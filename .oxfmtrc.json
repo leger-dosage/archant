@@ -1,0 +1,36 @@
+{
+	"useTabs": true,
+	"ignorePatterns": [
+		"node_modules",
+		"dist",
+		"coverage",
+		".wrangler",
+		"playwright-report",
+		"test-results",
+		"pnpm-lock.yaml",
+		"LICENSE",
+		"_bmad",
+		"_bmad-output",
+		".agents",
+		".claude",
+		".cursor",
+		"**/drizzle"
+	],
+	"sortImports": {
+		"customGroups": [
+			{
+				"groupName": "archant-workspace",
+				"elementNamePattern": ["@archant/**"]
+			}
+		],
+		"groups": [
+			"type-import",
+			["value-builtin", "value-external"],
+			"archant-workspace",
+			"value-internal",
+			["value-parent", "value-sibling", "value-index"],
+			"unknown"
+		],
+		"newlinesBetween": true
+	}
+}

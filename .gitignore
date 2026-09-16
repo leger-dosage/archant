@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+.wrangler
+.dev.vars
+playwright-report
+test-results
+*.tsbuildinfo
+
+# Local secrets. `.env.example` is committed and is the contract.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

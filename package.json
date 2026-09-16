@@ -1,0 +1,23 @@
+{
+	"name": "archant",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"api": "pnpm --filter @archant/api",
+		"web": "pnpm --filter @archant/web",
+		"db": "pnpm --filter @archant/db",
+		"format": "oxfmt .",
+		"lint:code": "oxlint --type-aware --max-warnings 0",
+		"lint:format": "oxfmt --check .",
+		"typecheck": "pnpm -r typecheck",
+		"test": "pnpm -r test",
+		"test:e2e": "pnpm --filter @archant/web test:e2e"
+	},
+	"devDependencies": {
+		"oxfmt": "^0.68.0",
+		"oxlint": "^1.83.0",
+		"oxlint-tsgolint": "^7.0.2001",
+		"typescript": "~7.0.2"
+	},
+	"packageManager": "pnpm@10.28.2"
+}

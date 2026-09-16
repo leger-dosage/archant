@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"target": "ES2023",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+
+		// Beyond `strict`. These three catch the bug classes that matter most in a
+		// financial app: an array lookup that is not actually guaranteed to exist,
+		// an optional field silently set to `undefined`, and a `catch` binding
+		// typed as `any` that swallows the error shape.
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+		"useUnknownInCatchVariables": true,
+
+		"noEmit": true,
+		"sourceMap": true
+	}
+}

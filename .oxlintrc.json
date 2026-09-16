@@ -1,0 +1,56 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "import", "promise"],
+	"options": {
+		"typeAware": true
+	},
+	"categories": {
+		"correctness": "error",
+		"suspicious": "error",
+		"perf": "warn"
+	},
+	"rules": {
+		// A money app must never lose a branch to an implicit fallthrough, and a
+		// forgotten `await` on a provider call silently drops a sync. These two are
+		// the reason type-aware linting is enabled at all.
+		"typescript/no-floating-promises": "error",
+		"typescript/no-misused-promises": "error",
+
+		"eslint/curly": ["error", "all"],
+		"eslint/eqeqeq": ["error", "always"],
+		"eslint/no-console": ["error", { "allow": ["warn", "error"] }],
+		"eslint/no-unused-vars": [
+			"error",
+			{
+				"vars": "all",
+				"varsIgnorePattern": "^_",
+				"args": "after-used",
+				"argsIgnorePattern": "^_"
+			}
+		],
+
+		"typescript/consistent-type-imports": [
+			"error",
+			{ "prefer": "type-imports", "fixStyle": "separate-type-imports" }
+		],
+
+		// `as any` and `as never` silence the compiler exactly where the domain is
+		// hardest: amounts, currencies, provider payloads. These two rules cover the
+		// same ground as the ESLint `no-restricted-syntax` selectors they replace,
+		// which oxlint does not implement.
+		"typescript/no-explicit-any": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-return": "error"
+	},
+	"ignorePatterns": [
+		"dist",
+		"coverage",
+		".wrangler",
+		"_bmad",
+		"_bmad-output",
+		".agents",
+		".claude",
+		"**/drizzle"
+	]
+}

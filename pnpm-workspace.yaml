@@ -1,0 +1,16 @@
+packages:
+  - packages/*
+
+# No `nodeLinker: hoisted` here, unlike the Expo-based sibling projects: archant
+# has no React Native package, so the default isolated linker applies. It is
+# stricter — a package can only import what it declares — which is what we want
+# for a public repo where contributors must not rely on hoisted transitives.
+
+catalog:
+  "@t3-oss/env-core": ^0.13.11
+  drizzle-orm: ^0.45.2
+  hono: ^4.13.8
+  react: 19.3.0
+  react-dom: 19.3.0
+  wrangler: ^4.132.0
+  zod: ^4.6.5
