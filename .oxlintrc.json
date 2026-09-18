@@ -46,7 +46,6 @@
 	"ignorePatterns": [
 		"dist",
 		"coverage",
-		".wrangler",
 		"_bmad",
 		"_bmad-output",
 		".agents",

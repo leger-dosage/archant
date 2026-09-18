@@ -1,5 +1,7 @@
 # Package layout
 
+> **Abandoned with its SPEC.md on 2026-09-18. Do not implement.** See `_bmad-output/implementation-artifacts/scaffolding-lessons.md`.
+
 The files each package owns at the end of this scope. Nothing here implies business logic; every file is skeleton or wiring. Naming, import and test conventions are in `AGENTS.md`; package versions are in `docs/tech-stack.md`.
 
 ## `packages/db` — `@archant/db`

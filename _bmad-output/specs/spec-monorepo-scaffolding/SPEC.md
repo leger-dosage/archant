@@ -1,11 +1,14 @@
 ---
 id: SPEC-monorepo-scaffolding
+status: abandoned
 companions:
   - package-layout.md
   - ../../../AGENTS.md
   - ../../../docs/tech-stack.md
 sources: []
 ---
+
+> **Abandoned on 2026-09-18. Do not implement.** Building the whole skeleton ahead of any feature produced code no feature used. Packages and dependencies now arrive with the first feature that needs them. What the attempt taught is in `_bmad-output/implementation-artifacts/scaffolding-lessons.md`.
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete, preservation-validated contract for what to build, test, and validate. Source documents listed in frontmatter are for traceability — consult them only if you need narrative rationale or prose color this contract intentionally omits.
 

@@ -12,5 +12,4 @@ catalog:
   hono: ^4.13.8
   react: 19.3.0
   react-dom: 19.3.0
-  wrangler: ^4.132.0
   zod: ^4.6.5

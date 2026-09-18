@@ -7,8 +7,13 @@ Self-hosted personal finance for one household. Bank data comes from Enable Bank
 ```bash
 pnpm install --frozen-lockfile
 cp .env.example .env
-pnpm db migrate:local
-pnpm api start:dev     # Hono worker on http://localhost:8787
+```
+
+No package exists yet, so there is nothing to start. The first feature that needs a package creates it, along with the scripts below that run it.
+
+```bash
+pnpm data migrate:local
+pnpm api start:dev     # Hono server on http://localhost:8787
 pnpm web start:dev     # Vite dev server on http://localhost:5173
 ```
 
@@ -39,13 +44,15 @@ Non-goals: multi-tenancy beyond one household, a managed SaaS offering, server-s
 
 ## Monorepo structure
 
-| Package        | Role                                                       | Runtime           |
-| -------------- | ---------------------------------------------------------- | ----------------- |
-| `@archant/web` | Vite + React SPA (interface)                               | Browser           |
-| `@archant/api` | Hono server (REST + scheduled sync)                        | Any Fetch runtime |
-| `@archant/db`  | Drizzle schema and derived types, shared by the two others | —                 |
+The target layout is three packages. None exists yet: each one appears when the first feature needs it, with only the dependencies that feature uses. The layout exists so that two features never invent two structures.
 
-`@archant/api` is written against web standards only, so the same code runs on Cloudflare Workers, Node, Bun and Deno. Anything runtime-specific lives in an entrypoint under `packages/api/src/entrypoints/`, never in a route or a service.
+| Package         | Role                                                       | Runtime |
+| --------------- | ---------------------------------------------------------- | ------- |
+| `@archant/web`  | Vite + React SPA (interface)                               | Browser |
+| `@archant/api`  | Hono server (REST + scheduled sync)                        | Node    |
+| `@archant/data` | Drizzle schema and derived types, shared by the two others | —       |
+
+`@archant/api` has a single entrypoint, `packages/api/src/index.ts`. Running somewhere else is a configuration and documentation concern; no route, service or module ever branches on the platform.
 
 ## Key conventions
 
@@ -58,15 +65,15 @@ Non-goals: multi-tenancy beyond one household, a managed SaaS offering, server-s
 
 ## Environment variables
 
-Validated with `@t3-oss/env-core` and Zod, never read through a bare `process.env`. The server exports a `validateEnv(runtimeEnv)` function rather than a module-level object, because Workers have no ambient `process.env` and bindings arrive per request.
+Validated with `@t3-oss/env-core` and Zod, never read through a bare `process.env`. The server exports a `validateEnv(runtimeEnv)` function rather than a module-level object, because some runtimes have no ambient `process.env` and hand their bindings over per request.
 
 `.env.example` is the contract: every variable is listed there, with a comment saying what degrades when it is absent.
 
 ## Database
 
-SQLite everywhere, through Drizzle. Local development and self-hosting use a file; hosted deployments use Turso or Cloudflare D1. The dialect never changes, so a single schema and a single set of migrations cover all three.
+SQLite everywhere, through Drizzle. Local development and self-hosting use a file; a hosted deployment uses Turso. The dialect never changes, so a single schema and a single set of migrations cover both.
 
-Columns are snake_case, mapped to camelCase in TypeScript (`transactedAt: integer("transacted_at")`). Derived types come from `InferSelectModel` / `InferInsertModel` in `packages/db/types.ts`. Never write raw SQL in application code.
+Columns are snake_case, mapped to camelCase in TypeScript (`transactedAt: integer("transacted_at")`). Derived types come from `InferSelectModel` / `InferInsertModel` in `packages/data/types.ts`. Never write raw SQL in application code.
 
 ## API contract
 
@@ -93,9 +100,9 @@ No test reaches the network. An unmocked request fails the test that sent it, na
 
 ## Deployment
 
-The primary target is a single Cloudflare Worker serving both the static assets and the API, with Turso or D1 behind it. A `Dockerfile` covers self-hosting with a plain SQLite file. Each target is one entrypoint plus one configuration file; adding a target must never fork the application code.
+The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume. It will be the only target with files in the repository. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.
 
-Scheduled synchronisation is a protected `POST /api/sync` route. Every platform triggers it its own way — a Cloudflare cron trigger, a GitHub Action, a system cron — and the route does not care which.
+Scheduled synchronisation is a protected `POST /api/sync` route. Every platform triggers it its own way, a system cron or a scheduled GitHub Action, and the route does not care which.
 
 ## Planning with BMAD
 
