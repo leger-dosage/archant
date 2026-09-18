@@ -1,35 +1,25 @@
 # Deployment
 
-One codebase, several targets. A target is an entrypoint under `packages/api/src/entrypoints/` plus one configuration file at the root of the package. Application code never branches on the platform.
+One codebase, several targets. `@archant/api` has a single entrypoint, `packages/api/src/index.ts`. A target is a matter of configuration and of the process that starts that file; application code never branches on the platform. The reasoning is in [adr/0002-container-reference-target.md](adr/0002-container-reference-target.md).
 
-## Cloudflare Workers — the primary target
+None of this is built yet. The files described here arrive with the first feature that can be deployed.
 
-A single Worker serves the built interface as static assets and handles the API on the same origin. The database is Turso over HTTP, or D1 through its binding.
+## Docker — the reference target
 
-Free-tier limits worth knowing:
+One image serves the built interface as static files and answers the API on the same origin. The database is a plain SQLite file on a volume. No cloud account, no second service. This is the only target that will have files in the repository.
 
-- 100,000 requests a day, which includes scheduled invocations.
-- 10 ms of CPU per invocation. Waiting on the network does not count, so a bank sync fits comfortably; a heavy computation over years of data would not.
-- D1 blocks queries past 5 million rows read or 100,000 rows written a day, enforced since 1 September 2026. Turso's free plan allows 5 GB and 500 million rows read a month, and is the safer default.
+## Other targets
 
-## Self-hosting with Docker
+These stay possible and none of them will have a file in this repository, by design: adding one must never fork the application code.
 
-A plain SQLite file on a volume, the Node entrypoint, no other service. This is the reference deployment for anyone who does not want a cloud account.
-
-## Other platforms
-
-Render, Vercel and Fly all work through the matching Hono adapter. Two traps on free tiers: a Render free PostgreSQL expires 30 days after creation, which is irrelevant here since we use SQLite, and a Render free web service spins down after 15 minutes of inactivity.
+- **A plain Node host.** Install, build the interface, start the entrypoint, put a reverse proxy in front.
+- **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
+- **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
+- **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
 
 ## Scheduled synchronisation
 
-`POST /api/sync` is protected by a shared secret and is the only entry point for synchronisation. How it gets called is a per-platform detail:
-
-| Platform   | Trigger                                          |
-| ---------- | ------------------------------------------------ |
-| Cloudflare | A cron trigger on the Worker                     |
-| Vercel     | A cron job, once a day maximum on the Hobby plan |
-| Docker     | A system cron or a timer in the container        |
-| Anywhere   | A scheduled GitHub Action calling the route      |
+`POST /api/sync` is protected by a shared secret and is the only entry point for synchronisation. How it gets called is a per-platform detail: a system cron or a timer in the container, a scheduled GitHub Action calling the route, or whatever the host provides.
 
 Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day.
 

@@ -2,6 +2,8 @@
 
 Versions verified on 16 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
 
+Only the toolchain is installed today. The package tables list what each package will use; a dependency is installed by the first feature that needs it, and one that no feature needs leaves the list.
+
 ## Toolchain
 
 | Tool       | Version | Note                                     |
@@ -44,17 +46,16 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 
 ## Server — `@archant/api`
 
-| Package               | Version | Role                          |
-| --------------------- | ------- | ----------------------------- |
-| `hono`                | 4.13.x  | Routing and middleware        |
-| `@hono/zod-validator` | 0.9.x   | Request validation            |
-| `better-auth`         | 1.7.x   | Sessions and accounts         |
-| `@t3-oss/env-core`    | 0.13.x  | Environment validation        |
-| `zod`                 | 4.6.x   | Schemas at every boundary     |
-| `vitest`              | 5.0.x   | Unit and integration tests    |
-| `wrangler`            | 4.132.x | Cloudflare deployment and dev |
+| Package               | Version | Role                       |
+| --------------------- | ------- | -------------------------- |
+| `hono`                | 4.13.x  | Routing and middleware     |
+| `@hono/zod-validator` | 0.9.x   | Request validation         |
+| `better-auth`         | 1.7.x   | Sessions and accounts      |
+| `@t3-oss/env-core`    | 0.13.x  | Environment validation     |
+| `zod`                 | 4.6.x   | Schemas at every boundary  |
+| `vitest`              | 5.0.x   | Unit and integration tests |
 
-## Data — `@archant/db`
+## Data — `@archant/data`
 
 | Package          | Version | Role                                      |
 | ---------------- | ------- | ----------------------------------------- |

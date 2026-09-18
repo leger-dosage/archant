@@ -4,7 +4,6 @@
 		"node_modules",
 		"dist",
 		"coverage",
-		".wrangler",
 		"playwright-report",
 		"test-results",
 		"pnpm-lock.yaml",

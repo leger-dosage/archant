@@ -19,14 +19,20 @@ Archant re-implements the parts of [Sure](https://github.com/we-promise/sure) th
 
 Why these, and what was rejected: [docs/adr/0001-technology-stack.md](docs/adr/0001-technology-stack.md).
 
+## Status
+
+Early. The toolchain, the conventions and the plan are in place; no feature is built yet. Each feature is scoped first, then built along with the packages and dependencies it needs, and nothing is added ahead of that need.
+
 ## Structure
+
+The target layout. The packages do not exist yet: each one arrives with the first feature that needs it.
 
 ```
 packages/
-  web/   Vite + React single-page app
-  api/   Hono server, REST and scheduled sync
-  db/    Drizzle schema shared by both
-docs/    Project documentation and decision records
+  web/    Vite + React single-page app
+  api/    Hono server, REST and scheduled sync
+  data/   Drizzle schema and database client shared by both
+docs/     Project documentation and decision records
 ```
 
 ## Prerequisites
@@ -39,11 +45,9 @@ Node.js 24+, pnpm 10+.
 git clone git@github.com:leger-dosage/archant.git
 cd archant
 pnpm install
-cp .env.example .env     # then fill in your Enable Banking credentials
-pnpm db migrate:local
-pnpm api start:dev
-pnpm web start:dev
 ```
+
+There is nothing to run yet. This section will list the commands to start the application once the first feature ships.
 
 ## Scripts
 
@@ -57,9 +61,11 @@ pnpm web start:dev
 | `pnpm test:e2e`     | Run the Playwright suite           |
 | `pnpm api <script>` | Run a script inside `@archant/api` |
 
+`pnpm web` and `pnpm data` do the same for the two other packages.
+
 ## Deploying
 
-One Cloudflare Worker serves the interface and the API, with Turso or D1 behind it. A `Dockerfile` covers self-hosting against a plain SQLite file. See [docs/deployment.md](docs/deployment.md).
+The reference target is a single container serving the interface and the API against a SQLite file on a volume, with no cloud account. Other targets are described in [docs/deployment.md](docs/deployment.md).
 
 ## Contributing
 

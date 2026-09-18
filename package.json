@@ -5,9 +5,9 @@
 	"scripts": {
 		"api": "pnpm --filter @archant/api",
 		"web": "pnpm --filter @archant/web",
-		"db": "pnpm --filter @archant/db",
+		"data": "pnpm --filter @archant/data",
 		"format": "oxfmt .",
-		"lint:code": "oxlint --type-aware --max-warnings 0",
+		"lint:code": "oxlint --type-aware --max-warnings 0 --no-error-on-unmatched-pattern",
 		"lint:format": "oxfmt --check .",
 		"typecheck": "pnpm -r typecheck",
 		"test": "pnpm -r test",
