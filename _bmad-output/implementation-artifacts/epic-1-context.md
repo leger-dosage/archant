@@ -63,6 +63,6 @@ The user creates depository and credit card accounts, records transactions and b
 ## Cross-Story Dependencies
 
 - Story 1.1 creates the three packages, the translation layer, the brand layer, the sidebar, `Money`, the error envelope and the ledger with the opening anchor. Every other story builds on it.
-- Story 1.2 needs the ledger's manual `ingest` path. Story 1.3 plugs the balance recompute into every ledger write and adds the chart. Story 1.4 adds `reconciliation` valuations to the same calculator.
+- Story 1.2 needs the ledger's manual `ingest` path. Story 1.2 also plugs the balance recompute into every ledger write; Story 1.3 adds the chart. Story 1.4 adds `reconciliation` valuations to the same calculator.
 - Story 1.5 needs transactions from 1.2. Story 1.6's deactivation must hide accounts from 1.5's filters, and its delete goes through the ledger.
 - Epic 2 reuses `ledger.ingest` with keys and statement balances; Epic 3 adds the auth guard in front of every route built here; Epics 4, 5 and 6 extend the transaction list filters, the sheet fields and read `balanceOn`.
