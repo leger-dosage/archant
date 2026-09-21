@@ -1,9 +1,10 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
+import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { NormalizedTransaction, ParsedStatement, RejectionCode } from "../domain/statement.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { and, count, desc, eq, gt, gte, inArray, lte, or, sum } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, lte, ne, or, sum } from "drizzle-orm";
 
 import type { AccountSubtype, AccountType } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
@@ -18,6 +19,7 @@ import type { Account, NewBalance } from "@archant/data/types";
 
 import { forwardBalances } from "../domain/balances/forward.ts";
 import { fillDays } from "../domain/balances/history.ts";
+import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { AppError } from "../lib/errors.ts";
@@ -534,6 +536,309 @@ export async function listTransactions(
 
 	return {
 		items: rows.map(toRecord),
+		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
+	};
+}
+
+export type SnapshotInput = {
+	date: IsoDate;
+	/** A stored balance (AD-5): an asset's value, a liability's amount owed. */
+	balance: MinorUnits;
+};
+
+/** An absent or `undefined` field is left as it is. */
+export type SnapshotPatch = {
+	date?: IsoDate | undefined;
+	balance?: MinorUnits | undefined;
+};
+
+export type RecordSnapshotResult =
+	| { status: "recorded"; id: string }
+	| { status: "rejected"; reason: SnapshotRejectionCode };
+
+export type SnapshotUpdateResult =
+	| { status: "updated" }
+	| { status: "rejected"; reason: SnapshotRejectionCode };
+
+function snapshotRejection(
+	account: { openingDate: IsoDate },
+	date: IsoDate,
+	timeZone: string,
+): SnapshotRejectionCode | null {
+	return snapshotRejectionFor(date, { openingDate: account.openingDate, today: today(timeZone) });
+}
+
+/** The id of the account's snapshot on `date`, other than `except`, if any. */
+async function snapshotOn(tx: Transaction, accountId: string, date: IsoDate, except?: string) {
+	const row = await tx
+		.select({ id: entries.id })
+		.from(entries)
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(entries.valuationKind, "reconciliation"),
+				eq(entries.date, date),
+				except === undefined ? undefined : ne(entries.id, except),
+			),
+		)
+		.get();
+
+	return row?.id;
+}
+
+async function snapshotRow(tx: Transaction, id: string) {
+	const row = await tx
+		.select({ accountId: entries.accountId, date: entries.date, balance: entries.amount })
+		.from(entries)
+		.where(and(eq(entries.id, id), eq(entries.valuationKind, "reconciliation")))
+		.get();
+
+	if (row === undefined) {
+		throw new AppError("NOT_FOUND", "No snapshot has this id.");
+	}
+
+	return row;
+}
+
+/**
+ * Records the balance the bank shows at the end of `date`, a `reconciliation`
+ * valuation (AD-8), and recomputes the balances from that day. A snapshot
+ * already on that date is updated in place and keeps its id, as in Sure's
+ * `Account::ReconciliationManager`.
+ */
+export async function recordSnapshot(
+	deps: ServiceDeps,
+	accountId: string,
+	input: SnapshotInput,
+	_options: { origin: Origin },
+): Promise<RecordSnapshotResult> {
+	return deps.db.transaction(
+		async (tx): Promise<RecordSnapshotResult> => {
+			const account = await accountWithOpeningDate(tx, accountId);
+			const reason = snapshotRejection(account, input.date, deps.timeZone);
+
+			if (reason !== null) {
+				return { status: "rejected", reason };
+			}
+
+			const now = Date.now();
+			const existing = await snapshotOn(tx, accountId, input.date);
+			const id = existing ?? crypto.randomUUID();
+
+			if (existing === undefined) {
+				await tx.insert(entries).values({
+					id,
+					accountId,
+					kind: "valuation",
+					valuationKind: "reconciliation",
+					date: input.date,
+					amount: input.balance,
+					currency: account.currency,
+					createdAt: now,
+					updatedAt: now,
+				});
+			} else {
+				await tx
+					.update(entries)
+					.set({ amount: input.balance, updatedAt: now })
+					.where(eq(entries.id, existing));
+			}
+
+			await recomputeBalances(tx, account, input.date, deps.timeZone);
+
+			return { status: "recorded", id };
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Moves or changes a snapshot and recomputes from the earlier of its old and
+ * new dates. Moving it onto a date another snapshot holds is refused: an edit
+ * never deletes a second snapshot behind the user's back.
+ */
+export async function updateSnapshot(
+	deps: ServiceDeps,
+	id: string,
+	patch: SnapshotPatch,
+	_options: { origin: Origin },
+): Promise<SnapshotUpdateResult> {
+	return deps.db.transaction(
+		async (tx): Promise<SnapshotUpdateResult> => {
+			const current = await snapshotRow(tx, id);
+			const account = await accountWithOpeningDate(tx, current.accountId);
+			const date = patch.date ?? current.date;
+			const balance = patch.balance ?? current.balance;
+			const reason = snapshotRejection(account, date, deps.timeZone);
+
+			if (reason !== null) {
+				return { status: "rejected", reason };
+			}
+
+			if ((await snapshotOn(tx, account.id, date, id)) !== undefined) {
+				return { status: "rejected", reason: "SNAPSHOT_EXISTS" };
+			}
+
+			await tx
+				.update(entries)
+				.set({ date, amount: balance, updatedAt: Date.now() })
+				.where(eq(entries.id, id));
+			await recomputeBalances(tx, account, minDate(current.date, date), deps.timeZone);
+
+			return { status: "updated" };
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** Deletes a snapshot; the balances from its date follow the transactions again. */
+export async function deleteSnapshot(
+	deps: ServiceDeps,
+	id: string,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const current = await snapshotRow(tx, id);
+			const account = await accountWithOpeningDate(tx, current.accountId);
+
+			await tx.delete(entries).where(eq(entries.id, id));
+			await recomputeBalances(tx, account, current.date, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+export type SnapshotRecord = {
+	id: string;
+	accountId: string;
+	date: IsoDate;
+	/** The recorded stored balance (AD-5). */
+	balance: MinorUnits;
+	/** The balance the transactions alone give for that day. */
+	computed: MinorUnits;
+	/** `balance - computed`, derived here and never stored. */
+	gap: MinorUnits;
+	currency: string;
+};
+
+const snapshotColumns = {
+	id: entries.id,
+	accountId: entries.accountId,
+	date: entries.date,
+	balance: entries.amount,
+	currency: entries.currency,
+	type: accounts.type,
+};
+
+type SnapshotRow = {
+	id: string;
+	accountId: string;
+	date: string;
+	balance: number;
+	currency: string;
+	type: AccountType;
+};
+
+/**
+ * Reads what `computed` and `gap` need for snapshots of one account on
+ * `dates`: one query for the balances of the days before, one for those days'
+ * movements, whatever the number of rows. Returns the function adding them to
+ * a row.
+ */
+async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readonly IsoDate[]) {
+	const previousRows = await db
+		.select({ date: balances.date, balance: balances.balance })
+		.from(balances)
+		.where(
+			and(
+				eq(balances.accountId, accountId),
+				inArray(
+					balances.date,
+					dates.map((date) => addDays(date, -1)),
+				),
+			),
+		);
+	const movementRows = await db
+		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
+		.from(entries)
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(entries.kind, "transaction"),
+				inArray(entries.date, [...dates]),
+			),
+		)
+		.groupBy(entries.date);
+	const previous = new Map(previousRows.map((row) => [row.date, row.balance]));
+	const movements = new Map(movementRows.map((row) => [row.date, row.amount]));
+
+	return ({ type, ...row }: SnapshotRow): SnapshotRecord => {
+		const before = previous.get(addDays(row.date, -1));
+
+		// Balances are written from the opening date on, and a snapshot is dated
+		// after it, so the day before always has a row; a missing one is a bug.
+		if (before === undefined) {
+			throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+		}
+
+		const balance = toMinorUnits(row.balance);
+
+		return {
+			...row,
+			balance,
+			...snapshotGap({
+				previous: toMinorUnits(before),
+				movements: toMinorUnits(movements.get(row.date) ?? 0),
+				recorded: balance,
+				classification: classificationOf(type),
+			}),
+		};
+	};
+}
+
+/** One snapshot with its gap, `null` when the id names none. */
+export async function findSnapshot(deps: ServiceDeps, id: string): Promise<SnapshotRecord | null> {
+	const row = await deps.db
+		.select(snapshotColumns)
+		.from(entries)
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(and(eq(entries.id, id), eq(entries.valuationKind, "reconciliation")))
+		.get();
+
+	if (row === undefined) {
+		return null;
+	}
+
+	const withGap = await gapReader(deps.db, row.accountId, [row.date]);
+
+	return withGap(row);
+}
+
+/** A page of an account's snapshots with their gaps, most recent first (AD-15). */
+export async function listSnapshots(
+	deps: ServiceDeps,
+	accountId: string,
+	page: { page: number; pageSize: number },
+): Promise<{ items: SnapshotRecord[]; total: number }> {
+	const where = and(eq(entries.accountId, accountId), eq(entries.valuationKind, "reconciliation"));
+	const rows = await deps.db
+		.select(snapshotColumns)
+		.from(entries)
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(where)
+		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
+		.limit(page.pageSize)
+		.offset((page.page - 1) * page.pageSize);
+	const totals = await deps.db.select({ total: count() }).from(entries).where(where);
+	const withGap = await gapReader(
+		deps.db,
+		accountId,
+		rows.map((row) => row.date),
+	);
+
+	return {
+		items: rows.map(withGap),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
 }

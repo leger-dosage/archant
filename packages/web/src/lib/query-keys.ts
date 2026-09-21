@@ -12,6 +12,11 @@ export const queryKeys = {
 		 */
 		balances: (id: string, period: BalancePeriod) =>
 			["accounts", "detail", id, "balances", period] as const,
+		/**
+		 * Under `detail(id)` too: a snapshot's gap depends on the transactions
+		 * of its day, so every transaction write must refresh the table.
+		 */
+		snapshots: (id: string, page: number) => ["accounts", "detail", id, "snapshots", page] as const,
 	},
 	transactions: {
 		byAccount: (accountId: string, page: number) =>

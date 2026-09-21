@@ -46,6 +46,12 @@ export const entries = sqliteTable(
 		uniqueIndex("entries_one_opening_anchor")
 			.on(table.accountId)
 			.where(sql`${table.valuationKind} = 'opening_anchor'`),
+		// One snapshot per account and day: a second one on the same date replaces
+		// the first in the ledger, and two would leave the day's balance to
+		// whichever row the recompute happened to read last.
+		uniqueIndex("entries_one_reconciliation_per_day")
+			.on(table.accountId, table.date)
+			.where(sql`${table.valuationKind} = 'reconciliation'`),
 		index("entries_account_date").on(table.accountId, table.date),
 	],
 );

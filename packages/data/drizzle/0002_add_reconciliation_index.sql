@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `entries_one_reconciliation_per_day` ON `entries` (`account_id`,`date`) WHERE "entries"."valuation_kind" = 'reconciliation';

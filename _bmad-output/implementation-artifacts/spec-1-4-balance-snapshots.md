@@ -2,7 +2,8 @@
 title: 'Story 1.4: Balance snapshots'
 type: 'feature'
 created: '2026-09-21'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '35edf916fdfcd7f3809784e6242f0d0c9dd1e1ea'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -76,14 +77,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/data/schema/entries.ts`, `drizzle/0002_*.sql` -- partial unique index `entries_one_reconciliation_per_day` on `(account_id, date)` where `valuation_kind = 'reconciliation'`; generate with `pnpm data generate`.
-- [ ] `packages/api/src/domain/balances/snapshot.spec.ts`, `snapshot.ts` (new) -- tests first, then `snapshotRejectionFor(date, { openingDate, today })` and `snapshotGap({ previous, movements, recorded, classification })` returning `{ computed, gap }`. 100% branches.
-- [ ] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- tests first, then `recordSnapshot`, `updateSnapshot`, `deleteSnapshot` (each takes `origin`, recomputes in its transaction, returns a rejection like `UpdateResult`) and `listSnapshots` (page, plus `computed` and `gap` from the `D - 1` balance rows and the day's movement sums, three queries per page, not one per row).
-- [ ] `packages/api/src/schemas/snapshots.ts` (new) -- body `{ date, balance }` as text, `createSnapshotSchema(currency)`, `updateSnapshotSchema(currency)`, shared with the form resolver.
-- [ ] `packages/api/src/services/snapshots.ts` (new), `routes/accounts.ts`, `routes/snapshots.ts` (new), `app.ts`, `app.spec.ts` -- the four routes; the spec covers the I/O matrix through `app.request`.
-- [ ] `packages/web/src/components/ui/tabs.tsx` -- `pnpm dlx shadcn add tabs`, patched for oxlint as the other `ui/` files.
-- [ ] `packages/web/src/lib/query-keys.ts`, `hooks/useSnapshots.ts` (new) -- `accounts.snapshots(id, page)` = `["accounts", "detail", id, "snapshots", page]`; list, create, update, delete hooks invalidating as `useInvalidateAccount` does.
-- [ ] `packages/web/src/components/Pagination.tsx` (new), `SnapshotList.tsx` (new), `SnapshotDialog.tsx` (new), `routes/comptes.$accountId.tsx`, `locales/fr.json` -- extract the pagination nav, add the tabs with `tab` and `snapshotsPage` search params (`.catch(undefined)`), the table, the dialog, the empty state and the error codes.
+- [x] `packages/data/schema/entries.ts`, `drizzle/0002_*.sql` -- partial unique index `entries_one_reconciliation_per_day` on `(account_id, date)` where `valuation_kind = 'reconciliation'`; generate with `pnpm data generate`.
+- [x] `packages/api/src/domain/balances/snapshot.spec.ts`, `snapshot.ts` (new) -- tests first, then `snapshotRejectionFor(date, { openingDate, today })` and `snapshotGap({ previous, movements, recorded, classification })` returning `{ computed, gap }`. 100% branches.
+- [x] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- tests first, then `recordSnapshot`, `updateSnapshot`, `deleteSnapshot` (each takes `origin`, recomputes in its transaction, returns a rejection like `UpdateResult`) and `listSnapshots` (page, plus `computed` and `gap` from the `D - 1` balance rows and the day's movement sums, three queries per page, not one per row).
+- [x] `packages/api/src/schemas/snapshots.ts` (new) -- body `{ date, balance }` as text, `createSnapshotSchema(currency)`, `updateSnapshotSchema(currency)`, shared with the form resolver.
+- [x] `packages/api/src/services/snapshots.ts` (new), `routes/accounts.ts`, `routes/snapshots.ts` (new), `app.ts`, `app.spec.ts` -- the four routes; the spec covers the I/O matrix through `app.request`.
+- [x] `packages/web/src/components/ui/tabs.tsx` -- `pnpm dlx shadcn add tabs`, patched for oxlint as the other `ui/` files.
+- [x] `packages/web/src/lib/query-keys.ts`, `hooks/useSnapshots.ts` (new) -- `accounts.snapshots(id, page)` = `["accounts", "detail", id, "snapshots", page]`; list, create, update, delete hooks invalidating as `useInvalidateAccount` does.
+- [x] `packages/web/src/components/Pagination.tsx` (new), `SnapshotList.tsx` (new), `SnapshotDialog.tsx` (new), `routes/comptes.$accountId.tsx`, `locales/fr.json` -- extract the pagination nav, add the tabs with `tab` and `snapshotsPage` search params (`.catch(undefined)`), the table, the dialog, the empty state and the error codes.
 
 **Acceptance Criteria:**
 - Given a snapshot saved, edited or deleted, when the dialog closes, then the header balance, the chart and the Soldes table show the new values without a reload.
@@ -93,9 +94,40 @@ context:
 
 ## Implementation Notes
 
+- `listSnapshots` reads a page, its count, the `D - 1` balance rows and the day's movement sums: four queries per page whatever its size. `gapReader` in `ledger.ts` throws `INTERNAL_ERROR` if a snapshot has no balance row the day before, which no write path can produce.
+- A positive gap reads `+620,00 €` through `formatSignedMoney`, uncoloured, like the chart's change; `Money` signs only coloured transaction amounts.
+- « Ajouter un solde » is disabled while the account opened today or later: no date can be valid yet.
+- `pageSearch` moved to `lib/page-search.ts` and serves both the pagination links and the page clamp; pagination strings moved from `transactions.pagination.*` to `pagination.*`.
+- A `POST` that replaces a snapshot answers `201` like a creation, with the kept id.
+- Verified in Chromium on a throwaway database: checking opened 2026-06-01 at `1 500,00`, `-120,00` on 08-02, `+2 400,00` on 09-10, `-950,00` on 09-15. `?tab=snapshots` selects Soldes and shows « Aucun solde saisi. »; recording `3 000,00` on 12/09/2026 moves the header from `2 830,00 €` to `2 050,00 €`, the row reads `3 000,00 € / 3 780,00 € / −780,00 €`, focus returns to « Ajouter un solde »; a `-50,00` on 09-12 then moves the gap to `−730,00 €` and leaves the header. Light 1280 px and dark 600 px checked.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Location | Finding | Verdict | Evidence | Route |
+|---|--------|----------|---------|---------|----------|-------|
+| 1 | blind, edge | `comptes.$accountId.tsx` `canAdd`, `SnapshotDialog.tsx` `valuesOf` | An account opened today offers « Ajouter un solde », but no date is both after opening and not after today | medium | The create dialog defaults to opening today; every submission then fails with `not_after_opening_date`. | patch |
+| 2 | verification | `schemas/snapshots.ts` `updateSnapshotSchema` | No test pins the ISO date check of a `PATCH` | medium | Pre-verified: loosening it to `z.string()` passes every test, and `snapshotRejectionFor` compares strings, so `2026-02-5` would be stored. | patch |
+| 3 | blind | `ledger.ts` `snapshotRow` | `PATCH`/`DELETE` with the opening anchor's id is untested | low | The `reconciliation` filter protects the anchor today; the test is one case and guards the one path that could erase the opening balance. | patch |
+| 4 | verification | `Pagination.tsx` `pageSearch`, route `useClampPage` | The page-param mapping is written twice and untested | medium | Pre-verified: swapping either copy passes every test; Suivant on Soldes would then move the transactions page. | patch |
+| 5 | blind, edge | `locales/fr.json` `transactions.title` | Orphan key after the `<h2>` gave way to the tabs | low | No reader left; direct deletion. The tab list names the panels for screen readers. | patch |
+| 6 | blind, edge | `SnapshotDialog.tsx` default date | Browser date versus `APP_TIMEZONE` near midnight | low | Same as `TransactionSheet` since Story 1.2; one household in one zone. Rejected. |  |
+| 7 | blind | `ledger.ts` `recordSnapshot` | Create on a taken date replaces silently | false | The frozen intent and the story's AC say a second snapshot on the same date replaces the first. |  |
+| 8 | blind | `SnapshotDialog.tsx` | No unsaved-changes prompt on close | low | EXPERIENCE.md asks it of the transaction sheet; a two-field dialog loses little. Rejected. |  |
+| 9 | blind | `ledger.spec.ts` | Rollback tested for `recordSnapshot` only | low | Update and delete use the same `immediate` transaction and recompute; adding tests adds no guard. Rejected. |  |
+| 10 | blind | `ledger.ts` `gapReader` | `INTERNAL_ERROR` if the opening date moves past a snapshot | false | No code path moves the opening date; Story 1.6 edits name and subtype only. |  |
+| 11 | blind | web | No component or end-to-end tests for the tab, list and dialog | low | The web package has no component harness (Story 1.3 #11, deferred). | defer |
+| 12 | blind | spec, `sprint-status.yaml` | Statuses disagree | false | Step 5 moves both to their final state. |  |
+| 13 | blind | `ledger.ts` snapshot writes | `origin` unused without comment | low | Same `_options` as `createAccount` and `deleteTransaction`; snapshots have no locked fields. Rejected. |  |
+| 14 | blind | `services/snapshots.ts` `updateSnapshot` | Reads the gap twice per edit | low | Three indexed reads on a user click. Rejected. |  |
+| 15 | blind | `SnapshotRecord` | `currency: string`, `balance: number` in the raw row | low | `balance` is branded `MinorUnits` on the record; same shape as `TransactionRecord`. Rejected. |  |
+| 16 | blind | `SnapshotDialog.tsx` | Supprimer and Annuler stay active while saving | low | A double action needs deliberate clicks within one request. Rejected. |  |
+| 17 | edge | `SnapshotDialog.tsx` `onCloseAutoFocus` | Focus falls to the body after deleting the opener row | low | Same fallback as `TransactionSheet`; fixing it adds a branch. Rejected. |  |
+| 18 | edge | `services/snapshots.ts` re-read | A concurrent delete between write and re-read returns 404 | low | Needs two writers on one household's snapshot within milliseconds. Rejected. |  |
+| 19 | edge | `ledger.ts` `listSnapshots` | Page, count and gap reads are not one transaction | low | Same as `listTransactions`; a stale total self-corrects on the next read. Rejected. |  |
+| 20 | edge (claim) | `ledger.ts` `listSnapshots` | Four queries, not three | low | The count is the fourth; still constant per page, which is the point. Rejected. |  |
+| 21 | edge (claim) | `ledger.ts` `deleteSnapshot` | Returns `void`, not a rejection | low | Delete has nothing to refuse, like `deleteTransaction`. Rejected. |  |
 
 ## Design Notes
 

@@ -8,6 +8,11 @@
 		"retry": "Réessayer",
 		"cancel": "Annuler"
 	},
+	"pagination": {
+		"previous": "Précédent",
+		"next": "Suivant",
+		"status": "Page {{page}} sur {{pages}}"
+	},
 	"nav": {
 		"accounts": "Comptes",
 		"openMenu": "Ouvrir le menu",
@@ -55,7 +60,12 @@
 	"accountDetail": {
 		"title": "Compte",
 		"notFound": "Compte introuvable",
-		"backToAccounts": "Retour aux comptes"
+		"backToAccounts": "Retour aux comptes",
+		"tabs": {
+			"label": "Vues du compte",
+			"transactions": "Opérations",
+			"snapshots": "Soldes"
+		}
 	},
 	"balances": {
 		"title": "Historique du solde",
@@ -82,19 +92,13 @@
 		"balance": "Solde"
 	},
 	"transactions": {
-		"title": "Opérations",
 		"add": "Ajouter une opération",
 		"empty": "Aucune opération.",
 		"days": {
 			"today": "Aujourd'hui",
 			"yesterday": "Hier"
 		},
-		"pagination": {
-			"label": "Pages des opérations",
-			"previous": "Précédent",
-			"next": "Suivant",
-			"status": "Page {{page}} sur {{pages}}"
-		},
+		"paginationLabel": "Pages des opérations",
 		"form": {
 			"addTitle": "Ajouter une opération",
 			"editTitle": "Modifier l'opération",
@@ -122,6 +126,31 @@
 			"manual": "Saisie manuelle"
 		}
 	},
+	"snapshots": {
+		"add": "Ajouter un solde",
+		"empty": "Aucun solde saisi.",
+		"paginationLabel": "Pages des soldes",
+		"noGap": "Aucun écart",
+		"columns": {
+			"date": "Date",
+			"balance": "Solde saisi",
+			"computed": "Solde calculé",
+			"gap": "Écart"
+		},
+		"form": {
+			"addTitle": "Ajouter un solde",
+			"editTitle": "Modifier le solde",
+			"description": "Le solde affiché par votre banque à la fin de cette journée, ou le montant dû pour une carte. Il remplace le solde calculé à partir de cette date.",
+			"date": "Date",
+			"balance": "Solde",
+			"save": "Enregistrer"
+		},
+		"delete": {
+			"action": "Supprimer",
+			"title": "Supprimer le solde du {{date}} ?",
+			"description": "Le solde saisi de {{amount}} sera supprimé, et le solde du compte recalculé à partir des opérations."
+		}
+	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
@@ -139,7 +168,9 @@
 			"unknown": "Valeur invalide.",
 			"date_too_early": "La date doit être postérieure au 1er janvier 1900.",
 			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
-			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour."
+			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
+			"date_in_future": "La date ne peut pas dépasser la date du jour.",
+			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord."
 		}
 	}
 }

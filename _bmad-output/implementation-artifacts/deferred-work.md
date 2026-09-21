@@ -10,3 +10,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3-daily-balance-history.md`
   summary: Test that `/comptes/$accountId` falls back to `1M` on an unknown `period` and keeps `period` across pagination links.
   evidence: The web package has no route or component test harness; reverting the pagination `search` updaters or the `.catch` passes every test today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4-balance-snapshots.md`
+  summary: Test the account page's Soldes tab, snapshot dialog and `tab` search param with a component or end-to-end harness.
+  evidence: The web package tests `lib/` only; reverting the tab wiring or the dialog's delete path passes every test today.

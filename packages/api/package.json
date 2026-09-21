@@ -7,6 +7,7 @@
 		"./app": "./src/app.ts",
 		"./schemas/accounts": "./src/schemas/accounts.ts",
 		"./schemas/balances": "./src/schemas/balances.ts",
+		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/transactions": "./src/schemas/transactions.ts"
 	},
 	"scripts": {
