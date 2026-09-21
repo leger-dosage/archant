@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Archant — Opérations (mock)</title>
+<style>
+/*
+  Spine sections illustrated by this mock:
+  - EXPERIENCE.md > Information Architecture (Transactions /operations, Transaction sheet)
+  - EXPERIENCE.md > Component Patterns: Transaction row, Transaction sheet, Filter bar, Bulk bar
+  - EXPERIENCE.md > State Patterns: Pending, Excluded, Possible duplicate
+  - EXPERIENCE.md > Money and Dates (fr-FR formatting, day-header grouping, signed amounts)
+  - EXPERIENCE.md > Key Flows > Flow 2 — Cleaning up after an import (Epics 4, 5)
+  - EXPERIENCE.md > Voice and Tone (« Sans catégorie », no exclamation marks)
+  - DESIGN.md > Colors, Components (money-income, money-expense, badge-pending, transaction-row)
+
+  Second section (below) additionally illustrates:
+  - EXPERIENCE.md > Component Patterns: Transaction sheet (fields, source, linked transfer)
+  - EXPERIENCE.md > State Patterns: Possible duplicate (sheet offers « Fusionner avec… » /
+    « Ce n'est pas un doublon »)
+*/
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #DCDCDC;
+  font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: #171717;
+  padding: 32px;
+}
+
+.section-caption {
+  width: 1440px;
+  margin: 0 auto 12px auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: #171717;
+}
+
+.browser {
+  width: 1440px;
+  margin: 0 auto 40px auto;
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.browser-chrome {
+  height: 40px;
+  background: #F7F7F7;
+  border-bottom: 1px solid #E7E7E7;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+}
+
+.browser-dots { display: flex; gap: 6px; }
+.browser-dots span { width: 10px; height: 10px; border-radius: 9999px; background: #E7E7E7; }
+
+.browser-address {
+  flex: 1;
+  height: 24px;
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #737373;
+}
+
+.app {
+  display: flex;
+  width: 1440px;
+  min-height: 760px;
+  position: relative;
+}
+
+/* Sidebar (collapsed reference, minimal for this screen) */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: #F7F7F7;
+  border-right: 1px solid #E7E7E7;
+  padding: 16px 12px;
+}
+
+.sidebar-brand { font-size: 14px; font-weight: 600; padding: 0 8px 16px 8px; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  position: relative;
+  margin-bottom: 2px;
+}
+
+.nav-item .icon { width: 16px; height: 16px; flex-shrink: 0; color: #737373; }
+.nav-item.active .icon { color: #171717; }
+.nav-item.active { background: #FFFFFF; border: 1px solid #E7E7E7; }
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 9999px;
+  background: #444CE7;
+}
+
+/* Main */
+.main { flex: 1; padding: 24px 32px 0 32px; min-width: 0; }
+
+.page-heading {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #E7E7E7;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #171717;
+  background: #FFFFFF;
+}
+
+.chip .close { color: #737373; font-size: 13px; line-height: 1; }
+
+.filter-spacer { flex: 1; }
+
+.filter-summary {
+  font-size: 12px;
+  color: #737373;
+  white-space: nowrap;
+}
+
+.filter-summary .total {
+  font-variant-numeric: tabular-nums;
+  color: #171717;
+  font-weight: 500;
+}
+
+/* Table */
+.tx-table { border: 1px solid #E7E7E7; border-radius: 8px; overflow: hidden; margin-bottom: 96px; }
+
+.day-header {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: #F7F7F7;
+  border-bottom: 1px solid #E7E7E7;
+  font-size: 12px;
+  font-weight: 500;
+  color: #737373;
+  text-transform: none;
+}
+
+.tx-row {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid #E7E7E7;
+  gap: 12px;
+}
+
+.tx-row:last-child { border-bottom: none; }
+.tx-row.selected { background: #F7F7F7; }
+
+.tx-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #C7C7C7;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.tx-row.selected .tx-checkbox {
+  background: #171717;
+  border-color: #171717;
+  position: relative;
+}
+
+.tx-row.selected .tx-checkbox::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #FFFFFF;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.tx-label-block { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.tx-label-line { display: flex; align-items: center; gap: 6px; }
+
+.tx-label {
+  font-size: 14px;
+  color: #171717;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-merchant { font-size: 12px; color: #737373; }
+
+.tx-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #B54708;
+  flex-shrink: 0;
+}
+
+.tx-flag .icon { width: 13px; height: 13px; }
+
+.tx-excluded-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #737373;
+  flex-shrink: 0;
+}
+
+.tx-excluded-note .icon { width: 13px; height: 13px; }
+
+.category-chip {
+  width: 150px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+}
+
+.category-dot { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+.category-dot.uncategorized {
+  width: 6px; height: 6px;
+  border: 1.5px dashed #C7C7C7;
+  background: transparent;
+}
+.category-chip.uncategorized { color: #737373; }
+
+.badge-pending {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid #E7E7E7;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #737373;
+  flex-shrink: 0;
+}
+
+.tx-account {
+  width: 130px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #737373;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-amount {
+  width: 120px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #171717;
+}
+
+.tx-amount.income { color: #067647; }
+.tx-amount.muted { color: #737373; }
+
+/* Bulk bar */
+.bulk-bar {
+  position: absolute;
+  left: 32px;
+  right: 32px;
+  bottom: 20px;
+  height: 52px;
+  background: #171717;
+  color: #FFFFFF;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
+
+.bulk-count { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.bulk-select-all { font-size: 12px; color: #B8B8B8; white-space: nowrap; }
+.bulk-spacer { flex: 1; }
+
+.bulk-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #FFFFFF;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.bulk-btn.destructive { color: #ED4E4E; }
+
+/* Sheet (section 2) */
+.app.with-sheet .main { filter: none; }
+
+.sheet-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(23,23,23,0.16);
+}
+
+.sheet {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  background: #FFFFFF;
+  border-left: 1px solid #E7E7E7;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.10);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.sheet-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.sheet-source {
+  font-size: 12px;
+  color: #737373;
+  margin-bottom: 16px;
+}
+
+.sheet-duplicate-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #FDF6EC;
+  border: 1px solid #F2D9B8;
+  color: #B54708;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.sheet-duplicate-banner .icon { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; }
+.sheet-duplicate-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+.sheet-duplicate-actions button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #B54708;
+  color: #B54708;
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.field-group { margin-bottom: 14px; }
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #737373;
+  margin-bottom: 5px;
+}
+
+.field-input {
+  width: 100%;
+  border: 1px solid #E7E7E7;
+  border-radius: 4px;
+  padding: 7px 10px;
+  font-size: 14px;
+  color: #171717;
+  font-family: inherit;
+}
+
+.field-input.readonly { background: #F7F7F7; color: #737373; }
+.field-input.amount { font-variant-numeric: tabular-nums; }
+
+.field-two-col { display: flex; gap: 12px; }
+.field-two-col > div { flex: 1; }
+
+.field-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-top: 1px solid #F1F1F1;
+  margin-top: 4px;
+}
+
+.field-toggle .field-label { margin-bottom: 0; }
+
+.toggle-track {
+  width: 32px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #E7E7E7;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.sheet-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid #E7E7E7;
+}
+
+.btn-secondary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+
+.btn-primary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: #FFFFFF;
+  background: #171717;
+  border: 1px solid #171717;
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+
+.btn-primary .shortcut { color: #B8B8B8; margin-left: 6px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="section-caption">1. Opérations — filtres, groupement par jour, sélection multiple et barre d'actions groupées</div>
+
+<div class="browser">
+  <div class="browser-chrome">
+    <div class="browser-dots"><span></span><span></span><span></span></div>
+    <div class="browser-address">archant.local/operations</div>
+  </div>
+
+  <div class="app">
+    <nav class="sidebar" aria-label="Navigation principale">
+      <div class="sidebar-brand">Archant</div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+        Tableau de bord
+      </div>
+      <div class="nav-item active">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="9" rx="1"/><path d="M2 6h12"/></svg>
+        Opérations
+      </div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+        Récurrences
+      </div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h5M9 8h5M8 2v5M8 9v5"/></svg>
+        Règles
+      </div>
+    </nav>
+
+    <main class="main">
+      <h1 class="page-heading">Opérations</h1>
+
+      <div class="filter-bar">
+        <span class="chip">Compte joint <span class="close">×</span></span>
+        <span class="chip">Septembre 2026 <span class="close">×</span></span>
+        <span class="chip">Montant &lt; 0 <span class="close">×</span></span>
+        <div class="filter-spacer"></div>
+        <span class="filter-summary">8 résultats · Total : <span class="total">+1&nbsp;140,23&nbsp;€</span></span>
+      </div>
+
+      <div class="tx-table">
+        <div class="day-header">Aujourd'hui</div>
+
+        <div class="tx-row">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">Salaire septembre</span></div>
+            <span class="tx-merchant">Employeur SA</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#12B76A"></span>Revenus</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount income">+2&nbsp;710,00&nbsp;€</span>
+        </div>
+
+        <div class="tx-row">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">CB Carrefour City</span></div>
+            <span class="tx-merchant">Carrefour City</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#12B76A"></span>Courses</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount">−42,18&nbsp;€</span>
+        </div>
+
+        <div class="tx-row selected">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">Prélèvement loyer</span></div>
+            <span class="tx-merchant">SCI Les Ormes</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#06AED4"></span>Logement</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount">−950,00&nbsp;€</span>
+        </div>
+
+        <div class="day-header">Hier</div>
+
+        <div class="tx-row">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line">
+              <span class="tx-label">Prélèvement Spotify</span>
+              <span class="badge-pending">En attente</span>
+            </div>
+            <span class="tx-merchant">Spotify</span>
+          </div>
+          <div class="category-chip uncategorized"><span class="category-dot uncategorized"></span>Sans catégorie</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount muted">−9,99&nbsp;€</span>
+        </div>
+
+        <div class="tx-row selected">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">Virement</span></div>
+            <span class="tx-merchant">Vers Livret A</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#7A5AF8"></span>Virement</div>
+          <span class="tx-account">Livret A</span>
+          <span class="tx-amount">−500,00&nbsp;€</span>
+        </div>
+
+        <div class="day-header">lundi 15 septembre</div>
+
+        <div class="tx-row">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">Prélèvement assurance habitation</span></div>
+            <span class="tx-merchant">MAIF · <span class="tx-excluded-note"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 8s2.6-4.5 6.5-4.5S14.5 8 14.5 8s-2.6 4.5-6.5 4.5S1.5 8 1.5 8Z"/><path d="M2 2l12 12"/></svg>Exclue des rapports</span></span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#F79009"></span>Assurance</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount muted">−28,50&nbsp;€</span>
+        </div>
+
+        <div class="tx-row selected">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line">
+              <span class="tx-label">Amazon Marketplace</span>
+              <span class="tx-flag"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 15 14H1L8 1.5Z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.7" r="0.6" fill="currentColor" stroke="none"/></svg>Doublon possible</span>
+            </div>
+            <span class="tx-merchant">Amazon</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#EE46BC"></span>Shopping</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount">−34,90&nbsp;€</span>
+        </div>
+
+        <div class="tx-row">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line"><span class="tx-label">CB Boulangerie Martin</span></div>
+            <span class="tx-merchant">Boulangerie Martin</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#F79009"></span>Restaurants</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount">−4,20&nbsp;€</span>
+        </div>
+      </div>
+
+      <div class="bulk-bar">
+        <span class="bulk-count">3 sélectionnées</span>
+        <span class="bulk-select-all">Tout sélectionner (8 résultats)</span>
+        <div class="bulk-spacer"></div>
+        <button class="bulk-btn" type="button">Catégorie</button>
+        <button class="bulk-btn" type="button">Marchand</button>
+        <button class="bulk-btn" type="button">Étiquettes</button>
+        <button class="bulk-btn" type="button">Exclure</button>
+        <button class="bulk-btn destructive" type="button">Supprimer</button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="section-caption">2. Opérations — fiche « Amazon Marketplace » ouverte, avec avertissement de doublon possible</div>
+
+<div class="browser">
+  <div class="browser-chrome">
+    <div class="browser-dots"><span></span><span></span><span></span></div>
+    <div class="browser-address">archant.local/operations · opération ouverte</div>
+  </div>
+
+  <div class="app with-sheet">
+    <nav class="sidebar" aria-label="Navigation principale">
+      <div class="sidebar-brand">Archant</div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+        Tableau de bord
+      </div>
+      <div class="nav-item active">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="9" rx="1"/><path d="M2 6h12"/></svg>
+        Opérations
+      </div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+        Récurrences
+      </div>
+      <div class="nav-item">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h5M9 8h5M8 2v5M8 9v5"/></svg>
+        Règles
+      </div>
+    </nav>
+
+    <main class="main">
+      <h1 class="page-heading">Opérations</h1>
+
+      <div class="filter-bar">
+        <span class="chip">Compte joint <span class="close">×</span></span>
+        <span class="chip">Septembre 2026 <span class="close">×</span></span>
+        <span class="chip">Montant &lt; 0 <span class="close">×</span></span>
+        <div class="filter-spacer"></div>
+        <span class="filter-summary">8 résultats · Total : <span class="total">+1&nbsp;140,23&nbsp;€</span></span>
+      </div>
+
+      <div class="tx-table">
+        <div class="day-header">lundi 15 septembre</div>
+        <div class="tx-row selected">
+          <div class="tx-checkbox"></div>
+          <div class="tx-label-block">
+            <div class="tx-label-line">
+              <span class="tx-label">Amazon Marketplace</span>
+              <span class="tx-flag"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 15 14H1L8 1.5Z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.7" r="0.6" fill="currentColor" stroke="none"/></svg>Doublon possible</span>
+            </div>
+            <span class="tx-merchant">Amazon</span>
+          </div>
+          <div class="category-chip"><span class="category-dot" style="background:#EE46BC"></span>Shopping</div>
+          <span class="tx-account">Compte joint</span>
+          <span class="tx-amount">−34,90&nbsp;€</span>
+        </div>
+      </div>
+    </main>
+
+    <div class="sheet-overlay"></div>
+
+    <aside class="sheet">
+      <div class="sheet-title">Amazon Marketplace</div>
+      <div class="sheet-source">Import OFX du 15 sept.</div>
+
+      <div class="sheet-duplicate-banner">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 15 14H1L8 1.5Z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.7" r="0.6" fill="currentColor" stroke="none"/></svg>
+        <div>
+          Doublon possible avec une opération du 14 septembre, même montant.
+          <div class="sheet-duplicate-actions">
+            <button type="button">Fusionner avec…</button>
+            <button type="button">Ce n'est pas un doublon</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-two-col">
+        <div class="field-group">
+          <label class="field-label">Date</label>
+          <div class="field-input">15/09/2026</div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Montant</label>
+          <div class="field-input amount">−34,90 €</div>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Libellé</label>
+        <div class="field-input">Amazon Marketplace</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Compte</label>
+        <div class="field-input readonly">Compte joint</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Catégorie</label>
+        <div class="field-input"><span class="category-dot" style="background:#EE46BC;display:inline-block;margin-right:6px;"></span>Shopping</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Marchand</label>
+        <div class="field-input">Amazon</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Étiquettes</label>
+        <div class="field-input" style="color:#737373;">Ajouter une étiquette…</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Notes</label>
+        <div class="field-input" style="color:#737373;">Aucune note.</div>
+      </div>
+
+      <div class="field-toggle">
+        <label class="field-label">Exclure des rapports</label>
+        <div class="toggle-track"></div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="btn-secondary" type="button">Annuler</button>
+        <button class="btn-primary" type="button">Enregistrer<span class="shortcut">⌘Enter</span></button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+</body>
+</html>
