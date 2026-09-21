@@ -21,8 +21,15 @@ const queryClient = new QueryClient({
 	// A failed read has no form to show it next to, so it becomes a toast. Writes
 	// handle their own errors, where the fields are.
 	queryCache: new QueryCache({
-		onError: (error) => {
-			toast.error(t(`errors.${errorCodeOf(error)}`));
+		onError: (error, query) => {
+			const code = errorCodeOf(error);
+
+			// A page that shows its own « introuvable » state needs no toast on top.
+			if (code === "NOT_FOUND" && query.meta?.["notFoundInline"] === true) {
+				return;
+			}
+
+			toast.error(t(`errors.${code}`));
 		},
 	}),
 });

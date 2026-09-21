@@ -28,6 +28,7 @@ const ACTIVE_INDICATOR =
 
 function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; currency: string }) {
 	const { t } = useTranslation();
+	const pathname = useRouterState({ select: (router) => router.location.pathname });
 	const [open, setOpen] = useStoredFlag(`archant.sidebar.${group.classification}`, true);
 
 	return (
@@ -54,11 +55,16 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 				<SidebarMenu>
 					{group.accounts.map((account) => (
 						<SidebarMenuItem key={account.id}>
-							{/* Not a link until the account page exists (Story 1.2). */}
-							<div className="flex h-8 items-center justify-between gap-2 px-2 pl-6 text-sm">
-								<span className="truncate">{account.name}</span>
-								<Money amount={account.balance} currency={account.currency} className="text-xs" />
-							</div>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === `/comptes/${account.id}`}
+								className={cn("justify-between gap-2 pl-6", ACTIVE_INDICATOR)}
+							>
+								<Link to="/comptes/$accountId" params={{ accountId: account.id }}>
+									<span className="truncate">{account.name}</span>
+									<Money amount={account.balance} currency={account.currency} className="text-xs" />
+								</Link>
+							</SidebarMenuButton>
 						</SidebarMenuItem>
 					))}
 				</SidebarMenu>
@@ -116,7 +122,8 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								isActive={pathname.startsWith("/comptes")}
+								// Exact: on an account page its own row carries the indicator.
+								isActive={pathname === "/comptes" || pathname === "/comptes/"}
 								tooltip={t("nav.accounts")}
 								className={ACTIVE_INDICATOR}
 							>

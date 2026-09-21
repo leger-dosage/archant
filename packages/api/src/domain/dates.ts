@@ -29,3 +29,7 @@ export function addDays(date: IsoDate, days: number): IsoDate {
 export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
 	return a > b ? a : b;
 }
+
+export function minDate(a: IsoDate, b: IsoDate): IsoDate {
+	return a < b ? a : b;
+}

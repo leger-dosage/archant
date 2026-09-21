@@ -65,6 +65,10 @@
 							{
 								"name": "@archant/data/schema/balances",
 								"message": "Only services/ledger.ts writes balances; read them through balanceOn (AD-2, AD-8)."
+							},
+							{
+								"name": "@archant/data/schema/transactions",
+								"message": "Only services/ledger.ts writes transactions (AD-2)."
 							}
 						]
 					}
@@ -92,6 +96,11 @@
 							{
 								"name": "@archant/data/schema/balances",
 								"message": "The domain may import balance types only (AD-2).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/transactions",
+								"message": "The domain may import transaction types only (AD-2).",
 								"allowTypeImports": true
 							}
 						],

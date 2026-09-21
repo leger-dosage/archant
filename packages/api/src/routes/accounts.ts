@@ -5,7 +5,9 @@ import { Hono } from "hono";
 
 import { validationError } from "../lib/zod-error.ts";
 import { createAccountSchema } from "../schemas/accounts.ts";
-import { createAccount, listAccounts } from "../services/accounts.ts";
+import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
+import { createAccount, getAccount, listAccounts } from "../services/accounts.ts";
+import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 
 export function accountsRoutes(deps: ServiceDeps) {
 	return new Hono()
@@ -18,5 +20,34 @@ export function accountsRoutes(deps: ServiceDeps) {
 				}
 			}),
 			async (c) => c.json({ data: await createAccount(deps, c.req.valid("json")) }, 201),
+		)
+		.get("/:id", async (c) => c.json({ data: await getAccount(deps, c.req.param("id")) }, 200))
+		.get(
+			"/:id/transactions",
+			zValidator("query", pageQuerySchema, (result) => {
+				if (!result.success) {
+					throw validationError(result.error);
+				}
+			}),
+			async (c) =>
+				c.json(
+					{
+						data: await listAccountTransactions(deps, c.req.param("id"), c.req.valid("query")),
+					},
+					200,
+				),
+		)
+		.post(
+			"/:id/transactions",
+			zValidator("json", transactionBodySchema, (result) => {
+				if (!result.success) {
+					throw validationError(result.error);
+				}
+			}),
+			async (c) =>
+				c.json(
+					{ data: await createTransaction(deps, c.req.param("id"), c.req.valid("json")) },
+					201,
+				),
 		);
 }

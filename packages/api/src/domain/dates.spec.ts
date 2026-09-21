@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, maxDate, today } from "./dates.ts";
+import { addDays, maxDate, minDate, today } from "./dates.ts";
 
 describe("today", () => {
 	it("is the date in the given time zone, not in UTC", () => {
@@ -34,5 +34,12 @@ describe("maxDate", () => {
 	it("returns the later date whichever side it is on", () => {
 		expect(maxDate("2026-09-01", "2026-09-21")).toBe("2026-09-21");
 		expect(maxDate("2026-09-21", "2026-09-01")).toBe("2026-09-21");
+	});
+});
+
+describe("minDate", () => {
+	it("returns the earlier date whichever side it is on", () => {
+		expect(minDate("2026-09-01", "2026-09-21")).toBe("2026-09-01");
+		expect(minDate("2026-09-21", "2026-09-01")).toBe("2026-09-01");
 	});
 });

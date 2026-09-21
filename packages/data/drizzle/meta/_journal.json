@@ -8,6 +8,13 @@
       "when": 1790004366462,
       "tag": "0000_create_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790018564575,
+      "tag": "0001_add_transactions",
+      "breakpoints": true
     }
   ]
 }

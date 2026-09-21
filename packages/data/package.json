@@ -11,6 +11,7 @@
 		"./schema/accounts": "./schema/accounts.ts",
 		"./schema/balances": "./schema/balances.ts",
 		"./schema/entries": "./schema/entries.ts",
+		"./schema/transactions": "./schema/transactions.ts",
 		"./types": "./types.ts"
 	},
 	"scripts": {

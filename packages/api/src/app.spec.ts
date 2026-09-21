@@ -1,5 +1,7 @@
+import type { CreateAccountInput } from "./schemas/accounts.ts";
 import type { TempDatabase } from "./testing/temp-database.ts";
 
+import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -216,6 +218,370 @@ describe("GET /api/accounts", () => {
 
 		expect(data.groups[0]?.accounts[0]?.balance).toBe(0);
 		expect(data.groups[0]?.total).toBe(0);
+	});
+});
+
+async function request(method: string, path: string, body?: unknown) {
+	const response = await buildApp().request(path, {
+		method,
+		headers: { "content-type": "application/json" },
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+
+	return { status: response.status, body: z.unknown().parse(await response.json()) };
+}
+
+async function openAccount(overrides: Partial<CreateAccountInput> = {}) {
+	const response = await testClient(buildApp()).api.accounts.$post({
+		json: { ...valid, ...overrides },
+	});
+
+	return (await response.json()).data;
+}
+
+const expense = { date: "2026-09-10", label: "Boulangerie", amount: "-42,90" };
+
+async function postTransaction(accountId: string, json: Record<string, string | null>) {
+	return request("POST", `/api/accounts/${accountId}/transactions`, json);
+}
+
+async function balanceOf(accountId: string) {
+	const response = await testClient(buildApp()).api.accounts[":id"].$get({
+		param: { id: accountId },
+	});
+
+	return (await response.json()).data.balance;
+}
+
+describe("GET /api/accounts/:id", () => {
+	it("returns the account with its classification and opening date", async () => {
+		const account = await openAccount();
+
+		const response = await testClient(buildApp()).api.accounts[":id"].$get({
+			param: { id: account.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({
+			id: account.id,
+			name: "Compte joint",
+			classification: "asset",
+			openingDate: "2026-09-01",
+			balance: 123456,
+		});
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await request("GET", "/api/accounts/nope");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("POST /api/accounts/:id/transactions", () => {
+	it("records an expense in the account's currency and moves the balance", async () => {
+		const account = await openAccount();
+
+		const response = await testClient(buildApp()).api.accounts[":id"].transactions.$post({
+			param: { id: account.id },
+			json: expense,
+		});
+
+		expect(response.status).toBe(201);
+		expect((await response.json()).data).toMatchObject({
+			accountId: account.id,
+			date: "2026-09-10",
+			label: "Boulangerie",
+			amount: -4290,
+			currency: "EUR",
+			notes: null,
+			source: "manual",
+		});
+		await expect(balanceOf(account.id)).resolves.toBe(119166);
+	});
+
+	it("raises a card's amount owed on a purchase", async () => {
+		const card = await openAccount({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "490,30",
+		});
+
+		const { status } = await postTransaction(card.id, { ...expense, amount: "-30,00" });
+
+		expect(status).toBe(201);
+		await expect(balanceOf(card.id)).resolves.toBe(52030);
+	});
+
+	it("trims the label, stores blank notes as null and accepts a zero amount", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await postTransaction(account.id, {
+			...expense,
+			label: "  Boulangerie  ",
+			amount: "0",
+			notes: "   ",
+		});
+
+		expect(status).toBe(201);
+		expect(body).toMatchObject({ data: { label: "Boulangerie", amount: 0, notes: null } });
+	});
+
+	it.each(["2026-09-01", "2026-08-31"])(
+		"refuses a transaction dated %s, on or before the opening date",
+		async (date) => {
+			const account = await openAccount();
+
+			const { status, body } = await postTransaction(account.id, { ...expense, date });
+
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "date", code: "not_after_opening_date" }],
+			});
+		},
+	);
+
+	it("refuses a date more than 366 days after today", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await postTransaction(account.id, {
+			...expense,
+			date: "2027-10-26",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "date_too_late" }]);
+	});
+
+	it("reports a blank label and a bad amount together", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await postTransaction(account.id, {
+			...expense,
+			label: "  ",
+			amount: "12,3,4",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "label", code: "too_small" },
+			{ path: "amount", code: "invalid_amount" },
+		]);
+	});
+
+	it("refuses a label over 200 characters and notes over 2 000", async () => {
+		const account = await openAccount();
+
+		const { body } = await postTransaction(account.id, {
+			...expense,
+			label: "a".repeat(201),
+			notes: "a".repeat(2001),
+		});
+
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "label", code: "too_big" },
+			{ path: "notes", code: "too_big" },
+		]);
+	});
+
+	it("refuses a body whose fields are not text", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await request("POST", `/api/accounts/${account.id}/transactions`, {
+			...expense,
+			amount: -42.9,
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "amount", code: "invalid_type" }]);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status } = await postTransaction("nope", expense);
+
+		expect(status).toBe(404);
+	});
+});
+
+describe("GET /api/accounts/:id/transactions", () => {
+	it("lists most recent first, 50 per page by default", async () => {
+		const account = await ownClient();
+		const created = await (await account.$post({ json: valid })).json();
+		const id = created.data.id;
+		const client = testClient(buildApp(own?.db)).api.accounts[":id"].transactions;
+		await client.$post({ param: { id }, json: { ...expense, label: "A" } });
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		await client.$post({ param: { id }, json: { ...expense, label: "B" } });
+		await client.$post({ param: { id }, json: { ...expense, date: "2026-09-02", label: "C" } });
+
+		const response = await client.$get({ param: { id }, query: {} });
+		const { data } = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.items.map((item) => item.label)).toEqual(["B", "A", "C"]);
+		expect(data).toMatchObject({ page: 1, pageSize: 50, total: 3 });
+
+		const second = await (
+			await client.$get({ param: { id }, query: { page: "2", pageSize: "2" } })
+		).json();
+		expect(second.data.items.map((item) => item.label)).toEqual(["C"]);
+	});
+
+	it.each([
+		["page=0", "page"],
+		["pageSize=201", "pageSize"],
+	])("refuses %s", async (query, path) => {
+		const account = await openAccount();
+
+		const { status, body } = await request(
+			"GET",
+			`/api/accounts/${account.id}/transactions?${query}`,
+		);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields?.[0]?.path).toBe(path);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await request("GET", "/api/accounts/nope/transactions");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("PATCH /api/transactions/:id", () => {
+	it("moves and changes a transaction, and the balance follows", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const response = await testClient(buildApp()).api.transactions[":id"].$patch({
+			param: { id: data.id },
+			json: { date: "2026-09-05", amount: "-50,00" },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({
+			date: "2026-09-05",
+			amount: -5000,
+			label: "Boulangerie",
+		});
+		await expect(balanceOf(account.id)).resolves.toBe(118456);
+	});
+
+	it("clears notes sent blank", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, { ...expense, notes: "Pain" });
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { body } = await request("PATCH", `/api/transactions/${data.id}`, { notes: " " });
+
+		expect(body).toMatchObject({ data: { notes: null } });
+	});
+
+	it("refuses a move onto the opening date", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			date: "2026-09-01",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "date", code: "not_after_opening_date" },
+		]);
+	});
+
+	it("refuses an invalid amount", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			amount: "abc",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "amount", code: "invalid_amount" },
+		]);
+	});
+
+	it("answers NOT_FOUND for an unknown transaction", async () => {
+		const { status } = await request("PATCH", "/api/transactions/nope", { label: "x" });
+
+		expect(status).toBe(404);
+	});
+});
+
+describe("DELETE /api/transactions/:id", () => {
+	it("deletes the transaction and puts the balance back", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const response = await testClient(buildApp()).api.transactions[":id"].$delete({
+			param: { id: data.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { id: data.id } });
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+
+	it("answers NOT_FOUND for an unknown transaction", async () => {
+		const { status, body } = await request("DELETE", "/api/transactions/nope");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("the opening anchor", () => {
+	async function anchorOf(accountId: string) {
+		// Raw on purpose: only the ledger may import the entries table (AD-2).
+		const [anchor] = await temp.db.all<{ id: string; date: string; amount: number }>(
+			sql`select id, date, amount from entries where account_id = ${accountId} and valuation_kind = 'opening_anchor'`,
+		);
+
+		if (anchor === undefined) {
+			throw new Error("The account has no opening anchor.");
+		}
+
+		return anchor;
+	}
+
+	it("cannot be deleted as a transaction", async () => {
+		const account = await openAccount();
+		const anchor = await anchorOf(account.id);
+
+		const { status, body } = await request("DELETE", `/api/transactions/${anchor.id}`);
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+		await expect(anchorOf(account.id)).resolves.toEqual(anchor);
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+
+	it("cannot be edited as a transaction", async () => {
+		const account = await openAccount();
+		const anchor = await anchorOf(account.id);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${anchor.id}`, {
+			amount: "0",
+			date: "2026-09-10",
+		});
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+		await expect(anchorOf(account.id)).resolves.toEqual(anchor);
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
 	});
 });
 

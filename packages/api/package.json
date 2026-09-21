@@ -5,7 +5,8 @@
 	"type": "module",
 	"exports": {
 		"./app": "./src/app.ts",
-		"./schemas/accounts": "./src/schemas/accounts.ts"
+		"./schemas/accounts": "./src/schemas/accounts.ts",
+		"./schemas/transactions": "./src/schemas/transactions.ts"
 	},
 	"scripts": {
 		"start:dev": "node --env-file-if-exists=../../.env --watch src/index.ts",

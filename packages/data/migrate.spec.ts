@@ -48,10 +48,15 @@ describe("runMigrations", () => {
 		const database = await migrated();
 
 		const tables = await database.all<{ name: string }>(
-			sql`select name from sqlite_master where type = 'table' and name in ('accounts', 'entries', 'balances') order by name`,
+			sql`select name from sqlite_master where type = 'table' and name in ('accounts', 'entries', 'balances', 'transactions') order by name`,
 		);
 
-		expect(tables.map((table) => table.name)).toEqual(["accounts", "balances", "entries"]);
+		expect(tables.map((table) => table.name)).toEqual([
+			"accounts",
+			"balances",
+			"entries",
+			"transactions",
+		]);
 	});
 
 	it("is safe to run twice, which is what a start-up migration would do", async () => {
@@ -86,6 +91,31 @@ describe("runMigrations", () => {
 		await expect(insertEntry(database, "e1", "transaction", "opening_anchor")).rejects.toThrow();
 		await expect(insertEntry(database, "e2", "valuation", null)).rejects.toThrow();
 		await expect(insertEntry(database, "e3", "transfer", null)).rejects.toThrow();
+	});
+
+	it("starts a transaction with no locked field and refuses to delete its entry first", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+
+		await database.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'Boulangerie')`,
+		);
+
+		await expect(
+			database.get<{ locked: string }>(
+				sql`select locked_fields as locked from transactions where entry_id = 'e1'`,
+			),
+		).resolves.toEqual({ locked: "[]" });
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+	});
+
+	it("refuses a transaction row without its entry", async () => {
+		const database = await migrated();
+
+		await expect(
+			database.run(sql`insert into transactions (entry_id, label) values ('nope', 'Boulangerie')`),
+		).rejects.toThrow();
 	});
 
 	it("refuses an entry for an account that does not exist", async () => {
