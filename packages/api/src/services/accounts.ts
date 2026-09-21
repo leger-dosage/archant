@@ -2,6 +2,8 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger.ts";
 
+import { eq } from "drizzle-orm";
+
 import type { AccountSubtype, AccountType, Classification } from "@archant/data/account-types";
 import { CLASSIFICATIONS, classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -10,7 +12,8 @@ import { accounts } from "@archant/data/schema/accounts";
 import type { Account } from "@archant/data/types";
 
 import { today } from "../domain/dates.ts";
-import { balanceOn, createAccount as createLedgerAccount } from "./ledger.ts";
+import { AppError } from "../lib/errors.ts";
+import { balanceOn, createAccount as createLedgerAccount, openingDateOf } from "./ledger.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 export type AccountSummary = {
@@ -89,4 +92,26 @@ export async function createAccount(
 	const account = await createLedgerAccount(deps, input, { origin: "user" });
 
 	return summarise(deps, account, today(deps.timeZone));
+}
+
+export type AccountDetail = AccountSummary & {
+	classification: Classification;
+	/** The opening anchor's date; a transaction must be dated after it. */
+	openingDate: IsoDate;
+};
+
+/** One account as its page shows it. */
+export async function getAccount(deps: ServiceDeps, id: string): Promise<AccountDetail> {
+	const account = await deps.db.select().from(accounts).where(eq(accounts.id, id)).get();
+	const openingDate = await openingDateOf(deps, id);
+
+	if (account === undefined || openingDate === null) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	return {
+		...(await summarise(deps, account, today(deps.timeZone))),
+		classification: classificationOf(account.type),
+		openingDate,
+	};
 }

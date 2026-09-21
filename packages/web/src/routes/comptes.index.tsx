@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useAccounts } from "@/hooks/useAccounts";
 import { errorCodeOf } from "@/lib/api";
 
-export const Route = createFileRoute("/comptes")({ component: AccountsPage });
+export const Route = createFileRoute("/comptes/")({ component: AccountsPage });
 
 function AccountsPage() {
 	const { t } = useTranslation();

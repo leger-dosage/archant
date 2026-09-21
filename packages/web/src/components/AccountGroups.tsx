@@ -1,5 +1,6 @@
 import type { AccountListData } from "@/hooks/useAccounts";
 
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { Money } from "@/components/Money";
@@ -32,17 +33,20 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 							)}
 							<ul className="divide-y">
 								{group.accounts.map((account) => (
-									<li
-										key={account.id}
-										className="flex min-h-11 items-center justify-between gap-4 py-2"
-									>
-										<div className="min-w-0">
-											<p className="truncate font-medium">{account.name}</p>
-											<p className="text-xs text-muted-foreground">
-												{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
-											</p>
-										</div>
-										<Money amount={account.balance} currency={account.currency} />
+									<li key={account.id}>
+										<Link
+											to="/comptes/$accountId"
+											params={{ accountId: account.id }}
+											className="-mx-2 flex min-h-11 items-center justify-between gap-4 rounded-md px-2 py-2 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+										>
+											<div className="min-w-0">
+												<p className="truncate font-medium">{account.name}</p>
+												<p className="text-xs text-muted-foreground">
+													{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
+												</p>
+											</div>
+											<Money amount={account.balance} currency={account.currency} />
+										</Link>
 									</li>
 								))}
 							</ul>

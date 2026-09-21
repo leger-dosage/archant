@@ -155,3 +155,11 @@
 		line-height: 1.5;
 	}
 }
+
+/* DESIGN.md `amount-hero`: an account's balance and the net worth. */
+@utility amount-hero {
+	font-size: 30px;
+	font-weight: 600;
+	line-height: 1.2;
+	letter-spacing: -0.02em;
+}

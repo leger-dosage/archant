@@ -46,3 +46,43 @@ export function frenchToIso(text: string): string | null {
 
 	return `${year}-${pad(month)}-${pad(day)}`;
 }
+
+const sameYear = new Intl.DateTimeFormat("fr-FR", {
+	weekday: "long",
+	day: "numeric",
+	month: "long",
+	timeZone: "UTC",
+});
+const otherYear = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	year: "numeric",
+	timeZone: "UTC",
+});
+
+export type DayHeading = { kind: "today" } | { kind: "yesterday" } | { kind: "date"; text: string };
+
+/**
+ * The header of a day in a list (EXPERIENCE.md): today, yesterday, then
+ * « lundi 15 septembre », with the year instead of the weekday for another
+ * year. Formatted at UTC midnight so the browser's zone cannot shift the day.
+ */
+export function dayHeading(iso: string, today: string = toIsoDate()): DayHeading {
+	const date = new Date(`${iso}T00:00:00Z`);
+	const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000)
+		.toISOString()
+		.slice(0, 10);
+
+	if (iso === today) {
+		return { kind: "today" };
+	}
+
+	if (iso === yesterday) {
+		return { kind: "yesterday" };
+	}
+
+	return {
+		kind: "date",
+		text: (iso.slice(0, 4) === today.slice(0, 4) ? sameYear : otherYear).format(date),
+	};
+}

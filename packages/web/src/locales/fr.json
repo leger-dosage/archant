@@ -5,7 +5,8 @@
 	},
 	"common": {
 		"close": "Fermer",
-		"retry": "Réessayer"
+		"retry": "Réessayer",
+		"cancel": "Annuler"
 	},
 	"nav": {
 		"accounts": "Comptes",
@@ -51,6 +52,52 @@
 			"datePlaceholder": "jj/mm/aaaa"
 		}
 	},
+	"accountDetail": {
+		"title": "Compte",
+		"notFound": "Compte introuvable",
+		"backToAccounts": "Retour aux comptes"
+	},
+	"transactions": {
+		"title": "Opérations",
+		"add": "Ajouter une opération",
+		"empty": "Aucune opération.",
+		"days": {
+			"today": "Aujourd'hui",
+			"yesterday": "Hier"
+		},
+		"pagination": {
+			"label": "Pages des opérations",
+			"previous": "Précédent",
+			"next": "Suivant",
+			"status": "Page {{page}} sur {{pages}}"
+		},
+		"form": {
+			"addTitle": "Ajouter une opération",
+			"editTitle": "Modifier l'opération",
+			"date": "Date",
+			"label": "Libellé",
+			"amount": "Montant",
+			"nature": "Sens de l'opération",
+			"expense": "Dépense",
+			"income": "Revenu",
+			"notes": "Notes",
+			"save": "Enregistrer",
+			"saveShortcut": "⌘Entrée ou Ctrl+Entrée"
+		},
+		"delete": {
+			"action": "Supprimer",
+			"title": "Supprimer l'opération « {{label}} » ?",
+			"description": "L'opération de {{amount}} sera supprimée définitivement, et le solde du compte recalculé sans elle."
+		},
+		"discard": {
+			"title": "Abandonner les modifications ?",
+			"description": "Les modifications de cette opération n'ont pas été enregistrées. Elles seront perdues.",
+			"action": "Abandonner"
+		},
+		"sources": {
+			"manual": "Saisie manuelle"
+		}
+	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
@@ -66,7 +113,9 @@
 			"invalid_value": "Valeur invalide.",
 			"invalid_type": "Valeur invalide.",
 			"unknown": "Valeur invalide.",
-			"date_too_early": "La date doit être postérieure au 1er janvier 1900."
+			"date_too_early": "La date doit être postérieure au 1er janvier 1900.",
+			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
+			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour."
 		}
 	}
 }

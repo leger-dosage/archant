@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { transactionsRoutes } from "./routes/transactions.ts";
 
 export type AppDeps = ServiceDeps & { logger: Logger };
 
@@ -16,7 +17,9 @@ export type AppDeps = ServiceDeps & { logger: Logger };
  * outside the chain is invisible to it.
  */
 function createApi(deps: AppDeps) {
-	return new Hono().route("/accounts", accountsRoutes(deps));
+	return new Hono()
+		.route("/accounts", accountsRoutes(deps))
+		.route("/transactions", transactionsRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApi>;
