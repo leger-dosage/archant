@@ -17,6 +17,8 @@
 		"typescript/no-misused-promises": "error",
 
 		"eslint/curly": ["error", "all"],
+		// Stylesheets and font faces are imported for their side effect by design.
+		"import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
 		"eslint/eqeqeq": ["error", "always"],
 		"eslint/no-console": ["error", { "allow": ["warn", "error"] }],
 		"eslint/no-unused-vars": [
@@ -43,6 +45,74 @@
 		"typescript/no-unsafe-argument": "error",
 		"typescript/no-unsafe-return": "error"
 	},
+	// AD-1 and AD-2 of the architecture spine, enforced rather than remembered.
+	// Later overrides replace the rule for the files they match, so the order
+	// goes from the broadest glob to the narrowest.
+	"overrides": [
+		{
+			// Only the ledger writes money rows. Any other module reaching for
+			// these tables would compute or store a balance its own way.
+			"files": ["packages/api/src/**"],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@archant/data/schema/entries",
+								"message": "Only services/ledger.ts writes entries (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/balances",
+								"message": "Only services/ledger.ts writes balances; read them through balanceOn (AD-2, AD-8)."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			// The domain stays pure so balance calculation is testable without a
+			// server or a database.
+			"files": ["packages/api/src/domain/**"],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{ "name": "drizzle-orm", "message": "The domain is pure (AD-1)." },
+							{ "name": "hono", "message": "The domain is pure (AD-1)." },
+							// Repeated from the override above, which this one replaces. The
+							// domain may name these rows' types, never touch the tables (AD-2).
+							{
+								"name": "@archant/data/schema/entries",
+								"message": "The domain may import entry types only (AD-2).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/balances",
+								"message": "The domain may import balance types only (AD-2).",
+								"allowTypeImports": true
+							}
+						],
+						"patterns": [
+							{ "group": ["drizzle-orm/*", "hono/*"], "message": "The domain is pure (AD-1)." },
+							{
+								"group": ["**/services/**"],
+								"message": "The domain may not call services (AD-1)."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"files": ["packages/api/src/services/ledger.ts", "packages/api/src/services/ledger.spec.ts"],
+			"rules": {
+				"eslint/no-restricted-imports": "off"
+			}
+		}
+	],
 	"ignorePatterns": [
 		"dist",
 		"coverage",
@@ -50,6 +120,8 @@
 		"_bmad-output",
 		".agents",
 		".claude",
-		"**/drizzle"
+		"**/drizzle",
+		// Written by the TanStack Router plugin on every dev, build and test run.
+		"**/routeTree.gen.ts"
 	]
 }

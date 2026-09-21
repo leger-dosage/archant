@@ -1,0 +1,33 @@
+{
+	"name": "@archant/api",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./app": "./src/app.ts",
+		"./schemas/accounts": "./src/schemas/accounts.ts"
+	},
+	"scripts": {
+		"start:dev": "node --env-file-if-exists=../../.env --watch src/index.ts",
+		"start": "node src/index.ts",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run --coverage"
+	},
+	"dependencies": {
+		"@archant/data": "workspace:*",
+		"@hono/node-server": "^2.1.1",
+		"@hono/zod-validator": "^0.9.1",
+		"@t3-oss/env-core": "catalog:",
+		"drizzle-orm": "catalog:",
+		"hono": "catalog:",
+		"pino": "^10.3.1",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"@vitest/coverage-v8": "^5.0.1",
+		"msw": "^2.15.0",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

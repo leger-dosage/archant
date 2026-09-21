@@ -1,0 +1,12 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2023"],
+		"types": ["node"],
+		// The other packages import this one as raw TypeScript, so every relative
+		// import carries its `.ts` extension for Node's ESM resolver.
+		"allowImportingTsExtensions": true
+	},
+	"include": ["**/*.ts"],
+	"exclude": ["node_modules"]
+}

@@ -13,3 +13,7 @@ test-results
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+
+# Local SQLite database created by `pnpm data migrate:local`.
+local.db
+local.db-*
