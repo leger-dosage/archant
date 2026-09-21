@@ -1,3 +1,4 @@
+import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { NormalizedTransaction, ParsedStatement, RejectionCode } from "../domain/statement.ts";
 import type { ServiceDeps } from "./deps.ts";
@@ -16,6 +17,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance } from "@archant/data/types";
 
 import { forwardBalances } from "../domain/balances/forward.ts";
+import { fillDays } from "../domain/balances/history.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { AppError } from "../lib/errors.ts";
@@ -426,6 +428,33 @@ export async function balanceOn(
 	const row = await lastBalanceOnOrBefore(deps.db, accountId, date);
 
 	return row === undefined ? null : { amount: toMinorUnits(row.balance), currency: row.currency };
+}
+
+/**
+ * The end-of-day balance of every day from `from` to `to`, both included,
+ * oldest first, as `balanceOn` would read each one (AD-8). Stored rows stop at
+ * the last write's end, so the days after it carry its balance. Days before
+ * the opening date are left out. One primary-key range scan plus one lookup.
+ */
+export async function balancesBetween(
+	deps: ServiceDeps,
+	accountId: string,
+	from: IsoDate,
+	to: IsoDate,
+): Promise<DailyBalance[]> {
+	const previous = await lastBalanceOnOrBefore(deps.db, accountId, from);
+	const rows = await deps.db
+		.select({ date: balances.date, balance: balances.balance })
+		.from(balances)
+		.where(and(eq(balances.accountId, accountId), gt(balances.date, from), lte(balances.date, to)))
+		.orderBy(balances.date);
+	const known = previous === undefined ? rows : [previous, ...rows];
+
+	return fillDays(
+		known.map((row) => ({ date: row.date, balance: toMinorUnits(row.balance) })),
+		from,
+		to,
+	);
 }
 
 /** The date of the account's opening anchor, `null` for an unknown account. */

@@ -57,6 +57,30 @@
 		"notFound": "Compte introuvable",
 		"backToAccounts": "Retour aux comptes"
 	},
+	"balances": {
+		"title": "Historique du solde",
+		"period": "Période",
+		"periods": {
+			"1M": "1 M",
+			"3M": "3 M",
+			"6M": "6 M",
+			"1Y": "1 A",
+			"all": "Tout"
+		},
+		"over": {
+			"1M": "sur 1 mois",
+			"3M": "sur 3 mois",
+			"6M": "sur 6 mois",
+			"1Y": "sur 1 an",
+			"all": "depuis l'ouverture"
+		},
+		"summary": "Solde : {{balance}}, {{change}} {{over}}.",
+		"changeWithPercent": "{{amount}} ({{percent}})",
+		"empty": "Aucun solde sur cette période.",
+		"showData": "Voir les données",
+		"date": "Date",
+		"balance": "Solde"
+	},
 	"transactions": {
 		"title": "Opérations",
 		"add": "Ajouter une opération",

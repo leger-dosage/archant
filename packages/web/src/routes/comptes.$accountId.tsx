@@ -5,8 +5,11 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
+import type { BalancePeriod } from "@archant/api/schemas/balances";
+import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import { isCurrencyCode } from "@archant/data/money";
 
+import { BalanceChart } from "@/components/BalanceChart";
 import { Money } from "@/components/Money";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
@@ -17,9 +20,12 @@ import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf } from "@/lib/api";
 
-// Absent means the first page, so links to an account need no search params.
+// Absent means the first page and the default period, so links to an account
+// need no search params. A period from an old or hand-edited link that no
+// longer exists falls back to the default rather than failing the page.
 const searchSchema = z.object({
 	page: z.number().int().min(1).optional().catch(undefined),
+	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/comptes/$accountId")({
@@ -32,7 +38,7 @@ type SheetState = { open: boolean; transaction: TransactionData | null };
 function AccountPage() {
 	const { t } = useTranslation();
 	const { accountId } = Route.useParams();
-	const { page = 1 } = Route.useSearch();
+	const { page = 1, period = DEFAULT_BALANCE_PERIOD } = Route.useSearch();
 	const account = useAccount(accountId);
 	const transactions = useAccountTransactions(accountId, page);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
@@ -50,7 +56,7 @@ function AccountPage() {
 			void navigate({
 				to: "/comptes/$accountId",
 				params: { accountId },
-				search: lastPage === 1 ? {} : { page: lastPage },
+				search: (previous) => ({ ...previous, page: lastPage === 1 ? undefined : lastPage }),
 				replace: true,
 			});
 		}
@@ -75,6 +81,14 @@ function AccountPage() {
 	}
 
 	const openNew = () => setSheet({ open: true, transaction: null });
+	const changePeriod = (next: BalancePeriod) =>
+		void navigate({
+			search: (previous) => ({
+				...previous,
+				period: next === DEFAULT_BALANCE_PERIOD ? undefined : next,
+			}),
+			replace: true,
+		});
 	const data = transactions.data;
 	const pageCount = data === undefined ? 1 : Math.max(1, Math.ceil(data.total / data.pageSize));
 	const currency = account.data?.currency;
@@ -114,6 +128,8 @@ function AccountPage() {
 					<Button onClick={openNew}>{t("transactions.add")}</Button>
 				</div>
 			)}
+
+			<BalanceChart accountId={accountId} period={period} onPeriodChange={changePeriod} />
 
 			<section aria-labelledby="transactions-heading" className="flex flex-col gap-3">
 				<h2 id="transactions-heading" className="text-lg font-semibold">
@@ -159,7 +175,10 @@ function AccountPage() {
 								<Link
 									to="/comptes/$accountId"
 									params={{ accountId }}
-									search={page - 1 === 1 ? {} : { page: page - 1 }}
+									search={(previous) => ({
+										...previous,
+										page: page - 1 === 1 ? undefined : page - 1,
+									})}
 								>
 									{t("transactions.pagination.previous")}
 								</Link>
@@ -177,7 +196,11 @@ function AccountPage() {
 							asChild={page < pageCount}
 						>
 							{page < pageCount ? (
-								<Link to="/comptes/$accountId" params={{ accountId }} search={{ page: page + 1 }}>
+								<Link
+									to="/comptes/$accountId"
+									params={{ accountId }}
+									search={(previous) => ({ ...previous, page: page + 1 })}
+								>
 									{t("transactions.pagination.next")}
 								</Link>
 							) : (
