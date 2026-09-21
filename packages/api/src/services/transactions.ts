@@ -1,17 +1,24 @@
 import type { RejectionCode } from "../domain/statement.ts";
 import type { FieldError } from "../lib/errors.ts";
-import type { TransactionInput, TransactionPatchInput } from "../schemas/transactions.ts";
+import type {
+	TransactionFilterRequest,
+	TransactionInput,
+	TransactionPatchInput,
+} from "../schemas/transactions.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { TransactionRecord } from "./ledger.ts";
+import type { TransactionFilter, TransactionListRecord, TransactionRecord } from "./ledger.ts";
 
-import type { CurrencyCode } from "@archant/data/money";
-import { isCurrencyCode } from "@archant/data/money";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 
+import { amountBoundsFor } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createTransactionSchema, updateTransactionSchema } from "../schemas/transactions.ts";
 import { getAccount } from "./accounts.ts";
 import * as ledger from "./ledger.ts";
+import { getReportingCurrency } from "./settings.ts";
 
 /**
  * Where a transaction came from, shown in its sheet. Every transaction is
@@ -21,17 +28,27 @@ export type TransactionSource = "manual";
 
 export type TransactionItem = TransactionRecord & { source: TransactionSource };
 
+export type TransactionListItem = TransactionListRecord & { source: TransactionSource };
+
 export type TransactionPage = {
-	items: TransactionItem[];
+	items: TransactionListItem[];
 	page: number;
 	pageSize: number;
 	total: number;
 };
 
-const withSource = (record: TransactionRecord): TransactionItem => ({
-	...record,
-	source: "manual",
-});
+export type FilteredTransactionPage = TransactionPage & {
+	/**
+	 * The signed sum of every matching row in the reporting currency, excluded
+	 * ones included; `skippedCount` rows in another currency are left out
+	 * until exchange rates exist.
+	 */
+	sum: { amount: MinorUnits; currency: CurrencyCode; skippedCount: number };
+};
+
+const withSource = <Record extends TransactionRecord>(
+	record: Record,
+): Record & { source: TransactionSource } => ({ ...record, source: "manual" });
 
 // The ledger names why it refused a line; the form shows it under the date.
 const REJECTION_FIELDS: Record<Exclude<RejectionCode, "CURRENCY_MISMATCH">, FieldError> = {
@@ -75,9 +92,68 @@ export async function listAccountTransactions(
 	page: { page: number; pageSize: number },
 ): Promise<TransactionPage> {
 	await getAccount(deps, accountId);
-	const { items, total } = await ledger.listTransactions(deps, accountId, page);
+	const { items, total } = await ledger.listTransactions(deps, { accountIds: [accountId] }, page);
 
 	return { items: items.map(withSource), page: page.page, pageSize: page.pageSize, total };
+}
+
+/**
+ * The amount bounds scaled to every currency an account holds. A currency
+ * whose minor units leave no value between the bounds is absent, so none of
+ * its rows match.
+ */
+async function amountsFor(
+	deps: ServiceDeps,
+	query: TransactionFilterRequest,
+): Promise<TransactionFilter["amounts"]> {
+	const { amountMin, amountMax } = query;
+
+	if (amountMin === undefined && amountMax === undefined) {
+		return undefined;
+	}
+
+	const rows = await deps.db.selectDistinct({ currency: accounts.currency }).from(accounts);
+
+	return rows.flatMap(({ currency }) => {
+		const range = isCurrencyCode(currency) ? amountBoundsFor(amountMin, amountMax, currency) : null;
+
+		return range === null ? [] : [{ currency, ...range }];
+	});
+}
+
+/**
+ * A page of every account's transactions matching the filter, most recent
+ * first, with the count and the signed total of all the matching rows.
+ */
+export async function listAllTransactions(
+	deps: ServiceDeps,
+	query: TransactionFilterRequest,
+): Promise<FilteredTransactionPage> {
+	const currency = getReportingCurrency();
+	const filter: TransactionFilter = {
+		accountIds: query.account,
+		from: query.from,
+		to: query.to,
+		amounts: await amountsFor(deps, query),
+		q: query.q,
+	};
+	const page = { page: query.page, pageSize: query.pageSize };
+	const { items, total } = await ledger.listTransactions(deps, filter, page);
+	const sums = await ledger.sumTransactions(deps, filter);
+	const counted = sums.find((row) => row.currency === currency);
+
+	return {
+		items: items.map(withSource),
+		...page,
+		total,
+		sum: {
+			amount: counted?.amount ?? toMinorUnits(0),
+			currency,
+			skippedCount: sums
+				.filter((row) => row.currency !== currency)
+				.reduce((skipped, row) => skipped + row.count, 0),
+		},
+	};
 }
 
 /** Records a transaction typed by the user, in its account's currency. */

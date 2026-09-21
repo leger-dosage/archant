@@ -19,6 +19,8 @@ export type OpenAccountOptions = {
 	/** As typed in the form: `1 234,56`. */
 	openingBalance?: string;
 	openingDate?: string;
+	/** ISO 4217; EUR by default. */
+	currency?: string;
 };
 
 export type Created = { id: string; name: string };
@@ -86,7 +88,7 @@ function apiHelpers(request: APIRequestContext) {
 					name,
 					type: kind.type,
 					subtype: kind.subtype,
-					currency: "EUR",
+					currency: options.currency ?? "EUR",
 					openingBalance: options.openingBalance ?? "1 000,00",
 					openingDate: options.openingDate ?? daysAgo(30),
 				},
@@ -113,6 +115,15 @@ function apiHelpers(request: APIRequestContext) {
 					amount: "-1",
 				});
 			}, Promise.resolve());
+		},
+
+		/** Marks a transaction « Exclue des rapports », as the sheet's switch does. */
+		async excludeTransaction(id: string) {
+			const response = await request.patch(`/api/transactions/${id}`, {
+				data: { excluded: true },
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
 		async recordSnapshot(accountId: string, input: { date: string; balance: string }) {

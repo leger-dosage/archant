@@ -19,3 +19,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7-end-to-end-tests-for-the-interface.md`
   summary: Test that a `PORT` written only in the root `.env` becomes the proxy target of `vite.config.ts`.
   evidence: The suite passes `PORT` through `process.env`, which `loadEnv` overlays on the files; pointing `loadEnv` at the package directory passes every test. A pure `apiTarget(envDir, mode)` tested by Vitest would cover it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-list-and-filter-transactions-across-accounts.md`
+  summary: Invalidate `queryKeys.transactions.all` when an account is renamed, deactivated or deleted, so `/operations` never shows a stale `accountName` or chip.
+  evidence: Story 1.6 adds those account writes; today only transaction writes invalidate the cross-account list.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-list-and-filter-transactions-across-accounts.md`
+  summary: Assert with `EXPLAIN QUERY PLAN` that the unfiltered transaction list uses `entries_kind_date` and no temporary B-tree.
+  evidence: The first page takes 11 ms without the index at 50,000 rows, so the 300 ms test cannot see it disappear.

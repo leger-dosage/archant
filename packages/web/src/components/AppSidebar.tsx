@@ -1,7 +1,7 @@
 import type { AccountGroupData } from "@/hooks/useAccounts";
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronRightIcon, WalletIcon } from "lucide-react";
+import { ChevronRightIcon, ListIcon, WalletIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Money } from "@/components/Money";
@@ -130,6 +130,19 @@ export function AppSidebar() {
 								<Link to="/comptes">
 									<WalletIcon />
 									<span>{t("nav.accounts")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/operations"}
+								tooltip={t("nav.operations")}
+								className={ACTIVE_INDICATOR}
+							>
+								<Link to="/operations">
+									<ListIcon />
+									<span>{t("nav.operations")}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>

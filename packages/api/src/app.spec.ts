@@ -656,10 +656,256 @@ describe("PATCH /api/transactions/:id", () => {
 		]);
 	});
 
+	it("excludes a transaction from reports and leaves the balance alone", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const response = await testClient(buildApp()).api.transactions[":id"].$patch({
+			param: { id: data.id },
+			json: { excluded: true },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({ excluded: true, amount: -4290 });
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
+	});
+
+	it("refuses an exclusion that is not a boolean", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			excluded: "yes",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields?.[0]?.path).toBe("excluded");
+	});
+
 	it("answers NOT_FOUND for an unknown transaction", async () => {
 		const { status } = await request("PATCH", "/api/transactions/nope", { label: "x" });
 
 		expect(status).toBe(404);
+	});
+});
+
+const listItem = z.object({
+	id: z.string(),
+	accountId: z.string(),
+	accountName: z.string(),
+	date: z.string(),
+	label: z.string(),
+	amount: z.number(),
+	excluded: z.boolean(),
+});
+
+const listBody = z.object({
+	data: z.object({
+		items: z.array(listItem),
+		page: z.number(),
+		pageSize: z.number(),
+		total: z.number(),
+		sum: z.object({ amount: z.number(), currency: z.string(), skippedCount: z.number() }),
+	}),
+});
+
+/** The I/O matrix of Story 1.5, each test in its own database. */
+async function listOwn(query: string) {
+	const response = await buildApp(own?.db).request(`/api/transactions${query}`);
+	const body = z.unknown().parse(await response.json());
+
+	return { status: response.status, body };
+}
+
+async function listed(query: string) {
+	const { status, body } = await listOwn(query);
+
+	expect(status, JSON.stringify(body)).toBe(200);
+
+	return listBody.parse(body).data;
+}
+
+async function openOwn(overrides: Partial<CreateAccountInput> = {}) {
+	own ??= await createTempDatabase();
+	const response = await testClient(buildApp(own.db)).api.accounts.$post({
+		json: { ...valid, ...overrides },
+	});
+
+	return (await response.json()).data;
+}
+
+async function postOwn(accountId: string, json: Record<string, string>) {
+	const response = await buildApp(own?.db).request(`/api/accounts/${accountId}/transactions`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(json),
+	});
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(await response.json()).data.id;
+}
+
+describe("GET /api/transactions", () => {
+	it("lists every account's transactions, most recent first, with the account's name", async () => {
+		const checking = await openOwn();
+		const card = await openOwn({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "0",
+		});
+		await [checking, card, checking, card, checking, card].reduce(
+			async (previous, account, index) => {
+				await previous;
+				await postOwn(account.id, {
+					...expense,
+					date: `2026-09-${String(index + 2).padStart(2, "0")}`,
+					label: `L${index}`,
+				});
+			},
+			Promise.resolve(),
+		);
+
+		const data = await listed("");
+
+		expect(data.items.map((item) => item.label)).toEqual(["L5", "L4", "L3", "L2", "L1", "L0"]);
+		expect(data).toMatchObject({ page: 1, pageSize: 50, total: 6 });
+		expect(data.items[0]).toMatchObject({ accountName: "Carte", excluded: false });
+		expect(data.items[1]).toMatchObject({ accountName: "Compte joint" });
+	});
+
+	it("combines account, start date and text in the label or the notes", async () => {
+		const checking = await openOwn();
+		const card = await openOwn({ name: "Carte", type: "credit_card", subtype: null });
+		await postOwn(checking.id, { ...expense, date: "2026-09-02", label: "Carrefour" });
+		await postOwn(checking.id, { ...expense, date: "2026-09-03", label: "CB CARREFOUR" });
+		await postOwn(checking.id, {
+			...expense,
+			date: "2026-09-04",
+			label: "Épicerie",
+			notes: "Carrefour",
+		});
+		await postOwn(checking.id, { ...expense, date: "2026-09-05", label: "Boulangerie" });
+		await postOwn(card.id, { ...expense, date: "2026-09-05", label: "Carrefour" });
+
+		const data = await listed(`?account=${checking.id}&from=2026-09-03&q=carre`);
+
+		expect(data.items.map((item) => item.label)).toEqual(["Épicerie", "CB CARREFOUR"]);
+		expect(data.total).toBe(2);
+	});
+
+	it("takes several accounts", async () => {
+		const checking = await openOwn();
+		const savings = await openOwn({ name: "Livret", subtype: "savings" });
+		const other = await openOwn({ name: "Autre" });
+		await postOwn(checking.id, { ...expense, label: "A" });
+		await postOwn(savings.id, { ...expense, label: "B" });
+		await postOwn(other.id, { ...expense, label: "C" });
+
+		const data = await listed(`?account=${checking.id}&account=${savings.id}`);
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["A", "B"]);
+	});
+
+	it("bounds the absolute amount", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, { ...expense, label: "Dépense", amount: "-42,90" });
+		await postOwn(account.id, { ...expense, label: "Revenu", amount: "45,00" });
+		await postOwn(account.id, { ...expense, label: "Petite", amount: "-12,00" });
+
+		const data = await listed("?amountMin=40&amountMax=50");
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Dépense", "Revenu"]);
+	});
+
+	it("rounds a bound finer than the minor unit inward", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, { ...expense, label: "Juste", amount: "-42,90" });
+
+		await expect(listed("?amountMin=42,895")).resolves.toMatchObject({ total: 1 });
+		await expect(listed("?amountMin=42,901")).resolves.toMatchObject({ total: 0 });
+		await expect(listed("?amountMax=42,899")).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("matches a % in the text literally", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, { ...expense, label: "Remise 50%" });
+		await postOwn(account.id, { ...expense, label: "Remise 500" });
+
+		const data = await listed(`?q=${encodeURIComponent("50%")}`);
+
+		expect(data.items.map((item) => item.label)).toEqual(["Remise 50%"]);
+	});
+
+	it("totals the reporting currency, excluded rows included, and counts the others", async () => {
+		const account = await openOwn();
+		const dollars = await openOwn({ name: "Dollars", currency: "USD", openingBalance: "0" });
+		const excluded = await postOwn(account.id, { ...expense, amount: "-42,90" });
+		await buildApp(own?.db).request(`/api/transactions/${excluded}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ excluded: true }),
+		});
+		await postOwn(account.id, { ...expense, amount: "100,00" });
+		await postOwn(dollars.id, { ...expense, amount: "-10.00" });
+
+		const data = await listed("");
+
+		expect(data.sum).toEqual({ amount: 5710, currency: "EUR", skippedCount: 1 });
+		expect(data.total).toBe(3);
+		expect(data.items.find((item) => item.id === excluded)?.excluded).toBe(true);
+	});
+
+	it("answers an empty page for an unknown account", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, expense);
+
+		const data = await listed("?account=nope");
+
+		expect(data).toMatchObject({ items: [], total: 0 });
+		expect(data.sum).toEqual({ amount: 0, currency: "EUR", skippedCount: 0 });
+	});
+
+	it("pages", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, { ...expense, date: "2026-09-03", label: "A" });
+		await postOwn(account.id, { ...expense, date: "2026-09-02", label: "B" });
+
+		const data = await listed("?page=2&pageSize=1");
+
+		expect(data.items.map((item) => item.label)).toEqual(["B"]);
+		expect(data).toMatchObject({ page: 2, pageSize: 1, total: 2 });
+	});
+
+	it.each([
+		["?from=2026-09-10&to=2026-09-01", "to", "before_from"],
+		["?amountMin=abc", "amountMin", "invalid_amount"],
+		["?amountMax=-5", "amountMax", "invalid_amount"],
+		["?amountMin=60&amountMax=50", "amountMax", "below_min"],
+		["?from=10/09/2026", "from", "invalid_format"],
+	])("refuses %s", async (query, path, code) => {
+		own = await createTempDatabase();
+
+		const { status, body } = await listOwn(query);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path, code }],
+		});
+	});
+
+	it("types its query for the interface's client", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, expense);
+
+		const response = await testClient(buildApp(own?.db)).api.transactions.$get({
+			query: { account: [account.id], amountMin: "1", q: "boul" },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data.items[0]?.accountName).toBe("Compte joint");
 	});
 });
 

@@ -25,6 +25,7 @@ import {
 	listSnapshots,
 	listTransactions,
 	openingDateOf,
+	sumTransactions,
 	recordSnapshot,
 	updateSnapshot,
 	updateTransaction,
@@ -253,6 +254,7 @@ describe("ingest", () => {
 			currency: "EUR",
 			label: "Boulangerie",
 			notes: null,
+			excluded: false,
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -324,7 +326,9 @@ describe("ingest", () => {
 			],
 		});
 		await expect(history(account.id)).resolves.toEqual(before);
-		await expect(listTransactions(deps(), account.id, { page: 1, pageSize: 50 })).resolves.toEqual({
+		await expect(
+			listTransactions(deps(), { accountIds: [account.id] }, { page: 1, pageSize: 50 }),
+		).resolves.toEqual({
 			items: [],
 			total: 0,
 		});
@@ -531,6 +535,30 @@ describe("updateTransaction", () => {
 		expect(days.get("2026-09-15")).toBe(119166);
 	});
 
+	it("excludes a transaction from reports, locks the flag and leaves the balance alone", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+		const before = await history(account.id);
+
+		await expect(
+			updateTransaction(deps(), id, { excluded: true }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ excluded: true });
+		await expect(lockedFields(id)).resolves.toEqual(["date", "amount", "label", "excluded"]);
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("never clears a locked exclusion for another origin", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+		await updateTransaction(deps(), id, { excluded: true }, { origin: "user" });
+
+		await updateTransaction(deps(), id, { excluded: false }, { origin: "rule" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ excluded: true });
+	});
+
 	it("answers NOT_FOUND for an unknown transaction", async () => {
 		await expect(
 			updateTransaction(deps(), "nope", { label: "x" }, { origin: "user" }),
@@ -597,12 +625,279 @@ describe("listTransactions", () => {
 		const second = await add(account.id, { date: "2026-09-12", label: "B" });
 		const older = await add(account.id, { date: "2026-09-02", label: "C" });
 
-		const all = await listTransactions(deps(), account.id, { page: 1, pageSize: 50 });
-		const secondPage = await listTransactions(deps(), account.id, { page: 2, pageSize: 2 });
+		const all = await listTransactions(
+			deps(),
+			{ accountIds: [account.id] },
+			{ page: 1, pageSize: 50 },
+		);
+		const secondPage = await listTransactions(
+			deps(),
+			{ accountIds: [account.id] },
+			{ page: 2, pageSize: 2 },
+		);
 
 		expect(all.items.map((item) => item.id)).toEqual([second, first, older]);
 		expect(all.total).toBe(3);
 		expect(secondPage).toEqual({ items: [expect.objectContaining({ id: older })], total: 3 });
+	});
+});
+
+// Two accounts of the I/O matrix of Story 1.5, each test with its own pair, so
+// rows from other tests never match.
+async function openPair() {
+	const joint = await openChecking({ name: "Compte joint" });
+	const card = await openChecking({
+		name: "Carte",
+		type: "credit_card",
+		subtype: null,
+		openingBalance: toMinorUnits(0),
+	});
+
+	return { joint, card, accountIds: [joint.id, card.id] };
+}
+
+const labelsOf = (page: { items: { label: string }[] }) => page.items.map((item) => item.label);
+
+describe("listTransactions across accounts", () => {
+	it("lists every account's transactions most recent first, with the account's name", async () => {
+		const { joint, card, accountIds } = await openPair();
+		await add(joint.id, { date: "2026-09-02", label: "C1" });
+		await add(card.id, { date: "2026-09-05", label: "K1" });
+		await add(joint.id, { date: "2026-09-08", label: "C2" });
+		await add(card.id, { date: "2026-09-11", label: "K2" });
+		await add(joint.id, { date: "2026-09-14", label: "C3" });
+		await add(card.id, { date: "2026-09-17", label: "K3" });
+
+		const page = await listTransactions(deps(), { accountIds }, firstPage);
+
+		expect(labelsOf(page)).toEqual(["K3", "C3", "K2", "C2", "K1", "C1"]);
+		expect(page.total).toBe(6);
+		expect(page.items[0]).toMatchObject({ accountId: card.id, accountName: "Carte" });
+		expect(page.items[1]).toMatchObject({ accountId: joint.id, accountName: "Compte joint" });
+	});
+
+	it("lists every account when no account is named", async () => {
+		const { joint } = await openPair();
+		const label = `Partout ${crypto.randomUUID()}`;
+		await add(joint.id, { label });
+
+		const page = await listTransactions(deps(), { q: label }, firstPage);
+
+		expect(labelsOf(page)).toEqual([label]);
+	});
+
+	it("combines account, dates and text, the text in the label or the notes", async () => {
+		const { joint, card, accountIds } = await openPair();
+		await add(joint.id, { date: "2026-09-02", label: "Carrefour", notes: null });
+		await add(joint.id, { date: "2026-09-03", label: "Carrefour Market" });
+		await add(joint.id, { date: "2026-09-05", label: "Épicerie", notes: "chez CARREFOUR" });
+		await add(joint.id, { date: "2026-09-12", label: "Carrefour City" });
+		await add(joint.id, { date: "2026-09-06", label: "Boulangerie" });
+		await add(card.id, { date: "2026-09-06", label: "Carrefour" });
+
+		const page = await listTransactions(
+			deps(),
+			{ accountIds: [joint.id], from: "2026-09-03", to: "2026-09-10", q: "carre" },
+			firstPage,
+		);
+
+		expect(labelsOf(page)).toEqual(["Épicerie", "Carrefour Market"]);
+		expect(page.total).toBe(2);
+		await expect(
+			listTransactions(deps(), { accountIds, q: "carrefour" }, firstPage),
+		).resolves.toMatchObject({ total: 5 });
+	});
+
+	it("matches %, _ and \\ in the text literally", async () => {
+		const { joint } = await openPair();
+		await add(joint.id, { label: "Remise 50%" });
+		await add(joint.id, { label: "Remise 500" });
+		await add(joint.id, { label: "Frais_bancaires" });
+		await add(joint.id, { label: "Frais bancaires" });
+		await add(joint.id, { label: "Dossier C:\\temp" });
+		const accountIds = [joint.id];
+
+		await expect(listTransactions(deps(), { accountIds, q: "50%" }, firstPage)).resolves.toEqual({
+			items: [expect.objectContaining({ label: "Remise 50%" })],
+			total: 1,
+		});
+		await expect(
+			listTransactions(deps(), { accountIds, q: "s_b" }, firstPage),
+		).resolves.toMatchObject({ items: [{ label: "Frais_bancaires" }] });
+		await expect(
+			listTransactions(deps(), { accountIds, q: ":\\t" }, firstPage),
+		).resolves.toMatchObject({ items: [{ label: "Dossier C:\\temp" }] });
+	});
+
+	it("bounds the absolute amount, both ways", async () => {
+		const { joint, accountIds } = await openPair();
+		await add(joint.id, { label: "Dépense", amount: toMinorUnits(-4290) });
+		await add(joint.id, { label: "Revenu", amount: toMinorUnits(4500) });
+		await add(joint.id, { label: "Petite", amount: toMinorUnits(-1200) });
+		await add(joint.id, { label: "Grosse", amount: toMinorUnits(-9000) });
+		const range = (min: number | null, max: number | null) => ({
+			accountIds,
+			amounts: [
+				{
+					currency: "EUR",
+					min: min === null ? null : toMinorUnits(min),
+					max: max === null ? null : toMinorUnits(max),
+				},
+			],
+		});
+
+		const between = await listTransactions(deps(), range(4000, 5000), firstPage);
+		const atLeast = await listTransactions(deps(), range(4290, null), firstPage);
+		const atMost = await listTransactions(deps(), range(null, 4500), firstPage);
+		const open = await listTransactions(deps(), range(null, null), firstPage);
+
+		expect(labelsOf(between).toSorted()).toEqual(["Dépense", "Revenu"]);
+		expect(labelsOf(atLeast).toSorted()).toEqual(["Dépense", "Grosse", "Revenu"]);
+		expect(labelsOf(atMost).toSorted()).toEqual(["Dépense", "Petite", "Revenu"]);
+		expect(open.total).toBe(4);
+	});
+
+	it("leaves out the currencies the amount bounds do not name", async () => {
+		const { joint } = await openPair();
+		const dollars = await openChecking({ name: "Dollars", currency: "USD" });
+		await add(joint.id, { label: "Euros", amount: toMinorUnits(-4290) });
+		await add(dollars.id, { label: "Dollars", amount: toMinorUnits(-4290), currency: "USD" });
+		const amounts = [{ currency: "EUR", min: toMinorUnits(4000), max: toMinorUnits(5000) }];
+
+		const page = await listTransactions(
+			deps(),
+			{ accountIds: [joint.id, dollars.id], amounts },
+			firstPage,
+		);
+
+		expect(labelsOf(page)).toEqual(["Euros"]);
+	});
+
+	it("matches nothing for an empty account list or no currency left in range", async () => {
+		const { joint, accountIds } = await openPair();
+		await add(joint.id);
+
+		await expect(listTransactions(deps(), { accountIds: [] }, firstPage)).resolves.toEqual({
+			items: [],
+			total: 0,
+		});
+		await expect(listTransactions(deps(), { accountIds, amounts: [] }, firstPage)).resolves.toEqual(
+			{ items: [], total: 0 },
+		);
+		await expect(sumTransactions(deps(), { accountIds: [] })).resolves.toEqual([]);
+	});
+
+	it("is an empty page for an unknown account", async () => {
+		await expect(listTransactions(deps(), { accountIds: ["nope"] }, firstPage)).resolves.toEqual({
+			items: [],
+			total: 0,
+		});
+	});
+});
+
+describe("sumTransactions", () => {
+	it("sums and counts per currency, excluded transactions included", async () => {
+		const { joint } = await openPair();
+		const dollars = await openChecking({ name: "Dollars", currency: "USD" });
+		const excluded = await add(joint.id, { amount: toMinorUnits(-4290) });
+		await updateTransaction(deps(), excluded, { excluded: true }, { origin: "user" });
+		await add(joint.id, { amount: toMinorUnits(10000) });
+		await add(dollars.id, { amount: toMinorUnits(-1000), currency: "USD" });
+
+		await expect(sumTransactions(deps(), { accountIds: [joint.id, dollars.id] })).resolves.toEqual([
+			{ currency: "EUR", amount: 5710, count: 2 },
+			{ currency: "USD", amount: -1000, count: 1 },
+		]);
+	});
+
+	it("sums only the rows the text matches", async () => {
+		const { joint } = await openPair();
+		await add(joint.id, { label: "Loyer", amount: toMinorUnits(-90000) });
+		await add(joint.id, { label: "Pain", amount: toMinorUnits(-120) });
+
+		await expect(sumTransactions(deps(), { accountIds: [joint.id], q: "loyer" })).resolves.toEqual([
+			{ currency: "EUR", amount: -90000, count: 1 },
+		]);
+	});
+});
+
+describe("the first page of 50,000 transactions", () => {
+	let big: TempDatabase;
+
+	beforeAll(async () => {
+		big = await createTempDatabase();
+		const now = Date.UTC(2026, 8, 21);
+		const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
+		setToday("2026-09-21T10:00:00Z");
+		const joint = await createAccount(
+			bigDeps,
+			{ ...checking, openingDate: "2016-01-01" },
+			{ origin: "user" },
+		);
+		const card = await createAccount(
+			bigDeps,
+			{ ...checking, name: "Carte", openingDate: "2016-01-01" },
+			{ origin: "user" },
+		);
+		vi.useRealTimers();
+		const accountIds = [joint.id, card.id];
+		const rows = Array.from({ length: 50_000 }, (_, index) => ({
+			id: crypto.randomUUID(),
+			accountId: accountIds[index % 2] ?? "",
+			// Spread over ten years, a few a day, as a household's history would be.
+			date: new Date(Date.UTC(2016, 0, 2) + (index % 3650) * 86_400_000).toISOString().slice(0, 10),
+			amount: -((index % 9000) + 1),
+			index,
+		}));
+
+		const chunks = Array.from({ length: rows.length / 2000 }, (_, index) =>
+			rows.slice(index * 2000, (index + 1) * 2000),
+		);
+
+		// Seeded directly: the ledger would recompute ten years of balances per row,
+		// and only the list's read path is being measured. In sequence, so the
+		// transaction rows always find their entries.
+		await chunks.reduce(async (previous, chunk) => {
+			await previous;
+			await big.db.insert(entries).values(
+				chunk.map((row) => ({
+					id: row.id,
+					accountId: row.accountId,
+					kind: "transaction" as const,
+					date: row.date,
+					amount: row.amount,
+					currency: "EUR",
+					createdAt: now + row.index,
+					updatedAt: now + row.index,
+				})),
+			);
+			await big.db
+				.insert(transactions)
+				.values(
+					chunk.map((row) => ({ entryId: row.id, label: `Opération ${row.index}`, notes: null })),
+				);
+		}, Promise.resolve());
+	}, 60_000);
+
+	afterAll(async () => {
+		await big.dispose();
+	});
+
+	it("answers the list, the count and the sum in under 300 ms", async () => {
+		const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
+		// One warm-up read, as a running server has had: the first query pays
+		// for opening the file.
+		await listTransactions(bigDeps, {}, firstPage);
+		await sumTransactions(bigDeps, {});
+
+		const started = performance.now();
+		const page = await listTransactions(bigDeps, {}, firstPage);
+		await sumTransactions(bigDeps, {});
+		const elapsed = performance.now() - started;
+
+		expect(page.total).toBe(50_000);
+		expect(page.items).toHaveLength(50);
+		expect(elapsed).toBeLessThan(300);
 	});
 });
 

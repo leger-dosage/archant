@@ -53,5 +53,8 @@ export const entries = sqliteTable(
 			.on(table.accountId, table.date)
 			.where(sql`${table.valuationKind} = 'reconciliation'`),
 		index("entries_account_date").on(table.accountId, table.date),
+		// The cross-account list orders every transaction by these columns; with
+		// them in one index its first page reads 50 rows instead of sorting all.
+		index("entries_kind_date").on(table.kind, table.date, table.createdAt, table.id),
 	],
 );

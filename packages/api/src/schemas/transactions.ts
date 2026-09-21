@@ -18,7 +18,10 @@ export const transactionBodySchema = z.object({
 	notes: z.string().nullable().optional(),
 });
 
-export const transactionPatchBodySchema = transactionBodySchema.partial();
+// Exclusion is an edit only: a new transaction is always counted.
+export const transactionPatchBodySchema = transactionBodySchema
+	.partial()
+	.extend({ excluded: z.boolean().optional() });
 
 export type TransactionInput = z.input<typeof transactionBodySchema>;
 export type TransactionPatchInput = z.input<typeof transactionPatchBodySchema>;
@@ -79,6 +82,7 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 			label: fields.label.optional(),
 			amount: fields.amount.optional(),
 			notes: z.string().trim().max(NOTES_MAX_LENGTH).nullable().optional(),
+			excluded: z.boolean().optional(),
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, notes, ...rest }) => {
@@ -92,8 +96,17 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 		});
 }
 
+/**
+ * The interface's sheet: the fields of a new transaction plus the exclusion
+ * switch, checked the way the API checks them. The form sends the typed text
+ * as is; the create or update schema parses it on the server.
+ */
+export function transactionFormSchema(currency: CurrencyCode) {
+	return z.object({ ...fields, excluded: z.boolean() }).superRefine(amountIn(currency));
+}
+
 /** What the interface's form holds: the text typed, before the schema parses it. */
-export type TransactionFormInput = z.input<ReturnType<typeof createTransactionSchema>>;
+export type TransactionFormInput = z.input<ReturnType<typeof transactionFormSchema>>;
 export type CreateTransactionRequest = z.output<ReturnType<typeof createTransactionSchema>>;
 export type UpdateTransactionRequest = z.output<ReturnType<typeof updateTransactionSchema>>;
 
@@ -104,3 +117,105 @@ export const pageQuerySchema = z.object({
 	page: z.coerce.number().int().min(1).default(1),
 	pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
 });
+
+/**
+ * A non-negative decimal read exactly, `units / 10^scale`. Structurally the
+ * domain's `DecimalAmount`, which this file may not import.
+ */
+export type AmountBound = { units: bigint; scale: number };
+
+// The unsigned shapes `parseAmount` reads: `1 234,56`, `42.90`, `20`. Fifteen
+// integer digits is already past any stored amount; ten decimals, past any
+// currency's minor unit.
+const BOUND_PATTERN = /^(\d{1,3}(?:[ \u00A0\u202F]\d{3})+|\d{1,15})(?:[.,](\d{1,10}))?$/u;
+
+/**
+ * Reads an amount filter bound, before any currency is known: the list spans
+ * accounts in several currencies, and each scales the bound its own way.
+ * `null` for anything else, a sign included: the bound is on the absolute
+ * value, and the sign is the direction filter's (Epic 5).
+ */
+export function parseAmountBound(text: string): AmountBound | null {
+	const match = BOUND_PATTERN.exec(text.trim());
+
+	if (match === null) {
+		return null;
+	}
+
+	const [, integerPart = "", fraction = ""] = match;
+
+	return { units: BigInt(integerPart.replace(/\D/gu, "") + fraction), scale: fraction.length };
+}
+
+const isBound = (value: AmountBound | null | undefined): value is AmountBound =>
+	value !== null && value !== undefined;
+
+/** Negative, zero or positive as `a` is below, equal to or above `b`. */
+export function compareAmountBounds(a: AmountBound, b: AmountBound): number {
+	const scale = Math.max(a.scale, b.scale);
+	const left = a.units * 10n ** BigInt(scale - a.scale);
+	const right = b.units * 10n ** BigInt(scale - b.scale);
+
+	return left === right ? 0 : left < right ? -1 : 1;
+}
+
+export const MAX_ACCOUNT_FILTER = 100;
+export const SEARCH_MAX_LENGTH = 200;
+
+const optionalText = z
+	.string()
+	.trim()
+	.optional()
+	.transform((value) => (value === "" ? undefined : value));
+
+/**
+ * The query of the cross-account list. `account` repeats, one id each; a lone
+ * one arrives as a string. Dates are inclusive, amounts bound the absolute
+ * value, `q` searches the label and the notes.
+ */
+export const transactionFilterSchema = pageQuerySchema
+	.extend({
+		account: z
+			.union([z.string(), z.array(z.string())])
+			.optional()
+			.transform((value) => (typeof value === "string" ? [value] : value))
+			.pipe(z.array(z.string()).max(MAX_ACCOUNT_FILTER).optional()),
+		from: z.iso.date().optional(),
+		to: z.iso.date().optional(),
+		amountMin: optionalText,
+		amountMax: optionalText,
+		q: optionalText.pipe(z.string().max(SEARCH_MAX_LENGTH).optional()),
+	})
+	.superRefine((value, context) => {
+		if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
+			context.addIssue({ code: "custom", path: ["to"], message: "before_from" });
+		}
+
+		const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
+		const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
+
+		if (min === null) {
+			context.addIssue({ code: "custom", path: ["amountMin"], message: "invalid_amount" });
+		}
+
+		if (max === null) {
+			context.addIssue({ code: "custom", path: ["amountMax"], message: "invalid_amount" });
+		}
+
+		if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
+			context.addIssue({ code: "custom", path: ["amountMax"], message: "below_min" });
+		}
+	})
+	.transform(({ amountMin, amountMax, ...rest }) => {
+		const min = amountMin === undefined ? null : parseAmountBound(amountMin);
+		const max = amountMax === undefined ? null : parseAmountBound(amountMax);
+
+		return {
+			...rest,
+			...(min === null ? {} : { amountMin: min }),
+			...(max === null ? {} : { amountMax: max }),
+		};
+	});
+
+export type TransactionFilterQuery = z.input<typeof transactionFilterSchema>;
+export type TransactionFilterRequest = z.output<typeof transactionFilterSchema>;

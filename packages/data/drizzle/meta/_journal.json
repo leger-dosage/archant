@@ -22,6 +22,13 @@
       "when": 1790022483946,
       "tag": "0002_add_reconciliation_index",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790027307599,
+      "tag": "0003_add_transaction_exclusion",
+      "breakpoints": true
     }
   ]
 }
