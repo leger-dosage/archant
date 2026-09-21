@@ -1,0 +1,103 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 09-21-2026 17:05
+last_updated: 09-21-2026 17:05
+project: archant
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-create-an-account-and-see-it-listed: backlog
+  1-2-record-transactions-by-hand: backlog
+  1-3-daily-balance-history: backlog
+  1-4-balance-snapshots: backlog
+  1-5-list-and-filter-transactions-across-accounts: backlog
+  1-6-manage-accounts: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-import-an-ofx-file-with-preview: backlog
+  2-2-use-the-ofx-ledger-balance: backlog
+  2-3-import-a-csv-file-with-a-saved-mapping: backlog
+  2-4-import-a-qif-file: backlog
+  2-5-import-history-and-revert: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-first-launch-setup-and-sign-in: backlog
+  3-2-sign-out-change-password-reset-from-the-server: backlog
+  3-3-run-archant-from-one-container: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-default-categories-and-category-management: backlog
+  4-2-categorise-transactions-and-filter-by-category: backlog
+  4-3-merchants: backlog
+  4-4-tags: backlog
+  4-5-bulk-edit: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-mark-two-transactions-as-a-transfer: backlog
+  5-2-automatic-transfer-matching: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-net-worth-and-its-history: backlog
+  6-2-monthly-income-and-expenses-by-category: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-loan-accounts: backlog
+  7-2-investment-accounts-pea: backlog
+  7-3-property-and-vehicle-accounts: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-create-a-categorisation-rule: backlog
+  8-2-more-rule-conditions-and-actions: backlog
+  8-3-apply-rules-to-existing-transactions: backlog
+  8-4-categorisation-provider-extension-point: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-detect-recurring-transactions: backlog
+  9-2-recurring-transactions-page: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-connect-a-bank: backlog
+  10-2-link-bank-accounts: backlog
+  10-3-sync-transactions-and-balances: backlog
+  10-4-pending-transactions: backlog
+  10-5-consent-renewal-and-disconnection: backlog
+  epic-10-retrospective: optional

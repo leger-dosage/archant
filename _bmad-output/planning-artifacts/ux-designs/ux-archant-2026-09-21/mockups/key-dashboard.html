@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Archant — Tableau de bord (mock)</title>
+<style>
+/*
+  Spine sections illustrated by this mock:
+  - EXPERIENCE.md > Information Architecture (Dashboard row, / route)
+  - EXPERIENCE.md > Component Patterns: Sidebar, Stat block, Chart, Banner
+  - EXPERIENCE.md > State Patterns: Sync in progress absent, Banner (consent expiring within 14 days)
+  - EXPERIENCE.md > Money and Dates (fr-FR formatting, period segmented control)
+  - EXPERIENCE.md > Accessibility Floor (chart text summary above the chart)
+  - EXPERIENCE.md > Key Flows > Flow 3 — Monthly review (Epic 6)
+  - DESIGN.md > Colors, Typography, Components (sidebar-item-active, money-income,
+    money-hero, banner-warning, button-primary)
+*/
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #DCDCDC;
+  font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  color: #171717;
+  padding: 32px;
+}
+
+/* Browser frame */
+.browser {
+  width: 1440px;
+  margin: 0 auto;
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.browser-chrome {
+  height: 40px;
+  background: #F7F7F7;
+  border-bottom: 1px solid #E7E7E7;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+}
+
+.browser-dots { display: flex; gap: 6px; }
+.browser-dots span {
+  width: 10px; height: 10px; border-radius: 9999px; background: #E7E7E7;
+}
+
+.browser-address {
+  flex: 1;
+  height: 24px;
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #737373;
+}
+
+.app {
+  display: flex;
+  width: 1440px;
+  min-height: 900px;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: #F7F7F7;
+  border-right: 1px solid #E7E7E7;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+}
+
+.sidebar-brand {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 8px 16px 8px;
+  color: #171717;
+}
+
+.nav-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 20px; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  position: relative;
+}
+
+.nav-item .icon { width: 16px; height: 16px; flex-shrink: 0; color: #737373; }
+.nav-item.active .icon { color: #171717; }
+
+.nav-item.active {
+  background: #FFFFFF;
+  border: 1px solid #E7E7E7;
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 9999px;
+  background: #444CE7;
+}
+
+.sidebar-section-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #737373;
+  padding: 0 8px;
+  margin: 12px 0 6px 0;
+}
+
+.account-group { margin-bottom: 8px; }
+
+.account-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #737373;
+}
+
+.account-group-header .total {
+  font-variant-numeric: tabular-nums;
+  color: #171717;
+  font-weight: 500;
+}
+
+.account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px 5px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.account-row .name-block { display: flex; flex-direction: column; line-height: 1.3; }
+.account-row .name { color: #171717; }
+.account-row .subtype { font-size: 11px; color: #737373; }
+.account-row .balance {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #171717;
+  white-space: nowrap;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  border-top: 1px solid #E7E7E7;
+  padding-top: 12px;
+}
+
+/* Main content */
+.main {
+  flex: 1;
+  padding: 24px 32px 48px 32px;
+  max-width: 1200px;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FDF6EC;
+  border: 1px solid #F2D9B8;
+  color: #B54708;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 24px;
+}
+
+.banner .icon { width: 16px; height: 16px; flex-shrink: 0; }
+.banner .msg { flex: 1; }
+.banner .action {
+  border: 1px solid #B54708;
+  color: #B54708;
+  background: transparent;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.page-heading {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+
+/* Net worth block */
+.networth-card {
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.networth-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.networth-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #737373;
+  margin-bottom: 6px;
+}
+
+.networth-value {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #171717;
+}
+
+.networth-change {
+  font-size: 12px;
+  margin-top: 4px;
+  color: #067647;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid #E7E7E7;
+  border-radius: 6px;
+  overflow: hidden;
+  height: 28px;
+}
+
+.segmented button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: #737373;
+  background: #FFFFFF;
+  border: none;
+  border-left: 1px solid #E7E7E7;
+  padding: 0 12px;
+  cursor: default;
+}
+
+.segmented button:first-child { border-left: none; }
+.segmented button.active { color: #171717; background: #F7F7F7; }
+
+.chart-summary {
+  font-size: 12px;
+  color: #737373;
+  margin-bottom: 8px;
+}
+
+.chart-wrap { border-top: 1px solid #F1F1F1; padding-top: 12px; }
+
+/* Flows section */
+.flows-section {
+  border: 1px solid #E7E7E7;
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+
+.flows-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-bottom: 16px;
+}
+
+.flows-totals {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 20px;
+}
+
+.flow-total-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #737373;
+  margin-bottom: 4px;
+}
+
+.flow-total-value {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-total-value.income { color: #067647; }
+.flow-total-value.expense { color: #171717; }
+
+.category-list { display: flex; flex-direction: column; gap: 10px; }
+
+.category-row { display: flex; align-items: center; gap: 10px; }
+
+.category-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.category-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #171717;
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.category-bar-track {
+  flex: 1;
+  height: 10px;
+  background: #F1F1F1;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.category-bar-fill { height: 100%; border-radius: 4px; }
+
+.category-amount {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #171717;
+  width: 100px;
+  text-align: right;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<div class="browser">
+  <div class="browser-chrome">
+    <div class="browser-dots"><span></span><span></span><span></span></div>
+    <div class="browser-address">archant.local/</div>
+  </div>
+
+  <div class="app">
+    <!-- Sidebar -->
+    <nav class="sidebar" aria-label="Navigation principale">
+      <div class="sidebar-brand">Archant</div>
+
+      <div class="nav-list">
+        <div class="nav-item active">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+          Tableau de bord
+        </div>
+        <div class="nav-item">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="9" rx="1"/><path d="M2 6h12"/></svg>
+          Opérations
+        </div>
+        <div class="nav-item">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+          Récurrences
+        </div>
+        <div class="nav-item">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h5M9 8h5M8 2v5M8 9v5"/></svg>
+          Règles
+        </div>
+      </div>
+
+      <div class="sidebar-section-label">Comptes</div>
+
+      <div class="account-group">
+        <div class="account-group-header">
+          <span>Actifs</span>
+          <span class="total">92&nbsp;721,30&nbsp;€</span>
+        </div>
+        <div class="account-row">
+          <div class="name-block">
+            <span class="name">Compte joint</span>
+            <span class="subtype">Compte courant</span>
+          </div>
+          <span class="balance">3&nbsp;240,55&nbsp;€</span>
+        </div>
+        <div class="account-row">
+          <div class="name-block">
+            <span class="name">Livret A</span>
+            <span class="subtype">Épargne</span>
+          </div>
+          <span class="balance">12&nbsp;500,00&nbsp;€</span>
+        </div>
+        <div class="account-row">
+          <div class="name-block">
+            <span class="name">PEA</span>
+            <span class="subtype">Titres</span>
+          </div>
+          <span class="balance">76&nbsp;980,75&nbsp;€</span>
+        </div>
+      </div>
+
+      <div class="account-group">
+        <div class="account-group-header">
+          <span>Passifs</span>
+          <span class="total">8&nbsp;491,30&nbsp;€</span>
+        </div>
+        <div class="account-row">
+          <div class="name-block">
+            <span class="name">Carte Visa</span>
+            <span class="subtype">Carte de crédit</span>
+          </div>
+          <span class="balance">490,30&nbsp;€</span>
+        </div>
+        <div class="account-row">
+          <div class="name-block">
+            <span class="name">Prêt immobilier</span>
+            <span class="subtype">Emprunt</span>
+          </div>
+          <span class="balance">8&nbsp;001,00&nbsp;€</span>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="nav-item">
+          <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.5 3.5l1 1M11.5 11.5l1 1M12.5 3.5l-1 1M4.5 11.5l-1 1"/></svg>
+          Réglages
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main">
+      <div class="banner" role="status">
+        <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5 15 14H1L8 1.5Z"/><path d="M8 6.5v3.5"/><circle cx="8" cy="11.7" r="0.6" fill="currentColor" stroke="none"/></svg>
+        <span class="msg">Le consentement de BoursoBank expire le 12 octobre.</span>
+        <button class="action" type="button">Renouveler</button>
+      </div>
+
+      <h1 class="page-heading">Tableau de bord</h1>
+
+      <section class="networth-card">
+        <div class="networth-top">
+          <div>
+            <div class="networth-label">Patrimoine net</div>
+            <div class="networth-value">84&nbsp;230,00&nbsp;€</div>
+            <div class="networth-change">+2,1&nbsp;% sur 3 mois</div>
+          </div>
+          <div class="segmented" role="group" aria-label="Période">
+            <button type="button">1 M</button>
+            <button type="button" class="active">3 M</button>
+            <button type="button">6 M</button>
+            <button type="button">1 A</button>
+            <button type="button">Tout</button>
+          </div>
+        </div>
+
+        <p class="chart-summary">Patrimoine net : 84&nbsp;230&nbsp;€, +2,1&nbsp;% sur 3 mois.</p>
+
+        <div class="chart-wrap">
+          <svg viewBox="0 0 1080 200" width="100%" height="200" preserveAspectRatio="none" role="img" aria-label="Évolution du patrimoine net sur 3 mois">
+            <line x1="0" y1="188" x2="1080" y2="188" stroke="#F1F1F1" stroke-width="1" />
+            <polyline
+              points="0,150 90,146 180,158 270,140 360,134 450,120 540,128 630,104 720,98 810,80 900,70 990,58 1080,40"
+              fill="none" stroke="#444CE7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+          </svg>
+        </div>
+      </section>
+
+      <section class="flows-section">
+        <h2 class="flows-title">Ce mois-ci</h2>
+
+        <div class="flows-totals">
+          <div>
+            <div class="flow-total-label">Revenus</div>
+            <div class="flow-total-value income">+5&nbsp;420,00&nbsp;€</div>
+          </div>
+          <div>
+            <div class="flow-total-label">Dépenses</div>
+            <div class="flow-total-value expense">−3&nbsp;910,00&nbsp;€</div>
+          </div>
+        </div>
+
+        <div class="category-list">
+          <div class="category-row">
+            <span class="category-dot" style="background:#06AED4"></span>
+            <span class="category-name">Logement</span>
+            <div class="category-bar-track"><div class="category-bar-fill" style="width:100%;background:#06AED4"></div></div>
+            <span class="category-amount">1&nbsp;600,00&nbsp;€</span>
+          </div>
+          <div class="category-row">
+            <span class="category-dot" style="background:#F79009"></span>
+            <span class="category-name">Restaurants</span>
+            <div class="category-bar-track"><div class="category-bar-fill" style="width:48.75%;background:#F79009"></div></div>
+            <span class="category-amount">780,00&nbsp;€</span>
+          </div>
+          <div class="category-row">
+            <span class="category-dot" style="background:#12B76A"></span>
+            <span class="category-name">Courses</span>
+            <div class="category-bar-track"><div class="category-bar-fill" style="width:40%;background:#12B76A"></div></div>
+            <span class="category-amount">640,00&nbsp;€</span>
+          </div>
+          <div class="category-row">
+            <span class="category-dot" style="background:#EE46BC"></span>
+            <span class="category-name">Transport</span>
+            <div class="category-bar-track"><div class="category-bar-fill" style="width:30%;background:#EE46BC"></div></div>
+            <span class="category-amount">480,00&nbsp;€</span>
+          </div>
+          <div class="category-row">
+            <span class="category-dot" style="background:#7A5AF8"></span>
+            <span class="category-name">Loisirs</span>
+            <div class="category-bar-track"><div class="category-bar-fill" style="width:25.6%;background:#7A5AF8"></div></div>
+            <span class="category-amount">410,00&nbsp;€</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+</body>
+</html>

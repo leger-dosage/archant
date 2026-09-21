@@ -14,14 +14,15 @@ For one household that is the wrong shape. Archant keeps the domain modelling, w
 
 Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. Nothing below is committed until its spec exists.
 
-Likely early scope:
+Early scope, in build order, is kept in `_bmad-output/planning-artifacts/feature-inventory.md`:
 
 - Accounts and balances, with history
-- Transaction import through Enable Banking, plus OFX and CSV files
-- Categories and a rules engine for automatic categorisation
-- Budgets
+- Transaction import from CSV, QIF and OFX files
+- Categories, internal transfers, and a rules engine for automatic categorisation
 - Dashboard and charts
-- Multi-currency amounts with historical exchange rates
+- Enable Banking synchronisation, behind a connector interface that other providers can implement
+
+One running instance is one household. Amounts are in euros, but every amount carries its currency code.
 
 Explicit non-goals: multi-tenancy beyond one household, a hosted offering, investment portfolio tracking at parity with Sure, server-side rendering, SEO.
 
