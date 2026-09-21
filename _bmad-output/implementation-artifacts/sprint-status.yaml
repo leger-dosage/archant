@@ -40,8 +40,10 @@ development_status:
   1-2-record-transactions-by-hand: review
   1-3-daily-balance-history: review
   1-4-balance-snapshots: review
-  1-5-list-and-filter-transactions-across-accounts: backlog
+  1-7-end-to-end-tests-for-the-interface: ready-for-dev
+  1-5-list-and-filter-transactions-across-accounts: ready-for-dev
   1-6-manage-accounts: backlog
+  1-8-command-palette-and-keyboard-shortcuts: backlog
   epic-1-retrospective: optional
 
   epic-2: backlog

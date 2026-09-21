@@ -14,6 +14,8 @@ The user creates depository and credit card accounts, records transactions and b
 - Story 1.4: Balance snapshots
 - Story 1.5: List and filter transactions across accounts
 - Story 1.6: Manage accounts
+- Story 1.7: End-to-end tests for the interface (runs before 1.5)
+- Story 1.8: Command palette and keyboard shortcuts
 
 ## Requirements & Constraints
 
@@ -24,6 +26,7 @@ The user creates depository and credit card accounts, records transactions and b
 - Transaction list: all accounts, most recent first, 50 per page, filters on account, date range, amount range and text in label or notes. With 50,000 transactions in a local SQLite file, the first unfiltered page answers in under 300 ms. Text search uses `LIKE`; FTS5 only if that target fails.
 - Money is never a float: integer minor units plus an ISO 4217 code. No code path assumes EUR.
 - Every boundary input goes through Zod. API errors use closed `AppError` codes; unknown routes answer `404 NOT_FOUND` JSON, unexpected throws a generic `500 INTERNAL_ERROR`. Messages in English.
+- Every story ships automated tests for its acceptance criteria: Playwright for what the interface shows, Vitest for the rest. Story 1.7 creates the Playwright harness, backfills Stories 1.1 to 1.4 and adds `pnpm test:e2e` to the gate and to a GitHub Actions workflow.
 - Balance computation is covered to 100% of branches, including the opening date carrying exactly the opening balance, several on one day, and a liability account. No test reaches the network.
 - Story 1.1 must leave the verification gate in `AGENTS.md` green, with each package holding only the dependencies that story uses.
 
@@ -52,7 +55,7 @@ The user creates depository and credit card accounts, records transactions and b
 - Sidebar: accounts under Comptes, grouped with balances, inactive hidden, group state remembered. Collapses to icons below 1024 px, becomes a sheet below 768 px.
 - Transaction sheet: saves on `⌘Enter` or Enregistrer; `Esc` closes and asks only when changes are unsaved; shows the source. No auto-save on blur.
 - Transactions list: 36 px rows grouped under day headers (« Aujourd'hui », « Hier », « lundi 15 septembre »), filters as removable chips in the URL, result count and signed total of filtered rows. Pages of 50, no infinite scroll.
-- Keyboard: `⌘K`/`Ctrl+K` palette with Aller à, Actions, Comptes; `g c`, `g o`; `j`/`k`, `x`, `e`/`Enter`, `/`, `n`, `Esc`, `?`. Single-letter shortcuts are off in text fields; each has a visible equivalent showing it in a tooltip.
+- Keyboard (Story 1.8): `⌘K`/`Ctrl+K` palette with Aller à, Actions, Comptes; `g c`, `g o`; `j`/`k`, `x`, `e`/`Enter`, `/`, `n`, `Esc`, `?`. Single-letter shortcuts are off in text fields; each has a visible equivalent showing it in a tooltip.
 - Balance chart: single line, text summary above, « Voir les données » table toggle, keyboard cursor, no animation under reduced motion.
 - Empty states: « Aucun compte pour l'instant. » + « Ajouter un compte »; « Aucune opération. »; « Aucune opération ne correspond à ces filtres. » + « Effacer les filtres ». Skeletons, not spinners. Errors as destructive Sonner toasts with the translated `errors.<CODE>`.
 - Confirmation dialogs state counts (« Supprimer le compte et ses 1 204 opérations ? »), focus starts on Annuler.
@@ -64,5 +67,6 @@ The user creates depository and credit card accounts, records transactions and b
 
 - Story 1.1 creates the three packages, the translation layer, the brand layer, the sidebar, `Money`, the error envelope and the ledger with the opening anchor. Every other story builds on it.
 - Story 1.2 needs the ledger's manual `ingest` path. Story 1.2 also plugs the balance recompute into every ledger write; Story 1.3 adds the chart. Story 1.4 adds `reconciliation` valuations to the same calculator.
+- Story 1.7 needs the screens of 1.1 to 1.4; Story 1.5 and every later interface story need its harness. Story 1.8 needs 1.5's list and search field; `x` selection waits for Story 4.5.
 - Story 1.5 needs transactions from 1.2. Story 1.6's deactivation must hide accounts from 1.5's filters, and its delete goes through the ledger.
 - Epic 2 reuses `ledger.ingest` with keys and statement balances; Epic 3 adds the auth guard in front of every route built here; Epics 4, 5 and 6 extend the transaction list filters, the sheet fields and read `balanceOn`.
