@@ -146,6 +146,7 @@ NFR14: Dependencies stay few and popular; each new one is justified in its pull 
 - Enable Banking credentials (application id and private key) come from the environment.
 - Backups are documented in `docs/deployment.md`, not automated by the application.
 - Amounts are signed from the account's point of view: negative means money leaving the account. A liability's balance is displayed as a positive outstanding amount. The architecture fixes the storage convention.
+- Every story ships automated tests for its acceptance criteria: Playwright end-to-end tests for what the interface shows, Vitest for domain, services and routes. A story is not done while one of its criteria is only checked by hand. Story 1.7 creates the Playwright harness and covers Stories 1.1 to 1.4; every story after it adds its own tests.
 - The architecture spine, `architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md`, binds every story; its `AD-n` rules win over any wording here.
 - Ordering constraints outside this document: `bmad-architecture` settles the connector interface and the data model before Story 2.1, and `bmad-ux` produces `DESIGN.md` and `EXPERIENCE.md` before Story 1.1, the first interface story.
 
@@ -159,7 +160,7 @@ UX-DR3: Sidebar with navigation entries and the accounts grouped under Actifs an
 UX-DR4: Transaction sheet with save on `⌘Enter`, `Esc` to close, a prompt only when changes are unsaved, and the transaction's source shown. Story 1.2.
 UX-DR5: Charts with a text summary and a « Voir les données » table alternative, keyboard cursor, no animation under reduced motion. Stories 1.3, 6.1, 6.2.
 UX-DR6: Transactions list grouped by day headers, filters as removable chips kept in the URL, result count and signed total of the filtered rows. Story 1.5.
-UX-DR7: Command palette on `⌘K` / `Ctrl+K` and the keyboard shortcuts of `EXPERIENCE.md` (`g` navigation, `j`/`k`, `x`, `e`, `/`, `?`), off inside text fields, each with a visible equivalent. Story 1.5.
+UX-DR7: Command palette on `⌘K` / `Ctrl+K` and the keyboard shortcuts of `EXPERIENCE.md` (`g` navigation, `j`/`k`, `x`, `e`, `/`, `?`), off inside text fields, each with a visible equivalent. Story 1.8; the `x` selection and its `Shift` extension, Story 4.5.
 UX-DR8: Import dialog with steps Fichier, Colonnes, Aperçu, preview tabs per group with counts, and a confirm button stating the count. Stories 2.1, 2.3.
 UX-DR9: Bulk bar at the bottom of the transactions list with « Tout sélectionner (N résultats) ». Story 4.5.
 UX-DR10: Warning banners for consent expiry, expired consent and stale sync, one action each. Story 10.5.
@@ -421,19 +422,19 @@ So that I can find any operation quickly.
 
 **Given** the list
 **When** I filter by account, date range, amount range, or text contained in the label or notes, alone or combined
-**Then** only matching transactions are shown, and the filters are kept in the URL so a reload keeps them
+**Then** only matching transactions are shown, with the result count and the signed total, and the filters are kept in the URL as removable chips so a reload keeps them (UX-DR6)
 
 **Given** a transaction
 **When** I mark it as excluded from reports
 **Then** it stays in the list with a visual marker and keeps affecting its account balance
 
-**Given** any page
-**When** I press `⌘K` or `Ctrl+K`
-**Then** the command palette opens with Aller à, Actions and Comptes, and in the list `j`/`k`, `x`, `e` and `/` work as described in `EXPERIENCE.md`, `?` listing them all (UX-DR6, UX-DR7)
-
 **Given** 50,000 transactions in a local SQLite file
 **When** the first page loads with no filter
 **Then** the API answers in under 300 ms
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 1.6: Manage accounts
 
@@ -460,6 +461,73 @@ So that the list stays accurate as my situation changes.
 **Given** an account with transactions
 **When** I delete it
 **Then** a confirmation states how many transactions will be deleted, and confirming deletes the account, its transactions, snapshots and daily balances
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 1.7: End-to-end tests for the interface
+
+As the household's administrator,
+I want every screen shipped so far checked by automated browser tests,
+So that a later story cannot break accounts, transactions, the chart or snapshots unnoticed.
+
+**Requirements:** NFR11, NFR13
+
+This story runs before Story 1.5, which needs its harness.
+
+**Acceptance Criteria:**
+
+**Given** a fresh clone
+**When** I run `pnpm test:e2e`
+**Then** Playwright starts the API on a new temporary SQLite file and the Vite server, never reuses a running server, runs in Chromium, and fails on `test.only` in CI
+**And** any request leaving `localhost` fails the test and names the URL
+
+**Given** the acceptance criteria of Stories 1.1 to 1.4
+**When** the end-to-end suite runs
+**Then** each one has a test through the interface: creating an account and seeing it in its group and the sidebar; creating, editing and deleting a transaction with the header balance following; the chart periods, the `1M` fallback on an unknown `period` and `period` kept across pagination; the Soldes tab opened from `?tab=snapshots`, recording, replacing, editing and deleting a snapshot with its gap
+
+**Given** `unwrap` in `packages/web/src/lib/api.ts`
+**When** the web unit tests run
+**Then** a 400 with fields, an unknown code, the proxy's HTML page and a rejected fetch are covered
+
+**Given** a pull request
+**When** GitHub Actions runs
+**Then** it runs the verification gate of `AGENTS.md` and `pnpm test:e2e`, and `AGENTS.md` lists `pnpm test:e2e` in that gate
+
+### Story 1.8: Command palette and keyboard shortcuts
+
+As the household's administrator,
+I want to reach every page and action from the keyboard,
+So that I can work through my transactions without the mouse.
+
+**Requirements:** NFR13
+
+**Acceptance Criteria:**
+
+**Given** any page
+**When** I press `⌘K` or `Ctrl+K`
+**Then** the command palette opens with Aller à, Actions and Comptes, `Enter` runs the highlighted item, and `Esc` closes it (UX-DR7)
+
+**Given** any page outside a text field
+**When** I type `g c` or `g o`
+**Then** the accounts page or the transactions page opens
+
+**Given** a transactions list
+**When** I press `j`/`k` or the arrows, `e` or `Enter`, `/`
+**Then** focus moves between rows, the focused transaction's sheet opens, and the search filter takes focus
+
+**Given** any page
+**When** I press `?`
+**Then** a dialog lists every shortcut, and each shortcut also has a visible equivalent whose tooltip shows it
+
+**Given** focus inside a text field
+**When** I type a single letter
+**Then** no shortcut fires
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 2: Import bank files
 
@@ -507,6 +575,10 @@ So that I don't type transactions by hand.
 **When** the tests run
 **Then** both parse to the expected transactions
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 2.2: Use the OFX ledger balance
 
 As the household's administrator,
@@ -528,6 +600,10 @@ So that Archant shows the same balance as my bank.
 **Given** an OFX file without `LEDGERBAL`
 **When** it is imported
 **Then** no snapshot is created
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 2.3: Import a CSV file with a saved mapping
 
@@ -567,6 +643,10 @@ So that later imports of the same account take one click.
 **When** it is parsed
 **Then** accented labels come out correctly
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 2.4: Import a QIF file
 
 As the household's administrator,
@@ -589,6 +669,10 @@ So that I can use banks or older tools that only export QIF.
 **When** I upload it
 **Then** it is refused with `INVALID_IMPORT_FILE` and a message naming the type
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 2.5: Import history and revert
 
 As the household's administrator,
@@ -610,6 +694,10 @@ So that a wrong file never pollutes my history for good.
 **Given** a reverted import
 **When** I import the same file again
 **Then** its transactions are created again
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 3: Protected access and deployment
 
@@ -645,6 +733,10 @@ So that nobody else can read my bank data.
 **When** Better Auth's rate limit is reached
 **Then** further attempts are refused for the configured window
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 3.2: Sign out, change password, reset from the server
 
 As the household's administrator,
@@ -666,6 +758,10 @@ So that I stay in control of my instance.
 **Given** shell access to the server
 **When** I run `pnpm api reset-password <email>`
 **Then** it prompts for a new password, updates it, revokes all sessions, and never prints the password
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 3.3: Run Archant from one container
 
@@ -701,6 +797,10 @@ So that I can host Archant anywhere a container runs.
 **When** CI runs
 **Then** it builds the image and checks the health endpoint of the running container
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ## Epic 4: Classify transactions
 
 The user sorts transactions into categories, merchants and tags, one by one or in bulk, and filters on them.
@@ -731,6 +831,10 @@ So that I can classify spending from day one.
 **When** I merge one into the other
 **Then** all transactions of the first move to the second and the first is deleted
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 4.2: Categorise transactions and filter by category
 
 As the household's administrator,
@@ -752,6 +856,10 @@ So that I know what I spend on.
 **Given** a transaction whose category was set by hand
 **When** it is saved
 **Then** the category is marked as set by the user, for the rules of Epic 8 to respect
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 4.3: Merchants
 
@@ -775,6 +883,10 @@ So that "CB CARREFOUR 1234" and "CARREFOUR MARKET" read as one shop.
 **When** I filter by merchant
 **Then** only its transactions are shown
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 4.4: Tags
 
 As the household's administrator,
@@ -797,6 +909,10 @@ So that I can follow a trip or a project across categories.
 **When** I filter by a tag
 **Then** only tagged transactions are shown
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 4.5: Bulk edit
 
 As the household's administrator,
@@ -808,12 +924,16 @@ So that cleaning up an import takes seconds.
 **Acceptance Criteria:**
 
 **Given** the transactions list
-**When** I select rows, or all rows matching the current filters
-**Then** a bar shows the selection count and the bulk actions
+**When** I select rows with their checkbox or `x`, extend the selection with `Shift`, or select all rows matching the current filters
+**Then** a bar shows the selection count and the bulk actions, and `Esc` clears the selection (UX-DR7, UX-DR9)
 
 **Given** a selection
 **When** I set a category, a merchant, add tags, exclude from reports, or delete
 **Then** the change applies to every selected transaction in one database transaction, and balances are recomputed after a delete
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 5: Internal transfers
 
@@ -845,6 +965,10 @@ So that it no longer looks like spending.
 **When** I filter by direction income, expense or transfer
 **Then** internal moves and credit card payments appear under transfer, using the same `direction` function as the dashboard
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 5.2: Automatic transfer matching
 
 As the household's administrator,
@@ -870,6 +994,10 @@ So that I don't match them by hand.
 **Given** the matching logic
 **When** its tests run
 **Then** every branch is covered, including a candidate at exactly 4 days and one at 5
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 6: Dashboard
 
@@ -897,6 +1025,10 @@ So that I know where I stand.
 **When** totals are computed
 **Then** it is left out, and a notice names it
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 6.2: Monthly income and expenses by category
 
 As the household's administrator,
@@ -918,6 +1050,10 @@ So that I see where my money goes.
 **Given** a category line
 **When** I click it
 **Then** the transactions page opens filtered on that category and month
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 7: Loans, investments and physical assets
 
@@ -945,6 +1081,10 @@ So that my debt counts in my net worth.
 **When** I record a balance snapshot from my lender's statement
 **Then** the outstanding balance follows it
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 7.2: Investment accounts (PEA)
 
 As the household's administrator,
@@ -967,6 +1107,10 @@ So that my investments count in my net worth without entering each trade.
 **When** it is matched
 **Then** its kind is investment contribution, its outflow counts as an expense in the monthly cash flow, and its inflow on the investment account counts in neither total
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 7.3: Property and vehicle accounts
 
 As the household's administrator,
@@ -984,6 +1128,10 @@ So that net worth includes them.
 **Given** a property or a vehicle
 **When** I record a new estimated value
 **Then** the history follows it, with no transaction needed
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 8: Rules
 
@@ -1011,6 +1159,10 @@ So that recurring shops are categorised without my help.
 **When** a rule matches it
 **Then** the category is left unchanged
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 8.2: More rule conditions and actions
 
 As the household's administrator,
@@ -1024,6 +1176,10 @@ So that one rule cleans up a transaction completely.
 **Given** the rule form
 **When** I add conditions on merchant, category, notes or tag, and actions set merchant, add tags, rename, exclude, or mark as transfer
 **Then** each is applied as described, and fields set by hand are left unchanged
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 8.3: Apply rules to existing transactions
 
@@ -1042,6 +1198,10 @@ So that a new rule cleans up my history too.
 **Given** the preview
 **When** I confirm
 **Then** the changes are written in one database transaction and the run is recorded with its count
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 8.4: Categorisation provider extension point
 
@@ -1064,6 +1224,10 @@ So that an AI model can propose categories without touching the rules engine.
 **Given** the extension point
 **When** its tests run
 **Then** they use a fake provider and reach no network
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ## Epic 9: Recurring transactions
 
@@ -1090,6 +1254,10 @@ So that I don't list them by hand.
 **Given** the detection logic
 **When** its tests run
 **Then** every branch is covered, including month-end days such as the 31st
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 9.2: Recurring transactions page
 
@@ -1121,6 +1289,10 @@ So that I see what is coming.
 **When** detection runs
 **Then** it is marked inactive
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ## Epic 10: Enable Banking synchronisation
 
 Accounts update themselves every day from the bank, and converge with the history already imported from files.
@@ -1151,6 +1323,10 @@ So that Archant can read my accounts.
 **When** it receives a response
 **Then** the response is parsed by a Zod schema, and tests use recorded fixtures with no network access
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 10.2: Link bank accounts
 
 As the household's administrator,
@@ -1168,6 +1344,10 @@ So that a bank account continues an account I already fed with files.
 **Given** a linked account
 **When** its balance comes from the bank
 **Then** that balance is the reference, and the history is computed backward from it
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 10.3: Sync transactions and balances
 
@@ -1199,6 +1379,10 @@ So that I never import a file again.
 **When** its page shows
 **Then** it displays the last successful sync time and the last error
 
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
 ### Story 10.4: Pending transactions
 
 As the household's administrator,
@@ -1220,6 +1404,10 @@ So that my balance is current, without duplicates later.
 **Given** a pending transaction absent from two consecutive syncs and not booked
 **When** sync runs
 **Then** it is deleted
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
 ### Story 10.5: Consent renewal and disconnection
 
@@ -1250,3 +1438,8 @@ So that sync never stops silently.
 **Given** a connection
 **When** I disconnect it
 **Then** the session is revoked at Enable Banking, stored secrets are deleted, and its accounts stay as manual accounts, and their balance history is unchanged
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+

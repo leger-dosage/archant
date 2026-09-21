@@ -13,3 +13,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4-balance-snapshots.md`
   summary: Test the account page's Soldes tab, snapshot dialog and `tab` search param with a component or end-to-end harness.
   evidence: The web package tests `lib/` only; reverting the tab wiring or the dialog's delete path passes every test today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-list-and-filter-transactions-across-accounts.md`
+  summary: Command palette on `⌘K` and the keyboard shortcuts of `EXPERIENCE.md`, now Story 1.8.
+  evidence: A global layer serving every page, not the list; `x` selection has no action before Story 4.5's bulk bar. Split by the project owner on 2026-09-21.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7-end-to-end-tests-for-the-interface.md`
+  summary: Test that a `PORT` written only in the root `.env` becomes the proxy target of `vite.config.ts`.
+  evidence: The suite passes `PORT` through `process.env`, which `loadEnv` overlays on the files; pointing `loadEnv` at the package directory passes every test. A pure `apiTarget(envDir, mode)` tested by Vitest would cover it.

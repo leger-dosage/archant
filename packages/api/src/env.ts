@@ -25,6 +25,9 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 			// in Paris lands on the right date whatever the server's clock zone.
 			APP_TIMEZONE: z.string().refine(isTimeZone).default("Europe/Paris"),
 			LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
+			// Also read by packages/web/vite.config.ts as its proxy target: one
+			// variable names the API's port in both processes, so they cannot drift.
+			PORT: z.coerce.number().int().min(1).max(65_535).default(8787),
 		},
 		runtimeEnv,
 		emptyStringAsUndefined: true,
