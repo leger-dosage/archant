@@ -12,6 +12,7 @@ import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/ba
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
+import { AccountSettings } from "@/components/AccountSettings";
 import { BalanceChart } from "@/components/BalanceChart";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
@@ -19,6 +20,7 @@ import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,7 +33,7 @@ import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots"] as const;
+const ACCOUNT_TABS = ["transactions", "snapshots", "settings"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -280,7 +282,10 @@ function AccountPage() {
 			{account.data !== undefined && (
 				<div className="flex flex-wrap items-end justify-between gap-4">
 					<div className="flex min-w-0 flex-col gap-1">
-						<h1 className="truncate text-3xl font-semibold tracking-tight">{account.data.name}</h1>
+						<h1 className="flex min-w-0 items-center gap-3 text-3xl font-semibold tracking-tight">
+							<span className="truncate">{account.data.name}</span>
+							{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
+						</h1>
 						<p className="text-sm text-muted-foreground">
 							{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
 						</p>
@@ -300,6 +305,7 @@ function AccountPage() {
 				<TabsList aria-label={t("accountDetail.tabs.label")}>
 					<TabsTrigger value="transactions">{t("accountDetail.tabs.transactions")}</TabsTrigger>
 					<TabsTrigger value="snapshots">{t("accountDetail.tabs.snapshots")}</TabsTrigger>
+					<TabsTrigger value="settings">{t("accountDetail.tabs.settings")}</TabsTrigger>
 				</TabsList>
 				<TabsContent value="transactions">
 					<TransactionsPanel
@@ -320,6 +326,9 @@ function AccountPage() {
 						onAdd={openNewSnapshot}
 						onOpen={(snapshot) => setSnapshotDialog({ open: true, snapshot })}
 					/>
+				</TabsContent>
+				<TabsContent value="settings">
+					{account.data !== undefined && <AccountSettings account={account.data} />}
 				</TabsContent>
 			</Tabs>
 

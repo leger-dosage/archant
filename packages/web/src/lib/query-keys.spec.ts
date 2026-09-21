@@ -50,3 +50,19 @@ describe("queryKeys.transactions.all", () => {
 		expect(client.getQueryState(account)?.isInvalidated).toBe(true);
 	});
 });
+
+describe("queryKeys.transactions.ofAccount", () => {
+	it("prefixes every page of its account's list, and only those", () => {
+		const client = new QueryClient();
+		const own = queryKeys.transactions.byAccount("a", 1);
+		const other = queryKeys.transactions.byAccount("b", 1);
+		client.setQueryData(own, { items: [] });
+		client.setQueryData(other, { items: [] });
+
+		// What deleting account `a` does through `useDeleteAccount`.
+		client.removeQueries({ queryKey: queryKeys.transactions.ofAccount("a") });
+
+		expect(client.getQueryState(own)).toBeUndefined();
+		expect(client.getQueryState(other)).toBeDefined();
+	});
+});

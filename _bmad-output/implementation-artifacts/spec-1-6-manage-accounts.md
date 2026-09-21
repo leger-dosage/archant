@@ -2,7 +2,8 @@
 title: 'Story 1.6: Manage accounts'
 type: 'feature'
 created: '2026-09-22'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '4dd2a6ff00e8ab9a2bae95518eddf4909cf65902'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -71,13 +72,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/data/schema/accounts.ts`, `drizzle/0004_*.sql` -- both columns.
-- [ ] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- tests first: `deleteAccount` removes every row of the account in the four tables, leaves a second account intact, throws `NOT_FOUND`; then the code.
-- [ ] `packages/api/src/app.spec.ts`, `schemas/accounts.ts`, `services/accounts.ts`, `routes/accounts.ts` -- tests first for every matrix row and the totals rule; then `PATCH`, `DELETE` and the flags.
-- [ ] `packages/web/src/hooks/useInvalidateAccount.ts` (new), `useAccounts.ts`, `useAccount.ts` -- `useUpdateAccount`, `useDeleteAccount`, shared invalidation.
-- [ ] `packages/web/src/components/AccountSettings.tsx` (new), `routes/comptes.$accountId.tsx` -- Paramètres tab, form, switch, deactivate/reactivate, delete confirmation, badge in the header.
-- [ ] `packages/web/src/routes/comptes.index.tsx`, `AccountGroups.tsx`, `AppSidebar.tsx`, `operations.tsx`, `locales/fr.json` -- hide inactive, `showInactive` toggle, badge, excluded marker.
-- [ ] `packages/web/e2e/manage-accounts.spec.ts` (new) -- Playwright for each acceptance criterion below and each interface row of the matrix.
+- [x] `packages/data/schema/accounts.ts`, `drizzle/0004_*.sql` -- both columns.
+- [x] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- tests first: `deleteAccount` removes every row of the account in the four tables, leaves a second account intact, throws `NOT_FOUND`; then the code.
+- [x] `packages/api/src/app.spec.ts`, `schemas/accounts.ts`, `services/accounts.ts`, `routes/accounts.ts` -- tests first for every matrix row and the totals rule; then `PATCH`, `DELETE` and the flags.
+- [x] `packages/web/src/hooks/useInvalidateAccount.ts` (new), `useAccounts.ts`, `useAccount.ts` -- `useUpdateAccount`, `useDeleteAccount`, shared invalidation.
+- [x] `packages/web/src/components/AccountSettings.tsx` (new), `routes/comptes.$accountId.tsx` -- Paramètres tab, form, switch, deactivate/reactivate, delete confirmation, badge in the header.
+- [x] `packages/web/src/routes/comptes.index.tsx`, `AccountGroups.tsx`, `AppSidebar.tsx`, `operations.tsx`, `locales/fr.json` -- hide inactive, `showInactive` toggle, badge, excluded marker.
+- [x] `packages/web/e2e/manage-accounts.spec.ts` (new) -- Playwright for each acceptance criterion below and each interface row of the matrix.
 
 **Acceptance Criteria:**
 - Given an account, when I change its name or subtype in Paramètres and save, then the header, sidebar and `/comptes` show the change after reload.
@@ -88,9 +89,38 @@ context:
 
 ## Implementation Notes
 
+- `useDeleteAccount` navigates to `/comptes` before removing the account's queries: in the other order the still-mounted page refetched the deleted account and showed a NOT_FOUND toast. The e2e test records every `GET /api/accounts/<id>` after confirming and expects none.
+- The « Inactif » badge sits inside the account page's `h1`, so its accessible name reads « Nom Inactif » for an inactive account; the existing e2e locators find the header through the `h1`'s parent.
+- « Exclure des rapports » saves with Enregistrer, as the transaction sheet's switch does; deactivation saves at once, since it loses nothing and is undone in one click.
+- French plural: one transaction reads « … et son opération ? »; zero has its own key.
+- `useInvalidateAccount` is now one shared hook; snapshot writes also refresh `transactions.all`, a harmless extra fetch.
+- `accountSettingsFormSchema` lives beside `createAccountSchema` in `schemas/accounts.ts`, so the form and the API share the name rule.
+- Verified in Chromium on a throwaway database: excluding « Livret A » drops Actifs from 8 189,10 € to 3 189,10 € with the eye-off marker; deactivating « Compte joint » hides it from the sidebar and the `/operations` account filter while its 3 transactions stay listed; the delete dialog reads « Supprimer le compte « Compte joint » et ses 3 opérations ? » with focus on Annuler. Light 1280 px and dark 600 px checked.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Location | Finding | Verdict | Evidence | Route |
+|---|--------|----------|---------|---------|----------|-------|
+| 1 | blind, edge | `TransactionFilters.tsx` `AccountEditor` | An inactive account in `?account=` stays selected but is not offered, so Appliquer re-sends it and it cannot be unchecked | medium | `selected` starts from `filters.account`; the checkboxes list `offered` only. | patch |
+| 2 | blind | `manage-accounts.spec.ts` | `toHaveCount(0)` on the NOT_FOUND toast passes at once, so it cannot catch a refetch of the deleted account | medium | A retrying assertion that already holds returns immediately. | patch |
+| 3 | blind | `services/accounts.ts` `AccountSummary.active` | Comment says the API hides inactive accounts; `listAccounts` returns them | low | Direct correction of a comment. | patch |
+| 4 | verification | `drizzle/0004_manage_accounts.sql` | `DEFAULT false` on `active` passes every suite | medium | `createAccount` writes both flags explicitly; `migrate.spec.ts` never reads them. | patch |
+| 5 | verification | `query-keys.ts` `ofAccount` | No test checks it prefixes `byAccount` | low | `query-keys.spec.ts` checks the other prefixes; a wrong key leaves stale pages silently. | patch |
+| 6 | blind, edge | `comptes.index.tsx`, `AppSidebar.tsx` | Every account inactive leaves `/comptes` with the switch only and the sidebar empty | low | Real, but a household deactivating every account is rare and the switch is on screen. Rejected. |  |
+| 7 | blind | `AccountSettings.tsx` `DeleteSection` | Delete stays disabled when the count request fails | low | The Opérations tab shows the same failure with a retry; rejected. |  |
+| 8 | blind | `schemas/accounts.ts` `updateAccountSchema` | Unknown keys such as `currency` are stripped silently | low | Same as every request schema since Story 1.2; rejected. |  |
+| 9 | blind | `schemas/accounts.ts` | Empty-patch error has an empty path and no translation | low | The form cannot send an empty patch; API-only. Rejected. |  |
+| 10 | blind | `AccountGroups.tsx` | Shown inactive rows are not muted, so rows no longer sum to the total | low | They carry « Inactif »; totals follow Sure. Rejected. |  |
+| 11 | blind | `services/*` | An inactive account still accepts writes | false | The frozen intent says its page stays reachable and writable. |  |
+| 12 | blind | `ledger.ts` `deleteAccount` | `_options` unused | false | Same signature as `createAccount`, `deleteTransaction` and the snapshot writers (AD-2). |  |
+| 13 | blind | `ledger.spec.ts` | No guard against a future child table | low | Speculative until Epic 2 adds `entry_keys`; rejected. |  |
+| 14 | blind | web | No Vitest for the inactive filters and field-error routing | low | Playwright covers each; rejected. |  |
+| 15 | blind | `AccountSettings.tsx` | Form and activation button can PATCH concurrently | low | Last write wins on distinct fields; rejected. |  |
+| 16 | blind | `manage-accounts.spec.ts` | Muted amount asserted through a Tailwind class | low | Story 1.5's tests do the same; rejected. |  |
+| 17 | blind | review diff | Spec missing from the diff | false | Left out on purpose; it is the claims file. |  |
+| 18 | edge | `services/accounts.ts` `updateAccount` | Select and update not atomic | false | A concurrent delete makes `getAccount` answer `404 NOT_FOUND`, the right answer. |  |
 
 ## Design Notes
 

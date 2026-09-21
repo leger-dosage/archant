@@ -15,7 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
 
-export type FilterAccount = { id: string; name: string };
+/**
+ * An account as the filters know it. An inactive one is not offered in the
+ * editor, but its chip, from an older link, still shows its name.
+ */
+export type FilterAccount = { id: string; name: string; active: boolean };
 
 /** What an editor sets: its own params, `undefined` to clear one. */
 export type FilterChange = Partial<Filters>;
@@ -68,6 +72,10 @@ function AccountEditor({
 }: EditorProps & { accounts: readonly FilterAccount[] }) {
 	const { t } = useTranslation();
 	const [selected, setSelected] = useState(() => new Set(filters.account ?? []));
+	// An inactive account already in the filter stays offered, so it can be
+	// unchecked; read from the initial selection so it does not vanish once it is.
+	const [initial] = useState(() => new Set(filters.account ?? []));
+	const offered = accounts.filter((account) => account.active || initial.has(account.id));
 
 	return (
 		<EditorForm
@@ -77,12 +85,12 @@ function AccountEditor({
 				<legend className="mb-1 text-xs font-medium text-muted-foreground">
 					{t("operations.editor.accounts")}
 				</legend>
-				{accounts.length === 0 && (
+				{offered.length === 0 && (
 					<p className="text-muted-foreground">{t("operations.editor.noAccount")}</p>
 				)}
 				{/* Scrolls on its own, so Appliquer stays in view however many accounts there are. */}
 				<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
-					{accounts.map((account) => (
+					{offered.map((account) => (
 						<label key={account.id} className="flex min-h-6 items-center gap-2">
 							<input
 								type="checkbox"

@@ -14,6 +14,14 @@ export const accounts = sqliteTable(
 		type: text("type").$type<AccountType>().notNull(),
 		subtype: text("subtype").$type<AccountSubtype>(),
 		currency: text("currency").notNull(),
+		// Deactivated rather than deleted: hidden from the lists, history kept,
+		// reactivable. Left out of its group's total, as in Sure.
+		active: integer("active", { mode: "boolean" }).notNull().default(true),
+		// Still listed, but left out of its group's total and, with Epic 6, of
+		// every report (AD-9).
+		excludedFromReports: integer("excluded_from_reports", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

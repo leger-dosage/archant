@@ -1,11 +1,10 @@
 import type { TransactionData } from "@/hooks/useTransactions";
 
-import { EyeOffIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { Money } from "@/components/Money";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { dayHeading } from "@/lib/dates";
 
 type TransactionListProps = {
@@ -43,28 +42,10 @@ function DayTitle({ date }: { date: string }) {
 	return <>{t(`transactions.days.${heading.kind}`)}</>;
 }
 
-/**
- * The eye-off icon of a transaction left out of reports (EXPERIENCE.md). The
- * text is in the row's name too, so the meaning never rests on the icon.
- */
-function ExcludedMarker() {
-	const { t } = useTranslation();
-
-	return (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<span className="inline-flex text-muted-foreground">
-					<EyeOffIcon className="size-3.5" aria-hidden="true" />
-					<span className="sr-only">{t("transactions.excluded")}</span>
-				</span>
-			</TooltipTrigger>
-			<TooltipContent>{t("transactions.excluded")}</TooltipContent>
-		</Tooltip>
-	);
-}
-
 /** Transactions, most recent first, under a header per day. */
 export function TransactionList({ items, onOpen, showAccount = false }: TransactionListProps) {
+	const { t } = useTranslation();
+
 	return (
 		<div className="flex flex-col gap-4">
 			{groupByDay(items).map((day) => {
@@ -98,7 +79,7 @@ export function TransactionList({ items, onOpen, showAccount = false }: Transact
 											</span>
 										)}
 										<span className="flex shrink-0 items-center gap-1.5">
-											{item.excluded && <ExcludedMarker />}
+											{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
 											<Money
 												amount={item.amount}
 												currency={item.currency}

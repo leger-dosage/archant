@@ -11,12 +11,17 @@ import { isCurrencyCode, parseAmount } from "@archant/data/money";
 
 export const EARLIEST_OPENING_DATE = "1900-01-01";
 
+export const ACCOUNT_NAME_MAX_LENGTH = 100;
+
+// One rule for creating and renaming, so a name the one accepts the other does too.
+const accountName = z.string().trim().min(1).max(ACCOUNT_NAME_MAX_LENGTH);
+
 // Shared with the interface, whose form resolver runs this same schema, so a
 // value the form accepts is a value the API accepts, with the same field codes.
 // Custom issues carry their field code as their message (lib/zod-error.ts).
 export const createAccountSchema = z
 	.object({
-		name: z.string().trim().min(1).max(100),
+		name: accountName,
 		type: z.enum(ACCOUNT_TYPE_IDS),
 		subtype: z.enum(ACCOUNT_SUBTYPES).nullable(),
 		currency: z.custom<CurrencyCode>(
@@ -62,3 +67,33 @@ export const createAccountSchema = z
 
 export type CreateAccountInput = z.input<typeof createAccountSchema>;
 export type CreateAccountRequest = z.output<typeof createAccountSchema>;
+
+/**
+ * An edit of an account's settings: any non-empty subset of these fields.
+ * Type, currency and opening balance are fixed at creation. Whether `subtype`
+ * fits the account needs its stored type, so the service checks it and raises
+ * the same `invalid_subtype` field error as creation.
+ */
+export const updateAccountSchema = z
+	.object({
+		name: accountName.optional(),
+		subtype: z.enum(ACCOUNT_SUBTYPES).nullable().optional(),
+		active: z.boolean().optional(),
+		excludedFromReports: z.boolean().optional(),
+	})
+	.refine((value) => Object.values(value).some((field) => field !== undefined), "empty_patch");
+
+export type UpdateAccountInput = z.input<typeof updateAccountSchema>;
+export type UpdateAccountRequest = z.output<typeof updateAccountSchema>;
+
+/**
+ * The Paramètres form: the name and subtype as typed, and the exclusion
+ * switch, checked the way the API checks them.
+ */
+export const accountSettingsFormSchema = z.object({
+	name: accountName,
+	subtype: z.enum(ACCOUNT_SUBTYPES).nullable(),
+	excludedFromReports: z.boolean(),
+});
+
+export type AccountSettingsFormInput = z.input<typeof accountSettingsFormSchema>;

@@ -197,6 +197,8 @@ export async function createAccount(
 		type: input.type,
 		subtype: input.subtype,
 		currency: input.currency,
+		active: true,
+		excludedFromReports: false,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -433,6 +435,40 @@ export async function deleteTransaction(
 			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
 			await tx.delete(entries).where(eq(entries.id, entryId));
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Deletes an account and everything it holds, as one write: its transactions,
+ * all its entries, snapshots and opening anchor included, its daily balances,
+ * then the account. Children go first, since their foreign keys restrict.
+ * Every delete selects by `account_id` through a subquery, never a list of
+ * ids, so a history of 50,000 transactions binds one parameter, not 50,000.
+ * When transfers arrive (Epic 5), the ones touching the account go first,
+ * leaving the other side an ordinary transaction, as Sure's `cleanup_transfers`.
+ */
+export async function deleteAccount(
+	deps: ServiceDeps,
+	accountId: string,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			await accountWithOpeningDate(tx, accountId);
+
+			await tx
+				.delete(transactions)
+				.where(
+					inArray(
+						transactions.entryId,
+						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
+					),
+				);
+			await tx.delete(entries).where(eq(entries.accountId, accountId));
+			await tx.delete(balances).where(eq(balances.accountId, accountId));
+			await tx.delete(accounts).where(eq(accounts.id, accountId));
 		},
 		{ behavior: "immediate" },
 	);

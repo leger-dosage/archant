@@ -137,6 +137,17 @@ describe("runMigrations", () => {
 		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
 	});
 
+	it("starts an account active and included in reports", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+
+		await expect(
+			database.get<{ active: number; excluded: number }>(
+				sql`select active, excluded_from_reports as excluded from accounts where id = 'a1'`,
+			),
+		).resolves.toEqual({ active: 1, excluded: 0 });
+	});
+
 	it("refuses a transaction row without its entry", async () => {
 		const database = await migrated();
 

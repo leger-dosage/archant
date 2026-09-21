@@ -30,6 +30,8 @@ export const queryKeys = {
 		/** A page of the cross-account list under its filters. */
 		list: (filters: TransactionFilters, page: number) =>
 			["transactions", "list", filters, page] as const,
+		/** Prefixes every page of one account's list. */
+		ofAccount: (accountId: string) => ["transactions", "account", accountId] as const,
 		byAccount: (accountId: string, page: number) =>
 			["transactions", "account", accountId, page] as const,
 	},
