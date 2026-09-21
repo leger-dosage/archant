@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push to a pull request makes the previous run pointless. Every push to
+# `main` keeps its own verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # One job per gate command: a red pipeline names the failing gate without
+  # anyone opening the logs.
+  gate:
+    name: ${{ matrix.command }}
+    runs-on: ubuntu-latest
+    # A hung server would otherwise hold the runner for six hours.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        command: [lint:code, lint:format, typecheck, test]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ${{ matrix.command }}
+      # AGENTS.md: the gate must leave every tracked file as it found it.
+      - run: git diff --exit-code
+
+  e2e:
+    name: test:e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Playwright starts the API and the built interface itself, so nothing
+      # else has to be booted here. Only the browser is missing from the runner.
+      - run: pnpm --filter @archant/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      # `vite build` regenerates the tracked routeTree.gen.ts; it must not change.
+      - run: git diff --exit-code
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report
+          path: packages/web/playwright-report
+          retention-days: 7

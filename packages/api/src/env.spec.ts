@@ -13,6 +13,12 @@ describe("validateEnv", () => {
 		expect(env.DATABASE_AUTH_TOKEN).toBeUndefined();
 		expect(env.APP_TIMEZONE).toBe("Europe/Paris");
 		expect(env.LOG_LEVEL).toBe("info");
+		expect(env.PORT).toBe(8787);
+	});
+
+	it("reads the port as a number and names one out of range", () => {
+		expect(validateEnv({ DATABASE_URL: "file:x.db", PORT: "8788" }).PORT).toBe(8788);
+		expect(() => validateEnv({ DATABASE_URL: "file:x.db", PORT: "70000" })).toThrow(/PORT/);
 	});
 
 	it("names a time zone Intl does not know", () => {

@@ -28,6 +28,7 @@ pnpm lint:code
 pnpm lint:format
 pnpm typecheck
 pnpm test
+pnpm test:e2e
 ```
 
 Do not modify tracked files after this sequence. Never add `--if-present` to the root scripts: a package without a script is a packaging mistake that must fail loudly, not be skipped silently.
@@ -97,6 +98,8 @@ This application holds bank transactions. The bar is higher than the usual side 
 Vitest for unit and integration tests, Playwright for end-to-end. Coverage is expected to be high but stays pragmatic: the money paths (import, deduplication, balance computation, currency conversion, provider sync) are covered to the branch; wiring and presentational components are not padded with tests that assert nothing.
 
 No test reaches the network. An unmocked request fails the test that sent it, naming the URL.
+
+End-to-end tests live in `packages/web/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`. `pnpm test:e2e` starts its own API on port 8788, against a fresh migrated SQLite file, and serves the built interface on port 4174, so it runs beside the dev servers without touching `local.db`. Tests create their own accounts through the API, then drive the interface by role and accessible name.
 
 ## Deployment
 
