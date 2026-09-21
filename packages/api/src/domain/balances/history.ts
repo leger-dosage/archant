@@ -1,4 +1,3 @@
-import type { BalancePeriod } from "../../schemas/balances.ts";
 import type { IsoDate } from "../dates.ts";
 import type { DailyBalance } from "./forward.ts";
 
@@ -7,23 +6,16 @@ import { toMinorUnits } from "@archant/data/money";
 
 import { addDays, addMonths, maxDate } from "../dates.ts";
 
-const PERIOD_MONTHS: Record<Exclude<BalancePeriod, "all">, number> = {
-	"1M": 1,
-	"3M": 3,
-	"6M": 6,
-	"1Y": 12,
-};
-
 export type DateRange = { from: IsoDate; to: IsoDate };
 
 /**
- * The days a period covers: from `today` minus its months, or from the opening
- * date for `all`, to `today`. Never before the opening date, since a line
+ * The days a period covers: from `today` minus `months` calendar months, or
+ * from the opening date for `all`, to `today`. Never before the opening date, since a line
  * before the account existed would read as a real balance. `null` when the
  * account opens after today and the period holds no day.
  */
 export function periodRange(
-	period: BalancePeriod,
+	months: number | "all",
 	today: IsoDate,
 	openingDate: IsoDate,
 ): DateRange | null {
@@ -31,7 +23,7 @@ export function periodRange(
 		return null;
 	}
 
-	const start = period === "all" ? openingDate : addMonths(today, -PERIOD_MONTHS[period]);
+	const start = months === "all" ? openingDate : addMonths(today, -months);
 
 	return { from: maxDate(start, openingDate), to: today };
 }

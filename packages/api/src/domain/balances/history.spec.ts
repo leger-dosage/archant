@@ -8,21 +8,21 @@ import { balanceChange, fillDays, periodRange } from "./history.ts";
 
 describe("periodRange", () => {
 	it("goes back one, three, six or twelve calendar months from today", () => {
-		expect(periodRange("1M", "2026-09-21", "2026-01-10")).toEqual({
+		expect(periodRange(1, "2026-09-21", "2026-01-10")).toEqual({
 			from: "2026-08-21",
 			to: "2026-09-21",
 		});
-		expect(periodRange("3M", "2026-09-21", "2020-01-01")?.from).toBe("2026-06-21");
-		expect(periodRange("6M", "2026-09-21", "2020-01-01")?.from).toBe("2026-03-21");
-		expect(periodRange("1Y", "2026-09-21", "2020-01-01")?.from).toBe("2025-09-21");
+		expect(periodRange(3, "2026-09-21", "2020-01-01")?.from).toBe("2026-06-21");
+		expect(periodRange(6, "2026-09-21", "2020-01-01")?.from).toBe("2026-03-21");
+		expect(periodRange(12, "2026-09-21", "2020-01-01")?.from).toBe("2025-09-21");
 	});
 
 	it("clamps to the end of a shorter month", () => {
-		expect(periodRange("1M", "2026-03-31", "2020-01-01")?.from).toBe("2026-02-28");
+		expect(periodRange(1, "2026-03-31", "2020-01-01")?.from).toBe("2026-02-28");
 	});
 
 	it("never starts before the opening date", () => {
-		expect(periodRange("6M", "2026-09-21", "2026-09-01")).toEqual({
+		expect(periodRange(6, "2026-09-21", "2026-09-01")).toEqual({
 			from: "2026-09-01",
 			to: "2026-09-21",
 		});
@@ -36,7 +36,7 @@ describe("periodRange", () => {
 	});
 
 	it("holds a single day when the account opened today", () => {
-		expect(periodRange("1M", "2026-09-21", "2026-09-21")).toEqual({
+		expect(periodRange(1, "2026-09-21", "2026-09-21")).toEqual({
 			from: "2026-09-21",
 			to: "2026-09-21",
 		});
