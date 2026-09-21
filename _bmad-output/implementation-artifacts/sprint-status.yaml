@@ -37,7 +37,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   epic-1: in-progress
   1-1-create-an-account-and-see-it-listed: review
-  1-2-record-transactions-by-hand: backlog
+  1-2-record-transactions-by-hand: ready-for-dev
   1-3-daily-balance-history: backlog
   1-4-balance-snapshots: backlog
   1-5-list-and-filter-transactions-across-accounts: backlog
