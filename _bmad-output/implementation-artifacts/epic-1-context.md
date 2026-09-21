@@ -18,13 +18,13 @@ The user creates depository and credit card accounts, records transactions and b
 ## Requirements & Constraints
 
 - Account: name, type, subtype, currency (default EUR), opening balance at a date. Epic 1 types are depository (checking or savings) and credit card. Each type is an asset or a liability. Accounts can be renamed, deactivated (hidden, history kept, reactivable), excluded from reports, and deleted with all their entries after a confirmation stating the count.
-- Transactions: create, edit (date, label, amount, notes), delete, exclude from reports. A transaction dated before the account's opening date is refused with `VALIDATION_ERROR`. Excluded transactions still affect the account balance.
+- Transactions: create, edit (date, label, amount, notes), delete, exclude from reports. The opening balance is an end-of-day balance, as in Sure, so a transaction dated on or before the opening date is refused with `VALIDATION_ERROR`. Excluded transactions still affect the account balance.
 - Snapshot: a balance at a date overrides the computed end-of-day balance from that date on. A second snapshot on the same date replaces the first. The gap between computed and recorded balance is shown.
 - Daily history: recomputed from the earliest affected date to `max(today, latest entry date)` in the same database transaction as the change. A day without entries carries the previous balance. Chart periods: 1 M, 3 M, 6 M, 1 A, Tout.
 - Transaction list: all accounts, most recent first, 50 per page, filters on account, date range, amount range and text in label or notes. With 50,000 transactions in a local SQLite file, the first unfiltered page answers in under 300 ms. Text search uses `LIKE`; FTS5 only if that target fails.
 - Money is never a float: integer minor units plus an ISO 4217 code. No code path assumes EUR.
 - Every boundary input goes through Zod. API errors use closed `AppError` codes; unknown routes answer `404 NOT_FOUND` JSON, unexpected throws a generic `500 INTERNAL_ERROR`. Messages in English.
-- Balance computation is covered to 100% of branches, including a transaction on the opening date, several on one day, and a liability account. No test reaches the network.
+- Balance computation is covered to 100% of branches, including the opening date carrying exactly the opening balance, several on one day, and a liability account. No test reaches the network.
 - Story 1.1 must leave the verification gate in `AGENTS.md` green, with each package holding only the dependencies that story uses.
 
 ## Technical Decisions

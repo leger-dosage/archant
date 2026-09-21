@@ -341,7 +341,7 @@ So that the account reflects what actually happened.
 **When** I press `Esc`
 **Then** I am asked whether to discard them, and `⌘Enter` saves instead (UX-DR4)
 
-**Given** a date before the account's opening date
+**Given** a date on or before the account's opening date (the opening balance is an end-of-day balance, as in Sure)
 **When** I submit the transaction
 **Then** it is refused with `VALIDATION_ERROR`
 
@@ -377,7 +377,7 @@ So that I understand where my money went over time.
 
 **Given** the balance computation
 **When** its unit tests run
-**Then** every branch is covered, including a transaction on the opening date, several transactions on one day, and a liability account
+**Then** every branch is covered, including the opening date carrying exactly the opening balance, several transactions on one day, and a liability account
 
 ### Story 1.4: Balance snapshots
 
@@ -491,7 +491,7 @@ So that I don't type transactions by hand.
 **When** the preview opens
 **Then** every transaction is listed as already present, and confirming creates nothing
 
-**Given** lines dated before the account's opening date
+**Given** lines dated on or before the account's opening date
 **When** the preview opens
 **Then** they are rejected with `BEFORE_OPENING_DATE`, and the preview offers to move the opening date
 
