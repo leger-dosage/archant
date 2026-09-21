@@ -686,6 +686,343 @@ describe("DELETE /api/transactions/:id", () => {
 	});
 });
 
+// The I/O matrix of Story 1.4: checking opened on 2026-01-10 at 1 500,00, a
+// -120,00 on 2026-03-02, and the clock at 2026-09-21.
+const pinned = { openingBalance: "1 500,00", openingDate: "2026-01-10" };
+
+const snapshotItem = z.object({
+	id: z.string(),
+	accountId: z.string(),
+	date: z.string(),
+	balance: z.number(),
+	computed: z.number(),
+	gap: z.number(),
+	currency: z.string(),
+});
+
+const snapshotPage = z.object({
+	data: z.object({
+		items: z.array(snapshotItem),
+		page: z.number(),
+		pageSize: z.number(),
+		total: z.number(),
+	}),
+});
+
+async function openPinned(overrides: Partial<CreateAccountInput> = {}) {
+	const account = await openAccount({ ...pinned, ...overrides });
+	await postTransaction(account.id, { date: "2026-03-02", label: "Courses", amount: "-120,00" });
+
+	return account;
+}
+
+async function postSnapshot(accountId: string, json: Record<string, string>) {
+	return request("POST", `/api/accounts/${accountId}/snapshots`, json);
+}
+
+async function recorded(accountId: string, json: Record<string, string>) {
+	const { status, body } = await postSnapshot(accountId, json);
+
+	expect(status).toBe(201);
+
+	return z.object({ data: snapshotItem }).parse(body).data;
+}
+
+async function snapshotsOf(accountId: string) {
+	const { body } = await request("GET", `/api/accounts/${accountId}/snapshots`);
+
+	return snapshotPage.parse(body).data;
+}
+
+async function balanceOnDay(accountId: string, date: string) {
+	// The chart's data: every day since the opening date.
+	const response = await testClient(buildApp()).api.accounts[":id"].balances.$get({
+		param: { id: accountId },
+		query: { period: "all" },
+	});
+	const { points } = (await response.json()).data;
+
+	return points.find((point) => point.date === date)?.balance;
+}
+
+describe("POST /api/accounts/:id/snapshots", () => {
+	it("pins the balance on its date; the next day continues from it", async () => {
+		const account = await openPinned();
+
+		const response = await testClient(buildApp()).api.accounts[":id"].snapshots.$post({
+			param: { id: account.id },
+			json: { date: "2026-03-05", balance: "2 000,00" },
+		});
+		await postTransaction(account.id, { date: "2026-03-06", label: "Pain", amount: "-50,00" });
+
+		expect(response.status).toBe(201);
+		expect((await response.json()).data).toMatchObject({
+			accountId: account.id,
+			date: "2026-03-05",
+			balance: 200000,
+			computed: 138000,
+			gap: 62000,
+			currency: "EUR",
+		});
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(200000);
+		await expect(balanceOnDay(account.id, "2026-03-06")).resolves.toBe(195000);
+		await expect(balanceOf(account.id)).resolves.toBe(195000);
+	});
+
+	it("keeps the day at the snapshot when a transaction lands on it, and widens the gap", async () => {
+		const account = await openPinned();
+		await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		await postTransaction(account.id, { date: "2026-03-05", label: "Pain", amount: "-30,00" });
+
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(200000);
+		const { items } = await snapshotsOf(account.id);
+		expect(items[0]).toMatchObject({ balance: 200000, computed: 135000, gap: 65000 });
+	});
+
+	it("replaces the snapshot of the same date, keeping its id", async () => {
+		const account = await openPinned();
+		const first = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const second = await recorded(account.id, { date: "2026-03-05", balance: "1 990,00" });
+
+		expect(second).toMatchObject({ id: first.id, balance: 199000 });
+		const list = await snapshotsOf(account.id);
+		expect(list.total).toBe(1);
+		expect(list.items).toHaveLength(1);
+	});
+
+	it("stores a card's amount owed and an overdraft as typed", async () => {
+		const card = await openAccount({
+			...pinned,
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "490,30",
+		});
+		const checking = await openPinned();
+
+		const owed = await recorded(card.id, { date: "2026-03-05", balance: "520,00" });
+		const overdraft = await recorded(checking.id, { date: "2026-03-05", balance: "-80,00" });
+
+		expect(owed).toMatchObject({ balance: 52000, computed: 49030, gap: 52000 - 49030 });
+		expect(overdraft).toMatchObject({ balance: -8000 });
+	});
+
+	it("refuses the opening date and tomorrow on the date field", async () => {
+		const account = await openPinned();
+
+		const opening = await postSnapshot(account.id, { date: "2026-01-10", balance: "1,00" });
+		const tomorrow = await postSnapshot(account.id, { date: "2026-09-22", balance: "1,00" });
+
+		expect(opening.status).toBe(400);
+		expect(errorBody.parse(opening.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "date", code: "not_after_opening_date" }],
+		});
+		expect(tomorrow.status).toBe(400);
+		expect(errorBody.parse(tomorrow.body).error.fields).toEqual([
+			{ path: "date", code: "date_in_future" },
+		]);
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("refuses a balance with too many decimals for the currency", async () => {
+		const account = await openPinned();
+
+		const { status, body } = await postSnapshot(account.id, {
+			date: "2026-03-05",
+			balance: "12,345",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "balance", code: "invalid_amount" },
+		]);
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("refuses a missing balance and a malformed date", async () => {
+		const account = await openPinned();
+
+		const missing = await request("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-03-05",
+		});
+		const malformed = await postSnapshot(account.id, { date: "05/03/2026", balance: "1,00" });
+
+		expect(missing.status).toBe(400);
+		expect(errorBody.parse(missing.body).error.fields).toEqual([
+			{ path: "balance", code: "invalid_type" },
+		]);
+		expect(malformed.status).toBe(400);
+		expect(errorBody.parse(malformed.body).error.fields).toEqual([
+			{ path: "date", code: "invalid_format" },
+		]);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await postSnapshot("nope", { date: "2026-03-05", balance: "1,00" });
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("GET /api/accounts/:id/snapshots", () => {
+	it("lists snapshots most recent first, paged", async () => {
+		const account = await openPinned();
+		const older = await recorded(account.id, { date: "2026-02-20", balance: "1 900,00" });
+		const newer = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const response = await testClient(buildApp()).api.accounts[":id"].snapshots.$get({
+			param: { id: account.id },
+			query: { page: "2", pageSize: "1" },
+		});
+		const all = await snapshotsOf(account.id);
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			items: [older],
+			page: 2,
+			pageSize: 1,
+			total: 2,
+		});
+		expect(all.items.map((item) => item.id)).toEqual([newer.id, older.id]);
+		expect(all).toMatchObject({ page: 1, pageSize: 50 });
+	});
+
+	it("refuses a page size over the maximum", async () => {
+		const account = await openPinned();
+
+		const { status } = await request("GET", `/api/accounts/${account.id}/snapshots?pageSize=201`);
+
+		expect(status).toBe(400);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status } = await request("GET", "/api/accounts/nope/snapshots");
+
+		expect(status).toBe(404);
+	});
+});
+
+describe("PATCH /api/snapshots/:id", () => {
+	it("moves a snapshot earlier and recomputes from the new date", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const response = await testClient(buildApp()).api.snapshots[":id"].$patch({
+			param: { id: snapshot.id },
+			json: { date: "2026-02-20" },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({
+			id: snapshot.id,
+			date: "2026-02-20",
+			balance: 200000,
+			computed: 150000,
+			gap: 50000,
+		});
+		await expect(balanceOnDay(account.id, "2026-02-20")).resolves.toBe(200000);
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(188000);
+	});
+
+	it("changes the balance", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			balance: "-80,00",
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { balance: -8000 } });
+		await expect(balanceOf(account.id)).resolves.toBe(-8000);
+	});
+
+	it("refuses a date another snapshot holds and writes nothing", async () => {
+		const account = await openPinned();
+		await recorded(account.id, { date: "2026-02-20", balance: "1 900,00" });
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			date: "2026-02-20",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "snapshot_exists" }]);
+		const list = await snapshotsOf(account.id);
+		expect(list.total).toBe(2);
+		expect(list.items[0]).toMatchObject({ id: snapshot.id, date: "2026-03-05" });
+		await expect(balanceOf(account.id)).resolves.toBe(200000);
+	});
+
+	it("refuses an invalid balance", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			balance: "abc",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "balance", code: "invalid_amount" },
+		]);
+	});
+
+	it("refuses a malformed date and writes nothing", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			date: "2026-02-5",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "invalid_format" }]);
+		const { items } = await snapshotsOf(account.id);
+		expect(items[0]).toMatchObject({ id: snapshot.id, date: "2026-03-05" });
+	});
+
+	it("answers NOT_FOUND for an unknown snapshot and for a transaction's id", async () => {
+		const account = await openPinned();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const unknown = await request("PATCH", "/api/snapshots/nope", { balance: "1,00" });
+		const transaction = await request("PATCH", `/api/snapshots/${data.id}`, { balance: "1,00" });
+
+		expect(unknown.status).toBe(404);
+		expect(transaction.status).toBe(404);
+	});
+});
+
+describe("DELETE /api/snapshots/:id", () => {
+	it("deletes the snapshot and the balances follow the transactions again", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const response = await testClient(buildApp()).api.snapshots[":id"].$delete({
+			param: { id: snapshot.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { id: snapshot.id } });
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(138000);
+		await expect(balanceOf(account.id)).resolves.toBe(138000);
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("answers NOT_FOUND for an unknown snapshot", async () => {
+		const { status, body } = await request("DELETE", "/api/snapshots/nope");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
 describe("the opening anchor", () => {
 	async function anchorOf(accountId: string) {
 		// Raw on purpose: only the ledger may import the entries table (AD-2).
@@ -723,6 +1060,23 @@ describe("the opening anchor", () => {
 
 		expect(status).toBe(404);
 		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+		await expect(anchorOf(account.id)).resolves.toEqual(anchor);
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+	it("cannot be edited or deleted as a snapshot", async () => {
+		const account = await openAccount();
+		const anchor = await anchorOf(account.id);
+
+		const patched = await request("PATCH", `/api/snapshots/${anchor.id}`, {
+			date: "2026-09-10",
+			balance: "0",
+		});
+		const deleted = await request("DELETE", `/api/snapshots/${anchor.id}`);
+
+		expect(patched.status).toBe(404);
+		expect(errorBody.parse(patched.body).error.code).toBe("NOT_FOUND");
+		expect(deleted.status).toBe(404);
+		expect(errorBody.parse(deleted.body).error.code).toBe("NOT_FOUND");
 		await expect(anchorOf(account.id)).resolves.toEqual(anchor);
 		await expect(balanceOf(account.id)).resolves.toBe(123456);
 	});

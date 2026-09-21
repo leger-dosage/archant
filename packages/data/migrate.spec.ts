@@ -38,9 +38,16 @@ const insertAccount = (database: Database, id: string, type: string, subtype: st
 		sql`insert into accounts (id, name, type, subtype, currency, created_at, updated_at) values (${id}, 'A', ${type}, ${subtype}, 'EUR', 0, 0)`,
 	);
 
-const insertEntry = (database: Database, id: string, kind: string, valuationKind: string | null) =>
+const insertEntry = (
+	database: Database,
+	id: string,
+	kind: string,
+	valuationKind: string | null,
+	date = "2026-09-01",
+	accountId = "a1",
+) =>
 	database.run(
-		sql`insert into entries (id, account_id, kind, valuation_kind, date, amount, currency, created_at, updated_at) values (${id}, 'a1', ${kind}, ${valuationKind}, '2026-09-01', 100, 'EUR', 0, 0)`,
+		sql`insert into entries (id, account_id, kind, valuation_kind, date, amount, currency, created_at, updated_at) values (${id}, ${accountId}, ${kind}, ${valuationKind}, ${date}, 100, 'EUR', 0, 0)`,
 	);
 
 describe("runMigrations", () => {
@@ -82,6 +89,26 @@ describe("runMigrations", () => {
 
 		await expect(insertEntry(database, "e2", "valuation", "opening_anchor")).rejects.toThrow();
 		await expect(insertEntry(database, "e3", "valuation", "reconciliation")).resolves.toBeDefined();
+	});
+
+	it("allows one reconciliation per account and date", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertAccount(database, "a2", "depository", "checking");
+		await insertEntry(database, "e1", "valuation", "reconciliation", "2026-09-05");
+
+		await expect(
+			insertEntry(database, "e2", "valuation", "reconciliation", "2026-09-05"),
+		).rejects.toThrow();
+		await expect(
+			insertEntry(database, "e3", "valuation", "reconciliation", "2026-09-06"),
+		).resolves.toBeDefined();
+		await expect(
+			insertEntry(database, "e4", "valuation", "reconciliation", "2026-09-05", "a2"),
+		).resolves.toBeDefined();
+		await expect(
+			insertEntry(database, "e5", "transaction", null, "2026-09-05"),
+		).resolves.toBeDefined();
 	});
 
 	it("refuses a valuation kind on a transaction and an unknown kind", async () => {

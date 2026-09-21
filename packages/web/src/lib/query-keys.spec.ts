@@ -18,3 +18,19 @@ describe("queryKeys.accounts.balances", () => {
 		expect(client.getQueryState(other)?.isInvalidated).toBe(false);
 	});
 });
+
+describe("queryKeys.accounts.snapshots", () => {
+	it("goes stale when its account is invalidated, and only then", async () => {
+		const client = new QueryClient();
+		const own = queryKeys.accounts.snapshots("a", 1);
+		const other = queryKeys.accounts.snapshots("b", 1);
+		client.setQueryData(own, { items: [] });
+		client.setQueryData(other, { items: [] });
+
+		// What every transaction write does through `useInvalidateAccount`.
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.detail("a") });
+
+		expect(client.getQueryState(own)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+	});
+});
