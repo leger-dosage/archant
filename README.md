@@ -21,11 +21,11 @@ Why these, and what was rejected: [docs/adr/0001-technology-stack.md](docs/adr/0
 
 ## Status
 
-Early. The toolchain, the conventions and the plan are in place; no feature is built yet. Each feature is scoped first, then built along with the packages and dependencies it needs, and nothing is added ahead of that need.
+Early. You can create checking, savings and credit card accounts and see them listed with their balances. Each feature is scoped first, then built along with the packages and dependencies it needs, and nothing is added ahead of that need.
 
 ## Structure
 
-The target layout. The packages do not exist yet: each one arrives with the first feature that needs it.
+The three packages exist; each grows only with the features that need it.
 
 ```
 packages/
@@ -45,9 +45,18 @@ Node.js 24+, pnpm 10+.
 git clone git@github.com:leger-dosage/archant.git
 cd archant
 pnpm install
+cp .env.example .env
 ```
 
-There is nothing to run yet. This section will list the commands to start the application once the first feature ships.
+Then, in separate terminals:
+
+```bash
+pnpm data migrate:local   # creates local.db at the repository root
+pnpm api start:dev        # API on http://localhost:8787
+pnpm web start:dev        # interface on http://localhost:5173, proxies /api to the API
+```
+
+Open http://localhost:5173.
 
 ## Scripts
 

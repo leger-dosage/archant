@@ -13,7 +13,9 @@
 		".agents",
 		".claude",
 		".cursor",
-		"**/drizzle"
+		"**/drizzle",
+		// Written by the TanStack Router plugin on every dev, build and test run.
+		"**/routeTree.gen.ts"
 	],
 	"sortImports": {
 		"customGroups": [

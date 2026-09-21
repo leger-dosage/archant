@@ -8,8 +8,22 @@ packages:
 
 catalog:
   "@t3-oss/env-core": ^0.13.11
+  "@types/node": ^24.10.0
   drizzle-orm: ^0.45.2
   hono: ^4.13.8
   react: 19.3.0
   react-dom: 19.3.0
+  typescript: ~7.0.2
+  vitest: ^5.0.1
   zod: ^4.6.5
+
+# esbuild ships a platform binary through its install script. Without this
+# allowance pnpm skips the script and drizzle-kit fails at run time on a machine
+# that never had the binary in its store.
+onlyBuiltDependencies:
+  - esbuild
+
+# msw's install script only copies its browser service worker into a project
+# that asked for one. Tests here run msw in Node, which needs no worker.
+ignoredBuiltDependencies:
+  - msw

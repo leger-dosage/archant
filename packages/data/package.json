@@ -1,0 +1,32 @@
+{
+	"name": "@archant/data",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./account-types": "./account-types.ts",
+		"./client": "./client.ts",
+		"./migrate": "./migrate.ts",
+		"./money": "./money.ts",
+		"./schema/accounts": "./schema/accounts.ts",
+		"./schema/balances": "./schema/balances.ts",
+		"./schema/entries": "./schema/entries.ts",
+		"./types": "./types.ts"
+	},
+	"scripts": {
+		"generate": "drizzle-kit generate",
+		"migrate:local": "node --env-file-if-exists=../../.env migrate.ts",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@libsql/client": "^0.18.0",
+		"drizzle-orm": "catalog:"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"drizzle-kit": "^0.31.11",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	}
+}

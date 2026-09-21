@@ -1,8 +1,8 @@
 # Tech stack
 
-Versions verified on 16 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
+Versions verified on 21 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
 
-Only the toolchain is installed today. The package tables list what each package will use; a dependency is installed by the first feature that needs it, and one that no feature needs leaves the list.
+The three packages exist since Story 1.1. Rows marked "planned" are not installed yet: a dependency is installed by the first feature that needs it, and one that no feature needs leaves the list.
 
 ## Toolchain
 
@@ -36,24 +36,43 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 
 ## Interface — `@archant/web`
 
-| Package                  | Version | Role                           |
-| ------------------------ | ------- | ------------------------------ |
-| `vite`                   | 8.3.x   | Dev server and build, Rolldown |
-| `react` / `react-dom`    | 19.3.0  | Rendering                      |
-| `@tanstack/react-router` | 1.170.x | Typed routing                  |
-| `@tanstack/react-query`  | 5.103.x | Server state                   |
-| `@playwright/test`       | 1.63.x  | End-to-end tests               |
+| Package                                                         | Version         | Role                                                 |
+| --------------------------------------------------------------- | --------------- | ---------------------------------------------------- |
+| `vite`                                                          | 8.3.x           | Dev server, `/api` proxy and build, Rolldown         |
+| `@vitejs/plugin-react`                                          | 6.1.x           | JSX and fast refresh                                 |
+| `react` / `react-dom`                                           | 19.3.0          | Rendering                                            |
+| `@tanstack/react-router`                                        | 1.170.x         | Typed routing                                        |
+| `@tanstack/router-plugin`                                       | 1.168.x         | File routes, generates `src/routeTree.gen.ts`        |
+| `@tanstack/react-query`                                         | 5.103.x         | Server state                                         |
+| `hono` (client)                                                 | 4.13.x          | Typed API client `hc<AppType>("/api")`               |
+| `zod`                                                           | 4.6.x           | Runs the API's request schemas in forms              |
+| `react-hook-form` / `@hookform/resolvers`                       | 7.88.x / 5.9.x  | Forms, validated by the shared Zod schema            |
+| `i18next` / `react-i18next`                                     | 26.4.x / 17.0.x | French strings from `locales/fr.json`                |
+| `tailwindcss` / `@tailwindcss/vite`                             | 4.3.x           | Styling and the DESIGN.md tokens                     |
+| `shadcn` (CLI, and its `tailwind.css`)                          | 4.21.x          | Copies components into `src/components/ui/`          |
+| `radix-ui`                                                      | 1.6.x           | Primitives behind the shadcn components              |
+| `class-variance-authority`, `cn`, `tw-animate-css`              | —               | shadcn component variants, class merging, animations |
+| `lucide-react`                                                  | 1.47.x          | Icons                                                |
+| `sonner`                                                        | 2.0.x           | Toasts                                               |
+| `react-day-picker`                                              | 10.0.x          | French calendar in date fields                       |
+| `@fontsource-variable/geist`, `@fontsource-variable/geist-mono` | 5.3.x           | Geist and Geist Mono, self-hosted                    |
+| `@playwright/test`                                              | 1.63.x          | End-to-end tests (planned)                           |
 
 ## Server — `@archant/api`
 
-| Package               | Version | Role                       |
-| --------------------- | ------- | -------------------------- |
-| `hono`                | 4.13.x  | Routing and middleware     |
-| `@hono/zod-validator` | 0.9.x   | Request validation         |
-| `better-auth`         | 1.7.x   | Sessions and accounts      |
-| `@t3-oss/env-core`    | 0.13.x  | Environment validation     |
-| `zod`                 | 4.6.x   | Schemas at every boundary  |
-| `vitest`              | 5.0.x   | Unit and integration tests |
+| Package               | Version | Role                                          |
+| --------------------- | ------- | --------------------------------------------- |
+| `hono`                | 4.13.x  | Routing and middleware                        |
+| `@hono/node-server`   | 2.1.x   | Serves the app on Node, port 8787             |
+| `@hono/zod-validator` | 0.9.x   | Request validation, typed for the client      |
+| `drizzle-orm`         | 0.45.x  | Queries in `services/`                        |
+| `pino`                | 10.3.x  | The one logger, with header redaction         |
+| `@t3-oss/env-core`    | 0.13.x  | Environment validation                        |
+| `zod`                 | 4.6.x   | Schemas at every boundary                     |
+| `vitest`              | 5.0.x   | Unit and integration tests                    |
+| `@vitest/coverage-v8` | 5.0.x   | Branch coverage thresholds on the money paths |
+| `msw`                 | 2.15.x  | Fails any test that reaches the network       |
+| `better-auth`         | 1.7.x   | Sessions and accounts (planned, Epic 3)       |
 
 ## Data — `@archant/data`
 

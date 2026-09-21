@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Archant</title>
+		<script>
+			// Applied before the first paint, so a dark-mode user never sees a white
+			// flash. Kept in sync with src/lib/theme.ts, which owns the storage key.
+			(function () {
+				var choice = null;
+				try {
+					choice = localStorage.getItem("archant.theme");
+				} catch (error) {}
+				var dark =
+					choice === "dark" ||
+					(choice !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+				document.documentElement.classList.toggle("dark", dark);
+			})();
+		</script>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="/src/main.tsx"></script>
+	</body>
+</html>

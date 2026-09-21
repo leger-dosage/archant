@@ -1,0 +1,72 @@
+{
+	"app": {
+		"name": "Archant",
+		"pageTitle": "{{page}} · {{app}}"
+	},
+	"common": {
+		"close": "Fermer",
+		"retry": "Réessayer"
+	},
+	"nav": {
+		"accounts": "Comptes",
+		"openMenu": "Ouvrir le menu",
+		"toggleSidebar": "Réduire ou déplier la barre latérale",
+		"mobileTitle": "Navigation",
+		"mobileDescription": "Pages et comptes d'Archant."
+	},
+	"theme": {
+		"label": "Thème",
+		"system": "Système",
+		"light": "Clair",
+		"dark": "Sombre",
+		"current": "{{label}} : {{choice}}"
+	},
+	"accounts": {
+		"title": "Comptes",
+		"add": "Ajouter un compte",
+		"empty": "Aucun compte pour l'instant.",
+		"groups": {
+			"asset": "Actifs",
+			"liability": "Passifs"
+		},
+		"subtypes": {
+			"checking": "Compte courant",
+			"savings": "Épargne",
+			"credit_card": "Carte de crédit"
+		},
+		"excluded_one": "{{count}} compte dans une autre devise n'est pas compté dans le total.",
+		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",
+		"form": {
+			"title": "Ajouter un compte",
+			"description": "Le solde initial est la valeur du compte, ou le montant dû pour une carte, à la date choisie.",
+			"name": "Nom",
+			"type": "Type",
+			"currency": "Devise",
+			"openingBalance": "Solde initial",
+			"openingDate": "Date du solde",
+			"pickDate": "Choisir une date",
+			"submit": "Ajouter le compte",
+			"cancel": "Annuler",
+			"created": "Compte « {{name}} » ajouté.",
+			"datePlaceholder": "jj/mm/aaaa"
+		}
+	},
+	"errors": {
+		"NOT_FOUND": "Cette ressource n'existe pas.",
+		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
+		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
+		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
+		"fields": {
+			"too_small": "Ce champ est obligatoire.",
+			"too_big": "Ce texte est trop long.",
+			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
+			"invalid_currency": "Devise inconnue.",
+			"invalid_subtype": "Type de compte invalide.",
+			"invalid_format": "Date invalide.",
+			"invalid_value": "Valeur invalide.",
+			"invalid_type": "Valeur invalide.",
+			"unknown": "Valeur invalide.",
+			"date_too_early": "La date doit être postérieure au 1er janvier 1900."
+		}
+	}
+}
