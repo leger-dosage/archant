@@ -9,6 +9,14 @@ import { today } from "../domain/dates.ts";
 import { getAccount } from "./accounts.ts";
 import { balancesBetween } from "./ledger.ts";
 
+const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
+	"1M": 1,
+	"3M": 3,
+	"6M": 6,
+	"1Y": 12,
+	all: "all",
+};
+
 export type BalanceHistory = {
 	period: BalancePeriod;
 	/** First and last day of the period; `null` when the account opens after today. */
@@ -35,7 +43,7 @@ export async function getBalanceHistory(
 ): Promise<BalanceHistory> {
 	const account = await getAccount(deps, accountId);
 	const to = today(deps.timeZone);
-	const range = periodRange(period, to, account.openingDate);
+	const range = periodRange(PERIOD_MONTHS[period], to, account.openingDate);
 	const points = range === null ? [] : await balancesBetween(deps, accountId, range.from, range.to);
 
 	return {

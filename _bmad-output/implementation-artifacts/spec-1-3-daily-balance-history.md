@@ -89,6 +89,7 @@ context:
 
 ## Implementation Notes
 
+- `periodRange` takes a month count or `"all"`, and `services/balances.ts` maps each `BalancePeriod` to it, so the domain imports nothing from `schemas/` (AD-1).
 - `balances` rows stop at the last write's `max(today, latest entry)`; nothing extends them on quiet days. `balancesBetween` therefore reads the last row on or before `from` plus the rows in `(from, to]`, and `fillDays` (`domain/balances/history.ts`) carries the previous balance over every missing day, as `balanceOn` reads a single day. The chart's last point always equals the header balance.
 - `change.percent` is in percentage points, one decimal, rounded on the absolute value so a rise and a fall of the same size round alike. `from` is `null` for an account opening after today.
 - The period switch is Radix `ToggleGroup` in single mode: it renders a radio group labelled « Période » rather than the `role="group"` of the mockup, which is the right semantics for one choice among five.
