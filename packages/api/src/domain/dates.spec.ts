@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, maxDate, minDate, today } from "./dates.ts";
+import { addDays, addMonths, maxDate, minDate, today } from "./dates.ts";
 
 describe("today", () => {
 	it("is the date in the given time zone, not in UTC", () => {
@@ -41,5 +41,29 @@ describe("minDate", () => {
 	it("returns the earlier date whichever side it is on", () => {
 		expect(minDate("2026-09-01", "2026-09-21")).toBe("2026-09-01");
 		expect(minDate("2026-09-21", "2026-09-01")).toBe("2026-09-01");
+	});
+});
+
+describe("addMonths", () => {
+	it("moves by calendar months, across years in both directions", () => {
+		expect(addMonths("2026-09-21", -1)).toBe("2026-08-21");
+		expect(addMonths("2026-09-21", -12)).toBe("2025-09-21");
+		expect(addMonths("2026-01-10", -3)).toBe("2025-10-10");
+		expect(addMonths("2026-11-15", 3)).toBe("2027-02-15");
+		expect(addMonths("2026-09-21", 0)).toBe("2026-09-21");
+	});
+
+	it("clamps a day the target month lacks to its last day", () => {
+		expect(addMonths("2026-03-31", -1)).toBe("2026-02-28");
+		expect(addMonths("2026-05-31", -1)).toBe("2026-04-30");
+		expect(addMonths("2026-12-31", -6)).toBe("2026-06-30");
+		expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
+	});
+
+	it("follows the leap-year rule, centuries included", () => {
+		expect(addMonths("2028-03-31", -1)).toBe("2028-02-29");
+		expect(addMonths("2024-02-29", -12)).toBe("2023-02-28");
+		expect(addMonths("2000-03-30", -1)).toBe("2000-02-29");
+		expect(addMonths("1900-03-30", -1)).toBe("1900-02-28");
 	});
 });

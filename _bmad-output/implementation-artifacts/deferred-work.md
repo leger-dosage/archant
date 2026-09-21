@@ -7,3 +7,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-2-record-transactions-by-hand.md`
   summary: Chunk the `entries` and `transactions` inserts of `ledger.ingest`, as `recomputeBalances` chunks balance rows.
   evidence: At 9 bound parameters per entry row, a statement of about 3 600 lines exceeds SQLite's 32 766-parameter cap; NFR10 targets 5 000-line imports in Epic 2. Manual ingest writes one line, so Story 1.2 cannot reach it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3-daily-balance-history.md`
+  summary: Test that `/comptes/$accountId` falls back to `1M` on an unknown `period` and keeps `period` across pagination links.
+  evidence: The web package has no route or component test harness; reverting the pagination `search` updaters or the `.catch` passes every test today.

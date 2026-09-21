@@ -33,3 +33,34 @@ export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
 export function minDate(a: IsoDate, b: IsoDate): IsoDate {
 	return a < b ? a : b;
 }
+
+function daysInMonth(year: number, month: number): number {
+	if (month === 2) {
+		const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+		return leap ? 29 : 28;
+	}
+
+	return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/**
+ * The same day `months` calendar months later, or earlier when negative. A day
+ * the target month lacks is clamped to its last day, as Rails' `months.ago`
+ * does for Sure's periods: one month before 31 March is 28 or 29 February.
+ */
+export function addMonths(date: IsoDate, months: number): IsoDate {
+	const year = Number(date.slice(0, 4));
+	const month = Number(date.slice(5, 7));
+	const day = Number(date.slice(8, 10));
+	const index = year * 12 + (month - 1) + months;
+	const targetYear = Math.floor(index / 12);
+	const targetMonth = index - targetYear * 12 + 1;
+	const targetDay = Math.min(day, daysInMonth(targetYear, targetMonth));
+
+	return [
+		String(targetYear).padStart(4, "0"),
+		String(targetMonth).padStart(2, "0"),
+		String(targetDay).padStart(2, "0"),
+	].join("-");
+}

@@ -2,7 +2,8 @@
 title: 'Story 1.3: Daily balance history'
 type: 'feature'
 created: '2026-09-21'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '9e621175d3747309bc835c1eba9cd3e461075bc9'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -71,20 +72,56 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/api/src/domain/dates.spec.ts`, `dates.ts` -- tests first, then `addMonths(date, months)` clamping to the month's end, leap years included.
-- [ ] `packages/api/src/domain/balances/history.spec.ts`, `history.ts` (new) -- tests first, then `periodRange(period, today, openingDate)` returning `{ from, to }` or `null` when empty, and `balanceChange(points)` returning `{ amount, percent }` or `null`. 100% branches.
-- [ ] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- `balancesBetween(deps, accountId, from, to)` ordered by date; add the ledger-level test for several transactions on one day that Story 1.2 left at the domain level only.
-- [ ] `packages/api/src/schemas/balances.ts` (new) -- `BALANCE_PERIODS` and `balanceQuerySchema` (`period`, default `1M`).
-- [ ] `packages/api/src/services/balances.ts` (new), `routes/accounts.ts`, `app.spec.ts` -- `getBalanceHistory(deps, accountId, period)` returning `{ period, from, to, currency, points: [{ date, balance }], change }`; route `GET /:id/balances`; spec covers the I/O matrix through `app.request`.
-- [ ] `packages/web/package.json`, `components/ui/{chart,toggle-group,table}.tsx` -- `pnpm dlx shadcn add chart toggle-group table`; recharts 3.10.1 and `react-is`, as pinned in the spine. Justify recharts in the pull request (NFR14).
-- [ ] `packages/web/src/lib/query-keys.ts`, `hooks/useBalanceHistory.ts` -- `accounts.balances(id, period)` = `["accounts", "detail", id, "balances", period]`.
-- [ ] `packages/web/src/components/BalanceChart.tsx`, `routes/comptes.$accountId.tsx`, `locales/fr.json` -- segmented control in a `role="group"` labelled « Période », summary, chart, table toggle, skeleton, empty state; `period` added to `searchSchema` with `.catch` to `1M`.
+- [x] `packages/api/src/domain/dates.spec.ts`, `dates.ts` -- tests first, then `addMonths(date, months)` clamping to the month's end, leap years included.
+- [x] `packages/api/src/domain/balances/history.spec.ts`, `history.ts` (new) -- tests first, then `periodRange(period, today, openingDate)` returning `{ from, to }` or `null` when empty, and `balanceChange(points)` returning `{ amount, percent }` or `null`. 100% branches.
+- [x] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- `balancesBetween(deps, accountId, from, to)` ordered by date; add the ledger-level test for several transactions on one day that Story 1.2 left at the domain level only.
+- [x] `packages/api/src/schemas/balances.ts` (new) -- `BALANCE_PERIODS` and `balanceQuerySchema` (`period`, default `1M`).
+- [x] `packages/api/src/services/balances.ts` (new), `routes/accounts.ts`, `app.spec.ts` -- `getBalanceHistory(deps, accountId, period)` returning `{ period, from, to, currency, points: [{ date, balance }], change }`; route `GET /:id/balances`; spec covers the I/O matrix through `app.request`.
+- [x] `packages/web/package.json`, `components/ui/{chart,toggle-group,table}.tsx` -- `pnpm dlx shadcn add chart toggle-group table`; recharts 3.10.1 and `react-is`, as pinned in the spine. Justify recharts in the pull request (NFR14).
+- [x] `packages/web/src/lib/query-keys.ts`, `hooks/useBalanceHistory.ts` -- `accounts.balances(id, period)` = `["accounts", "detail", id, "balances", period]`.
+- [x] `packages/web/src/components/BalanceChart.tsx`, `routes/comptes.$accountId.tsx`, `locales/fr.json` -- segmented control in a `role="group"` labelled « Période », summary, chart, table toggle, skeleton, empty state; `period` added to `searchSchema` with `.catch` to `1M`.
 
 **Acceptance Criteria:**
 - Given a saved, edited or deleted transaction, when the sheet closes, then the chart and its table show the new balance without a reload.
 - Given the chart focused, when the arrow keys are pressed, then the tooltip moves day by day showing the date and the balance.
 - Given `/comptes/<id>?period=3M` is opened directly, then 3 M is selected and the chart shows three months.
 - Given the finished story, when the AGENTS.md verification gate runs, then every command passes and leaves no tracked file modified.
+
+## Implementation Notes
+
+- `balances` rows stop at the last write's `max(today, latest entry)`; nothing extends them on quiet days. `balancesBetween` therefore reads the last row on or before `from` plus the rows in `(from, to]`, and `fillDays` (`domain/balances/history.ts`) carries the previous balance over every missing day, as `balanceOn` reads a single day. The chart's last point always equals the header balance.
+- `change.percent` is in percentage points, one decimal, rounded on the absolute value so a rise and a fall of the same size round alike. `from` is `null` for an account opening after today.
+- The period switch is Radix `ToggleGroup` in single mode: it renders a radio group labelled « Période » rather than the `role="group"` of the mockup, which is the right semantics for one choice among five.
+- `period` in the page's search params is optional and defaults in the component, so a link without it stays clean and the default never lands in the URL. Pagination links keep the current period.
+- Ticks switch to month and year past 200 points, so `1Y` and `all` show the year. A one-point series, an account opened today, draws its dot.
+- Dark mode gets its own `--chart-1: #8098f9`, DESIGN.md's dark accent; the light indigo inherited before read at about 3:1 on the dark background.
+- `components/ui/{chart,toggle-group,toggle,table}.tsx` vendored with the shadcn CLI and patched for oxlint (`no-shadow`, `eqeqeq`, typed recharts payload access), as in Story 1.1.
+- Verified in Chromium on a throwaway database: a checking account opened 2026-06-01 with ten transactions, `?period=3M` selects 3 M and reads « Solde : 4 722,20 €, +3 342,20 € (+242,2 %) sur 3 mois. », which matches a hand computation; arrow keys show « dimanche 21 juin 2026 / 1 380,00 € »; « Voir les données » sets `aria-expanded` and lists 93 days; an account opened today shows its single point with no `period` in the URL; light and dark at 1280 px. 600 px was not checked.
+
+## Spec Change Log
+
+## Review Triage Log
+
+| # | Source | Location | Finding | Verdict | Evidence | Route |
+|---|--------|----------|---------|---------|----------|-------|
+| 1 | blind, edge | `ledger.ts` `balancesBetween`, `services/balances.ts` | The series stops at the last write day; an idle account shows no point for `1M` | high | `recomputeBalances` extends rows only to `max(today at write time, latest entry)` and no read extends them; `balanceOn` hides this by taking the last row on or before. The frozen "one point per day" rule is broken on any quiet week. | patch |
+| 2 | blind | `BalanceChart.tsx` `Summary` | Summary can disagree with the header balance | medium | Same root cause as #1: the header reads `balanceOn(today)`, the summary the last stored row. Fixed with #1. | patch |
+| 3 | edge (claim) | `ledger.ts` docstring, `BalanceHistory.points` | "One row per day" and "today last" are false | medium | Same root cause as #1. | patch |
+| 4 | blind, edge | `domain/balances/history.ts` `balanceChange` | `Math.round` rounds a negative half toward zero | low | -0.25 % gives -0.2, +0.25 % gives 0.3; direct fix. | patch |
+| 5 | blind, edge | `BalanceChart.tsx` error branch | Alert and stale chart render together after a failed refetch | low | TanStack Query keeps `data` with `isError`; both blocks render. Direct fix. | patch |
+| 6 | edge | `BalanceChart.tsx` `<Line dot={false}>` | One-point series draws nothing | medium | An account opened today, the create dialog's default, has one point; a line needs two. | patch |
+| 7 | blind, edge (claim) | `BalanceChart.tsx` `LONG_RANGE_POINTS` | `1Y` ticks lack the year | low | 366 points is under the 400 threshold, so « 21 sept. » shows at both ends. Constant change. | patch |
+| 8 | blind | `BalanceChart.tsx` `<LineChart>` | Arrow-key cursor relies on recharts' default | low | The AC depends on an unpinned default; one prop. | patch |
+| 9 | verification | `lib/query-keys.ts` | No test that a transaction write invalidates the chart | medium | Pre-verified: no web test reads the keys; moving the key out of `detail(id)` passes every test. | patch |
+| 10 | verification | `services/balances.ts` `today(deps.timeZone)` | Period end in `APP_TIMEZONE` untested | medium | Pre-verified: every balances test runs at 10:00 UTC, where UTC and Paris agree. | patch |
+| 11 | verification | `comptes.$accountId.tsx` | `period` fallback and its survival across pagination untested | low | Pre-verified; the web package has no route or component test harness. | defer |
+| 12 | blind, edge | `useBalanceHistory.ts` `placeholderData` | While a period loads, the toggle shows the new period and the summary the old one | low | The summary matches the line it describes; the gap lasts one request. Fixing it adds a loading branch. Rejected. |  |
+| 13 | blind | `useBalanceHistory.ts` | `queryKey[2]` index guard is fragile | low | Same pattern as `useTransactions.ts` (Story 1.2 #3); no named caller diverges today. Rejected. |  |
+| 14 | blind | web | No component tests for `BalanceChart` | low | AGENTS.md does not pad wiring with tests; the formatting logic lives in `lib/balance-change.ts`, covered. Rejected. |  |
+| 15 | blind | `BalanceChart.tsx` | SVG has no label, `aria-controls` only when open, button label fixed | low | The text summary above and the table satisfy UX-DR5; the rest adds branches for no reported user. Rejected. |  |
+| 16 | blind | `balance-change.ts` | A tiny change shows `+1,00 € (0,0 %)` | low | Sure shows the same rounding; cosmetic. Rejected. |  |
+| 17 | blind | `packages/web/package.json` | `react-is` not on the catalog with React | false | recharts 3 declares `react-is` as `^16.8 \|\| ^17 \|\| ^18 \|\| ^19`, not an exact match; `^19.3.0` satisfies it. |  |
+| 18 | blind | `components/ui/*` | Unused shadcn exports and `"use client"` | low | Vendored as generated, like every `ui/` file since Story 1.1. Rejected. |  |
 
 ## Design Notes
 

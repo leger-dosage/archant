@@ -1,9 +1,17 @@
+import type { BalancePeriod } from "@archant/api/schemas/balances";
+
 // One entry per resource, so an invalidation after a write names exactly the
 // queries it makes stale. `accounts.all` prefixes every account query.
 export const queryKeys = {
 	accounts: {
 		all: ["accounts"] as const,
 		detail: (id: string) => ["accounts", "detail", id] as const,
+		/**
+		 * Under `detail(id)`, so every transaction write, which invalidates the
+		 * account, redraws its chart with no change to the mutations.
+		 */
+		balances: (id: string, period: BalancePeriod) =>
+			["accounts", "detail", id, "balances", period] as const,
 	},
 	transactions: {
 		byAccount: (accountId: string, page: number) =>

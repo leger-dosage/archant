@@ -15,6 +15,7 @@ import * as forward from "../domain/balances/forward.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	balanceOn,
+	balancesBetween,
 	createAccount,
 	deleteTransaction,
 	findTransaction,
@@ -345,6 +346,29 @@ describe("ingest", () => {
 		});
 	});
 
+	it("adds up several transactions on one day, from one statement or several", async () => {
+		const account = await openChecking();
+		await ingest(
+			deps(),
+			account.id,
+			{
+				transactions: [
+					line({ date: "2026-09-10", amount: toMinorUnits(-4290) }),
+					line({ date: "2026-09-10", amount: toMinorUnits(10000) }),
+				],
+			},
+			{ manual: true },
+			{ origin: "user" },
+		);
+
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-1000) });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-09")).toBe(123456);
+		expect(days.get("2026-09-10")).toBe(128166);
+		expect(days.get("2026-09-21")).toBe(128166);
+	});
+
 	it("replays the later transactions when an earlier one is recorded", async () => {
 		const account = await openChecking();
 		await add(account.id, { date: "2026-09-15", amount: toMinorUnits(-1000) });
@@ -574,6 +598,44 @@ describe("listTransactions", () => {
 		expect(all.items.map((item) => item.id)).toEqual([second, first, older]);
 		expect(all.total).toBe(3);
 		expect(secondPage).toEqual({ items: [expect.objectContaining({ id: older })], total: 3 });
+	});
+});
+
+describe("balancesBetween", () => {
+	it("returns each day of the range, both ends included, oldest first", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-09-10" });
+
+		await expect(balancesBetween(deps(), account.id, "2026-09-09", "2026-09-11")).resolves.toEqual([
+			{ date: "2026-09-09", balance: 123456 },
+			{ date: "2026-09-10", balance: 119166 },
+			{ date: "2026-09-11", balance: 119166 },
+		]);
+	});
+
+	it("leaves out the rows past the range, such as those of a future transaction", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-10-01" });
+
+		const rows = await balancesBetween(deps(), account.id, "2026-09-01", "2026-09-21");
+
+		expect(rows).toHaveLength(21);
+		expect(rows.at(-1)).toEqual({ date: "2026-09-21", balance: 123456 });
+	});
+
+	it("carries the last write's balance to today when nothing was written since", async () => {
+		const account = await openChecking();
+		setToday("2026-10-21T10:00:00Z");
+
+		const rows = await balancesBetween(deps(), account.id, "2026-09-21", "2026-10-21");
+
+		expect(rows).toHaveLength(31);
+		expect(rows[0]).toEqual({ date: "2026-09-21", balance: 123456 });
+		expect(rows.at(-1)).toEqual({ date: "2026-10-21", balance: 123456 });
+	});
+
+	it("is empty for an unknown account", async () => {
+		await expect(balancesBetween(deps(), "nope", "2026-09-01", "2026-09-21")).resolves.toEqual([]);
 	});
 });
 

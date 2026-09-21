@@ -125,6 +125,8 @@
 	--input: #242424;
 	--ring: #8098f9;
 	--accent-brand: #8098f9;
+	/* The first series is the accent (DESIGN.md). Inherited, the light indigo line read at about 3:1 here. */
+	--chart-1: #8098f9;
 	--money-income: #32d583;
 	--money-expense: #f7f7f7;
 	--money-muted: #9e9e9e;
