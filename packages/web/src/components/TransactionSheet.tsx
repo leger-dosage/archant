@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { TransactionFormInput } from "@archant/api/schemas/transactions";
-import { createTransactionSchema } from "@archant/api/schemas/transactions";
+import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 
@@ -26,6 +26,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -71,12 +72,13 @@ function FieldMessage({ id, error }: { id: string; error: FieldError | undefined
 
 function valuesOf(transaction: TransactionData | null, openingDate: string): TransactionFormInput {
 	return transaction === null
-		? { date: defaultDate(openingDate), label: "", amount: "", notes: "" }
+		? { date: defaultDate(openingDate), label: "", amount: "", notes: "", excluded: false }
 		: {
 				date: transaction.date,
 				label: transaction.label,
 				amount: amountToText(transaction.amount, transaction.currency),
 				notes: transaction.notes ?? "",
+				excluded: transaction.excluded,
 			};
 }
 
@@ -102,7 +104,7 @@ function TransactionForm({
 	const updateTransaction = useUpdateTransaction(account.id);
 	const deleteTransaction = useDeleteTransaction(account.id);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
-	const schema = useMemo(() => createTransactionSchema(account.currency), [account.currency]);
+	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
 	const form = useForm<TransactionFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
 		// there, into minor units of the account's currency.
@@ -112,6 +114,7 @@ function TransactionForm({
 	const { errors, isSubmitting, isDirty } = form.formState;
 	const date = useController({ control: form.control, name: "date" });
 	const amount = useController({ control: form.control, name: "amount" });
+	const excluded = useController({ control: form.control, name: "excluded" });
 
 	useEffect(() => {
 		onDirtyChange(isDirty);
@@ -133,7 +136,9 @@ function TransactionForm({
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			if (transaction === null) {
-				await createTransaction.mutateAsync(values);
+				// A new transaction is always counted; the switch shows on edits only.
+				const { excluded: _excluded, ...input } = values;
+				await createTransaction.mutateAsync(input);
 			} else {
 				await updateTransaction.mutateAsync({ id: transaction.id, input: values });
 			}
@@ -230,6 +235,18 @@ function TransactionForm({
 					/>
 					<FieldMessage id="transaction-notes-error" error={errors.notes} />
 				</div>
+
+				{transaction !== null && (
+					<div className="flex items-center justify-between gap-4">
+						<Label htmlFor="transaction-excluded">{t("transactions.form.excluded")}</Label>
+						<Switch
+							id="transaction-excluded"
+							checked={excluded.field.value}
+							onCheckedChange={excluded.field.onChange}
+							onBlur={excluded.field.onBlur}
+						/>
+					</div>
+				)}
 			</form>
 
 			<SheetFooter className="flex-row items-center justify-between border-t">

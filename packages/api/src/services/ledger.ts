@@ -2,9 +2,25 @@ import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { NormalizedTransaction, ParsedStatement, RejectionCode } from "../domain/statement.ts";
+import type { AmountRange } from "../domain/transaction-filter.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { SQL } from "drizzle-orm";
 
-import { and, count, desc, eq, gt, gte, inArray, lte, ne, or, sum } from "drizzle-orm";
+import {
+	and,
+	between,
+	count,
+	desc,
+	eq,
+	gt,
+	gte,
+	inArray,
+	lte,
+	ne,
+	or,
+	sql,
+	sum,
+} from "drizzle-orm";
 
 import type { AccountSubtype, AccountType } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
@@ -22,6 +38,7 @@ import { fillDays } from "../domain/balances/history.ts";
 import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
 import { rejectionFor } from "../domain/statement.ts";
+import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
@@ -299,6 +316,7 @@ export type TransactionPatch = {
 	amount?: MinorUnits | undefined;
 	label?: string | undefined;
 	notes?: string | null | undefined;
+	excluded?: boolean | undefined;
 };
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
@@ -312,6 +330,7 @@ async function transactionRow(tx: Transaction, entryId: string) {
 			currency: entries.currency,
 			label: transactions.label,
 			notes: transactions.notes,
+			excluded: transactions.excluded,
 			lockedFields: transactions.lockedFields,
 		})
 		.from(entries)
@@ -328,7 +347,7 @@ async function transactionRow(tx: Transaction, entryId: string) {
 
 /**
  * Edits a transaction and recomputes its account's balances from the earlier
- * of its old and new dates. A `user` edit locks every field it changes; any
+ * of its old and new dates. Excluding one from reports changes no balance. A `user` edit locks every field it changes; any
  * other origin leaves locked fields as they are (AD-10).
  */
 export async function updateTransaction(
@@ -345,7 +364,7 @@ export async function updateTransaction(
 			const next = { ...current };
 			const changed: LockableField[] = [];
 
-			for (const field of ["date", "amount", "label", "notes"] as const) {
+			for (const field of ["date", "amount", "label", "notes", "excluded"] as const) {
 				const value = patch[field];
 				const allowed = options.origin === "user" || !locked.has(field);
 
@@ -381,6 +400,7 @@ export async function updateTransaction(
 				.set({
 					label: next.label,
 					notes: next.notes,
+					excluded: next.excluded,
 					lockedFields:
 						options.origin === "user"
 							? [...new Set([...current.lockedFields, ...changed])]
@@ -478,7 +498,12 @@ export type TransactionRecord = {
 	currency: string;
 	label: string;
 	notes: string | null;
+	/** Left out of reports (AD-9), still counted in the balance. */
+	excluded: boolean;
 };
+
+/** A transaction as a list shows it, with its account's name. */
+export type TransactionListRecord = TransactionRecord & { accountName: string };
 
 const transactionColumns = {
 	id: entries.id,
@@ -488,17 +513,10 @@ const transactionColumns = {
 	currency: entries.currency,
 	label: transactions.label,
 	notes: transactions.notes,
+	excluded: transactions.excluded,
 };
 
-function toRecord(row: {
-	id: string;
-	accountId: string;
-	date: string;
-	amount: number;
-	currency: string;
-	label: string;
-	notes: string | null;
-}): TransactionRecord {
+function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {
 	return { ...row, amount: toMinorUnits(row.amount) };
 }
 
@@ -517,27 +535,157 @@ export async function findTransaction(
 	return row === undefined ? null : toRecord(row);
 }
 
-/** A page of an account's transactions, most recent first (AD-15). */
+/**
+ * What narrows a transaction list. Every field is optional; an empty filter
+ * lists every transaction of every account.
+ */
+export type TransactionFilter = {
+	accountIds?: readonly string[] | undefined;
+	/** Inclusive. */
+	from?: IsoDate | undefined;
+	/** Inclusive. */
+	to?: IsoDate | undefined;
+	/**
+	 * Absolute-value bounds per currency, computed by `amountBoundsFor`. When
+	 * set, a transaction in a currency the list leaves out matches nothing.
+	 */
+	amounts?: readonly ({ currency: string } & AmountRange)[] | undefined;
+	/**
+	 * Substring of the label or the notes, matched literally. Case is ignored
+	 * for ASCII letters only, as SQLite's `LIKE` does: « électricité » does not
+	 * find « Électricité ».
+	 */
+	q?: string | undefined;
+};
+
+function absoluteAmountIn(range: AmountRange): SQL | undefined {
+	const min = range.min === null ? null : Number(range.min);
+	const max = range.max === null ? null : Number(range.max);
+
+	if (min !== null && max !== null) {
+		return or(between(entries.amount, min, max), between(entries.amount, -max, -min));
+	}
+
+	if (min !== null) {
+		return or(gte(entries.amount, min), lte(entries.amount, -min));
+	}
+
+	return max === null ? undefined : between(entries.amount, -max, max);
+}
+
+// `LIKE` rather than FTS5 until the 300 ms target of Story 1.5 fails. Drizzle's
+// `like` has no `escape` clause, and without one `50%` would find `Remise 500`.
+function contains(column: typeof transactions.label | typeof transactions.notes, q: string): SQL {
+	return sql`${column} like ${`%${escapeLike(q)}%`} escape ${LIKE_ESCAPE}`;
+}
+
+/**
+ * The where clause of a filter, `null` when it can match nothing at all, so
+ * the caller skips the query rather than asking SQLite for an empty `or`.
+ */
+function filterCondition(filter: TransactionFilter): SQL | undefined | null {
+	const { accountIds, amounts, q } = filter;
+
+	if (accountIds?.length === 0 || amounts?.length === 0) {
+		return null;
+	}
+
+	return and(
+		eq(entries.kind, "transaction"),
+		accountIds === undefined ? undefined : inArray(entries.accountId, [...accountIds]),
+		filter.from === undefined ? undefined : gte(entries.date, filter.from),
+		filter.to === undefined ? undefined : lte(entries.date, filter.to),
+		amounts === undefined
+			? undefined
+			: or(
+					...amounts.map((range) =>
+						and(eq(entries.currency, range.currency), absoluteAmountIn(range)),
+					),
+				),
+		q === undefined
+			? undefined
+			: or(contains(transactions.label, q), contains(transactions.notes, q)),
+	);
+}
+
+/**
+ * A page of transactions matching `filter`, most recent first (AD-15), each
+ * with its account's name. The count joins `transactions` only when the text
+ * search needs its columns, so the unfiltered count reads one index.
+ */
 export async function listTransactions(
 	deps: ServiceDeps,
-	accountId: string,
+	filter: TransactionFilter,
 	page: { page: number; pageSize: number },
-): Promise<{ items: TransactionRecord[]; total: number }> {
-	const where = and(eq(entries.accountId, accountId), eq(entries.kind, "transaction"));
+): Promise<{ items: TransactionListRecord[]; total: number }> {
+	const where = filterCondition(filter);
+
+	if (where === null) {
+		return { items: [], total: 0 };
+	}
+
 	const rows = await deps.db
-		.select(transactionColumns)
+		.select({ ...transactionColumns, accountName: accounts.name })
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.where(where)
 		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
-	const totals = await deps.db.select({ total: count() }).from(entries).where(where);
+	const totals =
+		filter.q === undefined
+			? await deps.db.select({ total: count() }).from(entries).where(where)
+			: await deps.db
+					.select({ total: count() })
+					.from(entries)
+					.innerJoin(transactions, eq(transactions.entryId, entries.id))
+					.where(where);
 
 	return {
 		items: rows.map(toRecord),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
+}
+
+/**
+ * The signed sum and the count of the transactions matching `filter`, one row
+ * per currency. Excluded transactions count: the sum describes the rows the
+ * list shows, not a report. Joins `transactions` only for the text search, as
+ * the count does.
+ */
+export async function sumTransactions(
+	deps: ServiceDeps,
+	filter: TransactionFilter,
+): Promise<{ currency: string; amount: MinorUnits; count: number }[]> {
+	const where = filterCondition(filter);
+
+	if (where === null) {
+		return [];
+	}
+
+	const columns = {
+		currency: entries.currency,
+		amount: sum(entries.amount).mapWith(Number),
+		count: count(),
+	};
+	const rows =
+		filter.q === undefined
+			? await deps.db
+					.select(columns)
+					.from(entries)
+					.where(where)
+					.groupBy(entries.currency)
+					.orderBy(entries.currency)
+			: await deps.db
+					.select(columns)
+					.from(entries)
+					.innerJoin(transactions, eq(transactions.entryId, entries.id))
+					.where(where)
+					.groupBy(entries.currency)
+					.orderBy(entries.currency);
+
+	return rows.map(toRecord);
 }
 
 export type SnapshotInput = {

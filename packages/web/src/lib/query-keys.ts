@@ -1,3 +1,5 @@
+import type { TransactionFilters } from "@/lib/transaction-filters";
+
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 
 // One entry per resource, so an invalidation after a write names exactly the
@@ -19,9 +21,16 @@ export const queryKeys = {
 		snapshots: (id: string, page: number) => ["accounts", "detail", id, "snapshots", page] as const,
 	},
 	transactions: {
+		/**
+		 * Prefixes every transaction list, one account's or all of them. A
+		 * write invalidates it whole: an edit on an account page changes a row
+		 * of the cross-account list, and the other way round.
+		 */
+		all: ["transactions"] as const,
+		/** A page of the cross-account list under its filters. */
+		list: (filters: TransactionFilters, page: number) =>
+			["transactions", "list", filters, page] as const,
 		byAccount: (accountId: string, page: number) =>
 			["transactions", "account", accountId, page] as const,
-		/** Every page of one account's transactions. */
-		account: (accountId: string) => ["transactions", "account", accountId] as const,
 	},
 };

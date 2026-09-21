@@ -1,14 +1,18 @@
 import type { TransactionData } from "@/hooks/useTransactions";
 
+import { EyeOffIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Money } from "@/components/Money";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { dayHeading } from "@/lib/dates";
 
 type TransactionListProps = {
 	items: readonly TransactionData[];
 	onOpen: (transaction: TransactionData) => void;
+	/** Shows each row's account, for a list spanning several. */
+	showAccount?: boolean;
 };
 
 function groupByDay(items: readonly TransactionData[]) {
@@ -39,8 +43,28 @@ function DayTitle({ date }: { date: string }) {
 	return <>{t(`transactions.days.${heading.kind}`)}</>;
 }
 
-/** One account's transactions, most recent first, under a header per day. */
-export function TransactionList({ items, onOpen }: TransactionListProps) {
+/**
+ * The eye-off icon of a transaction left out of reports (EXPERIENCE.md). The
+ * text is in the row's name too, so the meaning never rests on the icon.
+ */
+function ExcludedMarker() {
+	const { t } = useTranslation();
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="inline-flex text-muted-foreground">
+					<EyeOffIcon className="size-3.5" aria-hidden="true" />
+					<span className="sr-only">{t("transactions.excluded")}</span>
+				</span>
+			</TooltipTrigger>
+			<TooltipContent>{t("transactions.excluded")}</TooltipContent>
+		</Tooltip>
+	);
+}
+
+/** Transactions, most recent first, under a header per day. */
+export function TransactionList({ items, onOpen, showAccount = false }: TransactionListProps) {
 	return (
 		<div className="flex flex-col gap-4">
 			{groupByDay(items).map((day) => {
@@ -62,10 +86,26 @@ export function TransactionList({ items, onOpen }: TransactionListProps) {
 										onClick={() => onOpen(item)}
 										className="flex min-h-9 w-full items-center justify-between gap-4 rounded-md px-2 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
 									>
-										<span className="min-w-0 truncate" title={item.label}>
+										<span className="min-w-0 flex-1 truncate" title={item.label}>
 											{item.label}
 										</span>
-										<Money amount={item.amount} currency={item.currency} signed />
+										{showAccount && (
+											<span
+												className="w-40 shrink-0 truncate text-xs text-muted-foreground max-md:w-24"
+												title={item.accountName}
+											>
+												{item.accountName}
+											</span>
+										)}
+										<span className="flex shrink-0 items-center gap-1.5">
+											{item.excluded && <ExcludedMarker />}
+											<Money
+												amount={item.amount}
+												currency={item.currency}
+												signed
+												muted={item.excluded}
+											/>
+										</span>
 									</button>
 								</li>
 							))}

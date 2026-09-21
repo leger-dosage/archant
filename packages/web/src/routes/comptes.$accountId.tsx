@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAccount } from "@/hooks/useAccount";
+import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
@@ -56,33 +57,26 @@ type SheetState = { open: boolean; transaction: TransactionData | null };
 
 type SnapshotDialogState = { open: boolean; snapshot: SnapshotData | null };
 
-const pageCountOf = (data: { total: number; pageSize: number } | undefined) =>
-	data === undefined ? 1 : Math.max(1, Math.ceil(data.total / data.pageSize));
-
-/**
- * A page past the end, after deleting the only row of the last page or from
- * an old link, would show an empty list that is not the empty state: go back
- * to the last page instead.
- */
-function useClampPage(
+/** Keeps a list of this page within its last page. */
+function useClampAccountPage(
 	accountId: string,
 	param: PageParam,
 	page: number,
 	loaded: { total: number; pageSize: number } | undefined,
 ) {
 	const navigate = Route.useNavigate();
-	const lastPage = loaded === undefined ? undefined : pageCountOf(loaded);
-
-	useEffect(() => {
-		if (lastPage !== undefined && page > lastPage) {
+	const goTo = useCallback(
+		(lastPage: number) =>
 			void navigate({
 				to: "/comptes/$accountId",
 				params: { accountId },
 				search: (previous) => ({ ...previous, ...pageSearch(param, lastPage) }),
 				replace: true,
-			});
-		}
-	}, [accountId, lastPage, navigate, page, param]);
+			}),
+		[accountId, navigate, param],
+	);
+
+	useClampPage(page, loaded, goTo);
 }
 
 function ListError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
@@ -112,7 +106,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 	const data = transactions.data;
 	const pageCount = pageCountOf(data);
 
-	useClampPage(
+	useClampAccountPage(
 		accountId,
 		"page",
 		page,
@@ -142,8 +136,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					accountId={accountId}
-					param="page"
+					target={{ to: "/comptes/$accountId", accountId, param: "page" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("transactions.paginationLabel")}
@@ -167,7 +160,7 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 	const data = snapshots.data;
 	const pageCount = pageCountOf(data);
 
-	useClampPage(
+	useClampAccountPage(
 		accountId,
 		"snapshotsPage",
 		page,
@@ -198,8 +191,7 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					accountId={accountId}
-					param="snapshotsPage"
+					target={{ to: "/comptes/$accountId", accountId, param: "snapshotsPage" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("snapshots.paginationLabel")}

@@ -15,6 +15,7 @@
 	},
 	"nav": {
 		"accounts": "Comptes",
+		"operations": "Opérations",
 		"openMenu": "Ouvrir le menu",
 		"toggleSidebar": "Réduire ou déplier la barre latérale",
 		"mobileTitle": "Navigation",
@@ -110,7 +111,8 @@
 			"income": "Revenu",
 			"notes": "Notes",
 			"save": "Enregistrer",
-			"saveShortcut": "⌘Entrée ou Ctrl+Entrée"
+			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
+			"excluded": "Exclure des rapports"
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -124,6 +126,47 @@
 		},
 		"sources": {
 			"manual": "Saisie manuelle"
+		},
+		"excluded": "Exclue des rapports"
+	},
+	"operations": {
+		"title": "Opérations",
+		"search": "Rechercher",
+		"searchPlaceholder": "Rechercher dans les libellés et les notes",
+		"filter": "Filtrer",
+		"kinds": {
+			"account": "Compte",
+			"period": "Période",
+			"amount": "Montant"
+		},
+		"removeFilter": "Retirer le filtre {{label}}",
+		"results_one": "{{count}} résultat",
+		"results_other": "{{count}} résultats",
+		"total": "Total :",
+		"skipped_one": "{{count}} opération dans une autre devise n'est pas comptée dans le total.",
+		"skipped_other": "{{count}} opérations dans une autre devise ne sont pas comptées dans le total.",
+		"empty": "Aucune opération.",
+		"noMatch": "Aucune opération ne correspond à ces filtres.",
+		"clearFilters": "Effacer les filtres",
+		"chips": {
+			"unknownAccount": "Compte inconnu",
+			"periodBetween": "Du {{from}} au {{to}}",
+			"periodSince": "Depuis le {{from}}",
+			"periodUntil": "Jusqu'au {{to}}",
+			"amountBetween": "Montant de {{min}} à {{max}}",
+			"amountAtLeast": "Montant d'au moins {{min}}",
+			"amountAtMost": "Montant d'au plus {{max}}"
+		},
+		"editor": {
+			"accounts": "Comptes à afficher",
+			"noAccount": "Aucun compte.",
+			"from": "Du",
+			"to": "Au",
+			"min": "Minimum",
+			"max": "Maximum",
+			"amountHint": "Sans signe : les dépenses et les revenus de ce montant sont affichés.",
+			"apply": "Appliquer",
+			"back": "Retour"
 		}
 	},
 	"snapshots": {
@@ -170,7 +213,9 @@
 			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
 			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",
-			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord."
+			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord.",
+			"before_from": "La date de fin doit suivre la date de début.",
+			"below_min": "Le maximum doit être supérieur ou égal au minimum."
 		}
 	}
 }

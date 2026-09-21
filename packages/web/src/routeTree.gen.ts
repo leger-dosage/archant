@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OperationsRouteImport } from './routes/operations'
 import { Route as ComptesIndexRouteImport } from './routes/comptes.index'
 import { Route as ComptesAccountIdRouteImport } from './routes/comptes.$accountId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperationsRoute = OperationsRouteImport.update({
+  id: '/operations',
+  path: '/operations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComptesIndexRoute = ComptesIndexRouteImport.update({
@@ -31,30 +37,34 @@ const ComptesAccountIdRoute = ComptesAccountIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/operations': typeof OperationsRoute
   '/comptes/$accountId': typeof ComptesAccountIdRoute
   '/comptes/': typeof ComptesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/operations': typeof OperationsRoute
   '/comptes/$accountId': typeof ComptesAccountIdRoute
   '/comptes': typeof ComptesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/operations': typeof OperationsRoute
   '/comptes/$accountId': typeof ComptesAccountIdRoute
   '/comptes/': typeof ComptesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/comptes/$accountId' | '/comptes/'
+  fullPaths: '/' | '/operations' | '/comptes/$accountId' | '/comptes/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/comptes/$accountId' | '/comptes'
-  id: '__root__' | '/' | '/comptes/$accountId' | '/comptes/'
+  to: '/' | '/operations' | '/comptes/$accountId' | '/comptes'
+  id: '__root__' | '/' | '/operations' | '/comptes/$accountId' | '/comptes/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OperationsRoute: typeof OperationsRoute
   ComptesAccountIdRoute: typeof ComptesAccountIdRoute
   ComptesIndexRoute: typeof ComptesIndexRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operations': {
+      id: '/operations'
+      path: '/operations'
+      fullPath: '/operations'
+      preLoaderRoute: typeof OperationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/comptes/': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OperationsRoute: OperationsRoute,
   ComptesAccountIdRoute: ComptesAccountIdRoute,
   ComptesIndexRoute: ComptesIndexRoute,
 }

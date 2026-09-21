@@ -1,3 +1,4 @@
+import type { TransactionFilters } from "@/lib/transaction-filters";
 import type { InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,12 +7,18 @@ import type { TransactionInput, TransactionPatchInput } from "@archant/api/schem
 
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
+import { toApiQuery } from "@/lib/transaction-filters";
 
 export type TransactionPageData = InferResponseType<
 	(typeof api.accounts)[":id"]["transactions"]["$get"],
 	200
 >["data"];
 export type TransactionData = TransactionPageData["items"][number];
+
+export type FilteredTransactionPageData = InferResponseType<
+	(typeof api.transactions)["$get"],
+	200
+>["data"];
 
 export function useAccountTransactions(accountId: string, page: number) {
 	return useQuery({
@@ -32,9 +39,23 @@ export function useAccountTransactions(accountId: string, page: number) {
 	});
 }
 
+/** A page of every account's transactions under `filters`, with its count and total. */
+export function useTransactions(filters: TransactionFilters, page: number) {
+	return useQuery({
+		queryKey: queryKeys.transactions.list(filters, page),
+		queryFn: async () =>
+			(await unwrap(api.transactions.$get({ query: toApiQuery(filters, page) }))).data,
+		// The rows stay on screen while the next page or filter loads; the
+		// sheet reads the account from each row, so no row can be edited
+		// against the wrong account.
+		placeholderData: (previous) => previous,
+	});
+}
+
 /**
  * A transaction changes its account's balance, which the account page, the
- * accounts page and the sidebar all show: every write refreshes the three.
+ * accounts page and the sidebar all show, and its row in every list: every
+ * write refreshes them all.
  */
 function useInvalidateAccount(accountId: string) {
 	const queryClient = useQueryClient();
@@ -43,7 +64,7 @@ function useInvalidateAccount(accountId: string) {
 		Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.detail(accountId) }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.account(accountId) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 		]);
 }
 
