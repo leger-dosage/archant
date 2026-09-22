@@ -1,13 +1,13 @@
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 
 import { test as base, expect } from "@playwright/test";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
-import { TIME_ZONE } from "./settings.ts";
+import { TIME_ZONE, WEB_URL } from "./settings.ts";
 
 export { expect };
 
@@ -24,6 +24,11 @@ export type OpenAccountOptions = {
 };
 
 export type Created = { id: string; name: string };
+
+// `request` carries the session cookie from the storage state, but no
+// `Origin`: a browser adds one itself, and the API's `csrf()` refuses a form
+// post, or a bodiless one, without it.
+const sameOrigin = { origin: WEB_URL };
 
 const createdBody = z.object({ data: z.object({ id: z.string() }) });
 
@@ -122,7 +127,7 @@ async function created(response: APIResponse): Promise<string> {
 	return createdBody.parse(await response.json()).data.id;
 }
 
-function apiHelpers(request: APIRequestContext) {
+export function apiHelpers(request: APIRequestContext) {
 	async function addTransaction(
 		accountId: string,
 		input: { date: string; label: string; amount: string; notes?: string },
@@ -191,10 +196,11 @@ function apiHelpers(request: APIRequestContext) {
 		async importFile(accountId: string, buffer: Buffer, name = "releve.ofx"): Promise<string> {
 			const id = await created(
 				await request.post(`/api/accounts/${accountId}/imports`, {
+					headers: sameOrigin,
 					multipart: { file: { name, mimeType: "application/x-ofx", buffer } },
 				}),
 			);
-			const response = await request.post(`/api/imports/${id}/confirm`);
+			const response = await request.post(`/api/imports/${id}/confirm`, { headers: sameOrigin });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 
@@ -215,10 +221,26 @@ function apiHelpers(request: APIRequestContext) {
 
 export type Api = ReturnType<typeof apiHelpers>;
 
-export const test = base.extend<{ api: Api; outsideRequestGuard: void }>({
+export const test = base.extend<{ api: Api; clientAddress: void; outsideRequestGuard: void }>({
 	api: async ({ request }, use) => {
 		await use(apiHelpers(request));
 	},
+
+	// Each test's browser plays a distinct client behind the preview server,
+	// the reverse proxy the suite's API trusts: its `x-forwarded-for` names the
+	// client, as a real proxy's would. Sharing one address, the suite would run
+	// past Better Auth's 100 calls per sliding ten seconds on `/api/auth/*`
+	// (every page load asks for the session), and one test's sign-ins would
+	// count against another's limit of three.
+	clientAddress: [
+		async ({ context }, use) => {
+			await context.setExtraHTTPHeaders({
+				"x-forwarded-for": `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`,
+			});
+			await use();
+		},
+		{ auto: true },
+	],
 
 	// No test reaches the network (AD-16). A request to any other host is
 	// aborted, then fails the test naming the URL, even if the page swallowed

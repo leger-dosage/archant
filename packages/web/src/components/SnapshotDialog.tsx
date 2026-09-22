@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 
 import type { SnapshotFormInput } from "@archant/api/schemas/snapshots";
 import { createSnapshotSchema } from "@archant/api/schemas/snapshots";
@@ -30,6 +29,7 @@ import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["date", "balance"] as const;
@@ -88,7 +88,7 @@ function SnapshotForm({ account, snapshot, onClose }: SnapshotFormProps) {
 			unplaced.length > 0 ||
 			apiError.fields.length === 0
 		) {
-			toast.error(t(`errors.${apiError.code}`));
+			showErrorToast(apiError.code);
 		}
 	};
 

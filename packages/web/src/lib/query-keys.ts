@@ -5,6 +5,8 @@ import type { BalancePeriod } from "@archant/api/schemas/balances";
 // One entry per resource, so an invalidation after a write names exactly the
 // queries it makes stale. `accounts.all` prefixes every account query.
 export const queryKeys = {
+	/** Better Auth's session, `null` when signed out (lib/auth-client.ts). */
+	session: ["session"] as const,
 	accounts: {
 		all: ["accounts"] as const,
 		detail: (id: string) => ["accounts", "detail", id] as const,

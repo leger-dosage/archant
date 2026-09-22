@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { runMigrations } from "@archant/data/migrate";
 
-import { API_PORT, TIME_ZONE } from "./settings.ts";
+import { API_PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 // Started by playwright.config.ts. One fresh database per run, in a file
 // rather than `:memory:`: every libSQL connection to `:memory:` opens its own
@@ -27,6 +27,14 @@ const api = spawn(process.execPath, [entrypoint], {
 		PORT: String(API_PORT),
 		APP_TIMEZONE: TIME_ZONE,
 		LOG_LEVEL: "warn",
+		// Sessions die with the run's database, so a fixed secret costs nothing.
+		BETTER_AUTH_SECRET: "archant-end-to-end-secret-of-32-characters",
+		// The preview server's origin, which the browser sends: Better Auth and
+		// the upload origin check refuse any other.
+		BETTER_AUTH_URL: WEB_URL,
+		// The preview server proxies `/api` from loopback, a genuine reverse
+		// proxy: its `x-forwarded-for` names the browser's address.
+		TRUSTED_PROXIES: "127.0.0.1,::1",
 	},
 });
 

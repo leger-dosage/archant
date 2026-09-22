@@ -101,6 +101,8 @@ No test reaches the network. An unmocked request fails the test that sent it, na
 
 End-to-end tests live in `packages/web/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`. `pnpm test:e2e` starts its own API on port 8788, against a fresh migrated SQLite file, and serves the built interface on port 4174, so it runs beside the dev servers without touching `local.db`. Tests create their own accounts through the API, then drive the interface by role and accessible name.
 
+Every end-to-end test runs signed in as the administrator that the `setup` Playwright project creates through `/setup`, the only moment the database has no user. Its session is saved to `packages/web/e2e/.auth/admin.json`, which is gitignored. A test that must start signed out sets an empty `storageState`. API specs sign in once per file through `packages/api/src/testing/auth.ts`, never once per test: Better Auth allows three sign-ins per ten seconds.
+
 ## Deployment
 
 The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume. It will be the only target with files in the repository. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.

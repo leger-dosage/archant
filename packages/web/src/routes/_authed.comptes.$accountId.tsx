@@ -58,7 +58,7 @@ const searchSchema = z.object({
 	importsPage: z.number().int().min(1).optional().catch(undefined),
 });
 
-export const Route = createFileRoute("/comptes/$accountId")({
+export const Route = createFileRoute("/_authed/comptes/$accountId")({
 	validateSearch: searchSchema,
 	component: AccountPage,
 });

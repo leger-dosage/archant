@@ -71,6 +71,13 @@
       "when": 1790082875725,
       "tag": "0009_add_import_revert",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790084739241,
+      "tag": "0010_add_auth",
+      "breakpoints": true
     }
   ]
 }

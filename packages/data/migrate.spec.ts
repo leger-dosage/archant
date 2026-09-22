@@ -284,6 +284,48 @@ async function migratedBefore(tag: string): Promise<Database> {
 	return before;
 }
 
+const insertUser = (database: Database, id: string, role: string | null) =>
+	database.run(
+		sql`insert into users (id, name, email, role) values (${id}, 'A', ${`${id}@example.test`}, ${role})`,
+	);
+
+describe("users and settings", () => {
+	it("accepts the admin role only, and requires one", async () => {
+		const database = await migrated();
+
+		await expect(insertUser(database, "u1", "admin")).resolves.toBeDefined();
+		await expect(insertUser(database, "u2", "viewer")).rejects.toThrow();
+		await expect(insertUser(database, "u3", null)).rejects.toThrow();
+	});
+
+	it("holds a setting once, so inserting its key is a one-time claim", async () => {
+		const database = await migrated();
+		const claim = () =>
+			database.run(
+				sql`insert into settings (key, value, updated_at) values ('setup_completed_at', '0', 0)`,
+			);
+
+		await expect(claim()).resolves.toBeDefined();
+		await expect(claim()).rejects.toThrow();
+	});
+
+	it("deletes a user's sessions and credentials with the user", async () => {
+		const database = await migrated();
+		await insertUser(database, "u1", "admin");
+		await database.run(
+			sql`insert into sessions (id, expires_at, token, updated_at, user_id) values ('s1', 0, 't1', 0, 'u1')`,
+		);
+		await database.run(
+			sql`insert into auth_accounts (id, account_id, provider_id, user_id, updated_at) values ('c1', 'u1', 'credential', 'u1', 0)`,
+		);
+
+		await database.run(sql`delete from users where id = 'u1'`);
+
+		await expect(database.all(sql`select id from sessions`)).resolves.toEqual([]);
+		await expect(database.all(sql`select id from auth_accounts`)).resolves.toEqual([]);
+	});
+});
+
 describe("import mappings", () => {
 	it("holds one mapping per account and goes with its account", async () => {
 		const database = await migrated();

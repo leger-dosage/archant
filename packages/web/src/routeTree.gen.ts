@@ -9,104 +9,184 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as OperationsRouteImport } from './routes/operations'
-import { Route as ComptesIndexRouteImport } from './routes/comptes.index'
-import { Route as ComptesAccountIdRouteImport } from './routes/comptes.$accountId'
+import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as ConnexionRouteImport } from './routes/connexion'
+import { Route as SetupRouteImport } from './routes/setup'
+import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
+import { Route as AuthedOperationsRouteImport } from './routes/_authed.operations'
+import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes.index'
+import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
 
-const IndexRoute = IndexRouteImport.update({
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnexionRoute = ConnexionRouteImport.update({
+  id: '/connexion',
+  path: '/connexion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthedRoute,
 } as any)
-const OperationsRoute = OperationsRouteImport.update({
+const AuthedOperationsRoute = AuthedOperationsRouteImport.update({
   id: '/operations',
   path: '/operations',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthedRoute,
 } as any)
-const ComptesIndexRoute = ComptesIndexRouteImport.update({
+const AuthedComptesIndexRoute = AuthedComptesIndexRouteImport.update({
   id: '/comptes/',
   path: '/comptes/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthedRoute,
 } as any)
-const ComptesAccountIdRoute = ComptesAccountIdRouteImport.update({
+const AuthedComptesAccountIdRoute = AuthedComptesAccountIdRouteImport.update({
   id: '/comptes/$accountId',
   path: '/comptes/$accountId',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthedRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/operations': typeof OperationsRoute
-  '/comptes/$accountId': typeof ComptesAccountIdRoute
-  '/comptes/': typeof ComptesIndexRoute
+  '/': typeof AuthedIndexRoute
+  '/connexion': typeof ConnexionRoute
+  '/setup': typeof SetupRoute
+  '/operations': typeof AuthedOperationsRoute
+  '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/comptes/': typeof AuthedComptesIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/operations': typeof OperationsRoute
-  '/comptes/$accountId': typeof ComptesAccountIdRoute
-  '/comptes': typeof ComptesIndexRoute
+  '/connexion': typeof ConnexionRoute
+  '/setup': typeof SetupRoute
+  '/operations': typeof AuthedOperationsRoute
+  '/': typeof AuthedIndexRoute
+  '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/comptes': typeof AuthedComptesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/operations': typeof OperationsRoute
-  '/comptes/$accountId': typeof ComptesAccountIdRoute
-  '/comptes/': typeof ComptesIndexRoute
+  '/_authed': typeof AuthedRouteWithChildren
+  '/connexion': typeof ConnexionRoute
+  '/setup': typeof SetupRoute
+  '/_authed/operations': typeof AuthedOperationsRoute
+  '/_authed/': typeof AuthedIndexRoute
+  '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/_authed/comptes/': typeof AuthedComptesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/operations' | '/comptes/$accountId' | '/comptes/'
+  fullPaths:
+    | '/'
+    | '/connexion'
+    | '/setup'
+    | '/operations'
+    | '/comptes/$accountId'
+    | '/comptes/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/operations' | '/comptes/$accountId' | '/comptes'
-  id: '__root__' | '/' | '/operations' | '/comptes/$accountId' | '/comptes/'
+  to:
+    | '/connexion'
+    | '/setup'
+    | '/operations'
+    | '/'
+    | '/comptes/$accountId'
+    | '/comptes'
+  id:
+    | '__root__'
+    | '/_authed'
+    | '/connexion'
+    | '/setup'
+    | '/_authed/operations'
+    | '/_authed/'
+    | '/_authed/comptes/$accountId'
+    | '/_authed/comptes/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  OperationsRoute: typeof OperationsRoute
-  ComptesAccountIdRoute: typeof ComptesAccountIdRoute
-  ComptesIndexRoute: typeof ComptesIndexRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
+  ConnexionRoute: typeof ConnexionRoute
+  SetupRoute: typeof SetupRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connexion': {
+      id: '/connexion'
+      path: '/connexion'
+      fullPath: '/connexion'
+      preLoaderRoute: typeof ConnexionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/': {
+      id: '/_authed/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedIndexRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/operations': {
-      id: '/operations'
+    '/_authed/operations': {
+      id: '/_authed/operations'
       path: '/operations'
       fullPath: '/operations'
-      preLoaderRoute: typeof OperationsRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedOperationsRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/comptes/': {
-      id: '/comptes/'
+    '/_authed/comptes/': {
+      id: '/_authed/comptes/'
       path: '/comptes'
       fullPath: '/comptes/'
-      preLoaderRoute: typeof ComptesIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedComptesIndexRouteImport
+      parentRoute: typeof AuthedRoute
     }
-    '/comptes/$accountId': {
-      id: '/comptes/$accountId'
+    '/_authed/comptes/$accountId': {
+      id: '/_authed/comptes/$accountId'
       path: '/comptes/$accountId'
       fullPath: '/comptes/$accountId'
-      preLoaderRoute: typeof ComptesAccountIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AuthedComptesAccountIdRouteImport
+      parentRoute: typeof AuthedRoute
     }
   }
 }
 
+interface AuthedRouteChildren {
+  AuthedOperationsRoute: typeof AuthedOperationsRoute
+  AuthedIndexRoute: typeof AuthedIndexRoute
+  AuthedComptesAccountIdRoute: typeof AuthedComptesAccountIdRoute
+  AuthedComptesIndexRoute: typeof AuthedComptesIndexRoute
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedOperationsRoute: AuthedOperationsRoute,
+  AuthedIndexRoute: AuthedIndexRoute,
+  AuthedComptesAccountIdRoute: AuthedComptesAccountIdRoute,
+  AuthedComptesIndexRoute: AuthedComptesIndexRoute,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  OperationsRoute: OperationsRoute,
-  ComptesAccountIdRoute: ComptesAccountIdRoute,
-  ComptesIndexRoute: ComptesIndexRoute,
+  AuthedRoute: AuthedRouteWithChildren,
+  ConnexionRoute: ConnexionRoute,
+  SetupRoute: SetupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

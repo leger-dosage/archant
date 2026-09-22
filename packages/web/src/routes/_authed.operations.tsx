@@ -31,7 +31,7 @@ import {
 	withoutFilter,
 } from "@/lib/transaction-filters";
 
-export const Route = createFileRoute("/operations")({
+export const Route = createFileRoute("/_authed/operations")({
 	validateSearch: operationsSearchSchema,
 	component: OperationsPage,
 });

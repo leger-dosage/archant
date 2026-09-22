@@ -8,6 +8,7 @@
 		"./schemas/accounts": "./src/schemas/accounts.ts",
 		"./schemas/balances": "./src/schemas/balances.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
+		"./schemas/setup": "./src/schemas/setup.ts",
 		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/transactions": "./src/schemas/transactions.ts"
 	},
@@ -22,6 +23,7 @@
 		"@hono/node-server": "^2.1.1",
 		"@hono/zod-validator": "^0.9.1",
 		"@t3-oss/env-core": "catalog:",
+		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
 		"ofx-js": "1.1.1",

@@ -43,3 +43,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-4-import-a-qif-file.md`
   summary: Check whether a French Quicken or Microsoft Money QIF export writes its starting balance under a French payee such as « Solde d'ouverture », which the QIF source would import as a transaction.
   evidence: Unverified, medium if true. `toLine` recognises only `Opening Balance`; a real French export would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-first-launch-setup-and-sign-in.md`
+  summary: Document in `docs/deployment.md` that `TRUSTED_PROXIES` must list the reverse proxy in front of the container (for instance the Docker network's CIDR), with `BETTER_AUTH_URL` and `BETTER_AUTH_SECRET`.
+  evidence: Story 3.1 adds the variables and explains them in `.env.example` only; behind an unlisted proxy every visitor shares the proxy's sign-in limit, so one stranger can slow the owner's sign-in. Story 3.3 writes the deployment page.
