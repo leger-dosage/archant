@@ -3,9 +3,9 @@ import type { ParsedStatement } from "../domain/statement.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ImportPreviewInput } from "../schemas/imports.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { IngestGroups, IngestResult, StatementBalanceOutcome } from "./ledger.ts";
+import type { IngestGroups, IngestResult, Removable, StatementBalanceOutcome } from "./ledger.ts";
 
-import { and, eq, lt } from "drizzle-orm";
+import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
@@ -82,6 +82,29 @@ export type ImportPreview = {
 };
 
 export type ConfirmedImport = { id: string; counts: ImportCounts };
+
+/**
+ * One row of an account's import history. `removable` is what a revert would
+ * delete now, `null` once reverted; `counts` stay as confirm stored them.
+ */
+export type ImportHistoryItem = {
+	id: string;
+	fileName: string;
+	source: FileSourceId;
+	confirmedAt: number;
+	revertedAt: number | null;
+	counts: ImportCounts;
+	removable: Removable | null;
+};
+
+export type ImportHistoryPage = {
+	items: ImportHistoryItem[];
+	page: number;
+	pageSize: number;
+	total: number;
+};
+
+export type RevertedImport = { id: string; removed: Removable };
 
 function invalidFile(): AppError {
 	return new AppError("INVALID_IMPORT_FILE", "The file is not a readable statement.");
@@ -306,6 +329,8 @@ export async function createImport(
 		counts: null,
 		createdAt: Date.now(),
 		confirmedAt: null,
+		revertedAt: null,
+		previousOpeningDate: null,
 	};
 
 	await deps.db.insert(imports).values(row);
@@ -391,6 +416,97 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 	} catch (error) {
 		if (error instanceof AppError) {
 			deps.logger.info({ importId: id, code: error.code }, "import refused");
+		}
+
+		throw error;
+	}
+}
+
+/**
+ * A page of the account's confirmed and reverted imports, the latest
+ * confirmed first. Previews are left out: they wrote nothing.
+ */
+export async function listImports(
+	deps: ServiceDeps,
+	accountId: string,
+	page: { page: number; pageSize: number },
+): Promise<ImportHistoryPage> {
+	await getAccount(deps, accountId);
+	const where = and(
+		eq(imports.accountId, accountId),
+		inArray(imports.status, ["confirmed", "reverted"]),
+	);
+	const rows = await deps.db
+		.select({
+			id: imports.id,
+			fileName: imports.fileName,
+			source: imports.source,
+			status: imports.status,
+			confirmedAt: imports.confirmedAt,
+			revertedAt: imports.revertedAt,
+			counts: imports.counts,
+		})
+		.from(imports)
+		.where(where)
+		.orderBy(desc(imports.confirmedAt), desc(imports.id))
+		.limit(page.pageSize)
+		.offset((page.page - 1) * page.pageSize);
+	const totals = await deps.db.select({ total: count() }).from(imports).where(where).get();
+	const removable = await ledger.removableOf(
+		deps,
+		rows.filter((row) => row.status === "confirmed").map((row) => row.id),
+	);
+
+	return {
+		items: rows.map(({ confirmedAt, counts, ...row }) => {
+			// Confirm writes both; a row without them is a bug, not a state.
+			if (confirmedAt === null || counts === null) {
+				throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+			}
+
+			return {
+				id: row.id,
+				fileName: row.fileName,
+				source: row.source,
+				confirmedAt,
+				revertedAt: row.revertedAt,
+				counts,
+				removable: removable.get(row.id) ?? null,
+			};
+		}),
+		page: page.page,
+		pageSize: page.pageSize,
+		total: totals?.total ?? 0,
+	};
+}
+
+/**
+ * Undoes a confirmed import (AD-7). The ledger checks the status under its
+ * write lock, so two reverts racing each other delete once.
+ */
+export async function revertImport(deps: ImportDeps, id: string): Promise<RevertedImport> {
+	const started = performance.now();
+
+	try {
+		const { removed } = await ledger.revertImport(deps, id, { origin: "user" });
+
+		deps.logger.info(
+			{ importId: id, removed, durationMs: Math.round(performance.now() - started) },
+			"import reverted",
+		);
+
+		return { id, removed };
+	} catch (error) {
+		const durationMs = Math.round(performance.now() - started);
+
+		// The code only: an unexpected error's message may embed bound amounts.
+		if (error instanceof AppError) {
+			deps.logger.info({ importId: id, code: error.code, durationMs }, "import revert refused");
+		} else {
+			deps.logger.error(
+				{ importId: id, code: "INTERNAL_ERROR", durationMs },
+				"import revert failed",
+			);
 		}
 
 		throw error;

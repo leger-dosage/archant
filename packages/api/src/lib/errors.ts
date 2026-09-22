@@ -11,6 +11,8 @@ export const ERROR_STATUSES = {
 	INVALID_IMPORT_FILE: 400,
 	/** The account changed between an import's preview and its confirmation. */
 	IMPORT_PREVIEW_STALE: 409,
+	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
+	IMPORT_NOT_REVERTABLE: 409,
 	INTERNAL_ERROR: 500,
 } as const satisfies Record<string, ContentfulStatusCode>;
 

@@ -15,6 +15,7 @@ import { isCurrencyCode } from "@archant/data/money";
 import { AccountSettings } from "@/components/AccountSettings";
 import { BalanceChart } from "@/components/BalanceChart";
 import { ImportDialog } from "@/components/ImportDialog";
+import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
 import { ShortcutHint } from "@/components/ShortcutHint";
@@ -30,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAccount } from "@/hooks/useAccount";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { usePageCommands } from "@/hooks/useCommands";
+import { useAccountImports } from "@/hooks/useImports";
 import { useShortcut } from "@/hooks/useShortcut";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTransactions } from "@/hooks/useTransactions";
@@ -38,7 +40,7 @@ import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots", "settings"] as const;
+const ACCOUNT_TABS = ["transactions", "snapshots", "imports", "settings"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -53,6 +55,7 @@ const searchSchema = z.object({
 	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
 	tab: z.enum(ACCOUNT_TABS).optional().catch(undefined),
 	snapshotsPage: z.number().int().min(1).optional().catch(undefined),
+	importsPage: z.number().int().min(1).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/comptes/$accountId")({
@@ -208,6 +211,49 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 	);
 }
 
+function ImportsPanel({ accountId, page }: { accountId: string; page: number }) {
+	const { t } = useTranslation();
+	const imports = useAccountImports(accountId, page);
+	const data = imports.data;
+	const pageCount = pageCountOf(data);
+
+	useClampAccountPage(
+		accountId,
+		"importsPage",
+		page,
+		imports.isPlaceholderData ? undefined : imports.data,
+	);
+
+	return (
+		<div className="flex flex-col gap-3">
+			{imports.isPending && <ImportHistorySkeleton />}
+
+			{imports.isError && (
+				<ListError error={imports.error} onRetry={() => void imports.refetch()} />
+			)}
+
+			{data !== undefined && data.total === 0 && (
+				<div className="rounded-lg border border-dashed p-8">
+					<p className="text-muted-foreground">{t("imports.history.empty")}</p>
+				</div>
+			)}
+
+			{data !== undefined && data.total > 0 && (
+				<ImportHistory accountId={accountId} items={data.items} />
+			)}
+
+			{data !== undefined && pageCount > 1 && (
+				<Pagination
+					target={{ to: "/comptes/$accountId", accountId, param: "importsPage" }}
+					page={page}
+					pageCount={pageCount}
+					label={t("imports.history.paginationLabel")}
+				/>
+			)}
+		</div>
+	);
+}
+
 function AccountPage() {
 	const { t } = useTranslation();
 	const { accountId } = Route.useParams();
@@ -216,6 +262,7 @@ function AccountPage() {
 		period = DEFAULT_BALANCE_PERIOD,
 		tab = DEFAULT_TAB,
 		snapshotsPage = 1,
+		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
@@ -379,6 +426,7 @@ function AccountPage() {
 				<TabsList aria-label={t("accountDetail.tabs.label")}>
 					<TabsTrigger value="transactions">{t("accountDetail.tabs.transactions")}</TabsTrigger>
 					<TabsTrigger value="snapshots">{t("accountDetail.tabs.snapshots")}</TabsTrigger>
+					<TabsTrigger value="imports">{t("accountDetail.tabs.imports")}</TabsTrigger>
 					<TabsTrigger value="settings">{t("accountDetail.tabs.settings")}</TabsTrigger>
 				</TabsList>
 				<TabsContent value="transactions">
@@ -398,6 +446,9 @@ function AccountPage() {
 						onAdd={openNewSnapshot}
 						onOpen={(snapshot) => setSnapshotDialog({ open: true, snapshot })}
 					/>
+				</TabsContent>
+				<TabsContent value="imports">
+					<ImportsPanel accountId={accountId} page={importsPage} />
 				</TabsContent>
 				<TabsContent value="settings">
 					{account.data !== undefined && <AccountSettings account={account.data} />}

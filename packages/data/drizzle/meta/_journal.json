@@ -64,6 +64,13 @@
       "when": 1790079144563,
       "tag": "0008_add_qif_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790082875725,
+      "tag": "0009_add_import_revert",
+      "breakpoints": true
     }
   ]
 }

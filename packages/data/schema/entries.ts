@@ -32,10 +32,13 @@ export const entries = sqliteTable(
 		date: text("date").notNull(),
 		amount: integer("amount").notNull(),
 		currency: text("currency").notNull(),
-		// The import that wrote this `reconciliation` from its statement balance
-		// (AD-8), so a revert removes only what the import wrote. Cleared when the
-		// user edits the snapshot: the value is theirs from then on. Restrict, as
-		// the ledger deletes an account's entries before its imports.
+		// The import that wrote this entry, so a revert removes only what the
+		// import wrote: a `reconciliation` from its statement balance (AD-8), or a
+		// transaction it created. A matched entry keeps its own value, since keys
+		// alone cannot tell a created entry from a matched manual one. Cleared
+		// when the user edits the snapshot, the value being theirs from then on,
+		// and on a created transaction another source's key keeps past a revert.
+		// Restrict, as the ledger deletes an account's entries before its imports.
 		importId: text("import_id").references(() => imports.id, { onDelete: "restrict" }),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),

@@ -5,7 +5,7 @@ import { Hono } from "hono";
 
 import { validationError } from "../lib/zod-error.ts";
 import { importPreviewSchema } from "../schemas/imports.ts";
-import { confirmImport, previewImport } from "../services/imports.ts";
+import { confirmImport, previewImport, revertImport } from "../services/imports.ts";
 
 // Uploading lives under the account (`POST /accounts/:id/imports`): a file
 // always targets one account.
@@ -23,5 +23,8 @@ export function importsRoutes(deps: ImportDeps) {
 		)
 		.post("/:id/confirm", async (c) =>
 			c.json({ data: await confirmImport(deps, c.req.param("id")) }, 200),
+		)
+		.post("/:id/revert", async (c) =>
+			c.json({ data: await revertImport(deps, c.req.param("id")) }, 200),
 		);
 }
