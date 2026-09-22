@@ -4,7 +4,9 @@ import type { TempDatabase } from "./testing/temp-database.ts";
 
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -1375,6 +1377,98 @@ describe("errors", () => {
 		expect(logLines[0]).toContain('"error":"Error"');
 		expect(logLines[0]).not.toContain("123456");
 		expect(logLines[0]).not.toContain("stack");
+	});
+
+	it("answers any path with NOT_FOUND when there is no interface to serve", async () => {
+		const response = await buildApp().request("/");
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+// The I/O matrix of Story 3.3: the built interface served beside the API.
+describe("serving the interface", () => {
+	let webDist: string;
+	const page = "<!doctype html><title>Archant</title>";
+	const script = "console.log('archant');";
+
+	beforeAll(async () => {
+		webDist = await mkdtemp(join(tmpdir(), "archant-web-"));
+		await mkdir(join(webDist, "assets"));
+		await writeFile(join(webDist, "index.html"), page);
+		await writeFile(join(webDist, "assets", "index-abc.js"), script);
+	});
+
+	afterAll(async () => {
+		await rm(webDist, { recursive: true, force: true });
+	});
+
+	const serving = () =>
+		withSession(
+			buildTestApp(temp.db, createLogger("silent"), undefined, { webDist }),
+			template.cookie,
+		);
+
+	it.each(["/", "/comptes", "/comptes/abc/operations"])(
+		"answers %s with index.html, revalidated on every visit",
+		async (path) => {
+			const response = await serving().request(path);
+
+			expect(response.status).toBe(200);
+			expect(response.headers.get("content-type")).toContain("text/html");
+			expect(response.headers.get("cache-control")).toBe("no-cache");
+			await expect(response.text()).resolves.toBe(page);
+		},
+	);
+
+	it("sends security headers, so no other site can frame the page", async () => {
+		const response = await serving().request("/");
+
+		expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+		expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+	});
+
+	it("serves a hashed asset as immutable for a year", async () => {
+		const response = await serving().request("/assets/index-abc.js");
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("javascript");
+		expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+		await expect(response.text()).resolves.toBe(script);
+	});
+
+	it("answers a missing asset with 404, not the page", async () => {
+		const response = await serving().request("/assets/index-gone.js");
+
+		expect(response.status).toBe(404);
+		expect(response.headers.get("cache-control")).toBeNull();
+		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("answers an unknown API route with the NOT_FOUND JSON, never the page", async () => {
+		const response = await serving().request("/api/nope");
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(await response.json())).toEqual({
+			error: { code: "NOT_FOUND", message: "No route matches GET /api/nope" },
+		});
+	});
+
+	it("still answers UNAUTHORIZED on an unknown API route without a session", async () => {
+		const response = await buildTestApp(temp.db, createLogger("silent"), undefined, {
+			webDist,
+		}).request("/api/nope");
+
+		expect(response.status).toBe(401);
+		expect(errorBody.parse(await response.json()).error.code).toBe("UNAUTHORIZED");
+	});
+
+	it("keeps API routes ahead of the page", async () => {
+		const response = await serving().request("/api/health");
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({ data: { status: "ok" } });
 	});
 });
 

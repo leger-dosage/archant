@@ -1,0 +1,28 @@
+# Dependencies are installed inside the image, for its own platform.
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+playwright-report
+**/playwright-report
+test-results
+**/test-results
+packages/web/e2e/.auth
+*.tsbuildinfo
+
+# A development `.env` would reach the build, and Vite inlines `VITE_*`
+# variables into the bundle.
+.env
+.env.*
+local.db
+local.db-*
+
+.git
+.github
+.agents
+.claude
+_bmad
+_bmad-output
+docs

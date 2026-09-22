@@ -33,7 +33,7 @@ export function buildTestApp(
 	db: Database,
 	logger: Logger = createLogger("silent"),
 	auth?: Auth,
-	network: TestNetwork = {},
+	network: TestNetwork & { webDist?: string } = {},
 ): TestApp {
 	const trustedProxies = network.trustedProxies ?? [];
 
@@ -46,6 +46,7 @@ export function buildTestApp(
 		trustedProxies,
 		// In process there is no socket unless a spec names a peer.
 		clientAddress: () => network.peer,
+		webDist: network.webDist,
 	});
 }
 

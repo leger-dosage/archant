@@ -32,7 +32,7 @@ function fail(message: string): never {
 const email = process.argv[2]?.trim();
 
 if (email === undefined || email === "") {
-	fail("Usage : pnpm api reset-password <adresse e-mail>");
+	fail("Usage : reset-password <adresse e-mail>");
 }
 
 // The prompts need a terminal; `docker exec` without one reads nothing, which

@@ -4,17 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runMigrations } from "@archant/data/migrate";
+import { PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
-import { API_PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
-
-// Started by playwright.config.ts. One fresh database per run, in a file
+// Started by playwright.config.ts once the interface is built. One fresh
+// database per run, which the server migrates before it listens, in a file
 // rather than `:memory:`: every libSQL connection to `:memory:` opens its own
 // empty database, and the ledger's transactions borrow their own connection.
 const directory = await mkdtemp(join(tmpdir(), "archant-e2e-"));
 const databaseUrl = `file:${join(directory, "e2e.db")}`;
-
-await runMigrations(databaseUrl);
 
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {
@@ -24,16 +21,20 @@ const api = spawn(process.execPath, [entrypoint], {
 		DATABASE_URL: databaseUrl,
 		// A token exported in the shell for Turso must not reach a local file.
 		DATABASE_AUTH_TOKEN: "",
-		PORT: String(API_PORT),
+		PORT: String(PORT),
 		APP_TIMEZONE: TIME_ZONE,
 		LOG_LEVEL: "warn",
 		// Sessions die with the run's database, so a fixed secret costs nothing.
 		BETTER_AUTH_SECRET: "archant-end-to-end-secret-of-32-characters",
-		// The preview server's origin, which the browser sends: Better Auth and
-		// the upload origin check refuse any other.
+		// The origin the browser sends: Better Auth and the upload origin check
+		// refuse any other.
 		BETTER_AUTH_URL: WEB_URL,
-		// The preview server proxies `/api` from loopback, a genuine reverse
-		// proxy: its `x-forwarded-for` names the browser's address.
+		// The bundle that ships, served the way the container serves it.
+		WEB_DIST: fileURLToPath(new URL("../dist", import.meta.url)),
+		// Loopback stands in for a reverse proxy: the `clientAddress` fixture
+		// gives each test's browser an `x-forwarded-for` of its own, so tests do
+		// not share Better Auth's rate-limit buckets. Every request here comes
+		// from loopback, so nothing outside the suite can use this trust.
 		TRUSTED_PROXIES: "127.0.0.1,::1",
 	},
 });

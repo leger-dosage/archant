@@ -99,7 +99,7 @@ Vitest for unit and integration tests, Playwright for end-to-end. Coverage is ex
 
 No test reaches the network. An unmocked request fails the test that sent it, naming the URL.
 
-End-to-end tests live in `packages/web/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`. `pnpm test:e2e` starts its own API on port 8788, against a fresh migrated SQLite file, and serves the built interface on port 4174, so it runs beside the dev servers without touching `local.db`. Tests create their own accounts through the API, then drive the interface by role and accessible name.
+End-to-end tests live in `packages/web/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`. `pnpm test:e2e` builds the interface, then starts one server on port 8788 that serves it beside the API, as the container does, against a fresh SQLite file the server migrates itself. It runs beside the dev servers without touching `local.db`. That server trusts loopback as a reverse proxy, so the `clientAddress` fixture can give each test its own `x-forwarded-for`, and with it its own sign-in rate-limit bucket. Tests create their own accounts through the API, then drive the interface by role and accessible name.
 
 Three Playwright projects run in order: `setup`, then `chromium`, then `password`. `password` holds the password-change test and runs last, because that change revokes every session of the single user, the saved administrator session included.
 
@@ -107,7 +107,7 @@ Every end-to-end test runs signed in as the administrator that the `setup` Playw
 
 ## Deployment
 
-The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume. It will be the only target with files in the repository. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.
+The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume: `BETTER_AUTH_SECRET=... docker compose up --build --detach --wait`, then http://localhost:8787. `Dockerfile`, `docker-compose.yml` and `.dockerignore` make it the only target with files in the repository. The server applies migrations before it listens and answers `GET /api/health`; it serves the interface only when `WEB_DIST` is set, so `pnpm api start:dev` serves none. The runtime image holds the production dependencies of `@archant/api` and `@archant/data` only; `.pnpmfile.cjs` drops optional peers that would otherwise pull in vitest, drizzle-kit and TypeScript. The CI job `image` builds it, starts it, probes it and checks that it stops on SIGTERM. Variables, reverse proxies and the password reset in the container are in `docs/deployment.md`. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.
 
 Scheduled synchronisation is a protected `POST /api/sync` route. Every platform triggers it its own way, a system cron or a scheduled GitHub Action, and the route does not care which.
 

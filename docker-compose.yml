@@ -1,0 +1,31 @@
+# The reference deployment: `BETTER_AUTH_SECRET=... docker compose up -d`.
+# Variables come from the shell, or from a `.env` next to this file, which
+# Compose reads for interpolation only. No `env_file: .env`: the development
+# `DATABASE_URL` and `BETTER_AUTH_URL` there would point the container at a
+# path that does not exist and at the Vite dev server's origin.
+services:
+  archant:
+    build: .
+    # Back after a reboot without anyone logging in.
+    restart: unless-stopped
+    # Node as PID 1 installs no SIGTERM handler, so the kernel drops the signal
+    # and Docker kills the server ten seconds later, mid-write. An init in front
+    # forwards it, and the container stops at once.
+    init: true
+    ports:
+      - "8787:8787"
+    environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to at least 32 characters, for instance from openssl rand -base64 32}
+      # The address the browser uses. Sign-ins and uploads from any other
+      # origin are refused, so set it to the public URL behind a reverse proxy.
+      BETTER_AUTH_URL: ${ARCHANT_URL:-http://localhost:8787}
+      # Empty values fall back to the defaults in packages/api/src/env.ts.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+    volumes:
+      # The whole database is this volume. Back it up, not the image.
+      - archant-data:/data
+
+volumes:
+  archant-data:

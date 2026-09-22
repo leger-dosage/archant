@@ -7,8 +7,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => {
 	// `PORT` is the API's port, read from the same root `.env` the API loads, so
-	// the proxy follows it; the end-to-end suite sets it to run beside the dev
-	// servers. Only `PORT` is loaded: the prefix keeps the other variables,
+	// the proxy follows it. Only `PORT` is loaded: the prefix keeps the other variables,
 	// secrets included, out of Vite. Empty means 8787, as for the API. Vite's
 	// own port is a flag, never this variable.
 	const { PORT } = loadEnv(mode, fileURLToPath(new URL("../..", import.meta.url)), "PORT");
@@ -24,7 +23,7 @@ export default defineConfig(({ mode }) => {
 		server: {
 			port: 5173,
 			// Same origin in the browser, so no CORS and no API URL baked into the
-			// bundle; in production the API will serve the interface (Epic 3).
+			// bundle; in production the API serves the built interface itself.
 			proxy: { "/api": apiTarget },
 		},
 		preview: { proxy: { "/api": apiTarget } },

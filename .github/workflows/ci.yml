@@ -62,3 +62,75 @@ jobs:
           name: playwright-report
           path: packages/web/playwright-report
           retention-days: 7
+
+  # The container is the reference deployment target (ADR 0002): build it,
+  # start it as a household would, and check it answers and stops cleanly.
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      # Every `docker compose` command interpolates the file, and the secret is
+      # required there, so it is generated once for the whole job.
+      - name: Generate a session secret
+        run: |
+          secret="$(openssl rand -base64 32)"
+          echo "::add-mask::$secret"
+          echo "BETTER_AUTH_SECRET=$secret" >> "$GITHUB_ENV"
+      - run: docker compose build
+      # `--wait` returns once the image's HEALTHCHECK passes, which needs the
+      # migrations applied and the database answering.
+      - run: docker compose up --detach --wait
+      - name: Health answers ok
+        run: |
+          body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
+          test "$body" = '{"data":{"status":"ok"}}'
+      - name: The interface is served under /
+        run: |
+          result="$(curl --silent --output /dev/null --write-out '%{http_code} %{content_type}' http://localhost:8787/)"
+          echo "$result"
+          case "$result" in "200 text/html"*) ;; *) exit 1 ;; esac
+      # Signed out, the session guard answers before the JSON 404; either way an
+      # unknown API route must never get the interface page.
+      - name: An unknown API route answers JSON
+        run: |
+          result="$(curl --silent --output "$RUNNER_TEMP/body.json" --write-out '%{http_code} %{content_type}' http://localhost:8787/api/nope)"
+          echo "$result"
+          test "$result" = "401 application/json"
+          grep --quiet '"code":"UNAUTHORIZED"' "$RUNNER_TEMP/body.json"
+      # Only the production dependencies of the API and `@archant/data`;
+      # .pnpmfile.cjs keeps optional peers from pulling these back in.
+      - name: The runtime image carries no build or test tooling
+        run: |
+          found="$(docker compose exec -T archant ls node_modules/.pnpm | grep -E '^(vitest|vite|drizzle-kit|typescript)@' || true)"
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
+      # The reset command docs/deployment.md gives for the container. Without a
+      # terminal it must refuse before prompting, which proves it starts.
+      - name: The in-container reset command runs
+        run: |
+          set +e
+          docker compose exec -T archant node packages/api/src/cli/reset-password.ts admin@example.test 2> "$RUNNER_TEMP/reset.err"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/reset.err"
+          test "$code" = "1"
+          grep --quiet "Aucun terminal" "$RUNNER_TEMP/reset.err"
+      # 143 is death by SIGTERM; 137 would mean Docker had to SIGKILL the
+      # server once the one-second timeout ran out.
+      - name: SIGTERM stops the server within one second
+        run: |
+          docker compose stop --timeout 1
+          code="$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet archant)")"
+          echo "exit code $code"
+          test "$code" = "143"
+      # An upgrade restarts on a volume already migrated.
+      - name: A restart on the same volume answers ok
+        run: |
+          docker compose up --detach --wait
+          body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
+          test "$body" = '{"data":{"status":"ok"}}'
+      - if: always()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down --volumes

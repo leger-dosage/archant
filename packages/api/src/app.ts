@@ -2,15 +2,18 @@ import type { ErrorBody } from "./lib/errors.ts";
 import type { Logger } from "./lib/logger.ts";
 import type { Auth } from "./services/auth.ts";
 import type { ServiceDeps } from "./services/deps.ts";
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { csrf } from "hono/csrf";
 import { HTTPException } from "hono/http-exception";
+import { secureHeaders } from "hono/secure-headers";
 
 import { withForwardedFor } from "./lib/client-address.ts";
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { setupRoutes } from "./routes/setup.ts";
@@ -29,6 +32,11 @@ export type AppDeps = ServiceDeps & {
 	 * so no route reads a Node socket; `index.ts` builds it with `getConnInfo`.
 	 */
 	clientAddress: (c: Context) => string | undefined;
+	/**
+	 * `WEB_DIST`: the built interface, served under `/` when set. Unset in
+	 * development, where Vite serves it and proxies `/api` here.
+	 */
+	webDist?: string | undefined;
 };
 
 /**
@@ -42,18 +50,71 @@ function createApi(deps: AppDeps) {
 		.route("/transactions", transactionsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
-		.route("/setup", setupRoutes(deps));
+		.route("/setup", setupRoutes(deps))
+		.route("/health", healthRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApi>;
 
+// `c.notFound()` is untyped, so the body goes through `c.json` like any other.
+function notFound(c: Context) {
+	const body: ErrorBody = {
+		error: { code: "NOT_FOUND", message: `No route matches ${c.req.method} ${c.req.path}` },
+	};
+
+	return c.json(body, 404);
+}
+
 /**
- * The assembly point: the API under `/api`, and the error envelope for all of
- * it. Order matters: the origin check and Better Auth's handler come before
- * the session guard, which comes before every route it protects.
+ * Sets `Cache-Control` on a file actually served. `serveStatic`'s `onFound`
+ * runs once the response is built, too late for a header to reach it.
+ */
+function cacheControl(value: string): MiddlewareHandler {
+	return async (c, next) => {
+		await next();
+
+		if (c.res.ok) {
+			c.header("Cache-Control", value);
+		}
+	};
+}
+
+/**
+ * The built interface. Vite hashes every file under `/assets`, so they never
+ * change and a missing one is a `404`, never the page. Everything else is
+ * revalidated: an `index.html` cached across an upgrade would ask for assets
+ * the new build no longer has.
+ */
+function serveInterface(app: Hono, root: string) {
+	app.get(
+		"/assets/*",
+		cacheControl("public, max-age=31536000, immutable"),
+		serveStatic({ root }),
+		notFound,
+	);
+	// Any other path is a client-side route, such as a reloaded `/comptes`.
+	app.get(
+		"*",
+		cacheControl("no-cache"),
+		serveStatic({ root }),
+		serveStatic({ root, path: "index.html" }),
+	);
+}
+
+/**
+ * The assembly point: the API under `/api`, the built interface under `/`
+ * when there is one, and the error envelope for all of it. Order matters: the
+ * origin check and Better Auth's handler come before the session guard, which
+ * comes before every route it protects; `/api` has its own JSON 404 before the
+ * interface's fallback, which would otherwise answer an unknown API route with
+ * the page.
  */
 export function createApp(deps: AppDeps) {
 	const app = new Hono()
+		// Every response, pages and API alike: without `X-Frame-Options` a
+		// third-party site could frame the sign-in page and steer a click, and
+		// `nosniff` stops a browser from running a file under a type it guessed.
+		.use("*", secureHeaders())
 		// A form post needs no preflight, so a foreign page could submit an
 		// upload with the session cookie attached. JSON requests are left to the
 		// browser's CORS preflight, which this API never answers.
@@ -66,16 +127,14 @@ export function createApp(deps: AppDeps) {
 			),
 		)
 		.use("/api/*", requireSession(deps.auth))
-		.route("/api", createApi(deps));
+		.route("/api", createApi(deps))
+		.all("/api/*", notFound);
 
-	// `c.notFound()` is untyped, so the body goes through `c.json` like any other.
-	app.notFound((c) => {
-		const body: ErrorBody = {
-			error: { code: "NOT_FOUND", message: `No route matches ${c.req.method} ${c.req.path}` },
-		};
+	if (deps.webDist !== undefined) {
+		serveInterface(app, deps.webDist);
+	}
 
-		return c.json(body, 404);
-	});
+	app.notFound(notFound);
 
 	app.onError((error, c) => {
 		if (error instanceof AppError) {
