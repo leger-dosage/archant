@@ -17,6 +17,7 @@ import {
 	balanceOn,
 	balancesBetween,
 	createAccount,
+	deleteAccount,
 	deleteSnapshot,
 	deleteTransaction,
 	findSnapshot,
@@ -1309,4 +1310,105 @@ describe("findSnapshot", () => {
 		await expect(findSnapshot(deps(), transaction)).resolves.toBeNull();
 		await expect(findSnapshot(deps(), "nope")).resolves.toBeNull();
 	});
+});
+
+/** Every row an account owns, in the four tables `deleteAccount` clears. */
+async function rowsOf(db: TempDatabase["db"], accountId: string) {
+	const accountRows = await db.select().from(accounts).where(eq(accounts.id, accountId));
+	const entryRows = await db.select().from(entries).where(eq(entries.accountId, accountId));
+	const transactionRows = await db
+		.select({ entryId: transactions.entryId })
+		.from(transactions)
+		.innerJoin(entries, eq(entries.id, transactions.entryId))
+		.where(eq(entries.accountId, accountId));
+	const balanceRows = await db.select().from(balances).where(eq(balances.accountId, accountId));
+
+	return {
+		accounts: accountRows.length,
+		entries: entryRows.length,
+		transactions: transactionRows.length,
+		balances: balanceRows.length,
+	};
+}
+
+describe("deleteAccount", () => {
+	it("removes the account, its transactions, snapshots, opening anchor and balances", async () => {
+		const account = await openPinned();
+		await add(account.id, { date: "2026-04-01" });
+		await add(account.id, { date: "2026-05-01" });
+		await snapshot(account.id, "2026-03-05", 200000);
+		const other = await openPinned({ name: "Livret A", subtype: "savings" });
+		const otherBefore = await rowsOf(temp.db, other.id);
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(rowsOf(temp.db, account.id)).resolves.toEqual({
+			accounts: 0,
+			entries: 0,
+			transactions: 0,
+			balances: 0,
+		});
+		await expect(rowsOf(temp.db, other.id)).resolves.toEqual(otherBefore);
+		expect(otherBefore).toMatchObject({ accounts: 1, entries: 2, transactions: 1 });
+		await expect(balanceOn(deps(), other.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 138000,
+		});
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		await expect(deleteAccount(deps(), "nope", { origin: "user" })).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+
+	it("deletes more transactions than SQLite binds parameters in one statement", async () => {
+		const big = await createTempDatabase();
+
+		try {
+			setToday("2026-09-21T10:00:00Z");
+			const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
+			const account = await createAccount(
+				bigDeps,
+				{ ...checking, openingDate: "2016-01-01" },
+				{ origin: "user" },
+			);
+			vi.useRealTimers();
+			// Past the 32 766 parameters a list of ids would bind.
+			const ids = Array.from({ length: 33_000 }, () => crypto.randomUUID());
+			const chunks = Array.from({ length: Math.ceil(ids.length / 2000) }, (_, index) =>
+				ids.slice(index * 2000, (index + 1) * 2000),
+			);
+
+			// Seeded directly, as the 50,000-row list test does: only the delete is under test.
+			await chunks.reduce(async (previous, chunk) => {
+				await previous;
+				await big.db.insert(entries).values(
+					chunk.map((id) => ({
+						id,
+						accountId: account.id,
+						kind: "transaction" as const,
+						date: "2026-01-02",
+						amount: -1,
+						currency: "EUR",
+						createdAt: 0,
+						updatedAt: 0,
+					})),
+				);
+				await big.db
+					.insert(transactions)
+					.values(chunk.map((id) => ({ entryId: id, label: "Opération", notes: null })));
+			}, Promise.resolve());
+
+			await deleteAccount(bigDeps, account.id, { origin: "user" });
+
+			await expect(rowsOf(big.db, account.id)).resolves.toEqual({
+				accounts: 0,
+				entries: 0,
+				transactions: 0,
+				balances: 0,
+			});
+		} finally {
+			await big.dispose();
+		}
+	}, 60_000);
 });

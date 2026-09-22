@@ -134,7 +134,11 @@ function OperationsPage() {
 	const accountOptions: FilterAccount[] = useMemo(
 		() =>
 			accounts.data?.groups.flatMap((group) =>
-				group.accounts.map((account) => ({ id: account.id, name: account.name })),
+				group.accounts.map((account) => ({
+					id: account.id,
+					name: account.name,
+					active: account.active,
+				})),
 			) ?? [],
 		[accounts.data],
 	);

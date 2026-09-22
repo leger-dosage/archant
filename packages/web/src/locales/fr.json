@@ -43,6 +43,9 @@
 		},
 		"excluded_one": "{{count}} compte dans une autre devise n'est pas compté dans le total.",
 		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",
+		"excludedFromReports": "Exclu des rapports",
+		"inactive": "Inactif",
+		"showInactive": "Afficher les comptes inactifs",
 		"form": {
 			"title": "Ajouter un compte",
 			"description": "Le solde initial est la valeur du compte, ou le montant dû pour une carte, à la date choisie.",
@@ -65,7 +68,37 @@
 		"tabs": {
 			"label": "Vues du compte",
 			"transactions": "Opérations",
-			"snapshots": "Soldes"
+			"snapshots": "Soldes",
+			"settings": "Paramètres"
+		}
+	},
+	"accountSettings": {
+		"title": "Paramètres du compte",
+		"name": "Nom",
+		"subtype": "Type",
+		"excludedFromReports": "Exclure des rapports",
+		"excludedFromReportsHint": "Le compte reste affiché, mais son solde n'est plus compté dans le total de son groupe.",
+		"save": "Enregistrer",
+		"saved": "Compte « {{name}} » enregistré.",
+		"activation": {
+			"deactivateTitle": "Désactiver le compte",
+			"deactivateDescription": "Le compte disparaît des listes et n'est plus compté dans les totaux. Ses opérations et son historique sont conservés, et vous pouvez le réactiver à tout moment.",
+			"deactivate": "Désactiver le compte",
+			"deactivated": "Compte « {{name}} » désactivé.",
+			"reactivateTitle": "Réactiver le compte",
+			"reactivateDescription": "Le compte est désactivé : il n'apparaît plus dans les listes ni dans les totaux. Le réactiver l'y remet.",
+			"reactivate": "Réactiver le compte",
+			"reactivated": "Compte « {{name}} » réactivé."
+		},
+		"delete": {
+			"sectionTitle": "Supprimer le compte",
+			"sectionDescription": "Le compte est supprimé définitivement, avec ses opérations, ses soldes saisis et l'historique de son solde.",
+			"action": "Supprimer le compte",
+			"titleEmpty": "Supprimer le compte « {{name}} » ?",
+			"title_one": "Supprimer le compte « {{name}} » et son opération ?",
+			"title_other": "Supprimer le compte « {{name}} » et ses {{formatted}} opérations ?",
+			"description": "Les soldes saisis et l'historique du solde de ce compte seront supprimés aussi. Cette action est définitive.",
+			"deleted": "Compte « {{name}} » supprimé."
 		}
 	},
 	"balances": {

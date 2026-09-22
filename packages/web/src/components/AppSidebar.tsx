@@ -4,6 +4,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronRightIcon, ListIcon, WalletIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { AccountBalance } from "@/components/AccountBalance";
 import { Money } from "@/components/Money";
 import { ThemeMenu } from "@/components/ThemeMenu";
 import {
@@ -62,7 +63,7 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 							>
 								<Link to="/comptes/$accountId" params={{ accountId: account.id }}>
 									<span className="truncate">{account.name}</span>
-									<Money amount={account.balance} currency={account.currency} className="text-xs" />
+									<AccountBalance account={account} className="text-xs" />
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -91,7 +92,9 @@ function SidebarAccounts() {
 
 	const { groups, reportingCurrency } = accounts.data;
 
+	// Inactive accounts are hidden here; the accounts page can still show them.
 	return groups
+		.map((group) => ({ ...group, accounts: group.accounts.filter((account) => account.active) }))
 		.filter((group) => group.accounts.length > 0)
 		.map((group) => (
 			<SidebarAccountGroup key={group.classification} group={group} currency={reportingCurrency} />

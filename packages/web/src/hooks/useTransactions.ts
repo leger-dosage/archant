@@ -1,10 +1,11 @@
 import type { TransactionFilters } from "@/lib/transaction-filters";
 import type { InferResponseType } from "hono/client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import type { TransactionInput, TransactionPatchInput } from "@archant/api/schemas/transactions";
 
+import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 import { toApiQuery } from "@/lib/transaction-filters";
@@ -50,22 +51,6 @@ export function useTransactions(filters: TransactionFilters, page: number) {
 		// against the wrong account.
 		placeholderData: (previous) => previous,
 	});
-}
-
-/**
- * A transaction changes its account's balance, which the account page, the
- * accounts page and the sidebar all show, and its row in every list: every
- * write refreshes them all.
- */
-function useInvalidateAccount(accountId: string) {
-	const queryClient = useQueryClient();
-
-	return () =>
-		Promise.all([
-			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.detail(accountId) }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
-		]);
 }
 
 export function useCreateTransaction(accountId: string) {

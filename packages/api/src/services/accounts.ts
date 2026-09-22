@@ -1,11 +1,12 @@
 import type { IsoDate } from "../domain/dates.ts";
+import type { UpdateAccountRequest } from "../schemas/accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger.ts";
 
 import { eq } from "drizzle-orm";
 
 import type { AccountSubtype, AccountType, Classification } from "@archant/data/account-types";
-import { CLASSIFICATIONS, classificationOf } from "@archant/data/account-types";
+import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -13,7 +14,12 @@ import type { Account } from "@archant/data/types";
 
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { balanceOn, createAccount as createLedgerAccount, openingDateOf } from "./ledger.ts";
+import {
+	balanceOn,
+	createAccount as createLedgerAccount,
+	deleteAccount as deleteLedgerAccount,
+	openingDateOf,
+} from "./ledger.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 export type AccountSummary = {
@@ -24,14 +30,29 @@ export type AccountSummary = {
 	currency: string;
 	/** Stored balance at the end of today; zero before the opening date. */
 	balance: MinorUnits;
+	/**
+	 * `false` once deactivated: still returned here, history kept, and hidden
+	 * by the interface from its lists.
+	 */
+	active: boolean;
+	/** Still listed, but left out of its group's total and of reports. */
+	excludedFromReports: boolean;
 };
 
 export type AccountGroup = {
 	classification: Classification;
 	accounts: AccountSummary[];
-	/** Sum of the group's accounts held in the reporting currency. */
+	/**
+	 * Sum of the group's active accounts, not excluded from reports, held in
+	 * the reporting currency. As in Sure's balance sheet, which sums only
+	 * visible accounts included in reports: the group totals add up to the net
+	 * worth Epic 6 shows.
+	 */
 	total: MinorUnits;
-	/** Accounts in another currency, left out of `total` until exchange rates exist. */
+	/**
+	 * Active, included accounts in another currency, left out of `total` until
+	 * exchange rates exist. An inactive or excluded one is left out by choice.
+	 */
 	excludedCount: number;
 };
 
@@ -51,15 +72,18 @@ async function summarise(
 		subtype: account.subtype,
 		currency: account.currency,
 		balance: balance?.amount ?? toMinorUnits(0),
+		active: account.active,
+		excludedFromReports: account.excludedFromReports,
 	};
 }
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
 /**
- * Every account with today's balance, assets first then liabilities, each
- * group sorted by name and totalled in the reporting currency. The whole set,
- * not a page: a household holds a bounded number of accounts.
+ * Every account with today's balance, inactive ones included, assets first
+ * then liabilities, each group sorted by name and totalled in the reporting
+ * currency. The whole set, not a page: a household holds a bounded number of
+ * accounts. The interface decides what to hide.
  */
 export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
 	const date = today(deps.timeZone);
@@ -71,13 +95,14 @@ export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
 		const members = summaries
 			.filter((summary) => classificationOf(summary.type) === classification)
 			.toSorted((a, b) => byName.compare(a.name, b.name));
-		const counted = members.filter((summary) => summary.currency === reportingCurrency);
+		const reported = members.filter((summary) => summary.active && !summary.excludedFromReports);
+		const counted = reported.filter((summary) => summary.currency === reportingCurrency);
 
 		return {
 			classification,
 			accounts: members,
 			total: toMinorUnits(counted.reduce((sum, summary) => sum + summary.balance, 0)),
-			excludedCount: members.length - counted.length,
+			excludedCount: reported.length - counted.length,
 		};
 	});
 
@@ -114,4 +139,49 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		classification: classificationOf(account.type),
 		openingDate,
 	};
+}
+
+/**
+ * Renames, retypes within its type, deactivates or excludes an account, and
+ * returns it as its page shows it. Updating `accounts` is not a money write,
+ * so it happens here rather than in the ledger.
+ */
+export async function updateAccount(
+	deps: ServiceDeps,
+	id: string,
+	patch: UpdateAccountRequest,
+): Promise<AccountDetail> {
+	const account = await deps.db.select().from(accounts).where(eq(accounts.id, id)).get();
+
+	if (account === undefined) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	if (patch.subtype !== undefined && !isSubtypeOf(account.type, patch.subtype)) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+			{ path: "subtype", code: "invalid_subtype" },
+		]);
+	}
+
+	await deps.db
+		.update(accounts)
+		.set({
+			...(patch.name === undefined ? {} : { name: patch.name }),
+			...(patch.subtype === undefined ? {} : { subtype: patch.subtype }),
+			...(patch.active === undefined ? {} : { active: patch.active }),
+			...(patch.excludedFromReports === undefined
+				? {}
+				: { excludedFromReports: patch.excludedFromReports }),
+			updatedAt: Date.now(),
+		})
+		.where(eq(accounts.id, id));
+
+	return getAccount(deps, id);
+}
+
+/** Deletes an account and everything it holds, on the user's behalf. */
+export async function deleteAccount(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	await deleteLedgerAccount(deps, id, { origin: "user" });
+
+	return { id };
 }

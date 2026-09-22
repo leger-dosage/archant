@@ -1358,3 +1358,278 @@ describe("errors", () => {
 		expect(logLines[0]).not.toContain("stack");
 	});
 });
+
+// The I/O matrix of Story 1.6.
+const accountBody = z.object({
+	data: z.object({
+		id: z.string(),
+		name: z.string(),
+		subtype: z.string().nullable(),
+		balance: z.number(),
+		active: z.boolean(),
+		excludedFromReports: z.boolean(),
+	}),
+});
+
+async function patchAccount(accountId: string, body: unknown) {
+	return request("PATCH", `/api/accounts/${accountId}`, body);
+}
+
+async function listOwnAccounts(client: Awaited<ReturnType<typeof ownClient>>) {
+	return (await (await client.$get()).json()).data;
+}
+
+describe("PATCH /api/accounts/:id", () => {
+	it("trims and saves a new name, which the transaction list follows", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+
+		const response = await testClient(buildApp()).api.accounts[":id"].$patch({
+			param: { id: account.id },
+			json: { name: " Livret A " },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({
+			id: account.id,
+			name: "Livret A",
+			subtype: "checking",
+			openingDate: "2026-09-01",
+			active: true,
+			excludedFromReports: false,
+		});
+		const { body } = await request("GET", `/api/transactions?account=${account.id}`);
+		expect(listBody.parse(body).data.items[0]?.accountName).toBe("Livret A");
+	});
+
+	it("moves a checking account to savings and leaves its balance alone", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+
+		const { status, body } = await patchAccount(account.id, { subtype: "savings" });
+
+		expect(status).toBe(200);
+		expect(accountBody.parse(body).data).toMatchObject({ subtype: "savings", balance: 119166 });
+	});
+
+	it("refuses a subtype the type does not allow and saves nothing", async () => {
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		const { status, body } = await patchAccount(card.id, { subtype: "savings", name: "Autre" });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "subtype", code: "invalid_subtype" }],
+		});
+		const detail = await request("GET", `/api/accounts/${card.id}`);
+		expect(accountBody.parse(detail.body).data).toMatchObject({ name: "Carte", subtype: null });
+	});
+
+	it("refuses a depository account without a subtype", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await patchAccount(account.id, { subtype: null });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "subtype", code: "invalid_subtype" },
+		]);
+	});
+
+	it("refuses an empty patch", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await patchAccount(account.id, {});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
+	});
+
+	it("ignores fields that cannot be edited, which leaves an empty patch", async () => {
+		const account = await openAccount();
+
+		const { status } = await patchAccount(account.id, { currency: "USD", type: "credit_card" });
+
+		expect(status).toBe(400);
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(accountBody.parse(detail.body).data).toMatchObject({ subtype: "checking" });
+	});
+
+	it("refuses a blank or too long name, and flags that are not booleans", async () => {
+		const account = await openAccount();
+
+		const { body } = await patchAccount(account.id, {
+			name: "  ",
+			active: "no",
+			excludedFromReports: 1,
+		});
+		const tooLong = await patchAccount(account.id, { name: "a".repeat(101) });
+
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "name", code: "too_small" },
+			{ path: "active", code: "invalid_type" },
+			{ path: "excludedFromReports", code: "invalid_type" },
+		]);
+		expect(errorBody.parse(tooLong.body).error.fields).toEqual([{ path: "name", code: "too_big" }]);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await patchAccount("nope", { name: "Livret A" });
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("GET /api/accounts with inactive and excluded accounts", () => {
+	it("lists a deactivated account and drops its balance from the group total", async () => {
+		const client = await ownClient();
+		const joint = (await (await client.$post({ json: valid })).json()).data;
+		const savings = (
+			await (
+				await client.$post({
+					json: { ...valid, name: "Livret A", subtype: "savings", openingBalance: "100" },
+				})
+			).json()
+		).data;
+		const before = await listOwnAccounts(client);
+
+		const response = await client[":id"].$patch({
+			param: { id: savings.id },
+			json: { active: false },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data.active).toBe(false);
+		const after = await listOwnAccounts(client);
+		expect(before.groups[0]?.total).toBe(123456 + 10000);
+		expect(after.groups[0]?.total).toBe(123456);
+		expect(after.groups[0]?.accounts).toEqual([
+			expect.objectContaining({ id: joint.id, active: true, excludedFromReports: false }),
+			expect.objectContaining({ id: savings.id, active: false, balance: 10000 }),
+		]);
+	});
+
+	it("keeps an excluded account listed and drops its balance from the total", async () => {
+		const client = await ownClient();
+		await client.$post({ json: valid });
+		const card = (
+			await (
+				await client.$post({
+					json: {
+						...valid,
+						name: "Carte",
+						type: "credit_card",
+						subtype: null,
+						openingBalance: "490,30",
+					},
+				})
+			).json()
+		).data;
+
+		await client[":id"].$patch({ param: { id: card.id }, json: { excludedFromReports: true } });
+
+		const { groups } = await listOwnAccounts(client);
+		expect(groups[1]).toMatchObject({
+			classification: "liability",
+			total: 0,
+			excludedCount: 0,
+			accounts: [{ id: card.id, excludedFromReports: true, balance: 49030 }],
+		});
+		expect(groups[0]?.total).toBe(123456);
+	});
+
+	it("counts in excludedCount only active, included accounts in another currency", async () => {
+		const client = await ownClient();
+		const usd = { ...valid, subtype: "savings", currency: "USD", openingBalance: "10.00" } as const;
+		await client.$post({ json: { ...usd, name: "Épargne US" } });
+		const inactive = (await (await client.$post({ json: { ...usd, name: "Ancien US" } })).json())
+			.data;
+		const excluded = (await (await client.$post({ json: { ...usd, name: "Exclu US" } })).json())
+			.data;
+
+		await client[":id"].$patch({ param: { id: inactive.id }, json: { active: false } });
+		await client[":id"].$patch({ param: { id: excluded.id }, json: { excludedFromReports: true } });
+
+		const { groups } = await listOwnAccounts(client);
+		expect(groups[0]).toMatchObject({ total: 0, excludedCount: 1 });
+		expect(groups[0]?.accounts).toHaveLength(3);
+	});
+
+	it("reactivates an account, which counts again", async () => {
+		const client = await ownClient();
+		const account = (await (await client.$post({ json: valid })).json()).data;
+		await client[":id"].$patch({ param: { id: account.id }, json: { active: false } });
+
+		await client[":id"].$patch({ param: { id: account.id }, json: { active: true } });
+
+		expect((await listOwnAccounts(client)).groups[0]?.total).toBe(123456);
+	});
+
+	it("keeps a deactivated account's transactions in the cross-account list", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+
+		await patchAccount(account.id, { active: false });
+
+		const { body } = await request("GET", `/api/transactions?account=${account.id}`);
+		expect(listBody.parse(body).data.items).toEqual([
+			expect.objectContaining({ accountId: account.id, label: "Boulangerie" }),
+		]);
+	});
+});
+
+describe("DELETE /api/accounts/:id", () => {
+	async function countRows(accountId: string) {
+		// Raw on purpose: only the ledger may import these tables (AD-2).
+		const [row] = await temp.db.all<Record<string, number>>(
+			sql`select
+				(select count(*) from accounts where id = ${accountId}) as accounts,
+				(select count(*) from entries where account_id = ${accountId}) as entries,
+				(select count(*) from transactions where entry_id in (select id from entries where account_id = ${accountId})) as transactions,
+				(select count(*) from balances where account_id = ${accountId}) as balances`,
+		);
+
+		return row;
+	}
+
+	it("deletes the account, its transactions, snapshot and balances, and nothing else", async () => {
+		const account = await openAccount();
+		const other = await openAccount({ name: "Livret A", subtype: "savings" });
+		await postTransaction(other.id, { ...expense, label: "Autre compte" });
+		// One after the other: each is an `immediate` ledger write.
+		await postTransaction(account.id, expense);
+		await postTransaction(account.id, { ...expense, date: "2026-09-11" });
+		await postTransaction(account.id, { ...expense, date: "2026-09-12" });
+		await postSnapshot(account.id, { date: "2026-09-15", balance: "1 000,00" });
+		const otherBefore = await countRows(other.id);
+
+		const response = await testClient(buildApp()).api.accounts[":id"].$delete({
+			param: { id: account.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { id: account.id } });
+		await expect(countRows(account.id)).resolves.toEqual({
+			accounts: 0,
+			entries: 0,
+			transactions: 0,
+			balances: 0,
+		});
+		await expect(countRows(other.id)).resolves.toEqual(otherBefore);
+		expect(otherBefore).toMatchObject({ accounts: 1, entries: 2, transactions: 1 });
+		expect((await request("GET", `/api/accounts/${account.id}`)).status).toBe(404);
+		const { body } = await request("GET", `/api/transactions?account=${other.id}`);
+		expect(listBody.parse(body).data.items).toEqual([
+			expect.objectContaining({ label: "Autre compte" }),
+		]);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await request("DELETE", "/api/accounts/nope");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});

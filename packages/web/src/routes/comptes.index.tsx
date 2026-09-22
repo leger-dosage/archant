@@ -1,20 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 import { AccountGroups, AccountGroupsSkeleton } from "@/components/AccountGroups";
 import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useAccounts } from "@/hooks/useAccounts";
 import { errorCodeOf } from "@/lib/api";
 
-export const Route = createFileRoute("/comptes/")({ component: AccountsPage });
+// Absent means inactive accounts stay hidden, so links need no search params.
+const searchSchema = z.object({
+	showInactive: z.boolean().optional().catch(undefined),
+});
+
+export const Route = createFileRoute("/comptes/")({
+	validateSearch: searchSchema,
+	component: AccountsPage,
+});
 
 function AccountsPage() {
 	const { t } = useTranslation();
 	const accounts = useAccounts();
+	const { showInactive = false } = Route.useSearch();
+	const navigate = Route.useNavigate();
 	const [creating, setCreating] = useState(false);
-	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
+	const all = accounts.data?.groups.flatMap((group) => group.accounts) ?? [];
+	const hasAccounts = all.length > 0;
+	const hasInactive = all.some((account) => !account.active);
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("accounts.title"), app: t("app.name") });
@@ -38,7 +53,25 @@ function AccountsPage() {
 				</div>
 			)}
 
-			{accounts.data !== undefined && hasAccounts && <AccountGroups list={accounts.data} />}
+			{hasInactive && (
+				<div className="flex items-center gap-2">
+					<Switch
+						id="show-inactive"
+						checked={showInactive}
+						onCheckedChange={(checked) =>
+							void navigate({
+								search: (previous) => ({ ...previous, showInactive: checked ? true : undefined }),
+								replace: true,
+							})
+						}
+					/>
+					<Label htmlFor="show-inactive">{t("accounts.showInactive")}</Label>
+				</div>
+			)}
+
+			{accounts.data !== undefined && hasAccounts && (
+				<AccountGroups list={accounts.data} showInactive={showInactive} />
+			)}
 
 			{accounts.data !== undefined && !hasAccounts && (
 				<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">

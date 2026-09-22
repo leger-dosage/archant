@@ -1,9 +1,10 @@
 import type { InferResponseType } from "hono/client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import type { SnapshotInput, SnapshotPatchInput } from "@archant/api/schemas/snapshots";
 
+import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -30,21 +31,6 @@ export function useAccountSnapshots(accountId: string, page: number) {
 		placeholderData: (previous, previousQuery) =>
 			previousQuery?.queryKey[2] === accountId ? previous : undefined,
 	});
-}
-
-/**
- * A snapshot fixes its account's balance from its date, which the header, the
- * chart, the accounts page, the sidebar and the Soldes table all show. The
- * account's queries hold all of them.
- */
-function useInvalidateAccount(accountId: string) {
-	const queryClient = useQueryClient();
-
-	return () =>
-		Promise.all([
-			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
-			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.detail(accountId) }),
-		]);
 }
 
 export function useCreateSnapshot(accountId: string) {
