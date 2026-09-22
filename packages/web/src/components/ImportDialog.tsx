@@ -40,6 +40,7 @@ import { useConfirmImport, usePreviewImport, useUploadImport } from "@/hooks/use
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate, formatSignedMoney, formatTableDate } from "@/lib/balance-change";
+import { showErrorToast } from "@/lib/error-toast";
 import {
 	IMPORT_GROUPS,
 	canConfirm,
@@ -405,7 +406,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						}
 					} catch (error) {
 						if (request === latest.current) {
-							toast.error(t(`errors.${errorCodeOf(error)}`));
+							showErrorToast(errorCodeOf(error));
 						}
 					}
 				})();
@@ -448,7 +449,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						: t("imports.qif.unsupportedType", { type }),
 				);
 			} else {
-				toast.error(t(`errors.${errorCodeOf(error)}`));
+				showErrorToast(errorCodeOf(error));
 			}
 		}
 	};
@@ -467,7 +468,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 				false,
 			);
 		} catch (error) {
-			toast.error(t(`errors.${errorCodeOf(error)}`));
+			showErrorToast(errorCodeOf(error));
 		}
 	};
 
@@ -485,7 +486,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 				false,
 			);
 		} catch (error) {
-			toast.error(t(`errors.${errorCodeOf(error)}`));
+			showErrorToast(errorCodeOf(error));
 		}
 	};
 
@@ -528,10 +529,10 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						true,
 					);
 				} catch (again) {
-					toast.error(t(`errors.${errorCodeOf(again)}`));
+					showErrorToast(errorCodeOf(again));
 				}
 			} else {
-				toast.error(t(`errors.${errorCodeOf(error)}`));
+				showErrorToast(errorCodeOf(error));
 			}
 		}
 	};

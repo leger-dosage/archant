@@ -16,7 +16,7 @@ const searchSchema = z.object({
 	showInactive: z.boolean().optional().catch(undefined),
 });
 
-export const Route = createFileRoute("/comptes/")({
+export const Route = createFileRoute("/_authed/comptes/")({
 	validateSearch: searchSchema,
 	component: AccountsPage,
 });

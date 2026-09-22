@@ -1,4 +1,5 @@
 import type { CreateAccountInput } from "./schemas/accounts.ts";
+import type { SignedInTemplate } from "./testing/auth.ts";
 import type { TempDatabase } from "./testing/temp-database.ts";
 
 import { sql } from "drizzle-orm";
@@ -7,28 +8,37 @@ import { readFile } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { createApp } from "./app.ts";
 import { createLogger } from "./lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "./schemas/imports.ts";
 import * as accountsService from "./services/accounts.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
+import { buildTestApp, createSignedInTemplate, withSession } from "./testing/auth.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
 
+let template: SignedInTemplate;
 let temp: TempDatabase;
 let logLines: string[];
 
+// Signed in as the administrator: every request carries the session cookie
+// and the interface's origin. Unauthenticated behaviour lives in
+// routes/middleware/auth.spec.ts.
 function buildApp(db = temp.db) {
 	logLines = [];
 	const logger = createLogger("info", { write: (line: string) => logLines.push(line) });
 
-	return createApp({ db, timeZone: "Europe/Paris", logger });
+	return withSession(buildTestApp(db, logger), template.cookie);
+}
+
+/** A database of its own, already holding the signed-in administrator. */
+async function freshDatabase() {
+	return createTempDatabase(template.file);
 }
 
 // Each listing test owns its database, so it passes alone or in any order.
 let own: TempDatabase | undefined;
 
 async function ownClient() {
-	own = await createTempDatabase();
+	own = await freshDatabase();
 
 	return testClient(buildApp(own.db)).api.accounts;
 }
@@ -62,14 +72,20 @@ const valid = {
 } as const;
 
 beforeAll(async () => {
-	temp = await createTempDatabase();
 	vi.useFakeTimers({ toFake: ["Date"] });
+	// A session lasts seven days and Better Auth deletes it once expired. Signed
+	// in on the latest day any test moves the clock to, it outlives them all;
+	// only its expiry is checked, so a clock set before its creation is fine.
+	vi.setSystemTime(new Date("2026-10-21T10:00:00Z"));
+	template = await createSignedInTemplate();
 	vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+	temp = await freshDatabase();
 });
 
 afterAll(async () => {
 	vi.useRealTimers();
 	await temp.dispose();
+	await template.dispose();
 });
 
 afterEach(async () => {
@@ -731,7 +747,7 @@ async function listed(query: string) {
 }
 
 async function openOwn(overrides: Partial<CreateAccountInput> = {}) {
-	own ??= await createTempDatabase();
+	own ??= await freshDatabase();
 	const response = await testClient(buildApp(own.db)).api.accounts.$post({
 		json: { ...valid, ...overrides },
 	});
@@ -888,7 +904,7 @@ describe("GET /api/transactions", () => {
 		["?amountMin=60&amountMax=50", "amountMax", "below_min"],
 		["?from=10/09/2026", "from", "invalid_format"],
 	])("refuses %s", async (query, path, code) => {
-		own = await createTempDatabase();
+		own = await freshDatabase();
 
 		const { status, body } = await listOwn(query);
 
@@ -2017,14 +2033,10 @@ describe("POST /api/imports/:id/preview", () => {
 
 describe("purgeStalePreviews", () => {
 	it("deletes the previews older than a day and keeps confirmed imports", async () => {
-		const purgeDb = await createTempDatabase();
+		const purgeDb = await freshDatabase();
 
 		try {
-			const app = createApp({
-				db: purgeDb.db,
-				timeZone: "Europe/Paris",
-				logger: createLogger("silent"),
-			});
+			const app = withSession(buildTestApp(purgeDb.db), template.cookie);
 			const created = await (await testClient(app).api.accounts.$post({ json: valid })).json();
 			const accountId = created.data.id;
 			const form = () => {

@@ -32,6 +32,7 @@ import { useCreateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
 const FIELD_NAMES = [
@@ -103,7 +104,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 				unplaced.length > 0 ||
 				apiError.fields.length === 0
 			) {
-				toast.error(t(`errors.${apiError.code}`));
+				showErrorToast(apiError.code);
 			}
 		}
 	});

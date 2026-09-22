@@ -1,9 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { API_PORT, TIME_ZONE, WEB_PORT } from "./e2e/settings.ts";
+import { ADMIN_STATE, API_PORT, TIME_ZONE, WEB_PORT, WEB_URL } from "./e2e/settings.ts";
 
 const CI = Boolean(process.env["CI"]);
-const WEB_URL = `http://localhost:${WEB_PORT}`;
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -21,7 +20,17 @@ export default defineConfig({
 		timezoneId: TIME_ZONE,
 		trace: "retain-on-failure",
 	},
-	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+	projects: [
+		// The only moment the database has no user: it creates the administrator
+		// through `/setup` and saves the session. Signing in per test instead
+		// would hit Better Auth's limit of three sign-ins per ten seconds.
+		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: { ...devices["Desktop Chrome"] } },
+		{
+			name: "chromium",
+			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
+			dependencies: ["setup"],
+		},
+	],
 	// No `reuseExistingServer`: a stale server left on these ports once made a
 	// failure look like a hanging request. A taken port stops the run instead.
 	webServer: [

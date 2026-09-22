@@ -434,6 +434,23 @@
 			"revertedNothing": "Import annulé."
 		}
 	},
+	"setup": {
+		"title": "Créer le compte administrateur",
+		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
+		"email": "Adresse e-mail",
+		"password": "Mot de passe",
+		"passwordHint": "Au moins 8 caractères.",
+		"confirmPassword": "Confirmer le mot de passe",
+		"submit": "Créer le compte"
+	},
+	"signIn": {
+		"title": "Connexion",
+		"email": "Adresse e-mail",
+		"password": "Mot de passe",
+		"submit": "Se connecter",
+		"invalidCredentials": "Adresse e-mail ou mot de passe invalide.",
+		"tooManyAttempts": "Trop de tentatives. Réessayez dans quelques secondes."
+	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
@@ -442,6 +459,8 @@
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
+		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
+		"FORBIDDEN": "Cette action n'est pas autorisée.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
@@ -458,7 +477,11 @@
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",
 			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord.",
 			"before_from": "La date de fin doit suivre la date de début.",
-			"below_min": "Le maximum doit être supérieur ou égal au minimum."
+			"below_min": "Le maximum doit être supérieur ou égal au minimum.",
+			"invalid_email": "Adresse e-mail invalide.",
+			"password_too_short": "Le mot de passe doit contenir au moins 8 caractères.",
+			"password_too_long": "Le mot de passe ne peut pas dépasser 128 caractères.",
+			"password_mismatch": "Les mots de passe ne correspondent pas."
 		}
 	}
 }

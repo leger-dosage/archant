@@ -19,6 +19,7 @@ import { useRevertImport } from "@/hooks/useImports";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 
 type TFunction = ReturnType<typeof useTranslation>["t"];
 
@@ -109,7 +110,7 @@ export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 			);
 			setTarget(null);
 		} catch (error) {
-			toast.error(t(`errors.${errorCodeOf(error)}`));
+			showErrorToast(errorCodeOf(error));
 			setTarget(null);
 		}
 	};

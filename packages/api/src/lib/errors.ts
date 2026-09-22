@@ -7,6 +7,10 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 export const ERROR_STATUSES = {
 	NOT_FOUND: 404,
 	VALIDATION_ERROR: 400,
+	/** No valid session on a guarded route. */
+	UNAUTHORIZED: 401,
+	/** Setup once a user exists, or a form post from a foreign origin. */
+	FORBIDDEN: 403,
 	/** A file no source can read, or larger than 5 MB. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,
 	/** The account changed between an import's preview and its confirmation. */

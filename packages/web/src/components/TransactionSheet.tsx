@@ -5,7 +5,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 
 import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
@@ -36,6 +35,7 @@ import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["date", "label", "amount", "notes"] as const;
@@ -130,7 +130,7 @@ function TransactionForm({
 			unplaced.length > 0 ||
 			apiError.fields.length === 0
 		) {
-			toast.error(t(`errors.${apiError.code}`));
+			showErrorToast(apiError.code);
 		}
 	};
 

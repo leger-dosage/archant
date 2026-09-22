@@ -26,16 +26,17 @@ import { useDeleteAccount, useUpdateAccount } from "@/hooks/useAccounts";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
+import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["name", "subtype", "excludedFromReports"] as const;
 
 const countFormat = new Intl.NumberFormat("fr-FR");
 
-function toastError(error: unknown, t: ReturnType<typeof useTranslation>["t"]) {
+function toastError(error: unknown) {
 	const code = error instanceof ApiError ? error.code : "INTERNAL_ERROR";
 
-	toast.error(t(`errors.${code}`));
+	showErrorToast(code);
 }
 
 function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
@@ -85,7 +86,7 @@ function SettingsForm({ account }: { account: AccountDetailData }) {
 				unplaced.length > 0 ||
 				apiError.fields.length === 0
 			) {
-				toastError(apiError, t);
+				toastError(apiError);
 			}
 		}
 	});
@@ -189,7 +190,7 @@ function ActivationSection({ account }: { account: AccountDetailData }) {
 				),
 			);
 		} catch (error) {
-			toastError(error, t);
+			toastError(error);
 		}
 	};
 
@@ -235,7 +236,7 @@ function DeleteSection({ account }: { account: AccountDetailData }) {
 			await deleteAccount.mutateAsync();
 			toast.success(t("accountSettings.delete.deleted", { name: account.name }));
 		} catch (error) {
-			toastError(error, t);
+			toastError(error);
 		}
 	};
 
