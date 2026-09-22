@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { countsOf, firstTab, importedCount, isNothingNew } from "./import-preview.ts";
+import {
+	canConfirm,
+	countsOf,
+	firstTab,
+	importedCount,
+	isBalanceOnly,
+	isNothingNew,
+} from "./import-preview.ts";
 
 const empty = { created: [], present: [], matched: [], duplicates: [], rejected: [] };
 
@@ -35,14 +42,40 @@ describe("firstTab", () => {
 	});
 });
 
+describe("canConfirm and isBalanceOnly", () => {
+	it("confirms when a line would be written, whatever the balance", () => {
+		const counts = countsOf({ ...empty, created: [1] });
+
+		expect(canConfirm(counts, null)).toBe(true);
+		expect(canConfirm(counts, "present")).toBe(true);
+		expect(isBalanceOnly(counts, "recorded")).toBe(false);
+	});
+
+	it("confirms a recorded balance alone, and only a recorded one", () => {
+		const counts = countsOf({ ...empty, present: [1, 2] });
+
+		expect(canConfirm(counts, "recorded")).toBe(true);
+		expect(isBalanceOnly(counts, "recorded")).toBe(true);
+		for (const status of ["present", "kept", "skipped", null] as const) {
+			expect(canConfirm(counts, status)).toBe(false);
+			expect(isBalanceOnly(counts, status)).toBe(false);
+		}
+	});
+});
+
 describe("isNothingNew", () => {
-	it("holds when every readable line is already present", () => {
-		expect(isNothingNew(countsOf({ ...empty, present: [1, 2], rejected: [3] }))).toBe(true);
+	it("holds when every readable line is already present and the balance writes nothing", () => {
+		expect(isNothingNew(countsOf({ ...empty, present: [1, 2], rejected: [3] }), null)).toBe(true);
+		expect(isNothingNew(countsOf({ ...empty, present: [1] }), "present")).toBe(true);
+	});
+
+	it("does not hold when a balance would be recorded", () => {
+		expect(isNothingNew(countsOf({ ...empty, present: [1] }), "recorded")).toBe(false);
 	});
 
 	it("does not hold when every line is rejected, the file is empty, or a line would be written", () => {
-		expect(isNothingNew(countsOf({ ...empty, rejected: [1] }))).toBe(false);
-		expect(isNothingNew(countsOf(empty))).toBe(false);
-		expect(isNothingNew(countsOf({ ...empty, present: [1], matched: [2] }))).toBe(false);
+		expect(isNothingNew(countsOf({ ...empty, rejected: [1] }), null)).toBe(false);
+		expect(isNothingNew(countsOf(empty), null)).toBe(false);
+		expect(isNothingNew(countsOf({ ...empty, present: [1], matched: [2] }), null)).toBe(false);
 	});
 });

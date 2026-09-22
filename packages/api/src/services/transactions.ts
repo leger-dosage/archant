@@ -217,7 +217,7 @@ export async function createTransaction(
 	const result = await ledger.ingest(
 		deps,
 		accountId,
-		{ transactions: [{ ...parsed.data, externalId: null, currency }], rejected: [] },
+		{ transactions: [{ ...parsed.data, externalId: null, currency }], balance: null, rejected: [] },
 		{ manual: true },
 		{ origin: "user" },
 	);

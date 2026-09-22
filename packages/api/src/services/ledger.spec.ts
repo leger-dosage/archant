@@ -213,7 +213,7 @@ async function add(
 	const result = await ingest(
 		deps(),
 		accountId,
-		{ transactions: [line(overrides)], rejected: [] },
+		{ transactions: [line(overrides)], balance: null, rejected: [] },
 		{ manual: true },
 		{ origin },
 	);
@@ -317,6 +317,7 @@ describe("ingest", () => {
 					line({ date: "2027-09-23" }),
 					line({ currency: "USD" }),
 				],
+				balance: null,
 				rejected: [],
 			},
 			{ manual: true },
@@ -347,7 +348,11 @@ describe("ingest", () => {
 		const result = await ingest(
 			deps(),
 			account.id,
-			{ transactions: [line({ date: "2026-09-01" }), line({ date: "2026-09-15" })], rejected: [] },
+			{
+				transactions: [line({ date: "2026-09-01" }), line({ date: "2026-09-15" })],
+				balance: null,
+				rejected: [],
+			},
 			{ manual: true },
 			{ origin: "user" },
 		);
@@ -372,6 +377,7 @@ describe("ingest", () => {
 					line({ date: "2026-09-10", amount: toMinorUnits(-4290) }),
 					line({ date: "2026-09-10", amount: toMinorUnits(10000) }),
 				],
+				balance: null,
 				rejected: [],
 			},
 			{ manual: true },
@@ -416,7 +422,7 @@ describe("ingest", () => {
 			ingest(
 				deps(),
 				"nope",
-				{ transactions: [line()], rejected: [] },
+				{ transactions: [line()], balance: null, rejected: [] },
 				{ manual: true },
 				{ origin: "user" },
 			),
@@ -433,7 +439,7 @@ describe("ingest", () => {
 			ingest(
 				deps(),
 				account.id,
-				{ transactions: [line()], rejected: [] },
+				{ transactions: [line()], balance: null, rejected: [] },
 				{ manual: true },
 				{ origin: "user" },
 			),
@@ -470,6 +476,7 @@ async function previewRow(accountId: string, db = temp.db): Promise<string> {
 
 const statementOf = (...lines: NormalizedTransaction[]): ParsedStatement => ({
 	transactions: lines,
+	balance: null,
 	rejected: [],
 });
 
@@ -783,6 +790,7 @@ describe("ingest from an import", () => {
 
 		const { result } = await importStatement(account.id, {
 			transactions: [line({ date: "2026-09-01" }), cafe],
+			balance: null,
 			rejected: [{ ref: "3", reason: "INVALID_AMOUNT" }],
 		});
 
@@ -938,6 +946,281 @@ describe("ingest from an import", () => {
 			await big.dispose();
 		}
 	}, 60_000);
+});
+
+// Story 2.2: step 7 of the pipeline, the statement balance.
+
+/** A statement with `cafe` and `salary` closing on `amount`, signed as the bank prints it. */
+const closingOn = (
+	amount: number,
+	date = "2026-09-15",
+	currency = "EUR",
+	lines: NormalizedTransaction[] = [cafe, salary],
+): ParsedStatement => ({
+	transactions: lines,
+	balance: { amount: toMinorUnits(amount), currency, date },
+	rejected: [],
+});
+
+async function snapshotsOf(accountId: string) {
+	return temp.db
+		.select({
+			id: entries.id,
+			date: entries.date,
+			balance: entries.amount,
+			importId: entries.importId,
+			updatedAt: entries.updatedAt,
+		})
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "reconciliation")));
+}
+
+describe("ingest the statement balance", () => {
+	it("previews a checking account's balance as recorded, and writes nothing", async () => {
+		const account = await openChecking();
+		const before = await history(account.id);
+
+		const { result } = await preview(account.id, closingOn(240861));
+
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-09-15", balance: 240861 });
+		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("records it on confirm as a snapshot owned by the import, which sets the balance", async () => {
+		const account = await openChecking();
+
+		const { importId, result } = await importStatement(account.id, closingOn(240861));
+
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-09-15", balance: 240861 });
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ date: "2026-09-15", balance: 240861, importId }),
+		]);
+		await expect(balanceOn(deps(), account.id, "2026-09-15")).resolves.toEqual({
+			amount: 240861,
+			currency: "EUR",
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 240861,
+		});
+		// The lines before it still move the days before it.
+		await expect(balanceOn(deps(), account.id, "2026-09-12")).resolves.toMatchObject({
+			amount: 123456 - 4290 + 215000,
+		});
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+		expect(items).toEqual([expect.objectContaining({ date: "2026-09-15", balance: 240861 })]);
+	});
+
+	it("turns a card's negative statement balance into a positive amount owed", async () => {
+		const card = await openChecking({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: toMinorUnits(0),
+		});
+
+		const { result } = await importStatement(card.id, closingOn(-51230, "2026-09-15", "EUR", []));
+
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-09-15", balance: 51230 });
+		await expect(balanceOn(deps(), card.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 51230,
+		});
+	});
+
+	it("records nothing for a statement without a balance", async () => {
+		const account = await openChecking();
+
+		const { result } = await importStatement(account.id, statementOf(cafe));
+
+		expect(result.balance).toBeNull();
+		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
+	});
+
+	it("ignores a balance on a manual statement: only an import carries one", async () => {
+		const account = await openChecking();
+
+		const result = await ingest(
+			deps(),
+			account.id,
+			closingOn(999, "2026-09-15", "EUR", [cafe]),
+			{ manual: true },
+			{ origin: "user" },
+		);
+
+		expect(result.balance).toBeNull();
+		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
+	});
+
+	it("keeps a snapshot the user entered on that date, and gives the gap", async () => {
+		const account = await openChecking();
+		const typed = await snapshot(account.id, "2026-09-15", 240000);
+
+		const { result } = await importStatement(account.id, closingOn(240861));
+
+		expect(result.balance).toEqual({
+			status: "kept",
+			date: "2026-09-15",
+			balance: 240861,
+			recorded: 240000,
+			gap: 861,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ id: typed, balance: 240000, importId: null }),
+		]);
+		await expect(balanceOn(deps(), account.id, "2026-09-15")).resolves.toMatchObject({
+			amount: 240000,
+		});
+	});
+
+	it("writes nothing when the same file comes again, keeping the first import as owner", async () => {
+		const account = await openChecking();
+		const first = await importStatement(account.id, closingOn(240861));
+		const [written] = await snapshotsOf(account.id);
+		const before = await history(account.id);
+
+		const again = await importStatement(account.id, closingOn(240861));
+
+		expect(again.result.balance).toEqual({
+			status: "present",
+			date: "2026-09-15",
+			balance: 240861,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			{ ...written, importId: first.importId },
+		]);
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("gives a snapshot the user typed with the same value as present, writing nothing", async () => {
+		const account = await openChecking();
+		const typed = await snapshot(account.id, "2026-09-15", 240861);
+		const [before] = await snapshotsOf(account.id);
+
+		const { result } = await importStatement(account.id, closingOn(240861));
+
+		expect(result.balance).toEqual({ status: "present", date: "2026-09-15", balance: 240861 });
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			{ ...before, id: typed, importId: null },
+		]);
+	});
+
+	it("records a later balance when every line is already present", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, closingOn(240861));
+
+		const later = await importStatement(account.id, closingOn(230000, "2026-09-18"));
+
+		expect(counts(later.result)).toMatchObject({ created: 0, present: 2 });
+		expect(later.result.balance).toEqual({
+			status: "recorded",
+			date: "2026-09-18",
+			balance: 230000,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ date: "2026-09-18", balance: 230000, importId: later.importId }),
+			]),
+		);
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 230000,
+		});
+	});
+
+	it("replaces another import's snapshot on that date with a newer file's value", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, closingOn(240861));
+		const [written] = await snapshotsOf(account.id);
+
+		// The same lines, all present: only the snapshot moves the balance.
+		const newer = await importStatement(account.id, closingOn(250000));
+
+		expect(counts(newer.result)).toMatchObject({ created: 0, present: 2 });
+		expect(newer.result.balance).toEqual({
+			status: "recorded",
+			date: "2026-09-15",
+			balance: 250000,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ id: written?.id, balance: 250000, importId: newer.importId }),
+		]);
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 250000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-14")).resolves.toMatchObject({
+			amount: 123456 - 4290 + 215000,
+		});
+	});
+
+	it.each([
+		["on the opening date", "2026-09-01", "EUR", "BEFORE_OPENING_DATE"],
+		["before the opening date", "2026-08-20", "EUR", "BEFORE_OPENING_DATE"],
+		["after today", "2026-09-22", "EUR", "DATE_IN_FUTURE"],
+		["in another currency", "2026-09-15", "USD", "CURRENCY_MISMATCH"],
+	])("skips a balance dated %s, writing nothing for it", async (_name, date, currency, reason) => {
+		const card = await openChecking({ type: "credit_card", subtype: null });
+
+		const { result } = await importStatement(card.id, closingOn(-51230, date, currency));
+
+		expect(result.balance).toEqual({ status: "skipped", date, balance: 51230, reason });
+		expect(result.created).toHaveLength(2);
+		await expect(snapshotsOf(card.id)).resolves.toEqual([]);
+	});
+
+	it("checks the date against the opening date the import moves", async () => {
+		const account = await openChecking();
+		const lines = closingOn(100000, "2026-08-25", "EUR", [
+			line({ date: "2026-08-22", amount: toMinorUnits(-2000), label: "Loyer" }),
+		]);
+
+		const { result } = await importStatement(account.id, lines, { moveOpeningDate: "2026-08-20" });
+
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-08-25", balance: 100000 });
+		await expect(balanceOn(deps(), account.id, "2026-08-25")).resolves.toMatchObject({
+			amount: 100000,
+		});
+	});
+
+	it("refuses a confirm when the user entered a snapshot on that date since the preview", async () => {
+		const account = await openChecking();
+		const { importId } = await preview(account.id, closingOn(240861));
+		await snapshot(account.id, "2026-09-15", 240000);
+		const before = await history(account.id);
+
+		await expect(confirm(account.id, importId, closingOn(240861))).rejects.toMatchObject({
+			code: "IMPORT_PREVIEW_STALE",
+		});
+
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ balance: 240000, importId: null }),
+		]);
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("hands an imported snapshot to the user once they record a value on its date", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, closingOn(240861));
+
+		await snapshot(account.id, "2026-09-15", 240500);
+
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ balance: 240500, importId: null }),
+		]);
+		const { result } = await preview(account.id, closingOn(240861));
+		expect(result.balance).toMatchObject({ status: "kept", recorded: 240500, gap: 361 });
+	});
+
+	it("hands an imported snapshot to the user once they edit it", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, closingOn(240861));
+		const [written] = await snapshotsOf(account.id);
+
+		await updateSnapshot(deps(), written?.id ?? "", { date: "2026-09-16" }, { origin: "user" });
+
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ date: "2026-09-16", balance: 240861, importId: null }),
+		]);
+	});
 });
 
 describe("importOrigins", () => {
@@ -1910,6 +2193,18 @@ describe("deleteAccount", () => {
 		await expect(balanceOn(deps(), other.id, "2026-09-21")).resolves.toMatchObject({
 			amount: 138000,
 		});
+	});
+
+	it("removes an import's snapshot before the import it points at", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, closingOn(240861));
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(rowsOf(temp.db, account.id)).resolves.toMatchObject({ accounts: 0, entries: 0 });
+		await expect(
+			temp.db.select().from(imports).where(eq(imports.accountId, account.id)),
+		).resolves.toEqual([]);
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {

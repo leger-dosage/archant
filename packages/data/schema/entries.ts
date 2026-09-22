@@ -3,6 +3,7 @@ import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-o
 
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
+import { imports } from "./imports.ts";
 
 export const ENTRY_KINDS = ["transaction", "valuation"] as const;
 
@@ -31,6 +32,11 @@ export const entries = sqliteTable(
 		date: text("date").notNull(),
 		amount: integer("amount").notNull(),
 		currency: text("currency").notNull(),
+		// The import that wrote this `reconciliation` from its statement balance
+		// (AD-8), so a revert removes only what the import wrote. Cleared when the
+		// user edits the snapshot: the value is theirs from then on. Restrict, as
+		// the ledger deletes an account's entries before its imports.
+		importId: text("import_id").references(() => imports.id, { onDelete: "restrict" }),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
@@ -53,6 +59,7 @@ export const entries = sqliteTable(
 			.on(table.accountId, table.date)
 			.where(sql`${table.valuationKind} = 'reconciliation'`),
 		index("entries_account_date").on(table.accountId, table.date),
+		index("entries_import").on(table.importId),
 		// The cross-account list orders every transaction by these columns; with
 		// them in one index its first page reads 50 rows instead of sorting all.
 		index("entries_kind_date").on(table.kind, table.date, table.createdAt, table.id),

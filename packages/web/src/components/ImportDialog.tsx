@@ -33,12 +33,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirmImport, usePreviewImport, useUploadImport } from "@/hooks/useImports";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { ApiError, errorCodeOf } from "@/lib/api";
-import { formatShortDate, formatTableDate } from "@/lib/balance-change";
+import { formatShortDate, formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 import {
 	IMPORT_GROUPS,
+	canConfirm,
 	countsOf,
 	firstTab,
 	importedCount,
+	isBalanceOnly,
 	isNothingNew,
 } from "@/lib/import-preview";
 import { cn } from "@/lib/utils";
@@ -153,6 +155,46 @@ function RejectedTable({
 	);
 }
 
+type StatementBalanceData = NonNullable<ImportPreviewData["statementBalance"]>;
+
+/**
+ * What confirming does with the file's closing balance. Amounts are stored
+ * balances (AD-5): a card shows its debt as positive.
+ */
+function StatementBalanceNote({
+	outcome,
+	currency,
+}: {
+	outcome: StatementBalanceData;
+	currency: string;
+}) {
+	const { t } = useTranslation();
+	const date = formatTableDate(outcome.date);
+	const amount = formatMoney({ amount: outcome.balance, currency });
+	let text: string;
+
+	if (outcome.status === "recorded") {
+		text = t("imports.balance.recorded", { amount, date });
+	} else if (outcome.status === "present") {
+		text = t("imports.balance.present", { amount, date });
+	} else if (outcome.status === "kept") {
+		text = t("imports.balance.kept", {
+			amount,
+			date,
+			recorded: formatMoney({ amount: outcome.recorded, currency }),
+			// Signed, as the Soldes tab shows a gap.
+			gap: formatSignedMoney(outcome.gap, currency),
+		});
+	} else {
+		text = t("imports.balance.skipped", {
+			date,
+			reason: t(`imports.balance.reasons.${outcome.reason}`),
+		});
+	}
+
+	return <p className="rounded-md border p-3">{text}</p>;
+}
+
 type PreviewProps = {
 	preview: ImportPreviewData;
 	currency: string;
@@ -186,6 +228,10 @@ function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening 
 						previous: formatTableDate(openingDate),
 					})}
 				</p>
+			)}
+
+			{preview.statementBalance !== null && (
+				<StatementBalanceNote outcome={preview.statementBalance} currency={currency} />
 			)}
 
 			<Tabs value={tab} onValueChange={setTab} className="gap-3">
@@ -287,17 +333,25 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 			return;
 		}
 
+		// Confirm writes what the preview showed, or answers stale.
+		const balanceOnly = isBalanceOnly(
+			countsOf(preview.groups),
+			preview.statementBalance?.status ?? null,
+		);
+
 		try {
 			const { counts } = await confirm.mutateAsync(preview.id);
 			const imported = t("imports.imported", { count: importedCount(counts) });
 
 			toast.success(
-				counts.present === 0
-					? t("imports.toastImported", { imported })
-					: t("imports.toast", {
-							imported,
-							present: t("imports.present", { count: counts.present }),
-						}),
+				balanceOnly
+					? t("imports.toastBalance")
+					: counts.present === 0
+						? t("imports.toastImported", { imported })
+						: t("imports.toast", {
+								imported,
+								present: t("imports.present", { count: counts.present }),
+							}),
 			);
 			onClose();
 		} catch (error) {
@@ -327,7 +381,9 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 		void read(event.dataTransfer.files[0]);
 	};
 
-	const count = preview === null ? 0 : importedCount(countsOf(preview.groups));
+	const counts = preview === null ? null : countsOf(preview.groups);
+	const count = counts === null ? 0 : importedCount(counts);
+	const balanceStatus = preview?.statementBalance?.status ?? null;
 
 	return (
 		<>
@@ -394,9 +450,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 
 			<DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<p className="text-muted-foreground">
-					{preview !== null && isNothingNew(countsOf(preview.groups))
-						? t("imports.nothingNew")
-						: ""}
+					{counts !== null && isNothingNew(counts, balanceStatus) ? t("imports.nothingNew") : ""}
 				</p>
 				<div className="flex justify-end gap-2">
 					<Button type="button" variant="outline" onClick={onClose}>
@@ -405,10 +459,17 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 					{preview !== null && (
 						<Button
 							type="button"
-							disabled={count === 0 || confirm.isPending || previewAgain.isPending}
+							disabled={
+								counts === null ||
+								!canConfirm(counts, balanceStatus) ||
+								confirm.isPending ||
+								previewAgain.isPending
+							}
 							onClick={() => void submit()}
 						>
-							{t("imports.confirm", { count })}
+							{counts !== null && isBalanceOnly(counts, balanceStatus)
+								? t("imports.confirmBalance")
+								: t("imports.confirm", { count })}
 						</Button>
 					)}
 				</div>
