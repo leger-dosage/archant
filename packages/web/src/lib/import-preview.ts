@@ -54,3 +54,62 @@ export function isBalanceOnly(counts: ImportCounts, balance: BalanceStatus): boo
 export function isNothingNew(counts: ImportCounts, balance: BalanceStatus): boolean {
 	return !canConfirm(counts, balance) && counts.present > 0;
 }
+
+/** How many records the Colonnes step shows under its header. */
+export const CSV_TABLE_ROWS = 10;
+
+const isEmptyRecord = (record: readonly string[]) => record.every((cell) => cell.trim() === "");
+
+/**
+ * The sample split with another delimiter, for display only. The server split
+ * it with the one it last read the file with; until a valid mapping lets it
+ * read the file again, rejoining and splitting is close enough to show the
+ * columns the user is choosing from. Quotes are lost on the way, which only a
+ * delimiter inside a quoted cell would notice.
+ */
+export function resplit(records: string[][], from: string, to: string): string[][] {
+	return from === to ? records : records.map((record) => record.join(from).split(to));
+}
+
+export type CsvTable = { header: string[] | null; rows: string[][]; width: number };
+
+/**
+ * What the Colonnes step shows, read as the parser reads the file: the record
+ * right after `skipRows` is the header when there is one, then the first
+ * non-empty records.
+ */
+export function csvTable(
+	sample: string[][],
+	sampleDelimiter: string,
+	mapping: { delimiter: string; skipRows: number; hasHeader: boolean },
+): CsvTable {
+	const records = resplit(sample, sampleDelimiter, mapping.delimiter).slice(mapping.skipRows);
+	const header = mapping.hasHeader ? (records[0] ?? null) : null;
+	const rows = records
+		.slice(mapping.hasHeader ? 1 : 0)
+		.filter((record) => !isEmptyRecord(record))
+		.slice(0, CSV_TABLE_ROWS);
+	const width = [...(header === null ? [] : [header]), ...rows].reduce(
+		(widest, record) => Math.max(widest, record.length),
+		0,
+	);
+
+	return { header, rows, width };
+}
+
+/** The roles padded with `ignore` up to `width`; a role beyond it is kept. */
+export function fitColumns<Role extends string>(
+	columns: readonly Role[],
+	width: number,
+	ignore: Role,
+): Role[] {
+	return Array.from(
+		{ length: Math.max(width, columns.length) },
+		(_, index) => columns[index] ?? ignore,
+	);
+}
+
+/** Whether two mappings read a file the same way. */
+export function sameMapping(a: unknown, b: unknown): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}

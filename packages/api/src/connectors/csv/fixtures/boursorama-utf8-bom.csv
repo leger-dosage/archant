@@ -1,0 +1,6 @@
+﻿# Fichier synthétique imitant un export Boursorama, anonymisé
+dateOp;dateVal;label;category;categoryParent;amount;comment;accountNum;accountLabel;accountbalance
+2026-09-03;2026-09-03;"CARTE 02/09/26 CAFE DE LA GARE CB*1234";"Restaurants, bars";"Loisirs";-42,90;;00040123456;BoursoBank;1234,56
+2026-09-05;2026-09-05;"PRLV SEPA EDF";"Électricité";"Logement";-87,12;"Échéance septembre";00040123456;BoursoBank;1234,56
+2026-09-08;2026-09-08;"Prélèvement Crédit Agricole";"Assurance";"Logement";-31,50;;00040123456;BoursoBank;1234,56
+2026-09-10;2026-09-10;"VIR SEPA ACME SAS SALAIRE";"Salaires";"Revenus";2150,00;;00040123456;BoursoBank;1234,56

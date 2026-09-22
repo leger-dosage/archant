@@ -112,7 +112,7 @@ async function openImport(page: Page, accountId: string, name: string) {
 
 async function choose(page: Page, buffer: Buffer, name = "releve.ofx") {
 	await dialog(page)
-		.getByLabel("Fichier OFX")
+		.getByLabel("Relevé bancaire")
 		.setInputFiles({ name, mimeType: "application/x-ofx", buffer });
 }
 
@@ -271,7 +271,7 @@ test("a text file shows the unreadable-file message", async ({ page, api }) => {
 	await choose(page, Buffer.from("Liste de courses : pain, lait", "utf8"), "courses.txt");
 
 	await expect(dialog(page).getByRole("alert")).toHaveText(
-		"Ce fichier n'est pas un relevé OFX lisible.",
+		"Ce fichier n'est pas un relevé bancaire lisible.",
 	);
 	await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Fichier/u);
 });
@@ -290,13 +290,13 @@ test("the palette offers the import on an account page, and a narrow screen is t
 		.getByRole("combobox")
 		.fill("importer");
 	await page.keyboard.press("Enter");
-	await expect(dialog(page).getByLabel("Fichier OFX")).toBeVisible();
+	await expect(dialog(page).getByLabel("Relevé bancaire")).toBeVisible();
 	await page.keyboard.press("Escape");
 
 	await page.setViewportSize({ width: 600, height: 900 });
 	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page).getByText("Disponible sur ordinateur")).toBeVisible();
-	await expect(dialog(page).getByLabel("Fichier OFX")).toHaveCount(0);
+	await expect(dialog(page).getByLabel("Relevé bancaire")).toHaveCount(0);
 });
 
 // Story 2.2: the file's LEDGERBAL becomes a snapshot.

@@ -1,0 +1,10 @@
+# Fichier synthétique imitant un export Société Générale, anonymisé
+="0003012345678901";Compte courant;;
+Solde au 15/09/2026;1 234,56 EUR;;
+Date de l'opération;Libellé;Détail de l'écriture;Montant de l'opération;Devise
+03/09/2026;CARTE X1234 CAFE DE LA GARE;CARTE X1234 02/09 CAFE DE LA GARE;-42,90;EUR
+05/09/2026;PRLV SEPA EDF;Électricité échéance septembre;-87,12;EUR
+08/09/2026;Prélèvement Crédit Agricole;Assurance habitation;-31,50;EUR
+10/09/2026;VIR RECU SALAIRE;DE: ACME SAS;2 150,00;EUR
+12/09/2026;CARTE X1234 BOULANGERIE;;-3,50;EUR
+12/09/2026;CARTE X1234 BOULANGERIE;;-3,50;EUR

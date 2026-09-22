@@ -1,3 +1,11 @@
+import type {
+	CsvColumnRole,
+	CsvDateFormat,
+	CsvDecimal,
+	CsvDelimiter,
+	CsvSign,
+} from "../csv-mapping.ts";
+
 import { sql } from "drizzle-orm";
 import { blob, check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
@@ -6,9 +14,9 @@ import { inList } from "./check.ts";
 
 /**
  * Connector ids of the file sources (AD-3). The same string is
- * `imports.source` and `entry_keys.source`; CSV and QIF join with their stories.
+ * `imports.source` and `entry_keys.source`; QIF joins with its story.
  */
-export const FILE_SOURCE_IDS = ["ofx"] as const;
+export const FILE_SOURCE_IDS = ["ofx", "csv"] as const;
 
 export type FileSourceId = (typeof FILE_SOURCE_IDS)[number];
 
@@ -16,10 +24,29 @@ export const IMPORT_STATUSES = ["previewed", "confirmed"] as const;
 
 export type ImportStatus = (typeof IMPORT_STATUSES)[number];
 
+/**
+ * How to read one bank's CSV export, saved per account (`import_mappings`).
+ * Columns are addressed by index, not by header name: many French exports
+ * start with account lines, and several have no header at all.
+ */
+export type CsvMapping = {
+	delimiter: CsvDelimiter;
+	/** Lines dropped before the header or the first record: an account preamble. */
+	skipRows: number;
+	hasHeader: boolean;
+	dateFormat: CsvDateFormat;
+	decimal: CsvDecimal;
+	sign: CsvSign;
+	/** One role per column, by index. */
+	columns: CsvColumnRole[];
+};
+
 /** What a preview offers to change besides writing lines, kept with the file. */
 export type ImportOptions = {
 	/** The earlier opening date the user accepted, so older lines can go in. */
 	moveOpeningDate?: string | undefined;
+	/** How a CSV file is read; absent for every other source. */
+	csv?: CsvMapping | undefined;
 };
 
 /** How many lines of a confirmed import fell in each group. */

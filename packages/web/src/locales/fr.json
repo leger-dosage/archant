@@ -276,15 +276,16 @@
 	"imports": {
 		"open": "Importer",
 		"title": "Importer un fichier",
-		"description": "Un relevé OFX exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
+		"description": "Un relevé OFX ou CSV exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
 		"mobile": "Disponible sur ordinateur",
 		"steps": {
 			"label": "Étapes de l'import",
 			"file": "Fichier",
+			"columns": "Colonnes",
 			"preview": "Aperçu"
 		},
 		"drop": "Déposez le fichier ici, ou choisissez-le.",
-		"file": "Fichier OFX",
+		"file": "Relevé bancaire",
 		"reading": "Lecture du fichier…",
 		"groups": {
 			"label": "Groupes de l'aperçu",
@@ -308,6 +309,7 @@
 			"reason": "Motif"
 		},
 		"fileLine": "Opération n° {{number}} du fichier",
+		"csvLine": "Ligne {{number}}",
 		"reasons": {
 			"BEFORE_OPENING_DATE": "Datée au plus tard le jour d'ouverture du compte",
 			"DATE_TOO_LATE": "Datée de plus d'un an après aujourd'hui",
@@ -339,14 +341,58 @@
 		"present_other": "{{count}} déjà présentes",
 		"toast": "{{imported}}, {{present}}.",
 		"toastImported": "{{imported}}.",
-		"toastBalance": "Solde du relevé enregistré."
+		"toastBalance": "Solde du relevé enregistré.",
+		"csv": {
+			"label": "Colonnes du fichier",
+			"column": "Rôle de la colonne {{name}}",
+			"unnamed": "Colonne {{number}}",
+			"roles": {
+				"date": "Date",
+				"label": "Libellé",
+				"amount": "Montant",
+				"debit": "Débit",
+				"credit": "Crédit",
+				"notes": "Notes",
+				"ignore": "Ignorer"
+			},
+			"delimiter": "Séparateur",
+			"delimiters": {
+				"semicolon": "Point-virgule ( ; )",
+				"comma": "Virgule ( , )",
+				"tab": "Tabulation"
+			},
+			"skipRows": "Lignes à ignorer au début",
+			"hasHeader": "La première ligne nomme les colonnes",
+			"dateFormat": "Format des dates",
+			"dateFormats": {
+				"DD/MM/YYYY": "JJ/MM/AAAA",
+				"DD/MM/YY": "JJ/MM/AA",
+				"DD-MM-YYYY": "JJ-MM-AAAA",
+				"DD.MM.YYYY": "JJ.MM.AAAA",
+				"YYYY-MM-DD": "AAAA-MM-JJ",
+				"MM/DD/YYYY": "MM/JJ/AAAA"
+			},
+			"decimal": "Séparateur décimal",
+			"decimals": {
+				"comma": "Virgule (1 234,56)",
+				"point": "Point (1,234.56)"
+			},
+			"sign": "Montants",
+			"signs": {
+				"inflows-positive": "Les entrées d'argent sont positives",
+				"inflows-negative": "Les entrées d'argent sont négatives"
+			},
+			"invalid": "Choisissez une colonne Date, au moins une colonne Libellé, puis une colonne Montant, ou des colonnes Débit et Crédit.",
+			"empty": "Aucune ligne à afficher après les lignes ignorées.",
+			"edit": "Modifier les colonnes"
+		}
 	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
 		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
-		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé OFX lisible.",
+		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
