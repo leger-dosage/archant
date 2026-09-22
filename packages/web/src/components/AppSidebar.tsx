@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
 import { Money } from "@/components/Money";
+import { ShortcutHint } from "@/components/ShortcutHint";
 import { ThemeMenu } from "@/components/ThemeMenu";
 import {
 	Sidebar,
@@ -127,7 +128,11 @@ export function AppSidebar() {
 								asChild
 								// Exact: on an account page its own row carries the indicator.
 								isActive={pathname === "/comptes" || pathname === "/comptes/"}
-								tooltip={t("nav.accounts")}
+								// Shown expanded too: the tooltip is where the shortcut is learnt.
+								tooltip={{
+									children: <ShortcutHint id="goAccounts" label={t("nav.accounts")} />,
+									hidden: false,
+								}}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/comptes">
@@ -140,7 +145,10 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/operations"}
-								tooltip={t("nav.operations")}
+								tooltip={{
+									children: <ShortcutHint id="goOperations" label={t("nav.operations")} />,
+									hidden: false,
+								}}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/operations">

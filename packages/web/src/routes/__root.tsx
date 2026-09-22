@@ -1,13 +1,89 @@
-import { Outlet, createRootRoute } from "@tanstack/react-router";
+import { Outlet, createRootRoute, useNavigate } from "@tanstack/react-router";
+import { KeyboardIcon, SearchIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AppSidebar } from "@/components/AppSidebar";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { CommandPalette } from "@/components/CommandPalette";
+import { CommandsProvider } from "@/components/CommandsProvider";
+import { CreateAccountDialog } from "@/components/CreateAccountDialog";
+import { ShortcutHint } from "@/components/ShortcutHint";
+import { ShortcutsDialog } from "@/components/ShortcutsDialog";
+import { Button } from "@/components/ui/button";
+import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCommands } from "@/hooks/useCommands";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useShortcut } from "@/hooks/useShortcut";
 
 export const Route = createRootRoute({ component: RootLayout });
 
+function GlobalShortcuts() {
+	const navigate = useNavigate();
+	const { setPaletteOpen, setShortcutsOpen } = useCommands();
+
+	useShortcut("palette", () => setPaletteOpen(true));
+	useShortcut("shortcuts", () => setShortcutsOpen(true));
+	useShortcut("goAccounts", () => void navigate({ to: "/comptes" }));
+	useShortcut("goOperations", () => void navigate({ to: "/operations" }));
+
+	return null;
+}
+
+/** `⌘B`, inside `SidebarProvider` since it needs the sidebar's own toggle. */
+function SidebarShortcut() {
+	const { toggleSidebar } = useSidebar();
+
+	useShortcut("toggleSidebar", toggleSidebar);
+
+	return null;
+}
+
+/** The visible equivalents of `⌘K` and `?`, each showing its shortcut in a tooltip. */
+function HeaderActions() {
+	const { t } = useTranslation();
+	const { setPaletteOpen, setShortcutsOpen } = useCommands();
+
+	return (
+		<div className="ml-auto flex items-center gap-1">
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button variant="outline" size="sm" onClick={() => setPaletteOpen(true)}>
+						<SearchIcon />
+						{t("commands.open")}
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent side="bottom">
+					<ShortcutHint id="palette" label={t("commands.title")} />
+				</TooltipContent>
+			</Tooltip>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						aria-label={t("shortcuts.open")}
+						onClick={() => setShortcutsOpen(true)}
+					>
+						<KeyboardIcon />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent side="bottom">
+					<ShortcutHint id="shortcuts" label={t("shortcuts.open")} />
+				</TooltipContent>
+			</Tooltip>
+		</div>
+	);
+}
+
+function AccountDialog() {
+	const { creatingAccount, setCreatingAccount } = useCommands();
+
+	return <CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />;
+}
+
 function RootLayout() {
+	const { t } = useTranslation();
 	// EXPERIENCE.md: full sidebar from 1024 px, icons below, a sheet below 768 px
 	// (the sidebar component handles that last step on its own).
 	const isWide = useMediaQuery("(min-width: 1024px)");
@@ -18,18 +94,33 @@ function RootLayout() {
 	}, [isWide]);
 
 	return (
-		<SidebarProvider
-			open={open}
-			onOpenChange={setOpen}
-			style={{ "--sidebar-width": "240px", "--sidebar-width-icon": "56px" }}
-		>
-			<AppSidebar />
-			<SidebarInset>
-				<header className="flex h-12 shrink-0 items-center border-b px-3">
-					<SidebarTrigger />
-				</header>
-				<Outlet />
-			</SidebarInset>
-		</SidebarProvider>
+		<CommandsProvider>
+			<SidebarProvider
+				open={open}
+				onOpenChange={setOpen}
+				style={{ "--sidebar-width": "240px", "--sidebar-width-icon": "56px" }}
+			>
+				<SidebarShortcut />
+				<AppSidebar />
+				<SidebarInset>
+					<header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<SidebarTrigger />
+							</TooltipTrigger>
+							<TooltipContent side="bottom">
+								<ShortcutHint id="toggleSidebar" label={t("nav.toggleSidebar")} />
+							</TooltipContent>
+						</Tooltip>
+						<HeaderActions />
+					</header>
+					<Outlet />
+				</SidebarInset>
+			</SidebarProvider>
+			<GlobalShortcuts />
+			<CommandPalette />
+			<ShortcutsDialog />
+			<AccountDialog />
+		</CommandsProvider>
 	);
 }

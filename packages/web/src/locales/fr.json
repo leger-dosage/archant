@@ -28,6 +28,49 @@
 		"dark": "Sombre",
 		"current": "{{label}} : {{choice}}"
 	},
+	"commands": {
+		"title": "Palette de commandes",
+		"description": "Aller à une page, lancer une action ou ouvrir un compte.",
+		"placeholder": "Rechercher une page, une action, un compte",
+		"empty": "Aucun résultat.",
+		"open": "Commandes",
+		"groups": {
+			"goTo": "Aller à",
+			"actions": "Actions",
+			"accounts": "Comptes"
+		},
+		"recordSnapshot": "Enregistrer un solde",
+		"showShortcuts": "Afficher les raccourcis",
+		"themes": {
+			"system": "Suivre le thème du système",
+			"light": "Utiliser le thème clair",
+			"dark": "Utiliser le thème sombre"
+		}
+	},
+	"shortcuts": {
+		"title": "Raccourcis clavier",
+		"description": "Les raccourcis d'une seule lettre ne s'appliquent pas pendant la saisie dans un champ.",
+		"open": "Raccourcis clavier",
+		"or": "ou",
+		"sections": {
+			"general": "Général",
+			"navigation": "Navigation",
+			"actions": "Actions",
+			"lists": "Listes d'opérations"
+		},
+		"labels": {
+			"palette": "Ouvrir la palette de commandes",
+			"toggleSidebar": "Réduire ou déplier la barre latérale",
+			"shortcuts": "Afficher les raccourcis",
+			"goAccounts": "Aller aux comptes",
+			"goOperations": "Aller aux opérations",
+			"newTransaction": "Ajouter une opération sur la page d'un compte",
+			"search": "Rechercher dans les opérations",
+			"nextRow": "Opération suivante",
+			"previousRow": "Opération précédente",
+			"openRow": "Ouvrir l'opération"
+		}
+	},
 	"accounts": {
 		"title": "Comptes",
 		"add": "Ajouter un compte",
