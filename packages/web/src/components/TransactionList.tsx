@@ -1,10 +1,12 @@
 import type { TransactionData } from "@/hooks/useTransactions";
 
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { Money } from "@/components/Money";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useListNavigation } from "@/hooks/useListNavigation";
 import { dayHeading } from "@/lib/dates";
 
 type TransactionListProps = {
@@ -42,12 +44,18 @@ function DayTitle({ date }: { date: string }) {
 	return <>{t(`transactions.days.${heading.kind}`)}</>;
 }
 
-/** Transactions, most recent first, under a header per day. */
+/**
+ * Transactions, most recent first, under a header per day. `j` / `k` and the
+ * arrows move between rows, `e` or `Enter` opens one.
+ */
 export function TransactionList({ items, onOpen, showAccount = false }: TransactionListProps) {
 	const { t } = useTranslation();
+	const container = useRef<HTMLDivElement>(null);
+
+	useListNavigation(container);
 
 	return (
-		<div className="flex flex-col gap-4">
+		<div ref={container} className="flex flex-col gap-4">
 			{groupByDay(items).map((day) => {
 				const headingId = `day-${day.date}`;
 

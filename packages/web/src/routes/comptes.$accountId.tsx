@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
@@ -16,6 +16,7 @@ import { AccountSettings } from "@/components/AccountSettings";
 import { BalanceChart } from "@/components/BalanceChart";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
+import { ShortcutHint } from "@/components/ShortcutHint";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
@@ -24,8 +25,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccount } from "@/hooks/useAccount";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
+import { usePageCommands } from "@/hooks/useCommands";
+import { useShortcut } from "@/hooks/useShortcut";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
@@ -229,6 +233,47 @@ function AccountPage() {
 		});
 	}, [name, t]);
 
+	const currency = account.data?.currency;
+	const writable: { id: string; currency: CurrencyCode; openingDate: string } | undefined =
+		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
+			? { id: account.data.id, currency, openingDate: account.data.openingDate }
+			: undefined;
+	// The same conditions as the « Ajouter une opération » and « Ajouter un
+	// solde » buttons, so the palette and `n` never offer what the page does not.
+	const canAddTransaction = account.data !== undefined;
+	// A snapshot must fall after the opening date and not after today: an
+	// account opened today or later has no valid date yet.
+	const canAddSnapshot = writable !== undefined && writable.openingDate < toIsoDate();
+	const commands = useMemo(
+		() => [
+			...(canAddTransaction
+				? [
+						{
+							id: "add-transaction",
+							label: t("transactions.add"),
+							shortcut: "newTransaction" as const,
+							run: () => setSheet({ open: true, transaction: null }),
+						},
+					]
+				: []),
+			...(canAddSnapshot
+				? [
+						{
+							id: "record-snapshot",
+							label: t("commands.recordSnapshot"),
+							run: () => setSnapshotDialog({ open: true, snapshot: null }),
+						},
+					]
+				: []),
+		],
+		[canAddSnapshot, canAddTransaction, t],
+	);
+
+	usePageCommands(commands);
+	useShortcut("newTransaction", () => setSheet({ open: true, transaction: null }), {
+		enabled: canAddTransaction,
+	});
+
 	if (notFound) {
 		return (
 			<div className="flex w-full max-w-[1200px] flex-col items-start gap-3 p-6">
@@ -259,11 +304,6 @@ function AccountPage() {
 			});
 		}
 	};
-	const currency = account.data?.currency;
-	const writable: { id: string; currency: CurrencyCode; openingDate: string } | undefined =
-		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
-			? { id: account.data.id, currency, openingDate: account.data.openingDate }
-			: undefined;
 
 	return (
 		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
@@ -295,7 +335,14 @@ function AccountPage() {
 							className="amount-hero mt-2"
 						/>
 					</div>
-					<Button onClick={openNew}>{t("transactions.add")}</Button>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button onClick={openNew}>{t("transactions.add")}</Button>
+						</TooltipTrigger>
+						<TooltipContent side="bottom">
+							<ShortcutHint id="newTransaction" label={t("transactions.add")} />
+						</TooltipContent>
+					</Tooltip>
 				</div>
 			)}
 
@@ -311,7 +358,7 @@ function AccountPage() {
 					<TransactionsPanel
 						accountId={accountId}
 						page={page}
-						canAdd={account.data !== undefined}
+						canAdd={canAddTransaction}
 						onAdd={openNew}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}
 					/>
@@ -320,9 +367,7 @@ function AccountPage() {
 					<SnapshotsPanel
 						accountId={accountId}
 						page={snapshotsPage}
-						// A snapshot must fall after the opening date and not after today:
-						// an account opened today or later has no valid date yet.
-						canAdd={writable !== undefined && writable.openingDate < toIsoDate()}
+						canAdd={canAddSnapshot}
 						onAdd={openNewSnapshot}
 						onOpen={(snapshot) => setSnapshotDialog({ open: true, snapshot })}
 					/>
