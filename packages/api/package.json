@@ -15,6 +15,7 @@
 	"scripts": {
 		"start:dev": "node --env-file-if-exists=../../.env --watch src/index.ts",
 		"start": "node src/index.ts",
+		"reset-password": "node --env-file-if-exists=../../.env src/cli/reset-password.ts",
 		"typecheck": "tsc -p tsconfig.json",
 		"test": "vitest run --coverage"
 	},

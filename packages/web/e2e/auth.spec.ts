@@ -84,3 +84,46 @@ test.describe("a session lost mid-use", () => {
 		await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	});
 });
+
+// Story 3.2: signing out. This test signs in itself rather than spend the
+// shared session, which it would then end for everything that follows.
+test("signing out revokes the session and the next API call answers 401", async ({
+	page,
+	context,
+	playwright,
+}) => {
+	await page.goto("/connexion");
+	await signIn(page, ADMIN.password);
+	await expect(page).toHaveURL(/\/comptes$/u);
+
+	// Kept to ask the API afterwards: a cookie the browser no longer sends
+	// would answer 401 whether or not the session row is gone.
+	const cookies = await context.cookies();
+	const cookie = cookies.map((entry) => `${entry.name}=${entry.value}`).join("; ");
+
+	await page.getByRole("button", { name: ADMIN.email }).click();
+	await page.getByRole("menuitem", { name: "Se déconnecter" }).click();
+
+	await expect(page).toHaveURL(/\/connexion$/u);
+
+	// Its own client address, like every browser context of the suite: sharing
+	// one would count this call against another test's rate-limit bucket.
+	const replay = await playwright.request.newContext({
+		extraHTTPHeaders: { cookie, "x-forwarded-for": "10.98.98.98" },
+	});
+	const response = await replay.get("/api/accounts");
+	await replay.dispose();
+
+	expect(response.status()).toBe(401);
+
+	// Back inside the application, without a reload: a reload would empty the
+	// cache on its own and say nothing about the sign-out clearing it.
+	await page.goBack();
+
+	await expect(page).toHaveURL(/\/connexion\?redirect=/u);
+	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toHaveCount(0);
+
+	await page.goto("/comptes");
+
+	await expect(page).toHaveURL(/\/connexion\?redirect=/u);
+});

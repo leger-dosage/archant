@@ -20,6 +20,7 @@ import {
 	SidebarMenuSkeleton,
 	useSidebar,
 } from "@/components/ui/sidebar";
+import { UserMenu } from "@/components/UserMenu";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { cn } from "@/lib/utils";
@@ -165,6 +166,9 @@ export function AppSidebar() {
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<ThemeMenu />
+					</SidebarMenuItem>
+					<SidebarMenuItem>
+						<UserMenu />
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarFooter>

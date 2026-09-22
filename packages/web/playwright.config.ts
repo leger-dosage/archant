@@ -27,8 +27,22 @@ export default defineConfig({
 		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: { ...devices["Desktop Chrome"] } },
 		{
 			name: "chromium",
+			// Everything but the password change, which the project below runs
+			// once nothing needs a session any more.
+			testIgnore: /password\.spec\.ts$/u,
 			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
 			dependencies: ["setup"],
+		},
+		// Last, because changing the password revokes every session of the single
+		// user, the saved administrator session included: run in the middle, it
+		// would sign every later test out. It is also the one project a retry
+		// cannot repeat: a second attempt would sign in with a password the
+		// first attempt has already replaced. Never give this suite `retries`.
+		{
+			name: "password",
+			testMatch: /password\.spec\.ts$/u,
+			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
+			dependencies: ["chromium"],
 		},
 	],
 	// No `reuseExistingServer`: a stale server left on these ports once made a

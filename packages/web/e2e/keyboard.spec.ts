@@ -84,6 +84,17 @@ test("typing an account's name then Enter opens that account", async ({ page, ap
 	await expect(palette(page)).toBeHidden();
 });
 
+test("the palette opens the settings", async ({ page }) => {
+	await visit(page, "/operations");
+	await openPalette(page);
+	await paletteInput(page).fill("reglages");
+	await expect(option(page, /^Réglages/u)).toBeVisible();
+	await page.keyboard.press("Enter");
+
+	await expect(page).toHaveURL(/\/reglages\/securite$/u);
+	await expect(page.getByRole("heading", { level: 1, name: "Réglages" })).toBeVisible();
+});
+
 test("the palette matches without accents", async ({ page }) => {
 	await visit(page, "/comptes");
 	await openPalette(page);
@@ -171,7 +182,7 @@ test("the palette offers no snapshot on an account opened today", async ({ page,
 	await expect(option(page, /^Enregistrer un solde/u)).toHaveCount(0);
 });
 
-test("g c and g o go to the accounts and the transactions", async ({ page }) => {
+test("g c, g o and g s go to the accounts, the transactions and the settings", async ({ page }) => {
 	await visit(page, "/operations");
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 
@@ -182,6 +193,11 @@ test("g c and g o go to the accounts and the transactions", async ({ page }) => 
 	await page.keyboard.press("g");
 	await page.keyboard.press("o");
 	await expect(page).toHaveURL(/\/operations$/u);
+
+	await page.keyboard.press("g");
+	await page.keyboard.press("s");
+	// `/reglages` opens its only section.
+	await expect(page).toHaveURL(/\/reglages\/securite$/u);
 });
 
 test("⌘K opens the palette from the search field, and Esc gives focus back to it", async ({
@@ -356,6 +372,7 @@ test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ pa
 		"Afficher les raccourcis?",
 		"Aller aux comptesG C",
 		"Aller aux opérationsG O",
+		"Aller aux réglagesG S",
 		"Ajouter une opération sur la page d'un compteN",
 		"Importer un fichier sur la page d'un compteI",
 		"Rechercher dans les opérations/",
