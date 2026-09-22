@@ -799,6 +799,7 @@ export async function ingest(
 						entryId: id,
 						label: line.label,
 						notes: line.notes,
+						reference: line.reference,
 						possibleDuplicate: duplicate,
 						lockedFields: options.origin === "user" ? filledFields(line) : [],
 					})),
@@ -1081,6 +1082,8 @@ export type TransactionRecord = {
 	currency: string;
 	label: string;
 	notes: string | null;
+	/** A cheque or QIF `N` number from the import that created it. */
+	reference: string | null;
 	/** Left out of reports (AD-9), still counted in the balance. */
 	excluded: boolean;
 };
@@ -1096,6 +1099,7 @@ const transactionColumns = {
 	currency: entries.currency,
 	label: transactions.label,
 	notes: transactions.notes,
+	reference: transactions.reference,
 	excluded: transactions.excluded,
 };
 

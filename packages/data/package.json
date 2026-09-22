@@ -9,6 +9,7 @@
 		"./csv-mapping": "./csv-mapping.ts",
 		"./migrate": "./migrate.ts",
 		"./money": "./money.ts",
+		"./qif-options": "./qif-options.ts",
 		"./schema/accounts": "./schema/accounts.ts",
 		"./schema/balances": "./schema/balances.ts",
 		"./schema/entries": "./schema/entries.ts",

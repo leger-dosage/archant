@@ -18,6 +18,7 @@ const errorBody = z.object({
 	error: z.object({
 		code: z.string(),
 		fields: z.array(z.object({ path: z.string(), code: z.string() })).optional(),
+		params: z.record(z.string(), z.string()).optional(),
 	}),
 });
 
@@ -29,12 +30,19 @@ function isErrorCode(value: string): value is Exclude<ErrorCode, "fields"> {
 export class ApiError extends Error {
 	readonly code: Exclude<ErrorCode, "fields">;
 	readonly fields: ApiFieldError[];
+	/** Values the translation names, such as the QIF type a file was refused for. */
+	readonly params: Record<string, string>;
 
-	constructor(code: Exclude<ErrorCode, "fields">, fields: ApiFieldError[] = []) {
+	constructor(
+		code: Exclude<ErrorCode, "fields">,
+		fields: ApiFieldError[] = [],
+		params: Record<string, string> = {},
+	) {
 		super(code);
 		this.name = "ApiError";
 		this.code = code;
 		this.fields = fields;
+		this.params = params;
 	}
 }
 
@@ -69,7 +77,7 @@ export async function unwrap<T>(
 		throw new ApiError("NETWORK_ERROR");
 	}
 
-	const { code, fields = [] } = parsed.data.error;
+	const { code, fields = [], params = {} } = parsed.data.error;
 
-	throw new ApiError(isErrorCode(code) ? code : "INTERNAL_ERROR", fields);
+	throw new ApiError(isErrorCode(code) ? code : "INTERNAL_ERROR", fields, params);
 }

@@ -195,6 +195,7 @@ const line = (overrides: Partial<NormalizedTransaction> = {}): NormalizedTransac
 	amount: toMinorUnits(-4290),
 	currency: "EUR",
 	label: "Boulangerie",
+	reference: null,
 	notes: null,
 	...overrides,
 });
@@ -260,6 +261,7 @@ describe("ingest", () => {
 			currency: "EUR",
 			label: "Boulangerie",
 			notes: null,
+			reference: null,
 			excluded: false,
 		});
 		const days = await history(account.id);
@@ -622,6 +624,19 @@ describe("ingest from an import", () => {
 		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
 			amount: 123456 - 4290 + 215000,
 		});
+	});
+
+	it("writes a line's reference", async () => {
+		const account = await openChecking();
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf({ ...cafe, reference: "1234567" }, salary),
+		);
+
+		const [cafeId = "", salaryId = ""] = result.created;
+		await expect(findTransaction(deps(), cafeId)).resolves.toMatchObject({ reference: "1234567" });
+		await expect(findTransaction(deps(), salaryId)).resolves.toMatchObject({ reference: null });
 	});
 
 	it("gives two previews that differ only in the opening they would write different digests", async () => {

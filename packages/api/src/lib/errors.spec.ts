@@ -25,4 +25,12 @@ describe("AppError", () => {
 			},
 		});
 	});
+
+	it("serialises params only when it has some", () => {
+		expect(
+			new AppError("INVALID_IMPORT_FILE", "Refused.", undefined, { type: "Invst" }).toJSON(),
+		).toEqual({
+			error: { code: "INVALID_IMPORT_FILE", message: "Refused.", params: { type: "Invst" } },
+		});
+	});
 });

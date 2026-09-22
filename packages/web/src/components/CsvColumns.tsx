@@ -11,6 +11,7 @@ import {
 } from "@archant/data/csv-mapping";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
+import { ChoiceField } from "@/components/ChoiceField";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,43 +35,6 @@ import { csvTable, fitColumns } from "@/lib/import-preview";
 const DELIMITER_KEYS = { ";": "semicolon", ",": "comma", "\t": "tab" } as const;
 
 const DECIMAL_KEYS = { ",": "comma", ".": "point" } as const;
-
-type Choice<Value extends string> = {
-	id: string;
-	label: string;
-	value: Value;
-	options: readonly { value: Value; label: string }[];
-	onChange: (value: Value) => void;
-};
-
-function ChoiceField<Value extends string>({ id, label, value, options, onChange }: Choice<Value>) {
-	return (
-		<div className="flex flex-col gap-1.5">
-			<Label htmlFor={id}>{label}</Label>
-			<Select
-				value={value}
-				onValueChange={(next) => {
-					const option = options.find((candidate) => candidate.value === next);
-
-					if (option !== undefined) {
-						onChange(option.value);
-					}
-				}}
-			>
-				<SelectTrigger id={id} className="w-full">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{options.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-		</div>
-	);
-}
 
 type CsvColumnsProps = {
 	/** The file's first records, as the server split them. */

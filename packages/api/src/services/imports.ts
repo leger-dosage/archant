@@ -9,6 +9,7 @@ import { and, eq, lt } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
+import type { QifDateOrder } from "@archant/data/qif-options";
 import { importMappings } from "@archant/data/schema/import-mappings";
 import type {
 	CsvMapping,
@@ -26,6 +27,7 @@ import {
 	guessDelimiter,
 	mappingFits,
 } from "../connectors/csv/csv.ts";
+import { qifDateOrder } from "../connectors/qif/qif.ts";
 import { detectFileSource, fileSource } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
@@ -56,6 +58,12 @@ export type CsvPreview = {
 	prefill: CsvMapping;
 };
 
+/**
+ * How a QIF file's dates were read. `ambiguous` says every date reads both
+ * ways, so Aperçu offers the choice.
+ */
+export type QifPreview = { dateOrder: QifDateOrder; ambiguous: boolean };
+
 export type ImportPreview = {
 	id: string;
 	fileName: string;
@@ -69,6 +77,8 @@ export type ImportPreview = {
 	statementBalance: StatementBalanceOutcome | null;
 	/** `null` for every source but CSV. */
 	csv: CsvPreview | null;
+	/** `null` for every source but QIF. */
+	qif: QifPreview | null;
 };
 
 export type ConfirmedImport = { id: string; counts: ImportCounts };
@@ -112,6 +122,7 @@ async function statementOf(
 	return fileSource(row.source).parse(new Uint8Array(row.content), {
 		currency,
 		csv: options.csv,
+		qif: options.qif,
 	});
 }
 
@@ -183,6 +194,17 @@ async function unmappedPreview(
 		opening: null,
 		statementBalance: null,
 		csv: await csvPreview(deps, row, undefined),
+		qif: null,
+	};
+}
+
+/** The order a QIF import's dates were read in: the user's choice, else the detected one. */
+function qifPreview(row: Import, options: ImportOptions): QifPreview {
+	const detected = qifDateOrder(new Uint8Array(row.content));
+
+	return {
+		dateOrder: options.qif?.dateOrder ?? detected.dateOrder,
+		ambiguous: detected.ambiguous,
 	};
 }
 
@@ -220,6 +242,7 @@ async function runPreview(
 		opening: result.opening,
 		statementBalance: result.balance,
 		csv: row.source === "csv" ? await csvPreview(deps, row, options.csv) : null,
+		qif: row.source === "qif" ? qifPreview(row, options) : null,
 	};
 }
 
@@ -300,9 +323,11 @@ export async function previewImport(
 ): Promise<ImportPreview> {
 	const row = await previewedImport(deps, id);
 	const csv = row.source === "csv" ? (input.csv ?? row.options.csv) : undefined;
+	const qif = row.source === "qif" ? (input.qif ?? row.options.qif) : undefined;
 	const options: ImportOptions = {
 		...(input.moveOpeningDate === null ? {} : { moveOpeningDate: input.moveOpeningDate }),
 		...(csv === undefined ? {} : { csv }),
+		...(qif === undefined ? {} : { qif }),
 	};
 
 	if (row.source === "csv" && csv === undefined) {

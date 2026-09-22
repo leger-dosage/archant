@@ -8,6 +8,7 @@ import {
 	CSV_DELIMITERS,
 	CSV_SIGNS,
 } from "@archant/data/csv-mapping";
+import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
 import { EARLIEST_OPENING_DATE } from "./accounts.ts";
@@ -66,7 +67,8 @@ export const csvMappingSchema = z
 /**
  * A new preview of a stored import. `moveOpeningDate` accepts the offer to
  * move the account's opening date back; `null` withdraws it. `csv` is the
- * column mapping to read a CSV file with; absent, the stored one stays.
+ * column mapping to read a CSV file with, `qif` the order of a QIF file's
+ * dates; absent, the stored one stays.
  */
 export const importPreviewSchema = z.object({
 	// As at account creation: an opening in year 1 would write a balance row
@@ -76,6 +78,7 @@ export const importPreviewSchema = z.object({
 		.refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early")
 		.nullable(),
 	csv: csvMappingSchema.optional(),
+	qif: z.object({ dateOrder: z.enum(QIF_DATE_ORDERS) }).optional(),
 });
 
 export type ImportPreviewInput = z.input<typeof importPreviewSchema>;

@@ -176,7 +176,9 @@ test("confirming writes the lines, moves the balance and gives the counts", asyn
 
 	await cafe.click();
 	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
-	await expect(sheet.getByText(`Import OFX du ${formatShortDate(daysAgo(0))}`)).toBeVisible();
+	await expect(
+		sheet.getByText(`Import OFX du ${formatShortDate(daysAgo(0))}`, { exact: true }),
+	).toBeVisible();
 });
 
 test("the same file again is already present, and confirm is disabled", async ({ page, api }) => {

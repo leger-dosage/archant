@@ -78,7 +78,7 @@ Columns are snake_case, mapped to camelCase in TypeScript (`transactedAt: intege
 
 ## API contract
 
-Success is `{ "data": ... }`, failure is `{ "error": { "code": "...", "message": "..." } }`. Codes are a closed union in SCREAMING_SNAKE_CASE, declared in `packages/api/src/lib/errors.ts` as an `AppError` class. A single `app.onError` maps `AppError` to its JSON and anything else to a generic `INTERNAL_ERROR` 500, so an unexpected throw never leaks a stack trace or a provider payload.
+Success is `{ "data": ... }`, failure is `{ "error": { "code": "...", "message": "..." } }`. A validation failure adds `fields`, one `{ path, code }` per invalid field; a code whose translation names a value, such as a refused QIF type, adds `params`, never an amount, a label or an account number. Codes are a closed union in SCREAMING_SNAKE_CASE, declared in `packages/api/src/lib/errors.ts` as an `AppError` class. A single `app.onError` maps `AppError` to its JSON and anything else to a generic `INTERNAL_ERROR` 500, so an unexpected throw never leaks a stack trace or a provider payload.
 
 Error messages returned by the API are in English. The interface translates them from the code.
 

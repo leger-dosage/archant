@@ -24,6 +24,8 @@ export const transactions = sqliteTable("transactions", {
 		.references(() => entries.id, { onDelete: "restrict" }),
 	label: text("label").notNull(),
 	notes: text("notes"),
+	// A cheque or QIF `N` number the bank printed; not lockable, no source edits it.
+	reference: text("reference"),
 	// Kept out of future reports (AD-9), never out of the account's balance:
 	// the money did move.
 	excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),

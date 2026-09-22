@@ -204,7 +204,8 @@
 		},
 		"sources": {
 			"manual": "Saisie manuelle",
-			"import": "Import {{format}} du {{date}}"
+			"import": "Import {{format}} du {{date}}",
+			"importReference": "Import {{format}} du {{date}}, n° {{reference}}"
 		},
 		"excluded": "Exclue des rapports"
 	},
@@ -276,7 +277,7 @@
 	"imports": {
 		"open": "Importer",
 		"title": "Importer un fichier",
-		"description": "Un relevé OFX ou CSV exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
+		"description": "Un relevé OFX, CSV ou QIF exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
 		"mobile": "Disponible sur ordinateur",
 		"steps": {
 			"label": "Étapes de l'import",
@@ -316,7 +317,8 @@
 			"CURRENCY_MISMATCH": "Dans une autre devise que le compte",
 			"INVALID_DATE": "Date illisible",
 			"INVALID_AMOUNT": "Montant illisible",
-			"MISSING_LABEL": "Sans libellé"
+			"MISSING_LABEL": "Sans libellé",
+			"OPENING_BALANCE": "Solde d'ouverture, non importé"
 		},
 		"moveOpening": "Avancer la date d'ouverture au {{date}}",
 		"openingMoved": "La date d'ouverture passera au {{date}}, avec un solde initial de {{amount}}. Le solde du {{previous}}, date d'ouverture actuelle, ne change pas.",
@@ -342,6 +344,14 @@
 		"toast": "{{imported}}, {{present}}.",
 		"toastImported": "{{imported}}.",
 		"toastBalance": "Solde du relevé enregistré.",
+		"qif": {
+			"dateOrder": "Ordre des dates",
+			"dateOrders": {
+				"day-first": "Jour d'abord (31/01/2026)",
+				"month-first": "Mois d'abord (01/31/2026)"
+			},
+			"unsupportedType": "Les relevés QIF de type {{type}} ne sont pas pris en charge."
+		},
 		"csv": {
 			"label": "Colonnes du fichier",
 			"column": "Rôle de la colonne {{name}}",

@@ -186,7 +186,8 @@ describe("imports and entry keys", () => {
 		await expect(insertImport(database, "i2", "confirmed")).resolves.toBeDefined();
 		await expect(insertImport(database, "i3", "reverted")).rejects.toThrow();
 		await expect(insertImport(database, "i4", "previewed", "csv")).resolves.toBeDefined();
-		await expect(insertImport(database, "i5", "previewed", "qif")).rejects.toThrow();
+		await expect(insertImport(database, "i5", "previewed", "qif")).resolves.toBeDefined();
+		await expect(insertImport(database, "i6", "previewed", "xls")).rejects.toThrow();
 	});
 
 	it("holds a key once per account and source, and protects its entry", async () => {
@@ -197,7 +198,8 @@ describe("imports and entry keys", () => {
 
 		await expect(insertKey(database, "fp:1")).resolves.toBeDefined();
 		await expect(insertKey(database, "fp:1", "e2")).rejects.toThrow();
-		await expect(insertKey(database, "fp:2", "e1", "qif")).rejects.toThrow();
+		await expect(insertKey(database, "fp:2", "e1", "qif")).resolves.toBeDefined();
+		await expect(insertKey(database, "fp:2", "e1", "xls")).rejects.toThrow();
 		await expect(insertKey(database, "fp:1", "e1", "csv")).resolves.toBeDefined();
 		await expect(insertKey(database, "fp:3", "nope")).rejects.toThrow();
 		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
@@ -257,6 +259,30 @@ function isJournal(value: unknown): value is { entries: { tag: string }[] } {
 	);
 }
 
+/**
+ * A database migrated up to, not including, the migration whose tag starts
+ * with `tag`, from a copy of the folder whose journal stops there.
+ */
+async function migratedBefore(tag: string): Promise<Database> {
+	const folder = join(directory, "drizzle");
+	await cp(fileURLToPath(new URL("./drizzle", import.meta.url)), folder, { recursive: true });
+	const journalPath = join(folder, "meta", "_journal.json");
+	const journal: unknown = JSON.parse(await readFile(journalPath, "utf8"));
+
+	if (!isJournal(journal)) {
+		throw new Error("drizzle-kit changed the shape of its journal.");
+	}
+
+	await writeFile(
+		journalPath,
+		JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.tag < tag) }),
+	);
+	const before = await createDb(url);
+	await migrate(before, { migrationsFolder: folder });
+
+	return before;
+}
+
 describe("import mappings", () => {
 	it("holds one mapping per account and goes with its account", async () => {
 		const database = await migrated();
@@ -276,25 +302,7 @@ describe("import mappings", () => {
 	});
 
 	it("keeps every import and key when 0007 rebuilds their source checks", async () => {
-		// Migrate up to 0006 from a copy of the folder whose journal stops there.
-		const folder = join(directory, "drizzle");
-		await cp(fileURLToPath(new URL("./drizzle", import.meta.url)), folder, { recursive: true });
-		const journalPath = join(folder, "meta", "_journal.json");
-		const journal: unknown = JSON.parse(await readFile(journalPath, "utf8"));
-
-		if (!isJournal(journal)) {
-			throw new Error("drizzle-kit changed the shape of its journal.");
-		}
-
-		await writeFile(
-			journalPath,
-			JSON.stringify({
-				...journal,
-				entries: journal.entries.filter((entry) => entry.tag < "0007"),
-			}),
-		);
-		const before = await createDb(url);
-		await migrate(before, { migrationsFolder: folder });
+		const before = await migratedBefore("0007");
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertImport(before, "i1", "confirmed");
 		await insertEntry(before, "e1", "transaction", null);
@@ -313,6 +321,32 @@ describe("import mappings", () => {
 			{ id: "i1", source: "ofx" },
 		]);
 		// The references to the rebuilt table still hold.
+		await expect(database.run(sql`delete from imports where id = 'i1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps every import, key and transaction when 0008 admits QIF", async () => {
+		const before = await migratedBefore("0008");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertImport(before, "i1", "confirmed", "csv");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Boulangerie')`);
+		await before.run(
+			sql`insert into entry_keys (entry_id, account_id, source, key, import_id) values ('e1', 'a1', 'csv', 'fp:1', 'i1')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select entry_id, source, key, import_id from entry_keys`),
+		).resolves.toEqual([{ entry_id: "e1", source: "csv", key: "fp:1", import_id: "i1" }]);
+		await expect(database.all(sql`select id, source from imports`)).resolves.toEqual([
+			{ id: "i1", source: "csv" },
+		]);
+		await expect(database.all(sql`select label, reference from transactions`)).resolves.toEqual([
+			{ label: "Boulangerie", reference: null },
+		]);
 		await expect(database.run(sql`delete from imports where id = 'i1'`)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});

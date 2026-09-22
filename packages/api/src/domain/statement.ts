@@ -6,9 +6,9 @@ import { addDays } from "./dates.ts";
 
 /**
  * One line of a statement, as every source hands it to the ledger (AD-3).
- * Narrowed to the fields stored so far: `originalAmount`, `reference` and
- * `pending` arrive with Stories 2.4 and Epic 10, together with their columns,
- * so no source ever sets a field the ledger silently drops.
+ * Narrowed to the fields stored so far: `originalAmount` and `pending` arrive
+ * with Epic 10, together with their columns, so no source ever sets a field
+ * the ledger silently drops.
  */
 export type NormalizedTransaction = {
 	/** The source's own id for the line, OFX `FITID`; `null` when it has none. */
@@ -18,6 +18,8 @@ export type NormalizedTransaction = {
 	amount: MinorUnits;
 	currency: string;
 	label: string;
+	/** A cheque or QIF `N` number the bank printed; `null` when it has none. */
+	reference: string | null;
 	notes: string | null;
 };
 
@@ -25,7 +27,8 @@ export type NormalizedTransaction = {
  * Why a line was refused. The ledger names the first three: `BEFORE_OPENING_DATE`
  * covers the opening day too, since the opening balance is that day's
  * end-of-day balance, as in Sure. A source names the others when a field of
- * the line cannot be read.
+ * the line cannot be read, or, for `OPENING_BALANCE`, when the line is the
+ * starting balance a QIF file carries rather than a movement.
  */
 export type RejectionCode =
 	| "BEFORE_OPENING_DATE"
@@ -33,7 +36,8 @@ export type RejectionCode =
 	| "CURRENCY_MISMATCH"
 	| "INVALID_DATE"
 	| "INVALID_AMOUNT"
-	| "MISSING_LABEL";
+	| "MISSING_LABEL"
+	| "OPENING_BALANCE";
 
 /**
  * The balance a statement closes on, signed as the bank prints it (AD-5): a

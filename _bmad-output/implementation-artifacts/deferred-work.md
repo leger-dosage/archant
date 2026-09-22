@@ -40,3 +40,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3-import-a-csv-file-with-a-saved-mapping.md`
   summary: Check whether a French bank writes `0,00` in the unused debit or credit column, which the CSV source rejects as both cells filled.
   evidence: Unverified, medium if true: every line of such an export would land under Rejetées. A real export with debit and credit columns would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-import-a-qif-file.md`
+  summary: Check whether a French Quicken or Microsoft Money QIF export writes its starting balance under a French payee such as « Solde d'ouverture », which the QIF source would import as a transaction.
+  evidence: Unverified, medium if true. `toLine` recognises only `Opening Balance`; a real French export would settle it.

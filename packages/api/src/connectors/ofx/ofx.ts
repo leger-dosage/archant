@@ -163,6 +163,7 @@ function toLine(
 		currency,
 		// By code points, so an emoji at the limit is never cut in half.
 		label: Array.from(label).slice(0, LABEL_MAX_LENGTH).join(""),
+		reference: null,
 		notes: null,
 	};
 }

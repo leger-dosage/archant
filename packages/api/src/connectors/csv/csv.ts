@@ -326,6 +326,7 @@ function toLine(
 		amount,
 		currency,
 		label,
+		reference: null,
 		notes: notes === "" ? null : notes,
 	};
 }

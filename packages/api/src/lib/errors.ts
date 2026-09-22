@@ -19,21 +19,30 @@ export type ErrorCode = keyof typeof ERROR_STATUSES;
 /** One invalid field: its dotted path and a snake_case code the form translates. */
 export type FieldError = { path: string; code: string };
 
+/**
+ * Values the interface puts into its translation of the code, such as the
+ * QIF type a file was refused for. Never an amount, a label or an account
+ * number (AD-14): they travel to logs and error reports with the rest.
+ */
+export type ErrorParams = Record<string, string>;
+
 export type ErrorBody = {
-	error: { code: ErrorCode; message: string; fields?: FieldError[] };
+	error: { code: ErrorCode; message: string; fields?: FieldError[]; params?: ErrorParams };
 };
 
 export class AppError extends Error {
 	readonly code: ErrorCode;
 	readonly status: (typeof ERROR_STATUSES)[ErrorCode];
 	readonly fields: FieldError[] | undefined;
+	readonly params: ErrorParams | undefined;
 
-	constructor(code: ErrorCode, message: string, fields?: FieldError[]) {
+	constructor(code: ErrorCode, message: string, fields?: FieldError[], params?: ErrorParams) {
 		super(message);
 		this.name = "AppError";
 		this.code = code;
 		this.status = ERROR_STATUSES[code];
 		this.fields = fields;
+		this.params = params;
 	}
 
 	toJSON(): ErrorBody {
@@ -42,6 +51,7 @@ export class AppError extends Error {
 				code: this.code,
 				message: this.message,
 				...(this.fields === undefined ? {} : { fields: this.fields }),
+				...(this.params === undefined ? {} : { params: this.params }),
 			},
 		};
 	}
