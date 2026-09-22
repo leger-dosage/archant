@@ -1,5 +1,8 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	// Registration is separate from rule adoption so setup does not change the
+	// existing UI policy before its violations have been measured.
+	"jsPlugins": ["@shadcn/lint"],
 	"plugins": ["typescript", "unicorn", "import", "promise"],
 	"options": {
 		"typeAware": true
