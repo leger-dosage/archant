@@ -23,6 +23,17 @@ These stay possible and none of them will have a file in this repository, by des
 
 Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day.
 
+## A lost password
+
+There is no password reset by email: Archant sends no mail and holds no reset token. The way back in is a shell on the machine running the API:
+
+```bash
+pnpm api reset-password admin@example.com
+# In the container: docker compose exec -it archant pnpm api reset-password admin@example.com
+```
+
+The command asks for the new password twice without echoing it, never accepts it as an argument, and closes every session of that user. It needs `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`, which it reads from the same `.env` the server does. A terminal is required, hence `-it`.
+
 ## Backups
 
 No free tier backs up your data for you. Whatever the target, schedule a dump of the database to object storage, and verify a restore at least once. This holds bank history; losing it is the failure that actually matters.

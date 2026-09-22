@@ -16,6 +16,8 @@
 	"nav": {
 		"accounts": "Comptes",
 		"operations": "Opérations",
+		"settings": "Réglages",
+		"signOut": "Se déconnecter",
 		"openMenu": "Ouvrir le menu",
 		"toggleSidebar": "Réduire ou déplier la barre latérale",
 		"mobileTitle": "Navigation",
@@ -65,6 +67,7 @@
 			"shortcuts": "Afficher les raccourcis",
 			"goAccounts": "Aller aux comptes",
 			"goOperations": "Aller aux opérations",
+			"goSettings": "Aller aux réglages",
 			"newTransaction": "Ajouter une opération sur la page d'un compte",
 			"search": "Rechercher dans les opérations",
 			"nextRow": "Opération suivante",
@@ -434,6 +437,21 @@
 			"revertedNothing": "Import annulé."
 		}
 	},
+	"settings": {
+		"title": "Réglages",
+		"sections": {
+			"security": "Sécurité"
+		}
+	},
+	"security": {
+		"title": "Sécurité",
+		"description": "Le mot de passe du compte administrateur. Le modifier ferme les sessions ouvertes sur les autres appareils.",
+		"currentPassword": "Mot de passe actuel",
+		"newPassword": "Nouveau mot de passe",
+		"confirmPassword": "Confirmer le nouveau mot de passe",
+		"submit": "Modifier le mot de passe",
+		"changed": "Mot de passe modifié."
+	},
 	"setup": {
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
@@ -481,7 +499,8 @@
 			"invalid_email": "Adresse e-mail invalide.",
 			"password_too_short": "Le mot de passe doit contenir au moins 8 caractères.",
 			"password_too_long": "Le mot de passe ne peut pas dépasser 128 caractères.",
-			"password_mismatch": "Les mots de passe ne correspondent pas."
+			"password_mismatch": "Les mots de passe ne correspondent pas.",
+			"invalid_password": "Mot de passe actuel incorrect."
 		}
 	}
 }

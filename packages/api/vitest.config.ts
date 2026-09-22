@@ -6,7 +6,9 @@ export default defineConfig({
 		coverage: {
 			provider: "v8",
 			include: ["src/**/*.ts"],
-			exclude: ["src/**/*.spec.ts", "src/index.ts"],
+			// Entrypoints are wiring with nothing to assert: they read the
+			// environment and call what is covered elsewhere.
+			exclude: ["src/**/*.spec.ts", "src/index.ts", "src/cli/**"],
 			reporter: ["text-summary"],
 			// AD-16: the money paths are covered to the branch. Everything else is
 			// held to what its tests naturally reach.

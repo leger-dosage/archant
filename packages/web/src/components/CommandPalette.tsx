@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCommands } from "@/hooks/useCommands";
+import { useSignOut } from "@/hooks/useSignOut";
 import { matchesCommand } from "@/lib/shortcuts";
 import { THEME_CHOICES, setThemeChoice } from "@/lib/theme";
 
@@ -81,6 +82,7 @@ export function CommandPalette() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const accounts = useAccounts();
+	const signOut = useSignOut();
 	const { paletteOpen, setPaletteOpen, setCreatingAccount, setShortcutsOpen, pageCommands } =
 		useCommands();
 	// Radix returns focus to a `DialogTrigger`; the palette opens from a
@@ -104,6 +106,12 @@ export function CommandPalette() {
 			shortcut: "goOperations",
 			run: () => void navigate({ to: "/operations" }),
 		},
+		{
+			id: "go-settings",
+			label: t("nav.settings"),
+			shortcut: "goSettings",
+			run: () => void navigate({ to: "/reglages" }),
+		},
 	];
 	const actions: Item[] = [
 		{ id: "add-account", label: t("accounts.add"), run: () => setCreatingAccount(true) },
@@ -113,6 +121,7 @@ export function CommandPalette() {
 			label: t(`commands.themes.${choice}`),
 			run: () => setThemeChoice(choice),
 		})),
+		{ id: "sign-out", label: t("nav.signOut"), run: () => void signOut() },
 		{
 			id: "show-shortcuts",
 			label: t("commands.showShortcuts"),

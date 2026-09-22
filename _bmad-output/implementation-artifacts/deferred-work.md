@@ -46,3 +46,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-first-launch-setup-and-sign-in.md`
   summary: Document in `docs/deployment.md` that `TRUSTED_PROXIES` must list the reverse proxy in front of the container (for instance the Docker network's CIDR), with `BETTER_AUTH_URL` and `BETTER_AUTH_SECRET`.
   evidence: Story 3.1 adds the variables and explains them in `.env.example` only; behind an unlisted proxy every visitor shares the proxy's sign-in limit, so one stranger can slow the owner's sign-in. Story 3.3 writes the deployment page.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-sign-out-change-password-reset-from-the-server.md`
+  summary: Run `cli/reset-password.ts` through its prompts in a test, covering the mapping from each refusal to its French sentence and the exit code.
+  evidence: The spec covers the terminal check only; reaching the prompts needs a pseudo-terminal, a dependency the repository does not have. Swapping two entries of `MESSAGES`, or exiting 0 on a failure, breaks no test today. Every piece of logic behind them is covered separately in `services/password.spec.ts` and `lib/prompt.spec.ts`.
