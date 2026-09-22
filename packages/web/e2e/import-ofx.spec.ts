@@ -1,69 +1,14 @@
+import type { Line } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
 import { toMinorUnits } from "@archant/data/money";
 
 import { formatShortDate, formatSignedMoney, formatTableDate } from "../src/lib/balance-change.ts";
-import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, ofxDate, sgml, test, uniqueName } from "./fixtures.ts";
 
 // Stories 2.1 and 2.2: import an OFX file with preview, and its ledger
 // balance. Files are built here with dates relative to today, so they always
 // fall after the account's opening date, which `openAccount` puts 30 days ago.
-
-type Line = { daysAgo: number; amount: string; label: string; fitid: string };
-
-const ofxDate = (days: number) => daysAgo(days).replaceAll("-", "");
-
-type SgmlOptions = {
-	/** `LEDGERBAL`, signed as the bank prints it; none when absent. */
-	ledger?: { amount: string; daysAgo: number };
-	/** A credit card statement, `CCSTMTRS`, rather than a bank one. */
-	card?: boolean;
-};
-
-/** An OFX 1.x SGML statement: unclosed leaves, an empty MEMO, decimal commas. */
-function sgml(lines: Line[], options: SgmlOptions = {}): Buffer {
-	const transactions = lines.map((line) =>
-		[
-			"<STMTTRN>",
-			"<TRNTYPE>OTHER",
-			`<DTPOSTED>${ofxDate(line.daysAgo)}`,
-			`<TRNAMT>${line.amount}`,
-			`<FITID>${line.fitid}`,
-			`<NAME>${line.label}`,
-			"<MEMO>",
-			"</STMTTRN>",
-		].join("\r\n"),
-	);
-	const text = [
-		"OFXHEADER:100",
-		"DATA:OFXSGML",
-		"VERSION:102",
-		"CHARSET:1252",
-		"",
-		"<OFX>",
-		options.card === true
-			? "<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>"
-			: "<BANKMSGSRSV1><STMTTRNRS><STMTRS>",
-		"<CURDEF>EUR",
-		"<BANKTRANLIST>",
-		...transactions,
-		"</BANKTRANLIST>",
-		...(options.ledger === undefined
-			? []
-			: [
-					"<LEDGERBAL>",
-					`<BALAMT>${options.ledger.amount}`,
-					`<DTASOF>${ofxDate(options.ledger.daysAgo)}`,
-					"</LEDGERBAL>",
-				]),
-		options.card === true
-			? "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>"
-			: "</STMTRS></STMTTRNRS></BANKMSGSRSV1>",
-		"</OFX>",
-	].join("\r\n");
-
-	return Buffer.from(text, "latin1");
-}
 
 /** An OFX 2.x XML statement in UTF-8, every tag closed, decimal points. */
 function xml(lines: Line[]): Buffer {

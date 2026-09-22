@@ -1,5 +1,5 @@
 /** The search param holding a list's page on the account page. */
-export type PageParam = "page" | "snapshotsPage";
+export type PageParam = "page" | "snapshotsPage" | "importsPage";
 
 /**
  * The search params that show `target` of the list behind `param`, leaving the
@@ -9,5 +9,5 @@ export type PageParam = "page" | "snapshotsPage";
 export function pageSearch(param: PageParam, target: number) {
 	const value = target === 1 ? undefined : target;
 
-	return param === "page" ? { page: value } : { snapshotsPage: value };
+	return { [param]: value };
 }

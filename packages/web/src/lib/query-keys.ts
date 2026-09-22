@@ -19,6 +19,11 @@ export const queryKeys = {
 		 * of its day, so every transaction write must refresh the table.
 		 */
 		snapshots: (id: string, page: number) => ["accounts", "detail", id, "snapshots", page] as const,
+		/**
+		 * Under `detail(id)` too: confirming an import adds a row, and any
+		 * transaction write can change what a revert would delete.
+		 */
+		imports: (id: string, page: number) => ["accounts", "detail", id, "imports", page] as const,
 	},
 	transactions: {
 		/**

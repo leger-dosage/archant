@@ -19,7 +19,7 @@ import {
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
-import { createImport } from "../services/imports.ts";
+import { createImport, listImports } from "../services/imports.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 
@@ -114,6 +114,16 @@ export function accountsRoutes(deps: ImportDeps) {
 			}),
 			async (c) =>
 				c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.get(
+			"/:id/imports",
+			zValidator("query", pageQuerySchema, (result) => {
+				if (!result.success) {
+					throw validationError(result.error);
+				}
+			}),
+			async (c) =>
+				c.json({ data: await listImports(deps, c.req.param("id"), c.req.valid("query")) }, 200),
 		)
 		.post(
 			"/:id/imports",

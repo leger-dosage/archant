@@ -11,8 +11,13 @@ describe("pageSearch", () => {
 		expect(pageSearch("snapshotsPage", 2)).toEqual({ snapshotsPage: 2 });
 	});
 
+	it("sets only the imports page", () => {
+		expect(pageSearch("importsPage", 4)).toEqual({ importsPage: 4 });
+	});
+
 	it("drops the param for the first page", () => {
 		expect(pageSearch("page", 1)).toEqual({ page: undefined });
 		expect(pageSearch("snapshotsPage", 1)).toEqual({ snapshotsPage: undefined });
+		expect(pageSearch("importsPage", 1)).toEqual({ importsPage: undefined });
 	});
 });

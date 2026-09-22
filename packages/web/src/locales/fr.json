@@ -114,6 +114,7 @@
 			"label": "Vues du compte",
 			"transactions": "Opérations",
 			"snapshots": "Soldes",
+			"imports": "Imports",
 			"settings": "Paramètres"
 		}
 	},
@@ -395,6 +396,42 @@
 			"invalid": "Choisissez une colonne Date, au moins une colonne Libellé, puis une colonne Montant, ou des colonnes Débit et Crédit.",
 			"empty": "Aucune ligne à afficher après les lignes ignorées.",
 			"edit": "Modifier les colonnes"
+		},
+		"history": {
+			"empty": "Aucun import.",
+			"paginationLabel": "Pages des imports",
+			"columns": {
+				"date": "Date",
+				"file": "Fichier",
+				"format": "Format",
+				"created": "Créées",
+				"matched": "Rapprochées",
+				"present": "Déjà présentes",
+				"rejected": "Rejetées",
+				"action": "Action"
+			},
+			"revertedOn": "Annulé le {{date}}",
+			"revert": "Annuler l'import",
+			"revertLabel": "Annuler l'import de {{fileName}} du {{date}}",
+			"confirm": {
+				"title": "Annuler l'import de {{fileName}} ?",
+				"transactions_one": "{{count}} opération",
+				"transactions_other": "{{count}} opérations",
+				"snapshot_one": "{{count}} solde relevé",
+				"snapshot_other": "{{count}} soldes relevés",
+				"both": "{{transactions}} et {{snapshot}} seront supprimés.",
+				"onlyTransactions_one": "{{transactions}} sera supprimée.",
+				"onlyTransactions_other": "{{transactions}} seront supprimées.",
+				"onlySnapshot_one": "{{snapshot}} sera supprimé.",
+				"onlySnapshot_other": "{{snapshot}} seront supprimés.",
+				"nothing": "Aucune opération ne sera supprimée.",
+				"deleteTransactions_one": "Supprimer {{count}} opération",
+				"deleteTransactions_other": "Supprimer {{count}} opérations",
+				"deleteSnapshot": "Supprimer le solde relevé"
+			},
+			"reverted_one": "Import annulé, {{count}} opération supprimée.",
+			"reverted_other": "Import annulé, {{count}} opérations supprimées.",
+			"revertedNothing": "Import annulé."
 		}
 	},
 	"errors": {
@@ -404,6 +441,7 @@
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
+		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

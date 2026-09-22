@@ -9,6 +9,7 @@ describe("AppError", () => {
 		expect(new AppError("INTERNAL_ERROR", "x").status).toBe(500);
 		expect(new AppError("INVALID_IMPORT_FILE", "x").status).toBe(400);
 		expect(new AppError("IMPORT_PREVIEW_STALE", "x").status).toBe(409);
+		expect(new AppError("IMPORT_NOT_REVERTABLE", "x").status).toBe(409);
 	});
 
 	it("serialises fields only when it has some", () => {

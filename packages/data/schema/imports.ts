@@ -21,7 +21,7 @@ export const FILE_SOURCE_IDS = ["ofx", "csv", "qif"] as const;
 
 export type FileSourceId = (typeof FILE_SOURCE_IDS)[number];
 
-export const IMPORT_STATUSES = ["previewed", "confirmed"] as const;
+export const IMPORT_STATUSES = ["previewed", "confirmed", "reverted"] as const;
 
 export type ImportStatus = (typeof IMPORT_STATUSES)[number];
 
@@ -86,6 +86,11 @@ export const imports = sqliteTable(
 		counts: text("counts", { mode: "json" }).$type<ImportCounts>(),
 		createdAt: integer("created_at").notNull(),
 		confirmedAt: integer("confirmed_at"),
+		revertedAt: integer("reverted_at"),
+		// The opening date before confirm moved the anchor back, written only
+		// then. The moved-in lines shifted the anchor's amount; a revert gives
+		// back the share of the lines it deletes dated on or before this day.
+		previousOpeningDate: text("previous_opening_date"),
 	},
 	(table) => [
 		check("imports_source_check", sql`${table.source} in ${inList(FILE_SOURCE_IDS)}`),

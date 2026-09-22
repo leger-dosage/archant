@@ -59,6 +59,63 @@ export function euros(amount: number): string {
 	return formatMoney({ amount: toMinorUnits(amount), currency: "EUR" });
 }
 
+/** A line of an OFX statement built by `sgml`, dated `daysAgo` days before today. */
+export type Line = { daysAgo: number; amount: string; label: string; fitid: string };
+
+export const ofxDate = (days: number) => daysAgo(days).replaceAll("-", "");
+
+export type SgmlOptions = {
+	/** `LEDGERBAL`, signed as the bank prints it; none when absent. */
+	ledger?: { amount: string; daysAgo: number };
+	/** A credit card statement, `CCSTMTRS`, rather than a bank one. */
+	card?: boolean;
+};
+
+/** An OFX 1.x SGML statement: unclosed leaves, an empty MEMO, decimal commas. */
+export function sgml(lines: Line[], options: SgmlOptions = {}): Buffer {
+	const transactions = lines.map((line) =>
+		[
+			"<STMTTRN>",
+			"<TRNTYPE>OTHER",
+			`<DTPOSTED>${ofxDate(line.daysAgo)}`,
+			`<TRNAMT>${line.amount}`,
+			`<FITID>${line.fitid}`,
+			`<NAME>${line.label}`,
+			"<MEMO>",
+			"</STMTTRN>",
+		].join("\r\n"),
+	);
+	const text = [
+		"OFXHEADER:100",
+		"DATA:OFXSGML",
+		"VERSION:102",
+		"CHARSET:1252",
+		"",
+		"<OFX>",
+		options.card === true
+			? "<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>"
+			: "<BANKMSGSRSV1><STMTTRNRS><STMTRS>",
+		"<CURDEF>EUR",
+		"<BANKTRANLIST>",
+		...transactions,
+		"</BANKTRANLIST>",
+		...(options.ledger === undefined
+			? []
+			: [
+					"<LEDGERBAL>",
+					`<BALAMT>${options.ledger.amount}`,
+					`<DTASOF>${ofxDate(options.ledger.daysAgo)}`,
+					"</LEDGERBAL>",
+				]),
+		options.card === true
+			? "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>"
+			: "</STMTRS></STMTTRNRS></BANKMSGSRSV1>",
+		"</OFX>",
+	].join("\r\n");
+
+	return Buffer.from(text, "latin1");
+}
+
 async function created(response: APIResponse): Promise<string> {
 	expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 
@@ -128,6 +185,20 @@ function apiHelpers(request: APIRequestContext) {
 
 		async recordSnapshot(accountId: string, input: { date: string; balance: string }) {
 			return created(await request.post(`/api/accounts/${accountId}/snapshots`, { data: input }));
+		},
+
+		/** Uploads a file and confirms its preview unchanged, as « Importer » does. Returns the import's id. */
+		async importFile(accountId: string, buffer: Buffer, name = "releve.ofx"): Promise<string> {
+			const id = await created(
+				await request.post(`/api/accounts/${accountId}/imports`, {
+					multipart: { file: { name, mimeType: "application/x-ofx", buffer } },
+				}),
+			);
+			const response = await request.post(`/api/imports/${id}/confirm`);
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+
+			return id;
 		},
 
 		/** A group's total in minor units, zero when it holds no account. */

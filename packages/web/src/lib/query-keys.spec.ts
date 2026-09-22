@@ -35,6 +35,22 @@ describe("queryKeys.accounts.snapshots", () => {
 	});
 });
 
+describe("queryKeys.accounts.imports", () => {
+	it("goes stale when its account is invalidated, and only then", async () => {
+		const client = new QueryClient();
+		const own = queryKeys.accounts.imports("a", 1);
+		const other = queryKeys.accounts.imports("b", 1);
+		client.setQueryData(own, { items: [] });
+		client.setQueryData(other, { items: [] });
+
+		// What confirming or reverting an import does through `useInvalidateAccount`.
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.detail("a") });
+
+		expect(client.getQueryState(own)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+	});
+});
+
 describe("queryKeys.transactions.all", () => {
 	it("prefixes the cross-account list and every account's list", async () => {
 		const client = new QueryClient();

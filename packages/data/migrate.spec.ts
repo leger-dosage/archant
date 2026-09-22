@@ -184,10 +184,11 @@ describe("imports and entry keys", () => {
 
 		await expect(insertImport(database, "i1", "previewed")).resolves.toBeDefined();
 		await expect(insertImport(database, "i2", "confirmed")).resolves.toBeDefined();
-		await expect(insertImport(database, "i3", "reverted")).rejects.toThrow();
+		await expect(insertImport(database, "i3", "reverted")).resolves.toBeDefined();
 		await expect(insertImport(database, "i4", "previewed", "csv")).resolves.toBeDefined();
 		await expect(insertImport(database, "i5", "previewed", "qif")).resolves.toBeDefined();
 		await expect(insertImport(database, "i6", "previewed", "xls")).rejects.toThrow();
+		await expect(insertImport(database, "i7", "cancelled")).rejects.toThrow();
 	});
 
 	it("holds a key once per account and source, and protects its entry", async () => {
@@ -346,6 +347,31 @@ describe("import mappings", () => {
 		]);
 		await expect(database.all(sql`select label, reference from transactions`)).resolves.toEqual([
 			{ label: "Boulangerie", reference: null },
+		]);
+		await expect(database.run(sql`delete from imports where id = 'i1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("import revert", () => {
+	it("keeps every import and its links when 0009 adds the revert columns", async () => {
+		const before = await migratedBefore("0009");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertImport(before, "i1", "confirmed");
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await before.run(sql`update entries set import_id = 'i1' where id = 'e1'`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		// drizzle-kit generated the copy reading the two new columns from the
+		// old table, which has neither: the migration failed on every database.
+		await expect(
+			database.all(
+				sql`select id, status, reverted_at as revertedAt, previous_opening_date as previousOpeningDate from imports`,
+			),
+		).resolves.toEqual([
+			{ id: "i1", status: "confirmed", revertedAt: null, previousOpeningDate: null },
 		]);
 		await expect(database.run(sql`delete from imports where id = 'i1'`)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);

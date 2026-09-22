@@ -2655,3 +2655,195 @@ describe("QIF imports", () => {
 		expect(JSON.parse(rows[0]?.options ?? "null")).toEqual({});
 	});
 });
+
+const historyBody = z.object({
+	data: z.object({
+		items: z.array(
+			z.object({
+				id: z.string(),
+				fileName: z.string(),
+				source: z.string(),
+				confirmedAt: z.number(),
+				revertedAt: z.number().nullable(),
+				counts: z.object({
+					created: z.number(),
+					present: z.number(),
+					matched: z.number(),
+					duplicates: z.number(),
+					rejected: z.number(),
+				}),
+				removable: z.object({ transactions: z.number(), snapshot: z.number() }).nullable(),
+			}),
+		),
+		page: z.number(),
+		pageSize: z.number(),
+		total: z.number(),
+	}),
+});
+
+async function confirmedImport(accountId: string) {
+	const preview = await uploaded(accountId, await creditAgricole());
+	await request("POST", `/api/imports/${preview.id}/confirm`);
+
+	return preview.id;
+}
+
+describe("GET /api/accounts/:id/imports", () => {
+	it("lists confirmed and reverted imports, latest first, with what a revert would delete", async () => {
+		const account = await openAccount();
+		const first = await confirmedImport(account.id);
+		vi.setSystemTime(new Date("2026-09-21T11:00:00Z"));
+		const second = await confirmedImport(account.id);
+		await request("POST", `/api/imports/${second}/revert`);
+		// A preview wrote nothing: it has no place in the history.
+		await uploaded(account.id, await creditAgricole());
+
+		const response = await testClient(buildApp()).api.accounts[":id"].imports.$get({
+			param: { id: account.id },
+			query: {},
+		});
+
+		expect(response.status).toBe(200);
+		expect(historyBody.parse(await response.json()).data).toEqual({
+			items: [
+				{
+					id: second,
+					fileName: "releve.ofx",
+					source: "ofx",
+					confirmedAt: Date.parse("2026-09-21T11:00:00Z"),
+					revertedAt: Date.parse("2026-09-21T11:00:00Z"),
+					counts: { created: 0, present: 5, matched: 0, duplicates: 0, rejected: 0 },
+					removable: null,
+				},
+				{
+					id: first,
+					fileName: "releve.ofx",
+					source: "ofx",
+					confirmedAt: Date.parse("2026-09-21T10:00:00Z"),
+					revertedAt: null,
+					counts: { created: 5, present: 0, matched: 0, duplicates: 0, rejected: 0 },
+					removable: { transactions: 5, snapshot: 1 },
+				},
+			],
+			page: 1,
+			pageSize: 50,
+			total: 2,
+		});
+	});
+
+	it("pages the history", async () => {
+		const account = await openAccount();
+		await confirmedImport(account.id);
+		vi.setSystemTime(new Date("2026-09-21T11:00:00Z"));
+		const latest = await confirmedImport(account.id);
+
+		const { status, body } = await request(
+			"GET",
+			`/api/accounts/${account.id}/imports?page=1&pageSize=1`,
+		);
+
+		expect(status).toBe(200);
+		const { data } = historyBody.parse(body);
+		expect(data.items.map((item) => item.id)).toEqual([latest]);
+		expect(data.total).toBe(2);
+	});
+
+	it("answers NOT_FOUND for an unknown account and refuses page 0", async () => {
+		await expect(request("GET", "/api/accounts/nope/imports")).resolves.toMatchObject({
+			status: 404,
+			body: { error: { code: "NOT_FOUND" } },
+		});
+		const account = await openAccount();
+		await expect(
+			request("GET", `/api/accounts/${account.id}/imports?page=0`),
+		).resolves.toMatchObject({ status: 400, body: { error: { code: "VALIDATION_ERROR" } } });
+	});
+});
+
+describe("POST /api/imports/:id/revert", () => {
+	it("deletes the import's transactions and snapshot, and puts the balance back", async () => {
+		const account = await openAccount({ openingBalance: "1 000,00" });
+		const id = await confirmedImport(account.id);
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+
+		const response = await testClient(buildApp()).api.imports[":id"].revert.$post({
+			param: { id },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			data: { id, removed: { transactions: 5, snapshot: 1 } },
+		});
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 0 });
+		await expect(balanceOf(account.id)).resolves.toBe(100000);
+	});
+
+	it("keeps a matched manual transaction, shown as manual again", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, { date: "2026-09-04", label: "Café", amount: "-42,90" });
+		const id = await confirmedImport(account.id);
+
+		await expect(request("POST", `/api/imports/${id}/revert`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { removed: { transactions: 4, snapshot: 1 } } },
+		});
+
+		const list = await transactionsOf(account.id);
+		expect(list.items).toEqual([
+			expect.objectContaining({ label: "Café", source: { kind: "manual" } }),
+		]);
+	});
+
+	it("lets the same file be imported again, every line to create", async () => {
+		const account = await openAccount();
+		const id = await confirmedImport(account.id);
+		await request("POST", `/api/imports/${id}/revert`);
+
+		const again = await uploaded(account.id, await creditAgricole());
+
+		expect(again.groups.created).toHaveLength(5);
+		expect(again.groups.present).toEqual([]);
+	});
+
+	it("answers IMPORT_NOT_REVERTABLE twice or for a preview, NOT_FOUND for an unknown id", async () => {
+		const account = await openAccount();
+		const id = await confirmedImport(account.id);
+		await request("POST", `/api/imports/${id}/revert`);
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		await expect(request("POST", `/api/imports/${id}/revert`)).resolves.toEqual({
+			status: 409,
+			body: {
+				error: {
+					code: "IMPORT_NOT_REVERTABLE",
+					message: "Only a confirmed import can be reverted.",
+				},
+			},
+		});
+		await expect(request("POST", `/api/imports/${preview.id}/revert`)).resolves.toMatchObject({
+			status: 409,
+			body: { error: { code: "IMPORT_NOT_REVERTABLE" } },
+		});
+		await expect(request("POST", "/api/imports/nope/revert")).resolves.toMatchObject({
+			status: 404,
+			body: { error: { code: "NOT_FOUND" } },
+		});
+	});
+
+	it("logs the import id, the counts and the duration, never a line or an amount", async () => {
+		const account = await openAccount();
+		const id = await confirmedImport(account.id);
+		const app = buildApp();
+
+		await app.request(`/api/imports/${id}/revert`, { method: "POST" });
+		await app.request(`/api/imports/${id}/revert`, { method: "POST" });
+
+		const [reverted, refused] = logLines.map((line) =>
+			z.record(z.string(), z.unknown()).parse(JSON.parse(line)),
+		);
+		expect(reverted).toMatchObject({ importId: id, removed: { transactions: 5, snapshot: 1 } });
+		expect(typeof reverted?.["durationMs"]).toBe("number");
+		expect(refused).toMatchObject({ importId: id, code: "IMPORT_NOT_REVERTABLE" });
+		expect(logLines.join("\n")).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
+	});
+});
