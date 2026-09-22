@@ -2,6 +2,7 @@ import type {
 	NormalizedTransaction,
 	ParsedStatement,
 	RejectionCode,
+	StatementBalance,
 } from "../../domain/statement.ts";
 import type { FileSource, FileSourceOptions } from "../file-source.ts";
 
@@ -71,7 +72,11 @@ const statement = z.object({
 	CURDEF: z.string().regex(/^[A-Z]{3}$/u),
 	// An empty `<BANKTRANLIST>` has no child and reads as a string.
 	BANKTRANLIST: z.union([z.object({ STMTTRN: lines.optional() }), z.literal("")]).optional(),
+	// Anything unexpected here reads as no balance: the lines stay importable.
+	LEDGERBAL: z.unknown().optional(),
 });
+
+const ledgerBalance = z.object({ BALAMT: leaf.optional(), DTASOF: leaf.optional() });
 
 const document = z.object({
 	OFX: z.object({
@@ -162,6 +167,29 @@ function toLine(
 	};
 }
 
+/**
+ * `LEDGERBAL`, the booked balance the statement closes on, signed as the bank
+ * prints it. `null` when absent or when its amount or date cannot be read;
+ * the file stays valid. `AVAILBAL` is left out: it counts pending card
+ * payments the lines do not hold yet.
+ */
+function balanceOf(
+	raw: unknown,
+	currency: string,
+	options: FileSourceOptions,
+): StatementBalance | null {
+	const parsed = ledgerBalance.safeParse(raw);
+
+	if (!parsed.success) {
+		return null;
+	}
+
+	const amount = amountOf(parsed.data.BALAMT, options);
+	const date = providerDate(clean(parsed.data.DTASOF));
+
+	return amount === null || date === null ? null : { amount, currency, date };
+}
+
 function parse(bytes: Uint8Array, options: FileSourceOptions): ParsedStatement {
 	if (bytes.length > MAX_FILE_BYTES) {
 		throw invalidFile();
@@ -191,7 +219,11 @@ function parse(bytes: Uint8Array, options: FileSourceOptions): ParsedStatement {
 	}
 
 	const list = typeof only.BANKTRANLIST === "object" ? (only.BANKTRANLIST.STMTTRN ?? []) : [];
-	const result: ParsedStatement = { transactions: [], rejected: [] };
+	const result: ParsedStatement = {
+		transactions: [],
+		balance: balanceOf(only.LEDGERBAL, only.CURDEF, options),
+		rejected: [],
+	};
 
 	for (const [index, rawLine] of list.entries()) {
 		const mapped = toLine(rawLine, only.CURDEF, options);

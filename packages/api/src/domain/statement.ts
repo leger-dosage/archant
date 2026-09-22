@@ -36,12 +36,21 @@ export type RejectionCode =
 	| "MISSING_LABEL";
 
 /**
+ * The balance a statement closes on, signed as the bank prints it (AD-5): a
+ * card's debt is negative. Only `toStoredBalance` turns it into a stored
+ * balance.
+ */
+export type StatementBalance = { amount: MinorUnits; currency: string; date: IsoDate };
+
+/**
  * What every source produces (AD-3). `rejected` holds the lines the source
  * could not read, `ref` being the line's position in the source; the file
- * stays valid. The statement balance arrives with Story 2.2.
+ * stays valid. `balance` is `null` when the source gives none, or none it
+ * can read.
  */
 export type ParsedStatement = {
 	transactions: NormalizedTransaction[];
+	balance: StatementBalance | null;
 	rejected: { ref: string; reason: RejectionCode }[];
 };
 

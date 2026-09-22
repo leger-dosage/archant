@@ -81,6 +81,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 
 		expect(parsed).toEqual({
 			rejected: [],
+			balance: { amount: 123456, currency: "EUR", date: "2026-09-15" },
 			transactions: [
 				{
 					externalId: "0000001",
@@ -130,6 +131,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 		const parsed = ofxSource.parse(await fixture("boursorama-211-xml.ofx"), eur);
 
 		expect(parsed.rejected).toEqual([]);
+		expect(parsed.balance).toEqual({ amount: 240861, currency: "EUR", date: "2026-09-15" });
 		expect(parsed.transactions).toEqual([
 			{
 				externalId: "BRS-0001",
@@ -156,6 +158,81 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				notes: null,
 			},
 		]);
+	});
+
+	it("reads the Société Générale card export, its negative balance signed as the bank prints it", async () => {
+		const parsed = ofxSource.parse(await fixture("societe-generale-card-102-sgml.ofx"), eur);
+
+		expect(parsed).toEqual({
+			rejected: [],
+			balance: { amount: -51230, currency: "EUR", date: "2026-09-15" },
+			transactions: [
+				{
+					externalId: "SG-CB-0001",
+					date: "2026-09-02",
+					amount: -12340,
+					currency: "EUR",
+					label: "CARTE X0000 HÔTEL DU PORT",
+					notes: null,
+				},
+				{
+					externalId: "SG-CB-0002",
+					date: "2026-09-07",
+					amount: -38890,
+					currency: "EUR",
+					label: "CARTE X0000 ÉLECTROMÉNAGER Réfrigérateur",
+					notes: null,
+				},
+			],
+		});
+	});
+});
+
+/** A bank statement with one line and `ledger` placed after its list. */
+const withLedger = (ledger: string) =>
+	utf8(bankFile(statement(sgmlLine(valid)).replace("</STMTRS>", `${ledger}\n</STMTRS>`)));
+
+describe("ofxSource.parse, the statement balance", () => {
+	it("reads LEDGERBAL with a decimal comma, in the statement's currency", () => {
+		const parsed = ofxSource.parse(
+			withLedger("<LEDGERBAL>\n<BALAMT>1234,5\n<DTASOF>20260915083000[+2:CEST]\n</LEDGERBAL>"),
+			eur,
+		);
+
+		expect(parsed.balance).toEqual({ amount: 123450, currency: "EUR", date: "2026-09-15" });
+		expect(parsed.transactions).toHaveLength(1);
+	});
+
+	it("keeps a card's positive balance positive: a credit, per the OFX specification", () => {
+		const card = [
+			"<OFX>",
+			"<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>",
+			"<CURDEF>EUR",
+			"<LEDGERBAL><BALAMT>+20.00<DTASOF>20260915</LEDGERBAL>",
+			"</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>",
+			"</OFX>",
+		].join("\n");
+
+		expect(ofxSource.parse(utf8(card), eur).balance).toEqual({
+			amount: 2000,
+			currency: "EUR",
+			date: "2026-09-15",
+		});
+	});
+
+	it.each([
+		["no LEDGERBAL", ""],
+		["an empty LEDGERBAL", "<LEDGERBAL>\n</LEDGERBAL>"],
+		["an unreadable amount", "<LEDGERBAL>\n<BALAMT>12,345\n<DTASOF>20260915\n</LEDGERBAL>"],
+		["no amount", "<LEDGERBAL>\n<DTASOF>20260915\n</LEDGERBAL>"],
+		["an unreadable date", "<LEDGERBAL>\n<BALAMT>12,34\n<DTASOF>20260231\n</LEDGERBAL>"],
+		["no date", "<LEDGERBAL>\n<BALAMT>12,34\n</LEDGERBAL>"],
+	])("gives no balance for %s, and keeps the lines", (_name, ledger) => {
+		const parsed = ofxSource.parse(withLedger(ledger), eur);
+
+		expect(parsed.balance).toBeNull();
+		expect(parsed.transactions).toHaveLength(1);
+		expect(parsed.rejected).toEqual([]);
 	});
 });
 
@@ -280,7 +357,11 @@ describe("ofxSource.parse", () => {
 		const noList = bankFile("<STMTRS>\n<CURDEF>EUR\n</STMTRS>");
 
 		for (const text of [noLine, emptyList, noList]) {
-			expect(ofxSource.parse(utf8(text), eur)).toEqual({ transactions: [], rejected: [] });
+			expect(ofxSource.parse(utf8(text), eur)).toEqual({
+				transactions: [],
+				balance: null,
+				rejected: [],
+			});
 		}
 	});
 

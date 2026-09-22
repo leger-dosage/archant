@@ -2,7 +2,12 @@ import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
-import type { NormalizedTransaction, ParsedStatement, RejectionCode } from "../domain/statement.ts";
+import type {
+	NormalizedTransaction,
+	ParsedStatement,
+	RejectionCode,
+	StatementBalance,
+} from "../domain/statement.ts";
 import type { AmountRange } from "../domain/transaction-filter.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { SQL } from "drizzle-orm";
@@ -41,6 +46,7 @@ import type { Account, NewBalance } from "@archant/data/types";
 import { forwardBalances } from "../domain/balances/forward.ts";
 import { fillDays } from "../domain/balances/history.ts";
 import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
+import { toStoredBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
 import { rejectionFor } from "../domain/statement.ts";
@@ -311,6 +317,25 @@ export function countsOf(groups: IngestGroups): ImportCounts {
 	};
 }
 
+/**
+ * What step 7 of the pipeline does with the statement balance (AD-8), in
+ * stored balances (AD-5). `recorded`: confirm writes it as a snapshot owned by
+ * the import. `present`: a snapshot with the same value is on that date
+ * already, whoever wrote it. `kept`: the user entered another value on that
+ * date, which stays; `gap` is `balance - recorded`. `skipped`: the account
+ * cannot hold a snapshot on that date, or in that currency.
+ */
+export type StatementBalanceOutcome =
+	| { status: "recorded"; date: IsoDate; balance: MinorUnits }
+	| { status: "present"; date: IsoDate; balance: MinorUnits }
+	| { status: "kept"; date: IsoDate; balance: MinorUnits; recorded: MinorUnits; gap: MinorUnits }
+	| {
+			status: "skipped";
+			date: IsoDate;
+			balance: MinorUnits;
+			reason: Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS"> | "CURRENCY_MISMATCH";
+	  };
+
 export type IngestResult = {
 	/** Entry ids written, in statement order: the created lines and the possible duplicates. */
 	created: string[];
@@ -326,6 +351,8 @@ export type IngestResult = {
 	openingSuggestion: IsoDate | null;
 	/** The opening anchor this ingest moves, `null` when it stays. */
 	opening: { date: IsoDate; balance: MinorUnits } | null;
+	/** Step 7's outcome, `null` when the statement has no balance. */
+	balance: StatementBalanceOutcome | null;
 };
 
 function filledFields(line: NormalizedTransaction): LockableField[] {
@@ -515,9 +542,102 @@ async function groupLines(
 	return groups;
 }
 
+type BalancePlan = {
+	outcome: StatementBalanceOutcome;
+	/** The snapshot already on the statement's date, if any. */
+	existing: { id: string; balance: MinorUnits; importId: string | null } | undefined;
+	importId: string;
+};
+
+/**
+ * Step 7 of the pipeline, planned (AD-8): what the statement balance becomes,
+ * checked against the opening date after any accepted move. A snapshot the
+ * user entered on that date wins; one an earlier import wrote gives way, as
+ * the bank's latest file is the better word, and Sure's `ReconciliationManager`
+ * updates in place.
+ */
+async function planStatementBalance(
+	tx: Transaction,
+	account: { id: string; type: AccountType; currency: string },
+	statementBalance: StatementBalance,
+	context: { openingDate: IsoDate; today: IsoDate },
+	importId: string,
+): Promise<BalancePlan> {
+	const { date } = statementBalance;
+	const balance = toStoredBalance(account, statementBalance.amount);
+	const reason =
+		snapshotRejectionFor(date, context) ??
+		(statementBalance.currency === account.currency ? null : "CURRENCY_MISMATCH");
+
+	if (reason !== null) {
+		return { outcome: { status: "skipped", date, balance, reason }, existing: undefined, importId };
+	}
+
+	const row = await snapshotOn(tx, account.id, date);
+	const existing = row === undefined ? undefined : { ...row, balance: toMinorUnits(row.balance) };
+
+	// As a line already present: an equal value writes nothing, so a re-import
+	// changes nothing and the first import stays the owner.
+	if (existing?.balance === balance) {
+		return { outcome: { status: "present", date, balance }, existing, importId };
+	}
+
+	if (existing !== undefined && existing.importId === null) {
+		const recorded = existing.balance;
+
+		return {
+			outcome: { status: "kept", date, balance, recorded, gap: toMinorUnits(balance - recorded) },
+			existing,
+			importId,
+		};
+	}
+
+	return { outcome: { status: "recorded", date, balance }, existing, importId };
+}
+
+/**
+ * Step 7 of the pipeline, written: inserts the statement balance as a
+ * snapshot owned by the import, or moves an earlier import's snapshot to it.
+ * Returns the date written, `null` when nothing was.
+ */
+async function writeStatementBalance(
+	tx: Transaction,
+	account: { id: string; currency: string },
+	plan: BalancePlan,
+	now: number,
+): Promise<IsoDate | null> {
+	const { outcome, existing, importId } = plan;
+
+	if (outcome.status !== "recorded") {
+		return null;
+	}
+
+	if (existing === undefined) {
+		await tx.insert(entries).values({
+			id: crypto.randomUUID(),
+			accountId: account.id,
+			kind: "valuation",
+			valuationKind: "reconciliation",
+			date: outcome.date,
+			amount: outcome.balance,
+			currency: account.currency,
+			importId,
+			createdAt: now,
+			updatedAt: now,
+		});
+	} else {
+		await tx
+			.update(entries)
+			.set({ amount: outcome.balance, importId, updatedAt: now })
+			.where(eq(entries.id, existing.id));
+	}
+
+	return outcome.date;
+}
+
 /**
  * Writes a statement into one account, in one transaction, following the
- * pipeline order of AD-4. Steps 3 and 5 to 7 arrive with their epics, in
+ * pipeline order of AD-4. Steps 3, 5 and 6 arrive with their epics, in
  * their slot. A manual line carries no key and is always created; an
  * import's lines are keyed and grouped (AD-7). With `dryRun`, the groups are
  * computed and nothing is written. Confirming an import refuses with
@@ -613,6 +733,12 @@ export async function ingest(
 									: account.openingBalance + movedIn,
 							),
 						};
+			// 7. The statement balance, planned here so the preview shows it and
+			// the digest covers it. Only an import carries one today.
+			const balancePlan =
+				target === null || statement.balance === null
+					? null
+					: await planStatementBalance(tx, account, statement.balance, context, target.id);
 			const digest = previewDigest([
 				...(["created", "present", "matched", "duplicates"] as const).flatMap((group) =>
 					groups[group].map(({ ref, entryId }) => ({ group, ref, entryId })),
@@ -621,6 +747,13 @@ export async function ingest(
 				...refused.map(({ ref, reason }) => ({ group: `ledger:${reason}`, ref, entryId: null })),
 				// The opening confirm would write must be the one the preview showed.
 				{ group: "opening", ref: JSON.stringify(opening), entryId: null },
+				// A snapshot entered on that date since the preview turns `recorded`
+				// into `kept`: confirm must not write what the preview did not show.
+				{
+					group: "balance",
+					ref: JSON.stringify(balancePlan?.outcome ?? null),
+					entryId: balancePlan?.existing?.id ?? null,
+				},
 			]);
 			const result: IngestResult = {
 				created: [],
@@ -629,6 +762,7 @@ export async function ingest(
 				digest,
 				openingSuggestion: earliestRefused === undefined ? null : addDays(earliestRefused, -1),
 				opening,
+				balance: balancePlan?.outcome ?? null,
 			};
 
 			if (options.dryRun === true) {
@@ -696,13 +830,17 @@ export async function ingest(
 					.where(eq(entries.id, account.openingId));
 			}
 
-			// 5. Rules arrive with Epic 8, 6. transfer matching with Epic 5, and
-			// 7. the statement balance with Story 2.2.
+			// 5. Rules arrive with Epic 8, 6. transfer matching with Epic 5.
+
+			// 7. The statement balance (AD-8).
+			const snapshotDate =
+				balancePlan === null ? null : await writeStatementBalance(tx, account, balancePlan, now);
 
 			// 8. Recompute balances from the earliest date this write touched.
 			const [earliest] = [
 				...rows.map(({ line }) => line.date),
 				...(opening === null ? [] : [opening.date]),
+				...(snapshotDate === null ? [] : [snapshotDate]),
 			].toSorted();
 
 			if (earliest !== undefined) {
@@ -1190,10 +1328,10 @@ function snapshotRejection(
 	return snapshotRejectionFor(date, { openingDate: account.openingDate, today: today(timeZone) });
 }
 
-/** The id of the account's snapshot on `date`, other than `except`, if any. */
+/** The account's snapshot on `date`, other than `except`, if any. */
 async function snapshotOn(tx: Transaction, accountId: string, date: IsoDate, except?: string) {
-	const row = await tx
-		.select({ id: entries.id })
+	return tx
+		.select({ id: entries.id, balance: entries.amount, importId: entries.importId })
 		.from(entries)
 		.where(
 			and(
@@ -1204,8 +1342,6 @@ async function snapshotOn(tx: Transaction, accountId: string, date: IsoDate, exc
 			),
 		)
 		.get();
-
-	return row?.id;
 }
 
 async function snapshotRow(tx: Transaction, id: string) {
@@ -1244,7 +1380,7 @@ export async function recordSnapshot(
 			}
 
 			const now = Date.now();
-			const existing = await snapshotOn(tx, accountId, input.date);
+			const existing = (await snapshotOn(tx, accountId, input.date))?.id;
 			const id = existing ?? crypto.randomUUID();
 
 			if (existing === undefined) {
@@ -1260,9 +1396,11 @@ export async function recordSnapshot(
 					updatedAt: now,
 				});
 			} else {
+				// The user's value now: later imports keep it, and reverting the
+				// import that wrote it leaves it.
 				await tx
 					.update(entries)
-					.set({ amount: input.balance, updatedAt: now })
+					.set({ amount: input.balance, importId: null, updatedAt: now })
 					.where(eq(entries.id, existing));
 			}
 
@@ -1301,9 +1439,10 @@ export async function updateSnapshot(
 				return { status: "rejected", reason: "SNAPSHOT_EXISTS" };
 			}
 
+			// As in `recordSnapshot`, an edited snapshot is the user's.
 			await tx
 				.update(entries)
-				.set({ date, amount: balance, updatedAt: Date.now() })
+				.set({ date, amount: balance, importId: null, updatedAt: Date.now() })
 				.where(eq(entries.id, id));
 			await recomputeBalances(tx, account, minDate(current.date, date), deps.timeZone);
 

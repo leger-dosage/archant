@@ -43,6 +43,13 @@
       "when": 1790064123997,
       "tag": "0005_add_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790068190848,
+      "tag": "0006_add_entry_import",
+      "breakpoints": true
     }
   ]
 }

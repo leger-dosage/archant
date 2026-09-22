@@ -3,7 +3,7 @@ import type { ParsedStatement } from "../domain/statement.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ImportPreviewInput } from "../schemas/imports.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { IngestGroups, IngestResult } from "./ledger.ts";
+import type { IngestGroups, IngestResult, StatementBalanceOutcome } from "./ledger.ts";
 
 import { and, eq, lt } from "drizzle-orm";
 
@@ -37,6 +37,8 @@ export type ImportPreview = {
 	openingSuggestion: IsoDate | null;
 	/** The opening anchor confirming moves to, with its new balance (AD-5). */
 	opening: { date: IsoDate; balance: MinorUnits } | null;
+	/** What confirming does with the file's closing balance, `null` when it has none. */
+	statementBalance: StatementBalanceOutcome | null;
 };
 
 export type ConfirmedImport = { id: string; counts: ImportCounts };
@@ -108,6 +110,7 @@ async function runPreview(
 		groups: result.groups,
 		openingSuggestion: result.openingSuggestion,
 		opening: result.opening,
+		statementBalance: result.balance,
 	};
 }
 

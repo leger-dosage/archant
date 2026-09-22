@@ -199,6 +199,28 @@ describe("imports and entry keys", () => {
 		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
 	});
 
+	it("links a snapshot to the import that wrote it, and protects that import", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertImport(database, "i1", "confirmed");
+		await insertEntry(database, "e1", "valuation", "reconciliation");
+
+		await expect(
+			database.run(sql`update entries set import_id = 'nope' where id = 'e1'`),
+		).rejects.toThrow();
+		await database.run(sql`update entries set import_id = 'i1' where id = 'e1'`);
+		await expect(database.run(sql`delete from imports where id = 'i1'`)).rejects.toThrow();
+		await expect(
+			database.get<{ importId: string | null }>(
+				sql`select import_id as importId from entries where id = 'e1'`,
+			),
+		).resolves.toEqual({ importId: "i1" });
+		const indexes = await database.all<{ name: string }>(
+			sql`select name from pragma_index_list('entries') where name = 'entries_import'`,
+		);
+		expect(indexes).toEqual([{ name: "entries_import" }]);
+	});
+
 	it("starts a transaction not flagged as a possible duplicate", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

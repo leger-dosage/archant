@@ -29,10 +29,28 @@ export function firstTab(counts: ImportCounts): ImportGroup {
 	return IMPORT_GROUPS.find((group) => counts[group] > 0) ?? "created";
 }
 
+/** What step 7 does with the file's closing balance; `null` when it has none. */
+export type BalanceStatus = "recorded" | "present" | "kept" | "skipped" | null;
+
+/**
+ * Whether confirming writes anything: a line, or the closing balance, which
+ * counts as something to write as in Sure, where an import without new rows
+ * still publishes.
+ */
+export function canConfirm(counts: ImportCounts, balance: BalanceStatus): boolean {
+	return importedCount(counts) > 0 || balance === "recorded";
+}
+
+/** Whether confirming writes the closing balance alone, labelled « Enregistrer le solde ». */
+export function isBalanceOnly(counts: ImportCounts, balance: BalanceStatus): boolean {
+	return importedCount(counts) === 0 && balance === "recorded";
+}
+
 /**
  * Whether the file brings nothing because the account already holds every
- * readable line. A file whose lines are all rejected, or empty, is not that.
+ * readable line and nothing else would be written. A file whose lines are
+ * all rejected, or empty, is not that.
  */
-export function isNothingNew(counts: ImportCounts): boolean {
-	return importedCount(counts) === 0 && counts.present > 0;
+export function isNothingNew(counts: ImportCounts, balance: BalanceStatus): boolean {
+	return !canConfirm(counts, balance) && counts.present > 0;
 }

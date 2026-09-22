@@ -1659,6 +1659,10 @@ const importBody = z.object({
 		}),
 		openingSuggestion: z.string().nullable(),
 		opening: z.object({ date: z.string(), balance: z.number() }).nullable(),
+		statementBalance: z
+			.object({ status: z.string(), date: z.string(), balance: z.number() })
+			.passthrough()
+			.nullable(),
 	}),
 });
 
@@ -1721,7 +1725,12 @@ describe("POST /api/accounts/:id/imports", () => {
 
 		expect(response.status).toBe(201);
 		const { data } = importBody.parse(await response.json());
-		expect(data).toMatchObject({ fileName: "releve.ofx", source: "ofx", openingSuggestion: null });
+		expect(data).toMatchObject({
+			fileName: "releve.ofx",
+			source: "ofx",
+			openingSuggestion: null,
+			statementBalance: { status: "recorded", date: "2026-09-15", balance: 123456 },
+		});
 		expect(data.groups.created.map((line) => line.label)).toEqual([
 			"CB CAFÉ DE LA GARE",
 			"PRLV SEPA EDF Électricité échéance septembre",
@@ -1826,7 +1835,51 @@ describe("POST /api/imports/:id/confirm", () => {
 		expect(everyAccount.items.map((item) => item.source)).toEqual(
 			Array.from({ length: 5 }, () => ({ kind: "import", format: "ofx", date: "2026-09-21" })),
 		);
-		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290 - 8712 + 215000 - 350 - 350);
+		// The file's LEDGERBAL of 1 234,56 on 15 September, not the lines' sum,
+		// sets today's balance.
+		await expect(balanceOnDay(account.id, "2026-09-10")).resolves.toBe(
+			123456 - 4290 - 8712 + 215000 - 350 - 350,
+		);
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+
+	it("records the card fixture's negative balance as a positive amount owed", async () => {
+		const card = await openAccount({ type: "credit_card", subtype: null, openingBalance: "0" });
+		const bytes = new Uint8Array(
+			await readFile(
+				new URL("connectors/ofx/fixtures/societe-generale-card-102-sgml.ofx", import.meta.url),
+			),
+		);
+		const preview = await uploaded(card.id, bytes);
+		expect(preview.statementBalance).toEqual({
+			status: "recorded",
+			date: "2026-09-15",
+			balance: 51230,
+		});
+
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		await expect(balanceOf(card.id)).resolves.toBe(51230);
+	});
+
+	it("keeps a snapshot the user entered on the statement date, and gives the gap", async () => {
+		const account = await openAccount();
+		await request("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-15",
+			balance: "1 200,00",
+		});
+
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		expect(preview.statementBalance).toEqual({
+			status: "kept",
+			date: "2026-09-15",
+			balance: 123456,
+			recorded: 120000,
+			gap: 3456,
+		});
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+		await expect(balanceOf(account.id)).resolves.toBe(120000);
 	});
 
 	it("keeps statement lines and amounts out of the logs", async () => {
@@ -1929,7 +1982,8 @@ describe("POST /api/imports/:id/preview", () => {
 		await request("POST", `/api/imports/${preview.id}/confirm`);
 
 		await expect(balanceOnDay(account.id, "2026-09-05")).resolves.toBe(123456);
-		await expect(balanceOf(account.id)).resolves.toBe(123456 + 215000 - 700);
+		// The file's LEDGERBAL on 15 September sets today's balance.
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
 		const { data: detail } = await (
 			await testClient(buildApp()).api.accounts[":id"].$get({ param: { id: account.id } })
 		).json();

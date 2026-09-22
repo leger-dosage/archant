@@ -1,18 +1,27 @@
 import type { Page } from "@playwright/test";
 
-import { formatShortDate, formatTableDate } from "../src/lib/balance-change.ts";
+import { toMinorUnits } from "@archant/data/money";
+
+import { formatShortDate, formatSignedMoney, formatTableDate } from "../src/lib/balance-change.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 2.1: import an OFX file with preview. Files are built here with dates
-// relative to today, so they always fall after the account's opening date,
-// which `openAccount` puts 30 days ago.
+// Stories 2.1 and 2.2: import an OFX file with preview, and its ledger
+// balance. Files are built here with dates relative to today, so they always
+// fall after the account's opening date, which `openAccount` puts 30 days ago.
 
 type Line = { daysAgo: number; amount: string; label: string; fitid: string };
 
 const ofxDate = (days: number) => daysAgo(days).replaceAll("-", "");
 
+type SgmlOptions = {
+	/** `LEDGERBAL`, signed as the bank prints it; none when absent. */
+	ledger?: { amount: string; daysAgo: number };
+	/** A credit card statement, `CCSTMTRS`, rather than a bank one. */
+	card?: boolean;
+};
+
 /** An OFX 1.x SGML statement: unclosed leaves, an empty MEMO, decimal commas. */
-function sgml(lines: Line[]): Buffer {
+function sgml(lines: Line[], options: SgmlOptions = {}): Buffer {
 	const transactions = lines.map((line) =>
 		[
 			"<STMTTRN>",
@@ -32,12 +41,24 @@ function sgml(lines: Line[]): Buffer {
 		"CHARSET:1252",
 		"",
 		"<OFX>",
-		"<BANKMSGSRSV1><STMTTRNRS><STMTRS>",
+		options.card === true
+			? "<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>"
+			: "<BANKMSGSRSV1><STMTTRNRS><STMTRS>",
 		"<CURDEF>EUR",
 		"<BANKTRANLIST>",
 		...transactions,
 		"</BANKTRANLIST>",
-		"</STMTRS></STMTTRNRS></BANKMSGSRSV1>",
+		...(options.ledger === undefined
+			? []
+			: [
+					"<LEDGERBAL>",
+					`<BALAMT>${options.ledger.amount}`,
+					`<DTASOF>${ofxDate(options.ledger.daysAgo)}`,
+					"</LEDGERBAL>",
+				]),
+		options.card === true
+			? "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>"
+			: "</STMTRS></STMTTRNRS></BANKMSGSRSV1>",
 		"</OFX>",
 	].join("\r\n");
 
@@ -276,4 +297,159 @@ test("the palette offers the import on an account page, and a narrow screen is t
 	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page).getByText("Disponible sur ordinateur")).toBeVisible();
 	await expect(dialog(page).getByLabel("Fichier OFX")).toHaveCount(0);
+});
+
+// Story 2.2: the file's LEDGERBAL becomes a snapshot.
+
+// Anchored: « 1 septembre 2026 » is also the end of « 11 septembre 2026 ».
+const snapshotRow = (page: Page, iso: string) =>
+	page.getByRole("row", { name: new RegExp(`^${formatTableDate(iso)} `, "u") });
+
+async function openSnapshots(page: Page) {
+	await page.getByRole("tab", { name: "Soldes" }).click();
+	await expect(page.getByRole("tab", { name: "Soldes" })).toHaveAttribute("aria-selected", "true");
+}
+
+test("the file's ledger balance is stated in the preview, then sets the balance and joins Soldes", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00" });
+	const date = daysAgo(2);
+
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(threeLines(), { ledger: { amount: "2408,61", daysAgo: 2 } }));
+
+	await expect(
+		dialog(page).getByText(
+			`Le relevé indique un solde de ${euros(240_861)} au ${formatTableDate(date)}. Il sera enregistré dans l'onglet Soldes.`,
+		),
+	).toBeVisible();
+	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await expect(header(page, account.name)).toContainText(euros(240_861));
+	await openSnapshots(page);
+	await expect(snapshotRow(page, date)).toContainText(euros(240_861));
+});
+
+test("a snapshot I typed on the statement date is kept, and the preview gives the gap", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00" });
+	const date = daysAgo(2);
+	await api.recordSnapshot(account.id, { date, balance: "2 400,00" });
+
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(threeLines(), { ledger: { amount: "2408,61", daysAgo: 2 } }));
+
+	await expect(
+		dialog(page).getByText(
+			`Vous avez saisi un solde de ${euros(240_000)} au ${formatTableDate(date)}, il est conservé. Le relevé indique ${euros(240_861)}, soit un écart de ${formatSignedMoney(toMinorUnits(861), "EUR")}.`,
+		),
+	).toBeVisible();
+	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await expect(header(page, account.name)).toContainText(euros(240_000));
+	await openSnapshots(page);
+	await expect(snapshotRow(page, date)).toContainText(euros(240_000));
+	await expect(page.getByRole("main").getByText(euros(240_861))).toHaveCount(0);
+});
+
+test("a card file's negative ledger balance shows as a positive amount owed", async ({
+	page,
+	api,
+}) => {
+	const card = await api.openAccount({ kind: "credit_card", openingBalance: "0,00" });
+	const [purchase] = threeLines();
+
+	await openImport(page, card.id, card.name);
+	await choose(
+		page,
+		sgml([{ ...purchase, amount: "-123,40" }], {
+			card: true,
+			ledger: { amount: "-512,30", daysAgo: 1 },
+		}),
+	);
+
+	await expect(
+		dialog(page).getByText(
+			`Le relevé indique un solde de ${euros(51_230)} au ${formatTableDate(daysAgo(1))}. Il sera enregistré dans l'onglet Soldes.`,
+		),
+	).toBeVisible();
+	await dialog(page).getByRole("button", { name: "Importer 1 opération" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await expect(header(page, card.name)).toContainText(euros(51_230));
+	await expect(header(page, card.name)).not.toContainText(euros(-51_230));
+});
+
+test("a file without a ledger balance states none and leaves Soldes empty", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(threeLines()));
+
+	await expect(tab(page, "À créer", 3)).toBeVisible();
+	await expect(
+		dialog(page).getByText(/relevé indique|solde du relevé|Vous avez saisi un solde/u),
+	).toHaveCount(0);
+	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await openSnapshots(page);
+	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+});
+
+test("a ledger balance dated before the opening date is not recorded, and the preview says why", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingDate: daysAgo(30) });
+
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(threeLines(), { ledger: { amount: "2408,61", daysAgo: 40 } }));
+
+	await expect(
+		dialog(page).getByText(
+			`Le solde du relevé au ${formatTableDate(daysAgo(40))} ne sera pas enregistré : il précède la date d'ouverture du compte.`,
+		),
+	).toBeVisible();
+	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await openSnapshots(page);
+	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+});
+
+test("the same lines with a later ledger balance offer « Enregistrer le solde », and the balance follows", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00" });
+	const lines = threeLines();
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(lines, { ledger: { amount: "2408,61", daysAgo: 2 } }));
+	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
+	await expect(dialog(page)).toBeHidden();
+	await expect(header(page, account.name)).toContainText(euros(240_861));
+
+	await page.keyboard.press("i");
+	await expect(dialog(page)).toBeVisible();
+	await choose(page, sgml(lines, { ledger: { amount: "2500,00", daysAgo: 1 } }));
+
+	await expect(tab(page, "Déjà présentes", 3)).toHaveAttribute("aria-selected", "true");
+	await expect(
+		dialog(page).getByText("Toutes les opérations de ce fichier sont déjà présentes."),
+	).toHaveCount(0);
+	await dialog(page).getByRole("button", { name: "Enregistrer le solde" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await expect(page.getByText("Solde du relevé enregistré.")).toBeVisible();
+	await expect(header(page, account.name)).toContainText(euros(250_000));
 });
