@@ -3,12 +3,15 @@ import type { TempDatabase } from "./testing/temp-database.ts";
 
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
+import { readFile } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createApp } from "./app.ts";
 import { createLogger } from "./lib/logger.ts";
+import { MAX_IMPORT_BYTES } from "./schemas/imports.ts";
 import * as accountsService from "./services/accounts.ts";
+import { purgeStalePreviews } from "./services/imports.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
 
 let temp: TempDatabase;
@@ -296,7 +299,7 @@ describe("POST /api/accounts/:id/transactions", () => {
 			amount: -4290,
 			currency: "EUR",
 			notes: null,
-			source: "manual",
+			source: { kind: "manual" },
 		});
 		await expect(balanceOf(account.id)).resolves.toBe(119166);
 	});
@@ -1633,3 +1636,378 @@ describe("DELETE /api/accounts/:id", () => {
 		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
 	});
 });
+
+// Story 2.1: import an OFX file with preview.
+
+const importBody = z.object({
+	data: z.object({
+		id: z.string(),
+		fileName: z.string(),
+		source: z.string(),
+		groups: z.object({
+			created: z.array(z.object({ ref: z.string(), label: z.string(), amount: z.number() })),
+			present: z.array(z.object({ ref: z.string(), entryId: z.string().nullable() })),
+			matched: z.array(z.object({ ref: z.string(), entryId: z.string().nullable() })),
+			duplicates: z.array(z.object({ ref: z.string() })),
+			rejected: z.array(
+				z.object({
+					ref: z.string(),
+					reason: z.string(),
+					line: z.object({ date: z.string(), amount: z.number(), label: z.string() }).nullable(),
+				}),
+			),
+		}),
+		openingSuggestion: z.string().nullable(),
+		opening: z.object({ date: z.string(), balance: z.number() }).nullable(),
+	}),
+});
+
+const creditAgricole = async () =>
+	new Uint8Array(
+		await readFile(
+			new URL("connectors/ofx/fixtures/credit-agricole-102-sgml.ofx", import.meta.url),
+		),
+	);
+
+/** A valid one-line card statement grown to `size` bytes by blank lines before `<OFX>`. */
+function paddedOfx(size: number): Uint8Array {
+	const body = new TextEncoder().encode(
+		"<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>EUR<BANKTRANLIST>\n<STMTTRN><DTPOSTED>20260910<TRNAMT>-12.00<FITID>P1<NAME>Librairie</STMTTRN>\n</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>",
+	);
+	const bytes = new Uint8Array(size).fill(0x0a);
+
+	bytes.set(body, size - body.length);
+
+	return bytes;
+}
+
+async function upload(accountId: string, bytes: Uint8Array, name = "releve.ofx") {
+	const form = new FormData();
+	form.append("file", new File([bytes], name));
+	const response = await buildApp().request(`/api/accounts/${accountId}/imports`, {
+		method: "POST",
+		body: form,
+	});
+
+	return { status: response.status, body: z.unknown().parse(await response.json()) };
+}
+
+async function uploaded(accountId: string, bytes: Uint8Array) {
+	const { status, body } = await upload(accountId, bytes);
+
+	expect(status).toBe(201);
+
+	return importBody.parse(body).data;
+}
+
+async function transactionsOf(accountId: string) {
+	const response = await testClient(buildApp()).api.accounts[":id"].transactions.$get({
+		param: { id: accountId },
+		query: {},
+	});
+
+	return (await response.json()).data;
+}
+
+describe("POST /api/accounts/:id/imports", () => {
+	it("stores a preview of an OFX file and writes nothing", async () => {
+		const account = await openAccount();
+		const client = testClient(buildApp()).api.accounts[":id"].imports;
+
+		const response = await client.$post({
+			param: { id: account.id },
+			form: { file: new File([await creditAgricole()], "releve.ofx") },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = importBody.parse(await response.json());
+		expect(data).toMatchObject({ fileName: "releve.ofx", source: "ofx", openingSuggestion: null });
+		expect(data.groups.created.map((line) => line.label)).toEqual([
+			"CB CAFÉ DE LA GARE",
+			"PRLV SEPA EDF Électricité échéance septembre",
+			"VIR SALAIRE",
+			"CB BOULANGERIE",
+			"CB BOULANGERIE",
+		]);
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 0 });
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+
+	it.each([
+		["a text file", new TextEncoder().encode("Liste de courses : pain, lait"), "notes.txt"],
+		[
+			"a file with two statements",
+			new TextEncoder().encode(
+				"<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR</STMTRS><STMTRS><CURDEF>EUR</STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+			),
+			"releve.ofx",
+		],
+		// Below the body limit: the file's own size check refuses it.
+		["a valid statement one byte over 5 MB", paddedOfx(MAX_IMPORT_BYTES + 1), "releve.ofx"],
+		["a valid statement over the body limit", paddedOfx(6 * 1024 * 1024), "releve.ofx"],
+	])("refuses %s with INVALID_IMPORT_FILE and writes nothing", async (_name, bytes, name) => {
+		const account = await openAccount();
+
+		const { status, body } = await upload(account.id, bytes, name);
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
+		const [row] = await temp.db.all<{ count: number }>(
+			sql`select count(*) as count from imports where account_id = ${account.id}`,
+		);
+		expect(row?.count).toBe(0);
+	});
+
+	it("reads a valid statement of exactly 5 MB", async () => {
+		const account = await openAccount();
+
+		const preview = await uploaded(account.id, paddedOfx(MAX_IMPORT_BYTES));
+
+		expect(preview.groups.created).toHaveLength(1);
+	});
+
+	it("purges the previews left for a day before storing a new one", async () => {
+		const account = await openAccount();
+		const old = await uploaded(account.id, paddedOfx(1024));
+		vi.setSystemTime(new Date("2026-09-22T10:00:01Z"));
+
+		const recent = await uploaded(account.id, paddedOfx(1024));
+
+		const rows = await temp.db.all<{ id: string }>(
+			sql`select id from imports where account_id = ${account.id}`,
+		);
+		expect(rows.map((row) => row.id)).toEqual([recent.id]);
+		expect(rows.map((row) => row.id)).not.toContain(old.id);
+	});
+
+	it("refuses a body without a file", async () => {
+		const account = await openAccount();
+
+		const response = await buildApp().request(`/api/accounts/${account.id}/imports`, {
+			method: "POST",
+			body: new FormData(),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status, body } = await upload("nope", await creditAgricole());
+
+		expect(status).toBe(404);
+		expect(body).toMatchObject({ error: { code: "NOT_FOUND" } });
+	});
+});
+
+describe("POST /api/imports/:id/confirm", () => {
+	it("writes the lines, moves the balance, and shows them as imported", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		const response = await testClient(buildApp()).api.imports[":id"].confirm.$post({
+			param: { id: preview.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			data: {
+				id: preview.id,
+				counts: { created: 5, present: 0, matched: 0, duplicates: 0, rejected: 0 },
+			},
+		});
+		const list = await transactionsOf(account.id);
+		expect(list.total).toBe(5);
+		expect(list.items[0]?.source).toEqual({ kind: "import", format: "ofx", date: "2026-09-21" });
+		const all = await testClient(buildApp()).api.transactions.$get({
+			query: { account: account.id },
+		});
+		const { data: everyAccount } = await all.json();
+		expect(everyAccount.items.map((item) => item.source)).toEqual(
+			Array.from({ length: 5 }, () => ({ kind: "import", format: "ofx", date: "2026-09-21" })),
+		);
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290 - 8712 + 215000 - 350 - 350);
+	});
+
+	it("keeps statement lines and amounts out of the logs", async () => {
+		const account = await openAccount();
+		const app = buildApp();
+		const form = new FormData();
+		form.append("file", new File([await creditAgricole()], "releve.ofx"));
+		const { data } = importBody.parse(
+			await (
+				await app.request(`/api/accounts/${account.id}/imports`, { method: "POST", body: form })
+			).json(),
+		);
+		await app.request(`/api/imports/${data.id}/confirm`, { method: "POST" });
+
+		const logs = logLines.join("\n");
+		expect(logs).toContain(data.id);
+		expect(logs).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
+	});
+
+	it("recognises the same file on re-import", async () => {
+		const account = await openAccount();
+		const first = await uploaded(account.id, await creditAgricole());
+		await request("POST", `/api/imports/${first.id}/confirm`);
+
+		const again = await uploaded(account.id, await creditAgricole());
+
+		expect(again.groups.created).toEqual([]);
+		expect(again.groups.present).toHaveLength(5);
+	});
+
+	it("answers NOT_FOUND for an import already confirmed or unknown", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 404,
+			body: { error: { code: "NOT_FOUND" } },
+		});
+		await expect(request("POST", "/api/imports/nope/confirm")).resolves.toMatchObject({
+			status: 404,
+		});
+	});
+
+	it("answers IMPORT_PREVIEW_STALE when a transaction arrived since the preview, then previews anew", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+		const manual = await postTransaction(account.id, {
+			date: "2026-09-04",
+			label: "Café",
+			amount: "-42,90",
+		});
+
+		const stale = await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		expect(stale).toEqual({
+			status: 409,
+			body: {
+				error: { code: "IMPORT_PREVIEW_STALE", message: "The account changed since the preview." },
+			},
+		});
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 1 });
+
+		const fresh = await request("POST", `/api/imports/${preview.id}/preview`, {
+			moveOpeningDate: null,
+		});
+		const { data } = importBody.parse(fresh.body);
+		expect(data.groups.matched).toEqual([expect.objectContaining({ ref: "0" })]);
+		expect(z.object({ data: z.object({ id: z.string() }) }).parse(manual.body).data.id).toBe(
+			data.groups.matched[0]?.entryId,
+		);
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 200,
+		});
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 5 });
+	});
+});
+
+describe("POST /api/imports/:id/preview", () => {
+	it("moves the opening date back on request, and confirm keeps today's balance", async () => {
+		const account = await openAccount({ openingDate: "2026-09-05" });
+		const preview = await uploaded(account.id, await creditAgricole());
+		expect(preview.openingSuggestion).toBe("2026-09-02");
+		expect(
+			preview.groups.rejected.map(({ ref, reason, line }) => [ref, reason, line?.date]),
+		).toEqual([
+			["0", "BEFORE_OPENING_DATE", "2026-09-03"],
+			["1", "BEFORE_OPENING_DATE", "2026-09-05"],
+		]);
+
+		const moved = await request("POST", `/api/imports/${preview.id}/preview`, {
+			moveOpeningDate: "2026-09-02",
+		});
+
+		const { data } = importBody.parse(moved.body);
+		expect(data.groups.created).toHaveLength(5);
+		expect(data.opening).toEqual({ date: "2026-09-02", balance: 123456 + 4290 + 8712 });
+		await expect(balanceOnDay(account.id, "2026-09-05")).resolves.toBe(123456);
+
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		await expect(balanceOnDay(account.id, "2026-09-05")).resolves.toBe(123456);
+		await expect(balanceOf(account.id)).resolves.toBe(123456 + 215000 - 700);
+		const { data: detail } = await (
+			await testClient(buildApp()).api.accounts[":id"].$get({ param: { id: account.id } })
+		).json();
+		expect(detail.openingDate).toBe("2026-09-02");
+	});
+
+	it("refuses a malformed date and answers NOT_FOUND for an unknown import", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		await expect(
+			request("POST", `/api/imports/${preview.id}/preview`, { moveOpeningDate: "hier" }),
+		).resolves.toMatchObject({ status: 400, body: { error: { code: "VALIDATION_ERROR" } } });
+		await expect(
+			request("POST", `/api/imports/${preview.id}/preview`, { moveOpeningDate: "0001-01-01" }),
+		).resolves.toEqual({
+			status: 400,
+			body: {
+				error: {
+					code: "VALIDATION_ERROR",
+					message: "The request is invalid.",
+					fields: [{ path: "moveOpeningDate", code: "date_too_early" }],
+				},
+			},
+		});
+		await expect(
+			request("POST", "/api/imports/nope/preview", { moveOpeningDate: null }),
+		).resolves.toMatchObject({ status: 404 });
+	});
+});
+
+describe("purgeStalePreviews", () => {
+	it("deletes the previews older than a day and keeps confirmed imports", async () => {
+		const purgeDb = await createTempDatabase();
+
+		try {
+			const app = createApp({
+				db: purgeDb.db,
+				timeZone: "Europe/Paris",
+				logger: createLogger("silent"),
+			});
+			const created = await (await testClient(app).api.accounts.$post({ json: valid })).json();
+			const accountId = created.data.id;
+			const form = () => {
+				const body = new FormData();
+				body.append("file", new File([new TextEncoder().encode(CARD_OFX)], "carte.ofx"));
+				return body;
+			};
+			const post = async () =>
+				importBody.parse(
+					await (
+						await app.request(`/api/accounts/${accountId}/imports`, {
+							method: "POST",
+							body: form(),
+						})
+					).json(),
+				).data.id;
+			const old = await post();
+			const confirmed = await post();
+			await app.request(`/api/imports/${confirmed}/confirm`, { method: "POST" });
+			vi.setSystemTime(new Date("2026-09-22T10:00:01Z"));
+
+			await expect(purgeStalePreviews({ db: purgeDb.db, timeZone: "Europe/Paris" })).resolves.toBe(
+				1,
+			);
+			const recent = await post();
+
+			const rows = await purgeDb.db.all<{ id: string }>(sql`select id from imports order by id`);
+			expect(rows.map((row) => row.id).toSorted()).toEqual([confirmed, recent].toSorted());
+			expect(rows.map((row) => row.id)).not.toContain(old);
+		} finally {
+			await purgeDb.dispose();
+		}
+	});
+});
+
+const CARD_OFX = [
+	"<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>EUR<BANKTRANLIST>",
+	"<STMTTRN><DTPOSTED>20260910<TRNAMT>-12.00<FITID>C1<NAME>Librairie</STMTTRN>",
+	"</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>",
+].join("\n");

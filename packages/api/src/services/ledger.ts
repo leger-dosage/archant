@@ -1,6 +1,7 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { IsoDate } from "../domain/dates.ts";
+import type { LineKeys, PairCandidate } from "../domain/keys.ts";
 import type { NormalizedTransaction, ParsedStatement, RejectionCode } from "../domain/statement.ts";
 import type { AmountRange } from "../domain/transaction-filter.ts";
 import type { ServiceDeps } from "./deps.ts";
@@ -17,6 +18,7 @@ import {
 	inArray,
 	lte,
 	ne,
+	notExists,
 	or,
 	sql,
 	sum,
@@ -29,6 +31,9 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
+import { entryKeys } from "@archant/data/schema/entry-keys";
+import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
+import { imports } from "@archant/data/schema/imports";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance } from "@archant/data/types";
@@ -37,6 +42,7 @@ import { forwardBalances } from "../domain/balances/forward.ts";
 import { fillDays } from "../domain/balances/history.ts";
 import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
+import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
@@ -59,6 +65,32 @@ type Transaction = Parameters<Parameters<ServiceDeps["db"]["transaction"]>[0]>[0
 // SQLite caps bound parameters per statement at 32 766; four columns per row
 // keeps a chunk far below it, and a decade of history is 3 650 rows.
 const BALANCE_ROWS_PER_INSERT = 1000;
+
+// Nine columns per entry row: 500 rows bind 4 500 parameters, far below the
+// cap whatever the table. Epic 1 inserted a statement in one query, which a
+// 3 600-line file would have pushed past it.
+const ROWS_PER_INSERT = 500;
+
+// Keys per lookup query; each query also binds the account and the source.
+const KEYS_PER_LOOKUP = 500;
+
+function chunksOf<Row>(rows: readonly Row[], size: number): Row[][] {
+	return Array.from({ length: Math.ceil(rows.length / size) }, (_, index) =>
+		rows.slice(index * size, (index + 1) * size),
+	);
+}
+
+/** Runs `write` on each chunk strictly in sequence, so a failed chunk rolls back with nothing else queued. */
+async function inSequence<Row>(
+	rows: readonly Row[],
+	size: number,
+	write: (chunk: Row[]) => Promise<unknown>,
+): Promise<void> {
+	await chunksOf(rows, size).reduce<Promise<unknown>>(
+		(pending, chunk) => pending.then(() => write(chunk)),
+		Promise.resolve(),
+	);
+}
 
 // A `current_anchor` belongs to a bank-linked account, computed backward from
 // it (AD-8); the forward computation reads only these two.
@@ -145,16 +177,7 @@ async function recomputeBalances(
 			),
 		);
 
-	const chunks: NewBalance[][] = [];
-	for (let start = 0; start < rows.length; start += BALANCE_ROWS_PER_INSERT) {
-		chunks.push(rows.slice(start, start + BALANCE_ROWS_PER_INSERT));
-	}
-
-	// Strictly in sequence, so a failed chunk rolls back with nothing else still queued.
-	await chunks.reduce<Promise<unknown>>(
-		(pending, chunk) => pending.then(() => tx.insert(balances).values(chunk)),
-		Promise.resolve(),
-	);
+	await inSequence(rows, BALANCE_ROWS_PER_INSERT, (chunk) => tx.insert(balances).values(chunk));
 }
 
 async function accountWithOpeningDate(tx: Transaction, accountId: string) {
@@ -163,7 +186,9 @@ async function accountWithOpeningDate(tx: Transaction, accountId: string) {
 			id: accounts.id,
 			type: accounts.type,
 			currency: accounts.currency,
+			openingId: entries.id,
 			openingDate: entries.date,
+			openingBalance: entries.amount,
 		})
 		.from(accounts)
 		.innerJoin(
@@ -225,62 +250,404 @@ export async function createAccount(
 	return account;
 }
 
-/** Where the statement comes from. Imports and bank sync add their ids with Epics 2 and 10. */
-export type IngestSource = { manual: true };
+/**
+ * Where the statement comes from. A manual line carries no key; an import's
+ * lines are keyed under its source (AD-7). Bank sync adds its connection with
+ * Epic 10.
+ */
+export type IngestSource = { manual: true } | { importId: string };
+
+export type IngestOptions = {
+	origin: Origin;
+	/** Computes the groups and writes nothing: the import preview (AD-4). */
+	dryRun?: boolean | undefined;
+	/**
+	 * An earlier opening date the user accepted so the lines on or before the
+	 * current one go in. Ignored unless it is earlier.
+	 */
+	moveOpeningDate?: IsoDate | undefined;
+};
+
+/** A line as the preview shows it; `entryId` names the entry it is or pairs with. */
+export type PreviewLine = {
+	ref: string;
+	date: IsoDate;
+	amount: MinorUnits;
+	label: string;
+	entryId: string | null;
+};
+
+/**
+ * A refused line. `line` is `null` when the source could not read it, and
+ * `ref` is then the line's position in the source rather than in the statement.
+ */
+export type RejectedLine = {
+	ref: string;
+	reason: RejectionCode;
+	line: { date: IsoDate; amount: MinorUnits; label: string } | null;
+};
+
+/** The five groups of an import preview (AD-4). */
+export type IngestGroups = {
+	/** New entries. */
+	created: PreviewLine[];
+	/** Recognised by a key: nothing is written. */
+	present: PreviewLine[];
+	/** Paired with an entry of another source: its keys are attached to it. */
+	matched: PreviewLine[];
+	/** Two entries equally near: created, flagged `possible_duplicate`. */
+	duplicates: PreviewLine[];
+	rejected: RejectedLine[];
+};
+
+/** How many lines fell in each group: the import's stored counts. */
+export function countsOf(groups: IngestGroups): ImportCounts {
+	return {
+		created: groups.created.length,
+		present: groups.present.length,
+		matched: groups.matched.length,
+		duplicates: groups.duplicates.length,
+		rejected: groups.rejected.length,
+	};
+}
 
 export type IngestResult = {
-	/** Entry ids, in statement order. */
+	/** Entry ids written, in statement order: the created lines and the possible duplicates. */
 	created: string[];
-	/** `ref` is the line's index in the statement. */
+	/** Every refused line, the source's first; `ref` is the line's index in the statement. */
 	rejected: { ref: string; reason: RejectionCode }[];
+	groups: IngestGroups;
+	/** The hash confirm compares with the preview's. */
+	digest: string;
+	/**
+	 * The day before the earliest line refused for being on or before the
+	 * opening date: the opening date that would let every such line in.
+	 */
+	openingSuggestion: IsoDate | null;
+	/** The opening anchor this ingest moves, `null` when it stays. */
+	opening: { date: IsoDate; balance: MinorUnits } | null;
 };
 
 function filledFields(line: NormalizedTransaction): LockableField[] {
 	return line.notes === null ? ["date", "amount", "label"] : ["date", "amount", "label", "notes"];
 }
 
+/** The previewed import a keyed ingest belongs to; anything else is unknown. */
+async function previewedImport(tx: Transaction, importId: string, accountId: string) {
+	const row = await tx
+		.select({ source: imports.source, digest: imports.previewDigest })
+		.from(imports)
+		.where(
+			and(
+				eq(imports.id, importId),
+				eq(imports.accountId, accountId),
+				eq(imports.status, "previewed"),
+			),
+		)
+		.get();
+
+	if (row === undefined) {
+		throw new AppError("NOT_FOUND", "No previewed import has this id.");
+	}
+
+	return row;
+}
+
+/** The entry holding each key already, looked up 500 keys per query. */
+async function entriesByKey(
+	tx: Transaction,
+	accountId: string,
+	source: FileSourceId,
+	keys: readonly string[],
+): Promise<Map<string, string>> {
+	const found = new Map<string, string>();
+
+	await inSequence(keys, KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await tx
+			.select({ key: entryKeys.key, entryId: entryKeys.entryId })
+			.from(entryKeys)
+			.where(
+				and(
+					eq(entryKeys.accountId, accountId),
+					eq(entryKeys.source, source),
+					inArray(entryKeys.key, chunk),
+				),
+			);
+
+		for (const row of rows) {
+			found.set(row.key, row.entryId);
+		}
+	});
+
+	return found;
+}
+
+/**
+ * The account's transactions a line may pair with (AD-7): dated within the
+ * window of the lines, and carrying no key from this source.
+ */
+async function pairCandidates(
+	tx: Transaction,
+	accountId: string,
+	source: FileSourceId,
+	dates: readonly IsoDate[],
+): Promise<PairCandidate[]> {
+	const sorted = dates.toSorted();
+	const [first] = sorted;
+	const last = sorted.at(-1);
+
+	if (first === undefined || last === undefined) {
+		return [];
+	}
+
+	const rows = await tx
+		.select({ id: entries.id, date: entries.date, amount: entries.amount })
+		.from(entries)
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(entries.kind, "transaction"),
+				between(entries.date, addDays(first, -MATCH_WINDOW_DAYS), addDays(last, MATCH_WINDOW_DAYS)),
+				notExists(
+					tx
+						.select({ key: entryKeys.key })
+						.from(entryKeys)
+						.where(and(eq(entryKeys.entryId, entries.id), eq(entryKeys.source, source))),
+				),
+			),
+		);
+
+	return rows.map((row) => ({ ...row, amount: toMinorUnits(row.amount) }));
+}
+
+type Keyed = { ref: string; line: NormalizedTransaction; keys: LineKeys };
+
+type Paired = Keyed & { entryId: string };
+
+type Groups = { created: Keyed[]; present: Paired[]; matched: Paired[]; duplicates: Keyed[] };
+
+function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): PreviewLine {
+	return {
+		ref,
+		date: line.date,
+		amount: line.amount,
+		label: line.label,
+		entryId: rest.entryId ?? null,
+	};
+}
+
+/**
+ * Writes the keys of an import's lines onto their entries (AD-7). Two lines
+ * of one file may share a FITID: the second keeps its fingerprint only.
+ */
+async function attachKeys(
+	tx: Transaction,
+	accountId: string,
+	target: { id: string; source: FileSourceId },
+	lines: readonly { entryId: string; keys: LineKeys }[],
+): Promise<void> {
+	const claimed = new Set<string>();
+	const rows = lines.flatMap(({ entryId, keys }) =>
+		[keys.fingerprint, keys.external]
+			.filter((key): key is string => key !== null && !claimed.has(key))
+			.map((key) => {
+				claimed.add(key);
+
+				return { entryId, accountId, source: target.source, key, importId: target.id };
+			}),
+	);
+
+	await inSequence(rows, ROWS_PER_INSERT, (chunk) => tx.insert(entryKeys).values(chunk));
+}
+
+/**
+ * Sorts the accepted lines of an import into present, matched, possible
+ * duplicates and created (AD-7), each in statement order.
+ */
+async function groupLines(
+	tx: Transaction,
+	accountId: string,
+	source: FileSourceId,
+	accepted: readonly Keyed[],
+): Promise<Groups> {
+	const known = await entriesByKey(
+		tx,
+		accountId,
+		source,
+		accepted.flatMap(({ keys }) =>
+			keys.external === null ? [keys.fingerprint] : [keys.fingerprint, keys.external],
+		),
+	);
+	const groups: Groups = { created: [], present: [], matched: [], duplicates: [] };
+	const remaining: (Keyed & { date: IsoDate; amount: MinorUnits })[] = [];
+
+	for (const item of accepted) {
+		const entryId =
+			known.get(item.keys.fingerprint) ??
+			(item.keys.external === null ? undefined : known.get(item.keys.external));
+
+		if (entryId === undefined) {
+			remaining.push({ ...item, date: item.line.date, amount: item.line.amount });
+		} else {
+			groups.present.push({ ...item, entryId });
+		}
+	}
+
+	const candidates = await pairCandidates(
+		tx,
+		accountId,
+		source,
+		remaining.map(({ date }) => date),
+	);
+
+	for (const { line: item, pairing } of pairLines(remaining, candidates)) {
+		const keyed = { ref: item.ref, line: item.line, keys: item.keys };
+
+		if (pairing.kind === "matched") {
+			groups.matched.push({ ...keyed, entryId: pairing.candidateId });
+		} else if (pairing.kind === "tie") {
+			groups.duplicates.push(keyed);
+		} else {
+			groups.created.push(keyed);
+		}
+	}
+
+	return groups;
+}
+
 /**
  * Writes a statement into one account, in one transaction, following the
- * pipeline order of AD-4. Steps 2, 3 and 5 to 7 arrive with their epics, in
- * their slot; a manual line carries no key.
+ * pipeline order of AD-4. Steps 3 and 5 to 7 arrive with their epics, in
+ * their slot. A manual line carries no key and is always created; an
+ * import's lines are keyed and grouped (AD-7). With `dryRun`, the groups are
+ * computed and nothing is written. Confirming an import refuses with
+ * `IMPORT_PREVIEW_STALE` when the groups differ from its preview, and marks
+ * it confirmed with its counts in the same transaction.
  */
 export async function ingest(
 	deps: ServiceDeps,
 	accountId: string,
 	statement: ParsedStatement,
-	_source: IngestSource,
-	options: { origin: Origin },
+	source: IngestSource,
+	options: IngestOptions,
 ): Promise<IngestResult> {
 	return deps.db.transaction(
 		async (tx) => {
 			const account = await accountWithOpeningDate(tx, accountId);
+			const target =
+				"importId" in source
+					? {
+							id: source.importId,
+							...(await previewedImport(tx, source.importId, accountId)),
+						}
+					: null;
+			const moveTo =
+				options.moveOpeningDate !== undefined && options.moveOpeningDate < account.openingDate
+					? options.moveOpeningDate
+					: null;
 			const context = {
-				openingDate: account.openingDate,
+				openingDate: moveTo ?? account.openingDate,
 				currency: account.currency,
 				today: today(deps.timeZone),
 			};
-			const result: IngestResult = { created: [], rejected: [] };
-			const accepted: NormalizedTransaction[] = [];
+			const accepted: Keyed[] = [];
+			const refused: (RejectedLine & { line: NonNullable<RejectedLine["line"]> })[] = [];
 
-			// 1. Reject lines the account cannot hold.
-			for (const [index, line] of statement.transactions.entries()) {
+			// 1. Reject lines the account cannot hold. Keys cover every line,
+			// refused ones included, so a line's occurrence index never depends on
+			// the account's opening date.
+			for (const [index, { line, keys }] of lineKeys(statement.transactions).entries()) {
 				const reason = rejectionFor(line, context);
+				const ref = String(index);
 
 				if (reason === null) {
-					accepted.push(line);
+					accepted.push({ ref, line, keys });
 				} else {
-					result.rejected.push({ ref: String(index), reason });
+					refused.push({
+						ref,
+						reason,
+						line: { date: line.date, amount: line.amount, label: line.label },
+					});
 				}
 			}
 
-			// 4. Insert the new entries.
-			const now = Date.now();
-			const rows = accepted.map((line) => ({ id: crypto.randomUUID(), line }));
-			const [earliest] = accepted.map((line) => line.date).toSorted();
+			// 2. Key matching, batched per statement (AD-7). A manual line has no key.
+			const grouped: Groups =
+				target === null
+					? { created: accepted, present: [], matched: [], duplicates: [] }
+					: await groupLines(tx, accountId, target.source, accepted);
+			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
+				...item,
+				line: null,
+			}));
+			const groups: IngestGroups = {
+				created: grouped.created.map(previewLine),
+				present: grouped.present.map(previewLine),
+				matched: grouped.matched.map(previewLine),
+				duplicates: grouped.duplicates.map(previewLine),
+				rejected: [...unreadable, ...refused],
+			};
+			const written = [
+				...grouped.created.map((item) => ({ ...item, duplicate: false })),
+				...grouped.duplicates.map((item) => ({ ...item, duplicate: true })),
+			];
+			const [earliestRefused] = refused
+				.filter(({ reason }) => reason === "BEFORE_OPENING_DATE")
+				.map(({ line }) => line.date)
+				.toSorted();
+			// AD-5: the opening balance changes so that the old opening day ends on
+			// the same balance once the lines up to it count. Sure's
+			// `adjust_opening_anchor_if_needed!` keeps the amount and shifts today's
+			// balance instead.
+			const movedIn = written
+				.filter(({ line }) => line.date <= account.openingDate)
+				.reduce((total, { line }) => total + line.amount, 0);
+			const opening =
+				moveTo === null
+					? null
+					: {
+							date: moveTo,
+							balance: toMinorUnits(
+								classificationOf(account.type) === "asset"
+									? account.openingBalance - movedIn
+									: account.openingBalance + movedIn,
+							),
+						};
+			const digest = previewDigest([
+				...(["created", "present", "matched", "duplicates"] as const).flatMap((group) =>
+					groups[group].map(({ ref, entryId }) => ({ group, ref, entryId })),
+				),
+				...unreadable.map(({ ref, reason }) => ({ group: `source:${reason}`, ref, entryId: null })),
+				...refused.map(({ ref, reason }) => ({ group: `ledger:${reason}`, ref, entryId: null })),
+				// The opening confirm would write must be the one the preview showed.
+				{ group: "opening", ref: JSON.stringify(opening), entryId: null },
+			]);
+			const result: IngestResult = {
+				created: [],
+				rejected: groups.rejected.map(({ ref, reason }) => ({ ref, reason })),
+				groups,
+				digest,
+				openingSuggestion: earliestRefused === undefined ? null : addDays(earliestRefused, -1),
+				opening,
+			};
 
-			if (earliest !== undefined) {
-				await tx.insert(entries).values(
-					rows.map(({ id, line }) => ({
+			if (options.dryRun === true) {
+				return result;
+			}
+
+			if (target !== null && target.digest !== digest) {
+				throw new AppError("IMPORT_PREVIEW_STALE", "The account changed since the preview.");
+			}
+
+			// 3. Pending reconciliation arrives with Epic 10.
+
+			// 4. Insert the new entries, attach keys to matched ones.
+			const now = Date.now();
+			const rows = written.map((item) => ({ ...item, id: crypto.randomUUID() }));
+
+			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
+				tx.insert(entries).values(
+					chunk.map(({ id, line }) => ({
 						id,
 						accountId,
 						kind: "transaction" as const,
@@ -290,17 +657,55 @@ export async function ingest(
 						createdAt: now,
 						updatedAt: now,
 					})),
-				);
-				await tx.insert(transactions).values(
-					rows.map(({ id, line }) => ({
+				),
+			);
+			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
+				tx.insert(transactions).values(
+					chunk.map(({ id, line, duplicate }) => ({
 						entryId: id,
 						label: line.label,
 						notes: line.notes,
+						possibleDuplicate: duplicate,
 						lockedFields: options.origin === "user" ? filledFields(line) : [],
 					})),
-				);
+				),
+			);
 
-				// 8. Recompute balances from the earliest new line.
+			if (target !== null) {
+				await attachKeys(tx, accountId, target, [
+					...rows.map(({ id, keys }) => ({ entryId: id, keys })),
+					...grouped.matched.map(({ entryId, keys }) => ({ entryId, keys })),
+				]);
+				await tx
+					.update(imports)
+					.set({
+						status: "confirmed",
+						confirmedAt: now,
+						// Nothing reads the file after confirm, and it holds the full
+						// account number and every amount (AD-14).
+						content: Buffer.alloc(0),
+						counts: countsOf(groups),
+					})
+					.where(eq(imports.id, target.id));
+			}
+
+			if (opening !== null) {
+				await tx
+					.update(entries)
+					.set({ date: opening.date, amount: opening.balance, updatedAt: now })
+					.where(eq(entries.id, account.openingId));
+			}
+
+			// 5. Rules arrive with Epic 8, 6. transfer matching with Epic 5, and
+			// 7. the statement balance with Story 2.2.
+
+			// 8. Recompute balances from the earliest date this write touched.
+			const [earliest] = [
+				...rows.map(({ line }) => line.date),
+				...(opening === null ? [] : [opening.date]),
+			].toSorted();
+
+			if (earliest !== undefined) {
 				await recomputeBalances(tx, account, earliest, deps.timeZone);
 			}
 
@@ -431,7 +836,9 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
-			// The detail row first: its foreign key restricts deleting the entry.
+			// Keys and the detail row first: their foreign keys restrict deleting
+			// the entry. Without its keys, the line comes back on re-import, as in Sure.
+			await tx.delete(entryKeys).where(eq(entryKeys.entryId, entryId));
 			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
 			await tx.delete(entries).where(eq(entries.id, entryId));
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
@@ -441,9 +848,9 @@ export async function deleteTransaction(
 }
 
 /**
- * Deletes an account and everything it holds, as one write: its transactions,
- * all its entries, snapshots and opening anchor included, its daily balances,
- * then the account. Children go first, since their foreign keys restrict.
+ * Deletes an account and everything it holds, as one write: its entries'
+ * keys, its transactions, all its entries, snapshots and opening anchor
+ * included, its daily balances, its imports, then the account. Children go first, since their foreign keys restrict.
  * Every delete selects by `account_id` through a subquery, never a list of
  * ids, so a history of 50,000 transactions binds one parameter, not 50,000.
  * When transfers arrive (Epic 5), the ones touching the account go first,
@@ -458,6 +865,7 @@ export async function deleteAccount(
 		async (tx) => {
 			await accountWithOpeningDate(tx, accountId);
 
+			await tx.delete(entryKeys).where(eq(entryKeys.accountId, accountId));
 			await tx
 				.delete(transactions)
 				.where(
@@ -468,6 +876,7 @@ export async function deleteAccount(
 				);
 			await tx.delete(entries).where(eq(entries.accountId, accountId));
 			await tx.delete(balances).where(eq(balances.accountId, accountId));
+			await tx.delete(imports).where(eq(imports.accountId, accountId));
 			await tx.delete(accounts).where(eq(accounts.id, accountId));
 		},
 		{ behavior: "immediate" },
@@ -554,6 +963,35 @@ const transactionColumns = {
 
 function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {
 	return { ...row, amount: toMinorUnits(row.amount) };
+}
+
+/** Where an imported entry came from; `confirmedAt` is epoch milliseconds. */
+export type ImportOrigin = { source: FileSourceId; confirmedAt: number | null };
+
+/** The import behind each of `entryIds` that has one; manual entries are absent. */
+export async function importOrigins(
+	deps: ServiceDeps,
+	entryIds: readonly string[],
+): Promise<Map<string, ImportOrigin>> {
+	const found = new Map<string, ImportOrigin>();
+
+	await inSequence(entryIds, KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await deps.db
+			.selectDistinct({
+				entryId: entryKeys.entryId,
+				source: imports.source,
+				confirmedAt: imports.confirmedAt,
+			})
+			.from(entryKeys)
+			.innerJoin(imports, eq(imports.id, entryKeys.importId))
+			.where(inArray(entryKeys.entryId, chunk));
+
+		for (const { entryId, ...origin } of rows) {
+			found.set(entryId, origin);
+		}
+	});
+
+	return found;
 }
 
 /** One transaction, `null` when the id names none. */

@@ -59,6 +59,13 @@ export const SHORTCUTS = [
 		inFields: false,
 	},
 	{
+		id: "importFile",
+		keys: ["i"],
+		label: "shortcuts.labels.importFile",
+		section: "actions",
+		inFields: false,
+	},
+	{
 		id: "search",
 		keys: ["/"],
 		label: "shortcuts.labels.search",

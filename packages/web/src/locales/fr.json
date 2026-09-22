@@ -45,7 +45,8 @@
 			"system": "Suivre le thème du système",
 			"light": "Utiliser le thème clair",
 			"dark": "Utiliser le thème sombre"
-		}
+		},
+		"importFile": "Importer un fichier"
 	},
 	"shortcuts": {
 		"title": "Raccourcis clavier",
@@ -68,7 +69,8 @@
 			"search": "Rechercher dans les opérations",
 			"nextRow": "Opération suivante",
 			"previousRow": "Opération précédente",
-			"openRow": "Ouvrir l'opération"
+			"openRow": "Ouvrir l'opération",
+			"importFile": "Importer un fichier sur la page d'un compte"
 		}
 	},
 	"accounts": {
@@ -201,7 +203,8 @@
 			"action": "Abandonner"
 		},
 		"sources": {
-			"manual": "Saisie manuelle"
+			"manual": "Saisie manuelle",
+			"import": "Import {{format}} du {{date}}"
 		},
 		"excluded": "Exclue des rapports"
 	},
@@ -270,11 +273,68 @@
 			"description": "Le solde saisi de {{amount}} sera supprimé, et le solde du compte recalculé à partir des opérations."
 		}
 	},
+	"imports": {
+		"open": "Importer",
+		"title": "Importer un fichier",
+		"description": "Un relevé OFX exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
+		"mobile": "Disponible sur ordinateur",
+		"steps": {
+			"label": "Étapes de l'import",
+			"file": "Fichier",
+			"preview": "Aperçu"
+		},
+		"drop": "Déposez le fichier ici, ou choisissez-le.",
+		"file": "Fichier OFX",
+		"reading": "Lecture du fichier…",
+		"groups": {
+			"label": "Groupes de l'aperçu",
+			"created": "À créer",
+			"present": "Déjà présentes",
+			"matched": "Rapprochées",
+			"duplicates": "Doublons possibles",
+			"rejected": "Rejetées"
+		},
+		"hints": {
+			"matched": "Ces opérations existent déjà, saisies à la main. Elles seront reliées au fichier, sans être modifiées.",
+			"duplicates": "Deux opérations proches ressemblent à chacune de ces lignes. Elles seront créées quand même, à vérifier ensuite."
+		},
+		"summary": "{{created}} à créer, {{present}} déjà présentes, {{matched}} rapprochées, {{duplicates}} doublons possibles, {{rejected}} rejetées.",
+		"empty": "Aucune opération dans ce groupe.",
+		"columns": {
+			"date": "Date",
+			"label": "Libellé",
+			"amount": "Montant",
+			"line": "Opération",
+			"reason": "Motif"
+		},
+		"fileLine": "Opération n° {{number}} du fichier",
+		"reasons": {
+			"BEFORE_OPENING_DATE": "Datée au plus tard le jour d'ouverture du compte",
+			"DATE_TOO_LATE": "Datée de plus d'un an après aujourd'hui",
+			"CURRENCY_MISMATCH": "Dans une autre devise que le compte",
+			"INVALID_DATE": "Date illisible",
+			"INVALID_AMOUNT": "Montant illisible",
+			"MISSING_LABEL": "Sans libellé"
+		},
+		"moveOpening": "Avancer la date d'ouverture au {{date}}",
+		"openingMoved": "La date d'ouverture passera au {{date}}, avec un solde initial de {{amount}}. Le solde du {{previous}}, date d'ouverture actuelle, ne change pas.",
+		"nothingNew": "Toutes les opérations de ce fichier sont déjà présentes.",
+		"confirm_one": "Importer {{count}} opération",
+		"confirm_other": "Importer {{count}} opérations",
+		"imported_one": "{{count}} opération importée",
+		"imported_other": "{{count}} opérations importées",
+		"present_one": "{{count}} déjà présente",
+		"present_other": "{{count}} déjà présentes",
+		"toast": "{{imported}}, {{present}}.",
+		"toastImported": "{{imported}}."
+	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
 		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
+		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé OFX lisible.",
+		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

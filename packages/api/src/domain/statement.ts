@@ -6,11 +6,13 @@ import { addDays } from "./dates.ts";
 
 /**
  * One line of a statement, as every source hands it to the ledger (AD-3).
- * Narrowed to the fields this story stores: Epic 2 adds `externalId`,
- * `originalAmount`, `reference` and `pending` together with their columns, so
- * no source ever sets a field the ledger silently drops.
+ * Narrowed to the fields stored so far: `originalAmount`, `reference` and
+ * `pending` arrive with Stories 2.4 and Epic 10, together with their columns,
+ * so no source ever sets a field the ledger silently drops.
  */
 export type NormalizedTransaction = {
+	/** The source's own id for the line, OFX `FITID`; `null` when it has none. */
+	externalId: string | null;
 	date: IsoDate;
 	/** Booked on the account, in the account currency, signed per AD-5. */
 	amount: MinorUnits;
@@ -20,13 +22,28 @@ export type NormalizedTransaction = {
 };
 
 /**
- * Why the ledger refused a line. `BEFORE_OPENING_DATE` covers the opening day
- * too: the opening balance is that day's end-of-day balance, as in Sure.
+ * Why a line was refused. The ledger names the first three: `BEFORE_OPENING_DATE`
+ * covers the opening day too, since the opening balance is that day's
+ * end-of-day balance, as in Sure. A source names the others when a field of
+ * the line cannot be read.
  */
-export type RejectionCode = "BEFORE_OPENING_DATE" | "DATE_TOO_LATE" | "CURRENCY_MISMATCH";
+export type RejectionCode =
+	| "BEFORE_OPENING_DATE"
+	| "DATE_TOO_LATE"
+	| "CURRENCY_MISMATCH"
+	| "INVALID_DATE"
+	| "INVALID_AMOUNT"
+	| "MISSING_LABEL";
 
-/** Epic 2 adds the statement balance and the source's own rejections. */
-export type ParsedStatement = { transactions: NormalizedTransaction[] };
+/**
+ * What every source produces (AD-3). `rejected` holds the lines the source
+ * could not read, `ref` being the line's position in the source; the file
+ * stays valid. The statement balance arrives with Story 2.2.
+ */
+export type ParsedStatement = {
+	transactions: NormalizedTransaction[];
+	rejected: { ref: string; reason: RejectionCode }[];
+};
 
 /**
  * How far ahead a line may be dated. Every day up to the latest entry gets a

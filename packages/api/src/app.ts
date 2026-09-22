@@ -7,6 +7,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { importsRoutes } from "./routes/imports.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 
@@ -21,7 +22,8 @@ function createApi(deps: AppDeps) {
 	return new Hono()
 		.route("/accounts", accountsRoutes(deps))
 		.route("/transactions", transactionsRoutes(deps))
-		.route("/snapshots", snapshotsRoutes(deps));
+		.route("/snapshots", snapshotsRoutes(deps))
+		.route("/imports", importsRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApi>;

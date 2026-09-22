@@ -39,6 +39,12 @@ const dayTick = new Intl.DateTimeFormat("fr-FR", {
 	month: "short",
 	timeZone: "UTC",
 });
+const shortDate = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "short",
+	year: "numeric",
+	timeZone: "UTC",
+});
 const monthTick = new Intl.DateTimeFormat("fr-FR", {
 	month: "short",
 	year: "numeric",
@@ -53,6 +59,9 @@ export const formatTooltipDate = (iso: string) => tooltipDate.format(atMidnight(
 
 /** `21 septembre 2026`, in the data table. */
 export const formatTableDate = (iso: string) => tableDate.format(atMidnight(iso));
+
+/** `12 sept. 2026`, where a sentence names a day. */
+export const formatShortDate = (iso: string) => shortDate.format(atMidnight(iso));
 
 /**
  * An axis tick: `21 sept.` over a few months, `sept. 2025` once the series

@@ -27,6 +27,9 @@ export const transactions = sqliteTable("transactions", {
 	// Kept out of future reports (AD-9), never out of the account's balance:
 	// the money did move.
 	excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),
+	// Set when an import found two entries equally near this line and created
+	// it rather than guess; the merge action arrives with a later story.
+	possibleDuplicate: integer("possible_duplicate", { mode: "boolean" }).notNull().default(false),
 	// Written only by `origin: "user"` ledger calls; read by every later writer.
 	lockedFields: text("locked_fields", { mode: "json" })
 		.$type<LockableField[]>()

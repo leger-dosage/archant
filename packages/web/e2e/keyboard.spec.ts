@@ -357,6 +357,7 @@ test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ pa
 		"Aller aux comptesG C",
 		"Aller aux opérationsG O",
 		"Ajouter une opération sur la page d'un compteN",
+		"Importer un fichier sur la page d'un compteI",
 		"Rechercher dans les opérations/",
 		"Opération suivanteJ ou ↓",
 		"Opération précédenteK ou ↑",

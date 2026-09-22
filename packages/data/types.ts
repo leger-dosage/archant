@@ -1,6 +1,8 @@
 import type { accounts } from "./schema/accounts.ts";
 import type { balances } from "./schema/balances.ts";
 import type { entries } from "./schema/entries.ts";
+import type { entryKeys } from "./schema/entry-keys.ts";
+import type { imports } from "./schema/imports.ts";
 import type { transactions } from "./schema/transactions.ts";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
@@ -15,3 +17,9 @@ export type NewTransaction = InferInsertModel<typeof transactions>;
 
 export type Balance = InferSelectModel<typeof balances>;
 export type NewBalance = InferInsertModel<typeof balances>;
+
+export type EntryKey = InferSelectModel<typeof entryKeys>;
+export type NewEntryKey = InferInsertModel<typeof entryKeys>;
+
+export type Import = InferSelectModel<typeof imports>;
+export type NewImport = InferInsertModel<typeof imports>;

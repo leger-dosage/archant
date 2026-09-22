@@ -14,6 +14,7 @@ import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountSettings } from "@/components/AccountSettings";
 import { BalanceChart } from "@/components/BalanceChart";
+import { ImportDialog } from "@/components/ImportDialog";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
 import { ShortcutHint } from "@/components/ShortcutHint";
@@ -222,6 +223,7 @@ function AccountPage() {
 		open: false,
 		snapshot: null,
 	});
+	const [importing, setImporting] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
 	const navigate = Route.useNavigate();
@@ -244,6 +246,8 @@ function AccountPage() {
 	// A snapshot must fall after the opening date and not after today: an
 	// account opened today or later has no valid date yet.
 	const canAddSnapshot = writable !== undefined && writable.openingDate < toIsoDate();
+	// The dialog needs the account's currency, like the two forms.
+	const canImport = writable !== undefined;
 	const commands = useMemo(
 		() => [
 			...(canAddTransaction
@@ -253,6 +257,16 @@ function AccountPage() {
 							label: t("transactions.add"),
 							shortcut: "newTransaction" as const,
 							run: () => setSheet({ open: true, transaction: null }),
+						},
+					]
+				: []),
+			...(canImport
+				? [
+						{
+							id: "import-file",
+							label: t("commands.importFile"),
+							shortcut: "importFile" as const,
+							run: () => setImporting(true),
 						},
 					]
 				: []),
@@ -266,13 +280,14 @@ function AccountPage() {
 					]
 				: []),
 		],
-		[canAddSnapshot, canAddTransaction, t],
+		[canAddSnapshot, canAddTransaction, canImport, t],
 	);
 
 	usePageCommands(commands);
 	useShortcut("newTransaction", () => setSheet({ open: true, transaction: null }), {
 		enabled: canAddTransaction,
 	});
+	useShortcut("importFile", () => setImporting(true), { enabled: canImport });
 
 	if (notFound) {
 		return (
@@ -335,14 +350,26 @@ function AccountPage() {
 							className="amount-hero mt-2"
 						/>
 					</div>
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button onClick={openNew}>{t("transactions.add")}</Button>
-						</TooltipTrigger>
-						<TooltipContent side="bottom">
-							<ShortcutHint id="newTransaction" label={t("transactions.add")} />
-						</TooltipContent>
-					</Tooltip>
+					<div className="flex gap-2">
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button variant="outline" onClick={() => setImporting(true)} disabled={!canImport}>
+									{t("imports.open")}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent side="bottom">
+								<ShortcutHint id="importFile" label={t("commands.importFile")} />
+							</TooltipContent>
+						</Tooltip>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button onClick={openNew}>{t("transactions.add")}</Button>
+							</TooltipTrigger>
+							<TooltipContent side="bottom">
+								<ShortcutHint id="newTransaction" label={t("transactions.add")} />
+							</TooltipContent>
+						</Tooltip>
+					</div>
 				</div>
 			)}
 
@@ -391,6 +418,7 @@ function AccountPage() {
 						snapshot={snapshotDialog.snapshot}
 						onOpenChange={(open) => setSnapshotDialog((current) => ({ ...current, open }))}
 					/>
+					<ImportDialog account={writable} open={importing} onOpenChange={setImporting} />
 				</>
 			)}
 		</div>
