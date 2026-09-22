@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?OFX OFXHEADER="200" VERSION="211" SECURITY="NONE" OLDFILEUID="NONE" NEWFILEUID="NONE"?>
+<!-- Synthetic statement imitating the OFX 2.1.1 export of Boursorama Banque: XML, UTF-8, every tag closed, decimal points. Every name, number and amount is invented. -->
+<OFX>
+  <SIGNONMSGSRSV1>
+    <SONRS>
+      <STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS>
+      <DTSERVER>20260915093000.000[+2:CEST]</DTSERVER>
+      <LANGUAGE>FRA</LANGUAGE>
+    </SONRS>
+  </SIGNONMSGSRSV1>
+  <BANKMSGSRSV1>
+    <STMTTRNRS>
+      <TRNUID>0</TRNUID>
+      <STATUS><CODE>0</CODE><SEVERITY>INFO</SEVERITY></STATUS>
+      <STMTRS>
+        <CURDEF>EUR</CURDEF>
+        <BANKACCTFROM>
+          <BANKID>00000</BANKID>
+          <BRANCHID>00000</BRANCHID>
+          <ACCTID>00000000000</ACCTID>
+          <ACCTTYPE>CHECKING</ACCTTYPE>
+        </BANKACCTFROM>
+        <BANKTRANLIST>
+          <DTSTART>20260901000000.000[+2:CEST]</DTSTART>
+          <DTEND>20260915000000.000[+2:CEST]</DTEND>
+          <STMTTRN>
+            <TRNTYPE>POS</TRNTYPE>
+            <DTPOSTED>20260904235900.000[+2:CEST]</DTPOSTED>
+            <TRNAMT>-18.40</TRNAMT>
+            <FITID>BRS-0001</FITID>
+            <NAME>CARTE 03/09 PHARMACIE</NAME>
+            <MEMO>Pharmacie Hôtel de Ville</MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>XFER</TRNTYPE>
+            <DTPOSTED>20260906000000.000[+2:CEST]</DTPOSTED>
+            <TRNAMT>+500.00</TRNAMT>
+            <FITID>BRS-0002</FITID>
+            <NAME>VIR Épargne</NAME>
+            <MEMO></MEMO>
+          </STMTTRN>
+          <STMTTRN>
+            <TRNTYPE>DEBIT</TRNTYPE>
+            <DTPOSTED>20260912000000.000[+2:CEST]</DTPOSTED>
+            <TRNAMT>-64.99</TRNAMT>
+            <FITID>BRS-0003</FITID>
+            <NAME>PRLV Free Mobile</NAME>
+            <MEMO>Forfait &amp; options</MEMO>
+          </STMTTRN>
+        </BANKTRANLIST>
+        <LEDGERBAL>
+          <BALAMT>2408.61</BALAMT>
+          <DTASOF>20260915000000.000[+2:CEST]</DTASOF>
+        </LEDGERBAL>
+      </STMTRS>
+    </STMTTRNRS>
+  </BANKMSGSRSV1>
+</OFX>

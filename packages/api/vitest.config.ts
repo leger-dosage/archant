@@ -13,6 +13,7 @@ export default defineConfig({
 			thresholds: {
 				"src/domain/**": { branches: 100, functions: 100, lines: 100, statements: 100 },
 				"src/services/ledger.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+				"src/connectors/**": { branches: 100, functions: 100, lines: 100, statements: 100 },
 			},
 		},
 	},

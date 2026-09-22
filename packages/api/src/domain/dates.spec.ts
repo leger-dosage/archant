@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, addMonths, maxDate, minDate, today } from "./dates.ts";
+import { addDays, addMonths, daysBetween, maxDate, minDate, today } from "./dates.ts";
 
 describe("today", () => {
 	it("is the date in the given time zone, not in UTC", () => {
@@ -27,6 +27,16 @@ describe("addDays", () => {
 	it("is not shifted by a daylight-saving change", () => {
 		expect(addDays("2026-03-29", 1)).toBe("2026-03-30");
 		expect(addDays("2026-10-25", 1)).toBe("2026-10-26");
+	});
+});
+
+describe("daysBetween", () => {
+	it("counts whole days both ways, across months and a daylight-saving change", () => {
+		expect(daysBetween("2026-09-03", "2026-09-05")).toBe(2);
+		expect(daysBetween("2026-09-05", "2026-09-03")).toBe(-2);
+		expect(daysBetween("2026-02-27", "2026-03-02")).toBe(3);
+		expect(daysBetween("2026-03-28", "2026-03-30")).toBe(2);
+		expect(daysBetween("2026-09-05", "2026-09-05")).toBe(0);
 	});
 });
 

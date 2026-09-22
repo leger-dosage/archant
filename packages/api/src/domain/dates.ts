@@ -26,6 +26,11 @@ export function addDays(date: IsoDate, days: number): IsoDate {
 	return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
+/** Whole days from `from` to `to`, negative when `to` is earlier. */
+export function daysBetween(from: IsoDate, to: IsoDate): number {
+	return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+}
+
 export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
 	return a > b ? a : b;
 }

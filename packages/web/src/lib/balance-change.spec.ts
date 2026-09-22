@@ -4,6 +4,7 @@ import { toMinorUnits } from "@archant/data/money";
 
 import {
 	formatSignedMoney,
+	formatShortDate,
 	formatSignedPercent,
 	formatTableDate,
 	formatTick,
@@ -33,6 +34,10 @@ describe("dates", () => {
 	it("formats the tooltip and the table in French, on the stored day", () => {
 		expect(formatTooltipDate("2026-09-21")).toBe("lundi 21 septembre 2026");
 		expect(formatTableDate("2026-09-01")).toBe("1 septembre 2026");
+	});
+
+	it("abbreviates the month where a sentence names a day", () => {
+		expect(formatShortDate("2026-09-12")).toBe("12 sept. 2026");
 	});
 
 	it("shows the day on a short range and the year on a long one", () => {

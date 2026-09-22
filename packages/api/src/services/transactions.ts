@@ -1,3 +1,4 @@
+import type { IsoDate } from "../domain/dates.ts";
 import type { RejectionCode } from "../domain/statement.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type {
@@ -11,7 +12,9 @@ import type { TransactionFilter, TransactionListRecord, TransactionRecord } from
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import type { FileSourceId } from "@archant/data/schema/imports";
 
+import { today } from "../domain/dates.ts";
 import { amountBoundsFor } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
@@ -21,10 +24,14 @@ import * as ledger from "./ledger.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /**
- * Where a transaction came from, shown in its sheet. Every transaction is
- * manual until imports (Epic 2) and bank sync (Epic 10) arrive.
+ * Where a transaction came from, shown in its sheet: typed by hand, or
+ * brought by a file, with the day it was imported. Derived from the entry's
+ * keys, so a manual entry an import paired with shows that import. Bank sync
+ * joins with Epic 10.
  */
-export type TransactionSource = "manual";
+export type TransactionSource =
+	| { kind: "manual" }
+	| { kind: "import"; format: FileSourceId; date: IsoDate };
 
 export type TransactionItem = TransactionRecord & { source: TransactionSource };
 
@@ -46,23 +53,50 @@ export type FilteredTransactionPage = TransactionPage & {
 	sum: { amount: MinorUnits; currency: CurrencyCode; skippedCount: number };
 };
 
-const withSource = <Record extends TransactionRecord>(
-	record: Record,
-): Record & { source: TransactionSource } => ({ ...record, source: "manual" });
+/** Each record with its source, in one query for the whole page. */
+async function withSources<Row extends TransactionRecord>(
+	deps: ServiceDeps,
+	records: readonly Row[],
+): Promise<(Row & { source: TransactionSource })[]> {
+	const origins = await ledger.importOrigins(
+		deps,
+		records.map((record) => record.id),
+	);
+
+	return records.map((record) => {
+		const origin = origins.get(record.id);
+
+		return {
+			...record,
+			source:
+				origin === undefined
+					? { kind: "manual" }
+					: {
+							kind: "import",
+							format: origin.source,
+							// Keys exist only once their import is confirmed.
+							date: today(deps.timeZone, new Date(origin.confirmedAt ?? 0)),
+						},
+		};
+	});
+}
 
 // The ledger names why it refused a line; the form shows it under the date.
-const REJECTION_FIELDS: Record<Exclude<RejectionCode, "CURRENCY_MISMATCH">, FieldError> = {
+const REJECTION_FIELDS: Partial<Record<RejectionCode, FieldError>> = {
 	BEFORE_OPENING_DATE: { path: "date", code: "not_after_opening_date" },
 	DATE_TOO_LATE: { path: "date", code: "date_too_late" },
 };
 
 function rejectionError(reason: RejectionCode): AppError {
-	if (reason === "CURRENCY_MISMATCH") {
-		// The service always writes in the account's currency; reaching this is a bug.
+	const field = REJECTION_FIELDS[reason];
+
+	if (field === undefined) {
+		// The service always writes in the account's currency, from a parsed
+		// form; any other reason is a bug.
 		return new AppError("INTERNAL_ERROR", "Something went wrong.");
 	}
 
-	return new AppError("VALIDATION_ERROR", "The request is invalid.", [REJECTION_FIELDS[reason]]);
+	return new AppError("VALIDATION_ERROR", "The request is invalid.", [field]);
 }
 
 async function currencyOf(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
@@ -82,7 +116,13 @@ async function found(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
 	}
 
-	return withSource(record);
+	const [item] = await withSources(deps, [record]);
+
+	if (item === undefined) {
+		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+	}
+
+	return item;
 }
 
 /** A page of one account's transactions, most recent first. */
@@ -94,7 +134,12 @@ export async function listAccountTransactions(
 	await getAccount(deps, accountId);
 	const { items, total } = await ledger.listTransactions(deps, { accountIds: [accountId] }, page);
 
-	return { items: items.map(withSource), page: page.page, pageSize: page.pageSize, total };
+	return {
+		items: await withSources(deps, items),
+		page: page.page,
+		pageSize: page.pageSize,
+		total,
+	};
 }
 
 /**
@@ -143,7 +188,7 @@ export async function listAllTransactions(
 	const counted = sums.find((row) => row.currency === currency);
 
 	return {
-		items: items.map(withSource),
+		items: await withSources(deps, items),
 		...page,
 		total,
 		sum: {
@@ -172,7 +217,7 @@ export async function createTransaction(
 	const result = await ledger.ingest(
 		deps,
 		accountId,
-		{ transactions: [{ ...parsed.data, currency }] },
+		{ transactions: [{ ...parsed.data, externalId: null, currency }], rejected: [] },
 		{ manual: true },
 		{ origin: "user" },
 	);

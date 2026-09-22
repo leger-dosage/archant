@@ -34,6 +34,7 @@ import {
 } from "@/hooks/useTransactions";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
+import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
@@ -373,7 +374,12 @@ export function TransactionSheet({
 						{t(transaction === null ? "transactions.form.addTitle" : "transactions.form.editTitle")}
 					</SheetTitle>
 					<SheetDescription>
-						{t(`transactions.sources.${transaction?.source ?? "manual"}`)}
+						{transaction?.source.kind === "import"
+							? t("transactions.sources.import", {
+									format: transaction.source.format.toUpperCase(),
+									date: formatShortDate(transaction.source.date),
+								})
+							: t("transactions.sources.manual")}
 					</SheetDescription>
 				</SheetHeader>
 				<TransactionForm

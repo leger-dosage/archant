@@ -1,4 +1,4 @@
-import type { NormalizedTransaction } from "../domain/statement.ts";
+import type { NormalizedTransaction, ParsedStatement } from "../domain/statement.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput, Origin } from "./ledger.ts";
 
@@ -9,9 +9,12 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
+import { entryKeys } from "@archant/data/schema/entry-keys";
+import { imports } from "@archant/data/schema/imports";
 import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../domain/balances/forward.ts";
+import { addDays } from "../domain/dates.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	balanceOn,
@@ -22,6 +25,7 @@ import {
 	deleteTransaction,
 	findSnapshot,
 	findTransaction,
+	importOrigins,
 	ingest,
 	listSnapshots,
 	listTransactions,
@@ -186,6 +190,7 @@ describe("balanceOn", () => {
 });
 
 const line = (overrides: Partial<NormalizedTransaction> = {}): NormalizedTransaction => ({
+	externalId: null,
 	date: "2026-09-10",
 	amount: toMinorUnits(-4290),
 	currency: "EUR",
@@ -208,7 +213,7 @@ async function add(
 	const result = await ingest(
 		deps(),
 		accountId,
-		{ transactions: [line(overrides)] },
+		{ transactions: [line(overrides)], rejected: [] },
 		{ manual: true },
 		{ origin },
 	);
@@ -312,12 +317,13 @@ describe("ingest", () => {
 					line({ date: "2027-09-23" }),
 					line({ currency: "USD" }),
 				],
+				rejected: [],
 			},
 			{ manual: true },
 			{ origin: "user" },
 		);
 
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			created: [],
 			rejected: [
 				{ ref: "0", reason: "BEFORE_OPENING_DATE" },
@@ -341,7 +347,7 @@ describe("ingest", () => {
 		const result = await ingest(
 			deps(),
 			account.id,
-			{ transactions: [line({ date: "2026-09-01" }), line({ date: "2026-09-15" })] },
+			{ transactions: [line({ date: "2026-09-01" }), line({ date: "2026-09-15" })], rejected: [] },
 			{ manual: true },
 			{ origin: "user" },
 		);
@@ -366,6 +372,7 @@ describe("ingest", () => {
 					line({ date: "2026-09-10", amount: toMinorUnits(-4290) }),
 					line({ date: "2026-09-10", amount: toMinorUnits(10000) }),
 				],
+				rejected: [],
 			},
 			{ manual: true },
 			{ origin: "user" },
@@ -406,7 +413,13 @@ describe("ingest", () => {
 		setToday("2026-09-21T10:00:00Z");
 
 		await expect(
-			ingest(deps(), "nope", { transactions: [line()] }, { manual: true }, { origin: "user" }),
+			ingest(
+				deps(),
+				"nope",
+				{ transactions: [line()], rejected: [] },
+				{ manual: true },
+				{ origin: "user" },
+			),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 
@@ -417,7 +430,13 @@ describe("ingest", () => {
 		vi.spyOn(forward, "forwardBalances").mockReturnValue([row, row]);
 
 		await expect(
-			ingest(deps(), account.id, { transactions: [line()] }, { manual: true }, { origin: "user" }),
+			ingest(
+				deps(),
+				account.id,
+				{ transactions: [line()], rejected: [] },
+				{ manual: true },
+				{ origin: "user" },
+			),
 		).rejects.toThrow();
 
 		const stored = await temp.db
@@ -426,6 +445,544 @@ describe("ingest", () => {
 			.where(and(eq(entries.accountId, account.id), eq(entries.kind, "transaction")));
 		expect(stored).toEqual([]);
 		await expect(history(account.id)).resolves.toEqual(before);
+	});
+});
+
+// Story 2.1: the keyed path of `ingest`, as an import drives it.
+
+/** A previewed import row, as `services/imports.ts` stores it before the first preview. */
+async function previewRow(accountId: string, db = temp.db): Promise<string> {
+	const id = crypto.randomUUID();
+
+	await db.insert(imports).values({
+		id,
+		accountId,
+		source: "ofx",
+		fileName: "releve.ofx",
+		status: "previewed",
+		content: Buffer.from("OFXHEADER:100"),
+		options: {},
+		createdAt: Date.now(),
+	});
+
+	return id;
+}
+
+const statementOf = (...lines: NormalizedTransaction[]): ParsedStatement => ({
+	transactions: lines,
+	rejected: [],
+});
+
+type ImportOptions = { moveOpeningDate?: string; db?: TempDatabase["db"] };
+
+/** Previews a statement, stores the digest as the service does, and returns the preview. */
+async function preview(
+	accountId: string,
+	statement: ParsedStatement,
+	options: ImportOptions & { importId?: string } = {},
+) {
+	const db = options.db ?? temp.db;
+	const importId = options.importId ?? (await previewRow(accountId, db));
+	const result = await ingest(
+		{ db, timeZone: "Europe/Paris" },
+		accountId,
+		statement,
+		{ importId },
+		{ origin: "sync", dryRun: true, moveOpeningDate: options.moveOpeningDate },
+	);
+
+	await db.update(imports).set({ previewDigest: result.digest }).where(eq(imports.id, importId));
+
+	return { importId, result };
+}
+
+async function confirm(
+	accountId: string,
+	importId: string,
+	statement: ParsedStatement,
+	options: ImportOptions = {},
+) {
+	return ingest(
+		{ db: options.db ?? temp.db, timeZone: "Europe/Paris" },
+		accountId,
+		statement,
+		{ importId },
+		{ origin: "sync", moveOpeningDate: options.moveOpeningDate },
+	);
+}
+
+/** Previews then confirms, as the interface does when nothing changed in between. */
+async function importStatement(
+	accountId: string,
+	statement: ParsedStatement,
+	options: ImportOptions = {},
+) {
+	const { importId } = await preview(accountId, statement, options);
+
+	return { importId, result: await confirm(accountId, importId, statement, options) };
+}
+
+async function keysOf(entryId: string) {
+	const rows = await temp.db
+		.select({ key: entryKeys.key, importId: entryKeys.importId })
+		.from(entryKeys)
+		.where(eq(entryKeys.entryId, entryId));
+
+	return rows.map((row) => row.key).toSorted();
+}
+
+async function transactionCount(accountId: string) {
+	const rows = await temp.db
+		.select({ id: entries.id })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.kind, "transaction")));
+
+	return rows.length;
+}
+
+const counts = (result: Awaited<ReturnType<typeof ingest>>) => ({
+	created: result.groups.created.length,
+	present: result.groups.present.length,
+	matched: result.groups.matched.length,
+	duplicates: result.groups.duplicates.length,
+	rejected: result.groups.rejected.length,
+});
+
+const cafe = line({
+	externalId: "F1",
+	date: "2026-09-10",
+	amount: toMinorUnits(-4290),
+	label: "CB Café",
+});
+const salary = line({
+	externalId: "F2",
+	date: "2026-09-12",
+	amount: toMinorUnits(215000),
+	label: "VIR SALAIRE",
+});
+
+describe("ingest from an import", () => {
+	it("previews the groups without writing anything", async () => {
+		const account = await openChecking();
+		const before = await history(account.id);
+
+		const { result } = await preview(account.id, statementOf(cafe, salary));
+
+		expect(result.groups.created).toEqual([
+			{ ref: "0", date: "2026-09-10", amount: -4290, label: "CB Café", entryId: null },
+			{ ref: "1", date: "2026-09-12", amount: 215000, label: "VIR SALAIRE", entryId: null },
+		]);
+		expect(counts(result)).toEqual({
+			created: 2,
+			present: 0,
+			matched: 0,
+			duplicates: 0,
+			rejected: 0,
+		});
+		expect(result.created).toEqual([]);
+		expect(result.digest).toMatch(/^[0-9a-f]{64}$/u);
+		expect(result.openingSuggestion).toBeNull();
+		expect(result.opening).toBeNull();
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("confirms: writes the lines with their keys, marks the import and moves the balance", async () => {
+		const account = await openChecking();
+
+		const { importId, result } = await importStatement(account.id, statementOf(cafe, salary));
+
+		expect(result.created).toHaveLength(2);
+		const [cafeId = "", salaryId = ""] = result.created;
+		await expect(findTransaction(deps(), cafeId)).resolves.toMatchObject({
+			date: "2026-09-10",
+			amount: -4290,
+			label: "CB Café",
+		});
+		await expect(keysOf(cafeId)).resolves.toEqual([
+			expect.stringMatching(/^ext:F1$/u),
+			expect.stringMatching(/^fp:[0-9a-f]{64}$/u),
+		]);
+		await expect(keysOf(salaryId)).resolves.toHaveLength(2);
+		await expect(lockedFields(cafeId)).resolves.toEqual([]);
+		const stored = await temp.db.select().from(imports).where(eq(imports.id, importId)).get();
+		expect(stored).toMatchObject({
+			status: "confirmed",
+			counts: { created: 2, present: 0, matched: 0, duplicates: 0, rejected: 0 },
+		});
+		expect(typeof stored?.confirmedAt).toBe("number");
+		expect(stored?.content).toHaveLength(0);
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 123456 - 4290 + 215000,
+		});
+	});
+
+	it("gives two previews that differ only in the opening they would write different digests", async () => {
+		const account = await openChecking();
+
+		const kept = await preview(account.id, statementOf(cafe));
+		const moved = await preview(account.id, statementOf(cafe), { moveOpeningDate: "2026-08-20" });
+
+		expect(moved.result.groups).toEqual(kept.result.groups);
+		expect(moved.result.opening).toEqual({ date: "2026-08-20", balance: 123456 });
+		expect(moved.result.digest).not.toBe(kept.result.digest);
+	});
+
+	it("recognises every line of the same file on re-import", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, statementOf(cafe, salary));
+
+		const { importId, result } = await preview(account.id, statementOf(cafe, salary));
+
+		expect(counts(result)).toMatchObject({ created: 0, present: 2 });
+		expect(result.groups.present.map((item) => item.entryId)).toEqual([
+			expect.any(String),
+			expect.any(String),
+		]);
+		await confirm(account.id, importId, statementOf(cafe, salary));
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("recognises a bank re-export with new FITIDs through the fingerprint", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, statementOf(cafe));
+
+		const { result } = await preview(
+			account.id,
+			statementOf({ ...cafe, externalId: "NEW", label: "CB CAFE" }),
+		);
+
+		expect(counts(result)).toMatchObject({ created: 0, present: 1 });
+	});
+
+	it("recognises a line by its FITID when the bank changed its label", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, statementOf(cafe));
+
+		const { result } = await preview(
+			account.id,
+			statementOf({ ...cafe, label: "CARTE CAFE GARE" }),
+		);
+
+		expect(counts(result)).toMatchObject({ created: 0, present: 1 });
+	});
+
+	it("creates two identical lines of one day, and recognises both on re-import", async () => {
+		const account = await openChecking();
+		const bread = line({ date: "2026-09-10", amount: toMinorUnits(-350), label: "CB BOULANGERIE" });
+
+		const first = await importStatement(account.id, statementOf(bread, bread));
+		const again = await preview(account.id, statementOf(bread, bread));
+
+		expect(first.result.created).toHaveLength(2);
+		expect(counts(again.result)).toMatchObject({ created: 0, present: 2 });
+	});
+
+	it("still recognises an imported line after its label and amount were edited", async () => {
+		const account = await openChecking();
+		const { result } = await importStatement(account.id, statementOf(cafe));
+		const [id = ""] = result.created;
+		await updateTransaction(
+			deps(),
+			id,
+			{ label: "Café du matin", amount: toMinorUnits(-5000) },
+			{ origin: "user" },
+		);
+
+		const again = await preview(account.id, statementOf(cafe));
+
+		expect(counts(again.result)).toMatchObject({ created: 0, present: 1 });
+	});
+
+	it("pairs a manual twin two days away, attaches the keys and changes nothing else", async () => {
+		const account = await openChecking();
+		const manual = await add(account.id, {
+			date: "2026-09-03",
+			amount: toMinorUnits(-4290),
+			label: "Café",
+		});
+		const before = await history(account.id);
+		const fileLine = line({
+			externalId: "F9",
+			date: "2026-09-05",
+			amount: toMinorUnits(-4290),
+			label: "CB CAFE GARE",
+		});
+
+		const { result } = await importStatement(account.id, statementOf(fileLine));
+
+		expect(result.groups.matched).toEqual([expect.objectContaining({ ref: "0", entryId: manual })]);
+		expect(result.created).toEqual([]);
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+		await expect(findTransaction(deps(), manual)).resolves.toMatchObject({
+			date: "2026-09-03",
+			label: "Café",
+			amount: -4290,
+		});
+		await expect(lockedFields(manual)).resolves.toEqual(["date", "amount", "label"]);
+		await expect(keysOf(manual)).resolves.toHaveLength(2);
+		await expect(history(account.id)).resolves.toEqual(before);
+		// Recognised next time, as the confirm label promised.
+		expect(counts((await preview(account.id, statementOf(fileLine))).result)).toMatchObject({
+			present: 1,
+		});
+	});
+
+	it("creates a line with two equally near candidates and flags it a possible duplicate", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-09-04", amount: toMinorUnits(-1000) });
+		await add(account.id, { date: "2026-09-06", amount: toMinorUnits(-1000) });
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-09-05", amount: toMinorUnits(-1000), label: "Péage" })),
+		);
+
+		expect(counts(result)).toMatchObject({ created: 0, duplicates: 1, matched: 0 });
+		const [id = ""] = result.created;
+		const row = await temp.db.select().from(transactions).where(eq(transactions.entryId, id)).get();
+		expect(row?.possibleDuplicate).toBe(true);
+		await expect(transactionCount(account.id)).resolves.toBe(3);
+	});
+
+	it("never pairs with an entry this source already keyed, nor one 4 days away", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, statementOf(cafe));
+		const manual = await add(account.id, { date: "2026-09-16", amount: toMinorUnits(-4290) });
+		await add(account.id, { date: "2026-09-19", amount: toMinorUnits(-777) });
+
+		const { result } = await preview(
+			account.id,
+			statementOf(
+				line({ date: "2026-09-11", amount: toMinorUnits(-4290), label: "Autre café" }),
+				line({ date: "2026-09-19", amount: toMinorUnits(-4290), label: "Encore un café" }),
+				line({ date: "2026-09-15", amount: toMinorUnits(-777), label: "Parking" }),
+			),
+		);
+
+		expect(counts(result)).toMatchObject({ created: 2, matched: 1 });
+		expect(result.groups.created.map((item) => item.ref)).toEqual(["0", "2"]);
+		expect(result.groups.matched).toEqual([expect.objectContaining({ ref: "1", entryId: manual })]);
+	});
+
+	it("writes a FITID shared by two lines of one file once, on the first", async () => {
+		const account = await openChecking();
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(cafe, { ...cafe, label: "CB Café bis" }),
+		);
+
+		const [first = "", second = ""] = result.created;
+		await expect(keysOf(first)).resolves.toEqual(["ext:F1", expect.stringMatching(/^fp:/u)]);
+		await expect(keysOf(second)).resolves.toEqual([expect.stringMatching(/^fp:/u)]);
+	});
+
+	it("reports the source's unreadable lines with the ledger's refusals", async () => {
+		const account = await openChecking();
+
+		const { result } = await importStatement(account.id, {
+			transactions: [line({ date: "2026-09-01" }), cafe],
+			rejected: [{ ref: "3", reason: "INVALID_AMOUNT" }],
+		});
+
+		expect(result.groups.rejected).toEqual([
+			{ ref: "3", reason: "INVALID_AMOUNT", line: null },
+			{
+				ref: "0",
+				reason: "BEFORE_OPENING_DATE",
+				line: { date: "2026-09-01", amount: -4290, label: "Boulangerie" },
+			},
+		]);
+		expect(result.rejected).toEqual([
+			{ ref: "3", reason: "INVALID_AMOUNT" },
+			{ ref: "0", reason: "BEFORE_OPENING_DATE" },
+		]);
+		expect(result.openingSuggestion).toBe("2026-08-31");
+	});
+
+	it("refuses a confirm when the account changed since the preview, writing nothing", async () => {
+		const account = await openChecking();
+		const { importId } = await preview(account.id, statementOf(cafe, salary));
+		await add(account.id, { date: "2026-09-11", amount: toMinorUnits(-4290), label: "Café" });
+		const before = await history(account.id);
+
+		await expect(confirm(account.id, importId, statementOf(cafe, salary))).rejects.toMatchObject({
+			code: "IMPORT_PREVIEW_STALE",
+		});
+
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+		await expect(history(account.id)).resolves.toEqual(before);
+		const stored = await temp.db.select().from(imports).where(eq(imports.id, importId)).get();
+		expect(stored?.status).toBe("previewed");
+		await expect(
+			temp.db.select().from(entryKeys).where(eq(entryKeys.importId, importId)),
+		).resolves.toEqual([]);
+	});
+
+	it("answers NOT_FOUND for an import already confirmed, unknown, or of another account", async () => {
+		const account = await openChecking();
+		const other = await openChecking();
+		const { importId } = await importStatement(account.id, statementOf(cafe));
+		const pending = await previewRow(other.id);
+
+		await expect(confirm(account.id, importId, statementOf(cafe))).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(confirm(account.id, "nope", statementOf(cafe))).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(confirm(account.id, pending, statementOf(cafe))).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+
+	it("ignores an opening date that is not earlier than the account's", async () => {
+		const account = await openChecking();
+
+		const { result } = await preview(account.id, statementOf(cafe), {
+			moveOpeningDate: "2026-09-05",
+		});
+
+		expect(result.opening).toBeNull();
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
+	});
+
+	it("moves an asset's opening back, keeping the old opening day's balance and today's", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-1000) });
+		const today = await balanceOn(deps(), account.id, "2026-09-21");
+		const lines = statementOf(
+			line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
+			line({ date: "2026-09-01", amount: toMinorUnits(5000), label: "Remboursement" }),
+			line({ date: "2026-09-15", amount: toMinorUnits(-300), label: "Pain" }),
+		);
+		const first = await preview(account.id, lines);
+
+		expect(first.result.openingSuggestion).toBe("2026-08-19");
+		expect(counts(first.result)).toMatchObject({ created: 1, rejected: 2 });
+
+		const moved = await importStatement(account.id, lines, { moveOpeningDate: "2026-08-19" });
+
+		expect(counts(moved.result)).toMatchObject({ created: 3, rejected: 0 });
+		// 1 234,56 − (−20,00 + 50,00): the old opening day still ends at 1 234,56.
+		expect(moved.result.opening).toEqual({ date: "2026-08-19", balance: 123456 - 3000 });
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-08-19");
+		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toMatchObject({
+			amount: 120456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
+			amount: 118456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: (today?.amount ?? 0) - 300,
+		});
+	});
+
+	it("moves a credit card's opening back, keeping the amount owed on the old opening day", async () => {
+		const card = await openChecking({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: toMinorUnits(50000),
+		});
+		const lines = statementOf(
+			line({ date: "2026-08-25", amount: toMinorUnits(-3000), label: "Achat" }),
+		);
+
+		const { result } = await importStatement(card.id, lines, { moveOpeningDate: "2026-08-24" });
+
+		// 500,00 owed − 30,00 bought after the new opening: 470,00 owed then.
+		expect(result.opening).toEqual({ date: "2026-08-24", balance: 47000 });
+		await expect(balanceOn(deps(), card.id, "2026-08-25")).resolves.toMatchObject({
+			amount: 50000,
+		});
+		await expect(balanceOn(deps(), card.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 50000,
+		});
+	});
+
+	it("imports 5,000 lines in chunks, then recognises all of them", async () => {
+		const big = await createTempDatabase();
+
+		try {
+			setToday("2026-09-21T10:00:00Z");
+			const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
+			const account = await createAccount(
+				bigDeps,
+				{ ...checking, openingDate: "2016-01-01" },
+				{ origin: "user" },
+			);
+			const lines = statementOf(
+				...Array.from({ length: 5000 }, (_, index) =>
+					line({
+						externalId: `F${index}`,
+						date: addDays("2016-01-02", index % 3800),
+						amount: toMinorUnits(-(index + 1)),
+						label: `Opération ${index}`,
+					}),
+				),
+			);
+			const started = performance.now();
+
+			const { result } = await importStatement(account.id, lines, { db: big.db });
+
+			expect(performance.now() - started).toBeLessThan(10_000);
+			expect(result.created).toHaveLength(5000);
+			const again = await preview(account.id, lines, { db: big.db });
+			expect(counts(again.result)).toMatchObject({ created: 0, present: 5000 });
+		} finally {
+			await big.dispose();
+		}
+	}, 60_000);
+});
+
+describe("importOrigins", () => {
+	it("names the import behind each imported entry and leaves manual ones out", async () => {
+		const account = await openChecking();
+		const manual = await add(account.id);
+		const { result } = await importStatement(account.id, statementOf(salary));
+		const [imported = ""] = result.created;
+
+		const origins = await importOrigins(deps(), [manual, imported]);
+
+		expect([...origins.keys()]).toEqual([imported]);
+		expect(origins.get(imported)?.source).toBe("ofx");
+		expect(typeof origins.get(imported)?.confirmedAt).toBe("number");
+		await expect(importOrigins(deps(), [])).resolves.toEqual(new Map());
+	});
+});
+
+describe("deleting imported transactions", () => {
+	it("deletes a transaction's keys with it, so re-importing brings it back", async () => {
+		const account = await openChecking();
+		const { result } = await importStatement(account.id, statementOf(cafe));
+		const [id = ""] = result.created;
+
+		await deleteTransaction(deps(), id, { origin: "user" });
+
+		await expect(keysOf(id)).resolves.toEqual([]);
+		expect(counts((await preview(account.id, statementOf(cafe))).result)).toMatchObject({
+			created: 1,
+		});
+	});
+
+	it("deletes an account with its keys and imports", async () => {
+		const account = await openChecking();
+		await importStatement(account.id, statementOf(cafe));
+		await previewRow(account.id);
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(
+			temp.db.select().from(imports).where(eq(imports.accountId, account.id)),
+		).resolves.toEqual([]);
+		await expect(
+			temp.db.select().from(entryKeys).where(eq(entryKeys.accountId, account.id)),
+		).resolves.toEqual([]);
 	});
 });
 

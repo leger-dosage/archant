@@ -7,6 +7,10 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 export const ERROR_STATUSES = {
 	NOT_FOUND: 404,
 	VALIDATION_ERROR: 400,
+	/** A file no source can read, or larger than 5 MB. Nothing is written. */
+	INVALID_IMPORT_FILE: 400,
+	/** The account changed between an import's preview and its confirmation. */
+	IMPORT_PREVIEW_STALE: 409,
 	INTERNAL_ERROR: 500,
 } as const satisfies Record<string, ContentfulStatusCode>;
 

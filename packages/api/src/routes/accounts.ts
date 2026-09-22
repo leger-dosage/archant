@@ -1,11 +1,14 @@
-import type { ServiceDeps } from "../services/deps.ts";
+import type { ImportDeps } from "../services/imports.ts";
 
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 
+import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createAccountSchema, updateAccountSchema } from "../schemas/accounts.ts";
 import { balanceQuerySchema } from "../schemas/balances.ts";
+import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts";
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
 import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
 import {
@@ -16,10 +19,11 @@ import {
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
+import { createImport } from "../services/imports.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 
-export function accountsRoutes(deps: ServiceDeps) {
+export function accountsRoutes(deps: ImportDeps) {
 	return new Hono()
 		.get("/", async (c) => c.json({ data: await listAccounts(deps) }, 200))
 		.post(
@@ -110,5 +114,29 @@ export function accountsRoutes(deps: ServiceDeps) {
 			}),
 			async (c) =>
 				c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.post(
+			"/:id/imports",
+			// Refused before the body is read, so a 50 MB upload costs nothing.
+			bodyLimit({
+				maxSize: MAX_IMPORT_BODY_BYTES,
+				onError: () => {
+					throw new AppError("INVALID_IMPORT_FILE", "The file is larger than 5 MB.");
+				},
+			}),
+			zValidator("form", importUploadSchema, (result) => {
+				if (!result.success) {
+					throw validationError(result.error);
+				}
+			}),
+			async (c) => {
+				const { file } = c.req.valid("form");
+				const bytes = new Uint8Array(await file.arrayBuffer());
+
+				return c.json(
+					{ data: await createImport(deps, c.req.param("id"), { name: file.name, bytes }) },
+					201,
+				);
+			},
 		);
 }

@@ -69,6 +69,15 @@
 							{
 								"name": "@archant/data/schema/transactions",
 								"message": "Only services/ledger.ts writes transactions (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/entry-keys",
+								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
+							},
+							{
+								"name": "@archant/data/schema/imports",
+								"message": "Only services/ledger.ts confirms imports (AD-2, AD-4).",
+								"allowTypeImports": true
 							}
 						]
 					}
@@ -102,6 +111,16 @@
 								"name": "@archant/data/schema/transactions",
 								"message": "The domain may import transaction types only (AD-2).",
 								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/entry-keys",
+								"message": "The domain may import entry key types only (AD-2).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/imports",
+								"message": "The domain may import import types only (AD-2).",
+								"allowTypeImports": true
 							}
 						],
 						"patterns": [
@@ -109,6 +128,95 @@
 							{
 								"group": ["**/services/**"],
 								"message": "The domain may not call services (AD-1)."
+							},
+							{
+								"group": ["**/connectors/**"],
+								"message": "The domain may not call connectors (AD-1)."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			// A connector turns bytes or a provider response into a statement. It
+			// never touches the database, so a parser runs in a test without one.
+			"files": ["packages/api/src/connectors/**"],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "drizzle-orm",
+								"message": "Connectors never touch the database (AD-1, AD-3)."
+							},
+							// Repeated from the first override, which this one replaces.
+							{
+								"name": "@archant/data/schema/entries",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/balances",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/transactions",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/entry-keys",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/imports",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							}
+						],
+						"patterns": [
+							{
+								"group": ["drizzle-orm/*"],
+								"message": "Connectors never touch the database (AD-1, AD-3)."
+							},
+							{
+								"group": ["**/services/**"],
+								"message": "Connectors may not call services (AD-1)."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			// Uploading stores a previewed import and the start purges stale ones;
+			// confirming it stays the ledger's, in the same transaction as the
+			// entries (AD-4). The other ledger tables stay out of reach.
+			"files": ["packages/api/src/services/imports.ts"],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@archant/data/schema/entries",
+								"message": "Only services/ledger.ts writes entries (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/balances",
+								"message": "Only services/ledger.ts writes balances; read them through balanceOn (AD-2, AD-8)."
+							},
+							{
+								"name": "@archant/data/schema/transactions",
+								"message": "Only services/ledger.ts writes transactions (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/entry-keys",
+								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
 							}
 						]
 					}

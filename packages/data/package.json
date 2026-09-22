@@ -11,6 +11,8 @@
 		"./schema/accounts": "./schema/accounts.ts",
 		"./schema/balances": "./schema/balances.ts",
 		"./schema/entries": "./schema/entries.ts",
+		"./schema/entry-keys": "./schema/entry-keys.ts",
+		"./schema/imports": "./schema/imports.ts",
 		"./schema/transactions": "./schema/transactions.ts",
 		"./types": "./types.ts"
 	},
