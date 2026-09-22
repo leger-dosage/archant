@@ -386,6 +386,11 @@ test("the header buttons open the palette and the shortcuts, showing their keys"
 	await expect(palette(page)).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(palette(page)).toBeHidden();
+	// Focus comes back to the button once the palette's exit animation ends,
+	// and opens its tooltip; on a slow CI runner that happened after the next
+	// hover began, leaving the tooltip up. Wait for it, then close it with Esc.
+	await expect(search).toBeFocused();
+	await page.keyboard.press("Escape");
 
 	const toggle = page.getByRole("button", { name: "Réduire ou déplier la barre latérale" }).first();
 	await expect(await hoverTooltip(page, toggle)).toHaveText(
