@@ -2,13 +2,16 @@ import type { ImportGroupsData, ImportPreviewData } from "@/hooks/useImports";
 import type { ImportGroup } from "@/lib/import-preview";
 import type { DragEvent } from "react";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { isCsvColumnsValid } from "@archant/api/schemas/imports";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
+import type { CsvMapping } from "@archant/data/schema/imports";
 
+import { CsvColumns } from "@/components/CsvColumns";
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +45,7 @@ import {
 	importedCount,
 	isBalanceOnly,
 	isNothingNew,
+	sameMapping,
 } from "@/lib/import-preview";
 import { cn } from "@/lib/utils";
 
@@ -49,16 +53,23 @@ import { cn } from "@/lib/utils";
 // (EXPERIENCE.md): the dialog says so instead.
 const DESKTOP_QUERY = "(min-width: 768px)";
 
+// Long enough that picking three roles in a row sends one preview, short
+// enough that the counts follow the choices.
+const LIVE_PREVIEW_DELAY_MS = 300;
+
 export type ImportAccount = { id: string; currency: CurrencyCode; openingDate: string };
 
 type LineGroup = Exclude<ImportGroup, "rejected">;
 
-function Steps({ current }: { current: "file" | "preview" }) {
+type Step = "file" | "columns" | "preview";
+
+function Steps({ current, csv }: { current: Step; csv: boolean }) {
 	const { t } = useTranslation();
+	const steps: readonly Step[] = csv ? ["file", "columns", "preview"] : ["file", "preview"];
 
 	return (
 		<ol aria-label={t("imports.steps.label")} className="flex gap-4 text-sm">
-			{(["file", "preview"] as const).map((step, index) => (
+			{steps.map((step, index) => (
 				<li
 					key={step}
 					aria-current={step === current ? "step" : undefined}
@@ -115,9 +126,12 @@ function LinesTable({ lines, currency }: { lines: ImportGroupsData[LineGroup]; c
 function RejectedTable({
 	lines,
 	currency,
+	csv,
 }: {
 	lines: ImportGroupsData["rejected"];
 	currency: string;
+	/** A CSV `ref` is a line of the file; an OFX one, a transaction's rank. */
+	csv: boolean;
 }) {
 	const { t } = useTranslation();
 
@@ -141,7 +155,7 @@ function RejectedTable({
 					<TableRow key={`${item.line === null ? "source" : "ledger"}-${item.ref}`}>
 						<TableCell className="max-w-[28ch] truncate">
 							{item.line === null
-								? t("imports.fileLine", { number: Number(item.ref) + 1 })
+								? t(csv ? "imports.csvLine" : "imports.fileLine", { number: Number(item.ref) + 1 })
 								: `${formatShortDate(item.line.date)} · ${item.line.label}`}
 						</TableCell>
 						<TableCell className="text-right">
@@ -266,7 +280,11 @@ function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening 
 								{t("imports.moveOpening", { date: formatTableDate(preview.openingSuggestion) })}
 							</Button>
 						)}
-						<RejectedTable lines={preview.groups.rejected} currency={currency} />
+						<RejectedTable
+							lines={preview.groups.rejected}
+							currency={currency}
+							csv={preview.source === "csv"}
+						/>
 					</TabsContent>
 				</div>
 			</Tabs>
@@ -276,23 +294,88 @@ function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening 
 
 type ImportFlowProps = { account: ImportAccount; onClose: () => void };
 
+/** The mapping a CSV preview was read with, or the one the Colonnes step starts from. */
+function mappingOf(csv: NonNullable<ImportPreviewData["csv"]>): CsvMapping {
+	return csv.mapping ?? csv.prefill;
+}
+
 function ImportFlow({ account, onClose }: ImportFlowProps) {
 	const { t } = useTranslation();
 	const upload = useUploadImport(account.id);
 	const previewAgain = usePreviewImport();
+	const livePreview = usePreviewImport();
 	const confirm = useConfirmImport(account.id);
 	const [preview, setPreview] = useState<ImportPreviewData | null>(null);
+	const [step, setStep] = useState<Step>("file");
+	// The mapping the Colonnes step edits; the preview shows the last one the
+	// server read the file with.
+	const [draft, setDraft] = useState<CsvMapping | null>(null);
 	const [stale, setStale] = useState(false);
 	const [unreadable, setUnreadable] = useState(false);
 	const [dragging, setDragging] = useState(false);
 	// A fresh tab choice for each new preview.
 	const [version, setVersion] = useState(0);
+	// Only the answer to the latest choice may land: an earlier one arriving
+	// late would show counts for a mapping the user already changed.
+	const latest = useRef(0);
+	// The live preview in flight. Each waits for the one before it: the server
+	// stores the mapping of the preview it answers last, and confirm writes that
+	// one, so the last sent must be the last stored.
+	const inFlight = useRef<Promise<unknown>>(Promise.resolve());
 
 	const show = (next: ImportPreviewData, isStale: boolean) => {
 		setPreview(next);
 		setStale(isStale);
 		setVersion((current) => current + 1);
 	};
+
+	const draftValid = draft !== null && isCsvColumnsValid(draft.columns);
+	const previewId = preview?.id ?? null;
+	const moveOpeningDate = preview?.opening?.date ?? null;
+
+	const live = step === "columns" && previewId !== null && draft !== null && draftValid;
+
+	useEffect(() => {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+
+		if (live && previewId !== null && draft !== null) {
+			latest.current += 1;
+			const request = latest.current;
+
+			timer = setTimeout(() => {
+				void (async () => {
+					const previous = inFlight.current;
+					const sent = (async () => {
+						// Its outcome was handled where it was sent.
+						await previous.catch(() => undefined);
+
+						return livePreview.mutateAsync({
+							id: previewId,
+							input: { moveOpeningDate, csv: draft },
+						});
+					})();
+
+					inFlight.current = sent.catch(() => undefined);
+
+					try {
+						const next = await sent;
+
+						if (request === latest.current) {
+							show(next, false);
+						}
+					} catch (error) {
+						if (request === latest.current) {
+							toast.error(t(`errors.${errorCodeOf(error)}`));
+						}
+					}
+				})();
+			}, LIVE_PREVIEW_DELAY_MS);
+		}
+
+		return () => clearTimeout(timer);
+		// Not `livePreview` nor `t`: they change identity on every render, and
+		// each would send a request for a mapping nobody changed.
+	}, [draft, live, previewId, moveOpeningDate]);
 
 	const read = async (file: File | undefined) => {
 		// A second file while the first uploads would race it for the preview.
@@ -303,7 +386,18 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 		setUnreadable(false);
 
 		try {
-			show(await upload.mutateAsync(file), false);
+			const next = await upload.mutateAsync(file);
+
+			show(next, false);
+
+			if (next.csv === null) {
+				setDraft(null);
+				setStep("preview");
+			} else {
+				setDraft(mappingOf(next.csv));
+				// A saved mapping that fits opens straight on the preview.
+				setStep(next.csv.mapping === null ? "columns" : "preview");
+			}
 		} catch (error) {
 			if (errorCodeOf(error) === "INVALID_IMPORT_FILE") {
 				setUnreadable(true);
@@ -381,25 +475,31 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 		void read(event.dataTransfer.files[0]);
 	};
 
-	const counts = preview === null ? null : countsOf(preview.groups);
+	const csv = preview?.csv ?? null;
+	// Groups exist once the server read the file with a mapping, and they are
+	// the draft's only when it read it with this one.
+	const computed = preview !== null && (csv === null || csv.mapping !== null);
+	const current =
+		step !== "columns" || (draftValid && csv !== null && sameMapping(csv.mapping, draft));
+	const counts = preview === null || !computed ? null : countsOf(preview.groups);
 	const count = counts === null ? 0 : importedCount(counts);
 	const balanceStatus = preview?.statementBalance?.status ?? null;
 
 	return (
 		<>
-			<Steps current={preview === null ? "file" : "preview"} />
+			<Steps current={step} csv={csv !== null} />
 
 			{/* Outside the preview, which remounts with each new one: a live region
 			    must exist before its text changes for screen readers to announce it. */}
 			<p role="status" className="sr-only">
 				{upload.isPending
 					? t("imports.reading")
-					: preview === null
+					: preview === null || counts === null
 						? ""
-						: t("imports.summary", countsOf(preview.groups))}
+						: t("imports.summary", counts)}
 			</p>
 
-			{preview === null ? (
+			{preview === null && (
 				<div
 					onDragOver={(event) => {
 						event.preventDefault();
@@ -418,7 +518,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						<Input
 							id="import-file"
 							type="file"
-							accept=".ofx,.qfx"
+							accept=".ofx,.qfx,.csv"
 							disabled={upload.isPending}
 							aria-invalid={unreadable}
 							{...(unreadable ? { "aria-describedby": "import-file-error" } : {})}
@@ -436,21 +536,55 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						</p>
 					)}
 				</div>
-			) : (
-				<Preview
-					key={version}
-					preview={preview}
-					currency={account.currency}
-					openingDate={account.openingDate}
-					stale={stale}
-					moving={previewAgain.isPending}
-					onMoveOpening={(date) => void moveOpening(date)}
-				/>
+			)}
+
+			{preview !== null && step === "columns" && csv !== null && draft !== null && (
+				<div className="flex max-h-[65vh] min-w-0 flex-col gap-4 overflow-y-auto">
+					<CsvColumns
+						sample={csv.sample}
+						sampleDelimiter={mappingOf(csv).delimiter}
+						mapping={draft}
+						onChange={setDraft}
+					/>
+					{!draftValid && <p className="text-muted-foreground">{t("imports.csv.invalid")}</p>}
+					{draftValid && computed && (
+						<Preview
+							key={version}
+							preview={preview}
+							currency={account.currency}
+							openingDate={account.openingDate}
+							stale={stale}
+							moving={previewAgain.isPending}
+							onMoveOpening={(date) => void moveOpening(date)}
+						/>
+					)}
+				</div>
+			)}
+
+			{preview !== null && step === "preview" && (
+				<div className="flex min-w-0 flex-col items-start gap-3">
+					{csv !== null && (
+						<Button type="button" variant="outline" onClick={() => setStep("columns")}>
+							{t("imports.csv.edit")}
+						</Button>
+					)}
+					<Preview
+						key={version}
+						preview={preview}
+						currency={account.currency}
+						openingDate={account.openingDate}
+						stale={stale}
+						moving={previewAgain.isPending}
+						onMoveOpening={(date) => void moveOpening(date)}
+					/>
+				</div>
 			)}
 
 			<DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<p className="text-muted-foreground">
-					{counts !== null && isNothingNew(counts, balanceStatus) ? t("imports.nothingNew") : ""}
+					{counts !== null && current && isNothingNew(counts, balanceStatus)
+						? t("imports.nothingNew")
+						: ""}
 				</p>
 				<div className="flex justify-end gap-2">
 					<Button type="button" variant="outline" onClick={onClose}>
@@ -461,9 +595,11 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 							type="button"
 							disabled={
 								counts === null ||
+								!current ||
 								!canConfirm(counts, balanceStatus) ||
 								confirm.isPending ||
-								previewAgain.isPending
+								previewAgain.isPending ||
+								livePreview.isPending
 							}
 							onClick={() => void submit()}
 						>
@@ -485,7 +621,8 @@ type ImportDialogProps = {
 };
 
 /**
- * Imports a bank file into the account: Fichier, then Aperçu (EXPERIENCE.md).
+ * Imports a bank file into the account: Fichier, Colonnes for a CSV file,
+ * then Aperçu (EXPERIENCE.md).
  * Nothing is written before « Importer N opérations ».
  */
 export function ImportDialog({ account, open, onOpenChange }: ImportDialogProps) {

@@ -1,7 +1,7 @@
 import type { ParsedStatement } from "../domain/statement.ts";
 
 import type { CurrencyCode } from "@archant/data/money";
-import type { FileSourceId } from "@archant/data/schema/imports";
+import type { CsvMapping, FileSourceId } from "@archant/data/schema/imports";
 
 import { MAX_IMPORT_BYTES } from "../schemas/imports.ts";
 
@@ -11,6 +11,8 @@ export const MAX_FILE_BYTES = MAX_IMPORT_BYTES;
 export type FileSourceOptions = {
 	/** The target account's currency: its minor units scale every amount. */
 	currency: CurrencyCode;
+	/** How to read a CSV file's columns; the other sources ignore it. */
+	csv?: CsvMapping | undefined;
 };
 
 /**

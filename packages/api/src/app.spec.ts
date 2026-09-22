@@ -2065,3 +2065,377 @@ const CARD_OFX = [
 	"<STMTTRN><DTPOSTED>20260910<TRNAMT>-12.00<FITID>C1<NAME>Librairie</STMTTRN>",
 	"</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>",
 ].join("\n");
+
+// Story 2.3: import a CSV file with a saved mapping.
+
+const csvMapping = z.object({
+	delimiter: z.string(),
+	skipRows: z.number(),
+	hasHeader: z.boolean(),
+	dateFormat: z.string(),
+	decimal: z.string(),
+	sign: z.string(),
+	columns: z.array(z.string()),
+});
+
+const csvBody = z.object({
+	data: importBody.shape.data.extend({
+		csv: z.object({
+			sample: z.array(z.array(z.string())),
+			mapping: csvMapping.nullable(),
+			saved: z.boolean(),
+			prefill: csvMapping,
+		}),
+	}),
+});
+
+const societeGenerale = async () =>
+	new Uint8Array(
+		await readFile(new URL("connectors/csv/fixtures/societe-generale-1252.csv", import.meta.url)),
+	);
+
+const sgMapping = {
+	delimiter: ";",
+	skipRows: 3,
+	hasHeader: true,
+	dateFormat: "DD/MM/YYYY",
+	decimal: ",",
+	sign: "inflows-positive",
+	columns: ["date", "label", "notes", "amount", "ignore"],
+} as const;
+
+async function uploadedCsv(accountId: string, bytes: Uint8Array, name = "releve.csv") {
+	const { status, body } = await upload(accountId, bytes, name);
+
+	expect(status).toBe(201);
+
+	return csvBody.parse(body).data;
+}
+
+async function previewCsv(id: string, csv: unknown, moveOpeningDate: string | null = null) {
+	return request("POST", `/api/imports/${id}/preview`, { moveOpeningDate, csv });
+}
+
+async function mappingRows(accountId: string) {
+	return temp.db.all<{ mapping: string }>(
+		sql`select mapping from import_mappings where account_id = ${accountId}`,
+	);
+}
+
+describe("CSV imports", () => {
+	it("opens a first CSV on its columns, with French defaults and nothing computed", async () => {
+		const account = await openAccount();
+
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+
+		expect(preview.source).toBe("csv");
+		expect(preview.groups).toEqual({
+			created: [],
+			present: [],
+			matched: [],
+			duplicates: [],
+			rejected: [],
+		});
+		expect(preview.csv.mapping).toBeNull();
+		expect(preview.csv.saved).toBe(false);
+		expect(preview.csv.prefill).toEqual({
+			delimiter: ";",
+			skipRows: 0,
+			hasHeader: true,
+			dateFormat: "DD/MM/YYYY",
+			decimal: ",",
+			sign: "inflows-positive",
+			columns: ["ignore", "ignore", "ignore", "ignore", "ignore"],
+		});
+		// windows-1252 decoded: the header reads with its accents.
+		expect(preview.csv.sample[3]).toEqual([
+			"Date de l'opération",
+			"Libellé",
+			"Détail de l'écriture",
+			"Montant de l'opération",
+			"Devise",
+		]);
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("ignores a stored mapping that no longer passes the schema", async () => {
+		const account = await openAccount();
+		const broken = JSON.stringify({ ...sgMapping, columns: ["date", "date", "label", "amount"] });
+		await temp.db.run(
+			sql`insert into import_mappings (account_id, mapping, updated_at) values (${account.id}, ${broken}, 0)`,
+		);
+
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+
+		expect(preview.csv.mapping).toBeNull();
+		expect(preview.csv.saved).toBe(false);
+		expect(preview.csv.prefill).toEqual({
+			delimiter: ";",
+			skipRows: 0,
+			hasHeader: true,
+			dateFormat: "DD/MM/YYYY",
+			decimal: ",",
+			sign: "inflows-positive",
+			columns: ["ignore", "ignore", "ignore", "ignore", "ignore"],
+		});
+		expect(preview.groups.created).toEqual([]);
+		expect(preview.groups.rejected).toEqual([]);
+	});
+
+	it("refuses to confirm a CSV import that has no mapping yet", async () => {
+		const account = await openAccount();
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 400,
+			body: { error: { code: "VALIDATION_ERROR" } },
+		});
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("previews with a mapping, confirms, saves the mapping, and applies it to the next file", async () => {
+		const account = await openAccount();
+		const first = await uploadedCsv(account.id, await societeGenerale());
+
+		const previewed = await previewCsv(first.id, sgMapping);
+
+		expect(previewed.status).toBe(200);
+		const { data } = csvBody.parse(previewed.body);
+		expect(data.groups.created.map((line) => line.label)).toEqual([
+			"CARTE X1234 CAFE DE LA GARE",
+			"PRLV SEPA EDF",
+			"Prélèvement Crédit Agricole",
+			"VIR RECU SALAIRE",
+			"CARTE X1234 BOULANGERIE",
+			"CARTE X1234 BOULANGERIE",
+		]);
+		expect(data.csv.mapping).toEqual(sgMapping);
+		expect(data.csv.saved).toBe(false);
+		// The sample is the file's first records, split with the mapping's delimiter.
+		expect(data.csv.sample[3]?.[0]).toBe("Date de l'opération");
+		await expect(mappingRows(account.id)).resolves.toEqual([]);
+
+		await expect(request("POST", `/api/imports/${first.id}/confirm`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { counts: { created: 6 } } },
+		});
+		await expect(balanceOf(account.id)).resolves.toBe(
+			123456 - 4290 - 8712 - 3150 + 215000 - 350 - 350,
+		);
+		const list = await transactionsOf(account.id);
+		expect(list.items[0]?.source).toEqual({ kind: "import", format: "csv", date: "2026-09-21" });
+		const [saved] = await mappingRows(account.id);
+		expect(JSON.parse(saved?.mapping ?? "null")).toEqual(sgMapping);
+
+		const again = await uploadedCsv(account.id, await societeGenerale());
+
+		expect(again.csv).toMatchObject({ mapping: sgMapping, saved: true, prefill: sgMapping });
+		// Twin lines both created, both recognised.
+		expect(again.groups.present).toHaveLength(6);
+		expect(again.groups.created).toEqual([]);
+	});
+
+	it("keeps recognising lines edited since their import", async () => {
+		const account = await openAccount();
+		const first = await uploadedCsv(account.id, await societeGenerale());
+		await previewCsv(first.id, sgMapping);
+		await request("POST", `/api/imports/${first.id}/confirm`);
+		const list = await transactionsOf(account.id);
+		const cafe = list.items.find((item) => item.label === "CARTE X1234 CAFE DE LA GARE");
+
+		await request("PATCH", `/api/transactions/${cafe?.id}`, {
+			label: "Café de la gare",
+			amount: "-50,00",
+		});
+		const again = await uploadedCsv(account.id, await societeGenerale());
+
+		expect(again.groups.present).toHaveLength(6);
+	});
+
+	it("opens a file the saved mapping no longer fits on its columns, prefilled with it", async () => {
+		const account = await openAccount();
+		const first = await uploadedCsv(account.id, await societeGenerale());
+		await previewCsv(first.id, {
+			...sgMapping,
+			skipRows: 0,
+			hasHeader: false,
+			columns: ["ignore", "ignore", "ignore", "ignore", "date", "label", "amount"],
+		});
+		// Any line rejected or not, confirm saves the mapping.
+		await request("POST", `/api/imports/${first.id}/confirm`);
+
+		const narrow = new TextEncoder().encode("01/09/2026;A;-1,00;x\n02/09/2026;B;-2,00;y\n");
+		const preview = await uploadedCsv(account.id, narrow);
+
+		expect(preview.csv.mapping).toBeNull();
+		expect(preview.csv.saved).toBe(false);
+		expect(preview.csv.prefill.columns).toEqual(["ignore", "ignore", "ignore", "ignore"]);
+		expect(preview.csv.prefill.hasHeader).toBe(false);
+		expect(preview.groups.created).toEqual([]);
+
+		// A preview without a mapping stays on the columns.
+		const without = await request("POST", `/api/imports/${preview.id}/preview`, {
+			moveOpeningDate: null,
+		});
+		expect(csvBody.parse(without.body).data.csv.mapping).toBeNull();
+	});
+
+	it("gives a rejected record its line in the whole file", async () => {
+		const account = await openAccount();
+		const file = new TextEncoder().encode(
+			[
+				"# export",
+				"Date;Libellé;Débit;Crédit",
+				"03/09/2026;A;1,00;",
+				"04/09/2026;B;1,00;2,00",
+			].join("\n"),
+		);
+		const preview = await uploadedCsv(account.id, file);
+
+		const { data } = csvBody.parse(
+			(
+				await previewCsv(preview.id, {
+					...sgMapping,
+					skipRows: 1,
+					columns: ["date", "label", "debit", "credit"],
+				})
+			).body,
+		);
+
+		expect(data.groups.rejected).toEqual([{ ref: "3", reason: "INVALID_AMOUNT", line: null }]);
+	});
+
+	it.each([
+		["two date columns", { ...sgMapping, columns: ["date", "date", "label", "amount"] }],
+		["no label", { ...sgMapping, columns: ["date", "amount"] }],
+		["an amount beside a debit", { ...sgMapping, columns: ["date", "label", "amount", "debit"] }],
+		["two debit columns", { ...sgMapping, columns: ["date", "label", "debit", "debit"] }],
+		["neither amount nor debit nor credit", { ...sgMapping, columns: ["date", "label"] }],
+		["too many rows to skip", { ...sgMapping, skipRows: 51 }],
+		["an unknown delimiter", { ...sgMapping, delimiter: "|" }],
+	])("refuses a mapping with %s and computes nothing", async (_name, csv) => {
+		const account = await openAccount();
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+
+		await expect(previewCsv(preview.id, csv)).resolves.toMatchObject({
+			status: 400,
+			body: { error: { code: "VALIDATION_ERROR" } },
+		});
+	});
+
+	it("names the columns in the field error of an invalid mapping", async () => {
+		const account = await openAccount();
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+
+		const { body } = await previewCsv(preview.id, {
+			...sgMapping,
+			columns: ["date", "date", "label", "amount"],
+		});
+
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "csv.columns", code: "invalid_columns" },
+		]);
+	});
+
+	it("refuses a .csv file holding one column of text, and stores nothing", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await upload(
+			account.id,
+			new TextEncoder().encode("Liste de courses\npain\nlait\n"),
+			"courses.csv",
+		);
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
+		const [row] = await temp.db.all<{ count: number }>(
+			sql`select count(*) as count from imports where account_id = ${account.id}`,
+		);
+		expect(row?.count).toBe(0);
+	});
+
+	it("refuses a first CSV with an unterminated quote, and stores nothing", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await upload(
+			account.id,
+			new TextEncoder().encode(
+				'Date;Libellé;Montant\n03/09/2026;"CAFE;-4,20\n04/09/2026;PAIN;-1,10\n',
+			),
+			"releve.csv",
+		);
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
+		const [row] = await temp.db.all<{ count: number }>(
+			sql`select count(*) as count from imports where account_id = ${account.id}`,
+		);
+		expect(row?.count).toBe(0);
+	});
+
+	it("saves no mapping when confirm finds the account changed", async () => {
+		const account = await openAccount();
+		const preview = await uploadedCsv(account.id, await societeGenerale());
+		await previewCsv(preview.id, sgMapping);
+		await postTransaction(account.id, { date: "2026-09-03", label: "Café", amount: "-42,90" });
+
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 409,
+		});
+
+		await expect(mappingRows(account.id)).resolves.toEqual([]);
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 1 });
+	});
+
+	it("updates the saved mapping at the next confirm, and drops it with the account", async () => {
+		const account = await openAccount();
+		const first = await uploadedCsv(account.id, await societeGenerale());
+		await previewCsv(first.id, sgMapping);
+		await request("POST", `/api/imports/${first.id}/confirm`);
+		const second = await uploadedCsv(account.id, await societeGenerale());
+		const notesless = { ...sgMapping, columns: ["date", "label", "ignore", "amount", "ignore"] };
+		await previewCsv(second.id, notesless);
+		await request("POST", `/api/imports/${second.id}/confirm`);
+
+		const [saved] = await mappingRows(account.id);
+		expect(JSON.parse(saved?.mapping ?? "null")).toEqual(notesless);
+
+		await request("DELETE", `/api/accounts/${account.id}`);
+		await expect(mappingRows(account.id)).resolves.toEqual([]);
+	});
+
+	it("ignores a CSV mapping sent for an OFX import", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		const again = await previewCsv(preview.id, sgMapping);
+
+		expect(again.status).toBe(200);
+		expect(importBody.parse(again.body).data.groups.created).toHaveLength(5);
+		expect(z.object({ data: z.object({ csv: z.null() }) }).parse(again.body).data.csv).toBeNull();
+	});
+
+	it("confirms 5,000 lines in under 10 seconds, then recognises them all", async () => {
+		const account = await openAccount();
+		const lines = Array.from(
+			{ length: 5000 },
+			(_, index) =>
+				`${String((index % 19) + 2).padStart(2, "0")}/09/2026;CB MAGASIN ${index % 50};-${(index % 97) + 1},${String(index % 100).padStart(2, "0")}`,
+		);
+		const file = new TextEncoder().encode(["Date;Libellé;Montant", ...lines].join("\n"));
+		const mapping = { ...sgMapping, skipRows: 0, columns: ["date", "label", "amount"] };
+		const started = performance.now();
+		const preview = await uploadedCsv(account.id, file);
+		await previewCsv(preview.id, mapping);
+
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { counts: { created: 5000 } } },
+		});
+
+		expect(performance.now() - started).toBeLessThan(10_000);
+		const again = await uploadedCsv(account.id, file);
+		expect(again.groups.present).toHaveLength(5000);
+		expect(again.groups.created).toEqual([]);
+	}, 30_000);
+});

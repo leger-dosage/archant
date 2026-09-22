@@ -1,0 +1,8 @@
+# Fichier synthétique imitant un export Crédit Agricole, anonymisé
+Date;Libellé;Débit euros;Crédit euros;
+03/09/2026;"CARTE X1234 02/09 CAFE DE LA GARE";42,90;;
+05/09/2026;"PRLV SEPA EDF
+Électricité échéance septembre";87,12;;
+08/09/2026;"Prélèvement Crédit Agricole";31,50;;
+10/09/2026;"VIREMENT EN VOTRE FAVEUR SALAIRE";;1 234,56;
+12/09/2026;"CARTE X1234 BOULANGERIE";3,50;;

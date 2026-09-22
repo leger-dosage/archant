@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
 	canConfirm,
 	countsOf,
+	csvTable,
 	firstTab,
+	fitColumns,
 	importedCount,
 	isBalanceOnly,
 	isNothingNew,
+	resplit,
+	sameMapping,
 } from "./import-preview.ts";
 
 const empty = { created: [], present: [], matched: [], duplicates: [], rejected: [] };
@@ -77,5 +81,87 @@ describe("isNothingNew", () => {
 		expect(isNothingNew(countsOf({ ...empty, rejected: [1] }), null)).toBe(false);
 		expect(isNothingNew(countsOf(empty), null)).toBe(false);
 		expect(isNothingNew(countsOf({ ...empty, present: [1], matched: [2] }), null)).toBe(false);
+	});
+});
+
+describe("resplit", () => {
+	it("leaves records split with the same delimiter alone", () => {
+		const records = [["a", "b"]];
+
+		expect(resplit(records, ";", ";")).toBe(records);
+	});
+
+	it("splits records again with another delimiter", () => {
+		expect(resplit([["01/09/2026;CAFE;-42", "90"]], ",", ";")).toEqual([
+			["01/09/2026", "CAFE", "-42,90"],
+		]);
+	});
+});
+
+describe("csvTable", () => {
+	const sample = [
+		["# Banque"],
+		["Date", "Libellé", "Montant"],
+		["01/09", "A", "-1"],
+		[""],
+		["02/09", "B"],
+	];
+
+	it("skips rows, names the columns from the header, and drops empty records", () => {
+		expect(csvTable(sample, ";", { delimiter: ";", skipRows: 1, hasHeader: true })).toEqual({
+			header: ["Date", "Libellé", "Montant"],
+			rows: [
+				["01/09", "A", "-1"],
+				["02/09", "B"],
+			],
+			width: 3,
+		});
+	});
+
+	it("reads every record as a row without a header", () => {
+		const table = csvTable(sample, ";", { delimiter: ";", skipRows: 2, hasHeader: false });
+
+		expect(table.header).toBeNull();
+		expect(table.rows).toEqual([
+			["01/09", "A", "-1"],
+			["02/09", "B"],
+		]);
+	});
+
+	it("shows ten rows at most, and nothing past the sample", () => {
+		const many = Array.from({ length: 20 }, (_, index) => [String(index), "x"]);
+
+		expect(csvTable(many, ";", { delimiter: ";", skipRows: 0, hasHeader: true }).rows).toHaveLength(
+			10,
+		);
+		expect(csvTable(many, ";", { delimiter: ";", skipRows: 30, hasHeader: true })).toEqual({
+			header: null,
+			rows: [],
+			width: 0,
+		});
+	});
+});
+
+describe("fitColumns", () => {
+	it("pads with ignore and keeps roles beyond the width", () => {
+		expect(fitColumns(["date", "label"], 4, "ignore")).toEqual([
+			"date",
+			"label",
+			"ignore",
+			"ignore",
+		]);
+		expect(fitColumns(["date", "label", "amount"], 2, "ignore")).toEqual([
+			"date",
+			"label",
+			"amount",
+		]);
+	});
+});
+
+describe("sameMapping", () => {
+	it("compares mappings by value", () => {
+		expect(sameMapping({ a: [1] }, { a: [1] })).toBe(true);
+		expect(sameMapping({ a: [1] }, { a: [2] })).toBe(false);
+		expect(sameMapping({ a: [1] }, null)).toBe(false);
 	});
 });
