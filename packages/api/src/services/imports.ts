@@ -254,8 +254,9 @@ export async function createImport(
 		if (source.id === "csv") {
 			// A first CSV file waits for its mapping. A saved one applies at once
 			// when the file still has every column it reads: same bank, same export.
-			// Refuses a file with no table before anything is stored.
-			guessDelimiter(file.bytes);
+			// Reading every record refuses a file with no table or an unterminated
+			// quote before anything is stored.
+			csvLayout(file.bytes, { delimiter: guessDelimiter(file.bytes), skipRows: 0 });
 
 			if (saved !== null && mappingFits(saved, csvLayout(file.bytes, saved).width)) {
 				options = { csv: saved };

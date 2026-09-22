@@ -99,7 +99,7 @@ context:
 - The interface re-splits the sample itself when the delimiter changes while the roles are still invalid (`resplit` in `lib/import-preview.ts`), for display only; counts always come from the server.
 - `SAMPLE_RECORDS` is `MAX_CSV_SKIP_ROWS + 1 + 10` (61), not the 20 the frozen block states: with `skipRows` up to 50, a 20-record sample left Colonnes empty past 19 skipped rows (review finding #4).
 - Live previews are sent one at a time, so the last mapping sent is the one stored and confirmed.
-- A file with an unterminated quote is refused with `INVALID_IMPORT_FILE`.
+- A file with an unterminated quote is refused with `INVALID_IMPORT_FILE`, on a first import too: `createImport` reads every record before storing the row.
 - QA on a throwaway database, Chromium 1280 px, dark: the Société Générale-like fixture opens on Colonnes, three skipped rows and Date, Libellé, Montant give 6 lines under À créer with accents intact and both twins kept; confirm moves the balance from 1 000,00 € to 2 981,48 €; the same file again applies the saved mapping and lists 6 under Déjà présentes.
 
 ## Spec Change Log

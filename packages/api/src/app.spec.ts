@@ -2354,6 +2354,25 @@ describe("CSV imports", () => {
 		expect(row?.count).toBe(0);
 	});
 
+	it("refuses a first CSV with an unterminated quote, and stores nothing", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await upload(
+			account.id,
+			new TextEncoder().encode(
+				'Date;Libellé;Montant\n03/09/2026;"CAFE;-4,20\n04/09/2026;PAIN;-1,10\n',
+			),
+			"releve.csv",
+		);
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
+		const [row] = await temp.db.all<{ count: number }>(
+			sql`select count(*) as count from imports where account_id = ${account.id}`,
+		);
+		expect(row?.count).toBe(0);
+	});
+
 	it("saves no mapping when confirm finds the account changed", async () => {
 		const account = await openAccount();
 		const preview = await uploadedCsv(account.id, await societeGenerale());
