@@ -1,18 +1,19 @@
 # Tech stack
 
-Versions verified on 21 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
+Versions verified on 22 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
 
 The three packages exist since Story 1.1. Rows marked "planned" are not installed yet: a dependency is installed by the first feature that needs it, and one that no feature needs leaves the list.
 
 ## Toolchain
 
-| Tool       | Version | Note                                     |
-| ---------- | ------- | ---------------------------------------- |
-| Node.js    | 24      | Pinned in CI, not in `engines`           |
-| pnpm       | 10.28.2 | Pinned by `packageManager`               |
-| TypeScript | 7.0.2   | Native Go compiler                       |
-| Oxlint     | 1.83.x  | Type-aware linting via `oxlint-tsgolint` |
-| Oxfmt      | 0.68.x  | Formatting and import sorting, tabs only |
+| Tool           | Version | Note                                     |
+| -------------- | ------- | ---------------------------------------- |
+| Node.js        | 24      | Pinned in CI, not in `engines`           |
+| pnpm           | 10.28.2 | Pinned by `packageManager`               |
+| TypeScript     | 7.0.2   | Native Go compiler                       |
+| Oxlint         | 1.83.x  | Type-aware linting via `oxlint-tsgolint` |
+| `@shadcn/lint` | 0.1.x   | Design-system plugin loaded by Oxlint    |
+| Oxfmt          | 0.68.x  | Formatting and import sorting, tabs only |
 
 ### Why Oxlint rather than ESLint
 
@@ -25,6 +26,8 @@ Oxlint removes the problem instead of working around it. Its type-aware engine, 
 Biome was the other candidate. It also sidesteps the TypeScript 7 problem, since it has its own inference engine and never loads the compiler, but that engine only approximates type information: on unawaited promises it catches roughly 75% of what `typescript-eslint` finds. On a codebase whose bugs are forgotten `await`s around bank calls, that gap is the wrong one to accept.
 
 The rules kept from the sibling projects' ESLint setup map over, with two exceptions. `no-restricted-syntax` does not exist in Oxlint, so the ban on `as any` and `as never` is expressed through `typescript/no-explicit-any` and the `no-unsafe-*` family, which cover the same ground more precisely. `padding-line-between-statements` has no equivalent and is dropped; it was cosmetic.
+
+`@shadcn/lint` is registered as an Oxlint JavaScript plugin. Future design-system rules belong in `.oxlintrc.json`; none is enabled until the project adopts a policy for existing components and Tailwind classes. The upstream [rule reference](https://github.com/shadcn-ui/lint/blob/093ae9db214772afe0de40299d224c7b5e24bdeb/docs/rules.md) and [configuration guide](https://github.com/shadcn-ui/lint/blob/093ae9db214772afe0de40299d224c7b5e24bdeb/docs/design-systems.md) document the available checks and options for version 0.1.5.
 
 ### Why Oxfmt rather than Prettier
 

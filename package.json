@@ -14,6 +14,7 @@
 		"test:e2e": "pnpm --filter @archant/web test:e2e"
 	},
 	"devDependencies": {
+		"@shadcn/lint": "^0.1.5",
 		"oxfmt": "^0.68.0",
 		"oxlint": "^1.83.0",
 		"oxlint-tsgolint": "^7.0.2001",
