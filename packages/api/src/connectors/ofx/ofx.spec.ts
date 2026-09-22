@@ -89,6 +89,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -4290,
 					currency: "EUR",
 					label: "CB CAFÉ DE LA GARE",
+					reference: null,
 					notes: null,
 				},
 				{
@@ -97,6 +98,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -8712,
 					currency: "EUR",
 					label: "PRLV SEPA EDF Électricité échéance septembre",
+					reference: null,
 					notes: null,
 				},
 				{
@@ -105,6 +107,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: 215000,
 					currency: "EUR",
 					label: "VIR SALAIRE",
+					reference: null,
 					notes: null,
 				},
 				{
@@ -113,6 +116,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -350,
 					currency: "EUR",
 					label: "CB BOULANGERIE",
+					reference: null,
 					notes: null,
 				},
 				{
@@ -121,6 +125,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -350,
 					currency: "EUR",
 					label: "CB BOULANGERIE",
+					reference: null,
 					notes: null,
 				},
 			],
@@ -139,6 +144,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				amount: -1840,
 				currency: "EUR",
 				label: "CARTE 03/09 PHARMACIE Pharmacie Hôtel de Ville",
+				reference: null,
 				notes: null,
 			},
 			{
@@ -147,6 +153,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				amount: 50000,
 				currency: "EUR",
 				label: "VIR Épargne",
+				reference: null,
 				notes: null,
 			},
 			{
@@ -155,6 +162,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				amount: -6499,
 				currency: "EUR",
 				label: "PRLV Free Mobile Forfait & options",
+				reference: null,
 				notes: null,
 			},
 		]);
@@ -173,6 +181,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -12340,
 					currency: "EUR",
 					label: "CARTE X0000 HÔTEL DU PORT",
+					reference: null,
 					notes: null,
 				},
 				{
@@ -181,6 +190,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					amount: -38890,
 					currency: "EUR",
 					label: "CARTE X0000 ÉLECTROMÉNAGER Réfrigérateur",
+					reference: null,
 					notes: null,
 				},
 			],

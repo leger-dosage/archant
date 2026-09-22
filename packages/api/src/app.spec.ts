@@ -2439,3 +2439,219 @@ describe("CSV imports", () => {
 		expect(again.groups.created).toEqual([]);
 	}, 30_000);
 });
+
+// Story 2.4: import a QIF file.
+
+const qifBody = z.object({
+	data: importBody.shape.data.extend({
+		qif: z.object({ dateOrder: z.string(), ambiguous: z.boolean() }),
+	}),
+});
+
+const banquePostale = async () =>
+	new Uint8Array(
+		await readFile(
+			new URL("connectors/qif/fixtures/banque-postale-bank-1252.qif", import.meta.url),
+		),
+	);
+
+const qifFile = (...records: string[][]) =>
+	new TextEncoder().encode(
+		["!Type:Bank", ...records.flatMap((record) => [...record, "^"])].join("\n"),
+	);
+
+async function uploadedQif(accountId: string, bytes: Uint8Array, name = "releve.qif") {
+	const { status, body } = await upload(accountId, bytes, name);
+
+	expect(status).toBe(201);
+
+	return qifBody.parse(body).data;
+}
+
+async function previewQif(id: string, body: Record<string, unknown>) {
+	const { status, body: json } = await request("POST", `/api/imports/${id}/preview`, {
+		moveOpeningDate: null,
+		...body,
+	});
+
+	expect(status).toBe(200);
+
+	return qifBody.parse(json).data;
+}
+
+describe("QIF imports", () => {
+	it("previews a bank file, confirms it with its cheque numbers, and recognises it all again", async () => {
+		const account = await openAccount();
+
+		const preview = await uploadedQif(account.id, await banquePostale());
+
+		expect(preview.source).toBe("qif");
+		expect(preview.qif).toEqual({ dateOrder: "day-first", ambiguous: false });
+		expect(preview.statementBalance).toBeNull();
+		expect(preview.groups.created.map((line) => line.label)).toEqual([
+			"CARTE X1234 CAFÉ DE LA GARE",
+			"PRLV EDF Électricité échéance septembre",
+			"CHEQUE 1234567",
+			"VIR SEPA ACME SAS SALAIRE",
+			"CHEQUE 1234568",
+			"PRLV FREE MOBILE",
+		]);
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 0 });
+
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { counts: { created: 6 } } },
+		});
+		// The balance row of today, 21 September: the 28th has not happened yet.
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290 - 8712 - 15000 + 215000 - 350);
+		const list = await transactionsOf(account.id);
+		const cheque = list.items.find((item) => item.label === "CHEQUE 1234567");
+		expect(cheque).toMatchObject({
+			reference: "1234567",
+			source: { kind: "import", format: "qif", date: "2026-09-21" },
+		});
+		expect(list.items.find((item) => item.label === "PRLV FREE MOBILE")?.reference).toBeNull();
+
+		const again = await uploadedQif(account.id, await banquePostale());
+
+		expect(again.groups.present).toHaveLength(6);
+		expect(again.groups.created).toEqual([]);
+	});
+
+	it("creates two identical records and recognises both on re-import", async () => {
+		const account = await openAccount();
+		const twin = ["D10/09/2026", "T-3,50", "PBOULANGERIE"];
+		const file = qifFile(twin, twin);
+		const preview = await uploadedQif(account.id, file);
+
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 2 });
+		const again = await uploadedQif(account.id, file);
+		expect(again.groups.present).toHaveLength(2);
+		expect(again.groups.created).toEqual([]);
+	});
+
+	it("reads ambiguous dates day-first, and keeps the month-first choice across re-previews and confirm", async () => {
+		const account = await openAccount({ openingDate: "2026-01-01" });
+		const file = qifFile(["D02/09/2026", "T-10,00", "PA"], ["D03/04/2026", "T-20,00", "PB"]);
+
+		const preview = await uploadedQif(account.id, file);
+
+		expect(preview.qif).toEqual({ dateOrder: "day-first", ambiguous: true });
+		expect(preview.groups.created.map((line) => line.label)).toEqual(["A", "B"]);
+		const dates = async (id: string) =>
+			z
+				.object({
+					data: z.object({
+						groups: z.object({ created: z.array(z.object({ date: z.string() })) }),
+					}),
+				})
+				.parse(
+					(await request("POST", `/api/imports/${id}/preview`, { moveOpeningDate: null })).body,
+				)
+				.data.groups.created.map((line) => line.date);
+		await expect(dates(preview.id)).resolves.toEqual(["2026-09-02", "2026-04-03"]);
+
+		const monthFirst = await previewQif(preview.id, { qif: { dateOrder: "month-first" } });
+
+		expect(monthFirst.qif).toEqual({ dateOrder: "month-first", ambiguous: true });
+		// Without `qif`, the stored choice stays.
+		await expect(dates(preview.id)).resolves.toEqual(["2026-02-09", "2026-03-04"]);
+		await expect(request("POST", `/api/imports/${preview.id}/confirm`)).resolves.toMatchObject({
+			status: 200,
+		});
+		const list = await transactionsOf(account.id);
+		expect(list.items.map((item) => item.date).toSorted()).toEqual(["2026-02-09", "2026-03-04"]);
+	});
+
+	it("reads month-first without a choice when one date only reads that way", async () => {
+		const account = await openAccount({ openingDate: "2026-01-01" });
+
+		const preview = await uploadedQif(account.id, qifFile(["D03/29/2026", "T-1,00", "PA"]));
+
+		expect(preview.qif).toEqual({ dateOrder: "month-first", ambiguous: false });
+		expect(preview.groups.created).toMatchObject([{ label: "A" }]);
+	});
+
+	it("rejects unreadable records and the opening balance, numbered among transactions", async () => {
+		const account = await openAccount();
+
+		const preview = await uploadedQif(
+			account.id,
+			qifFile(
+				["D10/09/2026", "T-1,00", "PA"],
+				["D10/09/2026", "U-28,500.00", "T-28,500.00", "PB"],
+				["D10/09/2026", "T1.234,56", "PC"],
+				["D10/09/2026", "T12,5,0", "PD"],
+				["D10/09/2026", "T100,00", "POpening Balance"],
+			),
+		);
+
+		expect(preview.groups.created.map((line) => [line.label, line.amount])).toEqual([
+			["A", -100],
+			["B", -2850000],
+			["C", 123456],
+		]);
+		expect(preview.groups.rejected).toEqual([
+			{ ref: "3", reason: "INVALID_AMOUNT", line: null },
+			{ ref: "4", reason: "OPENING_BALANCE", line: null },
+		]);
+	});
+
+	it.each([
+		["an investment file, naming its type", "!Type:Invst\nD1/5'26\nT50.00\n^", { type: "Invst" }],
+		["a file with two accounts", "!Account\nNA\n^\n!Type:Bank\n^\n!Account\nNB\n^\n", undefined],
+		["a .qif of plain text", "Liste de courses : pain, lait", undefined],
+	])("refuses %s with INVALID_IMPORT_FILE and stores nothing", async (_name, text, params) => {
+		const account = await openAccount();
+
+		const { status, body } = await upload(account.id, new TextEncoder().encode(text), "releve.qif");
+
+		expect(status).toBe(400);
+		expect(body).toEqual({
+			error: {
+				code: "INVALID_IMPORT_FILE",
+				message:
+					params === undefined
+						? "The file is not a readable QIF statement."
+						: "QIF statements of type Invst are not supported.",
+				...(params === undefined ? {} : { params }),
+			},
+		});
+		await expect(
+			temp.db.all(sql`select id from imports where account_id = ${account.id}`),
+		).resolves.toEqual([]);
+		expect(logLines.join("")).not.toContain("Invst");
+	});
+
+	it("refuses an unknown date order", async () => {
+		const account = await openAccount();
+		const preview = await uploadedQif(account.id, qifFile(["D10/09/2026", "T-1,00", "PA"]));
+
+		const { status, body } = await request("POST", `/api/imports/${preview.id}/preview`, {
+			moveOpeningDate: null,
+			qif: { dateOrder: "year-first" },
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
+	});
+
+	it("ignores a date order sent for an OFX import", async () => {
+		const account = await openAccount();
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		const { status, body } = await request("POST", `/api/imports/${preview.id}/preview`, {
+			moveOpeningDate: null,
+			qif: { dateOrder: "month-first" },
+		});
+
+		expect(status).toBe(200);
+		expect(z.object({ data: z.object({ qif: z.null() }) }).parse(body).data.qif).toBeNull();
+		const rows = await temp.db.all<{ options: string }>(
+			sql`select options from imports where id = ${preview.id}`,
+		);
+		expect(JSON.parse(rows[0]?.options ?? "null")).toEqual({});
+	});
+});

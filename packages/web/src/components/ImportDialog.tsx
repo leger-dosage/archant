@@ -9,8 +9,11 @@ import { toast } from "sonner";
 import { isCsvColumnsValid } from "@archant/api/schemas/imports";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
+import type { QifDateOrder } from "@archant/data/qif-options";
+import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
+import { ChoiceField } from "@/components/ChoiceField";
 import { CsvColumns } from "@/components/CsvColumns";
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -130,7 +133,7 @@ function RejectedTable({
 }: {
 	lines: ImportGroupsData["rejected"];
 	currency: string;
-	/** A CSV `ref` is a line of the file; an OFX one, a transaction's rank. */
+	/** A CSV `ref` is a line of the file; an OFX or QIF one, a transaction's rank. */
 	csv: boolean;
 }) {
 	const { t } = useTranslation();
@@ -217,9 +220,18 @@ type PreviewProps = {
 	stale: boolean;
 	moving: boolean;
 	onMoveOpening: (date: string) => void;
+	onDateOrder: (dateOrder: QifDateOrder) => void;
 };
 
-function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening }: PreviewProps) {
+function Preview({
+	preview,
+	currency,
+	openingDate,
+	stale,
+	moving,
+	onMoveOpening,
+	onDateOrder,
+}: PreviewProps) {
 	const { t } = useTranslation();
 	const counts = countsOf(preview.groups);
 	const [tab, setTab] = useState<string>(() => firstTab(counts));
@@ -227,6 +239,25 @@ function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening 
 	return (
 		<div className="flex min-w-0 flex-col gap-3">
 			<p className="truncate text-muted-foreground">{preview.fileName}</p>
+
+			{/* Only when the dates read both ways: otherwise the file settles it. */}
+			{preview.qif?.ambiguous === true && (
+				<div className="w-full sm:max-w-xs">
+					<ChoiceField
+						id="qif-date-order"
+						label={t("imports.qif.dateOrder")}
+						value={preview.qif.dateOrder}
+						options={QIF_DATE_ORDERS.map((value) => ({
+							value,
+							label: t(`imports.qif.dateOrders.${value}`),
+						}))}
+						onChange={onDateOrder}
+						// Until the answer lands: a second change would race the first
+						// for the order the server stores.
+						disabled={moving}
+					/>
+				</div>
+			)}
 
 			{stale && (
 				<p role="alert" className="rounded-md border border-destructive/50 p-3 text-destructive">
@@ -294,6 +325,14 @@ function Preview({ preview, currency, openingDate, stale, moving, onMoveOpening 
 
 type ImportFlowProps = { account: ImportAccount; onClose: () => void };
 
+/**
+ * What every re-preview sends besides its own change, so that moving the
+ * opening date or answering a stale confirm keeps the dates' order.
+ */
+function kept(preview: ImportPreviewData): { qif?: { dateOrder: QifDateOrder } } {
+	return preview.qif === null ? {} : { qif: { dateOrder: preview.qif.dateOrder } };
+}
+
 /** The mapping a CSV preview was read with, or the one the Colonnes step starts from. */
 function mappingOf(csv: NonNullable<ImportPreviewData["csv"]>): CsvMapping {
 	return csv.mapping ?? csv.prefill;
@@ -311,7 +350,8 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 	// server read the file with.
 	const [draft, setDraft] = useState<CsvMapping | null>(null);
 	const [stale, setStale] = useState(false);
-	const [unreadable, setUnreadable] = useState(false);
+	// What the file step says when the server refused the file, `null` until then.
+	const [refusal, setRefusal] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
 	// A fresh tab choice for each new preview.
 	const [version, setVersion] = useState(0);
@@ -383,7 +423,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 			return;
 		}
 
-		setUnreadable(false);
+		setRefusal(null);
 
 		try {
 			const next = await upload.mutateAsync(file);
@@ -400,7 +440,13 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 			}
 		} catch (error) {
 			if (errorCodeOf(error) === "INVALID_IMPORT_FILE") {
-				setUnreadable(true);
+				const type = error instanceof ApiError ? error.params["type"] : undefined;
+
+				setRefusal(
+					type === undefined
+						? t("errors.INVALID_IMPORT_FILE")
+						: t("imports.qif.unsupportedType", { type }),
+				);
 			} else {
 				toast.error(t(`errors.${errorCodeOf(error)}`));
 			}
@@ -414,7 +460,28 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 
 		try {
 			show(
-				await previewAgain.mutateAsync({ id: preview.id, input: { moveOpeningDate: date } }),
+				await previewAgain.mutateAsync({
+					id: preview.id,
+					input: { ...kept(preview), moveOpeningDate: date },
+				}),
+				false,
+			);
+		} catch (error) {
+			toast.error(t(`errors.${errorCodeOf(error)}`));
+		}
+	};
+
+	const changeDateOrder = async (dateOrder: QifDateOrder) => {
+		if (preview === null) {
+			return;
+		}
+
+		try {
+			show(
+				await previewAgain.mutateAsync({
+					id: preview.id,
+					input: { moveOpeningDate: preview.opening?.date ?? null, qif: { dateOrder } },
+				}),
 				false,
 			);
 		} catch (error) {
@@ -456,7 +523,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 					show(
 						await previewAgain.mutateAsync({
 							id: preview.id,
-							input: { moveOpeningDate: preview.opening?.date ?? null },
+							input: { ...kept(preview), moveOpeningDate: preview.opening?.date ?? null },
 						}),
 						true,
 					);
@@ -518,10 +585,10 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						<Input
 							id="import-file"
 							type="file"
-							accept=".ofx,.qfx,.csv"
+							accept=".ofx,.qfx,.csv,.qif"
 							disabled={upload.isPending}
-							aria-invalid={unreadable}
-							{...(unreadable ? { "aria-describedby": "import-file-error" } : {})}
+							aria-invalid={refusal !== null}
+							{...(refusal === null ? {} : { "aria-describedby": "import-file-error" })}
 							onChange={(event) => {
 								void read(event.target.files?.[0]);
 								// The same file chosen again must fire a change.
@@ -530,9 +597,9 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						/>
 					</div>
 					{upload.isPending && <p>{t("imports.reading")}</p>}
-					{unreadable && (
+					{refusal !== null && (
 						<p id="import-file-error" role="alert" className="text-destructive">
-							{t("errors.INVALID_IMPORT_FILE")}
+							{refusal}
 						</p>
 					)}
 				</div>
@@ -556,6 +623,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 							stale={stale}
 							moving={previewAgain.isPending}
 							onMoveOpening={(date) => void moveOpening(date)}
+							onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
 						/>
 					)}
 				</div>
@@ -576,6 +644,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						stale={stale}
 						moving={previewAgain.isPending}
 						onMoveOpening={(date) => void moveOpening(date)}
+						onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
 					/>
 				</div>
 			)}

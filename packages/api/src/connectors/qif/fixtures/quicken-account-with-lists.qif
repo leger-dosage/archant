@@ -1,0 +1,41 @@
+!Option:AutoSwitch
+!Type:Cat
+NAlimentation
+DCourses et restaurants
+E
+^
+NSalaire
+I
+^
+!Clear:AutoSwitch
+!Account
+NCompte courant
+TBank
+^
+!Type:Bank
+D1/ 1'26
+T1,500.00
+CX
+POpening Balance
+L[Compte courant]
+^
+D1/ 5'26
+U-28,500.00
+T-28,500.00
+PConcession Auto
+LVoiture
+^
+D1/15'26
+T-120.45
+PSupermarché
+LAlimentation
+SAlimentation
+EFruits et légumes
+$-80.00
+SMaison
+$-40.45
+^
+D1/31'26
+U3,200.00
+PSalaire ACME
+^

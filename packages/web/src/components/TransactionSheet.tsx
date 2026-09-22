@@ -375,10 +375,16 @@ export function TransactionSheet({
 					</SheetTitle>
 					<SheetDescription>
 						{transaction?.source.kind === "import"
-							? t("transactions.sources.import", {
-									format: transaction.source.format.toUpperCase(),
-									date: formatShortDate(transaction.source.date),
-								})
+							? t(
+									transaction.reference === null
+										? "transactions.sources.import"
+										: "transactions.sources.importReference",
+									{
+										format: transaction.source.format.toUpperCase(),
+										date: formatShortDate(transaction.source.date),
+										reference: transaction.reference,
+									},
+								)
 							: t("transactions.sources.manual")}
 					</SheetDescription>
 				</SheetHeader>

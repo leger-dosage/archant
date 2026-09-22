@@ -5,6 +5,7 @@ import type {
 	CsvDelimiter,
 	CsvSign,
 } from "../csv-mapping.ts";
+import type { QifDateOrder } from "../qif-options.ts";
 
 import { sql } from "drizzle-orm";
 import { blob, check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -14,9 +15,9 @@ import { inList } from "./check.ts";
 
 /**
  * Connector ids of the file sources (AD-3). The same string is
- * `imports.source` and `entry_keys.source`; QIF joins with its story.
+ * `imports.source` and `entry_keys.source`.
  */
-export const FILE_SOURCE_IDS = ["ofx", "csv"] as const;
+export const FILE_SOURCE_IDS = ["ofx", "csv", "qif"] as const;
 
 export type FileSourceId = (typeof FILE_SOURCE_IDS)[number];
 
@@ -47,6 +48,12 @@ export type ImportOptions = {
 	moveOpeningDate?: string | undefined;
 	/** How a CSV file is read; absent for every other source. */
 	csv?: CsvMapping | undefined;
+	/**
+	 * How a QIF file's dates are read, when the user chose; absent, the order
+	 * that reads every date wins. Never saved per account: QIF has no header
+	 * saying which, so the next file is detected again.
+	 */
+	qif?: { dateOrder: QifDateOrder } | undefined;
 };
 
 /** How many lines of a confirmed import fell in each group. */

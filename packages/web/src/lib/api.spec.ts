@@ -25,13 +25,28 @@ describe("unwrap", () => {
 		await expect(result).rejects.toMatchObject({ code: "VALIDATION_ERROR", fields });
 	});
 
+	it("keeps the params of a refusal", async () => {
+		const result = unwrap(
+			failed(() =>
+				Promise.resolve({
+					error: { code: "INVALID_IMPORT_FILE", message: "Refused", params: { type: "Invst" } },
+				}),
+			),
+		);
+
+		await expect(result).rejects.toMatchObject({
+			code: "INVALID_IMPORT_FILE",
+			params: { type: "Invst" },
+		});
+	});
+
 	it("reports a code the interface cannot translate as INTERNAL_ERROR", async () => {
 		const result = unwrap(
 			failed(() => Promise.resolve({ error: { code: "TEAPOT", message: "Short" } })),
 		);
 
 		await expect(result).rejects.toBeInstanceOf(ApiError);
-		await expect(result).rejects.toMatchObject({ code: "INTERNAL_ERROR", fields: [] });
+		await expect(result).rejects.toMatchObject({ code: "INTERNAL_ERROR", fields: [], params: {} });
 	});
 
 	it("reports a body that is not the envelope, such as the proxy's page, as NETWORK_ERROR", async () => {
