@@ -49,3 +49,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2-sign-out-change-password-reset-from-the-server.md`
   summary: Run `cli/reset-password.ts` through its prompts in a test, covering the mapping from each refusal to its French sentence and the exit code.
   evidence: The spec covers the terminal check only; reaching the prompts needs a pseudo-terminal, a dependency the repository does not have. Swapping two entries of `MESSAGES`, or exiting 0 on a failure, breaks no test today. Every piece of logic behind them is covered separately in `services/password.spec.ts` and `lib/prompt.spec.ts`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-3-run-archant-from-one-container.md`
+  summary: Write the container backup procedure in `docs/deployment.md`: `VACUUM INTO` through the running server's volume, since the image carries no `sqlite3` and copying `archant.db` without its WAL loses the latest writes.
+  evidence: The Backups section predates Story 3.3 and names no command; the architecture says backups are documented with `VACUUM INTO`, and a household on the container has no documented way to take a consistent copy.

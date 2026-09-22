@@ -1,12 +1,12 @@
 import { fileURLToPath } from "node:url";
 
-// Not the dev ports (8787 and 5173): the suite runs beside `pnpm api
-// start:dev` and `pnpm web start:dev` without touching their database.
-export const API_PORT = 8788;
-export const WEB_PORT = 4174;
+// Not a dev port (8787 or 5173): the suite runs beside `pnpm api start:dev`
+// and `pnpm web start:dev` without touching their database. One port, as in
+// the container: the API serves the built interface itself.
+export const PORT = 8788;
 
 /** The origin the browser uses, and so `BETTER_AUTH_URL` for the suite's API. */
-export const WEB_URL = `http://localhost:${WEB_PORT}`;
+export const WEB_URL = `http://localhost:${PORT}`;
 
 // The browser and the API agree on which day is today, whatever the zone of
 // the machine running the suite.

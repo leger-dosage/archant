@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { ADMIN_STATE, API_PORT, TIME_ZONE, WEB_PORT, WEB_URL } from "./e2e/settings.ts";
+import { ADMIN_STATE, TIME_ZONE, WEB_URL } from "./e2e/settings.ts";
 
 const CI = Boolean(process.env["CI"]);
 
@@ -45,23 +45,17 @@ export default defineConfig({
 			dependencies: ["chromium"],
 		},
 	],
-	// No `reuseExistingServer`: a stale server left on these ports once made a
+	// No `reuseExistingServer`: a stale server left on this port once made a
 	// failure look like a hanging request. A taken port stops the run instead.
-	webServer: [
-		{
-			command: "node e2e/start-api.ts",
-			port: API_PORT,
-			// Lets the script delete its temporary database before it exits.
-			gracefulShutdown: { signal: "SIGTERM", timeout: 5000 },
-			stdout: "pipe",
-		},
-		{
-			// The bundle that ships, not the dev server's modules.
-			command: `pnpm exec vite build --logLevel warn && pnpm exec vite preview --port ${WEB_PORT} --strictPort`,
-			url: WEB_URL,
-			// Read by vite.config.ts as the proxy target for `/api`.
-			env: { PORT: String(API_PORT) },
-			timeout: 120_000,
-		},
-	],
+	webServer: {
+		// The bundle that ships, not the dev server's modules, served by the API
+		// on one port as in the container: a reloaded deep link and an unknown
+		// `/api` route then reach the server exactly as a browser sends them.
+		command: "pnpm exec vite build --logLevel warn && node e2e/start-api.ts",
+		url: `${WEB_URL}/api/health`,
+		// Lets the script delete its temporary database before it exits.
+		gracefulShutdown: { signal: "SIGTERM", timeout: 5000 },
+		stdout: "pipe",
+		timeout: 120_000,
+	},
 });

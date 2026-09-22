@@ -226,9 +226,9 @@ export const test = base.extend<{ api: Api; clientAddress: void; outsideRequestG
 		await use(apiHelpers(request));
 	},
 
-	// Each test's browser plays a distinct client behind the preview server,
-	// the reverse proxy the suite's API trusts: its `x-forwarded-for` names the
-	// client, as a real proxy's would. Sharing one address, the suite would run
+	// Each test's browser plays a distinct client behind a reverse proxy: the
+	// suite's API trusts loopback, so this `x-forwarded-for` names the client,
+	// as a real proxy's would. Sharing one address, the suite would run
 	// past Better Auth's 100 calls per sliding ten seconds on `/api/auth/*`
 	// (every page load asks for the session), and one test's sign-ins would
 	// count against another's limit of three.

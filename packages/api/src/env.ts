@@ -1,4 +1,5 @@
 import { createEnv } from "@t3-oss/env-core";
+import { isAbsolute } from "node:path";
 import { z } from "zod";
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
@@ -54,6 +55,13 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 						.filter((entry) => entry !== ""),
 				)
 				.pipe(z.array(z.union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()]))),
+			// The built interface, which the API then serves under `/`. Absolute,
+			// because a relative path would depend on the directory the server
+			// happens to be started from.
+			WEB_DIST: z
+				.string()
+				.refine((value) => isAbsolute(value))
+				.optional(),
 		},
 		runtimeEnv,
 		emptyStringAsUndefined: true,

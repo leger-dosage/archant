@@ -18,6 +18,8 @@ export const ERROR_STATUSES = {
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
 	INTERNAL_ERROR: 500,
+	/** The health check could not read the database. */
+	SERVICE_UNAVAILABLE: 503,
 } as const satisfies Record<string, ContentfulStatusCode>;
 
 export type ErrorCode = keyof typeof ERROR_STATUSES;

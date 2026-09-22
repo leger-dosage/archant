@@ -74,7 +74,14 @@ Open http://localhost:5173.
 
 ## Deploying
 
-The reference target is a single container serving the interface and the API against a SQLite file on a volume, with no cloud account. Other targets are described in [docs/deployment.md](docs/deployment.md).
+The reference target is a single container serving the interface and the API against a SQLite file on a volume, with no cloud account:
+
+```bash
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+docker compose up --build --detach --wait
+```
+
+Open http://localhost:8787 and create the administrator. Reverse proxies, variables, upgrades and other targets are described in [docs/deployment.md](docs/deployment.md).
 
 ## Contributing
 

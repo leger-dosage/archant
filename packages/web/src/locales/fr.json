@@ -479,6 +479,7 @@
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
+		"SERVICE_UNAVAILABLE": "La base de données ne répond pas. Réessayez dans un instant.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

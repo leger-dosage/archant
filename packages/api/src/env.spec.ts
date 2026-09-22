@@ -26,6 +26,14 @@ describe("validateEnv", () => {
 		expect(env.PORT).toBe(8787);
 		expect(env.BETTER_AUTH_URL).toBe("http://localhost:5173");
 		expect(env.TRUSTED_PROXIES).toEqual([]);
+		expect(env.WEB_DIST).toBeUndefined();
+	});
+
+	it("accepts an absolute WEB_DIST and names a relative one", () => {
+		expect(validateEnv({ ...required, WEB_DIST: "/app/packages/web/dist" }).WEB_DIST).toBe(
+			"/app/packages/web/dist",
+		);
+		expect(() => validateEnv({ ...required, WEB_DIST: "packages/web/dist" })).toThrow(/WEB_DIST/);
 	});
 
 	it("reads the port as a number and names one out of range", () => {
