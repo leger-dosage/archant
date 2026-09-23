@@ -9,6 +9,10 @@ export const ACCOUNT_KINDS = [
 	{ id: "checking", type: "depository", subtype: "checking" },
 	{ id: "savings", type: "depository", subtype: "savings" },
 	{ id: "credit_card", type: "credit_card", subtype: null },
+	{ id: "mortgage", type: "loan", subtype: "mortgage" },
+	{ id: "consumer", type: "loan", subtype: "consumer" },
+	// `other` alone would read as any account, not a loan.
+	{ id: "other_loan", type: "loan", subtype: "other" },
 ] as const satisfies readonly { id: string; type: AccountType; subtype: AccountSubtype | null }[];
 
 export type AccountKindId = (typeof ACCOUNT_KINDS)[number]["id"];

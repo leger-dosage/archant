@@ -16,6 +16,7 @@ import { AccountSettings } from "@/components/AccountSettings";
 import { BalanceChart, PeriodToggle } from "@/components/BalanceChart";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
+import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
 import { ShortcutHint } from "@/components/ShortcutHint";
@@ -393,6 +394,9 @@ function AccountPage() {
 						<p className="text-sm text-muted-foreground">
 							{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
 						</p>
+						{account.data.details !== null && (
+							<LoanSummary details={account.data.details} currency={account.data.currency} />
+						)}
 						<Money
 							amount={account.data.balance}
 							currency={account.data.currency}

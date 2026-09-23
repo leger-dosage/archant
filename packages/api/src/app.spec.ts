@@ -76,6 +76,13 @@ const valid = {
 	openingDate: "2026-09-01",
 } as const;
 
+const mortgage = {
+	name: "Prêt immobilier",
+	type: "loan",
+	subtype: "mortgage",
+	openingBalance: "180 000,00",
+} as const;
+
 beforeAll(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	// A session lasts seven days and Better Auth deletes it once expired. Signed
@@ -166,6 +173,134 @@ describe("POST /api/accounts", () => {
 
 		expect(status).toBe(400);
 		expect(body.error.fields).toEqual([{ path: "openingDate", code: "date_too_early" }]);
+	});
+
+	it("creates a loan as a liability owing its outstanding balance, with empty details", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		expect(data).toMatchObject({ type: "loan", subtype: "mortgage", balance: 18000000 });
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: {
+				classification: "liability",
+				balance: 18000000,
+				details: { originalAmount: null, interestRate: null, endDate: null },
+			},
+		});
+	});
+
+	it("stores a loan's amount borrowed, rate in basis points and end date", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				details: { originalAmount: "200 000,00", interestRate: "3,45", endDate: "2045-06-30" },
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({
+			data: { details: { originalAmount: 20000000, interestRate: 345, endDate: "2045-06-30" } },
+		});
+	});
+
+	it.each(["3,45 %", "3,45%", "3.45 %"])(
+		"reads the rate %j with its percent sign",
+		async (interestRate) => {
+			const response = await testClient(buildApp()).api.accounts.$post({
+				json: { ...valid, ...mortgage, details: { interestRate } },
+			});
+			const { data } = await response.json();
+
+			const detail = await request("GET", `/api/accounts/${data.id}`);
+
+			expect(detail.body).toMatchObject({ data: { details: { interestRate: 345 } } });
+		},
+	);
+
+	it("reads the amount borrowed in the loan's own currency", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				currency: "JPY",
+				openingBalance: "150 000",
+				details: { originalAmount: "200 000" },
+			},
+		});
+		const { data } = await response.json();
+		const refused = await postRaw({
+			...valid,
+			...mortgage,
+			currency: "JPY",
+			openingBalance: "150 000",
+			details: { originalAmount: "1,5" },
+		});
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({ data: { details: { originalAmount: 200000 } } });
+		expect(refused.body.error.fields).toEqual([
+			{ path: "details.originalAmount", code: "invalid_amount" },
+		]);
+	});
+
+	it("reads a rate with a dot, and leaves blank details empty", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				details: { originalAmount: " ", interestRate: "4.1", endDate: "" },
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({
+			data: { details: { originalAmount: null, interestRate: 410, endDate: null } },
+		});
+	});
+
+	it.each(["3,456", "-1", "101", "100,01", "abc"])("refuses the rate %j", async (interestRate) => {
+		const { status, body } = await postRaw({ ...valid, ...mortgage, details: { interestRate } });
+
+		expect(status).toBe(400);
+		expect(body.error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "details.interestRate", code: "invalid_rate" }],
+		});
+	});
+
+	it.each(["0", "-5", "abc", "1,234"])("refuses the amount borrowed %j", async (originalAmount) => {
+		const { status, body } = await postRaw({ ...valid, ...mortgage, details: { originalAmount } });
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([{ path: "details.originalAmount", code: "invalid_amount" }]);
+	});
+
+	it("refuses an end date that is not a date", async () => {
+		const { body } = await postRaw({ ...valid, ...mortgage, details: { endDate: "2045-02-30" } });
+
+		expect(body.error.fields).toEqual([{ path: "details.endDate", code: "invalid_date" }]);
+	});
+
+	it("refuses loan details on a card", async () => {
+		const { status, body } = await postRaw({
+			...valid,
+			type: "credit_card",
+			subtype: null,
+			details: { interestRate: "3" },
+		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
 	});
 
 	it("answers a body that is not JSON with VALIDATION_ERROR", async () => {
@@ -292,6 +427,7 @@ describe("GET /api/accounts/:id", () => {
 			classification: "asset",
 			openingDate: "2026-09-01",
 			balance: 123456,
+			details: null,
 		});
 	});
 
@@ -1341,6 +1477,18 @@ async function balanceOnDay(accountId: string, date: string) {
 }
 
 describe("POST /api/accounts/:id/snapshots", () => {
+	it("pins what a loan owes on its date; a later repayment lowers it from there", async () => {
+		const loan = await openAccount({ ...mortgage, openingDate: "2026-01-10" });
+
+		await recorded(loan.id, { date: "2026-03-05", balance: "175 000,00" });
+		await postTransaction(loan.id, { date: "2026-03-06", label: "Échéance", amount: "1 200,00" });
+
+		await expect(balanceOnDay(loan.id, "2026-03-04")).resolves.toBe(18000000);
+		await expect(balanceOnDay(loan.id, "2026-03-05")).resolves.toBe(17500000);
+		await expect(balanceOnDay(loan.id, "2026-03-06")).resolves.toBe(17380000);
+		await expect(balanceOf(loan.id)).resolves.toBe(17380000);
+	});
+
 	it("pins the balance on its date; the next day continues from it", async () => {
 		const account = await openPinned();
 
@@ -1913,6 +2061,77 @@ describe("PATCH /api/accounts/:id", () => {
 			{ path: "excludedFromReports", code: "invalid_type" },
 		]);
 		expect(errorBody.parse(tooLong.body).error.fields).toEqual([{ path: "name", code: "too_big" }]);
+	});
+
+	it("replaces a loan's details, a blank field clearing its value", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: { originalAmount: "200 000,00", interestRate: "3,45", endDate: "2045-06-30" },
+		});
+
+		const { status, body } = await patchAccount(loan.id, {
+			details: { originalAmount: "200 000,00", interestRate: "3,10", endDate: "" },
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({
+			data: { details: { originalAmount: 20000000, interestRate: 310, endDate: null } },
+		});
+	});
+
+	it("refuses details on a non-loan, and an invalid one on a loan, saving nothing", async () => {
+		const account = await openAccount();
+		const loan = await openAccount({ ...mortgage, details: { interestRate: "3,45" } });
+
+		const onChecking = await patchAccount(account.id, {
+			details: { originalAmount: "", interestRate: "3", endDate: "" },
+		});
+		const onLoan = await patchAccount(loan.id, {
+			name: "Autre",
+			details: { interestRate: "3,456", originalAmount: "0", endDate: "" },
+		});
+
+		expect(onChecking.status).toBe(400);
+		expect(errorBody.parse(onChecking.body).error.fields).toEqual([
+			{ path: "details", code: "invalid_details" },
+		]);
+		expect(onLoan.status).toBe(400);
+		expect(errorBody.parse(onLoan.body).error.fields).toEqual([
+			{ path: "details.originalAmount", code: "invalid_amount" },
+			{ path: "details.interestRate", code: "invalid_rate" },
+		]);
+		const detail = await request("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({
+			data: { name: "Prêt immobilier", details: { interestRate: 345 } },
+		});
+	});
+
+	it("refuses partial details, which would clear the fields left out", async () => {
+		const loan = await openAccount({ ...mortgage, details: { originalAmount: "200 000,00" } });
+
+		const { status, body } = await patchAccount(loan.id, { details: { interestRate: "3" } });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
+		const detail = await request("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { originalAmount: 20000000 } } });
+	});
+
+	it("reads a JPY loan's amount borrowed in yen", async () => {
+		const loan = await openAccount({ ...mortgage, currency: "JPY", openingBalance: "150 000" });
+
+		const saved = await patchAccount(loan.id, {
+			details: { originalAmount: "200 000", interestRate: "", endDate: "" },
+		});
+		const refused = await patchAccount(loan.id, {
+			details: { originalAmount: "1,5", interestRate: "", endDate: "" },
+		});
+
+		expect(saved.body).toMatchObject({ data: { details: { originalAmount: 200000 } } });
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "details.originalAmount", code: "invalid_amount" },
+		]);
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {
@@ -4275,6 +4494,56 @@ describe("transfers", () => {
 		});
 	});
 
+	it("links a repayment into a loan as a loan payment, by hand too, lowering what it owes", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const loan = await openOwn(mortgage);
+		const payment = await postOwn(checking.id, {
+			date: "2026-09-12",
+			label: "ECHEANCE PRET",
+			amount: "-1 200,00",
+		});
+		const repaid = await postOwn(loan.id, {
+			date: "2026-09-12",
+			label: "ECHEANCE",
+			amount: "1 200,00",
+		});
+		const [automatic] = (await listed("?direction=transfer")).items;
+
+		expect(automatic?.transfer?.kind).toBe("loan_payment");
+		await ownRequest("DELETE", `/api/transfers/${automatic?.transfer?.id ?? ""}`);
+		const matched = await ownRequest("POST", "/api/transfers", {
+			transactionId: payment,
+			counterpartId: repaid,
+		});
+
+		expect(created.parse(matched.body).data).toMatchObject({
+			outflowTransactionId: payment,
+			inflowTransactionId: repaid,
+			kind: "loan_payment",
+		});
+		const detail = await ownRequest("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({ data: { balance: 18000000 - 120000 } });
+		// The outflow still spends, so it is an expense; the loan side is neither.
+		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([payment]);
+		expect((await listed("?direction=transfer")).items.map((item) => item.id)).toEqual([repaid]);
+	});
+
+	it("links a card paying off a loan as a loan payment", async () => {
+		const card = await openOwn(ownCard);
+		const loan = await openOwn(mortgage);
+		const payment = await postOwn(card.id, {
+			date: "2026-09-12",
+			label: "ECHEANCE PRET",
+			amount: "-1 200,00",
+		});
+		await postOwn(loan.id, { date: "2026-09-13", label: "ECHEANCE", amount: "1 200,00" });
+
+		const data = await listed("?direction=transfer");
+
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual(["loan_payment"]);
+		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([payment]);
+	});
+
 	it("refuses a counterpart that is not a candidate, already matched included", async () => {
 		const { checking, inflow } = await household();
 		// Five days before the other +500, so nothing else qualifies.
@@ -4434,6 +4703,17 @@ const ownCard = {
 } as const;
 
 describe("GET /api/reports/net-worth", () => {
+	it("subtracts what a loan still owes", async () => {
+		await openOwn({ openingBalance: "200 000,00" });
+		await openOwn(mortgage);
+
+		await expect(netWorthOf()).resolves.toMatchObject({
+			netWorth: 2000000,
+			assets: 20000000,
+			liabilities: 18000000,
+		});
+	});
+
 	it("subtracts what a card owes from what the checking account holds", async () => {
 		await openOwn({ openingBalance: "1 000,00" });
 		await openOwn(ownCard);
@@ -4733,6 +5013,27 @@ describe("GET /api/reports/cash-flow", () => {
 			expenses: -1200,
 			lines: { income: [], expense: [line(null, null, -1200)] },
 		});
+	});
+
+	it("counts a loan payment's outflow in « Dépenses », its loan side in neither", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const loan = await openOwn({ ...august, ...mortgage });
+		const outflow = await spend(checking.id, "-1 200,00", undefined, "2026-09-12");
+		const inflow = await spend(loan.id, "1 200,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("loan_payment");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			income: 0,
+			expenses: -120000,
+			lines: { income: [], expense: [line(null, null, -120000)] },
+		});
+		// The « Sans catégorie » drill-down lists what the line counts.
+		const drilled = await listed("?category=none&direction=expense&from=2026-09-01&to=2026-09-30");
+		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
+		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
 	it("leaves out a transfer side put in a category before its match", async () => {

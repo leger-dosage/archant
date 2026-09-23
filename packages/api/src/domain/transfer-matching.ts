@@ -48,11 +48,18 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 
 /**
  * The kind of a transfer, from the type of the account the money lands in, as
- * Sure's `Transfer#kind_for_account`. Loan and investment accounts arrive with
- * Epic 7 and will add their branches here.
+ * Sure's `Transfer#kind_for_account`: the outflow account's type never
+ * matters, so a card paying off a loan is a loan payment too.
  */
 export function transferKindOf(inflowAccountType: AccountType): TransferKind {
-	return inflowAccountType === "credit_card" ? "credit_card_payment" : "internal_move";
+	// A record, so a new account type does not compile until it names its kind.
+	const kinds: Record<AccountType, TransferKind> = {
+		depository: "internal_move",
+		credit_card: "credit_card_payment",
+		loan: "loan_payment",
+	};
+
+	return kinds[inflowAccountType];
 }
 
 /**

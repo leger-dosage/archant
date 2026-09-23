@@ -2,7 +2,8 @@
 title: 'Story 7.1: Loan accounts'
 type: 'feature'
 created: '2026-09-23'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: 'ac83fbff4f712bd9127f0686f5be8bf561385ca9'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -63,13 +64,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/data/account-types.spec.ts`, `migrate.spec.ts` -- failing tests for the `loan` type and the migration survival case.
-- [ ] `packages/data/account-types.ts`, `schema/accounts.ts`, `drizzle/0018_*` -- type, `LoanDetails`, column, generated migration.
-- [ ] `packages/api/src/domain/transfer-matching.spec.ts`, `transfer-matching.ts` -- loan branch.
-- [ ] `packages/api/src/app.spec.ts`, `services/ledger.spec.ts` -- failing tests for every matrix row; replace the hand-built pairs.
-- [ ] `packages/api/src/schemas/accounts.ts`, `services/ledger.ts`, `services/accounts.ts` -- details parsing, storage, return, update; « Sans catégorie » condition.
-- [ ] `packages/web/src/lib/account-kinds.ts`, `components/CreateAccountDialog.tsx`, `components/AccountSettings.tsx`, `routes/_authed.comptes.$accountId.tsx`, `locales/fr.json` -- kinds, fields, header.
-- [ ] `packages/web/e2e/accounts.spec.ts`, `transfers.spec.ts`, `snapshots.spec.ts`, `dashboard.spec.ts` -- one test per criterion below.
+- [x] `packages/data/account-types.spec.ts`, `migrate.spec.ts` -- failing tests for the `loan` type and the migration survival case.
+- [x] `packages/data/account-types.ts`, `schema/accounts.ts`, `drizzle/0018_*` -- type, `LoanDetails`, column, generated migration.
+- [x] `packages/api/src/domain/transfer-matching.spec.ts`, `transfer-matching.ts` -- loan branch.
+- [x] `packages/api/src/app.spec.ts`, `services/ledger.spec.ts` -- failing tests for every matrix row; replace the hand-built pairs.
+- [x] `packages/api/src/schemas/accounts.ts`, `services/ledger.ts`, `services/accounts.ts` -- details parsing, storage, return, update; « Sans catégorie » condition.
+- [x] `packages/web/src/lib/account-kinds.ts`, `components/CreateAccountDialog.tsx`, `components/AccountSettings.tsx`, `routes/_authed.comptes.$accountId.tsx`, `locales/fr.json` -- kinds, fields, header.
+- [x] `packages/web/e2e/accounts.spec.ts`, `transfers.spec.ts`, `snapshots.spec.ts`, `dashboard.spec.ts` -- one test per criterion below.
 
 **Acceptance Criteria:**
 - Given the create dialog, when I create a « Prêt immobilier » with its outstanding balance, amount borrowed, rate and end date, then it is listed under « Passifs » with that balance, and its page shows the three details.
@@ -79,9 +80,42 @@ context:
 
 ## Implementation Notes
 
+- drizzle-kit generated `0018` reading `details` from the old `accounts`, which has none; the copy selects `NULL` instead, as `0009` and `0012` were edited. A migration test checks that accounts, entries, imports and CSV mappings survive and that the dropped table cascades nothing.
+- A loan always stores `details`, each field null until known; other types store `null`, so the header's `LoanSummary` renders for loans only.
+- `PATCH` replaces `details` whole and requires its three keys, blank clearing a field: a partial object would otherwise clear the keys it leaves out. The Paramètres form always sends all three.
+- The rate accepts a trailing `%` and is shown with two decimals (`3,00 %`), as lenders write it.
+- `accountSettingsFormSchema` takes the account's currency, since the amount borrowed has that currency's decimals.
+- The create dialog keeps typed loan fields when another type is picked and drops them before validation, since the API refuses details on other types.
+- `transferKindOf` is a `Record<AccountType, TransferKind>`, so Stories 7.2 and 7.3 do not compile until their type names its kind.
+- The « Dépenses » criterion is checked in `e2e/transfers.spec.ts` on June 2024, a month no other test uses, rather than in `dashboard.spec.ts`.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Finding | Verdict | Route / evidence |
+|---|--------|---------|---------|------------------|
+| 1 | blind | `sprint-status.yaml` says `in-progress` while the spec is `in-review` | false | step 5 of the build moves the story to `review` |
+| 2 | blind, edge | Tasks name `e2e/dashboard.spec.ts`, which is untouched | low | rejected: the fix edits this spec; the « Dépenses » check sits in `transfers.spec.ts` (Implementation Notes) |
+| 3 | blind, edge | `categoryCondition` comment names only loan payments, `isTransferSide` also lets investment contributions through | low | patch: comment names both |
+| 4 | blind, edge | No check constraint ties `details` to `type = 'loan'` | low | rejected: Stories 7.2 and 7.3 may give other types details, and each check change rebuilds `accounts`; only the parser writes the column |
+| 5 | blind | A PATCH with partial `details` clears the missing fields | low | patch: the update schema requires all three keys, blank still clears |
+| 6 | blind | `rateToText` writes `3` for 300 but `4,90` for 490 | low | patch: always two decimals |
+| 7 | blind | A loan disbursement (loan to checking) is untested | low | rejected: it takes the existing `internal_move` branch, as Sure's `kind_for_account` |
+| 8 | blind | The create dialog's resolver is untested | false | the existing e2e creating a checking account through the form sends the default blank `details`, which the API would refuse |
+| 9 | blind | Fixed ids in `LoanDetailsFields` clash if the create dialog opens over a loan's Paramètres | low | rejected: needs the dialog opened on a loan kind over that tab; fix adds id plumbing |
+| 10 | blind, edge | `endDate` has no bound | low | rejected: a typo shows in the header and is fixed in Paramètres; a bound adds a cross-field rule |
+| 11 | blind | Migration test skips `balances` and `entry_keys` | low | rejected: `pragma_foreign_key_check` passes and `entries` covers the same restrict path |
+| 12 | blind | Spec says « Solde d'ouverture », the label is « Solde initial » | low | rejected: the fix edits this spec |
+| 13 | edge | A loan-payment outflow categorised before its match counts in that category while its row hides it | medium | defer: pre-existing transfer-side category rule from Epic 5 |
+| 14 | edge | `3,45 %` is refused | low | patch: optional trailing `%` accepted |
+| 15 | edge | `details` returned without parsing | false | only `parseLoanDetails` writes the column |
+| 16 | verification-gap | No test reads loan details in a non-EUR currency | medium | patch: JPY cases on create and update |
+| 17 | spec-review standards | `accounts.details` is not validated by a Zod schema per type (AD-6) | low | rejected: typed input goes through `loanDetailsInputSchema` and `parseLoanDetails`, the only writer; `@archant/data` has no Zod |
+| 18 | spec-review standards | Loan-detail issues mapped to field errors in two schemas | low | patch: `reportLoanDetailsIssues` |
+| 19 | spec-review standards | `type === "loan"` repeated across schema, service and forms | low | rejected: one type has details today; a shared map waits for a second one in Story 7.2 or 7.3 |
+| 20 | spec-review standards | Rate and end date are bare `number` and `string` | low | rejected: not money; the type's comment names the units |
+| 21 | spec-review spec | Form description now names loans | low | rejected: keeps the dialog's text true for the new type |
 
 ## Design Notes
 

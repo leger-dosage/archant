@@ -1,8 +1,8 @@
 import type { AccountDetailData } from "@/hooks/useAccount";
-import type { FieldError } from "react-hook-form";
+import type { FieldError, UseFormReturn } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import type { AccountSettingsFormInput } from "@archant/api/schemas/accounts";
 import { accountSettingsFormSchema } from "@archant/api/schemas/accounts";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +29,16 @@ import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { loanDetailsToInput } from "@/lib/loan-details";
 
-const FIELD_NAMES = ["name", "subtype", "excludedFromReports"] as const;
+const FIELD_NAMES = [
+	"name",
+	"subtype",
+	"excludedFromReports",
+	"details.originalAmount",
+	"details.interestRate",
+	"details.endDate",
+] as const;
 
 const countFormat = new Intl.NumberFormat("fr-FR");
 
@@ -53,17 +62,37 @@ function FieldMessage({ id, error }: { id: string; error: FieldError | undefined
 	);
 }
 
+/** Rendered for a loan only, so no other account's form ever holds `details`. */
+function LoanFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const endDate = useController({ control: form.control, name: "details.endDate" });
+
+	return (
+		<LoanDetailsFields
+			originalAmount={form.register("details.originalAmount")}
+			interestRate={form.register("details.interestRate")}
+			endDate={endDate.field}
+			errors={form.formState.errors.details}
+		/>
+	);
+}
+
 function SettingsForm({ account }: { account: AccountDetailData }) {
 	const { t } = useTranslation();
 	const updateAccount = useUpdateAccount(account.id);
+	const isLoan = account.type === "loan";
 	const values: AccountSettingsFormInput = {
 		name: account.name,
 		subtype: account.subtype,
 		excludedFromReports: account.excludedFromReports,
+		...(isLoan ? { details: loanDetailsToInput(account.details, account.currency) } : {}),
 	};
-	const form = useForm<AccountSettingsFormInput>({
+	const resolver = useMemo(
 		// `raw` sends the name as typed; the API trims it with the same schema.
-		resolver: zodResolver(accountSettingsFormSchema, undefined, { raw: true }),
+		() => zodResolver(accountSettingsFormSchema(account.currency), undefined, { raw: true }),
+		[account.currency],
+	);
+	const form = useForm<AccountSettingsFormInput>({
+		resolver,
 		// Follows the saved account, so the form never shows a stale name.
 		values,
 	});
@@ -73,9 +102,21 @@ function SettingsForm({ account }: { account: AccountDetailData }) {
 	// A credit card has no subtype, so it has nothing to choose.
 	const kinds = ACCOUNT_KINDS.filter((kind) => kind.type === account.type);
 
-	const submit = form.handleSubmit(async (input) => {
+	const submit = form.handleSubmit(async ({ details, ...input }) => {
 		try {
-			const saved = await updateAccount.mutateAsync(input);
+			// The API replaces the details whole, so all three always go.
+			const saved = await updateAccount.mutateAsync(
+				isLoan
+					? {
+							...input,
+							details: {
+								originalAmount: details?.originalAmount ?? "",
+								interestRate: details?.interestRate ?? "",
+								endDate: details?.endDate ?? "",
+							},
+						}
+					: input,
+			);
 			toast.success(t("accountSettings.saved", { name: saved.name }));
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
@@ -147,6 +188,8 @@ function SettingsForm({ account }: { account: AccountDetailData }) {
 					<FieldMessage id="account-subtype-error" error={errors.subtype} />
 				</div>
 			)}
+
+			{isLoan && <LoanFields form={form} />}
 
 			<div className="flex items-start gap-3">
 				<Switch

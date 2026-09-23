@@ -102,6 +102,72 @@ test("a depository account is listed under assets and a credit card under liabil
 	await expect(pageGroupHeader(page, "Passifs")).toContainText(euros(liabilityTotal));
 });
 
+// Story 7.1: loan accounts.
+
+test("a mortgage created through the form is listed under « Passifs », its page showing its details", async ({
+	page,
+}) => {
+	const name = uniqueName("Prêt immobilier");
+
+	await page.goto("/comptes");
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Prêt immobilier" }).click();
+	await expect(dialog.getByLabel("Solde initial")).toHaveCount(0);
+	await dialog.getByLabel("Capital restant dû").fill("180 000,00");
+	await dialog.getByLabel("Montant emprunté").fill("200 000,00");
+	await dialog.getByLabel("Taux (%)").fill("3,45");
+	await dialog.getByLabel("Date de fin").fill("30/06/2045");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+
+	await expect(dialog).toBeHidden();
+	const liabilities = page.getByRole("region", { name: "Passifs" });
+	const row = liabilities.getByRole("link", { name: new RegExp(name) });
+	await expect(row).toContainText("Prêt immobilier");
+	await expect(row).toContainText(euros(18_000_000));
+	await expect(
+		page.getByRole("region", { name: "Actifs" }).getByRole("link", { name: new RegExp(name) }),
+	).toHaveCount(0);
+
+	await row.click();
+	const details = page.getByRole("list", { name: "Détails du prêt" });
+	await expect(details.getByRole("listitem")).toHaveText([
+		`Emprunté : ${euros(20_000_000)}`,
+		"Taux : 3,45 %",
+		"Fin : 30/06/2045",
+	]);
+});
+
+test("a loan's new rate in Paramètres shows in its header", async ({ page, api }) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "consumer",
+		openingBalance: "8 000,00",
+		details: { interestRate: "4,9" },
+	});
+
+	await page.goto(`/comptes/${loan.id}?tab=settings`);
+	const details = page.getByRole("list", { name: "Détails du prêt" });
+	await expect(details).toHaveText("Taux : 4,90 %");
+	await expect(page.getByLabel("Taux (%)")).toHaveValue("4,90");
+	await expect(page.getByLabel("Montant emprunté")).toHaveValue("");
+	await page.getByLabel("Taux (%)").fill("3,456");
+	await page.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(page.getByLabel("Taux (%)")).toHaveAccessibleDescription(
+		"Taux invalide. Exemple : 3,45, entre 0 et 100.",
+	);
+
+	await page.getByLabel("Taux (%)").fill("3,75");
+	await page.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(page.getByText(`Compte « ${loan.name} » enregistré.`)).toBeVisible();
+	await expect(details).toHaveText("Taux : 3,75 %");
+	await page.reload();
+	await expect(details).toHaveText("Taux : 3,75 %");
+});
+
 test("invalid fields show their message next to the field", async ({ page }) => {
 	await page.goto("/comptes");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();

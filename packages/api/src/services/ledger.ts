@@ -37,7 +37,7 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
-import type { AccountSubtype, AccountType } from "@archant/data/account-types";
+import type { AccountSubtype, AccountType, LoanDetails } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits, Money } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -110,6 +110,8 @@ export type NewAccountInput = {
 	/** A stored balance (AD-5): an asset's value, a liability's amount owed. */
 	openingBalance: MinorUnits;
 	openingDate: IsoDate;
+	/** A loan's details; absent or null for every other type. */
+	details?: LoanDetails | null | undefined;
 };
 
 type Transaction = Parameters<Parameters<ServiceDeps["db"]["transaction"]>[0]>[0];
@@ -290,6 +292,7 @@ export async function createAccount(
 		type: input.type,
 		subtype: input.subtype,
 		currency: input.currency,
+		details: input.details ?? null,
 		active: true,
 		excludedFromReports: false,
 		createdAt: now,
@@ -2537,8 +2540,11 @@ function categoryCondition(filter: TransactionFilter): SQL | undefined | null {
 	return or(
 		ids.length === 0 ? undefined : inArray(transactions.categoryId, [...ids]),
 		// A transfer side shows no category, so it is not « Sans catégorie »
-		// either, as Sure's `uncategorized_condition` leaves transfers out.
-		uncategorised ? and(isNull(transactions.categoryId), not(inAnyTransfer)) : undefined,
+		// either, as Sure's `uncategorized_condition` leaves transfers out. The
+		// outflows of `EXPENSE_TRANSFER_KINDS`, loan payments and investment
+		// contributions, are the exception: the dashboard counts them as
+		// uncategorised expenses, so its drill-down must list them.
+		uncategorised ? and(isNull(transactions.categoryId), not(isTransferSide)) : undefined,
 	);
 }
 

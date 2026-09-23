@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { randomInt } from "node:crypto";
 
-import { daysAgo, expect, sgml, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
 
 // Stories 5.1 and 5.2: mark two transactions as a transfer, by hand or on
 // creation. One database serves the whole run and candidates are searched
@@ -157,6 +157,58 @@ test("a payment into a credit card is linked on creation as « Remboursement de 
 	await expect(rowItem(page, into).getByText("Remboursement de carte")).toBeVisible();
 	await expect(rowButton(page, out)).toContainText(`Vers ${card.name}`);
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
+});
+
+test("a repayment into a loan shows « Remboursement de prêt », lowers what it owes and counts in « Dépenses »", async ({
+	page,
+	api,
+}) => {
+	// June 2024 belongs to this test alone, so its totals and pair are exact.
+	const opened = { openingDate: "2024-05-01" } as const;
+	const prefix = uniqueName("Prêt");
+	const checking = await api.openAccount({
+		...opened,
+		name: uniqueName("Compte courant"),
+		openingBalance: "0",
+	});
+	const loan = await api.openAccount({
+		...opened,
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "180 000,00",
+	});
+	const out = `${prefix} échéance`;
+	const into = `${prefix} remboursement`;
+	const outId = await api.addTransaction(checking.id, {
+		date: "2024-06-05",
+		label: out,
+		amount: "-1 200,00",
+	});
+	const intoId = await api.addTransaction(loan.id, {
+		date: "2024-06-05",
+		label: into,
+		amount: "1 200,00",
+	});
+	// Linked on creation; undone and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(outId);
+	await api.matchTransfer(outId, intoId);
+
+	await visitOperations(page, prefix);
+	await expect(rowItem(page, out).getByText("Remboursement de prêt")).toBeVisible();
+	await expect(rowItem(page, into).getByText("Remboursement de prêt")).toBeVisible();
+	await expect(rowButton(page, out)).toContainText(`Vers ${loan.name}`);
+
+	await page.goto(`/comptes/${loan.id}`);
+	await expect(
+		page.getByRole("heading", { level: 1, name: loan.name }).locator(".."),
+	).toContainText(euros(17_880_000));
+
+	await page.goto("/?month=2024-06");
+	await expect(
+		page
+			.getByRole("region", { name: "Juin 2024" })
+			.getByRole("group", { name: "Dépenses", exact: true }),
+	).toContainText(euros(-120_000));
 });
 
 test("« Dissocier » gives both rows their category chip back and drops the caption", async ({
