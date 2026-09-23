@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { euros, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 1.1: create an account and see it listed.
 
@@ -206,6 +206,71 @@ test("a PEA created through the form is listed under « Actifs » with its value
 			.getByRole("link", { name: new RegExp(name) }),
 	).toContainText(euros(2_500_000));
 	await expect(sidebarGroup(page, "Actifs")).toContainText(euros(before + 2_500_000));
+});
+
+// Story 7.3: property and vehicle accounts.
+
+test("a home created through the form with its estimated value is listed under « Actifs » with its caption, and in the sidebar", async ({
+	page,
+	api,
+}) => {
+	// A name without « Maison », so the caption alone can show it.
+	const name = uniqueName("Résidence principale");
+	const before = await api.groupTotal("asset");
+
+	await page.goto("/comptes");
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await expect(dialog.getByLabel("Valeur estimée")).toHaveCount(0);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Maison", exact: true }).click();
+	await expect(dialog.getByLabel("Solde initial")).toHaveCount(0);
+	await dialog.getByLabel("Valeur estimée").fill("320 000,00");
+	await dialog.getByLabel("Date du solde").fill(typed(daysAgo(10)));
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+
+	await expect(dialog).toBeHidden();
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("Maison", { exact: true })).toBeVisible();
+	await expect(row).toContainText(euros(32_000_000));
+	await expect(
+		page.getByRole("region", { name: "Passifs" }).getByRole("link", { name: new RegExp(name) }),
+	).toHaveCount(0);
+	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before + 32_000_000));
+
+	await expect(
+		sidebarGroup(page, "Actifs")
+			.locator("..")
+			.getByRole("link", { name: new RegExp(name) }),
+	).toContainText(euros(32_000_000));
+});
+
+test("a vehicle created through the form with its estimated value is listed under « Actifs » with its caption", async ({
+	page,
+}) => {
+	const name = uniqueName("Voiture");
+
+	await page.goto("/comptes");
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Véhicule", exact: true }).click();
+	await dialog.getByLabel("Valeur estimée").fill("18 500,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+
+	await expect(dialog).toBeHidden();
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("Véhicule", { exact: true })).toBeVisible();
+	await expect(row).toContainText(euros(1_850_000));
+	await expect(
+		page.getByRole("region", { name: "Passifs" }).getByRole("link", { name: new RegExp(name) }),
+	).toHaveCount(0);
 });
 
 test("invalid fields show their message next to the field", async ({ page }) => {

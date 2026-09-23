@@ -90,6 +90,20 @@ const pea = {
 	openingBalance: "25 000,00",
 } as const;
 
+const home = {
+	name: "Maison",
+	type: "property",
+	subtype: "single_family_home",
+	openingBalance: "320 000,00",
+} as const;
+
+const car = {
+	name: "Voiture",
+	type: "vehicle",
+	subtype: null,
+	openingBalance: "18 500,00",
+} as const;
+
 beforeAll(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	// A session lasts seven days and Better Auth deletes it once expired. Signed
@@ -343,6 +357,67 @@ describe("POST /api/accounts", () => {
 
 		expect(status).toBe(400);
 		expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+	});
+
+	it("creates a home as an asset worth its estimated value, without details", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...home, openingDate: "2026-01-10" },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		expect(data).toMatchObject({
+			type: "property",
+			subtype: "single_family_home",
+			balance: 32000000,
+		});
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: { classification: "asset", balance: 32000000, details: null },
+		});
+	});
+
+	it("creates a vehicle without a subtype as an asset worth its estimated value", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...car },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		expect(data).toMatchObject({ type: "vehicle", subtype: null, balance: 1850000 });
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: { classification: "asset", balance: 1850000, details: null },
+		});
+	});
+
+	it("refuses a property without a subtype or with another type's, and a vehicle with one", async () => {
+		const responses = await Promise.all([
+			postRaw({ ...valid, ...home, subtype: null }),
+			postRaw({ ...valid, ...home, subtype: "pea" }),
+			postRaw({ ...valid, ...car, subtype: "car" }),
+		]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(body.error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "subtype", code: "invalid_subtype" }],
+			});
+		}
+	});
+
+	it("refuses details on a property and on a vehicle", async () => {
+		const responses = await Promise.all(
+			[home, car].map(async (account) =>
+				postRaw({ ...valid, ...account, details: { originalAmount: "300 000,00" } }),
+			),
+		);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+		}
 	});
 
 	it("answers a body that is not JSON with VALIDATION_ERROR", async () => {
@@ -1542,6 +1617,19 @@ describe("POST /api/accounts/:id/snapshots", () => {
 		await expect(balanceOf(account.id)).resolves.toBe(2630000);
 	});
 
+	it("pins a home's new estimated value on its date, without recording a transaction", async () => {
+		const account = await openAccount({ ...home, openingDate: "2026-01-10" });
+
+		await recorded(account.id, { date: "2026-06-01", balance: "335 000,00" });
+
+		await expect(balanceOnDay(account.id, "2026-05-31")).resolves.toBe(32000000);
+		await expect(balanceOnDay(account.id, "2026-06-01")).resolves.toBe(33500000);
+		await expect(balanceOnDay(account.id, "2026-06-02")).resolves.toBe(33500000);
+		await expect(balanceOf(account.id)).resolves.toBe(33500000);
+		const transactions = await request("GET", `/api/accounts/${account.id}/transactions`);
+		expect(transactions.body).toMatchObject({ data: { items: [], total: 0 } });
+	});
+
 	it("pins the balance on its date; the next day continues from it", async () => {
 		const account = await openPinned();
 
@@ -2066,6 +2154,18 @@ describe("PATCH /api/accounts/:id", () => {
 		});
 		const detail = await request("GET", `/api/accounts/${card.id}`);
 		expect(accountBody.parse(detail.body).data).toMatchObject({ name: "Carte", subtype: null });
+	});
+
+	it("refuses a subtype no type has as invalid_subtype", async () => {
+		const vehicle = await openAccount(car);
+
+		const { status, body } = await patchAccount(vehicle.id, { subtype: "car" });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "subtype", code: "invalid_subtype" }],
+		});
 	});
 
 	it("refuses a depository account without a subtype", async () => {
@@ -4669,6 +4769,31 @@ describe("transfers", () => {
 		expect((await listed("?direction=income")).items).toEqual([]);
 	});
 
+	it("links a move into a home or a vehicle as an internal move, raising its value", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const account = await openOwn(home);
+		const vehicle = await openOwn(car);
+		await postOwn(checking.id, { date: "2026-09-12", label: "TRAVAUX", amount: "-2 000,00" });
+		await postOwn(account.id, { date: "2026-09-12", label: "TRAVAUX", amount: "2 000,00" });
+		await postOwn(checking.id, { date: "2026-09-15", label: "PNEUS", amount: "-400,00" });
+		await postOwn(vehicle.id, { date: "2026-09-15", label: "PNEUS", amount: "400,00" });
+
+		const data = await listed("?direction=transfer");
+
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual([
+			"internal_move",
+			"internal_move",
+			"internal_move",
+			"internal_move",
+		]);
+		expect((await listed("?direction=expense")).items).toEqual([]);
+		expect((await listed("?direction=income")).items).toEqual([]);
+		const detail = await ownRequest("GET", `/api/accounts/${account.id}`);
+		expect(detail.body).toMatchObject({ data: { balance: 32000000 + 200000 } });
+		const vehicleDetail = await ownRequest("GET", `/api/accounts/${vehicle.id}`);
+		expect(vehicleDetail.body).toMatchObject({ data: { balance: 1850000 + 40000 } });
+	});
+
 	it("refuses a counterpart that is not a candidate, already matched included", async () => {
 		const { checking, inflow } = await household();
 		// Five days before the other +500, so nothing else qualifies.
@@ -4846,6 +4971,18 @@ describe("GET /api/reports/net-worth", () => {
 		await expect(netWorthOf()).resolves.toMatchObject({
 			netWorth: 2600000,
 			assets: 2600000,
+			liabilities: 0,
+		});
+	});
+
+	it("adds what a home and a car are worth to the assets", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		await openOwn(home);
+		await openOwn(car);
+
+		await expect(netWorthOf()).resolves.toMatchObject({
+			netWorth: 33950000,
+			assets: 33950000,
 			liabilities: 0,
 		});
 	});
@@ -5202,6 +5339,19 @@ describe("GET /api/reports/cash-flow", () => {
 		});
 		await spend(account.id, "-700,00", undefined, "2026-09-12");
 		await spend(lifeInsurance.id, "700,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("internal_move");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({ income: 0, expenses: 0, lines: { income: [], expense: [] } });
+	});
+
+	it("counts neither side of a move into a home", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const account = await openOwn({ ...august, ...home });
+		await spend(checking.id, "-2 000,00", undefined, "2026-09-12");
+		await spend(account.id, "2 000,00", undefined, "2026-09-12");
 		const [matched] = (await listed("?direction=transfer")).items;
 		expect(matched?.transfer?.kind).toBe("internal_move");
 

@@ -18,6 +18,13 @@ export const ACCOUNT_KINDS = [
 	// Sure's `brokerage`, labelled « Compte-titres ».
 	{ id: "brokerage", type: "investment", subtype: "brokerage" },
 	{ id: "other_investment", type: "investment", subtype: "other" },
+	{ id: "single_family_home", type: "property", subtype: "single_family_home" },
+	{ id: "apartment", type: "property", subtype: "apartment" },
+	{ id: "second_home", type: "property", subtype: "second_home" },
+	{ id: "investment_property", type: "property", subtype: "investment_property" },
+	{ id: "plot", type: "property", subtype: "plot" },
+	{ id: "commercial", type: "property", subtype: "commercial" },
+	{ id: "vehicle", type: "vehicle", subtype: null },
 ] as const satisfies readonly { id: string; type: AccountType; subtype: AccountSubtype | null }[];
 
 export type AccountKindId = (typeof ACCOUNT_KINDS)[number]["id"];

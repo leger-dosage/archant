@@ -94,6 +94,13 @@ describe("transferKindOf", () => {
 		expect(transferKindOf("depository", "investment")).toBe("internal_move");
 	});
 
+	it("makes money landing on a property or a vehicle an internal move", () => {
+		expect(transferKindOf("property", "depository")).toBe("internal_move");
+		expect(transferKindOf("property", "investment")).toBe("internal_move");
+		expect(transferKindOf("vehicle", "depository")).toBe("internal_move");
+		expect(transferKindOf("vehicle", "credit_card")).toBe("internal_move");
+	});
+
 	it("makes any other move an internal move", () => {
 		expect(transferKindOf("depository", "depository")).toBe("internal_move");
 	});

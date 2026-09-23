@@ -11,4 +11,9 @@ describe("kindOf", () => {
 	it("names an investment by its subtype", () => {
 		expect(kindOf("investment", "pea")).toBe("pea");
 	});
+
+	it("names a property by its subtype, and a vehicle by its type", () => {
+		expect(kindOf("property", "single_family_home")).toBe("single_family_home");
+		expect(kindOf("vehicle", null)).toBe("vehicle");
+	});
 });

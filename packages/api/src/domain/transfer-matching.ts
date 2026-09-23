@@ -64,6 +64,9 @@ export function transferKindOf(
 		credit_card: "credit_card_payment",
 		loan: "loan_payment",
 		investment: outflowAccountType === "investment" ? "internal_move" : "investment_contribution",
+		// Sure's `Transfer::Creator` falls through to `funds_movement` for both.
+		property: "internal_move",
+		vehicle: "internal_move",
 	};
 
 	return kinds[inflowAccountType];

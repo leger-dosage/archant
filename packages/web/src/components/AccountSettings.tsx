@@ -99,7 +99,7 @@ function SettingsForm({ account }: { account: AccountDetailData }) {
 	const { errors, isSubmitting } = form.formState;
 	const subtype = useController({ control: form.control, name: "subtype" });
 	const excluded = useController({ control: form.control, name: "excludedFromReports" });
-	// A credit card has no subtype, so it has nothing to choose.
+	// A credit card and a vehicle have no subtype, so they have nothing to choose.
 	const kinds = ACCOUNT_KINDS.filter((kind) => kind.type === account.type);
 
 	const submit = form.handleSubmit(async ({ details, ...input }) => {

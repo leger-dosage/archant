@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-import type { LoanDetails } from "@archant/data/account-types";
+import type { AccountSubtype, LoanDetails } from "@archant/data/account-types";
 import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
 	ACCOUNT_TYPES,
+	isAccountSubtype,
 	isSubtypeOf,
 } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
@@ -16,6 +17,10 @@ export const ACCOUNT_NAME_MAX_LENGTH = 100;
 
 // One rule for creating and renaming, so a name the one accepts the other does too.
 const accountName = z.string().trim().min(1).max(ACCOUNT_NAME_MAX_LENGTH);
+
+// `invalid_subtype`, not the enum's `invalid_value`: a subtype no type has,
+// such as a vehicle's `car`, is refused the way another type's subtype is.
+const accountSubtype = z.custom<AccountSubtype>(isAccountSubtype, "invalid_subtype").nullable();
 
 /**
  * A loan's details as typed. Every field is optional, and a blank one means
@@ -122,7 +127,7 @@ export const createAccountSchema = z
 	.object({
 		name: accountName,
 		type: z.enum(ACCOUNT_TYPE_IDS),
-		subtype: z.enum(ACCOUNT_SUBTYPES).nullable(),
+		subtype: accountSubtype,
 		currency: z.custom<CurrencyCode>(
 			(value) => typeof value === "string" && isCurrencyCode(value),
 			"invalid_currency",
@@ -139,7 +144,11 @@ export const createAccountSchema = z
 	// Runs even when another field failed, so the form shows every error at
 	// once. Each check guards on the fields it reads being valid themselves.
 	.superRefine((value, context) => {
-		if (Object.hasOwn(ACCOUNT_TYPES, value.type) && !isSubtypeOf(value.type, value.subtype)) {
+		if (
+			Object.hasOwn(ACCOUNT_TYPES, value.type) &&
+			(value.subtype === null || isAccountSubtype(value.subtype)) &&
+			!isSubtypeOf(value.type, value.subtype)
+		) {
 			context.addIssue({ code: "custom", path: ["subtype"], message: "invalid_subtype" });
 		}
 
@@ -194,7 +203,7 @@ export type CreateAccountRequest = z.output<typeof createAccountSchema>;
 export const updateAccountSchema = z
 	.object({
 		name: accountName.optional(),
-		subtype: z.enum(ACCOUNT_SUBTYPES).nullable().optional(),
+		subtype: accountSubtype.optional(),
 		active: z.boolean().optional(),
 		excludedFromReports: z.boolean().optional(),
 		details: loanDetailsInputSchema.required().optional(),

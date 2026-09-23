@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import type { CreateAccountInput } from "@archant/api/schemas/accounts";
 import { createAccountSchema } from "@archant/api/schemas/accounts";
+import type { AccountType } from "@archant/data/account-types";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { DateField } from "@/components/DateField";
@@ -61,6 +62,23 @@ const defaults = (): CreateAccountInput => ({
 	openingDate: toIsoDate(),
 	details: { originalAmount: "", interestRate: "", endDate: "" },
 });
+
+// What the amount is, where « Solde initial » would mislead: what a loan still
+// owes, what a home or a car would sell for, as Sure labels them. A record, so
+// a new account type does not compile until it names its label.
+const openingBalanceLabel: Record<
+	AccountType,
+	| "accounts.form.openingBalance"
+	| "accounts.form.outstandingBalance"
+	| "accounts.form.estimatedValue"
+> = {
+	depository: "accounts.form.openingBalance",
+	credit_card: "accounts.form.openingBalance",
+	loan: "accounts.form.outstandingBalance",
+	investment: "accounts.form.openingBalance",
+	property: "accounts.form.estimatedValue",
+	vehicle: "accounts.form.estimatedValue",
+};
 
 const schemaResolver = zodResolver(createAccountSchema, undefined, { raw: true });
 
@@ -225,13 +243,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 							<FieldMessage id="currency-error" error={errors.currency} />
 						</div>
 						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="openingBalance">
-								{t(
-									type === "loan"
-										? "accounts.form.outstandingBalance"
-										: "accounts.form.openingBalance",
-								)}
-							</Label>
+							<Label htmlFor="openingBalance">{t(openingBalanceLabel[type])}</Label>
 							<Input
 								id="openingBalance"
 								inputMode="decimal"
