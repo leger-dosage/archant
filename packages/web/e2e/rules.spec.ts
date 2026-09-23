@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 8.1: categorisation rules at `/regles`. One database serves the whole
 // run, and a rule reaches every transaction added after it, so each test
@@ -194,6 +194,26 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 		page.locator("[data-sonner-toast]").filter({ hasText: "Règle enregistrée." }),
 	).toBeVisible();
 	await expect(ruleRow(page, summary)).toBeVisible();
+});
+
+test("« À partir du » is saved with the rule and shown again by « Modifier »", async ({ page }) => {
+	const value = uniqueName("marche");
+	const date = typed(daysAgo(10));
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("À partir du").fill(date);
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(value);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: "Courses", exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+
+	await ruleRow(page, value)
+		.getByRole("button", { name: /^Actions pour / })
+		.click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog(page).getByLabel("À partir du")).toHaveValue(date);
 });
 
 test("the form points at an empty value or a missing action, and saves nothing", async ({

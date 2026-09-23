@@ -1,6 +1,7 @@
 import type { IsoDate } from "../dates.ts";
 
 import type { MinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import type { RuleOperatorOf } from "@archant/data/rules";
 
 import { squishLabel } from "../normalize-label.ts";
@@ -74,7 +75,10 @@ function labelMatches(condition: LabelCondition, label: string): boolean {
 		: text === value;
 }
 
-const COMPARE: Record<AmountCondition["operator"], (amount: number, value: number) => boolean> = {
+const COMPARE: Record<
+	AmountCondition["operator"],
+	(amount: MinorUnits, value: MinorUnits) => boolean
+> = {
 	"=": (amount, value) => amount === value,
 	">": (amount, value) => amount > value,
 	">=": (amount, value) => amount >= value,
@@ -94,7 +98,7 @@ function amountMatches(
 		return false;
 	}
 
-	return COMPARE[condition.operator](Math.abs(candidate.amount), condition.value);
+	return COMPARE[condition.operator](toMinorUnits(Math.abs(candidate.amount)), condition.value);
 }
 
 function accountMatches(condition: AccountCondition, accountId: string): boolean {

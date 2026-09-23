@@ -96,6 +96,7 @@ context:
 - The form offers one action; `duplicate_action` and `nested_group` are reachable through the API only and tested there.
 - Test suites sharing a database delete every rule after each test (`deleteRules` fixture), so a rule never reaches another test's transactions.
 - `lib/errors.ts` is unchanged: the new codes are field codes under `VALIDATION_ERROR`.
+- A standards and spec review after the BMAD review renamed the start-date field « À partir du », as the story names it, typed `COMPARE` in `MinorUnits`, and gave `setRuleCategories` its `{ origin: "rule" }` option (AD-2). Kept as is: the comma before « et N autres conditions », which reads as French, and a summary that starts « Toutes les opérations » when the first condition is an empty group.
 
 ## Spec Change Log
 

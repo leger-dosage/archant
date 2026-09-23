@@ -921,7 +921,7 @@ export async function ingest(
 					getReportingCurrency(),
 				);
 
-				await setRuleCategories(tx, planned);
+				await setRuleCategories(tx, planned, { origin: "rule" });
 			}
 
 			// 6. Transfer matching, once every new row exists (AD-11).
@@ -964,6 +964,7 @@ export async function ingest(
 export async function setRuleCategories(
 	tx: Transaction,
 	planned: ReadonlyMap<string, string>,
+	_options: { origin: "rule" },
 ): Promise<number> {
 	if (planned.size === 0) {
 		return 0;

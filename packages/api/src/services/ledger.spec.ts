@@ -4928,7 +4928,7 @@ describe("rules at ingestion", () => {
 
 describe("setRuleCategories", () => {
 	async function write(planned: Map<string, string>) {
-		return temp.db.transaction(async (tx) => setRuleCategories(tx, planned));
+		return temp.db.transaction(async (tx) => setRuleCategories(tx, planned, { origin: "rule" }));
 	}
 
 	it("writes nothing for an empty plan", async () => {
