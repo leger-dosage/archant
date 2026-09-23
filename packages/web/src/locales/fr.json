@@ -117,7 +117,11 @@
 			"credit_card": "Carte de crédit",
 			"mortgage": "Prêt immobilier",
 			"consumer": "Prêt à la consommation",
-			"other_loan": "Autre prêt"
+			"other_loan": "Autre prêt",
+			"pea": "PEA",
+			"assurance_vie": "Assurance-vie",
+			"brokerage": "Compte-titres",
+			"other_investment": "Autre placement"
 		},
 		"excluded_one": "{{count}} compte dans une autre devise n'est pas compté dans le total.",
 		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",

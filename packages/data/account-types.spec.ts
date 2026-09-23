@@ -8,15 +8,25 @@ import {
 } from "./account-types.ts";
 
 describe("account types", () => {
-	it("classifies a depository as an asset, and a credit card and a loan as liabilities", () => {
+	it("classifies a depository and an investment as assets, and a credit card and a loan as liabilities", () => {
 		expect(classificationOf("depository")).toBe("asset");
+		expect(classificationOf("investment")).toBe("asset");
 		expect(classificationOf("credit_card")).toBe("liability");
 		expect(classificationOf("loan")).toBe("liability");
 	});
 
 	it("lists every type and subtype once", () => {
-		expect(ACCOUNT_TYPE_IDS).toEqual(["depository", "credit_card", "loan"]);
-		expect(ACCOUNT_SUBTYPES).toEqual(["checking", "savings", "mortgage", "consumer", "other"]);
+		expect(ACCOUNT_TYPE_IDS).toEqual(["depository", "credit_card", "loan", "investment"]);
+		expect(ACCOUNT_SUBTYPES).toEqual([
+			"checking",
+			"savings",
+			"mortgage",
+			"consumer",
+			"other",
+			"pea",
+			"assurance_vie",
+			"brokerage",
+		]);
 	});
 
 	it("requires a subtype where the type has some, and none where it has none", () => {
@@ -28,5 +38,9 @@ describe("account types", () => {
 		expect(isSubtypeOf("loan", "mortgage")).toBe(true);
 		expect(isSubtypeOf("loan", null)).toBe(false);
 		expect(isSubtypeOf("loan", "savings")).toBe(false);
+		expect(isSubtypeOf("investment", "pea")).toBe(true);
+		expect(isSubtypeOf("investment", "other")).toBe(true);
+		expect(isSubtypeOf("investment", null)).toBe(false);
+		expect(isSubtypeOf("investment", "savings")).toBe(false);
 	});
 });

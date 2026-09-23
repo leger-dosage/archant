@@ -83,6 +83,13 @@ const mortgage = {
 	openingBalance: "180 000,00",
 } as const;
 
+const pea = {
+	name: "PEA",
+	type: "investment",
+	subtype: "pea",
+	openingBalance: "25 000,00",
+} as const;
+
 beforeAll(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	// A session lasts seven days and Better Auth deletes it once expired. Signed
@@ -298,6 +305,41 @@ describe("POST /api/accounts", () => {
 			subtype: null,
 			details: { interestRate: "3" },
 		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+	});
+
+	it("creates a PEA as an asset worth its opening balance, without details", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...pea },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		expect(data).toMatchObject({ type: "investment", subtype: "pea", balance: 2500000 });
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: { classification: "asset", balance: 2500000, details: null },
+		});
+	});
+
+	it("refuses an investment without a subtype or with another type's", async () => {
+		const responses = await Promise.all(
+			["savings", null].map(async (subtype) => postRaw({ ...valid, ...pea, subtype })),
+		);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(body.error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "subtype", code: "invalid_subtype" }],
+			});
+		}
+	});
+
+	it("refuses details on an investment", async () => {
+		const { status, body } = await postRaw({ ...valid, ...pea, details: { interestRate: "3" } });
 
 		expect(status).toBe(400);
 		expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
@@ -1487,6 +1529,17 @@ describe("POST /api/accounts/:id/snapshots", () => {
 		await expect(balanceOnDay(loan.id, "2026-03-05")).resolves.toBe(17500000);
 		await expect(balanceOnDay(loan.id, "2026-03-06")).resolves.toBe(17380000);
 		await expect(balanceOf(loan.id)).resolves.toBe(17380000);
+	});
+
+	it("pins a PEA's value on its date, which the following days keep", async () => {
+		const account = await openAccount({ ...pea, openingDate: "2026-01-10" });
+
+		await recorded(account.id, { date: "2026-03-05", balance: "26 300,00" });
+
+		await expect(balanceOnDay(account.id, "2026-03-04")).resolves.toBe(2500000);
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(2630000);
+		await expect(balanceOnDay(account.id, "2026-03-06")).resolves.toBe(2630000);
+		await expect(balanceOf(account.id)).resolves.toBe(2630000);
 	});
 
 	it("pins the balance on its date; the next day continues from it", async () => {
@@ -4544,6 +4597,78 @@ describe("transfers", () => {
 		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([payment]);
 	});
 
+	it("links a move into a PEA as a contribution, by hand too, raising its value", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const account = await openOwn(pea);
+		const contribution = await postOwn(checking.id, {
+			date: "2026-09-12",
+			label: "VERSEMENT PEA",
+			amount: "-500,00",
+		});
+		const received = await postOwn(account.id, {
+			date: "2026-09-13",
+			label: "VERSEMENT",
+			amount: "500,00",
+		});
+		const [automatic] = (await listed("?direction=transfer")).items;
+
+		expect(automatic?.transfer?.kind).toBe("investment_contribution");
+		await ownRequest("DELETE", `/api/transfers/${automatic?.transfer?.id ?? ""}`);
+		const matched = await ownRequest("POST", "/api/transfers", {
+			transactionId: received,
+			counterpartId: contribution,
+		});
+
+		expect(created.parse(matched.body).data).toMatchObject({
+			outflowTransactionId: contribution,
+			inflowTransactionId: received,
+			kind: "investment_contribution",
+		});
+		const detail = await ownRequest("GET", `/api/accounts/${account.id}`);
+		expect(detail.body).toMatchObject({ data: { balance: 2500000 + 50000 } });
+		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([
+			contribution,
+		]);
+		expect((await listed("?direction=transfer")).items.map((item) => item.id)).toEqual([received]);
+	});
+
+	it("links a card paying into a PEA as a contribution", async () => {
+		const card = await openOwn(ownCard);
+		const account = await openOwn(pea);
+		await postOwn(card.id, { date: "2026-09-12", label: "VERSEMENT PEA", amount: "-500,00" });
+		await postOwn(account.id, { date: "2026-09-12", label: "VERSEMENT", amount: "500,00" });
+
+		const data = await listed("?direction=transfer");
+
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual(["investment_contribution"]);
+	});
+
+	it("links a move between two investments, and out of one, as internal moves", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const account = await openOwn(pea);
+		const lifeInsurance = await openOwn({
+			...pea,
+			name: "Assurance-vie",
+			subtype: "assurance_vie",
+			openingBalance: "0",
+		});
+		await postOwn(account.id, { date: "2026-09-12", label: "ARBITRAGE", amount: "-700,00" });
+		await postOwn(lifeInsurance.id, { date: "2026-09-12", label: "ARBITRAGE", amount: "700,00" });
+		await postOwn(account.id, { date: "2026-09-15", label: "RETRAIT", amount: "-300,00" });
+		await postOwn(checking.id, { date: "2026-09-15", label: "RETRAIT PEA", amount: "300,00" });
+
+		const data = await listed("?direction=transfer");
+
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual([
+			"internal_move",
+			"internal_move",
+			"internal_move",
+			"internal_move",
+		]);
+		expect((await listed("?direction=expense")).items).toEqual([]);
+		expect((await listed("?direction=income")).items).toEqual([]);
+	});
+
 	it("refuses a counterpart that is not a candidate, already matched included", async () => {
 		const { checking, inflow } = await household();
 		// Five days before the other +500, so nothing else qualifies.
@@ -4711,6 +4836,17 @@ describe("GET /api/reports/net-worth", () => {
 			netWorth: 2000000,
 			assets: 20000000,
 			liabilities: 18000000,
+		});
+	});
+
+	it("adds what a PEA is worth to the assets", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		await openOwn(pea);
+
+		await expect(netWorthOf()).resolves.toMatchObject({
+			netWorth: 2600000,
+			assets: 2600000,
+			liabilities: 0,
 		});
 	});
 
@@ -5034,6 +5170,44 @@ describe("GET /api/reports/cash-flow", () => {
 		const drilled = await listed("?category=none&direction=expense&from=2026-09-01&to=2026-09-30");
 		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
+	});
+
+	it("counts a contribution's outflow in « Dépenses », its PEA side in neither", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const account = await openOwn({ ...august, ...pea });
+		const outflow = await spend(checking.id, "-500,00", undefined, "2026-09-12");
+		const inflow = await spend(account.id, "500,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("investment_contribution");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			income: 0,
+			expenses: -50000,
+			lines: { income: [], expense: [line(null, null, -50000)] },
+		});
+		const drilled = await listed("?category=none&direction=expense&from=2026-09-01&to=2026-09-30");
+		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
+		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
+	});
+
+	it("counts neither side of a move between two investments", async () => {
+		const account = await openOwn({ ...august, ...pea });
+		const lifeInsurance = await openOwn({
+			...august,
+			...pea,
+			name: "Assurance-vie",
+			subtype: "assurance_vie",
+		});
+		await spend(account.id, "-700,00", undefined, "2026-09-12");
+		await spend(lifeInsurance.id, "700,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("internal_move");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({ income: 0, expenses: 0, lines: { income: [], expense: [] } });
 	});
 
 	it("leaves out a transfer side put in a category before its match", async () => {

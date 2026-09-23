@@ -47,16 +47,23 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 }
 
 /**
- * The kind of a transfer, from the type of the account the money lands in, as
- * Sure's `Transfer#kind_for_account`: the outflow account's type never
- * matters, so a card paying off a loan is a loan payment too.
+ * The kind of a transfer, as Sure's `Transfer::Creator#outflow_transaction_kind`:
+ * the inflow account's type decides, so a card paying off a loan is a loan
+ * payment too. Only an investment looks at the outflow side as well: money
+ * moved between two investments, or out of one into a depository, is an
+ * internal move, so an arbitrage from a PEA to an assurance-vie never counts
+ * as spending.
  */
-export function transferKindOf(inflowAccountType: AccountType): TransferKind {
+export function transferKindOf(
+	inflowAccountType: AccountType,
+	outflowAccountType: AccountType,
+): TransferKind {
 	// A record, so a new account type does not compile until it names its kind.
 	const kinds: Record<AccountType, TransferKind> = {
 		depository: "internal_move",
 		credit_card: "credit_card_payment",
 		loan: "loan_payment",
+		investment: outflowAccountType === "investment" ? "internal_move" : "investment_contribution",
 	};
 
 	return kinds[inflowAccountType];

@@ -211,6 +211,58 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	).toContainText(euros(-120_000));
 });
 
+test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses »", async ({
+	page,
+	api,
+}) => {
+	// July 2024 belongs to this test alone, so its totals and pair are exact.
+	const opened = { openingDate: "2024-06-01" } as const;
+	const prefix = uniqueName("PEA");
+	const checking = await api.openAccount({
+		...opened,
+		name: uniqueName("Compte courant"),
+		openingBalance: "0",
+	});
+	const pea = await api.openAccount({
+		...opened,
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "25 000,00",
+	});
+	const out = `${prefix} versement`;
+	const into = `${prefix} reçu`;
+	const outId = await api.addTransaction(checking.id, {
+		date: "2024-07-05",
+		label: out,
+		amount: "-500,00",
+	});
+	const intoId = await api.addTransaction(pea.id, {
+		date: "2024-07-05",
+		label: into,
+		amount: "500,00",
+	});
+	// Linked on creation; undone and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(outId);
+	await api.matchTransfer(outId, intoId);
+
+	await visitOperations(page, prefix);
+	await expect(rowItem(page, out).getByText("Versement", { exact: true })).toBeVisible();
+	await expect(rowItem(page, into).getByText("Versement", { exact: true })).toBeVisible();
+	await expect(rowButton(page, out)).toContainText(`Vers ${pea.name}`);
+
+	await page.goto(`/comptes/${pea.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: pea.name }).locator("..")).toContainText(
+		euros(2_550_000),
+	);
+
+	await page.goto("/?month=2024-07");
+	await expect(
+		page
+			.getByRole("region", { name: "Juillet 2024" })
+			.getByRole("group", { name: "Dépenses", exact: true }),
+	).toContainText(euros(-50_000));
+});
+
 test("« Dissocier » gives both rows their category chip back and drops the caption", async ({
 	page,
 	api,

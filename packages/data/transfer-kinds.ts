@@ -1,7 +1,5 @@
 /**
- * What a transfer is, derived from the inflow account's type as in Sure.
- * `loan_payment` and `investment_contribution` have no account type yet; they
- * exist now so the account types that produce them need no migration. Kept out
+ * What a transfer is, derived from the two accounts' types as in Sure. Kept out
  * of the schema module so the pure domain and the interface can read it
  * without reaching for the table.
  */

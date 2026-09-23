@@ -70,15 +70,32 @@ describe("isTransferCandidate", () => {
 
 describe("transferKindOf", () => {
 	it("makes a payment into a credit card a card payment", () => {
-		expect(transferKindOf("credit_card")).toBe("credit_card_payment");
+		expect(transferKindOf("credit_card", "depository")).toBe("credit_card_payment");
+		expect(transferKindOf("credit_card", "investment")).toBe("credit_card_payment");
 	});
 
-	it("makes a payment into a loan a loan payment", () => {
-		expect(transferKindOf("loan")).toBe("loan_payment");
+	it("makes a payment into a loan a loan payment, whatever pays it", () => {
+		expect(transferKindOf("loan", "depository")).toBe("loan_payment");
+		expect(transferKindOf("loan", "credit_card")).toBe("loan_payment");
+		expect(transferKindOf("loan", "investment")).toBe("loan_payment");
+	});
+
+	it("makes money landing on an investment from a non-investment account a contribution", () => {
+		expect(transferKindOf("investment", "depository")).toBe("investment_contribution");
+		expect(transferKindOf("investment", "credit_card")).toBe("investment_contribution");
+		expect(transferKindOf("investment", "loan")).toBe("investment_contribution");
+	});
+
+	it("makes a move between two investments an internal move", () => {
+		expect(transferKindOf("investment", "investment")).toBe("internal_move");
+	});
+
+	it("makes a withdrawal from an investment an internal move", () => {
+		expect(transferKindOf("depository", "investment")).toBe("internal_move");
 	});
 
 	it("makes any other move an internal move", () => {
-		expect(transferKindOf("depository")).toBe("internal_move");
+		expect(transferKindOf("depository", "depository")).toBe("internal_move");
 	});
 });
 
