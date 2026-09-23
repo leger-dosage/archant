@@ -2,7 +2,7 @@ import type { NormalizedTransaction, ParsedStatement } from "../domain/statement
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput, Origin } from "./ledger.ts";
 
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
@@ -20,10 +20,13 @@ import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../domain/balances/forward.ts";
 import { addDays } from "../domain/dates.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	balanceOn,
 	balancesBetween,
+	bulkDeleteTransactions,
+	bulkUpdateTransactions,
 	createAccount,
 	deleteAccount,
 	deleteSnapshot,
@@ -3432,5 +3435,403 @@ describe("countByTag", () => {
 
 		expect(perTag.get(holidays)).toBe(2);
 		expect(perTag.has(empty)).toBe(false);
+	});
+});
+
+// Story 4.5: bulk edit.
+
+const asUser = { origin: "user" } as const;
+
+async function excludedOf(entryId: string) {
+	const row = await temp.db
+		.select({ excluded: transactions.excluded })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.excluded;
+}
+
+describe("bulkUpdateTransactions", () => {
+	it("sets a category on the given rows, locking it, without touching the balances", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const ids = [
+			await add(account.id, {}, "sync"),
+			await add(account.id, {}, "sync"),
+			await add(account.id, {}, "sync"),
+		];
+		const days = await history(account.id);
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids }, { categoryId: groceries }, asUser),
+		).resolves.toBe(3);
+
+		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([
+			groceries,
+			groceries,
+			groceries,
+		]);
+		await expect(Promise.all(ids.map(categoryOriginOf))).resolves.toEqual(["user", "user", "user"]);
+		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual([
+			["category"],
+			["category"],
+			["category"],
+		]);
+		expect(recompute).not.toHaveBeenCalled();
+		await expect(history(account.id)).resolves.toEqual(days);
+	});
+
+	it("clears a merchant, locking it", async () => {
+		const account = await openChecking();
+		const merchant = await newMerchant("Fleuriste");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { merchantId: merchant }, { origin: "rule" });
+
+		await bulkUpdateTransactions(deps(), { ids: [id] }, { merchantId: null }, asUser);
+
+		await expect(merchantOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual(["merchant"]);
+	});
+
+	it("adds tags to those a row carries, never removing one", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const tagged = await add(account.id, {}, "sync");
+		const bare = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), tagged, { tagIds: [holidays] }, { origin: "rule" });
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [tagged, bare] }, { addTagIds: [work] }, asUser),
+		).resolves.toBe(2);
+
+		await expect(tagsOf(tagged)).resolves.toEqual([holidays, work].toSorted());
+		await expect(tagsOf(bare)).resolves.toEqual([work]);
+		await expect(lockedFields(tagged)).resolves.toEqual(["tags"]);
+	});
+
+	it("writes nothing when a row would carry more tags than the cap", async () => {
+		const account = await openChecking();
+		const full = Array.from({ length: MAX_TAGS_PER_TRANSACTION }, () => crypto.randomUUID());
+		await temp.db
+			.insert(tags)
+			.values(full.map((id) => ({ id, name: `Tag ${id}`, createdAt: 0, updatedAt: 0 })));
+		const extra = await newTag("En trop");
+		const bare = await add(account.id, {}, "sync");
+		const crowded = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), crowded, { tagIds: full }, { origin: "rule" });
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [bare, crowded] }, { addTagIds: [extra] }, asUser),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "patch.addTagIds", code: "too_big" }],
+		});
+
+		await expect(tagsOf(bare)).resolves.toEqual([]);
+		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
+		await expect(lockedFields(bare)).resolves.toEqual([]);
+	});
+
+	it("counts a row already on the category without locking it again", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const already = await add(account.id, {}, "sync");
+		const moved = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), already, { categoryId: groceries }, { origin: "rule" });
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [already, moved] }, { categoryId: groceries }, asUser),
+		).resolves.toBe(2);
+
+		await expect(lockedFields(already)).resolves.toEqual([]);
+		await expect(categoryOriginOf(already)).resolves.toBe("rule");
+		await expect(lockedFields(moved)).resolves.toEqual(["category"]);
+	});
+
+	it("updates every row a filter matches, whatever the page", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const other = await newCategory("Loisirs");
+		const uncategorised = [
+			await add(account.id, {}, "sync"),
+			await add(account.id, {}, "sync"),
+			await add(account.id, {}, "sync"),
+		];
+		const kept = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), kept, { categoryId: other }, { origin: "rule" });
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id], uncategorised: true } },
+				{ categoryId: groceries },
+				asUser,
+			),
+		).resolves.toBe(3);
+
+		await expect(Promise.all(uncategorised.map(categoryOf))).resolves.toEqual([
+			groceries,
+			groceries,
+			groceries,
+		]);
+		await expect(categoryOf(kept)).resolves.toBe(other);
+	});
+
+	it("answers 0 when the filter matches nothing", async () => {
+		const account = await openChecking();
+		await add(account.id, {}, "sync");
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id], q: "introuvable" } },
+				{ excluded: true },
+				asUser,
+			),
+		).resolves.toBe(0);
+		await expect(
+			bulkUpdateTransactions(deps(), { filter: { merchantIds: [] } }, { excluded: true }, asUser),
+		).resolves.toBe(0);
+	});
+
+	it("writes nothing when an id names no transaction", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const first = await add(account.id, {}, "sync");
+		const second = await add(account.id, {}, "sync");
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ ids: [first, second, "nope"] },
+				{ categoryId: groceries },
+				asUser,
+			),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "ids", code: "invalid_value" }],
+		});
+
+		await expect(categoryOf(first)).resolves.toBeNull();
+		await expect(categoryOf(second)).resolves.toBeNull();
+	});
+
+	it("reads a repeated id once", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [id, id] }, { excluded: true }, asUser),
+		).resolves.toBe(1);
+	});
+
+	it.each([
+		["patch.categoryId", { categoryId: "nope" }],
+		["patch.merchantId", { merchantId: "nope" }],
+		["patch.addTagIds", { addTagIds: ["nope"] }],
+	])("writes nothing for an unknown reference, on %s", async (path, patch) => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [id] }, patch, asUser),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path, code: "invalid_value" }],
+		});
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
+
+	it("excludes the rows, locking the field, without rewriting a balance", async () => {
+		const account = await openChecking();
+		const ids = [await add(account.id, {}, "sync"), await add(account.id, {}, "sync")];
+		const days = await history(account.id);
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await bulkUpdateTransactions(deps(), { ids }, { excluded: true }, asUser);
+
+		await expect(Promise.all(ids.map(excludedOf))).resolves.toEqual([true, true]);
+		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual([["excluded"], ["excluded"]]);
+		expect(recompute).not.toHaveBeenCalled();
+		await expect(history(account.id)).resolves.toEqual(days);
+	});
+
+	it("keeps a locked field for any origin but the user's", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { categoryId: groceries }, asUser);
+
+		await bulkUpdateTransactions(
+			deps(),
+			{ ids: [id] },
+			{ categoryId: leisure },
+			{ origin: "rule" },
+		);
+
+		await expect(categoryOf(id)).resolves.toBe(groceries);
+	});
+});
+
+describe("bulkUpdateTransactions on 5,000 rows", () => {
+	it("categorises every row a filter matches in one transaction", async () => {
+		const big = await createTempDatabase();
+
+		try {
+			const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
+			setToday("2026-09-21T10:00:00Z");
+			const account = await createAccount(
+				bigDeps,
+				{ ...checking, openingDate: "2016-01-01" },
+				{ origin: "user" },
+			);
+			const category = crypto.randomUUID();
+			const tag = crypto.randomUUID();
+			await big.db.insert(categories).values({
+				id: category,
+				name: "Courses",
+				kind: "expense",
+				color: "#e99537",
+				icon: "tag",
+				createdAt: 0,
+				updatedAt: 0,
+			});
+			await big.db.insert(tags).values({ id: tag, name: "Vacances", createdAt: 0, updatedAt: 0 });
+			const rows = Array.from({ length: 5000 }, (_, index) => ({
+				id: crypto.randomUUID(),
+				date: new Date(Date.UTC(2016, 0, 2) + (index % 3650) * 86_400_000)
+					.toISOString()
+					.slice(0, 10),
+				index,
+			}));
+			// Seeded directly, in sequence, for the same reason as the 50,000-row list.
+			await Array.from({ length: 5 }, (_, index) =>
+				rows.slice(index * 1000, (index + 1) * 1000),
+			).reduce(async (previous, chunk) => {
+				await previous;
+				await big.db.insert(entries).values(
+					chunk.map((row) => ({
+						id: row.id,
+						accountId: account.id,
+						kind: "transaction" as const,
+						date: row.date,
+						amount: -1,
+						currency: "EUR",
+						createdAt: row.index,
+						updatedAt: row.index,
+					})),
+				);
+				await big.db
+					.insert(transactions)
+					.values(chunk.map((row) => ({ entryId: row.id, label: `Opération ${row.index}` })));
+			}, Promise.resolve());
+			const transaction = vi.spyOn(big.db, "transaction");
+
+			await expect(
+				bulkUpdateTransactions(
+					bigDeps,
+					{ filter: { uncategorised: true } },
+					{ categoryId: category, addTagIds: [tag] },
+					asUser,
+				),
+			).resolves.toBe(5000);
+
+			expect(transaction).toHaveBeenCalledTimes(1);
+			await expect(
+				big.db.all(
+					sql`select count(*) as count from transactions where category_id = ${category} and locked_fields = '["category","tags"]'`,
+				),
+			).resolves.toEqual([{ count: 5000 }]);
+			await expect(
+				big.db.all(sql`select count(*) as count from taggings where tag_id = ${tag}`),
+			).resolves.toEqual([{ count: 5000 }]);
+		} finally {
+			await big.dispose();
+		}
+	}, 60_000);
+});
+
+describe("bulkDeleteTransactions", () => {
+	it("deletes rows over two accounts with their keys and taggings, recomputing each account once", async () => {
+		const joint = await openChecking();
+		const card = await openChecking({ name: "Carte" });
+		const holidays = await newTag("Vacances");
+		const { result } = await importStatement(joint.id, statementOf(cafe));
+		const [imported = ""] = result.created;
+		const early = await add(joint.id, { date: "2026-09-05", amount: toMinorUnits(-1000) });
+		const kept = await add(joint.id, { date: "2026-09-15", amount: toMinorUnits(-500) });
+		const onCard = await add(card.id, { date: "2026-09-08" });
+		await updateTransaction(deps(), onCard, { tagIds: [holidays] }, asUser);
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await expect(
+			bulkDeleteTransactions(deps(), { ids: [imported, early, onCard] }, asUser),
+		).resolves.toBe(3);
+
+		await expect(
+			temp.db
+				.select()
+				.from(entries)
+				.where(inArray(entries.id, [imported, early, onCard])),
+		).resolves.toEqual([]);
+		await expect(keysOf(imported)).resolves.toEqual([]);
+		await expect(tagsOf(onCard)).resolves.toEqual([]);
+		await expect(findTransaction(deps(), kept)).resolves.not.toBeNull();
+		expect(recompute).toHaveBeenCalledTimes(2);
+		expect(recompute.mock.calls.map(([input]) => input.from).toSorted()).toEqual([
+			"2026-09-05",
+			"2026-09-08",
+		]);
+		const jointDays = await history(joint.id);
+		expect(jointDays.get("2026-09-14")).toBe(123456);
+		expect(jointDays.get("2026-09-21")).toBe(122956);
+		const cardDays = await history(card.id);
+		expect(new Set(cardDays.values())).toEqual(new Set([123456]));
+	});
+
+	it("deletes every row a filter matches", async () => {
+		const account = await openChecking();
+		await add(account.id, { label: "Boulangerie" });
+		await add(account.id, { label: "Boulangerie Dupont" });
+		const kept = await add(account.id, { label: "Pharmacie" });
+
+		await expect(
+			bulkDeleteTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id], q: "boulangerie" } },
+				asUser,
+			),
+		).resolves.toBe(2);
+
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+		await expect(findTransaction(deps(), kept)).resolves.not.toBeNull();
+	});
+
+	it("deletes nothing when an id names no transaction", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+
+		await expect(
+			bulkDeleteTransactions(deps(), { ids: [id, "nope"] }, asUser),
+		).rejects.toMatchObject({ fields: [{ path: "ids", code: "invalid_value" }] });
+
+		await expect(findTransaction(deps(), id)).resolves.not.toBeNull();
+	});
+
+	it("never deletes a snapshot or an opening anchor named by id", async () => {
+		const account = await openChecking();
+		const anchor = await temp.db
+			.select({ id: entries.id })
+			.from(entries)
+			.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "opening_anchor")))
+			.get();
+
+		await expect(
+			bulkDeleteTransactions(deps(), { ids: [anchor?.id ?? ""] }, asUser),
+		).rejects.toMatchObject({ fields: [{ path: "ids", code: "invalid_value" }] });
 	});
 });

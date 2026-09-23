@@ -3863,3 +3863,241 @@ describe("tags", () => {
 		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
 	});
 });
+
+// Story 4.5: bulk edit.
+
+async function transactionIds(accountId: string) {
+	const rows = await temp.db.all<{ id: string }>(
+		sql`select id from entries where account_id = ${accountId} and kind = 'transaction' order by id`,
+	);
+
+	return rows.map((row) => row.id);
+}
+
+async function rowsOf(accountId: string) {
+	return temp.db.all<{
+		category: string | null;
+		origin: string | null;
+		merchant: string | null;
+		excluded: number;
+		locked: string;
+		tags: string | null;
+	}>(
+		sql`select t.category_id as category, t.category_origin as origin, t.merchant_id as merchant, t.excluded as excluded, t.locked_fields as locked, (select group_concat(tag_id) from (select tag_id from taggings where transaction_id = t.entry_id order by tag_id)) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.id`,
+	);
+}
+
+async function openWith(count: number) {
+	const account = await openAccount();
+
+	await Array.from({ length: count }, (_, index) => index).reduce(async (previous, index) => {
+		await previous;
+		await postTransaction(account.id, { ...expense, label: `Opération ${index}` });
+	}, Promise.resolve());
+
+	return { account, ids: await transactionIds(account.id) };
+}
+
+const manualLocks = '["date","amount","label"';
+
+describe("POST /api/transactions/bulk-update", () => {
+	it("sets a category on the given ids without moving the balance", async () => {
+		const { account, ids } = await openWith(3);
+		const groceries = await createCategory(uniqueCategory("Courses"));
+
+		const response = await testClient(buildApp()).api.transactions["bulk-update"].$post({
+			json: { ids, patch: { categoryId: groceries.id } },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { updated: 3 } });
+		const rows = await rowsOf(account.id);
+		expect(rows.map((row) => [row.category, row.origin, row.locked])).toEqual(
+			ids.map(() => [groceries.id, "user", `${manualLocks},"category"]`]),
+		);
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 3 * 4290);
+	});
+
+	it("clears a merchant, adds a tag and excludes, locking each", async () => {
+		const { account, ids } = await openWith(2);
+		const merchant = await createMerchant(uniqueCategory("Carrefour"));
+		const kept = await createTag(uniqueCategory("Vacances"));
+		const added = await createTag(uniqueCategory("Travaux"));
+		await linkMerchant(account.id, merchant.id);
+		await tagAll(account.id, [kept.id]);
+
+		await [{ merchantId: null }, { addTagIds: [added.id] }, { excluded: true }].reduce(
+			async (previous, patch) => {
+				await previous;
+				const { status } = await request("POST", "/api/transactions/bulk-update", { ids, patch });
+
+				expect(status).toBe(200);
+			},
+			Promise.resolve(),
+		);
+
+		const rows = await rowsOf(account.id);
+		expect(rows).toEqual(
+			ids.map(() => ({
+				category: null,
+				origin: null,
+				merchant: null,
+				excluded: 1,
+				locked: `${manualLocks},"merchant","tags","excluded"]`,
+				tags: [kept.id, added.id].toSorted().join(","),
+			})),
+		);
+	});
+
+	it("updates every row the filter matches, refusing a page in the filter", async () => {
+		const { account, ids } = await openWith(3);
+		const groceries = await createCategory(uniqueCategory("Courses"));
+
+		await expect(
+			request("POST", "/api/transactions/bulk-update", {
+				filter: { account: account.id, category: "none", pageSize: "1" },
+				patch: { categoryId: groceries.id },
+			}),
+		).resolves.toMatchObject({
+			status: 400,
+			body: { error: { fields: [{ path: "filter", code: "unrecognized_keys" }] } },
+		});
+		await expect(
+			request("POST", "/api/transactions/bulk-update", {
+				filter: { account: account.id, category: "none" },
+				patch: { categoryId: groceries.id },
+			}),
+		).resolves.toEqual({ status: 200, body: { data: { updated: 3 } } });
+		expect((await rowsOf(account.id)).map((row) => row.category)).toEqual(
+			ids.map(() => groceries.id),
+		);
+	});
+
+	it("reads a parent category in the filter as its children too", async () => {
+		const { account } = await openWith(2);
+		const parent = await createCategory(uniqueCategory("Maison"));
+		const child = await createCategory(uniqueCategory("Travaux"), { parentId: parent.id });
+		await categorise(account.id, child.id);
+
+		await expect(
+			request("POST", "/api/transactions/bulk-update", {
+				filter: { account: [account.id], category: [parent.id] },
+				patch: { excluded: true },
+			}),
+		).resolves.toMatchObject({ body: { data: { updated: 2 } } });
+	});
+
+	it("answers 0 when the filter matches nothing", async () => {
+		const { account } = await openWith(1);
+
+		await expect(
+			request("POST", "/api/transactions/bulk-update", {
+				filter: { account: account.id, q: "introuvable" },
+				patch: { excluded: true },
+			}),
+		).resolves.toEqual({ status: 200, body: { data: { updated: 0 } } });
+	});
+
+	it.each([
+		[
+			"an unknown id",
+			"ids",
+			"invalid_value",
+			(ids: string[]) => ({ ids: [...ids, "nope"], patch: { excluded: true } }),
+		],
+		[
+			"an unknown category",
+			"patch.categoryId",
+			"invalid_value",
+			(ids: string[]) => ({ ids, patch: { categoryId: "nope" } }),
+		],
+		[
+			"an unknown merchant",
+			"patch.merchantId",
+			"invalid_value",
+			(ids: string[]) => ({ ids, patch: { merchantId: "nope" } }),
+		],
+		[
+			"an unknown tag",
+			"patch.addTagIds",
+			"invalid_value",
+			(ids: string[]) => ({ ids, patch: { addTagIds: ["nope"] } }),
+		],
+		[
+			"ids and a filter",
+			"selection",
+			"ids_or_filter",
+			(ids: string[]) => ({ ids, filter: {}, patch: { excluded: true } }),
+		],
+		["an empty patch", "patch", "empty_patch", (ids: string[]) => ({ ids, patch: {} })],
+	])("writes nothing for %s", async (_label, path, code, bodyOf) => {
+		const { account, ids } = await openWith(2);
+		const before = await rowsOf(account.id);
+
+		const { status, body: response } = await request(
+			"POST",
+			"/api/transactions/bulk-update",
+			bodyOf(ids),
+		);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(response).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path, code }],
+		});
+		await expect(rowsOf(account.id)).resolves.toEqual(before);
+	});
+
+	it("refuses a selection with neither ids nor a filter", async () => {
+		const { status, body } = await request("POST", "/api/transactions/bulk-update", {
+			patch: { excluded: true },
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "selection", code: "ids_or_filter" },
+		]);
+	});
+});
+
+describe("POST /api/transactions/bulk-delete", () => {
+	it("deletes rows over two accounts with their taggings and puts both balances back", async () => {
+		const first = await openWith(2);
+		const second = await openWith(1);
+		const tag = await createTag(uniqueCategory("Vacances"));
+		await tagAll(second.account.id, [tag.id]);
+
+		const response = await testClient(buildApp()).api.transactions["bulk-delete"].$post({
+			json: { ids: [...first.ids, ...second.ids] },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { deleted: 3 } });
+		await expect(transactionIds(first.account.id)).resolves.toEqual([]);
+		await expect(transactionIds(second.account.id)).resolves.toEqual([]);
+		await expect(balanceOf(first.account.id)).resolves.toBe(123456);
+		await expect(balanceOf(second.account.id)).resolves.toBe(123456);
+		expect((await tagList()).find((item) => item.id === tag.id)?.transactionCount).toBe(0);
+	});
+
+	it("deletes every row the filter matches", async () => {
+		const { account } = await openWith(3);
+
+		await expect(
+			request("POST", "/api/transactions/bulk-delete", { filter: { account: account.id } }),
+		).resolves.toEqual({ status: 200, body: { data: { deleted: 3 } } });
+		await expect(balanceOf(account.id)).resolves.toBe(123456);
+	});
+
+	it("deletes nothing when an id names no transaction", async () => {
+		const { account, ids } = await openWith(2);
+
+		const { status, body } = await request("POST", "/api/transactions/bulk-delete", {
+			ids: [...ids, "nope"],
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "ids", code: "invalid_value" }]);
+		await expect(transactionIds(account.id)).resolves.toEqual(ids);
+	});
+});

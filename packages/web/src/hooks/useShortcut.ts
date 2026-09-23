@@ -10,6 +10,25 @@ import {
 	shortcutOf,
 } from "@/lib/shortcuts";
 
+// Key presses that began while a layer was open. Radix closes a popover on
+// `Escape` from a capture listener, and React re-renders before the
+// shortcuts' own listener runs: by then the layer looks closed, and the
+// `Escape` that closed a bulk bar's combobox also cleared the selection.
+// Recorded on the window, whose capture listeners run before Radix's.
+const beganInLayer = new WeakSet<KeyboardEvent>();
+
+if (typeof window !== "undefined") {
+	window.addEventListener(
+		"keydown",
+		(event) => {
+			if (isLayerOpen(document)) {
+				beganInLayer.add(event);
+			}
+		},
+		{ capture: true },
+	);
+}
+
 type ShortcutOptions = {
 	enabled?: boolean;
 	/** A condition read on each key press; the key keeps its default action when false. */
@@ -30,7 +49,7 @@ export function useShortcut(
 	const isSequence = shortcut.keys.some((keys) => keys.includes(">"));
 
 	const ignored = (event: KeyboardEvent) => {
-		if (isLayerOpen(document)) {
+		if (isLayerOpen(document) || beganInLayer.has(event)) {
 			// The library returns before its own `preventDefault` here, and
 			// `Ctrl+K` under a sheet would reach the browser, which focuses its
 			// address bar on Windows and Linux.

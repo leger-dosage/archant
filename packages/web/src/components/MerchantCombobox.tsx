@@ -41,8 +41,11 @@ function nameKey(name: string): string {
 type MerchantComboboxProps = {
 	/** Sorted by name, as the API lists them. */
 	merchants: readonly MerchantData[];
-	/** The current merchant, marked in the list; `null` for « Sans marchand ». */
-	value: string | null;
+	/**
+	 * The current merchant, marked in the list; `null` for « Sans marchand », `undefined`
+	 * for none marked, as for several rows at once.
+	 */
+	value: string | null | undefined;
 	onSelect: (merchantId: string | null) => void;
 	/** A merge target picker offers neither « Sans marchand » nor « Créer ». */
 	mode?: "edit" | "target";

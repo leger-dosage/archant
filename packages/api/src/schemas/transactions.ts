@@ -209,53 +209,149 @@ function repeated(max: number) {
 		.pipe(z.array(z.string().min(1)).max(max).optional());
 }
 
+const filterFields = {
+	account: repeated(MAX_ACCOUNT_FILTER),
+	category: repeated(MAX_CATEGORY_FILTER),
+	merchant: repeated(MAX_MERCHANT_FILTER),
+	tag: repeated(MAX_TAG_FILTER),
+	from: z.iso.date().optional(),
+	to: z.iso.date().optional(),
+	amountMin: optionalText,
+	amountMax: optionalText,
+	q: optionalText.pipe(z.string().max(SEARCH_MAX_LENGTH).optional()),
+};
+
+type FilterFields = {
+	from?: string | undefined;
+	to?: string | undefined;
+	amountMin?: string | undefined;
+	amountMax?: string | undefined;
+};
+
+function checkFilter(value: FilterFields, context: z.core.$RefinementCtx) {
+	if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
+		context.addIssue({ code: "custom", path: ["to"], message: "before_from" });
+	}
+
+	const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
+	const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
+
+	if (min === null) {
+		context.addIssue({ code: "custom", path: ["amountMin"], message: "invalid_amount" });
+	}
+
+	if (max === null) {
+		context.addIssue({ code: "custom", path: ["amountMax"], message: "invalid_amount" });
+	}
+
+	if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
+		context.addIssue({ code: "custom", path: ["amountMax"], message: "below_min" });
+	}
+}
+
+function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest }: Value) {
+	const min = amountMin === undefined ? null : parseAmountBound(amountMin);
+	const max = amountMax === undefined ? null : parseAmountBound(amountMax);
+
+	return {
+		...rest,
+		...(min === null ? {} : { amountMin: min }),
+		...(max === null ? {} : { amountMax: max }),
+	};
+}
+
 /**
  * The query of the cross-account list. `account`, `category`, `merchant` and
  * `tag` repeat, one id each, `none` standing for « Sans catégorie ». Dates are inclusive,
  * amounts bound the absolute value, `q` searches the label and the notes.
  */
 export const transactionFilterSchema = pageQuerySchema
-	.extend({
-		account: repeated(MAX_ACCOUNT_FILTER),
-		category: repeated(MAX_CATEGORY_FILTER),
-		merchant: repeated(MAX_MERCHANT_FILTER),
-		tag: repeated(MAX_TAG_FILTER),
-		from: z.iso.date().optional(),
-		to: z.iso.date().optional(),
-		amountMin: optionalText,
-		amountMax: optionalText,
-		q: optionalText.pipe(z.string().max(SEARCH_MAX_LENGTH).optional()),
-	})
-	.superRefine((value, context) => {
-		if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
-			context.addIssue({ code: "custom", path: ["to"], message: "before_from" });
-		}
+	.extend(filterFields)
+	.superRefine(checkFilter)
+	.transform(parseBounds);
 
-		const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
-		const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
-
-		if (min === null) {
-			context.addIssue({ code: "custom", path: ["amountMin"], message: "invalid_amount" });
-		}
-
-		if (max === null) {
-			context.addIssue({ code: "custom", path: ["amountMax"], message: "invalid_amount" });
-		}
-
-		if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
-			context.addIssue({ code: "custom", path: ["amountMax"], message: "below_min" });
-		}
-	})
-	.transform(({ amountMin, amountMax, ...rest }) => {
-		const min = amountMin === undefined ? null : parseAmountBound(amountMin);
-		const max = amountMax === undefined ? null : parseAmountBound(amountMax);
-
-		return {
-			...rest,
-			...(min === null ? {} : { amountMin: min }),
-			...(max === null ? {} : { amountMax: max }),
-		};
-	});
+/**
+ * The list's filter without its page, as a bulk action sends it for « Tout
+ * sélectionner ». The same shape as the query, so the interface sends its
+ * search params as they are. Strict: a key renamed on one side only would
+ * otherwise be dropped, and the filter would widen to every transaction.
+ */
+export const bulkFilterSchema = z
+	.strictObject(filterFields)
+	.superRefine(checkFilter)
+	.transform(parseBounds);
 
 export type TransactionFilterQuery = z.input<typeof transactionFilterSchema>;
 export type TransactionFilterRequest = z.output<typeof transactionFilterSchema>;
+export type BulkFilterRequest = z.output<typeof bulkFilterSchema>;
+
+/**
+ * The largest selection sent as ids: the list's largest page. Past it, the
+ * interface sends the filter, which « Tout sélectionner » covers.
+ */
+export const MAX_BULK_IDS = MAX_PAGE_SIZE;
+
+// Repeats are dropped before the bounds count, so a row ticked twice never refuses.
+const bulkIds = z
+	.array(z.string().min(1))
+	.transform((ids) => [...new Set(ids)])
+	.pipe(z.array(z.string()).min(1).max(MAX_BULK_IDS));
+
+const selectionFields = { ids: bulkIds.optional(), filter: bulkFilterSchema.optional() };
+
+type SelectionFields = {
+	ids?: string[] | undefined;
+	filter?: BulkFilterRequest | undefined;
+};
+
+/** The rows a bulk action targets: exactly one of `ids` and `filter`. */
+export type BulkSelectionRequest = { ids: string[] } | { filter: BulkFilterRequest };
+
+/**
+ * Moves `ids` or `filter` into `selection`, refusing both or neither on
+ * `selection`: a missing filter must not read as « every transaction ».
+ */
+function toSelection<Value extends SelectionFields>(
+	{ ids, filter, ...rest }: Value,
+	context: z.core.$RefinementCtx,
+) {
+	if ((ids === undefined) === (filter === undefined)) {
+		context.addIssue({ code: "custom", path: ["selection"], message: "ids_or_filter" });
+
+		return z.NEVER;
+	}
+
+	const selection: BulkSelectionRequest = ids === undefined ? { filter: filter ?? {} } : { ids };
+
+	return { ...rest, selection };
+}
+
+/** What a bulk edit may change: at least one field, each as in the single edit. */
+export const bulkPatchSchema = z
+	.object({
+		// `null` clears it; the ledger checks that the id names a category.
+		categoryId: z.string().min(1).nullable().optional(),
+		// `null` clears it; the ledger checks that the id names a merchant.
+		merchantId: z.string().min(1).nullable().optional(),
+		// Added to each row's tags, never replacing them; the ledger checks the ids and each row's cap.
+		addTagIds: z
+			.array(z.string().min(1))
+			.transform((ids) => [...new Set(ids)])
+			.pipe(z.array(z.string()).min(1).max(MAX_TAGS_PER_TRANSACTION))
+			.optional(),
+		excluded: z.boolean().optional(),
+	})
+	.refine((patch) => Object.values(patch).some((value) => value !== undefined), {
+		message: "empty_patch",
+	});
+
+export const bulkUpdateBodySchema = z
+	.object({ ...selectionFields, patch: bulkPatchSchema })
+	.transform(toSelection);
+
+export const bulkDeleteBodySchema = z.object(selectionFields).transform(toSelection);
+
+export type BulkUpdateInput = z.input<typeof bulkUpdateBodySchema>;
+export type BulkUpdateRequest = z.output<typeof bulkUpdateBodySchema>;
+export type BulkDeleteInput = z.input<typeof bulkDeleteBodySchema>;
+export type BulkDeleteRequest = z.output<typeof bulkDeleteBodySchema>;

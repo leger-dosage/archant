@@ -1,3 +1,4 @@
+import type { BulkPicker } from "@/components/BulkBar";
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind } from "@/lib/transaction-filters";
@@ -9,6 +10,7 @@ import { useTranslation } from "react-i18next";
 
 import { isCurrencyCode } from "@archant/data/money";
 
+import { BulkBar } from "@/components/BulkBar";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
 import { ShortcutHint } from "@/components/ShortcutHint";
@@ -23,6 +25,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useSelection } from "@/hooks/useSelection";
 import { useShortcut } from "@/hooks/useShortcut";
 import { useTags } from "@/hooks/useTags";
 import { useTransactions } from "@/hooks/useTransactions";
@@ -160,6 +163,14 @@ function OperationsPage() {
 	const data = transactions.data;
 	const pageCount = pageCountOf(data);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
+	// The rows shown belong to the filters and page asked for only once loaded;
+	// a placeholder page must not be ticked under the new filters.
+	const shownItems = transactions.isPlaceholderData ? [] : (data?.items ?? []);
+	const selection = useSelection(
+		JSON.stringify([filters, page]),
+		shownItems.map((item) => item.id),
+	);
+	const [bulkPicker, setBulkPicker] = useState<BulkPicker | null>(null);
 	const accountOptions: FilterAccount[] = useMemo(
 		() =>
 			accounts.data?.groups.flatMap((group) =>
@@ -267,6 +278,9 @@ function OperationsPage() {
 					items={data.items}
 					showAccount
 					onOpen={(transaction) => setSheet({ open: true, transaction })}
+					// The previous page's rows, shown while the next loads, cannot be ticked
+					// under the new filters.
+					{...(transactions.isPlaceholderData ? {} : { selection, onBulkPick: setBulkPicker })}
 				/>
 			)}
 
@@ -276,6 +290,17 @@ function OperationsPage() {
 					page={page}
 					pageCount={pageCount}
 					label={t("transactions.paginationLabel")}
+				/>
+			)}
+
+			{data !== undefined && selection.target !== null && (
+				<BulkBar
+					selection={selection}
+					target={selection.target}
+					total={data.total}
+					filters={filters}
+					picker={bulkPicker}
+					onPickerChange={setBulkPicker}
 				/>
 			)}
 

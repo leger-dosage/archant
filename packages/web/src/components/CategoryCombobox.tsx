@@ -25,8 +25,11 @@ function filterByName(_value: string, search: string, keywords: string[] = []): 
 
 type CategoryComboboxProps = {
 	categories: readonly CategoryData[];
-	/** The current category, marked in the list; `null` for « Sans catégorie ». */
-	value: string | null;
+	/**
+	 * The current category, marked in the list; `null` for « Sans catégorie », `undefined`
+	 * for none marked, as for several rows at once.
+	 */
+	value: string | null | undefined;
 	onSelect: (categoryId: string | null) => void;
 };
 

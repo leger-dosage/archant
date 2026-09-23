@@ -2,12 +2,21 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { RejectionCode } from "../domain/statement.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type {
+	BulkDeleteRequest,
+	BulkFilterRequest,
+	BulkSelectionRequest,
+	BulkUpdateRequest,
 	TransactionFilterRequest,
 	TransactionInput,
 	TransactionPatchInput,
 } from "../schemas/transactions.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { TransactionFilter, TransactionListRecord, TransactionRecord } from "./ledger.ts";
+import type {
+	BulkSelection,
+	TransactionFilter,
+	TransactionListRecord,
+	TransactionRecord,
+} from "./ledger.ts";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
@@ -154,7 +163,7 @@ export async function listAccountTransactions(
  */
 async function amountsFor(
 	deps: ServiceDeps,
-	query: TransactionFilterRequest,
+	query: BulkFilterRequest,
 ): Promise<TransactionFilter["amounts"]> {
 	const { amountMin, amountMax } = query;
 
@@ -189,15 +198,11 @@ async function categoryFilterOf(
 }
 
 /**
- * A page of every account's transactions matching the filter, most recent
- * first, with the count and the signed total of all the matching rows.
+ * The list's filter as the ledger reads it, shared by the list and the bulk
+ * actions so « Tout sélectionner » acts on exactly the rows the list counts.
  */
-export async function listAllTransactions(
-	deps: ServiceDeps,
-	query: TransactionFilterRequest,
-): Promise<FilteredTransactionPage> {
-	const currency = getReportingCurrency();
-	const filter: TransactionFilter = {
+async function filterOf(deps: ServiceDeps, query: BulkFilterRequest): Promise<TransactionFilter> {
+	return {
 		accountIds: query.account,
 		from: query.from,
 		to: query.to,
@@ -207,6 +212,18 @@ export async function listAllTransactions(
 		merchantIds: query.merchant,
 		tagIds: query.tag,
 	};
+}
+
+/**
+ * A page of every account's transactions matching the filter, most recent
+ * first, with the count and the signed total of all the matching rows.
+ */
+export async function listAllTransactions(
+	deps: ServiceDeps,
+	query: TransactionFilterRequest,
+): Promise<FilteredTransactionPage> {
+	const currency = getReportingCurrency();
+	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
 	const { items, total } = await ledger.listTransactions(deps, filter, page);
 	const sums = await ledger.sumTransactions(deps, filter);
@@ -292,4 +309,43 @@ export async function deleteTransaction(deps: ServiceDeps, id: string): Promise<
 	await ledger.deleteTransaction(deps, id, { origin: "user" });
 
 	return { id };
+}
+
+async function selectionOf(
+	deps: ServiceDeps,
+	selection: BulkSelectionRequest,
+): Promise<BulkSelection> {
+	return "ids" in selection ? selection : { filter: await filterOf(deps, selection.filter) };
+}
+
+/**
+ * Sets a category or a merchant, adds tags or changes the exclusion on the
+ * selected transactions, on the user's behalf, and counts the rows selected.
+ */
+export async function bulkUpdateTransactions(
+	deps: ServiceDeps,
+	body: BulkUpdateRequest,
+): Promise<{ updated: number }> {
+	const updated = await ledger.bulkUpdateTransactions(
+		deps,
+		await selectionOf(deps, body.selection),
+		body.patch,
+		{ origin: "user" },
+	);
+
+	return { updated };
+}
+
+/** Deletes the selected transactions for good and counts them. */
+export async function bulkDeleteTransactions(
+	deps: ServiceDeps,
+	body: BulkDeleteRequest,
+): Promise<{ deleted: number }> {
+	const deleted = await ledger.bulkDeleteTransactions(
+		deps,
+		await selectionOf(deps, body.selection),
+		{ origin: "user" },
+	);
+
+	return { deleted };
 }

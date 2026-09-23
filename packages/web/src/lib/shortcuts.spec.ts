@@ -94,6 +94,12 @@ describe("keysText", () => {
 		expect(keysText("/", true)).toBe("/");
 	});
 
+	it("reads ⇧J on Apple platforms and Shift J elsewhere", () => {
+		expect(keysText("shift+j", true)).toBe("⇧J");
+		expect(keysText("shift+arrowdown", false)).toBe("Shift ↓");
+		expect(keysText("escape", false)).toBe("Esc");
+	});
+
 	it("lists every binding of a shortcut, the main one first", () => {
 		expect(shortcutTexts("openRow", false)).toEqual(["E", "↵"]);
 		expect(shortcutTexts("palette", true)).toEqual(["⌘K"]);
@@ -120,7 +126,7 @@ describe("hasForeignModifier", () => {
 		expect(hasForeignModifier(press("j"))).toBe(false);
 	});
 
-	it("keeps Shift on letters, arrows and Enter for selection", () => {
+	it("leaves Shift on letters, arrows and Enter to the selection shortcuts", () => {
 		expect(hasForeignModifier(press("J", { shiftKey: true }))).toBe(true);
 		expect(hasForeignModifier(press("ArrowDown", { shiftKey: true }))).toBe(true);
 		expect(hasForeignModifier(press("Enter", { shiftKey: true }))).toBe(true);
