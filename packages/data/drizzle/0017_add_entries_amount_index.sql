@@ -1,0 +1,1 @@
+CREATE INDEX `entries_kind_amount_date` ON `entries` (`kind`,`amount`,`date`);

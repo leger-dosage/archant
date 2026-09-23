@@ -61,6 +61,3 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-4-tags.md`
   summary: Test in `e2e/tags.spec.ts` and `e2e/merchants.spec.ts` that renaming to a taken name shows « … porte déjà ce nom. » under the field and keeps the dialog open.
   evidence: The API refusal is tested; removing the `name_taken` branch of `RenameTagDialog` or `RenameMerchantDialog` breaks no test today.
-- source_spec: `_bmad-output/implementation-artifacts/spec-6-1-net-worth-and-its-history.md`
-  summary: Bring the 5,000-line CSV confirm back under 10 seconds on GitHub runners; Story 5.2's step 6 of `ledger.ingest` took it from about 2 s to 8 s, and it now fails at 12 to 20 s.
-  evidence: CI `test` timings of `confirms 5,000 lines in under 10 seconds` were 1.3 to 2.2 s before #26 and 8.1 to 8.5 s after. On 2026-09-23 a rerun of main's own run 35865520227 failed at 20.1 s, as did three runs of PR #27 (12.8, 19.2, 14.9 s). Locally the test takes 5.4 s on main and on #27 alike.

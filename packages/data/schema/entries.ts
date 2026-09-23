@@ -66,5 +66,10 @@ export const entries = sqliteTable(
 		// The cross-account list orders every transaction by these columns; with
 		// them in one index its first page reads 50 rows instead of sorting all.
 		index("entries_kind_date").on(table.kind, table.date, table.createdAt, table.id),
+		// A transfer candidate has the exact opposite amount within a few days.
+		// Without this index, each new line of an import scanned every
+		// transaction of that window: 5,000 lines took 5 s on a laptop and up
+		// to 20 s on a CI runner, against a third of a second with it.
+		index("entries_kind_amount_date").on(table.kind, table.amount, table.date),
 	],
 );
