@@ -22,7 +22,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import * as forward from "../domain/balances/forward.ts";
-import { direction } from "../domain/cash-flow.ts";
+import { countsInCashFlow, direction } from "../domain/cash-flow.ts";
 import { addDays } from "../domain/dates.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
@@ -31,6 +31,7 @@ import {
 	balancesBetween,
 	bulkDeleteTransactions,
 	bulkUpdateTransactions,
+	cashFlowByCategory,
 	createAccount,
 	deleteAccount,
 	deleteSnapshot,
@@ -4314,6 +4315,75 @@ describe("the direction filter", () => {
 		await expect(sumTransactions(deps(), { accountIds, direction: ["income"] })).resolves.toEqual([
 			{ currency: "EUR", amount: earned, count: 1 },
 		]);
+	});
+});
+
+const byCategoryAndAmount = (rows: { categoryId: string | null; amount: number }[]) =>
+	rows.toSorted(
+		(a, b) => String(a.categoryId).localeCompare(String(b.categoryId)) || a.amount - b.amount,
+	);
+
+describe("cashFlowByCategory", () => {
+	it("sums per category and sign exactly the rows `countsInCashFlow` counts", async () => {
+		const { livret, card } = await openHousehold();
+		// Opened in August, so a row can sit on the last day before the month.
+		const joint = await openChecking({ name: "Compte courant", openingDate: "2026-08-01" });
+		const accountIds = [joint.id, livret.id, card.id];
+		const groceries = await newCategory("Courses");
+		const inCategory = async (amount: number, date = "2026-09-10") => {
+			const id = await add(joint.id, { amount: toMinorUnits(amount), date, label: "Courses" });
+			await updateTransaction(deps(), id, { categoryId: groceries }, asUser);
+
+			return id;
+		};
+		// Amounts of their own: step 6 would link them to another test's rows.
+		await inCategory(-transferAmount());
+		await inCategory(transferAmount());
+		await inCategory(-transferAmount(), "2026-09-01");
+		await inCategory(-transferAmount(), "2026-09-30");
+		await inCategory(-transferAmount(), "2026-10-01");
+		await inCategory(-transferAmount(), "2026-08-31");
+		await add(joint.id, { amount: toMinorUnits(transferAmount()), label: "income" });
+		await add(joint.id, { amount: toMinorUnits(-transferAmount()), label: "expense" });
+		await add(joint.id, { amount: toMinorUnits(0), label: "zero" });
+		const excluded = await inCategory(-transferAmount());
+		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		const categorisedSide = await inCategory(-transferAmount());
+		const counterpart = await addStandard(livret.id, {
+			amount: toMinorUnits(transferAmount()),
+			label: "side in",
+		});
+		await insertTransfer(categorisedSide, counterpart, "internal_move");
+		await pairOf("internal_move", joint.id, livret.id);
+		await pairOf("credit_card_payment", joint.id, card.id);
+		await pairOf("loan_payment", joint.id, livret.id);
+		await pairOf("investment_contribution", joint.id, livret.id);
+
+		const all = await listTransactions(deps(), { accountIds }, firstPage);
+		const expected = new Map<string, { categoryId: string | null; amount: number }>();
+		for (const item of all.items) {
+			if (item.date >= "2026-09-01" && item.date <= "2026-09-30" && countsInCashFlow(item)) {
+				const key = `${item.categoryId}:${item.amount > 0}`;
+				const current = expected.get(key);
+				expected.set(key, {
+					categoryId: item.categoryId,
+					amount: (current?.amount ?? 0) + item.amount,
+				});
+			}
+		}
+		const rows = await cashFlowByCategory(deps(), {
+			from: "2026-09-01",
+			to: "2026-09-30",
+			accountIds,
+		});
+
+		expect(byCategoryAndAmount(rows)).toEqual(byCategoryAndAmount([...expected.values()]));
+		// Courses: both signs of three counted expenses and one refund, and
+		// uncategorised: one income, then the expense, the zero and two outflows.
+		expect(rows).toHaveLength(4);
+		await expect(
+			cashFlowByCategory(deps(), { from: "2026-09-01", to: "2026-09-30", accountIds: [] }),
+		).resolves.toEqual([]);
 	});
 });
 

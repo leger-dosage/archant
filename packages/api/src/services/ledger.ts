@@ -1,6 +1,6 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
-import type { Direction } from "../domain/cash-flow.ts";
+import type { CashFlowRow, Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
 import type {
@@ -2717,6 +2717,37 @@ export async function sumTransactions(
 				.where(where)
 				.groupBy(entries.currency)
 				.orderBy(entries.currency);
+
+	return rows.map(toRecord);
+}
+
+/**
+ * The counted transactions of `accountIds` between `from` and `to`, both
+ * inclusive, summed per category and per sign: `countsInCashFlow`'s SQL
+ * twin, tied to it by a parity test. Uncategorised rows keep their two signs
+ * apart, since « Sans catégorie » splits into income and expenses; a
+ * category's two signs meet again in `cashFlowBreakdown`. The currency is the
+ * caller's to settle through `accountIds`.
+ */
+export async function cashFlowByCategory(
+	deps: ServiceDeps,
+	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+): Promise<CashFlowRow[]> {
+	const where = filterCondition({ ...range, direction: ["income", "expense"] });
+
+	if (where === null) {
+		return [];
+	}
+
+	const rows = await deps.db
+		.select({
+			categoryId: transactions.categoryId,
+			amount: sum(entries.amount).mapWith(Number),
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(and(where, eq(transactions.excluded, false)))
+		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
 
 	return rows.map(toRecord);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, addMonths, daysBetween, maxDate, minDate, today } from "./dates.ts";
+import { addDays, addMonths, daysBetween, maxDate, minDate, monthRange, today } from "./dates.ts";
 
 describe("today", () => {
 	it("is the date in the given time zone, not in UTC", () => {
@@ -75,5 +75,14 @@ describe("addMonths", () => {
 		expect(addMonths("2024-02-29", -12)).toBe("2023-02-28");
 		expect(addMonths("2000-03-30", -1)).toBe("2000-02-29");
 		expect(addMonths("1900-03-30", -1)).toBe("1900-02-28");
+	});
+});
+
+describe("monthRange", () => {
+	it("spans a whole calendar month, February and December included", () => {
+		expect(monthRange("2026-09")).toEqual({ from: "2026-09-01", to: "2026-09-30" });
+		expect(monthRange("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+		expect(monthRange("2028-02")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+		expect(monthRange("2026-12")).toEqual({ from: "2026-12-01", to: "2026-12-31" });
 	});
 });

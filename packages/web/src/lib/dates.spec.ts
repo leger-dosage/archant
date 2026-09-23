@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { dayHeading, frenchToIso, isoToFrench } from "./dates.ts";
+import {
+	addMonthsTo,
+	dayHeading,
+	frenchToIso,
+	isoToFrench,
+	monthHeading,
+	toIsoMonth,
+} from "./dates.ts";
 
 describe("frenchToIso", () => {
 	it("reads a typed French date, padded or not", () => {
@@ -40,5 +47,27 @@ describe("dayHeading", () => {
 			kind: "date",
 			text: "15 septembre 2025",
 		});
+	});
+});
+
+describe("toIsoMonth", () => {
+	it("is the month of the local date", () => {
+		expect(toIsoMonth(new Date(2026, 0, 31, 23, 59))).toBe("2026-01");
+	});
+});
+
+describe("addMonthsTo", () => {
+	it("moves by months across years in both directions", () => {
+		expect(addMonthsTo("2026-09", -1)).toBe("2026-08");
+		expect(addMonthsTo("2026-01", -1)).toBe("2025-12");
+		expect(addMonthsTo("2026-12", 1)).toBe("2027-01");
+		expect(addMonthsTo("2026-09", 0)).toBe("2026-09");
+	});
+});
+
+describe("monthHeading", () => {
+	it("names the month and year, capitalised", () => {
+		expect(monthHeading("2026-08")).toBe("Août 2026");
+		expect(monthHeading("2027-01")).toBe("Janvier 2027");
 	});
 });

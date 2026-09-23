@@ -65,5 +65,13 @@ export const queryKeys = {
 		 */
 		transferCandidates: (transactionId: string) =>
 			["transactions", "transfer-candidates", transactionId] as const,
+		/**
+		 * The dashboard's income and expenses of a month. Under `all`: every
+		 * transaction, category-assignment, transfer and account-flag write
+		 * already invalidates it. A category's own edit invalidates
+		 * `categories.all` only, but happens on another page, and the dashboard
+		 * refetches on mount.
+		 */
+		cashFlow: (month: string) => ["transactions", "cash-flow", month] as const,
 	},
 };

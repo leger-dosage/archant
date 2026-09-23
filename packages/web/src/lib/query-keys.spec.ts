@@ -94,3 +94,15 @@ describe("queryKeys.accounts.netWorth", () => {
 		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
 	});
 });
+
+describe("queryKeys.transactions.cashFlow", () => {
+	it("goes stale on every transaction write, which invalidates `transactions.all`", async () => {
+		const client = new QueryClient();
+		const key = queryKeys.transactions.cashFlow("2026-09");
+		client.setQueryData(key, { lines: { income: [], expense: [] } });
+
+		await client.invalidateQueries({ queryKey: queryKeys.transactions.all });
+
+		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+	});
+});
