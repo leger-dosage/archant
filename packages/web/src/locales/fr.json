@@ -437,9 +437,120 @@
 			"revertedNothing": "Import annulé."
 		}
 	},
+	"categories": {
+		"title": "Catégories",
+		"description": "Les catégories classent vos opérations. Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
+		"add": "Ajouter une catégorie",
+		"groups": {
+			"income": "Revenus",
+			"expense": "Dépenses"
+		},
+		"groupEmpty": "Aucune catégorie de ce type.",
+		"transactions_one": "{{count}} opération",
+		"transactions_other": "{{count}} opérations",
+		"actions": "Actions pour {{name}}",
+		"edit": "Modifier",
+		"merge": "Fusionner",
+		"delete": "Supprimer",
+		"kinds": {
+			"income": "Revenu",
+			"expense": "Dépense"
+		},
+		"colors": {
+			"#e99537": "Orange",
+			"#4da568": "Vert",
+			"#6471eb": "Bleu",
+			"#db5a54": "Rouge",
+			"#df4e92": "Rose",
+			"#c44fe9": "Violet",
+			"#eb5429": "Orange vif",
+			"#61c9ea": "Bleu ciel",
+			"#805dee": "Mauve",
+			"#6ad28a": "Vert clair"
+		},
+		"icons": {
+			"circle-dollar-sign": "Pièce",
+			"shopping-bag": "Sac de courses",
+			"utensils": "Couverts",
+			"bus": "Bus",
+			"house": "Maison",
+			"lightbulb": "Ampoule",
+			"wifi": "Wi-Fi",
+			"shield": "Bouclier",
+			"pill": "Médicament",
+			"landmark": "Bâtiment public",
+			"receipt": "Reçu",
+			"drama": "Masques de théâtre",
+			"plane": "Avion",
+			"hand-helping": "Main tendue",
+			"piggy-bank": "Tirelire",
+			"tag": "Étiquette",
+			"shopping-cart": "Chariot",
+			"car": "Voiture",
+			"fuel": "Carburant",
+			"train-front": "Train",
+			"bike": "Vélo",
+			"baby": "Bébé",
+			"dog": "Chien",
+			"graduation-cap": "Diplôme",
+			"dumbbell": "Haltère",
+			"shirt": "Vêtement",
+			"gift": "Cadeau",
+			"heart": "Cœur",
+			"briefcase": "Mallette",
+			"wrench": "Clé à molette",
+			"smartphone": "Téléphone",
+			"tv": "Télévision",
+			"music": "Musique",
+			"book-open": "Livre",
+			"coffee": "Café",
+			"banknote": "Billet",
+			"coins": "Pièces",
+			"credit-card": "Carte bancaire"
+		},
+		"form": {
+			"addTitle": "Ajouter une catégorie",
+			"editTitle": "Modifier la catégorie",
+			"description": "Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
+			"name": "Nom",
+			"parent": "Catégorie parente",
+			"noParent": "Aucune, catégorie principale",
+			"parentLocked": "Cette catégorie a des sous-catégories, elle reste donc une catégorie principale.",
+			"kind": "Type",
+			"color": "Couleur",
+			"currentColor": "Couleur actuelle",
+			"icon": "Icône",
+			"save": "Enregistrer",
+			"created": "Catégorie « {{name}} » ajoutée.",
+			"saved": "Catégorie « {{name}} » enregistrée."
+		},
+		"deleteDialog": {
+			"title": "Supprimer la catégorie « {{name}} » ?",
+			"count_one": "Elle contient {{count}} opération.",
+			"count_other": "Elle contient {{count}} opérations.",
+			"none": "Elle ne contient aucune opération.",
+			"children": "Ses sous-catégories deviendront des catégories principales.",
+			"destination": "Déplacer les opérations vers",
+			"uncategorised": "Laisser sans catégorie",
+			"action": "Supprimer",
+			"deleted": "Catégorie « {{name}} » supprimée."
+		},
+		"mergeDialog": {
+			"title": "Fusionner « {{name}} » dans une autre catégorie",
+			"description_one": "Son opération passera dans la catégorie choisie, puis « {{name}} » sera supprimée.",
+			"description_other": "Ses {{count}} opérations passeront dans la catégorie choisie, puis « {{name}} » sera supprimée.",
+			"descriptionNone": "Elle ne contient aucune opération. « {{name}} » sera supprimée.",
+			"children": "Ses sous-catégories passeront sous la catégorie choisie et prendront son type et sa couleur.",
+			"target": "Fusionner dans",
+			"placeholder": "Choisir une catégorie",
+			"action": "Fusionner",
+			"merged": "« {{name}} » fusionnée dans « {{target}} »."
+		}
+	},
 	"settings": {
 		"title": "Réglages",
 		"sections": {
+			"categories": "Catégories",
 			"security": "Sécurité"
 		}
 	},
@@ -501,7 +612,9 @@
 			"password_too_short": "Le mot de passe doit contenir au moins 8 caractères.",
 			"password_too_long": "Le mot de passe ne peut pas dépasser 128 caractères.",
 			"password_mismatch": "Les mots de passe ne correspondent pas.",
-			"invalid_password": "Mot de passe actuel incorrect."
+			"invalid_password": "Mot de passe actuel incorrect.",
+			"name_taken": "Une catégorie porte déjà ce nom.",
+			"invalid_parent": "Cette catégorie parente n'est pas possible : les catégories ont deux niveaux au plus."
 		}
 	}
 }

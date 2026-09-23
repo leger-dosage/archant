@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		"./account-types": "./account-types.ts",
+		"./category-presets": "./category-presets.ts",
 		"./client": "./client.ts",
 		"./csv-mapping": "./csv-mapping.ts",
 		"./migrate": "./migrate.ts",
@@ -13,6 +14,7 @@
 		"./schema/accounts": "./schema/accounts.ts",
 		"./schema/auth": "./schema/auth.ts",
 		"./schema/balances": "./schema/balances.ts",
+		"./schema/categories": "./schema/categories.ts",
 		"./schema/entries": "./schema/entries.ts",
 		"./schema/entry-keys": "./schema/entry-keys.ts",
 		"./schema/import-mappings": "./schema/import-mappings.ts",

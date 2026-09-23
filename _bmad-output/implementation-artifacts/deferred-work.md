@@ -52,3 +52,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-3-run-archant-from-one-container.md`
   summary: Write the container backup procedure in `docs/deployment.md`: `VACUUM INTO` through the running server's volume, since the image carries no `sqlite3` and copying `archant.db` without its WAL loses the latest writes.
   evidence: The Backups section predates Story 3.3 and names no command; the architecture says backups are documented with `VACUUM INTO`, and a household on the container has no documented way to take a consistent copy.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-default-categories-and-category-management.md`
+  summary: Group the delete-replacement and merge-target pickers by kind, with children indented, by reusing the category combobox of Story 4.2.
+  evidence: Both pickers list every category in one alphabetical list, so the user cannot tell an income category from an expense one or a child from a parent.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1-default-categories-and-category-management.md`
+  summary: Cover the command palette's « Catégories » entry in `e2e/keyboard.spec.ts`.
+  evidence: Removing or misrouting the `go-categories` item in `CommandPalette.tsx` breaks no test today.

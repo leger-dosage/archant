@@ -4,10 +4,13 @@ import { test as base, expect } from "@playwright/test";
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import type { CategoryIcon } from "@archant/data/category-presets";
+import { createDb } from "@archant/data/client";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
+import type { CategoryKind } from "@archant/data/schema/categories";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
-import { TIME_ZONE, WEB_URL } from "./settings.ts";
+import { DATABASE_FILE, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 export { expect };
 
@@ -24,6 +27,14 @@ export type OpenAccountOptions = {
 };
 
 export type Created = { id: string; name: string };
+
+export type CreateCategoryOptions = {
+	name?: string;
+	kind?: CategoryKind;
+	color?: string;
+	icon?: CategoryIcon;
+	parentId?: string | null;
+};
 
 // `request` carries the session cookie from the storage state, but no
 // `Origin`: a browser adds one itself, and the API's `csrf()` refuses a form
@@ -205,6 +216,38 @@ export function apiHelpers(request: APIRequestContext) {
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 
 			return id;
+		},
+
+		async createCategory(options: CreateCategoryOptions = {}): Promise<Created> {
+			const name = options.name ?? uniqueName("Catégorie");
+			const response = await request.post("/api/categories", {
+				data: {
+					name,
+					kind: options.kind ?? "expense",
+					color: options.color ?? "#e99537",
+					icon: options.icon ?? "tag",
+					parentId: options.parentId ?? null,
+				},
+			});
+
+			return { id: await created(response), name };
+		},
+
+		/**
+		 * Puts transactions in a category straight in the run's database: no
+		 * screen or route sets a transaction's category before Story 4.2.
+		 */
+		async categorise(transactionIds: string[], categoryId: string) {
+			const db = await createDb(`file:${DATABASE_FILE}`);
+
+			try {
+				await db.$client.execute({
+					sql: `update transactions set category_id = ? where entry_id in (${transactionIds.map(() => "?").join(", ")})`,
+					args: [categoryId, ...transactionIds],
+				});
+			} finally {
+				db.$client.close();
+			}
 		},
 
 		/** A group's total in minor units, zero when it holds no account. */

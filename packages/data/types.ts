@@ -1,6 +1,7 @@
 import type { accounts } from "./schema/accounts.ts";
 import type { sessions, users } from "./schema/auth.ts";
 import type { balances } from "./schema/balances.ts";
+import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
 import type { entryKeys } from "./schema/entry-keys.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
@@ -34,3 +35,6 @@ export type NewUser = InferInsertModel<typeof users>;
 
 export type Session = InferSelectModel<typeof sessions>;
 export type NewSession = InferInsertModel<typeof sessions>;
+
+export type Category = InferSelectModel<typeof categories>;
+export type NewCategory = InferInsertModel<typeof categories>;
