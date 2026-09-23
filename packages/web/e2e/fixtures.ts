@@ -42,6 +42,10 @@ const sameOrigin = { origin: WEB_URL };
 
 const createdBody = z.object({ data: z.object({ id: z.string() }) });
 
+const linkedBody = z.object({
+	data: z.object({ transfer: z.object({ id: z.string() }).nullable() }),
+});
+
 const accountListBody = z.object({
 	data: z.object({
 		groups: z.array(z.object({ classification: z.string(), total: z.number() })),
@@ -298,6 +302,25 @@ export function apiHelpers(request: APIRequestContext) {
 			return created(
 				await request.post("/api/transfers", { data: { transactionId, counterpartId } }),
 			);
+		},
+
+		/**
+		 * Undoes the transfer `transactionId` sits in, as « Dissocier » does: for
+		 * the pairs step 6 links on creation that a test needs apart.
+		 */
+		async unlinkTransfer(transactionId: string) {
+			// An empty patch answers the row as it is, its transfer included.
+			const row = await request.patch(`/api/transactions/${transactionId}`, { data: {} });
+
+			expect(row.ok(), `${row.url()} answered ${await row.text()}`).toBe(true);
+			const { data } = linkedBody.parse(await row.json());
+
+			expect(data.transfer, `${transactionId} is in no transfer`).not.toBeNull();
+			const response = await request.delete(`/api/transfers/${data.transfer?.id ?? ""}`, {
+				headers: sameOrigin,
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
 		/** A group's total in minor units, zero when it holds no account. */

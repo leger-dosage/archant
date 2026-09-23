@@ -910,6 +910,7 @@ const listItem = z.object({
 			counterpartAccountName: z.string(),
 		})
 		.nullable(),
+	transferSuggested: z.boolean(),
 });
 
 const listBody = z.object({
@@ -4146,7 +4147,10 @@ describe("transfers", () => {
 		}),
 	});
 
-	/** −500 on the checking account, +500 on the Livret A three days later, +500 six days later. */
+	/**
+	 * −500 on the checking account, +500 on the Livret A three days later, which
+	 * links them on creation, and +500 six days later, too far to be a candidate.
+	 */
 	async function household() {
 		const checking = await openOwn({ name: "Compte courant" });
 		const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
@@ -4171,12 +4175,46 @@ describe("transfers", () => {
 			label: "Plus tard",
 			amount: "500,00",
 		});
+		const [automatic] = (await listed("?direction=transfer")).items;
 
-		return { checking, livret, card, outflow, inflow, later };
+		return {
+			checking,
+			livret,
+			card,
+			outflow,
+			inflow,
+			later,
+			transferId: automatic?.transfer?.id ?? "",
+		};
 	}
 
+	/** `household()` with its automatic link undone, for the tests that match by hand. */
+	async function unlinkedHousehold() {
+		const found = await household();
+		const { status } = await ownRequest("DELETE", `/api/transfers/${found.transferId}`);
+
+		expect(status).toBe(200);
+
+		return found;
+	}
+
+	it("links a move to savings on creation", async () => {
+		const { checking, outflow, inflow, transferId } = await household();
+
+		const data = await listed("?direction=transfer");
+
+		expect(data.items.map((item) => item.id).toSorted()).toEqual([outflow, inflow].toSorted());
+		expect(data.items.find((item) => item.id === outflow)).toMatchObject({
+			transfer: { id: transferId, kind: "internal_move", counterpartAccountName: "Livret A" },
+			transferSuggested: false,
+		});
+		expect(data.items.find((item) => item.id === inflow)).toMatchObject({
+			transfer: { id: transferId, counterpartAccountId: checking.id },
+		});
+	});
+
 	it("lists the candidates, then matches the one picked", async () => {
-		const { livret, outflow, inflow } = await household();
+		const { livret, outflow, inflow } = await unlinkedHousehold();
 
 		const listedCandidates = await ownRequest(
 			"GET",
@@ -4214,7 +4252,7 @@ describe("transfers", () => {
 		});
 	});
 
-	it("makes a payment into a card a card payment", async () => {
+	it("links a payment into a card on creation, as a card payment", async () => {
 		const { checking, card } = await household();
 		const payment = await postOwn(checking.id, {
 			date: "2026-09-12",
@@ -4227,21 +4265,18 @@ describe("transfers", () => {
 			amount: "300,00",
 		});
 
-		const { status, body } = await ownRequest("POST", "/api/transfers", {
-			transactionId: repaid,
-			counterpartId: payment,
-		});
+		const data = await listed("?direction=transfer");
 
-		expect(status).toBe(201);
-		expect(created.parse(body).data).toMatchObject({
-			outflowTransactionId: payment,
-			kind: "credit_card_payment",
+		expect(data.items.find((item) => item.id === repaid)).toMatchObject({
+			transfer: { kind: "credit_card_payment", counterpartAccountName: "Compte courant" },
+		});
+		expect(data.items.find((item) => item.id === payment)).toMatchObject({
+			transfer: { kind: "credit_card_payment", counterpartAccountName: "Carte" },
 		});
 	});
 
 	it("refuses a counterpart that is not a candidate, already matched included", async () => {
-		const { checking, outflow, inflow } = await household();
-		await ownRequest("POST", "/api/transfers", { transactionId: outflow, counterpartId: inflow });
+		const { checking, inflow } = await household();
 		// Five days before the other +500, so nothing else qualifies.
 		const second = await postOwn(checking.id, {
 			date: "2026-09-11",
@@ -4269,12 +4304,7 @@ describe("transfers", () => {
 	});
 
 	it("unmatches a transfer, both sides becoming standard again", async () => {
-		const { outflow, inflow } = await household();
-		const matched = await ownRequest("POST", "/api/transfers", {
-			transactionId: outflow,
-			counterpartId: inflow,
-		});
-		const { id } = created.parse(matched.body).data;
+		const { transferId: id } = await household();
 
 		await expect(ownRequest("DELETE", `/api/transfers/${id}`)).resolves.toEqual({
 			status: 200,
@@ -4298,6 +4328,50 @@ describe("transfers", () => {
 		await notFound("GET", "/api/transactions/nope/transfer-candidates");
 		await notFound("POST", "/api/transfers", { transactionId: "nope", counterpartId: inflow });
 		await notFound("DELETE", "/api/transfers/nope");
+		await notFound("POST", "/api/transfers/nope/reject");
+	});
+
+	it("rejects a transfer, whose pair is then never offered nor accepted", async () => {
+		const { outflow, inflow, transferId } = await household();
+
+		await expect(ownRequest("POST", `/api/transfers/${transferId}/reject`)).resolves.toEqual({
+			status: 200,
+			body: { data: { id: transferId } },
+		});
+		expect((await listed("?direction=transfer")).items).toEqual([]);
+		const { body } = await ownRequest("GET", `/api/transactions/${outflow}/transfer-candidates`);
+		expect(candidateList.parse(body).data).toEqual([]);
+		const refused = await ownRequest("POST", "/api/transfers", {
+			transactionId: inflow,
+			counterpartId: outflow,
+		});
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "counterpartId", code: "not_a_candidate" },
+		]);
+	});
+
+	it("suggests a match when a row has two candidates, and links nothing", async () => {
+		const { checking, livret, card } = await unlinkedHousehold();
+		// The unlinked pair is one candidate each: no suggestion.
+		expect((await listed("")).items.every((item) => !item.transferSuggested)).toBe(true);
+		await postOwn(livret.id, { date: "2026-09-20", label: "VIR", amount: "70,00" });
+		await postOwn(card.id, { date: "2026-09-20", label: "VIR", amount: "70,00" });
+
+		const outflow = await postOwn(checking.id, {
+			date: "2026-09-19",
+			label: "VIR",
+			amount: "-70,00",
+		});
+
+		const data = await listed("");
+		expect(data.items.filter((item) => item.transferSuggested).map((item) => item.id)).toEqual([
+			outflow,
+		]);
+		expect((await listed("?direction=transfer")).items).toEqual([]);
+		// The sheet reads a row through the edit route, as an empty patch.
+		const single = await ownRequest("PATCH", `/api/transactions/${outflow}`, {});
+		expect(single.body).toMatchObject({ data: { transferSuggested: true, transfer: null } });
 	});
 
 	it("refuses a body without both ids", async () => {
@@ -4310,8 +4384,7 @@ describe("transfers", () => {
 	});
 
 	it("filters by direction, and deletes the rows of a direction in bulk", async () => {
-		const { checking, outflow, inflow, later } = await household();
-		await ownRequest("POST", "/api/transfers", { transactionId: outflow, counterpartId: inflow });
+		const { checking, later } = await household();
 		const spent = await postOwn(checking.id, { date: "2026-09-14", label: "Café", amount: "-20" });
 		const earned = await postOwn(checking.id, { date: "2026-09-14", label: "Prime", amount: "30" });
 

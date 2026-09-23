@@ -25,3 +25,10 @@ export async function deleteTransfer(deps: ServiceDeps, id: string): Promise<{ i
 
 	return { id };
 }
+
+/** Undoes a transfer and refuses its pair for good, on the user's behalf. */
+export async function rejectTransfer(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	await ledger.rejectTransfer(deps, id, { origin: "user" });
+
+	return { id };
+}

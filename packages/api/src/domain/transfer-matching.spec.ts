@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { TRANSFER_WINDOW_DAYS, isTransferCandidate, transferKindOf } from "./transfer-matching.ts";
+import {
+	TRANSFER_WINDOW_DAYS,
+	isTransferCandidate,
+	mutualMatches,
+	transferKindOf,
+} from "./transfer-matching.ts";
 
 const side = (overrides: Partial<TransferSide> = {}): TransferSide => ({
 	kind: "transaction",
@@ -70,5 +75,53 @@ describe("transferKindOf", () => {
 
 	it("makes any other move an internal move", () => {
 		expect(transferKindOf("depository")).toBe("internal_move");
+	});
+});
+
+const candidates = (entries: Record<string, string[]>) => new Map(Object.entries(entries));
+
+describe("mutualMatches", () => {
+	it("pairs a new row with its only candidate when that candidate has only it", () => {
+		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["n"] }))).toEqual([["n", "c"]]);
+	});
+
+	it("links nothing for a row without candidates, known or not", () => {
+		expect(mutualMatches(["n"], candidates({ n: [] }))).toEqual([]);
+		expect(mutualMatches(["n"], candidates({}))).toEqual([]);
+	});
+
+	it("links nothing when the new row has two candidates", () => {
+		expect(mutualMatches(["n"], candidates({ n: ["c1", "c2"], c1: ["n"], c2: ["n"] }))).toEqual([]);
+	});
+
+	it("links nothing when the candidate has another candidate too", () => {
+		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["n", "o"] }))).toEqual([]);
+	});
+
+	it("links nothing when the candidate's only candidate is another row", () => {
+		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["o"] }))).toEqual([]);
+	});
+
+	it("links nothing when the candidate's candidates are unknown", () => {
+		expect(mutualMatches(["n"], candidates({ n: ["c"] }))).toEqual([]);
+	});
+
+	it("returns two new rows that pick each other once, whatever their order", () => {
+		const both = candidates({ a: ["b"], b: ["a"] });
+
+		expect(mutualMatches(["a", "b"], both)).toEqual([["a", "b"]]);
+		expect(mutualMatches(["b", "a"], both)).toEqual([["b", "a"]]);
+	});
+
+	it("keeps each independent pair, in the order of the new rows", () => {
+		expect(
+			mutualMatches(
+				["n1", "n2", "n3"],
+				candidates({ n1: ["c1"], c1: ["n1"], n2: ["c1", "c2"], n3: ["c3"], c3: ["n3"] }),
+			),
+		).toEqual([
+			["n1", "c1"],
+			["n3", "c3"],
+		]);
 	});
 });

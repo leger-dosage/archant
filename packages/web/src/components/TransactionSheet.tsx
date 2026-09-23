@@ -43,7 +43,7 @@ import {
 	useDeleteTransaction,
 	useUpdateTransaction,
 } from "@/hooks/useTransactions";
-import { useMatchTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
+import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
@@ -288,8 +288,9 @@ function TagsField({
 type TransferLink = TransactionData["transfer"];
 
 /**
- * The sheet's « Virement » block: the other side and « Dissocier » for a
- * transfer side, « Rapprocher un virement » for a standard transaction. It
+ * The sheet's « Virement » block: the other side, « Ne plus proposer » and
+ * « Dissocier » for a transfer side, « Rapprocher un virement » for a standard
+ * transaction, under a suggestion when it has several candidates. It
  * saves at once, apart from the form, so it keeps the link it last saved
  * rather than the row the sheet was opened with.
  */
@@ -305,6 +306,7 @@ function TransferBlock({
 	const { t } = useTranslation();
 	const matchTransfer = useMatchTransfer();
 	const unmatchTransfer = useUnmatchTransfer();
+	const rejectTransfer = useRejectTransfer();
 	const [picking, setPicking] = useState(false);
 	const caption = transferCaption({ amount: transaction.amount, transfer });
 
@@ -326,11 +328,15 @@ function TransferBlock({
 			},
 		);
 
-	const unmatch = (id: string) =>
-		unmatchTransfer.mutate(id, {
+	const undo = (
+		mutation: typeof unmatchTransfer,
+		id: string,
+		done: "transactions.transfer.unmatched" | "transactions.transfer.rejected",
+	) =>
+		mutation.mutate(id, {
 			onSuccess: () => {
 				onChange(null);
-				toast.success(t("transactions.transfer.unmatched"));
+				toast.success(t(done));
 			},
 			onError: (error) => {
 				// Already dissociated elsewhere: the sheet catches up rather than
@@ -341,6 +347,7 @@ function TransferBlock({
 				showErrorToast(errorCodeOf(error));
 			},
 		});
+	const pending = unmatchTransfer.isPending || rejectTransfer.isPending;
 
 	return (
 		<section aria-labelledby="transaction-transfer-title" className="flex flex-col gap-1.5">
@@ -349,7 +356,11 @@ function TransferBlock({
 			</h3>
 			{transfer === null || caption === null ? (
 				<div className="flex flex-col items-start gap-2">
-					<p className="text-sm text-muted-foreground">{t("transactions.transfer.none")}</p>
+					<p className="text-sm text-muted-foreground">
+						{transaction.transfer === null && transaction.transferSuggested
+							? t("transactions.transfer.suggestion")
+							: t("transactions.transfer.none")}
+					</p>
 					<Button type="button" variant="outline" onClick={() => setPicking(true)}>
 						{t("transactions.transfer.match")}
 					</Button>
@@ -370,14 +381,24 @@ function TransferBlock({
 							{t(`transactions.transfer.kinds.${transfer.kind}`)}
 						</span>
 					</p>
-					<Button
-						type="button"
-						variant="outline"
-						disabled={unmatchTransfer.isPending}
-						onClick={() => unmatch(transfer.id)}
-					>
-						{t("transactions.transfer.unmatch")}
-					</Button>
+					<div className="flex shrink-0 gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							disabled={pending}
+							onClick={() => undo(rejectTransfer, transfer.id, "transactions.transfer.rejected")}
+						>
+							{t("transactions.transfer.reject")}
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={pending}
+							onClick={() => undo(unmatchTransfer, transfer.id, "transactions.transfer.unmatched")}
+						>
+							{t("transactions.transfer.unmatch")}
+						</Button>
+					</div>
 				</div>
 			)}
 		</section>

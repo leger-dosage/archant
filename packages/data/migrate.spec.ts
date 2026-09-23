@@ -747,6 +747,43 @@ describe("transfers", () => {
 	});
 });
 
+const insertRejectedTransfer = (database: Database, id: string, outflow: string, inflow: string) =>
+	database.run(
+		sql`insert into rejected_transfers (id, outflow_transaction_id, inflow_transaction_id, created_at) values (${id}, ${outflow}, ${inflow}, 0)`,
+	);
+
+describe("rejected transfers", () => {
+	it("keeps every transfer when 0016 adds rejected pairs, and holds each pair once", async () => {
+		const before = await migratedBefore("0016");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertEntry(before, "e1", "transaction", null, "2026-09-01", "a1");
+		await insertEntry(before, "e2", "transaction", null, "2026-09-01", "a2");
+		await insertEntry(before, "e3", "transaction", null, "2026-09-01", "a2");
+		await before.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'Virement'), ('e2', 'Virement'), ('e3', 'Virement')`,
+		);
+		await insertTransfer(before, "x1", "e1", "e3");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, outflow_transaction_id as outflow from transfers`),
+		).resolves.toEqual([{ id: "x1", outflow: "e1" }]);
+		await expect(insertRejectedTransfer(database, "r0", "e1", "e1")).rejects.toThrow();
+		await expect(insertRejectedTransfer(database, "r0", "e1", "nope")).rejects.toThrow();
+		await insertRejectedTransfer(database, "r1", "e1", "e2");
+		await expect(insertRejectedTransfer(database, "r2", "e1", "e2")).rejects.toThrow();
+		// One transaction may be refused with several others.
+		await insertRejectedTransfer(database, "r2", "e3", "e2");
+		await expect(
+			database.run(sql`delete from transactions where entry_id = 'e2'`),
+		).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

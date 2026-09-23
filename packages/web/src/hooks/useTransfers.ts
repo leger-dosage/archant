@@ -49,6 +49,17 @@ export function useMatchTransfer() {
 	});
 }
 
+/** Undoes a transfer and refuses its pair for good: « Ne plus proposer ». */
+export function useRejectTransfer() {
+	const invalidate = useInvalidateTransactions();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.transfers[":id"].reject.$post({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
 export function useUnmatchTransfer() {
 	const invalidate = useInvalidateTransactions();
 
