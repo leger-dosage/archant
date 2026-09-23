@@ -20,6 +20,7 @@
 		"./schema/import-mappings": "./schema/import-mappings.ts",
 		"./schema/imports": "./schema/imports.ts",
 		"./schema/merchants": "./schema/merchants.ts",
+		"./schema/rejected-transfers": "./schema/rejected-transfers.ts",
 		"./schema/settings": "./schema/settings.ts",
 		"./schema/taggings": "./schema/taggings.ts",
 		"./schema/tags": "./schema/tags.ts",

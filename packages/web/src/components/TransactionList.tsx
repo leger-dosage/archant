@@ -3,6 +3,7 @@ import type { CategoryData } from "@/hooks/useCategories";
 import type { Selection } from "@/hooks/useSelection";
 import type { TransactionData } from "@/hooks/useTransactions";
 
+import { ArrowLeftRightIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -145,6 +146,22 @@ function TransferChip({ kind }: { kind: NonNullable<TransactionData["transfer"]>
 		<span className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start px-2 text-xs text-muted-foreground md:ml-0 md:w-44 md:shrink-0 md:self-center">
 			<CategoryDot color={TRANSFER_COLOR} />
 			<span className="truncate">{t(`transactions.transfer.kinds.${kind}`)}</span>
+		</span>
+	);
+}
+
+/**
+ * « Virement possible »: automatic matching found several candidates and left
+ * the pick to the user. Neutral, as the warning colour belongs to states that
+ * need attention (DESIGN.md), and a suggestion does not.
+ */
+function TransferSuggestedFlag() {
+	const { t } = useTranslation();
+
+	return (
+		<span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+			<ArrowLeftRightIcon className="size-3.5" aria-hidden="true" />
+			{t("transactions.transfer.suggested")}
 		</span>
 	);
 }
@@ -397,8 +414,13 @@ export function TransactionList({
 														className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex-1"
 													>
 														<span className="flex min-w-0 flex-1 flex-col">
-															<span className="truncate" title={item.label}>
-																{item.label}
+															<span className="flex min-w-0 items-center gap-1.5">
+																<span className="truncate" title={item.label}>
+																	{item.label}
+																</span>
+																{item.transfer === null && item.transferSuggested && (
+																	<TransferSuggestedFlag />
+																)}
 															</span>
 															{(subtitle !== undefined || rowTags.length > 0) && (
 																<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">

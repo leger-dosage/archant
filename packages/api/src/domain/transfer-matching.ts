@@ -54,3 +54,36 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 export function transferKindOf(inflowAccountType: AccountType): TransferKind {
 	return inflowAccountType === "credit_card" ? "credit_card_payment" : "internal_move";
 }
+
+/**
+ * The pairs automatic matching links: `n`, one of `newIds`, and `c`, when `n`
+ * has exactly one candidate `c` and `c` has exactly one candidate, `n`.
+ * Mutual uniqueness keeps an outflow that two inflows compete for, or an
+ * inflow two outflows compete for, unlinked, whatever order the rows arrived
+ * in. Each pair comes once, in the order of `newIds`, the new side first; two
+ * new rows that pick each other come once, as the earlier one's pair.
+ */
+export function mutualMatches(
+	newIds: readonly string[],
+	candidatesOf: ReadonlyMap<string, readonly string[]>,
+): [string, string][] {
+	const paired = new Set<string>();
+	const pairs: [string, string][] = [];
+
+	for (const id of newIds) {
+		const [candidate, ...others] = candidatesOf.get(id) ?? [];
+
+		if (candidate === undefined || others.length > 0 || paired.has(id)) {
+			continue;
+		}
+
+		const back = candidatesOf.get(candidate) ?? [];
+
+		if (back.length === 1 && back[0] === id) {
+			paired.add(id).add(candidate);
+			pairs.push([id, candidate]);
+		}
+	}
+
+	return pairs;
+}
