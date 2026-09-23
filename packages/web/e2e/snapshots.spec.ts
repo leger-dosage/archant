@@ -115,6 +115,41 @@ test("a PEA's snapshot sets its value, and its history follows from that date", 
 	);
 });
 
+// Story 7.3: property and vehicle accounts.
+
+test("a home's new estimated value sets its balance and history, with no transaction recorded", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("Maison"),
+		kind: "single_family_home",
+		openingBalance: "320 000,00",
+		openingDate: daysAgo(30),
+	});
+	const date = daysAgo(5);
+
+	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.getByRole("button", { name: "Ajouter un solde" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
+	await dialog.getByLabel("Date", { exact: true }).fill(typed(date));
+	await dialog.getByLabel("Solde").fill("335 000,00");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(header(page, account.name)).toContainText(euros(33_500_000));
+
+	await page.getByRole("tab", { name: "Opérations" }).click();
+	await expect(page.getByText("Aucune opération.")).toBeVisible();
+	await page.getByRole("button", { name: "Voir les données" }).click();
+	const table = page.getByRole("table");
+	await expect(table.getByRole("row").nth(1)).toContainText(euros(33_500_000));
+	await expect(table.getByRole("row", { name: dayRow(date) })).toContainText(euros(33_500_000));
+	await expect(table.getByRole("row", { name: dayRow(daysAgo(6)) })).toContainText(
+		euros(32_000_000),
+	);
+});
+
 test("a second snapshot on the same date replaces the first", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
 	const date = daysAgo(5);

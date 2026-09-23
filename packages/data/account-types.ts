@@ -18,6 +18,20 @@ export const ACCOUNT_TYPES = {
 		classification: "asset",
 		subtypes: ["pea", "assurance_vie", "brokerage", "other"],
 	},
+	// A French-relevant subset of Sure's `Property::SUBTYPES` keys.
+	property: {
+		classification: "asset",
+		subtypes: [
+			"single_family_home",
+			"apartment",
+			"second_home",
+			"investment_property",
+			"plot",
+			"commercial",
+		],
+	},
+	// Sure's `Vehicle` has no subtypes.
+	vehicle: { classification: "asset", subtypes: [] },
 } as const satisfies Record<
 	string,
 	{ classification: Classification; subtypes: readonly string[] }
@@ -40,6 +54,10 @@ export const ACCOUNT_SUBTYPES: readonly AccountSubtype[] = [
 		ACCOUNT_TYPE_IDS.flatMap((type): readonly AccountSubtype[] => ACCOUNT_TYPES[type].subtypes),
 	),
 ];
+
+export function isAccountSubtype(value: unknown): value is AccountSubtype {
+	return typeof value === "string" && ACCOUNT_SUBTYPES.some((subtype) => subtype === value);
+}
 
 export function classificationOf(type: AccountType): Classification {
 	return ACCOUNT_TYPES[type].classification;

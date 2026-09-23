@@ -64,3 +64,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-1-loan-accounts.md`
   summary: A `loan_payment` or `investment_contribution` outflow categorised before its match counts in that category on the dashboard, while its row shows the transfer chip and offers no way to change the category.
   evidence: medium. Transfer matching leaves the category in place (`services/ledger.ts`) and `countsInCashFlow` counts these outflows by category; `TransactionList.tsx` hides the category of any transfer side. Decide whether a spent transfer outflow shows and edits its category, as Sure lets a loan payment keep one.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-property-and-vehicle-accounts.md`
+  summary: Group the account form's « Type » select by account type, now that it lists 17 kinds in one flat list.
+  evidence: `CreateAccountDialog.tsx` renders `ACCOUNT_KINDS.map` as flat `SelectItem`s since Story 1.1; Story 7.3 raised it from 10 to 17 entries.

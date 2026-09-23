@@ -4,19 +4,29 @@ import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
 	classificationOf,
+	isAccountSubtype,
 	isSubtypeOf,
 } from "./account-types.ts";
 
 describe("account types", () => {
-	it("classifies a depository and an investment as assets, and a credit card and a loan as liabilities", () => {
+	it("classifies a depository, an investment, a property and a vehicle as assets, and a credit card and a loan as liabilities", () => {
 		expect(classificationOf("depository")).toBe("asset");
 		expect(classificationOf("investment")).toBe("asset");
+		expect(classificationOf("property")).toBe("asset");
+		expect(classificationOf("vehicle")).toBe("asset");
 		expect(classificationOf("credit_card")).toBe("liability");
 		expect(classificationOf("loan")).toBe("liability");
 	});
 
 	it("lists every type and subtype once", () => {
-		expect(ACCOUNT_TYPE_IDS).toEqual(["depository", "credit_card", "loan", "investment"]);
+		expect(ACCOUNT_TYPE_IDS).toEqual([
+			"depository",
+			"credit_card",
+			"loan",
+			"investment",
+			"property",
+			"vehicle",
+		]);
 		expect(ACCOUNT_SUBTYPES).toEqual([
 			"checking",
 			"savings",
@@ -26,6 +36,12 @@ describe("account types", () => {
 			"pea",
 			"assurance_vie",
 			"brokerage",
+			"single_family_home",
+			"apartment",
+			"second_home",
+			"investment_property",
+			"plot",
+			"commercial",
 		]);
 	});
 
@@ -42,5 +58,19 @@ describe("account types", () => {
 		expect(isSubtypeOf("investment", "other")).toBe(true);
 		expect(isSubtypeOf("investment", null)).toBe(false);
 		expect(isSubtypeOf("investment", "savings")).toBe(false);
+		expect(isSubtypeOf("property", "single_family_home")).toBe(true);
+		expect(isSubtypeOf("property", "commercial")).toBe(true);
+		expect(isSubtypeOf("property", null)).toBe(false);
+		expect(isSubtypeOf("property", "pea")).toBe(false);
+		expect(isSubtypeOf("vehicle", null)).toBe(true);
+		expect(isSubtypeOf("vehicle", "car")).toBe(false);
+		expect(isSubtypeOf("vehicle", "apartment")).toBe(false);
+	});
+
+	it("recognises a subtype of any type, and nothing else", () => {
+		expect(isAccountSubtype("checking")).toBe(true);
+		expect(isAccountSubtype("single_family_home")).toBe(true);
+		expect(isAccountSubtype("car")).toBe(false);
+		expect(isAccountSubtype(null)).toBe(false);
 	});
 });

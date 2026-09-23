@@ -121,7 +121,14 @@
 			"pea": "PEA",
 			"assurance_vie": "Assurance-vie",
 			"brokerage": "Compte-titres",
-			"other_investment": "Autre placement"
+			"other_investment": "Autre placement",
+			"single_family_home": "Maison",
+			"apartment": "Appartement",
+			"second_home": "Résidence secondaire",
+			"investment_property": "Bien locatif",
+			"plot": "Terrain",
+			"commercial": "Local commercial",
+			"vehicle": "Véhicule"
 		},
 		"excluded_one": "{{count}} compte dans une autre devise n'est pas compté dans le total.",
 		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",
@@ -136,6 +143,7 @@
 			"currency": "Devise",
 			"openingBalance": "Solde initial",
 			"outstandingBalance": "Capital restant dû",
+			"estimatedValue": "Valeur estimée",
 			"openingDate": "Date du solde",
 			"pickDate": "Choisir une date",
 			"submit": "Ajouter le compte",
