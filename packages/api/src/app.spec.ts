@@ -819,6 +819,74 @@ describe("PATCH /api/transactions/:id", () => {
 		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
 		expect(after.body).toMatchObject({ data: { label: "Boulangerie", merchantId: null } });
 	});
+
+	it("sets, replaces and clears tags, locking them and leaving the balance alone", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const holidays = await createTag(uniqueCategory("Vacances"));
+		const work = await createTag(uniqueCategory("Travaux"));
+		const client = testClient(buildApp()).api.transactions[":id"];
+
+		const set = await client.$patch({
+			param: { id: data.id },
+			json: { tagIds: [holidays.id, work.id, holidays.id] },
+		});
+
+		expect(set.status).toBe(200);
+		const setData = (await set.json()).data;
+		expect(setData).toMatchObject({ amount: -4290 });
+		expect(setData.tagIds.toSorted()).toEqual([holidays.id, work.id].toSorted());
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
+
+		const replaced = await client.$patch({ param: { id: data.id }, json: { tagIds: [work.id] } });
+
+		expect((await replaced.json()).data).toMatchObject({ tagIds: [work.id] });
+
+		const cleared = await client.$patch({ param: { id: data.id }, json: { tagIds: [] } });
+
+		expect((await cleared.json()).data).toMatchObject({ tagIds: [] });
+		await expect(
+			temp.db.get(
+				sql`select locked_fields as locked from transactions where entry_id = ${data.id}`,
+			),
+		).resolves.toEqual({ locked: '["date","amount","label","tags"]' });
+	});
+
+	it("refuses an unknown tag and writes nothing", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const holidays = await createTag(uniqueCategory("Vacances"));
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			tagIds: [holidays.id, "x"],
+			label: "Autre",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "tagIds", code: "invalid_value" }],
+		});
+		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
+		expect(after.body).toMatchObject({ data: { label: "Boulangerie", tagIds: [] } });
+	});
+
+	it("refuses more tags than the cap and writes nothing", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			tagIds: Array.from({ length: 21 }, (_, index) => `t${index}`),
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields?.[0]?.path).toBe("tagIds");
+		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
+		expect(after.body).toMatchObject({ data: { tagIds: [] } });
+	});
 });
 
 const listItem = z.object({
@@ -831,6 +899,7 @@ const listItem = z.object({
 	excluded: z.boolean(),
 	categoryId: z.string().nullable(),
 	merchantId: z.string().nullable(),
+	tagIds: z.array(z.string()),
 });
 
 const listBody = z.object({
@@ -1063,6 +1132,45 @@ describe("GET /api/transactions", () => {
 		expect(data.total).toBe(2);
 		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
 		await expect(listed("?merchant=nope")).resolves.toMatchObject({ items: [], total: 0 });
+	});
+
+	it("filters on tags, ORed, listing and counting a row with both tags once", async () => {
+		const account = await openOwn();
+		const client = testClient(buildApp(own?.db)).api;
+		const tagOf = async (name: string) =>
+			(await (await client.tags.$post({ json: { name } })).json()).data.id;
+		const holidays = await tagOf("Vacances");
+		const work = await tagOf("Travaux");
+		const other = await tagOf("Autre");
+		const rows: [string, string[]][] = [
+			[await postOwn(account.id, { ...expense, label: "Hôtel" }), [holidays, work]],
+			[await postOwn(account.id, { ...expense, label: "Train" }), [holidays]],
+			[await postOwn(account.id, { ...expense, label: "Livre" }), [other]],
+		];
+		await postOwn(account.id, { ...expense, label: "Virement" });
+		await rows.reduce(async (previous, [id, tagIds]) => {
+			await previous;
+			await client.transactions[":id"].$patch({ param: { id }, json: { tagIds } });
+		}, Promise.resolve());
+
+		const data = await listed(`?tag=${holidays}&tag=${work}`);
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Hôtel", "Train"]);
+		expect(data.total).toBe(2);
+		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		await expect(listed("?tag=nope")).resolves.toMatchObject({ items: [], total: 0 });
+	});
+
+	it("refuses an empty tag, and more tags than the cap", async () => {
+		own = await freshDatabase();
+		const query = Array.from({ length: 101 }, (_, index) => `tag=t${index}`).join("&");
+
+		const responses = await Promise.all([listOwn(`?${query}`), listOwn("?tag=")]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error.fields?.[0]?.path).toMatch(/^tag/u);
+		}
 	});
 
 	it("refuses an empty merchant, and more merchants than the cap", async () => {
@@ -3608,6 +3716,146 @@ describe("merchants", () => {
 		["PATCH", "/api/merchants/nope", { name: "Autre" }],
 		["DELETE", "/api/merchants/nope", undefined],
 		["POST", "/api/merchants/nope/merge", { targetId: "other" }],
+	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
+		const response = await request(method, path, body);
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+async function createTag(name: string) {
+	const response = await testClient(buildApp()).api.tags.$post({ json: { name } });
+
+	expect(response.status).toBe(201);
+
+	return (await response.json()).data;
+}
+
+/** Tags every transaction of the account, by hand through the API. */
+async function tagAll(accountId: string, tagIds: string[]) {
+	const rows = await temp.db.all<{ id: string }>(
+		sql`select id from entries where account_id = ${accountId} and kind = 'transaction'`,
+	);
+
+	await rows.reduce(async (previous, row) => {
+		await previous;
+		const { status } = await request("PATCH", `/api/transactions/${row.id}`, { tagIds });
+
+		expect(status).toBe(200);
+	}, Promise.resolve());
+}
+
+async function tagList(db = temp.db) {
+	const response = await testClient(buildApp(db)).api.tags.$get();
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+describe("tags", () => {
+	it("lists the tags sorted by name, with their transaction counts", async () => {
+		own = await freshDatabase();
+		const client = testClient(buildApp(own.db)).api.tags;
+		await client.$post({ json: { name: "Vacances" } });
+		await client.$post({ json: { name: "Été" } });
+		await client.$post({ json: { name: "Anniversaire" } });
+
+		const list = await tagList(own.db);
+
+		expect(list.map((item) => [item.name, item.transactionCount])).toEqual([
+			["Anniversaire", 0],
+			["Été", 0],
+			["Vacances", 0],
+		]);
+	});
+
+	it("creates a tag, trimming its name", async () => {
+		const name = uniqueCategory("Vacances");
+
+		await expect(request("POST", "/api/tags", { name: `  ${name} ` })).resolves.toMatchObject({
+			status: 201,
+			body: { data: { name, transactionCount: 0 } },
+		});
+	});
+
+	it("refuses a name taken in another case", async () => {
+		const name = uniqueCategory("Vacances");
+		await createTag(name);
+
+		const { status, body } = await request("POST", "/api/tags", { name: name.toUpperCase() });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "name", code: "name_taken" }],
+		});
+	});
+
+	it.each([
+		["a blank name", "  ", "too_small"],
+		["a name over 60 characters", "x".repeat(61), "too_big"],
+	])("refuses %s", async (_label, name, code) => {
+		const { status, body } = await request("POST", "/api/tags", { name });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "name", code }]);
+	});
+
+	it("renames a tag", async () => {
+		const tag = await createTag(uniqueCategory("Vacances"));
+		const name = uniqueCategory("Vacances 2026");
+
+		const response = await testClient(buildApp()).api.tags[":id"].$patch({
+			param: { id: tag.id },
+			json: { name },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({ id: tag.id, name, transactionCount: 0 });
+	});
+
+	it("deletes a tag, removing it from its transactions and keeping their locks", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+		await postTransaction(account.id, { ...expense, label: "Marché" });
+		const tag = await createTag(uniqueCategory("Vacances"));
+		const kept = await createTag(uniqueCategory("Travaux"));
+		await tagAll(account.id, [tag.id, kept.id]);
+
+		await expect(request("DELETE", `/api/tags/${tag.id}`)).resolves.toEqual({
+			status: 200,
+			body: { data: { id: tag.id, untagged: 2 } },
+		});
+		await expect(
+			temp.db.all(
+				sql`select t.locked_fields as locked, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t where t.entry_id in (select id from entries where account_id = ${account.id})`,
+			),
+		).resolves.toEqual([
+			{ locked: '["date","amount","label","tags"]', tags: kept.id },
+			{ locked: '["date","amount","label","tags"]', tags: kept.id },
+		]);
+		expect((await tagList()).find((item) => item.id === tag.id)).toBeUndefined();
+	});
+
+	it("deletes a tagged transaction and an account whose transactions carry tags", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		await postTransaction(account.id, { ...expense, label: "Marché" });
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const tag = await createTag(uniqueCategory("Vacances"));
+		await tagAll(account.id, [tag.id]);
+
+		expect((await request("DELETE", `/api/transactions/${data.id}`)).status).toBe(200);
+		expect((await tagList()).find((item) => item.id === tag.id)?.transactionCount).toBe(1);
+		expect((await request("DELETE", `/api/accounts/${account.id}`)).status).toBe(200);
+		expect((await tagList()).find((item) => item.id === tag.id)?.transactionCount).toBe(0);
+	});
+
+	it.each([
+		["PATCH", "/api/tags/nope", { name: "Autre" }],
+		["DELETE", "/api/tags/nope", undefined],
 	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
 		const response = await request(method, path, body);
 

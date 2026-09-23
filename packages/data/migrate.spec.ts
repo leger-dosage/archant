@@ -650,6 +650,61 @@ describe("merchants", () => {
 	});
 });
 
+const insertTag = (database: Database, id: string, name: string) =>
+	database.run(
+		sql`insert into tags (id, name, created_at, updated_at) values (${id}, ${name}, 0, 0)`,
+	);
+
+describe("tags", () => {
+	it("holds a name once, ignoring case", async () => {
+		const database = await migrated();
+		await insertTag(database, "t1", "Vacances");
+
+		await expect(insertTag(database, "t2", "vacances")).rejects.toThrow();
+		await expect(insertTag(database, "t3", "Vacances 2026")).resolves.toBeDefined();
+	});
+
+	it("keeps every transaction when 0014 adds tags, and protects a tagging on both ends", async () => {
+		const before = await migratedBefore("0014");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertMerchant(before, "m1", "Carrefour");
+		await before.run(
+			sql`insert into transactions (entry_id, label, locked_fields, merchant_id) values ('e1', 'CB CARREFOUR 1234', '["merchant"]', 'm1')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, locked_fields as locked, merchant_id as merchantId from transactions`,
+			),
+		).resolves.toEqual([
+			{ entryId: "e1", label: "CB CARREFOUR 1234", locked: '["merchant"]', merchantId: "m1" },
+		]);
+		await insertTag(database, "t1", "Vacances");
+		await expect(
+			database.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 'nope')`),
+		).rejects.toThrow();
+		await expect(
+			database.run(sql`insert into taggings (transaction_id, tag_id) values ('nope', 't1')`),
+		).rejects.toThrow();
+		await database.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
+		await expect(
+			database.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`),
+		).rejects.toThrow();
+		await expect(database.run(sql`delete from tags where id = 't1'`)).rejects.toThrow();
+		await expect(
+			database.run(sql`delete from transactions where entry_id = 'e1'`),
+		).rejects.toThrow();
+		await expect(
+			database.all(sql`select name from pragma_index_list('taggings') where name = 'taggings_tag'`),
+		).resolves.toEqual([{ name: "taggings_tag" }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

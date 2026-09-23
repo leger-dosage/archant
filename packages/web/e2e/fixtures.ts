@@ -269,6 +269,30 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		async createTag(name: string = uniqueName("Étiquette")): Promise<Created> {
+			return { id: await created(await request.post("/api/tags", { data: { name } })), name };
+		},
+
+		async deleteTag(id: string) {
+			// Bodiless, so it needs the `Origin` a browser would add.
+			const response = await request.delete(`/api/tags/${id}`, { headers: sameOrigin });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Replaces transactions' tags by hand, as the row's combobox does. */
+		async setTags(transactionIds: string[], tagIds: string[]) {
+			// One after the other: each is an `immediate` ledger write.
+			await transactionIds.reduce(async (previous, id) => {
+				await previous;
+				const response = await request.patch(`/api/transactions/${id}`, {
+					data: { tagIds },
+				});
+
+				expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+			}, Promise.resolve());
+		},
+
 		/** A group's total in minor units, zero when it holds no account. */
 		async groupTotal(classification: "asset" | "liability"): Promise<number> {
 			const response = await request.get("/api/accounts");

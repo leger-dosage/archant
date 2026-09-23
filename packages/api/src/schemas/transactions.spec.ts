@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
 	MAX_MERCHANT_FILTER,
+	MAX_TAGS_PER_TRANSACTION,
+	MAX_TAG_FILTER,
 	compareAmountBounds,
 	parseAmountBound,
 	transactionFilterSchema,
@@ -78,6 +80,17 @@ describe("transactionFilterSchema", () => {
 		expect(transactionFilterSchema.safeParse({ merchant: merchant.slice(1) }).success).toBe(true);
 	});
 
+	it("reads a lone tag as a list, repeated ones in order, and refuses more than the cap", () => {
+		const tag = Array.from({ length: MAX_TAG_FILTER + 1 }, (_, index) => `t${index}`);
+
+		expect(transactionFilterSchema.parse({ tag: "t1" }).tag).toEqual(["t1"]);
+		expect(transactionFilterSchema.parse({ tag: ["t1", "t2"] }).tag).toEqual(["t1", "t2"]);
+		expect(transactionFilterSchema.parse({}).tag).toBeUndefined();
+		expect(transactionFilterSchema.safeParse({ tag }).success).toBe(false);
+		expect(transactionFilterSchema.safeParse({ tag: tag.slice(1) }).success).toBe(true);
+		expect(transactionFilterSchema.safeParse({ tag: ["t1", ""] }).success).toBe(false);
+	});
+
 	it("refuses an empty account, category or merchant rather than matching nothing", () => {
 		expect(transactionFilterSchema.safeParse({ category: "" }).success).toBe(false);
 		expect(transactionFilterSchema.safeParse({ merchant: ["m1", ""] }).success).toBe(false);
@@ -101,5 +114,22 @@ describe("updateTransactionSchema", () => {
 		expect(schema.parse({ merchantId: "m1" })).toEqual({ merchantId: "m1" });
 		expect(schema.parse({ merchantId: null })).toEqual({ merchantId: null });
 		expect(schema.safeParse({ merchantId: "" }).success).toBe(false);
+	});
+
+	it("keeps a tag set, an empty one, and none at all apart, dropping repeats", () => {
+		const schema = updateTransactionSchema("EUR");
+
+		expect(schema.parse({ tagIds: ["t1", "t2", "t1"] })).toEqual({ tagIds: ["t1", "t2"] });
+		expect(schema.parse({ tagIds: [] })).toEqual({ tagIds: [] });
+		expect(schema.parse({})).toEqual({});
+		expect(schema.safeParse({ tagIds: [""] }).success).toBe(false);
+	});
+
+	it("refuses more tags than the cap, counting repeats once", () => {
+		const schema = updateTransactionSchema("EUR");
+		const tagIds = Array.from({ length: MAX_TAGS_PER_TRANSACTION + 1 }, (_, index) => `t${index}`);
+
+		expect(schema.safeParse({ tagIds }).error?.issues[0]?.path).toEqual(["tagIds"]);
+		expect(schema.safeParse({ tagIds: [...tagIds.slice(1), "t1"] }).success).toBe(true);
 	});
 });

@@ -35,6 +35,10 @@ export const queryKeys = {
 	merchants: {
 		all: ["merchants"] as const,
 	},
+	/** The whole tag list, one query: each row's tag names are read from it. */
+	tags: {
+		all: ["tags"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

@@ -78,6 +78,10 @@
 								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
 							},
 							{
+								"name": "@archant/data/schema/taggings",
+								"message": "Only services/ledger.ts links tags to transactions (AD-2)."
+							},
+							{
 								"name": "@archant/data/schema/imports",
 								"message": "Only services/ledger.ts confirms imports (AD-2, AD-4).",
 								"allowTypeImports": true
@@ -118,6 +122,11 @@
 							{
 								"name": "@archant/data/schema/entry-keys",
 								"message": "The domain may import entry key types only (AD-2).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/taggings",
+								"message": "The domain may import tagging types only (AD-2).",
 								"allowTypeImports": true
 							},
 							{
@@ -176,6 +185,11 @@
 								"allowTypeImports": true
 							},
 							{
+								"name": "@archant/data/schema/taggings",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
 								"name": "@archant/data/schema/imports",
 								"message": "Connectors never touch the database (AD-3).",
 								"allowTypeImports": true
@@ -220,6 +234,10 @@
 							{
 								"name": "@archant/data/schema/entry-keys",
 								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
+							},
+							{
+								"name": "@archant/data/schema/taggings",
+								"message": "Only services/ledger.ts links tags to transactions (AD-2)."
 							}
 						]
 					}

@@ -14,6 +14,8 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
+import { taggings } from "@archant/data/schema/taggings";
+import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../domain/balances/forward.ts";
@@ -34,12 +36,14 @@ import {
 	listTransactions,
 	countByCategory,
 	countByMerchant,
+	countByTag,
 	moveMerchant,
 	openingDateOf,
 	recategorise,
 	sumTransactions,
 	recordSnapshot,
 	removableOf,
+	removeTag,
 	revertImport,
 	updateSnapshot,
 	updateTransaction,
@@ -281,6 +285,7 @@ describe("ingest", () => {
 			excluded: false,
 			categoryId: null,
 			merchantId: null,
+			tagIds: [],
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -1453,6 +1458,20 @@ describe("revertImport", () => {
 		expect(keys).toEqual([{ source: "csv", importId: csv.importId }]);
 	});
 
+	it("deletes the taggings of the transactions it deletes", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const { importId, result } = await importStatement(account.id, statementOf(cafe, salary));
+		const [cafeId = "", salaryId = ""] = result.created;
+		await updateTransaction(deps(), cafeId, { tagIds: [holidays] }, { origin: "user" });
+		await updateTransaction(deps(), salaryId, { tagIds: [holidays] }, { origin: "user" });
+
+		await expect(revert(importId)).resolves.toMatchObject({ removed: { transactions: 2 } });
+
+		await expect(tagsOf(cafeId)).resolves.toEqual([]);
+		await expect(tagsOf(salaryId)).resolves.toEqual([]);
+	});
+
 	it("deletes a transaction the user edited since the import", async () => {
 		const account = await openChecking();
 		const before = await history(account.id);
@@ -2056,6 +2075,100 @@ describe("updateTransaction", () => {
 		});
 		await expect(lockedFields(id)).resolves.toEqual([]);
 	});
+	it("sets tags by hand, locking them, without touching the entry or balances", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const id = await add(account.id, {}, "sync");
+		const entry = await temp.db.select().from(entries).where(eq(entries.id, id)).get();
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await expect(
+			updateTransaction(deps(), id, { tagIds: [holidays, work, holidays] }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(tagsOf(id)).resolves.toEqual([holidays, work].toSorted());
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			tagIds: [holidays, work].toSorted(),
+		});
+		await expect(lockedFields(id)).resolves.toEqual(["tags"]);
+		await expect(temp.db.select().from(entries).where(eq(entries.id, id)).get()).resolves.toEqual(
+			entry,
+		);
+		expect(recompute).not.toHaveBeenCalled();
+	});
+
+	it("replaces the whole set of tags", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "user" });
+
+		await updateTransaction(deps(), id, { tagIds: [work] }, { origin: "user" });
+
+		await expect(tagsOf(id)).resolves.toEqual([work]);
+	});
+
+	it("clears the tags by hand, locking them", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "rule" });
+		await expect(lockedFields(id)).resolves.toEqual([]);
+
+		await updateTransaction(deps(), id, { tagIds: [] }, { origin: "user" });
+
+		await expect(tagsOf(id)).resolves.toEqual([]);
+		await expect(lockedFields(id)).resolves.toEqual(["tags"]);
+	});
+
+	it("treats the same tags in another order as no change", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays, work] }, { origin: "rule" });
+
+		await updateTransaction(deps(), id, { tagIds: [work, holidays] }, { origin: "user" });
+
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
+
+	it("never changes locked tags for another origin", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "user" });
+
+		await updateTransaction(deps(), id, { tagIds: [work] }, { origin: "rule" });
+		await updateTransaction(deps(), id, { tagIds: [] }, { origin: "provider" });
+
+		await expect(tagsOf(id)).resolves.toEqual([holidays]);
+	});
+
+	it("refuses an unknown tag and writes nothing", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const id = await add(account.id, {}, "sync");
+
+		await expect(
+			updateTransaction(
+				deps(),
+				id,
+				{ tagIds: [holidays, "nope"], label: "Autre" },
+				{ origin: "user" },
+			),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "tagIds", code: "invalid_value" }],
+		});
+
+		await expect(tagsOf(id)).resolves.toEqual([]);
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ label: "Boulangerie" });
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
 });
 
 describe("deleteTransaction", () => {
@@ -2100,6 +2213,19 @@ describe("deleteTransaction", () => {
 		await expect(balanceOn(deps(), account.id, "2026-10-15")).resolves.toMatchObject({
 			amount: 119166,
 		});
+	});
+
+	it("deletes a tagged transaction with its taggings, keeping the tag", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const id = await add(account.id);
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "user" });
+
+		await deleteTransaction(deps(), id, { origin: "user" });
+
+		await expect(findTransaction(deps(), id)).resolves.toBeNull();
+		await expect(tagsOf(id)).resolves.toEqual([]);
+		await expect(temp.db.select().from(tags).where(eq(tags.id, holidays))).resolves.toHaveLength(1);
 	});
 
 	it("answers NOT_FOUND for an unknown transaction", async () => {
@@ -2345,6 +2471,47 @@ describe("listTransactions across accounts", () => {
 		).resolves.toMatchObject({ total: 3 });
 		await expect(
 			sumTransactions(deps(), { accountIds, merchantIds: [carrefour, lidl] }),
+		).resolves.toEqual([{ currency: "EUR", amount: -12870, count: 3 }]);
+	});
+
+	it("filters on tags, ORed, listing and counting a row with both tags once", async () => {
+		const { joint } = await openPair();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const other = await newTag("Autre");
+		const tag = async (label: string, tagIds: string[]) => {
+			const id = await add(joint.id, { label });
+			await updateTransaction(deps(), id, { tagIds }, { origin: "user" });
+
+			return id;
+		};
+		const both = await tag("Hôtel", [holidays, work]);
+		await tag("Train", [holidays]);
+		await tag("Peinture", [work]);
+		await tag("Livre", [other]);
+		await tag("Virement", []);
+		const accountIds = [joint.id];
+		const labels = async (filter: Parameters<typeof listTransactions>[1]) =>
+			labelsOf(await listTransactions(deps(), { accountIds, ...filter }, firstPage)).toSorted();
+
+		await expect(labels({ tagIds: [holidays, work] })).resolves.toEqual([
+			"Hôtel",
+			"Peinture",
+			"Train",
+		]);
+		await expect(labels({ tagIds: ["nope"] })).resolves.toEqual([]);
+		await expect(labels({ tagIds: [] })).resolves.toEqual([]);
+		const page = await listTransactions(
+			deps(),
+			{ accountIds, tagIds: [holidays, work] },
+			firstPage,
+		);
+		expect(page.total).toBe(3);
+		expect(page.items.find((item) => item.id === both)?.tagIds).toEqual(
+			[holidays, work].toSorted(),
+		);
+		await expect(
+			sumTransactions(deps(), { accountIds, tagIds: [holidays, work] }),
 		).resolves.toEqual([{ currency: "EUR", amount: -12870, count: 3 }]);
 	});
 
@@ -2927,6 +3094,22 @@ describe("deleteAccount", () => {
 		).resolves.toEqual([]);
 	});
 
+	it("removes the taggings of its transactions, keeping the tags and other accounts' taggings", async () => {
+		const account = await openChecking();
+		const other = await openChecking({ name: "Livret A", subtype: "savings" });
+		const holidays = await newTag("Vacances");
+		const mine = await add(account.id);
+		const theirs = await add(other.id);
+		await updateTransaction(deps(), mine, { tagIds: [holidays] }, { origin: "user" });
+		await updateTransaction(deps(), theirs, { tagIds: [holidays] }, { origin: "user" });
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(rowsOf(temp.db, account.id)).resolves.toMatchObject({ transactions: 0 });
+		await expect(tagsOf(mine)).resolves.toEqual([]);
+		await expect(tagsOf(theirs)).resolves.toEqual([holidays]);
+	});
+
 	it("answers NOT_FOUND for an unknown account", async () => {
 		await expect(deleteAccount(deps(), "nope", { origin: "user" })).rejects.toMatchObject({
 			code: "NOT_FOUND",
@@ -3193,5 +3376,61 @@ describe("countByMerchant", () => {
 		expect(perMerchant.get(carrefour)).toBe(2);
 		expect(perMerchant.has(empty)).toBe(false);
 		expect([...perMerchant.keys()]).not.toContain(null);
+	});
+});
+
+async function newTag(name: string) {
+	const id = crypto.randomUUID();
+	await temp.db.insert(tags).values({ id, name: `${name} ${id}`, createdAt: 0, updatedAt: 0 });
+
+	return id;
+}
+
+async function tagsOf(entryId: string) {
+	const rows = await temp.db
+		.select({ tagId: taggings.tagId })
+		.from(taggings)
+		.where(eq(taggings.transactionId, entryId))
+		.orderBy(taggings.tagId);
+
+	return rows.map((row) => row.tagId);
+}
+
+describe("removeTag", () => {
+	it("removes a tag from every transaction, keeping locks and balances", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const work = await newTag("Travaux");
+		const first = await add(account.id, {}, "sync");
+		const second = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), first, { tagIds: [holidays, work] }, { origin: "user" });
+		await updateTransaction(deps(), second, { tagIds: [holidays] }, { origin: "rule" });
+		const days = await history(account.id);
+
+		await expect(removeTag(deps(), holidays, { origin: "maintenance" })).resolves.toBe(2);
+
+		await expect(tagsOf(first)).resolves.toEqual([work]);
+		await expect(tagsOf(second)).resolves.toEqual([]);
+		await expect(lockedFields(first)).resolves.toEqual(["tags"]);
+		await expect(lockedFields(second)).resolves.toEqual([]);
+		await expect(history(account.id)).resolves.toEqual(days);
+	});
+});
+
+describe("countByTag", () => {
+	it("counts each tag's transactions, leaving out unused tags", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const empty = await newTag("Vide");
+		const first = await add(account.id, {}, "sync");
+		const second = await add(account.id, {}, "sync");
+		await add(account.id, {}, "sync");
+		await updateTransaction(deps(), first, { tagIds: [holidays] }, { origin: "rule" });
+		await updateTransaction(deps(), second, { tagIds: [holidays] }, { origin: "rule" });
+
+		const perTag = await countByTag(deps());
+
+		expect(perTag.get(holidays)).toBe(2);
+		expect(perTag.has(empty)).toBe(false);
 	});
 });

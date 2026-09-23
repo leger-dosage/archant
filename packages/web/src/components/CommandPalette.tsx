@@ -122,6 +122,11 @@ export function CommandPalette() {
 			label: t("settings.sections.merchants"),
 			run: () => void navigate({ to: "/reglages/marchands" }),
 		},
+		{
+			id: "go-tags",
+			label: t("settings.sections.tags"),
+			run: () => void navigate({ to: "/reglages/etiquettes" }),
+		},
 	];
 	const actions: Item[] = [
 		{ id: "add-account", label: t("accounts.add"), run: () => setCreatingAccount(true) },

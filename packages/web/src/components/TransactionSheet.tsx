@@ -17,6 +17,7 @@ import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
+import { TagCombobox } from "@/components/TagCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useTags } from "@/hooks/useTags";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -45,7 +47,15 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
-const FIELD_NAMES = ["date", "label", "amount", "notes", "categoryId", "merchantId"] as const;
+const FIELD_NAMES = [
+	"date",
+	"label",
+	"amount",
+	"notes",
+	"categoryId",
+	"merchantId",
+	"tagIds",
+] as const;
 
 type FieldName = (typeof FIELD_NAMES)[number];
 
@@ -88,6 +98,7 @@ function valuesOf(transaction: TransactionData | null, openingDate: string): Tra
 				excluded: false,
 				categoryId: null,
 				merchantId: null,
+				tagIds: [],
 			}
 		: {
 				date: transaction.date,
@@ -97,7 +108,14 @@ function valuesOf(transaction: TransactionData | null, openingDate: string): Tra
 				excluded: transaction.excluded,
 				categoryId: transaction.categoryId,
 				merchantId: transaction.merchantId,
+				tagIds: transaction.tagIds,
 			};
+}
+
+function sameTags(a: readonly string[], b: readonly string[]): boolean {
+	const set = new Set(a);
+
+	return set.size === b.length && b.every((id) => set.has(id));
 }
 
 /** The sheet's Catégorie field: the list's combobox behind a button showing the choice. */
@@ -204,6 +222,64 @@ function MerchantField({
 	);
 }
 
+const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+
+/** The sheet's Étiquettes field: the list's combobox behind a button naming the tags. */
+function TagsField({
+	value,
+	onChange,
+	invalid,
+	describedBy,
+}: {
+	value: string[];
+	onChange: (tagIds: string[]) => void;
+	invalid: boolean;
+	describedBy: string | undefined;
+}) {
+	const { t } = useTranslation();
+	const tags = useTags();
+	const [open, setOpen] = useState(false);
+	const names =
+		tags.data === undefined
+			? null
+			: tags.data
+					.filter((tag) => value.includes(tag.id))
+					.map((tag) => tag.name)
+					.toSorted((a, b) => byName.compare(a, b));
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					id="transaction-tags"
+					type="button"
+					variant="outline"
+					className="w-full justify-start font-normal"
+					aria-invalid={invalid}
+					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
+				>
+					{names === null ? (
+						<Skeleton className="h-3 w-24" />
+					) : (
+						<span className="truncate">
+							{names.length === 0 ? t("transactions.tags.none") : names.join(", ")}
+						</span>
+					)}
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+				<TagCombobox
+					tags={tags.data ?? []}
+					value={value}
+					onToggle={(tagId) =>
+						onChange(value.includes(tagId) ? value.filter((id) => id !== tagId) : [...value, tagId])
+					}
+				/>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
 type TransactionFormProps = {
 	account: SheetAccount;
 	transaction: TransactionData | null;
@@ -239,6 +315,7 @@ function TransactionForm({
 	const excluded = useController({ control: form.control, name: "excluded" });
 	const category = useController({ control: form.control, name: "categoryId" });
 	const merchant = useController({ control: form.control, name: "merchantId" });
+	const tagIds = useController({ control: form.control, name: "tagIds" });
 
 	useEffect(() => {
 		onDirtyChange(isDirty);
@@ -260,25 +337,28 @@ function TransactionForm({
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			if (transaction === null) {
-				// A new transaction is always counted and starts « Sans catégorie » and
-				// « Sans marchand »: the switch, the category and the merchant show on
-				// edits only.
+				// A new transaction is always counted, starts « Sans catégorie » and
+				// « Sans marchand », and carries no tag: the switch, the category, the
+				// merchant and the tags show on edits only.
 				const {
 					excluded: _excluded,
 					categoryId: _categoryId,
 					merchantId: _merchantId,
+					tagIds: _tagIds,
 					...input
 				} = values;
 				await createTransaction.mutateAsync(input);
 			} else {
-				// Sent only when changed: a category or a merchant deleted elsewhere
-				// since the sheet opened would otherwise refuse the save of any other field.
-				const { categoryId, merchantId, ...rest } = values;
+				// Sent only when changed: a category, a merchant or a tag deleted
+				// elsewhere since the sheet opened would otherwise refuse the save of
+				// any other field. Tags are a set, so their order is no change.
+				const { categoryId, merchantId, tagIds: tags, ...rest } = values;
 				const { dirtyFields } = form.formState;
 				const input = {
 					...rest,
 					...(dirtyFields.categoryId === true ? { categoryId } : {}),
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
+					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
 				};
 				await updateTransaction.mutateAsync({ id: transaction.id, input });
 			}
@@ -303,6 +383,15 @@ function TransactionForm({
 			showError(error);
 		}
 	};
+
+	// An array field's error may carry one per item; the API reports the set as a whole.
+	const tagsError: FieldError | undefined =
+		errors.tagIds?.type === undefined
+			? undefined
+			: {
+					type: errors.tagIds.type,
+					...(errors.tagIds.message === undefined ? {} : { message: errors.tagIds.message }),
+				};
 
 	const describedBy = (name: FieldName) =>
 		errors[name] === undefined ? {} : { "aria-describedby": `transaction-${name}-error` };
@@ -403,6 +492,19 @@ function TransactionForm({
 							}
 						/>
 						<FieldMessage id="transaction-merchantId-error" error={errors.merchantId} />
+					</div>
+				)}
+
+				{transaction !== null && (
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="transaction-tags">{t("transactions.form.tags")}</Label>
+						<TagsField
+							value={tagIds.field.value}
+							onChange={tagIds.field.onChange}
+							invalid={errors.tagIds !== undefined}
+							describedBy={errors.tagIds === undefined ? undefined : "transaction-tagIds-error"}
+						/>
+						<FieldMessage id="transaction-tagIds-error" error={tagsError} />
 					</div>
 				)}
 

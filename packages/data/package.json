@@ -21,6 +21,8 @@
 		"./schema/imports": "./schema/imports.ts",
 		"./schema/merchants": "./schema/merchants.ts",
 		"./schema/settings": "./schema/settings.ts",
+		"./schema/taggings": "./schema/taggings.ts",
+		"./schema/tags": "./schema/tags.ts",
 		"./schema/transactions": "./schema/transactions.ts",
 		"./types": "./types.ts"
 	},

@@ -58,3 +58,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-default-categories-and-category-management.md`
   summary: Cover the command palette's « Catégories » entry in `e2e/keyboard.spec.ts`.
   evidence: Removing or misrouting the `go-categories` item in `CommandPalette.tsx` breaks no test today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-4-tags.md`
+  summary: Test in `e2e/tags.spec.ts` and `e2e/merchants.spec.ts` that renaming to a taken name shows « … porte déjà ce nom. » under the field and keeps the dialog open.
+  evidence: The API refusal is tested; removing the `name_taken` branch of `RenameTagDialog` or `RenameMerchantDialog` breaks no test today.

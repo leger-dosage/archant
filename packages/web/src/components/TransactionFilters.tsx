@@ -1,5 +1,6 @@
 import type { CategoryData } from "@/hooks/useCategories";
 import type { MerchantData } from "@/hooks/useMerchants";
+import type { TagData } from "@/hooks/useTags";
 import type { FilterKind, TransactionFilters as Filters } from "@/lib/transaction-filters";
 import type { FormEvent, ReactNode } from "react";
 
@@ -177,62 +178,99 @@ function CategoryEditor({
 	);
 }
 
+type NamedItem = { id: string; name: string };
+
 /**
- * Merchants outnumber categories, so the checklist has a search field. A
- * checked merchant stays checked when the search hides it.
+ * Merchants and tags outnumber categories, so their checklist has a search
+ * field. A checked item stays checked when the search hides it.
  */
+function SearchableEditor({
+	selectedIds,
+	items,
+	texts,
+	onApply,
+}: {
+	selectedIds: readonly string[] | undefined;
+	items: readonly NamedItem[];
+	texts: { search: string; legend: string; empty: string };
+	onApply: (ids: string[] | undefined) => void;
+}) {
+	// An id from an old link that names nothing any more is left out, so
+	// Appliquer drops it instead of keeping a filter no checkbox can clear.
+	const [selected, setSelected] = useState(() => {
+		const known = new Set(items.map((item) => item.id));
+
+		return new Set((selectedIds ?? []).filter((id) => known.has(id)));
+	});
+	const [search, setSearch] = useState("");
+	const shown = items.filter((item) => matchesCommand(item.name, search));
+
+	return (
+		<EditorForm onSubmit={() => onApply(selected.size === 0 ? undefined : [...selected])}>
+			<Input
+				type="search"
+				value={search}
+				autoComplete="off"
+				aria-label={texts.search}
+				placeholder={texts.search}
+				onChange={(event) => setSearch(event.target.value)}
+			/>
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">{texts.legend}</legend>
+				{shown.length === 0 && <p className="text-muted-foreground">{texts.empty}</p>}
+				<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+					{shown.map((item) => (
+						<label key={item.id} className="flex min-h-6 items-center gap-2">
+							<input
+								type="checkbox"
+								className="size-4 accent-primary"
+								checked={selected.has(item.id)}
+								onChange={(event) => setSelected(toggled(selected, item.id, event.target.checked))}
+							/>
+							<span className="truncate">{item.name}</span>
+						</label>
+					))}
+				</div>
+			</fieldset>
+		</EditorForm>
+	);
+}
+
 function MerchantEditor({
 	filters,
 	merchants,
 	onApply,
 }: EditorProps & { merchants: readonly MerchantData[] }) {
 	const { t } = useTranslation();
-	// An id from an old link that names no merchant any more is left out, so
-	// Appliquer drops it instead of keeping a filter no checkbox can clear.
-	const [selected, setSelected] = useState(() => {
-		const known = new Set(merchants.map((merchant) => merchant.id));
-
-		return new Set((filters.merchant ?? []).filter((id) => known.has(id)));
-	});
-	const [search, setSearch] = useState("");
-	const shown = merchants.filter((merchant) => matchesCommand(merchant.name, search));
 
 	return (
-		<EditorForm
-			onSubmit={() => onApply({ merchant: selected.size === 0 ? undefined : [...selected] })}
-		>
-			<Input
-				type="search"
-				value={search}
-				autoComplete="off"
-				aria-label={t("transactions.merchant.search")}
-				placeholder={t("transactions.merchant.search")}
-				onChange={(event) => setSearch(event.target.value)}
-			/>
-			<fieldset className="flex flex-col gap-2">
-				<legend className="mb-1 text-xs font-medium text-muted-foreground">
-					{t("operations.editor.merchants")}
-				</legend>
-				{shown.length === 0 && (
-					<p className="text-muted-foreground">{t("transactions.merchant.empty")}</p>
-				)}
-				<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
-					{shown.map((merchant) => (
-						<label key={merchant.id} className="flex min-h-6 items-center gap-2">
-							<input
-								type="checkbox"
-								className="size-4 accent-primary"
-								checked={selected.has(merchant.id)}
-								onChange={(event) =>
-									setSelected(toggled(selected, merchant.id, event.target.checked))
-								}
-							/>
-							<span className="truncate">{merchant.name}</span>
-						</label>
-					))}
-				</div>
-			</fieldset>
-		</EditorForm>
+		<SearchableEditor
+			selectedIds={filters.merchant}
+			items={merchants}
+			texts={{
+				search: t("transactions.merchant.search"),
+				legend: t("operations.editor.merchants"),
+				empty: t("transactions.merchant.empty"),
+			}}
+			onApply={(merchant) => onApply({ merchant })}
+		/>
+	);
+}
+
+function TagEditor({ filters, tags, onApply }: EditorProps & { tags: readonly TagData[] }) {
+	const { t } = useTranslation();
+
+	return (
+		<SearchableEditor
+			selectedIds={filters.tag}
+			items={tags}
+			texts={{
+				search: t("transactions.tags.search"),
+				legend: t("operations.editor.tags"),
+				empty: t("transactions.tags.empty"),
+			}}
+			onApply={(tag) => onApply({ tag })}
+		/>
 	);
 }
 
@@ -422,6 +460,7 @@ type TransactionFiltersProps = {
 	accounts: readonly FilterAccount[];
 	categories: readonly CategoryData[];
 	merchants: readonly MerchantData[];
+	tags: readonly TagData[];
 	onChange: (change: FilterChange) => void;
 	onRemove: (kind: FilterKind) => void;
 };
@@ -436,6 +475,7 @@ export function TransactionFilters({
 	accounts,
 	categories,
 	merchants,
+	tags,
 	onChange,
 	onRemove,
 }: TransactionFiltersProps) {
@@ -445,12 +485,14 @@ export function TransactionFilters({
 	const accountNames = new Map(accounts.map((account) => [account.id, account.name]));
 	const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
 	const merchantNames = new Map(merchants.map((merchant) => [merchant.id, merchant.name]));
+	const tagNames = new Map(tags.map((tag) => [tag.id, tag.name]));
 	const chips = filterChips(
 		filters,
 		{
 			account: (id) => accountNames.get(id),
 			category: (id) => categoryNames.get(id),
 			merchant: (id) => merchantNames.get(id),
+			tag: (id) => tagNames.get(id),
 		},
 		(key, values) => t(key, { replace: values ?? {} }),
 	);
@@ -512,6 +554,7 @@ export function TransactionFilters({
 							{pane === "category" && (
 								<CategoryEditor filters={filters} categories={categories} onApply={apply} />
 							)}
+							{pane === "tag" && <TagEditor filters={filters} tags={tags} onApply={apply} />}
 							{pane === "merchant" && (
 								<MerchantEditor filters={filters} merchants={merchants} onApply={apply} />
 							)}

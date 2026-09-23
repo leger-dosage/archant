@@ -18,6 +18,7 @@ export const LOCKABLE_FIELDS = [
 	"excluded",
 	"category",
 	"merchant",
+	"tags",
 ] as const;
 
 export type LockableField = (typeof LOCKABLE_FIELDS)[number];

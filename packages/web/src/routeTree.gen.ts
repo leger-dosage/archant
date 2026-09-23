@@ -19,6 +19,7 @@ import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes
 import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
 import { Route as AuthedReglagesIndexRouteImport } from './routes/_authed.reglages.index'
 import { Route as AuthedReglagesCategoriesRouteImport } from './routes/_authed.reglages.categories'
+import { Route as AuthedReglagesEtiquettesRouteImport } from './routes/_authed.reglages.etiquettes'
 import { Route as AuthedReglagesMarchandsRouteImport } from './routes/_authed.reglages.marchands'
 import { Route as AuthedReglagesSecuriteRouteImport } from './routes/_authed.reglages.securite'
 
@@ -72,6 +73,12 @@ const AuthedReglagesCategoriesRoute =
     path: '/categories',
     getParentRoute: () => AuthedReglagesRoute,
   } as any)
+const AuthedReglagesEtiquettesRoute =
+  AuthedReglagesEtiquettesRouteImport.update({
+    id: '/etiquettes',
+    path: '/etiquettes',
+    getParentRoute: () => AuthedReglagesRoute,
+  } as any)
 const AuthedReglagesMarchandsRoute = AuthedReglagesMarchandsRouteImport.update({
   id: '/marchands',
   path: '/marchands',
@@ -91,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/reglages': typeof AuthedReglagesRouteWithChildren
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes/': typeof AuthedComptesIndexRoute
@@ -103,6 +111,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes': typeof AuthedComptesIndexRoute
@@ -118,6 +127,7 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/_authed/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/_authed/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/_authed/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/_authed/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/_authed/comptes/': typeof AuthedComptesIndexRoute
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/reglages'
     | '/comptes/$accountId'
     | '/reglages/categories'
+    | '/reglages/etiquettes'
     | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/'
     | '/comptes/$accountId'
     | '/reglages/categories'
+    | '/reglages/etiquettes'
     | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes'
@@ -159,6 +171,7 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/comptes/$accountId'
     | '/_authed/reglages/categories'
+    | '/_authed/reglages/etiquettes'
     | '/_authed/reglages/marchands'
     | '/_authed/reglages/securite'
     | '/_authed/comptes/'
@@ -243,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedReglagesCategoriesRouteImport
       parentRoute: typeof AuthedReglagesRoute
     }
+    '/_authed/reglages/etiquettes': {
+      id: '/_authed/reglages/etiquettes'
+      path: '/etiquettes'
+      fullPath: '/reglages/etiquettes'
+      preLoaderRoute: typeof AuthedReglagesEtiquettesRouteImport
+      parentRoute: typeof AuthedReglagesRoute
+    }
     '/_authed/reglages/marchands': {
       id: '/_authed/reglages/marchands'
       path: '/marchands'
@@ -262,6 +282,7 @@ declare module '@tanstack/react-router' {
 
 interface AuthedReglagesRouteChildren {
   AuthedReglagesCategoriesRoute: typeof AuthedReglagesCategoriesRoute
+  AuthedReglagesEtiquettesRoute: typeof AuthedReglagesEtiquettesRoute
   AuthedReglagesMarchandsRoute: typeof AuthedReglagesMarchandsRoute
   AuthedReglagesSecuriteRoute: typeof AuthedReglagesSecuriteRoute
   AuthedReglagesIndexRoute: typeof AuthedReglagesIndexRoute
@@ -269,6 +290,7 @@ interface AuthedReglagesRouteChildren {
 
 const AuthedReglagesRouteChildren: AuthedReglagesRouteChildren = {
   AuthedReglagesCategoriesRoute: AuthedReglagesCategoriesRoute,
+  AuthedReglagesEtiquettesRoute: AuthedReglagesEtiquettesRoute,
   AuthedReglagesMarchandsRoute: AuthedReglagesMarchandsRoute,
   AuthedReglagesSecuriteRoute: AuthedReglagesSecuriteRoute,
   AuthedReglagesIndexRoute: AuthedReglagesIndexRoute,
