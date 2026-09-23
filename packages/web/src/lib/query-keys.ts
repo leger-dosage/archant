@@ -26,6 +26,12 @@ export const queryKeys = {
 		 * transaction write can change what a revert would delete.
 		 */
 		imports: (id: string, page: number) => ["accounts", "detail", id, "imports", page] as const,
+		/**
+		 * Under `all`, not under one account: every write that moves a
+		 * balance, flips an account's flags or adds an account already
+		 * invalidates `all`, so the dashboard follows with no change to them.
+		 */
+		netWorth: (period: BalancePeriod) => ["accounts", "net-worth", period] as const,
 	},
 	/** The whole category list, one query: a household keeps a few dozen. */
 	categories: {

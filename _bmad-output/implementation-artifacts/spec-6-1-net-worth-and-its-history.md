@@ -2,7 +2,8 @@
 title: 'Story 6.1: Net worth and its history'
 type: 'feature'
 created: '2026-09-23'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '1df1093cc4f5b7268d1f424c877e73557e9b9521'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -61,14 +62,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/api/src/domain/net-worth.spec.ts` -- failing tests for `netWorthSeries`: signs, late opener, day before any account, empty input.
-- [ ] `packages/api/src/domain/net-worth.ts` -- `netWorthSeries`.
-- [ ] `packages/api/src/app.spec.ts` -- failing `describe("GET /api/reports/net-worth")` covering every matrix row.
-- [ ] `packages/api/src/services/reports.ts`, `routes/reports.ts`, `app.ts`, `services/balances.ts` -- service, route, mount, exported `PERIOD_MONTHS`.
-- [ ] `packages/web/src/components/BalanceChart.tsx`, `routes/_authed.comptes.$accountId.tsx` -- presentational chart, account page unchanged for the user.
-- [ ] `packages/web/src/hooks/useNetWorth.ts`, `lib/query-keys.ts`, `routes/_authed.index.tsx`, `locales/fr.json` -- dashboard page, notice, empty state.
-- [ ] `packages/web/src/components/AppSidebar.tsx`, `lib/shortcuts.ts`, `components/CommandPalette.tsx` -- entry, `g d`, palette.
-- [ ] `packages/web/e2e/dashboard.spec.ts` (new), `e2e/fixtures.ts`, `e2e/keyboard.spec.ts` -- `netWorth()` helper, one test per criterion below.
+- [x] `packages/api/src/domain/net-worth.spec.ts` -- failing tests for `netWorthSeries`: signs, late opener, day before any account, empty input.
+- [x] `packages/api/src/domain/net-worth.ts` -- `netWorthSeries`.
+- [x] `packages/api/src/app.spec.ts` -- failing `describe("GET /api/reports/net-worth")` covering every matrix row.
+- [x] `packages/api/src/services/reports.ts`, `routes/reports.ts`, `app.ts`, `services/balances.ts` -- service, route, mount, exported `PERIOD_MONTHS`.
+- [x] `packages/web/src/components/BalanceChart.tsx`, `routes/_authed.comptes.$accountId.tsx` -- presentational chart, account page unchanged for the user.
+- [x] `packages/web/src/hooks/useNetWorth.ts`, `lib/query-keys.ts`, `routes/_authed.index.tsx`, `locales/fr.json` -- dashboard page, notice, empty state.
+- [x] `packages/web/src/components/AppSidebar.tsx`, `lib/shortcuts.ts`, `components/CommandPalette.tsx` -- entry, `g d`, palette.
+- [x] `packages/web/e2e/dashboard.spec.ts` (new), `e2e/fixtures.ts`, `e2e/keyboard.spec.ts` -- `netWorth()` helper, one test per criterion below.
 
 **Acceptance Criteria:**
 - Given a checking account and a card, when the dashboard opens, then « Patrimoine net », « Actifs » and « Passifs » move by the new accounts' balances.
@@ -79,9 +80,39 @@ context:
 
 ## Implementation Notes
 
+- `BalanceChart` takes the whole `UseQueryResult` rather than bare data, so its skeleton and error alert stay shared; the `<section>`, its heading and the new `PeriodToggle` moved to each caller, and a `valueLabel` names the table column (« Solde » or « Patrimoine net »).
+- The headline change shows amount and percentage (« +12,40 € (+1,0 %) sur 3 mois »), as the stat block spec asks, where the mockup shows the percentage only.
+- `/` is now the dashboard: `auth.setup.ts`, `auth.spec.ts`, `accounts.spec.ts` and `keyboard.spec.ts` expected the old redirect and were adjusted.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Finding | Verdict | Route / evidence |
+|---|--------|---------|---------|------------------|
+| 1 | blind, edge, gap | Headline skeleton stays forever when `useNetWorth` fails | medium | patch: `data === undefined` also holds on error |
+| 2 | blind | Excluded/inactive test uses EUR only, cannot prove `leftOut` skips them | low | patch: test-only |
+| 3 | blind, gap | `leftOut` sort untested | low | patch: test-only |
+| 4 | blind | No e2e for "accounts but none counted" | low | rejected: API matrix row covers it; the UI is the shared chart empty state |
+| 5 | blind | Counted account opening after today untested | low | patch: test-only |
+| 6 | blind | `CountedSeries` duplicates `CountedAccount` | low | patch: two sources of the same shape would drift |
+| 7 | blind | `currency` typed `string`, not `CurrencyCode` | low | rejected: `BalanceHistory.currency` is `string` too |
+| 8 | blind | `BalanceChart` API differs from the spec wording | low | rejected: recorded in Implementation Notes |
+| 9 | blind | Net worth request waits for `/api/accounts` | low | rejected: two local round trips on one page |
+| 10 | blind | `patchOwn` uses `own?.db` | false | every call follows `openOwn`, which sets `own` |
+| 11 | blind | `headline` locator climbs with `..` | low | rejected: test stability only |
+| 12 | blind | `daysAgo(0)` vs server time zone | false | every e2e spec uses `daysAgo`; the server runs in the same zone in CI |
+| 13 | blind | Green rise untested | low | rejected: cosmetic |
+| 14 | edge | Accounts refetch error shows alert and card together | low | rejected: same pattern as the accounts page |
+| 15 | edge | Overpaid card makes « Passifs » negative | low | rejected: matches `listAccounts` and the sidebar |
+| 16 | edge | `useBalanceHistory` runs on a not-found account page | low | rejected: `notFoundInline` suppresses the toast; one extra 404 |
+| 17 | gap | Dashboard `?period=` fallback untested | medium | patch: test-only |
+| 18 | gap | Palette « Tableau de bord » entry untested | low | patch: test-only |
+| 19 | spec-review standards | e2e `headline` and `total` locate by DOM structure, against AGENTS.md's role-and-name rule | low | patch: stat block and totals are now labelled groups, located by role and name |
+| 20 | spec-review standards | Counted-account filter repeats `listAccounts` | low | rejected: the spec forbids changing `listAccounts`; the service comment names the tie |
+| 21 | spec-review standards | `BalanceChart.tsx` also exports `PeriodToggle` and `changeText` | low | rejected: both serve the chart's two callers only |
+| 22 | spec-review standards | `PERIOD_MONTHS` exported from a service | low | rejected: the spec asks for this export |
+| 23 | spec-review spec | Change sits under the headline, not beside the period | false | the spec's « beside the period » is the stat block facing the toggle, as in the mockup |
 
 ## Design Notes
 

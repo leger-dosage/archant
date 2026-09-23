@@ -2,6 +2,7 @@ import type { Api } from "./fixtures.ts";
 import type { Locator, Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Story 1.8: command palette and keyboard shortcuts. One database serves the
 // whole run, so the palette is narrowed by a unique account name and lists by
@@ -95,6 +96,17 @@ test("the palette opens the settings", async ({ page }) => {
 	await expect(page.getByRole("heading", { level: 1, name: "Réglages" })).toBeVisible();
 });
 
+test("the palette opens the dashboard", async ({ page }) => {
+	await visit(page, "/operations");
+	await openPalette(page);
+	await paletteInput(page).fill("tableau");
+	await expect(option(page, /^Tableau de bord/u)).toBeVisible();
+	await page.keyboard.press("Enter");
+
+	await expect(page).toHaveURL(`${WEB_URL}/`);
+	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+});
+
 test("the palette matches without accents", async ({ page }) => {
 	await visit(page, "/comptes");
 	await openPalette(page);
@@ -182,9 +194,16 @@ test("the palette offers no snapshot on an account opened today", async ({ page,
 	await expect(option(page, /^Enregistrer un solde/u)).toHaveCount(0);
 });
 
-test("g c, g o and g s go to the accounts, the transactions and the settings", async ({ page }) => {
+test("g d, g c, g o and g s go to the dashboard, the accounts, the transactions and the settings", async ({
+	page,
+}) => {
 	await visit(page, "/operations");
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
+
+	await page.keyboard.press("g");
+	await page.keyboard.press("d");
+	await expect(page).toHaveURL(`${WEB_URL}/`);
+	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
 
 	await page.keyboard.press("g");
 	await page.keyboard.press("c");
@@ -359,7 +378,7 @@ test("n opens the new-transaction sheet on an account page", async ({ page, api 
 	await expect(page.getByRole("dialog", { name: "Ajouter une opération" })).toBeVisible();
 });
 
-test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ page }) => {
+test("? lists every shortcut, and the sidebar shows each page's keys", async ({ page }) => {
 	await visit(page, "/comptes");
 	await page.keyboard.press("Shift+?");
 
@@ -370,6 +389,7 @@ test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ pa
 		/^Ouvrir la palette de commandes(⌘K|Ctrl K)$/u,
 		/^Réduire ou déplier la barre latérale(⌘B|Ctrl B)$/u,
 		"Afficher les raccourcis?",
+		"Aller au tableau de bordG D",
 		"Aller aux comptesG C",
 		"Aller aux opérationsG O",
 		"Aller aux réglagesG S",
@@ -391,6 +411,9 @@ test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ pa
 	await expect(dialog).toBeHidden();
 
 	const sidebar = page.locator('[data-sidebar="sidebar"]');
+	await expect(
+		await hoverTooltip(page, sidebar.getByRole("link", { name: "Tableau de bord", exact: true })),
+	).toHaveText("Tableau de bord G D");
 	await expect(
 		await hoverTooltip(page, sidebar.getByRole("link", { name: "Comptes", exact: true })),
 	).toHaveText("Comptes G C");

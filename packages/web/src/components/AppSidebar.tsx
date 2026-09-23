@@ -1,7 +1,7 @@
 import type { AccountGroupData } from "@/hooks/useAccounts";
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronRightIcon, ListIcon, WalletIcon } from "lucide-react";
+import { ChevronRightIcon, LayoutDashboardIcon, ListIcon, WalletIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
@@ -124,6 +124,22 @@ export function AppSidebar() {
 			<SidebarContent>
 				<SidebarGroup>
 					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/"}
+								tooltip={{
+									children: <ShortcutHint id="goDashboard" label={t("nav.dashboard")} />,
+									hidden: false,
+								}}
+								className={ACTIVE_INDICATOR}
+							>
+								<Link to="/">
+									<LayoutDashboardIcon />
+									<span>{t("nav.dashboard")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild

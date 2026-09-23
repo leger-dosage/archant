@@ -45,6 +45,7 @@ function GlobalShortcuts() {
 
 	useShortcut("palette", () => setPaletteOpen(true));
 	useShortcut("shortcuts", () => setShortcutsOpen(true));
+	useShortcut("goDashboard", () => void navigate({ to: "/" }));
 	useShortcut("goAccounts", () => void navigate({ to: "/comptes" }));
 	useShortcut("goOperations", () => void navigate({ to: "/operations" }));
 	useShortcut("goSettings", () => void navigate({ to: "/reglages" }));

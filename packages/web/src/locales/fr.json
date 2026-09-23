@@ -14,6 +14,7 @@
 		"status": "Page {{page}} sur {{pages}}"
 	},
 	"nav": {
+		"dashboard": "Tableau de bord",
 		"accounts": "Comptes",
 		"operations": "Opérations",
 		"settings": "Réglages",
@@ -65,6 +66,7 @@
 			"palette": "Ouvrir la palette de commandes",
 			"toggleSidebar": "Réduire ou déplier la barre latérale",
 			"shortcuts": "Afficher les raccourcis",
+			"goDashboard": "Aller au tableau de bord",
 			"goAccounts": "Aller aux comptes",
 			"goOperations": "Aller aux opérations",
 			"goSettings": "Aller aux réglages",
@@ -82,6 +84,15 @@
 			"extendPrevious": "Étendre la sélection à l'opération précédente",
 			"clearSelection": "Vider la sélection"
 		}
+	},
+	"dashboard": {
+		"title": "Tableau de bord",
+		"netWorth": "Patrimoine net",
+		"assets": "Actifs",
+		"liabilities": "Passifs",
+		"change": "{{change}} {{over}}",
+		"summary": "Patrimoine net : {{balance}}, {{change}} {{over}}.",
+		"leftOut": "Hors des totaux, faute de conversion : {{names}}."
 	},
 	"accounts": {
 		"title": "Comptes",

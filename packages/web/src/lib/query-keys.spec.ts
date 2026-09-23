@@ -82,3 +82,15 @@ describe("queryKeys.transactions.ofAccount", () => {
 		expect(client.getQueryState(other)).toBeDefined();
 	});
 });
+
+describe("queryKeys.accounts.netWorth", () => {
+	it("goes stale with any account write", async () => {
+		const client = new QueryClient();
+		const key = queryKeys.accounts.netWorth("3M");
+		client.setQueryData(key, { points: [] });
+
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.all });
+
+		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+	});
+});

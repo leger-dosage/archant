@@ -95,6 +95,12 @@ export function CommandPalette() {
 
 	const goTo: Item[] = [
 		{
+			id: "go-dashboard",
+			label: t("nav.dashboard"),
+			shortcut: "goDashboard",
+			run: () => void navigate({ to: "/" }),
+		},
+		{
 			id: "go-accounts",
 			label: t("nav.accounts"),
 			shortcut: "goAccounts",

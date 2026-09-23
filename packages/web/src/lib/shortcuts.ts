@@ -38,6 +38,13 @@ export const SHORTCUTS = [
 		inFields: false,
 	},
 	{
+		id: "goDashboard",
+		keys: ["g>d"],
+		label: "shortcuts.labels.goDashboard",
+		section: "navigation",
+		inFields: false,
+	},
+	{
 		id: "goAccounts",
 		keys: ["g>c"],
 		label: "shortcuts.labels.goAccounts",
