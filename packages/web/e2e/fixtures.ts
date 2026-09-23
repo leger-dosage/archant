@@ -50,6 +50,8 @@ const linkedBody = z.object({
 	data: z.object({ transfer: z.object({ id: z.string() }).nullable() }),
 });
 
+const ruleListBody = z.object({ data: z.array(z.object({ id: z.string() })) });
+
 const accountListBody = z.object({
 	data: z.object({
 		groups: z.array(z.object({ classification: z.string(), total: z.number() })),
@@ -319,6 +321,44 @@ export function apiHelpers(request: APIRequestContext) {
 				});
 
 				expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+			}, Promise.resolve());
+		},
+
+		/**
+		 * Creates a rule setting `categoryId`, as the form does. Every rule
+		 * reaches every later transaction of the shared database, so the test
+		 * that creates one deletes it with `deleteRules`.
+		 */
+		async createRule(input: {
+			name?: string;
+			conditions: { conditionType: string; operator: string; value: string }[];
+			categoryId: string;
+		}): Promise<string> {
+			return created(
+				await request.post("/api/rules", {
+					data: {
+						name: input.name ?? null,
+						conditions: input.conditions,
+						actions: [{ actionType: "set_transaction_category", value: input.categoryId }],
+					},
+				}),
+			);
+		},
+
+		/** Deletes every rule, so none outlives the test that created it. */
+		async deleteRules() {
+			const response = await request.get("/api/rules");
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+			const { data } = ruleListBody.parse(await response.json());
+
+			// One after the other: each is an `immediate` write.
+			await data.reduce(async (previous, rule) => {
+				await previous;
+				// Bodiless, so it needs the `Origin` a browser would add.
+				const deleted = await request.delete(`/api/rules/${rule.id}`, { headers: sameOrigin });
+
+				expect(deleted.ok(), `${deleted.url()} answered ${await deleted.text()}`).toBe(true);
 			}, Promise.resolve());
 		},
 

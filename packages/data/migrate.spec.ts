@@ -929,6 +929,81 @@ describe("property and vehicle accounts", () => {
 	});
 });
 
+const insertRule = (database: Database, id: string) =>
+	database.run(sql`insert into rules (id, created_at, updated_at) values (${id}, 0, 0)`);
+const insertCondition = (
+	database: Database,
+	id: string,
+	type: string,
+	operator: string,
+	parentId: string | null = null,
+) =>
+	database.run(
+		sql`insert into rule_conditions (id, rule_id, parent_id, position, condition_type, operator, value) values (${id}, 'r1', ${parentId}, 0, ${type}, ${operator}, 'x')`,
+	);
+const insertAction = (database: Database, id: string, type: string) =>
+	database.run(
+		sql`insert into rule_actions (id, rule_id, position, action_type, value) values (${id}, 'r1', 0, ${type}, 'c1')`,
+	);
+
+describe("rules", () => {
+	it("starts a rule enabled, without name or start date", async () => {
+		const database = await migrated();
+		await insertRule(database, "r1");
+
+		await expect(
+			database.get(sql`select name, enabled, effective_date as effectiveDate from rules`),
+		).resolves.toEqual({ name: null, enabled: 1, effectiveDate: null });
+	});
+
+	it("accepts only the operators of each condition type, and known action types", async () => {
+		const database = await migrated();
+		await insertRule(database, "r1");
+
+		await expect(
+			insertCondition(database, "c1", "transaction_name", "like"),
+		).resolves.toBeDefined();
+		await expect(insertCondition(database, "c2", "transaction_name", ">")).rejects.toThrow();
+		await expect(
+			insertCondition(database, "c3", "transaction_amount", ">="),
+		).resolves.toBeDefined();
+		await expect(insertCondition(database, "c4", "transaction_amount", "like")).rejects.toThrow();
+		await expect(insertCondition(database, "c5", "transaction_account", "!=")).rejects.toThrow();
+		await expect(
+			insertCondition(database, "c9", "transaction_amount", "!="),
+		).resolves.toBeDefined();
+		await expect(
+			insertCondition(database, "c10", "transaction_account", "="),
+		).resolves.toBeDefined();
+		await expect(insertCondition(database, "c6", "compound", "or")).resolves.toBeDefined();
+		await expect(insertCondition(database, "c7", "compound", "=")).rejects.toThrow();
+		await expect(insertCondition(database, "c8", "transaction_merchant", "=")).rejects.toThrow();
+		await expect(insertAction(database, "a1", "set_transaction_category")).resolves.toBeDefined();
+		await expect(insertAction(database, "a2", "set_transaction_tags")).rejects.toThrow();
+	});
+
+	it("deletes a rule's conditions, sub-conditions and actions with it", async () => {
+		const database = await migrated();
+		await insertRule(database, "r1");
+		await insertCondition(database, "c1", "compound", "and");
+		await insertCondition(database, "c2", "transaction_name", "like", "c1");
+		await insertCondition(database, "c3", "transaction_amount", ">");
+		await insertAction(database, "a1", "set_transaction_category");
+
+		await database.run(sql`delete from rules where id = 'r1'`);
+
+		await expect(database.all(sql`select id from rule_conditions`)).resolves.toEqual([]);
+		await expect(database.all(sql`select id from rule_actions`)).resolves.toEqual([]);
+	});
+
+	it("refuses a condition or an action for a rule that does not exist", async () => {
+		const database = await migrated();
+
+		await expect(insertCondition(database, "c1", "transaction_name", "like")).rejects.toThrow();
+		await expect(insertAction(database, "a1", "set_transaction_category")).rejects.toThrow();
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

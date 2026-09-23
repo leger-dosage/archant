@@ -11,6 +11,7 @@
 		"./schemas/imports": "./src/schemas/imports.ts",
 		"./schemas/merchants": "./src/schemas/merchants.ts",
 		"./schemas/reports": "./src/schemas/reports.ts",
+		"./schemas/rules": "./src/schemas/rules.ts",
 		"./schemas/setup": "./src/schemas/setup.ts",
 		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/tags": "./src/schemas/tags.ts",

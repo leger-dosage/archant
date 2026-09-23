@@ -66,6 +66,7 @@ import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.t
 import { toStoredBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
+import { planCategories } from "../domain/rules/matching.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
 import {
@@ -76,6 +77,8 @@ import {
 } from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
+import { loadEnabledRules } from "./rules.ts";
+import { getReportingCurrency } from "./settings.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
 export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
@@ -902,7 +905,24 @@ export async function ingest(
 					.where(eq(entries.id, account.openingId));
 			}
 
-			// 5. Rules arrive with Epic 8.
+			// 5. Rules, on the rows this ingest created, possible duplicates
+			// included. Loaded once per call, inside this transaction.
+			if (rows.length > 0) {
+				const planned = planCategories(
+					await loadEnabledRules(tx),
+					rows.map(({ id, line }) => ({
+						id,
+						accountId,
+						date: line.date,
+						amount: line.amount,
+						currency: line.currency,
+						label: line.label,
+					})),
+					getReportingCurrency(),
+				);
+
+				await setRuleCategories(tx, planned);
+			}
 
 			// 6. Transfer matching, once every new row exists (AD-11).
 			await matchNewTransfers(
@@ -932,6 +952,72 @@ export async function ingest(
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * Writes the categories rules planned, by entry id, with `origin: "rule"`: the
+ * origin becomes `rule` and nothing is locked (AD-10). Skips a row whose
+ * category is locked, a row already in that category, and a category that no
+ * longer exists. Returns how many rows changed. Step 5 of `ingest` calls it;
+ * applying rules to history reuses it.
+ */
+export async function setRuleCategories(
+	tx: Transaction,
+	planned: ReadonlyMap<string, string>,
+): Promise<number> {
+	if (planned.size === 0) {
+		return 0;
+	}
+
+	const found: { entryId: string; categoryId: string | null; lockedFields: LockableField[] }[] = [];
+
+	await inSequence([...planned.keys()], KEYS_PER_LOOKUP, async (chunk) => {
+		found.push(
+			...(await tx
+				.select({
+					entryId: transactions.entryId,
+					categoryId: transactions.categoryId,
+					lockedFields: transactions.lockedFields,
+				})
+				.from(transactions)
+				.where(inArray(transactions.entryId, chunk))),
+		);
+	});
+	const known = new Set(
+		(
+			await tx
+				.select({ id: categories.id })
+				.from(categories)
+				.where(inArray(categories.id, [...new Set(planned.values())]))
+		).map((row) => row.id),
+	);
+	const byCategory = new Map<string, string[]>();
+
+	for (const row of found) {
+		const categoryId = planned.get(row.entryId);
+
+		if (
+			categoryId !== undefined &&
+			known.has(categoryId) &&
+			row.categoryId !== categoryId &&
+			!row.lockedFields.includes("category")
+		) {
+			byCategory.set(categoryId, [...(byCategory.get(categoryId) ?? []), row.entryId]);
+		}
+	}
+
+	const origin = categoryOriginOf("rule");
+
+	await oneByOne([...byCategory], ([categoryId, ids]) =>
+		inSequence(ids, KEYS_PER_LOOKUP, (chunk) =>
+			tx
+				.update(transactions)
+				.set({ categoryId, categoryOrigin: origin })
+				.where(inArray(transactions.entryId, chunk)),
+		),
+	);
+
+	return [...byCategory.values()].reduce((total, ids) => total + ids.length, 0);
 }
 
 /** An absent or `undefined` field is left as it is. */

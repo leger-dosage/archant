@@ -17,6 +17,7 @@
 		"dashboard": "Tableau de bord",
 		"accounts": "Comptes",
 		"operations": "Opérations",
+		"rules": "Règles",
 		"settings": "Réglages",
 		"signOut": "Se déconnecter",
 		"openMenu": "Ouvrir le menu",
@@ -69,6 +70,7 @@
 			"goDashboard": "Aller au tableau de bord",
 			"goAccounts": "Aller aux comptes",
 			"goOperations": "Aller aux opérations",
+			"goRules": "Aller aux règles",
 			"goSettings": "Aller aux réglages",
 			"newTransaction": "Ajouter une opération sur la page d'un compte",
 			"search": "Rechercher dans les opérations",
@@ -768,6 +770,84 @@
 			"deleted": "Étiquette « {{name}} » supprimée."
 		}
 	},
+	"rules": {
+		"title": "Règles",
+		"description": "Une règle classe les nouvelles opérations à leur arrivée, saisies ou importées. Les règles s'appliquent dans l'ordre de la liste, et la dernière qui correspond l'emporte. Une catégorie choisie à la main n'est jamais remplacée.",
+		"empty": "Aucune règle pour l'instant.",
+		"add": "Ajouter une règle",
+		"mobile": "Disponible sur ordinateur",
+		"actions": "Actions pour {{name}}",
+		"toggle": "Activer {{name}}",
+		"edit": "Modifier",
+		"delete": "Supprimer",
+		"enabled": "Règle activée.",
+		"disabled": "Règle désactivée. Les opérations déjà classées gardent leur catégorie.",
+		"summary": {
+			"condition": "Si {{field}} {{operator}} {{value}}, alors {{action}}",
+			"all": "Toutes les opérations, alors {{action}}",
+			"more_one": "{{summary}}, et {{count}} autre condition",
+			"more_other": "{{summary}}, et {{count}} autres conditions",
+			"category": "Catégorie {{name}}",
+			"deletedAccount": "Compte supprimé",
+			"deletedCategory": "Catégorie supprimée"
+		},
+		"fields": {
+			"transaction_name": "Libellé",
+			"transaction_amount": "Montant",
+			"transaction_account": "Compte",
+			"compound": "Groupe de conditions"
+		},
+		"operators": {
+			"contains": "contient",
+			"equals": "est égal à",
+			"is": "est",
+			"gt": ">",
+			"gte": "≥",
+			"lt": "<",
+			"lte": "≤",
+			"eq": "=",
+			"ne": "≠",
+			"all": "Toutes les conditions",
+			"any": "Au moins une condition"
+		},
+		"form": {
+			"addTitle": "Ajouter une règle",
+			"editTitle": "Modifier la règle",
+			"description": "La règle s'applique aux nouvelles opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes.",
+			"name": "Nom",
+			"namePlaceholder": "Facultatif",
+			"effectiveDate": "Date de début",
+			"effectiveDateHint": "Facultative. La règle ne touche que les opérations datées de ce jour ou après.",
+			"conditions": "Si",
+			"noCondition": "Aucune condition : la règle s'applique à toutes les nouvelles opérations.",
+			"condition": "Condition {{index}}",
+			"field": "Champ de la condition {{index}}",
+			"operator": "Opérateur de la condition {{index}}",
+			"value": "Valeur de la condition {{index}}",
+			"remove": "Retirer la condition {{index}}",
+			"group": "Groupe {{index}}",
+			"groupOperator": "Le groupe {{index}} correspond si",
+			"groupEmpty": "Groupe vide : il correspond à toutes les opérations.",
+			"addCondition": "Ajouter une condition",
+			"addGroup": "Ajouter un groupe",
+			"addToGroup": "Ajouter une condition au groupe",
+			"accountPlaceholder": "Choisir un compte",
+			"actions": "Alors",
+			"setCategory": "Catégorie",
+			"categoryPlaceholder": "Choisir une catégorie",
+			"removeAction": "Retirer l'action",
+			"addAction": "Ajouter une action",
+			"save": "Enregistrer",
+			"created": "Règle ajoutée.",
+			"saved": "Règle enregistrée."
+		},
+		"deleteDialog": {
+			"title": "Supprimer la règle « {{name}} » ?",
+			"description": "Les opérations déjà classées par cette règle gardent leur catégorie.",
+			"action": "Supprimer",
+			"deleted": "Règle supprimée."
+		}
+	},
 	"settings": {
 		"title": "Réglages",
 		"sections": {
@@ -840,7 +920,10 @@
 			"password_mismatch": "Les mots de passe ne correspondent pas.",
 			"invalid_password": "Mot de passe actuel incorrect.",
 			"name_taken": "Une catégorie porte déjà ce nom.",
-			"invalid_parent": "Cette catégorie parente n'est pas possible : les catégories ont deux niveaux au plus."
+			"invalid_parent": "Cette catégorie parente n'est pas possible : les catégories ont deux niveaux au plus.",
+			"action_required": "Ajoutez au moins une action.",
+			"duplicate_action": "Cette action est déjà dans la règle.",
+			"nested_group": "Un groupe ne peut pas contenir un autre groupe."
 		}
 	}
 }

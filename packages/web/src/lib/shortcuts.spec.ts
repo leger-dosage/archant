@@ -72,6 +72,7 @@ describe("hotkeysOf", () => {
 	it("joins the alternatives of a shortcut", () => {
 		expect(hotkeysOf(shortcutOf("nextRow"))).toBe("j,arrowdown");
 		expect(hotkeysOf(shortcutOf("goOperations"))).toBe("g>o");
+		expect(hotkeysOf(shortcutOf("goRules"))).toBe("g>u");
 	});
 });
 

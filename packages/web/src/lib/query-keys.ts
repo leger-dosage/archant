@@ -45,6 +45,10 @@ export const queryKeys = {
 	tags: {
 		all: ["tags"] as const,
 	},
+	/** Every rule, one query: a household keeps a few dozen. */
+	rules: {
+		all: ["rules"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

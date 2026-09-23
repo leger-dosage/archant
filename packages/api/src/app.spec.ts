@@ -4247,6 +4247,308 @@ describe("tags", () => {
 	});
 });
 
+// Story 8.1: categorisation rules.
+
+const labelRule = (value: string, categoryId: string) => ({
+	conditions: [{ conditionType: "transaction_name", operator: "like", value }],
+	actions: [{ actionType: "set_transaction_category", value: categoryId }],
+});
+
+const ruleLeaf = (conditionType: string, operator: string, value: string | null) => ({
+	conditionType,
+	operator,
+	value,
+});
+
+const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
+
+describe("rules", () => {
+	// A rule reaches every later transaction of this shared database.
+	afterEach(async () => {
+		await temp.db.run(sql`delete from rules`);
+	});
+
+	const ruleBody = z.object({
+		data: z.object({
+			id: z.string(),
+			name: z.string().nullable(),
+			enabled: z.boolean(),
+			conditions: z.array(z.unknown()),
+		}),
+	});
+
+	async function createRule(body: unknown) {
+		const { status, body: created } = await request("POST", "/api/rules", body);
+
+		expect(status).toBe(201);
+
+		return ruleBody.parse(created).data;
+	}
+
+	async function categoriesOf(accountId: string) {
+		const rows = await temp.db.all<{
+			label: string;
+			category: string | null;
+			origin: string | null;
+		}>(
+			sql`select t.label as label, t.category_id as category, t.category_origin as origin from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
+		);
+
+		return rows;
+	}
+
+	it("creates, lists, replaces, switches off and deletes a rule", async () => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		const client = testClient(buildApp()).api.rules;
+
+		const created = await client.$post({ json: labelRule("carrefour", groceries.id) });
+		expect(created.status).toBe(201);
+		const { data: rule } = await created.json();
+		expect(rule).toEqual({
+			id: rule.id,
+			name: null,
+			enabled: true,
+			effectiveDate: null,
+			conditions: [
+				{ conditionType: "transaction_name", operator: "like", value: "carrefour", conditions: [] },
+			],
+			actions: [{ actionType: "set_transaction_category", value: groceries.id }],
+		});
+
+		const replaced = await client[":id"].$put({
+			param: { id: rule.id },
+			json: {
+				name: "Sorties",
+				effectiveDate: "2026-09-01",
+				conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1 234,5" }],
+				actions: [{ actionType: "set_transaction_category", value: leisure.id }],
+			},
+		});
+		expect(replaced.status).toBe(200);
+		expect((await replaced.json()).data).toMatchObject({
+			name: "Sorties",
+			effectiveDate: "2026-09-01",
+			conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "123450" }],
+			actions: [{ value: leisure.id }],
+		});
+
+		const switched = await client[":id"].$patch({
+			param: { id: rule.id },
+			json: { enabled: false },
+		});
+		expect((await switched.json()).data.enabled).toBe(false);
+
+		const list = await client.$get();
+		expect((await list.json()).data.map((item) => item.id)).toEqual([rule.id]);
+
+		await expect(request("DELETE", `/api/rules/${rule.id}`)).resolves.toEqual({
+			status: 200,
+			body: { data: { id: rule.id } },
+		});
+		expect((await (await client.$get()).json()).data).toEqual([]);
+	});
+
+	it.each([
+		[
+			"no action",
+			[ruleLeaf("transaction_name", "like", "x")],
+			[],
+			[{ path: "actions", code: "action_required" }],
+		],
+		["two category actions", [], "twice", [{ path: "actions.1", code: "duplicate_action" }]],
+		[
+			"an empty label",
+			[ruleLeaf("transaction_name", "like", "  ")],
+			"once",
+			[{ path: "conditions.0.value", code: "too_small" }],
+		],
+		[
+			"a missing value",
+			[{ conditionType: "transaction_account", operator: "=" }],
+			"once",
+			[{ path: "conditions.0.value", code: "too_small" }],
+		],
+		[
+			"a negative amount",
+			[ruleLeaf("transaction_amount", ">", "-50,00")],
+			"once",
+			[{ path: "conditions.0.value", code: "invalid_amount" }],
+		],
+		[
+			"an unreadable amount",
+			[ruleLeaf("transaction_amount", ">", "50,001")],
+			"once",
+			[{ path: "conditions.0.value", code: "invalid_amount" }],
+		],
+		[
+			"an operator of another type",
+			[ruleLeaf("transaction_name", ">", "x")],
+			"once",
+			[{ path: "conditions.0.operator", code: "invalid_value" }],
+		],
+		[
+			"a group in a group",
+			[
+				{
+					conditionType: "compound",
+					operator: "or",
+					conditions: [ruleLeaf("compound", "and", null), ruleLeaf("transaction_name", "like", "")],
+				},
+			],
+			"once",
+			[
+				{ path: "conditions.0.conditions.0", code: "nested_group" },
+				{ path: "conditions.0.conditions.1.value", code: "too_small" },
+			],
+		],
+		[
+			"an unknown account",
+			[ruleLeaf("transaction_account", "=", "nope")],
+			"once",
+			[{ path: "conditions.0.value", code: "invalid_value" }],
+		],
+		["an unknown category", [], "unknown", [{ path: "actions.0.value", code: "invalid_value" }]],
+	])("refuses %s with the field", async (_label, conditions, actions, fields) => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const actionList =
+			actions === "once"
+				? [categoryAction(groceries.id)]
+				: actions === "twice"
+					? [categoryAction(groceries.id), categoryAction(groceries.id)]
+					: actions === "unknown"
+						? [categoryAction("nope")]
+						: actions;
+
+		const { status, body } = await request("POST", "/api/rules", {
+			conditions,
+			actions: actionList,
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toEqual({
+			code: "VALIDATION_ERROR",
+			message: "The request is invalid.",
+			fields,
+		});
+		expect((await request("GET", "/api/rules")).body).toEqual({ data: [] });
+	});
+
+	it.each([
+		["a name over 100 characters", { name: "x".repeat(101) }, [{ path: "name", code: "too_big" }]],
+		[
+			"a label over 200 characters",
+			{ conditions: [ruleLeaf("transaction_name", "like", "x".repeat(201))] },
+			[{ path: "conditions.0.value", code: "too_big" }],
+		],
+		[
+			"51 conditions",
+			{ conditions: Array.from({ length: 51 }, () => ruleLeaf("transaction_name", "like", "x")) },
+			[{ path: "conditions", code: "too_big" }],
+		],
+		[
+			"a start date that is no date",
+			{ effectiveDate: "2026-13-01" },
+			[{ path: "effectiveDate", code: "invalid_format" }],
+		],
+	])("refuses %s with the field", async (_label, overrides, fields) => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+
+		const { status, body } = await request("POST", "/api/rules", {
+			conditions: [],
+			actions: [categoryAction(groceries.id)],
+			...overrides,
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual(fields);
+	});
+
+	it("clears the start date on a PUT with a null one", async () => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const rule = await createRule({ ...labelRule("x", groceries.id), effectiveDate: "2026-09-01" });
+
+		const { status, body } = await request("PUT", `/api/rules/${rule.id}`, {
+			...labelRule("x", groceries.id),
+			effectiveDate: null,
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { effectiveDate: null } });
+	});
+
+	it("refuses a body without conditions and a switch that is not a boolean", async () => {
+		const { status } = await request("POST", "/api/rules", { actions: [] });
+		expect(status).toBe(400);
+
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const rule = await createRule(labelRule("x", groceries.id));
+		const patched = await request("PATCH", `/api/rules/${rule.id}`, { enabled: "yes" });
+		expect(patched.status).toBe(400);
+	});
+
+	it.each([
+		// A valid body, so the refusal is the unknown id's and not the body's.
+		["PUT", (categoryId: string) => ({ conditions: [], actions: [categoryAction(categoryId)] })],
+		["PATCH", () => ({ enabled: true })],
+		["DELETE", () => undefined],
+	])("answers %s with NOT_FOUND", async (method, bodyFor) => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const response = await request(method, "/api/rules/nope", bodyFor(groceries.id));
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+	});
+
+	it("categorises a transaction typed by hand, and leaves it when the rule is off", async () => {
+		const account = await openAccount();
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const rule = await createRule(labelRule("carrefour", groceries.id));
+
+		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+		await request("PATCH", `/api/rules/${rule.id}`, { enabled: false });
+		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR CITY" });
+
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB CARREFOUR", category: groceries.id, origin: "rule" },
+			{ label: "CB CARREFOUR CITY", category: null, origin: null },
+		]);
+	});
+
+	it("lets the later of two matching rules win", async () => {
+		const account = await openAccount();
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		await createRule(labelRule("carrefour", groceries.id));
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		await createRule(labelRule("carrefour", leisure.id));
+
+		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB CARREFOUR", category: leisure.id, origin: "rule" },
+		]);
+	});
+
+	it("categorises the lines of a confirmed OFX import it matches, and none at preview", async () => {
+		const account = await openAccount();
+		const bakery = await createCategory(uniqueCategory("Boulangerie"));
+		await createRule(labelRule("boulangerie", bakery.id));
+		const preview = await uploaded(account.id, await creditAgricole());
+		await expect(categoriesOf(account.id)).resolves.toEqual([]);
+
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		const rows = await categoriesOf(account.id);
+		expect(rows).toHaveLength(5);
+		expect(rows.filter((row) => row.category === bakery.id).map((row) => row.label)).toEqual([
+			"CB BOULANGERIE",
+			"CB BOULANGERIE",
+		]);
+		expect(rows.filter((row) => row.category === null)).toHaveLength(3);
+	});
+});
+
 // Story 4.5: bulk edit.
 
 async function transactionIds(accountId: string) {

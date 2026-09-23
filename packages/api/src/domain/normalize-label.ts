@@ -11,3 +11,11 @@ export function normalizeLabel(label: string): string {
 		.replace(/\s+/gu, " ")
 		.trim();
 }
+
+/**
+ * A label with its ends trimmed and every run of whitespace turned into one
+ * space, as Sure's `squish`. Case and accents stay: a rule compares with them.
+ */
+export function squishLabel(label: string): string {
+	return label.replace(/\s+/gu, " ").trim();
+}
