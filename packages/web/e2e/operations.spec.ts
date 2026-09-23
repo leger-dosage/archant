@@ -20,7 +20,7 @@ const chip = (page: Page, label: string) =>
 	page.getByRole("button", { name: `Retirer le filtre ${label}` });
 
 /** Opens the « Filtrer » menu on one filter's editor. */
-async function openFilter(page: Page, kind: "Compte" | "Période" | "Montant") {
+async function openFilter(page: Page, kind: "Compte" | "Catégorie" | "Période" | "Montant") {
 	await page.getByRole("button", { name: "Filtrer" }).click();
 	const menu = page.getByRole("dialog");
 	await menu.getByRole("button", { name: kind, exact: true }).click();

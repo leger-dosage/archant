@@ -18,8 +18,13 @@ import { today } from "../domain/dates.ts";
 import { amountBoundsFor } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
-import { createTransactionSchema, updateTransactionSchema } from "../schemas/transactions.ts";
+import {
+	UNCATEGORISED,
+	createTransactionSchema,
+	updateTransactionSchema,
+} from "../schemas/transactions.ts";
 import { getAccount } from "./accounts.ts";
+import { withChildren } from "./categories.ts";
 import * as ledger from "./ledger.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -166,6 +171,23 @@ async function amountsFor(
 	});
 }
 
+/** The `category` values as the ledger reads them, each parent standing for its children too. */
+async function categoryFilterOf(
+	deps: ServiceDeps,
+	values: readonly string[] | undefined,
+): Promise<Pick<TransactionFilter, "categoryIds" | "uncategorised">> {
+	if (values === undefined) {
+		return {};
+	}
+
+	const ids = values.filter((value) => value !== UNCATEGORISED);
+
+	return {
+		categoryIds: await withChildren(deps, ids),
+		uncategorised: ids.length < values.length,
+	};
+}
+
 /**
  * A page of every account's transactions matching the filter, most recent
  * first, with the count and the signed total of all the matching rows.
@@ -181,6 +203,7 @@ export async function listAllTransactions(
 		to: query.to,
 		amounts: await amountsFor(deps, query),
 		q: query.q,
+		...(await categoryFilterOf(deps, query.category)),
 	};
 	const page = { page: query.page, pageSize: query.pageSize };
 	const { items, total } = await ledger.listTransactions(deps, filter, page);

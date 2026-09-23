@@ -12,11 +12,15 @@ import {
 const t = (key: string, values?: Record<string, string>) =>
 	values === undefined ? key : `${key} ${JSON.stringify(values)}`;
 
-const names = new Map([
+const accounts = new Map([
 	["a", "Compte joint"],
 	["b", "Carte"],
 ]);
-const nameOf = (id: string) => names.get(id);
+const categories = new Map([["c", "Courses"]]);
+const nameOf = {
+	account: (id: string) => accounts.get(id),
+	category: (id: string) => categories.get(id),
+};
 
 describe("operationsSearchSchema", () => {
 	it("keeps every valid filter", () => {
@@ -89,6 +93,14 @@ describe("operationsSearchSchema, across params", () => {
 	it("reads a lone account id as a list of one", () => {
 		expect(operationsSearchSchema.parse({ account: "a" })).toEqual({ account: ["a"] });
 	});
+
+	it("reads a lone category as a list of one, and drops an empty list", () => {
+		expect(operationsSearchSchema.parse({ category: "none" })).toEqual({ category: ["none"] });
+		expect(operationsSearchSchema.parse({ category: ["none", "c"] })).toEqual({
+			category: ["none", "c"],
+		});
+		expect(operationsSearchSchema.parse({ category: [] })).toEqual({});
+	});
 });
 
 describe("filtersOf and hasFilters", () => {
@@ -124,6 +136,10 @@ describe("withoutFilter", () => {
 			amountMax: undefined,
 		});
 		expect(withoutFilter(search, "account")).toMatchObject({ account: undefined });
+		expect(withoutFilter({ ...search, category: ["c"] }, "category")).toMatchObject({
+			category: undefined,
+			account: ["a"],
+		});
 		expect(withoutFilter(search, "q")).toMatchObject({ q: undefined, account: ["a"] });
 	});
 });
@@ -135,6 +151,7 @@ describe("toApiQuery", () => {
 			toApiQuery(
 				{
 					account: ["a"],
+					category: ["none", "c"],
 					from: "2026-09-01",
 					to: "2026-09-10",
 					amountMin: "20",
@@ -146,6 +163,7 @@ describe("toApiQuery", () => {
 		).toEqual({
 			page: "3",
 			account: ["a"],
+			category: ["none", "c"],
 			from: "2026-09-01",
 			to: "2026-09-10",
 			amountMin: "20",
@@ -163,6 +181,15 @@ describe("filterChips", () => {
 	it("names the accounts, an unknown one included", () => {
 		expect(filterChips({ account: ["a", "b", "z"] }, nameOf, t)).toEqual([
 			{ kind: "account", label: "Compte joint, Carte, operations.chips.unknownAccount" },
+		]);
+	});
+
+	it("names the categories, « Sans catégorie » and an unknown one included", () => {
+		expect(filterChips({ category: ["none", "c", "z"] }, nameOf, t)).toEqual([
+			{
+				kind: "category",
+				label: "operations.chips.uncategorised, Courses, operations.chips.unknownCategory",
+			},
 		]);
 	});
 
@@ -195,9 +222,11 @@ describe("filterChips", () => {
 
 	it("orders the chips as the menu does", () => {
 		expect(
-			filterChips({ amountMin: "1", from: "2026-09-01", account: ["a"] }, nameOf, t).map(
-				(chip) => chip.kind,
-			),
-		).toEqual(["account", "period", "amount"]);
+			filterChips(
+				{ amountMin: "1", from: "2026-09-01", category: ["c"], account: ["a"] },
+				nameOf,
+				t,
+			).map((chip) => chip.kind),
+		).toEqual(["account", "category", "period", "amount"]);
 	});
 });

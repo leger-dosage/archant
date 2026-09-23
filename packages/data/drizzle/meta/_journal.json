@@ -85,6 +85,13 @@
       "when": 1790145211633,
       "tag": "0011_add_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790148556161,
+      "tag": "0012_add_category_origin",
+      "breakpoints": true
     }
   ]
 }

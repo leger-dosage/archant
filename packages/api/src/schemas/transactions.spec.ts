@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { compareAmountBounds, parseAmountBound } from "./transactions.ts";
+import {
+	compareAmountBounds,
+	parseAmountBound,
+	transactionFilterSchema,
+	updateTransactionSchema,
+} from "./transactions.ts";
 
 describe("parseAmountBound", () => {
 	it.each([
@@ -43,5 +48,32 @@ describe("compareAmountBounds", () => {
 		expect(compareAmountBounds({ units: 429n, scale: 1 }, { units: 43n, scale: 0 })).toBe(-1);
 		expect(compareAmountBounds({ units: 43n, scale: 0 }, { units: 42999n, scale: 3 })).toBe(1);
 		expect(compareAmountBounds({ units: 60n, scale: 0 }, { units: 5000n, scale: 2 })).toBe(1);
+	});
+});
+
+describe("transactionFilterSchema", () => {
+	it("reads a lone category as a list, and repeated ones in order", () => {
+		expect(transactionFilterSchema.parse({ category: "none" }).category).toEqual(["none"]);
+		expect(transactionFilterSchema.parse({ category: ["c1", "none"] }).category).toEqual([
+			"c1",
+			"none",
+		]);
+		expect(transactionFilterSchema.parse({}).category).toBeUndefined();
+	});
+
+	it("refuses an empty account or category rather than matching nothing", () => {
+		expect(transactionFilterSchema.safeParse({ category: "" }).success).toBe(false);
+		expect(transactionFilterSchema.safeParse({ account: ["a1", ""] }).success).toBe(false);
+	});
+});
+
+describe("updateTransactionSchema", () => {
+	it("keeps a category id, a cleared category, and no category at all apart", () => {
+		const schema = updateTransactionSchema("EUR");
+
+		expect(schema.parse({ categoryId: "c1" })).toEqual({ categoryId: "c1" });
+		expect(schema.parse({ categoryId: null })).toEqual({ categoryId: null });
+		expect(schema.parse({})).toEqual({});
+		expect(schema.safeParse({ categoryId: "" }).success).toBe(false);
 	});
 });

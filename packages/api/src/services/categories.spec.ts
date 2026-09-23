@@ -14,8 +14,9 @@ import {
 	listCategories,
 	mergeCategory,
 	updateCategory,
+	withChildren,
 } from "./categories.ts";
-import { createAccount, ingest } from "./ledger.ts";
+import { createAccount, ingest, updateTransaction } from "./ledger.ts";
 import { seedDefaults } from "./seed.ts";
 
 let temp: TempDatabase;
@@ -31,7 +32,7 @@ afterAll(async () => {
 
 // Each test starts from an empty set, so names never collide across tests.
 beforeEach(async () => {
-	await temp.db.run(sql`update transactions set category_id = null`);
+	await temp.db.run(sql`update transactions set category_id = null, category_origin = null`);
 	await temp.db.update(categories).set({ parentId: null });
 	await temp.db.delete(categories);
 });
@@ -48,7 +49,7 @@ const input = (overrides: Partial<CreateCategoryRequest> = {}): CreateCategoryRe
 const create = (overrides: Partial<CreateCategoryRequest> = {}) =>
 	createCategory(deps(), input(overrides));
 
-/** `count` new transactions in `categoryId`, written as Story 4.2 will. */
+/** `count` new transactions in `categoryId`, set by hand. */
 async function transactionsIn(categoryId: string | null, count: number): Promise<string[]> {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
@@ -93,15 +94,29 @@ async function transactionsIn(categoryId: string | null, count: number): Promise
 	}
 }
 
-// Raw SQL: only the ledger imports the transactions table (AD-2), and until
-// Story 4.2 no ledger function sets one transaction's category.
+// One after the other: each is an `immediate` ledger transaction.
 async function setCategory(entryIds: string[], categoryId: string | null) {
-	await temp.db.run(
-		sql`update transactions set category_id = ${categoryId} where entry_id in (${sql.join(
-			entryIds.map((id) => sql`${id}`),
-			sql`, `,
-		)})`,
+	await entryIds.reduce<Promise<unknown>>(
+		(pending, id) =>
+			pending.then(() => updateTransaction(deps(), id, { categoryId }, { origin: "user" })),
+		Promise.resolve(),
 	);
+}
+
+async function originsOf(entryIds: string[]) {
+	const rows = await Promise.all(
+		entryIds.map((id) =>
+			temp.db.get<{ origin: string | null; locked: string }>(
+				sql`select category_origin as origin, locked_fields as locked from transactions where entry_id = ${id}`,
+			),
+		),
+	);
+
+	return rows.map((row) => {
+		const locked: unknown = JSON.parse(row?.locked ?? "[]");
+
+		return { origin: row?.origin, locked };
+	});
 }
 
 async function categoriesOf(entryIds: string[]) {
@@ -345,6 +360,11 @@ describe("deleteCategory", () => {
 		await deleteCategory(deps(), gifts.id, undefined);
 
 		await expect(categoriesOf(ids)).resolves.toEqual([null, null]);
+		// The origin goes with the category; the lock stays (AD-10).
+		await expect(originsOf(ids)).resolves.toEqual([
+			{ origin: null, locked: ["category"] },
+			{ origin: null, locked: ["category"] },
+		]);
 	});
 
 	it("makes the children top-level, keeping their kind and colour", async () => {
@@ -407,6 +427,11 @@ describe("mergeCategory", () => {
 
 		await expect(categoriesOf([...moved, ...kept])).resolves.toEqual([food.id, food.id, food.id]);
 		await expect(stored(groceries.id)).resolves.toBeUndefined();
+		// Still the user's choice, still locked: a rule must not undo the merge.
+		await expect(originsOf(moved)).resolves.toEqual([
+			{ origin: "user", locked: ["category"] },
+			{ origin: "user", locked: ["category"] },
+		]);
 	});
 
 	it("moves the source's children under the target, with its kind and colour", async () => {
@@ -473,5 +498,20 @@ describe("mergeCategory", () => {
 		await expect(mergeCategory(deps(), "nope", target.id)).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
+	});
+});
+
+describe("withChildren", () => {
+	it("adds every parent's children, once each, and keeps unknown ids", async () => {
+		const housing = await create({ name: "Logement" });
+		const rent = await create({ name: "Loyer", parentId: housing.id });
+		const energy = await create({ name: "Énergie", parentId: housing.id });
+		const leisure = await create({ name: "Loisirs" });
+		await create({ name: "Cinéma", parentId: leisure.id });
+
+		const expanded = await withChildren(deps(), [housing.id, rent.id, "nope"]);
+
+		expect(expanded.toSorted()).toEqual([housing.id, rent.id, energy.id, "nope"].toSorted());
+		await expect(withChildren(deps(), [])).resolves.toEqual([]);
 	});
 });

@@ -5,12 +5,11 @@ import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
-import { createDb } from "@archant/data/client";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CategoryKind } from "@archant/data/schema/categories";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
-import { DATABASE_FILE, TIME_ZONE, WEB_URL } from "./settings.ts";
+import { TIME_ZONE, WEB_URL } from "./settings.ts";
 
 export { expect };
 
@@ -233,21 +232,17 @@ export function apiHelpers(request: APIRequestContext) {
 			return { id: await created(response), name };
 		},
 
-		/**
-		 * Puts transactions in a category straight in the run's database: no
-		 * screen or route sets a transaction's category before Story 4.2.
-		 */
-		async categorise(transactionIds: string[], categoryId: string) {
-			const db = await createDb(`file:${DATABASE_FILE}`);
-
-			try {
-				await db.$client.execute({
-					sql: `update transactions set category_id = ? where entry_id in (${transactionIds.map(() => "?").join(", ")})`,
-					args: [categoryId, ...transactionIds],
+		/** Puts transactions in a category by hand, as the row's combobox does. */
+		async categorise(transactionIds: string[], categoryId: string | null) {
+			// One after the other: each is an `immediate` ledger write.
+			await transactionIds.reduce(async (previous, id) => {
+				await previous;
+				const response = await request.patch(`/api/transactions/${id}`, {
+					data: { categoryId },
 				});
-			} finally {
-				db.$client.close();
-			}
+
+				expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+			}, Promise.resolve());
 		},
 
 		/** A group's total in minor units, zero when it holds no account. */

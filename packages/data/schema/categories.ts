@@ -15,6 +15,14 @@ export const CATEGORY_KINDS = ["income", "expense"] as const;
 export type CategoryKind = (typeof CATEGORY_KINDS)[number];
 
 /**
+ * Who set a transaction's category (AD-10). `user` goes with a lock; a rule or
+ * the provider only writes a category nobody locked.
+ */
+export const CATEGORY_ORIGINS = ["user", "rule", "provider"] as const;
+
+export type CategoryOrigin = (typeof CATEGORY_ORIGINS)[number];
+
+/**
  * Two levels at most, as in Sure: a child's parent is a top-level category.
  * The service enforces the depth and copies the parent's kind and colour onto
  * its children; the database only holds the reference.

@@ -18,10 +18,13 @@ export const transactionBodySchema = z.object({
 	notes: z.string().nullable().optional(),
 });
 
-// Exclusion is an edit only: a new transaction is always counted.
-export const transactionPatchBodySchema = transactionBodySchema
-	.partial()
-	.extend({ excluded: z.boolean().optional() });
+// Exclusion and category are edits only: a new transaction is always counted,
+// and starts « Sans catégorie ».
+export const transactionPatchBodySchema = transactionBodySchema.partial().extend({
+	excluded: z.boolean().optional(),
+	// `null` clears it; the ledger checks that the id names a category.
+	categoryId: z.string().nullable().optional(),
+});
 
 export type TransactionInput = z.input<typeof transactionBodySchema>;
 export type TransactionPatchInput = z.input<typeof transactionPatchBodySchema>;
@@ -83,6 +86,7 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 			amount: fields.amount.optional(),
 			notes: z.string().trim().max(NOTES_MAX_LENGTH).nullable().optional(),
 			excluded: z.boolean().optional(),
+			categoryId: z.string().min(1).nullable().optional(),
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, notes, ...rest }) => {
@@ -98,11 +102,14 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 
 /**
  * The interface's sheet: the fields of a new transaction plus the exclusion
- * switch, checked the way the API checks them. The form sends the typed text
- * as is; the create or update schema parses it on the server.
+ * switch and the category, checked the way the API checks them. The form
+ * sends the typed text as is; the create or update schema parses it on the
+ * server.
  */
 export function transactionFormSchema(currency: CurrencyCode) {
-	return z.object({ ...fields, excluded: z.boolean() }).superRefine(amountIn(currency));
+	return z
+		.object({ ...fields, excluded: z.boolean(), categoryId: z.string().nullable() })
+		.superRefine(amountIn(currency));
 }
 
 /** What the interface's form holds: the text typed, before the schema parses it. */
@@ -160,6 +167,10 @@ export function compareAmountBounds(a: AmountBound, b: AmountBound): number {
 }
 
 export const MAX_ACCOUNT_FILTER = 100;
+export const MAX_CATEGORY_FILTER = MAX_ACCOUNT_FILTER;
+
+/** The `category` filter value that stands for « Sans catégorie ». */
+export const UNCATEGORISED = "none";
 export const SEARCH_MAX_LENGTH = 200;
 
 const optionalText = z
@@ -168,18 +179,24 @@ const optionalText = z
 	.optional()
 	.transform((value) => (value === "" ? undefined : value));
 
+/** A query key that repeats, one value each; a lone one arrives as a string. */
+function repeated(max: number) {
+	return z
+		.union([z.string(), z.array(z.string())])
+		.optional()
+		.transform((value) => (typeof value === "string" ? [value] : value))
+		.pipe(z.array(z.string().min(1)).max(max).optional());
+}
+
 /**
- * The query of the cross-account list. `account` repeats, one id each; a lone
- * one arrives as a string. Dates are inclusive, amounts bound the absolute
- * value, `q` searches the label and the notes.
+ * The query of the cross-account list. `account` and `category` repeat, one
+ * id each, `none` standing for « Sans catégorie ». Dates are inclusive,
+ * amounts bound the absolute value, `q` searches the label and the notes.
  */
 export const transactionFilterSchema = pageQuerySchema
 	.extend({
-		account: z
-			.union([z.string(), z.array(z.string())])
-			.optional()
-			.transform((value) => (typeof value === "string" ? [value] : value))
-			.pipe(z.array(z.string()).max(MAX_ACCOUNT_FILTER).optional()),
+		account: repeated(MAX_ACCOUNT_FILTER),
+		category: repeated(MAX_CATEGORY_FILTER),
 		from: z.iso.date().optional(),
 		to: z.iso.date().optional(),
 		amountMin: optionalText,

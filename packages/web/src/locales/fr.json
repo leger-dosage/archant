@@ -73,7 +73,8 @@
 			"nextRow": "Opération suivante",
 			"previousRow": "Opération précédente",
 			"openRow": "Ouvrir l'opération",
-			"importFile": "Importer un fichier sur la page d'un compte"
+			"importFile": "Importer un fichier sur la page d'un compte",
+			"categoriseRow": "Changer la catégorie de l'opération"
 		}
 	},
 	"accounts": {
@@ -194,7 +195,8 @@
 			"notes": "Notes",
 			"save": "Enregistrer",
 			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
-			"excluded": "Exclure des rapports"
+			"excluded": "Exclure des rapports",
+			"category": "Catégorie"
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -211,7 +213,16 @@
 			"import": "Import {{format}} du {{date}}",
 			"importReference": "Import {{format}} du {{date}}, n° {{reference}}"
 		},
-		"excluded": "Exclue des rapports"
+		"excluded": "Exclue des rapports",
+		"category": {
+			"none": "Sans catégorie",
+			"chip": "Catégorie : {{name}}",
+			"change": "Changer la catégorie",
+			"search": "Rechercher une catégorie",
+			"empty": "Aucune catégorie trouvée.",
+			"changed": "Catégorie modifiée",
+			"undo": "Annuler"
+		}
 	},
 	"operations": {
 		"title": "Opérations",
@@ -220,6 +231,7 @@
 		"filter": "Filtrer",
 		"kinds": {
 			"account": "Compte",
+			"category": "Catégorie",
 			"period": "Période",
 			"amount": "Montant"
 		},
@@ -234,6 +246,8 @@
 		"clearFilters": "Effacer les filtres",
 		"chips": {
 			"unknownAccount": "Compte inconnu",
+			"uncategorised": "Sans catégorie",
+			"unknownCategory": "Catégorie inconnue",
 			"periodBetween": "Du {{from}} au {{to}}",
 			"periodSince": "Depuis le {{from}}",
 			"periodUntil": "Jusqu'au {{to}}",
@@ -244,6 +258,7 @@
 		"editor": {
 			"accounts": "Comptes à afficher",
 			"noAccount": "Aucun compte.",
+			"categories": "Catégories à afficher",
 			"from": "Du",
 			"to": "Au",
 			"min": "Minimum",

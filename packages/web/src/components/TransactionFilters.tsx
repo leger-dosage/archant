@@ -1,3 +1,4 @@
+import type { CategoryData } from "@/hooks/useCategories";
 import type { FilterKind, TransactionFilters as Filters } from "@/lib/transaction-filters";
 import type { FormEvent, ReactNode } from "react";
 
@@ -5,14 +6,20 @@ import { ListFilterIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { compareAmountBounds, parseAmountBound } from "@archant/api/schemas/transactions";
+import {
+	UNCATEGORISED,
+	compareAmountBounds,
+	parseAmountBound,
+} from "@archant/api/schemas/transactions";
 
+import { CategoryDot } from "@/components/CategoryDot";
 import { DateField } from "@/components/DateField";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { categoryTree } from "@/lib/category-tree";
 import { FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
 
 /**
@@ -65,6 +72,109 @@ function EditorForm({ onSubmit, children }: { onSubmit: () => void; children: Re
 	);
 }
 
+/** A checkbox list's toggle: the set with `id` added or removed. */
+function toggled(selected: ReadonlySet<string>, id: string, checked: boolean): Set<string> {
+	const next = new Set(selected);
+
+	if (checked) {
+		next.add(id);
+	} else {
+		next.delete(id);
+	}
+
+	return next;
+}
+
+function CategoryCheckbox({
+	id,
+	label,
+	color,
+	child = false,
+	selected,
+	onChange,
+}: {
+	id: string;
+	label: string;
+	color: string | null;
+	child?: boolean;
+	selected: ReadonlySet<string>;
+	onChange: (next: Set<string>) => void;
+}) {
+	return (
+		<label className={`flex min-h-6 items-center gap-2 ${child ? "pl-6" : ""}`}>
+			<input
+				type="checkbox"
+				className="size-4 accent-primary"
+				checked={selected.has(id)}
+				onChange={(event) => onChange(toggled(selected, id, event.target.checked))}
+			/>
+			<CategoryDot color={color} />
+			<span className="truncate">{label}</span>
+		</label>
+	);
+}
+
+/**
+ * « Sans catégorie » first, then each parent and its children. Checking a
+ * parent is enough to see its children's rows: the API expands it.
+ */
+function CategoryEditor({
+	filters,
+	categories,
+	onApply,
+}: EditorProps & { categories: readonly CategoryData[] }) {
+	const { t } = useTranslation();
+	// An id from an old link that names no category any more is left out, so
+	// Appliquer drops it instead of keeping a filter no checkbox can clear.
+	const [selected, setSelected] = useState(() => {
+		const known = new Set(categories.map((category) => category.id));
+
+		return new Set((filters.category ?? []).filter((id) => id === UNCATEGORISED || known.has(id)));
+	});
+
+	return (
+		<EditorForm
+			onSubmit={() => onApply({ category: selected.size === 0 ? undefined : [...selected] })}
+		>
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">
+					{t("operations.editor.categories")}
+				</legend>
+				<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+					<CategoryCheckbox
+						id={UNCATEGORISED}
+						label={t("operations.chips.uncategorised")}
+						color={null}
+						selected={selected}
+						onChange={setSelected}
+					/>
+					{categoryTree(categories).flatMap(({ parent, children }) => [
+						<CategoryCheckbox
+							key={parent.id}
+							id={parent.id}
+							label={parent.name}
+							color={parent.color}
+							selected={selected}
+							onChange={setSelected}
+						/>,
+						...children.map((child) => (
+							<CategoryCheckbox
+								key={child.id}
+								id={child.id}
+								label={child.name}
+								color={child.color}
+								child
+								selected={selected}
+								onChange={setSelected}
+							/>
+						)),
+					])}
+				</div>
+			</fieldset>
+		</EditorForm>
+	);
+}
+
 function AccountEditor({
 	filters,
 	accounts,
@@ -96,17 +206,9 @@ function AccountEditor({
 								type="checkbox"
 								className="size-4 accent-primary"
 								checked={selected.has(account.id)}
-								onChange={(event) => {
-									const next = new Set(selected);
-
-									if (event.target.checked) {
-										next.add(account.id);
-									} else {
-										next.delete(account.id);
-									}
-
-									setSelected(next);
-								}}
+								onChange={(event) =>
+									setSelected(toggled(selected, account.id, event.target.checked))
+								}
 							/>
 							<span className="truncate">{account.name}</span>
 						</label>
@@ -257,6 +359,7 @@ function AmountEditor({ filters, onApply }: EditorProps) {
 type TransactionFiltersProps = {
 	filters: Filters;
 	accounts: readonly FilterAccount[];
+	categories: readonly CategoryData[];
 	onChange: (change: FilterChange) => void;
 	onRemove: (kind: FilterKind) => void;
 };
@@ -269,16 +372,18 @@ type TransactionFiltersProps = {
 export function TransactionFilters({
 	filters,
 	accounts,
+	categories,
 	onChange,
 	onRemove,
 }: TransactionFiltersProps) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 	const [pane, setPane] = useState<FilterKind | null>(null);
-	const names = new Map(accounts.map((account) => [account.id, account.name]));
+	const accountNames = new Map(accounts.map((account) => [account.id, account.name]));
+	const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
 	const chips = filterChips(
 		filters,
-		(id) => names.get(id),
+		{ account: (id) => accountNames.get(id), category: (id) => categoryNames.get(id) },
 		(key, values) => t(key, { replace: values ?? {} }),
 	);
 
@@ -335,6 +440,9 @@ export function TransactionFilters({
 							</div>
 							{pane === "account" && (
 								<AccountEditor filters={filters} accounts={accounts} onApply={apply} />
+							)}
+							{pane === "category" && (
+								<CategoryEditor filters={filters} categories={categories} onApply={apply} />
 							)}
 							{pane === "period" && <PeriodEditor filters={filters} onApply={apply} />}
 							{pane === "amount" && <AmountEditor filters={filters} onApply={apply} />}

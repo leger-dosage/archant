@@ -473,7 +473,9 @@ describe("categories", () => {
 		await expect(
 			database.run(sql`update transactions set category_id = 'nope' where entry_id = 'e1'`),
 		).rejects.toThrow();
-		await database.run(sql`update transactions set category_id = 'c1' where entry_id = 'e1'`);
+		await database.run(
+			sql`update transactions set category_id = 'c1', category_origin = 'user' where entry_id = 'e1'`,
+		);
 		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
 		await expect(
 			database.all(
@@ -500,6 +502,96 @@ describe("categories", () => {
 		).resolves.toEqual([
 			{ entryId: "e1", label: "Boulangerie", locked: '["label"]', categoryId: null },
 		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("accepts a user, rule or provider origin only", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertCategory(database, "c1", "Courses");
+		await database.run(
+			sql`insert into transactions (entry_id, label, category_id, category_origin) values ('e1', 'Boulangerie', 'c1', 'user')`,
+		);
+		const setOrigin = (origin: string) =>
+			database.run(sql`update transactions set category_origin = ${origin} where entry_id = 'e1'`);
+
+		await expect(setOrigin("rule")).resolves.toBeDefined();
+		await expect(setOrigin("provider")).resolves.toBeDefined();
+		await expect(setOrigin("maintenance")).rejects.toThrow();
+	});
+
+	it("records an origin exactly when a category is set", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertEntry(database, "e2", "transaction", null);
+		await insertEntry(database, "e3", "transaction", null);
+		await insertEntry(database, "e4", "transaction", null);
+		await insertCategory(database, "c1", "Courses");
+		const insertTransaction = (id: string, categoryId: string | null, origin: string | null) =>
+			database.run(
+				sql`insert into transactions (entry_id, label, category_id, category_origin) values (${id}, 'Boulangerie', ${categoryId}, ${origin})`,
+			);
+
+		await expect(insertTransaction("e1", null, null)).resolves.toBeDefined();
+		await expect(insertTransaction("e2", "c1", "user")).resolves.toBeDefined();
+		await expect(insertTransaction("e3", "c1", null)).rejects.toThrow();
+		await expect(insertTransaction("e4", null, "user")).rejects.toThrow();
+	});
+
+	it("keeps every transaction and reference when 0012 rebuilds the table", async () => {
+		const before = await migratedBefore("0012");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertEntry(before, "e2", "transaction", null);
+		await insertCategory(before, "c1", "Courses");
+		await before.run(
+			sql`insert into transactions (entry_id, label, notes, reference, excluded, possible_duplicate, locked_fields, category_id) values ('e1', 'Boulangerie', 'pain', '12', 1, 1, '["label"]', 'c1'), ('e2', 'Loyer', null, null, 0, 0, '[]', null)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, notes, reference, excluded, possible_duplicate as possibleDuplicate, locked_fields as locked, category_id as categoryId, category_origin as categoryOrigin from transactions order by entry_id`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				label: "Boulangerie",
+				notes: "pain",
+				reference: "12",
+				excluded: 1,
+				possibleDuplicate: 1,
+				locked: '["label","category"]',
+				categoryId: "c1",
+				// Before 0012 only a person could set a category, by hand in the
+				// database; the row takes `user` and its lock rather than failing
+				// the new check.
+				categoryOrigin: "user",
+			},
+			{
+				entryId: "e2",
+				label: "Loyer",
+				notes: null,
+				reference: null,
+				excluded: 0,
+				possibleDuplicate: 0,
+				locked: "[]",
+				categoryId: null,
+				categoryOrigin: null,
+			},
+		]);
+		// The rebuilt table still refuses to lose its entry or its category.
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('transactions') where name = 'transactions_category'`,
+			),
+		).resolves.toEqual([{ name: "transactions_category" }]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
