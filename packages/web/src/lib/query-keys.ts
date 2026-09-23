@@ -27,6 +27,10 @@ export const queryKeys = {
 		 */
 		imports: (id: string, page: number) => ["accounts", "detail", id, "imports", page] as const,
 	},
+	/** The whole category list, one query: a household keeps a few dozen. */
+	categories: {
+		all: ["categories"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

@@ -9,6 +9,7 @@ import { validateEnv } from "./env.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createAuth } from "./services/auth.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
+import { seedDefaults } from "./services/seed.ts";
 
 const env = validateEnv(process.env);
 const logger = createLogger(env.LOG_LEVEL);
@@ -17,6 +18,11 @@ const logger = createLogger(env.LOG_LEVEL);
 await runMigrations(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN);
 logger.info("migrations applied");
 const db = await createDb(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN);
+// Once per instance, not once per start: a default the user deleted stays deleted.
+const seeded = await seedDefaults({ db });
+if (seeded > 0) {
+	logger.info({ seeded }, "default categories seeded");
+}
 // An unconfirmed preview keeps the uploaded file; a day is long enough to
 // come back to it, and short enough that bank statements do not pile up.
 const purged = await purgeStalePreviews({ db, timeZone: env.APP_TIMEZONE });

@@ -420,6 +420,90 @@ describe("import revert", () => {
 	});
 });
 
+const insertCategory = (
+	database: Database,
+	id: string,
+	name: string,
+	kind = "expense",
+	parentId: string | null = null,
+) =>
+	database.run(
+		sql`insert into categories (id, name, kind, color, icon, parent_id, created_at, updated_at) values (${id}, ${name}, ${kind}, '#e99537', 'tag', ${parentId}, 0, 0)`,
+	);
+
+describe("categories", () => {
+	it("accepts an income or an expense kind only", async () => {
+		const database = await migrated();
+
+		await expect(insertCategory(database, "c1", "Salaire", "income")).resolves.toBeDefined();
+		await expect(insertCategory(database, "c2", "Courses", "expense")).resolves.toBeDefined();
+		await expect(insertCategory(database, "c3", "Virements", "transfer")).rejects.toThrow();
+	});
+
+	it("holds a name once, ignoring case", async () => {
+		const database = await migrated();
+		await insertCategory(database, "c1", "Courses");
+
+		await expect(insertCategory(database, "c2", "courses")).rejects.toThrow();
+		await expect(insertCategory(database, "c3", "COURSES")).rejects.toThrow();
+		await expect(insertCategory(database, "c4", "Courses bio")).resolves.toBeDefined();
+	});
+
+	it("refuses an unknown parent, and deleting a parent that still has children", async () => {
+		const database = await migrated();
+		await insertCategory(database, "c1", "Logement");
+
+		await expect(insertCategory(database, "c2", "Loyer", "expense", "nope")).rejects.toThrow();
+		await insertCategory(database, "c3", "Loyer", "expense", "c1");
+		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
+	});
+
+	it("leaves a transaction without category, and refuses to delete a category in use", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertCategory(database, "c1", "Courses");
+		await database.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'Boulangerie')`,
+		);
+
+		await expect(
+			database.get(sql`select category_id as categoryId from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ categoryId: null });
+		await expect(
+			database.run(sql`update transactions set category_id = 'nope' where entry_id = 'e1'`),
+		).rejects.toThrow();
+		await database.run(sql`update transactions set category_id = 'c1' where entry_id = 'e1'`);
+		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('transactions') where name = 'transactions_category'`,
+			),
+		).resolves.toEqual([{ name: "transactions_category" }]);
+	});
+
+	it("keeps every transaction when 0011 adds the category column", async () => {
+		const before = await migratedBefore("0011");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, locked_fields) values ('e1', 'Boulangerie', '["label"]')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, locked_fields as locked, category_id as categoryId from transactions`,
+			),
+		).resolves.toEqual([
+			{ entryId: "e1", label: "Boulangerie", locked: '["label"]', categoryId: null },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

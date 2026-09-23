@@ -5,8 +5,10 @@ export const Route = createFileRoute("/_authed/reglages")({
 	component: SettingsLayout,
 });
 
-/** Sécurité is the only section until Epic 4 brings the others. */
-const SECTIONS = [{ to: "/reglages/securite", label: "settings.sections.security" }] as const;
+const SECTIONS = [
+	{ to: "/reglages/categories", label: "settings.sections.categories" },
+	{ to: "/reglages/securite", label: "settings.sections.security" },
+] as const;
 
 function SettingsLayout() {
 	const { t } = useTranslation();

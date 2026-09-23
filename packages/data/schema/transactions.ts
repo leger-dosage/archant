@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { categories } from "./categories.ts";
 import { entries } from "./entries.ts";
 
 /**
@@ -16,25 +17,34 @@ export type LockableField = (typeof LOCKABLE_FIELDS)[number];
  * in Sure's delegated types (AD-8). The date and the amount stay on `entries`,
  * where the balance computation reads them for transactions and valuations alike.
  */
-export const transactions = sqliteTable("transactions", {
-	// Restrict, not cascade: only the ledger deletes an entry, and it removes
-	// this row first. A bypass fails instead of leaving the entry half gone.
-	entryId: text("entry_id")
-		.primaryKey()
-		.references(() => entries.id, { onDelete: "restrict" }),
-	label: text("label").notNull(),
-	notes: text("notes"),
-	// A cheque or QIF `N` number the bank printed; not lockable, no source edits it.
-	reference: text("reference"),
-	// Kept out of future reports (AD-9), never out of the account's balance:
-	// the money did move.
-	excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),
-	// Set when an import found two entries equally near this line and created
-	// it rather than guess; the merge action arrives with a later story.
-	possibleDuplicate: integer("possible_duplicate", { mode: "boolean" }).notNull().default(false),
-	// Written only by `origin: "user"` ledger calls; read by every later writer.
-	lockedFields: text("locked_fields", { mode: "json" })
-		.$type<LockableField[]>()
-		.notNull()
-		.default(sql`'[]'`),
-});
+export const transactions = sqliteTable(
+	"transactions",
+	{
+		// Restrict, not cascade: only the ledger deletes an entry, and it removes
+		// this row first. A bypass fails instead of leaving the entry half gone.
+		entryId: text("entry_id")
+			.primaryKey()
+			.references(() => entries.id, { onDelete: "restrict" }),
+		label: text("label").notNull(),
+		notes: text("notes"),
+		// A cheque or QIF `N` number the bank printed; not lockable, no source edits it.
+		reference: text("reference"),
+		// Kept out of future reports (AD-9), never out of the account's balance:
+		// the money did move.
+		excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),
+		// Set when an import found two entries equally near this line and created
+		// it rather than guess; the merge action arrives with a later story.
+		possibleDuplicate: integer("possible_duplicate", { mode: "boolean" }).notNull().default(false),
+		// Written only by `origin: "user"` ledger calls; read by every later writer.
+		lockedFields: text("locked_fields", { mode: "json" })
+			.$type<LockableField[]>()
+			.notNull()
+			.default(sql`'[]'`),
+		// Null is « Sans catégorie ». Restrict: deleting a category goes through the
+		// service, which moves its transactions first, so a bypass fails instead of
+		// silently uncategorising them.
+		categoryId: text("category_id").references(() => categories.id, { onDelete: "restrict" }),
+	},
+	// Every category delete and merge, and Story 4.2's filter, look rows up by it.
+	(table) => [index("transactions_category").on(table.categoryId)],
+);

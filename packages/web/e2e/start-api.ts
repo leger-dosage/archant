@@ -1,17 +1,19 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdir, rm } from "node:fs/promises";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
+import { DATABASE_FILE, PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 // Started by playwright.config.ts once the interface is built. One fresh
 // database per run, which the server migrates before it listens, in a file
 // rather than `:memory:`: every libSQL connection to `:memory:` opens its own
 // empty database, and the ledger's transactions borrow their own connection.
-const directory = await mkdtemp(join(tmpdir(), "archant-e2e-"));
-const databaseUrl = `file:${join(directory, "e2e.db")}`;
+// A run killed before its cleanup leaves the file behind; it is removed here.
+const directory = dirname(DATABASE_FILE);
+await rm(directory, { recursive: true, force: true });
+await mkdir(directory, { recursive: true });
+const databaseUrl = `file:${DATABASE_FILE}`;
 
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {

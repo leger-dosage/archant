@@ -112,6 +112,11 @@ export function CommandPalette() {
 			shortcut: "goSettings",
 			run: () => void navigate({ to: "/reglages" }),
 		},
+		{
+			id: "go-categories",
+			label: t("settings.sections.categories"),
+			run: () => void navigate({ to: "/reglages/categories" }),
+		},
 	];
 	const actions: Item[] = [
 		{ id: "add-account", label: t("accounts.add"), run: () => setCreatingAccount(true) },

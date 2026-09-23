@@ -21,6 +21,7 @@ import {
 	gt,
 	gte,
 	inArray,
+	isNotNull,
 	isNull,
 	lte,
 	ne,
@@ -991,6 +992,54 @@ export async function deleteTransaction(
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * Moves every transaction of category `from` to `to`, or leaves them
+ * uncategorised with `null`, and returns how many moved. Called by a
+ * category's delete and merge with `origin: "maintenance"`: the user chose
+ * the category, not each transaction, so `locked_fields` stays as it is
+ * (AD-10). No balance changes, so nothing is recomputed. One statement,
+ * whatever the count: a category can hold years of transactions.
+ */
+export async function recategorise(
+	deps: ServiceDeps,
+	from: string,
+	to: string | null,
+	// Maintenance only until Story 4.2 defines the category lock: a `user`
+	// call here would be expected to lock and would not.
+	_options: { origin: "maintenance" },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const result = await tx
+				.update(transactions)
+				.set({ categoryId: to })
+				.where(eq(transactions.categoryId, from));
+
+			return result.rowsAffected;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * How many transactions each category holds, by category id. A category
+ * absent from the map holds none. Counted in children and parents alike:
+ * rolling children up into their parent is the reports' business (Epic 6).
+ */
+export async function countByCategory(deps: ServiceDeps): Promise<Map<string, number>> {
+	const rows = await deps.db
+		.select({
+			// Never null: the `where` below leaves uncategorised rows out.
+			categoryId: sql<string>`${transactions.categoryId}`,
+			count: count(),
+		})
+		.from(transactions)
+		.where(isNotNull(transactions.categoryId))
+		.groupBy(transactions.categoryId);
+
+	return new Map(rows.map((row) => [row.categoryId, row.count]));
 }
 
 /** What reverting an import deletes now: its created transactions, and its snapshot (0 or 1). */

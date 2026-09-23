@@ -13,6 +13,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { withForwardedFor } from "./lib/client-address.ts";
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { categoriesRoutes } from "./routes/categories.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
@@ -50,6 +51,7 @@ function createApi(deps: AppDeps) {
 		.route("/transactions", transactionsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
+		.route("/categories", categoriesRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }

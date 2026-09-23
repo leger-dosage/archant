@@ -91,7 +91,7 @@ test("the palette opens the settings", async ({ page }) => {
 	await expect(option(page, /^Réglages/u)).toBeVisible();
 	await page.keyboard.press("Enter");
 
-	await expect(page).toHaveURL(/\/reglages\/securite$/u);
+	await expect(page).toHaveURL(/\/reglages\/categories$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Réglages" })).toBeVisible();
 });
 
@@ -196,8 +196,8 @@ test("g c, g o and g s go to the accounts, the transactions and the settings", a
 
 	await page.keyboard.press("g");
 	await page.keyboard.press("s");
-	// `/reglages` opens its only section.
-	await expect(page).toHaveURL(/\/reglages\/securite$/u);
+	// `/reglages` opens its first section.
+	await expect(page).toHaveURL(/\/reglages\/categories$/u);
 });
 
 test("⌘K opens the palette from the search field, and Esc gives focus back to it", async ({

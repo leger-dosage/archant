@@ -78,6 +78,13 @@
       "when": 1790084739241,
       "tag": "0010_add_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790145211633,
+      "tag": "0011_add_categories",
+      "breakpoints": true
     }
   ]
 }

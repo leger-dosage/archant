@@ -2,12 +2,13 @@ import type { NormalizedTransaction, ParsedStatement } from "../domain/statement
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput, Origin } from "./ledger.ts";
 
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
@@ -30,7 +31,9 @@ import {
 	ingest,
 	listSnapshots,
 	listTransactions,
+	countByCategory,
 	openingDateOf,
+	recategorise,
 	sumTransactions,
 	recordSnapshot,
 	removableOf,
@@ -2720,4 +2723,111 @@ describe("deleteAccount", () => {
 			await big.dispose();
 		}
 	}, 60_000);
+});
+
+async function newCategory(name: string) {
+	const id = crypto.randomUUID();
+	await temp.db.insert(categories).values({
+		id,
+		name: `${name} ${id}`,
+		kind: "expense",
+		color: "#e99537",
+		icon: "tag",
+		createdAt: 0,
+		updatedAt: 0,
+	});
+
+	return id;
+}
+
+async function categoryOf(entryId: string) {
+	const row = await temp.db
+		.select({ categoryId: transactions.categoryId })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.categoryId;
+}
+
+describe("recategorise", () => {
+	it("moves every transaction of a category to another, and only those", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const food = await newCategory("Alimentation");
+		const other = await newCategory("Loisirs");
+		// One after the other: each is an `immediate` ledger transaction.
+		const ids = [
+			await add(account.id, { label: "Marché" }),
+			await add(account.id, { label: "Épicerie" }),
+			await add(account.id, { label: "Primeur" }),
+		];
+		const untouched = await add(account.id, { label: "Cinéma" });
+		await temp.db
+			.update(transactions)
+			.set({ categoryId: groceries })
+			.where(inArray(transactions.entryId, ids));
+		await temp.db
+			.update(transactions)
+			.set({ categoryId: other })
+			.where(eq(transactions.entryId, untouched));
+		const days = await history(account.id);
+
+		await expect(recategorise(deps(), groceries, food, { origin: "maintenance" })).resolves.toBe(3);
+
+		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([food, food, food]);
+		await expect(categoryOf(untouched)).resolves.toBe(other);
+		await expect(history(account.id)).resolves.toEqual(days);
+	});
+
+	it("leaves the transactions uncategorised with null, keeping their locked fields", async () => {
+		const account = await openChecking();
+		const category = await newCategory("Cadeaux");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { label: "Fleuriste" }, { origin: "user" });
+		await temp.db
+			.update(transactions)
+			.set({ categoryId: category })
+			.where(eq(transactions.entryId, id));
+
+		await expect(recategorise(deps(), category, null, { origin: "maintenance" })).resolves.toBe(1);
+
+		await expect(categoryOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual(["label"]);
+	});
+
+	it("moves nothing from a category no transaction uses", async () => {
+		const empty = await newCategory("Vide");
+		const target = await newCategory("Cible");
+
+		await expect(recategorise(deps(), empty, target, { origin: "maintenance" })).resolves.toBe(0);
+	});
+});
+
+describe("countByCategory", () => {
+	it("counts each category's transactions, leaving out uncategorised ones and empty categories", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const empty = await newCategory("Vide");
+		const first = await add(account.id, { label: "Marché" });
+		const second = await add(account.id, { label: "Épicerie" });
+		const third = await add(account.id, { label: "Cinéma" });
+		await add(account.id, { label: "Sans catégorie" });
+		await temp.db
+			.update(transactions)
+			.set({ categoryId: groceries })
+			.where(inArray(transactions.entryId, [first, second]));
+		await temp.db
+			.update(transactions)
+			.set({ categoryId: leisure })
+			.where(eq(transactions.entryId, third));
+
+		const perCategory = await countByCategory(deps());
+
+		expect(perCategory.get(groceries)).toBe(2);
+		expect(perCategory.get(leisure)).toBe(1);
+		expect(perCategory.has(empty)).toBe(false);
+		expect([...perCategory.keys()]).not.toContain(null);
+	});
 });
