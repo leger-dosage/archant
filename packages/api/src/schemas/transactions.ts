@@ -5,6 +5,8 @@ import { parseAmount } from "@archant/data/money";
 
 export const LABEL_MAX_LENGTH = 200;
 export const NOTES_MAX_LENGTH = 2000;
+/** Past this a tag stops telling a trip apart; the route refuses a larger set. */
+export const MAX_TAGS_PER_TRANSACTION = 20;
 
 // What the route checks before it knows the account: every field is text, so
 // the typed client knows the body's shape. The amount is parsed afterwards,
@@ -18,14 +20,16 @@ export const transactionBodySchema = z.object({
 	notes: z.string().nullable().optional(),
 });
 
-// Exclusion, category and merchant are edits only: a new transaction is always
-// counted, and starts « Sans catégorie » and « Sans marchand ».
+// Exclusion, category, merchant and tags are edits only: a new transaction is
+// always counted, and starts « Sans catégorie », « Sans marchand » and untagged.
 export const transactionPatchBodySchema = transactionBodySchema.partial().extend({
 	excluded: z.boolean().optional(),
 	// `null` clears it; the ledger checks that the id names a category.
 	categoryId: z.string().nullable().optional(),
 	// `null` clears it; the ledger checks that the id names a merchant.
 	merchantId: z.string().nullable().optional(),
+	// The whole set; the ledger checks that every id names a tag.
+	tagIds: z.array(z.string()).optional(),
 });
 
 export type TransactionInput = z.input<typeof transactionBodySchema>;
@@ -90,6 +94,12 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 			excluded: z.boolean().optional(),
 			categoryId: z.string().min(1).nullable().optional(),
 			merchantId: z.string().min(1).nullable().optional(),
+			// Repeats are dropped before the cap counts, so a double click never refuses.
+			tagIds: z
+				.array(z.string().min(1))
+				.transform((ids) => [...new Set(ids)])
+				.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
+				.optional(),
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, notes, ...rest }) => {
@@ -105,7 +115,7 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 
 /**
  * The interface's sheet: the fields of a new transaction plus the exclusion
- * switch, the category and the merchant, checked the way the API checks them. The form
+ * switch, the category, the merchant and the tags, checked the way the API checks them. The form
  * sends the typed text as is; the create or update schema parses it on the
  * server.
  */
@@ -116,6 +126,7 @@ export function transactionFormSchema(currency: CurrencyCode) {
 			excluded: z.boolean(),
 			categoryId: z.string().nullable(),
 			merchantId: z.string().nullable(),
+			tagIds: z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION),
 		})
 		.superRefine(amountIn(currency));
 }
@@ -177,6 +188,7 @@ export function compareAmountBounds(a: AmountBound, b: AmountBound): number {
 export const MAX_ACCOUNT_FILTER = 100;
 export const MAX_CATEGORY_FILTER = MAX_ACCOUNT_FILTER;
 export const MAX_MERCHANT_FILTER = MAX_ACCOUNT_FILTER;
+export const MAX_TAG_FILTER = MAX_ACCOUNT_FILTER;
 
 /** The `category` filter value that stands for « Sans catégorie ». */
 export const UNCATEGORISED = "none";
@@ -198,8 +210,8 @@ function repeated(max: number) {
 }
 
 /**
- * The query of the cross-account list. `account`, `category` and `merchant`
- * repeat, one id each, `none` standing for « Sans catégorie ». Dates are inclusive,
+ * The query of the cross-account list. `account`, `category`, `merchant` and
+ * `tag` repeat, one id each, `none` standing for « Sans catégorie ». Dates are inclusive,
  * amounts bound the absolute value, `q` searches the label and the notes.
  */
 export const transactionFilterSchema = pageQuerySchema
@@ -207,6 +219,7 @@ export const transactionFilterSchema = pageQuerySchema
 		account: repeated(MAX_ACCOUNT_FILTER),
 		category: repeated(MAX_CATEGORY_FILTER),
 		merchant: repeated(MAX_MERCHANT_FILTER),
+		tag: repeated(MAX_TAG_FILTER),
 		from: z.iso.date().optional(),
 		to: z.iso.date().optional(),
 		amountMin: optionalText,

@@ -44,6 +44,8 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
+import { taggings } from "@archant/data/schema/taggings";
+import { tags } from "@archant/data/schema/tags";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { LOCKABLE_FIELDS, transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance } from "@archant/data/types";
@@ -900,6 +902,8 @@ export type TransactionPatch = {
 	categoryId?: string | null | undefined;
 	/** `null` leaves the transaction « Sans marchand ». */
 	merchantId?: string | null | undefined;
+	/** The whole set, replacing the current one; `[]` removes every tag. */
+	tagIds?: readonly string[] | undefined;
 };
 
 /** The patch key and the row column behind each lockable field. */
@@ -911,6 +915,7 @@ const PATCH_KEY_OF = {
 	excluded: "excluded",
 	category: "categoryId",
 	merchant: "merchantId",
+	tags: "tagIds",
 } as const satisfies Record<LockableField, keyof TransactionPatch>;
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
@@ -938,7 +943,28 @@ async function transactionRow(tx: Transaction, entryId: string) {
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
 	}
 
-	return row;
+	return { ...row, tagIds: await tagIdsOf(tx, entryId) };
+}
+
+async function tagIdsOf(db: Pick<Transaction, "select">, entryId: string): Promise<string[]> {
+	const rows = await db
+		.select({ tagId: taggings.tagId })
+		.from(taggings)
+		.where(eq(taggings.transactionId, entryId))
+		.orderBy(taggings.tagId);
+
+	return rows.map((row) => row.tagId);
+}
+
+/** Tags are a set: the same ids in another order, or repeated, are no change. */
+function sameValue(current: unknown, value: unknown): boolean {
+	if (Array.isArray(current) && Array.isArray(value)) {
+		const wanted = new Set<unknown>(value);
+
+		return wanted.size === current.length && current.every((item) => wanted.has(item));
+	}
+
+	return current === value;
 }
 
 /**
@@ -971,9 +997,9 @@ export async function updateTransaction(
 				const value = patch[key];
 				const allowed = options.origin === "user" || !locked.has(field);
 
-				if (value !== undefined && value !== current[key] && allowed) {
+				if (value !== undefined && !sameValue(current[key], value) && allowed) {
 					changed.push(field);
-					Object.assign(next, { [key]: value });
+					Object.assign(next, { [key]: Array.isArray(value) ? [...new Set(value)] : value });
 				}
 			}
 
@@ -1007,6 +1033,20 @@ export async function updateTransaction(
 				}
 			}
 
+			if (changed.includes("tags") && next.tagIds.length > 0) {
+				const found = await tx
+					.select({ count: count() })
+					.from(tags)
+					.where(inArray(tags.id, next.tagIds))
+					.get();
+
+				if (found?.count !== next.tagIds.length) {
+					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+						{ path: "tagIds", code: "invalid_value" },
+					]);
+				}
+			}
+
 			const reason = rejectionFor(
 				{ date: next.date, currency: current.currency },
 				{
@@ -1024,9 +1064,11 @@ export async function updateTransaction(
 				return { status: "updated" };
 			}
 
-			// The category and the merchant live on `transactions` alone and move no
-			// balance, so classifying a row does not rewrite a decade of daily balances.
-			const touchesEntry = changed.some((field) => field !== "category" && field !== "merchant");
+			// The category, the merchant and the tags live beside the entry and move
+			// no balance, so classifying a row does not rewrite a decade of daily balances.
+			const touchesEntry = changed.some(
+				(field) => field !== "category" && field !== "merchant" && field !== "tags",
+			);
 
 			if (touchesEntry) {
 				await tx
@@ -1055,6 +1097,16 @@ export async function updateTransaction(
 				})
 				.where(eq(transactions.entryId, entryId));
 
+			if (changed.includes("tags")) {
+				await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
+
+				if (next.tagIds.length > 0) {
+					await tx
+						.insert(taggings)
+						.values(next.tagIds.map((tagId) => ({ transactionId: entryId, tagId })));
+				}
+			}
+
 			if (touchesEntry) {
 				await recomputeBalances(tx, account, minDate(current.date, next.date), deps.timeZone);
 			}
@@ -1079,9 +1131,11 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
-			// Keys and the detail row first: their foreign keys restrict deleting
-			// the entry. Without its keys, the line comes back on re-import, as in Sure.
+			// Keys, taggings and the detail row first: their foreign keys restrict
+			// deleting the entry. Without its keys, the line comes back on re-import,
+			// as in Sure.
 			await tx.delete(entryKeys).where(eq(entryKeys.entryId, entryId));
+			await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
 			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
 			await tx.delete(entries).where(eq(entries.id, entryId));
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
@@ -1180,6 +1234,37 @@ export async function countByMerchant(deps: ServiceDeps): Promise<Map<string, nu
 		.groupBy(transactions.merchantId);
 
 	return new Map(rows.map((row) => [row.merchantId, row.count]));
+}
+
+/**
+ * Removes a tag from every transaction that carries it and returns how many
+ * lost it. Serves a tag's delete with `origin: "maintenance"`: the user chose
+ * the tag, not each transaction, so `locked_fields` stay as they are (AD-10).
+ */
+export async function removeTag(
+	deps: ServiceDeps,
+	tagId: string,
+	// Maintenance only, for the same reason as `recategorise`.
+	_options: { origin: "maintenance" },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const result = await tx.delete(taggings).where(eq(taggings.tagId, tagId));
+
+			return result.rowsAffected;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** How many transactions each tag marks, by tag id; absent marks none. */
+export async function countByTag(deps: ServiceDeps): Promise<Map<string, number>> {
+	const rows = await deps.db
+		.select({ tagId: taggings.tagId, count: count() })
+		.from(taggings)
+		.groupBy(taggings.tagId);
+
+	return new Map(rows.map((row) => [row.tagId, row.count]));
 }
 
 /** What reverting an import deletes now: its created transactions, and its snapshot (0 or 1). */
@@ -1308,6 +1393,9 @@ export async function revertImport(
 			const ids = created.map((entry) => entry.id);
 
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
+			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(transactions).where(inArray(transactions.entryId, chunk)),
 			);
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
@@ -1378,7 +1466,7 @@ export async function revertImport(
 
 /**
  * Deletes an account and everything it holds, as one write: its entries'
- * keys, its transactions, all its entries, snapshots and opening anchor
+ * keys, its transactions' taggings, its transactions, all its entries, snapshots and opening anchor
  * included, its daily balances, its imports, then the account. Children go first, since their foreign keys restrict.
  * Every delete selects by `account_id` through a subquery, never a list of
  * ids, so a history of 50,000 transactions binds one parameter, not 50,000.
@@ -1395,6 +1483,14 @@ export async function deleteAccount(
 			await accountWithOpeningDate(tx, accountId);
 
 			await tx.delete(entryKeys).where(eq(entryKeys.accountId, accountId));
+			await tx
+				.delete(taggings)
+				.where(
+					inArray(
+						taggings.transactionId,
+						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
+					),
+				);
 			await tx
 				.delete(transactions)
 				.where(
@@ -1480,6 +1576,8 @@ export type TransactionRecord = {
 	categoryId: string | null;
 	/** `null` is « Sans marchand ». */
 	merchantId: string | null;
+	/** Sorted by id; the interface sorts the names. */
+	tagIds: string[];
 };
 
 /** A transaction as a list shows it, with its account's name. */
@@ -1544,7 +1642,32 @@ export async function findTransaction(
 		.where(eq(entries.id, entryId))
 		.get();
 
-	return row === undefined ? null : toRecord(row);
+	return row === undefined ? null : { ...toRecord(row), tagIds: await tagIdsOf(deps.db, entryId) };
+}
+
+/**
+ * The tags of each of `entryIds`, one query for a page rather than a join that
+ * would repeat a row once per tag.
+ */
+async function tagIdsByEntry(
+	deps: ServiceDeps,
+	entryIds: readonly string[],
+): Promise<Map<string, string[]>> {
+	const found = new Map<string, string[]>();
+
+	await inSequence(entryIds, KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await deps.db
+			.select({ transactionId: taggings.transactionId, tagId: taggings.tagId })
+			.from(taggings)
+			.where(inArray(taggings.transactionId, chunk))
+			.orderBy(taggings.tagId);
+
+		for (const row of rows) {
+			found.set(row.transactionId, [...(found.get(row.transactionId) ?? []), row.tagId]);
+		}
+	});
+
+	return found;
 }
 
 /**
@@ -1577,6 +1700,8 @@ export type TransactionFilter = {
 	uncategorised?: boolean | undefined;
 	/** Merchants, ORed; an unknown id matches nothing, an empty list nothing at all. */
 	merchantIds?: readonly string[] | undefined;
+	/** Tags, ORed; a row carrying several still matches once. */
+	tagIds?: readonly string[] | undefined;
 };
 
 /** Whether the filter reads `transactions`, so the count and the sum must join it. */
@@ -1634,13 +1759,14 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
  * the caller skips the query rather than asking SQLite for an empty `or`.
  */
 function filterCondition(filter: TransactionFilter): SQL | undefined | null {
-	const { accountIds, amounts, q, merchantIds } = filter;
+	const { accountIds, amounts, q, merchantIds, tagIds } = filter;
 	const category = categoryCondition(filter);
 
 	if (
 		accountIds?.length === 0 ||
 		amounts?.length === 0 ||
 		merchantIds?.length === 0 ||
+		tagIds?.length === 0 ||
 		category === null
 	) {
 		return null;
@@ -1663,6 +1789,11 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 			: or(contains(transactions.label, q), contains(transactions.notes, q)),
 		category,
 		merchantIds === undefined ? undefined : inArray(transactions.merchantId, [...merchantIds]),
+		// `exists` rather than a join: a row with two of the tags would be listed,
+		// counted and summed twice.
+		tagIds === undefined
+			? undefined
+			: sql`exists (select 1 from ${taggings} where ${taggings.transactionId} = ${entries.id} and ${inArray(taggings.tagId, [...tagIds])})`,
 	);
 }
 
@@ -1700,8 +1831,13 @@ export async function listTransactions(
 				.innerJoin(transactions, eq(transactions.entryId, entries.id))
 				.where(where);
 
+	const tagsOf = await tagIdsByEntry(
+		deps,
+		rows.map((row) => row.id),
+	);
+
 	return {
-		items: rows.map(toRecord),
+		items: rows.map((row) => ({ ...toRecord(row), tagIds: tagsOf.get(row.id) ?? [] })),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
 }

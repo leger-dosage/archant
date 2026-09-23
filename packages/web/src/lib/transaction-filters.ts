@@ -42,6 +42,12 @@ export const operationsSearchSchema = z
 			.pipe(z.array(z.string()).min(1))
 			.optional()
 			.catch(undefined),
+		// Tag ids, ORed.
+		tag: z
+			.union([z.string().transform((id) => [id]), z.array(z.string())])
+			.pipe(z.array(z.string()).min(1))
+			.optional()
+			.catch(undefined),
 		from: isoDate.optional().catch(undefined),
 		to: isoDate.optional().catch(undefined),
 		amountMin: text
@@ -77,13 +83,14 @@ export type OperationsSearch = z.output<typeof operationsSearchSchema>;
 /** The filters alone, without the page: what the query key and the chips read. */
 export type TransactionFilters = Omit<OperationsSearch, "page">;
 
-export const FILTER_KINDS = ["account", "category", "merchant", "period", "amount"] as const;
+export const FILTER_KINDS = ["account", "category", "tag", "merchant", "period", "amount"] as const;
 
 export type FilterKind = (typeof FILTER_KINDS)[number];
 
 const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]> = {
 	account: ["account"],
 	category: ["category"],
+	tag: ["tag"],
 	merchant: ["merchant"],
 	period: ["from", "to"],
 	amount: ["amountMin", "amountMax"],
@@ -116,6 +123,7 @@ export function toApiQuery(filters: TransactionFilters, page: number) {
 		...(filters.account === undefined ? {} : { account: filters.account }),
 		...(filters.category === undefined ? {} : { category: filters.category }),
 		...(filters.merchant === undefined ? {} : { merchant: filters.merchant }),
+		...(filters.tag === undefined ? {} : { tag: filters.tag }),
 		...(filters.from === undefined ? {} : { from: filters.from }),
 		...(filters.to === undefined ? {} : { to: filters.to }),
 		...(filters.amountMin === undefined ? {} : { amountMin: filters.amountMin }),
@@ -129,6 +137,7 @@ type ChipKey = `operations.chips.${
 	| "unknownCategory"
 	| "uncategorised"
 	| "unknownMerchant"
+	| "unknownTag"
 	| "periodBetween"
 	| "periodSince"
 	| "periodUntil"
@@ -146,6 +155,7 @@ export type FilterNames = {
 	account: (id: string) => string | undefined;
 	category: (id: string) => string | undefined;
 	merchant: (id: string) => string | undefined;
+	tag: (id: string) => string | undefined;
 };
 
 function accountLabel(ids: readonly string[], names: FilterNames, t: Translate) {
@@ -164,6 +174,10 @@ function categoryLabel(ids: readonly string[], names: FilterNames, t: Translate)
 
 function merchantLabel(ids: readonly string[], names: FilterNames, t: Translate) {
 	return ids.map((id) => names.merchant(id) ?? t("operations.chips.unknownMerchant")).join(", ");
+}
+
+function tagLabel(ids: readonly string[], names: FilterNames, t: Translate) {
+	return ids.map((id) => names.tag(id) ?? t("operations.chips.unknownTag")).join(", ");
 }
 
 function periodLabel(from: string | undefined, to: string | undefined, t: Translate) {
@@ -203,6 +217,10 @@ export function filterChips(
 
 	if (filters.category !== undefined) {
 		chips.push({ kind: "category", label: categoryLabel(filters.category, names, t) });
+	}
+
+	if (filters.tag !== undefined) {
+		chips.push({ kind: "tag", label: tagLabel(filters.tag, names, t) });
 	}
 
 	if (filters.merchant !== undefined) {

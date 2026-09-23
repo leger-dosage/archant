@@ -77,24 +77,28 @@ export function useUpdateTransaction(accountId: string) {
 	return useMutation({
 		mutationFn: async ({ id, input }: { id: string; input: TransactionPatchInput }) =>
 			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: input }))).data,
-		// The sheet can change the category and the merchant too, and with them their counts.
+		// The sheet can change the category, the merchant and the tags too, and
+		// with them their counts.
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
 			]),
 	});
 }
 
-/** A field a row edits in place, with an optimistic update and « Annuler ». */
-type RowField = "categoryId" | "merchantId";
+/** The fields a row edits in place, with an optimistic update and « Annuler ». */
+type RowValues = { categoryId: string | null; merchantId: string | null; tagIds: string[] };
 
-type RowChange = {
+type RowField = keyof RowValues;
+
+type RowChange<Field extends RowField> = {
 	id: string;
-	value: string | null;
+	value: RowValues[Field];
 	/** What the row showed before, for « Annuler ». */
-	previous: string | null;
+	previous: RowValues[Field];
 	/** An undo shows no toast of its own: it would offer to undo the undo. */
 	undo?: boolean;
 };
@@ -115,24 +119,29 @@ const ROW_FIELDS = {
 		toast: "merchant",
 		counts: queryKeys.merchants.all,
 	},
+	tagIds: {
+		changed: "transactions.tags.changed",
+		undo: "transactions.tags.undo",
+		toast: "tags",
+		counts: queryKeys.tags.all,
+	},
 } as const;
 
 /**
- * Sets one row's category or merchant from the list. The row changes at once
+ * Sets one row's category, merchant or tags from the list. The row changes at once
  * in every cached list; a success toast offers « Annuler », which sets the
  * previous value back, by hand again, so it stays locked. A failure puts the
  * rows back and shows a destructive toast.
  */
-function useSetRowField(field: RowField) {
+function useSetRowField<Field extends RowField>(field: Field) {
 	const queryClient = useQueryClient();
 	const texts = ROW_FIELDS[field];
-	const patchOf = (value: string | null) =>
-		field === "categoryId" ? { categoryId: value } : { merchantId: value };
+	const patchOf = (value: RowValues[Field]): Partial<RowValues> => ({ [field]: value });
 
 	const mutation = useMutation({
-		mutationFn: async ({ id, value }: RowChange) =>
+		mutationFn: async ({ id, value }: RowChange<Field>) =>
 			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: patchOf(value) }))).data,
-		onMutate: async ({ id, value }: RowChange) => {
+		onMutate: async ({ id, value }: RowChange<Field>) => {
 			// A refetch landing after the optimistic write would show the old value again.
 			await queryClient.cancelQueries({ queryKey: queryKeys.transactions.all });
 			const snapshot = queryClient.getQueriesData<CachedPage>({
@@ -200,6 +209,11 @@ export function useSetTransactionCategory() {
 
 export function useSetTransactionMerchant() {
 	return useSetRowField("merchantId");
+}
+
+/** Replaces one row's tags from the list, as a whole set, with « Annuler ». */
+export function useSetTransactionTags() {
+	return useSetRowField("tagIds");
 }
 
 export function useDeleteTransaction(accountId: string) {

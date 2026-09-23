@@ -75,7 +75,8 @@
 			"openRow": "Ouvrir l'opération",
 			"importFile": "Importer un fichier sur la page d'un compte",
 			"categoriseRow": "Changer la catégorie de l'opération",
-			"setMerchantRow": "Changer le marchand de l'opération"
+			"setMerchantRow": "Changer le marchand de l'opération",
+			"setTagsRow": "Changer les étiquettes de l'opération"
 		}
 	},
 	"accounts": {
@@ -198,7 +199,8 @@
 			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
 			"excluded": "Exclure des rapports",
 			"category": "Catégorie",
-			"merchant": "Marchand"
+			"merchant": "Marchand",
+			"tags": "Étiquettes"
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -233,6 +235,15 @@
 			"create": "Créer \"{{name}}\"",
 			"changed": "Marchand modifié",
 			"undo": "Annuler"
+		},
+		"tags": {
+			"none": "Aucune étiquette",
+			"search": "Rechercher une étiquette",
+			"empty": "Aucune étiquette trouvée.",
+			"create": "Créer \"{{name}}\"",
+			"more": "+{{count}}",
+			"changed": "Étiquettes modifiées",
+			"undo": "Annuler"
 		}
 	},
 	"operations": {
@@ -243,6 +254,7 @@
 		"kinds": {
 			"account": "Compte",
 			"category": "Catégorie",
+			"tag": "Étiquette",
 			"merchant": "Marchand",
 			"period": "Période",
 			"amount": "Montant"
@@ -261,6 +273,7 @@
 			"uncategorised": "Sans catégorie",
 			"unknownCategory": "Catégorie inconnue",
 			"unknownMerchant": "Marchand inconnu",
+			"unknownTag": "Étiquette inconnue",
 			"periodBetween": "Du {{from}} au {{to}}",
 			"periodSince": "Depuis le {{from}}",
 			"periodUntil": "Jusqu'au {{to}}",
@@ -273,6 +286,7 @@
 			"noAccount": "Aucun compte.",
 			"categories": "Catégories à afficher",
 			"merchants": "Marchands à afficher",
+			"tags": "Étiquettes à afficher",
 			"from": "Du",
 			"to": "Au",
 			"min": "Minimum",
@@ -613,11 +627,38 @@
 			"deleted": "Marchand « {{name}} » supprimé."
 		}
 	},
+	"tags": {
+		"title": "Étiquettes",
+		"description": "Une étiquette suit un voyage ou un projet à travers les catégories. Créez-en une depuis une opération, en tapant son nom dans le champ Étiquettes.",
+		"empty": "Aucune étiquette pour l'instant.",
+		"transactions_one": "{{count}} opération",
+		"transactions_other": "{{count}} opérations",
+		"actions": "Actions pour {{name}}",
+		"rename": "Renommer",
+		"delete": "Supprimer",
+		"renameDialog": {
+			"title": "Renommer « {{name}} »",
+			"description": "Toutes les opérations de cette étiquette afficheront le nouveau nom.",
+			"name": "Nom",
+			"action": "Renommer",
+			"saved": "Étiquette « {{name}} » renommée.",
+			"nameTaken": "Une étiquette porte déjà ce nom."
+		},
+		"deleteDialog": {
+			"title": "Supprimer l'étiquette « {{name}} » ?",
+			"count_one": "{{count}} opération perdra cette étiquette. Elle ne sera pas supprimée.",
+			"count_other": "{{count}} opérations perdront cette étiquette. Elles ne seront pas supprimées.",
+			"none": "Aucune opération n'a cette étiquette.",
+			"action": "Supprimer",
+			"deleted": "Étiquette « {{name}} » supprimée."
+		}
+	},
 	"settings": {
 		"title": "Réglages",
 		"sections": {
 			"categories": "Catégories",
 			"merchants": "Marchands",
+			"tags": "Étiquettes",
 			"security": "Sécurité"
 		}
 	},

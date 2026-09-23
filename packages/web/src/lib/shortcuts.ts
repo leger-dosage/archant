@@ -114,6 +114,13 @@ export const SHORTCUTS = [
 		section: "lists",
 		inFields: false,
 	},
+	{
+		id: "setTagsRow",
+		keys: ["t"],
+		label: "shortcuts.labels.setTagsRow",
+		section: "lists",
+		inFields: false,
+	},
 ] as const satisfies readonly {
 	id: string;
 	keys: readonly [string, ...string[]];

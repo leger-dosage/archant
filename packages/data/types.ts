@@ -7,6 +7,8 @@ import type { entryKeys } from "./schema/entry-keys.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { merchants } from "./schema/merchants.ts";
+import type { taggings } from "./schema/taggings.ts";
+import type { tags } from "./schema/tags.ts";
 import type { transactions } from "./schema/transactions.ts";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
@@ -42,3 +44,9 @@ export type NewCategory = InferInsertModel<typeof categories>;
 
 export type Merchant = InferSelectModel<typeof merchants>;
 export type NewMerchant = InferInsertModel<typeof merchants>;
+
+export type Tag = InferSelectModel<typeof tags>;
+export type NewTag = InferInsertModel<typeof tags>;
+
+export type Tagging = InferSelectModel<typeof taggings>;
+export type NewTagging = InferInsertModel<typeof taggings>;

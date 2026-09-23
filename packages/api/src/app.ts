@@ -20,6 +20,7 @@ import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
+import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 
 export type AppDeps = ServiceDeps & {
@@ -54,6 +55,7 @@ function createApi(deps: AppDeps) {
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
 		.route("/merchants", merchantsRoutes(deps))
+		.route("/tags", tagsRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }

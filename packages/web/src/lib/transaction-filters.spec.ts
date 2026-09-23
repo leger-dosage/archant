@@ -18,10 +18,12 @@ const accounts = new Map([
 ]);
 const categories = new Map([["c", "Courses"]]);
 const merchants = new Map([["m", "Carrefour"]]);
+const tags = new Map([["t", "Vacances"]]);
 const nameOf = {
 	account: (id: string) => accounts.get(id),
 	category: (id: string) => categories.get(id),
 	merchant: (id: string) => merchants.get(id),
+	tag: (id: string) => tags.get(id),
 };
 
 describe("operationsSearchSchema", () => {
@@ -111,6 +113,12 @@ describe("operationsSearchSchema, across params", () => {
 		});
 		expect(operationsSearchSchema.parse({ merchant: [] })).toEqual({});
 	});
+
+	it("reads a lone tag as a list of one, and drops an empty list", () => {
+		expect(operationsSearchSchema.parse({ tag: "t" })).toEqual({ tag: ["t"] });
+		expect(operationsSearchSchema.parse({ tag: ["t", "u"] })).toEqual({ tag: ["t", "u"] });
+		expect(operationsSearchSchema.parse({ tag: [] })).toEqual({});
+	});
 });
 
 describe("filtersOf and hasFilters", () => {
@@ -154,6 +162,10 @@ describe("withoutFilter", () => {
 			merchant: undefined,
 			account: ["a"],
 		});
+		expect(withoutFilter({ ...search, tag: ["t"] }, "tag")).toMatchObject({
+			tag: undefined,
+			account: ["a"],
+		});
 		expect(withoutFilter(search, "q")).toMatchObject({ q: undefined, account: ["a"] });
 	});
 });
@@ -167,6 +179,7 @@ describe("toApiQuery", () => {
 					account: ["a"],
 					category: ["none", "c"],
 					merchant: ["m"],
+					tag: ["t"],
 					from: "2026-09-01",
 					to: "2026-09-10",
 					amountMin: "20",
@@ -180,6 +193,7 @@ describe("toApiQuery", () => {
 			account: ["a"],
 			category: ["none", "c"],
 			merchant: ["m"],
+			tag: ["t"],
 			from: "2026-09-01",
 			to: "2026-09-10",
 			amountMin: "20",
@@ -212,6 +226,12 @@ describe("filterChips", () => {
 	it("names the merchants, an unknown one included", () => {
 		expect(filterChips({ merchant: ["m", "z"] }, nameOf, t)).toEqual([
 			{ kind: "merchant", label: "Carrefour, operations.chips.unknownMerchant" },
+		]);
+	});
+
+	it("names the tags, an unknown one included", () => {
+		expect(filterChips({ tag: ["t", "z"] }, nameOf, t)).toEqual([
+			{ kind: "tag", label: "Vacances, operations.chips.unknownTag" },
 		]);
 	});
 
@@ -249,12 +269,13 @@ describe("filterChips", () => {
 					amountMin: "1",
 					from: "2026-09-01",
 					merchant: ["m"],
+					tag: ["t"],
 					category: ["c"],
 					account: ["a"],
 				},
 				nameOf,
 				t,
 			).map((chip) => chip.kind),
-		).toEqual(["account", "category", "merchant", "period", "amount"]);
+		).toEqual(["account", "category", "tag", "merchant", "period", "amount"]);
 	});
 });

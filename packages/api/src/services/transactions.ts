@@ -205,6 +205,7 @@ export async function listAllTransactions(
 		q: query.q,
 		...(await categoryFilterOf(deps, query.category)),
 		merchantIds: query.merchant,
+		tagIds: query.tag,
 	};
 	const page = { page: query.page, pageSize: query.pageSize };
 	const { items, total } = await ledger.listTransactions(deps, filter, page);
