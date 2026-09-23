@@ -12,11 +12,14 @@ import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 
 import { AmountField } from "@/components/AmountField";
+import { CategoryCombobox } from "@/components/CategoryCombobox";
+import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Sheet,
 	SheetContent,
@@ -25,7 +28,9 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -38,7 +43,7 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
-const FIELD_NAMES = ["date", "label", "amount", "notes"] as const;
+const FIELD_NAMES = ["date", "label", "amount", "notes", "categoryId"] as const;
 
 type FieldName = (typeof FIELD_NAMES)[number];
 
@@ -73,14 +78,71 @@ function FieldMessage({ id, error }: { id: string; error: FieldError | undefined
 
 function valuesOf(transaction: TransactionData | null, openingDate: string): TransactionFormInput {
 	return transaction === null
-		? { date: defaultDate(openingDate), label: "", amount: "", notes: "", excluded: false }
+		? {
+				date: defaultDate(openingDate),
+				label: "",
+				amount: "",
+				notes: "",
+				excluded: false,
+				categoryId: null,
+			}
 		: {
 				date: transaction.date,
 				label: transaction.label,
 				amount: amountToText(transaction.amount, transaction.currency),
 				notes: transaction.notes ?? "",
 				excluded: transaction.excluded,
+				categoryId: transaction.categoryId,
 			};
+}
+
+/** The sheet's Catégorie field: the list's combobox behind a button showing the choice. */
+function CategoryField({
+	value,
+	onChange,
+	invalid,
+	describedBy,
+}: {
+	value: string | null;
+	onChange: (categoryId: string | null) => void;
+	invalid: boolean;
+	describedBy: string | undefined;
+}) {
+	const categories = useCategories();
+	const [open, setOpen] = useState(false);
+	const { color, name } = useCategoryShown(value);
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					id="transaction-category"
+					type="button"
+					variant="outline"
+					className="w-full justify-start font-normal"
+					aria-invalid={invalid}
+					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
+				>
+					<CategoryDot color={color} />
+					{name === null ? (
+						<Skeleton className="h-3 w-24" />
+					) : (
+						<span className="truncate">{name}</span>
+					)}
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+				<CategoryCombobox
+					categories={categories.data ?? []}
+					value={value}
+					onSelect={(categoryId) => {
+						onChange(categoryId);
+						setOpen(false);
+					}}
+				/>
+			</PopoverContent>
+		</Popover>
+	);
 }
 
 type TransactionFormProps = {
@@ -116,6 +178,7 @@ function TransactionForm({
 	const date = useController({ control: form.control, name: "date" });
 	const amount = useController({ control: form.control, name: "amount" });
 	const excluded = useController({ control: form.control, name: "excluded" });
+	const category = useController({ control: form.control, name: "categoryId" });
 
 	useEffect(() => {
 		onDirtyChange(isDirty);
@@ -137,11 +200,16 @@ function TransactionForm({
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			if (transaction === null) {
-				// A new transaction is always counted; the switch shows on edits only.
-				const { excluded: _excluded, ...input } = values;
+				// A new transaction is always counted and starts « Sans catégorie »:
+				// the switch and the category show on edits only.
+				const { excluded: _excluded, categoryId: _categoryId, ...input } = values;
 				await createTransaction.mutateAsync(input);
 			} else {
-				await updateTransaction.mutateAsync({ id: transaction.id, input: values });
+				// Sent only when changed: a category deleted elsewhere since the sheet
+				// opened would otherwise refuse the save of any other field.
+				const { categoryId: _categoryId, ...rest } = values;
+				const input = form.formState.dirtyFields.categoryId === true ? values : rest;
+				await updateTransaction.mutateAsync({ id: transaction.id, input });
 			}
 			// No success toast: the row and the balance changing say it.
 			onClose();
@@ -236,6 +304,21 @@ function TransactionForm({
 					/>
 					<FieldMessage id="transaction-notes-error" error={errors.notes} />
 				</div>
+
+				{transaction !== null && (
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
+						<CategoryField
+							value={category.field.value}
+							onChange={category.field.onChange}
+							invalid={errors.categoryId !== undefined}
+							describedBy={
+								errors.categoryId === undefined ? undefined : "transaction-categoryId-error"
+							}
+						/>
+						<FieldMessage id="transaction-categoryId-error" error={errors.categoryId} />
+					</div>
+				)}
 
 				{transaction !== null && (
 					<div className="flex items-center justify-between gap-4">

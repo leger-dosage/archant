@@ -711,6 +711,72 @@ describe("PATCH /api/transactions/:id", () => {
 
 		expect(status).toBe(404);
 	});
+
+	it("sets and clears a category, leaving the balance alone", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const client = testClient(buildApp()).api.transactions[":id"];
+
+		const set = await client.$patch({ param: { id: data.id }, json: { categoryId: groceries.id } });
+
+		expect(set.status).toBe(200);
+		expect((await set.json()).data).toMatchObject({ categoryId: groceries.id, amount: -4290 });
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
+
+		const cleared = await client.$patch({ param: { id: data.id }, json: { categoryId: null } });
+
+		expect((await cleared.json()).data).toMatchObject({ categoryId: null });
+	});
+
+	it("locks a category set by hand, and leaves an unchanged one unlocked", async () => {
+		const account = await openAccount();
+		const set = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse((await postTransaction(account.id, expense)).body).data.id;
+		const unchanged = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse((await postTransaction(account.id, expense)).body).data.id;
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const locksOf = async (id: string) =>
+			(
+				await temp.db.get<{ locked: string }>(
+					sql`select locked_fields as locked from transactions where entry_id = ${id}`,
+				)
+			)?.locked;
+
+		await request("PATCH", `/api/transactions/${set}`, { categoryId: groceries.id });
+		// The sheet sends the category it shows, whatever else it saves.
+		await request("PATCH", `/api/transactions/${unchanged}`, {
+			categoryId: null,
+			label: "Autre",
+		});
+
+		// A transaction typed by hand starts with its date, amount and label locked.
+		await expect(locksOf(set)).resolves.toBe('["date","amount","label","category"]');
+		await expect(locksOf(unchanged)).resolves.toBe('["date","amount","label"]');
+	});
+
+	it("refuses an unknown category and writes nothing", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			categoryId: "x",
+			label: "Autre",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "categoryId", code: "invalid_value" }],
+		});
+		// An empty patch answers the transaction as it stands.
+		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
+		expect(after.body).toMatchObject({ data: { label: "Boulangerie", categoryId: null } });
+	});
 });
 
 const listItem = z.object({
@@ -721,6 +787,7 @@ const listItem = z.object({
 	label: z.string(),
 	amount: z.number(),
 	excluded: z.boolean(),
+	categoryId: z.string().nullable(),
 });
 
 const listBody = z.object({
@@ -879,6 +946,64 @@ describe("GET /api/transactions", () => {
 		expect(data.items.find((item) => item.id === excluded)?.excluded).toBe(true);
 	});
 
+	it("filters on a parent category, its children included", async () => {
+		const account = await openOwn();
+		const client = testClient(buildApp(own?.db)).api;
+		const parent = await (await client.categories.$post({ json: category("Logement") })).json();
+		const child = await (
+			await client.categories.$post({ json: category("Loyer", { parentId: parent.data.id }) })
+		).json();
+		const other = await (await client.categories.$post({ json: category("Loisirs") })).json();
+		const onParent = await postOwn(account.id, { ...expense, label: "Travaux" });
+		const onChild = await postOwn(account.id, { ...expense, label: "Loyer" });
+		const onOther = await postOwn(account.id, { ...expense, label: "Cinéma" });
+		await postOwn(account.id, { ...expense, label: "Virement" });
+		await [
+			[onParent, parent.data.id],
+			[onChild, child.data.id],
+			[onOther, other.data.id],
+		].reduce(async (previous, [id = "", categoryId = ""]) => {
+			await previous;
+			await client.transactions[":id"].$patch({ param: { id }, json: { categoryId } });
+		}, Promise.resolve());
+
+		const data = await listed(`?category=${parent.data.id}`);
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Loyer", "Travaux"]);
+		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		await expect(listed(`?category=${child.data.id}`)).resolves.toMatchObject({ total: 1 });
+	});
+
+	it("filters on « Sans catégorie » and a category together, and matches nothing for an unknown one", async () => {
+		const account = await openOwn();
+		const client = testClient(buildApp(own?.db)).api;
+		const leisure = await (await client.categories.$post({ json: category("Loisirs") })).json();
+		const onLeisure = await postOwn(account.id, { ...expense, label: "Cinéma" });
+		await postOwn(account.id, { ...expense, label: "Virement" });
+		await client.transactions[":id"].$patch({
+			param: { id: onLeisure },
+			json: { categoryId: leisure.data.id },
+		});
+
+		const data = await listed(`?category=none&category=${leisure.data.id}`);
+		const uncategorised = await listed("?category=none");
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Cinéma", "Virement"]);
+		expect(uncategorised.items.map((item) => item.label)).toEqual(["Virement"]);
+		expect(uncategorised.items[0]?.categoryId).toBeNull();
+		await expect(listed("?category=nope")).resolves.toMatchObject({ items: [], total: 0 });
+	});
+
+	it("refuses more categories than the cap", async () => {
+		own = await freshDatabase();
+		const query = Array.from({ length: 101 }, (_, index) => `category=c${index}`).join("&");
+
+		const { status, body } = await listOwn(`?${query}`);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields?.[0]?.path).toBe("category");
+	});
+
 	it("answers an empty page for an unknown account", async () => {
 		const account = await openOwn();
 		await postOwn(account.id, expense);
@@ -923,7 +1048,7 @@ describe("GET /api/transactions", () => {
 		await postOwn(account.id, expense);
 
 		const response = await testClient(buildApp(own?.db)).api.transactions.$get({
-			query: { account: [account.id], amountMin: "1", q: "boul" },
+			query: { account: [account.id], category: ["none"], amountMin: "1", q: "boul" },
 		});
 
 		expect(response.status).toBe(200);
@@ -2977,11 +3102,18 @@ async function createCategory(name: string, overrides: Partial<CreateCategoryInp
 	return (await response.json()).data;
 }
 
-/** Puts every transaction of the account in the category, as Story 4.2 will. */
+/** Puts every transaction of the account in the category, by hand through the API. */
 async function categorise(accountId: string, categoryId: string) {
-	await temp.db.run(
-		sql`update transactions set category_id = ${categoryId} where entry_id in (select id from entries where account_id = ${accountId})`,
+	const rows = await temp.db.all<{ id: string }>(
+		sql`select id from entries where account_id = ${accountId} and kind = 'transaction'`,
 	);
+
+	await rows.reduce(async (previous, row) => {
+		await previous;
+		const { status } = await request("PATCH", `/api/transactions/${row.id}`, { categoryId });
+
+		expect(status).toBe(200);
+	}, Promise.resolve());
 }
 
 async function categoryList(db = temp.db) {

@@ -1,14 +1,22 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { categories } from "./categories.ts";
+import { type CategoryOrigin, CATEGORY_ORIGINS, categories } from "./categories.ts";
+import { inList } from "./check.ts";
 import { entries } from "./entries.ts";
 
 /**
  * Fields a user edit can lock (AD-10). Grows with the columns later epics add,
  * so a rule or a provider knows by name what it must not overwrite.
  */
-export const LOCKABLE_FIELDS = ["date", "amount", "label", "notes", "excluded"] as const;
+export const LOCKABLE_FIELDS = [
+	"date",
+	"amount",
+	"label",
+	"notes",
+	"excluded",
+	"category",
+] as const;
 
 export type LockableField = (typeof LOCKABLE_FIELDS)[number];
 
@@ -44,7 +52,20 @@ export const transactions = sqliteTable(
 		// service, which moves its transactions first, so a bypass fails instead of
 		// silently uncategorising them.
 		categoryId: text("category_id").references(() => categories.id, { onDelete: "restrict" }),
+		// Who set `categoryId`; the lock itself lives in `lockedFields`, so a
+		// merge can move a category without deciding who owns it.
+		categoryOrigin: text("category_origin").$type<CategoryOrigin>(),
 	},
-	// Every category delete and merge, and Story 4.2's filter, look rows up by it.
-	(table) => [index("transactions_category").on(table.categoryId)],
+	(table) => [
+		// Every category delete and merge, and the list's filter, look rows up by it.
+		index("transactions_category").on(table.categoryId),
+		check(
+			"transactions_category_origin_check",
+			sql`${table.categoryOrigin} in ${inList(CATEGORY_ORIGINS)}`,
+		),
+		check(
+			"transactions_category_origin_set_check",
+			sql`(${table.categoryId} is null) = (${table.categoryOrigin} is null)`,
+		),
+	],
 );

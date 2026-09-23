@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { compareAmountBounds, parseAmountBound } from "@archant/api/schemas/transactions";
+import {
+	UNCATEGORISED,
+	compareAmountBounds,
+	parseAmountBound,
+} from "@archant/api/schemas/transactions";
 
 import { isoToFrench } from "@/lib/dates";
 
@@ -22,6 +26,12 @@ export const operationsSearchSchema = z
 		// A hand-written `?account=<id>` reaches the router as a lone string, a form
 		// the API accepts too.
 		account: z
+			.union([z.string().transform((id) => [id]), z.array(z.string())])
+			.pipe(z.array(z.string()).min(1))
+			.optional()
+			.catch(undefined),
+		// Category ids, `none` standing for « Sans catégorie ».
+		category: z
 			.union([z.string().transform((id) => [id]), z.array(z.string())])
 			.pipe(z.array(z.string()).min(1))
 			.optional()
@@ -61,12 +71,13 @@ export type OperationsSearch = z.output<typeof operationsSearchSchema>;
 /** The filters alone, without the page: what the query key and the chips read. */
 export type TransactionFilters = Omit<OperationsSearch, "page">;
 
-export const FILTER_KINDS = ["account", "period", "amount"] as const;
+export const FILTER_KINDS = ["account", "category", "period", "amount"] as const;
 
 export type FilterKind = (typeof FILTER_KINDS)[number];
 
 const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]> = {
 	account: ["account"],
+	category: ["category"],
 	period: ["from", "to"],
 	amount: ["amountMin", "amountMax"],
 	q: ["q"],
@@ -96,6 +107,7 @@ export function toApiQuery(filters: TransactionFilters, page: number) {
 	return {
 		page: String(page),
 		...(filters.account === undefined ? {} : { account: filters.account }),
+		...(filters.category === undefined ? {} : { category: filters.category }),
 		...(filters.from === undefined ? {} : { from: filters.from }),
 		...(filters.to === undefined ? {} : { to: filters.to }),
 		...(filters.amountMin === undefined ? {} : { amountMin: filters.amountMin }),
@@ -106,6 +118,8 @@ export function toApiQuery(filters: TransactionFilters, page: number) {
 
 type ChipKey = `operations.chips.${
 	| "unknownAccount"
+	| "unknownCategory"
+	| "uncategorised"
 	| "periodBetween"
 	| "periodSince"
 	| "periodUntil"
@@ -118,12 +132,24 @@ export type Translate = (key: ChipKey, values?: Record<string, string>) => strin
 
 export type FilterChip = { kind: FilterKind; label: string };
 
-function accountLabel(
-	ids: readonly string[],
-	nameOf: (id: string) => string | undefined,
-	t: Translate,
-) {
-	return ids.map((id) => nameOf(id) ?? t("operations.chips.unknownAccount")).join(", ");
+/** The names the chips show, looked up in the lists the page already holds. */
+export type FilterNames = {
+	account: (id: string) => string | undefined;
+	category: (id: string) => string | undefined;
+};
+
+function accountLabel(ids: readonly string[], names: FilterNames, t: Translate) {
+	return ids.map((id) => names.account(id) ?? t("operations.chips.unknownAccount")).join(", ");
+}
+
+function categoryLabel(ids: readonly string[], names: FilterNames, t: Translate) {
+	return ids
+		.map((id) =>
+			id === UNCATEGORISED
+				? t("operations.chips.uncategorised")
+				: (names.category(id) ?? t("operations.chips.unknownCategory")),
+		)
+		.join(", ");
 }
 
 function periodLabel(from: string | undefined, to: string | undefined, t: Translate) {
@@ -152,13 +178,17 @@ function amountLabel(min: string | undefined, max: string | undefined, t: Transl
  */
 export function filterChips(
 	filters: TransactionFilters,
-	nameOf: (id: string) => string | undefined,
+	names: FilterNames,
 	t: Translate,
 ): FilterChip[] {
 	const chips: FilterChip[] = [];
 
 	if (filters.account !== undefined) {
-		chips.push({ kind: "account", label: accountLabel(filters.account, nameOf, t) });
+		chips.push({ kind: "account", label: accountLabel(filters.account, names, t) });
+	}
+
+	if (filters.category !== undefined) {
+		chips.push({ kind: "category", label: categoryLabel(filters.category, names, t) });
 	}
 
 	if (filters.from !== undefined || filters.to !== undefined) {

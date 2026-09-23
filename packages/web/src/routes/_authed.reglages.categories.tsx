@@ -9,6 +9,7 @@ import type { CategoryKind } from "@archant/data/schema/categories";
 import { CATEGORY_KINDS } from "@archant/data/schema/categories";
 
 import { CategoryDialog } from "@/components/CategoryDialog";
+import { CategoryDot } from "@/components/CategoryDot";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";
 import { MergeCategoryDialog } from "@/components/MergeCategoryDialog";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCategories } from "@/hooks/useCategories";
 import { errorCodeOf } from "@/lib/api";
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
+import { categoryTree } from "@/lib/category-tree";
 
 export const Route = createFileRoute("/_authed/reglages/categories")({
 	component: CategoriesPage,
@@ -48,11 +50,7 @@ function CategoryRow({
 
 	return (
 		<div className="flex min-h-11 items-center gap-3 py-1">
-			<span
-				aria-hidden="true"
-				className="size-2 shrink-0 rounded-full"
-				style={{ backgroundColor: category.color }}
-			/>
+			<CategoryDot color={category.color} />
 			<Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
 			<span className="min-w-0 flex-1 truncate">{category.name}</span>
 			<span className="shrink-0 text-sm text-muted-foreground tabular-nums">
@@ -95,23 +93,18 @@ function CategoryGroup({
 }) {
 	const { t } = useTranslation();
 	const headingId = `categories-${kind}`;
-	// The list arrives sorted by name, so each level keeps that order.
-	const parents = categories.filter(
-		(category) => category.parentId === null && category.kind === kind,
-	);
+	const branches = categoryTree(categories).filter(({ parent }) => parent.kind === kind);
 
 	return (
 		<section aria-labelledby={headingId} className="flex flex-col gap-1">
 			<h3 id={headingId} className="text-sm font-medium text-muted-foreground">
 				{t(`categories.groups.${kind}`)}
 			</h3>
-			{parents.length === 0 ? (
+			{branches.length === 0 ? (
 				<p className="py-2 text-sm text-muted-foreground">{t("categories.groupEmpty")}</p>
 			) : (
 				<ul className="divide-y">
-					{parents.map((parent) => {
-						const children = categories.filter((category) => category.parentId === parent.id);
-
+					{branches.map(({ parent, children }) => {
 						return (
 							<li key={parent.id}>
 								<CategoryRow category={parent} onAction={(action) => onAction(action, parent)} />

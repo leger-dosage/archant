@@ -276,6 +276,7 @@ describe("ingest", () => {
 			notes: null,
 			reference: null,
 			excluded: false,
+			categoryId: null,
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -1865,6 +1866,106 @@ describe("updateTransaction", () => {
 			updateTransaction(deps(), "nope", { label: "x" }, { origin: "user" }),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
+
+	it("sets a category by hand, recording the user and locking it, without touching balances", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const id = await add(account.id, {}, "sync");
+		const entry = await temp.db.select().from(entries).where(eq(entries.id, id)).get();
+		const recompute = vi.spyOn(forward, "forwardBalances");
+		setToday("2026-09-21T11:00:00Z");
+
+		await expect(
+			updateTransaction(deps(), id, { categoryId: groceries }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ categoryId: groceries });
+		await expect(categoryOriginOf(id)).resolves.toBe("user");
+		await expect(lockedFields(id)).resolves.toEqual(["category"]);
+		await expect(temp.db.select().from(entries).where(eq(entries.id, id)).get()).resolves.toEqual(
+			entry,
+		);
+		expect(recompute).not.toHaveBeenCalled();
+	});
+
+	it("clears a category by hand, locking it too", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { categoryId: groceries }, { origin: "rule" });
+
+		await updateTransaction(deps(), id, { categoryId: null }, { origin: "user" });
+
+		await expect(categoryOf(id)).resolves.toBeNull();
+		await expect(categoryOriginOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual(["category"]);
+	});
+
+	it("records a rule's category without locking it, and a provider's for a sync", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const byRule = await add(account.id, {}, "sync");
+		const bySync = await add(account.id, {}, "sync");
+
+		await updateTransaction(deps(), byRule, { categoryId: groceries }, { origin: "rule" });
+		await updateTransaction(deps(), bySync, { categoryId: groceries }, { origin: "sync" });
+
+		await expect(categoryOriginOf(byRule)).resolves.toBe("rule");
+		await expect(lockedFields(byRule)).resolves.toEqual([]);
+		await expect(categoryOriginOf(bySync)).resolves.toBe("provider");
+	});
+
+	it("never changes a locked category for another origin", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const set = await add(account.id, {}, "sync");
+		const cleared = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), set, { categoryId: groceries }, { origin: "user" });
+		await updateTransaction(deps(), cleared, { categoryId: null }, { origin: "user" });
+		// Clearing an empty category changes nothing, so nothing is locked yet.
+		await updateTransaction(deps(), cleared, { categoryId: groceries }, { origin: "user" });
+		await updateTransaction(deps(), cleared, { categoryId: null }, { origin: "user" });
+
+		await updateTransaction(deps(), set, { categoryId: leisure }, { origin: "rule" });
+		await updateTransaction(deps(), cleared, { categoryId: leisure }, { origin: "rule" });
+
+		await expect(categoryOf(set)).resolves.toBe(groceries);
+		await expect(categoryOriginOf(set)).resolves.toBe("user");
+		await expect(categoryOf(cleared)).resolves.toBeNull();
+	});
+
+	it("refuses to set or clear one transaction's category for maintenance", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { categoryId: groceries }, { origin: "rule" });
+
+		await expect(
+			updateTransaction(deps(), id, { categoryId: null }, { origin: "maintenance" }),
+		).rejects.toThrow(/maintenance/u);
+
+		await expect(categoryOf(id)).resolves.toBe(groceries);
+		await expect(categoryOriginOf(id)).resolves.toBe("rule");
+	});
+
+	it("refuses an unknown category and writes nothing", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+
+		await expect(
+			updateTransaction(deps(), id, { categoryId: "nope", label: "Autre" }, { origin: "user" }),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "categoryId", code: "invalid_value" }],
+		});
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			label: "Boulangerie",
+			categoryId: null,
+		});
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
 });
 
 describe("deleteTransaction", () => {
@@ -2086,6 +2187,42 @@ describe("listTransactions across accounts", () => {
 			{ items: [], total: 0 },
 		);
 		await expect(sumTransactions(deps(), { accountIds: [] })).resolves.toEqual([]);
+	});
+
+	it("filters on categories as given, on « Sans catégorie », or both", async () => {
+		const { joint } = await openPair();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const other = await newCategory("Santé");
+		const categorise = async (label: string, categoryId: string | null) => {
+			const id = await add(joint.id, { label });
+			await updateTransaction(deps(), id, { categoryId }, { origin: "user" });
+		};
+		await categorise("Marché", groceries);
+		await categorise("Cinéma", leisure);
+		await categorise("Pharmacie", other);
+		await categorise("Virement", null);
+		const accountIds = [joint.id];
+		const labels = async (filter: Parameters<typeof listTransactions>[1]) =>
+			labelsOf(await listTransactions(deps(), { accountIds, ...filter }, firstPage)).toSorted();
+
+		await expect(labels({ categoryIds: [groceries, leisure] })).resolves.toEqual([
+			"Cinéma",
+			"Marché",
+		]);
+		await expect(labels({ uncategorised: true })).resolves.toEqual(["Virement"]);
+		await expect(labels({ categoryIds: [groceries], uncategorised: true })).resolves.toEqual([
+			"Marché",
+			"Virement",
+		]);
+		await expect(labels({ categoryIds: ["nope"] })).resolves.toEqual([]);
+		await expect(labels({ categoryIds: [] })).resolves.toEqual([]);
+		await expect(
+			listTransactions(deps(), { accountIds, categoryIds: [groceries] }, firstPage),
+		).resolves.toMatchObject({ total: 1, items: [{ categoryId: groceries }] });
+		await expect(
+			sumTransactions(deps(), { accountIds, categoryIds: [groceries], uncategorised: true }),
+		).resolves.toEqual([{ currency: "EUR", amount: -8580, count: 2 }]);
 	});
 
 	it("is an empty page for an unknown account", async () => {
@@ -2750,6 +2887,16 @@ async function categoryOf(entryId: string) {
 	return row?.categoryId;
 }
 
+async function categoryOriginOf(entryId: string) {
+	const row = await temp.db
+		.select({ origin: transactions.categoryOrigin })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.origin;
+}
+
 describe("recategorise", () => {
 	it("moves every transaction of a category to another, and only those", async () => {
 		const account = await openChecking();
@@ -2765,11 +2912,11 @@ describe("recategorise", () => {
 		const untouched = await add(account.id, { label: "Cinéma" });
 		await temp.db
 			.update(transactions)
-			.set({ categoryId: groceries })
+			.set({ categoryId: groceries, categoryOrigin: "rule" })
 			.where(inArray(transactions.entryId, ids));
 		await temp.db
 			.update(transactions)
-			.set({ categoryId: other })
+			.set({ categoryId: other, categoryOrigin: "rule" })
 			.where(eq(transactions.entryId, untouched));
 		const days = await history(account.id);
 
@@ -2777,23 +2924,40 @@ describe("recategorise", () => {
 
 		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([food, food, food]);
 		await expect(categoryOf(untouched)).resolves.toBe(other);
+		await expect(Promise.all(ids.map(categoryOriginOf))).resolves.toEqual(["rule", "rule", "rule"]);
 		await expect(history(account.id)).resolves.toEqual(days);
 	});
 
-	it("leaves the transactions uncategorised with null, keeping their locked fields", async () => {
+	it("keeps a category set by hand locked and the user's when it merges", async () => {
+		const account = await openChecking();
+		const source = await newCategory("Supermarché");
+		const target = await newCategory("Courses");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { categoryId: source }, { origin: "user" });
+
+		await recategorise(deps(), source, target, { origin: "maintenance" });
+
+		await expect(categoryOf(id)).resolves.toBe(target);
+		await expect(categoryOriginOf(id)).resolves.toBe("user");
+		await expect(lockedFields(id)).resolves.toEqual(["category"]);
+	});
+
+	it("leaves the transactions uncategorised with null, dropping the origin and keeping the locks", async () => {
 		const account = await openChecking();
 		const category = await newCategory("Cadeaux");
 		const id = await add(account.id, {}, "sync");
-		await updateTransaction(deps(), id, { label: "Fleuriste" }, { origin: "user" });
-		await temp.db
-			.update(transactions)
-			.set({ categoryId: category })
-			.where(eq(transactions.entryId, id));
+		await updateTransaction(
+			deps(),
+			id,
+			{ label: "Fleuriste", categoryId: category },
+			{ origin: "user" },
+		);
 
 		await expect(recategorise(deps(), category, null, { origin: "maintenance" })).resolves.toBe(1);
 
 		await expect(categoryOf(id)).resolves.toBeNull();
-		await expect(lockedFields(id)).resolves.toEqual(["label"]);
+		await expect(categoryOriginOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual(["label", "category"]);
 	});
 
 	it("moves nothing from a category no transaction uses", async () => {
@@ -2816,11 +2980,11 @@ describe("countByCategory", () => {
 		await add(account.id, { label: "Sans catégorie" });
 		await temp.db
 			.update(transactions)
-			.set({ categoryId: groceries })
+			.set({ categoryId: groceries, categoryOrigin: "rule" })
 			.where(inArray(transactions.entryId, [first, second]));
 		await temp.db
 			.update(transactions)
-			.set({ categoryId: leisure })
+			.set({ categoryId: leisure, categoryOrigin: "rule" })
 			.where(eq(transactions.entryId, third));
 
 		const perCategory = await countByCategory(deps());

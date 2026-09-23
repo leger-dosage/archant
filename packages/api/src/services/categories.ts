@@ -1,7 +1,7 @@
 import type { CreateCategoryRequest, UpdateCategoryRequest } from "../schemas/categories.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/schema/categories";
@@ -72,6 +72,24 @@ async function getCategory(deps: ServiceDeps, id: string): Promise<CategorySumma
 
 async function findCategory(db: Db, id: string): Promise<Category | undefined> {
 	return db.select().from(categories).where(eq(categories.id, id)).get();
+}
+
+/**
+ * `ids` with the children of every parent among them, as Sure filters: a
+ * parent stands for its whole branch. Two levels at most, so one query
+ * reaches every child. An unknown id stays, and matches no transaction.
+ */
+export async function withChildren(deps: ServiceDeps, ids: readonly string[]): Promise<string[]> {
+	if (ids.length === 0) {
+		return [];
+	}
+
+	const children = await deps.db
+		.select({ id: categories.id })
+		.from(categories)
+		.where(inArray(categories.parentId, [...ids]));
+
+	return [...new Set([...ids, ...children.map((child) => child.id)])];
 }
 
 async function hasChildren(db: Db, id: string): Promise<boolean> {

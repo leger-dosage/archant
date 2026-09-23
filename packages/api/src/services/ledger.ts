@@ -37,12 +37,14 @@ import type { CurrencyCode, MinorUnits, Money } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { categories } from "@archant/data/schema/categories";
+import type { CategoryOrigin } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import type { LockableField } from "@archant/data/schema/transactions";
-import { transactions } from "@archant/data/schema/transactions";
+import { LOCKABLE_FIELDS, transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance } from "@archant/data/types";
 
 import { forwardBalances } from "../domain/balances/forward.ts";
@@ -57,6 +59,28 @@ import { AppError } from "../lib/errors.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
 export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
+
+/**
+ * The `category_origin` a write records; a sync brings the provider's
+ * category. Maintenance has none: it moves categories wholesale through
+ * `recategorise`, never one transaction's through `updateTransaction`.
+ */
+const CATEGORY_ORIGIN_OF: Record<Exclude<Origin, "maintenance">, CategoryOrigin> = {
+	user: "user",
+	rule: "rule",
+	provider: "provider",
+	sync: "provider",
+};
+
+function categoryOriginOf(origin: Origin): CategoryOrigin {
+	if (origin === "maintenance") {
+		// A programming error, not a request error: no caller does this, and
+		// the row would get an origin without the lock that goes with it.
+		throw new Error("A maintenance write cannot set one transaction's category.");
+	}
+
+	return CATEGORY_ORIGIN_OF[origin];
+}
 
 export type NewAccountInput = {
 	name: string;
@@ -871,7 +895,19 @@ export type TransactionPatch = {
 	label?: string | undefined;
 	notes?: string | null | undefined;
 	excluded?: boolean | undefined;
+	/** `null` leaves the transaction « Sans catégorie ». */
+	categoryId?: string | null | undefined;
 };
+
+/** The patch key and the row column behind each lockable field. */
+const PATCH_KEY_OF = {
+	date: "date",
+	amount: "amount",
+	label: "label",
+	notes: "notes",
+	excluded: "excluded",
+	category: "categoryId",
+} as const satisfies Record<LockableField, keyof TransactionPatch>;
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
 
@@ -885,6 +921,7 @@ async function transactionRow(tx: Transaction, entryId: string) {
 			label: transactions.label,
 			notes: transactions.notes,
 			excluded: transactions.excluded,
+			categoryId: transactions.categoryId,
 			lockedFields: transactions.lockedFields,
 		})
 		.from(entries)
@@ -901,8 +938,13 @@ async function transactionRow(tx: Transaction, entryId: string) {
 
 /**
  * Edits a transaction and recomputes its account's balances from the earlier
- * of its old and new dates. Excluding one from reports changes no balance. A `user` edit locks every field it changes; any
- * other origin leaves locked fields as they are (AD-10).
+ * of its old and new dates; a change to the category alone touches neither
+ * the entry nor the balances. A `user` edit locks every field it
+ * changes, clearing the category included, as in Sure; any other origin
+ * leaves locked fields as they are (AD-10). The category's origin is the
+ * call's, `null` without a category. Throws `VALIDATION_ERROR` on
+ * `categoryId` for an unknown category, checked in the same transaction as
+ * the write so a concurrent delete cannot slip between them.
  */
 export async function updateTransaction(
 	deps: ServiceDeps,
@@ -918,13 +960,30 @@ export async function updateTransaction(
 			const next = { ...current };
 			const changed: LockableField[] = [];
 
-			for (const field of ["date", "amount", "label", "notes", "excluded"] as const) {
-				const value = patch[field];
+			for (const field of LOCKABLE_FIELDS) {
+				const key = PATCH_KEY_OF[field];
+				const value = patch[key];
 				const allowed = options.origin === "user" || !locked.has(field);
 
-				if (value !== undefined && value !== current[field] && allowed) {
+				if (value !== undefined && value !== current[key] && allowed) {
 					changed.push(field);
-					Object.assign(next, { [field]: value });
+					Object.assign(next, { [key]: value });
+				}
+			}
+
+			const categoryOrigin = changed.includes("category") ? categoryOriginOf(options.origin) : null;
+
+			if (changed.includes("category") && next.categoryId !== null) {
+				const category = await tx
+					.select({ id: categories.id })
+					.from(categories)
+					.where(eq(categories.id, next.categoryId))
+					.get();
+
+				if (category === undefined) {
+					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+						{ path: "categoryId", code: "invalid_value" },
+					]);
 				}
 			}
 
@@ -945,23 +1004,39 @@ export async function updateTransaction(
 				return { status: "updated" };
 			}
 
-			await tx
-				.update(entries)
-				.set({ date: next.date, amount: next.amount, updatedAt: Date.now() })
-				.where(eq(entries.id, entryId));
+			// The category lives on `transactions` alone and moves no balance, so
+			// categorising a row does not rewrite a decade of daily balances.
+			const touchesEntry = changed.some((field) => field !== "category");
+
+			if (touchesEntry) {
+				await tx
+					.update(entries)
+					.set({ date: next.date, amount: next.amount, updatedAt: Date.now() })
+					.where(eq(entries.id, entryId));
+			}
+
 			await tx
 				.update(transactions)
 				.set({
 					label: next.label,
 					notes: next.notes,
 					excluded: next.excluded,
+					...(changed.includes("category")
+						? {
+								categoryId: next.categoryId,
+								categoryOrigin: next.categoryId === null ? null : categoryOrigin,
+							}
+						: {}),
 					lockedFields:
 						options.origin === "user"
 							? [...new Set([...current.lockedFields, ...changed])]
 							: current.lockedFields,
 				})
 				.where(eq(transactions.entryId, entryId));
-			await recomputeBalances(tx, account, minDate(current.date, next.date), deps.timeZone);
+
+			if (touchesEntry) {
+				await recomputeBalances(tx, account, minDate(current.date, next.date), deps.timeZone);
+			}
 
 			return { status: "updated" };
 		},
@@ -998,23 +1073,25 @@ export async function deleteTransaction(
  * Moves every transaction of category `from` to `to`, or leaves them
  * uncategorised with `null`, and returns how many moved. Called by a
  * category's delete and merge with `origin: "maintenance"`: the user chose
- * the category, not each transaction, so `locked_fields` stays as it is
- * (AD-10). No balance changes, so nothing is recomputed. One statement,
- * whatever the count: a category can hold years of transactions.
+ * the category, not each transaction, so `locked_fields` and
+ * `category_origin` stay as they are (AD-10); only a row left without a
+ * category loses its origin, which the database requires. No balance
+ * changes, so nothing is recomputed. One statement, whatever the count: a
+ * category can hold years of transactions.
  */
 export async function recategorise(
 	deps: ServiceDeps,
 	from: string,
 	to: string | null,
-	// Maintenance only until Story 4.2 defines the category lock: a `user`
-	// call here would be expected to lock and would not.
+	// Maintenance only: a `user` call here would be expected to lock every
+	// row it moves, and a category merge must not.
 	_options: { origin: "maintenance" },
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
 			const result = await tx
 				.update(transactions)
-				.set({ categoryId: to })
+				.set(to === null ? { categoryId: null, categoryOrigin: null } : { categoryId: to })
 				.where(eq(transactions.categoryId, from));
 
 			return result.rowsAffected;
@@ -1336,6 +1413,8 @@ export type TransactionRecord = {
 	reference: string | null;
 	/** Left out of reports (AD-9), still counted in the balance. */
 	excluded: boolean;
+	/** `null` is « Sans catégorie ». */
+	categoryId: string | null;
 };
 
 /** A transaction as a list shows it, with its account's name. */
@@ -1351,6 +1430,7 @@ const transactionColumns = {
 	notes: transactions.notes,
 	reference: transactions.reference,
 	excluded: transactions.excluded,
+	categoryId: transactions.categoryId,
 };
 
 function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {
@@ -1422,7 +1502,40 @@ export type TransactionFilter = {
 	 * find « Électricité ».
 	 */
 	q?: string | undefined;
+	/**
+	 * Categories matched as given, without their children: the caller expands
+	 * a parent. Ored with `uncategorised`; an unknown id matches nothing.
+	 */
+	categoryIds?: readonly string[] | undefined;
+	/** Also match transactions without a category. */
+	uncategorised?: boolean | undefined;
 };
+
+/** Whether the filter reads `transactions`, so the count and the sum must join it. */
+function needsTransactionColumns(filter: TransactionFilter): boolean {
+	return (
+		filter.q !== undefined || filter.categoryIds !== undefined || filter.uncategorised === true
+	);
+}
+
+function categoryCondition(filter: TransactionFilter): SQL | undefined | null {
+	const { categoryIds, uncategorised = false } = filter;
+
+	if (categoryIds === undefined && !uncategorised) {
+		return undefined;
+	}
+
+	const ids = categoryIds ?? [];
+
+	if (ids.length === 0 && !uncategorised) {
+		return null;
+	}
+
+	return or(
+		ids.length === 0 ? undefined : inArray(transactions.categoryId, [...ids]),
+		uncategorised ? isNull(transactions.categoryId) : undefined,
+	);
+}
 
 function absoluteAmountIn(range: AmountRange): SQL | undefined {
 	const min = range.min === null ? null : Number(range.min);
@@ -1451,8 +1564,9 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
  */
 function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 	const { accountIds, amounts, q } = filter;
+	const category = categoryCondition(filter);
 
-	if (accountIds?.length === 0 || amounts?.length === 0) {
+	if (accountIds?.length === 0 || amounts?.length === 0 || category === null) {
 		return null;
 	}
 
@@ -1471,13 +1585,15 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 		q === undefined
 			? undefined
 			: or(contains(transactions.label, q), contains(transactions.notes, q)),
+		category,
 	);
 }
 
 /**
  * A page of transactions matching `filter`, most recent first (AD-15), each
  * with its account's name. The count joins `transactions` only when the text
- * search needs its columns, so the unfiltered count reads one index.
+ * search or the category filter needs its columns, so the unfiltered count
+ * reads one index.
  */
 export async function listTransactions(
 	deps: ServiceDeps,
@@ -1499,14 +1615,13 @@ export async function listTransactions(
 		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
-	const totals =
-		filter.q === undefined
-			? await deps.db.select({ total: count() }).from(entries).where(where)
-			: await deps.db
-					.select({ total: count() })
-					.from(entries)
-					.innerJoin(transactions, eq(transactions.entryId, entries.id))
-					.where(where);
+	const totals = !needsTransactionColumns(filter)
+		? await deps.db.select({ total: count() }).from(entries).where(where)
+		: await deps.db
+				.select({ total: count() })
+				.from(entries)
+				.innerJoin(transactions, eq(transactions.entryId, entries.id))
+				.where(where);
 
 	return {
 		items: rows.map(toRecord),
@@ -1517,8 +1632,8 @@ export async function listTransactions(
 /**
  * The signed sum and the count of the transactions matching `filter`, one row
  * per currency. Excluded transactions count: the sum describes the rows the
- * list shows, not a report. Joins `transactions` only for the text search, as
- * the count does.
+ * list shows, not a report. Joins `transactions` only for the text search and
+ * the category filter, as the count does.
  */
 export async function sumTransactions(
 	deps: ServiceDeps,
@@ -1535,21 +1650,20 @@ export async function sumTransactions(
 		amount: sum(entries.amount).mapWith(Number),
 		count: count(),
 	};
-	const rows =
-		filter.q === undefined
-			? await deps.db
-					.select(columns)
-					.from(entries)
-					.where(where)
-					.groupBy(entries.currency)
-					.orderBy(entries.currency)
-			: await deps.db
-					.select(columns)
-					.from(entries)
-					.innerJoin(transactions, eq(transactions.entryId, entries.id))
-					.where(where)
-					.groupBy(entries.currency)
-					.orderBy(entries.currency);
+	const rows = !needsTransactionColumns(filter)
+		? await deps.db
+				.select(columns)
+				.from(entries)
+				.where(where)
+				.groupBy(entries.currency)
+				.orderBy(entries.currency)
+		: await deps.db
+				.select(columns)
+				.from(entries)
+				.innerJoin(transactions, eq(transactions.entryId, entries.id))
+				.where(where)
+				.groupBy(entries.currency)
+				.orderBy(entries.currency);
 
 	return rows.map(toRecord);
 }

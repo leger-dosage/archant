@@ -8,10 +8,9 @@ import { fileURLToPath } from "node:url";
 export const PORT = 8788;
 
 /**
- * The run's SQLite file, which the server migrates itself. A fixed path rather
- * than a fresh temporary directory, so the suite can set what no screen sets
- * yet, such as a transaction's category before Story 4.2. The port already
- * allows one run per machine at a time.
+ * The run's SQLite file, which the server migrates itself. A fixed path, so a
+ * run killed before its cleanup leaves a file the next run finds and clears.
+ * The port already allows one run per machine at a time.
  */
 export const DATABASE_FILE = join(tmpdir(), `archant-e2e-${PORT}`, "e2e.db");
 

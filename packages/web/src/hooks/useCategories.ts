@@ -1,6 +1,7 @@
 import type { InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 
 import type { CreateCategoryInput, UpdateCategoryInput } from "@archant/api/schemas/categories";
 
@@ -14,6 +15,30 @@ export function useCategories() {
 		queryKey: queryKeys.categories.all,
 		queryFn: async () => (await unwrap(api.categories.$get())).data,
 	});
+}
+
+/**
+ * What a chip shows for a transaction's category: its colour and name,
+ * « Sans catégorie » for `null`, « Catégorie inconnue » for an id the list
+ * lacks, and a `null` name while the list loads.
+ */
+export function useCategoryShown(id: string | null): { color: string | null; name: string | null } {
+	const { t } = useTranslation();
+	const categories = useCategories().data;
+
+	if (id === null) {
+		return { color: null, name: t("transactions.category.none") };
+	}
+
+	if (categories === undefined) {
+		return { color: null, name: null };
+	}
+
+	const category = categories.find((candidate) => candidate.id === id);
+
+	return category === undefined
+		? { color: null, name: t("operations.chips.unknownCategory") }
+		: { color: category.color, name: category.name };
 }
 
 export function useCreateCategory() {
