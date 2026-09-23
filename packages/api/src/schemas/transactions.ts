@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
+import { DIRECTIONS } from "../domain/cash-flow.ts";
+
 export const LABEL_MAX_LENGTH = 200;
 export const NOTES_MAX_LENGTH = 2000;
 /** Past this a tag stops telling a trip apart; the route refuses a larger set. */
@@ -209,8 +211,16 @@ function repeated(max: number) {
 		.pipe(z.array(z.string().min(1)).max(max).optional());
 }
 
+/** One value of the `direction` filter, as `direction` in `domain/cash-flow.ts` returns it. */
+export const directionSchema = z.enum(DIRECTIONS);
+
 const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
+	// Repeats are dropped rather than refused: « Revenus » twice is still « Revenus ».
+	direction: z
+		.union([directionSchema, z.array(directionSchema)])
+		.transform((value) => (typeof value === "string" ? [value] : [...new Set(value)]))
+		.optional(),
 	category: repeated(MAX_CATEGORY_FILTER),
 	merchant: repeated(MAX_MERCHANT_FILTER),
 	tag: repeated(MAX_TAG_FILTER),
@@ -262,7 +272,8 @@ function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest
 
 /**
  * The query of the cross-account list. `account`, `category`, `merchant` and
- * `tag` repeat, one id each, `none` standing for « Sans catégorie ». Dates are inclusive,
+ * `tag` repeat, one id each, `none` standing for « Sans catégorie »; `direction`
+ * repeats `income`, `expense` or `transfer`. Dates are inclusive,
  * amounts bound the absolute value, `q` searches the label and the notes.
  */
 export const transactionFilterSchema = pageQuerySchema

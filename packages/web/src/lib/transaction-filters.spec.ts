@@ -119,6 +119,17 @@ describe("operationsSearchSchema, across params", () => {
 		expect(operationsSearchSchema.parse({ tag: ["t", "u"] })).toEqual({ tag: ["t", "u"] });
 		expect(operationsSearchSchema.parse({ tag: [] })).toEqual({});
 	});
+
+	it("reads a lone direction as a list of one, drops repeats, and drops an unknown one", () => {
+		expect(operationsSearchSchema.parse({ direction: "transfer" })).toEqual({
+			direction: ["transfer"],
+		});
+		expect(operationsSearchSchema.parse({ direction: ["income", "expense", "income"] })).toEqual({
+			direction: ["income", "expense"],
+		});
+		expect(operationsSearchSchema.parse({ direction: ["income", "refund"] })).toEqual({});
+		expect(operationsSearchSchema.parse({ direction: [] })).toEqual({});
+	});
 });
 
 describe("filtersOf and hasFilters", () => {
@@ -166,6 +177,10 @@ describe("withoutFilter", () => {
 			tag: undefined,
 			account: ["a"],
 		});
+		expect(withoutFilter({ ...search, direction: ["transfer"] }, "direction")).toMatchObject({
+			direction: undefined,
+			account: ["a"],
+		});
 		expect(withoutFilter(search, "q")).toMatchObject({ q: undefined, account: ["a"] });
 	});
 });
@@ -185,6 +200,7 @@ describe("toApiQuery", () => {
 					amountMin: "20",
 					amountMax: "50",
 					q: "carre",
+					direction: ["income", "transfer"],
 				},
 				3,
 			),
@@ -199,6 +215,7 @@ describe("toApiQuery", () => {
 			amountMin: "20",
 			amountMax: "50",
 			q: "carre",
+			direction: ["income", "transfer"],
 		});
 	});
 });
@@ -262,6 +279,15 @@ describe("filterChips", () => {
 		);
 	});
 
+	it("names the directions", () => {
+		expect(filterChips({ direction: ["expense", "transfer"] }, nameOf, t)).toEqual([
+			{
+				kind: "direction",
+				label: "operations.chips.directions.expense, operations.chips.directions.transfer",
+			},
+		]);
+	});
+
 	it("orders the chips as the menu does", () => {
 		expect(
 			filterChips(
@@ -272,10 +298,11 @@ describe("filterChips", () => {
 					tag: ["t"],
 					category: ["c"],
 					account: ["a"],
+					direction: ["income"],
 				},
 				nameOf,
 				t,
 			).map((chip) => chip.kind),
-		).toEqual(["account", "category", "tag", "merchant", "period", "amount"]);
+		).toEqual(["account", "category", "tag", "merchant", "period", "amount", "direction"]);
 	});
 });

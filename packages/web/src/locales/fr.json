@@ -248,6 +248,26 @@
 			"more": "+{{count}}",
 			"changed": "Étiquettes modifiées",
 			"undo": "Annuler"
+		},
+		"transfer": {
+			"title": "Virement",
+			"to": "Vers {{account}}",
+			"from": "Depuis {{account}}",
+			"kinds": {
+				"internal_move": "Virement",
+				"credit_card_payment": "Remboursement de carte",
+				"loan_payment": "Remboursement de prêt",
+				"investment_contribution": "Versement"
+			},
+			"none": "Opération standard, liée à aucune autre.",
+			"match": "Rapprocher un virement",
+			"unmatch": "Dissocier",
+			"matched": "Virement rapproché",
+			"unmatched": "Virement dissocié",
+			"dialogTitle": "Rapprocher un virement",
+			"dialogDescription": "Choisissez l'opération de montant opposé qui forme l'autre côté de ce virement.",
+			"candidates": "Opérations candidates",
+			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 4 jours près"
 		}
 	},
 	"operations": {
@@ -261,7 +281,8 @@
 			"tag": "Étiquette",
 			"merchant": "Marchand",
 			"period": "Période",
-			"amount": "Montant"
+			"amount": "Montant",
+			"direction": "Sens"
 		},
 		"removeFilter": "Retirer le filtre {{label}}",
 		"results_one": "{{count}} résultat",
@@ -283,7 +304,12 @@
 			"periodUntil": "Jusqu'au {{to}}",
 			"amountBetween": "Montant de {{min}} à {{max}}",
 			"amountAtLeast": "Montant d'au moins {{min}}",
-			"amountAtMost": "Montant d'au plus {{max}}"
+			"amountAtMost": "Montant d'au plus {{max}}",
+			"directions": {
+				"income": "Revenus",
+				"expense": "Dépenses",
+				"transfer": "Virements"
+			}
 		},
 		"editor": {
 			"accounts": "Comptes à afficher",
@@ -296,6 +322,7 @@
 			"min": "Minimum",
 			"max": "Maximum",
 			"amountHint": "Sans signe : les dépenses et les revenus de ce montant sont affichés.",
+			"directions": "Sens à afficher",
 			"apply": "Appliquer",
 			"back": "Retour"
 		},

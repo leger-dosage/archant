@@ -53,5 +53,11 @@ export const queryKeys = {
 		ofAccount: (accountId: string) => ["transactions", "account", accountId] as const,
 		byAccount: (accountId: string, page: number) =>
 			["transactions", "account", accountId, page] as const,
+		/**
+		 * Under `all`: any transaction write can add or remove a candidate, and
+		 * every one of them already invalidates `all`.
+		 */
+		transferCandidates: (transactionId: string) =>
+			["transactions", "transfer-candidates", transactionId] as const,
 	},
 };

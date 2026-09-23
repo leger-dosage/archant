@@ -211,6 +211,7 @@ async function filterOf(deps: ServiceDeps, query: BulkFilterRequest): Promise<Tr
 		...(await categoryFilterOf(deps, query.category)),
 		merchantIds: query.merchant,
 		tagIds: query.tag,
+		direction: query.direction,
 	};
 }
 

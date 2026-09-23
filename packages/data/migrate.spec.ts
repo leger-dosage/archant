@@ -705,6 +705,48 @@ describe("tags", () => {
 	});
 });
 
+const insertTransfer = (
+	database: Database,
+	id: string,
+	outflow: string,
+	inflow: string,
+	kind = "internal_move",
+) =>
+	database.run(
+		sql`insert into transfers (id, outflow_transaction_id, inflow_transaction_id, kind, created_at) values (${id}, ${outflow}, ${inflow}, ${kind}, 0)`,
+	);
+
+describe("transfers", () => {
+	it("keeps every transaction when 0015 adds transfers, and holds each side once", async () => {
+		const before = await migratedBefore("0015");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertEntry(before, "e1", "transaction", null, "2026-09-01", "a1");
+		await insertEntry(before, "e2", "transaction", null, "2026-09-01", "a2");
+		await insertEntry(before, "e3", "transaction", null, "2026-09-01", "a2");
+		await before.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'Virement'), ('e2', 'Virement'), ('e3', 'Virement')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select entry_id as entryId from transactions order by entry_id`),
+		).resolves.toEqual([{ entryId: "e1" }, { entryId: "e2" }, { entryId: "e3" }]);
+		await expect(insertTransfer(database, "x0", "e1", "e2", "refund")).rejects.toThrow();
+		await expect(insertTransfer(database, "x0", "e1", "e1")).rejects.toThrow();
+		await expect(insertTransfer(database, "x0", "e1", "nope")).rejects.toThrow();
+		await insertTransfer(database, "x1", "e1", "e2", "credit_card_payment");
+		await expect(insertTransfer(database, "x2", "e1", "e3")).rejects.toThrow();
+		await expect(insertTransfer(database, "x2", "e3", "e2")).rejects.toThrow();
+		await expect(
+			database.run(sql`delete from transactions where entry_id = 'e2'`),
+		).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

@@ -22,6 +22,7 @@ import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
 import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
+import { transfersRoutes } from "./routes/transfers.ts";
 
 export type AppDeps = ServiceDeps & {
 	logger: Logger;
@@ -51,6 +52,7 @@ function createApi(deps: AppDeps) {
 	return new Hono()
 		.route("/accounts", accountsRoutes(deps))
 		.route("/transactions", transactionsRoutes(deps))
+		.route("/transfers", transfersRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))

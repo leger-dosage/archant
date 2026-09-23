@@ -11,6 +11,8 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { TRANSFER_KINDS } from "@archant/data/transfer-kinds";
+
 import { createLogger } from "./lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "./schemas/imports.ts";
 import * as accountsService from "./services/accounts.ts";
@@ -900,6 +902,14 @@ const listItem = z.object({
 	categoryId: z.string().nullable(),
 	merchantId: z.string().nullable(),
 	tagIds: z.array(z.string()),
+	transfer: z
+		.object({
+			id: z.string(),
+			kind: z.string(),
+			counterpartAccountId: z.string(),
+			counterpartAccountName: z.string(),
+		})
+		.nullable(),
 });
 
 const listBody = z.object({
@@ -4099,5 +4109,224 @@ describe("POST /api/transactions/bulk-delete", () => {
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual([{ path: "ids", code: "invalid_value" }]);
 		await expect(transactionIds(account.id)).resolves.toEqual(ids);
+	});
+});
+
+describe("transfers", () => {
+	async function ownRequest(method: string, path: string, body?: unknown) {
+		const response = await buildApp(own?.db).request(path, {
+			method,
+			headers: { "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+
+		return { status: response.status, body: z.unknown().parse(await response.json()) };
+	}
+
+	const candidateList = z.object({
+		data: z.array(
+			z.object({
+				id: z.string(),
+				date: z.string(),
+				label: z.string(),
+				amount: z.number(),
+				currency: z.string(),
+				accountId: z.string(),
+				accountName: z.string(),
+			}),
+		),
+	});
+
+	const created = z.object({
+		data: z.object({
+			id: z.string(),
+			outflowTransactionId: z.string(),
+			inflowTransactionId: z.string(),
+			kind: z.enum(TRANSFER_KINDS),
+		}),
+	});
+
+	/** −500 on the checking account, +500 on the Livret A three days later, +500 six days later. */
+	async function household() {
+		const checking = await openOwn({ name: "Compte courant" });
+		const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
+		const card = await openOwn({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "0",
+		});
+		const outflow = await postOwn(checking.id, {
+			date: "2026-09-10",
+			label: "VIR LIVRET A",
+			amount: "-500,00",
+		});
+		const inflow = await postOwn(livret.id, {
+			date: "2026-09-13",
+			label: "VIR COMPTE COURANT",
+			amount: "500,00",
+		});
+		const later = await postOwn(livret.id, {
+			date: "2026-09-16",
+			label: "Plus tard",
+			amount: "500,00",
+		});
+
+		return { checking, livret, card, outflow, inflow, later };
+	}
+
+	it("lists the candidates, then matches the one picked", async () => {
+		const { livret, outflow, inflow } = await household();
+
+		const listedCandidates = await ownRequest(
+			"GET",
+			`/api/transactions/${outflow}/transfer-candidates`,
+		);
+
+		expect(listedCandidates.status).toBe(200);
+		expect(candidateList.parse(listedCandidates.body).data).toEqual([
+			{
+				id: inflow,
+				date: "2026-09-13",
+				label: "VIR COMPTE COURANT",
+				amount: 50000,
+				currency: "EUR",
+				accountId: livret.id,
+				accountName: "Livret A",
+			},
+		]);
+
+		const matched = await ownRequest("POST", "/api/transfers", {
+			transactionId: outflow,
+			counterpartId: inflow,
+		});
+
+		expect(matched.status).toBe(201);
+		expect(created.parse(matched.body).data).toMatchObject({
+			outflowTransactionId: outflow,
+			inflowTransactionId: inflow,
+			kind: "internal_move",
+		});
+		const data = await listed("?direction=transfer");
+		expect(data.items.map((item) => item.id).toSorted()).toEqual([outflow, inflow].toSorted());
+		expect(data.items.find((item) => item.id === outflow)).toMatchObject({
+			transfer: { kind: "internal_move", counterpartAccountName: "Livret A" },
+		});
+	});
+
+	it("makes a payment into a card a card payment", async () => {
+		const { checking, card } = await household();
+		const payment = await postOwn(checking.id, {
+			date: "2026-09-12",
+			label: "PRLV CARTE",
+			amount: "-300,00",
+		});
+		const repaid = await postOwn(card.id, {
+			date: "2026-09-12",
+			label: "REMBOURSEMENT",
+			amount: "300,00",
+		});
+
+		const { status, body } = await ownRequest("POST", "/api/transfers", {
+			transactionId: repaid,
+			counterpartId: payment,
+		});
+
+		expect(status).toBe(201);
+		expect(created.parse(body).data).toMatchObject({
+			outflowTransactionId: payment,
+			kind: "credit_card_payment",
+		});
+	});
+
+	it("refuses a counterpart that is not a candidate, already matched included", async () => {
+		const { checking, outflow, inflow } = await household();
+		await ownRequest("POST", "/api/transfers", { transactionId: outflow, counterpartId: inflow });
+		// Five days before the other +500, so nothing else qualifies.
+		const second = await postOwn(checking.id, {
+			date: "2026-09-11",
+			label: "VIR LIVRET A",
+			amount: "-500,00",
+		});
+
+		const refused = async (counterpartId: string) => {
+			const { status, body } = await ownRequest("POST", "/api/transfers", {
+				transactionId: second,
+				counterpartId,
+			});
+
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "counterpartId", code: "not_a_candidate" }],
+			});
+		};
+
+		await refused(inflow);
+		await refused("nope");
+		const { body } = await ownRequest("GET", `/api/transactions/${second}/transfer-candidates`);
+		expect(candidateList.parse(body).data).toEqual([]);
+	});
+
+	it("unmatches a transfer, both sides becoming standard again", async () => {
+		const { outflow, inflow } = await household();
+		const matched = await ownRequest("POST", "/api/transfers", {
+			transactionId: outflow,
+			counterpartId: inflow,
+		});
+		const { id } = created.parse(matched.body).data;
+
+		await expect(ownRequest("DELETE", `/api/transfers/${id}`)).resolves.toEqual({
+			status: 200,
+			body: { data: { id } },
+		});
+		const data = await listed("?direction=transfer");
+		expect(data.items).toEqual([]);
+		expect((await listed("?direction=expense&direction=income")).total).toBe(3);
+	});
+
+	it("answers NOT_FOUND for an unknown transaction or transfer", async () => {
+		const { inflow } = await household();
+
+		const notFound = async (method: string, path: string, body?: unknown) => {
+			const response = await ownRequest(method, path, body);
+
+			expect(response.status).toBe(404);
+			expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+		};
+
+		await notFound("GET", "/api/transactions/nope/transfer-candidates");
+		await notFound("POST", "/api/transfers", { transactionId: "nope", counterpartId: inflow });
+		await notFound("DELETE", "/api/transfers/nope");
+	});
+
+	it("refuses a body without both ids", async () => {
+		const { status, body } = await request("POST", "/api/transfers", { transactionId: "t1" });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "counterpartId", code: "invalid_type" },
+		]);
+	});
+
+	it("filters by direction, and deletes the rows of a direction in bulk", async () => {
+		const { checking, outflow, inflow, later } = await household();
+		await ownRequest("POST", "/api/transfers", { transactionId: outflow, counterpartId: inflow });
+		const spent = await postOwn(checking.id, { date: "2026-09-14", label: "Café", amount: "-20" });
+		const earned = await postOwn(checking.id, { date: "2026-09-14", label: "Prime", amount: "30" });
+
+		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([spent]);
+		// The +500 left alone on the Livret is income until someone matches it.
+		expect((await listed("?direction=income")).items.map((item) => item.id).toSorted()).toEqual(
+			[earned, later].toSorted(),
+		);
+		const refused = await ownRequest("GET", "/api/transactions?direction=refund");
+		expect(refused.status).toBe(400);
+
+		await expect(
+			ownRequest("POST", "/api/transactions/bulk-delete", {
+				filter: { direction: "expense" },
+			}),
+		).resolves.toEqual({ status: 200, body: { data: { deleted: 1 } } });
 	});
 });

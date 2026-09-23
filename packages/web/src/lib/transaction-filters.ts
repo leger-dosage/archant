@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
 	UNCATEGORISED,
 	compareAmountBounds,
+	directionSchema,
 	parseAmountBound,
 } from "@archant/api/schemas/transactions";
 
@@ -48,6 +49,13 @@ export const operationsSearchSchema = z
 			.pipe(z.array(z.string()).min(1))
 			.optional()
 			.catch(undefined),
+		// Income, expense or transfer, ORed; repeats are dropped.
+		direction: z
+			.union([z.string().transform((value) => [value]), z.array(z.string())])
+			.pipe(z.array(directionSchema).min(1))
+			.transform((values) => [...new Set(values)])
+			.optional()
+			.catch(undefined),
 		from: isoDate.optional().catch(undefined),
 		to: isoDate.optional().catch(undefined),
 		amountMin: text
@@ -83,7 +91,20 @@ export type OperationsSearch = z.output<typeof operationsSearchSchema>;
 /** The filters alone, without the page: what the query key and the chips read. */
 export type TransactionFilters = Omit<OperationsSearch, "page">;
 
-export const FILTER_KINDS = ["account", "category", "tag", "merchant", "period", "amount"] as const;
+export const FILTER_KINDS = [
+	"account",
+	"category",
+	"tag",
+	"merchant",
+	"period",
+	"amount",
+	"direction",
+] as const;
+
+/** The `direction` values, in the order the « Sens » editor lists them. */
+export const DIRECTIONS = directionSchema.options;
+
+export type Direction = (typeof DIRECTIONS)[number];
 
 export type FilterKind = (typeof FILTER_KINDS)[number];
 
@@ -94,6 +115,7 @@ const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]>
 	merchant: ["merchant"],
 	period: ["from", "to"],
 	amount: ["amountMin", "amountMax"],
+	direction: ["direction"],
 	q: ["q"],
 };
 
@@ -129,6 +151,7 @@ export function toApiQuery(filters: TransactionFilters, page: number) {
 		...(filters.amountMin === undefined ? {} : { amountMin: filters.amountMin }),
 		...(filters.amountMax === undefined ? {} : { amountMax: filters.amountMax }),
 		...(filters.q === undefined ? {} : { q: filters.q }),
+		...(filters.direction === undefined ? {} : { direction: filters.direction }),
 	};
 }
 
@@ -143,7 +166,10 @@ type ChipKey = `operations.chips.${
 	| "periodUntil"
 	| "amountBetween"
 	| "amountAtLeast"
-	| "amountAtMost"}`;
+	| "amountAtMost"
+	| "directions.income"
+	| "directions.expense"
+	| "directions.transfer"}`;
 
 /** i18next's `t`, narrowed to the chip labels so a test can stand in for it. */
 export type Translate = (key: ChipKey, values?: Record<string, string>) => string;
@@ -190,6 +216,10 @@ function periodLabel(from: string | undefined, to: string | undefined, t: Transl
 		: t("operations.chips.periodSince", { from: isoToFrench(from) });
 }
 
+function directionLabel(values: readonly Direction[], t: Translate) {
+	return values.map((value) => t(`operations.chips.directions.${value}`)).join(", ");
+}
+
 function amountLabel(min: string | undefined, max: string | undefined, t: Translate) {
 	if (min !== undefined && max !== undefined) {
 		return t("operations.chips.amountBetween", { min, max });
@@ -233,6 +263,10 @@ export function filterChips(
 
 	if (filters.amountMin !== undefined || filters.amountMax !== undefined) {
 		chips.push({ kind: "amount", label: amountLabel(filters.amountMin, filters.amountMax, t) });
+	}
+
+	if (filters.direction !== undefined) {
+		chips.push({ kind: "direction", label: directionLabel(filters.direction, t) });
 	}
 
 	return chips;

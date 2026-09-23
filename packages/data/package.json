@@ -24,6 +24,8 @@
 		"./schema/taggings": "./schema/taggings.ts",
 		"./schema/tags": "./schema/tags.ts",
 		"./schema/transactions": "./schema/transactions.ts",
+		"./schema/transfers": "./schema/transfers.ts",
+		"./transfer-kinds": "./transfer-kinds.ts",
 		"./types": "./types.ts"
 	},
 	"scripts": {

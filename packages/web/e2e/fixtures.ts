@@ -293,6 +293,13 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		/** Links two transactions as a transfer, as a pick in « Rapprocher un virement » does. */
+		async matchTransfer(transactionId: string, counterpartId: string): Promise<string> {
+			return created(
+				await request.post("/api/transfers", { data: { transactionId, counterpartId } }),
+			);
+		},
+
 		/** A group's total in minor units, zero when it holds no account. */
 		async groupTotal(classification: "asset" | "liability"): Promise<number> {
 			const response = await request.get("/api/accounts");

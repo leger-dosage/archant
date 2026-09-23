@@ -10,6 +10,7 @@ import type { merchants } from "./schema/merchants.ts";
 import type { taggings } from "./schema/taggings.ts";
 import type { tags } from "./schema/tags.ts";
 import type { transactions } from "./schema/transactions.ts";
+import type { transfers } from "./schema/transfers.ts";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
 export type Account = InferSelectModel<typeof accounts>;
@@ -50,3 +51,6 @@ export type NewTag = InferInsertModel<typeof tags>;
 
 export type Tagging = InferSelectModel<typeof taggings>;
 export type NewTagging = InferInsertModel<typeof taggings>;
+
+export type Transfer = InferSelectModel<typeof transfers>;
+export type NewTransfer = InferInsertModel<typeof transfers>;

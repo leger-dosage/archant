@@ -1,7 +1,11 @@
 import type { CategoryData } from "@/hooks/useCategories";
 import type { MerchantData } from "@/hooks/useMerchants";
 import type { TagData } from "@/hooks/useTags";
-import type { FilterKind, TransactionFilters as Filters } from "@/lib/transaction-filters";
+import type {
+	Direction,
+	FilterKind,
+	TransactionFilters as Filters,
+} from "@/lib/transaction-filters";
 import type { FormEvent, ReactNode } from "react";
 
 import { ListFilterIcon, XIcon } from "lucide-react";
@@ -23,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { categoryTree } from "@/lib/category-tree";
 import { matchesCommand } from "@/lib/shortcuts";
-import { FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
+import { DIRECTIONS, FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
 
 /**
  * An account as the filters know it. An inactive one is not offered in the
@@ -318,6 +322,36 @@ function AccountEditor({
 	);
 }
 
+/** Income, expense and transfer, as `direction` in the API tells them apart. */
+function DirectionEditor({ filters, onApply }: EditorProps) {
+	const { t } = useTranslation();
+	const [selected, setSelected] = useState<ReadonlySet<string>>(
+		() => new Set(filters.direction ?? []),
+	);
+	const picked = DIRECTIONS.filter((value: Direction) => selected.has(value));
+
+	return (
+		<EditorForm onSubmit={() => onApply({ direction: picked.length === 0 ? undefined : picked })}>
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">
+					{t("operations.editor.directions")}
+				</legend>
+				{DIRECTIONS.map((value) => (
+					<label key={value} className="flex min-h-6 items-center gap-2">
+						<input
+							type="checkbox"
+							className="size-4 accent-primary"
+							checked={selected.has(value)}
+							onChange={(event) => setSelected(toggled(selected, value, event.target.checked))}
+						/>
+						<span>{t(`operations.chips.directions.${value}`)}</span>
+					</label>
+				))}
+			</fieldset>
+		</EditorForm>
+	);
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 
 function PeriodEditor({ filters, onApply }: EditorProps) {
@@ -560,6 +594,7 @@ export function TransactionFilters({
 							)}
 							{pane === "period" && <PeriodEditor filters={filters} onApply={apply} />}
 							{pane === "amount" && <AmountEditor filters={filters} onApply={apply} />}
+							{pane === "direction" && <DirectionEditor filters={filters} onApply={apply} />}
 						</div>
 					)}
 				</PopoverContent>
