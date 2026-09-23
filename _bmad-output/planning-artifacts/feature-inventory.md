@@ -24,7 +24,7 @@ Sure was read from its source: `config/routes.rb`, `app/models`, and the Enable 
 | Transactions | List with search and filters, single and bulk edit, splits, attachments, notes, tags, exclusion from reports. | List, filters, single and bulk edit, notes, tags, exclusion. Splits and attachments later. |
 | Internal transfers | Opposite-sign transactions on two owned accounts within a date window are matched automatically and leave the expense totals. Credit card and loan payments have their own kind. | Kept, early: without it every transfer to a savings account counts as both an expense and an income. |
 | Classification | Two-level categories with a default set, mergeable merchants, tags. | Kept. |
-| Rules | Conditions (account, amount, name, merchant, category, notes, tag, type) trigger actions (set category, merchant, name, tags; exclude; mark as transfer). Rules can run on past transactions. AI auto-categorisation. | Base building blocks kept. The design is not copied from Sure: the project owner brings their own approach when the epic starts, and it must leave room for AI categorisation soon after. |
+| Rules | Conditions (account, amount, name, merchant, category, notes, tag, type) trigger actions (set category, merchant, name, tags; exclude; mark as transfer). Rules can run on past transactions. AI auto-categorisation. | Kept, following Sure's rule model, with the departures listed in Epic 8 (decided on 2026-09-23). No AI actions, no email notification. |
 | Recurring transactions | Detects transactions repeating over three months, grouped by merchant or name and amount. | Kept, shortly after the core. |
 | Budgets | Monthly budget per category, rollover, copy from previous month. | Deferred. |
 | Dashboard and reports | Net worth and its history (`BalanceSheet`); income and expenses by category (`IncomeStatement`); reports page with period picker and CSV export. | Net worth with history, monthly flows by category. |
@@ -58,7 +58,7 @@ The detailed breakdown, with stories and acceptance criteria, is in `epics.md`. 
 5. **Internal transfers.** Automatic matching and transfer kinds.
 6. **Dashboard.** Net worth with history, monthly income and expenses by category.
 7. **Loans, investments and physical assets.** Net worth becomes complete.
-8. **Rules.** Built on the project owner's approach, with a hook for AI categorisation.
+8. **Rules.** Sure's rule model: conditions, actions, and application to past transactions.
 9. **Recurring transactions.**
 10. **Enable Banking sync.** Consent, account linking, daily sync, pending transactions, consent renewal, convergence with file imports.
 

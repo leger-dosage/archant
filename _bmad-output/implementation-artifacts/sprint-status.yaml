@@ -88,7 +88,6 @@ development_status:
   8-1-create-a-categorisation-rule: backlog
   8-2-more-rule-conditions-and-actions: backlog
   8-3-apply-rules-to-existing-transactions: backlog
-  8-4-categorisation-provider-extension-point: backlog
   epic-8-retrospective: optional
 
   epic-9: backlog

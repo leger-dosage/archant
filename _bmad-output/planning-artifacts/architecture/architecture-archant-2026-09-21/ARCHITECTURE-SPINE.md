@@ -322,8 +322,7 @@ packages/
 
 ## Deferred
 
-- **Rules data model.** The project owner designs it when Epic 8 starts. Fixed now: rules run at step 5 of AD-4, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the step-6 matcher reads; it never creates a transfer itself.
-- **Categorisation provider interface.** Shaped in Story 8.4, inside the rules module, writing with `origin: "provider"`.
+- **Rules data model.** Follows Sure's, as Epic 8 describes; its tables are settled by Story 8.1. Fixed now: rules run at step 5 of AD-4, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the step-6 matcher reads; it never creates a transfer itself.
 - **Currency conversion.** No exchange rates until a non-euro account exists; AD-6 keeps the door open.
 - **Roles beyond `admin`, and invitations.** `requireRole` and the `admin` plugin exist; a `viewer` role needs new checks only.
 - **Full-text search.** `LIKE` on label and notes until Story 1.5's 300 ms target fails. SQLite FTS5 then arrives through one migration and one query helper in `services/`, the only place raw SQL is then allowed.

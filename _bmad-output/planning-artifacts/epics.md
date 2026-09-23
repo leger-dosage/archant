@@ -81,10 +81,10 @@ FR35: The user sees income and expenses for a chosen month, broken down by categ
 
 #### Rules
 
-FR36: The user can define rules made of conditions on transaction fields and actions that set category, merchant, tags or label, exclude the transaction, or mark it as a transfer. The rule model itself is designed with the project owner when the epic starts; Sure's model is a reference, not a contract.
-FR37: Rules run on every new transaction, whatever its source, and the user can run them on existing transactions after a preview of what would change.
+FR36: The user can define rules made of conditions on transaction fields and actions that set category, merchant, tags or label, exclude the transaction, or mark it as a transfer. The rule model follows Sure's, with the departures Epic 8 names.
+FR37: Rules run on every new transaction, whatever its source, and the user can run them on existing transactions after seeing how many would change.
 FR38: A field the user set by hand is never overwritten by a rule.
-FR39: The rules engine exposes an extension point where a categorisation provider, such as an AI model, can propose a category.
+FR39: Withdrawn. A categorisation provider interface with no provider behind it would be code nothing calls; AI categorisation comes back later as a real action.
 
 #### Recurring transactions
 
@@ -206,7 +206,7 @@ FR35: Epic 6 - Monthly income and expenses by category
 FR36: Epic 8 - Rule definition
 FR37: Epic 8 - Rules on new and existing transactions
 FR38: Epic 8 - Manual edits win over rules
-FR39: Epic 8 - Categorisation provider extension point
+FR39: Withdrawn
 FR40: Epic 9 - Recurring detection
 FR41: Epic 9 - Recurring list and management
 FR42: Epic 3 - First-launch administrator setup
@@ -264,8 +264,8 @@ The user adds a loan, a PEA, a property and a vehicle, so net worth reflects the
 
 ### Epic 8: Rules
 
-New transactions are categorised and cleaned up automatically. The stories below follow Sure's model as a placeholder: the project owner reworks this epic with their own approach before it starts.
-**FRs covered:** FR36, FR37, FR38, FR39
+New transactions are categorised and cleaned up automatically, following Sure's rule model.
+**FRs covered:** FR36, FR37, FR38
 
 ### Epic 9: Recurring transactions
 
@@ -1135,7 +1135,7 @@ So that net worth includes them.
 
 ## Epic 8: Rules
 
-New transactions are categorised and cleaned up automatically. Provisional stories modelled on Sure; the project owner reworks them before the epic starts.
+New transactions are categorised and cleaned up automatically. The rule model follows Sure's `Rule`, `Rule::Condition` and `Rule::Action` (`app/models/rule*.rb`, `app/models/rule/`); each story names its departures from Sure, and AD-4 and AD-10 still bind. Out of this epic: AI actions, the email notification action, Sure's investment activity label and provider-details condition, the prompt to create a rule after categorising a transaction, the quick-categorise wizard, deleting every rule at once, and rule import and export.
 
 ### Story 8.1: Create a categorisation rule
 
@@ -1147,21 +1147,43 @@ So that recurring shops are categorised without my help.
 
 **Acceptance Criteria:**
 
-**Given** the rules page
-**When** I create a rule with one or more conditions on label (contains, equals), amount (greater, less, equal), or account, combined with all or any, and a "set category" action
-**Then** the rule is saved and enabled
+**Given** the « Règles » page at `/regles`, reached from the sidebar or `g u`
+**When** I create a rule
+**Then** I give it an optional name, one or more conditions, a « Catégorie » action and an optional start date « À partir du »; without a start date it applies to transactions of any date, as Sure's `effective_date`
+
+**Given** the rule form
+**When** I add a condition
+**Then** it is a field, an operator and a value: « Libellé » with « contient » (substring, case ignored) or « est égal à » (exact, case kept), both after trimming and collapsing runs of spaces on each side; « Montant » with `>`, `≥`, `<`, `≤`, `=` or `≠`, entered as a positive amount and compared with the transaction's absolute amount; « Compte » with « est »
+
+**Given** several conditions
+**When** a transaction is tested
+**Then** it matches only when every top-level condition does; a condition group, one level deep, matches when all or any of its conditions do, as the group chooses; a rule without conditions matches every transaction, as in Sure
+
+**Given** the rule form
+**When** I save a rule without an action, with two actions of the same kind, with a group inside a group, or with a condition missing its value
+**Then** it is refused and the faulty field is shown
 
 **Given** enabled rules
-**When** new transactions are written, whatever their source
-**Then** each rule applies to the matching ones, in the order shown on the rules page
+**When** transactions are created, by hand or by an import
+**Then** at step 5 of the ingestion pipeline each enabled rule applies to the new transactions it matches, in the order the rules were created, each rule seeing what the earlier ones wrote; the category is written with `origin: "rule"`, which records `category_origin` `rule` and locks nothing, so a later rule may overwrite it, as in Sure
 
-**Given** a transaction whose category was set by hand
+**Given** a transaction whose category the user set
 **When** a rule matches it
-**Then** the category is left unchanged
+**Then** its category is left unchanged
+
+**Given** the rules page
+**When** I open it
+**Then** rules are listed in the order they apply, each with its name or, without one, a summary built from its first condition and first action, such as « Si Libellé contient CARREFOUR, alors Catégorie Courses » followed by « et 2 autres conditions »; a switch enables or disables each rule, and its menu offers « Modifier » and « Supprimer », which asks for confirmation; a new rule is enabled, and disabling a rule leaves what it wrote in place
+
+**Given** a screen narrower than 768 px
+**When** I open the rules page
+**Then** it shows « Disponible sur ordinateur », as `EXPERIENCE.md` specifies
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+Departures from Sure: rules apply in creation order, where Sure runs them in no set order, and the list shows that order rather than Sure's sort by name. A new rule is enabled at once, where Sure keeps it disabled until the confirmation that Story 8.3 brings. At ingestion a rule reaches the new transactions only, where Sure re-runs every rule over the whole history after each sync; Story 8.3 covers the history.
 
 ### Story 8.2: More rule conditions and actions
 
@@ -1174,60 +1196,65 @@ So that one rule cleans up a transaction completely.
 **Acceptance Criteria:**
 
 **Given** the rule form
-**When** I add conditions on merchant, category, notes or tag, and actions set merchant, add tags, rename, exclude, or mark as transfer
-**Then** each is applied as described, and fields set by hand are left unchanged
+**When** I add a condition
+**Then** I can also choose « Marchand », « Catégorie » or « Étiquette » with « est » or « est vide »; « Notes » with « contient », « est égal à » or « est vide »; and « Type » with « est » « Revenu », « Dépense » or « Virement »
+**And** « Catégorie » matches that category only, not its subcategories; « Étiquette est » matches a transaction carrying that tag, « Étiquette est vide » one carrying none; a transaction in a transfer is a « Virement », any other is a « Revenu » or a « Dépense » by the sign of its amount, so at ingestion, before transfer matching, no new transaction is yet a « Virement »
+
+**Given** the rule form
+**When** I add an action
+**Then** I can also choose « Marchand », which sets the merchant; « Ajouter une étiquette », which adds one tag and keeps the others; « Renommer », which sets the label and refuses an empty value; « Exclure », which excludes the transaction from reports; and « Virement avec un compte », described below
+
+**Given** a field the user set: merchant, tags, label or excluded
+**When** a rule's action targets it
+**Then** it is left unchanged, the tags as a whole when the tags are locked
+
+**Given** a « Virement avec un compte » action naming an account
+**When** it matches a transaction not already in a transfer
+**Then** the transaction records that account as its expected counterpart, and the transfer matcher at step 6 pairs it with its only candidate on that account, even when other accounts also hold candidates
+**And** with no candidate yet, the pair forms when the other side is ingested; with several candidates on that account, the transaction stays unmatched for the user to pair by hand; the kind follows the inflow account, as for any transfer; no entry is created
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+Departures from Sure: Sure's transfer action creates the mirror entry in the chosen account and ignores locks. Archant imports every account, so that entry would double the line the other statement brings, and the architecture spine lets a rule only set an expectation that the matcher reads.
 
 ### Story 8.3: Apply rules to existing transactions
 
 As the household's administrator,
-I want to run a rule on past transactions after a preview,
+I want to run rules on past transactions after seeing how many would change,
 So that a new rule cleans up my history too.
 
-**Requirements:** FR37
+**Requirements:** FR37, FR38
 
 **Acceptance Criteria:**
 
-**Given** a rule
-**When** I ask to apply it to existing transactions
-**Then** I see how many transactions would change and a sample of them, before anything is written
+**Given** a rule I have just created or edited
+**When** I save it
+**Then** a dialog offers to apply it to existing transactions and states how many it would change, such as « 12 opérations seront modifiées »: only matching transactions whose targeted field is neither locked nor already set to that value count
+**And** « Appliquer » writes the changes; « Plus tard » closes the dialog, and the rule keeps applying to new transactions
 
-**Given** the preview
-**When** I confirm
-**Then** the changes are written in one database transaction and the run is recorded with its count
+**Given** a rule's menu
+**When** I choose « Appliquer aux opérations existantes »
+**Then** the same dialog opens for that rule
+
+**Given** the rules page
+**When** I choose « Appliquer toutes les règles »
+**Then** the dialog states how many distinct transactions the enabled rules would change, and confirming applies every enabled rule in order
+
+**Given** a confirmed application
+**When** it runs
+**Then** the changes are written in one database transaction with `origin: "rule"`, locked fields are left unchanged as at ingestion, transfer matching runs for the transactions a « Virement avec un compte » action marked, and balances are recomputed
+
+**Given** a confirmed application
+**When** it has run
+**Then** it is recorded with its date, the rule's name or summary at that time, the number of matching transactions and the number changed, and the rules page lists these « Exécutions récentes », newest first, paginated
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
-### Story 8.4: Categorisation provider extension point
-
-As a contributor,
-I want an interface for categorisation providers,
-So that an AI model can propose categories without touching the rules engine.
-
-**Requirements:** FR39
-
-**Acceptance Criteria:**
-
-**Given** the rules engine
-**When** a provider is registered through the interface
-**Then** it receives uncategorised transactions and the category list, and its proposals are applied after rules, never over a category set by hand or by a rule
-
-**Given** no provider configured
-**When** transactions are written
-**Then** behaviour is unchanged
-
-**Given** the extension point
-**When** its tests run
-**Then** they use a fake provider and reach no network
-
-**Given** the finished story
-**When** `pnpm test` and `pnpm test:e2e` run
-**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+Departures from Sure: Sure ignores the user's locks when a rule is applied by hand; Archant never does (FR38, AD-10). Sure's count includes locked and unchanged transactions; Archant counts what would change. Sure's « Appliquer tout » runs disabled rules too; Archant runs enabled ones only. Closing Sure's dialog leaves a new rule disabled; here it stays enabled. Only applications the user confirms are recorded: an import runs every enabled rule, and one row per rule per import would bury the runs the user asked for.
 
 ## Epic 9: Recurring transactions
 
