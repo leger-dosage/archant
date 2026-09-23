@@ -1,3 +1,5 @@
+import type { MinorUnits } from "./money.ts";
+
 export const CLASSIFICATIONS = ["asset", "liability"] as const;
 
 export type Classification = (typeof CLASSIFICATIONS)[number];
@@ -10,6 +12,7 @@ export type Classification = (typeof CLASSIFICATIONS)[number];
 export const ACCOUNT_TYPES = {
 	depository: { classification: "asset", subtypes: ["checking", "savings"] },
 	credit_card: { classification: "liability", subtypes: [] },
+	loan: { classification: "liability", subtypes: ["mortgage", "consumer", "other"] },
 } as const satisfies Record<
 	string,
 	{ classification: Classification; subtypes: readonly string[] }
@@ -39,3 +42,15 @@ export function isSubtypeOf(type: AccountType, subtype: string | null): boolean 
 
 	return subtype === null ? allowed.length === 0 : allowed.includes(subtype);
 }
+
+/**
+ * What a loan carries besides its balance, in `accounts.details`. Every field
+ * is optional: the outstanding balance is all a loan needs. The rate is in
+ * basis points (3,45 % is 345), so the two decimals lenders quote stay exact
+ * without a float. `endDate` is an ISO date.
+ */
+export type LoanDetails = {
+	originalAmount: MinorUnits | null;
+	interestRate: number | null;
+	endDate: string | null;
+};

@@ -73,6 +73,10 @@ describe("transferKindOf", () => {
 		expect(transferKindOf("credit_card")).toBe("credit_card_payment");
 	});
 
+	it("makes a payment into a loan a loan payment", () => {
+		expect(transferKindOf("loan")).toBe("loan_payment");
+	});
+
 	it("makes any other move an internal move", () => {
 		expect(transferKindOf("depository")).toBe("internal_move");
 	});

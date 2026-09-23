@@ -4250,8 +4250,34 @@ async function pairOf(kind: TransferKind, outflowAccount: string, inflowAccount:
 		amount: toMinorUnits(amount),
 		label: `${kind} in`,
 	});
-	// Loan and investment accounts arrive with Epic 7, so no match can make these yet.
+	// Investment accounts arrive with Story 7.2, so no match can make this kind yet.
 	await insertTransfer(outflow, inflow, kind);
+
+	return { outflow, inflow };
+}
+
+async function openLoan() {
+	return openChecking({
+		name: "Prêt immobilier",
+		type: "loan",
+		subtype: "mortgage",
+		openingBalance: toMinorUnits(18_000_000),
+	});
+}
+
+/** A repayment from `outflowAccount` into `loanAccount`, linked by a real match. */
+async function loanPaymentOf(outflowAccount: string, loanAccount: string) {
+	const amount = transferAmount();
+	const outflow = await addStandard(outflowAccount, {
+		amount: toMinorUnits(-amount),
+		label: "loan_payment out",
+	});
+	const inflow = await addStandard(loanAccount, {
+		amount: toMinorUnits(amount),
+		label: "loan_payment in",
+	});
+	const transfer = await matchTransfer(deps(), outflow, inflow, { origin: "user" });
+	expect(transfer.kind).toBe("loan_payment");
 
 	return { outflow, inflow };
 }
@@ -4262,7 +4288,8 @@ const sortedIds = (page: { items: { id: string }[] }) =>
 describe("the direction filter", () => {
 	it("partitions every case as `direction` does", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
-		const accountIds = [joint.id, livret.id, card.id];
+		const mortgage = await openLoan();
+		const accountIds = [joint.id, livret.id, card.id, mortgage.id];
 		// Amounts of their own: step 6 would link them to another test's rows.
 		const earned = transferAmount();
 		const expense = await add(joint.id, {
@@ -4273,7 +4300,7 @@ describe("the direction filter", () => {
 		const zero = await add(joint.id, { amount: toMinorUnits(0), label: "zero" });
 		const move = await pairOf("internal_move", joint.id, livret.id);
 		const cardPayment = await pairOf("credit_card_payment", joint.id, card.id);
-		const loan = await pairOf("loan_payment", joint.id, livret.id);
+		const loan = await loanPaymentOf(joint.id, mortgage.id);
 		const investment = await pairOf("investment_contribution", joint.id, livret.id);
 		const expected = {
 			income: [income],
@@ -4326,9 +4353,10 @@ const byCategoryAndAmount = (rows: { categoryId: string | null; amount: number }
 describe("cashFlowByCategory", () => {
 	it("sums per category and sign exactly the rows `countsInCashFlow` counts", async () => {
 		const { livret, card } = await openHousehold();
+		const mortgage = await openLoan();
 		// Opened in August, so a row can sit on the last day before the month.
 		const joint = await openChecking({ name: "Compte courant", openingDate: "2026-08-01" });
-		const accountIds = [joint.id, livret.id, card.id];
+		const accountIds = [joint.id, livret.id, card.id, mortgage.id];
 		const groceries = await newCategory("Courses");
 		const inCategory = async (amount: number, date = "2026-09-10") => {
 			const id = await add(joint.id, { amount: toMinorUnits(amount), date, label: "Courses" });
@@ -4356,7 +4384,7 @@ describe("cashFlowByCategory", () => {
 		await insertTransfer(categorisedSide, counterpart, "internal_move");
 		await pairOf("internal_move", joint.id, livret.id);
 		await pairOf("credit_card_payment", joint.id, card.id);
-		await pairOf("loan_payment", joint.id, livret.id);
+		await loanPaymentOf(joint.id, mortgage.id);
 		await pairOf("investment_contribution", joint.id, livret.id);
 
 		const all = await listTransactions(deps(), { accountIds }, firstPage);
@@ -4401,6 +4429,26 @@ describe("transfer sides and categories", () => {
 		expect(page.items.map((item) => item.id)).toEqual([standard]);
 		expect(page.items.map((item) => item.id)).not.toContain(outflow);
 		expect(page.items.map((item) => item.id)).not.toContain(inflow);
+	});
+
+	it("lists the outflow of a loan payment under « Sans catégorie », as the dashboard counts it", async () => {
+		const { checking: joint } = await openHousehold();
+		const mortgage = await openLoan();
+		const { outflow, inflow } = await loanPaymentOf(joint.id, mortgage.id);
+
+		const page = await listTransactions(
+			deps(),
+			{ accountIds: [joint.id, mortgage.id], uncategorised: true, direction: ["expense"] },
+			firstPage,
+		);
+		const all = await listTransactions(
+			deps(),
+			{ accountIds: [joint.id, mortgage.id], uncategorised: true },
+			firstPage,
+		);
+
+		expect(page.items.map((item) => item.id)).toEqual([outflow]);
+		expect(all.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
 	it("sets a bulk category on standard rows only, other fields on every row", async () => {

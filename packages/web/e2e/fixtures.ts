@@ -25,6 +25,8 @@ export type OpenAccountOptions = {
 	openingDate?: string;
 	/** ISO 4217; EUR by default. */
 	currency?: string;
+	/** A loan's details, as typed in the form. */
+	details?: { originalAmount?: string; interestRate?: string; endDate?: string };
 };
 
 export type Created = { id: string; name: string };
@@ -180,6 +182,7 @@ export function apiHelpers(request: APIRequestContext) {
 					currency: options.currency ?? "EUR",
 					openingBalance: options.openingBalance ?? "1 000,00",
 					openingDate: options.openingDate ?? daysAgo(30),
+					...(options.details === undefined ? {} : { details: options.details }),
 				},
 			});
 

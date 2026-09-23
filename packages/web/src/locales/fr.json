@@ -114,7 +114,10 @@
 		"subtypes": {
 			"checking": "Compte courant",
 			"savings": "Épargne",
-			"credit_card": "Carte de crédit"
+			"credit_card": "Carte de crédit",
+			"mortgage": "Prêt immobilier",
+			"consumer": "Prêt à la consommation",
+			"other_loan": "Autre prêt"
 		},
 		"excluded_one": "{{count}} compte dans une autre devise n'est pas compté dans le total.",
 		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",
@@ -123,11 +126,12 @@
 		"showInactive": "Afficher les comptes inactifs",
 		"form": {
 			"title": "Ajouter un compte",
-			"description": "Le solde initial est la valeur du compte, ou le montant dû pour une carte, à la date choisie.",
+			"description": "Le solde initial est la valeur du compte, ou le montant dû pour une carte ou un prêt, à la date choisie.",
 			"name": "Nom",
 			"type": "Type",
 			"currency": "Devise",
 			"openingBalance": "Solde initial",
+			"outstandingBalance": "Capital restant dû",
 			"openingDate": "Date du solde",
 			"pickDate": "Choisir une date",
 			"submit": "Ajouter le compte",
@@ -146,6 +150,17 @@
 			"snapshots": "Soldes",
 			"imports": "Imports",
 			"settings": "Paramètres"
+		}
+	},
+	"loanDetails": {
+		"label": "Détails du prêt",
+		"originalAmount": "Montant emprunté",
+		"interestRate": "Taux (%)",
+		"endDate": "Date de fin",
+		"summary": {
+			"originalAmount": "Emprunté : {{amount}}",
+			"interestRate": "Taux : {{rate}}",
+			"endDate": "Fin : {{date}}"
 		}
 	},
 	"accountSettings": {
@@ -793,6 +808,9 @@
 			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
 			"invalid_currency": "Devise inconnue.",
 			"invalid_subtype": "Type de compte invalide.",
+			"invalid_rate": "Taux invalide. Exemple : 3,45, entre 0 et 100.",
+			"invalid_date": "Date invalide.",
+			"invalid_details": "Ces détails ne concernent que les prêts.",
 			"invalid_format": "Date invalide.",
 			"invalid_value": "Valeur invalide.",
 			"invalid_type": "Valeur invalide.",

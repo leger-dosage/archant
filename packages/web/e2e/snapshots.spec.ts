@@ -14,6 +14,8 @@ const header = (page: Page, name: string) =>
 const snapshotRow = (page: Page, iso: string) =>
 	page.getByRole("row", { name: new RegExp(`^${formatTableDate(iso)} `, "u") });
 
+const dayRow = (iso: string) => new RegExp(`^${formatTableDate(iso)} `, "u");
+
 const gap = (amount: number) => formatSignedMoney(toMinorUnits(amount), "EUR");
 
 test("?tab=snapshots opens Soldes; a recorded snapshot sets the balance and shows its gap", async ({
@@ -47,6 +49,38 @@ test("?tab=snapshots opens Soldes; a recorded snapshot sets the balance and show
 		gap(100_000),
 	]);
 	await expect(header(page, account.name)).toContainText(euros(200_000));
+});
+
+test("a loan's snapshot sets what it owes, and its history follows from that date", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "180 000,00",
+		openingDate: daysAgo(30),
+	});
+	const date = daysAgo(5);
+
+	await page.goto(`/comptes/${loan.id}?tab=snapshots`);
+	await page.getByRole("button", { name: "Ajouter un solde" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
+	await dialog.getByLabel("Date", { exact: true }).fill(typed(date));
+	await dialog.getByLabel("Solde").fill("175 000,00");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(header(page, loan.name)).toContainText(euros(17_500_000));
+
+	await page.getByRole("tab", { name: "Opérations" }).click();
+	await page.getByRole("button", { name: "Voir les données" }).click();
+	const table = page.getByRole("table");
+	await expect(table.getByRole("row").nth(1)).toContainText(euros(17_500_000));
+	await expect(table.getByRole("row", { name: dayRow(date) })).toContainText(euros(17_500_000));
+	await expect(table.getByRole("row", { name: dayRow(daysAgo(6)) })).toContainText(
+		euros(18_000_000),
+	);
 });
 
 test("a second snapshot on the same date replaces the first", async ({ page, api }) => {

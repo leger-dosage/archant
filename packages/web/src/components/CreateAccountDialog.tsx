@@ -1,4 +1,4 @@
-import type { FieldError } from "react-hook-form";
+import type { FieldError, Resolver } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useController, useForm } from "react-hook-form";
@@ -10,6 +10,7 @@ import { createAccountSchema } from "@archant/api/schemas/accounts";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { DateField } from "@/components/DateField";
+import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -35,13 +36,20 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
-const FIELD_NAMES = [
+const TOP_FIELD_NAMES = [
 	"name",
 	"type",
 	"subtype",
 	"currency",
 	"openingBalance",
 	"openingDate",
+] as const;
+
+const FIELD_NAMES = [
+	...TOP_FIELD_NAMES,
+	"details.originalAmount",
+	"details.interestRate",
+	"details.endDate",
 ] as const;
 
 const defaults = (): CreateAccountInput => ({
@@ -51,7 +59,20 @@ const defaults = (): CreateAccountInput => ({
 	currency: DEFAULT_CURRENCY,
 	openingBalance: "",
 	openingDate: toIsoDate(),
+	details: { originalAmount: "", interestRate: "", endDate: "" },
 });
+
+const schemaResolver = zodResolver(createAccountSchema, undefined, { raw: true });
+
+// The loan fields stay in the form's values when another type is picked, so
+// switching back keeps what was typed; the API refuses details on any other
+// type, so they are dropped before validation, and so before sending.
+const resolver: Resolver<CreateAccountInput> = async (values, context, options) =>
+	schemaResolver(
+		values.type === "loan" ? values : { ...values, details: undefined },
+		context,
+		options,
+	);
 
 function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
 	const { t } = useTranslation();
@@ -75,13 +96,15 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 	const form = useForm<CreateAccountInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
 		// there, into minor units of the chosen currency.
-		resolver: zodResolver(createAccountSchema, undefined, { raw: true }),
+		resolver,
 		defaultValues: defaults(),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const currency = useController({ control: form.control, name: "currency" });
 	const openingDate = useController({ control: form.control, name: "openingDate" });
-	const kind = kindOf(form.watch("type"), form.watch("subtype"));
+	const endDate = useController({ control: form.control, name: "details.endDate" });
+	const type = form.watch("type");
+	const kind = kindOf(type, form.watch("subtype"));
 
 	const close = (next: boolean) => {
 		if (!next) {
@@ -109,7 +132,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 		}
 	});
 
-	const describedBy = (name: (typeof FIELD_NAMES)[number]) =>
+	const describedBy = (name: (typeof TOP_FIELD_NAMES)[number]) =>
 		errors[name] === undefined ? {} : { "aria-describedby": `${name}-error` };
 
 	return (
@@ -202,7 +225,13 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 							<FieldMessage id="currency-error" error={errors.currency} />
 						</div>
 						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="openingBalance">{t("accounts.form.openingBalance")}</Label>
+							<Label htmlFor="openingBalance">
+								{t(
+									type === "loan"
+										? "accounts.form.outstandingBalance"
+										: "accounts.form.openingBalance",
+								)}
+							</Label>
 							<Input
 								id="openingBalance"
 								inputMode="decimal"
@@ -228,6 +257,15 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 						/>
 						<FieldMessage id="openingDate-error" error={errors.openingDate} />
 					</div>
+
+					{type === "loan" && (
+						<LoanDetailsFields
+							originalAmount={form.register("details.originalAmount")}
+							interestRate={form.register("details.interestRate")}
+							endDate={endDate.field}
+							errors={errors.details}
+						/>
+					)}
 				</form>
 				<DialogFooter>
 					<Button type="button" variant="outline" onClick={() => close(false)}>

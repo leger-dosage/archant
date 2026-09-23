@@ -1,11 +1,17 @@
 import type { IsoDate } from "../domain/dates.ts";
+import type { FieldError } from "../lib/errors.ts";
 import type { UpdateAccountRequest } from "../schemas/accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger.ts";
 
 import { eq } from "drizzle-orm";
 
-import type { AccountSubtype, AccountType, Classification } from "@archant/data/account-types";
+import type {
+	AccountSubtype,
+	AccountType,
+	Classification,
+	LoanDetails,
+} from "@archant/data/account-types";
 import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -14,6 +20,7 @@ import type { Account } from "@archant/data/types";
 
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { parseLoanDetails } from "../schemas/accounts.ts";
 import {
 	balanceOn,
 	createAccount as createLedgerAccount,
@@ -123,6 +130,8 @@ export type AccountDetail = AccountSummary & {
 	classification: Classification;
 	/** The opening anchor's date; a transaction must be dated after it. */
 	openingDate: IsoDate;
+	/** A loan's original amount, rate and end date, each null when not given; null for other types. */
+	details: LoanDetails | null;
 };
 
 /** One account as its page shows it. */
@@ -138,6 +147,7 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		...(await summarise(deps, account, today(deps.timeZone))),
 		classification: classificationOf(account.type),
 		openingDate,
+		details: account.details,
 	};
 }
 
@@ -157,10 +167,28 @@ export async function updateAccount(
 		throw new AppError("NOT_FOUND", "No account has this id.");
 	}
 
+	const fields: FieldError[] = [];
+
 	if (patch.subtype !== undefined && !isSubtypeOf(account.type, patch.subtype)) {
-		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-			{ path: "subtype", code: "invalid_subtype" },
-		]);
+		fields.push({ path: "subtype", code: "invalid_subtype" });
+	}
+
+	let details: LoanDetails | undefined;
+
+	if (patch.details !== undefined) {
+		if (account.type === "loan") {
+			const parsed = parseLoanDetails(patch.details, account.currency);
+			details = parsed.details;
+			fields.push(
+				...parsed.issues.map((issue) => ({ path: `details.${issue.field}`, code: issue.code })),
+			);
+		} else {
+			fields.push({ path: "details", code: "invalid_details" });
+		}
+	}
+
+	if (fields.length > 0) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", fields);
 	}
 
 	await deps.db
@@ -169,6 +197,7 @@ export async function updateAccount(
 			...(patch.name === undefined ? {} : { name: patch.name }),
 			...(patch.subtype === undefined ? {} : { subtype: patch.subtype }),
 			...(patch.active === undefined ? {} : { active: patch.active }),
+			...(details === undefined ? {} : { details }),
 			...(patch.excludedFromReports === undefined
 				? {}
 				: { excludedFromReports: patch.excludedFromReports }),

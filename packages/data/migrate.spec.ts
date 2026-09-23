@@ -83,6 +83,9 @@ describe("runMigrations", () => {
 		await expect(insertAccount(database, "a2", "depository", null)).rejects.toThrow();
 		await expect(insertAccount(database, "a3", "loan", null)).rejects.toThrow();
 		await expect(insertAccount(database, "a4", "credit_card", null)).resolves.toBeDefined();
+		await expect(insertAccount(database, "a5", "loan", "mortgage")).resolves.toBeDefined();
+		await expect(insertAccount(database, "a6", "loan", "savings")).rejects.toThrow();
+		await expect(insertAccount(database, "a7", "brokerage", null)).rejects.toThrow();
 	});
 
 	it("allows one opening anchor per account", async () => {
@@ -780,6 +783,43 @@ describe("rejected transfers", () => {
 		await expect(
 			database.run(sql`delete from transactions where entry_id = 'e2'`),
 		).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("loan accounts", () => {
+	it("keeps every account, entry and CSV mapping when 0018 rebuilds accounts", async () => {
+		const before = await migratedBefore("0018");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "credit_card", null);
+		await insertEntry(before, "e1", "valuation", "opening_anchor");
+		await insertEntry(before, "e2", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e2', 'Boulangerie')`);
+		await before.run(
+			sql`insert into import_mappings (account_id, mapping, updated_at) values ('a1', '{"skipRows":2}', 0)`,
+		);
+		await insertImport(before, "i1", "confirmed");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, type, subtype, details from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "depository", subtype: "checking", details: null },
+			{ id: "a2", type: "credit_card", subtype: null, details: null },
+		]);
+		await expect(database.all(sql`select id from entries order by id`)).resolves.toEqual([
+			{ id: "e1" },
+			{ id: "e2" },
+		]);
+		// Dropping the old table must not cascade to the mappings that point at it.
+		await expect(
+			database.all(sql`select account_id as accountId, mapping from import_mappings`),
+		).resolves.toEqual([{ accountId: "a1", mapping: '{"skipRows":2}' }]);
+		await expect(database.all(sql`select id from imports`)).resolves.toEqual([{ id: "i1" }]);
+		await expect(insertAccount(database, "a3", "loan", "consumer")).resolves.toBeDefined();
+		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
