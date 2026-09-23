@@ -1,5 +1,6 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
+import type { Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
 import type {
@@ -9,8 +10,9 @@ import type {
 	StatementBalance,
 } from "../domain/statement.ts";
 import type { AmountRange } from "../domain/transaction-filter.ts";
+import type { TransferSide } from "../domain/transfer-matching.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { SQL } from "drizzle-orm";
+import type { SQL, SQLWrapper } from "drizzle-orm";
 
 import {
 	and,
@@ -25,11 +27,14 @@ import {
 	isNull,
 	lte,
 	ne,
+	not,
 	notExists,
+	notInArray,
 	or,
 	sql,
 	sum,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountSubtype, AccountType } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
@@ -48,16 +53,24 @@ import { taggings } from "@archant/data/schema/taggings";
 import { tags } from "@archant/data/schema/tags";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { LOCKABLE_FIELDS, transactions } from "@archant/data/schema/transactions";
-import type { Account, NewBalance } from "@archant/data/types";
+import { transfers } from "@archant/data/schema/transfers";
+import type { TransferKind } from "@archant/data/transfer-kinds";
+import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
+import type { Account, NewBalance, Transfer } from "@archant/data/types";
 
 import { forwardBalances } from "../domain/balances/forward.ts";
 import { fillDays } from "../domain/balances/history.ts";
 import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
 import { toStoredBalance } from "../domain/balances/stored-balance.ts";
-import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
+import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
+import {
+	TRANSFER_WINDOW_DAYS,
+	isTransferCandidate,
+	transferKindOf,
+} from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 
@@ -134,6 +147,14 @@ async function inSequence<Row>(
 	write: (chunk: Row[]) => Promise<unknown>,
 ): Promise<void> {
 	await oneByOne(chunksOf(rows, size), write);
+}
+
+/** The transfers `ids` sit in, on either side; `ids` may be a subquery. */
+function transferOf(ids: readonly string[] | SQLWrapper): SQL | undefined {
+	return or(
+		inArray(transfers.outflowTransactionId, ids),
+		inArray(transfers.inflowTransactionId, ids),
+	);
 }
 
 // A `current_anchor` belongs to a bank-linked account, computed backward from
@@ -1154,6 +1175,12 @@ export async function updateTransaction(
 					.where(eq(entries.id, entryId));
 			}
 
+			// The two sides no longer cancel out, so they stop being one movement.
+			// A new date keeps the transfer, as in Sure: the money still moved.
+			if (changed.includes("amount")) {
+				await tx.delete(transfers).where(transferOf([entryId]));
+			}
+
 			await tx
 				.update(transactions)
 				.set(detailOf(current, change, options.origin))
@@ -1193,10 +1220,12 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
-			// Keys, taggings and the detail row first: their foreign keys restrict
-			// deleting the entry. Without its keys, the line comes back on re-import,
-			// as in Sure.
+			// Keys, taggings, the transfer and the detail row first: their foreign
+			// keys restrict deleting the entry. Without its keys, the line comes back
+			// on re-import, as in Sure; without its transfer, the other side is a
+			// standard transaction again.
 			await tx.delete(entryKeys).where(eq(entryKeys.entryId, entryId));
+			await tx.delete(transfers).where(transferOf([entryId]));
 			await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
 			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
 			await tx.delete(entries).where(eq(entries.id, entryId));
@@ -1232,7 +1261,7 @@ export type BulkPatch = {
 async function selectedRows(tx: Transaction, selection: BulkSelection) {
 	const query = (where: SQL | undefined) =>
 		tx
-			.select({ id: entries.id, ...editableColumns })
+			.select({ id: entries.id, ...editableColumns, inTransfer: inAnyTransfer.mapWith(Boolean) })
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
 			.where(and(eq(entries.kind, "transaction"), where));
@@ -1313,7 +1342,7 @@ export async function bulkUpdateTransactions(
 			>();
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 
-			for (const { id, ...row } of rows) {
+			for (const { id, inTransfer, ...row } of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
 				const tagIds =
 					added === undefined ? undefined : [...new Set([...current.tagIds, ...added])];
@@ -1324,7 +1353,9 @@ export async function bulkUpdateTransactions(
 
 				const change = changeOf(
 					current,
-					{ categoryId, merchantId, excluded, tagIds },
+					// A transfer side has no category to set: it would stay hidden, and
+					// come back unasked when the transfer is dissociated.
+					{ categoryId: inTransfer ? undefined : categoryId, merchantId, excluded, tagIds },
 					options.origin,
 				);
 
@@ -1395,6 +1426,9 @@ export async function bulkDeleteTransactions(
 			);
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
+			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(transfers).where(transferOf(chunk)),
 			);
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(transactions).where(inArray(transactions.entryId, chunk)),
@@ -1664,6 +1698,10 @@ export async function revertImport(
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
 			);
+			// The other side, maybe on another account, becomes a standard transaction.
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(transfers).where(transferOf(chunk)),
+			);
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(transactions).where(inArray(transactions.entryId, chunk)),
 			);
@@ -1735,12 +1773,13 @@ export async function revertImport(
 
 /**
  * Deletes an account and everything it holds, as one write: its entries'
- * keys, its transactions' taggings, its transactions, all its entries, snapshots and opening anchor
- * included, its daily balances, its imports, then the account. Children go first, since their foreign keys restrict.
- * Every delete selects by `account_id` through a subquery, never a list of
- * ids, so a history of 50,000 transactions binds one parameter, not 50,000.
- * When transfers arrive (Epic 5), the ones touching the account go first,
- * leaving the other side an ordinary transaction, as Sure's `cleanup_transfers`.
+ * keys, its transactions' taggings and transfers, its transactions, all its
+ * entries, snapshots and opening anchor included, its daily balances, its
+ * imports, then the account. Children go first, since their foreign keys
+ * restrict. A transfer's other side, on another account, stays as a standard
+ * transaction, as Sure's `cleanup_transfers` leaves it. Every delete selects
+ * by `account_id` through a subquery, never a list of ids, so a history of
+ * 50,000 transactions binds one parameter, not 50,000.
  */
 export async function deleteAccount(
 	deps: ServiceDeps,
@@ -1757,6 +1796,13 @@ export async function deleteAccount(
 				.where(
 					inArray(
 						taggings.transactionId,
+						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
+					),
+				);
+			await tx
+				.delete(transfers)
+				.where(
+					transferOf(
 						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
 					),
 				);
@@ -1829,6 +1875,183 @@ export async function openingDateOf(deps: ServiceDeps, accountId: string): Promi
 	return row?.date ?? null;
 }
 
+/** A transaction that can be the other side of a transfer, as the picker lists it. */
+export type TransferCandidate = {
+	id: string;
+	date: IsoDate;
+	label: string;
+	amount: MinorUnits;
+	currency: string;
+	accountId: string;
+	accountName: string;
+};
+
+const inAnyTransfer = sql<number>`exists (select 1 from ${transfers} where ${transfers.outflowTransactionId} = ${entries.id} or ${transfers.inflowTransactionId} = ${entries.id})`;
+
+const sideColumns = {
+	id: entries.id,
+	kind: entries.kind,
+	accountId: entries.accountId,
+	accountType: accounts.type,
+	date: entries.date,
+	amount: entries.amount,
+	currency: entries.currency,
+	inTransfer: inAnyTransfer.mapWith(Boolean),
+};
+
+/** One transaction as the matching rule reads it, `undefined` when the id names none. */
+async function transferSide(db: Pick<Transaction, "select">, entryId: string) {
+	const row = await db
+		.select(sideColumns)
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(eq(entries.id, entryId))
+		.get();
+
+	return row === undefined ? undefined : { ...row, amount: toMinorUnits(row.amount) };
+}
+
+function asSide(row: Omit<TransferSide, "amount"> & { amount: number }): TransferSide {
+	return { ...row, amount: toMinorUnits(row.amount) };
+}
+
+/**
+ * The transactions `entryId` can be matched with, closest date first, then
+ * the earlier, then the older entry. SQL narrows them to the opposite amount
+ * in another account of the currency, within the window and unmatched;
+ * `isTransferCandidate` then has the last word, so the picker and the match
+ * never disagree. Throws `NOT_FOUND` for an unknown transaction; a
+ * transaction already in a transfer has no candidate.
+ */
+export async function transferCandidates(
+	deps: ServiceDeps,
+	entryId: string,
+): Promise<TransferCandidate[]> {
+	const source = await transferSide(deps.db, entryId);
+
+	if (source === undefined) {
+		throw new AppError("NOT_FOUND", "No transaction has this id.");
+	}
+
+	const amount = Number(source.amount);
+
+	if (source.inTransfer || amount === 0) {
+		return [];
+	}
+
+	const rows = await deps.db
+		.select({ ...sideColumns, label: transactions.label, accountName: accounts.name })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(
+			and(
+				eq(entries.kind, "transaction"),
+				ne(entries.accountId, source.accountId),
+				eq(entries.currency, source.currency),
+				eq(entries.amount, -amount),
+				between(
+					entries.date,
+					addDays(source.date, -TRANSFER_WINDOW_DAYS),
+					addDays(source.date, TRANSFER_WINDOW_DAYS),
+				),
+				not(inAnyTransfer),
+			),
+		)
+		.orderBy(entries.date, entries.createdAt, entries.id);
+
+	return (
+		rows
+			.filter((row) => isTransferCandidate(source, asSide(row)))
+			.map((row) => ({
+				row,
+				distance: Math.abs(daysBetween(source.date, row.date)),
+			}))
+			// Stable, so rows equally far keep the query's order.
+			.toSorted((a, b) => a.distance - b.distance)
+			.map(({ row }) => ({
+				id: row.id,
+				date: row.date,
+				label: row.label,
+				amount: toMinorUnits(row.amount),
+				currency: row.currency,
+				accountId: row.accountId,
+				accountName: row.accountName,
+			}))
+	);
+}
+
+/**
+ * Links `entryId` and `counterpartId` as one transfer, the negative side as
+ * the outflow, its kind from the inflow account's type. The rule is checked
+ * again inside the write, so a concurrent match cannot put a transaction in
+ * two transfers. No balance moves and no category, lock or tag changes: the
+ * two rows stay what they were, only their direction changes. Throws
+ * `NOT_FOUND` for an unknown `entryId`, `VALIDATION_ERROR` on `counterpartId`
+ * when it is no candidate, unknown or already matched included.
+ */
+export async function matchTransfer(
+	deps: ServiceDeps,
+	entryId: string,
+	counterpartId: string,
+	_options: { origin: Origin },
+): Promise<Transfer> {
+	return deps.db.transaction(
+		async (tx): Promise<Transfer> => {
+			const source = await transferSide(tx, entryId);
+
+			if (source === undefined) {
+				throw new AppError("NOT_FOUND", "No transaction has this id.");
+			}
+
+			const counterpart = await transferSide(tx, counterpartId);
+
+			if (counterpart === undefined || !isTransferCandidate(source, counterpart)) {
+				throw invalidField("counterpartId", "not_a_candidate");
+			}
+
+			const [outflow, inflow] = source.amount < 0 ? [source, counterpart] : [counterpart, source];
+			const transfer: Transfer = {
+				id: crypto.randomUUID(),
+				outflowTransactionId: outflow.id,
+				inflowTransactionId: inflow.id,
+				kind: transferKindOf(inflow.accountType),
+				createdAt: Date.now(),
+			};
+
+			await tx.insert(transfers).values(transfer);
+
+			return transfer;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Deletes a transfer, both sides becoming standard transactions again, their
+ * category, locks and tags as they were. Throws `NOT_FOUND` for an unknown id.
+ */
+export async function unmatchTransfer(
+	deps: ServiceDeps,
+	transferId: string,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const deleted = await tx
+				.delete(transfers)
+				.where(eq(transfers.id, transferId))
+				.returning({ id: transfers.id });
+
+			if (deleted.length === 0) {
+				throw new AppError("NOT_FOUND", "No transfer has this id.");
+			}
+		},
+		{ behavior: "immediate" },
+	);
+}
+
 export type TransactionRecord = {
 	id: string;
 	accountId: string;
@@ -1847,6 +2070,19 @@ export type TransactionRecord = {
 	merchantId: string | null;
 	/** Sorted by id; the interface sorts the names. */
 	tagIds: string[];
+	/** The transfer it is a side of, with the other side's account. */
+	transfer: TransferLink | null;
+};
+
+/**
+ * A transaction's transfer as its row shows it. Which side it is follows from
+ * its amount: the outflow is the negative one.
+ */
+export type TransferLink = {
+	id: string;
+	kind: TransferKind;
+	counterpartAccountId: string;
+	counterpartAccountName: string;
 };
 
 /** A transaction as a list shows it, with its account's name. */
@@ -1868,6 +2104,47 @@ const transactionColumns = {
 
 function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {
 	return { ...row, amount: toMinorUnits(row.amount) };
+}
+
+// A row is the outflow of at most one transfer and the inflow of at most one,
+// so a left join on each unique index never repeats it.
+const asOutflow = alias(transfers, "as_outflow");
+const asInflow = alias(transfers, "as_inflow");
+const counterpartEntry = alias(entries, "counterpart_entry");
+const counterpartAccount = alias(accounts, "counterpart_account");
+
+const counterpartIdOf = sql`coalesce(${asOutflow.inflowTransactionId}, ${asInflow.outflowTransactionId})`;
+
+const transferColumns = {
+	transferId: sql<string | null>`coalesce(${asOutflow.id}, ${asInflow.id})`,
+	transferKind: sql<TransferKind | null>`coalesce(${asOutflow.kind}, ${asInflow.kind})`,
+	counterpartAccountId: counterpartAccount.id,
+	counterpartAccountName: counterpartAccount.name,
+};
+
+type TransferColumns = {
+	transferId: string | null;
+	transferKind: TransferKind | null;
+	counterpartAccountId: string | null;
+	counterpartAccountName: string | null;
+};
+
+/** Folds the transfer columns of a row into its `transfer`. */
+function withTransferLink<Row extends TransferColumns>(
+	row: Row,
+): Omit<Row, keyof TransferColumns> & { transfer: TransferLink | null } {
+	const { transferId, transferKind, counterpartAccountId, counterpartAccountName, ...rest } = row;
+
+	return {
+		...rest,
+		transfer:
+			transferId === null ||
+			transferKind === null ||
+			counterpartAccountId === null ||
+			counterpartAccountName === null
+				? null
+				: { id: transferId, kind: transferKind, counterpartAccountId, counterpartAccountName },
+	};
 }
 
 /** Where an imported entry came from; `confirmedAt` is epoch milliseconds. */
@@ -1905,13 +2182,19 @@ export async function findTransaction(
 	entryId: string,
 ): Promise<TransactionRecord | null> {
 	const row = await deps.db
-		.select(transactionColumns)
+		.select({ ...transactionColumns, ...transferColumns })
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
+		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
 		.where(eq(entries.id, entryId))
 		.get();
 
-	return row === undefined ? null : { ...toRecord(row), tagIds: await tagIdsOf(deps.db, entryId) };
+	return row === undefined
+		? null
+		: { ...withTransferLink(toRecord(row)), tagIds: await tagIdsOf(deps.db, entryId) };
 }
 
 /**
@@ -1971,6 +2254,8 @@ export type TransactionFilter = {
 	merchantIds?: readonly string[] | undefined;
 	/** Tags, ORed; a row carrying several still matches once. */
 	tagIds?: readonly string[] | undefined;
+	/** Income, expense or transfer as `direction` decides, ORed. */
+	direction?: readonly Direction[] | undefined;
 };
 
 /** Whether the filter reads `transactions`, so the count and the sum must join it. */
@@ -1998,7 +2283,9 @@ function categoryCondition(filter: TransactionFilter): SQL | undefined | null {
 
 	return or(
 		ids.length === 0 ? undefined : inArray(transactions.categoryId, [...ids]),
-		uncategorised ? isNull(transactions.categoryId) : undefined,
+		// A transfer side shows no category, so it is not « Sans catégorie »
+		// either, as Sure's `uncategorized_condition` leaves transfers out.
+		uncategorised ? and(isNull(transactions.categoryId), not(inAnyTransfer)) : undefined,
 	);
 }
 
@@ -2024,11 +2311,25 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
 }
 
 /**
+ * The SQL twin of `direction` in `domain/cash-flow.ts`, built from the same
+ * `EXPENSE_TRANSFER_KINDS`; the ledger's parity test keeps the two in step. It
+ * lives here because only the ledger reads the money tables. `exists` rather
+ * than a join, so the count and the sum need no join either.
+ */
+const isTransferSide = sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`;
+
+const DIRECTION_CONDITIONS: Record<Direction, SQL | undefined> = {
+	income: and(not(isTransferSide), gt(entries.amount, 0)),
+	expense: and(not(isTransferSide), lte(entries.amount, 0)),
+	transfer: isTransferSide,
+};
+
+/**
  * The where clause of a filter, `null` when it can match nothing at all, so
  * the caller skips the query rather than asking SQLite for an empty `or`.
  */
 function filterCondition(filter: TransactionFilter): SQL | undefined | null {
-	const { accountIds, amounts, q, merchantIds, tagIds } = filter;
+	const { accountIds, amounts, q, merchantIds, tagIds, direction } = filter;
 	const category = categoryCondition(filter);
 
 	if (
@@ -2036,6 +2337,7 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 		amounts?.length === 0 ||
 		merchantIds?.length === 0 ||
 		tagIds?.length === 0 ||
+		direction?.length === 0 ||
 		category === null
 	) {
 		return null;
@@ -2063,6 +2365,9 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 		tagIds === undefined
 			? undefined
 			: sql`exists (select 1 from ${taggings} where ${taggings.transactionId} = ${entries.id} and ${inArray(taggings.tagId, [...tagIds])})`,
+		direction === undefined
+			? undefined
+			: or(...[...new Set(direction)].map((value) => DIRECTION_CONDITIONS[value])),
 	);
 }
 
@@ -2084,10 +2389,14 @@ export async function listTransactions(
 	}
 
 	const rows = await deps.db
-		.select({ ...transactionColumns, accountName: accounts.name })
+		.select({ ...transactionColumns, ...transferColumns, accountName: accounts.name })
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
+		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
 		.where(where)
 		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
 		.limit(page.pageSize)
@@ -2106,7 +2415,10 @@ export async function listTransactions(
 	);
 
 	return {
-		items: rows.map((row) => ({ ...toRecord(row), tagIds: tagsOf.get(row.id) ?? [] })),
+		items: rows.map((row) => ({
+			...withTransferLink(toRecord(row)),
+			tagIds: tagsOf.get(row.id) ?? [],
+		})),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
 }

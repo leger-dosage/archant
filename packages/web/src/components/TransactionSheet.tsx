@@ -1,10 +1,12 @@
 import type { TransactionData } from "@/hooks/useTransactions";
+import type { TransferCandidateData } from "@/hooks/useTransfers";
 import type { FieldError } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
@@ -18,6 +20,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { TagCombobox } from "@/components/TagCombobox";
+import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,12 +43,14 @@ import {
 	useDeleteTransaction,
 	useUpdateTransaction,
 } from "@/hooks/useTransactions";
+import { useMatchTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { amountToText } from "@/lib/amount-sign";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
 
 const FIELD_NAMES = [
 	"date",
@@ -280,6 +285,105 @@ function TagsField({
 	);
 }
 
+type TransferLink = TransactionData["transfer"];
+
+/**
+ * The sheet's « Virement » block: the other side and « Dissocier » for a
+ * transfer side, « Rapprocher un virement » for a standard transaction. It
+ * saves at once, apart from the form, so it keeps the link it last saved
+ * rather than the row the sheet was opened with.
+ */
+function TransferBlock({
+	transaction,
+	transfer,
+	onChange,
+}: {
+	transaction: TransactionData;
+	transfer: TransferLink;
+	onChange: (transfer: TransferLink) => void;
+}) {
+	const { t } = useTranslation();
+	const matchTransfer = useMatchTransfer();
+	const unmatchTransfer = useUnmatchTransfer();
+	const [picking, setPicking] = useState(false);
+	const caption = transferCaption({ amount: transaction.amount, transfer });
+
+	const match = (candidate: TransferCandidateData) =>
+		matchTransfer.mutate(
+			{ transactionId: transaction.id, counterpartId: candidate.id },
+			{
+				onSuccess: (saved) => {
+					onChange({
+						id: saved.id,
+						kind: saved.kind,
+						counterpartAccountId: candidate.accountId,
+						counterpartAccountName: candidate.accountName,
+					});
+					setPicking(false);
+					toast.success(t("transactions.transfer.matched"));
+				},
+				onError: (error) => showErrorToast(errorCodeOf(error)),
+			},
+		);
+
+	const unmatch = (id: string) =>
+		unmatchTransfer.mutate(id, {
+			onSuccess: () => {
+				onChange(null);
+				toast.success(t("transactions.transfer.unmatched"));
+			},
+			onError: (error) => {
+				// Already dissociated elsewhere: the sheet catches up rather than
+				// offering « Dissocier » again.
+				if (errorCodeOf(error) === "NOT_FOUND") {
+					onChange(null);
+				}
+				showErrorToast(errorCodeOf(error));
+			},
+		});
+
+	return (
+		<section aria-labelledby="transaction-transfer-title" className="flex flex-col gap-1.5">
+			<h3 id="transaction-transfer-title" className="text-sm font-medium">
+				{t("transactions.transfer.title")}
+			</h3>
+			{transfer === null || caption === null ? (
+				<div className="flex flex-col items-start gap-2">
+					<p className="text-sm text-muted-foreground">{t("transactions.transfer.none")}</p>
+					<Button type="button" variant="outline" onClick={() => setPicking(true)}>
+						{t("transactions.transfer.match")}
+					</Button>
+					<TransferDialog
+						transactionId={transaction.id}
+						open={picking}
+						onOpenChange={setPicking}
+						onPick={match}
+						pending={matchTransfer.isPending}
+					/>
+				</div>
+			) : (
+				<div className="flex items-center justify-between gap-4">
+					<p className="flex min-w-0 flex-col text-sm">
+						<span className="truncate">{t(caption.key, { account: caption.account })}</span>
+						<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+							<CategoryDot color={TRANSFER_COLOR} />
+							{t(`transactions.transfer.kinds.${transfer.kind}`)}
+						</span>
+					</p>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={unmatchTransfer.isPending}
+						onClick={() => unmatch(transfer.id)}
+					>
+						{t("transactions.transfer.unmatch")}
+					</Button>
+				</div>
+			)}
+		</section>
+	);
+}
+
 type TransactionFormProps = {
 	account: SheetAccount;
 	transaction: TransactionData | null;
@@ -302,6 +406,7 @@ function TransactionForm({
 	const updateTransaction = useUpdateTransaction(account.id);
 	const deleteTransaction = useDeleteTransaction(account.id);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const [transfer, setTransfer] = useState<TransferLink>(transaction?.transfer ?? null);
 	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
 	const form = useForm<TransactionFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
@@ -356,7 +461,8 @@ function TransactionForm({
 				const { dirtyFields } = form.formState;
 				const input = {
 					...rest,
-					...(dirtyFields.categoryId === true ? { categoryId } : {}),
+					// Hidden once a transfer is matched in this sheet: not the user's to save.
+					...(dirtyFields.categoryId === true && transfer === null ? { categoryId } : {}),
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
 					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
 				};
@@ -414,6 +520,10 @@ function TransactionForm({
 					}
 				}}
 			>
+				{transaction !== null && (
+					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
+				)}
+
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="transaction-date">{t("transactions.form.date")}</Label>
 					<DateField
@@ -465,7 +575,8 @@ function TransactionForm({
 					<FieldMessage id="transaction-notes-error" error={errors.notes} />
 				</div>
 
-				{transaction !== null && (
+				{/* A transfer side has no category to pick: it is neither spent nor earned. */}
+				{transaction !== null && transfer === null && (
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
 						<CategoryField

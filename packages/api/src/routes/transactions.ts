@@ -17,6 +17,7 @@ import {
 	listAllTransactions,
 	updateTransaction,
 } from "../services/transactions.ts";
+import { listTransferCandidates } from "../services/transfers.ts";
 
 export function transactionsRoutes(deps: ServiceDeps) {
 	return (
@@ -49,6 +50,9 @@ export function transactionsRoutes(deps: ServiceDeps) {
 					}
 				}),
 				async (c) => c.json({ data: await bulkDeleteTransactions(deps, c.req.valid("json")) }, 200),
+			)
+			.get("/:id/transfer-candidates", async (c) =>
+				c.json({ data: await listTransferCandidates(deps, c.req.param("id")) }, 200),
 			)
 			.patch(
 				"/:id",

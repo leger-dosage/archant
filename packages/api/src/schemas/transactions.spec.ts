@@ -84,6 +84,18 @@ describe("transactionFilterSchema", () => {
 		expect(transactionFilterSchema.safeParse({ merchant: merchant.slice(1) }).success).toBe(true);
 	});
 
+	it("reads a lone direction as a list, drops repeats and refuses an unknown one", () => {
+		expect(transactionFilterSchema.parse({ direction: "income" }).direction).toEqual(["income"]);
+		expect(
+			transactionFilterSchema.parse({ direction: ["transfer", "expense", "transfer"] }).direction,
+		).toEqual(["transfer", "expense"]);
+		expect(transactionFilterSchema.parse({}).direction).toBeUndefined();
+		expect(transactionFilterSchema.safeParse({ direction: "refund" }).success).toBe(false);
+		expect(bulkDeleteBodySchema.parse({ filter: { direction: "transfer" } }).selection).toEqual({
+			filter: { direction: ["transfer"] },
+		});
+	});
+
 	it("reads a lone tag as a list, repeated ones in order, and refuses more than the cap", () => {
 		const tag = Array.from({ length: MAX_TAG_FILTER + 1 }, (_, index) => `t${index}`);
 

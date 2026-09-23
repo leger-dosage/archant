@@ -29,6 +29,7 @@ import {
 	useSetTransactionTags,
 } from "@/hooks/useTransactions";
 import { dayHeading } from "@/lib/dates";
+import { TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
 import { cn } from "@/lib/utils";
 
 type TransactionListProps = {
@@ -130,6 +131,21 @@ function CategoryChip({
 				/>
 			</PopoverContent>
 		</Popover>
+	);
+}
+
+/**
+ * A transfer side's chip, where a standard row has its category: not a
+ * button, since a transfer has no category to pick until it is dissociated.
+ */
+function TransferChip({ kind }: { kind: NonNullable<TransactionData["transfer"]>["kind"] }) {
+	const { t } = useTranslation();
+
+	return (
+		<span className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start px-2 text-xs text-muted-foreground md:ml-0 md:w-44 md:shrink-0 md:self-center">
+			<CategoryDot color={TRANSFER_COLOR} />
+			<span className="truncate">{t(`transactions.transfer.kinds.${kind}`)}</span>
+		</span>
 	);
 }
 
@@ -260,10 +276,12 @@ export function TransactionList({
 		"categoriseRow",
 		() => {
 			const id = focusedRowId();
+			// A transfer side shows no category to change.
+			const transfer = items.find((item) => item.id === id)?.transfer ?? null;
 
 			if (bulk()) {
 				onBulkPick?.("category");
-			} else if (id !== undefined) {
+			} else if (id !== undefined && transfer === null) {
 				openedFromRow.current = id;
 				setPicking(id);
 			}
@@ -324,8 +342,14 @@ export function TransactionList({
 						</h3>
 						<ul>
 							{day.items.map((item) => {
-								const merchantName =
-									item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
+								const caption = transferCaption(item);
+								// A transfer side names the other account where a purchase names its merchant.
+								const subtitle =
+									caption !== null
+										? t(caption.key, { account: caption.account })
+										: item.merchantId === null
+											? undefined
+											: merchantNames.get(item.merchantId);
 								const rowTags = item.tagIds
 									.flatMap((id) => {
 										const name = tagNames.get(id);
@@ -376,10 +400,10 @@ export function TransactionList({
 															<span className="truncate" title={item.label}>
 																{item.label}
 															</span>
-															{(merchantName !== undefined || rowTags.length > 0) && (
+															{(subtitle !== undefined || rowTags.length > 0) && (
 																<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-																	{merchantName !== undefined && (
-																		<span className="truncate">{merchantName}</span>
+																	{subtitle !== undefined && (
+																		<span className="truncate">{subtitle}</span>
 																	)}
 																	{rowTags.slice(0, SHOWN_TAGS).map((name) => (
 																		<Badge
@@ -457,34 +481,38 @@ export function TransactionList({
 													)}
 												</PopoverContent>
 											</Popover>
-											<CategoryChip
-												transaction={item}
-												categories={categories.data}
-												open={picking === item.id}
-												onOpenChange={(open) => {
-													if (open) {
-														openedFromRow.current = null;
-													}
-													setPicking(open ? item.id : null);
-												}}
-												onPick={(categoryId) => {
-													setPicking(null);
-													if (categoryId !== item.categoryId) {
-														setCategory.mutate({
-															id: item.id,
-															value: categoryId,
-															previous: item.categoryId,
-														});
-													}
-												}}
-												onCloseFocus={(event) => {
-													if (openedFromRow.current === item.id) {
-														openedFromRow.current = null;
-														event.preventDefault();
-														rowButton(item.id)?.focus();
-													}
-												}}
-											/>
+											{item.transfer !== null ? (
+												<TransferChip kind={item.transfer.kind} />
+											) : (
+												<CategoryChip
+													transaction={item}
+													categories={categories.data}
+													open={picking === item.id}
+													onOpenChange={(open) => {
+														if (open) {
+															openedFromRow.current = null;
+														}
+														setPicking(open ? item.id : null);
+													}}
+													onPick={(categoryId) => {
+														setPicking(null);
+														if (categoryId !== item.categoryId) {
+															setCategory.mutate({
+																id: item.id,
+																value: categoryId,
+																previous: item.categoryId,
+															});
+														}
+													}}
+													onCloseFocus={(event) => {
+														if (openedFromRow.current === item.id) {
+															openedFromRow.current = null;
+															event.preventDefault();
+															rowButton(item.id)?.focus();
+														}
+													}}
+												/>
+											)}
 										</div>
 									</li>
 								);
