@@ -16,6 +16,7 @@ import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
+import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
+import { useMerchants } from "@/hooks/useMerchants";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -43,7 +45,7 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
-const FIELD_NAMES = ["date", "label", "amount", "notes", "categoryId"] as const;
+const FIELD_NAMES = ["date", "label", "amount", "notes", "categoryId", "merchantId"] as const;
 
 type FieldName = (typeof FIELD_NAMES)[number];
 
@@ -85,6 +87,7 @@ function valuesOf(transaction: TransactionData | null, openingDate: string): Tra
 				notes: "",
 				excluded: false,
 				categoryId: null,
+				merchantId: null,
 			}
 		: {
 				date: transaction.date,
@@ -93,6 +96,7 @@ function valuesOf(transaction: TransactionData | null, openingDate: string): Tra
 				notes: transaction.notes ?? "",
 				excluded: transaction.excluded,
 				categoryId: transaction.categoryId,
+				merchantId: transaction.merchantId,
 			};
 }
 
@@ -145,6 +149,61 @@ function CategoryField({
 	);
 }
 
+/** The sheet's Marchand field: the list's combobox behind a button showing the choice. */
+function MerchantField({
+	value,
+	onChange,
+	invalid,
+	describedBy,
+}: {
+	value: string | null;
+	onChange: (merchantId: string | null) => void;
+	invalid: boolean;
+	describedBy: string | undefined;
+}) {
+	const { t } = useTranslation();
+	const merchants = useMerchants();
+	const [open, setOpen] = useState(false);
+	const name =
+		value === null
+			? t("transactions.merchant.none")
+			: merchants.data === undefined
+				? null
+				: (merchants.data.find((merchant) => merchant.id === value)?.name ??
+					t("transactions.merchant.unknown"));
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					id="transaction-merchant"
+					type="button"
+					variant="outline"
+					className="w-full justify-start font-normal"
+					aria-invalid={invalid}
+					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
+				>
+					{name === null ? (
+						<Skeleton className="h-3 w-24" />
+					) : (
+						<span className="truncate">{name}</span>
+					)}
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+				<MerchantCombobox
+					merchants={merchants.data ?? []}
+					value={value}
+					onSelect={(merchantId) => {
+						onChange(merchantId);
+						setOpen(false);
+					}}
+				/>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
 type TransactionFormProps = {
 	account: SheetAccount;
 	transaction: TransactionData | null;
@@ -179,6 +238,7 @@ function TransactionForm({
 	const amount = useController({ control: form.control, name: "amount" });
 	const excluded = useController({ control: form.control, name: "excluded" });
 	const category = useController({ control: form.control, name: "categoryId" });
+	const merchant = useController({ control: form.control, name: "merchantId" });
 
 	useEffect(() => {
 		onDirtyChange(isDirty);
@@ -200,15 +260,26 @@ function TransactionForm({
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			if (transaction === null) {
-				// A new transaction is always counted and starts « Sans catégorie »:
-				// the switch and the category show on edits only.
-				const { excluded: _excluded, categoryId: _categoryId, ...input } = values;
+				// A new transaction is always counted and starts « Sans catégorie » and
+				// « Sans marchand »: the switch, the category and the merchant show on
+				// edits only.
+				const {
+					excluded: _excluded,
+					categoryId: _categoryId,
+					merchantId: _merchantId,
+					...input
+				} = values;
 				await createTransaction.mutateAsync(input);
 			} else {
-				// Sent only when changed: a category deleted elsewhere since the sheet
-				// opened would otherwise refuse the save of any other field.
-				const { categoryId: _categoryId, ...rest } = values;
-				const input = form.formState.dirtyFields.categoryId === true ? values : rest;
+				// Sent only when changed: a category or a merchant deleted elsewhere
+				// since the sheet opened would otherwise refuse the save of any other field.
+				const { categoryId, merchantId, ...rest } = values;
+				const { dirtyFields } = form.formState;
+				const input = {
+					...rest,
+					...(dirtyFields.categoryId === true ? { categoryId } : {}),
+					...(dirtyFields.merchantId === true ? { merchantId } : {}),
+				};
 				await updateTransaction.mutateAsync({ id: transaction.id, input });
 			}
 			// No success toast: the row and the balance changing say it.
@@ -317,6 +388,21 @@ function TransactionForm({
 							}
 						/>
 						<FieldMessage id="transaction-categoryId-error" error={errors.categoryId} />
+					</div>
+				)}
+
+				{transaction !== null && (
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="transaction-merchant">{t("transactions.form.merchant")}</Label>
+						<MerchantField
+							value={merchant.field.value}
+							onChange={merchant.field.onChange}
+							invalid={errors.merchantId !== undefined}
+							describedBy={
+								errors.merchantId === undefined ? undefined : "transaction-merchantId-error"
+							}
+						/>
+						<FieldMessage id="transaction-merchantId-error" error={errors.merchantId} />
 					</div>
 				)}
 

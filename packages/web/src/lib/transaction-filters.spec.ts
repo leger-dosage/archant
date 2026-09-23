@@ -17,9 +17,11 @@ const accounts = new Map([
 	["b", "Carte"],
 ]);
 const categories = new Map([["c", "Courses"]]);
+const merchants = new Map([["m", "Carrefour"]]);
 const nameOf = {
 	account: (id: string) => accounts.get(id),
 	category: (id: string) => categories.get(id),
+	merchant: (id: string) => merchants.get(id),
 };
 
 describe("operationsSearchSchema", () => {
@@ -101,6 +103,14 @@ describe("operationsSearchSchema, across params", () => {
 		});
 		expect(operationsSearchSchema.parse({ category: [] })).toEqual({});
 	});
+
+	it("reads a lone merchant as a list of one, and drops an empty list", () => {
+		expect(operationsSearchSchema.parse({ merchant: "m" })).toEqual({ merchant: ["m"] });
+		expect(operationsSearchSchema.parse({ merchant: ["m", "n"] })).toEqual({
+			merchant: ["m", "n"],
+		});
+		expect(operationsSearchSchema.parse({ merchant: [] })).toEqual({});
+	});
 });
 
 describe("filtersOf and hasFilters", () => {
@@ -140,6 +150,10 @@ describe("withoutFilter", () => {
 			category: undefined,
 			account: ["a"],
 		});
+		expect(withoutFilter({ ...search, merchant: ["m"] }, "merchant")).toMatchObject({
+			merchant: undefined,
+			account: ["a"],
+		});
 		expect(withoutFilter(search, "q")).toMatchObject({ q: undefined, account: ["a"] });
 	});
 });
@@ -152,6 +166,7 @@ describe("toApiQuery", () => {
 				{
 					account: ["a"],
 					category: ["none", "c"],
+					merchant: ["m"],
 					from: "2026-09-01",
 					to: "2026-09-10",
 					amountMin: "20",
@@ -164,6 +179,7 @@ describe("toApiQuery", () => {
 			page: "3",
 			account: ["a"],
 			category: ["none", "c"],
+			merchant: ["m"],
 			from: "2026-09-01",
 			to: "2026-09-10",
 			amountMin: "20",
@@ -190,6 +206,12 @@ describe("filterChips", () => {
 				kind: "category",
 				label: "operations.chips.uncategorised, Courses, operations.chips.unknownCategory",
 			},
+		]);
+	});
+
+	it("names the merchants, an unknown one included", () => {
+		expect(filterChips({ merchant: ["m", "z"] }, nameOf, t)).toEqual([
+			{ kind: "merchant", label: "Carrefour, operations.chips.unknownMerchant" },
 		]);
 	});
 
@@ -223,10 +245,16 @@ describe("filterChips", () => {
 	it("orders the chips as the menu does", () => {
 		expect(
 			filterChips(
-				{ amountMin: "1", from: "2026-09-01", category: ["c"], account: ["a"] },
+				{
+					amountMin: "1",
+					from: "2026-09-01",
+					merchant: ["m"],
+					category: ["c"],
+					account: ["a"],
+				},
 				nameOf,
 				t,
 			).map((chip) => chip.kind),
-		).toEqual(["account", "category", "period", "amount"]);
+		).toEqual(["account", "category", "merchant", "period", "amount"]);
 	});
 });

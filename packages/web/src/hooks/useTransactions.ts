@@ -77,18 +77,22 @@ export function useUpdateTransaction(accountId: string) {
 	return useMutation({
 		mutationFn: async ({ id, input }: { id: string; input: TransactionPatchInput }) =>
 			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: input }))).data,
-		// The sheet can change the category too, and with it a category's count.
+		// The sheet can change the category and the merchant too, and with them their counts.
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
 			]),
 	});
 }
 
-type CategoryChange = {
+/** A field a row edits in place, with an optimistic update and « Annuler ». */
+type RowField = "categoryId" | "merchantId";
+
+type RowChange = {
 	id: string;
-	categoryId: string | null;
+	value: string | null;
 	/** What the row showed before, for « Annuler ». */
 	previous: string | null;
 	/** An undo shows no toast of its own: it would offer to undo the undo. */
@@ -98,19 +102,37 @@ type CategoryChange = {
 /** Any cached page of transactions, one account's or the cross-account list. */
 type CachedPage = { items: TransactionData[] } | undefined;
 
+const ROW_FIELDS = {
+	categoryId: {
+		changed: "transactions.category.changed",
+		undo: "transactions.category.undo",
+		toast: "category",
+		counts: queryKeys.categories.all,
+	},
+	merchantId: {
+		changed: "transactions.merchant.changed",
+		undo: "transactions.merchant.undo",
+		toast: "merchant",
+		counts: queryKeys.merchants.all,
+	},
+} as const;
+
 /**
- * Sets one row's category from the list. The row changes at once in every
- * cached list; a success toast offers « Annuler », which sets the previous
- * category back, by hand again, so it stays locked. A failure puts the rows
- * back and shows a destructive toast.
+ * Sets one row's category or merchant from the list. The row changes at once
+ * in every cached list; a success toast offers « Annuler », which sets the
+ * previous value back, by hand again, so it stays locked. A failure puts the
+ * rows back and shows a destructive toast.
  */
-export function useSetTransactionCategory() {
+function useSetRowField(field: RowField) {
 	const queryClient = useQueryClient();
+	const texts = ROW_FIELDS[field];
+	const patchOf = (value: string | null) =>
+		field === "categoryId" ? { categoryId: value } : { merchantId: value };
 
 	const mutation = useMutation({
-		mutationFn: async ({ id, categoryId }: CategoryChange) =>
-			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: { categoryId } }))).data,
-		onMutate: async ({ id, categoryId }: CategoryChange) => {
+		mutationFn: async ({ id, value }: RowChange) =>
+			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: patchOf(value) }))).data,
+		onMutate: async ({ id, value }: RowChange) => {
 			// A refetch landing after the optimistic write would show the old value again.
 			await queryClient.cancelQueries({ queryKey: queryKeys.transactions.all });
 			const snapshot = queryClient.getQueriesData<CachedPage>({
@@ -122,7 +144,9 @@ export function useSetTransactionCategory() {
 					? page
 					: {
 							...page,
-							items: page.items.map((item) => (item.id === id ? { ...item, categoryId } : item)),
+							items: page.items.map((item) =>
+								item.id === id ? { ...item, ...patchOf(value) } : item,
+							),
 						},
 			);
 
@@ -139,35 +163,43 @@ export function useSetTransactionCategory() {
 				return;
 			}
 
-			// One toast per row: a newer choice replaces the older toast, whose
-			// « Annuler » would otherwise overwrite it.
-			const id = `category-${change.id}`;
+			// One toast per row and field: a newer choice replaces the older
+			// toast, whose « Annuler » would otherwise overwrite it.
+			const id = `${texts.toast}-${change.id}`;
 
-			toast.success(t("transactions.category.changed"), {
+			toast.success(t(texts.changed), {
 				id,
 				action: {
-					label: t("transactions.category.undo"),
+					label: t(texts.undo),
 					onClick: () => {
 						toast.dismiss(id);
 						mutation.mutate({
 							id: change.id,
-							categoryId: change.previous,
-							previous: change.categoryId,
+							value: change.previous,
+							previous: change.value,
 							undo: true,
 						});
 					},
 				},
 			});
 		},
-		// A filtered list may have to drop the row, and a category's count moved.
+		// A filtered list may have to drop the row, and a count moved.
 		onSettled: () =>
 			Promise.all([
 				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+				queryClient.invalidateQueries({ queryKey: texts.counts }),
 			]),
 	});
 
 	return mutation;
+}
+
+export function useSetTransactionCategory() {
+	return useSetRowField("categoryId");
+}
+
+export function useSetTransactionMerchant() {
+	return useSetRowField("merchantId");
 }
 
 export function useDeleteTransaction(accountId: string) {

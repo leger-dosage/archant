@@ -74,7 +74,8 @@
 			"previousRow": "Opération précédente",
 			"openRow": "Ouvrir l'opération",
 			"importFile": "Importer un fichier sur la page d'un compte",
-			"categoriseRow": "Changer la catégorie de l'opération"
+			"categoriseRow": "Changer la catégorie de l'opération",
+			"setMerchantRow": "Changer le marchand de l'opération"
 		}
 	},
 	"accounts": {
@@ -196,7 +197,8 @@
 			"save": "Enregistrer",
 			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
 			"excluded": "Exclure des rapports",
-			"category": "Catégorie"
+			"category": "Catégorie",
+			"merchant": "Marchand"
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -222,6 +224,15 @@
 			"empty": "Aucune catégorie trouvée.",
 			"changed": "Catégorie modifiée",
 			"undo": "Annuler"
+		},
+		"merchant": {
+			"none": "Sans marchand",
+			"unknown": "Marchand inconnu",
+			"search": "Rechercher un marchand",
+			"empty": "Aucun marchand trouvé.",
+			"create": "Créer \"{{name}}\"",
+			"changed": "Marchand modifié",
+			"undo": "Annuler"
 		}
 	},
 	"operations": {
@@ -232,6 +243,7 @@
 		"kinds": {
 			"account": "Compte",
 			"category": "Catégorie",
+			"merchant": "Marchand",
 			"period": "Période",
 			"amount": "Montant"
 		},
@@ -248,6 +260,7 @@
 			"unknownAccount": "Compte inconnu",
 			"uncategorised": "Sans catégorie",
 			"unknownCategory": "Catégorie inconnue",
+			"unknownMerchant": "Marchand inconnu",
 			"periodBetween": "Du {{from}} au {{to}}",
 			"periodSince": "Depuis le {{from}}",
 			"periodUntil": "Jusqu'au {{to}}",
@@ -259,6 +272,7 @@
 			"accounts": "Comptes à afficher",
 			"noAccount": "Aucun compte.",
 			"categories": "Catégories à afficher",
+			"merchants": "Marchands à afficher",
 			"from": "Du",
 			"to": "Au",
 			"min": "Minimum",
@@ -562,10 +576,48 @@
 			"merged": "« {{name}} » fusionnée dans « {{target}} »."
 		}
 	},
+	"merchants": {
+		"title": "Marchands",
+		"description": "Un marchand regroupe les libellés d'un même commerce. Créez-en un depuis une opération, en tapant son nom dans le champ Marchand.",
+		"empty": "Aucun marchand pour l'instant.",
+		"transactions_one": "{{count}} opération",
+		"transactions_other": "{{count}} opérations",
+		"actions": "Actions pour {{name}}",
+		"rename": "Renommer",
+		"merge": "Fusionner",
+		"delete": "Supprimer",
+		"renameDialog": {
+			"title": "Renommer « {{name}} »",
+			"description": "Toutes les opérations de ce marchand afficheront le nouveau nom.",
+			"name": "Nom",
+			"action": "Renommer",
+			"saved": "Marchand « {{name}} » renommé.",
+			"nameTaken": "Un marchand porte déjà ce nom."
+		},
+		"mergeDialog": {
+			"title": "Fusionner « {{name}} » dans un autre marchand",
+			"description_one": "Son opération passera au marchand choisi, puis « {{name}} » sera supprimé.",
+			"description_other": "Ses {{count}} opérations passeront au marchand choisi, puis « {{name}} » sera supprimé.",
+			"descriptionNone": "Il n'a aucune opération. « {{name}} » sera supprimé.",
+			"target": "Fusionner dans",
+			"placeholder": "Choisir un marchand",
+			"action": "Fusionner",
+			"merged": "« {{name}} » fusionné dans « {{target}} »."
+		},
+		"deleteDialog": {
+			"title": "Supprimer le marchand « {{name}} » ?",
+			"count_one": "{{count}} opération perdra son marchand. Elle ne sera pas supprimée.",
+			"count_other": "{{count}} opérations perdront leur marchand. Elles ne seront pas supprimées.",
+			"none": "Aucune opération n'a ce marchand.",
+			"action": "Supprimer",
+			"deleted": "Marchand « {{name}} » supprimé."
+		}
+	},
 	"settings": {
 		"title": "Réglages",
 		"sections": {
 			"categories": "Catégories",
+			"merchants": "Marchands",
 			"security": "Sécurité"
 		}
 	},

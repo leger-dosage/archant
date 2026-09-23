@@ -777,6 +777,48 @@ describe("PATCH /api/transactions/:id", () => {
 		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
 		expect(after.body).toMatchObject({ data: { label: "Boulangerie", categoryId: null } });
 	});
+
+	it("sets and clears a merchant, locking it and leaving the balance alone", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const carrefour = await createMerchant(uniqueCategory("Carrefour"));
+		const client = testClient(buildApp()).api.transactions[":id"];
+
+		const set = await client.$patch({ param: { id: data.id }, json: { merchantId: carrefour.id } });
+
+		expect(set.status).toBe(200);
+		expect((await set.json()).data).toMatchObject({ merchantId: carrefour.id, amount: -4290 });
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
+
+		const cleared = await client.$patch({ param: { id: data.id }, json: { merchantId: null } });
+
+		expect((await cleared.json()).data).toMatchObject({ merchantId: null });
+		await expect(
+			temp.db.get(
+				sql`select locked_fields as locked from transactions where entry_id = ${data.id}`,
+			),
+		).resolves.toEqual({ locked: '["date","amount","label","merchant"]' });
+	});
+
+	it("refuses an unknown merchant and writes nothing", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			merchantId: "x",
+			label: "Autre",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "merchantId", code: "invalid_value" }],
+		});
+		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
+		expect(after.body).toMatchObject({ data: { label: "Boulangerie", merchantId: null } });
+	});
 });
 
 const listItem = z.object({
@@ -788,6 +830,7 @@ const listItem = z.object({
 	amount: z.number(),
 	excluded: z.boolean(),
 	categoryId: z.string().nullable(),
+	merchantId: z.string().nullable(),
 });
 
 const listBody = z.object({
@@ -992,6 +1035,46 @@ describe("GET /api/transactions", () => {
 		expect(uncategorised.items.map((item) => item.label)).toEqual(["Virement"]);
 		expect(uncategorised.items[0]?.categoryId).toBeNull();
 		await expect(listed("?category=nope")).resolves.toMatchObject({ items: [], total: 0 });
+	});
+
+	it("filters on merchants, ORed, with the count and the sum to match", async () => {
+		const account = await openOwn();
+		const client = testClient(buildApp(own?.db)).api;
+		const merchantOf = async (name: string) =>
+			(await (await client.merchants.$post({ json: { name } })).json()).data.id;
+		const carrefour = await merchantOf("Carrefour");
+		const lidl = await merchantOf("Lidl");
+		const fnac = await merchantOf("Fnac");
+		const rows = [
+			[await postOwn(account.id, { ...expense, label: "CB CARREFOUR 1234" }), carrefour],
+			[await postOwn(account.id, { ...expense, label: "LIDL" }), lidl],
+			[await postOwn(account.id, { ...expense, label: "FNAC" }), fnac],
+		];
+		await postOwn(account.id, { ...expense, label: "Virement" });
+		await rows.reduce(async (previous, [id = "", merchantId = ""]) => {
+			await previous;
+			await client.transactions[":id"].$patch({ param: { id }, json: { merchantId } });
+		}, Promise.resolve());
+
+		const data = await listed(`?merchant=${carrefour}&merchant=${lidl}`);
+
+		expect(data.items.map((item) => item.label).toSorted()).toEqual(["CB CARREFOUR 1234", "LIDL"]);
+		expect(new Set(data.items.map((item) => item.merchantId))).toEqual(new Set([carrefour, lidl]));
+		expect(data.total).toBe(2);
+		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		await expect(listed("?merchant=nope")).resolves.toMatchObject({ items: [], total: 0 });
+	});
+
+	it("refuses an empty merchant, and more merchants than the cap", async () => {
+		own = await freshDatabase();
+		const query = Array.from({ length: 101 }, (_, index) => `merchant=m${index}`).join("&");
+
+		const responses = await Promise.all([listOwn(`?${query}`), listOwn("?merchant=")]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error.fields?.[0]?.path).toMatch(/^merchant/u);
+		}
 	});
 
 	it("refuses more categories than the cap", async () => {
@@ -3352,6 +3435,179 @@ describe("categories", () => {
 		["PATCH", "/api/categories/nope", { name: "Autre" }],
 		["DELETE", "/api/categories/nope", undefined],
 		["POST", "/api/categories/nope/merge", { targetId: "other" }],
+	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
+		const response = await request(method, path, body);
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+async function createMerchant(name: string) {
+	const response = await testClient(buildApp()).api.merchants.$post({ json: { name } });
+
+	expect(response.status).toBe(201);
+
+	return (await response.json()).data;
+}
+
+/** Links every transaction of the account to the merchant, by hand through the API. */
+async function linkMerchant(accountId: string, merchantId: string) {
+	const rows = await temp.db.all<{ id: string }>(
+		sql`select id from entries where account_id = ${accountId} and kind = 'transaction'`,
+	);
+
+	await rows.reduce(async (previous, row) => {
+		await previous;
+		const { status } = await request("PATCH", `/api/transactions/${row.id}`, { merchantId });
+
+		expect(status).toBe(200);
+	}, Promise.resolve());
+}
+
+async function merchantList(db = temp.db) {
+	const response = await testClient(buildApp(db)).api.merchants.$get();
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+describe("merchants", () => {
+	it("lists the merchants sorted by name, with their transaction counts", async () => {
+		own = await freshDatabase();
+		const client = testClient(buildApp(own.db)).api.merchants;
+		await client.$post({ json: { name: "Fnac" } });
+		await client.$post({ json: { name: "Épicerie du coin" } });
+		await client.$post({ json: { name: "Carrefour" } });
+
+		const list = await merchantList(own.db);
+
+		expect(list.map((item) => [item.name, item.transactionCount])).toEqual([
+			["Carrefour", 0],
+			["Épicerie du coin", 0],
+			["Fnac", 0],
+		]);
+	});
+
+	it("creates a merchant, trimming its name", async () => {
+		const name = uniqueCategory("Carrefour");
+
+		await expect(request("POST", "/api/merchants", { name: `  ${name} ` })).resolves.toMatchObject({
+			status: 201,
+			body: { data: { name, transactionCount: 0 } },
+		});
+	});
+
+	it("refuses a name taken in another case", async () => {
+		const name = uniqueCategory("Carrefour");
+		await createMerchant(name);
+
+		await expect(request("POST", "/api/merchants", { name: name.toLowerCase() })).resolves.toEqual({
+			status: 400,
+			body: {
+				error: {
+					code: "VALIDATION_ERROR",
+					message: "The request is invalid.",
+					fields: [{ path: "name", code: "name_taken" }],
+				},
+			},
+		});
+	});
+
+	it("refuses a decomposed name beside the composed one", async () => {
+		const name = uniqueCategory("Épicerie");
+		await createMerchant(name);
+
+		const { status, body } = await request("POST", "/api/merchants", {
+			name: name.normalize("NFD"),
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "name", code: "name_taken" }]);
+	});
+
+	it.each([
+		["a blank name", "  ", "too_small"],
+		["a name over 60 characters", "x".repeat(61), "too_big"],
+	])("refuses %s", async (_label, name, code) => {
+		const { status, body } = await request("POST", "/api/merchants", { name });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "name", code }]);
+	});
+
+	it("renames a merchant", async () => {
+		const merchant = await createMerchant(uniqueCategory("Carrefour"));
+		const name = uniqueCategory("Carrefour Market");
+
+		const response = await testClient(buildApp()).api.merchants[":id"].$patch({
+			param: { id: merchant.id },
+			json: { name },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({ id: merchant.id, name, transactionCount: 0 });
+	});
+
+	it("deletes a merchant, unlinking its transactions and keeping their locks", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+		await postTransaction(account.id, { ...expense, label: "Marché" });
+		const merchant = await createMerchant(uniqueCategory("Fleuriste"));
+		await linkMerchant(account.id, merchant.id);
+
+		await expect(request("DELETE", `/api/merchants/${merchant.id}`)).resolves.toEqual({
+			status: 200,
+			body: { data: { id: merchant.id, unlinked: 2 } },
+		});
+		await expect(
+			temp.db.all(
+				sql`select merchant_id as merchantId, locked_fields as locked from transactions where entry_id in (select id from entries where account_id = ${account.id})`,
+			),
+		).resolves.toEqual([
+			{ merchantId: null, locked: '["date","amount","label","merchant"]' },
+			{ merchantId: null, locked: '["date","amount","label","merchant"]' },
+		]);
+		expect((await merchantList()).find((item) => item.id === merchant.id)).toBeUndefined();
+	});
+
+	it("merges a merchant into a target, whose count then includes its transactions", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+		const source = await createMerchant(uniqueCategory("CB Carrefour"));
+		const target = await createMerchant(uniqueCategory("Carrefour"));
+		await linkMerchant(account.id, source.id);
+
+		const response = await testClient(buildApp()).api.merchants[":id"].merge.$post({
+			param: { id: source.id },
+			json: { targetId: target.id },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toMatchObject({ id: target.id, transactionCount: 1 });
+		expect((await merchantList()).find((item) => item.id === source.id)).toBeUndefined();
+	});
+
+	it.each([["nope"], ["self"]])("refuses %s as the merge target", async (which) => {
+		const source = await createMerchant(uniqueCategory("Carrefour"));
+		const targetId = which === "self" ? source.id : which;
+
+		const { status, body } = await request("POST", `/api/merchants/${source.id}/merge`, {
+			targetId,
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "targetId", code: "invalid_value" },
+		]);
+		expect((await merchantList()).find((item) => item.id === source.id)).toBeDefined();
+	});
+
+	it.each([
+		["PATCH", "/api/merchants/nope", { name: "Autre" }],
+		["DELETE", "/api/merchants/nope", undefined],
+		["POST", "/api/merchants/nope/merge", { targetId: "other" }],
 	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
 		const response = await request(method, path, body);
 

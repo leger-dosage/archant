@@ -31,6 +31,10 @@ export const queryKeys = {
 	categories: {
 		all: ["categories"] as const,
 	},
+	/** The whole merchant list, one query: each row's merchant name is read from it. */
+	merchants: {
+		all: ["merchants"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

@@ -1,4 +1,5 @@
 import type { CategoryData } from "@/hooks/useCategories";
+import type { MerchantData } from "@/hooks/useMerchants";
 import type { FilterKind, TransactionFilters as Filters } from "@/lib/transaction-filters";
 import type { FormEvent, ReactNode } from "react";
 
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { categoryTree } from "@/lib/category-tree";
+import { matchesCommand } from "@/lib/shortcuts";
 import { FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
 
 /**
@@ -169,6 +171,65 @@ function CategoryEditor({
 							/>
 						)),
 					])}
+				</div>
+			</fieldset>
+		</EditorForm>
+	);
+}
+
+/**
+ * Merchants outnumber categories, so the checklist has a search field. A
+ * checked merchant stays checked when the search hides it.
+ */
+function MerchantEditor({
+	filters,
+	merchants,
+	onApply,
+}: EditorProps & { merchants: readonly MerchantData[] }) {
+	const { t } = useTranslation();
+	// An id from an old link that names no merchant any more is left out, so
+	// Appliquer drops it instead of keeping a filter no checkbox can clear.
+	const [selected, setSelected] = useState(() => {
+		const known = new Set(merchants.map((merchant) => merchant.id));
+
+		return new Set((filters.merchant ?? []).filter((id) => known.has(id)));
+	});
+	const [search, setSearch] = useState("");
+	const shown = merchants.filter((merchant) => matchesCommand(merchant.name, search));
+
+	return (
+		<EditorForm
+			onSubmit={() => onApply({ merchant: selected.size === 0 ? undefined : [...selected] })}
+		>
+			<Input
+				type="search"
+				value={search}
+				autoComplete="off"
+				aria-label={t("transactions.merchant.search")}
+				placeholder={t("transactions.merchant.search")}
+				onChange={(event) => setSearch(event.target.value)}
+			/>
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">
+					{t("operations.editor.merchants")}
+				</legend>
+				{shown.length === 0 && (
+					<p className="text-muted-foreground">{t("transactions.merchant.empty")}</p>
+				)}
+				<div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+					{shown.map((merchant) => (
+						<label key={merchant.id} className="flex min-h-6 items-center gap-2">
+							<input
+								type="checkbox"
+								className="size-4 accent-primary"
+								checked={selected.has(merchant.id)}
+								onChange={(event) =>
+									setSelected(toggled(selected, merchant.id, event.target.checked))
+								}
+							/>
+							<span className="truncate">{merchant.name}</span>
+						</label>
+					))}
 				</div>
 			</fieldset>
 		</EditorForm>
@@ -360,6 +421,7 @@ type TransactionFiltersProps = {
 	filters: Filters;
 	accounts: readonly FilterAccount[];
 	categories: readonly CategoryData[];
+	merchants: readonly MerchantData[];
 	onChange: (change: FilterChange) => void;
 	onRemove: (kind: FilterKind) => void;
 };
@@ -373,6 +435,7 @@ export function TransactionFilters({
 	filters,
 	accounts,
 	categories,
+	merchants,
 	onChange,
 	onRemove,
 }: TransactionFiltersProps) {
@@ -381,9 +444,14 @@ export function TransactionFilters({
 	const [pane, setPane] = useState<FilterKind | null>(null);
 	const accountNames = new Map(accounts.map((account) => [account.id, account.name]));
 	const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+	const merchantNames = new Map(merchants.map((merchant) => [merchant.id, merchant.name]));
 	const chips = filterChips(
 		filters,
-		{ account: (id) => accountNames.get(id), category: (id) => categoryNames.get(id) },
+		{
+			account: (id) => accountNames.get(id),
+			category: (id) => categoryNames.get(id),
+			merchant: (id) => merchantNames.get(id),
+		},
 		(key, values) => t(key, { replace: values ?? {} }),
 	);
 
@@ -443,6 +511,9 @@ export function TransactionFilters({
 							)}
 							{pane === "category" && (
 								<CategoryEditor filters={filters} categories={categories} onApply={apply} />
+							)}
+							{pane === "merchant" && (
+								<MerchantEditor filters={filters} merchants={merchants} onApply={apply} />
 							)}
 							{pane === "period" && <PeriodEditor filters={filters} onApply={apply} />}
 							{pane === "amount" && <AmountEditor filters={filters} onApply={apply} />}

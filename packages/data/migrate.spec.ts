@@ -596,6 +596,60 @@ describe("categories", () => {
 	});
 });
 
+const insertMerchant = (database: Database, id: string, name: string) =>
+	database.run(
+		sql`insert into merchants (id, name, created_at, updated_at) values (${id}, ${name}, 0, 0)`,
+	);
+
+describe("merchants", () => {
+	it("holds a name once, ignoring case", async () => {
+		const database = await migrated();
+		await insertMerchant(database, "m1", "Carrefour");
+
+		await expect(insertMerchant(database, "m2", "carrefour")).rejects.toThrow();
+		await expect(insertMerchant(database, "m3", "Carrefour Market")).resolves.toBeDefined();
+	});
+
+	it("keeps every transaction when 0013 adds the merchant column, and protects a used merchant", async () => {
+		const before = await migratedBefore("0013");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertCategory(before, "c1", "Courses");
+		await before.run(
+			sql`insert into transactions (entry_id, label, locked_fields, category_id, category_origin) values ('e1', 'CB CARREFOUR 1234', '["category"]', 'c1', 'user')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, locked_fields as locked, category_id as categoryId, merchant_id as merchantId from transactions`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				label: "CB CARREFOUR 1234",
+				locked: '["category"]',
+				categoryId: "c1",
+				merchantId: null,
+			},
+		]);
+		await expect(
+			database.run(sql`update transactions set merchant_id = 'nope' where entry_id = 'e1'`),
+		).rejects.toThrow();
+		await insertMerchant(database, "m1", "Carrefour");
+		await database.run(sql`update transactions set merchant_id = 'm1' where entry_id = 'e1'`);
+		await expect(database.run(sql`delete from merchants where id = 'm1'`)).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('transactions') where name = 'transactions_merchant'`,
+			),
+		).resolves.toEqual([{ name: "transactions_merchant" }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

@@ -19,6 +19,7 @@
 		"./schema/entry-keys": "./schema/entry-keys.ts",
 		"./schema/import-mappings": "./schema/import-mappings.ts",
 		"./schema/imports": "./schema/imports.ts",
+		"./schema/merchants": "./schema/merchants.ts",
 		"./schema/settings": "./schema/settings.ts",
 		"./schema/transactions": "./schema/transactions.ts",
 		"./types": "./types.ts"

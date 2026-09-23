@@ -9,6 +9,7 @@
 		"./schemas/balances": "./src/schemas/balances.ts",
 		"./schemas/categories": "./src/schemas/categories.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
+		"./schemas/merchants": "./src/schemas/merchants.ts",
 		"./schemas/setup": "./src/schemas/setup.ts",
 		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/transactions": "./src/schemas/transactions.ts"
