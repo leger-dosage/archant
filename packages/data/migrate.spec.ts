@@ -86,6 +86,11 @@ describe("runMigrations", () => {
 		await expect(insertAccount(database, "a5", "loan", "mortgage")).resolves.toBeDefined();
 		await expect(insertAccount(database, "a6", "loan", "savings")).rejects.toThrow();
 		await expect(insertAccount(database, "a7", "brokerage", null)).rejects.toThrow();
+		await expect(insertAccount(database, "a8", "investment", "pea")).resolves.toBeDefined();
+		await expect(insertAccount(database, "a9", "investment", "other")).resolves.toBeDefined();
+		await expect(insertAccount(database, "a10", "investment", null)).rejects.toThrow();
+		await expect(insertAccount(database, "a11", "investment", "mortgage")).rejects.toThrow();
+		await expect(insertAccount(database, "a12", "loan", "pea")).rejects.toThrow();
 	});
 
 	it("allows one opening anchor per account", async () => {
@@ -819,6 +824,53 @@ describe("loan accounts", () => {
 		).resolves.toEqual([{ accountId: "a1", mapping: '{"skipRows":2}' }]);
 		await expect(database.all(sql`select id from imports`)).resolves.toEqual([{ id: "i1" }]);
 		await expect(insertAccount(database, "a3", "loan", "consumer")).resolves.toBeDefined();
+		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("investment accounts", () => {
+	it("keeps every account, entry and CSV mapping when 0019 rebuilds accounts", async () => {
+		const before = await migratedBefore("0019");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "credit_card", null);
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, created_at, updated_at) values ('a3', 'A', 'loan', 'mortgage', 'EUR', '{"originalAmount":20000000,"interestRate":345,"endDate":"2045-01-01"}', 0, 0)`,
+		);
+		await insertEntry(before, "e1", "valuation", "opening_anchor");
+		await insertEntry(before, "e2", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e2', 'Boulangerie')`);
+		await before.run(
+			sql`insert into import_mappings (account_id, mapping, updated_at) values ('a1', '{"skipRows":2}', 0)`,
+		);
+		await insertImport(before, "i1", "confirmed");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, type, subtype, details from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "depository", subtype: "checking", details: null },
+			{ id: "a2", type: "credit_card", subtype: null, details: null },
+			{
+				id: "a3",
+				type: "loan",
+				subtype: "mortgage",
+				details: '{"originalAmount":20000000,"interestRate":345,"endDate":"2045-01-01"}',
+			},
+		]);
+		await expect(database.all(sql`select id from entries order by id`)).resolves.toEqual([
+			{ id: "e1" },
+			{ id: "e2" },
+		]);
+		await expect(
+			database.all(sql`select account_id as accountId, mapping from import_mappings`),
+		).resolves.toEqual([{ accountId: "a1", mapping: '{"skipRows":2}' }]);
+		await expect(database.all(sql`select id from imports`)).resolves.toEqual([{ id: "i1" }]);
+		await expect(
+			insertAccount(database, "a4", "investment", "assurance_vie"),
+		).resolves.toBeDefined();
 		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});

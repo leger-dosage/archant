@@ -4250,7 +4250,6 @@ async function pairOf(kind: TransferKind, outflowAccount: string, inflowAccount:
 		amount: toMinorUnits(amount),
 		label: `${kind} in`,
 	});
-	// Investment accounts arrive with Story 7.2, so no match can make this kind yet.
 	await insertTransfer(outflow, inflow, kind);
 
 	return { outflow, inflow };
@@ -4265,22 +4264,39 @@ async function openLoan() {
 	});
 }
 
-/** A repayment from `outflowAccount` into `loanAccount`, linked by a real match. */
-async function loanPaymentOf(outflowAccount: string, loanAccount: string) {
+async function openPea() {
+	return openChecking({
+		name: "PEA",
+		type: "investment",
+		subtype: "pea",
+		openingBalance: toMinorUnits(2_500_000),
+	});
+}
+
+/** A transfer of `kind` from `outflowAccount` to `inflowAccount`, linked by a real match. */
+async function matchedOf(kind: TransferKind, outflowAccount: string, inflowAccount: string) {
 	const amount = transferAmount();
 	const outflow = await addStandard(outflowAccount, {
 		amount: toMinorUnits(-amount),
-		label: "loan_payment out",
+		label: `${kind} out`,
 	});
-	const inflow = await addStandard(loanAccount, {
+	const inflow = await addStandard(inflowAccount, {
 		amount: toMinorUnits(amount),
-		label: "loan_payment in",
+		label: `${kind} in`,
 	});
 	const transfer = await matchTransfer(deps(), outflow, inflow, { origin: "user" });
-	expect(transfer.kind).toBe("loan_payment");
+	expect(transfer.kind).toBe(kind);
 
 	return { outflow, inflow };
 }
+
+/** A repayment from `outflowAccount` into `loanAccount`. */
+const loanPaymentOf = (outflowAccount: string, loanAccount: string) =>
+	matchedOf("loan_payment", outflowAccount, loanAccount);
+
+/** A contribution from `outflowAccount` into `investmentAccount`. */
+const contributionOf = (outflowAccount: string, investmentAccount: string) =>
+	matchedOf("investment_contribution", outflowAccount, investmentAccount);
 
 const sortedIds = (page: { items: { id: string }[] }) =>
 	page.items.map((item) => item.id).toSorted();
@@ -4289,7 +4305,8 @@ describe("the direction filter", () => {
 	it("partitions every case as `direction` does", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const mortgage = await openLoan();
-		const accountIds = [joint.id, livret.id, card.id, mortgage.id];
+		const pea = await openPea();
+		const accountIds = [joint.id, livret.id, card.id, mortgage.id, pea.id];
 		// Amounts of their own: step 6 would link them to another test's rows.
 		const earned = transferAmount();
 		const expense = await add(joint.id, {
@@ -4301,7 +4318,7 @@ describe("the direction filter", () => {
 		const move = await pairOf("internal_move", joint.id, livret.id);
 		const cardPayment = await pairOf("credit_card_payment", joint.id, card.id);
 		const loan = await loanPaymentOf(joint.id, mortgage.id);
-		const investment = await pairOf("investment_contribution", joint.id, livret.id);
+		const investment = await contributionOf(joint.id, pea.id);
 		const expected = {
 			income: [income],
 			expense: [expense, zero, loan.outflow, investment.outflow],
@@ -4354,9 +4371,10 @@ describe("cashFlowByCategory", () => {
 	it("sums per category and sign exactly the rows `countsInCashFlow` counts", async () => {
 		const { livret, card } = await openHousehold();
 		const mortgage = await openLoan();
+		const pea = await openPea();
 		// Opened in August, so a row can sit on the last day before the month.
 		const joint = await openChecking({ name: "Compte courant", openingDate: "2026-08-01" });
-		const accountIds = [joint.id, livret.id, card.id, mortgage.id];
+		const accountIds = [joint.id, livret.id, card.id, mortgage.id, pea.id];
 		const groceries = await newCategory("Courses");
 		const inCategory = async (amount: number, date = "2026-09-10") => {
 			const id = await add(joint.id, { amount: toMinorUnits(amount), date, label: "Courses" });
@@ -4385,7 +4403,7 @@ describe("cashFlowByCategory", () => {
 		await pairOf("internal_move", joint.id, livret.id);
 		await pairOf("credit_card_payment", joint.id, card.id);
 		await loanPaymentOf(joint.id, mortgage.id);
-		await pairOf("investment_contribution", joint.id, livret.id);
+		await contributionOf(joint.id, pea.id);
 
 		const all = await listTransactions(deps(), { accountIds }, firstPage);
 		const expected = new Map<string, { categoryId: string | null; amount: number }>();

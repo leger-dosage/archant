@@ -13,6 +13,11 @@ export const ACCOUNT_TYPES = {
 	depository: { classification: "asset", subtypes: ["checking", "savings"] },
 	credit_card: { classification: "liability", subtypes: [] },
 	loan: { classification: "liability", subtypes: ["mortgage", "consumer", "other"] },
+	// Sure's `Investment::SUBTYPES` keys: `brokerage` is the compte-titres.
+	investment: {
+		classification: "asset",
+		subtypes: ["pea", "assurance_vie", "brokerage", "other"],
+	},
 } as const satisfies Record<
 	string,
 	{ classification: Classification; subtypes: readonly string[] }
@@ -29,9 +34,12 @@ export function isAccountType(value: string): value is AccountType {
 export const ACCOUNT_TYPE_IDS: readonly AccountType[] =
 	Object.keys(ACCOUNT_TYPES).filter(isAccountType);
 
-export const ACCOUNT_SUBTYPES: readonly AccountSubtype[] = ACCOUNT_TYPE_IDS.flatMap(
-	(type): readonly AccountSubtype[] => ACCOUNT_TYPES[type].subtypes,
-);
+// Distinct values: `other` belongs to both loans and investments.
+export const ACCOUNT_SUBTYPES: readonly AccountSubtype[] = [
+	...new Set(
+		ACCOUNT_TYPE_IDS.flatMap((type): readonly AccountSubtype[] => ACCOUNT_TYPES[type].subtypes),
+	),
+];
 
 export function classificationOf(type: AccountType): Classification {
 	return ACCOUNT_TYPES[type].classification;

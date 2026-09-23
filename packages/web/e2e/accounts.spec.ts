@@ -168,6 +168,46 @@ test("a loan's new rate in Paramètres shows in its header", async ({ page, api 
 	await expect(details).toHaveText("Taux : 3,75 %");
 });
 
+// Story 7.2: investment accounts.
+
+test("a PEA created through the form is listed under « Actifs » with its value and caption, and in the sidebar", async ({
+	page,
+	api,
+}) => {
+	// A name without « PEA », so the caption alone can show it.
+	const name = uniqueName("Plan actions");
+	const before = await api.groupTotal("asset");
+
+	await page.goto("/comptes");
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "PEA", exact: true }).click();
+	await expect(dialog.getByLabel("Montant emprunté")).toHaveCount(0);
+	await dialog.getByLabel("Solde initial").fill("25 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+
+	await expect(dialog).toBeHidden();
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("PEA", { exact: true })).toBeVisible();
+	await expect(row).toContainText(euros(2_500_000));
+	await expect(
+		page.getByRole("region", { name: "Passifs" }).getByRole("link", { name: new RegExp(name) }),
+	).toHaveCount(0);
+	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before + 2_500_000));
+
+	// The toggle's parent is the sidebar group, which holds its account links.
+	await expect(
+		sidebarGroup(page, "Actifs")
+			.locator("..")
+			.getByRole("link", { name: new RegExp(name) }),
+	).toContainText(euros(2_500_000));
+	await expect(sidebarGroup(page, "Actifs")).toContainText(euros(before + 2_500_000));
+});
+
 test("invalid fields show their message next to the field", async ({ page }) => {
 	await page.goto("/comptes");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();

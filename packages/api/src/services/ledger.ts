@@ -2065,7 +2065,7 @@ async function candidatePairs(
 
 /**
  * A transfer between `a` and `b`, the negative side as the outflow, its kind
- * from the inflow account's type.
+ * from both accounts' types.
  */
 function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
 	const [outflow, inflow] = a.amount < 0 ? [a, b] : [b, a];
@@ -2074,7 +2074,7 @@ function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
 		id: crypto.randomUUID(),
 		outflowTransactionId: outflow.id,
 		inflowTransactionId: inflow.id,
-		kind: transferKindOf(inflow.accountType),
+		kind: transferKindOf(inflow.accountType, outflow.accountType),
 		createdAt: now,
 	};
 }

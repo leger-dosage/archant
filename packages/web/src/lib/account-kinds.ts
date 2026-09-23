@@ -13,6 +13,11 @@ export const ACCOUNT_KINDS = [
 	{ id: "consumer", type: "loan", subtype: "consumer" },
 	// `other` alone would read as any account, not a loan.
 	{ id: "other_loan", type: "loan", subtype: "other" },
+	{ id: "pea", type: "investment", subtype: "pea" },
+	{ id: "assurance_vie", type: "investment", subtype: "assurance_vie" },
+	// Sure's `brokerage`, labelled « Compte-titres ».
+	{ id: "brokerage", type: "investment", subtype: "brokerage" },
+	{ id: "other_investment", type: "investment", subtype: "other" },
 ] as const satisfies readonly { id: string; type: AccountType; subtype: AccountSubtype | null }[];
 
 export type AccountKindId = (typeof ACCOUNT_KINDS)[number]["id"];
