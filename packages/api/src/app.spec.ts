@@ -4597,3 +4597,211 @@ describe("GET /api/reports/net-worth", () => {
 		});
 	});
 });
+
+/** A line of the cash-flow breakdown, in the colour `category()` gives. */
+const line = (
+	categoryId: string | null,
+	name: string | null,
+	amount: number,
+	share: number | null = 1,
+) => ({ categoryId, name, color: categoryId === null ? null : "#e99537", amount, share });
+
+/** The I/O matrix of Story 6.2, each test in its own database. */
+describe("GET /api/reports/cash-flow", () => {
+	// Opened before September, so a row can sit on the month's first day.
+	const august = { openingDate: "2026-08-01" } as const;
+
+	async function cashFlowOf(month: string) {
+		own ??= await freshDatabase();
+		const response = await testClient(buildApp(own.db)).api.reports["cash-flow"].$get({
+			query: { month },
+		});
+
+		expect(response.status).toBe(200);
+
+		return (await response.json()).data;
+	}
+
+	async function sendOwn(method: string, path: string, body?: unknown) {
+		const response = await buildApp(own?.db).request(path, {
+			method,
+			headers: { "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+		const json = z.unknown().parse(await response.json());
+
+		expect(response.status, JSON.stringify(json)).toBeLessThan(300);
+
+		return json;
+	}
+
+	async function ownCategory(name: string, overrides: Partial<CreateCategoryInput> = {}) {
+		own ??= await freshDatabase();
+		const body = await sendOwn("POST", "/api/categories", category(name, overrides));
+
+		return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+	}
+
+	async function spend(
+		accountId: string,
+		amount: string,
+		categoryId?: string,
+		date = "2026-09-10",
+	) {
+		const id = await postOwn(accountId, { date, label: "Opération", amount });
+
+		if (categoryId !== undefined) {
+			await sendOwn("PATCH", `/api/transactions/${id}`, { categoryId });
+		}
+
+		return id;
+	}
+
+	it("rolls a sub-category up into its parent", async () => {
+		const account = await openOwn(august);
+		const courses = await ownCategory("Courses");
+		const bio = await ownCategory("Bio", { parentId: courses });
+		await spend(account.id, "-30,00", courses);
+		await spend(account.id, "-20,00", bio);
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toEqual({
+			month: "2026-09",
+			from: "2026-09-01",
+			to: "2026-09-30",
+			currency: "EUR",
+			income: 0,
+			expenses: -5000,
+			lines: { income: [], expense: [line(courses, "Courses", -5000)] },
+		});
+	});
+
+	it("lowers a category and « Dépenses » by a refund", async () => {
+		const account = await openOwn(august);
+		const courses = await ownCategory("Courses");
+		await spend(account.id, "-80,00", courses);
+		await spend(account.id, "20,00", courses);
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data.expenses).toBe(-6000);
+		expect(data.lines.expense).toEqual([line(courses, "Courses", -6000)]);
+	});
+
+	it("splits uncategorised rows by sign into « Sans catégorie » on each side", async () => {
+		const account = await openOwn(august);
+		await spend(account.id, "100,00");
+		await spend(account.id, "-40,00");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			income: 10000,
+			expenses: -4000,
+			lines: { income: [line(null, null, 10000)], expense: [line(null, null, -4000)] },
+		});
+	});
+
+	it("leaves out excluded rows, internal moves, card payments and uncounted accounts", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const livret = await openOwn({ ...august, name: "Livret A", subtype: "savings" });
+		const card = await openOwn({ ...august, ...ownCard });
+		const excludedAccount = await openOwn({ ...august, name: "Exclu" });
+		const inactive = await openOwn({ ...august, name: "Inactif" });
+		const dollars = await openOwn({ ...august, name: "US", currency: "USD", openingBalance: "0" });
+		await patchOwn(excludedAccount.id, { excludedFromReports: true });
+		await patchOwn(inactive.id, { active: false });
+		await spend(checking.id, "-12,00");
+		const excluded = await spend(checking.id, "-13,00");
+		await sendOwn("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+		// Each pair links on creation: same amount, opposite signs, days apart.
+		await spend(checking.id, "-500,00", undefined, "2026-09-11");
+		await spend(livret.id, "500,00", undefined, "2026-09-12");
+		await spend(checking.id, "-300,00", undefined, "2026-09-14");
+		await spend(card.id, "300,00", undefined, "2026-09-14");
+		await spend(excludedAccount.id, "-14,00");
+		await spend(inactive.id, "-15,00");
+		await spend(dollars.id, "-16.00");
+		const transfers = await listed("?direction=transfer");
+		expect(transfers.items).toHaveLength(4);
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			income: 0,
+			expenses: -1200,
+			lines: { income: [], expense: [line(null, null, -1200)] },
+		});
+	});
+
+	it("leaves out a transfer side put in a category before its match", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const livret = await openOwn({ ...august, name: "Livret A", subtype: "savings" });
+		const courses = await ownCategory("Courses");
+		const outflow = await spend(checking.id, "-500,00", courses);
+		await spend(livret.id, "500,00", undefined, "2026-09-12");
+		const matched = (await listed("?direction=transfer")).items.find((item) => item.id === outflow);
+		expect(matched?.transfer).not.toBeNull();
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({ income: 0, expenses: 0, lines: { income: [], expense: [] } });
+	});
+
+	it("counts the month's first and last days, not the next month's first", async () => {
+		const account = await openOwn(august);
+		await spend(account.id, "-1,00", undefined, "2026-08-31");
+		await spend(account.id, "-2,00", undefined, "2026-09-01");
+		await spend(account.id, "-4,00", undefined, "2026-09-30");
+		await spend(account.id, "-8,00", undefined, "2026-10-01");
+
+		await expect(cashFlowOf("2026-09")).resolves.toMatchObject({ expenses: -600 });
+	});
+
+	it("keeps both lines of a group summing to zero, without a share", async () => {
+		const account = await openOwn(august);
+		const salaire = await ownCategory("Salaire", { kind: "income" });
+		const primes = await ownCategory("Primes", { kind: "income" });
+		await spend(account.id, "50,00", salaire);
+		await spend(account.id, "-50,00", primes);
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data.income).toBe(0);
+		expect(data.lines.income).toEqual([
+			line(primes, "Primes", -5000, null),
+			line(salaire, "Salaire", 5000, null),
+		]);
+	});
+
+	it("is zero with empty lines for a month without counted rows", async () => {
+		await openOwn(august);
+
+		await expect(cashFlowOf("2026-02")).resolves.toEqual({
+			month: "2026-02",
+			from: "2026-02-01",
+			to: "2026-02-28",
+			currency: "EUR",
+			income: 0,
+			expenses: 0,
+			lines: { income: [], expense: [] },
+		});
+	});
+
+	it("refuses a month that does not exist, or none", async () => {
+		const refused = async (query: string, code: string) => {
+			const { status, body } = await request("GET", `/api/reports/cash-flow${query}`);
+
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "month", code }],
+			});
+		};
+
+		await refused("?month=2026-13", "invalid_format");
+		await refused("?month=2026-9", "invalid_format");
+		await refused("", "invalid_type");
+	});
+});

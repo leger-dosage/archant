@@ -92,7 +92,16 @@
 		"liabilities": "Passifs",
 		"change": "{{change}} {{over}}",
 		"summary": "Patrimoine net : {{balance}}, {{change}} {{over}}.",
-		"leftOut": "Hors des totaux, faute de conversion : {{names}}."
+		"leftOut": "Hors des totaux, faute de conversion : {{names}}.",
+		"cashFlow": {
+			"thisMonth": "Ce mois-ci",
+			"previous": "Mois précédent",
+			"next": "Mois suivant",
+			"income": "Revenus",
+			"expenses": "Dépenses",
+			"uncategorised": "Sans catégorie",
+			"empty": "Aucune opération ce mois-ci."
+		}
 	},
 	"accounts": {
 		"title": "Comptes",

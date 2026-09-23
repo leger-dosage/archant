@@ -2,7 +2,8 @@
 title: 'Story 6.2: Monthly income and expenses by category'
 type: 'feature'
 created: '2026-09-23'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '2785b891a164d27e9ded2e5a762d6aab97de68c7'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -59,14 +60,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/api/src/domain/cash-flow.spec.ts`, `domain/dates.spec.ts` -- failing tests for `countsInCashFlow`, `cashFlowBreakdown` (roll-up, refund, uncategorised split, sort, zero line, zero group) and `monthRange` (February, leap year, December).
-- [ ] `packages/api/src/domain/cash-flow.ts`, `domain/dates.ts` -- the three functions.
-- [ ] `packages/api/src/services/ledger.spec.ts` -- failing parity test for `cashFlowByCategory` against `countsInCashFlow`.
-- [ ] `packages/api/src/services/ledger.ts` -- `cashFlowByCategory`.
-- [ ] `packages/api/src/app.spec.ts` -- failing `describe("GET /api/reports/cash-flow")` covering every matrix row.
-- [ ] `packages/api/src/schemas/reports.ts`, `services/reports.ts`, `routes/reports.ts` -- schema, shared counted-account helper, `getCashFlow`, route.
-- [ ] `packages/web/src/hooks/useCashFlow.ts`, `lib/query-keys.ts`, `components/CashFlowCard.tsx`, `routes/_authed.index.tsx`, `locales/fr.json` -- card, month navigation, rows and links.
-- [ ] `packages/web/e2e/dashboard.spec.ts`, `e2e/fixtures.ts` -- `excludeAccount` helper, one test per criterion below.
+- [x] `packages/api/src/domain/cash-flow.spec.ts`, `domain/dates.spec.ts` -- failing tests for `countsInCashFlow`, `cashFlowBreakdown` (roll-up, refund, uncategorised split, sort, zero line, zero group) and `monthRange` (February, leap year, December).
+- [x] `packages/api/src/domain/cash-flow.ts`, `domain/dates.ts` -- the three functions.
+- [x] `packages/api/src/services/ledger.spec.ts` -- failing parity test for `cashFlowByCategory` against `countsInCashFlow`.
+- [x] `packages/api/src/services/ledger.ts` -- `cashFlowByCategory`.
+- [x] `packages/api/src/app.spec.ts` -- failing `describe("GET /api/reports/cash-flow")` covering every matrix row.
+- [x] `packages/api/src/schemas/reports.ts`, `services/reports.ts`, `routes/reports.ts` -- schema, shared counted-account helper, `getCashFlow`, route.
+- [x] `packages/web/src/hooks/useCashFlow.ts`, `lib/query-keys.ts`, `components/CashFlowCard.tsx`, `routes/_authed.index.tsx`, `locales/fr.json` -- card, month navigation, rows and links.
+- [x] `packages/web/e2e/dashboard.spec.ts`, `e2e/fixtures.ts` -- `excludeAccount` helper, one test per criterion below.
 
 **Acceptance Criteria:**
 - Given a month with categorised, excluded, transfer and excluded-account rows, when the dashboard shows it, then « Revenus » and « Dépenses » count only the counted rows.
@@ -76,9 +77,43 @@ context:
 
 ## Implementation Notes
 
+- `Line.name` and `Line.color` are `null` for « Sans catégorie »: the API stays in English and the interface translates the name. `share` is a ratio (0.6), formatted as a percentage by the card.
+- Lines of the same size keep a stable order: by category name, « Sans catégorie » last.
+- A row whose category id is unknown counts as « Sans catégorie » rather than vanishing.
+- `@archant/api` exports `./schemas/reports` so the dashboard's `?month=` reuses `monthSchema`.
+- The optimistic row update in `useTransactions.ts` rewrote every cached query under `transactions.all` as a page; it now skips any entry without `items`, since the cash-flow query (and the transfer candidates) share that prefix.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Source | Finding | Verdict | Route / evidence |
+|---|--------|---------|---------|------------------|
+| 1 | blind | `getCashFlow` docstring says the drill-down lists the rows the line sums | low | patch: the link carries category and dates only; comment reworded |
+| 2 | blind, edge | Both « Sans catégorie » links send the same filter, the income one lists uncategorised expenses | medium | patch: the « Sans catégorie » link adds its side's `direction` |
+| 3 | blind, edge | An uncategorised `loan_payment` outflow counts in « Sans catégorie » but `category=none` leaves transfer sides out | maybe-false | defer: no account produces that kind until Epic 7 |
+| 4 | edge | Category drill-down lists excluded rows, uncounted accounts and categorised transfer sides | low | rejected: accepted in Design Notes, as Sure's drill-down |
+| 5 | blind, edge | `useUpdateCategory` does not invalidate the cash-flow key | low | patch: comment corrected; category edits happen on another page and the dashboard refetches on mount (`staleTime` 0) |
+| 6 | blind, edge | Placeholder data shows the previous month's rows and links under the new heading | low | patch: data block `inert` and dimmed while `isPlaceholderData` |
+| 7 | blind, gap | The optimistic-update guard in `useTransactions.ts` has no test | medium | patch: e2e recategorises a row after the drill-down |
+| 8 | blind, edge | `last_updated` format changed in `sprint-status.yaml` | low | patch: original format restored |
+| 9 | blind | `?month=2026-00` and repeated `month` untested | low | rejected: the regex rejects `00`; a repeated param is not a path the interface produces |
+| 10 | blind | A future `?month=` typed by hand shows an empty month | low | rejected: harmless, the next button still stops at the current month |
+| 11 | blind | Empty month shows zero totals above the message | low | rejected: the totals are true, the message matches the spec |
+| 12 | blind | Month e2e mixes `TIME_ZONE` and the browser zone | false | `playwright.config.ts` sets `timezoneId: TIME_ZONE` |
+| 13 | blind, gap | Forward navigation and the `?month=` fallback untested | low | patch: test-only |
+| 14 | blind | `cashFlowByCategory` import out of alphabetical order | low | patch |
+| 15 | blind | `getCashFlow` reads `categories` itself rather than through `services/categories.ts` | low | rejected: `listCategories` adds a count query the report does not need; no named divergence |
+| 16 | edge | `addMonthsTo("0000-01", -1)` gives a negative year | low | rejected: unreachable in use |
+| 17 | edge | Opposite-signed lines give shares above 100 % or negative | low | rejected: share = line / group total is the spec's rule |
+| 18 | gap | « Sans catégorie » link never clicked in e2e | low | patch: test-only, with row 2 |
+| 19 | spec-review spec | No Playwright test covers a credit card payment, which the story's first criterion names | low | patch: the totals e2e adds a checking-to-card pair |
+| 20 | spec-review standards | `linesOf` takes money as a bare `number`, against AGENTS.md's money rule | low | patch: `MinorUnits` |
+| 21 | spec-review standards | `groupBy` on `sql\`amount > 0\`` is raw SQL | false | a Drizzle `sql` fragment, as the ledger already uses for `isTransferSide`; AGENTS.md forbids hand-written queries |
+| 22 | spec-review standards | e2e locates the toast by `[data-sonner-toast]` | low | rejected: the local idiom of `merchant.spec.ts` and `tag.spec.ts` |
+| 23 | spec-review standards | `data` passed down to rows for `from`, `to` and `currency` | low | rejected: one card, one data object |
+| 24 | spec-review standards | Ninth `Intl.Collator("fr")`, repeated `zValidator` callback | low | rejected: existing idiom, outside this story |
+| 25 | spec-review standards | `CachedPage` now also names non-page entries | low | rejected: its comment says so |
 
 ## Design Notes
 

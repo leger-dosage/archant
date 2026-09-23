@@ -215,6 +215,15 @@ export function apiHelpers(request: APIRequestContext) {
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
+		/** Turns on « Exclure des rapports », as the account's settings do. */
+		async excludeAccount(id: string) {
+			const response = await request.patch(`/api/accounts/${id}`, {
+				data: { excludedFromReports: true },
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
 		async recordSnapshot(accountId: string, input: { date: string; balance: string }) {
 			return created(await request.post(`/api/accounts/${accountId}/snapshots`, { data: input }));
 		},

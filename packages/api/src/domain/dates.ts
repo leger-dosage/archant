@@ -69,3 +69,17 @@ export function addMonths(date: IsoDate, months: number): IsoDate {
 		String(targetDay).padStart(2, "0"),
 	].join("-");
 }
+
+/** A calendar month as `YYYY-MM`. */
+export type IsoMonth = string;
+
+/** The first and last days of a calendar month, both inclusive. */
+export function monthRange(month: IsoMonth): { from: IsoDate; to: IsoDate } {
+	const year = Number(month.slice(0, 4));
+	const monthNumber = Number(month.slice(5, 7));
+
+	return {
+		from: `${month}-01`,
+		to: `${month}-${String(daysInMonth(year, monthNumber)).padStart(2, "0")}`,
+	};
+}

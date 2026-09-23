@@ -7,8 +7,10 @@ import { z } from "zod";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
+import { monthSchema } from "@archant/api/schemas/reports";
 
 import { BalanceChart, PeriodToggle, changeText } from "@/components/BalanceChart";
+import { CashFlowCard } from "@/components/CashFlowCard";
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,12 +18,15 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCommands } from "@/hooks/useCommands";
 import { useNetWorth } from "@/hooks/useNetWorth";
 import { errorCodeOf } from "@/lib/api";
+import { toIsoMonth } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 // Absent means the default period, so links to the dashboard need no search
 // params; a period from an old or hand-edited link falls back to it.
 const searchSchema = z.object({
 	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
+	// Absent means this month, in the browser's own time zone.
+	month: monthSchema.optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_authed/")({
@@ -130,7 +135,8 @@ function NetWorthCard({
 function DashboardPage() {
 	const { t } = useTranslation();
 	const accounts = useAccounts();
-	const { period = DEFAULT_BALANCE_PERIOD } = Route.useSearch();
+	const currentMonth = toIsoMonth();
+	const { period = DEFAULT_BALANCE_PERIOD, month = currentMonth } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	// The dialog lives in the root layout, so the palette opens it from any page.
 	const { setCreatingAccount } = useCommands();
@@ -145,6 +151,15 @@ function DashboardPage() {
 			search: (previous) => ({
 				...previous,
 				period: next === DEFAULT_BALANCE_PERIOD ? undefined : next,
+			}),
+			replace: true,
+		});
+
+	const changeMonth = (next: string) =>
+		void navigate({
+			search: (previous) => ({
+				...previous,
+				month: next === currentMonth ? undefined : next,
 			}),
 			replace: true,
 		});
@@ -165,7 +180,10 @@ function DashboardPage() {
 			)}
 
 			{accounts.data !== undefined && hasAccounts && (
-				<NetWorthCard period={period} onPeriodChange={changePeriod} />
+				<>
+					<NetWorthCard period={period} onPeriodChange={changePeriod} />
+					<CashFlowCard month={month} current={currentMonth} onMonthChange={changeMonth} />
+				</>
 			)}
 
 			{accounts.data !== undefined && !hasAccounts && (

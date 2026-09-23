@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-23-2026 16:30
+last_updated: 09-23-2026 16:45
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -75,7 +75,7 @@ development_status:
 
   epic-6: in-progress
   6-1-net-worth-and-its-history: review
-  6-2-monthly-income-and-expenses-by-category: ready-for-dev
+  6-2-monthly-income-and-expenses-by-category: review
   epic-6-retrospective: optional
 
   epic-7: backlog

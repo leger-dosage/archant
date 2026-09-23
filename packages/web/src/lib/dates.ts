@@ -86,3 +86,29 @@ export function dayHeading(iso: string, today: string = toIsoDate()): DayHeading
 		text: (iso.slice(0, 4) === today.slice(0, 4) ? sameYear : otherYear).format(date),
 	};
 }
+
+/** The calendar month in the browser's own time zone, as `YYYY-MM`; this month by default. */
+export function toIsoMonth(now: Date = new Date()): string {
+	return toIsoDate(now).slice(0, 7);
+}
+
+/** The month `months` later, or earlier when negative, across years. */
+export function addMonthsTo(month: string, months: number): string {
+	const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + months;
+	const year = Math.floor(index / 12);
+
+	return `${String(year).padStart(4, "0")}-${pad(index - year * 12 + 1)}`;
+}
+
+const monthYear = new Intl.DateTimeFormat("fr-FR", {
+	month: "long",
+	year: "numeric",
+	timeZone: "UTC",
+});
+
+/** `2026-08` as « Août 2026 », capitalised as a heading. */
+export function monthHeading(month: string): string {
+	const text = monthYear.format(new Date(`${month}-01T00:00:00Z`));
+
+	return text.charAt(0).toLocaleUpperCase("fr-FR") + text.slice(1);
+}

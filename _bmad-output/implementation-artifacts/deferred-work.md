@@ -61,3 +61,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-4-tags.md`
   summary: Test in `e2e/tags.spec.ts` and `e2e/merchants.spec.ts` that renaming to a taken name shows « … porte déjà ce nom. » under the field and keeps the dialog open.
   evidence: The API refusal is tested; removing the `name_taken` branch of `RenameTagDialog` or `RenameMerchantDialog` breaks no test today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-monthly-income-and-expenses-by-category.md`
+  summary: The « Sans catégorie » drill-down leaves out an uncategorised `loan_payment` or `investment_contribution` outflow that the dashboard counts as an expense.
+  evidence: medium, unverified. `categoryCondition` in `services/ledger.ts` matches `none` only outside every transfer (`not(inAnyTransfer)`), while `countsInCashFlow` counts those outflows. No account type produces these kinds before Epic 7; settle it there with a test that opens the « Sans catégorie » drill-down on such an outflow.

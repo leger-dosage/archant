@@ -108,8 +108,13 @@ type RowChange<Field extends RowField> = {
 	undo?: boolean;
 };
 
-/** Any cached page of transactions, one account's or the cross-account list. */
-type CachedPage = { items: TransactionData[] } | undefined;
+/**
+ * Any cached query under `transactions.all`. Only a page of transactions, one
+ * account's or the cross-account list, has `items`: the dashboard's cash flow
+ * and a row's transfer candidates share the prefix so that every write
+ * refreshes them, and the optimistic write must leave them alone.
+ */
+type CachedPage = { items?: TransactionData[] } | undefined;
 
 const ROW_FIELDS = {
 	categoryId: {
@@ -154,7 +159,7 @@ function useSetRowField<Field extends RowField>(field: Field) {
 			});
 
 			queryClient.setQueriesData<CachedPage>({ queryKey: queryKeys.transactions.all }, (page) =>
-				page === undefined
+				page?.items === undefined
 					? page
 					: {
 							...page,
