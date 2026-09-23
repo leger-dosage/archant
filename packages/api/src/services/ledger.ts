@@ -59,6 +59,7 @@ import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
 export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
@@ -115,16 +116,24 @@ function chunksOf<Row>(rows: readonly Row[], size: number): Row[][] {
 	);
 }
 
-/** Runs `write` on each chunk strictly in sequence, so a failed chunk rolls back with nothing else queued. */
+/** Runs `step` on each item strictly in sequence, so a failed step rolls back with nothing else queued. */
+async function oneByOne<Item>(
+	items: readonly Item[],
+	step: (item: Item) => Promise<unknown>,
+): Promise<void> {
+	await items.reduce<Promise<unknown>>(
+		(pending, item) => pending.then(() => step(item)),
+		Promise.resolve(),
+	);
+}
+
+/** Runs `write` on each chunk strictly in sequence. */
 async function inSequence<Row>(
 	rows: readonly Row[],
 	size: number,
 	write: (chunk: Row[]) => Promise<unknown>,
 ): Promise<void> {
-	await chunksOf(rows, size).reduce<Promise<unknown>>(
-		(pending, chunk) => pending.then(() => write(chunk)),
-		Promise.resolve(),
-	);
+	await oneByOne(chunksOf(rows, size), write);
 }
 
 // A `current_anchor` belongs to a bank-linked account, computed backward from
@@ -920,20 +929,23 @@ const PATCH_KEY_OF = {
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
 
+// What a row edit reads: the entry's date and amount beside the detail row.
+const editableColumns = {
+	accountId: entries.accountId,
+	date: entries.date,
+	amount: entries.amount,
+	currency: entries.currency,
+	label: transactions.label,
+	notes: transactions.notes,
+	excluded: transactions.excluded,
+	categoryId: transactions.categoryId,
+	merchantId: transactions.merchantId,
+	lockedFields: transactions.lockedFields,
+};
+
 async function transactionRow(tx: Transaction, entryId: string) {
 	const row = await tx
-		.select({
-			accountId: entries.accountId,
-			date: entries.date,
-			amount: entries.amount,
-			currency: entries.currency,
-			label: transactions.label,
-			notes: transactions.notes,
-			excluded: transactions.excluded,
-			categoryId: transactions.categoryId,
-			merchantId: transactions.merchantId,
-			lockedFields: transactions.lockedFields,
-		})
+		.select(editableColumns)
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.where(eq(entries.id, entryId))
@@ -945,6 +957,9 @@ async function transactionRow(tx: Transaction, entryId: string) {
 
 	return { ...row, tagIds: await tagIdsOf(tx, entryId) };
 }
+
+/** A transaction as an edit sees it, tags included. */
+type EditableRow = Awaited<ReturnType<typeof transactionRow>>;
 
 async function tagIdsOf(db: Pick<Transaction, "select">, entryId: string): Promise<string[]> {
 	const rows = await db
@@ -965,6 +980,100 @@ function sameValue(current: unknown, value: unknown): boolean {
 	}
 
 	return current === value;
+}
+
+type RowChange = { next: EditableRow; changed: LockableField[] };
+
+/**
+ * What `patch` changes on one row. A field changes only where the value
+ * differs; a `user` write changes a locked field, any other origin leaves it
+ * as it is (AD-10). Shared by the single and the bulk edit, so both lock the
+ * same way.
+ */
+function changeOf(current: EditableRow, patch: TransactionPatch, origin: Origin): RowChange {
+	const locked = new Set(current.lockedFields);
+	const next = { ...current };
+	const changed: LockableField[] = [];
+
+	for (const field of LOCKABLE_FIELDS) {
+		const key = PATCH_KEY_OF[field];
+		const value = patch[key];
+		const allowed = origin === "user" || !locked.has(field);
+
+		if (value !== undefined && !sameValue(current[key], value) && allowed) {
+			changed.push(field);
+			Object.assign(next, { [key]: Array.isArray(value) ? [...new Set(value)] : value });
+		}
+	}
+
+	return { next, changed };
+}
+
+/**
+ * The `transactions` columns a change writes: the fields it changed, the
+ * category's origin with the category, `null` without one, and the locks a
+ * `user` write adds. The entry's date and amount and the taggings are the
+ * caller's.
+ */
+function detailOf(
+	current: EditableRow,
+	{ next, changed }: RowChange,
+	origin: Origin,
+): Partial<typeof transactions.$inferInsert> {
+	// Asked even when the category is cleared, so a maintenance write fails either way.
+	const categoryOrigin = changed.includes("category") ? categoryOriginOf(origin) : null;
+
+	return {
+		...(changed.includes("label") ? { label: next.label } : {}),
+		...(changed.includes("notes") ? { notes: next.notes } : {}),
+		...(changed.includes("excluded") ? { excluded: next.excluded } : {}),
+		...(changed.includes("category")
+			? {
+					categoryId: next.categoryId,
+					categoryOrigin: next.categoryId === null ? null : categoryOrigin,
+				}
+			: {}),
+		...(changed.includes("merchant") ? { merchantId: next.merchantId } : {}),
+		lockedFields:
+			origin === "user"
+				? [...new Set([...current.lockedFields, ...changed])]
+				: current.lockedFields,
+	};
+}
+
+function invalidField(path: string, code = "invalid_value"): AppError {
+	return new AppError("VALIDATION_ERROR", "The request is invalid.", [{ path, code }]);
+}
+
+async function categoryExists(tx: Transaction, id: string): Promise<boolean> {
+	const row = await tx
+		.select({ id: categories.id })
+		.from(categories)
+		.where(eq(categories.id, id))
+		.get();
+
+	return row !== undefined;
+}
+
+async function merchantExists(tx: Transaction, id: string): Promise<boolean> {
+	const row = await tx
+		.select({ id: merchants.id })
+		.from(merchants)
+		.where(eq(merchants.id, id))
+		.get();
+
+	return row !== undefined;
+}
+
+/** Whether every one of `ids`, without repeats, names a tag. */
+async function tagsExist(tx: Transaction, ids: readonly string[]): Promise<boolean> {
+	const found = await tx
+		.select({ count: count() })
+		.from(tags)
+		.where(inArray(tags.id, [...ids]))
+		.get();
+
+	return found?.count === ids.length;
 }
 
 /**
@@ -988,63 +1097,31 @@ export async function updateTransaction(
 		async (tx): Promise<UpdateResult> => {
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
-			const locked = new Set(current.lockedFields);
-			const next = { ...current };
-			const changed: LockableField[] = [];
+			const change = changeOf(current, patch, options.origin);
+			const { next, changed } = change;
 
-			for (const field of LOCKABLE_FIELDS) {
-				const key = PATCH_KEY_OF[field];
-				const value = patch[key];
-				const allowed = options.origin === "user" || !locked.has(field);
-
-				if (value !== undefined && !sameValue(current[key], value) && allowed) {
-					changed.push(field);
-					Object.assign(next, { [key]: Array.isArray(value) ? [...new Set(value)] : value });
-				}
+			if (
+				changed.includes("category") &&
+				next.categoryId !== null &&
+				!(await categoryExists(tx, next.categoryId))
+			) {
+				throw invalidField("categoryId");
 			}
 
-			const categoryOrigin = changed.includes("category") ? categoryOriginOf(options.origin) : null;
-
-			if (changed.includes("category") && next.categoryId !== null) {
-				const category = await tx
-					.select({ id: categories.id })
-					.from(categories)
-					.where(eq(categories.id, next.categoryId))
-					.get();
-
-				if (category === undefined) {
-					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-						{ path: "categoryId", code: "invalid_value" },
-					]);
-				}
+			if (
+				changed.includes("merchant") &&
+				next.merchantId !== null &&
+				!(await merchantExists(tx, next.merchantId))
+			) {
+				throw invalidField("merchantId");
 			}
 
-			if (changed.includes("merchant") && next.merchantId !== null) {
-				const merchant = await tx
-					.select({ id: merchants.id })
-					.from(merchants)
-					.where(eq(merchants.id, next.merchantId))
-					.get();
-
-				if (merchant === undefined) {
-					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-						{ path: "merchantId", code: "invalid_value" },
-					]);
-				}
-			}
-
-			if (changed.includes("tags") && next.tagIds.length > 0) {
-				const found = await tx
-					.select({ count: count() })
-					.from(tags)
-					.where(inArray(tags.id, next.tagIds))
-					.get();
-
-				if (found?.count !== next.tagIds.length) {
-					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-						{ path: "tagIds", code: "invalid_value" },
-					]);
-				}
+			if (
+				changed.includes("tags") &&
+				next.tagIds.length > 0 &&
+				!(await tagsExist(tx, next.tagIds))
+			) {
+				throw invalidField("tagIds");
 			}
 
 			const reason = rejectionFor(
@@ -1079,22 +1156,7 @@ export async function updateTransaction(
 
 			await tx
 				.update(transactions)
-				.set({
-					label: next.label,
-					notes: next.notes,
-					excluded: next.excluded,
-					...(changed.includes("category")
-						? {
-								categoryId: next.categoryId,
-								categoryOrigin: next.categoryId === null ? null : categoryOrigin,
-							}
-						: {}),
-					...(changed.includes("merchant") ? { merchantId: next.merchantId } : {}),
-					lockedFields:
-						options.origin === "user"
-							? [...new Set([...current.lockedFields, ...changed])]
-							: current.lockedFields,
-				})
+				.set(detailOf(current, change, options.origin))
 				.where(eq(transactions.entryId, entryId));
 
 			if (changed.includes("tags")) {
@@ -1139,6 +1201,213 @@ export async function deleteTransaction(
 			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
 			await tx.delete(entries).where(eq(entries.id, entryId));
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * The rows a bulk action applies to: the given ids, or every transaction the
+ * list's filter matches, across pages.
+ */
+export type BulkSelection = { ids: readonly string[] } | { filter: TransactionFilter };
+
+/** What a bulk edit may change; an absent field is left as it is. */
+export type BulkPatch = {
+	/** `null` leaves the rows « Sans catégorie ». */
+	categoryId?: string | null | undefined;
+	/** `null` leaves the rows « Sans marchand ». */
+	merchantId?: string | null | undefined;
+	/** Added to each row's tags; a bulk edit never removes one. */
+	addTagIds?: readonly string[] | undefined;
+	excluded?: boolean | undefined;
+};
+
+/**
+ * Resolves a selection to its rows once, before any write, so a write never
+ * changes which rows match: « Sans catégorie », once categorised, would
+ * otherwise lose the rows a later chunk still had to lock. An id naming no
+ * transaction fails the call on `ids`.
+ */
+async function selectedRows(tx: Transaction, selection: BulkSelection) {
+	const query = (where: SQL | undefined) =>
+		tx
+			.select({ id: entries.id, ...editableColumns })
+			.from(entries)
+			.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			.where(and(eq(entries.kind, "transaction"), where));
+
+	if ("filter" in selection) {
+		const where = filterCondition(selection.filter);
+
+		return where === null ? [] : query(where);
+	}
+
+	const ids = [...new Set(selection.ids)];
+	const rows: Awaited<ReturnType<typeof query>> = [];
+
+	await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+		rows.push(...(await query(inArray(entries.id, chunk))));
+	});
+
+	if (rows.length !== ids.length) {
+		throw invalidField("ids");
+	}
+
+	return rows;
+}
+
+/**
+ * Sets a category or a merchant, adds tags or changes the exclusion on every
+ * selected row, all or nothing, and returns how many rows the selection
+ * matched, unchanged ones included. Each row follows `updateTransaction`'s
+ * rules through `changeOf`. An unknown category, merchant or tag, or a row
+ * the new tags would carry past `MAX_TAGS_PER_TRANSACTION`, fails the call on
+ * its `patch` field. Classification and exclusion move no balance, so nothing
+ * is recomputed.
+ */
+export async function bulkUpdateTransactions(
+	deps: ServiceDeps,
+	selection: BulkSelection,
+	patch: BulkPatch,
+	options: { origin: Origin },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const { categoryId, merchantId, excluded } = patch;
+			const added = patch.addTagIds === undefined ? undefined : [...new Set(patch.addTagIds)];
+
+			if (
+				categoryId !== undefined &&
+				categoryId !== null &&
+				!(await categoryExists(tx, categoryId))
+			) {
+				throw invalidField("patch.categoryId");
+			}
+
+			if (
+				merchantId !== undefined &&
+				merchantId !== null &&
+				!(await merchantExists(tx, merchantId))
+			) {
+				throw invalidField("patch.merchantId");
+			}
+
+			if (added !== undefined && added.length > 0 && !(await tagsExist(tx, added))) {
+				throw invalidField("patch.addTagIds");
+			}
+
+			const rows = await selectedRows(tx, selection);
+			const tagsOf =
+				added === undefined
+					? new Map<string, string[]>()
+					: await tagIdsByEntry(
+							tx,
+							rows.map((row) => row.id),
+						);
+			// Rows whose write is the same share one statement per chunk: the
+			// classification is the same for all, only the locks already held differ.
+			const writes = new Map<
+				string,
+				{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
+			>();
+			const newTaggings: { transactionId: string; tagId: string }[] = [];
+
+			for (const { id, ...row } of rows) {
+				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
+				const tagIds =
+					added === undefined ? undefined : [...new Set([...current.tagIds, ...added])];
+
+				if (tagIds !== undefined && tagIds.length > MAX_TAGS_PER_TRANSACTION) {
+					throw invalidField("patch.addTagIds", "too_big");
+				}
+
+				const change = changeOf(
+					current,
+					{ categoryId, merchantId, excluded, tagIds },
+					options.origin,
+				);
+
+				if (change.changed.length === 0) {
+					continue;
+				}
+
+				const detail = detailOf(current, change, options.origin);
+				const key = JSON.stringify(detail);
+				const group = writes.get(key);
+
+				if (group === undefined) {
+					writes.set(key, { detail, ids: [id] });
+				} else {
+					group.ids.push(id);
+				}
+
+				if (change.changed.includes("tags")) {
+					newTaggings.push(
+						...change.next.tagIds
+							.filter((tagId) => !current.tagIds.includes(tagId))
+							.map((tagId) => ({ transactionId: id, tagId })),
+					);
+				}
+			}
+
+			const statements = [...writes.values()].flatMap(({ detail, ids }) =>
+				chunksOf(ids, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
+			);
+
+			await oneByOne(statements, ({ detail, chunk }) =>
+				tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),
+			);
+			await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
+
+			return rows.length;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Deletes every selected transaction for good, all or nothing, as
+ * `deleteTransaction` does one, and returns how many went. Recomputes each
+ * affected account once, from its earliest deleted date, as `revertImport`
+ * does.
+ */
+export async function bulkDeleteTransactions(
+	deps: ServiceDeps,
+	selection: BulkSelection,
+	_options: { origin: Origin },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const rows = await selectedRows(tx, selection);
+			const ids = rows.map((row) => row.id);
+			const earliest = new Map<string, IsoDate>();
+
+			for (const row of rows) {
+				const known = earliest.get(row.accountId);
+				earliest.set(row.accountId, known === undefined ? row.date : minDate(known, row.date));
+			}
+
+			// The same order as `deleteTransaction`: their foreign keys restrict
+			// deleting the entry.
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(entryKeys).where(inArray(entryKeys.entryId, chunk)),
+			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
+			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(transactions).where(inArray(transactions.entryId, chunk)),
+			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(entries).where(inArray(entries.id, chunk)),
+			);
+			await oneByOne([...earliest], async ([accountId, date]) => {
+				const account = await accountWithOpeningDate(tx, accountId);
+				await recomputeBalances(tx, account, date, deps.timeZone);
+			});
+
+			return rows.length;
 		},
 		{ behavior: "immediate" },
 	);
@@ -1650,13 +1919,13 @@ export async function findTransaction(
  * would repeat a row once per tag.
  */
 async function tagIdsByEntry(
-	deps: ServiceDeps,
+	db: Pick<Transaction, "select">,
 	entryIds: readonly string[],
 ): Promise<Map<string, string[]>> {
 	const found = new Map<string, string[]>();
 
 	await inSequence(entryIds, KEYS_PER_LOOKUP, async (chunk) => {
-		const rows = await deps.db
+		const rows = await db
 			.select({ transactionId: taggings.transactionId, tagId: taggings.tagId })
 			.from(taggings)
 			.where(inArray(taggings.transactionId, chunk))
@@ -1832,7 +2101,7 @@ export async function listTransactions(
 				.where(where);
 
 	const tagsOf = await tagIdsByEntry(
-		deps,
+		deps.db,
 		rows.map((row) => row.id),
 	);
 

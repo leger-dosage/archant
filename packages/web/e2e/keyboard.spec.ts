@@ -382,6 +382,10 @@ test("? lists every shortcut, and the sidebar shows G C on Comptes", async ({ pa
 		"Changer la catégorie de l'opérationC",
 		"Changer le marchand de l'opérationM",
 		"Changer les étiquettes de l'opérationT",
+		"Sélectionner l'opérationX",
+		/^Étendre la sélection à l'opération suivante(⇧J ou ⇧↓|Shift J ou Shift ↓)$/u,
+		/^Étendre la sélection à l'opération précédente(⇧K ou ⇧↑|Shift K ou Shift ↑)$/u,
+		"Vider la sélectionEsc",
 	]);
 	await page.keyboard.press("Escape");
 	await expect(dialog).toBeHidden();

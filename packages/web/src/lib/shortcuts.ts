@@ -121,6 +121,34 @@ export const SHORTCUTS = [
 		section: "lists",
 		inFields: false,
 	},
+	{
+		id: "toggleRow",
+		keys: ["x"],
+		label: "shortcuts.labels.toggleRow",
+		section: "lists",
+		inFields: false,
+	},
+	{
+		id: "extendNext",
+		keys: ["shift+j", "shift+arrowdown"],
+		label: "shortcuts.labels.extendNext",
+		section: "lists",
+		inFields: false,
+	},
+	{
+		id: "extendPrevious",
+		keys: ["shift+k", "shift+arrowup"],
+		label: "shortcuts.labels.extendPrevious",
+		section: "lists",
+		inFields: false,
+	},
+	{
+		id: "clearSelection",
+		keys: ["escape"],
+		label: "shortcuts.labels.clearSelection",
+		section: "lists",
+		inFields: false,
+	},
 ] as const satisfies readonly {
 	id: string;
 	keys: readonly [string, ...string[]];
@@ -162,8 +190,8 @@ export function hotkeysOf(shortcut: Shortcut, apple: boolean = APPLE): string {
 }
 
 // `?` and `/` need Shift on AZERTY, so Shift is allowed on punctuation. On a
-// letter, an arrow or Enter it is kept for selection, which arrives with
-// Story 4.5.
+// letter, an arrow or Enter it makes another shortcut: `Shift+J` extends the
+// selection, and must not also move as `j` does.
 export function hasForeignModifier(event: {
 	key: string;
 	ctrlKey: boolean;
@@ -198,9 +226,13 @@ export function keysText(keys: string, apple: boolean): string {
 
 	const parts = keys.split("+");
 	const key = keyName(parts.at(-1) ?? "");
-	const modifiers = parts
-		.slice(0, -1)
-		.map((modifier) => (modifier === "mod" ? (apple ? "⌘" : "Ctrl") : modifier));
+	const modifiers = parts.slice(0, -1).map((modifier) => {
+		if (modifier === "mod") {
+			return apple ? "⌘" : "Ctrl";
+		}
+
+		return modifier === "shift" ? (apple ? "⇧" : "Shift") : modifier;
+	});
 
 	return apple ? [...modifiers, key].join("") : [...modifiers, key].join(" ");
 }

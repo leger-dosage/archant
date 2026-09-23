@@ -76,7 +76,11 @@
 			"importFile": "Importer un fichier sur la page d'un compte",
 			"categoriseRow": "Changer la catégorie de l'opération",
 			"setMerchantRow": "Changer le marchand de l'opération",
-			"setTagsRow": "Changer les étiquettes de l'opération"
+			"setTagsRow": "Changer les étiquettes de l'opération",
+			"toggleRow": "Sélectionner l'opération",
+			"extendNext": "Étendre la sélection à l'opération suivante",
+			"extendPrevious": "Étendre la sélection à l'opération précédente",
+			"clearSelection": "Vider la sélection"
 		}
 	},
 	"accounts": {
@@ -294,6 +298,39 @@
 			"amountHint": "Sans signe : les dépenses et les revenus de ce montant sont affichés.",
 			"apply": "Appliquer",
 			"back": "Retour"
+		},
+		"bulk": {
+			"toolbar": "Actions sur la sélection",
+			"selectRow": "Sélectionner « {{label}} »",
+			"selected_one": "{{count}} sélectionnée",
+			"selected_other": "{{count}} sélectionnées",
+			"selectAll_one": "Tout sélectionner ({{count}} résultat)",
+			"selectAll_other": "Tout sélectionner ({{count}} résultats)",
+			"category": "Catégorie",
+			"merchant": "Marchand",
+			"tags": "Étiquettes",
+			"exclude": "Exclure",
+			"excludeAction": "Exclure des rapports",
+			"includeAction": "Réintégrer dans les rapports",
+			"delete": "Supprimer",
+			"categoryChanged_one": "Catégorie modifiée sur {{count}} opération",
+			"categoryChanged_other": "Catégorie modifiée sur {{count}} opérations",
+			"merchantChanged_one": "Marchand modifié sur {{count}} opération",
+			"merchantChanged_other": "Marchand modifié sur {{count}} opérations",
+			"tagsAdded_one": "Étiquettes ajoutées sur {{count}} opération",
+			"tagsAdded_other": "Étiquettes ajoutées sur {{count}} opérations",
+			"excluded_one": "{{count}} opération exclue des rapports",
+			"excluded_other": "{{count}} opérations exclues des rapports",
+			"included_one": "{{count}} opération réintégrée dans les rapports",
+			"included_other": "{{count}} opérations réintégrées dans les rapports",
+			"deleted_one": "{{count}} opération supprimée",
+			"deleted_other": "{{count}} opérations supprimées",
+			"deleteTitle_one": "Supprimer {{count}} opération ?",
+			"deleteTitle_other": "Supprimer {{count}} opérations ?",
+			"deleteDescription_one": "L'opération sélectionnée sera supprimée définitivement, et le solde de son compte recalculé sans elle.",
+			"deleteDescription_other": "Les {{count}} opérations sélectionnées seront supprimées définitivement, et le solde de leurs comptes recalculé sans elles.",
+			"deleteTransactions_one": "Supprimer {{count}} opération",
+			"deleteTransactions_other": "Supprimer {{count}} opérations"
 		}
 	},
 	"snapshots": {

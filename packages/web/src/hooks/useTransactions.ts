@@ -5,7 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "i18next";
 import { toast } from "sonner";
 
-import type { TransactionInput, TransactionPatchInput } from "@archant/api/schemas/transactions";
+import type {
+	BulkDeleteInput,
+	BulkUpdateInput,
+	TransactionInput,
+	TransactionPatchInput,
+} from "@archant/api/schemas/transactions";
 
 import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, errorCodeOf, unwrap } from "@/lib/api";
@@ -223,5 +228,51 @@ export function useDeleteTransaction(accountId: string) {
 		mutationFn: async (id: string) =>
 			(await unwrap(api.transactions[":id"].$delete({ param: { id } }))).data,
 		onSuccess: invalidate,
+	});
+}
+
+/**
+ * Refreshes what a bulk action can change: every transaction list, the
+ * category, merchant and tag counts, and, after a delete, every account's
+ * balance. No optimistic update: the rows a filter selects are not all on screen.
+ */
+function useInvalidateBulk() {
+	const queryClient = useQueryClient();
+
+	return (options: { balances: boolean }) =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
+			...(options.balances
+				? [queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all })]
+				: []),
+		]);
+}
+
+export type BulkPatch = BulkUpdateInput["patch"];
+
+/** Sets a category or a merchant, adds tags or changes the exclusion on a selection. */
+export function useBulkUpdateTransactions() {
+	const invalidate = useInvalidateBulk();
+
+	return useMutation({
+		mutationFn: async (input: BulkUpdateInput) =>
+			(await unwrap(api.transactions["bulk-update"].$post({ json: input }))).data,
+		onSuccess: () => invalidate({ balances: false }),
+		onError: (error) => showErrorToast(errorCodeOf(error)),
+	});
+}
+
+/** Deletes a selection for good; the balances of their accounts follow. */
+export function useBulkDeleteTransactions() {
+	const invalidate = useInvalidateBulk();
+
+	return useMutation({
+		mutationFn: async (input: BulkDeleteInput) =>
+			(await unwrap(api.transactions["bulk-delete"].$post({ json: input }))).data,
+		onSuccess: () => invalidate({ balances: true }),
+		onError: (error) => showErrorToast(errorCodeOf(error)),
 	});
 }
