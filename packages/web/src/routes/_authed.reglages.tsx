@@ -7,6 +7,7 @@ export const Route = createFileRoute("/_authed/reglages")({
 
 const SECTIONS = [
 	{ to: "/reglages/categories", label: "settings.sections.categories" },
+	{ to: "/reglages/marchands", label: "settings.sections.merchants" },
 	{ to: "/reglages/securite", label: "settings.sections.security" },
 ] as const;
 

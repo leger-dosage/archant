@@ -245,6 +245,30 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		async createMerchant(name: string = uniqueName("Marchand")): Promise<Created> {
+			return { id: await created(await request.post("/api/merchants", { data: { name } })), name };
+		},
+
+		async deleteMerchant(id: string) {
+			// Bodiless, so it needs the `Origin` a browser would add.
+			const response = await request.delete(`/api/merchants/${id}`, { headers: sameOrigin });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Links transactions to a merchant by hand, as the row's combobox does. */
+		async setMerchant(transactionIds: string[], merchantId: string | null) {
+			// One after the other: each is an `immediate` ledger write.
+			await transactionIds.reduce(async (previous, id) => {
+				await previous;
+				const response = await request.patch(`/api/transactions/${id}`, {
+					data: { merchantId },
+				});
+
+				expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+			}, Promise.resolve());
+		},
+
 		/** A group's total in minor units, zero when it holds no account. */
 		async groupTotal(classification: "asset" | "liability"): Promise<number> {
 			const response = await request.get("/api/accounts");

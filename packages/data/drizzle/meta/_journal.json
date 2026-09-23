@@ -92,6 +92,13 @@
       "when": 1790148556161,
       "tag": "0012_add_category_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790153336826,
+      "tag": "0013_add_merchants",
+      "breakpoints": true
     }
   ]
 }

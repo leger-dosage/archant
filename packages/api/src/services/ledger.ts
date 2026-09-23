@@ -43,6 +43,7 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { merchants } from "@archant/data/schema/merchants";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { LOCKABLE_FIELDS, transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance } from "@archant/data/types";
@@ -897,6 +898,8 @@ export type TransactionPatch = {
 	excluded?: boolean | undefined;
 	/** `null` leaves the transaction « Sans catégorie ». */
 	categoryId?: string | null | undefined;
+	/** `null` leaves the transaction « Sans marchand ». */
+	merchantId?: string | null | undefined;
 };
 
 /** The patch key and the row column behind each lockable field. */
@@ -907,6 +910,7 @@ const PATCH_KEY_OF = {
 	notes: "notes",
 	excluded: "excluded",
 	category: "categoryId",
+	merchant: "merchantId",
 } as const satisfies Record<LockableField, keyof TransactionPatch>;
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
@@ -922,6 +926,7 @@ async function transactionRow(tx: Transaction, entryId: string) {
 			notes: transactions.notes,
 			excluded: transactions.excluded,
 			categoryId: transactions.categoryId,
+			merchantId: transactions.merchantId,
 			lockedFields: transactions.lockedFields,
 		})
 		.from(entries)
@@ -938,13 +943,14 @@ async function transactionRow(tx: Transaction, entryId: string) {
 
 /**
  * Edits a transaction and recomputes its account's balances from the earlier
- * of its old and new dates; a change to the category alone touches neither
- * the entry nor the balances. A `user` edit locks every field it
- * changes, clearing the category included, as in Sure; any other origin
- * leaves locked fields as they are (AD-10). The category's origin is the
- * call's, `null` without a category. Throws `VALIDATION_ERROR` on
- * `categoryId` for an unknown category, checked in the same transaction as
- * the write so a concurrent delete cannot slip between them.
+ * of its old and new dates; a change to the category or the merchant alone
+ * touches neither the entry nor the balances. A `user` edit locks every
+ * field it changes, clearing the category or the merchant included, as in
+ * Sure; any other origin leaves locked fields as they are (AD-10). The
+ * category's origin is the call's, `null` without a category. Throws
+ * `VALIDATION_ERROR` on `categoryId` or `merchantId` for an unknown category
+ * or merchant, checked in the same transaction as the write so a concurrent
+ * delete cannot slip between them.
  */
 export async function updateTransaction(
 	deps: ServiceDeps,
@@ -987,6 +993,20 @@ export async function updateTransaction(
 				}
 			}
 
+			if (changed.includes("merchant") && next.merchantId !== null) {
+				const merchant = await tx
+					.select({ id: merchants.id })
+					.from(merchants)
+					.where(eq(merchants.id, next.merchantId))
+					.get();
+
+				if (merchant === undefined) {
+					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+						{ path: "merchantId", code: "invalid_value" },
+					]);
+				}
+			}
+
 			const reason = rejectionFor(
 				{ date: next.date, currency: current.currency },
 				{
@@ -1004,9 +1024,9 @@ export async function updateTransaction(
 				return { status: "updated" };
 			}
 
-			// The category lives on `transactions` alone and moves no balance, so
-			// categorising a row does not rewrite a decade of daily balances.
-			const touchesEntry = changed.some((field) => field !== "category");
+			// The category and the merchant live on `transactions` alone and move no
+			// balance, so classifying a row does not rewrite a decade of daily balances.
+			const touchesEntry = changed.some((field) => field !== "category" && field !== "merchant");
 
 			if (touchesEntry) {
 				await tx
@@ -1027,6 +1047,7 @@ export async function updateTransaction(
 								categoryOrigin: next.categoryId === null ? null : categoryOrigin,
 							}
 						: {}),
+					...(changed.includes("merchant") ? { merchantId: next.merchantId } : {}),
 					lockedFields:
 						options.origin === "user"
 							? [...new Set([...current.lockedFields, ...changed])]
@@ -1117,6 +1138,48 @@ export async function countByCategory(deps: ServiceDeps): Promise<Map<string, nu
 		.groupBy(transactions.categoryId);
 
 	return new Map(rows.map((row) => [row.categoryId, row.count]));
+}
+
+/**
+ * Moves every transaction of merchant `from` to `to`, or unlinks them with
+ * `null`, and returns how many moved. Serves a merchant's merge and delete
+ * with `origin: "maintenance"`: the user chose the merchant, not each
+ * transaction, so `locked_fields` stay as they are (AD-10). One statement,
+ * whatever the count, as `recategorise`.
+ */
+export async function moveMerchant(
+	deps: ServiceDeps,
+	from: string,
+	to: string | null,
+	// Maintenance only, for the same reason as `recategorise`.
+	_options: { origin: "maintenance" },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const result = await tx
+				.update(transactions)
+				.set({ merchantId: to })
+				.where(eq(transactions.merchantId, from));
+
+			return result.rowsAffected;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** How many transactions each merchant holds, by merchant id; absent holds none. */
+export async function countByMerchant(deps: ServiceDeps): Promise<Map<string, number>> {
+	const rows = await deps.db
+		.select({
+			// Never null: the `where` below leaves rows without a merchant out.
+			merchantId: sql<string>`${transactions.merchantId}`,
+			count: count(),
+		})
+		.from(transactions)
+		.where(isNotNull(transactions.merchantId))
+		.groupBy(transactions.merchantId);
+
+	return new Map(rows.map((row) => [row.merchantId, row.count]));
 }
 
 /** What reverting an import deletes now: its created transactions, and its snapshot (0 or 1). */
@@ -1415,6 +1478,8 @@ export type TransactionRecord = {
 	excluded: boolean;
 	/** `null` is « Sans catégorie ». */
 	categoryId: string | null;
+	/** `null` is « Sans marchand ». */
+	merchantId: string | null;
 };
 
 /** A transaction as a list shows it, with its account's name. */
@@ -1431,6 +1496,7 @@ const transactionColumns = {
 	reference: transactions.reference,
 	excluded: transactions.excluded,
 	categoryId: transactions.categoryId,
+	merchantId: transactions.merchantId,
 };
 
 function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {
@@ -1509,12 +1575,17 @@ export type TransactionFilter = {
 	categoryIds?: readonly string[] | undefined;
 	/** Also match transactions without a category. */
 	uncategorised?: boolean | undefined;
+	/** Merchants, ORed; an unknown id matches nothing, an empty list nothing at all. */
+	merchantIds?: readonly string[] | undefined;
 };
 
 /** Whether the filter reads `transactions`, so the count and the sum must join it. */
 function needsTransactionColumns(filter: TransactionFilter): boolean {
 	return (
-		filter.q !== undefined || filter.categoryIds !== undefined || filter.uncategorised === true
+		filter.q !== undefined ||
+		filter.categoryIds !== undefined ||
+		filter.uncategorised === true ||
+		filter.merchantIds !== undefined
 	);
 }
 
@@ -1563,10 +1634,15 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
  * the caller skips the query rather than asking SQLite for an empty `or`.
  */
 function filterCondition(filter: TransactionFilter): SQL | undefined | null {
-	const { accountIds, amounts, q } = filter;
+	const { accountIds, amounts, q, merchantIds } = filter;
 	const category = categoryCondition(filter);
 
-	if (accountIds?.length === 0 || amounts?.length === 0 || category === null) {
+	if (
+		accountIds?.length === 0 ||
+		amounts?.length === 0 ||
+		merchantIds?.length === 0 ||
+		category === null
+	) {
 		return null;
 	}
 
@@ -1586,13 +1662,14 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 			? undefined
 			: or(contains(transactions.label, q), contains(transactions.notes, q)),
 		category,
+		merchantIds === undefined ? undefined : inArray(transactions.merchantId, [...merchantIds]),
 	);
 }
 
 /**
  * A page of transactions matching `filter`, most recent first (AD-15), each
  * with its account's name. The count joins `transactions` only when the text
- * search or the category filter needs its columns, so the unfiltered count
+ * search or the category or merchant filter needs its columns, so the unfiltered count
  * reads one index.
  */
 export async function listTransactions(
@@ -1633,7 +1710,7 @@ export async function listTransactions(
  * The signed sum and the count of the transactions matching `filter`, one row
  * per currency. Excluded transactions count: the sum describes the rows the
  * list shows, not a report. Joins `transactions` only for the text search and
- * the category filter, as the count does.
+ * the category and merchant filters, as the count does.
  */
 export async function sumTransactions(
 	deps: ServiceDeps,

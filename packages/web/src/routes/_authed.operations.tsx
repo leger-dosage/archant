@@ -22,6 +22,7 @@ import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
+import { useMerchants } from "@/hooks/useMerchants";
 import { useShortcut } from "@/hooks/useShortcut";
 import { useTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
@@ -153,6 +154,7 @@ function OperationsPage() {
 	const transactions = useTransactions(filters, page);
 	const accounts = useAccounts();
 	const categories = useCategories();
+	const merchants = useMerchants();
 	const data = transactions.data;
 	const pageCount = pageCountOf(data);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
@@ -199,6 +201,7 @@ function OperationsPage() {
 					filters={filters}
 					accounts={accountOptions}
 					categories={categories.data ?? []}
+					merchants={merchants.data ?? []}
 					onChange={change}
 					onRemove={remove}
 				/>

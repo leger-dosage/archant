@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	MAX_MERCHANT_FILTER,
 	compareAmountBounds,
 	parseAmountBound,
 	transactionFilterSchema,
@@ -61,8 +62,25 @@ describe("transactionFilterSchema", () => {
 		expect(transactionFilterSchema.parse({}).category).toBeUndefined();
 	});
 
-	it("refuses an empty account or category rather than matching nothing", () => {
+	it("reads a lone merchant as a list, and repeated ones in order", () => {
+		expect(transactionFilterSchema.parse({ merchant: "m1" }).merchant).toEqual(["m1"]);
+		expect(transactionFilterSchema.parse({ merchant: ["m1", "m2"] }).merchant).toEqual([
+			"m1",
+			"m2",
+		]);
+		expect(transactionFilterSchema.parse({}).merchant).toBeUndefined();
+	});
+
+	it("refuses more merchants than the cap", () => {
+		const merchant = Array.from({ length: MAX_MERCHANT_FILTER + 1 }, (_, index) => `m${index}`);
+
+		expect(transactionFilterSchema.safeParse({ merchant }).success).toBe(false);
+		expect(transactionFilterSchema.safeParse({ merchant: merchant.slice(1) }).success).toBe(true);
+	});
+
+	it("refuses an empty account, category or merchant rather than matching nothing", () => {
 		expect(transactionFilterSchema.safeParse({ category: "" }).success).toBe(false);
+		expect(transactionFilterSchema.safeParse({ merchant: ["m1", ""] }).success).toBe(false);
 		expect(transactionFilterSchema.safeParse({ account: ["a1", ""] }).success).toBe(false);
 	});
 });
@@ -75,5 +93,13 @@ describe("updateTransactionSchema", () => {
 		expect(schema.parse({ categoryId: null })).toEqual({ categoryId: null });
 		expect(schema.parse({})).toEqual({});
 		expect(schema.safeParse({ categoryId: "" }).success).toBe(false);
+	});
+
+	it("keeps a merchant id, a cleared merchant, and no merchant at all apart", () => {
+		const schema = updateTransactionSchema("EUR");
+
+		expect(schema.parse({ merchantId: "m1" })).toEqual({ merchantId: "m1" });
+		expect(schema.parse({ merchantId: null })).toEqual({ merchantId: null });
+		expect(schema.safeParse({ merchantId: "" }).success).toBe(false);
 	});
 });

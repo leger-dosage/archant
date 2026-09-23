@@ -4,6 +4,7 @@ import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-cor
 import { type CategoryOrigin, CATEGORY_ORIGINS, categories } from "./categories.ts";
 import { inList } from "./check.ts";
 import { entries } from "./entries.ts";
+import { merchants } from "./merchants.ts";
 
 /**
  * Fields a user edit can lock (AD-10). Grows with the columns later epics add,
@@ -16,6 +17,7 @@ export const LOCKABLE_FIELDS = [
 	"notes",
 	"excluded",
 	"category",
+	"merchant",
 ] as const;
 
 export type LockableField = (typeof LOCKABLE_FIELDS)[number];
@@ -55,10 +57,16 @@ export const transactions = sqliteTable(
 		// Who set `categoryId`; the lock itself lives in `lockedFields`, so a
 		// merge can move a category without deciding who owns it.
 		categoryOrigin: text("category_origin").$type<CategoryOrigin>(),
+		// Null is « Sans marchand ». Restrict for the same reason as the category:
+		// deleting a merchant goes through the service, which unlinks it first.
+		// No origin column: only the category's origin is recorded (AD-10).
+		merchantId: text("merchant_id").references(() => merchants.id, { onDelete: "restrict" }),
 	},
 	(table) => [
 		// Every category delete and merge, and the list's filter, look rows up by it.
 		index("transactions_category").on(table.categoryId),
+		// Every merchant delete and merge, and the list's filter, look rows up by it.
+		index("transactions_merchant").on(table.merchantId),
 		check(
 			"transactions_category_origin_check",
 			sql`${table.categoryOrigin} in ${inList(CATEGORY_ORIGINS)}`,

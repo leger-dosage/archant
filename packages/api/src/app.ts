@@ -16,6 +16,7 @@ import { accountsRoutes } from "./routes/accounts.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
+import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
@@ -52,6 +53,7 @@ function createApi(deps: AppDeps) {
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
+		.route("/merchants", merchantsRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }

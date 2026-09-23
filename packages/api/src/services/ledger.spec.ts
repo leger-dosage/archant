@@ -13,6 +13,7 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { merchants } from "@archant/data/schema/merchants";
 import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../domain/balances/forward.ts";
@@ -32,6 +33,8 @@ import {
 	listSnapshots,
 	listTransactions,
 	countByCategory,
+	countByMerchant,
+	moveMerchant,
 	openingDateOf,
 	recategorise,
 	sumTransactions,
@@ -277,6 +280,7 @@ describe("ingest", () => {
 			reference: null,
 			excluded: false,
 			categoryId: null,
+			merchantId: null,
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -1966,6 +1970,92 @@ describe("updateTransaction", () => {
 		});
 		await expect(lockedFields(id)).resolves.toEqual([]);
 	});
+
+	it("sets a merchant by hand, locking it, without touching the entry or balances", async () => {
+		const account = await openChecking();
+		const carrefour = await newMerchant("Carrefour");
+		const id = await add(account.id, {}, "sync");
+		const entry = await temp.db.select().from(entries).where(eq(entries.id, id)).get();
+		const recompute = vi.spyOn(forward, "forwardBalances");
+		setToday("2026-09-21T11:00:00Z");
+
+		await expect(
+			updateTransaction(deps(), id, { merchantId: carrefour }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ merchantId: carrefour });
+		await expect(lockedFields(id)).resolves.toEqual(["merchant"]);
+		await expect(temp.db.select().from(entries).where(eq(entries.id, id)).get()).resolves.toEqual(
+			entry,
+		);
+		expect(recompute).not.toHaveBeenCalled();
+	});
+
+	it("sets a category and a merchant together without recomputing balances", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const carrefour = await newMerchant("Carrefour");
+		const id = await add(account.id, {}, "sync");
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await updateTransaction(
+			deps(),
+			id,
+			{ categoryId: groceries, merchantId: carrefour },
+			{ origin: "user" },
+		);
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			categoryId: groceries,
+			merchantId: carrefour,
+		});
+		await expect(lockedFields(id)).resolves.toEqual(["category", "merchant"]);
+		expect(recompute).not.toHaveBeenCalled();
+	});
+
+	it("clears a merchant by hand, locking it too", async () => {
+		const account = await openChecking();
+		const carrefour = await newMerchant("Carrefour");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { merchantId: carrefour }, { origin: "rule" });
+		await expect(lockedFields(id)).resolves.toEqual([]);
+
+		await updateTransaction(deps(), id, { merchantId: null }, { origin: "user" });
+
+		await expect(merchantOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual(["merchant"]);
+	});
+
+	it("never changes a locked merchant for another origin", async () => {
+		const account = await openChecking();
+		const carrefour = await newMerchant("Carrefour");
+		const lidl = await newMerchant("Lidl");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { merchantId: carrefour }, { origin: "user" });
+
+		await updateTransaction(deps(), id, { merchantId: lidl }, { origin: "rule" });
+		await updateTransaction(deps(), id, { merchantId: null }, { origin: "provider" });
+
+		await expect(merchantOf(id)).resolves.toBe(carrefour);
+	});
+
+	it("refuses an unknown merchant and writes nothing", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+
+		await expect(
+			updateTransaction(deps(), id, { merchantId: "nope", label: "Autre" }, { origin: "user" }),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "merchantId", code: "invalid_value" }],
+		});
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			label: "Boulangerie",
+			merchantId: null,
+		});
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
 });
 
 describe("deleteTransaction", () => {
@@ -2223,6 +2313,39 @@ describe("listTransactions across accounts", () => {
 		await expect(
 			sumTransactions(deps(), { accountIds, categoryIds: [groceries], uncategorised: true }),
 		).resolves.toEqual([{ currency: "EUR", amount: -8580, count: 2 }]);
+	});
+
+	it("filters on merchants, ORed, with count and sum to match", async () => {
+		const { joint } = await openPair();
+		const carrefour = await newMerchant("Carrefour");
+		const lidl = await newMerchant("Lidl");
+		const other = await newMerchant("Fnac");
+		const link = async (label: string, merchantId: string | null) => {
+			const id = await add(joint.id, { label });
+			await updateTransaction(deps(), id, { merchantId }, { origin: "user" });
+		};
+		await link("CB CARREFOUR 1234", carrefour);
+		await link("CARREFOUR MARKET", carrefour);
+		await link("LIDL", lidl);
+		await link("FNAC", other);
+		await link("Virement", null);
+		const accountIds = [joint.id];
+		const labels = async (filter: Parameters<typeof listTransactions>[1]) =>
+			labelsOf(await listTransactions(deps(), { accountIds, ...filter }, firstPage)).toSorted();
+
+		await expect(labels({ merchantIds: [carrefour, lidl] })).resolves.toEqual([
+			"CARREFOUR MARKET",
+			"CB CARREFOUR 1234",
+			"LIDL",
+		]);
+		await expect(labels({ merchantIds: ["nope"] })).resolves.toEqual([]);
+		await expect(labels({ merchantIds: [] })).resolves.toEqual([]);
+		await expect(
+			listTransactions(deps(), { accountIds, merchantIds: [carrefour, lidl] }, firstPage),
+		).resolves.toMatchObject({ total: 3 });
+		await expect(
+			sumTransactions(deps(), { accountIds, merchantIds: [carrefour, lidl] }),
+		).resolves.toEqual([{ currency: "EUR", amount: -12870, count: 3 }]);
 	});
 
 	it("is an empty page for an unknown account", async () => {
@@ -2993,5 +3116,82 @@ describe("countByCategory", () => {
 		expect(perCategory.get(leisure)).toBe(1);
 		expect(perCategory.has(empty)).toBe(false);
 		expect([...perCategory.keys()]).not.toContain(null);
+	});
+});
+
+async function newMerchant(name: string) {
+	const id = crypto.randomUUID();
+	await temp.db.insert(merchants).values({ id, name: `${name} ${id}`, createdAt: 0, updatedAt: 0 });
+
+	return id;
+}
+
+async function merchantOf(entryId: string) {
+	const row = await temp.db
+		.select({ merchantId: transactions.merchantId })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.merchantId;
+}
+
+describe("moveMerchant", () => {
+	it("moves every transaction of a merchant to another, keeping locks and balances", async () => {
+		const account = await openChecking();
+		const source = await newMerchant("CB Carrefour");
+		const target = await newMerchant("Carrefour");
+		const other = await newMerchant("Lidl");
+		const locked = await add(account.id, { label: "CB CARREFOUR 1234" }, "sync");
+		const market = await add(account.id, { label: "CARREFOUR MARKET" }, "sync");
+		const city = await add(account.id, { label: "CARREFOUR CITY" }, "sync");
+		const untouched = await add(account.id, { label: "LIDL" }, "sync");
+		await updateTransaction(deps(), locked, { merchantId: source }, { origin: "user" });
+		await updateTransaction(deps(), market, { merchantId: source }, { origin: "rule" });
+		await updateTransaction(deps(), city, { merchantId: source }, { origin: "rule" });
+		await updateTransaction(deps(), untouched, { merchantId: other }, { origin: "rule" });
+		const days = await history(account.id);
+
+		await expect(moveMerchant(deps(), source, target, { origin: "maintenance" })).resolves.toBe(3);
+
+		const ids = [locked, market, city];
+		await expect(Promise.all(ids.map(merchantOf))).resolves.toEqual([target, target, target]);
+		await expect(merchantOf(untouched)).resolves.toBe(other);
+		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual([["merchant"], [], []]);
+		await expect(history(account.id)).resolves.toEqual(days);
+	});
+
+	it("unlinks the transactions with null, keeping the locks", async () => {
+		const account = await openChecking();
+		const merchant = await newMerchant("Fleuriste");
+		const first = await add(account.id, {}, "sync");
+		const second = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), first, { merchantId: merchant }, { origin: "user" });
+		await updateTransaction(deps(), second, { merchantId: merchant }, { origin: "rule" });
+
+		await expect(moveMerchant(deps(), merchant, null, { origin: "maintenance" })).resolves.toBe(2);
+
+		await expect(merchantOf(first)).resolves.toBeNull();
+		await expect(merchantOf(second)).resolves.toBeNull();
+		await expect(lockedFields(first)).resolves.toEqual(["merchant"]);
+	});
+});
+
+describe("countByMerchant", () => {
+	it("counts each merchant's transactions, leaving out unlinked ones and empty merchants", async () => {
+		const account = await openChecking();
+		const carrefour = await newMerchant("Carrefour");
+		const empty = await newMerchant("Vide");
+		const first = await add(account.id, {}, "sync");
+		const second = await add(account.id, {}, "sync");
+		await add(account.id, {}, "sync");
+		await updateTransaction(deps(), first, { merchantId: carrefour }, { origin: "rule" });
+		await updateTransaction(deps(), second, { merchantId: carrefour }, { origin: "rule" });
+
+		const perMerchant = await countByMerchant(deps());
+
+		expect(perMerchant.get(carrefour)).toBe(2);
+		expect(perMerchant.has(empty)).toBe(false);
+		expect([...perMerchant.keys()]).not.toContain(null);
 	});
 });

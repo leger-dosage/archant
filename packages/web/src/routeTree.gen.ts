@@ -19,6 +19,7 @@ import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes
 import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
 import { Route as AuthedReglagesIndexRouteImport } from './routes/_authed.reglages.index'
 import { Route as AuthedReglagesCategoriesRouteImport } from './routes/_authed.reglages.categories'
+import { Route as AuthedReglagesMarchandsRouteImport } from './routes/_authed.reglages.marchands'
 import { Route as AuthedReglagesSecuriteRouteImport } from './routes/_authed.reglages.securite'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -71,6 +72,11 @@ const AuthedReglagesCategoriesRoute =
     path: '/categories',
     getParentRoute: () => AuthedReglagesRoute,
   } as any)
+const AuthedReglagesMarchandsRoute = AuthedReglagesMarchandsRouteImport.update({
+  id: '/marchands',
+  path: '/marchands',
+  getParentRoute: () => AuthedReglagesRoute,
+} as any)
 const AuthedReglagesSecuriteRoute = AuthedReglagesSecuriteRouteImport.update({
   id: '/securite',
   path: '/securite',
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/reglages': typeof AuthedReglagesRouteWithChildren
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes/': typeof AuthedComptesIndexRoute
   '/reglages/': typeof AuthedReglagesIndexRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes': typeof AuthedComptesIndexRoute
   '/reglages': typeof AuthedReglagesIndexRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/_authed/reglages/categories': typeof AuthedReglagesCategoriesRoute
+  '/_authed/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/_authed/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/_authed/comptes/': typeof AuthedComptesIndexRoute
   '/_authed/reglages/': typeof AuthedReglagesIndexRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/reglages'
     | '/comptes/$accountId'
     | '/reglages/categories'
+    | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes/'
     | '/reglages/'
@@ -135,6 +145,7 @@ export interface FileRouteTypes {
     | '/'
     | '/comptes/$accountId'
     | '/reglages/categories'
+    | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes'
     | '/reglages'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/comptes/$accountId'
     | '/_authed/reglages/categories'
+    | '/_authed/reglages/marchands'
     | '/_authed/reglages/securite'
     | '/_authed/comptes/'
     | '/_authed/reglages/'
@@ -231,6 +243,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedReglagesCategoriesRouteImport
       parentRoute: typeof AuthedReglagesRoute
     }
+    '/_authed/reglages/marchands': {
+      id: '/_authed/reglages/marchands'
+      path: '/marchands'
+      fullPath: '/reglages/marchands'
+      preLoaderRoute: typeof AuthedReglagesMarchandsRouteImport
+      parentRoute: typeof AuthedReglagesRoute
+    }
     '/_authed/reglages/securite': {
       id: '/_authed/reglages/securite'
       path: '/securite'
@@ -243,12 +262,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthedReglagesRouteChildren {
   AuthedReglagesCategoriesRoute: typeof AuthedReglagesCategoriesRoute
+  AuthedReglagesMarchandsRoute: typeof AuthedReglagesMarchandsRoute
   AuthedReglagesSecuriteRoute: typeof AuthedReglagesSecuriteRoute
   AuthedReglagesIndexRoute: typeof AuthedReglagesIndexRoute
 }
 
 const AuthedReglagesRouteChildren: AuthedReglagesRouteChildren = {
   AuthedReglagesCategoriesRoute: AuthedReglagesCategoriesRoute,
+  AuthedReglagesMarchandsRoute: AuthedReglagesMarchandsRoute,
   AuthedReglagesSecuriteRoute: AuthedReglagesSecuriteRoute,
   AuthedReglagesIndexRoute: AuthedReglagesIndexRoute,
 }

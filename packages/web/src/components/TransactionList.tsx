@@ -7,15 +7,17 @@ import { useTranslation } from "react-i18next";
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryDot } from "@/components/CategoryDot";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
+import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { Money } from "@/components/Money";
 import { ShortcutHint } from "@/components/ShortcutHint";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useListNavigation } from "@/hooks/useListNavigation";
+import { useMerchants } from "@/hooks/useMerchants";
 import { useShortcut } from "@/hooks/useShortcut";
-import { useSetTransactionCategory } from "@/hooks/useTransactions";
+import { useSetTransactionCategory, useSetTransactionMerchant } from "@/hooks/useTransactions";
 import { dayHeading } from "@/lib/dates";
 
 type TransactionListProps = {
@@ -121,13 +123,22 @@ const rowButton = (id: string) =>
 
 /**
  * Transactions, most recent first, under a header per day. `j` / `k` and the
- * arrows move between rows, `e` or `Enter` opens one, `c` opens its category.
+ * arrows move between rows, `e` or `Enter` opens one, `c` opens its category,
+ * `m` its merchant.
  */
 export function TransactionList({ items, onOpen, showAccount = false }: TransactionListProps) {
 	const { t } = useTranslation();
 	const container = useRef<HTMLDivElement>(null);
 	const categories = useCategories();
 	const setCategory = useSetTransactionCategory();
+	const merchants = useMerchants();
+	const setMerchant = useSetTransactionMerchant();
+	const merchantNames = new Map(
+		(merchants.data ?? []).map((merchant) => [merchant.id, merchant.name]),
+	);
+	// The row whose merchant combobox `m` opened; it has no button of its own,
+	// so it hangs from the row and gives focus back to it.
+	const [pickingMerchant, setPickingMerchant] = useState<string | null>(null);
 	// The row whose combobox is open, and the one `c` opened it from, which
 	// gets focus back so `j` carries on from there.
 	const [picking, setPicking] = useState<string | null>(null);
@@ -156,6 +167,18 @@ export function TransactionList({ items, onOpen, showAccount = false }: Transact
 		{ when: () => focusedRowId() !== undefined },
 	);
 
+	useShortcut(
+		"setMerchantRow",
+		() => {
+			const id = focusedRowId();
+
+			if (id !== undefined) {
+				setPickingMerchant(id);
+			}
+		},
+		{ when: () => focusedRowId() !== undefined },
+	);
+
 	return (
 		<div ref={container} className="flex flex-col gap-4">
 			{groupByDay(items).map((day) => {
@@ -167,71 +190,113 @@ export function TransactionList({ items, onOpen, showAccount = false }: Transact
 							<DayTitle date={day.date} />
 						</h3>
 						<ul>
-							{day.items.map((item) => (
-								<li
-									key={item.id}
-									// Two lines below 768 px: label and amount, then the category.
-									className="flex flex-col rounded-md pb-1 hover:bg-muted has-[[data-transaction-id]:focus-visible]:bg-muted md:flex-row md:items-center md:gap-2 md:pb-0"
-								>
-									<button
-										type="button"
-										// Lets the sheet give focus back to this row after an edit
-										// moved it under another day, which remounts it.
-										data-transaction-id={item.id}
-										onClick={() => onOpen(item)}
-										className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex-1"
+							{day.items.map((item) => {
+								const merchantName =
+									item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
+
+								return (
+									<li
+										key={item.id}
+										// Two lines below 768 px: label, merchant and amount, then the category.
+										className="flex flex-col rounded-md pb-1 hover:bg-muted has-[[data-transaction-id]:focus-visible]:bg-muted md:flex-row md:items-center md:gap-2 md:pb-0"
 									>
-										<span className="min-w-0 flex-1 truncate" title={item.label}>
-											{item.label}
-										</span>
-										{showAccount && (
-											<span
-												className="w-40 shrink-0 truncate text-xs text-muted-foreground max-md:w-24"
-												title={item.accountName}
+										<Popover
+											open={pickingMerchant === item.id}
+											onOpenChange={(open) => setPickingMerchant(open ? item.id : null)}
+										>
+											<PopoverAnchor asChild>
+												<button
+													type="button"
+													// Lets the sheet give focus back to this row after an edit
+													// moved it under another day, which remounts it.
+													data-transaction-id={item.id}
+													onClick={() => onOpen(item)}
+													className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex-1"
+												>
+													<span className="flex min-w-0 flex-1 flex-col">
+														<span className="truncate" title={item.label}>
+															{item.label}
+														</span>
+														{merchantName !== undefined && (
+															<span className="truncate text-xs text-muted-foreground">
+																{merchantName}
+															</span>
+														)}
+													</span>
+													{showAccount && (
+														<span
+															className="w-40 shrink-0 truncate text-xs text-muted-foreground max-md:w-24"
+															title={item.accountName}
+														>
+															{item.accountName}
+														</span>
+													)}
+													<span className="flex shrink-0 items-center gap-1.5">
+														{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
+														<Money
+															amount={item.amount}
+															currency={item.currency}
+															signed
+															muted={item.excluded}
+														/>
+													</span>
+												</button>
+											</PopoverAnchor>
+											<PopoverContent
+												align="start"
+												className="w-72 p-0"
+												onCloseAutoFocus={(event) => {
+													event.preventDefault();
+													rowButton(item.id)?.focus();
+												}}
 											>
-												{item.accountName}
-											</span>
-										)}
-										<span className="flex shrink-0 items-center gap-1.5">
-											{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
-											<Money
-												amount={item.amount}
-												currency={item.currency}
-												signed
-												muted={item.excluded}
-											/>
-										</span>
-									</button>
-									<CategoryChip
-										transaction={item}
-										categories={categories.data}
-										open={picking === item.id}
-										onOpenChange={(open) => {
-											if (open) {
-												openedFromRow.current = null;
-											}
-											setPicking(open ? item.id : null);
-										}}
-										onPick={(categoryId) => {
-											setPicking(null);
-											if (categoryId !== item.categoryId) {
-												setCategory.mutate({
-													id: item.id,
-													categoryId,
-													previous: item.categoryId,
-												});
-											}
-										}}
-										onCloseFocus={(event) => {
-											if (openedFromRow.current === item.id) {
-												openedFromRow.current = null;
-												event.preventDefault();
-												rowButton(item.id)?.focus();
-											}
-										}}
-									/>
-								</li>
-							))}
+												<MerchantCombobox
+													merchants={merchants.data ?? []}
+													value={item.merchantId}
+													onSelect={(merchantId) => {
+														setPickingMerchant(null);
+														if (merchantId !== item.merchantId) {
+															setMerchant.mutate({
+																id: item.id,
+																value: merchantId,
+																previous: item.merchantId,
+															});
+														}
+													}}
+												/>
+											</PopoverContent>
+										</Popover>
+										<CategoryChip
+											transaction={item}
+											categories={categories.data}
+											open={picking === item.id}
+											onOpenChange={(open) => {
+												if (open) {
+													openedFromRow.current = null;
+												}
+												setPicking(open ? item.id : null);
+											}}
+											onPick={(categoryId) => {
+												setPicking(null);
+												if (categoryId !== item.categoryId) {
+													setCategory.mutate({
+														id: item.id,
+														value: categoryId,
+														previous: item.categoryId,
+													});
+												}
+											}}
+											onCloseFocus={(event) => {
+												if (openedFromRow.current === item.id) {
+													openedFromRow.current = null;
+													event.preventDefault();
+													rowButton(item.id)?.focus();
+												}
+											}}
+										/>
+									</li>
+								);
+							})}
 						</ul>
 					</section>
 				);
