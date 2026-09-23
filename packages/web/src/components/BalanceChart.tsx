@@ -1,5 +1,7 @@
 import type { ChartConfig } from "@/components/ui/chart";
 import type { BalanceHistoryData } from "@/hooks/useBalanceHistory";
+import type { UseQueryResult } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import type { TooltipContentProps } from "recharts";
 
 import { useId, useState } from "react";
@@ -23,7 +25,6 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { errorCodeOf } from "@/lib/api";
 import {
 	formatSignedMoney,
@@ -33,13 +34,16 @@ import {
 	formatTooltipDate,
 } from "@/lib/balance-change";
 
-type Point = BalanceHistoryData["points"][number];
+/**
+ * What the chart draws: an account's balance history or the household's net
+ * worth, both one point per day of a period with its change.
+ */
+export type ChartHistory = Pick<BalanceHistoryData, "period" | "currency" | "points" | "change">;
 
-type BalanceChartProps = {
-	accountId: string;
-	period: BalancePeriod;
-	onPeriodChange: (period: BalancePeriod) => void;
-};
+type Point = ChartHistory["points"][number];
+
+/** The sentence above the chart, which names what the line is. */
+type SummaryKey = "balances.summary" | "dashboard.summary";
 
 const CHART_HEIGHT = "h-64";
 
@@ -51,7 +55,23 @@ function isPeriod(value: string): value is BalancePeriod {
 	return BALANCE_PERIODS.some((period) => period === value);
 }
 
-function Summary({ history }: { history: BalanceHistoryData }) {
+/** `+12,40 € (+1,0 %)`, or the amount alone when the period starts at zero. */
+export function changeText(
+	t: TFunction,
+	change: NonNullable<ChartHistory["change"]>,
+	currency: string,
+): string {
+	const amount = formatSignedMoney(change.amount, currency);
+
+	return change.percent === null
+		? amount
+		: t("balances.changeWithPercent", {
+				amount,
+				percent: formatSignedPercent(change.percent),
+			});
+}
+
+function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: SummaryKey }) {
 	const { t } = useTranslation();
 	const last = history.points.at(-1);
 
@@ -59,18 +79,11 @@ function Summary({ history }: { history: BalanceHistoryData }) {
 		return null;
 	}
 
-	const amount = formatSignedMoney(history.change.amount, history.currency);
-	const change =
-		history.change.percent === null
-			? amount
-			: t("balances.changeWithPercent", {
-					amount,
-					percent: formatSignedPercent(history.change.percent),
-				});
+	const change = changeText(t, history.change, history.currency);
 
 	return (
 		<p className="text-sm">
-			{t("balances.summary", {
+			{t(summaryKey, {
 				balance: formatMoney({ amount: last.balance, currency: history.currency }),
 				change,
 				over: t(`balances.over.${history.period}`),
@@ -104,10 +117,9 @@ function BalanceTooltip({
 	);
 }
 
-function Chart({ history }: { history: BalanceHistoryData }) {
-	const { t } = useTranslation();
+function Chart({ history, valueLabel }: { history: ChartHistory; valueLabel: string }) {
 	const config = {
-		balance: { label: t("balances.balance"), color: "var(--chart-1)" },
+		balance: { label: valueLabel, color: "var(--chart-1)" },
 	} satisfies ChartConfig;
 	const byDate = new Map(history.points.map((point) => [point.date, point]));
 	const longRange = history.points.length > LONG_RANGE_POINTS;
@@ -157,7 +169,15 @@ function Chart({ history }: { history: BalanceHistoryData }) {
 	);
 }
 
-function DataTable({ history, id }: { history: BalanceHistoryData; id: string }) {
+function DataTable({
+	history,
+	id,
+	valueLabel,
+}: {
+	history: ChartHistory;
+	id: string;
+	valueLabel: string;
+}) {
 	const { t } = useTranslation();
 
 	return (
@@ -167,7 +187,7 @@ function DataTable({ history, id }: { history: BalanceHistoryData; id: string })
 					<TableRow>
 						<TableHead scope="col">{t("balances.date")}</TableHead>
 						<TableHead scope="col" className="text-right">
-							{t("balances.balance")}
+							{valueLabel}
 						</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -186,46 +206,61 @@ function DataTable({ history, id }: { history: BalanceHistoryData; id: string })
 	);
 }
 
-/**
- * An account's daily balance over a period, with a text summary above and the
- * same series as a table on demand (EXPERIENCE.md, accessibility floor).
- */
-export function BalanceChart({ accountId, period, onPeriodChange }: BalanceChartProps) {
+/** The « 1 M, 3 M, 6 M, 1 A, Tout » segmented control. */
+export function PeriodToggle({
+	period,
+	onPeriodChange,
+}: {
+	period: BalancePeriod;
+	onPeriodChange: (period: BalancePeriod) => void;
+}) {
 	const { t } = useTranslation();
-	const history = useBalanceHistory(accountId, period);
+
+	return (
+		<ToggleGroup
+			type="single"
+			variant="outline"
+			size="sm"
+			spacing={0}
+			aria-label={t("balances.period")}
+			value={period}
+			// Radix reports an empty value when the pressed item is pressed
+			// again; a period is always selected.
+			onValueChange={(value) => {
+				if (isPeriod(value)) {
+					onPeriodChange(value);
+				}
+			}}
+		>
+			{BALANCE_PERIODS.map((option) => (
+				<ToggleGroupItem key={option} value={option}>
+					{t(`balances.periods.${option}`)}
+				</ToggleGroupItem>
+			))}
+		</ToggleGroup>
+	);
+}
+
+type BalanceChartProps = {
+	history: UseQueryResult<ChartHistory>;
+	summaryKey: SummaryKey;
+	/** The table's column header, such as « Solde ». */
+	valueLabel: string;
+};
+
+/**
+ * A daily series over a period, with a text summary above and the same series
+ * as a table on demand (EXPERIENCE.md, accessibility floor). The caller owns
+ * the query and the period control, so an account and the net worth share it.
+ */
+export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartProps) {
+	const { t } = useTranslation();
 	const [showTable, setShowTable] = useState(false);
 	const tableId = useId();
 	const data = history.data;
 
 	return (
-		<section aria-labelledby="balance-heading" className="flex flex-col gap-3">
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<h2 id="balance-heading" className="text-lg font-semibold">
-					{t("balances.title")}
-				</h2>
-				<ToggleGroup
-					type="single"
-					variant="outline"
-					size="sm"
-					spacing={0}
-					aria-label={t("balances.period")}
-					value={period}
-					// Radix reports an empty value when the pressed item is pressed
-					// again; a period is always selected.
-					onValueChange={(value) => {
-						if (isPeriod(value)) {
-							onPeriodChange(value);
-						}
-					}}
-				>
-					{BALANCE_PERIODS.map((option) => (
-						<ToggleGroupItem key={option} value={option}>
-							{t(`balances.periods.${option}`)}
-						</ToggleGroupItem>
-					))}
-				</ToggleGroup>
-			</div>
-
+		<>
 			{history.isPending && <Skeleton className={`${CHART_HEIGHT} w-full`} aria-hidden="true" />}
 
 			{history.isError && data === undefined && (
@@ -246,7 +281,7 @@ export function BalanceChart({ accountId, period, onPeriodChange }: BalanceChart
 			{data !== undefined && data.points.length > 0 && (
 				<>
 					<div className="flex flex-wrap items-center justify-between gap-3">
-						<Summary history={data} />
+						<Summary history={data} summaryKey={summaryKey} />
 						<Button
 							variant="ghost"
 							size="sm"
@@ -257,9 +292,13 @@ export function BalanceChart({ accountId, period, onPeriodChange }: BalanceChart
 							{t("balances.showData")}
 						</Button>
 					</div>
-					{showTable ? <DataTable history={data} id={tableId} /> : <Chart history={data} />}
+					{showTable ? (
+						<DataTable history={data} id={tableId} valueLabel={valueLabel} />
+					) : (
+						<Chart history={data} valueLabel={valueLabel} />
+					)}
 				</>
 			)}
-		</section>
+		</>
 	);
 }

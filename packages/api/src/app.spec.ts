@@ -4403,3 +4403,197 @@ describe("transfers", () => {
 		).resolves.toEqual({ status: 200, body: { data: { deleted: 1 } } });
 	});
 });
+
+/** The I/O matrix of Story 6.1, each test in its own database. */
+async function netWorthOf(period?: "1M" | "3M" | "6M" | "1Y" | "all") {
+	own ??= await freshDatabase();
+	const response = await testClient(buildApp(own.db)).api.reports["net-worth"].$get({
+		query: period === undefined ? {} : { period },
+	});
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+async function patchOwn(accountId: string, body: unknown) {
+	const response = await buildApp(own?.db).request(`/api/accounts/${accountId}`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+
+	expect(response.status).toBe(200);
+}
+
+const ownCard = {
+	name: "Carte",
+	type: "credit_card",
+	subtype: null,
+	openingBalance: "300,00",
+} as const;
+
+describe("GET /api/reports/net-worth", () => {
+	it("subtracts what a card owes from what the checking account holds", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		await openOwn(ownCard);
+
+		const data = await netWorthOf();
+
+		expect(data).toMatchObject({
+			period: "1M",
+			from: "2026-09-01",
+			to: "2026-09-21",
+			currency: "EUR",
+			netWorth: 70000,
+			assets: 100000,
+			liabilities: 30000,
+			change: { amount: 0, percent: 0 },
+			leftOut: [],
+		});
+		expect(data.points).toHaveLength(21);
+		expect(data.points.at(-1)).toEqual({ date: "2026-09-21", balance: 70000 });
+	});
+
+	it("starts at the earliest opening and adds a later account from its own opening", async () => {
+		await openOwn({ openingDate: "2026-07-23", openingBalance: "1 000,00" });
+		await openOwn({
+			name: "Livret A",
+			subtype: "savings",
+			openingDate: "2026-09-11",
+			openingBalance: "500,00",
+		});
+
+		const data = await netWorthOf("3M");
+
+		expect(data.from).toBe("2026-07-23");
+		expect(data.points[0]).toEqual({ date: "2026-07-23", balance: 100000 });
+		expect(data.points.find((point) => point.date === "2026-09-10")?.balance).toBe(100000);
+		expect(data.points.find((point) => point.date === "2026-09-11")?.balance).toBe(150000);
+		expect(data.change).toEqual({ amount: 50000, percent: 50 });
+	});
+
+	it("carries an untouched account's balance forward to today", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		vi.setSystemTime(new Date("2026-10-11T10:00:00Z"));
+
+		const data = await netWorthOf();
+
+		expect(data).toMatchObject({ from: "2026-09-11", to: "2026-10-11", netWorth: 100000 });
+		expect(data.points).toHaveLength(31);
+		expect(data.points.at(-1)).toEqual({ date: "2026-10-11", balance: 100000 });
+	});
+
+	it("ends today, leaving out a transaction dated tomorrow", async () => {
+		const account = await openOwn({ openingBalance: "1 000,00" });
+		await postOwn(account.id, { ...expense, date: "2026-09-22", amount: "-100,00" });
+
+		const data = await netWorthOf();
+
+		expect(data.netWorth).toBe(100000);
+		expect(data.points.at(-1)).toEqual({ date: "2026-09-21", balance: 100000 });
+	});
+
+	it("leaves an excluded and an inactive account out of totals, points and notice", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		const excluded = await openOwn({ name: "Livret A", subtype: "savings" });
+		const inactive = await openOwn(ownCard);
+		await patchOwn(excluded.id, { excludedFromReports: true });
+		await patchOwn(inactive.id, { active: false });
+
+		const data = await netWorthOf();
+
+		expect(data).toMatchObject({ netWorth: 100000, assets: 100000, liabilities: 0, leftOut: [] });
+		expect(data.points.every((point) => point.balance === 100000)).toBe(true);
+	});
+
+	it("names active, reported accounts in another currency by name instead of counting them", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		const usd = await openOwn({ name: "Épargne US", currency: "USD", openingBalance: "10.00" });
+		const chf = await openOwn({ name: "Compte suisse", currency: "CHF", openingBalance: "10.00" });
+		const excluded = await openOwn({ name: "Exclu", currency: "USD", openingBalance: "10.00" });
+		const inactive = await openOwn({ name: "Inactif", currency: "CHF", openingBalance: "10.00" });
+		await patchOwn(excluded.id, { excludedFromReports: true });
+		await patchOwn(inactive.id, { active: false });
+
+		const data = await netWorthOf();
+
+		expect(data).toMatchObject({ netWorth: 100000, assets: 100000 });
+		expect(data.leftOut).toEqual([
+			{ id: chf.id, name: "Compte suisse", currency: "CHF" },
+			{ id: usd.id, name: "Épargne US", currency: "USD" },
+		]);
+		expect(data.points.at(-1)?.balance).toBe(100000);
+	});
+
+	it("adds nothing for a counted account opening after today", async () => {
+		await openOwn({ openingBalance: "1 000,00" });
+		await openOwn({ name: "Livret A", subtype: "savings", openingDate: "2026-09-30" });
+
+		const data = await netWorthOf();
+
+		expect(data).toMatchObject({ from: "2026-09-01", netWorth: 100000, assets: 100000 });
+		expect(data.points).toHaveLength(21);
+		expect(data.points.every((point) => point.balance === 100000)).toBe(true);
+	});
+
+	it("gives the amount alone when the period starts at zero", async () => {
+		const account = await openOwn({ openingBalance: "0" });
+		await postOwn(account.id, { ...expense, amount: "500,00" });
+
+		const data = await netWorthOf();
+
+		expect(data.points[0]?.balance).toBe(0);
+		expect(data.change).toEqual({ amount: 50000, percent: null });
+	});
+
+	it("measures a rise from a negative start against its size", async () => {
+		const card = await openOwn({ ...ownCard, openingBalance: "200,00" });
+		await postOwn(card.id, { ...expense, label: "Remboursement", amount: "100,00" });
+
+		const data = await netWorthOf();
+
+		expect(data.points[0]?.balance).toBe(-20000);
+		expect(data.netWorth).toBe(-10000);
+		expect(data.change).toEqual({ amount: 10000, percent: 50 });
+	});
+
+	it("is empty without any account", async () => {
+		await expect(netWorthOf("all")).resolves.toEqual({
+			period: "all",
+			from: null,
+			to: "2026-09-21",
+			currency: "EUR",
+			netWorth: 0,
+			assets: 0,
+			liabilities: 0,
+			points: [],
+			change: null,
+			leftOut: [],
+		});
+	});
+
+	it("is empty when every account is excluded", async () => {
+		const account = await openOwn();
+		await patchOwn(account.id, { excludedFromReports: true });
+
+		await expect(netWorthOf()).resolves.toMatchObject({
+			from: null,
+			netWorth: 0,
+			assets: 0,
+			liabilities: 0,
+			points: [],
+			change: null,
+		});
+	});
+
+	it("refuses an unknown period", async () => {
+		const { status, body } = await request("GET", "/api/reports/net-worth?period=2W");
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "period", code: "invalid_value" }],
+		});
+	});
+});

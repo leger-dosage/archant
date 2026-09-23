@@ -29,9 +29,8 @@ test("an empty household sees the empty state and a button to add an account", a
 		}),
 	);
 
-	await page.goto("/");
+	await page.goto("/comptes");
 
-	await expect(page).toHaveURL(/\/comptes$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 	await expect(page.getByText("Aucun compte pour l'instant.")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();

@@ -9,7 +9,7 @@ import { today } from "../domain/dates.ts";
 import { getAccount } from "./accounts.ts";
 import { balancesBetween } from "./ledger.ts";
 
-const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
+export const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
 	"1M": 1,
 	"3M": 3,
 	"6M": 6,

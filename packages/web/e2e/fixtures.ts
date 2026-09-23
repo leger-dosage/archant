@@ -4,6 +4,8 @@ import { test as base, expect } from "@playwright/test";
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import type { BalancePeriod } from "@archant/api/schemas/balances";
+import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CategoryKind } from "@archant/data/schema/categories";
@@ -49,6 +51,17 @@ const linkedBody = z.object({
 const accountListBody = z.object({
 	data: z.object({
 		groups: z.array(z.object({ classification: z.string(), total: z.number() })),
+	}),
+});
+
+const netWorthBody = z.object({
+	data: z.object({
+		netWorth: z.number(),
+		assets: z.number(),
+		liabilities: z.number(),
+		points: z.array(z.object({ date: z.string(), balance: z.number() })),
+		change: z.object({ amount: z.number(), percent: z.number().nullable() }).nullable(),
+		leftOut: z.array(z.object({ id: z.string(), name: z.string(), currency: z.string() })),
 	}),
 });
 
@@ -321,6 +334,18 @@ export function apiHelpers(request: APIRequestContext) {
 			});
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/**
+		 * The dashboard's net worth, as the API computes it now: tests share one
+		 * database, so they assert a change from it rather than a fixed amount.
+		 */
+		async netWorth(period: BalancePeriod = DEFAULT_BALANCE_PERIOD) {
+			const response = await request.get(`/api/reports/net-worth?period=${period}`);
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+
+			return netWorthBody.parse(await response.json()).data;
 		},
 
 		/** A group's total in minor units, zero when it holds no account. */

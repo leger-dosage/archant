@@ -13,7 +13,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountSettings } from "@/components/AccountSettings";
-import { BalanceChart } from "@/components/BalanceChart";
+import { BalanceChart, PeriodToggle } from "@/components/BalanceChart";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { Money } from "@/components/Money";
@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccount } from "@/hooks/useAccount";
+import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { usePageCommands } from "@/hooks/useCommands";
 import { useAccountImports } from "@/hooks/useImports";
@@ -265,6 +266,7 @@ function AccountPage() {
 		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
+	const balanceHistory = useBalanceHistory(accountId, period);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	const [snapshotDialog, setSnapshotDialog] = useState<SnapshotDialogState>({
 		open: false,
@@ -420,7 +422,19 @@ function AccountPage() {
 				</div>
 			)}
 
-			<BalanceChart accountId={accountId} period={period} onPeriodChange={changePeriod} />
+			<section aria-labelledby="balance-heading" className="flex flex-col gap-3">
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<h2 id="balance-heading" className="text-lg font-semibold">
+						{t("balances.title")}
+					</h2>
+					<PeriodToggle period={period} onPeriodChange={changePeriod} />
+				</div>
+				<BalanceChart
+					history={balanceHistory}
+					summaryKey="balances.summary"
+					valueLabel={t("balances.balance")}
+				/>
+			</section>
 
 			<Tabs value={tab} onValueChange={changeTab} className="gap-3">
 				<TabsList aria-label={t("accountDetail.tabs.label")}>

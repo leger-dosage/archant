@@ -1,5 +1,5 @@
 import { expect, test } from "./fixtures.ts";
-import { ADMIN, ADMIN_STATE } from "./settings.ts";
+import { ADMIN, ADMIN_STATE, WEB_URL } from "./settings.ts";
 
 // Story 3.1: the first launch. The only moment the database has no user, so
 // the setup project is where it is tested, and where the session every other
@@ -23,9 +23,8 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	await page.getByLabel("Confirmer le mot de passe").fill(ADMIN.password);
 	await page.getByRole("button", { name: "Créer le compte" }).click();
 
-	// `/` is the accounts page until the dashboard ships.
-	await expect(page).toHaveURL(/\/comptes$/u);
-	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
+	await expect(page).toHaveURL(`${WEB_URL}/`);
+	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
 
 	await page.context().storageState({ path: ADMIN_STATE });
 });

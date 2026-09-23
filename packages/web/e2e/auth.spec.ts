@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { apiHelpers, expect, test } from "./fixtures.ts";
-import { ADMIN, ADMIN_STATE } from "./settings.ts";
+import { ADMIN, ADMIN_STATE, WEB_URL } from "./settings.ts";
 
 // Story 3.1: sign-in. Every test here starts signed out; the administrator
 // exists already, created by the setup project.
@@ -94,7 +94,7 @@ test("signing out revokes the session and the next API call answers 401", async 
 }) => {
 	await page.goto("/connexion");
 	await signIn(page, ADMIN.password);
-	await expect(page).toHaveURL(/\/comptes$/u);
+	await expect(page).toHaveURL(`${WEB_URL}/`);
 
 	// Kept to ask the API afterwards: a cookie the browser no longer sends
 	// would answer 401 whether or not the session row is gone.
