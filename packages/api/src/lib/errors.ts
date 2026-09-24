@@ -17,6 +17,11 @@ export const ERROR_STATUSES = {
 	IMPORT_PREVIEW_STALE: 409,
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
+	/**
+	 * A merge of a transaction no longer flagged as a possible duplicate:
+	 * dismissed, or merged, in another tab. Nothing is written.
+	 */
+	DUPLICATE_RESOLVED: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

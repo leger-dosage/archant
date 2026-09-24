@@ -7,6 +7,7 @@ import { validationError } from "../lib/zod-error.ts";
 import {
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
+	mergeDuplicateBodySchema,
 	transactionFilterSchema,
 	transactionPatchBodySchema,
 } from "../schemas/transactions.ts";
@@ -14,7 +15,10 @@ import {
 	bulkDeleteTransactions,
 	bulkUpdateTransactions,
 	deleteTransaction,
+	dismissDuplicate,
 	listAllTransactions,
+	listDuplicateCandidates,
+	mergeDuplicate,
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
@@ -53,6 +57,22 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.get("/:id/transfer-candidates", async (c) =>
 				c.json({ data: await listTransferCandidates(deps, c.req.param("id")) }, 200),
+			)
+			.get("/:id/duplicate-candidates", async (c) =>
+				c.json({ data: await listDuplicateCandidates(deps, c.req.param("id")) }, 200),
+			)
+			.post(
+				"/:id/merge",
+				zValidator("json", mergeDuplicateBodySchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) =>
+					c.json({ data: await mergeDuplicate(deps, c.req.param("id"), c.req.valid("json")) }, 200),
+			)
+			.post("/:id/dismiss-duplicate", async (c) =>
+				c.json({ data: await dismissDuplicate(deps, c.req.param("id")) }, 200),
 			)
 			.patch(
 				"/:id",

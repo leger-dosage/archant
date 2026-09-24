@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryDot } from "@/components/CategoryDot";
+import { DuplicateFlag } from "@/components/DuplicateFlag";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { Money } from "@/components/Money";
@@ -421,6 +422,7 @@ export function TransactionList({
 																{item.transfer === null && item.transferSuggested && (
 																	<TransferSuggestedFlag />
 																)}
+																{item.possibleDuplicate && <DuplicateFlag />}
 															</span>
 															{(subtitle !== undefined || rowTags.length > 0) && (
 																<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">

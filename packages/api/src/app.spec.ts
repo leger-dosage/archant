@@ -1179,6 +1179,7 @@ const listItem = z.object({
 		})
 		.nullable(),
 	transferSuggested: z.boolean(),
+	possibleDuplicate: z.boolean(),
 });
 
 const listBody = z.object({
@@ -5780,6 +5781,214 @@ const ownCard = {
 	subtype: null,
 	openingBalance: "300,00",
 } as const;
+
+// Story 10.6: merge or dismiss a possible duplicate.
+
+/** One OFX line of −10,00 on the 5th. */
+const tollOfx = () =>
+	new TextEncoder().encode(
+		"<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR<BANKTRANLIST>\n<STMTTRN><DTPOSTED>20260905<TRNAMT>-10.00<FITID>T1<NAME>PEAGE</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+	);
+
+describe("possible duplicates", () => {
+	async function ownRequest(method: string, path: string, body?: unknown) {
+		const response = await buildApp(own?.db).request(path, {
+			method,
+			headers: { "content-type": "application/json" },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		});
+
+		return { status: response.status, body: z.unknown().parse(await response.json()) };
+	}
+
+	const candidateList = z.object({
+		data: z.array(
+			z.object({
+				id: z.string(),
+				date: z.string(),
+				label: z.string(),
+				amount: z.number(),
+				currency: z.string(),
+				accountId: z.string(),
+				accountName: z.string(),
+			}),
+		),
+	});
+
+	const itemBody = z.object({ data: listItem.omit({ accountName: true }) });
+
+	async function importToll(accountId: string) {
+		const app = buildApp(own?.db);
+		const form = new FormData();
+		form.append("file", new File([tollOfx()], "releve.ofx"));
+		const uploadResponse = await app.request(`/api/accounts/${accountId}/imports`, {
+			method: "POST",
+			body: form,
+		});
+		const { data } = importBody.parse(await uploadResponse.json());
+		const response = await app.request(`/api/imports/${data.id}/confirm`, { method: "POST" });
+
+		expect(response.status).toBe(200);
+
+		return data.groups;
+	}
+
+	/** −10,00 typed by hand on the 4th and the 6th, then the OFX line of the 5th: a tie. */
+	async function tie() {
+		const account = await openOwn({ name: "Compte courant" });
+		const first = await postOwn(account.id, {
+			date: "2026-09-04",
+			label: "Péage A",
+			amount: "-10",
+		});
+		const second = await postOwn(account.id, {
+			date: "2026-09-06",
+			label: "Péage B",
+			amount: "-10",
+		});
+		await importToll(account.id);
+		const flagged = (await listed("")).items.find((item) => item.possibleDuplicate)?.id ?? "";
+
+		return { account, first, second, flagged };
+	}
+
+	it("flags the tie, lists its candidates, and merges it into the one picked", async () => {
+		const { account, first, second, flagged } = await tie();
+
+		const candidates = await ownRequest("GET", `/api/transactions/${flagged}/duplicate-candidates`);
+
+		expect(candidates.status).toBe(200);
+		// Equally near and created in the same millisecond here: sorted by date to compare.
+		expect(
+			candidateList.parse(candidates.body).data.toSorted((a, b) => a.date.localeCompare(b.date)),
+		).toEqual([
+			{
+				id: first,
+				date: "2026-09-04",
+				label: "Péage A",
+				amount: -1000,
+				currency: "EUR",
+				accountId: account.id,
+				accountName: "Compte courant",
+			},
+			expect.objectContaining({ id: second }),
+		]);
+
+		const merged = await ownRequest("POST", `/api/transactions/${flagged}/merge`, { into: first });
+
+		expect(merged.status).toBe(200);
+		expect(itemBody.parse(merged.body).data).toMatchObject({
+			id: first,
+			label: "Péage A",
+			possibleDuplicate: false,
+		});
+		expect(merged.body).toMatchObject({ data: { source: { kind: "import", format: "ofx" } } });
+		const { items } = await listed("");
+		expect(items.map((item) => item.id).toSorted()).toEqual([first, second].toSorted());
+		const detail = await ownRequest("GET", `/api/accounts/${account.id}`);
+		expect(detail.body).toMatchObject({ data: { balance: 123456 - 2000 } });
+		// Its line is known now: importing the file again adds nothing.
+		const again = await importToll(account.id);
+		expect(again.present).toEqual([expect.objectContaining({ entryId: first })]);
+	});
+
+	it("dismisses the flag, and importing the file again never raises it", async () => {
+		const { account, flagged } = await tie();
+
+		const dismissed = await ownRequest("POST", `/api/transactions/${flagged}/dismiss-duplicate`);
+
+		expect(dismissed.status).toBe(200);
+		expect(itemBody.parse(dismissed.body).data).toMatchObject({
+			id: flagged,
+			possibleDuplicate: false,
+		});
+		const candidates = await ownRequest("GET", `/api/transactions/${flagged}/duplicate-candidates`);
+		expect(candidateList.parse(candidates.body).data).toEqual([]);
+		const again = await importToll(account.id);
+		expect(again.present).toEqual([expect.objectContaining({ entryId: flagged })]);
+		expect((await listed("")).items.some((item) => item.possibleDuplicate)).toBe(false);
+	});
+
+	it("refuses a candidate outside the list, then a duplicate already resolved", async () => {
+		const { first, flagged } = await tie();
+		const other = await openOwn({ name: "Livret" });
+		const elsewhere = await postOwn(other.id, {
+			date: "2026-09-05",
+			label: "Péage",
+			amount: "-10",
+		});
+
+		const refused = await ownRequest("POST", `/api/transactions/${flagged}/merge`, {
+			into: elsewhere,
+		});
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "into", code: "not_a_candidate" }],
+		});
+		const missing = await ownRequest("POST", `/api/transactions/${flagged}/merge`, {});
+		expect(missing.status).toBe(400);
+		expect(errorBody.parse(missing.body).error.fields?.[0]?.path).toBe("into");
+
+		await ownRequest("POST", `/api/transactions/${flagged}/dismiss-duplicate`);
+		const resolved = await ownRequest("POST", `/api/transactions/${flagged}/merge`, {
+			into: first,
+		});
+
+		expect(resolved.status).toBe(409);
+		expect(errorBody.parse(resolved.body).error.code).toBe("DUPLICATE_RESOLVED");
+	});
+
+	it("answers NOT_FOUND for an unknown transaction", async () => {
+		await openOwn();
+
+		const responses = await Promise.all([
+			ownRequest("GET", "/api/transactions/nope/duplicate-candidates"),
+			ownRequest("POST", "/api/transactions/nope/merge", { into: "other" }),
+			ownRequest("POST", "/api/transactions/nope/dismiss-duplicate"),
+		]);
+
+		expect(responses.map(({ status }) => status)).toEqual([404, 404, 404]);
+		expect(responses.map(({ body }) => errorBody.parse(body).error.code)).toEqual([
+			"NOT_FOUND",
+			"NOT_FOUND",
+			"NOT_FOUND",
+		]);
+	});
+
+	it("guards the three routes with the session and the origin check", async () => {
+		own = await freshDatabase();
+		const anonymous = buildTestApp(own.db, createLogger("silent"));
+		const foreign = withSession(buildTestApp(own.db, createLogger("silent")), template.cookie);
+		const sameOrigin = { origin: "http://localhost:5173" };
+		const attacker = { origin: "https://attacker.example" };
+
+		const responses = await Promise.all([
+			anonymous.request("/api/transactions/t1/duplicate-candidates"),
+			anonymous.request("/api/transactions/t1/merge", {
+				method: "POST",
+				headers: { "content-type": "application/json", ...sameOrigin },
+				body: JSON.stringify({ into: "t2" }),
+			}),
+			anonymous.request("/api/transactions/t1/dismiss-duplicate", {
+				method: "POST",
+				headers: sameOrigin,
+			}),
+			foreign.request("/api/transactions/t1/merge", {
+				method: "POST",
+				headers: { "content-type": "text/plain", ...attacker },
+				body: JSON.stringify({ into: "t2" }),
+			}),
+			foreign.request("/api/transactions/t1/dismiss-duplicate", {
+				method: "POST",
+				headers: attacker,
+			}),
+		]);
+
+		expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 403, 403]);
+	});
+});
 
 describe("GET /api/reports/net-worth", () => {
 	it("subtracts what a loan still owes", async () => {

@@ -34,6 +34,12 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 	tagIds: z.array(z.string()).optional(),
 });
 
+/** Merging a possible duplicate into the candidate the user picked. */
+export const mergeDuplicateBodySchema = z.object({ into: z.string().min(1) });
+
+export type MergeDuplicateInput = z.input<typeof mergeDuplicateBodySchema>;
+export type MergeDuplicateRequest = z.output<typeof mergeDuplicateBodySchema>;
+
 export type TransactionInput = z.input<typeof transactionBodySchema>;
 export type TransactionPatchInput = z.input<typeof transactionPatchBodySchema>;
 

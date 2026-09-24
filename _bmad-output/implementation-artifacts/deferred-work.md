@@ -120,3 +120,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-5-consent-renewal-and-disconnection.md`
   summary: Disconnect revokes the session before the ledger transaction, so a failed unlink leaves an active connection on a revoked session until the user disconnects again.
   evidence: low. The intent orders revoke, unlink, delete; Sure unlinks first. A retry completes because a second revocation's 404 is ignored.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-6-merge-or-dismiss-a-possible-duplicate.md`
+  summary: No end-to-end test drives the sheet's « Doublon possible » block through a merge or dismissal refused because another tab resolved it first.
+  evidence: `DuplicateBlock.failed` handles `DUPLICATE_RESOLVED`, `NOT_FOUND` and `VALIDATION_ERROR`, but `e2e/duplicates.spec.ts` only covers the successful paths.
