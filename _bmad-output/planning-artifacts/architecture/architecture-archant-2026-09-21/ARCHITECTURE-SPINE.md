@@ -185,7 +185,7 @@ An arrow means "may import". The web package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 2, 4, 5, 9, 10; FR51, FR52
 - **Prevents:** a pending-to-booked replacement or a duplicate merge changing an entry's id and orphaning its tags, transfer, recurring link and keys.
-- **Rule:** An entry's id never changes. `ledger.absorb(survivorId, source)` updates the survivor in place, skipping locked fields, moves every key, tagging, transfer and recurring link onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A pending entry absent from two consecutive syncs is deleted (`entries.pending_missed_syncs`). The user's "merge possible duplicate" action uses `absorb` too.
+- **Rule:** An entry's id never changes. `ledger.absorb(survivorId, source)` updates the survivor in place, skipping locked fields, moves every key, tagging, transfer and recurring link onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A pending entry absent from two consecutive syncs is deleted (`transactions.pending_missed_syncs`, beside `transactions.pending`: AD-8 keeps transaction-only columns on `transactions`). The user's "merge possible duplicate" action uses `absorb` too.
 
 ### AD-18 — Enable Banking specifics
 

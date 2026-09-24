@@ -41,12 +41,16 @@ export const FAKE_ACCOUNTS = {
 	card: { name: "Carte Démo", balance: "-300.00" },
 } as const;
 
-/** The booked lines every account lists, as their labels show; plus a pending one and an informational one, which never show. */
+/**
+ * The lines every account lists, as their labels show: three booked, one
+ * pending, dated today and without a reference, and an informational one,
+ * which never shows.
+ */
 export const FAKE_LINES = {
 	groceries: { label: "Supermarché Démo", amount: "-42.90", daysAgo: 3 },
 	salary: { label: "Salaire Démo", amount: "2500.00", daysAgo: 10 },
 	subscription: { label: "ABONNEMENT DEMO", amount: "-9.99", daysAgo: 2 },
-	pending: { label: "Boulangerie en attente" },
+	pending: { label: "Boulangerie en attente", amount: "-3.20" },
 } as const;
 
 /** A day `days` before today in the suite's zone, as the bank prints it. */
@@ -110,7 +114,7 @@ function transactionsPage(uid: string, continuationKey: string | null) {
 				value_date: daysAgo(salary.daysAgo),
 			},
 			{
-				transaction_amount: unsigned("-3.20"),
+				transaction_amount: unsigned(pending.amount),
 				creditor: { name: pending.label },
 				credit_debit_indicator: "DBIT",
 				status: "PDNG",

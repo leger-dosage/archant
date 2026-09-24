@@ -289,6 +289,7 @@ function toLine(
 			payee === "" || memo === "" || memo === payee
 				? null
 				: Array.from(memo).slice(0, NOTES_MAX_LENGTH).join(""),
+		pending: false,
 	};
 }
 

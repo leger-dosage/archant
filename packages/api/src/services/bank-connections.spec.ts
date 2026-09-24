@@ -687,6 +687,7 @@ describe("linkBankAccounts", () => {
 						label: "Boulangerie",
 						reference: null,
 						notes: null,
+						pending: false,
 					},
 				],
 				balance: null,

@@ -272,7 +272,9 @@ export async function createTransaction(
 		deps,
 		accountId,
 		{
-			transactions: [{ ...parsed.data, externalId: null, reference: null, currency }],
+			transactions: [
+				{ ...parsed.data, externalId: null, reference: null, currency, pending: false },
+			],
 			balance: null,
 			rejected: [],
 		},

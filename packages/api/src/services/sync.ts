@@ -10,10 +10,10 @@ import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
-import { addDays, today } from "../domain/dates.ts";
+import { addDays, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { logFailure, requireBankConnector } from "./bank-connections.ts";
-import { ingest } from "./ledger.ts";
+import { ingest, oldestPendingDate } from "./ledger.ts";
 import { detectRecurring } from "./recurring.ts";
 
 /** A run that crashed leaves its lease behind; after this long, it is free again. */
@@ -40,12 +40,22 @@ export type SyncStatus = { lastSyncedAt: number | null; lastError: string | null
  * The first day a bank account's window reads: its own last sync minus the
  * overlap, or three months back when it never synced. Per bank account, not
  * per connection: an account that keeps failing would otherwise come back
- * with a gap once the others moved on.
+ * with a gap once the others moved on. Never after its oldest pending entry:
+ * a line the window leaves out would count as missed, and a hotel
+ * pre-authorisation older than the overlap would go while still pending.
  */
-export function windowStart(lastSyncedAt: number | null, day: IsoDate, timeZone: string): IsoDate {
-	return lastSyncedAt === null
-		? addDays(day, -FIRST_WINDOW_DAYS)
-		: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
+export function windowStart(
+	lastSyncedAt: number | null,
+	day: IsoDate,
+	timeZone: string,
+	oldestPending: IsoDate | null,
+): IsoDate {
+	const start =
+		lastSyncedAt === null
+			? addDays(day, -FIRST_WINDOW_DAYS)
+			: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
+
+	return oldestPending === null ? start : minDate(start, oldestPending);
 }
 
 /** The statement as the ledger takes it: a balance that names no day is today's. */
@@ -130,7 +140,12 @@ async function runSync(
 		try {
 			const statement = await connector.fetchStatement(
 				item.providerUid,
-				windowStart(item.lastSyncedAt, day, deps.timeZone),
+				windowStart(
+					item.lastSyncedAt,
+					day,
+					deps.timeZone,
+					await oldestPendingDate(deps, item.accountId, connectionId),
+				),
 			);
 			const result = await ingest(
 				deps,

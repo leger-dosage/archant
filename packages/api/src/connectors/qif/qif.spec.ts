@@ -49,6 +49,7 @@ describe("qifSource.parse on the committed fixtures", () => {
 			label: "CARTE X1234 CAFÉ DE LA GARE",
 			reference: null,
 			notes: "CARTE X1234 02/09 CAFÉ DE LA GARE",
+			pending: false,
 		});
 		expect(parsed.transactions[1]?.label).toBe("PRLV EDF Électricité échéance septembre");
 		expect(parsed.transactions[2]).toMatchObject({ reference: "1234567", notes: null });
@@ -123,6 +124,7 @@ describe("qifSource.parse, records and sections", () => {
 					label: "CARTE MONOP",
 					reference: "1234567",
 					notes: null,
+					pending: false,
 				},
 			],
 			balance: null,

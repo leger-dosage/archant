@@ -65,6 +65,7 @@ async function transactionsOf(merchantId: string, count: number): Promise<string
 					label: `CB CARREFOUR ${index}`,
 					reference: null,
 					notes: null,
+					pending: false,
 				})),
 				balance: null,
 				rejected: [],

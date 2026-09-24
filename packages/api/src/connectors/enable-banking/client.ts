@@ -110,9 +110,9 @@ function labelOf(line: z.output<typeof transactionSchema>, debit: boolean): stri
 }
 
 /**
- * One line as the ledger takes it (AD-18); `null` when it is not booked, or
- * dated before `since` because the bank ignored `date_from`; otherwise the
- * reason the line is refused.
+ * One line as the ledger takes it (AD-18); `null` when it is neither booked
+ * nor pending, or dated before `since` because the bank ignored `date_from`;
+ * otherwise the reason the line is refused.
  */
 export function toTransaction(
 	raw: unknown,
@@ -127,8 +127,8 @@ export function toTransaction(
 
 	const line = parsed.data;
 
-	// Pending lines are Story 10.4's; cancelled and informational ones never count.
-	if (line.status !== "BOOK") {
+	// Cancelled and informational lines never count.
+	if (line.status !== "BOOK" && line.status !== "PDNG") {
 		return null;
 	}
 
@@ -164,6 +164,7 @@ export function toTransaction(
 		label: labelOf(line, debit),
 		reference: null,
 		notes: notes === "" ? null : capped(notes, NOTES_MAX_LENGTH),
+		pending: line.status === "PDNG",
 	};
 }
 
