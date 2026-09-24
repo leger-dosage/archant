@@ -1,3 +1,4 @@
+import type { RowPlan } from "../domain/rules/matching.ts";
 import type { NormalizedTransaction, ParsedStatement } from "../domain/statement.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput, Origin } from "./ledger.ts";
@@ -58,7 +59,7 @@ import {
 	removableOf,
 	removeTag,
 	revertImport,
-	setRuleCategories,
+	applyRulePlan,
 	updateSnapshot,
 	updateTransaction,
 } from "./ledger.ts";
@@ -4800,11 +4801,20 @@ describe("rules at ingestion", () => {
 		conditions: Parameters<typeof createRule>[1]["conditions"] = [],
 		effectiveDate: string | null = null,
 	) {
-		const rule = await createRule(deps(), {
-			effectiveDate,
+		return newRuleWith(
+			[{ actionType: "set_transaction_category", value: categoryId }],
 			conditions,
-			actions: [{ actionType: "set_transaction_category", value: categoryId }],
-		});
+			effectiveDate,
+		);
+	}
+
+	/** A rule with `actions`, created after every earlier one. */
+	async function newRuleWith(
+		actions: Parameters<typeof createRule>[1]["actions"],
+		conditions: Parameters<typeof createRule>[1]["conditions"] = [],
+		effectiveDate: string | null = null,
+	) {
+		const rule = await createRule(deps(), { effectiveDate, conditions, actions });
 		created += 1;
 		// Frozen clocks would give two rules the same creation time.
 		await temp.db.update(rules).set({ createdAt: created }).where(eq(rules.id, rule.id));
@@ -4924,44 +4934,374 @@ describe("rules at ingestion", () => {
 		const categorised = await Promise.all(result.created.map(categoryOf));
 		expect(categorised).toEqual([groceries, null, groceries, null, null]);
 	});
+
+	// Story 8.2: every action, chained over one planned state per row.
+
+	it("chains a merchant into a tag, and renames and excludes an imported line", async () => {
+		const account = await openChecking();
+		const amazon = await newMerchant("Amazon");
+		const purchases = await newTag("Achats");
+		await newRuleWith(
+			[
+				{ actionType: "set_transaction_merchant", value: amazon },
+				{ actionType: "set_transaction_name", value: " Amazon " },
+				{ actionType: "exclude_transaction" },
+			],
+			[labelLike("amzn")],
+		);
+		await newRuleWith(
+			[{ actionType: "set_transaction_tags", value: purchases }],
+			[{ conditionType: "transaction_merchant", operator: "=", value: amazon }],
+		);
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(
+				line({ externalId: "1", label: "CB AMZN MKTP" }),
+				line({ externalId: "2", label: "PRLV AMZN PRIME" }),
+				line({ externalId: "3", label: "CB FNAC" }),
+			),
+		);
+
+		const [first = "", second = "", other = ""] = result.created;
+		const both = [first, second];
+		await expect(Promise.all(both.map(merchantOf))).resolves.toEqual([amazon, amazon]);
+		await expect(Promise.all(both.map(tagsOf))).resolves.toEqual([[purchases], [purchases]]);
+		await expect(Promise.all(both.map(excludedOf))).resolves.toEqual([true, true]);
+		await expect(Promise.all(both.map(lockedFields))).resolves.toEqual([[], []]);
+		await expect(
+			Promise.all(both.map(async (id) => (await findTransaction(deps(), id))?.label)),
+		).resolves.toEqual(["Amazon", "Amazon"]);
+		await expect(merchantOf(other)).resolves.toBeNull();
+		await expect(tagsOf(other)).resolves.toEqual([]);
+	});
+
+	it("never renames a line typed by hand, whose label is locked", async () => {
+		const account = await openChecking();
+		await newRuleWith([{ actionType: "set_transaction_name", value: "Boulangerie Paul" }]);
+
+		const typed = await add(account.id, { label: "CB PAUL" });
+		const synced = await add(account.id, { label: "CB PAUL" }, "sync");
+
+		await expect(findTransaction(deps(), typed)).resolves.toMatchObject({ label: "CB PAUL" });
+		await expect(findTransaction(deps(), synced)).resolves.toMatchObject({
+			label: "Boulangerie Paul",
+		});
+	});
+
+	it("matches on notes and type, and sees no transfer on a new line", async () => {
+		const account = await openChecking();
+		const gifts = await newCategory("Cadeaux");
+		const moves = await newCategory("Virements");
+		await newRule(gifts, [
+			{ conditionType: "transaction_notes", operator: "like", value: "cadeau" },
+			{ conditionType: "transaction_type", operator: "=", value: "expense" },
+		]);
+		await newRule(moves, [{ conditionType: "transaction_type", operator: "=", value: "transfer" }]);
+
+		const gift = await add(account.id, { amount: toMinorUnits(-1000), notes: "Cadeau Léa" });
+		const refund = await add(account.id, { amount: toMinorUnits(1000), notes: "Cadeau Léa" });
+
+		await expect(categoryOf(gift)).resolves.toBe(gifts);
+		await expect(categoryOf(refund)).resolves.toBeNull();
+	});
+
+	it("records the expected account without creating an entry or a transfer", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+
+		const id = await add(joint.id, {
+			amount: toMinorUnits(-transferAmount()),
+			label: "VIR EPARGNE",
+		});
+
+		await expect(expectedOf(id)).resolves.toBe(livret.id);
+		await expect(transferRows(id)).resolves.toEqual([]);
+		await expect(transactionCount(livret.id)).resolves.toBe(0);
+	});
+
+	it("pairs a line with the one candidate on the expected account, whatever other accounts hold", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		const onLivret = await add(livret.id, { amount: toMinorUnits(amount) });
+		await add(card.id, { amount: toMinorUnits(amount) });
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: onLivret, kind: "internal_move" },
+		]);
+	});
+
+	it("leaves a line unpaired when the expected account holds two candidates", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		await add(livret.id, { amount: toMinorUnits(amount), label: "A" });
+		await add(livret.id, { amount: toMinorUnits(amount), label: "B" });
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+	});
+
+	it("stops a later rule from seeing a rename the locked label refused", async () => {
+		const account = await openChecking();
+		const bakery = await newCategory("Boulangerie");
+		await newRuleWith([{ actionType: "set_transaction_name", value: "Paul" }]);
+		await newRule(bakery, [{ conditionType: "transaction_name", operator: "=", value: "Paul" }]);
+
+		const typed = await add(account.id, { label: "CB PAUL" });
+
+		await expect(findTransaction(deps(), typed)).resolves.toMatchObject({ label: "CB PAUL" });
+		await expect(categoryOf(typed)).resolves.toBeNull();
+	});
+
+	it("narrows the candidate's own list too, so its line with two candidates still pairs", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		const onLivret = await add(livret.id, { amount: toMinorUnits(amount) });
+		// A second candidate for the Livret A line, unlinked from it: without
+		// narrowing its list, the choice would not be mutual.
+		await addStandard(card.id, { amount: toMinorUnits(-amount) });
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: onLivret },
+		]);
+	});
+
+	it("keeps a rejected pair apart when one side expects the other's account", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		const inflow = await add(livret.id, { amount: toMinorUnits(amount) });
+		const [linked] = await transferRows(outflow);
+		await rejectTransfer(deps(), linked?.id ?? "", { origin: "user" });
+
+		// A new line makes the expecting side a candidate again: its list is
+		// read anew, and the rejected Livret A line must stay out of it.
+		await add(card.id, { amount: toMinorUnits(amount) });
+
+		await expect(rejectedRows(outflow)).resolves.toEqual([{ outflow, inflow }]);
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+	});
+
+	it("pairs an expecting line with the expected account's line when that one arrives later", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		await newRuleWith(
+			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+			[labelLike("epargne")],
+		);
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		// A second candidate for the inflow, on another account: without the
+		// expectation, the inflow would have two and pair with neither.
+		await add(card.id, { amount: toMinorUnits(-amount), label: "Autre" });
+
+		const { result } = await importStatement(
+			livret.id,
+			statementOf(line({ amount: toMinorUnits(amount), label: "VIR RECU" })),
+		);
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: result.created[0] },
+		]);
+	});
 });
 
-describe("setRuleCategories", () => {
-	async function write(planned: Map<string, string>) {
-		return temp.db.transaction(async (tx) => setRuleCategories(tx, planned, { origin: "rule" }));
+async function expectedOf(entryId: string) {
+	const row = await temp.db
+		.select({ expected: transactions.expectedTransferAccountId })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.expected;
+}
+
+describe("applyRulePlan", () => {
+	async function write(plan: Map<string, RowPlan>) {
+		return temp.db.transaction(async (tx) => applyRulePlan(tx, plan, { origin: "rule" }));
 	}
 
 	it("writes nothing for an empty plan", async () => {
 		await expect(write(new Map())).resolves.toBe(0);
 	});
 
-	it("skips a locked category, an unknown category and a row already in that category", async () => {
-		const account = await openChecking();
+	it("writes every planned field with a rule origin, and locks nothing", async () => {
+		const { checking: joint, livret } = await openHousehold();
 		const groceries = await newCategory("Courses");
-		const leisure = await newCategory("Loisirs");
-		const locked = await add(account.id);
-		await updateTransaction(deps(), locked, { categoryId: leisure }, { origin: "user" });
-		const already = await add(account.id);
-		await write(new Map([[already, groceries]]));
-		const unknown = await add(account.id);
-		const free = await add(account.id);
+		const merchant = await newMerchant("Amazon");
+		const kept = await newTag("Voyage");
+		const added = await newTag("Achats");
+		const id = await add(joint.id, {}, "sync");
+		const twin = await add(joint.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [kept] }, { origin: "rule" });
 
 		const written = await write(
 			new Map([
-				[locked, groceries],
-				[already, groceries],
-				[unknown, "nope"],
-				[free, groceries],
+				[
+					id,
+					{
+						categoryId: groceries,
+						merchantId: merchant,
+						addTagIds: [added],
+						label: "Amazon",
+						excluded: true,
+						expectedTransferAccountId: livret.id,
+					},
+				],
+				[twin, { categoryId: groceries }],
 			]),
 		);
 
-		expect(written).toBe(1);
+		expect(written).toBe(2);
+		await expect(categoryOf(id)).resolves.toBe(groceries);
+		await expect(categoryOriginOf(id)).resolves.toBe("rule");
+		await expect(merchantOf(id)).resolves.toBe(merchant);
+		await expect(tagsOf(id)).resolves.toEqual([added, kept].toSorted());
+		await expect(excludedOf(id)).resolves.toBe(true);
+		await expect(expectedOf(id)).resolves.toBe(livret.id);
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ label: "Amazon" });
+		await expect(lockedFields(id)).resolves.toEqual([]);
+		await expect(categoryOf(twin)).resolves.toBe(groceries);
+	});
+
+	it("skips locked fields, and values the row already holds", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const merchant = await newMerchant("Amazon");
+		const tag = await newTag("Achats");
+		const locked = await add(joint.id);
+		await updateTransaction(deps(), locked, { categoryId: leisure }, { origin: "user" });
+		// Clearing a field by hand locks it too, as in Sure; set here directly.
+		await temp.db
+			.update(transactions)
+			.set({ lockedFields: ["label", "category", "merchant", "tags", "excluded"] })
+			.where(eq(transactions.entryId, locked));
+		const already = await add(joint.id, {}, "sync");
+		await write(
+			new Map([[already, { categoryId: groceries, expectedTransferAccountId: livret.id }]]),
+		);
+
+		const written = await write(
+			new Map([
+				[
+					locked,
+					{
+						categoryId: groceries,
+						merchantId: merchant,
+						addTagIds: [tag],
+						label: "X",
+						excluded: true,
+					},
+				],
+				[already, { categoryId: groceries, expectedTransferAccountId: livret.id }],
+			]),
+		);
+
+		expect(written).toBe(0);
 		await expect(categoryOf(locked)).resolves.toBe(leisure);
 		await expect(categoryOriginOf(locked)).resolves.toBe("user");
-		await expect(categoryOf(already)).resolves.toBe(groceries);
-		await expect(categoryOf(unknown)).resolves.toBeNull();
-		await expect(categoryOf(free)).resolves.toBe(groceries);
-		await expect(categoryOriginOf(free)).resolves.toBe("rule");
-		await expect(lockedFields(free)).resolves.toEqual(["date", "amount", "label"]);
+		await expect(merchantOf(locked)).resolves.toBeNull();
+		await expect(tagsOf(locked)).resolves.toEqual([]);
+		await expect(excludedOf(locked)).resolves.toBe(false);
+		await expect(findTransaction(deps(), locked)).resolves.toMatchObject({ label: "Boulangerie" });
+	});
+
+	it("adds a tag beside the others, and skips it at the cap", async () => {
+		const account = await openChecking();
+		const full = await Promise.all(
+			Array.from({ length: MAX_TAGS_PER_TRANSACTION }, (_, index) => newTag(`Plein ${index}`)),
+		);
+		const added = await newTag("Achats");
+		const crowded = await add(account.id);
+		await updateTransaction(deps(), crowded, { tagIds: full }, { origin: "rule" });
+
+		await expect(write(new Map([[crowded, { addTagIds: [added] }]]))).resolves.toBe(0);
+		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
+	});
+
+	it("skips a planned tag the row carries since the plan, spending no slot", async () => {
+		const account = await openChecking();
+		const almost = await Promise.all(
+			Array.from({ length: MAX_TAGS_PER_TRANSACTION - 1 }, (_, index) =>
+				newTag(`Presque ${index}`),
+			),
+		);
+		const carried = almost[0] ?? "";
+		const added = await newTag("Achats");
+		const id = await add(account.id);
+		await updateTransaction(deps(), id, { tagIds: almost }, { origin: "rule" });
+
+		await expect(write(new Map([[id, { addTagIds: [carried] }]]))).resolves.toBe(0);
+		await expect(write(new Map([[id, { addTagIds: [carried, added] }]]))).resolves.toBe(1);
+		await expect(tagsOf(id)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
+		await expect(tagsOf(id)).resolves.toContain(added);
+	});
+
+	it("writes nothing for a row, category, merchant, tag or account gone since the plan", async () => {
+		const { checking: joint } = await openHousehold();
+		const id = await add(joint.id, {}, "sync");
+
+		const written = await write(
+			new Map<string, RowPlan>([
+				[
+					id,
+					{
+						categoryId: "gone",
+						merchantId: "gone",
+						addTagIds: ["gone"],
+						expectedTransferAccountId: "gone",
+					},
+				],
+				["no-such-row", { label: "X" }],
+			]),
+		);
+
+		expect(written).toBe(0);
+		await expect(categoryOf(id)).resolves.toBeNull();
+		await expect(merchantOf(id)).resolves.toBeNull();
+		await expect(tagsOf(id)).resolves.toEqual([]);
+		await expect(expectedOf(id)).resolves.toBeNull();
+	});
+
+	it("expects no counterpart on a row in a transfer, nor in the row's own account", async () => {
+		const { outflow, checking: joint } = await matchedPair();
+		const { livret } = await openHousehold();
+		const alone = await add(joint.id, {}, "sync");
+
+		await expect(
+			write(
+				new Map([
+					[outflow, { expectedTransferAccountId: livret.id }],
+					[alone, { expectedTransferAccountId: joint.id }],
+				]),
+			),
+		).resolves.toBe(0);
+		await expect(expectedOf(outflow)).resolves.toBeNull();
+		await expect(expectedOf(alone)).resolves.toBeNull();
 	});
 });

@@ -104,3 +104,31 @@ export function mutualMatches(
 
 	return pairs;
 }
+
+/** What narrowing reads of a side: its account and the account a rule expects its other side in. */
+export type ExpectingSide = { id: string; accountId: string; expectedAccountId: string | null };
+
+/**
+ * The candidates of `source` that automatic matching weighs, before
+ * `mutualMatches`. A source a rule expects in account X keeps only its
+ * candidates on X. A source expecting nothing, one of whose candidates
+ * expects the source's account, keeps only such candidates. Otherwise every
+ * candidate stays. A unique candidate then pairs as before, so one candidate
+ * on X pairs even when other accounts hold candidates too.
+ */
+export function narrowToExpected(
+	source: ExpectingSide,
+	candidates: readonly ExpectingSide[],
+): string[] {
+	if (source.expectedAccountId !== null) {
+		return candidates
+			.filter((candidate) => candidate.accountId === source.expectedAccountId)
+			.map((candidate) => candidate.id);
+	}
+
+	const expecting = candidates.filter(
+		(candidate) => candidate.expectedAccountId === source.accountId,
+	);
+
+	return (expecting.length > 0 ? expecting : candidates).map((candidate) => candidate.id);
+}

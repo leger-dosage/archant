@@ -3,6 +3,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { CashFlowRow, Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
+import type { RowPlan } from "../domain/rules/matching.ts";
 import type {
 	NormalizedTransaction,
 	ParsedStatement,
@@ -66,13 +67,14 @@ import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.t
 import { toStoredBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
-import { planCategories } from "../domain/rules/matching.ts";
+import { planActions } from "../domain/rules/matching.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
 import {
 	TRANSFER_WINDOW_DAYS,
 	isTransferCandidate,
 	mutualMatches,
+	narrowToExpected,
 	transferKindOf,
 } from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
@@ -864,6 +866,9 @@ export async function ingest(
 					})),
 				),
 			);
+			const locksOf = (line: NormalizedTransaction) =>
+				options.origin === "user" ? filledFields(line) : [];
+
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(transactions).values(
 					chunk.map(({ id, line, duplicate }) => ({
@@ -872,7 +877,7 @@ export async function ingest(
 						notes: line.notes,
 						reference: line.reference,
 						possibleDuplicate: duplicate,
-						lockedFields: options.origin === "user" ? filledFields(line) : [],
+						lockedFields: locksOf(line),
 					})),
 				),
 			);
@@ -906,9 +911,10 @@ export async function ingest(
 			}
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
-			// included. Loaded once per call, inside this transaction.
+			// included. Loaded once per call, inside this transaction. A new row
+			// carries no merchant, category, tag or transfer yet.
 			if (rows.length > 0) {
-				const planned = planCategories(
+				const plan = planActions(
 					await loadEnabledRules(tx),
 					rows.map(({ id, line }) => ({
 						id,
@@ -917,11 +923,20 @@ export async function ingest(
 						amount: line.amount,
 						currency: line.currency,
 						label: line.label,
+						notes: line.notes,
+						merchantId: null,
+						categoryId: null,
+						tagIds: [],
+						excluded: false,
+						transfer: null,
+						expectedTransferAccountId: null,
+						lockedFields: locksOf(line),
 					})),
 					getReportingCurrency(),
+					MAX_TAGS_PER_TRANSACTION,
 				);
 
-				await setRuleCategories(tx, planned, { origin: "rule" });
+				await applyRulePlan(tx, plan, { origin: "rule" });
 			}
 
 			// 6. Transfer matching, once every new row exists (AD-11).
@@ -954,71 +969,173 @@ export async function ingest(
 	);
 }
 
+/** Which of `ids` `find` still finds, looked up 500 per query. */
+async function stillThere(
+	ids: Iterable<string>,
+	find: (chunk: string[]) => Promise<{ id: string }[]>,
+): Promise<Set<string>> {
+	const found = new Set<string>();
+
+	await inSequence([...new Set(ids)], KEYS_PER_LOOKUP, async (chunk) => {
+		for (const row of await find(chunk)) {
+			found.add(row.id);
+		}
+	});
+
+	return found;
+}
+
+/** `id` when `set` still holds it, `undefined` otherwise. */
+function ifStillThere(set: ReadonlySet<string>, id: string | undefined): string | undefined {
+	return id !== undefined && set.has(id) ? id : undefined;
+}
+
+/** What `applyRulePlan` re-reads of each planned row; a row deleted since the plan is absent. */
+function plannedRows(tx: Transaction, ids: string[]) {
+	return tx
+		.select({
+			id: entries.id,
+			...editableColumns,
+			inTransfer: inAnyTransfer.mapWith(Boolean),
+			expectedTransferAccountId: transactions.expectedTransferAccountId,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(inArray(entries.id, ids));
+}
+
 /**
- * Writes the categories rules planned, by entry id, with `origin: "rule"`: the
- * origin becomes `rule` and nothing is locked (AD-10). Skips a row whose
- * category is locked, a row already in that category, and a category that no
- * longer exists. Returns how many rows changed. Step 5 of `ingest` calls it;
- * applying rules to history reuses it.
+ * Writes what rules planned, by entry id, with `origin: "rule"` (AD-10): a
+ * category's origin becomes `rule` and nothing is locked. It re-reads each
+ * row inside the transaction and skips a locked field, a value the row
+ * already holds, and a category, merchant, tag or account deleted since the
+ * plan. A tag is added beside the others while the row holds fewer than
+ * `MAX_TAGS_PER_TRANSACTION`; the expected counterpart account is set only on
+ * a row in no transfer. Returns how many rows changed. Step 5 of `ingest`
+ * calls it; applying rules to history reuses it.
  */
-export async function setRuleCategories(
+export async function applyRulePlan(
 	tx: Transaction,
-	planned: ReadonlyMap<string, string>,
+	plan: ReadonlyMap<string, RowPlan>,
 	_options: { origin: "rule" },
 ): Promise<number> {
-	if (planned.size === 0) {
-		return 0;
-	}
+	const origin: Origin = "rule";
+	const ids = [...plan.keys()];
+	const plans = [...plan.values()];
+	const rows: Awaited<ReturnType<typeof plannedRows>> = [];
 
-	const found: { entryId: string; categoryId: string | null; lockedFields: LockableField[] }[] = [];
-
-	await inSequence([...planned.keys()], KEYS_PER_LOOKUP, async (chunk) => {
-		found.push(
-			...(await tx
-				.select({
-					entryId: transactions.entryId,
-					categoryId: transactions.categoryId,
-					lockedFields: transactions.lockedFields,
-				})
-				.from(transactions)
-				.where(inArray(transactions.entryId, chunk))),
-		);
+	await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+		rows.push(...(await plannedRows(tx, chunk)));
 	});
-	const known = new Set(
-		(
-			await tx
-				.select({ id: categories.id })
-				.from(categories)
-				.where(inArray(categories.id, [...new Set(planned.values())]))
-		).map((row) => row.id),
-	);
-	const byCategory = new Map<string, string[]>();
 
-	for (const row of found) {
-		const categoryId = planned.get(row.entryId);
+	const tagsOf = await tagIdsByEntry(tx, ids);
+	const [knownCategories, knownMerchants, knownTags, knownAccounts] = [
+		await stillThere(
+			plans.flatMap((row) => (row.categoryId === undefined ? [] : [row.categoryId])),
+			(chunk) =>
+				tx.select({ id: categories.id }).from(categories).where(inArray(categories.id, chunk)),
+		),
+		await stillThere(
+			plans.flatMap((row) => (row.merchantId === undefined ? [] : [row.merchantId])),
+			(chunk) =>
+				tx.select({ id: merchants.id }).from(merchants).where(inArray(merchants.id, chunk)),
+		),
+		await stillThere(
+			plans.flatMap((row) => row.addTagIds ?? []),
+			(chunk) => tx.select({ id: tags.id }).from(tags).where(inArray(tags.id, chunk)),
+		),
+		await stillThere(
+			plans.flatMap((row) =>
+				row.expectedTransferAccountId === undefined ? [] : [row.expectedTransferAccountId],
+			),
+			(chunk) => tx.select({ id: accounts.id }).from(accounts).where(inArray(accounts.id, chunk)),
+		),
+	];
+	// Rows whose write is the same share one statement per chunk, as in a bulk edit.
+	const writes = new Map<
+		string,
+		{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
+	>();
+	const newTaggings: { transactionId: string; tagId: string }[] = [];
 
-		if (
-			categoryId !== undefined &&
-			known.has(categoryId) &&
-			row.categoryId !== categoryId &&
-			!row.lockedFields.includes("category")
-		) {
-			byCategory.set(categoryId, [...(byCategory.get(categoryId) ?? []), row.entryId]);
+	const rowById = new Map(rows.map((row) => [row.id, row]));
+
+	for (const [id, planned] of plan) {
+		const found = rowById.get(id);
+
+		// Deleted since the plan: nothing left to write.
+		if (found === undefined) {
+			continue;
+		}
+
+		const { inTransfer, expectedTransferAccountId, ...row } = found;
+		const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
+		const tagIds = [...current.tagIds];
+
+		for (const tagId of planned.addTagIds ?? []) {
+			if (
+				knownTags.has(tagId) &&
+				!tagIds.includes(tagId) &&
+				tagIds.length < MAX_TAGS_PER_TRANSACTION
+			) {
+				tagIds.push(tagId);
+			}
+		}
+
+		const change = changeOf(
+			current,
+			{
+				categoryId: ifStillThere(knownCategories, planned.categoryId),
+				merchantId: ifStillThere(knownMerchants, planned.merchantId),
+				tagIds,
+				label: planned.label,
+				excluded: planned.excluded,
+			},
+			origin,
+		);
+		const expected = ifStillThere(knownAccounts, planned.expectedTransferAccountId);
+		const expects =
+			expected !== undefined &&
+			expected !== expectedTransferAccountId &&
+			expected !== row.accountId &&
+			!inTransfer;
+
+		if (change.changed.length === 0 && !expects) {
+			continue;
+		}
+
+		const detail = {
+			...detailOf(current, change, origin),
+			...(expects ? { expectedTransferAccountId: expected } : {}),
+		};
+		const key = JSON.stringify(detail);
+		const group = writes.get(key);
+
+		if (group === undefined) {
+			writes.set(key, { detail, ids: [id] });
+		} else {
+			group.ids.push(id);
+		}
+
+		if (change.changed.includes("tags")) {
+			newTaggings.push(
+				...change.next.tagIds
+					.filter((tagId) => !current.tagIds.includes(tagId))
+					.map((tagId) => ({ transactionId: id, tagId })),
+			);
 		}
 	}
 
-	const origin = categoryOriginOf("rule");
-
-	await oneByOne([...byCategory], ([categoryId, ids]) =>
-		inSequence(ids, KEYS_PER_LOOKUP, (chunk) =>
-			tx
-				.update(transactions)
-				.set({ categoryId, categoryOrigin: origin })
-				.where(inArray(transactions.entryId, chunk)),
-		),
+	const statements = [...writes.values()].flatMap(({ detail, ids: group }) =>
+		chunksOf(group, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
 	);
 
-	return [...byCategory.values()].reduce((total, ids) => total + ids.length, 0);
+	await oneByOne(statements, ({ detail, chunk }) =>
+		tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),
+	);
+	await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
+
+	return [...writes.values()].reduce((total, { ids: group }) => total + group.length, 0);
 }
 
 /** An absent or `undefined` field is left as it is. */
@@ -2084,6 +2201,7 @@ function asSide(row: Omit<TransferSide, "amount"> & { amount: number }): Transfe
 
 const sourceEntry = alias(entries, "source_entry");
 const sourceAccount = alias(accounts, "source_account");
+const sourceTransaction = alias(transactions, "source_transaction");
 
 /** A side of a candidate pair, with what a transfer's direction and kind need. */
 type PairSide = { id: string; amount: number; accountType: AccountType };
@@ -2105,11 +2223,18 @@ function candidatePairQuery(
 				amount: sourceEntry.amount,
 				currency: sourceEntry.currency,
 				inTransfer: inTransferSql(sourceEntry.id).mapWith(Boolean),
+				expectedAccountId: sourceTransaction.expectedTransferAccountId,
 			},
-			candidate: { ...sideColumns, label: transactions.label, accountName: accounts.name },
+			candidate: {
+				...sideColumns,
+				label: transactions.label,
+				accountName: accounts.name,
+				expectedAccountId: transactions.expectedTransferAccountId,
+			},
 		})
 		.from(sourceEntry)
 		.innerJoin(sourceAccount, eq(sourceAccount.id, sourceEntry.accountId))
+		.innerJoin(sourceTransaction, eq(sourceTransaction.entryId, sourceEntry.id))
 		.innerJoin(entries, candidateOf(sourceEntry, entries))
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
@@ -2170,8 +2295,9 @@ function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
  * Step 6 of `ingest`: links each of `createdIds` that forms a mutually unique
  * pair (AD-11). Every candidate list is read before the first link is
  * written, so a link made for one line never removes a candidate from the
- * next, and the result does not depend on line order. No balance, category,
- * lock or tag moves.
+ * next, and the result does not depend on line order. A rule's expected
+ * counterpart account narrows each list first, through `narrowToExpected`.
+ * No balance, category, lock or tag moves.
  */
 async function matchNewTransfers(
 	tx: Transaction,
@@ -2179,18 +2305,32 @@ async function matchNewTransfers(
 	now: number,
 ): Promise<void> {
 	const candidatesOf = new Map<string, string[]>();
-	const record = (pairs: readonly CandidatePair[]) => {
-		for (const { source, candidate } of pairs) {
-			candidatesOf.get(source.id)?.push(candidate.id);
+	// Each source's list, narrowed once all of its candidates are known.
+	const record = (ids: readonly string[], pairs: readonly CandidatePair[]) => {
+		const bySource = new Map<string, CandidatePair[]>();
+
+		for (const pair of pairs) {
+			bySource.set(pair.source.id, [...(bySource.get(pair.source.id) ?? []), pair]);
+		}
+
+		for (const id of ids) {
+			const own = bySource.get(id) ?? [];
+			const [first] = own;
+
+			candidatesOf.set(
+				id,
+				first === undefined
+					? []
+					: narrowToExpected(
+							first.source,
+							own.map(({ candidate }) => candidate),
+						),
+			);
 		}
 	};
 
-	for (const id of createdIds) {
-		candidatesOf.set(id, []);
-	}
-
 	const fromNew = await candidatePairs(tx, createdIds);
-	record(fromNew);
+	record(createdIds, fromNew);
 
 	// Only a unique candidate can complete a pair; its own candidates tell
 	// whether the choice is mutual. A new row's are known already.
@@ -2203,11 +2343,7 @@ async function matchNewTransfers(
 		),
 	];
 
-	for (const id of uniques) {
-		candidatesOf.set(id, []);
-	}
-
-	record(await candidatePairs(tx, uniques));
+	record(uniques, await candidatePairs(tx, uniques));
 
 	// Each pair is a row of the first read, the new side as its source.
 	const matched = new Set(mutualMatches(createdIds, candidatesOf).map((pair) => pair.join(" ")));

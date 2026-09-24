@@ -1,4 +1,4 @@
-import type { Condition, LeafCondition, Rule } from "../domain/rules/matching.ts";
+import type { Condition, LeafCondition, Rule, RuleAction } from "../domain/rules/matching.ts";
 import type {
 	RuleConditionRequest,
 	RuleEnabledInput,
@@ -12,21 +12,29 @@ import { asc, eq, inArray } from "drizzle-orm";
 
 import { toMinorUnits } from "@archant/data/money";
 import type { RuleActionType, RuleConditionType, RuleOperator } from "@archant/data/rules";
-import { isRuleOperatorOf } from "@archant/data/rules";
+import { isRuleOperatorOf, isValuelessAction } from "@archant/data/rules";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
+import { merchants } from "@archant/data/schema/merchants";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
-import type { NewRuleCondition, RuleCondition as RuleConditionRow } from "@archant/data/types";
+import { tags } from "@archant/data/schema/tags";
+import type {
+	NewRuleCondition,
+	RuleAction as RuleActionRow,
+	RuleCondition as RuleConditionRow,
+} from "@archant/data/types";
 
+import { DIRECTIONS } from "../domain/cash-flow.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /**
- * A condition as the interface reads it. `value` is stored text: the label,
- * the amount in minor units of the reporting currency, or an account id;
- * `null` for a group, whose conditions follow.
+ * A condition as the interface reads it. `value` is stored text: the label
+ * or the notes, the amount in minor units of the reporting currency, a
+ * direction, or an account, merchant, category or tag id; `null` for
+ * `is_null` and for a group, whose conditions follow.
  */
 export type RuleConditionData = {
 	conditionType: RuleConditionType;
@@ -41,8 +49,11 @@ export type RuleData = {
 	enabled: boolean;
 	effectiveDate: string | null;
 	conditions: RuleConditionData[];
-	/** `value` is a category id, which may name a deleted category. */
-	actions: { actionType: RuleActionType; value: string }[];
+	/**
+	 * `value` is a category, merchant, tag or account id, which may name a
+	 * deleted one; the new label of a rename; `null` for an exclusion.
+	 */
+	actions: { actionType: RuleActionType; value: string | null }[];
 };
 
 type Db = ServiceDeps["db"];
@@ -146,12 +157,69 @@ function parse(input: RuleInput): RuleRequest {
 	return parsed.data;
 }
 
+/** The table a condition or an action names a row of, by its type. */
+type Reference = "account" | "merchant" | "category" | "tag";
+
+const CONDITION_REFERENCES: Partial<Record<RuleConditionType, Reference>> = {
+	transaction_account: "account",
+	transaction_merchant: "merchant",
+	transaction_category: "category",
+	transaction_tag: "tag",
+};
+
+const ACTION_REFERENCES: Partial<Record<RuleActionType, Reference>> = {
+	set_transaction_category: "category",
+	set_transaction_merchant: "merchant",
+	set_transaction_tags: "tag",
+	set_as_transfer_or_payment: "account",
+};
+
+/** Every id of `reference`'s table among `ids`, all of them when `ids` is absent. */
+async function existing(
+	db: Pick<Db, "select">,
+	reference: Reference,
+	ids?: string[],
+): Promise<Set<string>> {
+	const rows = await {
+		account: () =>
+			db
+				.select({ id: accounts.id })
+				.from(accounts)
+				.where(ids === undefined ? undefined : inArray(accounts.id, ids)),
+		merchant: () =>
+			db
+				.select({ id: merchants.id })
+				.from(merchants)
+				.where(ids === undefined ? undefined : inArray(merchants.id, ids)),
+		category: () =>
+			db
+				.select({ id: categories.id })
+				.from(categories)
+				.where(ids === undefined ? undefined : inArray(categories.id, ids)),
+		tag: () =>
+			db
+				.select({ id: tags.id })
+				.from(tags)
+				.where(ids === undefined ? undefined : inArray(tags.id, ids)),
+	}[reference]();
+
+	return new Set(rows.map((row) => row.id));
+}
+
 /**
- * Refuses an account or a category that does not exist, on the value that
- * names it. Checked on save only: one deleted later leaves the rule inert.
+ * Refuses an account, merchant, category or tag that does not exist, on the
+ * value that names it. Checked on save only: one deleted later leaves the
+ * rule inert.
  */
 async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest): Promise<void> {
-	const accountValues = rule.conditions.flatMap((condition, index) => {
+	const named: { reference: Reference; id: string; path: string }[] = [];
+	const name = (reference: Reference | undefined, id: string | null, path: string) => {
+		if (reference !== undefined && id !== null) {
+			named.push({ reference, id, path });
+		}
+	};
+
+	for (const [index, condition] of rule.conditions.entries()) {
 		const leaves: [RuleLeafRequest, string][] =
 			condition.conditionType === "compound"
 				? condition.conditions.map((child, position) => [
@@ -160,30 +228,41 @@ async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest):
 					])
 				: [[condition, `conditions.${index}.value`]];
 
-		return leaves.filter(([leaf]) => leaf.conditionType === "transaction_account");
-	});
-	const accountIds = accountValues.map(([leaf]) => leaf.value);
-	const categoryIds = rule.actions.map((action) => action.value);
-	const [knownAccounts, knownCategories] = await Promise.all([
-		accountIds.length === 0
-			? []
-			: db.select({ id: accounts.id }).from(accounts).where(inArray(accounts.id, accountIds)),
-		db.select({ id: categories.id }).from(categories).where(inArray(categories.id, categoryIds)),
-	]);
-	const accountSet = new Set(knownAccounts.map((row) => row.id));
-	const categorySet = new Set(knownCategories.map((row) => row.id));
-	const fields = [
-		...accountValues
-			.filter(([leaf]) => !accountSet.has(leaf.value))
-			.map(([, path]) => ({ path, code: "invalid_value" })),
-		...rule.actions.flatMap((action, index) =>
-			categorySet.has(action.value)
-				? []
-				: [{ path: `actions.${index}.value`, code: "invalid_value" }],
-		),
-	];
+		for (const [leaf, path] of leaves) {
+			name(CONDITION_REFERENCES[leaf.conditionType], leaf.value, path);
+		}
+	}
 
-	if (fields.length > 0) {
+	for (const [index, action] of rule.actions.entries()) {
+		name(ACTION_REFERENCES[action.actionType], action.value, `actions.${index}.value`);
+	}
+
+	const missing = (
+		await Promise.all(
+			(["account", "merchant", "category", "tag"] as const).map(async (reference) => {
+				const wanted = named.filter((item) => item.reference === reference);
+
+				if (wanted.length === 0) {
+					return [];
+				}
+
+				const found = await existing(
+					db,
+					reference,
+					wanted.map((item) => item.id),
+				);
+
+				return wanted.filter((item) => !found.has(item.id)).map((item) => item.path);
+			}),
+		)
+	).flat();
+
+	if (missing.length > 0) {
+		// In the body's order, conditions before actions, as the form lists them.
+		const fields = named
+			.filter((item) => missing.includes(item.path))
+			.map(({ path }) => ({ path, code: "invalid_value" }));
+
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", fields);
 	}
 }
@@ -338,7 +417,10 @@ function malformed(): Error {
 	return new Error("A stored rule condition is malformed.");
 }
 
-function toLeaf(condition: RuleConditionRow, knownAccounts: ReadonlySet<string>): LeafCondition {
+/** The ids still in each table, so a deleted one resolves to `null`. */
+type Known = Record<Reference, ReadonlySet<string>>;
+
+function toLeaf(condition: RuleConditionRow, known: Known): LeafCondition {
 	const value = condition.value ?? "";
 	const { conditionType, operator } = condition;
 
@@ -352,19 +434,74 @@ function toLeaf(condition: RuleConditionRow, knownAccounts: ReadonlySet<string>)
 
 	if (conditionType === "transaction_account" && isRuleOperatorOf(conditionType, operator)) {
 		// A deleted account makes the condition match nothing, as in Sure.
-		return { type: conditionType, operator, accountId: knownAccounts.has(value) ? value : null };
+		return { type: conditionType, operator, accountId: known.account.has(value) ? value : null };
+	}
+
+	if (conditionType === "transaction_notes" && isRuleOperatorOf(conditionType, operator)) {
+		return operator === "is_null"
+			? { type: conditionType, operator }
+			: { type: conditionType, operator, value };
+	}
+
+	const direction = DIRECTIONS.find((candidate) => candidate === value);
+
+	if (conditionType === "transaction_type" && direction !== undefined) {
+		return { type: conditionType, operator: "=", value: direction };
+	}
+
+	const reference = CONDITION_REFERENCES[conditionType];
+
+	if (
+		(conditionType === "transaction_merchant" ||
+			conditionType === "transaction_category" ||
+			conditionType === "transaction_tag") &&
+		reference !== undefined &&
+		isRuleOperatorOf(conditionType, operator)
+	) {
+		// A deleted row makes `=` match nothing, as in Sure.
+		return {
+			type: conditionType,
+			operator,
+			id: operator === "=" && known[reference].has(value) ? value : null,
+		};
 	}
 
 	throw malformed();
 }
 
+/** An action as the evaluator reads it, a deleted row resolved to `null`. */
+function toAction(action: RuleActionRow, known: Known): RuleAction {
+	// Only an exclusion is stored without a value; a rename read as "" would blank labels.
+	if (action.value === null && !isValuelessAction(action.actionType)) {
+		throw malformed();
+	}
+
+	const value = action.value ?? "";
+	const ifKnown = (reference: Reference) => (known[reference].has(value) ? value : null);
+
+	switch (action.actionType) {
+		case "set_transaction_category":
+			return { type: action.actionType, categoryId: ifKnown("category") };
+		case "set_transaction_merchant":
+			return { type: action.actionType, merchantId: ifKnown("merchant") };
+		case "set_transaction_tags":
+			return { type: action.actionType, tagId: ifKnown("tag") };
+		case "set_transaction_name":
+			return { type: action.actionType, label: value };
+		case "exclude_transaction":
+			return { type: action.actionType };
+		default:
+			return { type: action.actionType, accountId: ifKnown("account") };
+	}
+}
+
 function toCondition(
 	condition: RuleConditionRow,
 	all: readonly RuleConditionRow[],
-	knownAccounts: ReadonlySet<string>,
+	known: Known,
 ): Condition {
 	if (condition.conditionType !== "compound") {
-		return toLeaf(condition, knownAccounts);
+		return toLeaf(condition, known);
 	}
 
 	if (!isRuleOperatorOf("compound", condition.operator)) {
@@ -376,14 +513,14 @@ function toCondition(
 		operator: condition.operator,
 		conditions: all
 			.filter((child) => child.parentId === condition.id)
-			.map((child) => toLeaf(child, knownAccounts)),
+			.map((child) => toLeaf(child, known)),
 	};
 }
 
 /**
  * The enabled rules as the evaluator reads them, in application order, with
- * deleted accounts and categories resolved to `null`. Step 5 of
- * `ledger.ingest` calls it once per ingest, inside its transaction.
+ * deleted accounts, merchants, categories and tags resolved to `null`. Step
+ * 5 of `ledger.ingest` calls it once per ingest, inside its transaction.
  */
 export async function loadEnabledRules(db: Pick<Db, "select">): Promise<Rule[]> {
 	const found = await readRules(db, { enabled: true });
@@ -392,23 +529,20 @@ export async function loadEnabledRules(db: Pick<Db, "select">): Promise<Rule[]> 
 		return [];
 	}
 
-	const [accountRows, categoryRows] = await Promise.all([
-		db.select({ id: accounts.id }).from(accounts),
-		db.select({ id: categories.id }).from(categories),
+	const [account, merchant, category, tag] = await Promise.all([
+		existing(db, "account"),
+		existing(db, "merchant"),
+		existing(db, "category"),
+		existing(db, "tag"),
 	]);
-	const knownAccounts = new Set(accountRows.map((row) => row.id));
-	const knownCategories = new Set(categoryRows.map((row) => row.id));
+	const known: Known = { account, merchant, category, tag };
 
 	return found.map(({ row, conditions, actions }) => ({
 		id: row.id,
 		effectiveDate: row.effectiveDate,
 		conditions: conditions
 			.filter((condition) => condition.parentId === null)
-			.map((condition) => toCondition(condition, conditions, knownAccounts)),
-		actions: actions.map((action) => ({
-			type: action.actionType,
-			// A deleted category makes the action write nothing, as in Sure.
-			categoryId: knownCategories.has(action.value) ? action.value : null,
-		})),
+			.map((condition) => toCondition(condition, conditions, known)),
+		actions: actions.map((action) => toAction(action, known)),
 	}));
 }

@@ -977,9 +977,96 @@ describe("rules", () => {
 		).resolves.toBeDefined();
 		await expect(insertCondition(database, "c6", "compound", "or")).resolves.toBeDefined();
 		await expect(insertCondition(database, "c7", "compound", "=")).rejects.toThrow();
-		await expect(insertCondition(database, "c8", "transaction_merchant", "=")).rejects.toThrow();
+		await expect(insertCondition(database, "c8", "transaction_other", "=")).rejects.toThrow();
 		await expect(insertAction(database, "a1", "set_transaction_category")).resolves.toBeDefined();
-		await expect(insertAction(database, "a2", "set_transaction_tags")).rejects.toThrow();
+		await expect(insertAction(database, "a2", "set_transaction_color")).rejects.toThrow();
+	});
+
+	it("accepts Story 8.2's conditions with their operators, and its actions", async () => {
+		const database = await migrated();
+		await insertRule(database, "r1");
+
+		await expect(
+			insertCondition(database, "m1", "transaction_merchant", "="),
+		).resolves.toBeDefined();
+		await expect(
+			insertCondition(database, "m2", "transaction_merchant", "is_null"),
+		).resolves.toBeDefined();
+		await expect(
+			insertCondition(database, "k1", "transaction_category", "is_null"),
+		).resolves.toBeDefined();
+		await expect(insertCondition(database, "t1", "transaction_tag", "=")).resolves.toBeDefined();
+		await expect(
+			insertCondition(database, "n1", "transaction_notes", "like"),
+		).resolves.toBeDefined();
+		await expect(
+			insertCondition(database, "n2", "transaction_notes", "is_null"),
+		).resolves.toBeDefined();
+		await expect(insertCondition(database, "y1", "transaction_type", "=")).resolves.toBeDefined();
+
+		await expect(insertCondition(database, "m3", "transaction_merchant", "like")).rejects.toThrow();
+		await expect(insertCondition(database, "y2", "transaction_type", "is_null")).rejects.toThrow();
+		await expect(insertCondition(database, "x1", "transaction_name", "is_null")).rejects.toThrow();
+
+		await expect(insertAction(database, "a1", "set_transaction_merchant")).resolves.toBeDefined();
+		await expect(insertAction(database, "a2", "set_transaction_tags")).resolves.toBeDefined();
+		await expect(insertAction(database, "a3", "set_transaction_name")).resolves.toBeDefined();
+		await expect(insertAction(database, "a4", "set_as_transfer_or_payment")).resolves.toBeDefined();
+
+		// Exclusion needs no value, so the column takes null.
+		await expect(
+			database.run(
+				sql`insert into rule_actions (id, rule_id, position, action_type, value) values ('a5', 'r1', 0, 'exclude_transaction', null)`,
+			),
+		).resolves.toBeDefined();
+	});
+
+	it("keeps every rule, condition and action when 0022 rebuilds their tables", async () => {
+		const before = await migratedBefore("0022");
+		await insertRule(before, "r1");
+		await insertCondition(before, "c1", "compound", "or");
+		await insertCondition(before, "c2", "transaction_name", "like", "c1");
+		await insertCondition(before, "c3", "transaction_amount", ">");
+		await insertAction(before, "a1", "set_transaction_category");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, parent_id as parentId from rule_conditions order by id`),
+		).resolves.toEqual([
+			{ id: "c1", parentId: null },
+			{ id: "c2", parentId: "c1" },
+			{ id: "c3", parentId: null },
+		]);
+		await expect(database.all(sql`select id, value from rule_actions`)).resolves.toEqual([
+			{ id: "a1", value: "c1" },
+		]);
+		await database.run(sql`delete from rules where id = 'r1'`);
+		await expect(database.all(sql`select id from rule_conditions`)).resolves.toEqual([]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("starts a transaction expecting no counterpart, and forgets the account once it goes", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertAccount(database, "a2", "depository", "savings");
+		await insertEntry(database, "e1", "transaction", null);
+		await database.run(sql`insert into transactions (entry_id, label) values ('e1', 'Épargne')`);
+
+		await expect(
+			database.get(sql`select expected_transfer_account_id as expected from transactions`),
+		).resolves.toEqual({ expected: null });
+		await expect(
+			database.run(sql`update transactions set expected_transfer_account_id = 'nope'`),
+		).rejects.toThrow();
+
+		await database.run(sql`update transactions set expected_transfer_account_id = 'a2'`);
+		await database.run(sql`delete from accounts where id = 'a2'`);
+
+		await expect(
+			database.get(sql`select expected_transfer_account_id as expected from transactions`),
+		).resolves.toEqual({ expected: null });
 	});
 
 	it("deletes a rule's conditions, sub-conditions and actions with it", async () => {

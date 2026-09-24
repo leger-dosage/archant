@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { accounts } from "./accounts.ts";
 import { type CategoryOrigin, CATEGORY_ORIGINS, categories } from "./categories.ts";
 import { inList } from "./check.ts";
 import { entries } from "./entries.ts";
@@ -62,6 +63,13 @@ export const transactions = sqliteTable(
 		// deleting a merchant goes through the service, which unlinks it first.
 		// No origin column: only the category's origin is recorded (AD-10).
 		merchantId: text("merchant_id").references(() => merchants.id, { onDelete: "restrict" }),
+		// The account a rule's « Virement avec » expects the other side in; the
+		// transfer matcher narrows this row's candidates to it. Set null, not
+		// restrict: a deleted account leaves the row expecting nothing, and
+		// deleting an account must not depend on rules elsewhere.
+		expectedTransferAccountId: text("expected_transfer_account_id").references(() => accounts.id, {
+			onDelete: "set null",
+		}),
 	},
 	(table) => [
 		// Every category delete and merge, and the list's filter, look rows up by it.

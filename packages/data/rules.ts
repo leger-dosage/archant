@@ -4,39 +4,78 @@
  * without reaching for the tables. The check constraints are built from them,
  * so the database refuses an unknown type or an operator of another type;
  * duplicate actions, nested groups and value formats are the API's checks
- * only. Story 8.2 extends them.
+ * only.
  */
 export const RULE_CONDITION_TYPES = [
 	"transaction_name",
 	"transaction_amount",
 	"transaction_account",
+	"transaction_merchant",
+	"transaction_category",
+	"transaction_tag",
+	"transaction_notes",
+	"transaction_type",
 	"compound",
 ] as const;
 
 export type RuleConditionType = (typeof RULE_CONDITION_TYPES)[number];
 
-export const RULE_OPERATORS = ["like", "=", ">", ">=", "<", "<=", "!=", "and", "or"] as const;
+export const RULE_OPERATORS = [
+	"like",
+	"=",
+	">",
+	">=",
+	"<",
+	"<=",
+	"!=",
+	"and",
+	"or",
+	"is_null",
+] as const;
 
 export type RuleOperator = (typeof RULE_OPERATORS)[number];
 
 /**
  * The operators each condition type accepts, in the order the form offers
  * them. A compound condition is a group: `and` matches on all of its
- * conditions, `or` on any.
+ * conditions, `or` on any. `is_null` takes no value, as in Sure.
  */
 export const RULE_OPERATORS_BY_TYPE = {
 	transaction_name: ["like", "="],
 	transaction_amount: [">", ">=", "<", "<=", "=", "!="],
 	transaction_account: ["="],
+	transaction_merchant: ["=", "is_null"],
+	transaction_category: ["=", "is_null"],
+	transaction_tag: ["=", "is_null"],
+	transaction_notes: ["like", "=", "is_null"],
+	transaction_type: ["="],
 	compound: ["and", "or"],
 } as const satisfies Record<RuleConditionType, readonly RuleOperator[]>;
 
 export type RuleOperatorOf<Type extends RuleConditionType> =
 	(typeof RULE_OPERATORS_BY_TYPE)[Type][number];
 
-export const RULE_ACTION_TYPES = ["set_transaction_category"] as const;
+export const RULE_ACTION_TYPES = [
+	"set_transaction_category",
+	"set_transaction_merchant",
+	"set_transaction_tags",
+	"set_transaction_name",
+	"exclude_transaction",
+	"set_as_transfer_or_payment",
+] as const;
 
 export type RuleActionType = (typeof RULE_ACTION_TYPES)[number];
+
+/** Exclusion needs nothing more, as in Sure: its stored value is null. */
+export const VALUELESS_RULE_ACTION_TYPES = [
+	"exclude_transaction",
+] as const satisfies readonly RuleActionType[];
+
+export function isValuelessAction(type: RuleActionType): boolean {
+	const valueless: readonly RuleActionType[] = VALUELESS_RULE_ACTION_TYPES;
+
+	return valueless.includes(type);
+}
 
 export function isRuleOperatorOf<Type extends RuleConditionType>(
 	type: Type,
