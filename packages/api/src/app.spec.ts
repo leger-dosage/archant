@@ -17,6 +17,7 @@ import { createLogger } from "./lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "./schemas/imports.ts";
 import * as accountsService from "./services/accounts.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
+import * as recurringService from "./services/recurring.ts";
 import { buildTestApp, createSignedInTemplate, withSession } from "./testing/auth.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
 
@@ -2619,6 +2620,56 @@ describe("POST /api/accounts/:id/imports", () => {
 	});
 });
 
+/** Three monthly Netflix lines at -13,99 €, the last on 5 September. */
+function netflixOfx(): Uint8Array {
+	const lines = ["20260705", "20260805", "20260905"].map(
+		(date, index) =>
+			`<STMTTRN><DTPOSTED>${date}<TRNAMT>-13.99<FITID>N${index}<NAME>NETFLIX.COM</STMTTRN>`,
+	);
+
+	return new TextEncoder().encode(
+		`<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>EUR<BANKTRANLIST>\n${lines.join("\n")}\n</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>`,
+	);
+}
+
+/** An account of its own database, opened early enough for three months of lines. */
+async function ownRecurringAccount() {
+	own = await freshDatabase();
+	const app = buildApp(own.db);
+	const response = await testClient(app).api.accounts.$post({
+		json: { ...valid, openingDate: "2026-01-01" },
+	});
+
+	return { app, db: own.db, account: (await response.json()).data };
+}
+
+async function confirmOwnImport(app: ReturnType<typeof buildApp>, accountId: string) {
+	const form = new FormData();
+	form.append("file", new File([netflixOfx()], "releve.ofx"));
+	const uploadResponse = await app.request(`/api/accounts/${accountId}/imports`, {
+		method: "POST",
+		body: form,
+	});
+	const { data } = importBody.parse(await uploadResponse.json());
+	const response = await app.request(`/api/imports/${data.id}/confirm`, { method: "POST" });
+
+	return { id: data.id, status: response.status };
+}
+
+async function transactionsOfDb(db: TempDatabase["db"], accountId: string) {
+	const [row] = await db.all<{ count: number }>(
+		sql`select count(*) as count from entries where account_id = ${accountId} and kind = 'transaction'`,
+	);
+
+	return row?.count;
+}
+
+async function recurringRows(db: TempDatabase["db"]) {
+	return db.all(
+		sql`select account_id as accountId, merchant_id as merchantId, label_key as labelKey, amount, currency, expected_day_of_month as day, last_occurrence_date as last, next_expected_date as next, occurrence_count as count from recurring_transactions`,
+	);
+}
+
 describe("POST /api/imports/:id/confirm", () => {
 	it("writes the lines, moves the balance, and shows them as imported", async () => {
 		const account = await openAccount();
@@ -2765,6 +2816,50 @@ describe("POST /api/imports/:id/confirm", () => {
 			status: 200,
 		});
 		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 5 });
+	});
+
+	it("detects recurring transactions once the lines are written", async () => {
+		const { app, db, account } = await ownRecurringAccount();
+
+		const { status } = await confirmOwnImport(app, account.id);
+
+		expect(status).toBe(200);
+		await expect(recurringRows(db)).resolves.toEqual([
+			{
+				accountId: account.id,
+				merchantId: null,
+				labelKey: "netflix.com",
+				amount: -1399,
+				currency: "EUR",
+				day: 5,
+				last: "2026-09-05",
+				next: "2026-10-05",
+				count: 3,
+			},
+		]);
+	});
+
+	it("answers 200 when detection throws, and logs the import id and code only", async () => {
+		vi.spyOn(recurringService, "detectRecurring").mockRejectedValue(
+			new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"),
+		);
+		const { app, db, account } = await ownRecurringAccount();
+
+		const { id, status } = await confirmOwnImport(app, account.id);
+
+		expect(status).toBe(200);
+		await expect(transactionsOfDb(db, account.id)).resolves.toBe(3);
+		const failures = logLines
+			.map((line) => z.record(z.string(), z.unknown()).parse(JSON.parse(line)))
+			.filter((line) => line["level"] === 50);
+		expect(failures).toEqual([
+			expect.objectContaining({
+				importId: id,
+				code: "INTERNAL_ERROR",
+				msg: "recurring detection failed",
+			}),
+		]);
+		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
 	});
 });
 
@@ -6148,5 +6243,36 @@ describe("GET /api/reports/cash-flow", () => {
 		await refused("?month=2026-13", "invalid_format");
 		await refused("?month=2026-9", "invalid_format");
 		await refused("", "invalid_type");
+	});
+});
+
+describe("POST /api/recurring/detect", () => {
+	it("detects hand-entered transactions and answers how many patterns it found", async () => {
+		const { app, db, account } = await ownRecurringAccount();
+		const netflix = (date: string) =>
+			app.request(`/api/accounts/${account.id}/transactions`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ date, label: "Netflix", amount: "-13,99" }),
+			});
+		await netflix("2026-07-05");
+		await netflix("2026-08-05");
+		await netflix("2026-09-05");
+
+		const response = await testClient(app).api.recurring.detect.$post();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { detected: 1 } });
+		await expect(recurringRows(db)).resolves.toEqual([
+			expect.objectContaining({ labelKey: "netflix", amount: -1399, day: 5, count: 3 }),
+		]);
+	});
+
+	it("answers zero on an empty database", async () => {
+		own = await freshDatabase();
+
+		const response = await testClient(buildApp(own.db)).api.recurring.detect.$post();
+
+		expect(await response.json()).toEqual({ data: { detected: 0 } });
 	});
 });

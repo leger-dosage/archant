@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, addMonths, daysBetween, maxDate, minDate, monthRange, today } from "./dates.ts";
+import {
+	addDays,
+	addMonths,
+	daysBetween,
+	maxDate,
+	minDate,
+	monthRange,
+	today,
+	withDay,
+} from "./dates.ts";
 
 describe("today", () => {
 	it("is the date in the given time zone, not in UTC", () => {
@@ -75,6 +84,24 @@ describe("addMonths", () => {
 		expect(addMonths("2024-02-29", -12)).toBe("2023-02-28");
 		expect(addMonths("2000-03-30", -1)).toBe("2000-02-29");
 		expect(addMonths("1900-03-30", -1)).toBe("1900-02-28");
+	});
+});
+
+describe("withDay", () => {
+	it("moves to a day of the same month", () => {
+		expect(withDay("2026-10-17", 5)).toBe("2026-10-05");
+		expect(withDay("2026-10-01", 31)).toBe("2026-10-31");
+	});
+
+	it("clamps a day the month lacks to its last day", () => {
+		expect(withDay("2026-09-01", 31)).toBe("2026-09-30");
+		expect(withDay("2026-02-10", 30)).toBe("2026-02-28");
+	});
+
+	it("follows the leap-year rule in February", () => {
+		expect(withDay("2028-02-01", 31)).toBe("2028-02-29");
+		expect(withDay("2100-02-01", 29)).toBe("2100-02-28");
+		expect(withDay("2000-02-01", 29)).toBe("2000-02-29");
 	});
 });
 

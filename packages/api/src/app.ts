@@ -18,6 +18,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
+import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
 import { rulesRoutes } from "./routes/rules.ts";
 import { setupRoutes } from "./routes/setup.ts";
@@ -61,6 +62,7 @@ function createApi(deps: AppDeps) {
 		.route("/merchants", merchantsRoutes(deps))
 		.route("/tags", tagsRoutes(deps))
 		.route("/rules", rulesRoutes(deps))
+		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));

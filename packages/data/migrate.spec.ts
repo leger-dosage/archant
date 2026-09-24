@@ -1113,6 +1113,76 @@ describe("rules", () => {
 	});
 });
 
+const insertRecurring = (
+	database: Database,
+	id: string,
+	key: { merchantId?: string; labelKey?: string },
+	amount = -1399,
+	day = 5,
+) =>
+	database.run(
+		sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, created_at, updated_at) values (${id}, 'a1', ${key.merchantId ?? null}, ${key.labelKey ?? null}, 'NETFLIX', ${amount}, 'EUR', ${day}, '2026-09-05', '2026-10-05', 3, 0, 0)`,
+	);
+
+describe("recurring transactions", () => {
+	it("holds a merchant or a label key, never both nor neither, and a day from 1 to 31", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertMerchant(database, "m1", "Netflix");
+
+		await expect(insertRecurring(database, "r1", { merchantId: "m1" })).resolves.toBeDefined();
+		await expect(insertRecurring(database, "r2", { labelKey: "netflix" })).resolves.toBeDefined();
+		await expect(
+			insertRecurring(database, "r3", { merchantId: "m1", labelKey: "netflix" }, -1),
+		).rejects.toThrow();
+		await expect(insertRecurring(database, "r4", {}, -2)).rejects.toThrow();
+		await expect(insertRecurring(database, "r5", { labelKey: "x" }, -3, 0)).rejects.toThrow();
+		await expect(insertRecurring(database, "r6", { labelKey: "y" }, -3, 32)).rejects.toThrow();
+		await expect(insertRecurring(database, "r7", { labelKey: "z" }, -3, 31)).resolves.toBeDefined();
+	});
+
+	it("holds one pattern per account, merchant and amount", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertMerchant(database, "m1", "Netflix");
+		await insertRecurring(database, "r1", { merchantId: "m1" });
+
+		await expect(insertRecurring(database, "r2", { merchantId: "m1" })).rejects.toThrow();
+		await expect(
+			insertRecurring(database, "r3", { merchantId: "m1" }, -1799),
+		).resolves.toBeDefined();
+	});
+
+	it("holds one pattern per account, label key and amount", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertRecurring(database, "r1", { labelKey: "prlv edf" });
+
+		await expect(insertRecurring(database, "r2", { labelKey: "prlv edf" })).rejects.toThrow();
+		await expect(
+			insertRecurring(database, "r3", { labelKey: "prlv edf" }, -5000),
+		).resolves.toBeDefined();
+	});
+
+	it("goes with its account or its merchant", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertMerchant(database, "m1", "Netflix");
+		await insertRecurring(database, "r1", { merchantId: "m1" });
+		await insertRecurring(database, "r2", { labelKey: "prlv edf" });
+
+		await database.run(sql`delete from merchants where id = 'm1'`);
+
+		await expect(database.all(sql`select id from recurring_transactions`)).resolves.toEqual([
+			{ id: "r2" },
+		]);
+
+		await database.run(sql`delete from accounts where id = 'a1'`);
+
+		await expect(database.all(sql`select id from recurring_transactions`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

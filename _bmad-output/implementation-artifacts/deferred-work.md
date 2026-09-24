@@ -70,3 +70,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-1-create-a-categorisation-rule.md`
   summary: Rule amount conditions store minor units of the reporting currency without the currency code.
   evidence: `getReportingCurrency()` returns a constant today; if it becomes a `settings` row, stored amounts would be read at another scale (EUR to JPY) without warning. Store the currency beside the value or migrate them when the setting ships.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-detect-recurring-transactions.md`
+  summary: `next_expected_date` lands on the day after the latest row when that row came early across a month end, e.g. rows on 07-01, 08-02 and 08-31 give 09-01 instead of 10-01.
+  evidence: medium. `detectRecurring` takes the month after the latest row on the expected day, as Sure's `calculate_next_expected_date` does; a bill paid on the 1st or the 31st is common. Story 9.2 sorts and shows this date: pick the expected-day date nearest to one month after the latest row.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-1-detect-recurring-transactions.md`
+  summary: A stored pattern that detection no longer finds stays as it was, so a pattern regrouped under a merchant assigned later leaves its label-keyed twin behind, and a reverted import leaves counts and dates computed on deleted rows.
+  evidence: medium. Story 9.1 keeps undetected rows as Sure does; Story 9.2's inactive transition (no occurrence for more than two expected periods) must cover both, or the page lists them as current.

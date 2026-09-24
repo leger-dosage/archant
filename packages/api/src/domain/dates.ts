@@ -70,6 +70,16 @@ export function addMonths(date: IsoDate, months: number): IsoDate {
 	].join("-");
 }
 
+/**
+ * `day` of the month `date` falls in, clamped to that month's last day: the
+ * 31st of a 30-day month is its 30th, as Sure's `[expected_day, days_in_month].min`.
+ */
+export function withDay(date: IsoDate, day: number): IsoDate {
+	const lastDay = daysInMonth(Number(date.slice(0, 4)), Number(date.slice(5, 7)));
+
+	return `${date.slice(0, 8)}${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
 /** A calendar month as `YYYY-MM`. */
 export type IsoMonth = string;
 
