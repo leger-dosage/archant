@@ -5,6 +5,7 @@ import {
 	ChevronRightIcon,
 	LayoutDashboardIcon,
 	ListIcon,
+	RepeatIcon,
 	WandSparklesIcon,
 	WalletIcon,
 } from "lucide-react";
@@ -177,6 +178,22 @@ export function AppSidebar() {
 								<Link to="/operations">
 									<ListIcon />
 									<span>{t("nav.operations")}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								asChild
+								isActive={pathname === "/recurrences"}
+								tooltip={{
+									children: <ShortcutHint id="goRecurring" label={t("nav.recurring")} />,
+									hidden: false,
+								}}
+								className={ACTIVE_INDICATOR}
+							>
+								<Link to="/recurrences">
+									<RepeatIcon />
+									<span>{t("nav.recurring")}</span>
 								</Link>
 							</SidebarMenuButton>
 						</SidebarMenuItem>

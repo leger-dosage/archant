@@ -4,7 +4,14 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { dayDistance, detectRecurring, expectedDay } from "./recurring.ts";
+import {
+	dayDistance,
+	detectRecurring,
+	expectedDay,
+	isStale,
+	nextDateFrom,
+	nextExpectedDate,
+} from "./recurring.ts";
 
 const TODAY = "2026-09-21";
 
@@ -103,6 +110,12 @@ describe("detectRecurring", () => {
 		]);
 	});
 
+	it("takes the expected day nearest to a month after a row that came early", () => {
+		expect(detectRecurring(rows(["2026-07-01", "2026-08-02", "2026-08-31"]), TODAY)).toMatchObject([
+			{ expectedDayOfMonth: 1, lastOccurrenceDate: "2026-08-31", nextExpectedDate: "2026-10-01" },
+		]);
+	});
+
 	it("drops days spread over more than 5", () => {
 		expect(detectRecurring(rows(["2026-07-05", "2026-08-15", "2026-09-15"]), TODAY)).toEqual([]);
 		expect(detectRecurring(rows(["2026-07-05", "2026-08-10", "2026-09-10"]), TODAY)).toHaveLength(
@@ -197,5 +210,64 @@ describe("detectRecurring", () => {
 		).toMatchObject([
 			{ label: "NETFLIX SEPT", lastOccurrenceDate: "2026-09-05", occurrenceCount: 4 },
 		]);
+	});
+});
+
+describe("nextExpectedDate", () => {
+	it("takes the expected day of the next month when the row came on time", () => {
+		expect(nextExpectedDate("2026-09-05", 5)).toBe("2026-10-05");
+		expect(nextExpectedDate("2026-09-03", 5)).toBe("2026-10-05");
+		expect(nextExpectedDate("2026-09-07", 5)).toBe("2026-10-05");
+	});
+
+	it("moves a month on for a row that came early across the month end", () => {
+		expect(nextExpectedDate("2026-08-31", 1)).toBe("2026-10-01");
+		expect(nextExpectedDate("2026-08-30", 2)).toBe("2026-10-02");
+	});
+
+	it("moves a month back for a row that came late across the month end", () => {
+		expect(nextExpectedDate("2026-09-02", 30)).toBe("2026-09-30");
+		expect(nextExpectedDate("2026-09-01", 31)).toBe("2026-09-30");
+	});
+
+	it("clamps the month end to a shorter month", () => {
+		expect(nextExpectedDate("2026-01-31", 31)).toBe("2026-02-28");
+		expect(nextExpectedDate("2026-08-31", 31)).toBe("2026-09-30");
+	});
+
+	it("keeps the target's month on a tie", () => {
+		// Target 2026-06-16: 2026-06-01 and 2026-07-01 are both 15 days away.
+		expect(nextExpectedDate("2026-05-16", 1)).toBe("2026-06-01");
+	});
+});
+
+describe("nextDateFrom", () => {
+	it("takes today when the expected day is today", () => {
+		expect(nextDateFrom(TODAY, 21)).toBe("2026-09-21");
+	});
+
+	it("takes this month when the expected day is still ahead", () => {
+		expect(nextDateFrom(TODAY, 25)).toBe("2026-09-25");
+	});
+
+	it("takes next month when the expected day has passed", () => {
+		expect(nextDateFrom(TODAY, 20)).toBe("2026-10-20");
+		expect(nextDateFrom("2026-12-15", 3)).toBe("2027-01-03");
+	});
+
+	it("clamps the 31st to the month's last day", () => {
+		expect(nextDateFrom(TODAY, 31)).toBe("2026-09-30");
+		expect(nextDateFrom("2026-09-30", 31)).toBe("2026-09-30");
+		expect(nextDateFrom("2026-10-31", 31)).toBe("2026-10-31");
+		expect(nextDateFrom("2027-01-31", 30)).toBe("2027-02-28");
+	});
+});
+
+describe("isStale", () => {
+	it("marks a pattern stale more than two months after its last row", () => {
+		expect(isStale("2026-07-15", TODAY)).toBe(true);
+		expect(isStale("2026-07-20", TODAY)).toBe(true);
+		expect(isStale("2026-07-21", TODAY)).toBe(false);
+		expect(isStale("2026-09-10", TODAY)).toBe(false);
 	});
 });

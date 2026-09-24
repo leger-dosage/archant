@@ -1181,6 +1181,35 @@ describe("recurring transactions", () => {
 
 		await expect(database.all(sql`select id from recurring_transactions`)).resolves.toEqual([]);
 	});
+
+	it("starts a pattern detected and not manual, and accepts only a known status", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		const setStatus = (status: string) =>
+			database.run(sql`update recurring_transactions set status = ${status} where id = 'r1'`);
+
+		await expect(
+			database.get(sql`select status, manual from recurring_transactions where id = 'r1'`),
+		).resolves.toEqual({ status: "detected", manual: 0 });
+		await expect(setStatus("confirmed")).resolves.toBeDefined();
+		await expect(setStatus("inactive")).resolves.toBeDefined();
+		await expect(setStatus("dismissed")).resolves.toBeDefined();
+		await expect(setStatus("deleted")).rejects.toThrow();
+	});
+
+	it("marks every existing pattern detected when 0025 adds the status", async () => {
+		const before = await migratedBefore("0025");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertRecurring(before, "r1", { labelKey: "netflix" });
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, status, manual from recurring_transactions`),
+		).resolves.toEqual([{ id: "r1", status: "detected", manual: 0 }]);
+	});
 });
 
 describe("migrateFromEnv", () => {

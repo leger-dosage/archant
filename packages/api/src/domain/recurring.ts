@@ -4,7 +4,7 @@ import type { IsoDate } from "./dates.ts";
 import type { MinorUnits } from "@archant/data/money";
 
 import { direction } from "./cash-flow.ts";
-import { addDays, addMonths, withDay } from "./dates.ts";
+import { addDays, addMonths, daysBetween, withDay } from "./dates.ts";
 import { normalizeLabel } from "./normalize-label.ts";
 
 /** What detection reads of a transaction; excluded rows count, as in Sure. */
@@ -40,6 +40,8 @@ const MIN_OCCURRENCES = 3;
 const STALE_AFTER_DAYS = 45;
 const MAX_DAY_SPREAD = 5;
 const CIRCLE = 31;
+// Sure's `cleanup_stale_for`: no occurrence for two expected periods.
+const INACTIVE_AFTER_MONTHS = 2;
 
 /** Days of the month apart on Sure's 31-day circle: the 30th and the 1st are 2 apart. */
 export function dayDistance(a: number, b: number): number {
@@ -141,10 +143,40 @@ export function detectRecurring(
 			currency: latest.currency,
 			expectedDayOfMonth: day,
 			lastOccurrenceDate: latest.date,
-			nextExpectedDate: withDay(addMonths(latest.date, 1), day),
+			nextExpectedDate: nextExpectedDate(latest.date, day),
 			occurrenceCount: rows.length,
 		});
 	}
 
 	return patterns;
+}
+
+/**
+ * The date on the expected day nearest to one month after the latest row.
+ * Sure takes the expected day of the following month, so a bill due on the
+ * 1st that came on 31 August reads as due on 1 September, the day after.
+ */
+export function nextExpectedDate(lastDate: IsoDate, day: number): IsoDate {
+	const target = addMonths(lastDate, 1);
+	const firstOfMonth = `${target.slice(0, 8)}01`;
+	// The target's own month first, so it wins a tie.
+	const candidates = [0, 1, -1].map((months) => withDay(addMonths(firstOfMonth, months), day));
+
+	return candidates.reduce((best, candidate) =>
+		Math.abs(daysBetween(target, candidate)) < Math.abs(daysBetween(target, best))
+			? candidate
+			: best,
+	);
+}
+
+/** The first date on the expected day that is today or later: a manual item's next date, as Sure's. */
+export function nextDateFrom(today: IsoDate, day: number): IsoDate {
+	const thisMonth = withDay(today, day);
+
+	return thisMonth >= today ? thisMonth : withDay(addMonths(`${today.slice(0, 8)}01`, 1), day);
+}
+
+/** Whether a pattern last seen on `lastDate` has missed more than two expected periods. */
+export function isStale(lastDate: IsoDate, today: IsoDate): boolean {
+	return lastDate < addMonths(today, -INACTIVE_AFTER_MONTHS);
 }

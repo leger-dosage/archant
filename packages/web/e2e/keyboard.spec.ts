@@ -392,6 +392,7 @@ test("? lists every shortcut, and the sidebar shows each page's keys", async ({ 
 		"Aller au tableau de bordG D",
 		"Aller aux comptesG C",
 		"Aller aux opérationsG O",
+		"Aller aux récurrencesG R",
 		"Aller aux règlesG U",
 		"Aller aux réglagesG S",
 		"Ajouter une opération sur la page d'un compteN",
@@ -421,6 +422,9 @@ test("? lists every shortcut, and the sidebar shows each page's keys", async ({ 
 	await expect(
 		await hoverTooltip(page, sidebar.getByRole("link", { name: "Opérations", exact: true })),
 	).toHaveText("Opérations G O");
+	await expect(
+		await hoverTooltip(page, sidebar.getByRole("link", { name: "Récurrences", exact: true })),
+	).toHaveText("Récurrences G R");
 	await expect(
 		await hoverTooltip(page, sidebar.getByRole("link", { name: "Règles", exact: true })),
 	).toHaveText("Règles G U");

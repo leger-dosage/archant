@@ -2,7 +2,16 @@ import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "./accounts.ts";
+import { inList } from "./check.ts";
 import { merchants } from "./merchants.ts";
+
+/**
+ * `dismissed` is kept rather than deleted, unlike Sure: the row blocks its key,
+ * so detection never brings the pattern back.
+ */
+export const RECURRING_STATUSES = ["detected", "confirmed", "inactive", "dismissed"] as const;
+
+export type RecurringStatus = (typeof RECURRING_STATUSES)[number];
 
 /**
  * Sure's `RecurringTransaction`: a payment seen on the same day of the month
@@ -29,6 +38,9 @@ export const recurringTransactions = sqliteTable(
 		lastOccurrenceDate: text("last_occurrence_date").notNull(),
 		nextExpectedDate: text("next_expected_date").notNull(),
 		occurrenceCount: integer("occurrence_count").notNull(),
+		status: text("status").$type<RecurringStatus>().notNull().default("detected"),
+		// Added by hand from a transaction, as Sure's `manual`.
+		manual: integer("manual", { mode: "boolean" }).notNull().default(false),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
@@ -36,6 +48,10 @@ export const recurringTransactions = sqliteTable(
 		check(
 			"recurring_transactions_key_check",
 			sql`(${table.merchantId} is null) <> (${table.labelKey} is null)`,
+		),
+		check(
+			"recurring_transactions_status_check",
+			sql`${table.status} in ${inList(RECURRING_STATUSES)}`,
 		),
 		check("recurring_transactions_day_check", sql`${table.expectedDayOfMonth} between 1 and 31`),
 		uniqueIndex("recurring_transactions_merchant_unique")
