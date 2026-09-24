@@ -59,6 +59,13 @@ export const SHORTCUTS = [
 		inFields: false,
 	},
 	{
+		id: "goRules",
+		keys: ["g>u"],
+		label: "shortcuts.labels.goRules",
+		section: "navigation",
+		inFields: false,
+	},
+	{
 		id: "goSettings",
 		keys: ["g>s"],
 		label: "shortcuts.labels.goSettings",

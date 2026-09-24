@@ -113,6 +113,12 @@ export function CommandPalette() {
 			run: () => void navigate({ to: "/operations" }),
 		},
 		{
+			id: "go-rules",
+			label: t("nav.rules"),
+			shortcut: "goRules",
+			run: () => void navigate({ to: "/regles" }),
+		},
+		{
 			id: "go-settings",
 			label: t("nav.settings"),
 			shortcut: "goSettings",

@@ -15,6 +15,7 @@ import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
+import { rules } from "@archant/data/schema/rules";
 import { taggings } from "@archant/data/schema/taggings";
 import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
@@ -57,9 +58,11 @@ import {
 	removableOf,
 	removeTag,
 	revertImport,
+	setRuleCategories,
 	updateSnapshot,
 	updateTransaction,
 } from "./ledger.ts";
+import { createRule, setRuleEnabled } from "./rules.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -4772,5 +4775,193 @@ describe("a rejected pair when a side goes", () => {
 
 		await expect(findTransaction(deps(), outflow)).resolves.toBeNull();
 		await expect(rejectedRows(inflow)).resolves.toEqual([]);
+	});
+});
+
+// Story 8.1: step 5 applies the enabled rules to the rows an ingest creates.
+
+const labelLike = (value: string) => ({
+	conditionType: "transaction_name",
+	operator: "like",
+	value,
+});
+
+describe("rules at ingestion", () => {
+	// Every rule reaches every new transaction: none may outlive its test.
+	afterEach(async () => {
+		await temp.db.delete(rules);
+	});
+
+	let created = 0;
+
+	/** A rule setting `categoryId`, created after every earlier one. */
+	async function newRule(
+		categoryId: string,
+		conditions: Parameters<typeof createRule>[1]["conditions"] = [],
+		effectiveDate: string | null = null,
+	) {
+		const rule = await createRule(deps(), {
+			effectiveDate,
+			conditions,
+			actions: [{ actionType: "set_transaction_category", value: categoryId }],
+		});
+		created += 1;
+		// Frozen clocks would give two rules the same creation time.
+		await temp.db.update(rules).set({ createdAt: created }).where(eq(rules.id, rule.id));
+
+		return rule;
+	}
+
+	it("categorises a new transaction a rule matches, with a rule origin and no lock", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		await newRule(groceries, [labelLike("carrefour  city")]);
+
+		const hit = await add(account.id, { label: "CB CARREFOUR CITY 12/09" });
+		const miss = await add(account.id, { label: "CB AUCHAN" });
+
+		await expect(categoryOf(hit)).resolves.toBe(groceries);
+		await expect(categoryOriginOf(hit)).resolves.toBe("rule");
+		await expect(lockedFields(hit)).resolves.toEqual(["date", "amount", "label"]);
+		await expect(categoryOf(miss)).resolves.toBeNull();
+	});
+
+	it("matches an amount above 50,00 in the reporting currency only", async () => {
+		const account = await openChecking();
+		const dollars = await openChecking({ name: "USD", currency: "USD" });
+		const big = await newCategory("Gros achats");
+		await newRule(big, [{ conditionType: "transaction_amount", operator: ">", value: "50,00" }]);
+
+		const expense = await add(account.id, { amount: toMinorUnits(-6000) });
+		const small = await add(account.id, { amount: toMinorUnits(4000) });
+		const income = await add(account.id, { amount: toMinorUnits(6000) });
+		const foreign = await add(dollars.id, { amount: toMinorUnits(-6000), currency: "USD" });
+
+		await expect(categoryOf(expense)).resolves.toBe(big);
+		await expect(categoryOf(small)).resolves.toBeNull();
+		await expect(categoryOf(income)).resolves.toBe(big);
+		await expect(categoryOf(foreign)).resolves.toBeNull();
+	});
+
+	it("lets the later of two matching rules win, and skips a disabled one", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const other = await newCategory("Autre");
+		await newRule(groceries);
+		await newRule(leisure);
+		const disabled = await newRule(other);
+		await setRuleEnabled(deps(), disabled.id, { enabled: false });
+
+		const id = await add(account.id);
+
+		await expect(categoryOf(id)).resolves.toBe(leisure);
+	});
+
+	it("reaches only the lines dated on or after the start date", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		await newRule(groceries, [], "2026-09-10");
+
+		const before = await add(account.id, { date: "2026-09-09" });
+		const on = await add(account.id, { date: "2026-09-10" });
+
+		await expect(categoryOf(before)).resolves.toBeNull();
+		await expect(categoryOf(on)).resolves.toBe(groceries);
+	});
+
+	it("writes nothing for a rule whose category was deleted, nor for an account condition on a deleted account", async () => {
+		const account = await openChecking();
+		const gone = await openChecking({ name: "Fermé" });
+		const groceries = await newCategory("Courses");
+		const deleted = await newCategory("Supprimée");
+		await newRule(groceries, [
+			{ conditionType: "transaction_account", operator: "=", value: gone.id },
+		]);
+		await newRule(deleted);
+		await temp.db.delete(categories).where(eq(categories.id, deleted));
+		await deleteAccount(deps(), gone.id, { origin: "user" });
+
+		const id = await add(account.id);
+
+		await expect(categoryOf(id)).resolves.toBeNull();
+	});
+
+	it("categorises a possible duplicate an import creates", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-09-04", amount: toMinorUnits(-1000) });
+		await add(account.id, { date: "2026-09-06", amount: toMinorUnits(-1000) });
+		const tolls = await newCategory("Péages");
+		await newRule(tolls, [labelLike("péage")]);
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-09-05", amount: toMinorUnits(-1000), label: "Péage" })),
+		);
+
+		expect(counts(result)).toMatchObject({ created: 0, duplicates: 1 });
+		const [id = ""] = result.created;
+		await expect(categoryOf(id)).resolves.toBe(tolls);
+		await expect(categoryOriginOf(id)).resolves.toBe("rule");
+	});
+
+	it("categorises the lines of a confirmed import it matches, and nothing at preview", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		await newRule(groceries, [labelLike("carrefour")]);
+		const statement = statementOf(
+			line({ externalId: "1", label: "CB CARREFOUR MARKET" }),
+			line({ externalId: "2", label: "CB BOULANGERIE" }),
+			line({ externalId: "3", label: "Carrefour city", date: "2026-09-11" }),
+			line({ externalId: "4", label: "VIR SALAIRE", amount: toMinorUnits(215000) }),
+			line({ externalId: "5", label: "PRLV EDF" }),
+		);
+
+		const { importId } = await preview(account.id, statement);
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+		const result = await confirm(account.id, importId, statement);
+
+		const categorised = await Promise.all(result.created.map(categoryOf));
+		expect(categorised).toEqual([groceries, null, groceries, null, null]);
+	});
+});
+
+describe("setRuleCategories", () => {
+	async function write(planned: Map<string, string>) {
+		return temp.db.transaction(async (tx) => setRuleCategories(tx, planned, { origin: "rule" }));
+	}
+
+	it("writes nothing for an empty plan", async () => {
+		await expect(write(new Map())).resolves.toBe(0);
+	});
+
+	it("skips a locked category, an unknown category and a row already in that category", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const leisure = await newCategory("Loisirs");
+		const locked = await add(account.id);
+		await updateTransaction(deps(), locked, { categoryId: leisure }, { origin: "user" });
+		const already = await add(account.id);
+		await write(new Map([[already, groceries]]));
+		const unknown = await add(account.id);
+		const free = await add(account.id);
+
+		const written = await write(
+			new Map([
+				[locked, groceries],
+				[already, groceries],
+				[unknown, "nope"],
+				[free, groceries],
+			]),
+		);
+
+		expect(written).toBe(1);
+		await expect(categoryOf(locked)).resolves.toBe(leisure);
+		await expect(categoryOriginOf(locked)).resolves.toBe("user");
+		await expect(categoryOf(already)).resolves.toBe(groceries);
+		await expect(categoryOf(unknown)).resolves.toBeNull();
+		await expect(categoryOf(free)).resolves.toBe(groceries);
+		await expect(categoryOriginOf(free)).resolves.toBe("rule");
+		await expect(lockedFields(free)).resolves.toEqual(["date", "amount", "label"]);
 	});
 });

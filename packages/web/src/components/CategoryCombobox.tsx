@@ -31,6 +31,8 @@ type CategoryComboboxProps = {
 	 */
 	value: string | null | undefined;
 	onSelect: (categoryId: string | null) => void;
+	/** Offers « Sans catégorie » first; a rule's action has no such choice. */
+	allowNone?: boolean;
 };
 
 /**
@@ -38,7 +40,12 @@ type CategoryComboboxProps = {
  * each parent followed by its children, indented. Arrows move, `Enter` picks.
  * The caller puts it in a popover and closes it on `onSelect`.
  */
-export function CategoryCombobox({ categories, value, onSelect }: CategoryComboboxProps) {
+export function CategoryCombobox({
+	categories,
+	value,
+	onSelect,
+	allowNone = true,
+}: CategoryComboboxProps) {
 	const { t } = useTranslation();
 	const none = t("transactions.category.none");
 	const item = (category: CategoryData, child: boolean) => (
@@ -64,15 +71,17 @@ export function CategoryCombobox({ categories, value, onSelect }: CategoryCombob
 			<CommandList>
 				<CommandEmpty>{t("transactions.category.empty")}</CommandEmpty>
 				<CommandGroup>
-					<CommandItem
-						value={NONE}
-						keywords={[none]}
-						data-checked={value === null}
-						onSelect={() => onSelect(null)}
-					>
-						<CategoryDot color={null} />
-						<span>{none}</span>
-					</CommandItem>
+					{allowNone && (
+						<CommandItem
+							value={NONE}
+							keywords={[none]}
+							data-checked={value === null}
+							onSelect={() => onSelect(null)}
+						>
+							<CategoryDot color={null} />
+							<span>{none}</span>
+						</CommandItem>
+					)}
 					{categoryTree(categories).flatMap(({ parent, children }) => [
 						item(parent, false),
 						...children.map((child) => item(child, true)),

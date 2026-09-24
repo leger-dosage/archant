@@ -1,4 +1,5 @@
 import type { ImportHistoryItemData } from "@/hooks/useImports";
+import type { TFunction } from "i18next";
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,8 +21,6 @@ import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-
-type TFunction = ReturnType<typeof useTranslation>["t"];
 
 // The API stores instants; the user reads the day they did it, in their zone.
 const dayOf = (epochMs: number) => formatShortDate(toIsoDate(new Date(epochMs)));

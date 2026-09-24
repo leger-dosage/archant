@@ -15,6 +15,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthedOperationsRouteImport } from './routes/_authed.operations'
 import { Route as AuthedReglagesRouteImport } from './routes/_authed.reglages'
+import { Route as AuthedReglesRouteImport } from './routes/_authed.regles'
 import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes.index'
 import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
 import { Route as AuthedReglagesIndexRouteImport } from './routes/_authed.reglages.index'
@@ -50,6 +51,11 @@ const AuthedOperationsRoute = AuthedOperationsRouteImport.update({
 const AuthedReglagesRoute = AuthedReglagesRouteImport.update({
   id: '/reglages',
   path: '/reglages',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedReglesRoute = AuthedReglesRouteImport.update({
+  id: '/regles',
+  path: '/regles',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedComptesIndexRoute = AuthedComptesIndexRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/operations': typeof AuthedOperationsRoute
   '/reglages': typeof AuthedReglagesRouteWithChildren
+  '/regles': typeof AuthedReglesRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
   '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
   '/operations': typeof AuthedOperationsRoute
+  '/regles': typeof AuthedReglesRoute
   '/': typeof AuthedIndexRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/_authed/operations': typeof AuthedOperationsRoute
   '/_authed/reglages': typeof AuthedReglagesRouteWithChildren
+  '/_authed/regles': typeof AuthedReglesRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
   '/_authed/reglages/categories': typeof AuthedReglagesCategoriesRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/operations'
     | '/reglages'
+    | '/regles'
     | '/comptes/$accountId'
     | '/reglages/categories'
     | '/reglages/etiquettes'
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/connexion'
     | '/setup'
     | '/operations'
+    | '/regles'
     | '/'
     | '/comptes/$accountId'
     | '/reglages/categories'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/_authed/operations'
     | '/_authed/reglages'
+    | '/_authed/regles'
     | '/_authed/'
     | '/_authed/comptes/$accountId'
     | '/_authed/reglages/categories'
@@ -226,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/reglages'
       fullPath: '/reglages'
       preLoaderRoute: typeof AuthedReglagesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/regles': {
+      id: '/_authed/regles'
+      path: '/regles'
+      fullPath: '/regles'
+      preLoaderRoute: typeof AuthedReglesRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/comptes/': {
@@ -303,6 +322,7 @@ const AuthedReglagesRouteWithChildren = AuthedReglagesRoute._addFileChildren(
 interface AuthedRouteChildren {
   AuthedOperationsRoute: typeof AuthedOperationsRoute
   AuthedReglagesRoute: typeof AuthedReglagesRouteWithChildren
+  AuthedReglesRoute: typeof AuthedReglesRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedComptesAccountIdRoute: typeof AuthedComptesAccountIdRoute
   AuthedComptesIndexRoute: typeof AuthedComptesIndexRoute
@@ -311,6 +331,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedOperationsRoute: AuthedOperationsRoute,
   AuthedReglagesRoute: AuthedReglagesRouteWithChildren,
+  AuthedReglesRoute: AuthedReglesRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedComptesAccountIdRoute: AuthedComptesAccountIdRoute,
   AuthedComptesIndexRoute: AuthedComptesIndexRoute,

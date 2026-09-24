@@ -48,6 +48,7 @@ function GlobalShortcuts() {
 	useShortcut("goDashboard", () => void navigate({ to: "/" }));
 	useShortcut("goAccounts", () => void navigate({ to: "/comptes" }));
 	useShortcut("goOperations", () => void navigate({ to: "/operations" }));
+	useShortcut("goRules", () => void navigate({ to: "/regles" }));
 	useShortcut("goSettings", () => void navigate({ to: "/reglages" }));
 
 	return null;

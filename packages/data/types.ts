@@ -8,6 +8,7 @@ import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { merchants } from "./schema/merchants.ts";
 import type { rejectedTransfers } from "./schema/rejected-transfers.ts";
+import type { ruleActions, ruleConditions, rules } from "./schema/rules.ts";
 import type { taggings } from "./schema/taggings.ts";
 import type { tags } from "./schema/tags.ts";
 import type { transactions } from "./schema/transactions.ts";
@@ -58,3 +59,12 @@ export type NewTransfer = InferInsertModel<typeof transfers>;
 
 export type RejectedTransfer = InferSelectModel<typeof rejectedTransfers>;
 export type NewRejectedTransfer = InferInsertModel<typeof rejectedTransfers>;
+
+export type Rule = InferSelectModel<typeof rules>;
+export type NewRule = InferInsertModel<typeof rules>;
+
+export type RuleCondition = InferSelectModel<typeof ruleConditions>;
+export type NewRuleCondition = InferInsertModel<typeof ruleConditions>;
+
+export type RuleAction = InferSelectModel<typeof ruleActions>;
+export type NewRuleAction = InferInsertModel<typeof ruleActions>;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeLabel } from "./normalize-label.ts";
+import { normalizeLabel, squishLabel } from "./normalize-label.ts";
 
 describe("normalizeLabel", () => {
 	it("lower-cases, strips accents and collapses spaces", () => {
@@ -13,5 +13,11 @@ describe("normalizeLabel", () => {
 
 	it("gives the same text for a label typed with composed or decomposed accents", () => {
 		expect(normalizeLabel("Café")).toBe(normalizeLabel("Café"));
+	});
+});
+
+describe("squishLabel", () => {
+	it("trims and collapses whitespace, keeping case and accents", () => {
+		expect(squishLabel("  CB  Électricité \t de\nFrance ")).toBe("CB Électricité de France");
 	});
 });
