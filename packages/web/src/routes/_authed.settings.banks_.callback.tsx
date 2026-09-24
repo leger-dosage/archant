@@ -73,10 +73,13 @@ function BankReturnPage() {
 				onSuccess: (connection) => {
 					toast.success(t("banks.return.connected", { name: connection.institutionName }));
 					// Replaced, so Back never lands on a spent code. On to the
-					// connection's accounts, which the user decides about next.
+					// connection's accounts, which the user decides about next. A
+					// renewed consent syncs once there, so the user sees it work; a
+					// new connection has nothing linked yet, and its sync reads nothing.
 					void navigate({
 						to: "/settings/banks/$connectionId",
 						params: { connectionId: connection.id },
+						search: { sync: true },
 						replace: true,
 					});
 				},

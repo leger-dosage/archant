@@ -60,8 +60,7 @@ export type BankStatement = Omit<ParsedStatement, "balance"> & { balance: BankBa
 
 /**
  * A bank aggregator behind the connector port (AD-3). Like a file source it
- * never touches the database: the service stores what it returns. Later
- * stories add revocation.
+ * never touches the database: the service stores what it returns.
  */
 export type BankConnector = {
 	id: BankConnectorId;
@@ -70,6 +69,11 @@ export type BankConnector = {
 	startAuthorization: (request: AuthorizationRequest) => Promise<{ url: string }>;
 	/** Trades the callback's `code` for a session. */
 	completeAuthorization: (code: string) => Promise<BankSession>;
+	/**
+	 * Ends a session at the provider, Sure's `revoke_session`: the bank stops
+	 * sharing the accounts under it.
+	 */
+	revokeAuthorization: (sessionId: string) => Promise<void>;
 	/**
 	 * The account's current balance (AD-18): the interim booked one, else
 	 * the closing booked one; `null` when the bank gives neither.

@@ -267,13 +267,20 @@ function Connections() {
 										<span className="font-medium">{connection.institutionName}</span>
 										<span className="text-sm text-muted-foreground">
 											{countryName(connection.country)}
-											{connection.consentExpiresAt !== null && (
+											{connection.alert === "consent_expired" ? (
 												<>
 													{" · "}
-													{t("banks.consentUntil", {
-														date: consentDate.format(new Date(connection.consentExpiresAt)),
-													})}
+													{t("banks.consentExpired")}
 												</>
+											) : (
+												connection.consentExpiresAt !== null && (
+													<>
+														{" · "}
+														{t("banks.consentUntil", {
+															date: consentDate.format(new Date(connection.consentExpiresAt)),
+														})}
+													</>
+												)
 											)}
 										</span>
 										<span className="text-sm text-muted-foreground">

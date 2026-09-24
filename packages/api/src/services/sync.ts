@@ -12,12 +12,9 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { addDays, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { logFailure, requireBankConnector } from "./bank-connections.ts";
+import { LEASE_MS, codeOf, logFailure, requireBankConnector } from "./bank-connections.ts";
 import { ingest, oldestPendingDate } from "./ledger.ts";
 import { detectRecurring } from "./recurring.ts";
-
-/** A run that crashed leaves its lease behind; after this long, it is free again. */
-export const LEASE_MS = 10 * 60 * 1000;
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
 export const MIN_INTERVAL_MS = 60 * 60 * 1000;
@@ -31,7 +28,7 @@ export const OVERLAP_DAYS = 7;
 /** Who asked: the connection's button refuses what the cron quietly skips. */
 export type SyncTrigger = "button" | "cron";
 
-export type SyncResult = "synced" | "failed" | "skipped";
+export type SyncResult = "synced" | "failed" | "skipped" | "consent_expired";
 
 /** A connection's sync state, as its page shows it. */
 export type SyncStatus = { lastSyncedAt: number | null; lastError: string | null };
@@ -68,17 +65,19 @@ function toParsedStatement(statement: BankStatement, day: IsoDate): ParsedStatem
 	};
 }
 
-const codeOf = (error: unknown): ErrorCode =>
-	error instanceof AppError ? error.code : "INTERNAL_ERROR";
-
 /**
  * Takes the lease in one statement, so two runs cannot both hold it: free,
- * or older than ten minutes, and the connection not synced within the hour.
+ * or older than ten minutes, and the connection not synced within the hour
+ * unless a consent was renewed since its last sync (AD-18), so the renewal
+ * can be checked at once. Taking the lease spends that exception.
  */
 async function takeLease(deps: BankConnectionDeps, connectionId: string, now: number) {
 	const [taken] = await deps.db
 		.update(bankConnections)
-		.set({ syncStartedAt: now })
+		// The renewal's exception is spent by the run it lets through, whatever
+		// that run's outcome: a sync that keeps failing must not skip the hour
+		// on every press.
+		.set({ syncStartedAt: now, authorizedAt: null })
 		.where(
 			and(
 				eq(bankConnections.id, connectionId),
@@ -89,6 +88,7 @@ async function takeLease(deps: BankConnectionDeps, connectionId: string, now: nu
 				or(
 					isNull(bankConnections.lastSyncedAt),
 					lt(bankConnections.lastSyncedAt, now - MIN_INTERVAL_MS),
+					lt(bankConnections.lastSyncedAt, bankConnections.authorizedAt),
 				),
 			),
 		)
@@ -127,7 +127,14 @@ async function runSync(
 		})
 		.from(bankAccounts)
 		.innerJoin(accounts, eq(accounts.bankAccountId, bankAccounts.id))
-		.where(and(eq(bankAccounts.bankConnectionId, connectionId), eq(accounts.active, true)))
+		// An account the current consent leaves out is neither read nor failed.
+		.where(
+			and(
+				eq(bankAccounts.bankConnectionId, connectionId),
+				eq(bankAccounts.listed, true),
+				eq(accounts.active, true),
+			),
+		)
 		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
 	const errors: ErrorCode[] = [];
 	let created = 0;
@@ -218,8 +225,8 @@ type Connection = { id: string; consentExpiresAt: number | null; syncStartedAt: 
 /**
  * One connection's sync, lease taken and released here. The button refuses a
  * held lease with `SYNC_IN_PROGRESS` and a sync within the hour with
- * `SYNC_TOO_RECENT`; the cron skips both, and every connection whose consent
- * has ended.
+ * `SYNC_TOO_RECENT`; the cron skips both. An ended consent reads nothing and
+ * writes nothing: the button answers `CONSENT_EXPIRED`, the cron reports it.
  */
 async function syncOne(
 	deps: BankConnectionDeps,
@@ -228,11 +235,19 @@ async function syncOne(
 ): Promise<SyncResult> {
 	const startedAt = Date.now();
 
-	// Nothing to read without consent; renewal is Story 10.5's.
+	// Nothing to read without consent, and nothing deleted: a renewal picks
+	// the connection up where it stopped.
 	if (connection.consentExpiresAt !== null && connection.consentExpiresAt <= startedAt) {
-		deps.logger.info({ connectionId: connection.id, trigger }, "bank sync skipped: consent ended");
+		deps.logger.info(
+			{ connectionId: connection.id, trigger, code: "CONSENT_EXPIRED" },
+			"bank sync skipped",
+		);
 
-		return "skipped";
+		if (trigger === "button") {
+			throw new AppError("CONSENT_EXPIRED", "This bank connection's consent has expired.");
+		}
+
+		return "consent_expired";
 	}
 
 	if (!(await takeLease(deps, connection.id, startedAt))) {

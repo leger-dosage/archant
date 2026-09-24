@@ -54,7 +54,7 @@ export type ProviderRequest = {
 	body: unknown;
 };
 
-type Endpoint = "aspsps" | "auth" | "sessions" | "balances" | "transactions";
+type Endpoint = "aspsps" | "auth" | "sessions" | "revoke" | "balances" | "transactions";
 
 /** The fixture pages: the first without a key, the second on `page-2`. */
 export function transactionsPage(url: URL): Response {
@@ -66,7 +66,7 @@ export function transactionsPage(url: URL): Response {
 }
 
 /**
- * Serves the five endpoints from the fixtures, or from `overrides`, and
+ * Serves the six endpoints from the fixtures, or from `overrides`, and
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
@@ -82,7 +82,7 @@ export function mockProvider(
 				path: url.pathname,
 				search: url.search,
 				authorization: request.headers.get("authorization"),
-				body: request.method === "GET" ? undefined : await request.json(),
+				body: request.method === "POST" ? await request.json() : undefined,
 			});
 
 			return (overrides[endpoint] ?? fallback)(url);
@@ -100,6 +100,10 @@ export function mockProvider(
 		http.post(
 			`${TEST_PROVIDER_URL}/sessions`,
 			answer("sessions", () => HttpResponse.json(fixtures.session)),
+		),
+		http.delete(
+			`${TEST_PROVIDER_URL}/sessions/:id`,
+			answer("revoke", () => HttpResponse.json({ message: "OK" })),
 		),
 		http.get(
 			`${TEST_PROVIDER_URL}/accounts/:uid/balances`,

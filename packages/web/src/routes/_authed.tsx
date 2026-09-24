@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AppSidebar } from "@/components/AppSidebar";
+import { BankAlerts } from "@/components/BankAlerts";
 import { CommandPalette } from "@/components/CommandPalette";
 import { CommandsProvider } from "@/components/CommandsProvider";
 import { CreateAccountDialog } from "@/components/CreateAccountDialog";
@@ -139,6 +140,7 @@ function AuthedLayout() {
 						</Tooltip>
 						<HeaderActions />
 					</header>
+					<BankAlerts />
 					<Outlet />
 				</SidebarInset>
 			</SidebarProvider>

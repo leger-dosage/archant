@@ -6626,6 +6626,64 @@ describe("/api/bank-connections", () => {
 		return { app, client, connection };
 	}
 
+	it("renews a connection's consent, then disconnects it", async () => {
+		const { client, connection } = await connectedApp();
+		const requests = mockProvider();
+
+		const renewed = await client[":id"].renew.$post({ param: { id: connection.id } });
+
+		expect(renewed.status).toBe(200);
+		expect(await renewed.json()).toEqual({ data: { url: FIXTURE_AUTH_URL } });
+		const renewing = (await (await client.$get()).json()).data;
+		expect(renewing).toEqual([
+			expect.objectContaining({ id: connection.id, status: "active", alert: null }),
+		]);
+
+		const removed = await client[":id"].$delete({ param: { id: connection.id } });
+
+		expect(removed.status).toBe(200);
+		expect(await removed.json()).toEqual({ data: { id: connection.id, accounts: 0 } });
+		expect(requests.map(({ method, path }) => `${method} ${path}`)).toContain(
+			`DELETE /sessions/${FIXTURE_SESSION_ID}`,
+		);
+		expect((await (await client.$get()).json()).data).toEqual([]);
+
+		const again = await client[":id"].$delete({ param: { id: connection.id } });
+		expect(again.status).toBe(404);
+		expect(errorBody.parse(await again.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("guards renewal and disconnection with the session and the origin check", async () => {
+		own = await freshDatabase();
+		const app = buildTestApp(own.db, createLogger("silent"), undefined, {}, configuredBank());
+		const foreign = withSession(
+			buildTestApp(own.db, createLogger("silent"), undefined, {}, configuredBank()),
+			template.cookie,
+		);
+
+		const responses = await Promise.all([
+			app.request("/api/bank-connections/c1/renew", {
+				method: "POST",
+				headers: { origin: "http://localhost:5173" },
+			}),
+			app.request("/api/bank-connections/c1", {
+				method: "DELETE",
+				headers: { origin: "http://localhost:5173" },
+			}),
+			foreign.request("/api/bank-connections/c1/renew", {
+				method: "POST",
+				headers: { origin: "https://attacker.example" },
+			}),
+			foreign.request("/api/bank-connections/c1", {
+				method: "DELETE",
+				headers: { origin: "https://attacker.example" },
+			}),
+		]);
+
+		expect(responses.map((response) => response.status)).toEqual([401, 401, 403, 403]);
+		expect(errorBody.parse(await responses[3]?.json()).error.code).toBe("FORBIDDEN");
+	});
+
 	it("lists a connection's bank accounts, then creates one from the bank", async () => {
 		const { app, client, connection } = await connectedApp();
 
@@ -6865,6 +6923,27 @@ describe("bank sync routes", () => {
 
 		expect(second.status).toBe(409);
 		expect(errorBody.parse(await second.json()).error.code).toBe("SYNC_TOO_RECENT");
+	});
+
+	it("answers CONSENT_EXPIRED from the button, and reports it to the cron", async () => {
+		const { app, db } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
+		const { client, connection } = await linkedConnection(app);
+		await db.run(
+			sql`update bank_connections set consent_expires_at = ${Date.now() - 1} where id = ${connection.id}`,
+		);
+
+		const button = await client[":id"].sync.$post({ param: { id: connection.id } });
+		const scheduled = await cron(app, `Bearer ${SECRET}`);
+
+		expect(button.status).toBe(409);
+		expect(errorBody.parse(await button.json()).error.code).toBe("CONSENT_EXPIRED");
+		expect(await scheduled.json()).toEqual({
+			data: { connections: [{ id: connection.id, result: "consent_expired" }] },
+		});
+		const expired = (await (await client.$get()).json()).data;
+		expect(expired).toEqual([
+			expect.objectContaining({ id: connection.id, alert: "consent_expired", lastSyncedAt: null }),
+		]);
 	});
 
 	it("answers SYNC_IN_PROGRESS while a sync holds the lease", async () => {

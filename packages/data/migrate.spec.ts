@@ -1435,6 +1435,33 @@ describe("pending transactions", () => {
 	});
 });
 
+describe("consent renewal", () => {
+	it("keeps every connection with no authorisation times, and every bank account listed, when 0030 runs", async () => {
+		const before = await migratedBefore("0030");
+		await insertConnection(before, "c1", { status: "active", state: null });
+		await insertBankAccount(before, "b1", "c1", "hash-1");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, status, authorization_started_at as startedAt, authorized_at as authorizedAt from bank_connections`,
+			),
+		).resolves.toEqual([{ id: "c1", status: "active", startedAt: null, authorizedAt: null }]);
+		await expect(database.all(sql`select id, listed from bank_accounts`)).resolves.toEqual([
+			{ id: "b1", listed: 1 },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("still refuses a status other than pending or active", async () => {
+		const database = await migrated();
+
+		await expect(insertConnection(database, "c1", { status: "expired" })).rejects.toThrow();
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

@@ -1,6 +1,7 @@
 import type { BankConnector } from "../connectors/bank-connector.ts";
+import type { ConnectionAlert } from "../domain/bank-connection-alert.ts";
 import type { Env } from "../env.ts";
-import type { FieldError } from "../lib/errors.ts";
+import type { ErrorCode, FieldError } from "../lib/errors.ts";
 import type { Logger } from "../lib/logger.ts";
 import type {
 	CompleteConnectionInput,
@@ -11,7 +12,7 @@ import type { ServiceDeps } from "./deps.ts";
 import type { AnchorBalance } from "./ledger.ts";
 import type { AnyColumn } from "drizzle-orm";
 
-import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
@@ -27,10 +28,11 @@ import { BankProviderError } from "../connectors/bank-connector.ts";
 import { createBankConnector } from "../connectors/registry.ts";
 import { toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
+import { connectionAlert } from "../domain/bank-connection-alert.ts";
 import { addMonths, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { encrypt } from "./crypto.ts";
-import { createAccount, linkBankAccount } from "./ledger.ts";
+import { decrypt, encrypt } from "./crypto.ts";
+import { createAccount, linkBankAccount, unlinkBankAccount } from "./ledger.ts";
 
 /** The value an upsert tried to insert into `column`, named from the schema. */
 const excluded = (column: AnyColumn) => sql`excluded.${sql.identifier(column.name)}`;
@@ -40,6 +42,9 @@ export const REDIRECT_PATH = "/settings/banks/callback";
 
 /** How long a `state` stays valid: time enough to sign in at the bank, no more. */
 export const AUTHORIZATION_TTL_MS = 30 * 60 * 1000;
+
+/** A run that crashed leaves its sync lease behind; after this long, it is free again. */
+export const LEASE_MS = 10 * 60 * 1000;
 
 /** What is needed to connect a bank, and which of it is missing. */
 export type BankConnectionDeps = ServiceDeps & {
@@ -75,6 +80,8 @@ export type BankConnectionRecord = {
 	lastSyncedAt: number | null;
 	/** The error code of the latest failed run, `null` once a run succeeds. */
 	lastError: string | null;
+	/** The banner the connection shows, `null` for none. */
+	alert: ConnectionAlert | null;
 	createdAt: number;
 };
 
@@ -154,7 +161,7 @@ export function logFailure(
 	}
 }
 
-function toRecord(row: typeof bankConnections.$inferSelect): BankConnectionRecord {
+function toRecord(row: typeof bankConnections.$inferSelect, now: number): BankConnectionRecord {
 	return {
 		id: row.id,
 		connector: row.connector,
@@ -164,6 +171,7 @@ function toRecord(row: typeof bankConnections.$inferSelect): BankConnectionRecor
 		consentExpiresAt: row.consentExpiresAt,
 		lastSyncedAt: row.lastSyncedAt,
 		lastError: row.lastError,
+		alert: connectionAlert(row, now),
 		createdAt: row.createdAt,
 	};
 }
@@ -184,6 +192,24 @@ export async function listInstitutions(
 			.toSorted((left, right) => byName.compare(left.name, right.name));
 	} catch (error) {
 		logFailure(deps, null, error);
+		throw error;
+	}
+}
+
+/** The bank as the provider lists it now, `undefined` once it no longer does. */
+async function findInstitution(
+	deps: BankConnectionDeps,
+	connector: BankConnector,
+	connectionId: string | null,
+	country: string,
+	name: string,
+) {
+	try {
+		const institutions = await connector.listInstitutions(country);
+
+		return institutions.find((candidate) => candidate.name === name);
+	} catch (error) {
+		logFailure(deps, connectionId, error);
 		throw error;
 	}
 }
@@ -212,16 +238,13 @@ export async function startConnection(
 			),
 		);
 
-	let institutions;
-
-	try {
-		institutions = await connector.listInstitutions(input.country);
-	} catch (error) {
-		logFailure(deps, null, error);
-		throw error;
-	}
-
-	const institution = institutions.find((candidate) => candidate.name === input.institution);
+	const institution = await findInstitution(
+		deps,
+		connector,
+		null,
+		input.country,
+		input.institution,
+	);
 
 	if (institution === undefined) {
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
@@ -239,6 +262,7 @@ export async function startConnection(
 		country: institution.country,
 		status: "pending",
 		authorizationState: state,
+		authorizationStartedAt: now,
 		createdAt: now,
 		updatedAt: now,
 	});
@@ -261,10 +285,77 @@ export async function startConnection(
 }
 
 /**
- * Sure's `callback`: claims the pending row by its `state`, once and within
- * 30 minutes, trades the code for a session and stores it encrypted. Any
- * failure after the claim deletes the row: the code is single use at the
- * provider too, so only a fresh attempt can succeed.
+ * Sure's `reauthorize`: a new consent on the same connection, so its bank
+ * accounts and the accounts they feed stay as they are. Reads the bank again
+ * from the provider and stores a fresh `state` on the active row, which keeps
+ * syncing on its old session until the callback succeeds. A failure clears
+ * the state and leaves the connection as it was.
+ */
+export async function renewConnection(
+	deps: BankConnectionDeps,
+	connectionId: string,
+): Promise<{ url: string }> {
+	const { connector } = requireBankConnector(deps);
+	const connection = await activeConnection(deps, connectionId);
+	const institution = await findInstitution(
+		deps,
+		connector,
+		connection.id,
+		connection.country,
+		connection.institutionName,
+	);
+
+	if (institution === undefined) {
+		const error = new BankProviderError(
+			"BANK_PROVIDER_ERROR",
+			"The bank provider no longer lists this bank.",
+			{ status: 200, providerCode: null },
+		);
+
+		logFailure(deps, connection.id, error);
+		throw error;
+	}
+
+	const now = Date.now();
+	const state = randomUUID();
+
+	await deps.db
+		.update(bankConnections)
+		.set({ authorizationState: state, authorizationStartedAt: now, updatedAt: now })
+		.where(eq(bankConnections.id, connection.id));
+
+	try {
+		const { url } = await connector.startAuthorization({
+			institution,
+			state,
+			redirectUrl: deps.redirectUrl,
+		});
+
+		deps.logger.info({ connectionId: connection.id }, "bank renewal started");
+
+		return { url };
+	} catch (error) {
+		// This attempt's state only: a second renewal may have replaced it.
+		await deps.db
+			.update(bankConnections)
+			.set({ authorizationState: null, updatedAt: Date.now() })
+			.where(
+				and(eq(bankConnections.id, connection.id), eq(bankConnections.authorizationState, state)),
+			);
+		logFailure(deps, connection.id, error);
+		throw error;
+	}
+}
+
+/**
+ * Sure's `callback`: claims the row by its `state`, once and within 30
+ * minutes of the redirect, trades the code for a session and stores it
+ * encrypted. The row is pending for a new connection, active for a renewal,
+ * whose bank accounts are refreshed on their `identification_hash`: each
+ * keeps its id and the account it feeds, a new one appears unlinked, and one
+ * the bank no longer lists stays. A failure after the claim deletes a
+ * pending row, since the code is single use at the provider too; an active
+ * one keeps its old session, which the bank has not revoked (Sure).
  */
 export async function completeConnection(
 	deps: BankConnectionDeps,
@@ -280,11 +371,11 @@ export async function completeConnection(
 		.where(
 			and(
 				eq(bankConnections.authorizationState, input.state),
-				eq(bankConnections.status, "pending"),
-				gte(bankConnections.createdAt, now - AUTHORIZATION_TTL_MS),
+				inArray(bankConnections.status, ["pending", "active"]),
+				gte(bankConnections.authorizationStartedAt, now - AUTHORIZATION_TTL_MS),
 			),
 		)
-		.returning({ id: bankConnections.id });
+		.returning({ id: bankConnections.id, status: bankConnections.status });
 
 	if (claimed === undefined) {
 		throw invalidAuthorization();
@@ -295,7 +386,10 @@ export async function completeConnection(
 	try {
 		session = await connector.completeAuthorization(input.code);
 	} catch (error) {
-		await deps.db.delete(bankConnections).where(eq(bankConnections.id, claimed.id));
+		if (claimed.status === "pending") {
+			await deps.db.delete(bankConnections).where(eq(bankConnections.id, claimed.id));
+		}
+
 		logFailure(deps, claimed.id, error);
 		throw error;
 	}
@@ -308,6 +402,7 @@ export async function completeConnection(
 				status: "active",
 				sessionId: encrypt(encryptionKey, session.sessionId),
 				consentExpiresAt: session.consentExpiresAt,
+				authorizedAt: updatedAt,
 				updatedAt,
 			})
 			.where(eq(bankConnections.id, claimed.id))
@@ -339,6 +434,7 @@ export async function completeConnection(
 				.onConflictDoUpdate({
 					target: [bankAccounts.bankConnectionId, bankAccounts.identificationHash],
 					set: {
+						listed: true,
 						providerUid: excluded(bankAccounts.providerUid),
 						name: excluded(bankAccounts.name),
 						ibanLast4: excluded(bankAccounts.ibanLast4),
@@ -349,12 +445,34 @@ export async function completeConnection(
 				});
 		}
 
+		// Sure's importer: an account the new consent leaves out keeps its row
+		// and its link, and no sync asks the new session for its old uid.
+		await tx
+			.update(bankAccounts)
+			.set({ listed: false, updatedAt })
+			.where(
+				and(
+					eq(bankAccounts.bankConnectionId, updated.id),
+					notInArray(
+						bankAccounts.identificationHash,
+						session.accounts.map((account) => account.identificationHash),
+					),
+				),
+			);
+
 		return updated;
 	});
 
-	deps.logger.info({ connectionId: row.id, accounts: session.accounts.length }, "bank connected");
+	deps.logger.info(
+		{
+			connectionId: row.id,
+			accounts: session.accounts.length,
+			renewed: claimed.status === "active",
+		},
+		"bank connected",
+	);
 
-	return toRecord(row);
+	return toRecord(row, Date.now());
 }
 
 /** Every open connection, oldest first. */
@@ -366,8 +484,9 @@ export async function listConnections(deps: BankConnectionDeps): Promise<BankCon
 		.from(bankConnections)
 		.where(eq(bankConnections.status, "active"))
 		.orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+	const now = Date.now();
 
-	return rows.map(toRecord);
+	return rows.map((row) => toRecord(row, now));
 }
 
 /** A way to feed a bank account into the ledger, as the page offers it. */
@@ -397,7 +516,12 @@ export type BankAccountRecord = {
 
 async function activeConnection(deps: BankConnectionDeps, connectionId: string) {
 	const row = await deps.db
-		.select({ id: bankConnections.id })
+		.select({
+			id: bankConnections.id,
+			country: bankConnections.country,
+			institutionName: bankConnections.institutionName,
+			sessionId: bankConnections.sessionId,
+		})
 		.from(bankConnections)
 		.where(and(eq(bankConnections.id, connectionId), eq(bankConnections.status, "active")))
 		.get();
@@ -606,4 +730,122 @@ export async function linkBankAccounts(
 	deps.logger.info({ connectionId, linked: planned.length }, "bank accounts linked");
 
 	return listBankAccounts(deps, connectionId);
+}
+
+export const codeOf = (error: unknown): ErrorCode =>
+	error instanceof AppError ? error.code : "INTERNAL_ERROR";
+
+/**
+ * Sure's `revoke_session`, best effort: the provider may be down, or the
+ * session unreadable after an `ENCRYPTION_KEY` change, and neither may keep
+ * the user from disconnecting. Each is logged by its code, never with the
+ * session.
+ */
+async function revokeSession(
+	deps: BankConnectionDeps,
+	connector: BankConnector,
+	encryptionKey: Uint8Array,
+	connection: { id: string; sessionId: string | null },
+) {
+	if (connection.sessionId === null) {
+		return;
+	}
+
+	let sessionId: string;
+
+	try {
+		sessionId = decrypt(encryptionKey, connection.sessionId);
+	} catch {
+		deps.logger.warn(
+			{ connectionId: connection.id, code: "SESSION_UNREADABLE" },
+			"bank session not revoked",
+		);
+
+		return;
+	}
+
+	try {
+		await connector.revokeAuthorization(sessionId);
+	} catch (error) {
+		logFailure(deps, connection.id, error);
+		deps.logger.warn(
+			{ connectionId: connection.id, code: codeOf(error) },
+			"bank session not revoked",
+		);
+	}
+}
+
+/**
+ * Sure's `destroy` on a connection: revokes its session at the provider,
+ * turns every account it feeds into a manual one with its history unchanged
+ * (AD-8), then deletes the connection, its bank accounts with it. Synced
+ * lines keep their keys, their connection cleared, so connecting the same
+ * bank again recognises every one of them. Takes the sync lease, ignoring
+ * the hour between two syncs: a running sync answers `SYNC_IN_PROGRESS`.
+ */
+export async function disconnectConnection(
+	deps: BankConnectionDeps,
+	connectionId: string,
+): Promise<{ id: string; accounts: number }> {
+	const { connector, encryptionKey } = requireBankConnector(deps);
+	const connection = await activeConnection(deps, connectionId);
+	const now = Date.now();
+	const [leased] = await deps.db
+		.update(bankConnections)
+		.set({ syncStartedAt: now })
+		.where(
+			and(
+				eq(bankConnections.id, connection.id),
+				or(
+					isNull(bankConnections.syncStartedAt),
+					lt(bankConnections.syncStartedAt, now - LEASE_MS),
+				),
+			),
+		)
+		.returning({ id: bankConnections.id });
+
+	if (leased === undefined) {
+		throw new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.");
+	}
+
+	try {
+		await revokeSession(deps, connector, encryptionKey, connection);
+
+		// One transaction, the write lock taken up front: an account linked
+		// meanwhile is unlinked too, rather than losing its link through the
+		// foreign key with its bank balance left behind. A failed unlink leaves
+		// the connection and every link.
+		const linked = await deps.db.transaction(
+			async (tx) => {
+				const inner: ServiceDeps = { ...deps, db: tx };
+				const rows = await tx
+					.select({ id: accounts.id })
+					.from(accounts)
+					.innerJoin(bankAccounts, eq(bankAccounts.id, accounts.bankAccountId))
+					.where(eq(bankAccounts.bankConnectionId, connection.id))
+					.orderBy(asc(accounts.id));
+
+				// In sequence: each ledger call opens a savepoint on this one connection.
+				await rows.reduce<Promise<void>>(
+					(previous, account) =>
+						previous.then(() => unlinkBankAccount(inner, account.id, { origin: "sync" })),
+					Promise.resolve(),
+				);
+				await tx.delete(bankConnections).where(eq(bankConnections.id, connection.id));
+
+				return rows;
+			},
+			{ behavior: "immediate" },
+		);
+
+		deps.logger.info({ connectionId: connection.id, accounts: linked.length }, "bank disconnected");
+
+		return { id: connection.id, accounts: linked.length };
+	} catch (error) {
+		await deps.db
+			.update(bankConnections)
+			.set({ syncStartedAt: null })
+			.where(and(eq(bankConnections.id, connection.id), eq(bankConnections.syncStartedAt, now)));
+		throw error;
+	}
 }

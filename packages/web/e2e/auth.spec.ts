@@ -69,8 +69,15 @@ test.describe("a session lost mid-use", () => {
 		page,
 		context,
 	}) => {
+		// Every page asks for the bank connections, for their banners, once the
+		// setup answers: still in flight, that request would meet the lost
+		// session before the click does.
+		const banksListed = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === "/api/bank-connections",
+		);
 		await page.goto("/accounts");
 		await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
+		await banksListed;
 
 		// The interface still believes in its cached session; the API no longer does.
 		await context.clearCookies();

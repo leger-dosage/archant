@@ -10,7 +10,8 @@ export type BankConnectorId = (typeof BANK_CONNECTOR_IDS)[number];
 
 /**
  * `pending` from the redirect to the bank until the callback, `active` once
- * the session is open. Renewal and revocation (Story 10.5) add their own.
+ * the session is open. An expired consent stays `active`: it is read from
+ * `consent_expires_at`, and a renewal happens on the same row.
  */
 export const BANK_CONNECTION_STATUSES = ["pending", "active"] as const;
 
@@ -33,6 +34,13 @@ export const bankConnections = sqliteTable(
 		// The OAuth `state` of a pending attempt, cleared once used so a replay
 		// finds nothing. Unique: two attempts never share a callback.
 		authorizationState: text("authorization_state"),
+		// Epoch milliseconds of the latest redirect to the bank, first consent or
+		// renewal: the callback accepts its `state` for 30 minutes from here.
+		authorizationStartedAt: integer("authorization_started_at"),
+		// Epoch milliseconds of the latest successful callback, cleared by the
+		// next sync to take the lease: one sync within the hour is let through
+		// after a renewal, so it can be checked at once, and only one.
+		authorizedAt: integer("authorized_at"),
 		// Encrypted by the API's crypto service (`v1:<iv>:<tag>:<ciphertext>`),
 		// never stored in clear: it is a bearer credential for the account data.
 		sessionId: text("session_id"),

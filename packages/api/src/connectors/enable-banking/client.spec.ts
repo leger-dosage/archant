@@ -285,6 +285,36 @@ describe("completeAuthorization", () => {
 const account = (fields: Record<string, unknown>) =>
 	toBankAccount(sessionAccountSchema.parse({ uid: "u1", currency: "EUR", ...fields }));
 
+describe("revokeAuthorization", () => {
+	it("deletes the session, signed like every other request", async () => {
+		const requests = mockProvider();
+
+		await expect(connector.revokeAuthorization(FIXTURE_SESSION_ID)).resolves.toBeUndefined();
+
+		expect(requests.map(({ method, path, body }) => ({ method, path, body }))).toEqual([
+			{ method: "DELETE", path: `/sessions/${FIXTURE_SESSION_ID}`, body: undefined },
+		]);
+		expect(requests[0]?.authorization).toMatch(/^Bearer /u);
+	});
+
+	it("takes an empty answer as a success", async () => {
+		mockProvider({ revoke: () => new HttpResponse(null, { status: 204 }) });
+
+		await expect(connector.revokeAuthorization(FIXTURE_SESSION_ID)).resolves.toBeUndefined();
+	});
+
+	it("throws a sanitised provider error, never naming the session", async () => {
+		mockProvider({ revoke: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }) });
+
+		const error = await rejection(connector.revokeAuthorization(FIXTURE_SESSION_ID));
+
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure.status).toBe(401);
+		expect(JSON.stringify(error.toJSON())).not.toContain(FIXTURE_SESSION_ID);
+		expect(error.message).not.toContain(FIXTURE_SESSION_ID);
+	});
+});
+
 describe("toBankAccount", () => {
 	it("names the account from its details first, then its product, then its name", () => {
 		expect(account({ details: "Livret A", product: "Épargne", name: "M. X" }).name).toBe(

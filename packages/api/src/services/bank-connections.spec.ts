@@ -2,7 +2,7 @@ import type { TempDatabase } from "../testing/temp-database.ts";
 import type { BankConnectionDeps } from "./bank-connections.ts";
 import type { NewAccountInput } from "./ledger.ts";
 
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -36,13 +36,15 @@ import {
 	bankDepsFromEnv,
 	bankSetup,
 	completeConnection,
+	disconnectConnection,
 	linkBankAccounts,
 	listBankAccounts,
 	listConnections,
 	listInstitutions,
+	renewConnection,
 	startConnection,
 } from "./bank-connections.ts";
-import { decrypt } from "./crypto.ts";
+import { decrypt, encrypt } from "./crypto.ts";
 import { balanceOn, createAccount, ingest } from "./ledger.ts";
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
@@ -151,6 +153,8 @@ describe("when unavailable", () => {
 		);
 		await expect(listConnections(unavailable)).rejects.toMatchObject(refused);
 		await expect(listBankAccounts(unavailable, "c1")).rejects.toMatchObject(refused);
+		await expect(renewConnection(unavailable, "c1")).rejects.toMatchObject(refused);
+		await expect(disconnectConnection(unavailable, "c1")).rejects.toMatchObject(refused);
 		await expect(
 			linkBankAccounts(unavailable, "c1", {
 				links: [{ bankAccountId: "b1", action: "link", accountId: "a1" }],
@@ -306,6 +310,8 @@ describe("completeConnection", () => {
 		const [row] = await rows();
 		expect(row?.status).toBe("active");
 		expect(row?.authorizationState).toBeNull();
+		expect(row?.authorizationStartedAt).toBe(NOW);
+		expect(row?.authorizedAt).toBe(NOW);
 		expect(row?.sessionId).toMatch(/^v1:/u);
 		expect(row?.sessionId).not.toContain(FIXTURE_SESSION_ID);
 		expect(decrypt(Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"), row?.sessionId ?? "")).toBe(
@@ -419,10 +425,44 @@ describe("listConnections", () => {
 				country: "FR",
 				status: "active",
 				consentExpiresAt: FIXTURE_CONSENT_END,
+				alert: null,
 				createdAt: NOW,
 			},
 		]);
 		expect(JSON.stringify(list)).not.toMatch(/v1:|sessionId|authorizationState/u);
+	});
+
+	it("gives each connection the banner it shows", async () => {
+		const insert = (id: string, fields: Partial<typeof bankConnections.$inferInsert>) =>
+			temp.db.insert(bankConnections).values({
+				id,
+				connector: "enable-banking",
+				institutionName: id,
+				country: "FR",
+				status: "active",
+				createdAt: NOW - Number(id.slice(1)),
+				updatedAt: NOW,
+				...fields,
+			});
+		await insert("c5", { consentExpiresAt: NOW + 10 * DAY, lastSyncedAt: NOW });
+		await insert("c4", { consentExpiresAt: NOW + 15 * DAY, lastSyncedAt: NOW });
+		await insert("c3", { consentExpiresAt: NOW - DAY, lastSyncedAt: NOW - 5 * DAY });
+		await insert("c2", { consentExpiresAt: NOW + 60 * DAY, lastSyncedAt: NOW - 49 * 60 * MINUTE });
+		await insert("c1", {
+			consentExpiresAt: NOW + 87 * DAY,
+			lastSyncedAt: null,
+			createdAt: NOW - 3 * DAY,
+		});
+
+		const list = await listConnections(deps());
+
+		expect(list.map(({ id, alert }) => ({ id, alert }))).toEqual([
+			{ id: "c1", alert: null },
+			{ id: "c5", alert: "consent_expiring" },
+			{ id: "c4", alert: null },
+			{ id: "c3", alert: "consent_expired" },
+			{ id: "c2", alert: "sync_stale" },
+		]);
 	});
 });
 
@@ -962,5 +1002,502 @@ describe("linkBankAccounts", () => {
 		expect(logLines.join("")).toContain(`"connectionId":"${connection.id}"`);
 		expect(logLines.join("")).toContain('"providerCode":"ASPSP_ERROR"');
 		expect(logLines.join("")).not.toContain(FIXTURE_CARD_UID);
+	});
+});
+
+/** The session fixture renewed: a new id and consent end, the checking account under a new uid, the card gone, a savings account added. */
+function renewedSession() {
+	const session = z
+		.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+		.loose()
+		.parse(fixtures.session);
+	const [checking] = session.accounts;
+
+	return HttpResponse.json({
+		...session,
+		session_id: "renewed-session",
+		access: { valid_until: "2027-03-20T10:00:00Z" },
+		accounts: [
+			{ ...checking, uid: "renewed-checking-uid" },
+			{
+				uid: "savings-uid",
+				identification_hash: "anonymised-hash-savings",
+				product: "Livret A",
+				currency: "EUR",
+				cash_account_type: "SVGS",
+			},
+		],
+	});
+}
+
+async function renew(connectionId: string, sessions?: () => Response) {
+	const requests = mockProvider(sessions === undefined ? {} : { sessions });
+	const { url } = await renewConnection(deps(), connectionId);
+
+	return { url, state: sentState(requests), requests };
+}
+
+async function bankRows(connectionId: string) {
+	return temp.db
+		.select({
+			id: bankAccounts.id,
+			hash: bankAccounts.identificationHash,
+			uid: bankAccounts.providerUid,
+			listed: bankAccounts.listed,
+		})
+		.from(bankAccounts)
+		.where(eq(bankAccounts.bankConnectionId, connectionId))
+		.orderBy(bankAccounts.identificationHash);
+}
+
+/** A connection whose checking account and card feed two new accounts. */
+async function linkedConnection() {
+	const connection = await connected();
+	const { checking, card } = await bankAccountsOf(connection.id);
+	mockProvider();
+	const list = await linkBankAccounts(deps(), connection.id, {
+		links: [
+			{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+			{ bankAccountId: card.id, action: "create", type: "credit_card", subtype: null },
+		],
+	});
+	const accountIds = list.flatMap((row) => (row.account === null ? [] : [row.account.id]));
+
+	return { connection, checking, card, accountIds };
+}
+
+describe("renewConnection", () => {
+	it("stores a fresh state on the active row, which keeps its session and status", async () => {
+		const connection = await connected();
+		const [before] = await rows();
+		vi.setSystemTime(NOW + DAY);
+
+		const { url, state, requests } = await renew(connection.id);
+
+		expect(url).toBe(FIXTURE_AUTH_URL);
+		expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+			"GET /aspsps",
+			"POST /auth",
+		]);
+		await expect(rows()).resolves.toEqual([
+			{
+				...before,
+				authorizationState: state,
+				authorizationStartedAt: NOW + DAY,
+				updatedAt: NOW + DAY,
+			},
+		]);
+		expect(logLines.join("")).toContain(`"connectionId":"${connection.id}"`);
+	});
+
+	it("keeps the connection, its bank accounts and their links, with the new uids and consent", async () => {
+		const { connection, checking, card, accountIds } = await linkedConnection();
+		const linksBefore = await temp.db
+			.select({ id: accounts.id, bankAccountId: accounts.bankAccountId })
+			.from(accounts)
+			.where(inArray(accounts.id, accountIds));
+		vi.setSystemTime(NOW + DAY);
+		const { state } = await renew(connection.id, renewedSession);
+
+		const renewed = await completeConnection(deps(), { code: "new-code", state });
+
+		expect(renewed).toMatchObject({
+			id: connection.id,
+			status: "active",
+			consentExpiresAt: Date.parse("2027-03-20T10:00:00Z"),
+		});
+		const [row] = await rows();
+		expect(row?.authorizedAt).toBe(NOW + DAY);
+		expect(row?.authorizationState).toBeNull();
+		expect(decrypt(Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"), row?.sessionId ?? "")).toBe(
+			"renewed-session",
+		);
+		const bank = await bankRows(connection.id);
+		expect(bank).toMatchObject([
+			{ id: card.id, hash: "anonymised-hash-card", uid: FIXTURE_CARD_UID },
+			{ id: checking.id, hash: "anonymised-hash-checking", uid: "renewed-checking-uid" },
+			{ hash: "anonymised-hash-savings", uid: "savings-uid" },
+		]);
+		expect(bank).toHaveLength(3);
+		await expect(
+			temp.db
+				.select({ id: accounts.id, bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(inArray(accounts.id, accountIds)),
+		).resolves.toEqual(linksBefore);
+		const savings = (await listBankAccounts(deps(), connection.id)).find(
+			(item) => item.name === "Livret A",
+		);
+		expect(savings?.account).toBeNull();
+		expect(logLines.join("")).not.toContain("renewed-session");
+	});
+
+	it("marks a bank account the renewal leaves out unlisted, keeping its link, until one lists it again", async () => {
+		const { connection, card, accountIds } = await linkedConnection();
+		const cardLink = () =>
+			temp.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.bankAccountId, card.id));
+		const linkedBefore = await cardLink();
+		expect(linkedBefore).toHaveLength(1);
+		expect(accountIds).toContain(linkedBefore[0]?.id);
+
+		const dropped = await renew(connection.id, renewedSession);
+		await completeConnection(deps(), { code: "new-code", state: dropped.state });
+
+		const afterDrop = await bankRows(connection.id);
+		expect(afterDrop.find((row) => row.id === card.id)).toMatchObject({
+			uid: FIXTURE_CARD_UID,
+			listed: false,
+		});
+		expect(afterDrop.filter((row) => row.id !== card.id)).toEqual(
+			afterDrop.filter((row) => row.id !== card.id).map((row) => ({ ...row, listed: true })),
+		);
+		await expect(cardLink()).resolves.toEqual(linkedBefore);
+
+		const listedAgain = await renew(connection.id);
+		await completeConnection(deps(), { code: "newer-code", state: listedAgain.state });
+
+		await expect(bankRows(connection.id)).resolves.toContainEqual({
+			id: card.id,
+			hash: "anonymised-hash-card",
+			uid: FIXTURE_CARD_UID,
+			listed: true,
+		});
+		await expect(cardLink()).resolves.toEqual(linkedBefore);
+	});
+
+	it("keeps the active row and its old session when the bank refuses the renewal", async () => {
+		const connection = await connected();
+		const [before] = await rows();
+		const { state } = await renew(connection.id, () =>
+			HttpResponse.json(fixtures.unauthorized, { status: 401 }),
+		);
+
+		await expect(completeConnection(deps(), { code: "new-code", state })).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+
+		const [row] = await rows();
+		expect(row).toMatchObject({
+			id: connection.id,
+			status: "active",
+			sessionId: before?.sessionId,
+			consentExpiresAt: before?.consentExpiresAt,
+			authorizationState: null,
+		});
+		await expect(completeConnection(deps(), { code: "new-code", state })).rejects.toMatchObject({
+			code: "BANK_AUTHORIZATION_INVALID",
+		});
+	});
+
+	it("refuses a renewal state 31 minutes old, leaving the connection as it was", async () => {
+		const connection = await connected();
+		const { state } = await renew(connection.id);
+		const before = await rows();
+		vi.setSystemTime(NOW + 31 * MINUTE);
+
+		await expect(completeConnection(deps(), { code: "new-code", state })).rejects.toMatchObject({
+			code: "BANK_AUTHORIZATION_INVALID",
+		});
+		await expect(rows()).resolves.toEqual(before);
+	});
+
+	it("clears its state and keeps the active row when the bank's page cannot be opened", async () => {
+		const connection = await connected();
+		const [before] = await rows();
+		mockProvider({ auth: () => HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 }) });
+
+		await expect(renewConnection(deps(), connection.id)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({
+				id: connection.id,
+				status: "active",
+				sessionId: before?.sessionId,
+				authorizationState: null,
+			}),
+		]);
+		expect(logLines.join("")).toContain('"providerCode":"ASPSP_ERROR"');
+	});
+
+	it("refuses a bank the provider no longer lists, and stores no state", async () => {
+		const connection = await connected();
+		const before = await rows();
+		mockProvider({ aspsps: () => HttpResponse.json({ aspsps: [] }) });
+
+		await expect(renewConnection(deps(), connection.id)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+			status: 502,
+		});
+		await expect(rows()).resolves.toEqual(before);
+		expect(logLines.join("")).toContain(`"connectionId":"${connection.id}"`);
+	});
+
+	it("passes a failure to read the bank list on, storing no state", async () => {
+		const connection = await connected();
+		const before = await rows();
+		mockProvider({ aspsps: () => HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 }) });
+
+		await expect(renewConnection(deps(), connection.id)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+		await expect(rows()).resolves.toEqual(before);
+	});
+
+	it("answers NOT_FOUND for a pending or unknown connection", async () => {
+		const requests = mockProvider();
+		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		const [pending] = await rows();
+
+		await expect(renewConnection(deps(), pending?.id ?? "")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(renewConnection(deps(), crypto.randomUUID())).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		expect(requests.filter(({ path }) => path === "/auth")).toHaveLength(1);
+	});
+});
+
+async function balancesOf(accountId: string) {
+	return temp.db.all<{ date: string; balance: number }>(
+		sql`select date, balance from balances where account_id = ${accountId} order by date`,
+	);
+}
+
+async function keysOf(accountId: string) {
+	return temp.db.all<{ key: string; connectionId: string | null }>(
+		sql`select key, connection_id as connectionId from entry_keys where account_id = ${accountId} order by key`,
+	);
+}
+
+describe("disconnectConnection", () => {
+	/** A linked connection with a booked and a pending synced line on its checking account. */
+	async function synced() {
+		const linked = await linkedConnection();
+		const [checkingAccount = ""] = linked.accountIds;
+		const line = {
+			currency: "EUR" as const,
+			label: "Boulangerie",
+			reference: null,
+			notes: null,
+		};
+		await ingest(
+			{ db: temp.db, timeZone: "Europe/Paris" },
+			checkingAccount,
+			{
+				transactions: [
+					{
+						...line,
+						externalId: "b-1",
+						date: "2026-09-20",
+						amount: toMinorUnits(-1717),
+						pending: false,
+					},
+					{
+						...line,
+						externalId: "p-1",
+						date: "2026-09-23",
+						amount: toMinorUnits(-1919),
+						pending: true,
+					},
+				],
+				balance: null,
+				rejected: [],
+			},
+			{ connectionId: linked.connection.id },
+			{ origin: "sync" },
+		);
+
+		return { ...linked, checkingAccount };
+	}
+
+	it("revokes the session, keeps the accounts as manual ones with their history, and deletes the connection", async () => {
+		const { connection, accountIds, checkingAccount } = await synced();
+		const history = await Promise.all(accountIds.map(balancesOf));
+		const keys = await keysOf(checkingAccount);
+		const pending = await temp.db.all(
+			sql`select e.id from entries e join transactions t on t.entry_id = e.id where e.account_id = ${checkingAccount} and t.pending = 1`,
+		);
+		const requests = mockProvider();
+		const service = deps();
+
+		await expect(disconnectConnection(service, connection.id)).resolves.toEqual({
+			id: connection.id,
+			accounts: 2,
+		});
+
+		expect(requests).toEqual([
+			expect.objectContaining({ method: "DELETE", path: `/sessions/${FIXTURE_SESSION_ID}` }),
+		]);
+		await expect(rows()).resolves.toEqual([]);
+		await expect(bankRows(connection.id)).resolves.toEqual([]);
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId, active: accounts.active })
+				.from(accounts)
+				.where(inArray(accounts.id, accountIds)),
+		).resolves.toEqual([
+			{ bankAccountId: null, active: true },
+			{ bankAccountId: null, active: true },
+		]);
+		await expect(Promise.all(accountIds.map(balancesOf))).resolves.toEqual(history);
+		expect(keys.length).toBeGreaterThan(0);
+		await expect(keysOf(checkingAccount)).resolves.toEqual(
+			keys.map(({ key }) => ({ key, connectionId: null })),
+		);
+		await expect(
+			temp.db.all(
+				sql`select e.id from entries e join transactions t on t.entry_id = e.id where e.account_id = ${checkingAccount} and t.pending = 1`,
+			),
+		).resolves.toEqual(pending);
+		expect(logLines.join("")).toContain('"accounts":2');
+		expect(logLines.join("")).not.toContain(FIXTURE_SESSION_ID);
+	});
+
+	it("disconnects even when the provider refuses the revocation, logging its code", async () => {
+		const { connection } = await linkedConnection();
+		mockProvider({ revoke: () => HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 }) });
+		const service = deps();
+
+		await expect(disconnectConnection(service, connection.id)).resolves.toMatchObject({
+			accounts: 2,
+		});
+		await expect(rows()).resolves.toEqual([]);
+		expect(logLines.join("")).toContain('"code":"BANK_PROVIDER_ERROR"');
+		expect(logLines.join("")).toContain('"providerCode":"ASPSP_ERROR"');
+		expect(logLines.join("")).not.toContain(FIXTURE_SESSION_ID);
+	});
+
+	it("disconnects when the revocation throws something unexpected", async () => {
+		const { connection } = await linkedConnection();
+		const service = deps();
+		const connector = service.bankConnector;
+
+		if (connector === null) {
+			throw new Error("The connector is configured in these tests.");
+		}
+
+		await expect(
+			disconnectConnection(
+				{
+					...service,
+					bankConnector: {
+						...connector,
+						revokeAuthorization: () => Promise.reject(new Error("boom")),
+					},
+				},
+				connection.id,
+			),
+		).resolves.toMatchObject({ accounts: 2 });
+		expect(logLines.join("")).toContain('"code":"INTERNAL_ERROR"');
+	});
+
+	it("disconnects without calling the provider when the session cannot be read", async () => {
+		const { connection } = await linkedConnection();
+		// Encrypted under a key other than `ENCRYPTION_KEY`, as after a rotation.
+		const otherKey = Buffer.alloc(32, 0xab);
+		await temp.db
+			.update(bankConnections)
+			.set({ sessionId: encrypt(otherKey, FIXTURE_SESSION_ID) })
+			.where(eq(bankConnections.id, connection.id));
+		const requests = mockProvider();
+		const service = deps();
+
+		await expect(disconnectConnection(service, connection.id)).resolves.toMatchObject({
+			accounts: 2,
+		});
+		expect(requests).toEqual([]);
+		expect(logLines.join("")).toContain('"code":"SESSION_UNREADABLE"');
+	});
+
+	it("disconnects a connection without a session or a linked account", async () => {
+		const connection = await connected();
+		await temp.db
+			.update(bankConnections)
+			.set({ sessionId: null })
+			.where(eq(bankConnections.id, connection.id));
+		const requests = mockProvider();
+
+		await expect(disconnectConnection(deps(), connection.id)).resolves.toEqual({
+			id: connection.id,
+			accounts: 0,
+		});
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toEqual([]);
+	});
+
+	it("refuses while a sync holds the lease, changing nothing", async () => {
+		const { connection } = await linkedConnection();
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartedAt: NOW - 2 * MINUTE })
+			.where(eq(bankConnections.id, connection.id));
+		const before = await rows();
+		const requests = mockProvider();
+
+		await expect(disconnectConnection(deps(), connection.id)).rejects.toMatchObject({
+			code: "SYNC_IN_PROGRESS",
+			status: 409,
+		});
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toEqual(before);
+	});
+
+	it("takes a lease older than ten minutes, and ignores the hour between two syncs", async () => {
+		const { connection } = await linkedConnection();
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartedAt: NOW - 11 * MINUTE, lastSyncedAt: NOW - MINUTE })
+			.where(eq(bankConnections.id, connection.id));
+		mockProvider();
+
+		await expect(disconnectConnection(deps(), connection.id)).resolves.toMatchObject({
+			accounts: 2,
+		});
+		await expect(rows()).resolves.toEqual([]);
+	});
+
+	it("keeps the connection and every link, and frees the lease, when unlinking fails", async () => {
+		const { connection, accountIds } = await linkedConnection();
+		mockProvider();
+		const service = deps();
+		const { db } = service;
+		const failing: BankConnectionDeps = {
+			...service,
+			db: {
+				select: db.select.bind(db),
+				selectDistinct: db.selectDistinct.bind(db),
+				insert: db.insert.bind(db),
+				delete: db.delete.bind(db),
+				update: db.update.bind(db),
+				transaction: () => Promise.reject(new Error("disk full")),
+			},
+		};
+
+		await expect(disconnectConnection(failing, connection.id)).rejects.toThrow("disk full");
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({ id: connection.id, syncStartedAt: null }),
+		]);
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(inArray(accounts.id, accountIds)),
+		).resolves.not.toContainEqual({ bankAccountId: null });
+	});
+
+	it("answers NOT_FOUND for a pending or unknown connection", async () => {
+		mockProvider();
+		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		const [pending] = await rows();
+
+		await expect(disconnectConnection(deps(), pending?.id ?? "")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(disconnectConnection(deps(), crypto.randomUUID())).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(rows()).resolves.toHaveLength(1);
 	});
 });

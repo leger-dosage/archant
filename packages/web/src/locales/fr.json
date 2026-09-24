@@ -1015,6 +1015,26 @@
 			"submit": "Valider",
 			"linked_one": "{{count}} compte relié à la banque.",
 			"linked_other": "{{count}} comptes reliés à la banque."
+		},
+		"consentExpired": "Consentement expiré",
+		"alerts": {
+			"label": "Avertissements bancaires",
+			"consent_expiring": "Le consentement de {{bank}} expire le {{date}}.",
+			"consent_expired": "Le consentement de {{bank}} a expiré. La synchronisation est arrêtée.",
+			"sync_stale": "La synchronisation de {{bank}} est arrêtée depuis le {{date}}.",
+			"renew": "Renouveler",
+			"reconnect": "Reconnecter",
+			"view": "Voir la connexion",
+			"dismiss": "Masquer l'avertissement sur {{bank}}"
+		},
+		"renew": "Renouveler le consentement",
+		"disconnect": {
+			"submit": "Déconnecter",
+			"title": "Déconnecter {{bank}} ?",
+			"description_zero": "Aucun compte n'est lié à cette banque.",
+			"description_one": "Le compte lié devient un compte manuel. Ses transactions et son historique sont conservés.",
+			"description_other": "Les {{count}} comptes liés deviennent des comptes manuels. Leurs transactions et leur historique sont conservés.",
+			"done": "La connexion à {{bank}} est supprimée."
 		}
 	},
 	"security": {
@@ -1060,6 +1080,7 @@
 		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
+		"CONSENT_EXPIRED": "Le consentement de cette banque a expiré. Renouvelez-le pour reprendre la synchronisation.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
