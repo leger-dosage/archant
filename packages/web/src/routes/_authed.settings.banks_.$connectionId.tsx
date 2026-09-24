@@ -5,14 +5,17 @@ import type {
 } from "@/hooks/useBankConnections";
 import type { AccountKindId } from "@/lib/account-kinds";
 
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { Loader2Icon, RefreshCwIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2Icon, RefreshCwIcon, UnplugIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import { BANK_ACCOUNT_TARGETS } from "@archant/data/account-types";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -27,15 +30,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
 	useBankAccounts,
 	useBankConnections,
+	useDisconnectBankConnection,
 	useLinkBankAccounts,
+	useRenewBankConnection,
 	useSyncBankConnection,
 } from "@/hooks/useBankConnections";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showFailureToast } from "@/lib/error-toast";
+import { queryKeys } from "@/lib/query-keys";
+
+// `sync`: set by the return page, so a renewed consent syncs once on arrival.
+const searchSchema = z.object({ sync: z.boolean().optional().catch(undefined) });
 
 // `banks_`: a page of its own under the settings layout, as the return page.
 export const Route = createFileRoute("/_authed/settings/banks_/$connectionId")({
+	validateSearch: searchSchema,
 	component: BankConnectionPage,
 });
 
@@ -150,6 +160,64 @@ function SyncStatus({
 	);
 }
 
+/**
+ * Sure's `reauthorize` and `destroy`: a new consent at the bank, the same
+ * connection coming back; or the connection gone, its accounts kept as
+ * manual ones after a confirmation that says so.
+ */
+function ConnectionActions({
+	connection,
+	linkedCount,
+	disconnect,
+	onDisconnect,
+}: {
+	connection: BankConnectionData;
+	linkedCount: number;
+	disconnect: ReturnType<typeof useDisconnectBankConnection>;
+	/** `onFailure` closes the confirmation; on success the page leaves. */
+	onDisconnect: (onFailure: () => void) => void;
+}) {
+	const { t } = useTranslation();
+	const renew = useRenewBankConnection();
+	const [confirming, setConfirming] = useState(false);
+	const bank = connection.institutionName;
+
+	const renewNow = () => {
+		renew.mutate(connection.id, {
+			onSuccess: ({ url }) => window.location.assign(url),
+			onError: showFailureToast,
+		});
+	};
+
+	return (
+		<div className="flex flex-wrap gap-2">
+			<Button
+				variant="outline"
+				disabled={renew.isPending}
+				aria-busy={renew.isPending}
+				onClick={renewNow}
+			>
+				{renew.isPending && <Loader2Icon className="animate-spin" aria-hidden />}
+				{t("banks.renew")}
+			</Button>
+			<Button variant="outline" onClick={() => setConfirming(true)}>
+				<UnplugIcon aria-hidden />
+				{t("banks.disconnect.submit")}
+			</Button>
+			<ConfirmDialog
+				open={confirming}
+				onOpenChange={setConfirming}
+				title={t("banks.disconnect.title", { bank })}
+				description={t("banks.disconnect.description", { count: linkedCount })}
+				confirmLabel={t("banks.disconnect.submit")}
+				onConfirm={() => onDisconnect(() => setConfirming(false))}
+				destructive
+				pending={disconnect.isPending}
+			/>
+		</div>
+	);
+}
+
 function BankAccountRow({
 	row,
 	choice,
@@ -227,10 +295,16 @@ function BankAccountRow({
 function BankConnectionPage() {
 	const { t } = useTranslation();
 	const { connectionId } = Route.useParams();
+	const { sync: syncOnArrival } = Route.useSearch();
+	const navigate = useNavigate();
 	const connections = useBankConnections(true);
 	const accounts = useBankAccounts(connectionId);
 	const link = useLinkBankAccounts(connectionId);
 	const sync = useSyncBankConnection(connectionId);
+	// Here rather than in the actions, which go with the connection: the
+	// answer still has to reach this page to leave it.
+	const disconnect = useDisconnectBankConnection();
+	const queryClient = useQueryClient();
 	// Only the rows the user changed: the others follow their suggestion.
 	const [choices, setChoices] = useState<Record<string, Choice>>({});
 	const connection = connections.data?.find((item) => item.id === connectionId);
@@ -245,9 +319,55 @@ function BankConnectionPage() {
 			return chosen === null ? [] : [chosen];
 		});
 
+	const linkedCount = rows.filter((row) => row.account !== null).length;
+	// Once per arrival: strict mode's second effect must not sync again.
+	const arrived = useRef(false);
+	const { mutate: syncNow } = sync;
+
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: title, app: t("app.name") });
 	}, [t, title]);
+
+	// Back from the bank. A renewed consent syncs once, as a new link does, so
+	// the page shows it works; a new connection has nothing linked to read.
+	useEffect(() => {
+		if (syncOnArrival !== true || accounts.data === undefined || arrived.current) {
+			return;
+		}
+
+		arrived.current = true;
+		void navigate({
+			to: "/settings/banks/$connectionId",
+			params: { connectionId },
+			search: {},
+			replace: true,
+		});
+
+		if (accounts.data.some((row) => row.account !== null)) {
+			syncNow(undefined, {
+				onError: (error) => {
+					if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
+						showFailureToast(error);
+					}
+				},
+			});
+		}
+	}, [syncOnArrival, accounts.data, connectionId, navigate, syncNow]);
+
+	const disconnectNow = (bank: string, onFailure: () => void) => {
+		disconnect.mutate(connectionId, {
+			onSuccess: () => {
+				toast.success(t("banks.disconnect.done", { bank }));
+				void navigate({ to: "/settings/banks", replace: true }).then(() =>
+					queryClient.removeQueries({ queryKey: queryKeys.bankConnections.accounts(connectionId) }),
+				);
+			},
+			onError: (error) => {
+				onFailure();
+				showFailureToast(error);
+			},
+		});
+	};
 
 	const submit = () => {
 		link.mutate(links, {
@@ -277,6 +397,15 @@ function BankConnectionPage() {
 			</div>
 
 			{connection !== undefined && <SyncStatus connection={connection} sync={sync} />}
+
+			{connection !== undefined && (
+				<ConnectionActions
+					connection={connection}
+					linkedCount={linkedCount}
+					disconnect={disconnect}
+					onDisconnect={(onFailure) => disconnectNow(connection.institutionName, onFailure)}
+				/>
+			)}
 
 			{accounts.isPending && (
 				<div className="flex flex-col gap-2">

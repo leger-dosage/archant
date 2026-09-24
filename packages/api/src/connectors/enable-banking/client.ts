@@ -26,6 +26,7 @@ import {
 	authResponseSchema,
 	balancesResponseSchema,
 	errorResponseSchema,
+	revokeResponseSchema,
 	sessionResponseSchema,
 	transactionSchema,
 	transactionsPageSchema,
@@ -195,7 +196,7 @@ function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): Ban
 	};
 }
 
-type Call = { method: "GET" | "POST"; path: string; body?: unknown };
+type Call = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
 
 async function call<Schema extends z.ZodType>(
 	config: EnableBankingConfig,
@@ -219,6 +220,8 @@ async function call<Schema extends z.ZodType>(
 		throw failed(null);
 	}
 
+	// A body that is not JSON reads as `null`: an error keeps no code from it,
+	// and a schema that expects nothing, as a revocation's, still accepts it.
 	const payload: unknown = await response.json().catch(() => null);
 
 	if (!response.ok) {
@@ -349,6 +352,14 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				consentExpiresAt: session.access.valid_until,
 				accounts: session.accounts.map(toBankAccount),
 			};
+		},
+
+		async revokeAuthorization(sessionId) {
+			await call(
+				config,
+				{ method: "DELETE", path: `/sessions/${encodeURIComponent(sessionId)}` },
+				revokeResponseSchema,
+			);
 		},
 
 		fetchBalance,

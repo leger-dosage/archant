@@ -13,6 +13,8 @@ export type InstitutionData = InferResponseType<typeof bank.institutions.$get, 2
 
 export type BankConnectionData = InferResponseType<typeof bank.$get, 200>["data"][number];
 
+export type BankConnectionAlert = NonNullable<BankConnectionData["alert"]>;
+
 export type BankAccountData = InferResponseType<
 	(typeof bank)[":id"]["accounts"]["$get"],
 	200
@@ -97,6 +99,41 @@ export function useLinkBankAccounts(connectionId: string) {
 		onSuccess: async (list) => {
 			queryClient.setQueryData(queryKeys.bankConnections.accounts(connectionId), list);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+		},
+	});
+}
+
+/**
+ * Starts a new consent on an existing connection; the caller sends the
+ * browser to the returned URL. The connection keeps syncing on its old
+ * consent until the bank sends the browser back.
+ */
+export function useRenewBankConnection() {
+	return useMutation({
+		mutationFn: async (connectionId: string) =>
+			(await unwrap(bank[":id"].renew.$post({ param: { id: connectionId } }))).data,
+	});
+}
+
+/**
+ * Disconnects a bank. Its accounts stay, as manual ones: every account query
+ * goes stale, since they lose their link, and the connection leaves the list.
+ */
+export function useDisconnectBankConnection() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (connectionId: string) =>
+			(await unwrap(bank[":id"].$delete({ param: { id: connectionId } }))).data,
+		// The connection's own bank account query is left to the page, which
+		// drops it once it has moved on: dropped here, the page would ask for
+		// it again and show a connection that no longer exists.
+		onSuccess: async () => {
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			]);
 		},
 	});
 }

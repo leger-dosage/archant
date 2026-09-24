@@ -117,3 +117,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
   summary: A `PDNG` line with no `booking_date` and a future `value_date` would be dated in the future, so today's balance would leave it out.
   evidence: unverified. A real bank's pending payload settles it; the fixtures carry `transaction_date` only, and AD-18 fixes the date order.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-5-consent-renewal-and-disconnection.md`
+  summary: Disconnect revokes the session before the ledger transaction, so a failed unlink leaves an active connection on a revoked session until the user disconnects again.
+  evidence: low. The intent orders revoke, unlink, delete; Sure unlinks first. A retry completes because a second revocation's 404 is ignored.

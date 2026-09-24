@@ -30,6 +30,11 @@ export const bankAccounts = sqliteTable(
 		// lives here, not on the connection: an account that keeps failing
 		// would otherwise come back with a gap once the others moved on.
 		lastSyncedAt: integer("last_synced_at"),
+		// Whether the connection's current session shares it. A renewal whose
+		// consent leaves it out keeps the row and its link, as Sure does, but a
+		// sync must not ask the new session for a uid it does not know: that
+		// account would fail every run and hold the connection's last sync back.
+		listed: integer("listed", { mode: "boolean" }).notNull().default(true),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

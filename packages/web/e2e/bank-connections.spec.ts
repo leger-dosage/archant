@@ -6,11 +6,12 @@ import { createDb } from "@archant/data/client";
 
 import { FAILING_BANK, FAKE_ACCOUNTS, FAKE_BANKS, FAKE_LINES } from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
-import { DATABASE_FILE, TIME_ZONE } from "./settings.ts";
+import { DATABASE_FILE, TIME_ZONE, WEB_URL } from "./settings.ts";
 
-// Stories 10.1 to 10.3: connecting a bank from « Réglages > Banques »,
-// deciding what each of its accounts becomes, then syncing them, against the
-// fake Enable Banking that e2e/start-api.ts starts on loopback.
+// Stories 10.1 to 10.5: connecting a bank from « Réglages > Banques »,
+// deciding what each of its accounts becomes, syncing them, then renewing or
+// disconnecting it, against the fake Enable Banking that e2e/start-api.ts
+// starts on loopback.
 
 const PAGE = "/settings/banks";
 
@@ -372,4 +373,204 @@ test("an account the bank fails to list shows the error, and the other one still
 	await page.goto(`/accounts/${cardId}`);
 	await expect(page.getByRole("main")).toContainText("300,00 €");
 	await expect(transactionRow(page, FAKE_LINES.salary.label)).toHaveCount(0);
+});
+
+// Story 10.5. A banner shows on every page, so each test below puts its
+// connection back out of sight when it ends, pass or fail.
+
+const DAY_MS = 86_400_000;
+
+const bannerDate = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	timeZone: TIME_ZONE,
+});
+
+const banners = (page: Page) => page.getByRole("region", { name: "Avertissements bancaires" });
+
+/** Moves a connection's consent end or last sync, as time passing would. */
+async function age(
+	connectionId: string,
+	fields: { consentExpiresAt?: number; lastSyncedAt?: number | null },
+) {
+	const db = await createDb(`file:${DATABASE_FILE}`);
+
+	try {
+		await Promise.all(
+			Object.entries({
+				consent_expires_at: fields.consentExpiresAt,
+				last_synced_at: fields.lastSyncedAt,
+			}).flatMap(([column, value]) =>
+				value === undefined
+					? []
+					: [
+							db.$client.execute({
+								sql: `update bank_connections set ${column} = ? where id = ?`,
+								args: [value, connectionId],
+							}),
+						],
+			),
+		);
+	} finally {
+		db.$client.close();
+	}
+}
+
+/** A connection whose accounts are both linked and synced, with the ids of those accounts. */
+async function connectAndLink(page: Page) {
+	const connectionId = await connect(page);
+	await validate(page).click();
+	await expect(toast(page, "2 comptes reliés à la banque.")).toBeVisible();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+	return {
+		connectionId,
+		checkingId: await linkedAccountId(page, FAKE_ACCOUNTS.checking.name),
+		cardId: await linkedAccountId(page, FAKE_ACCOUNTS.card.name),
+	};
+}
+
+test("an expiring consent shows a banner on every page, and renewing it keeps the connection", async ({
+	page,
+	request,
+}) => {
+	const { connectionId, checkingId, cardId } = await connectAndLink(page);
+
+	try {
+		const expiresAt = Date.now() + 10 * DAY_MS;
+		// Synced minutes ago, within the hour: « à l'instant » after the
+		// renewal can then only come from the sync the return page starts,
+		// which the renewal alone lets through.
+		await age(connectionId, {
+			consentExpiresAt: expiresAt,
+			lastSyncedAt: Date.now() - 5 * 60 * 1000,
+		});
+
+		await page.goto("/transactions");
+		const banner = banners(page);
+		await expect(banner).toContainText(
+			`Le consentement de Banque Démo expire le ${bannerDate.format(new Date(expiresAt))}.`,
+		);
+
+		// Closed, it stays hidden for the browser session, a reload included,
+		// and comes back in a new one.
+		await banner.getByRole("button", { name: "Masquer l'avertissement sur Banque Démo" }).click();
+		await expect(banner).toBeHidden();
+		await page.reload();
+		await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+		await expect(banners(page)).toBeHidden();
+		const other = await page.context().newPage();
+		await other.goto("/accounts");
+		await expect(banners(other)).toContainText("Le consentement de Banque Démo expire le");
+
+		await banners(other).getByRole("button", { name: "Renouveler", exact: true }).click();
+
+		// Back from the bank on the same connection, which syncs once at once.
+		await expect(toast(other, "Banque Démo est connectée.")).toBeVisible();
+		await expect(other).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
+		await expect(other.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+		await expect(
+			bankAccountRows(other).getByRole("link", { name: FAKE_ACCOUNTS.checking.name }),
+		).toHaveAttribute("href", `/accounts/${checkingId}`);
+		await expect(
+			bankAccountRows(other).getByRole("link", { name: FAKE_ACCOUNTS.card.name }),
+		).toHaveAttribute("href", `/accounts/${cardId}`);
+		await expect(banners(other)).toBeHidden();
+
+		// Every line recognised: none twice.
+		await other.goto(`/accounts/${checkingId}`);
+		await expect(transactionRow(other, FAKE_LINES.salary.label)).toHaveCount(1);
+		await expect(transactionRow(other, FAKE_LINES.pending.label)).toHaveCount(1);
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+test("an expired consent says sync has stopped, and the button answers with a toast", async ({
+	page,
+	request,
+}) => {
+	const connectionId = await connect(page);
+
+	try {
+		await age(connectionId, { consentExpiresAt: Date.now() - DAY_MS });
+		await page.reload();
+
+		await expect(banners(page)).toContainText(
+			"Le consentement de Banque Démo a expiré. La synchronisation est arrêtée.",
+		);
+		await expect(
+			banners(page).getByRole("button", { name: "Reconnecter", exact: true }),
+		).toBeVisible();
+
+		await page.getByRole("button", { name: "Synchroniser" }).click();
+		await expect(toast(page, "Le consentement de cette banque a expiré.")).toBeVisible();
+
+		await visit(page);
+		const row = page
+			.getByRole("list", { name: "Banques connectées" })
+			.getByRole("listitem")
+			.filter({ has: page.locator(`[href="/settings/banks/${connectionId}"]`) });
+		await expect(row).toContainText("Consentement expiré");
+		await expect(row).not.toContainText("Consentement valable");
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+test("a sync stopped for more than 48 hours leads to its connection", async ({ page, request }) => {
+	const connectionId = await connect(page);
+
+	try {
+		const lastSyncedAt = Date.now() - 49 * 60 * 60 * 1000;
+		await age(connectionId, { lastSyncedAt });
+
+		await page.goto("/");
+		await expect(banners(page)).toContainText(
+			`La synchronisation de Banque Démo est arrêtée depuis le ${bannerDate.format(new Date(lastSyncedAt))}.`,
+		);
+		await banners(page).getByRole("link", { name: "Voir la connexion" }).click();
+
+		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
+		await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+test("disconnecting keeps each account in the sidebar, with the same balance and transactions", async ({
+	page,
+}) => {
+	const { connectionId, checkingId, cardId } = await connectAndLink(page);
+	await expect(sidebarAccount(page, checkingId)).toContainText("1 231,36 €");
+	// The bank's 300,00 € owed, plus the pending 3,20 € it leaves out.
+	await expect(sidebarAccount(page, cardId)).toContainText("303,20 €");
+
+	await page.getByRole("button", { name: "Déconnecter" }).click();
+	const dialog = page.getByRole("alertdialog", { name: "Déconnecter Banque Démo ?" });
+	await expect(dialog).toContainText(
+		"Les 2 comptes liés deviennent des comptes manuels. Leurs transactions et leur historique sont conservés.",
+	);
+	await expect(dialog.getByRole("button", { name: "Annuler" })).toBeFocused();
+	await dialog.getByRole("button", { name: "Déconnecter" }).click();
+
+	await expect(toast(page, "La connexion à Banque Démo est supprimée.")).toBeVisible();
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
+	await expect(page.locator(`[href="/settings/banks/${connectionId}"]`)).toHaveCount(0);
+	await expect(sidebarAccount(page, checkingId)).toContainText("1 231,36 €");
+	await expect(sidebarAccount(page, cardId)).toContainText("303,20 €");
+
+	await page.goto(`/accounts/${checkingId}`);
+	await expect(page.getByRole("main")).toContainText("1 231,36 €");
+	await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
+	await expect(transactionRow(page, FAKE_LINES.pending.label)).toContainText("En attente");
+
+	await page.goto(`/settings/banks/${connectionId}`);
+	await expect(page.getByRole("alert")).toContainText("Cette connexion n'existe pas.");
 });

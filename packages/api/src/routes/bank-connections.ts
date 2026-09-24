@@ -15,10 +15,12 @@ import {
 import {
 	bankSetup,
 	completeConnection,
+	disconnectConnection,
 	linkBankAccounts,
 	listBankAccounts,
 	listConnections,
 	listInstitutions,
+	renewConnection,
 	requireBankConnector,
 	startConnection,
 } from "../services/bank-connections.ts";
@@ -83,6 +85,25 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 					}
 				}),
 				async (c) => c.json({ data: await syncConnection(deps, c.req.valid("param").id) }, 200),
+			)
+			.post(
+				"/:id/renew",
+				zValidator("param", connectionParamSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) => c.json({ data: await renewConnection(deps, c.req.valid("param").id) }, 200),
+			)
+			.delete(
+				"/:id",
+				zValidator("param", connectionParamSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) =>
+					c.json({ data: await disconnectConnection(deps, c.req.valid("param").id) }, 200),
 			)
 			.post(
 				"/:id/accounts",

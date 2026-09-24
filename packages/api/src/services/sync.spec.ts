@@ -28,7 +28,7 @@ import {
 	transactionsPage,
 } from "../testing/enable-banking.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
-import { bankDepsFromEnv } from "./bank-connections.ts";
+import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
 import { encrypt } from "./crypto.ts";
 import { balanceOn, createAccount, linkBankAccount } from "./ledger.ts";
 import * as recurringService from "./recurring.ts";
@@ -451,16 +451,105 @@ describe("syncConnection", () => {
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: null });
 	});
 
-	it("reads nothing once the consent has ended, and answers the state unchanged", async () => {
+	it("answers CONSENT_EXPIRED once the consent has ended, reading and writing nothing", async () => {
 		const requests = mockProvider();
-		const connectionId = await newConnection({ consentExpiresAt: NOW - 1 });
-		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const connectionId = await newConnection({
+			consentExpiresAt: NOW - 1,
+			lastSyncedAt: NOW - 5 * DAY,
+		});
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const before = await connectionRow(connectionId);
 
-		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
-			lastSyncedAt: null,
-			lastError: null,
+		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
+			code: "CONSENT_EXPIRED",
+			status: 409,
 		});
 		expect(requests).toEqual([]);
+		await expect(connectionRow(connectionId)).resolves.toEqual(before);
+		await expect(transactionCount(accountId)).resolves.toBe(0);
+	});
+
+	it("syncs within the hour once after a renewal, then keeps the hour again", async () => {
+		mockProvider();
+		const connectionId = await newConnection({
+			lastSyncedAt: NOW - 10 * MINUTE,
+			authorizedAt: NOW - 2 * MINUTE,
+		});
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+
+		vi.setSystemTime(NOW + MINUTE);
+
+		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
+			code: "SYNC_TOO_RECENT",
+		});
+	});
+
+	it("spends the renewal's exception on a failed sync, then keeps the hour again", async () => {
+		failingOn(FIXTURE_CHECKING_UID);
+		const connectionId = await newConnection({
+			lastSyncedAt: NOW - 10 * MINUTE,
+			authorizedAt: NOW - 2 * MINUTE,
+		});
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastSyncedAt: NOW - 10 * MINUTE,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({ authorizedAt: null });
+
+		vi.setSystemTime(NOW + MINUTE);
+
+		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
+			code: "SYNC_TOO_RECENT",
+		});
+	});
+
+	it("after a renewal that drops the card, syncs the rest and never asks for the card's uid", async () => {
+		const connectionId = await newConnection({
+			lastSyncedAt: NOW - 2 * 60 * MINUTE,
+			authorizationState: "renewal-state",
+			authorizationStartedAt: NOW - MINUTE,
+		});
+		const checking = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const card = await linkedAccount(connectionId, FIXTURE_CARD_UID);
+		// The new consent shares the current account alone, under the same uid.
+		mockProvider({
+			sessions: () =>
+				HttpResponse.json({
+					session_id: "renewed-session",
+					access: { valid_until: "2026-12-20T10:00:00Z" },
+					accounts: [
+						{
+							uid: FIXTURE_CHECKING_UID,
+							identification_hash: `hash-${checking.bankAccountId}`,
+							currency: "EUR",
+							product: "Compte courant",
+						},
+					],
+				}),
+		});
+		await completeConnection(deps(), { code: "new-code", state: "renewal-state" });
+		const requests = mockProvider();
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+
+		expect(requests.filter(({ path }) => path.includes(FIXTURE_CARD_UID))).toEqual([]);
+		await expect(transactionCount(checking.accountId)).resolves.toBe(6);
+		await expect(bankAccountSyncedAt(card.bankAccountId)).resolves.toBeNull();
+		const [row] = await temp.db
+			.select({ bankAccountId: accounts.bankAccountId })
+			.from(accounts)
+			.where(eq(accounts.id, card.accountId));
+		expect(row).toEqual({ bankAccountId: card.bankAccountId });
 	});
 
 	it("answers NOT_FOUND for a connection that is not active, or unknown", async () => {
@@ -620,6 +709,39 @@ describe("syncConnection", () => {
 	});
 });
 
+describe("a bank connected again", () => {
+	it("recognises every line synced before the disconnection, duplicating none", async () => {
+		mockProvider();
+		const first = await newConnection();
+		const { accountId } = await linkedAccount(first, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), first);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await disconnectConnection(deps(), first);
+		const second = await newConnection();
+		const bankAccountId = randomUUID();
+		await temp.db.insert(bankAccounts).values({
+			id: bankAccountId,
+			bankConnectionId: second,
+			identificationHash: `hash-${bankAccountId}`,
+			providerUid: FIXTURE_CHECKING_UID,
+			name: "Compte courant",
+			currency: "EUR",
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		await linkBankAccount(
+			deps(),
+			accountId,
+			{ bankAccountId, balance: { amount: toMinorUnits(100000), date: null } },
+			{ origin: "sync" },
+		);
+
+		await expect(syncConnection(deps(), second)).resolves.toMatchObject({ lastError: null });
+
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+	});
+});
+
 describe("syncAll", () => {
 	it("syncs every active connection, skipping what the button would refuse", async () => {
 		failingOn(FIXTURE_CARD_UID);
@@ -637,8 +759,13 @@ describe("syncAll", () => {
 			{ id: failed, result: "failed" },
 			{ id: leased, result: "skipped" },
 			{ id: recent, result: "skipped" },
-			{ id: expired, result: "skipped" },
+			{ id: expired, result: "consent_expired" },
 		]);
+		await expect(connectionRow(expired)).resolves.toMatchObject({
+			lastSyncedAt: null,
+			lastError: null,
+			syncStartedAt: null,
+		});
 		await expect(connectionRow(failed)).resolves.toMatchObject({
 			lastSyncedAt: null,
 			lastError: "BANK_PROVIDER_ERROR",

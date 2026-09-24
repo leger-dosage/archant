@@ -536,6 +536,170 @@ export async function linkBankAccount(
 }
 
 /**
+ * Replaces the account's reconciliation on `date` with `balance`, or writes
+ * one. The one already there keeps its id but loses its import: the value is
+ * no longer the file's, and reverting the file must not take it away.
+ */
+async function writeReconciliation(
+	tx: Transaction,
+	account: Pick<Account, "id" | "currency">,
+	date: IsoDate,
+	balance: MinorUnits,
+	now: number,
+): Promise<void> {
+	const existing = await snapshotOn(tx, account.id, date);
+
+	if (existing === undefined) {
+		await tx.insert(entries).values({
+			id: crypto.randomUUID(),
+			accountId: account.id,
+			kind: "valuation",
+			valuationKind: "reconciliation",
+			date,
+			amount: balance,
+			currency: account.currency,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		return;
+	}
+
+	await tx
+		.update(entries)
+		.set({ amount: balance, importId: null, updatedAt: now })
+		.where(eq(entries.id, existing.id));
+}
+
+/**
+ * The days an unlinked account must fix to keep its stored balances, each
+ * with the balance it keeps: the bank's day, and every day where going
+ * forward would part from the history the backward computation stored.
+ *
+ * Going forward from the opening date's stored balance adds the movements
+ * the backward pass subtracted, so the two agree up to the first
+ * reconciliation. Past it they part: backward, a reconciliation fixes its
+ * day and the days before it, the day after coming from the bank's side;
+ * forward, the day after starts from the reconciliation. The day after one
+ * whose balance does not follow from it is fixed too.
+ */
+function unlinkReconciliations(input: {
+	rows: readonly { date: IsoDate; balance: MinorUnits }[];
+	openingDate: IsoDate;
+	anchorDate: IsoDate;
+	reconciled: ReadonlySet<IsoDate>;
+	sums: ReadonlyMap<IsoDate, MinorUnits>;
+	sign: 1 | -1;
+}): { date: IsoDate; balance: MinorUnits }[] {
+	const stored = new Map(input.rows.map((row) => [row.date, row.balance]));
+	const fixes = (date: IsoDate) => date === input.openingDate || input.reconciled.has(date);
+
+	return input.rows
+		.filter((row) => {
+			// The opening day belongs to the opening anchor, even when the bank's
+			// balance describes a day before it.
+			if (row.date === input.anchorDate) {
+				return row.date > input.openingDate;
+			}
+
+			const previous = addDays(row.date, -1);
+			const before = stored.get(previous);
+
+			return (
+				before !== undefined &&
+				fixes(previous) &&
+				!fixes(row.date) &&
+				before + input.sign * (input.sums.get(row.date) ?? 0) !== row.balance
+			);
+		})
+		.map((row) => ({ date: row.date, balance: row.balance }));
+}
+
+/**
+ * Sure's `unlink`: the account stops being fed by a bank and becomes a
+ * manual one, computed forward, with every stored balance as it was (AD-8).
+ * The bank's last figure becomes a reconciliation on its day, pending lines
+ * included, since that is the balance the page showed; the opening anchor
+ * takes the stored balance of the opening date; the `current_anchor` goes.
+ * An account without a bank balance, already computed forward, only loses
+ * its link.
+ */
+export async function unlinkBankAccount(
+	deps: ServiceDeps,
+	accountId: string,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const account = await accountWithOpeningDate(tx, accountId);
+			const anchor = await backwardAnchor(tx, accountId);
+			const now = Date.now();
+
+			await tx
+				.update(accounts)
+				.set({ bankAccountId: null, updatedAt: now })
+				.where(eq(accounts.id, accountId));
+
+			if (anchor === undefined) {
+				return;
+			}
+
+			const last = maxDate(anchor.date, account.openingDate);
+			const rows = await tx
+				.select({ date: balances.date, balance: balances.balance })
+				.from(balances)
+				.where(
+					and(eq(balances.accountId, accountId), between(balances.date, account.openingDate, last)),
+				);
+			const movements = await tx
+				.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
+				.from(entries)
+				.where(
+					and(
+						eq(entries.accountId, accountId),
+						eq(entries.kind, "transaction"),
+						between(entries.date, account.openingDate, last),
+					),
+				)
+				.groupBy(entries.date);
+			const reconciled = await tx
+				.select({ date: entries.date })
+				.from(entries)
+				.where(
+					and(
+						eq(entries.accountId, accountId),
+						eq(entries.valuationKind, "reconciliation"),
+						between(entries.date, account.openingDate, last),
+					),
+				);
+
+			await oneByOne(
+				unlinkReconciliations({
+					rows: rows.map((row) => ({ date: row.date, balance: toMinorUnits(row.balance) })),
+					openingDate: account.openingDate,
+					anchorDate: last,
+					reconciled: new Set(reconciled.map((row) => row.date)),
+					sums: new Map(movements.map((row) => [row.date, toMinorUnits(row.amount)])),
+					sign: classificationOf(account.type) === "asset" ? 1 : -1,
+				}),
+				(row) => writeReconciliation(tx, account, row.date, row.balance, now),
+			);
+			await oneByOne(
+				rows.filter((row) => row.date === account.openingDate),
+				(row) =>
+					tx
+						.update(entries)
+						.set({ amount: row.balance, updatedAt: now })
+						.where(eq(entries.id, account.openingId)),
+			);
+			await writeCurrentAnchor(tx, account, null, now);
+			await recomputeBalances(tx, account, account.openingDate, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
  * Where the statement comes from. A manual line carries no key; an import's
  * lines are keyed under its source, a sync's under its connection's
  * connector (AD-7).

@@ -10,7 +10,8 @@ import { TIME_ZONE } from "./settings.ts";
 /**
  * A stand-in for Enable Banking on loopback, so the suite never reaches the
  * network (AD-16). It serves what the API calls, `/aspsps`, `/auth`,
- * `/sessions` and `/accounts/{uid}/balances`, plus the bank's consent page, which approves at once and
+ * `/sessions`, `DELETE /sessions/{id}` and `/accounts/{uid}/balances`, plus
+ * the bank's consent page, which approves at once and
  * sends the browser back to `redirect_url` with a `code` and the `state`,
  * and `/accounts/{uid}/transactions`, two pages of lines dated a few days
  * back.
@@ -190,6 +191,8 @@ export async function startFakeEnableBanking(options: {
 	const balances = new Map<string, string>();
 	// The uids whose transactions answer 500.
 	const failing = new Set<string>();
+	// Every session opened and not revoked yet.
+	const sessions = new Set<string>();
 	let origin = "";
 
 	const server = createServer((request, response) => {
@@ -287,8 +290,11 @@ export async function startFakeEnableBanking(options: {
 					failing.add(cardUid);
 				}
 
+				const sessionId = randomUUID();
+				sessions.add(sessionId);
+
 				json(response, 200, {
-					session_id: randomUUID(),
+					session_id: sessionId,
 					accounts: [
 						{
 							uid: checkingUid,
@@ -309,6 +315,19 @@ export async function startFakeEnableBanking(options: {
 					],
 					access: { valid_until: attempt.validUntil },
 				});
+				return;
+			}
+
+			const sessionPath = /^\/sessions\/([^/]+)$/u.exec(url.pathname);
+
+			if (request.method === "DELETE" && sessionPath !== null) {
+				// A second revocation finds nothing, as at the real service.
+				if (!sessions.delete(decodeURIComponent(sessionPath[1] ?? ""))) {
+					json(response, 404, { code: 404, message: "Unknown session", error: "NOT_FOUND" });
+					return;
+				}
+
+				json(response, 200, { message: "OK" });
 				return;
 			}
 

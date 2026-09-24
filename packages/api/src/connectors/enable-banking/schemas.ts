@@ -21,6 +21,10 @@ export const aspspSchema = z.object({
 
 export const aspspsResponseSchema = z.object({ aspsps: z.array(aspspSchema) });
 
+// A revoked session's answer says nothing the service uses, and nothing of it
+// travels further: any body, or none, is a success.
+export const revokeResponseSchema = z.unknown();
+
 // The browser is sent there: anything but http(s) would be a script URL.
 export const authResponseSchema = z.object({ url: httpUrl });
 
