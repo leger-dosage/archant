@@ -2971,7 +2971,7 @@ export type EntryOrigin =
  * A bank's key wins over a file's: an entry a sync paired with is fed by the
  * bank from then on.
  */
-export async function importOrigins(
+export async function entryOrigins(
 	deps: ServiceDeps,
 	entryIds: readonly string[],
 ): Promise<Map<string, EntryOrigin>> {

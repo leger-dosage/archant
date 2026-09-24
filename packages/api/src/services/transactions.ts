@@ -91,7 +91,7 @@ async function withSources<Row extends TransactionRecord>(
 	deps: ServiceDeps,
 	records: readonly Row[],
 ): Promise<(Row & { source: TransactionSource })[]> {
-	const origins = await ledger.importOrigins(
+	const origins = await ledger.entryOrigins(
 		deps,
 		records.map((record) => record.id),
 	);

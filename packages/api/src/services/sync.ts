@@ -273,7 +273,6 @@ const connectionColumns = {
 export async function syncConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
-	trigger: SyncTrigger = "button",
 ): Promise<SyncStatus> {
 	requireBankConnector(deps);
 
@@ -287,7 +286,7 @@ export async function syncConnection(
 		throw new AppError("NOT_FOUND", "No bank connection has this id.");
 	}
 
-	await syncOne(deps, connection, trigger);
+	await syncOne(deps, connection, "button");
 
 	const status = await deps.db
 		.select({ lastSyncedAt: bankConnections.lastSyncedAt, lastError: bankConnections.lastError })

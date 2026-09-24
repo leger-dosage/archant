@@ -42,7 +42,7 @@ import {
 	deleteTransaction,
 	findSnapshot,
 	findTransaction,
-	importOrigins,
+	entryOrigins,
 	ingest,
 	linkBankAccount,
 	listSnapshots,
@@ -1288,20 +1288,20 @@ describe("ingest the statement balance", () => {
 	});
 });
 
-describe("importOrigins", () => {
+describe("entryOrigins", () => {
 	it("names the import behind each imported entry and leaves manual ones out", async () => {
 		const account = await openChecking();
 		const manual = await add(account.id);
 		const { result } = await importStatement(account.id, statementOf(salary));
 		const [imported = ""] = result.created;
 
-		const origins = await importOrigins(deps(), [manual, imported]);
+		const origins = await entryOrigins(deps(), [manual, imported]);
 
 		expect([...origins.keys()]).toEqual([imported]);
 		const origin = origins.get(imported);
 		expect(origin).toMatchObject({ kind: "import", source: "ofx" });
 		expect(origin?.kind === "import" && typeof origin.confirmedAt).toBe("number");
-		await expect(importOrigins(deps(), [])).resolves.toEqual(new Map());
+		await expect(entryOrigins(deps(), [])).resolves.toEqual(new Map());
 	});
 });
 
@@ -1454,7 +1454,7 @@ describe("revertImport", () => {
 			amount: -4290,
 		});
 		await expect(keysOf(manual)).resolves.toEqual([]);
-		await expect(importOrigins(deps(), [manual])).resolves.toEqual(new Map());
+		await expect(entryOrigins(deps(), [manual])).resolves.toEqual(new Map());
 		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
@@ -5872,7 +5872,7 @@ describe("ingest from a bank connection", () => {
 		const days = await history(account.id);
 		expect(days.get("2026-09-21")).toBe(95710);
 		expect(days.get("2026-09-11")).toBe(100000);
-		await expect(importOrigins(deps(), [id])).resolves.toEqual(
+		await expect(entryOrigins(deps(), [id])).resolves.toEqual(
 			new Map([[id, { kind: "bank", connector: "enable-banking" }]]),
 		);
 	});
@@ -5962,7 +5962,7 @@ describe("ingest from a bank connection", () => {
 			"enable-banking",
 		]);
 		// The sheet names the bank from then on.
-		await expect(importOrigins(deps(), [csvEntry])).resolves.toEqual(
+		await expect(entryOrigins(deps(), [csvEntry])).resolves.toEqual(
 			new Map([[csvEntry, { kind: "bank", connector: "enable-banking" }]]),
 		);
 	});
