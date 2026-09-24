@@ -237,11 +237,12 @@ export function useDeleteTransaction(accountId: string) {
 }
 
 /**
- * Refreshes what a bulk action can change: every transaction list, the
- * category, merchant and tag counts, and, after a delete, every account's
- * balance. No optimistic update: the rows a filter selects are not all on screen.
+ * Refreshes what a bulk action or a rule application can change: every
+ * transaction list, the category, merchant and tag counts, and, with
+ * `balances`, every account. No optimistic update: the rows a filter or a
+ * rule selects are not all on screen.
  */
-function useInvalidateBulk() {
+export function useInvalidateBulk() {
 	const queryClient = useQueryClient();
 
 	return (options: { balances: boolean }) =>

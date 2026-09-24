@@ -770,6 +770,8 @@ type RuleDialogProps = {
 	rule?: RuleData | undefined;
 	options: Options;
 	reportingCurrency: CurrencyCode;
+	/** Called with the rule once saved, after the dialog closes. */
+	onSaved?: ((rule: RuleData) => void) | undefined;
 };
 
 /**
@@ -783,6 +785,7 @@ export function RuleDialog({
 	rule,
 	options,
 	reportingCurrency,
+	onSaved,
 }: RuleDialogProps) {
 	const { t } = useTranslation();
 	const createRule = useCreateRule();
@@ -820,15 +823,18 @@ export function RuleDialog({
 
 	const submit = form.handleSubmit(async (values) => {
 		try {
+			let saved: RuleData;
+
 			if (rule === undefined) {
-				await createRule.mutateAsync(values);
+				saved = await createRule.mutateAsync(values);
 				toast.success(t("rules.form.created"));
 			} else {
-				await updateRule.mutateAsync({ id: rule.id, input: values });
+				saved = await updateRule.mutateAsync({ id: rule.id, input: values });
 				toast.success(t("rules.form.saved"));
 			}
 
 			onOpenChange(false);
+			onSaved?.(saved);
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 			const unplaced = applyFieldErrors(apiError.fields, fieldNames(values), form.setError);

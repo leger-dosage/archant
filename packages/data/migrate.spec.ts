@@ -1089,6 +1089,28 @@ describe("rules", () => {
 		await expect(insertCondition(database, "c1", "transaction_name", "like")).rejects.toThrow();
 		await expect(insertAction(database, "a1", "set_transaction_category")).rejects.toThrow();
 	});
+
+	it("keeps a run and its snapshot once its rule goes, and refuses an unknown rule", async () => {
+		const database = await migrated();
+		await insertRule(database, "r1");
+		const insertRun = (id: string, ruleId: string) =>
+			database.run(
+				sql`insert into rule_runs (id, rule_id, rule, matched_count, changed_count, executed_at, position) values (${id}, ${ruleId}, '{"name":"Courses"}', 5, 3, 0, 0)`,
+			);
+
+		await expect(insertRun("u1", "r1")).resolves.toBeDefined();
+		await expect(insertRun("u2", "nope")).rejects.toThrow();
+
+		await database.run(sql`delete from rules where id = 'r1'`);
+
+		await expect(
+			database.all(
+				sql`select id, rule_id as ruleId, rule, matched_count as matched, changed_count as changed from rule_runs`,
+			),
+		).resolves.toEqual([
+			{ id: "u1", ruleId: null, rule: '{"name":"Courses"}', matched: 5, changed: 3 },
+		]);
+	});
 });
 
 describe("migrateFromEnv", () => {

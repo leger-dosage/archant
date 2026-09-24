@@ -259,8 +259,11 @@ const withActions = (actions: Rule["actions"], conditions: Condition[] = [], id 
 });
 
 const plan = (rules: Rule[], candidates: RuleCandidate[] = [candidate()], maxTags = 20) => [
-	...planActions(rules, candidates, "EUR", maxTags),
+	...planActions(rules, candidates, "EUR", maxTags).plan,
 ];
+
+const tallies = (rules: Rule[], candidates: RuleCandidate[]) =>
+	planActions(rules, candidates, "EUR", 20).perRule;
 
 describe("planActions", () => {
 	it("gives every candidate to a rule without conditions", () => {
@@ -419,5 +422,63 @@ describe("planActions", () => {
 
 		expect(plan([expectLivret], [candidate({ transfer: { kind: "internal_move" } })])).toEqual([]);
 		expect(plan([expectLivret], [candidate({ accountId: "livret" })])).toEqual([]);
+	});
+});
+
+describe("planActions' per-rule tallies", () => {
+	it("counts matched rows and, among them, those a lock or a value already there leaves alone", () => {
+		const courses = withActions(
+			[{ type: "set_transaction_category", categoryId: "courses" }],
+			[label("like", "carrefour")],
+		);
+		const rows = [
+			candidate(),
+			candidate({ id: "e2" }),
+			candidate({ id: "e3" }),
+			candidate({ id: "e4", categoryId: "loisirs", lockedFields: ["category"] }),
+			candidate({ id: "e5", categoryId: "courses" }),
+			candidate({ id: "e6", label: "Loyer" }),
+		];
+
+		expect(tallies([courses], rows)).toEqual([{ ruleId: "r1", matched: 5, changed: 3 }]);
+		expect(plan([courses], rows)).toHaveLength(3);
+	});
+
+	it("tallies a rule against what earlier rules planned, one tally per rule in order", () => {
+		const rules = [
+			withActions(
+				[{ type: "set_transaction_merchant", merchantId: "amazon" }],
+				[label("like", "amzn")],
+			),
+			withActions(
+				[{ type: "set_transaction_tags", tagId: "achats" }],
+				[reference("transaction_merchant", "amazon")],
+				"r2",
+			),
+			withActions([{ type: "exclude_transaction" }], [label("like", "nothing")], "r3"),
+		];
+		const rows = [
+			candidate({ label: "AMZN Mktp" }),
+			candidate({ id: "e2", label: "Amazon", merchantId: "amazon", tagIds: ["achats"] }),
+		];
+
+		expect(tallies(rules, rows)).toEqual([
+			{ ruleId: "r1", matched: 1, changed: 1 },
+			{ ruleId: "r2", matched: 2, changed: 1 },
+			{ ruleId: "r3", matched: 0, changed: 0 },
+		]);
+	});
+
+	it("counts a row a later rule overwrites once in the plan, and once for each rule", () => {
+		const rules = [
+			withActions([{ type: "set_transaction_category", categoryId: "courses" }]),
+			withActions([{ type: "set_transaction_category", categoryId: "loisirs" }], [], "r2"),
+		];
+
+		expect(tallies(rules, [candidate()])).toEqual([
+			{ ruleId: "r1", matched: 1, changed: 1 },
+			{ ruleId: "r2", matched: 1, changed: 1 },
+		]);
+		expect(plan(rules, [candidate()])).toEqual([["e1", { categoryId: "loisirs" }]]);
 	});
 });

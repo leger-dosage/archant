@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, sgml, test, typed, uniqueName } from "./fixtures.ts";
 
-// Stories 8.1 and 8.2: rules at `/regles`. One database serves the whole
+// Stories 8.1, 8.2 and 8.3: rules at `/regles`. One database serves the whole
 // run, and a rule reaches every transaction added after it, so each test
 // deletes its rules before the next one starts.
 
@@ -22,6 +22,15 @@ const dialog = (page: Page) =>
 	page.getByRole("dialog", { name: /^(Ajouter une|Modifier la) règle$/u });
 
 const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
+
+// The confirmation after a save or from a menu, the only alert dialog then open.
+const applyDialog = (page: Page) => page.getByRole("alertdialog");
+
+/** Answers « Plus tard » to the application offered once a rule is saved. */
+async function later(page: Page) {
+	await applyDialog(page).getByRole("button", { name: "Plus tard" }).click();
+	await expect(applyDialog(page)).toBeHidden();
+}
 
 const labelLike = (value: string) => ({
 	conditionType: "transaction_name",
@@ -78,6 +87,7 @@ test("a rule saved from the form categorises the next matching transaction", asy
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
+	await later(page);
 	const row = ruleRow(page, "Si Libellé contient carrefour, alors Catégorie Courses");
 	await expect(row).toBeVisible();
 	await expect(row.getByRole("switch")).toBeChecked();
@@ -159,6 +169,7 @@ test("« Modifier » reopens the form filled in and saves, « Supprimer » remov
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
+	await later(page);
 	await expect(
 		ruleRow(page, `Si Libellé contient ${after}, alors Catégorie ${category.name}`),
 	).toBeVisible();
@@ -196,6 +207,7 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
+	await later(page);
 	await expect(
 		page.locator("[data-sonner-toast]").filter({ hasText: "Règle enregistrée." }),
 	).toBeVisible();
@@ -214,6 +226,7 @@ test("« À partir du » is saved with the rule and shown again by « Modifier �
 	await page.getByRole("option", { name: "Courses", exact: true }).click();
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 	await expect(dialog(page)).toBeHidden();
+	await later(page);
 
 	await ruleRow(page, value)
 		.getByRole("button", { name: /^Actions pour / })
@@ -329,6 +342,11 @@ test("a merchant condition saved through its picker reads « Marchand est … »
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
+	// A new merchant holds no transaction yet.
+	await expect(applyDialog(page).getByRole("heading")).toHaveText(
+		"Aucune opération ne sera modifiée",
+	);
+	await later(page);
 	await expect(
 		ruleRow(page, `Si Marchand est ${merchant.name}, alors Catégorie ${category.name}`),
 	).toBeVisible();
@@ -362,6 +380,7 @@ test("a rule with four actions sets the merchant, a tag and the label of an impo
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
+	await later(page);
 	await expect(
 		ruleRow(
 			page,
@@ -428,4 +447,209 @@ test("the form points at an empty « Renommer » and saves nothing", async ({ pa
 	await expect(dialog(page).getByText("Ce champ est obligatoire.")).toBeVisible();
 	await dialog(page).getByRole("button", { name: "Annuler" }).click();
 	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
+});
+
+// Story 8.3: applying rules to existing transactions.
+
+const runsTable = (page: Page) => page.getByRole("table", { name: "Exécutions récentes" });
+
+const runRow = (page: Page, text: string) =>
+	runsTable(page).getByRole("row").filter({ hasText: text });
+
+const toast = (page: Page, text: string) =>
+	page.locator("[data-sonner-toast]").filter({ hasText: text });
+
+/** Opens the form, fills « Libellé contient `value` » → Courses and saves it. */
+async function saveCoursesRule(page: Page, value: string) {
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(value);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: "Courses", exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+}
+
+test("a saved rule offers to apply itself, and « Appliquer » leaves a row set by hand alone", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
+	const marker = uniqueName("CARREFOUR").replace(" ", "-");
+	const labels = [1, 2, 3].map((index) => `CB ${marker} ${index}`);
+	const ids = await labels.reduce<Promise<string[]>>(async (previous, label) => {
+		const done = await previous;
+
+		return [
+			...done,
+			await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-12,30" }),
+		];
+	}, Promise.resolve([]));
+	await api.categorise(ids.slice(2), leisure.id);
+	await visit(page);
+
+	await saveCoursesRule(page, marker);
+
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("2 opérations seront modifiées");
+	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	await expect(applyDialog(page)).toBeHidden();
+	await expect(toast(page, "2 opérations modifiées.")).toBeVisible();
+
+	await expectCategory(page, `CB ${marker} 1`, "Courses");
+	await expectCategory(page, `CB ${marker} 2`, "Courses");
+	await expectCategory(page, `CB ${marker} 3`, leisure.name);
+});
+
+test("« Plus tard » changes nothing and records no run; the next matching row is categorised", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const marker = uniqueName("MONOP").replace(" ", "-");
+	await api.addTransaction(account.id, {
+		date: daysAgo(3),
+		label: `CB ${marker} avant`,
+		amount: "-5,00",
+	});
+	await visit(page);
+
+	await saveCoursesRule(page, marker);
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("1 opération sera modifiée");
+	await later(page);
+
+	await expect(page.getByRole("heading", { level: 2, name: "Exécutions récentes" })).toBeVisible();
+	await expect(runRow(page, marker)).toHaveCount(0);
+	await expectCategory(page, `CB ${marker} avant`, "Sans catégorie");
+
+	await api.addTransaction(account.id, {
+		date: daysAgo(1),
+		label: `CB ${marker} après`,
+		amount: "-5,00",
+	});
+	await expectCategory(page, `CB ${marker} après`, "Courses");
+});
+
+test("« Appliquer aux opérations existantes » records a run with the rule's label and counts", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const category = await api.createCategory();
+	const other = await api.createCategory();
+	const marker = uniqueName("PICARD").replace(" ", "-");
+	await api.addTransaction(account.id, {
+		date: daysAgo(4),
+		label: `${marker} un`,
+		amount: "-9,00",
+	});
+	const byHand = await api.addTransaction(account.id, {
+		date: daysAgo(3),
+		label: `${marker} deux`,
+		amount: "-9,00",
+	});
+	await api.categorise([byHand], other.id);
+	await api.createRule({ conditions: [labelLike(marker)], actions: [categoryAction(category.id)] });
+	const summary = `Si Libellé contient ${marker}, alors Catégorie ${category.name}`;
+	await visit(page);
+
+	await ruleRow(page, summary)
+		.getByRole("button", { name: /^Actions pour / })
+		.click();
+	await page.getByRole("menuitem", { name: "Appliquer aux opérations existantes" }).click();
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("1 opération sera modifiée");
+	// Asked from the menu, declining cancels: « Plus tard » belongs to the save only.
+	await expect(applyDialog(page).getByRole("button", { name: "Annuler" })).toBeFocused();
+	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	await expect(applyDialog(page)).toBeHidden();
+
+	const cells = runRow(page, summary).getByRole("cell");
+	await expect(cells).toHaveText([/\S/u, summary, "2", "1"]);
+});
+
+test("« Appliquer toutes les règles » counts distinct rows for the enabled rules and records one run each", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const category = await api.createCategory();
+	const merchant = await api.createMerchant(uniqueName("Amazon"));
+	const tag = await api.createTag();
+	const marker = uniqueName("AMZN").replace(" ", "-");
+	await api.addTransaction(account.id, {
+		date: daysAgo(4),
+		label: `${marker} livre`,
+		amount: "-20,00",
+	});
+	await api.addTransaction(account.id, {
+		date: daysAgo(3),
+		label: `${marker} disque`,
+		amount: "-15,00",
+	});
+	const disabledName = uniqueName("Désactivée");
+	const disabled = await api.createRule({
+		name: disabledName,
+		conditions: [labelLike(marker)],
+		actions: [{ actionType: "set_transaction_tags", value: tag.id }],
+	});
+	const switched = await page.request.patch(`/api/rules/${disabled}`, { data: { enabled: false } });
+	expect(switched.ok()).toBe(true);
+	await visit(page);
+	await expect(page.getByRole("button", { name: "Appliquer toutes les règles" })).toBeDisabled();
+
+	const first = uniqueName("Catégorie");
+	const second = uniqueName("Marchand");
+	await api.createRule({
+		name: first,
+		conditions: [labelLike(marker)],
+		actions: [categoryAction(category.id)],
+	});
+	await api.createRule({
+		name: second,
+		conditions: [labelLike(`${marker} livre`)],
+		actions: [{ actionType: "set_transaction_merchant", value: merchant.id }],
+	});
+	await page.reload();
+
+	await page.getByRole("button", { name: "Appliquer toutes les règles" }).click();
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("2 opérations seront modifiées");
+	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	await expect(applyDialog(page)).toBeHidden();
+
+	await expect(runRow(page, first).getByRole("cell")).toHaveText([/\S/u, first, "2", "2"]);
+	await expect(runRow(page, second).getByRole("cell")).toHaveText([/\S/u, second, "1", "1"]);
+	await expect(runRow(page, disabledName)).toHaveCount(0);
+});
+
+test("the runs table pages to older runs", async ({ page, api }) => {
+	const older = uniqueName("Ancienne");
+	const newer = uniqueName("Récente");
+	const category = await api.createCategory();
+	const olderRule = await api.createRule({
+		name: older,
+		conditions: [labelLike(older)],
+		actions: [categoryAction(category.id)],
+	});
+	await api.applyRule(olderRule);
+	const newerRule = await api.createRule({
+		name: newer,
+		conditions: [labelLike(newer)],
+		actions: [categoryAction(category.id)],
+	});
+	// One page holds 50 runs: 50 newer ones push the older run to the next.
+	await Array.from({ length: 50 }).reduce<Promise<void>>(async (previous) => {
+		await previous;
+		await api.applyRule(newerRule);
+	}, Promise.resolve());
+	await visit(page);
+
+	await expect(runRow(page, newer)).toHaveCount(50);
+	await expect(runRow(page, older)).toHaveCount(0);
+
+	await page
+		.getByRole("navigation", { name: "Pages des exécutions" })
+		.getByRole("link", { name: "Suivant" })
+		.click();
+
+	await expect(page).toHaveURL(/runsPage=2/u);
+	await expect(runRow(page, older)).toBeVisible();
 });

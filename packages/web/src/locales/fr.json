@@ -772,7 +772,7 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, exclusion ou virement attendu. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
+		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, exclusion ou virement attendu. Elle ne touche les opérations existantes que si vous l'appliquez. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
 		"empty": "Aucune règle pour l'instant.",
 		"add": "Ajouter une règle",
 		"mobile": "Disponible sur ordinateur",
@@ -842,7 +842,7 @@
 		"form": {
 			"addTitle": "Ajouter une règle",
 			"editTitle": "Modifier la règle",
-			"description": "La règle s'applique aux nouvelles opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes.",
+			"description": "La règle s'applique aux nouvelles opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes. Après l'enregistrement, vous pourrez l'appliquer aux opérations existantes.",
 			"name": "Nom",
 			"namePlaceholder": "Facultatif",
 			"effectiveDate": "À partir du",
@@ -873,6 +873,31 @@
 			"save": "Enregistrer",
 			"created": "Règle ajoutée.",
 			"saved": "Règle enregistrée."
+		},
+		"apply": {
+			"one": "Appliquer aux opérations existantes",
+			"all": "Appliquer toutes les règles",
+			"count_one": "{{count}} opération sera modifiée",
+			"count_other": "{{count}} opérations seront modifiées",
+			"nothing": "Aucune opération ne sera modifiée",
+			"description": "Appliquer « {{name}} » aux opérations existantes. Un champ modifié à la main n'est jamais remplacé.",
+			"descriptionAll": "Appliquer les règles activées aux opérations existantes, dans l'ordre de la liste. Un champ modifié à la main n'est jamais remplacé.",
+			"confirm": "Appliquer",
+			"later": "Plus tard",
+			"done_one": "{{count}} opération modifiée.",
+			"done_other": "{{count}} opérations modifiées.",
+			"doneNothing": "Aucune opération modifiée."
+		},
+		"runs": {
+			"title": "Exécutions récentes",
+			"empty": "Aucune règle appliquée aux opérations existantes pour l'instant.",
+			"paginationLabel": "Pages des exécutions",
+			"columns": {
+				"date": "Date",
+				"rule": "Règle",
+				"matched": "Correspondances",
+				"changed": "Modifiées"
+			}
 		},
 		"deleteDialog": {
 			"title": "Supprimer la règle « {{name}} » ?",

@@ -333,40 +333,59 @@ function planOf(candidate: RuleCandidate, row: RuleCandidate): RowPlan {
 	};
 }
 
+/** What one rule did over the candidates, for its run. */
+export type RuleTally = {
+	ruleId: string;
+	/** Rows it matched, against the state earlier rules planned. */
+	matched: number;
+	/** Rows its actions altered: a locked field or a value already there is no change. */
+	changed: number;
+};
+
 /**
- * What rules change on each candidate, by entry id. `rules` apply in the
- * order given, creation order, over one planned state per row: a later
- * rule's conditions see what earlier ones planned, and its actions overwrite
- * them. An action on a locked field, or naming a deleted row, plans nothing,
- * so later rules see the value unchanged. A tag past `maxTagsPerRow` is
- * skipped. A candidate no rule changes is absent.
+ * What rules change on each candidate, by entry id, and what each rule did.
+ * `rules` apply in the order given, creation order, over one planned state
+ * per row: a later rule's conditions see what earlier ones planned, and its
+ * actions overwrite them. An action on a locked field, or naming a deleted
+ * row, plans nothing, so later rules see the value unchanged. A tag past
+ * `maxTagsPerRow` is skipped. A candidate no rule changes is absent from
+ * `plan`; `perRule` holds one tally per rule, in the same order.
  */
 export function planActions(
 	rules: readonly Rule[],
 	candidates: readonly RuleCandidate[],
 	reportingCurrency: string,
 	maxTagsPerRow: number,
-): Map<string, RowPlan> {
-	const planned = new Map<string, RowPlan>();
+): { plan: Map<string, RowPlan>; perRule: RuleTally[] } {
+	const plan = new Map<string, RowPlan>();
+	const tallied = rules.map((rule) => ({
+		rule,
+		tally: { ruleId: rule.id, matched: 0, changed: 0 },
+	}));
 
 	for (const candidate of candidates) {
 		// The row as later rules see it: what earlier ones planned over the row as it is.
 		let row = candidate;
 
-		for (const rule of rules) {
+		for (const { rule, tally } of tallied) {
 			if (matches(rule, row, reportingCurrency)) {
+				const before = row;
+
 				for (const action of rule.actions) {
 					row = { ...row, ...applyAction(action, row, maxTagsPerRow) };
 				}
+
+				tally.matched += 1;
+				tally.changed += Object.keys(planOf(before, row)).length > 0 ? 1 : 0;
 			}
 		}
 
-		const plan = planOf(candidate, row);
+		const planned = planOf(candidate, row);
 
-		if (Object.keys(plan).length > 0) {
-			planned.set(candidate.id, plan);
+		if (Object.keys(planned).length > 0) {
+			plan.set(candidate.id, planned);
 		}
 	}
 
-	return planned;
+	return { plan, perRule: tallied.map(({ tally }) => tally) };
 }
