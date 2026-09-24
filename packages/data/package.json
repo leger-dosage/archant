@@ -21,6 +21,7 @@
 		"./schema/import-mappings": "./schema/import-mappings.ts",
 		"./schema/imports": "./schema/imports.ts",
 		"./schema/merchants": "./schema/merchants.ts",
+		"./schema/recurring-transactions": "./schema/recurring-transactions.ts",
 		"./schema/rejected-transfers": "./schema/rejected-transfers.ts",
 		"./schema/rules": "./schema/rules.ts",
 		"./schema/settings": "./schema/settings.ts",

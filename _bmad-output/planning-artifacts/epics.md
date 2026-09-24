@@ -1272,7 +1272,7 @@ So that I don't list them by hand.
 
 **Given** the last three months of transactions, transfers excluded
 **When** detection runs after an import or on demand
-**Then** transactions grouped by account, merchant or else normalised label, and same amount, form a recurring item when there are at least two, the last within 45 days, on days of the month within 5 days of each other, as in Sure
+**Then** transactions grouped by account, merchant or else normalised label, and same amount, form a recurring item when there are at least three, the last within 45 days, on days of the month within 5 days of each other, as in Sure
 
 **Given** a recurring item
 **When** it is stored

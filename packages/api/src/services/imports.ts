@@ -33,6 +33,7 @@ import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { getAccount } from "./accounts.ts";
 import * as ledger from "./ledger.ts";
+import { detectRecurring } from "./recurring.ts";
 
 export type ImportDeps = ServiceDeps & { logger: Logger };
 
@@ -410,6 +411,7 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 		);
 		const counts = ledger.countsOf(result.groups);
 
+		await detectAfterImport(deps, id);
 		deps.logger.info({ importId: id, counts }, "import confirmed");
 
 		return { id, counts };
@@ -419,6 +421,21 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 		}
 
 		throw error;
+	}
+}
+
+/**
+ * Recurring detection once the lines are committed. The import is done by
+ * then: a failure here is logged, code only, and never fails the request.
+ */
+async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+	try {
+		await detectRecurring(deps);
+	} catch (error) {
+		// The code only: an unexpected error's message may embed bound amounts.
+		const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";
+
+		deps.logger.error({ importId, code }, "recurring detection failed");
 	}
 }
 

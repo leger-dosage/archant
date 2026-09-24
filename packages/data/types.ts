@@ -7,6 +7,7 @@ import type { entryKeys } from "./schema/entry-keys.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { merchants } from "./schema/merchants.ts";
+import type { recurringTransactions } from "./schema/recurring-transactions.ts";
 import type { rejectedTransfers } from "./schema/rejected-transfers.ts";
 import type { ruleActions, ruleConditions, ruleRuns, rules } from "./schema/rules.ts";
 import type { taggings } from "./schema/taggings.ts";
@@ -71,3 +72,6 @@ export type NewRuleAction = InferInsertModel<typeof ruleActions>;
 
 export type RuleRun = InferSelectModel<typeof ruleRuns>;
 export type NewRuleRun = InferInsertModel<typeof ruleRuns>;
+
+export type RecurringTransaction = InferSelectModel<typeof recurringTransactions>;
+export type NewRecurringTransaction = InferInsertModel<typeof recurringTransactions>;
