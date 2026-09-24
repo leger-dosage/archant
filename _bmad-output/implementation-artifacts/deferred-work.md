@@ -89,3 +89,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-link-bank-accounts.md`
   summary: No test proves that a failure in the middle of `linkBankAccounts`'s write transaction leaves nothing written.
   evidence: Every tested failure happens before the first write; removing the outer transaction keeps all tests green. Only a concurrent request reaches a mid-batch failure today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
+  summary: Merging or dismissing a possible duplicate, with its « Doublon possible » marker, moved to Story 10.6.
+  evidence: Story 10.3's criterion assumed Epic 2 shipped the merge; `transactions.possible_duplicate` is written but nothing shows or clears it, and `ledger.absorb` arrives with 10.4.

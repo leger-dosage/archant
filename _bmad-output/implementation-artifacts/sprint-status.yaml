@@ -98,7 +98,8 @@ development_status:
   epic-10: in-progress
   10-1-connect-a-bank: review
   10-2-link-bank-accounts: review
-  10-3-sync-transactions-and-balances: backlog
+  10-3-sync-transactions-and-balances: ready-for-dev
   10-4-pending-transactions: backlog
   10-5-consent-renewal-and-disconnection: backlog
+  10-6-merge-or-dismiss-a-possible-duplicate: backlog
   epic-10-retrospective: optional
