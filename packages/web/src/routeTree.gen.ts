@@ -10,30 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
-import { Route as ConnexionRouteImport } from './routes/connexion'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
-import { Route as AuthedOperationsRouteImport } from './routes/_authed.operations'
-import { Route as AuthedRecurrencesRouteImport } from './routes/_authed.recurrences'
-import { Route as AuthedReglagesRouteImport } from './routes/_authed.reglages'
-import { Route as AuthedReglesRouteImport } from './routes/_authed.regles'
-import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes.index'
-import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
-import { Route as AuthedReglagesIndexRouteImport } from './routes/_authed.reglages.index'
-import { Route as AuthedReglagesBanquesRouteImport } from './routes/_authed.reglages.banques'
-import { Route as AuthedReglagesCategoriesRouteImport } from './routes/_authed.reglages.categories'
-import { Route as AuthedReglagesEtiquettesRouteImport } from './routes/_authed.reglages.etiquettes'
-import { Route as AuthedReglagesMarchandsRouteImport } from './routes/_authed.reglages.marchands'
-import { Route as AuthedReglagesSecuriteRouteImport } from './routes/_authed.reglages.securite'
-import { Route as AuthedReglagesBanquesRetourRouteImport } from './routes/_authed.reglages.banques_.retour'
+import { Route as AuthedRecurringRouteImport } from './routes/_authed.recurring'
+import { Route as AuthedRulesRouteImport } from './routes/_authed.rules'
+import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
+import { Route as AuthedTransactionsRouteImport } from './routes/_authed.transactions'
+import { Route as AuthedAccountsIndexRouteImport } from './routes/_authed.accounts.index'
+import { Route as AuthedAccountsAccountIdRouteImport } from './routes/_authed.accounts.$accountId'
+import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settings.index'
+import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
+import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.settings.categories'
+import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
+import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
+import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
+import { Route as AuthedSettingsBanksCallbackRouteImport } from './routes/_authed.settings.banks_.callback'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConnexionRoute = ConnexionRouteImport.update({
-  id: '/connexion',
-  path: '/connexion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -41,196 +36,200 @@ const SetupRoute = SetupRouteImport.update({
   path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedOperationsRoute = AuthedOperationsRouteImport.update({
-  id: '/operations',
-  path: '/operations',
+const AuthedRecurringRoute = AuthedRecurringRouteImport.update({
+  id: '/recurring',
+  path: '/recurring',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedRecurrencesRoute = AuthedRecurrencesRouteImport.update({
-  id: '/recurrences',
-  path: '/recurrences',
+const AuthedRulesRoute = AuthedRulesRouteImport.update({
+  id: '/rules',
+  path: '/rules',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedReglagesRoute = AuthedReglagesRouteImport.update({
-  id: '/reglages',
-  path: '/reglages',
+const AuthedSettingsRoute = AuthedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedReglesRoute = AuthedReglesRouteImport.update({
-  id: '/regles',
-  path: '/regles',
+const AuthedTransactionsRoute = AuthedTransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedComptesIndexRoute = AuthedComptesIndexRouteImport.update({
-  id: '/comptes/',
-  path: '/comptes/',
+const AuthedAccountsIndexRoute = AuthedAccountsIndexRouteImport.update({
+  id: '/accounts/',
+  path: '/accounts/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedComptesAccountIdRoute = AuthedComptesAccountIdRouteImport.update({
-  id: '/comptes/$accountId',
-  path: '/comptes/$accountId',
+const AuthedAccountsAccountIdRoute = AuthedAccountsAccountIdRouteImport.update({
+  id: '/accounts/$accountId',
+  path: '/accounts/$accountId',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedReglagesIndexRoute = AuthedReglagesIndexRouteImport.update({
+const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AuthedReglagesRoute,
+  getParentRoute: () => AuthedSettingsRoute,
 } as any)
-const AuthedReglagesBanquesRoute = AuthedReglagesBanquesRouteImport.update({
-  id: '/banques',
-  path: '/banques',
-  getParentRoute: () => AuthedReglagesRoute,
+const AuthedSettingsBanksRoute = AuthedSettingsBanksRouteImport.update({
+  id: '/banks',
+  path: '/banks',
+  getParentRoute: () => AuthedSettingsRoute,
 } as any)
-const AuthedReglagesCategoriesRoute =
-  AuthedReglagesCategoriesRouteImport.update({
+const AuthedSettingsCategoriesRoute =
+  AuthedSettingsCategoriesRouteImport.update({
     id: '/categories',
     path: '/categories',
-    getParentRoute: () => AuthedReglagesRoute,
+    getParentRoute: () => AuthedSettingsRoute,
   } as any)
-const AuthedReglagesEtiquettesRoute =
-  AuthedReglagesEtiquettesRouteImport.update({
-    id: '/etiquettes',
-    path: '/etiquettes',
-    getParentRoute: () => AuthedReglagesRoute,
-  } as any)
-const AuthedReglagesMarchandsRoute = AuthedReglagesMarchandsRouteImport.update({
-  id: '/marchands',
-  path: '/marchands',
-  getParentRoute: () => AuthedReglagesRoute,
+const AuthedSettingsMerchantsRoute = AuthedSettingsMerchantsRouteImport.update({
+  id: '/merchants',
+  path: '/merchants',
+  getParentRoute: () => AuthedSettingsRoute,
 } as any)
-const AuthedReglagesSecuriteRoute = AuthedReglagesSecuriteRouteImport.update({
-  id: '/securite',
-  path: '/securite',
-  getParentRoute: () => AuthedReglagesRoute,
+const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => AuthedSettingsRoute,
 } as any)
-const AuthedReglagesBanquesRetourRoute =
-  AuthedReglagesBanquesRetourRouteImport.update({
-    id: '/banques_/retour',
-    path: '/banques/retour',
-    getParentRoute: () => AuthedReglagesRoute,
+const AuthedSettingsTagsRoute = AuthedSettingsTagsRouteImport.update({
+  id: '/tags',
+  path: '/tags',
+  getParentRoute: () => AuthedSettingsRoute,
+} as any)
+const AuthedSettingsBanksCallbackRoute =
+  AuthedSettingsBanksCallbackRouteImport.update({
+    id: '/banks_/callback',
+    path: '/banks/callback',
+    getParentRoute: () => AuthedSettingsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
-  '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
-  '/operations': typeof AuthedOperationsRoute
-  '/recurrences': typeof AuthedRecurrencesRoute
-  '/reglages': typeof AuthedReglagesRouteWithChildren
-  '/regles': typeof AuthedReglesRoute
-  '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
-  '/reglages/banques': typeof AuthedReglagesBanquesRoute
-  '/reglages/categories': typeof AuthedReglagesCategoriesRoute
-  '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
-  '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
-  '/reglages/securite': typeof AuthedReglagesSecuriteRoute
-  '/comptes/': typeof AuthedComptesIndexRoute
-  '/reglages/': typeof AuthedReglagesIndexRoute
-  '/reglages/banques/retour': typeof AuthedReglagesBanquesRetourRoute
+  '/sign-in': typeof SignInRoute
+  '/recurring': typeof AuthedRecurringRoute
+  '/rules': typeof AuthedRulesRoute
+  '/settings': typeof AuthedSettingsRouteWithChildren
+  '/transactions': typeof AuthedTransactionsRoute
+  '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/settings/banks': typeof AuthedSettingsBanksRoute
+  '/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/tags': typeof AuthedSettingsTagsRoute
+  '/accounts/': typeof AuthedAccountsIndexRoute
+  '/settings/': typeof AuthedSettingsIndexRoute
+  '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
 }
 export interface FileRoutesByTo {
-  '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
-  '/operations': typeof AuthedOperationsRoute
-  '/recurrences': typeof AuthedRecurrencesRoute
-  '/regles': typeof AuthedReglesRoute
+  '/sign-in': typeof SignInRoute
+  '/recurring': typeof AuthedRecurringRoute
+  '/rules': typeof AuthedRulesRoute
+  '/transactions': typeof AuthedTransactionsRoute
   '/': typeof AuthedIndexRoute
-  '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
-  '/reglages/banques': typeof AuthedReglagesBanquesRoute
-  '/reglages/categories': typeof AuthedReglagesCategoriesRoute
-  '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
-  '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
-  '/reglages/securite': typeof AuthedReglagesSecuriteRoute
-  '/comptes': typeof AuthedComptesIndexRoute
-  '/reglages': typeof AuthedReglagesIndexRoute
-  '/reglages/banques/retour': typeof AuthedReglagesBanquesRetourRoute
+  '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/settings/banks': typeof AuthedSettingsBanksRoute
+  '/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/settings/security': typeof AuthedSettingsSecurityRoute
+  '/settings/tags': typeof AuthedSettingsTagsRoute
+  '/accounts': typeof AuthedAccountsIndexRoute
+  '/settings': typeof AuthedSettingsIndexRoute
+  '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
-  '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
-  '/_authed/operations': typeof AuthedOperationsRoute
-  '/_authed/recurrences': typeof AuthedRecurrencesRoute
-  '/_authed/reglages': typeof AuthedReglagesRouteWithChildren
-  '/_authed/regles': typeof AuthedReglesRoute
+  '/sign-in': typeof SignInRoute
+  '/_authed/recurring': typeof AuthedRecurringRoute
+  '/_authed/rules': typeof AuthedRulesRoute
+  '/_authed/settings': typeof AuthedSettingsRouteWithChildren
+  '/_authed/transactions': typeof AuthedTransactionsRoute
   '/_authed/': typeof AuthedIndexRoute
-  '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
-  '/_authed/reglages/banques': typeof AuthedReglagesBanquesRoute
-  '/_authed/reglages/categories': typeof AuthedReglagesCategoriesRoute
-  '/_authed/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
-  '/_authed/reglages/marchands': typeof AuthedReglagesMarchandsRoute
-  '/_authed/reglages/securite': typeof AuthedReglagesSecuriteRoute
-  '/_authed/comptes/': typeof AuthedComptesIndexRoute
-  '/_authed/reglages/': typeof AuthedReglagesIndexRoute
-  '/_authed/reglages/banques_/retour': typeof AuthedReglagesBanquesRetourRoute
+  '/_authed/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
+  '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/_authed/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
+  '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
+  '/_authed/accounts/': typeof AuthedAccountsIndexRoute
+  '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/settings/banks_/callback': typeof AuthedSettingsBanksCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/connexion'
     | '/setup'
-    | '/operations'
-    | '/recurrences'
-    | '/reglages'
-    | '/regles'
-    | '/comptes/$accountId'
-    | '/reglages/banques'
-    | '/reglages/categories'
-    | '/reglages/etiquettes'
-    | '/reglages/marchands'
-    | '/reglages/securite'
-    | '/comptes/'
-    | '/reglages/'
-    | '/reglages/banques/retour'
+    | '/sign-in'
+    | '/recurring'
+    | '/rules'
+    | '/settings'
+    | '/transactions'
+    | '/accounts/$accountId'
+    | '/settings/banks'
+    | '/settings/categories'
+    | '/settings/merchants'
+    | '/settings/security'
+    | '/settings/tags'
+    | '/accounts/'
+    | '/settings/'
+    | '/settings/banks/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/connexion'
     | '/setup'
-    | '/operations'
-    | '/recurrences'
-    | '/regles'
+    | '/sign-in'
+    | '/recurring'
+    | '/rules'
+    | '/transactions'
     | '/'
-    | '/comptes/$accountId'
-    | '/reglages/banques'
-    | '/reglages/categories'
-    | '/reglages/etiquettes'
-    | '/reglages/marchands'
-    | '/reglages/securite'
-    | '/comptes'
-    | '/reglages'
-    | '/reglages/banques/retour'
+    | '/accounts/$accountId'
+    | '/settings/banks'
+    | '/settings/categories'
+    | '/settings/merchants'
+    | '/settings/security'
+    | '/settings/tags'
+    | '/accounts'
+    | '/settings'
+    | '/settings/banks/callback'
   id:
     | '__root__'
     | '/_authed'
-    | '/connexion'
     | '/setup'
-    | '/_authed/operations'
-    | '/_authed/recurrences'
-    | '/_authed/reglages'
-    | '/_authed/regles'
+    | '/sign-in'
+    | '/_authed/recurring'
+    | '/_authed/rules'
+    | '/_authed/settings'
+    | '/_authed/transactions'
     | '/_authed/'
-    | '/_authed/comptes/$accountId'
-    | '/_authed/reglages/banques'
-    | '/_authed/reglages/categories'
-    | '/_authed/reglages/etiquettes'
-    | '/_authed/reglages/marchands'
-    | '/_authed/reglages/securite'
-    | '/_authed/comptes/'
-    | '/_authed/reglages/'
-    | '/_authed/reglages/banques_/retour'
+    | '/_authed/accounts/$accountId'
+    | '/_authed/settings/banks'
+    | '/_authed/settings/categories'
+    | '/_authed/settings/merchants'
+    | '/_authed/settings/security'
+    | '/_authed/settings/tags'
+    | '/_authed/accounts/'
+    | '/_authed/settings/'
+    | '/_authed/settings/banks_/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
-  ConnexionRoute: typeof ConnexionRoute
   SetupRoute: typeof SetupRoute
+  SignInRoute: typeof SignInRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -242,18 +241,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/connexion': {
-      id: '/connexion'
-      path: '/connexion'
-      fullPath: '/connexion'
-      preLoaderRoute: typeof ConnexionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/setup': {
       id: '/setup'
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/': {
@@ -263,142 +262,142 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/operations': {
-      id: '/_authed/operations'
-      path: '/operations'
-      fullPath: '/operations'
-      preLoaderRoute: typeof AuthedOperationsRouteImport
+    '/_authed/recurring': {
+      id: '/_authed/recurring'
+      path: '/recurring'
+      fullPath: '/recurring'
+      preLoaderRoute: typeof AuthedRecurringRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/recurrences': {
-      id: '/_authed/recurrences'
-      path: '/recurrences'
-      fullPath: '/recurrences'
-      preLoaderRoute: typeof AuthedRecurrencesRouteImport
+    '/_authed/rules': {
+      id: '/_authed/rules'
+      path: '/rules'
+      fullPath: '/rules'
+      preLoaderRoute: typeof AuthedRulesRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/reglages': {
-      id: '/_authed/reglages'
-      path: '/reglages'
-      fullPath: '/reglages'
-      preLoaderRoute: typeof AuthedReglagesRouteImport
+    '/_authed/settings': {
+      id: '/_authed/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthedSettingsRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/regles': {
-      id: '/_authed/regles'
-      path: '/regles'
-      fullPath: '/regles'
-      preLoaderRoute: typeof AuthedReglesRouteImport
+    '/_authed/transactions': {
+      id: '/_authed/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof AuthedTransactionsRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/comptes/': {
-      id: '/_authed/comptes/'
-      path: '/comptes'
-      fullPath: '/comptes/'
-      preLoaderRoute: typeof AuthedComptesIndexRouteImport
+    '/_authed/accounts/': {
+      id: '/_authed/accounts/'
+      path: '/accounts'
+      fullPath: '/accounts/'
+      preLoaderRoute: typeof AuthedAccountsIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/comptes/$accountId': {
-      id: '/_authed/comptes/$accountId'
-      path: '/comptes/$accountId'
-      fullPath: '/comptes/$accountId'
-      preLoaderRoute: typeof AuthedComptesAccountIdRouteImport
+    '/_authed/accounts/$accountId': {
+      id: '/_authed/accounts/$accountId'
+      path: '/accounts/$accountId'
+      fullPath: '/accounts/$accountId'
+      preLoaderRoute: typeof AuthedAccountsAccountIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/reglages/': {
-      id: '/_authed/reglages/'
+    '/_authed/settings/': {
+      id: '/_authed/settings/'
       path: '/'
-      fullPath: '/reglages/'
-      preLoaderRoute: typeof AuthedReglagesIndexRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthedSettingsIndexRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/banques': {
-      id: '/_authed/reglages/banques'
-      path: '/banques'
-      fullPath: '/reglages/banques'
-      preLoaderRoute: typeof AuthedReglagesBanquesRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+    '/_authed/settings/banks': {
+      id: '/_authed/settings/banks'
+      path: '/banks'
+      fullPath: '/settings/banks'
+      preLoaderRoute: typeof AuthedSettingsBanksRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/categories': {
-      id: '/_authed/reglages/categories'
+    '/_authed/settings/categories': {
+      id: '/_authed/settings/categories'
       path: '/categories'
-      fullPath: '/reglages/categories'
-      preLoaderRoute: typeof AuthedReglagesCategoriesRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+      fullPath: '/settings/categories'
+      preLoaderRoute: typeof AuthedSettingsCategoriesRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/etiquettes': {
-      id: '/_authed/reglages/etiquettes'
-      path: '/etiquettes'
-      fullPath: '/reglages/etiquettes'
-      preLoaderRoute: typeof AuthedReglagesEtiquettesRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+    '/_authed/settings/merchants': {
+      id: '/_authed/settings/merchants'
+      path: '/merchants'
+      fullPath: '/settings/merchants'
+      preLoaderRoute: typeof AuthedSettingsMerchantsRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/marchands': {
-      id: '/_authed/reglages/marchands'
-      path: '/marchands'
-      fullPath: '/reglages/marchands'
-      preLoaderRoute: typeof AuthedReglagesMarchandsRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+    '/_authed/settings/security': {
+      id: '/_authed/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof AuthedSettingsSecurityRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/securite': {
-      id: '/_authed/reglages/securite'
-      path: '/securite'
-      fullPath: '/reglages/securite'
-      preLoaderRoute: typeof AuthedReglagesSecuriteRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+    '/_authed/settings/tags': {
+      id: '/_authed/settings/tags'
+      path: '/tags'
+      fullPath: '/settings/tags'
+      preLoaderRoute: typeof AuthedSettingsTagsRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
-    '/_authed/reglages/banques_/retour': {
-      id: '/_authed/reglages/banques_/retour'
-      path: '/banques/retour'
-      fullPath: '/reglages/banques/retour'
-      preLoaderRoute: typeof AuthedReglagesBanquesRetourRouteImport
-      parentRoute: typeof AuthedReglagesRoute
+    '/_authed/settings/banks_/callback': {
+      id: '/_authed/settings/banks_/callback'
+      path: '/banks/callback'
+      fullPath: '/settings/banks/callback'
+      preLoaderRoute: typeof AuthedSettingsBanksCallbackRouteImport
+      parentRoute: typeof AuthedSettingsRoute
     }
   }
 }
 
-interface AuthedReglagesRouteChildren {
-  AuthedReglagesBanquesRoute: typeof AuthedReglagesBanquesRoute
-  AuthedReglagesCategoriesRoute: typeof AuthedReglagesCategoriesRoute
-  AuthedReglagesEtiquettesRoute: typeof AuthedReglagesEtiquettesRoute
-  AuthedReglagesMarchandsRoute: typeof AuthedReglagesMarchandsRoute
-  AuthedReglagesSecuriteRoute: typeof AuthedReglagesSecuriteRoute
-  AuthedReglagesIndexRoute: typeof AuthedReglagesIndexRoute
-  AuthedReglagesBanquesRetourRoute: typeof AuthedReglagesBanquesRetourRoute
+interface AuthedSettingsRouteChildren {
+  AuthedSettingsBanksRoute: typeof AuthedSettingsBanksRoute
+  AuthedSettingsCategoriesRoute: typeof AuthedSettingsCategoriesRoute
+  AuthedSettingsMerchantsRoute: typeof AuthedSettingsMerchantsRoute
+  AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
+  AuthedSettingsTagsRoute: typeof AuthedSettingsTagsRoute
+  AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
+  AuthedSettingsBanksCallbackRoute: typeof AuthedSettingsBanksCallbackRoute
 }
 
-const AuthedReglagesRouteChildren: AuthedReglagesRouteChildren = {
-  AuthedReglagesBanquesRoute: AuthedReglagesBanquesRoute,
-  AuthedReglagesCategoriesRoute: AuthedReglagesCategoriesRoute,
-  AuthedReglagesEtiquettesRoute: AuthedReglagesEtiquettesRoute,
-  AuthedReglagesMarchandsRoute: AuthedReglagesMarchandsRoute,
-  AuthedReglagesSecuriteRoute: AuthedReglagesSecuriteRoute,
-  AuthedReglagesIndexRoute: AuthedReglagesIndexRoute,
-  AuthedReglagesBanquesRetourRoute: AuthedReglagesBanquesRetourRoute,
+const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
+  AuthedSettingsBanksRoute: AuthedSettingsBanksRoute,
+  AuthedSettingsCategoriesRoute: AuthedSettingsCategoriesRoute,
+  AuthedSettingsMerchantsRoute: AuthedSettingsMerchantsRoute,
+  AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
+  AuthedSettingsTagsRoute: AuthedSettingsTagsRoute,
+  AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
+  AuthedSettingsBanksCallbackRoute: AuthedSettingsBanksCallbackRoute,
 }
 
-const AuthedReglagesRouteWithChildren = AuthedReglagesRoute._addFileChildren(
-  AuthedReglagesRouteChildren,
+const AuthedSettingsRouteWithChildren = AuthedSettingsRoute._addFileChildren(
+  AuthedSettingsRouteChildren,
 )
 
 interface AuthedRouteChildren {
-  AuthedOperationsRoute: typeof AuthedOperationsRoute
-  AuthedRecurrencesRoute: typeof AuthedRecurrencesRoute
-  AuthedReglagesRoute: typeof AuthedReglagesRouteWithChildren
-  AuthedReglesRoute: typeof AuthedReglesRoute
+  AuthedRecurringRoute: typeof AuthedRecurringRoute
+  AuthedRulesRoute: typeof AuthedRulesRoute
+  AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
+  AuthedTransactionsRoute: typeof AuthedTransactionsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
-  AuthedComptesAccountIdRoute: typeof AuthedComptesAccountIdRoute
-  AuthedComptesIndexRoute: typeof AuthedComptesIndexRoute
+  AuthedAccountsAccountIdRoute: typeof AuthedAccountsAccountIdRoute
+  AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
-  AuthedOperationsRoute: AuthedOperationsRoute,
-  AuthedRecurrencesRoute: AuthedRecurrencesRoute,
-  AuthedReglagesRoute: AuthedReglagesRouteWithChildren,
-  AuthedReglesRoute: AuthedReglesRoute,
+  AuthedRecurringRoute: AuthedRecurringRoute,
+  AuthedRulesRoute: AuthedRulesRoute,
+  AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
+  AuthedTransactionsRoute: AuthedTransactionsRoute,
   AuthedIndexRoute: AuthedIndexRoute,
-  AuthedComptesAccountIdRoute: AuthedComptesAccountIdRoute,
-  AuthedComptesIndexRoute: AuthedComptesIndexRoute,
+  AuthedAccountsAccountIdRoute: AuthedAccountsAccountIdRoute,
+  AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
 }
 
 const AuthedRouteWithChildren =
@@ -406,8 +405,8 @@ const AuthedRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
-  ConnexionRoute: ConnexionRoute,
   SetupRoute: SetupRoute,
+  SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

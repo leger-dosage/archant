@@ -16,7 +16,7 @@ import { AppError } from "../lib/errors.ts";
 import { encrypt } from "./crypto.ts";
 
 /** Where the bank sends the browser back: a page of the interface, not an API route. */
-export const REDIRECT_PATH = "/reglages/banques/retour";
+export const REDIRECT_PATH = "/settings/banks/callback";
 
 /** How long a `state` stays valid: time enough to sign in at the bank, no more. */
 export const AUTHORIZATION_TTL_MS = 30 * 60 * 1000;

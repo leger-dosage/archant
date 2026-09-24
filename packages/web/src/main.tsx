@@ -32,8 +32,8 @@ function signInAgain(error: unknown): boolean {
 
 	const { href, pathname } = router.state.location;
 
-	if (pathname !== "/connexion") {
-		void router.navigate({ to: "/connexion", search: { redirect: href } });
+	if (pathname !== "/sign-in") {
+		void router.navigate({ to: "/sign-in", search: { redirect: href } });
 	}
 
 	return true;

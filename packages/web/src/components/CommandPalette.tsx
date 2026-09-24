@@ -104,46 +104,46 @@ export function CommandPalette() {
 			id: "go-accounts",
 			label: t("nav.accounts"),
 			shortcut: "goAccounts",
-			run: () => void navigate({ to: "/comptes" }),
+			run: () => void navigate({ to: "/accounts" }),
 		},
 		{
 			id: "go-operations",
 			label: t("nav.operations"),
 			shortcut: "goOperations",
-			run: () => void navigate({ to: "/operations" }),
+			run: () => void navigate({ to: "/transactions" }),
 		},
 		{
 			id: "go-recurring",
 			label: t("nav.recurring"),
 			shortcut: "goRecurring",
-			run: () => void navigate({ to: "/recurrences" }),
+			run: () => void navigate({ to: "/recurring" }),
 		},
 		{
 			id: "go-rules",
 			label: t("nav.rules"),
 			shortcut: "goRules",
-			run: () => void navigate({ to: "/regles" }),
+			run: () => void navigate({ to: "/rules" }),
 		},
 		{
 			id: "go-settings",
 			label: t("nav.settings"),
 			shortcut: "goSettings",
-			run: () => void navigate({ to: "/reglages" }),
+			run: () => void navigate({ to: "/settings" }),
 		},
 		{
 			id: "go-categories",
 			label: t("settings.sections.categories"),
-			run: () => void navigate({ to: "/reglages/categories" }),
+			run: () => void navigate({ to: "/settings/categories" }),
 		},
 		{
 			id: "go-merchants",
 			label: t("settings.sections.merchants"),
-			run: () => void navigate({ to: "/reglages/marchands" }),
+			run: () => void navigate({ to: "/settings/merchants" }),
 		},
 		{
 			id: "go-tags",
 			label: t("settings.sections.tags"),
-			run: () => void navigate({ to: "/reglages/etiquettes" }),
+			run: () => void navigate({ to: "/settings/tags" }),
 		},
 	];
 	const actions: Item[] = [
@@ -169,7 +169,7 @@ export function CommandPalette() {
 			id: `account-${account.id}`,
 			label: account.name,
 			extra: <AccountBalance account={account} className="text-xs" />,
-			run: () => void navigate({ to: "/comptes/$accountId", params: { accountId: account.id } }),
+			run: () => void navigate({ to: "/accounts/$accountId", params: { accountId: account.id } }),
 		}));
 
 	const select = (item: Item) => {

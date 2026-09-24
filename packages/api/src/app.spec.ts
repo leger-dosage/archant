@@ -2036,7 +2036,7 @@ describe("serving the interface", () => {
 			template.cookie,
 		);
 
-	it.each(["/", "/comptes", "/comptes/abc/operations"])(
+	it.each(["/", "/accounts", "/accounts/abc/transactions"])(
 		"answers %s with index.html, revalidated on every visit",
 		async (path) => {
 			const response = await serving().request(path);
@@ -6512,7 +6512,7 @@ describe("/api/bank-connections", () => {
 			error: {
 				code: "BANK_REDIRECT_NOT_ALLOWED",
 				message: "Register the redirect URL in the Enable Banking control panel.",
-				params: { url: "http://localhost:5173/reglages/banques/retour" },
+				params: { url: "http://localhost:5173/settings/banks/callback" },
 			},
 		});
 	});

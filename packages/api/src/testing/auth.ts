@@ -62,7 +62,7 @@ export function buildTestApp(
 		webDist: network.webDist,
 		...NO_BANK,
 		...bank,
-		redirectUrl: `${TEST_ORIGIN}/reglages/banques/retour`,
+		redirectUrl: `${TEST_ORIGIN}/settings/banks/callback`,
 	});
 }
 

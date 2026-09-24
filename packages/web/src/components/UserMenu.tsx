@@ -36,7 +36,7 @@ export function UserMenu() {
 				</DropdownMenuLabel>
 				<DropdownMenuSeparator />
 				<DropdownMenuItem asChild>
-					<Link to="/reglages">
+					<Link to="/settings">
 						<SettingsIcon />
 						{t("nav.settings")}
 					</Link>

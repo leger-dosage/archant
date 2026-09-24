@@ -30,7 +30,7 @@ import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { showErrorToast } from "@/lib/error-toast";
 
-export const Route = createFileRoute("/_authed/recurrences")({
+export const Route = createFileRoute("/_authed/recurring")({
 	component: RecurringPage,
 });
 

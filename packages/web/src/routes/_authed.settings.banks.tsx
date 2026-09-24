@@ -28,7 +28,7 @@ import {
 import { errorCodeOf } from "@/lib/api";
 import { showFailureToast } from "@/lib/error-toast";
 
-export const Route = createFileRoute("/_authed/reglages/banques")({
+export const Route = createFileRoute("/_authed/settings/banks")({
 	component: BanksPage,
 });
 
@@ -271,7 +271,7 @@ function Connections() {
 
 /**
  * Sure's `select_bank`: a country, then a bank, then off to the bank's
- * consent page. The bank sends the browser back to `/reglages/banques/retour`.
+ * consent page. The bank sends the browser back to `/settings/banks/callback`.
  */
 function BanksPage() {
 	const { t } = useTranslation();

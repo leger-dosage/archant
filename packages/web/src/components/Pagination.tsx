@@ -7,11 +7,11 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { pageSearch } from "@/lib/page-search";
 
-/** The list the pages belong to: one of an account page's, `/operations`, or the runs on `/regles`. */
+/** The list the pages belong to: one of an account page's, `/transactions`, or the runs on `/rules`. */
 export type PageTarget =
-	| { to: "/comptes/$accountId"; accountId: string; param: PageParam }
-	| { to: "/operations" }
-	| { to: "/regles"; param: RulesPageParam };
+	| { to: "/accounts/$accountId"; accountId: string; param: PageParam }
+	| { to: "/transactions" }
+	| { to: "/rules"; param: RulesPageParam };
 
 type PaginationProps = {
 	target: PageTarget;
@@ -30,20 +30,20 @@ function PageLink({
 	page: number;
 	children: ReactNode;
 }) {
-	if (target.to === "/operations") {
+	if (target.to === "/transactions") {
 		return (
-			<Link to="/operations" search={(previous) => ({ ...previous, ...pageSearch("page", page) })}>
+			<Link
+				to="/transactions"
+				search={(previous) => ({ ...previous, ...pageSearch("page", page) })}
+			>
 				{children}
 			</Link>
 		);
 	}
 
-	if (target.to === "/regles") {
+	if (target.to === "/rules") {
 		return (
-			<Link
-				to="/regles"
-				search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}
-			>
+			<Link to="/rules" search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}>
 				{children}
 			</Link>
 		);
@@ -51,7 +51,7 @@ function PageLink({
 
 	return (
 		<Link
-			to="/comptes/$accountId"
+			to="/accounts/$accountId"
 			params={{ accountId: target.accountId }}
 			search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}
 		>

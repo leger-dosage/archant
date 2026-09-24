@@ -99,7 +99,7 @@ describe("bankDepsFromEnv", () => {
 
 		expect(bankSetup(bank)).toEqual({ available: true, missing: [] });
 		expect(bank.bankConnector?.id).toBe("enable-banking");
-		expect(bank.redirectUrl).toBe("http://localhost:5173/reglages/banques/retour");
+		expect(bank.redirectUrl).toBe("http://localhost:5173/settings/banks/callback");
 	});
 
 	it("names ENCRYPTION_KEY alone when it is the one missing", () => {
@@ -178,7 +178,7 @@ describe("startConnection", () => {
 		expect(auth?.body).toMatchObject({
 			access: { valid_until: new Date(NOW + 90 * DAY).toISOString() },
 			aspsp: { name: "Banque Test", country: "FR" },
-			redirect_url: "http://localhost:5173/reglages/banques/retour",
+			redirect_url: "http://localhost:5173/settings/banks/callback",
 		});
 		await expect(rows()).resolves.toEqual([
 			expect.objectContaining({
@@ -226,7 +226,7 @@ describe("startConnection", () => {
 		).rejects.toMatchObject({
 			code: "BANK_REDIRECT_NOT_ALLOWED",
 			status: 502,
-			params: { url: "http://localhost:5173/reglages/banques/retour" },
+			params: { url: "http://localhost:5173/settings/banks/callback" },
 		});
 		await expect(rows()).resolves.toEqual([]);
 		expect(logLines.join("")).toContain('"providerCode":"REDIRECT_URI_NOT_ALLOWED"');

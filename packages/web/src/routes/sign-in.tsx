@@ -38,7 +38,7 @@ type SignInValues = z.input<typeof signInSchema>;
 
 type FormFailure = "invalidCredentials" | "tooManyAttempts";
 
-export const Route = createFileRoute("/connexion")({
+export const Route = createFileRoute("/sign-in")({
 	validateSearch: searchSchema,
 	beforeLoad: async ({ context, search }) => {
 		if ((await context.queryClient.ensureQueryData(sessionQuery)) !== null) {

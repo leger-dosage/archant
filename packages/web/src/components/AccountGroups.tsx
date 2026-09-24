@@ -51,7 +51,7 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 								{group.accounts.map((account) => (
 									<li key={account.id}>
 										<Link
-											to="/comptes/$accountId"
+											to="/accounts/$accountId"
 											params={{ accountId: account.id }}
 											className="-mx-2 flex min-h-11 items-center justify-between gap-4 rounded-md px-2 py-2 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
 										>

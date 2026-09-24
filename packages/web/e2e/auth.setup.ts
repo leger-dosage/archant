@@ -6,7 +6,7 @@ import { ADMIN, ADMIN_STATE, WEB_URL } from "./settings.ts";
 // test starts from is saved.
 
 test("a first launch leads to setup, and creating the administrator signs in", async ({ page }) => {
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 
 	await expect(page).toHaveURL(/\/setup$/u);
 	await expect(page.getByText("Créer le compte administrateur")).toBeVisible();

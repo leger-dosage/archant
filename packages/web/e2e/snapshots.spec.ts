@@ -25,7 +25,7 @@ test("?tab=snapshots opens Soldes; a recorded snapshot sets the balance and show
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
 	const date = daysAgo(5);
 
-	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 
 	await expect(page.getByRole("tab", { name: "Soldes" })).toHaveAttribute("aria-selected", "true");
 	await expect(page.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
@@ -63,7 +63,7 @@ test("a loan's snapshot sets what it owes, and its history follows from that dat
 	});
 	const date = daysAgo(5);
 
-	await page.goto(`/comptes/${loan.id}?tab=snapshots`);
+	await page.goto(`/accounts/${loan.id}?tab=snapshots`);
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
 	await dialog.getByLabel("Date", { exact: true }).fill(typed(date));
@@ -95,7 +95,7 @@ test("a PEA's snapshot sets its value, and its history follows from that date", 
 	});
 	const date = daysAgo(5);
 
-	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
 	await dialog.getByLabel("Date", { exact: true }).fill(typed(date));
@@ -129,7 +129,7 @@ test("a home's new estimated value sets its balance and history, with no transac
 	});
 	const date = daysAgo(5);
 
-	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
 	await dialog.getByLabel("Date", { exact: true }).fill(typed(date));
@@ -155,7 +155,7 @@ test("a second snapshot on the same date replaces the first", async ({ page, api
 	const date = daysAgo(5);
 	await api.recordSnapshot(account.id, { date, balance: "2 000,00" });
 
-	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 	await expect(snapshotRow(page, date)).toContainText(euros(200_000));
 
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
@@ -176,7 +176,7 @@ test("a snapshot is edited, then deleted after confirmation", async ({ page, api
 	const date = daysAgo(5);
 	await api.recordSnapshot(account.id, { date, balance: "2 000,00" });
 
-	await page.goto(`/comptes/${account.id}?tab=snapshots`);
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 
 	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Modifier le solde" });
@@ -208,7 +208,7 @@ test("a transaction on a snapshot day moves the gap, not the balance", async ({ 
 	const date = daysAgo(5);
 	await api.recordSnapshot(account.id, { date, balance: "2 000,00" });
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	await page.getByRole("button", { name: "Ajouter une opération" }).first().click();
 	const sheet = page.getByRole("dialog", { name: "Ajouter une opération" });
 	await sheet.getByLabel("Date", { exact: true }).fill(typed(date));

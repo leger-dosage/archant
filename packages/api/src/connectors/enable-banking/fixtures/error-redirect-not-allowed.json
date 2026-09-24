@@ -2,5 +2,5 @@
 	"code": 400,
 	"message": "Redirect URI not allowed",
 	"error": "REDIRECT_URI_NOT_ALLOWED",
-	"detail": "https://archant.example.org/reglages/banques/retour"
+	"detail": "https://archant.example.org/settings/banks/callback"
 }

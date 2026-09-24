@@ -25,7 +25,7 @@ import { errorCodeOf } from "@/lib/api";
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { categoryTree } from "@/lib/category-tree";
 
-export const Route = createFileRoute("/_authed/reglages/categories")({
+export const Route = createFileRoute("/_authed/settings/categories")({
 	component: CategoriesPage,
 });
 

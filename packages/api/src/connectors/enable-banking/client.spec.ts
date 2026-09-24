@@ -41,7 +41,7 @@ const institution = {
 const request = {
 	institution,
 	state: "0f8fad5b-d9cb-469f-a165-70867728950e",
-	redirectUrl: "http://localhost:5173/reglages/banques/retour",
+	redirectUrl: "http://localhost:5173/settings/banks/callback",
 };
 
 beforeEach(() => {

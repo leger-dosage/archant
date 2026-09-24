@@ -18,6 +18,6 @@ export function useSignOut(): () => Promise<void> {
 		// browser must stop showing the household's data.
 		await authClient.signOut().catch(() => undefined);
 		queryClient.clear();
-		await navigate({ to: "/connexion" });
+		await navigate({ to: "/sign-in" });
 	};
 }

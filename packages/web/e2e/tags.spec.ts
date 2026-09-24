@@ -6,7 +6,7 @@ import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 // Story 4.4: tag management under « Réglages ». One database serves the
 // whole run, so each test works on tags of its own.
 
-const PAGE = "/reglages/etiquettes";
+const PAGE = "/settings/tags";
 
 const tagRow = (page: Page, name: string) =>
 	page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).locator("..");
@@ -31,7 +31,7 @@ const rowButton = (page: Page, label: string) =>
 		.locator("button[data-transaction-id]");
 
 async function visitOperations(page: Page, q: string) {
-	await page.goto(`/operations?q=${encodeURIComponent(q)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(q)}`);
 	await expect(rowButton(page, q)).toBeVisible();
 }
 

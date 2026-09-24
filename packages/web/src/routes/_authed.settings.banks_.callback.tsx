@@ -16,9 +16,9 @@ const searchSchema = z.object({
 	error: z.string().optional().catch(undefined),
 });
 
-// `banques_`: a page of its own under the settings layout, not a child
+// `banks_`: a page of its own under the settings layout, not a child
 // rendered inside the bank list.
-export const Route = createFileRoute("/_authed/reglages/banques_/retour")({
+export const Route = createFileRoute("/_authed/settings/banks_/callback")({
 	validateSearch: searchSchema,
 	component: BankReturnPage,
 });
@@ -30,7 +30,7 @@ function Failure({ message }: { message: string }) {
 		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
 			<p>{message}</p>
 			<Link
-				to="/reglages/banques"
+				to="/settings/banks"
 				replace
 				className="text-sm font-medium underline underline-offset-4"
 			>
@@ -73,7 +73,7 @@ function BankReturnPage() {
 				onSuccess: (connection) => {
 					toast.success(t("banks.return.connected", { name: connection.institutionName }));
 					// Replaced, so Back never lands on a spent code.
-					void navigate({ to: "/reglages/banques", replace: true });
+					void navigate({ to: "/settings/banks", replace: true });
 				},
 			},
 		);

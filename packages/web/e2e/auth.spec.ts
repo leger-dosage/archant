@@ -16,7 +16,7 @@ async function signIn(page: Page, password: string) {
 test("once a user exists, setup leads to sign-in", async ({ page }) => {
 	await page.goto("/setup");
 
-	await expect(page).toHaveURL(/\/connexion$/u);
+	await expect(page).toHaveURL(/\/sign-in$/u);
 	await expect(page.getByText("Connexion", { exact: true })).toBeVisible();
 });
 
@@ -38,12 +38,12 @@ test("Better Auth refuses a sign-in from another origin", async ({ request }) =>
 });
 
 test("a wrong password shows an error and stays on the page", async ({ page }) => {
-	await page.goto("/connexion");
+	await page.goto("/sign-in");
 
 	await signIn(page, "pas le bon mot de passe");
 
 	await expect(page.getByRole("alert")).toHaveText("Adresse e-mail ou mot de passe invalide.");
-	await expect(page).toHaveURL(/\/connexion$/u);
+	await expect(page).toHaveURL(/\/sign-in$/u);
 });
 
 test("signing in lands back on the page asked for", async ({ page, playwright }) => {
@@ -52,13 +52,13 @@ test("signing in lands back on the page asked for", async ({ page, playwright })
 	const account = await apiHelpers(admin).openAccount();
 	await admin.dispose();
 
-	await page.goto(`/comptes/${account.id}?tab=imports`);
+	await page.goto(`/accounts/${account.id}?tab=imports`);
 
-	await expect(page).toHaveURL(/\/connexion\?redirect=/u);
+	await expect(page).toHaveURL(/\/sign-in\?redirect=/u);
 
 	await signIn(page, ADMIN.password);
 
-	await expect(page).toHaveURL(new RegExp(`/comptes/${account.id}\\?tab=imports$`, "u"));
+	await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}\\?tab=imports$`, "u"));
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 });
 
@@ -69,18 +69,18 @@ test.describe("a session lost mid-use", () => {
 		page,
 		context,
 	}) => {
-		await page.goto("/comptes");
+		await page.goto("/accounts");
 		await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
 		// The interface still believes in its cached session; the API no longer does.
 		await context.clearCookies();
 		await page.getByRole("link", { name: "Opérations" }).click();
 
-		await expect(page).toHaveURL(/\/connexion\?redirect=%2Foperations$/u);
+		await expect(page).toHaveURL(/\/sign-in\?redirect=%2Ftransactions$/u);
 
 		await signIn(page, ADMIN.password);
 
-		await expect(page).toHaveURL(/\/operations$/u);
+		await expect(page).toHaveURL(/\/transactions$/u);
 		await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	});
 });
@@ -92,7 +92,7 @@ test("signing out revokes the session and the next API call answers 401", async 
 	context,
 	playwright,
 }) => {
-	await page.goto("/connexion");
+	await page.goto("/sign-in");
 	await signIn(page, ADMIN.password);
 	await expect(page).toHaveURL(`${WEB_URL}/`);
 
@@ -104,7 +104,7 @@ test("signing out revokes the session and the next API call answers 401", async 
 	await page.getByRole("button", { name: ADMIN.email }).click();
 	await page.getByRole("menuitem", { name: "Se déconnecter" }).click();
 
-	await expect(page).toHaveURL(/\/connexion$/u);
+	await expect(page).toHaveURL(/\/sign-in$/u);
 
 	// Its own client address, like every browser context of the suite: sharing
 	// one would count this call against another test's rate-limit bucket.
@@ -120,10 +120,10 @@ test("signing out revokes the session and the next API call answers 401", async 
 	// cache on its own and say nothing about the sign-out clearing it.
 	await page.goBack();
 
-	await expect(page).toHaveURL(/\/connexion\?redirect=/u);
+	await expect(page).toHaveURL(/\/sign-in\?redirect=/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toHaveCount(0);
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 
-	await expect(page).toHaveURL(/\/connexion\?redirect=/u);
+	await expect(page).toHaveURL(/\/sign-in\?redirect=/u);
 });

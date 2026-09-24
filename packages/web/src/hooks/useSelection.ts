@@ -30,7 +30,7 @@ export type Selection = {
 const emptyIn = (scope: string): SelectionState => ({ scope, ids: [], all: false, anchor: null });
 
 /**
- * The rows ticked on `/operations`. `scope` names the filters and the page:
+ * The rows ticked on `/transactions`. `scope` names the filters and the page:
  * when it changes, the selection is empty again, with no effect to wait for,
  * so an action can never apply to rows the list no longer shows. `pageIds`
  * are the rows of the page, in the order shown.

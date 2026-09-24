@@ -6,7 +6,7 @@ import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 // the whole run, so each test works on categories of its own and never
 // changes a default.
 
-const PAGE = "/reglages/categories";
+const PAGE = "/settings/categories";
 
 /** A category's row: its dot, icon, name, count and menu. */
 const row = (scope: Page | Locator, name: string) =>

@@ -16,12 +16,12 @@ const sidebarRow = (page: Page, name: string) =>
 	page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: new RegExp(name) });
 
 async function openSettings(page: Page, accountId: string) {
-	await page.goto(`/comptes/${accountId}`);
+	await page.goto(`/accounts/${accountId}`);
 	await page.getByRole("tab", { name: "Paramètres" }).click();
 	await expect(page).toHaveURL(/[?&]tab=settings/u);
 }
 
-/** The account options of the « Filtrer » menu on `/operations`. */
+/** The account options of the « Filtrer » menu on `/transactions`. */
 async function openAccountFilter(page: Page) {
 	await page.getByRole("button", { name: "Filtrer" }).click();
 	const menu = page.getByRole("dialog");
@@ -30,7 +30,7 @@ async function openAccountFilter(page: Page) {
 	return menu;
 }
 
-test("a new name and subtype show in the header, the sidebar, /comptes and /operations", async ({
+test("a new name and subtype show in the header, the sidebar, /accounts and /transactions", async ({
 	page,
 	api,
 }) => {
@@ -52,11 +52,11 @@ test("a new name and subtype show in the header, the sidebar, /comptes and /oper
 	await expect(header).toContainText(euros(48_000));
 	await expect(sidebarRow(page, name)).toContainText(euros(48_000));
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(pageRow(page, name)).toContainText("Épargne");
 	await expect(pageRow(page, account.name)).toHaveCount(0);
 
-	await page.goto(`/operations?q=${encodeURIComponent(label)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
 		new RegExp(`${label}.*${name}`, "u"),
 	]);
@@ -77,7 +77,7 @@ test("a credit card offers no type to choose, and a blank name is refused", asyn
 	await expect(page.getByRole("heading", { level: 1, name: card.name })).toBeVisible();
 });
 
-test("a deactivated account leaves /comptes, the sidebar and the filter, and comes back when reactivated", async ({
+test("a deactivated account leaves /accounts, the sidebar and the filter, and comes back when reactivated", async ({
 	page,
 	api,
 }) => {
@@ -107,7 +107,7 @@ test("a deactivated account leaves /comptes, the sidebar and the filter, and com
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 9_900));
 
 	// Its transactions stay listed, but the filter no longer offers it.
-	await page.goto(`/operations?q=${encodeURIComponent(label)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
 		new RegExp(`${label}.*${account.name}`, "u"),
 	]);
@@ -117,7 +117,7 @@ test("a deactivated account leaves /comptes, the sidebar and the filter, and com
 
 	// A link filtering on it from before still names it in its chip, and the
 	// menu still offers it, checked, so it can be unchecked.
-	await page.goto(`/operations?account=${encodeURIComponent(JSON.stringify([account.id]))}`);
+	await page.goto(`/transactions?account=${encodeURIComponent(JSON.stringify([account.id]))}`);
 	const accountChip = page.getByRole("button", { name: `Retirer le filtre ${account.name}` });
 	await expect(accountChip).toBeVisible();
 	const filtered = await openAccountFilter(page);
@@ -129,7 +129,7 @@ test("a deactivated account leaves /comptes, the sidebar and the filter, and com
 	await expect(page).not.toHaveURL(/[?&]account=/u);
 	await expect(accountChip).toHaveCount(0);
 
-	await page.goto("/comptes?showInactive=true");
+	await page.goto("/accounts?showInactive=true");
 	await row.click();
 	await page.getByRole("tab", { name: "Paramètres" }).click();
 	await page.getByRole("button", { name: "Réactiver le compte" }).click();
@@ -137,11 +137,11 @@ test("a deactivated account leaves /comptes, the sidebar and the filter, and com
 	await expect(page.getByRole("heading", { level: 1 })).not.toContainText("Inactif");
 	await expect(sidebarRow(page, account.name)).toBeVisible();
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(pageRow(page, account.name)).not.toContainText("Inactif");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before));
 
-	await page.goto("/operations");
+	await page.goto("/transactions");
 	const reopened = await openAccountFilter(page);
 	await expect(reopened.getByRole("checkbox", { name: account.name })).toBeVisible();
 });
@@ -173,7 +173,7 @@ test("the inactive switch shows only when an inactive account exists", async ({ 
 		}),
 	);
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 
 	await expect(pageRow(page, "Seul actif")).toBeVisible();
 	await expect(page.getByRole("switch", { name: "Afficher les comptes inactifs" })).toHaveCount(0);
@@ -192,7 +192,7 @@ test("an excluded account stays listed, muted with the eye-off icon, out of its 
 	await expect(page.getByText(`Compte « ${account.name} » enregistré.`)).toBeVisible();
 
 	expect(await api.groupTotal("asset")).toBe(before - 25_000);
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 25_000));
 
 	const row = pageRow(page, account.name);
@@ -246,19 +246,19 @@ test("deleting an account states its transactions, then removes it and them", as
 	await dialog.getByRole("button", { name: "Supprimer le compte" }).click();
 
 	await expect(page.getByText(`Compte « ${account.name} » supprimé.`)).toBeVisible();
-	await expect(page).toHaveURL(/\/comptes$/u);
+	await expect(page).toHaveURL(/\/accounts$/u);
 	await expect(pageRow(page, other.name)).toBeVisible();
 	await expect(pageRow(page, account.name)).toHaveCount(0);
 	await expect(sidebarRow(page, account.name)).toHaveCount(0);
 	await expect(page.getByRole("heading", { level: 2, name: "Actifs" })).toBeVisible();
 	expect(reads).toEqual([]);
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
 		new RegExp(`${prefix} gardée.*${other.name}`, "u"),
 	]);
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: "Compte introuvable" })).toBeVisible();
 });
 

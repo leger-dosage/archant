@@ -17,7 +17,7 @@ test("each period selects, and the summary names it", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(400) });
 	await api.addTransaction(account.id, { date: daysAgo(10), label: "Loyer", amount: "-100,00" });
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	const periods = page.getByRole("radiogroup", { name: "Période" });
 	const summary = page.getByText(/^Solde : /u);
 
@@ -46,7 +46,7 @@ test("« Voir les données » shows the series as a table", async ({ page, api }
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(60) });
 	await api.addTransaction(account.id, { date: daysAgo(10), label: "Loyer", amount: "-100,00" });
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	const toggle = page.getByRole("button", { name: "Voir les données" });
 
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -68,7 +68,7 @@ test("« Voir les données » shows the series as a table", async ({ page, api }
 test("an unknown period in the URL falls back to one month", async ({ page, api }) => {
 	const account = await api.openAccount();
 
-	await page.goto(`/comptes/${account.id}?period=decennie`);
+	await page.goto(`/accounts/${account.id}?period=decennie`);
 
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await expect(page.getByRole("radio", { name: "1 M" })).toBeChecked();
@@ -80,7 +80,7 @@ test("the period is kept across the pages of the transactions", async ({ page, a
 
 	await api.addDailyTransactions(account.id, 51, "Jour");
 
-	await page.goto(`/comptes/${account.id}?period=3M`);
+	await page.goto(`/accounts/${account.id}?period=3M`);
 	const pages = page.getByRole("navigation", { name: "Pages des opérations" });
 
 	await pages.getByRole("link", { name: "Suivant" }).click();

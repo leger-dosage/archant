@@ -42,7 +42,7 @@ export function useUpdateAccount(accountId: string) {
 }
 
 /**
- * Deletes an account, then lands on `/comptes`. The navigation comes first,
+ * Deletes an account, then lands on `/accounts`. The navigation comes first,
  * while the mutation is still pending and nothing re-renders: a component
  * still reading the account would ask for it again once its queries are
  * removed, and fail with a NOT_FOUND toast.
@@ -56,7 +56,7 @@ export function useDeleteAccount(accountId: string) {
 		mutationFn: async () =>
 			(await unwrap(api.accounts[":id"].$delete({ param: { id: accountId } }))).data,
 		onSuccess: async () => {
-			await navigate({ to: "/comptes" });
+			await navigate({ to: "/accounts" });
 			await queryClient.cancelQueries({ queryKey: queryKeys.accounts.detail(accountId) });
 			queryClient.removeQueries({ queryKey: queryKeys.accounts.detail(accountId) });
 			queryClient.removeQueries({ queryKey: queryKeys.transactions.ofAccount(accountId) });

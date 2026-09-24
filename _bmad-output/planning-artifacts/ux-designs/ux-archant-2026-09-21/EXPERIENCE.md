@@ -14,7 +14,7 @@ sources:
 
 Responsive web, desktop first. A phone can read everything and make quick edits, such as categorising a transaction; importing files and managing rules are laptop tasks. shadcn/ui on Vite, React, TanStack Router and Tailwind CSS 4. `DESIGN.md` is the visual reference; this file specifies behaviour and only the delta over shadcn's components.
 
-One instance serves one household and, for now, one signed-in user with the `admin` role. The interface is in French, through i18next, with every string in `locales/fr.json`.
+One instance serves one household and, for now, one signed-in user with the `admin` role. The interface is in French, through i18next, with every string in `locales/fr.json`. Routes and search params are English, as in Sure: a URL is not translated, so it must read the same whatever the locale.
 
 Navigation entries appear with the epic that ships them: a surface whose epic has not shipped is absent, never disabled.
 
@@ -23,19 +23,19 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | Surface | Route | Reached from | Purpose | Epic |
 | --- | --- | --- | --- | --- |
 | First-launch setup | `/setup` | First visit with no user | Create the administrator | 3 |
-| Sign-in | `/connexion` | Any page without a session | Sign in | 3 |
+| Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
 | Dashboard | `/` | Sidebar, `g d` | Net worth, its history, the month's income and expenses by category | 6 |
-| Accounts | `/comptes` | Sidebar, `g c` | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
-| Account detail | `/comptes/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports, Paramètres | 1 |
+| Accounts | `/accounts` | Sidebar, `g c` | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
+| Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports, Paramètres | 1 |
 | Import | Dialog over account detail | "Importer" on an account, `i` | File, column mapping, preview, confirmation | 2 |
-| Transactions | `/operations` | Sidebar, `g o` | All transactions, filters in the URL, bulk actions | 1 |
+| Transactions | `/transactions` | Sidebar, `g o` | All transactions, filters in the URL, bulk actions | 1 |
 | Transaction | Sheet over the current page | Row click, `Enter`, `e` | Edit every field | 1 |
-| Recurring | `/recurrences` | Sidebar, `g r` | Subscriptions and bills with the next date | 9 |
-| Rules | `/regles` | Sidebar, `g u` | Rules list and editor | 8 |
-| Settings | `/reglages/...` | Sidebar footer, `g s` | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
+| Recurring | `/recurring` | Sidebar, `g r` | Subscriptions and bills with the next date | 9 |
+| Rules | `/rules` | Sidebar, `g u` | Rules list and editor | 8 |
+| Settings | `/settings/...` | Sidebar footer, `g s` | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
 | Command palette | Overlay | `⌘K` / `Ctrl+K` | Go anywhere, run any action, find an account or a transaction | 1 |
 
-Until Epic 6 ships, `/` redirects to `/comptes`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
+Until Epic 6 ships, `/` redirects to `/accounts`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
 → Composition reference: [mockups/key-dashboard.html](mockups/key-dashboard.html), [mockups/key-transactions.html](mockups/key-transactions.html). This spine wins on conflict.
 

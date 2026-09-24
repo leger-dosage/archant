@@ -67,10 +67,10 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 						<SidebarMenuItem key={account.id}>
 							<SidebarMenuButton
 								asChild
-								isActive={pathname === `/comptes/${account.id}`}
+								isActive={pathname === `/accounts/${account.id}`}
 								className={cn("justify-between gap-2 pl-6", ACTIVE_INDICATOR)}
 							>
-								<Link to="/comptes/$accountId" params={{ accountId: account.id }}>
+								<Link to="/accounts/$accountId" params={{ accountId: account.id }}>
 									<span className="truncate">{account.name}</span>
 									<AccountBalance account={account} className="text-xs" />
 								</Link>
@@ -151,7 +151,7 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								// Exact: on an account page its own row carries the indicator.
-								isActive={pathname === "/comptes" || pathname === "/comptes/"}
+								isActive={pathname === "/accounts" || pathname === "/accounts/"}
 								// Shown expanded too: the tooltip is where the shortcut is learnt.
 								tooltip={{
 									children: <ShortcutHint id="goAccounts" label={t("nav.accounts")} />,
@@ -159,7 +159,7 @@ export function AppSidebar() {
 								}}
 								className={ACTIVE_INDICATOR}
 							>
-								<Link to="/comptes">
+								<Link to="/accounts">
 									<WalletIcon />
 									<span>{t("nav.accounts")}</span>
 								</Link>
@@ -168,14 +168,14 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								isActive={pathname === "/operations"}
+								isActive={pathname === "/transactions"}
 								tooltip={{
 									children: <ShortcutHint id="goOperations" label={t("nav.operations")} />,
 									hidden: false,
 								}}
 								className={ACTIVE_INDICATOR}
 							>
-								<Link to="/operations">
+								<Link to="/transactions">
 									<ListIcon />
 									<span>{t("nav.operations")}</span>
 								</Link>
@@ -184,14 +184,14 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								isActive={pathname === "/recurrences"}
+								isActive={pathname === "/recurring"}
 								tooltip={{
 									children: <ShortcutHint id="goRecurring" label={t("nav.recurring")} />,
 									hidden: false,
 								}}
 								className={ACTIVE_INDICATOR}
 							>
-								<Link to="/recurrences">
+								<Link to="/recurring">
 									<RepeatIcon />
 									<span>{t("nav.recurring")}</span>
 								</Link>
@@ -200,14 +200,14 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								isActive={pathname === "/regles"}
+								isActive={pathname === "/rules"}
 								tooltip={{
 									children: <ShortcutHint id="goRules" label={t("nav.rules")} />,
 									hidden: false,
 								}}
 								className={ACTIVE_INDICATOR}
 							>
-								<Link to="/regles">
+								<Link to="/rules">
 									<WandSparklesIcon />
 									<span>{t("nav.rules")}</span>
 								</Link>
