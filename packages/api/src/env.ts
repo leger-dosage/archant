@@ -1,4 +1,5 @@
 import { createEnv } from "@t3-oss/env-core";
+import { createPrivateKey } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 
@@ -9,6 +10,25 @@ function isTimeZone(value: string): boolean {
 		return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone !== "";
 	} catch {
 		return false;
+	}
+}
+
+/** AES-256 wants exactly this many bytes of key. */
+export const ENCRYPTION_KEY_BYTES = 32;
+
+/**
+ * The PEM behind a base64 value, when Node reads it as an RSA private key,
+ * PKCS#1 (`BEGIN RSA PRIVATE KEY`) or PKCS#8 (`BEGIN PRIVATE KEY`) alike.
+ * Base64, because a multi-line PEM does not survive every `.env` parser or
+ * control panel.
+ */
+function rsaPrivateKey(value: string) {
+	try {
+		const key = createPrivateKey(Buffer.from(value, "base64").toString("utf8"));
+
+		return key.asymmetricKeyType === "rsa" ? key : null;
+	} catch {
+		return null;
 	}
 }
 
@@ -62,6 +82,40 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.string()
 				.refine((value) => isAbsolute(value))
 				.optional(),
+			// Enable Banking (Story 10.1). All optional: without the three below the
+			// bank routes answer 503 and the rest of the app is untouched. A value
+			// present but unreadable still fails startup, as a bad secret does:
+			// a typo would otherwise look like an unconfigured feature.
+			ENABLE_BANKING_APPLICATION_ID: z.string().trim().min(1).optional(),
+			ENABLE_BANKING_PRIVATE_KEY: z
+				.string()
+				.optional()
+				.transform((value, context) => {
+					if (value === undefined) {
+						return undefined;
+					}
+
+					const key = rsaPrivateKey(value);
+
+					if (key === null) {
+						context.addIssue({ code: "custom", message: "invalid_private_key" });
+
+						return z.NEVER;
+					}
+
+					return key;
+				}),
+			// Encrypts bank session ids at rest. Losing it means reconnecting
+			// every bank; changing it without a migration has the same effect.
+			ENCRYPTION_KEY: z
+				.base64()
+				.transform((value) => Buffer.from(value, "base64"))
+				.refine((key) => key.length === ENCRYPTION_KEY_BYTES)
+				.optional(),
+			// Overridden only by the end-to-end suite, which points it at a fake.
+			ENABLE_BANKING_API_URL: z
+				.url({ protocol: /^https?$/u })
+				.default("https://api.enablebanking.com"),
 		},
 		runtimeEnv,
 		emptyStringAsUndefined: true,

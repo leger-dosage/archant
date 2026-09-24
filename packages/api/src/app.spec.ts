@@ -13,12 +13,20 @@ import { z } from "zod";
 
 import { TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
+import { validateEnv } from "./env.ts";
 import { createLogger } from "./lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "./schemas/imports.ts";
 import * as accountsService from "./services/accounts.ts";
+import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
 import * as recurringService from "./services/recurring.ts";
 import { buildTestApp, createSignedInTemplate, withSession } from "./testing/auth.ts";
+import {
+	TEST_APPLICATION_ID,
+	TEST_ENCRYPTION_KEY_BASE64,
+	TEST_PKCS1_BASE64,
+} from "./testing/bank.ts";
+import { FIXTURE_AUTH_URL, FIXTURE_SESSION_ID, mockProvider } from "./testing/enable-banking.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
 
 let template: SignedInTemplate;
@@ -6398,5 +6406,197 @@ describe("/api/recurring", () => {
 
 		expect(unknownId.status).toBe(404);
 		expect(errorBody.parse(await unknownId.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+// PKCS#1, as an older control panel export, so the whole path signs with it.
+function configuredBank() {
+	const { bankConnector, encryptionKey, bankSetup } = bankDepsFromEnv(
+		validateEnv({
+			DATABASE_URL: "file:x.db",
+			BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+			BETTER_AUTH_URL: "http://localhost:5173",
+			ENABLE_BANKING_APPLICATION_ID: TEST_APPLICATION_ID,
+			ENABLE_BANKING_PRIVATE_KEY: TEST_PKCS1_BASE64,
+			ENCRYPTION_KEY: TEST_ENCRYPTION_KEY_BASE64,
+		}),
+	);
+
+	return { bankConnector, encryptionKey, bankSetup };
+}
+
+describe("/api/bank-connections", () => {
+	async function bankApp(bank = configuredBank()) {
+		own = await freshDatabase();
+		logLines = [];
+		const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
+
+		return withSession(buildTestApp(own.db, logger, undefined, {}, bank), template.cookie);
+	}
+
+	it("connects a bank: list, start, callback, then the list of connections", async () => {
+		const requests = mockProvider();
+		const client = testClient(await bankApp()).api["bank-connections"];
+
+		const setup = await client.setup.$get();
+		expect(await setup.json()).toEqual({ data: { available: true, missing: [] } });
+
+		const institutions = await client.institutions.$get({ query: { country: "FR" } });
+		expect(institutions.status).toBe(200);
+		const offered = (await institutions.json()).data;
+		expect(offered.map((institution) => institution.name)).toEqual([
+			"Banque Test",
+			"Caisse Sans Limite",
+			"Crédit Exemple",
+		]);
+		expect(offered[0]).toEqual({
+			name: "Banque Test",
+			country: "FR",
+			logo: "https://enablebanking.com/brands/FR/Banque%20Test/",
+			bic: "BTSTFRPP",
+		});
+
+		const started = await client.$post({
+			json: { country: "FR", institution: "Banque Test" },
+		});
+		expect(started.status).toBe(200);
+		expect(await started.json()).toEqual({ data: { url: FIXTURE_AUTH_URL } });
+
+		const auth = requests.find((sent) => sent.path === "/auth");
+		const { state } = z.object({ state: z.string() }).parse(auth?.body);
+		const completed = await client.callback.$post({ json: { code: "the-code", state } });
+		expect(completed.status).toBe(200);
+		const connection = (await completed.json()).data;
+		expect(connection).toMatchObject({ institutionName: "Banque Test", status: "active" });
+
+		const list = await client.$get();
+		const body = await list.text();
+		expect(JSON.parse(body)).toEqual({ data: [connection] });
+		expect(body).not.toContain(FIXTURE_SESSION_ID);
+		expect(logLines.join("")).not.toContain(FIXTURE_SESSION_ID);
+
+		const stored = await own?.db.all<{ sessionId: string }>(
+			sql`select session_id as sessionId from bank_connections`,
+		);
+		expect(stored?.[0]?.sessionId).toMatch(/^v1:/u);
+	});
+
+	it("answers a replayed callback with BANK_AUTHORIZATION_INVALID", async () => {
+		const requests = mockProvider();
+		const client = testClient(await bankApp()).api["bank-connections"];
+		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		await client.callback.$post({ json: { code: "the-code", state } });
+
+		const replayed = await client.callback.$post({ json: { code: "the-code", state } });
+
+		expect(replayed.status).toBe(400);
+		expect(errorBody.parse(await replayed.json()).error.code).toBe("BANK_AUTHORIZATION_INVALID");
+	});
+
+	it("answers a refused redirect with BANK_REDIRECT_NOT_ALLOWED and the URL to register", async () => {
+		mockProvider({
+			auth: () =>
+				Response.json({ error: "REDIRECT_URI_NOT_ALLOWED", message: "nope" }, { status: 400 }),
+		});
+		const client = testClient(await bankApp()).api["bank-connections"];
+
+		const response = await client.$post({
+			json: { country: "FR", institution: "Banque Test" },
+		});
+
+		expect(response.status).toBe(502);
+		expect(await response.json()).toEqual({
+			error: {
+				code: "BANK_REDIRECT_NOT_ALLOWED",
+				message: "Register the redirect URL in the Enable Banking control panel.",
+				params: { url: "http://localhost:5173/reglages/banques/retour" },
+			},
+		});
+	});
+
+	it("refuses a country Sure does not offer, an empty bank name and an empty code", async () => {
+		const app = await bankApp();
+
+		const country = await app.request("/api/bank-connections/institutions?country=US");
+		expect(country.status).toBe(400);
+		expect(errorBody.parse(await country.json()).error.fields).toEqual([
+			{ path: "country", code: "invalid_value" },
+		]);
+
+		const blank = await testClient(app).api["bank-connections"].$post({
+			json: { country: "FR", institution: "  " },
+		});
+		expect(blank.status).toBe(400);
+		expect(errorBody.parse(await blank.json()).error.fields).toEqual([
+			{ path: "institution", code: "too_small" },
+		]);
+
+		const noCode = await testClient(app).api["bank-connections"].callback.$post({
+			json: { code: "", state: "s" },
+		});
+		expect(noCode.status).toBe(400);
+		expect(errorBody.parse(await noCode.json()).error.fields).toEqual([
+			{ path: "code", code: "too_small" },
+		]);
+	});
+
+	it("names the missing variables and answers 503 elsewhere, while accounts still answer", async () => {
+		const app = await bankApp({
+			...configuredBank(),
+			bankConnector: null,
+			encryptionKey: null,
+			bankSetup: ["ENCRYPTION_KEY"],
+		});
+		const client = testClient(app).api;
+
+		const setup = await client["bank-connections"].setup.$get();
+		expect(await setup.json()).toEqual({
+			data: { available: false, missing: ["ENCRYPTION_KEY"] },
+		});
+
+		const refused = await Promise.all([
+			app.request("/api/bank-connections"),
+			// Refused before its query is read: no field error for an unknown country.
+			app.request("/api/bank-connections/institutions?country=US"),
+			app.request("/api/bank-connections", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ country: "FR", institution: "Banque Test" }),
+			}),
+			app.request("/api/bank-connections/callback", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ code: "c", state: "s" }),
+			}),
+		]);
+
+		expect(refused.map((response) => response.status)).toEqual([503, 503, 503, 503]);
+		const codes = await Promise.all(
+			refused.map(async (response) => errorBody.parse(await response.json()).error.code),
+		);
+		expect(new Set(codes)).toEqual(new Set(["BANK_CONNECTOR_UNAVAILABLE"]));
+
+		const accounts = await client.accounts.$get();
+		expect(accounts.status).toBe(200);
+	});
+
+	it("answers UNAUTHORIZED without a session, the callback included", async () => {
+		own = await freshDatabase();
+		const app = buildTestApp(own.db, createLogger("silent"), undefined, {}, configuredBank());
+
+		const responses = await Promise.all([
+			app.request("/api/bank-connections/setup"),
+			app.request("/api/bank-connections"),
+			app.request("/api/bank-connections/callback", {
+				method: "POST",
+				headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+				body: JSON.stringify({ code: "c", state: "s" }),
+			}),
+		]);
+
+		expect(responses.map((response) => response.status)).toEqual([401, 401, 401]);
 	});
 });

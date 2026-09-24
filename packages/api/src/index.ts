@@ -8,6 +8,7 @@ import { createApp } from "./app.ts";
 import { validateEnv } from "./env.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createAuth } from "./services/auth.ts";
+import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
 import { seedDefaults } from "./services/seed.ts";
 
@@ -43,6 +44,7 @@ const app = createApp({
 	trustedProxies: env.TRUSTED_PROXIES,
 	clientAddress: (c) => getConnInfo(c).remote.address,
 	webDist: env.WEB_DIST,
+	...bankDepsFromEnv(env),
 });
 
 // Vite proxies `/api` here in development; see packages/web/vite.config.ts.

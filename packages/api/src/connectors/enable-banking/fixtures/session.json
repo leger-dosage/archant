@@ -1,0 +1,15 @@
+{
+	"session_id": "4b1a9f0e-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+	"accounts": [
+		{
+			"uid": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+			"identification_hash": "anonymised-hash",
+			"account_id": { "iban": "FR7600000000000000000000000" },
+			"name": "Compte courant",
+			"currency": "EUR"
+		}
+	],
+	"aspsp": { "name": "Banque Test", "country": "FR" },
+	"psu_type": "personal",
+	"access": { "valid_until": "2026-12-20T10:00:00.000000+00:00" }
+}

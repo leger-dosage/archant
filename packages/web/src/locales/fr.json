@@ -953,10 +953,38 @@
 	"settings": {
 		"title": "Réglages",
 		"sections": {
+			"banks": "Banques",
 			"categories": "Catégories",
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
 			"security": "Sécurité"
+		}
+	},
+	"banks": {
+		"title": "Banques",
+		"description": "Connectez une banque pour qu'Archant lise vos comptes à votre place. Vous donnez votre accord sur le site de la banque, qui peut le retirer à tout moment ; Archant ne voit jamais vos identifiants.",
+		"unavailable": {
+			"title": "La connexion bancaire n'est pas configurée",
+			"description": "Définissez ces variables d'environnement sur le serveur, puis redémarrez-le :",
+			"docs": "Lire le guide de déploiement"
+		},
+		"country": "Pays",
+		"search": "Rechercher une banque",
+		"searchPlaceholder": "Nom ou BIC",
+		"institutions": "Banques disponibles",
+		"noResults": "Aucune banque ne correspond à cette recherche.",
+		"noInstitutions": "Aucune banque n'est proposée pour ce pays.",
+		"bic": "BIC : {{bic}}",
+		"connect": "Connecter {{name}}",
+		"connections": "Banques connectées",
+		"noConnections": "Aucune banque connectée pour l'instant.",
+		"consentUntil": "Consentement valable jusqu'au {{date}}",
+		"return": {
+			"title": "Connexion à votre banque",
+			"pending": "Connexion en cours…",
+			"connected": "{{name}} est connectée.",
+			"refused": "La banque n'a pas donné son accord.",
+			"back": "Retour aux banques"
 		}
 	},
 	"security": {
@@ -996,6 +1024,10 @@
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
 		"SERVICE_UNAVAILABLE": "La base de données ne répond pas. Réessayez dans un instant.",
+		"BANK_CONNECTOR_UNAVAILABLE": "La connexion bancaire n'est pas configurée sur ce serveur.",
+		"BANK_PROVIDER_ERROR": "Enable Banking n'a pas répondu correctement. Réessayez dans un instant.",
+		"BANK_REDIRECT_NOT_ALLOWED": "Enable Banking refuse l'adresse de retour. Enregistrez {{url}} dans les réglages de votre application Enable Banking, puis réessayez.",
+		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

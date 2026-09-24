@@ -183,6 +183,13 @@
       "when": 1790244123622,
       "tag": "0025_add_recurring_status",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1790247268162,
+      "tag": "0026_add_bank_connections",
+      "breakpoints": true
     }
   ]
 }

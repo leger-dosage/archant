@@ -1,0 +1,5 @@
+{
+	"code": 401,
+	"message": "Invalid token: signature does not match application 00000000-0000-4000-8000-00000000a11d",
+	"error": "UNAUTHORIZED"
+}

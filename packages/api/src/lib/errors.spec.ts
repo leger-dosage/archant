@@ -13,6 +13,10 @@ describe("AppError", () => {
 		expect(new AppError("IMPORT_PREVIEW_STALE", "x").status).toBe(409);
 		expect(new AppError("IMPORT_NOT_REVERTABLE", "x").status).toBe(409);
 		expect(new AppError("SERVICE_UNAVAILABLE", "x").status).toBe(503);
+		expect(new AppError("BANK_CONNECTOR_UNAVAILABLE", "x").status).toBe(503);
+		expect(new AppError("BANK_PROVIDER_ERROR", "x").status).toBe(502);
+		expect(new AppError("BANK_REDIRECT_NOT_ALLOWED", "x").status).toBe(502);
+		expect(new AppError("BANK_AUTHORIZATION_INVALID", "x").status).toBe(400);
 	});
 
 	it("serialises fields only when it has some", () => {

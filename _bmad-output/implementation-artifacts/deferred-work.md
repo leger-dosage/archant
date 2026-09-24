@@ -79,3 +79,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-2-recurring-transactions-page.md`
   summary: A confirmed or inactive pattern that detection does not find again keeps its dates, so its next date slips into the past; a manual add or a confirm on an old row keeps its old dates too.
   evidence: medium. Detection refreshes only the patterns it finds, as Sure's identifier does; Sure runs a separate pass over manual rows. A manual item whose transaction has fewer than three occurrences in three months shows a past « Prochaine échéance » until detection finds it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-1-connect-a-bank.md`
+  summary: The CI `image` job does not check that `docker-compose.yml` passes the Enable Banking variables and `ENCRYPTION_KEY` to the container.
+  evidence: The job sets only `BETTER_AUTH_SECRET` and never calls `GET /api/bank-connections/setup`; a typo in one of the three pass-through lines stays green.

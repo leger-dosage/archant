@@ -1,6 +1,12 @@
+import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { validateEnv } from "./env.ts";
+import {
+	TEST_ENCRYPTION_KEY_BASE64,
+	TEST_PKCS1_BASE64,
+	TEST_PKCS8_BASE64,
+} from "./testing/bank.ts";
 
 const required = {
 	DATABASE_URL: "file:x.db",
@@ -27,6 +33,10 @@ describe("validateEnv", () => {
 		expect(env.BETTER_AUTH_URL).toBe("http://localhost:5173");
 		expect(env.TRUSTED_PROXIES).toEqual([]);
 		expect(env.WEB_DIST).toBeUndefined();
+		expect(env.ENABLE_BANKING_APPLICATION_ID).toBeUndefined();
+		expect(env.ENABLE_BANKING_PRIVATE_KEY).toBeUndefined();
+		expect(env.ENCRYPTION_KEY).toBeUndefined();
+		expect(env.ENABLE_BANKING_API_URL).toBe("https://api.enablebanking.com");
 	});
 
 	it("accepts an absolute WEB_DIST and names a relative one", () => {
@@ -75,5 +85,59 @@ describe("validateEnv", () => {
 
 	it.each(["localhost", "10.0.0.0/33", "127.0.0.1;rm"])("names the proxy %j", (entry) => {
 		expect(() => validateEnv({ ...required, TRUSTED_PROXIES: entry })).toThrow(/TRUSTED_PROXIES/);
+	});
+
+	it.each([
+		["PKCS#8", TEST_PKCS8_BASE64],
+		["PKCS#1", TEST_PKCS1_BASE64],
+	])("reads a %s private key and a 32-byte encryption key", (_, key) => {
+		const env = validateEnv({
+			...required,
+			ENABLE_BANKING_APPLICATION_ID: "app-id",
+			ENABLE_BANKING_PRIVATE_KEY: key,
+			ENCRYPTION_KEY: TEST_ENCRYPTION_KEY_BASE64,
+			ENABLE_BANKING_API_URL: "http://localhost:9999",
+		});
+
+		expect(env.ENABLE_BANKING_PRIVATE_KEY?.asymmetricKeyType).toBe("rsa");
+		expect(env.ENCRYPTION_KEY?.length).toBe(32);
+		expect(env.ENABLE_BANKING_API_URL).toBe("http://localhost:9999");
+	});
+
+	it.each([
+		["not base64 of a PEM", Buffer.from("hello").toString("base64")],
+		["a raw PEM", "-----BEGIN PRIVATE KEY-----"],
+		[
+			"an EC key",
+			Buffer.from(
+				generateKeyPairSync("ec", { namedCurve: "P-256" })
+					.privateKey.export({ type: "pkcs8", format: "pem" })
+					.toString(),
+			).toString("base64"),
+		],
+	])("names a private key that is %s", (_, key) => {
+		expect(() => validateEnv({ ...required, ENABLE_BANKING_PRIVATE_KEY: key })).toThrow(
+			/ENABLE_BANKING_PRIVATE_KEY/,
+		);
+	});
+
+	it.each([
+		["16 bytes", Buffer.alloc(16).toString("base64")],
+		["33 bytes", Buffer.alloc(33).toString("base64")],
+		["not base64", "not base64 at all!"],
+	])("names an encryption key of %s", (_, key) => {
+		expect(() => validateEnv({ ...required, ENCRYPTION_KEY: key })).toThrow(/ENCRYPTION_KEY/);
+	});
+
+	it("names an application id made of spaces only", () => {
+		expect(() => validateEnv({ ...required, ENABLE_BANKING_APPLICATION_ID: "   " })).toThrow(
+			/ENABLE_BANKING_APPLICATION_ID/,
+		);
+	});
+
+	it("names a provider URL that is not http", () => {
+		expect(() =>
+			validateEnv({ ...required, ENABLE_BANKING_API_URL: "ftp://api.enablebanking.com" }),
+		).toThrow(/ENABLE_BANKING_API_URL/);
 	});
 });
