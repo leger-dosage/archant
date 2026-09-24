@@ -345,7 +345,22 @@ export function apiHelpers(request: APIRequestContext) {
 			);
 		},
 
-		/** Deletes every rule, so none outlives the test that created it. */
+		/**
+		 * Applies the rule to existing transactions, as a confirmed « Appliquer »
+		 * does, recording one run.
+		 */
+		async applyRule(ruleId: string) {
+			// Bodiless, so it needs the `Origin` a browser would add.
+			const response = await request.post(`/api/rules/${ruleId}/apply`, { headers: sameOrigin });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/**
+		 * Deletes every rule, so none outlives the test that created it. Their
+		 * runs stay, as they would for the user, with no rule to point at: a
+		 * test reads runs by a rule name or a label of its own.
+		 */
 		async deleteRules() {
 			const response = await request.get("/api/rules");
 

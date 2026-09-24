@@ -4265,6 +4265,7 @@ const categoryAction = (value: string) => ({ actionType: "set_transaction_catego
 describe("rules", () => {
 	// A rule reaches every later transaction of this shared database.
 	afterEach(async () => {
+		await temp.db.run(sql`delete from rule_runs`);
 		await temp.db.run(sql`delete from rules`);
 	});
 
@@ -4713,6 +4714,256 @@ describe("rules", () => {
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual(fields);
 		expect((await request("GET", "/api/rules")).body).toEqual({ data: [] });
+	});
+
+	// Story 8.3: applying rules to existing transactions. Rows are created
+	// before the rule, so ingestion leaves them alone; each test labels its
+	// rows with a word of its own, since every test shares this database.
+
+	const idBody = z.object({ data: z.object({ id: z.string() }) });
+	const previewBody = z.object({ data: z.object({ changed: z.number() }) });
+	const applicationBody = z.object({
+		data: z.object({
+			changed: z.number(),
+			runs: z.array(
+				z.object({
+					ruleId: z.string().nullable(),
+					rule: z.object({ name: z.string().nullable() }),
+					matchedCount: z.number(),
+					changedCount: z.number(),
+				}),
+			),
+		}),
+	});
+
+	async function typed(accountId: string, json: Record<string, string | null>) {
+		return idBody.parse((await postTransaction(accountId, json)).body).data.id;
+	}
+
+	async function previewOf(path: string) {
+		const { status, body } = await request("GET", path);
+
+		expect(status).toBe(200);
+
+		return previewBody.parse(body).data.changed;
+	}
+
+	async function applied(path: string) {
+		const { status, body } = await request("POST", path);
+
+		expect(status).toBe(200);
+
+		return applicationBody.parse(body).data.runs;
+	}
+
+	async function pairedAccounts(entryId: string) {
+		return temp.db.all<{ outflow: string; inflow: string }>(
+			sql`select eo.account_id as outflow, ei.account_id as inflow from transfers t join entries eo on eo.id = t.outflow_transaction_id join entries ei on ei.id = t.inflow_transaction_id where t.outflow_transaction_id = ${entryId} or t.inflow_transaction_id = ${entryId}`,
+		);
+	}
+
+	it("counts, then changes, only the rows neither locked nor already there, and records the run", async () => {
+		const account = await openAccount();
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		await Promise.all(
+			[1, 2, 3].map((index) =>
+				typed(account.id, { ...expense, label: `CB CARREFOUR ORPHEE ${index}` }),
+			),
+		);
+		const locked = await typed(account.id, { ...expense, label: "CB CARREFOUR ORPHEE 4" });
+		const already = await typed(account.id, { ...expense, label: "CB CARREFOUR ORPHEE 5" });
+		await request("PATCH", `/api/transactions/${locked}`, { categoryId: leisure.id });
+		await temp.db.run(
+			sql`update transactions set category_id = ${groceries.id}, category_origin = 'rule' where entry_id = ${already}`,
+		);
+		const rule = await createRule({ name: "Courses", ...labelRule("orphee", groceries.id) });
+
+		await expect(previewOf(`/api/rules/${rule.id}/preview`)).resolves.toBe(3);
+		const { status, body } = await request("POST", `/api/rules/${rule.id}/apply`);
+		expect(status).toBe(200);
+		expect(applicationBody.parse(body).data).toMatchObject({
+			changed: 3,
+			runs: [{ ruleId: rule.id, rule: { name: "Courses" }, matchedCount: 5, changedCount: 3 }],
+		});
+
+		const rows = await categoriesOf(account.id);
+		expect(rows.filter((row) => row.category === groceries.id)).toHaveLength(4);
+		expect(rows.filter((row) => row.category === leisure.id)).toEqual([
+			{ label: "CB CARREFOUR ORPHEE 4", category: leisure.id, origin: "user" },
+		]);
+		// Rules add no lock: the rows the rule changed hold none on their category.
+		const locks = await temp.db.all<{ locked: string }>(
+			sql`select t.locked_fields as locked from transactions t join entries e on e.id = t.entry_id where e.account_id = ${account.id} and t.entry_id != ${locked}`,
+		);
+		expect(locks.every(({ locked: fields }) => !fields.includes("category"))).toBe(true);
+	});
+
+	it("reaches only the rows dated on or after the rule's start date", async () => {
+		const account = await openAccount({ openingDate: "2026-05-01" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		await typed(account.id, { ...expense, date: "2026-05-20", label: "CB PERSEE MAI" });
+		await typed(account.id, { ...expense, date: "2026-06-10", label: "CB PERSEE JUIN" });
+		const rule = await createRule({
+			effectiveDate: "2026-06-01",
+			...labelRule("persee", groceries.id),
+		});
+
+		await expect(previewOf(`/api/rules/${rule.id}/preview`)).resolves.toBe(1);
+		await applied(`/api/rules/${rule.id}/apply`);
+
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB PERSEE MAI", category: null, origin: null },
+			{ label: "CB PERSEE JUIN", category: groceries.id, origin: "rule" },
+		]);
+	});
+
+	it("applies every enabled rule in order, the later seeing the earlier's merchant, one run each", async () => {
+		const account = await openAccount();
+		const amazon = await createMerchant(uniqueCategory("Amazon"));
+		const purchases = await createTag(uniqueCategory("Achats"));
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		await typed(account.id, { ...expense, label: "AMZN ANDROMEDE" });
+		const first = await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "andromede")],
+			actions: [{ actionType: "set_transaction_merchant", value: amazon.id }],
+		});
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		const second = await createRule({
+			conditions: [ruleLeaf("transaction_merchant", "=", amazon.id)],
+			actions: [{ actionType: "set_transaction_tags", value: purchases.id }],
+		});
+		vi.setSystemTime(new Date("2026-09-21T10:00:02Z"));
+		const disabled = await createRule(labelRule("andromede", groceries.id));
+		await request("PATCH", `/api/rules/${disabled.id}`, { enabled: false });
+
+		await expect(previewOf("/api/rules/preview")).resolves.toBe(1);
+		const runs = await applied("/api/rules/apply");
+
+		expect(
+			runs.map(({ ruleId, matchedCount, changedCount }) => ({
+				ruleId,
+				matchedCount,
+				changedCount,
+			})),
+		).toEqual([
+			{ ruleId: first.id, matchedCount: 1, changedCount: 1 },
+			{ ruleId: second.id, matchedCount: 1, changedCount: 1 },
+		]);
+		await expect(detailsOf(account.id)).resolves.toMatchObject([
+			{ merchant: amazon.id, tags: purchases.id, category: null },
+		]);
+	});
+
+	it("tags a row already in a transfer on « Type est Virement »", async () => {
+		const joint = await openAccount();
+		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
+		const moved = await createTag(uniqueCategory("Épargne"));
+		const outflow = await typed(joint.id, {
+			...expense,
+			label: "VIR CASSIOPEE",
+			amount: "-613,17",
+		});
+		await typed(livret.id, { ...expense, label: "VIR RECU", amount: "613,17" });
+		await expect(pairedAccounts(outflow)).resolves.toHaveLength(1);
+		const rule = await createRule({
+			conditions: [
+				ruleLeaf("transaction_name", "like", "cassiopee"),
+				ruleLeaf("transaction_type", "=", "transfer"),
+			],
+			actions: [{ actionType: "set_transaction_tags", value: moved.id }],
+		});
+
+		await applied(`/api/rules/${rule.id}/apply`);
+
+		await expect(detailsOf(joint.id)).resolves.toMatchObject([{ tags: moved.id }]);
+	});
+
+	it("pairs an unmatched row with the one candidate on the account « Virement avec » names", async () => {
+		const joint = await openAccount();
+		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+		// Both inflows first: the outflow arrives with two candidates and stays alone.
+		await typed(card.id, { ...expense, label: "REMBOURSEMENT", amount: "521,09" });
+		await typed(livret.id, { ...expense, label: "VIR RECU", amount: "521,09" });
+		const outflow = await typed(joint.id, { ...expense, label: "VIR ORION", amount: "-521,09" });
+		await expect(pairedAccounts(outflow)).resolves.toEqual([]);
+		const rule = await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "orion")],
+			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+		});
+
+		await applied(`/api/rules/${rule.id}/apply`);
+
+		await expect(pairedAccounts(outflow)).resolves.toEqual([
+			{ outflow: joint.id, inflow: livret.id },
+		]);
+	});
+
+	it("leaves the row unpaired when the named account holds several candidates", async () => {
+		const joint = await openAccount();
+		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
+		await typed(livret.id, { ...expense, label: "VIR RECU 1", amount: "433,51" });
+		await typed(livret.id, { ...expense, label: "VIR RECU 2", amount: "433,51" });
+		const outflow = await typed(joint.id, { ...expense, label: "VIR LYRE", amount: "-433,51" });
+		const rule = await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "lyre")],
+			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+		});
+
+		await expect(applied(`/api/rules/${rule.id}/apply`)).resolves.toMatchObject([
+			{ changedCount: 1 },
+		]);
+		await expect(pairedAccounts(outflow)).resolves.toEqual([]);
+	});
+
+	it("counts nothing and records no run without an enabled rule", async () => {
+		const rule = await createRule(
+			labelRule("pegase", (await createCategory(uniqueCategory("C"))).id),
+		);
+		await request("PATCH", `/api/rules/${rule.id}`, { enabled: false });
+
+		await expect(previewOf("/api/rules/preview")).resolves.toBe(0);
+		await expect(applied("/api/rules/apply")).resolves.toEqual([]);
+		await expect(request("GET", "/api/rules/runs")).resolves.toMatchObject({
+			body: { data: { items: [], page: 1, total: 0 } },
+		});
+	});
+
+	it("pages the runs, the latest first, keeping each once its rule is deleted", async () => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const rule = await createRule({ name: "Première", ...labelRule("hydre", groceries.id) });
+		await applied(`/api/rules/${rule.id}/apply`);
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		await request("PUT", `/api/rules/${rule.id}`, {
+			name: "Seconde",
+			...labelRule("hydre", groceries.id),
+		});
+		await applied(`/api/rules/${rule.id}/apply`);
+		await request("DELETE", `/api/rules/${rule.id}`);
+
+		const page = async (number: number) =>
+			(await request("GET", `/api/rules/runs?page=${number}&pageSize=1`)).body;
+
+		await expect(page(1)).resolves.toMatchObject({
+			data: { items: [{ ruleId: null, rule: { name: "Seconde" } }], page: 1, pageSize: 1 },
+		});
+		await expect(page(2)).resolves.toMatchObject({
+			data: { items: [{ ruleId: null, rule: { name: "Première" } }], page: 2, pageSize: 1 },
+		});
+		const { status, body } = await request("GET", "/api/rules/runs?page=0");
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
+	});
+
+	it.each([
+		["GET", "/api/rules/nope/preview"],
+		["POST", "/api/rules/nope/apply"],
+	])("answers %s %s with NOT_FOUND", async (method, path) => {
+		const response = await request(method, path);
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
 	});
 });
 

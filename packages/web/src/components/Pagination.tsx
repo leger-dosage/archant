@@ -1,4 +1,4 @@
-import type { PageParam } from "@/lib/page-search";
+import type { PageParam, RulesPageParam } from "@/lib/page-search";
 import type { ReactNode } from "react";
 
 import { Link } from "@tanstack/react-router";
@@ -7,10 +7,11 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { pageSearch } from "@/lib/page-search";
 
-/** The list the pages belong to: one of an account page's, or `/operations`. */
+/** The list the pages belong to: one of an account page's, `/operations`, or the runs on `/regles`. */
 export type PageTarget =
 	| { to: "/comptes/$accountId"; accountId: string; param: PageParam }
-	| { to: "/operations" };
+	| { to: "/operations" }
+	| { to: "/regles"; param: RulesPageParam };
 
 type PaginationProps = {
 	target: PageTarget;
@@ -32,6 +33,17 @@ function PageLink({
 	if (target.to === "/operations") {
 		return (
 			<Link to="/operations" search={(previous) => ({ ...previous, ...pageSearch("page", page) })}>
+				{children}
+			</Link>
+		);
+	}
+
+	if (target.to === "/regles") {
+		return (
+			<Link
+				to="/regles"
+				search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}
+			>
 				{children}
 			</Link>
 		);

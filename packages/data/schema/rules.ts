@@ -1,4 +1,4 @@
-import type { RuleActionType, RuleConditionType, RuleOperator } from "../rules.ts";
+import type { RuleActionType, RuleConditionType, RuleOperator, RuleSnapshot } from "../rules.ts";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import { sql } from "drizzle-orm";
@@ -95,4 +95,27 @@ export const ruleActions = sqliteTable(
 		index("rule_actions_rule").on(table.ruleId),
 		check("rule_actions_type_check", sql`${table.actionType} in ${inList(RULE_ACTION_TYPES)}`),
 	],
+);
+
+/**
+ * Sure's `RuleRun`: one confirmed application of a rule to existing
+ * transactions. An ingest records none. `rule` is the rule as it was then;
+ * `rule_id` still points at it for as long as it exists.
+ */
+export const ruleRuns = sqliteTable(
+	"rule_runs",
+	{
+		id: text("id").primaryKey(),
+		ruleId: text("rule_id").references(() => rules.id, { onDelete: "set null" }),
+		rule: text("rule", { mode: "json" }).$type<RuleSnapshot>().notNull(),
+		// Rows the rule matched against what earlier rules of the same run planned.
+		matchedCount: integer("matched_count").notNull(),
+		// Rows it altered: a locked field or a value already there is no change.
+		changedCount: integer("changed_count").notNull(),
+		executedAt: integer("executed_at").notNull(),
+		// The rule's place in its application: the runs of one « Appliquer toutes
+		// les règles » share `executed_at`, and list in the order they applied.
+		position: integer("position").notNull(),
+	},
+	(table) => [index("rule_runs_executed").on(table.executedAt, table.position)],
 );

@@ -60,6 +60,8 @@ import {
 	removeTag,
 	revertImport,
 	applyRulePlan,
+	applyRulePlanToHistory,
+	ruleCandidates,
 	updateSnapshot,
 	updateTransaction,
 } from "./ledger.ts";
@@ -5146,7 +5148,7 @@ describe("applyRulePlan", () => {
 	}
 
 	it("writes nothing for an empty plan", async () => {
-		await expect(write(new Map())).resolves.toBe(0);
+		await expect(write(new Map())).resolves.toEqual({ changed: [], marked: [] });
 	});
 
 	it("writes every planned field with a rule origin, and locks nothing", async () => {
@@ -5176,7 +5178,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toBe(2);
+		expect(written).toEqual({ changed: [id, twin], marked: [id] });
 		await expect(categoryOf(id)).resolves.toBe(groceries);
 		await expect(categoryOriginOf(id)).resolves.toBe("rule");
 		await expect(merchantOf(id)).resolves.toBe(merchant);
@@ -5222,7 +5224,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toBe(0);
+		expect(written).toEqual({ changed: [], marked: [] });
 		await expect(categoryOf(locked)).resolves.toBe(leisure);
 		await expect(categoryOriginOf(locked)).resolves.toBe("user");
 		await expect(merchantOf(locked)).resolves.toBeNull();
@@ -5240,7 +5242,10 @@ describe("applyRulePlan", () => {
 		const crowded = await add(account.id);
 		await updateTransaction(deps(), crowded, { tagIds: full }, { origin: "rule" });
 
-		await expect(write(new Map([[crowded, { addTagIds: [added] }]]))).resolves.toBe(0);
+		await expect(write(new Map([[crowded, { addTagIds: [added] }]]))).resolves.toEqual({
+			changed: [],
+			marked: [],
+		});
 		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 	});
 
@@ -5256,8 +5261,14 @@ describe("applyRulePlan", () => {
 		const id = await add(account.id);
 		await updateTransaction(deps(), id, { tagIds: almost }, { origin: "rule" });
 
-		await expect(write(new Map([[id, { addTagIds: [carried] }]]))).resolves.toBe(0);
-		await expect(write(new Map([[id, { addTagIds: [carried, added] }]]))).resolves.toBe(1);
+		await expect(write(new Map([[id, { addTagIds: [carried] }]]))).resolves.toEqual({
+			changed: [],
+			marked: [],
+		});
+		await expect(write(new Map([[id, { addTagIds: [carried, added] }]]))).resolves.toEqual({
+			changed: [id],
+			marked: [],
+		});
 		await expect(tagsOf(id)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 		await expect(tagsOf(id)).resolves.toContain(added);
 	});
@@ -5281,7 +5292,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toBe(0);
+		expect(written).toEqual({ changed: [], marked: [] });
 		await expect(categoryOf(id)).resolves.toBeNull();
 		await expect(merchantOf(id)).resolves.toBeNull();
 		await expect(tagsOf(id)).resolves.toEqual([]);
@@ -5300,8 +5311,129 @@ describe("applyRulePlan", () => {
 					[alone, { expectedTransferAccountId: joint.id }],
 				]),
 			),
-		).resolves.toBe(0);
+		).resolves.toEqual({ changed: [], marked: [] });
 		await expect(expectedOf(outflow)).resolves.toBeNull();
 		await expect(expectedOf(alone)).resolves.toBeNull();
+	});
+});
+
+// Story 8.3: applying rules to history reads every transaction as a rule does.
+
+describe("ruleCandidates", () => {
+	const candidatesOf = async (ids: readonly string[], from: string | null = null) =>
+		(await ruleCandidates(temp.db, from)).filter((candidate) => ids.includes(candidate.id));
+
+	it("reads what a rule reads and writes, locks and the transfer kind included", async () => {
+		const { outflow, inflow, livret } = await matchedPair();
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const merchant = await newMerchant("Amazon");
+		const tag = await newTag("Achats");
+		const edited = await add(account.id, { label: "AMZN Mktp", notes: "Colis" }, "sync");
+		await updateTransaction(
+			deps(),
+			edited,
+			{ categoryId: groceries, merchantId: merchant, tagIds: [tag], excluded: true },
+			{ origin: "user" },
+		);
+		await temp.db
+			.update(transactions)
+			.set({ expectedTransferAccountId: livret.id })
+			.where(eq(transactions.entryId, edited));
+
+		const [read] = await candidatesOf([edited]);
+
+		expect(read).toMatchObject({
+			id: edited,
+			accountId: account.id,
+			date: "2026-09-10",
+			amount: -4290,
+			currency: "EUR",
+			label: "AMZN Mktp",
+			notes: "Colis",
+			merchantId: merchant,
+			categoryId: groceries,
+			tagIds: [tag],
+			excluded: true,
+			transfer: null,
+			expectedTransferAccountId: livret.id,
+		});
+		expect(read?.lockedFields).toEqual(
+			expect.arrayContaining(["category", "merchant", "tags", "excluded"]),
+		);
+		await expect(candidatesOf([outflow, inflow])).resolves.toMatchObject([
+			{ transfer: { kind: "internal_move" } },
+			{ transfer: { kind: "internal_move" } },
+		]);
+	});
+
+	it("keeps rows dated on or after the start, every date without one", async () => {
+		const account = await openChecking({ openingDate: "2026-05-01" });
+		const may = await add(account.id, { date: "2026-05-31" });
+		const june = await add(account.id, { date: "2026-06-01" });
+
+		await expect(candidatesOf([may, june], "2026-06-01")).resolves.toMatchObject([{ id: june }]);
+		await expect(candidatesOf([may, june])).resolves.toMatchObject([{ id: may }, { id: june }]);
+	});
+
+	it("leaves out the opening anchor and a reconciliation", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+		await snapshot(account.id, "2026-09-15", 1000);
+
+		const own = (await ruleCandidates(temp.db, null)).filter(
+			(candidate) => candidate.accountId === account.id,
+		);
+
+		expect(own.map((candidate) => candidate.id)).toEqual([id]);
+	});
+
+	it("reads the tags of more rows than one lookup holds", async () => {
+		const account = await openChecking();
+		const tag = await newTag("Lot");
+		const result = await ingest(
+			deps(),
+			account.id,
+			{
+				transactions: Array.from({ length: 520 }, (_, index) =>
+					line({ label: `Ligne ${index}`, amount: toMinorUnits(-(index + 1)) }),
+				),
+				balance: null,
+				rejected: [],
+			},
+			{ manual: true },
+			{ origin: "sync" },
+		);
+		const last = result.created.at(-1) ?? "";
+		await temp.db.insert(taggings).values({ transactionId: last, tagId: tag });
+
+		const read = await candidatesOf(result.created);
+
+		expect(read).toHaveLength(520);
+		expect(read.find((candidate) => candidate.id === last)?.tagIds).toEqual([tag]);
+	});
+});
+
+describe("applyRulePlanToHistory", () => {
+	it("pairs an existing row with the expected account's line it had to share before", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		// Both inflows come first, so the outflow arrives with two candidates
+		// and step 6 leaves every row unpaired.
+		await add(card.id, { amount: toMinorUnits(amount), label: "Remboursement" });
+		const inflow = await add(livret.id, { amount: toMinorUnits(amount), label: "VIR RECU" });
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+
+		const changed = await applyRulePlanToHistory(
+			deps(),
+			new Map([[outflow, { expectedTransferAccountId: livret.id }]]),
+			{ origin: "rule" },
+		);
+
+		expect(changed).toBe(1);
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: inflow, kind: "internal_move" },
+		]);
 	});
 });

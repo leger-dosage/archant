@@ -1,3 +1,4 @@
+import type { IsoDate } from "../domain/dates.ts";
 import type { Condition, LeafCondition, Rule, RuleAction } from "../domain/rules/matching.ts";
 import type {
 	RuleConditionRequest,
@@ -8,15 +9,20 @@ import type {
 } from "../schemas/rules.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, count, desc, eq, inArray } from "drizzle-orm";
 
 import { toMinorUnits } from "@archant/data/money";
-import type { RuleActionType, RuleConditionType, RuleOperator } from "@archant/data/rules";
+import type {
+	RuleActionType,
+	RuleConditionSnapshot,
+	RuleConditionType,
+	RuleSnapshot,
+} from "@archant/data/rules";
 import { isRuleOperatorOf, isValuelessAction } from "@archant/data/rules";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
-import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
+import { ruleActions, ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import { tags } from "@archant/data/schema/tags";
 import type {
 	NewRuleCondition,
@@ -25,35 +31,22 @@ import type {
 } from "@archant/data/types";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
+import { planActions } from "../domain/rules/matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
+import { applyRulePlanToHistory, ruleCandidates } from "./ledger.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /**
- * A condition as the interface reads it. `value` is stored text: the label
- * or the notes, the amount in minor units of the reporting currency, a
- * direction, or an account, merchant, category or tag id; `null` for
- * `is_null` and for a group, whose conditions follow.
+ * An action's `value` is a category, merchant, tag or account id, which may
+ * name a deleted one; the new label of a rename; `null` for an exclusion.
  */
-export type RuleConditionData = {
-	conditionType: RuleConditionType;
-	operator: RuleOperator;
-	value: string | null;
-	conditions: RuleConditionData[];
-};
-
-export type RuleData = {
+export type RuleData = RuleSnapshot & {
 	id: string;
-	name: string | null;
 	enabled: boolean;
 	effectiveDate: string | null;
-	conditions: RuleConditionData[];
-	/**
-	 * `value` is a category, merchant, tag or account id, which may name a
-	 * deleted one; the new label of a rename; `null` for an exclusion.
-	 */
-	actions: { actionType: RuleActionType; value: string | null }[];
 };
 
 type Db = ServiceDeps["db"];
@@ -109,7 +102,7 @@ type ReadRule = { row: RuleRow; conditions: RuleConditionRow[]; actions: ActionR
 function conditionTree(
 	conditions: readonly RuleConditionRow[],
 	parentId: string | null,
-): RuleConditionData[] {
+): RuleConditionSnapshot[] {
 	return conditions
 		.filter((condition) => condition.parentId === parentId)
 		.map((condition) => ({
@@ -517,6 +510,29 @@ function toCondition(
 	};
 }
 
+/** The ids still in each table, read once per load. */
+async function knownReferences(db: Pick<Db, "select">): Promise<Known> {
+	const [account, merchant, category, tag] = await Promise.all([
+		existing(db, "account"),
+		existing(db, "merchant"),
+		existing(db, "category"),
+		existing(db, "tag"),
+	]);
+
+	return { account, merchant, category, tag };
+}
+
+function toRule({ row, conditions, actions }: ReadRule, known: Known): Rule {
+	return {
+		id: row.id,
+		effectiveDate: row.effectiveDate,
+		conditions: conditions
+			.filter((condition) => condition.parentId === null)
+			.map((condition) => toCondition(condition, conditions, known)),
+		actions: actions.map((action) => toAction(action, known)),
+	};
+}
+
 /**
  * The enabled rules as the evaluator reads them, in application order, with
  * deleted accounts, merchants, categories and tags resolved to `null`. Step
@@ -529,20 +545,166 @@ export async function loadEnabledRules(db: Pick<Db, "select">): Promise<Rule[]> 
 		return [];
 	}
 
-	const [account, merchant, category, tag] = await Promise.all([
-		existing(db, "account"),
-		existing(db, "merchant"),
-		existing(db, "category"),
-		existing(db, "tag"),
-	]);
-	const known: Known = { account, merchant, category, tag };
+	const known = await knownReferences(db);
 
-	return found.map(({ row, conditions, actions }) => ({
-		id: row.id,
-		effectiveDate: row.effectiveDate,
-		conditions: conditions
-			.filter((condition) => condition.parentId === null)
-			.map((condition) => toCondition(condition, conditions, known)),
-		actions: actions.map((action) => toAction(action, known)),
-	}));
+	return found.map((rule) => toRule(rule, known));
+}
+
+/** A rule as the evaluator reads it, beside the snapshot a run keeps of it. */
+type Applied = { rule: Rule; snapshot: RuleSnapshot };
+
+/**
+ * The rules an application runs: the one `id` names, enabled or not, or every
+ * enabled rule in application order. Throws `NOT_FOUND` for an unknown id.
+ */
+async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
+	const found = await readRules(db, id === undefined ? { enabled: true } : { id });
+
+	if (id !== undefined && found.length === 0) {
+		throw notFound();
+	}
+
+	if (found.length === 0) {
+		return [];
+	}
+
+	const known = await knownReferences(db);
+
+	return found.map((read) => {
+		const { name, conditions, actions } = toData(read);
+
+		return { rule: toRule(read, known), snapshot: { name, conditions, actions } };
+	});
+}
+
+/**
+ * The earliest date any of `reached` reaches, `null` for every date: a rule
+ * without a start date reaches them all.
+ */
+function earliestStart(reached: readonly Rule[]): IsoDate | null {
+	const starts = reached.map((rule) => rule.effectiveDate);
+
+	if (starts.includes(null)) {
+		return null;
+	}
+
+	return starts.filter((start) => start !== null).toSorted()[0] ?? null;
+}
+
+/** The plan and per-rule tallies of `applied` over the transactions it reaches. */
+async function planOver(db: Pick<Db, "select">, applied: readonly Applied[]) {
+	const evaluated = applied.map(({ rule }) => rule);
+	const candidates = await ruleCandidates(db, earliestStart(evaluated));
+
+	return planActions(evaluated, candidates, getReportingCurrency(), MAX_TAGS_PER_TRANSACTION);
+}
+
+/**
+ * How many existing transactions applying the rule `id`, or every enabled
+ * rule when it is absent, would change: a locked field or a value already
+ * there is no change, and a row several rules change counts once. Writes
+ * nothing and records no run.
+ */
+export async function previewRules(deps: ServiceDeps, id?: string): Promise<{ changed: number }> {
+	const applied = await rulesToApply(deps.db, id);
+
+	if (applied.length === 0) {
+		return { changed: 0 };
+	}
+
+	const { plan } = await planOver(deps.db, applied);
+
+	return { changed: plan.size };
+}
+
+export type RuleRunData = {
+	id: string;
+	/** `null` once the rule is deleted; `rule` still says what ran. */
+	ruleId: string | null;
+	rule: RuleSnapshot;
+	matchedCount: number;
+	changedCount: number;
+	executedAt: number;
+	/** The rule's place in its application, which shares `executedAt`. */
+	position: number;
+};
+
+/** What an application answers: the rows it changed, and one run per rule. */
+export type RuleApplication = { changed: number; runs: RuleRunData[] };
+
+/**
+ * Applies the rule `id`, or every enabled rule in application order, to
+ * existing transactions, as `previewRules` counted them. One immediate
+ * transaction plans again, writes through the ledger with a rule origin, so
+ * no lock is added and none is crossed, pairs the rows a transfer action
+ * marked, and records one run per rule. No balance moves: no rule action
+ * changes an amount. Answers how many rows it changed, a row several rules
+ * change counted once, and the runs; none without a rule to apply.
+ */
+export async function applyRules(deps: ServiceDeps, id?: string): Promise<RuleApplication> {
+	return deps.db.transaction(
+		async (tx) => {
+			const applied = await rulesToApply(tx, id);
+
+			if (applied.length === 0) {
+				return { changed: 0, runs: [] };
+			}
+
+			const { plan, perRule } = await planOver(tx, applied);
+			const now = Date.now();
+			// Inside this transaction, the ledger's own becomes a savepoint: the
+			// writes and the runs commit together.
+			const changed = await applyRulePlanToHistory({ ...deps, db: tx }, plan, {
+				origin: "rule",
+			});
+
+			const snapshotOf = new Map(applied.map(({ rule, snapshot }) => [rule.id, snapshot]));
+			const runs = perRule.map((tally, position) => {
+				const snapshot = snapshotOf.get(tally.ruleId);
+
+				// `planActions` tallies the rules it was given, so this is a bug, not a state.
+				if (snapshot === undefined) {
+					throw new Error("A rule tally names no applied rule.");
+				}
+
+				return {
+					id: crypto.randomUUID(),
+					ruleId: tally.ruleId,
+					rule: snapshot,
+					matchedCount: tally.matched,
+					changedCount: tally.changed,
+					executedAt: now,
+					position,
+				};
+			});
+
+			await tx.insert(ruleRuns).values(runs);
+
+			return { changed, runs };
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+export type RuleRunPage = {
+	items: RuleRunData[];
+	page: number;
+	pageSize: number;
+	total: number;
+};
+
+/** A page of the recorded runs, the latest application first, each in the order its rules applied. */
+export async function listRuleRuns(
+	deps: ServiceDeps,
+	page: { page: number; pageSize: number },
+): Promise<RuleRunPage> {
+	const items = await deps.db
+		.select()
+		.from(ruleRuns)
+		.orderBy(desc(ruleRuns.executedAt), asc(ruleRuns.position), desc(ruleRuns.id))
+		.limit(page.pageSize)
+		.offset((page.page - 1) * page.pageSize);
+	const totals = await deps.db.select({ total: count() }).from(ruleRuns).get();
+
+	return { items, page: page.page, pageSize: page.pageSize, total: totals?.total ?? 0 };
 }

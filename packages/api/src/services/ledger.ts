@@ -3,7 +3,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { CashFlowRow, Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
-import type { RowPlan } from "../domain/rules/matching.ts";
+import type { RowPlan, RuleCandidate } from "../domain/rules/matching.ts";
 import type {
 	NormalizedTransaction,
 	ParsedStatement,
@@ -914,7 +914,7 @@ export async function ingest(
 			// included. Loaded once per call, inside this transaction. A new row
 			// carries no merchant, category, tag or transfer yet.
 			if (rows.length > 0) {
-				const plan = planActions(
+				const { plan } = planActions(
 					await loadEnabledRules(tx),
 					rows.map(({ id, line }) => ({
 						id,
@@ -1011,14 +1011,16 @@ function plannedRows(tx: Transaction, ids: string[]) {
  * already holds, and a category, merchant, tag or account deleted since the
  * plan. A tag is added beside the others while the row holds fewer than
  * `MAX_TAGS_PER_TRANSACTION`; the expected counterpart account is set only on
- * a row in no transfer. Returns how many rows changed. Step 5 of `ingest`
- * calls it; applying rules to history reuses it.
+ * a row in no transfer. Returns the ids of the rows it changed and, among
+ * them, of those whose expected counterpart account it set, which transfer
+ * matching reads next. Step 5 of `ingest` calls it; applying rules to history
+ * reuses it.
  */
 export async function applyRulePlan(
 	tx: Transaction,
 	plan: ReadonlyMap<string, RowPlan>,
 	_options: { origin: "rule" },
-): Promise<number> {
+): Promise<{ changed: string[]; marked: string[] }> {
 	const origin: Origin = "rule";
 	const ids = [...plan.keys()];
 	const plans = [...plan.values()];
@@ -1057,6 +1059,7 @@ export async function applyRulePlan(
 		{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
 	>();
 	const newTaggings: { transactionId: string; tagId: string }[] = [];
+	const marked: string[] = [];
 
 	const rowById = new Map(rows.map((row) => [row.id, row]));
 
@@ -1104,6 +1107,10 @@ export async function applyRulePlan(
 			continue;
 		}
 
+		if (expects) {
+			marked.push(id);
+		}
+
 		const detail = {
 			...detailOf(current, change, origin),
 			...(expects ? { expectedTransferAccountId: expected } : {}),
@@ -1135,7 +1142,69 @@ export async function applyRulePlan(
 	);
 	await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
 
-	return [...writes.values()].reduce((total, { ids: group }) => total + group.length, 0);
+	return { changed: [...writes.values()].flatMap(({ ids: group }) => group), marked };
+}
+
+/**
+ * Applying rules to existing transactions: writes `plan` through
+ * `applyRulePlan`, then pairs the rows whose expected counterpart account it
+ * set, as step 6 of `ingest` pairs new ones. No balance moves: no rule action
+ * changes an amount. Returns how many rows changed, each once.
+ */
+export async function applyRulePlanToHistory(
+	deps: ServiceDeps,
+	plan: ReadonlyMap<string, RowPlan>,
+	options: { origin: "rule" },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const { changed, marked } = await applyRulePlan(tx, plan, options);
+
+			await matchNewTransfers(tx, marked, Date.now());
+
+			return changed.length;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Every transaction as a rule reads it, for applying rules to history:
+ * possible duplicates and excluded rows included, with their merchant,
+ * category, tags, notes, transfer kind, expected counterpart and locks.
+ * `from` keeps rows dated on or after it; `null` keeps every date. Tags are
+ * read `KEYS_PER_LOOKUP` rows per query, below SQLite's parameter cap.
+ */
+export async function ruleCandidates(
+	db: Pick<Transaction, "select">,
+	from: IsoDate | null,
+): Promise<RuleCandidate[]> {
+	const rows = await db
+		.select({
+			id: entries.id,
+			...editableColumns,
+			expectedTransferAccountId: transactions.expectedTransferAccountId,
+			transferKind: transferColumns.transferKind,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(
+			and(eq(entries.kind, "transaction"), from === null ? undefined : gte(entries.date, from)),
+		)
+		.orderBy(entries.date, entries.createdAt, entries.id);
+	const tagsOf = await tagIdsByEntry(
+		db,
+		rows.map((row) => row.id),
+	);
+
+	return rows.map(({ transferKind, amount, ...row }) => ({
+		...row,
+		amount: toMinorUnits(amount),
+		tagIds: tagsOf.get(row.id) ?? [],
+		transfer: transferKind === null ? null : { kind: transferKind },
+	}));
 }
 
 /** An absent or `undefined` field is left as it is. */
@@ -2293,7 +2362,8 @@ function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
 
 /**
  * Step 6 of `ingest`: links each of `createdIds` that forms a mutually unique
- * pair (AD-11). Every candidate list is read before the first link is
+ * pair (AD-11). `applyRulePlanToHistory` calls it on the rows whose expected
+ * counterpart account a rule set, which need not be new. Every candidate list is read before the first link is
  * written, so a link made for one line never removes a candidate from the
  * next, and the result does not depend on line order. A rule's expected
  * counterpart account narrows each list first, through `narrowToExpected`.

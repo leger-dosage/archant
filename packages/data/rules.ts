@@ -86,6 +86,29 @@ export function isRuleOperatorOf<Type extends RuleConditionType>(
 	return allowed.includes(operator);
 }
 
+/**
+ * A condition as the API returns it. `value` is stored text: the label or the
+ * notes, the amount in minor units of the reporting currency, a direction,
+ * or an account, merchant, category or tag id; `null` for `is_null` and for
+ * a group, whose conditions follow.
+ */
+export type RuleConditionSnapshot = {
+	conditionType: RuleConditionType;
+	operator: RuleOperator;
+	value: string | null;
+	conditions: RuleConditionSnapshot[];
+};
+
+/**
+ * A rule's name, conditions and actions as the API returns them. A run keeps
+ * one, so a later edit of the rule does not rewrite what past runs applied.
+ */
+export type RuleSnapshot = {
+	name: string | null;
+	conditions: RuleConditionSnapshot[];
+	actions: { actionType: RuleActionType; value: string | null }[];
+};
+
 /** Past this a rule's label condition is no longer a shop's name. */
 export const RULE_VALUE_MAX_LENGTH = 200;
 

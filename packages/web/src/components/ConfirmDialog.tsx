@@ -19,6 +19,8 @@ type ConfirmDialogProps = {
 	description: string;
 	/** Repeats the verb of the action: « Supprimer », « Abandonner ». */
 	confirmLabel: string;
+	/** « Annuler » unless the choice is a postponement, as « Plus tard ». */
+	cancelLabel?: string | undefined;
 	onConfirm: () => void;
 	destructive?: boolean;
 	pending?: boolean;
@@ -34,6 +36,7 @@ export function ConfirmDialog({
 	title,
 	description,
 	confirmLabel,
+	cancelLabel,
 	onConfirm,
 	destructive = false,
 	pending = false,
@@ -48,7 +51,7 @@ export function ConfirmDialog({
 					<AlertDialogDescription>{description}</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
-					<AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+					<AlertDialogCancel>{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
 					<AlertDialogAction
 						variant={destructive ? "destructive" : "default"}
 						disabled={pending}
