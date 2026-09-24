@@ -100,3 +100,31 @@ export function useLinkBankAccounts(connectionId: string) {
 		},
 	});
 }
+
+/**
+ * Syncs a connection now. The answer is its new state, written into the
+ * list at once; the bank's lines and balances change every account query,
+ * every transaction list and the recurring patterns.
+ */
+export function useSyncBankConnection(connectionId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async () =>
+			(await unwrap(bank[":id"].sync.$post({ param: { id: connectionId } }))).data,
+		onSuccess: async (status) => {
+			queryClient.setQueryData<BankConnectionData[]>(queryKeys.bankConnections.list, (list) =>
+				list?.map((connection) =>
+					connection.id === connectionId ? { ...connection, ...status } : connection,
+				),
+			);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+				// The sync runs recurring detection once its lines are in.
+				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+			]);
+		},
+	});
+}

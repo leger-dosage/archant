@@ -21,7 +21,7 @@ import {
 } from "../../testing/enable-banking.ts";
 import { BankProviderError } from "../bank-connector.ts";
 import { createBankConnector } from "../registry.ts";
-import { consentValidUntil, toBankAccount } from "./client.ts";
+import { MAX_PAGES, consentValidUntil, toBankAccount, toTransaction } from "./client.ts";
 import { sessionAccountSchema } from "./schemas.ts";
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
@@ -339,9 +339,11 @@ describe("fetchBalance", () => {
 	it("reads the interim booked balance before the closing one, as minor units", async () => {
 		const requests = mockProvider();
 
+		// The interim balance names no day: the ledger dates it today.
 		await expect(connector.fetchBalance(FIXTURE_CHECKING_UID)).resolves.toEqual({
 			amount: 123456,
 			currency: "EUR",
+			date: null,
 		});
 		expect(requests).toEqual([
 			expect.objectContaining({
@@ -351,13 +353,22 @@ describe("fetchBalance", () => {
 		]);
 	});
 
-	it("falls back to the closing booked balance", async () => {
-		balances(balance("XPCD", "5.00"), balance("CLBD", "-300.00"));
+	it("falls back to the closing booked balance, with the day it describes", async () => {
+		balances(balance("XPCD", "5.00"), balance("CLBD", "-300.00", { reference_date: "2026-09-23" }));
 
 		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toEqual({
 			amount: -30000,
 			currency: "EUR",
+			date: "2026-09-23",
 		});
+	});
+
+	it("dates a balance whose day it cannot read as undated", async () => {
+		balances(balance("ITBD", "1.00", { reference_date: "23/09/2026" }));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({ date: null });
+
+		balances(balance("ITBD", "1.00", { reference_date: 20_260_923 }));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({ date: null });
 	});
 
 	it("gives nothing when the bank has no booked balance", async () => {
@@ -396,6 +407,241 @@ describe("fetchBalance", () => {
 		const error = await rejection(connector.fetchBalance(FIXTURE_CARD_UID));
 
 		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
+	});
+});
+
+const SINCE = "2026-06-26";
+
+/** A booked debit with every field the mapping reads, `extra` on top. */
+const line = (extra: Record<string, unknown> = {}) => ({
+	entry_reference: "ref-1",
+	transaction_amount: { amount: "10.00", currency: "EUR" },
+	credit_debit_indicator: "DBIT",
+	status: "BOOK",
+	booking_date: "2026-09-20",
+	creditor: { name: "Boulangerie" },
+	debtor: { name: "M. Jean Exemple" },
+	bank_transaction_code: { description: "Paiement carte" },
+	remittance_information: ["CB BOULANGERIE", "20/09"],
+	...extra,
+});
+
+describe("toTransaction", () => {
+	it("maps a booked debit, keyed on the entry reference, never on the transaction id", () => {
+		expect(toTransaction(line({ transaction_id: "tx-1" }), SINCE)).toEqual({
+			externalId: "ref-1",
+			date: "2026-09-20",
+			amount: -1000,
+			currency: "EUR",
+			label: "Boulangerie",
+			reference: null,
+			notes: "CB BOULANGERIE\n20/09",
+		});
+	});
+
+	it("keeps a credit positive and names its debtor", () => {
+		expect(toTransaction(line({ credit_debit_indicator: "CRDT" }), SINCE)).toMatchObject({
+			amount: 1000,
+			label: "M. Jean Exemple",
+		});
+	});
+
+	it("reads a negative amount by its direction alone", () => {
+		expect(
+			toTransaction(line({ transaction_amount: { amount: "-10.00", currency: "EUR" } }), SINCE),
+		).toMatchObject({ amount: -1000 });
+		expect(
+			toTransaction(
+				line({
+					credit_debit_indicator: "CRDT",
+					transaction_amount: { amount: "-10.00", currency: "EUR" },
+				}),
+				SINCE,
+			),
+		).toMatchObject({ amount: 1000 });
+	});
+
+	it("names a line from the bank's code, then the first remittance line, then its direction", () => {
+		const bare = { creditor: null, debtor: { name: "  " } };
+
+		expect(toTransaction(line(bare), SINCE)).toMatchObject({ label: "Paiement carte" });
+		expect(
+			toTransaction(line({ ...bare, bank_transaction_code: { description: 3 } }), SINCE),
+		).toMatchObject({ label: "CB BOULANGERIE" });
+		expect(
+			toTransaction(
+				line({ ...bare, bank_transaction_code: null, remittance_information: [7, " "] }),
+				SINCE,
+			),
+		).toMatchObject({ label: "Virement sortant", notes: null });
+		expect(
+			toTransaction(
+				line({
+					...bare,
+					credit_debit_indicator: "CRDT",
+					bank_transaction_code: "PMNT",
+					remittance_information: "text",
+				}),
+				SINCE,
+			),
+		).toMatchObject({ label: "Virement entrant", notes: null });
+	});
+
+	it("caps the label and the notes by code points", () => {
+		const mapped = toTransaction(
+			line({ creditor: { name: "é".repeat(300) }, remittance_information: ["x".repeat(3000)] }),
+			SINCE,
+		);
+
+		expect(mapped).toMatchObject({ label: "é".repeat(200), notes: "x".repeat(2000) });
+	});
+
+	it("keeps no key without an entry reference", () => {
+		expect(toTransaction(line({ entry_reference: undefined }), SINCE)).toMatchObject({
+			externalId: null,
+		});
+		expect(toTransaction(line({ entry_reference: " " }), SINCE)).toMatchObject({
+			externalId: null,
+		});
+	});
+
+	it("dates a line by booking, then value, then transaction date", () => {
+		expect(
+			toTransaction(line({ booking_date: null, value_date: "2026-09-19" }), SINCE),
+		).toMatchObject({ date: "2026-09-19" });
+		expect(
+			toTransaction(
+				line({ booking_date: undefined, transaction_date: "2026-09-18T23:30:00+02:00" }),
+				SINCE,
+			),
+		).toMatchObject({ date: "2026-09-18" });
+	});
+
+	it("drops every line that is not booked, and those before the window", () => {
+		for (const status of ["PDNG", "INFO", "CNCL", "HOLD", "OTHR", null]) {
+			expect(toTransaction(line({ status }), SINCE)).toBeNull();
+		}
+
+		expect(toTransaction(line({ booking_date: "2026-06-25" }), SINCE)).toBeNull();
+		expect(toTransaction(line({ booking_date: SINCE }), SINCE)).not.toBeNull();
+	});
+
+	it("refuses a line without a readable date, amount or direction", () => {
+		expect(toTransaction(line({ booking_date: null }), SINCE)).toBe("INVALID_DATE");
+		expect(toTransaction(line({ booking_date: "2026-02-30" }), SINCE)).toBe("INVALID_DATE");
+		expect(toTransaction(line({ transaction_amount: null }), SINCE)).toBe("INVALID_AMOUNT");
+		expect(
+			toTransaction(line({ transaction_amount: { amount: "douze", currency: "EUR" } }), SINCE),
+		).toBe("INVALID_AMOUNT");
+		expect(
+			toTransaction(line({ transaction_amount: { amount: "1.00", currency: "XXX" } }), SINCE),
+		).toBe("INVALID_AMOUNT");
+		expect(toTransaction(line({ credit_debit_indicator: "OTHR" }), SINCE)).toBe("INVALID_AMOUNT");
+		expect(toTransaction("not a line", SINCE)).toBe("INVALID_AMOUNT");
+	});
+});
+
+const pages = (...items: Record<string, unknown>[]) =>
+	mockProvider({
+		transactions: (url) => {
+			const key = url.searchParams.get("continuation_key");
+
+			return HttpResponse.json(items[key === null ? 0 : Number(key)]);
+		},
+	});
+
+describe("fetchStatement", () => {
+	it("reads every page from the window start, then the balance", async () => {
+		const requests = mockProvider();
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+
+		expect(
+			statement.transactions.map(({ label, amount, date, externalId }) => ({
+				label,
+				amount,
+				date,
+				externalId,
+			})),
+		).toEqual([
+			{ label: "Carrefour Market", amount: -4290, date: "2026-09-20", externalId: "20260920-0001" },
+			{ label: "Employeur Test", amount: 250000, date: "2026-09-15", externalId: "20260915-0002" },
+			{ label: "Prélèvement", amount: -6000, date: "2026-09-18", externalId: null },
+			{ label: "NETFLIX.COM", amount: -999, date: "2026-09-21", externalId: "20260921-0005" },
+			{ label: "Virement entrant", amount: 1500, date: "2026-09-22", externalId: "20260922-0007" },
+		]);
+		expect(statement.rejected).toEqual([]);
+		expect(statement.balance).toEqual({ amount: 123456, currency: "EUR", date: null });
+		expect(requests.map(({ path, search }) => `${path}${search}`)).toEqual([
+			`/accounts/${FIXTURE_CHECKING_UID}/transactions?date_from=2026-06-26`,
+			`/accounts/${FIXTURE_CHECKING_UID}/transactions?date_from=2026-06-26&continuation_key=page-2`,
+			`/accounts/${FIXTURE_CHECKING_UID}/balances`,
+		]);
+	});
+
+	it("refuses an unreadable line by its position across pages, and keeps the others", async () => {
+		pages(
+			{ transactions: [line(), line({ booking_date: "soon" })], continuation_key: "1" },
+			{ transactions: [line({ status: "PDNG" }), 42, line()], continuation_key: null },
+		);
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+
+		expect(statement.transactions).toHaveLength(2);
+		expect(statement.rejected).toEqual([
+			{ ref: "1", reason: "INVALID_DATE" },
+			{ ref: "3", reason: "INVALID_AMOUNT" },
+		]);
+	});
+
+	it("stops on a key it has already followed", async () => {
+		const requests = pages(
+			{ transactions: [line()], continuation_key: "1" },
+			{ transactions: [line()], continuation_key: "1" },
+		);
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+
+		expect(statement.transactions).toHaveLength(2);
+		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(2);
+	});
+
+	it("stops after a hundred pages", async () => {
+		const requests = mockProvider({
+			transactions: (url) =>
+				HttpResponse.json({
+					transactions: [line()],
+					continuation_key: String(Number(url.searchParams.get("continuation_key") ?? 0) + 1),
+				}),
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+
+		expect(statement.transactions).toHaveLength(MAX_PAGES);
+		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(MAX_PAGES);
+	});
+
+	it("takes a page with an odd key as the last one, and refuses one without lines", async () => {
+		pages({ transactions: [line()], continuation_key: 7 });
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE)).resolves.toMatchObject({
+			transactions: [expect.objectContaining({ externalId: "ref-1" })],
+		});
+
+		pages({ continuation_key: null });
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+	});
+
+	it("passes a provider failure on, before reading the balance", async () => {
+		const requests = mockProvider({
+			transactions: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }),
+		});
+
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE));
+
+		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
+		expect(requests.some(({ path }) => path.endsWith("/balances"))).toBe(false);
 	});
 });
 

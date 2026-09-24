@@ -21,6 +21,7 @@ import type {
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import type { FileSourceId } from "@archant/data/schema/imports";
 
 import { today } from "../domain/dates.ts";
@@ -40,12 +41,13 @@ import { getReportingCurrency } from "./settings.ts";
 /**
  * Where a transaction came from, shown in its sheet: typed by hand, or
  * brought by a file, with the day it was imported. Derived from the entry's
- * keys, so a manual entry an import paired with shows that import. Bank sync
- * joins with Epic 10.
+ * keys, so a manual entry an import paired with shows that import, and an
+ * entry a sync paired with shows the bank.
  */
 export type TransactionSource =
 	| { kind: "manual" }
-	| { kind: "import"; format: FileSourceId; date: IsoDate };
+	| { kind: "import"; format: FileSourceId; date: IsoDate }
+	| { kind: "bank"; connector: BankConnectorId };
 
 export type TransactionItem = TransactionRecord & { source: TransactionSource };
 
@@ -67,12 +69,29 @@ export type FilteredTransactionPage = TransactionPage & {
 	sum: { amount: MinorUnits; currency: CurrencyCode; skippedCount: number };
 };
 
-/** Each record with its source, in one query for the whole page. */
+function sourceOf(origin: ledger.EntryOrigin | undefined, timeZone: string): TransactionSource {
+	if (origin === undefined) {
+		return { kind: "manual" };
+	}
+
+	if (origin.kind === "bank") {
+		return { kind: "bank", connector: origin.connector };
+	}
+
+	return {
+		kind: "import",
+		format: origin.source,
+		// Keys exist only once their import is confirmed.
+		date: today(timeZone, new Date(origin.confirmedAt ?? 0)),
+	};
+}
+
+/** Each record with its source, in two queries for the whole page. */
 async function withSources<Row extends TransactionRecord>(
 	deps: ServiceDeps,
 	records: readonly Row[],
 ): Promise<(Row & { source: TransactionSource })[]> {
-	const origins = await ledger.importOrigins(
+	const origins = await ledger.entryOrigins(
 		deps,
 		records.map((record) => record.id),
 	);
@@ -82,15 +101,7 @@ async function withSources<Row extends TransactionRecord>(
 
 		return {
 			...record,
-			source:
-				origin === undefined
-					? { kind: "manual" }
-					: {
-							kind: "import",
-							format: origin.source,
-							// Keys exist only once their import is confirmed.
-							date: today(deps.timeZone, new Date(origin.confirmedAt ?? 0)),
-						},
+			source: sourceOf(origin, deps.timeZone),
 		};
 	});
 }

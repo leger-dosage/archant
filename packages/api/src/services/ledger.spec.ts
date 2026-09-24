@@ -42,7 +42,7 @@ import {
 	deleteTransaction,
 	findSnapshot,
 	findTransaction,
-	importOrigins,
+	entryOrigins,
 	ingest,
 	linkBankAccount,
 	listSnapshots,
@@ -1288,19 +1288,20 @@ describe("ingest the statement balance", () => {
 	});
 });
 
-describe("importOrigins", () => {
+describe("entryOrigins", () => {
 	it("names the import behind each imported entry and leaves manual ones out", async () => {
 		const account = await openChecking();
 		const manual = await add(account.id);
 		const { result } = await importStatement(account.id, statementOf(salary));
 		const [imported = ""] = result.created;
 
-		const origins = await importOrigins(deps(), [manual, imported]);
+		const origins = await entryOrigins(deps(), [manual, imported]);
 
 		expect([...origins.keys()]).toEqual([imported]);
-		expect(origins.get(imported)?.source).toBe("ofx");
-		expect(typeof origins.get(imported)?.confirmedAt).toBe("number");
-		await expect(importOrigins(deps(), [])).resolves.toEqual(new Map());
+		const origin = origins.get(imported);
+		expect(origin).toMatchObject({ kind: "import", source: "ofx" });
+		expect(origin?.kind === "import" && typeof origin.confirmedAt).toBe("number");
+		await expect(entryOrigins(deps(), [])).resolves.toEqual(new Map());
 	});
 });
 
@@ -1453,7 +1454,7 @@ describe("revertImport", () => {
 			amount: -4290,
 		});
 		await expect(keysOf(manual)).resolves.toEqual([]);
-		await expect(importOrigins(deps(), [manual])).resolves.toEqual(new Map());
+		await expect(entryOrigins(deps(), [manual])).resolves.toEqual(new Map());
 		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
@@ -5476,11 +5477,16 @@ async function valuationsOf(accountId: string) {
 		.orderBy(entries.date);
 }
 
-const link = (accountId: string, bankAccountId: string, balance: number | null) =>
+const link = (
+	accountId: string,
+	bankAccountId: string,
+	balance: number | null,
+	date: string | null = null,
+) =>
 	linkBankAccount(
 		deps(),
 		accountId,
-		{ bankAccountId, balance: balance === null ? null : toMinorUnits(balance) },
+		{ bankAccountId, balance: balance === null ? null : { amount: toMinorUnits(balance), date } },
 		{ origin: "sync" },
 	);
 
@@ -5539,6 +5545,32 @@ describe("linkBankAccount", () => {
 		expect(days.get("2026-09-05")).toBe(50000);
 		expect(days.get("2026-09-04")).toBe(51000);
 		expect(days.get("2026-09-01")).toBe(51000);
+	});
+
+	it("dates the anchor on the day the bank's balance describes, never after today", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await add(account.id, { date: "2026-09-21", amount: toMinorUnits(-500) });
+
+		// A closing balance of yesterday: today's line comes after it.
+		await link(account.id, bank.id, 100000, "2026-09-20");
+
+		await expect(valuationsOf(account.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-20",
+			amount: 100000,
+		});
+		const days = await history(account.id);
+		expect(days.get("2026-09-20")).toBe(100000);
+		expect(days.get("2026-09-21")).toBe(99500);
+
+		await link(account.id, bank.id, 100000, "2026-09-30");
+
+		await expect(valuationsOf(account.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-21",
+			amount: 100000,
+		});
 	});
 
 	it("owes a card's bank balance, whichever sign the bank gives it", async () => {
@@ -5771,5 +5803,239 @@ describe("a bank-linked account", () => {
 		expect(days.get("2026-09-09")).toBe(100000);
 		expect(days.get("2026-09-10")).toBe(95710);
 		expect(days.get("2026-09-21")).toBe(95710);
+	});
+});
+
+// Story 10.3: the keyed path of `ingest`, as a bank sync drives it.
+
+/** The bank's 995,00, as it describes the end of `date`. */
+const bankBalance = (date: string) => ({ amount: toMinorUnits(99500), currency: "EUR", date });
+
+describe("ingest from a bank connection", () => {
+	async function linkedChecking(balance = 100000) {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, balance);
+
+		return { account, bank };
+	}
+
+	const sync = (
+		accountId: string,
+		connectionId: string,
+		lines: NormalizedTransaction[],
+		balance: ParsedStatement["balance"] = null,
+	) =>
+		ingest(
+			deps(),
+			accountId,
+			{ transactions: lines, balance, rejected: [] },
+			{ connectionId },
+			{ origin: "sync" },
+		);
+
+	const bankLine = (overrides: Partial<NormalizedTransaction> = {}) =>
+		line({ externalId: "EB1", date: "2026-09-12", label: "CARREFOUR", ...overrides });
+
+	async function keyRows(entryId: string) {
+		return temp.db
+			.select({
+				source: entryKeys.source,
+				importId: entryKeys.importId,
+				connectionId: entryKeys.connectionId,
+			})
+			.from(entryKeys)
+			.where(eq(entryKeys.entryId, entryId));
+	}
+
+	it("keys its lines under the connector and the connection, and rewrites the anchor", async () => {
+		const { account, bank } = await linkedChecking();
+
+		const result = await sync(account.id, bank.connectionId, [bankLine()], {
+			amount: toMinorUnits(95710),
+			currency: "EUR",
+			date: "2026-09-21",
+		});
+
+		const [id = ""] = result.created;
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-09-21", balance: 95710 });
+		await expect(keyRows(id)).resolves.toEqual([
+			{ source: "enable-banking", importId: null, connectionId: bank.connectionId },
+			{ source: "enable-banking", importId: null, connectionId: bank.connectionId },
+		]);
+		await expect(entryImport(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toEqual([]);
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-21", amount: 95710 },
+		]);
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(95710);
+		expect(days.get("2026-09-11")).toBe(100000);
+		await expect(entryOrigins(deps(), [id])).resolves.toEqual(
+			new Map([[id, { kind: "bank", connector: "enable-banking" }]]),
+		);
+	});
+
+	it("creates nothing the second time, keyed by reference or, without one, by fingerprint", async () => {
+		const { account, bank } = await linkedChecking();
+		const lines = [bankLine(), bankLine({ externalId: null, label: "SANS REFERENCE" })];
+		await sync(account.id, bank.connectionId, lines);
+
+		const again = await sync(account.id, bank.connectionId, lines);
+
+		expect(again.created).toEqual([]);
+		expect(again.groups.present).toHaveLength(2);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("dates the anchor on the balance's own day, never after today", async () => {
+		const { account, bank } = await linkedChecking();
+
+		await sync(
+			account.id,
+			bank.connectionId,
+			[bankLine({ date: "2026-09-21", amount: toMinorUnits(-500) })],
+			bankBalance("2026-09-20"),
+		);
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-20")).toBe(99500);
+		expect(days.get("2026-09-21")).toBe(99000);
+
+		const later = await sync(account.id, bank.connectionId, [], bankBalance("2026-10-02"));
+
+		expect(later.balance).toMatchObject({ status: "recorded", date: "2026-09-21" });
+		await expect(valuationsOf(account.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-21",
+			amount: 99500,
+		});
+	});
+
+	it("keeps the anchor when the bank gives no balance, or one in another currency", async () => {
+		const { account, bank } = await linkedChecking();
+
+		const none = await sync(account.id, bank.connectionId, [bankLine()]);
+		const foreign = await sync(account.id, bank.connectionId, [], {
+			amount: toMinorUnits(1),
+			currency: "USD",
+			date: "2026-09-21",
+		});
+
+		expect(none.balance).toBeNull();
+		expect(foreign.balance).toEqual({
+			status: "skipped",
+			date: "2026-09-21",
+			balance: 1,
+			reason: "CURRENCY_MISMATCH",
+		});
+		await expect(valuationsOf(account.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-21",
+			amount: 100000,
+		});
+		expect((await history(account.id)).get("2026-09-21")).toBe(100000);
+	});
+
+	it("attaches its keys to a file's entry of the same amount within 3 days", async () => {
+		const { account, bank } = await linkedChecking();
+		const { result } = await importStatement(
+			account.id,
+			statementOf(line({ label: "CB CARREFOUR" })),
+			{
+				source: "csv",
+			},
+		);
+		const [csvEntry = ""] = result.created;
+
+		const synced = await sync(account.id, bank.connectionId, [bankLine()]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.matched).toEqual([
+			expect.objectContaining({ entryId: csvEntry, date: "2026-09-12" }),
+		]);
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+		expect((await keyRows(csvEntry)).map(({ source }) => source).toSorted()).toEqual([
+			"csv",
+			"enable-banking",
+			"enable-banking",
+		]);
+		// The sheet names the bank from then on.
+		await expect(entryOrigins(deps(), [csvEntry])).resolves.toEqual(
+			new Map([[csvEntry, { kind: "bank", connector: "enable-banking" }]]),
+		);
+	});
+
+	it("keeps an entry a sync paired with when its file import is reverted", async () => {
+		const { account, bank } = await linkedChecking();
+		const { importId, result } = await importStatement(
+			account.id,
+			statementOf(line({ label: "CB CARREFOUR" })),
+			{ source: "csv" },
+		);
+		const [csvEntry = ""] = result.created;
+		await sync(account.id, bank.connectionId, [bankLine()]);
+
+		await expect(removableOf(deps(), [importId])).resolves.toEqual(
+			new Map([[importId, { transactions: 0, snapshot: 0 }]]),
+		);
+		await revert(importId);
+
+		await expect(findTransaction(deps(), csvEntry)).resolves.not.toBeNull();
+		expect((await keyRows(csvEntry)).map(({ source }) => source)).toEqual([
+			"enable-banking",
+			"enable-banking",
+		]);
+	});
+
+	it("creates a line two file entries are equally near, flagged as a possible duplicate", async () => {
+		const { account, bank } = await linkedChecking();
+		await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-09-11" }), line({ date: "2026-09-13" })),
+			{ source: "csv" },
+		);
+
+		const synced = await sync(account.id, bank.connectionId, [bankLine()]);
+
+		const [id = ""] = synced.created;
+		expect(synced.groups.duplicates).toHaveLength(1);
+		await expect(
+			temp.db
+				.select({ flagged: transactions.possibleDuplicate })
+				.from(transactions)
+				.where(eq(transactions.entryId, id))
+				.get(),
+		).resolves.toEqual({ flagged: true });
+	});
+
+	it("never pairs with an entry another sync of the same connector wrote", async () => {
+		const { account, bank } = await linkedChecking();
+		await sync(account.id, bank.connectionId, [bankLine()]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			bankLine({ externalId: "EB2", date: "2026-09-13", label: "AUTRE" }),
+		]);
+
+		expect(synced.created).toHaveLength(1);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("refuses lines on or before the opening date, as any source", async () => {
+		const { account, bank } = await linkedChecking();
+
+		const synced = await sync(account.id, bank.connectionId, [bankLine({ date: "2026-09-01" })]);
+
+		expect(synced.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
+	});
+
+	it("refuses an unknown connection and writes nothing", async () => {
+		const { account } = await linkedChecking();
+
+		await expect(sync(account.id, crypto.randomUUID(), [bankLine()])).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(0);
 	});
 });

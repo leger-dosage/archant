@@ -1,0 +1,45 @@
+{
+	"transactions": [
+		{
+			"entry_reference": "20260920-0001",
+			"transaction_id": "a9f1c2d3-0001",
+			"transaction_amount": { "currency": "EUR", "amount": "42.90" },
+			"creditor": { "name": "Carrefour Market" },
+			"creditor_account": { "iban": "FR7600000000000000000000001" },
+			"credit_debit_indicator": "DBIT",
+			"status": "BOOK",
+			"booking_date": "2026-09-20",
+			"value_date": "2026-09-19",
+			"transaction_date": "2026-09-19",
+			"remittance_information": ["CB CARREFOUR MARKET 19/09"]
+		},
+		{
+			"entry_reference": "20260915-0002",
+			"transaction_amount": { "currency": "EUR", "amount": "2500.00" },
+			"debtor": { "name": "Employeur Test" },
+			"debtor_account": { "iban": "FR7600000000000000000000002" },
+			"credit_debit_indicator": "CRDT",
+			"status": "BOOK",
+			"value_date": "2026-09-15",
+			"remittance_information": ["SALAIRE SEPTEMBRE"]
+		},
+		{
+			"entry_reference": "20260923-0003",
+			"transaction_amount": { "currency": "EUR", "amount": "12.00" },
+			"creditor": { "name": "Boulangerie Test" },
+			"credit_debit_indicator": "DBIT",
+			"status": "PDNG",
+			"transaction_date": "2026-09-23",
+			"remittance_information": []
+		},
+		{
+			"transaction_amount": { "currency": "EUR", "amount": "60.00" },
+			"bank_transaction_code": { "description": "Prélèvement", "code": "PMNT" },
+			"credit_debit_indicator": "DBIT",
+			"status": "BOOK",
+			"transaction_date": "2026-09-18",
+			"remittance_information": ["ECHEANCE ASSURANCE", "CONTRAT 0000"]
+		}
+	],
+	"continuation_key": "page-2"
+}

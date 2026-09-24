@@ -13,6 +13,7 @@ Accounts update themselves every day from the bank, so the user never imports a 
 - Story 10.3: Sync transactions and balances
 - Story 10.4: Pending transactions
 - Story 10.5: Consent renewal and disconnection
+- Story 10.6: Merge or dismiss a possible duplicate
 
 ## Requirements & Constraints
 
@@ -50,5 +51,5 @@ Accounts update themselves every day from the bank, so the user never imports a 
 
 ## Cross-Story Dependencies
 
-- Builds on Epic 2's connector port, ingestion pipeline, dedup keys and possible-duplicate merge, Epic 3's auth guard, Epic 8's rules (step 5), Epic 5's transfer matching (step 6), and Epic 9's post-commit recurring detection.
-- 10.1 creates `bank_connections`, the crypto service, the env variables and the Enable Banking client. 10.2 needs a connection to list accounts and introduces `bank_accounts`, `accounts.bank_account_id` and backward balance computation. 10.3 needs linked accounts and adds both sync routes, the lease and the connection status. 10.4 extends 10.3's sync with pending reconciliation. 10.5 needs 10.1's consent flow for renewal and 10.3's last-sync time for the stale banner.
+- Builds on Epic 2's connector port, ingestion pipeline, dedup keys and the `possible_duplicate` flag (no merge action exists yet), Epic 3's auth guard, Epic 8's rules (step 5), Epic 5's transfer matching (step 6), and Epic 9's post-commit recurring detection.
+- 10.1 creates `bank_connections`, the crypto service, the env variables and the Enable Banking client. 10.2 needs a connection to list accounts and introduces `bank_accounts`, `accounts.bank_account_id` and backward balance computation. 10.3 needs linked accounts and adds both sync routes, the lease and the connection status. 10.4 extends 10.3's sync with pending reconciliation. 10.5 needs 10.1's consent flow for renewal and 10.3's last-sync time for the stale banner. 10.6 reuses 10.4's `ledger.absorb` for the merge and adds the « Doublon possible » marker and the dismiss action.

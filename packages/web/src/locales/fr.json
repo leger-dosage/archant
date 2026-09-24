@@ -270,7 +270,11 @@
 		"sources": {
 			"manual": "Saisie manuelle",
 			"import": "Import {{format}} du {{date}}",
-			"importReference": "Import {{format}} du {{date}}, n° {{reference}}"
+			"importReference": "Import {{format}} du {{date}}, n° {{reference}}",
+			"bank": "Synchronisée depuis {{connector}}",
+			"connectors": {
+				"enable-banking": "Enable Banking"
+			}
 		},
 		"excluded": "Exclue des rapports",
 		"category": {
@@ -979,6 +983,15 @@
 		"connections": "Banques connectées",
 		"noConnections": "Aucune banque connectée pour l'instant.",
 		"consentUntil": "Consentement valable jusqu'au {{date}}",
+		"sync": {
+			"last": "Dernière synchronisation : {{when}}",
+			"justNow": "à l'instant",
+			"never": "Jamais synchronisée",
+			"lastError": "La dernière synchronisation a échoué : {{error}}",
+			"submit": "Synchroniser",
+			"done": "Synchronisation terminée.",
+			"failed": "Synchronisation terminée avec une erreur."
+		},
 		"return": {
 			"title": "Connexion à votre banque",
 			"pending": "Connexion en cours…",
@@ -1044,6 +1057,8 @@
 		"BANK_PROVIDER_ERROR": "Enable Banking n'a pas répondu correctement. Réessayez dans un instant.",
 		"BANK_REDIRECT_NOT_ALLOWED": "Enable Banking refuse l'adresse de retour. Enregistrez {{url}} dans les réglages de votre application Enable Banking, puis réessayez.",
 		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
+		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
+		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

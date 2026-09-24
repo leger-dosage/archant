@@ -17,6 +17,10 @@ export const ERROR_STATUSES = {
 	IMPORT_PREVIEW_STALE: 409,
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
+	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
+	SYNC_IN_PROGRESS: 409,
+	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */
+	SYNC_TOO_RECENT: 409,
 	/** An unknown, already used or expired `state` on a bank's callback. Nothing is written. */
 	BANK_AUTHORIZATION_INVALID: 400,
 	INTERNAL_ERROR: 500,

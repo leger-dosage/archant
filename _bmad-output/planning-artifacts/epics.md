@@ -1396,7 +1396,7 @@ So that I never import a file again.
 
 **Given** an account already fed by files
 **When** a synced transaction has no provider match
-**Then** it is attached to the existing transaction of the same amount at the nearest date within 3 days that carries no Enable Banking key; with no candidate it is created, and with a tie it is created and flagged as a possible duplicate that I can merge or dismiss
+**Then** it is attached to the existing transaction of the same amount at the nearest date within 3 days that carries no Enable Banking key; with no candidate it is created, and with a tie it is created and flagged as a possible duplicate, which Story 10.6 lets me merge or dismiss
 
 **Given** a failure on one account
 **When** sync runs
@@ -1465,6 +1465,32 @@ So that sync never stops silently.
 **Given** a connection
 **When** I disconnect it
 **Then** the session is revoked at Enable Banking, stored secrets are deleted, and its accounts stay as manual accounts, and their balance history is unchanged
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 10.6: Merge or dismiss a possible duplicate
+
+As the household's administrator,
+I want to merge a transaction flagged as a possible duplicate with the one it repeats, or dismiss the flag,
+So that a file import and a bank sync never leave me with two copies of one operation.
+
+**Requirements:** FR52
+
+**Acceptance Criteria:**
+
+**Given** a transaction flagged as a possible duplicate, by a file import or a sync
+**When** the list or its sheet shows it
+**Then** it carries a warning icon and « Doublon possible », never colour alone
+
+**Given** a flagged transaction
+**When** I choose « Fusionner avec… » and pick the transaction it repeats
+**Then** the picked transaction survives with its id through `ledger.absorb`, gains the flagged one's keys, tags, transfer and recurring link, keeps the fields I set by hand, and the flagged one is deleted
+
+**Given** a flagged transaction
+**When** I choose « Ce n'est pas un doublon »
+**Then** the flag is cleared and a later sync never raises it again for that transaction
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run

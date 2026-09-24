@@ -8,13 +8,14 @@ import type {
 	StartConnectionInput,
 } from "../schemas/bank-connections.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { AnchorBalance } from "./ledger.ts";
 import type { AnyColumn } from "drizzle-orm";
 
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
-import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -70,6 +71,10 @@ export type BankConnectionRecord = {
 	country: string;
 	status: BankConnectionStatus;
 	consentExpiresAt: number | null;
+	/** Epoch milliseconds of the last run where every account synced. */
+	lastSyncedAt: number | null;
+	/** The error code of the latest failed run, `null` once a run succeeds. */
+	lastError: string | null;
 	createdAt: number;
 };
 
@@ -136,7 +141,11 @@ const invalidAuthorization = () =>
  * id, the provider's HTTP status and error code. Anything else is rethrown
  * as is, for `app.onError`.
  */
-function logFailure(deps: BankConnectionDeps, connectionId: string | null, error: unknown) {
+export function logFailure(
+	deps: Pick<BankConnectionDeps, "logger">,
+	connectionId: string | null,
+	error: unknown,
+) {
 	if (error instanceof BankProviderError) {
 		deps.logger.warn(
 			{ connectionId, code: error.code, ...error.failure },
@@ -153,6 +162,8 @@ function toRecord(row: typeof bankConnections.$inferSelect): BankConnectionRecor
 		country: row.country,
 		status: row.status,
 		consentExpiresAt: row.consentExpiresAt,
+		lastSyncedAt: row.lastSyncedAt,
+		lastError: row.lastError,
 		createdAt: row.createdAt,
 	};
 }
@@ -522,7 +533,7 @@ export async function linkBankAccounts(
 	}
 
 	// Every balance before any write: one failure leaves the connection as it was.
-	let balances: (MinorUnits | null)[];
+	let balances: (AnchorBalance | null)[];
 
 	try {
 		balances = await Promise.all(
@@ -532,7 +543,7 @@ export async function linkBankAccounts(
 				// No conversion (FR56 wants the bank's own figure): a balance in
 				// another currency is as good as none.
 				return balance !== null && balance.currency === bankAccount.currency
-					? balance.amount
+					? { amount: balance.amount, date: balance.date }
 					: null;
 			}),
 		);
@@ -564,7 +575,7 @@ export async function linkBankAccounts(
 									openingBalance:
 										balance === null
 											? toMinorUnits(0)
-											: toStoredBankBalance({ type: link.type }, balance),
+											: toStoredBankBalance({ type: link.type }, balance.amount),
 									openingDate,
 								},
 								{ origin: "sync" },
@@ -577,6 +588,12 @@ export async function linkBankAccounts(
 				{ bankAccountId: bankAccount.id, balance },
 				{ origin: "sync" },
 			);
+			// A new link starts a new window: the account it now feeds gets the
+			// first sync's three months, not seven days from an earlier link.
+			await tx
+				.update(bankAccounts)
+				.set({ lastSyncedAt: null, updatedAt: Date.now() })
+				.where(eq(bankAccounts.id, bankAccount.id));
 		};
 
 		// In sequence: each ledger call opens a savepoint on this one connection.

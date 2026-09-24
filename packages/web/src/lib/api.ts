@@ -22,7 +22,7 @@ const errorBody = z.object({
 	}),
 });
 
-function isErrorCode(value: string): value is Exclude<ErrorCode, "fields"> {
+export function isErrorCode(value: string): value is Exclude<ErrorCode, "fields"> {
 	return value !== "fields" && Object.hasOwn(fr.errors, value);
 }
 

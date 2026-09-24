@@ -1,3 +1,6 @@
+import type { IsoDate } from "../domain/dates.ts";
+import type { ParsedStatement } from "../domain/statement.ts";
+
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 
@@ -45,13 +48,20 @@ export type BankSession = {
 	accounts: BankAccountRef[];
 };
 
-/** A bank's balance as it prints it: signed, never converted to a stored balance (AD-5). */
-export type BankBalance = { amount: MinorUnits; currency: CurrencyCode };
+/**
+ * A bank's balance as it prints it: signed, never converted to a stored
+ * balance (AD-5). `date` is the day it describes, `null` when the bank does
+ * not say; the ledger dates it today then, and never later than today.
+ */
+export type BankBalance = { amount: MinorUnits; currency: CurrencyCode; date: IsoDate | null };
+
+/** A statement as a bank connector reads it: its balance may carry no date. */
+export type BankStatement = Omit<ParsedStatement, "balance"> & { balance: BankBalance | null };
 
 /**
  * A bank aggregator behind the connector port (AD-3). Like a file source it
  * never touches the database: the service stores what it returns. Later
- * stories add statements and revocation.
+ * stories add revocation.
  */
 export type BankConnector = {
 	id: BankConnectorId;
@@ -65,6 +75,12 @@ export type BankConnector = {
 	 * the closing booked one; `null` when the bank gives neither.
 	 */
 	fetchBalance: (uid: string) => Promise<BankBalance | null>;
+	/**
+	 * The account's booked lines dated `since` or later, every page, then its
+	 * balance as `fetchBalance` reads it. A line it cannot read goes to
+	 * `rejected`; a pending or cancelled one is left out.
+	 */
+	fetchStatement: (uid: string, since: IsoDate) => Promise<BankStatement>;
 };
 
 /** What a log line may say about a provider failure: numbers and a code, never a payload. */

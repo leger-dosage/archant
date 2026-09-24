@@ -89,3 +89,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-2-link-bank-accounts.md`
   summary: No test proves that a failure in the middle of `linkBankAccounts`'s write transaction leaves nothing written.
   evidence: Every tested failure happens before the first write; removing the outer transaction keeps all tests green. Only a concurrent request reaches a mid-batch failure today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
+  summary: Merging or dismissing a possible duplicate, with its « Doublon possible » marker, moved to Story 10.6.
+  evidence: Story 10.3's criterion assumed Epic 2 shipped the merge; `transactions.possible_duplicate` is written but nothing shows or clears it, and `ledger.absorb` arrives with 10.4.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
+  summary: A button sync on a connection whose consent has ended answers 200 and shows « Synchronisation terminée » although nothing was read.
+  evidence: `syncOne` returns `skipped` for both triggers; Story 10.5 adds the « consent expired » status and should refuse the button with it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
+  summary: A synced transaction the user deletes comes back on the next sync while its date is inside the 7-day overlap.
+  evidence: Deleting an entry deletes its `entry_keys`, so the next read finds no key; keeping a tombstone key for bank-sourced deletions would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
+  summary: No test covers the « Synchronisation terminée » toast or the silent `SYNC_TOO_RECENT` after linking.
+  evidence: The e2e clicks « Synchroniser » only in a refused state; the API paths behind both are covered.

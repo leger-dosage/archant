@@ -1,7 +1,12 @@
-import type { BankAccountData, BankAccountLink } from "@/hooks/useBankConnections";
+import type {
+	BankAccountData,
+	BankAccountLink,
+	BankConnectionData,
+} from "@/hooks/useBankConnections";
 import type { AccountKindId } from "@/lib/account-kinds";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { Loader2Icon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -23,9 +28,10 @@ import {
 	useBankAccounts,
 	useBankConnections,
 	useLinkBankAccounts,
+	useSyncBankConnection,
 } from "@/hooks/useBankConnections";
 import { kindOf } from "@/lib/account-kinds";
-import { errorCodeOf } from "@/lib/api";
+import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showFailureToast } from "@/lib/error-toast";
 
 // `banks_`: a page of its own under the settings layout, as the return page.
@@ -61,6 +67,87 @@ function linkOf(row: BankAccountData, choice: Choice): BankAccountLink | null {
 	return target === undefined
 		? null
 		: { bankAccountId: row.id, action: "create", type: target.type, subtype: target.subtype };
+}
+
+const JUST_NOW_MS = 60_000;
+
+const syncTime = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	year: "numeric",
+	hour: "2-digit",
+	minute: "2-digit",
+});
+
+/**
+ * The connection's last successful sync and latest error, with its
+ * « Synchroniser » button. A click while a sync runs is refused as the server
+ * would refuse it, without asking again.
+ */
+function SyncStatus({
+	connection,
+	sync,
+}: {
+	connection: BankConnectionData;
+	sync: ReturnType<typeof useSyncBankConnection>;
+}) {
+	const { t } = useTranslation();
+	const { lastSyncedAt, lastError } = connection;
+
+	const start = () => {
+		if (sync.isPending) {
+			toast.error(t("errors.SYNC_IN_PROGRESS"));
+			return;
+		}
+
+		sync.mutate(undefined, {
+			onSuccess: (status) => {
+				if (status.lastError === null) {
+					toast.success(t("banks.sync.done"));
+				} else {
+					toast.error(t("banks.sync.failed"));
+				}
+			},
+			onError: showFailureToast,
+		});
+	};
+
+	return (
+		<div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center">
+			<div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+				<p>
+					{lastSyncedAt === null
+						? t("banks.sync.never")
+						: t("banks.sync.last", {
+								when:
+									Date.now() - lastSyncedAt < JUST_NOW_MS
+										? t("banks.sync.justNow")
+										: syncTime.format(new Date(lastSyncedAt)),
+							})}
+				</p>
+				{lastError !== null && (
+					<p role="status" className="text-destructive">
+						{t("banks.sync.lastError", {
+							error: t(`errors.${isErrorCode(lastError) ? lastError : "INTERNAL_ERROR"}`),
+						})}
+					</p>
+				)}
+			</div>
+			<Button
+				variant="outline"
+				onClick={start}
+				aria-disabled={sync.isPending}
+				aria-busy={sync.isPending}
+			>
+				{sync.isPending ? (
+					<Loader2Icon className="animate-spin" aria-hidden />
+				) : (
+					<RefreshCwIcon aria-hidden />
+				)}
+				{t("banks.sync.submit")}
+			</Button>
+		</div>
+	);
 }
 
 function BankAccountRow({
@@ -143,6 +230,7 @@ function BankConnectionPage() {
 	const connections = useBankConnections(true);
 	const accounts = useBankAccounts(connectionId);
 	const link = useLinkBankAccounts(connectionId);
+	const sync = useSyncBankConnection(connectionId);
 	// Only the rows the user changed: the others follow their suggestion.
 	const [choices, setChoices] = useState<Record<string, Choice>>({});
 	const connection = connections.data?.find((item) => item.id === connectionId);
@@ -166,6 +254,16 @@ function BankConnectionPage() {
 			onSuccess: () => {
 				setChoices({});
 				toast.success(t("banks.accounts.linked", { count: links.length }));
+				// Sure's `complete_account_setup`: the new links bring their history
+				// at once. Quiet on success, and when a sync ran within the hour:
+				// the new link then waits for the next one, as the page shows.
+				sync.mutate(undefined, {
+					onError: (error) => {
+						if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
+							showFailureToast(error);
+						}
+					},
+				});
 			},
 			onError: showFailureToast,
 		});
@@ -177,6 +275,8 @@ function BankConnectionPage() {
 				<h2 className="text-lg font-semibold">{title}</h2>
 				<p className="text-sm text-muted-foreground">{t("banks.accounts.description")}</p>
 			</div>
+
+			{connection !== undefined && <SyncStatus connection={connection} sync={sync} />}
 
 			{accounts.isPending && (
 				<div className="flex flex-col gap-2">

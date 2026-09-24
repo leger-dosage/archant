@@ -26,6 +26,10 @@ export const bankAccounts = sqliteTable(
 		currency: text("currency").notNull(),
 		// ISO 20022 cash account type as the bank reports it, such as `CACC`.
 		cashAccountType: text("cash_account_type"),
+		// Epoch milliseconds of this account's last committed sync. The window
+		// lives here, not on the connection: an account that keeps failing
+		// would otherwise come back with a gap once the others moved on.
+		lastSyncedAt: integer("last_synced_at"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

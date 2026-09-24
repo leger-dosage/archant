@@ -709,6 +709,67 @@ describe("linkBankAccounts", () => {
 		});
 	});
 
+	it("dates the anchor on the day a closing balance describes", async () => {
+		const connection = await connected();
+		const { checking } = await bankAccountsOf(connection.id);
+		mockProvider({
+			balances: balancesBy({
+				[FIXTURE_CHECKING_UID]: {
+					balances: [
+						{
+							balance_amount: { amount: "1000.00", currency: "EUR" },
+							balance_type: "CLBD",
+							reference_date: "2026-09-23",
+						},
+					],
+				},
+			}),
+		});
+
+		const list = await linkBankAccounts(deps(), connection.id, {
+			links: [
+				{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+			],
+		});
+
+		const accountId = list.find((row) => row.id === checking.id)?.account?.id ?? "";
+		await expect(valuations(accountId)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-23",
+			amount: 100000,
+		});
+	});
+
+	it("starts a relinked bank account's window afresh", async () => {
+		const connection = await connected();
+		const { checking } = await bankAccountsOf(connection.id);
+		const create = { action: "create", type: "depository", subtype: "checking" } as const;
+		mockProvider();
+		await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: checking.id, ...create }],
+		});
+		// Synced once, then its account let go of it.
+		await temp.db
+			.update(bankAccounts)
+			.set({ lastSyncedAt: NOW - DAY })
+			.where(eq(bankAccounts.id, checking.id));
+		await temp.db
+			.update(accounts)
+			.set({ bankAccountId: null })
+			.where(eq(accounts.bankAccountId, checking.id));
+
+		await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: checking.id, ...create }],
+		});
+
+		const row = await temp.db
+			.select({ lastSyncedAt: bankAccounts.lastSyncedAt })
+			.from(bankAccounts)
+			.where(eq(bankAccounts.id, checking.id))
+			.get();
+		expect(row).toEqual({ lastSyncedAt: null });
+	});
+
 	it("creates a card owing the bank's balance, and leaves a skipped row linkable", async () => {
 		const connection = await connected();
 		const { checking, card } = await bankAccountsOf(connection.id);

@@ -83,9 +83,58 @@ export const balanceSchema = z.object({
 	balance_amount: z.object({ amount: z.string().min(1), currency }),
 	balance_type: z.string().min(1),
 	credit_debit_indicator: z.enum(["CRDT", "DBIT"]).nullish().catch(null),
+	// The day the balance describes: a `CLBD` often closes yesterday. Unread,
+	// the balance still counts, dated today.
+	reference_date: z.string().nullable().catch(null),
 });
 
 export const balancesResponseSchema = z.object({ balances: z.array(balanceSchema) });
+
+// A free-text field of a line, kept only when it says something. Nullable
+// rather than nullish: `catch` turns an absent field into `null` too, so the
+// client has one empty value to test.
+const text = z
+	.string()
+	.trim()
+	.nullable()
+	.catch(null)
+	.transform((value) => (value === "" ? null : value));
+
+/**
+ * `Transaction`, as `GET /accounts/{uid}/transactions` returns it. Every
+ * field forgives a wrong type, so the client, not this schema, decides which
+ * gaps refuse a line: one odd line never fails its page. Account numbers of
+ * either side are dropped here.
+ */
+export const transactionSchema = z.object({
+	entry_reference: text,
+	transaction_amount: z.object({ amount: z.string(), currency: z.string() }).nullable().catch(null),
+	credit_debit_indicator: z.enum(["CRDT", "DBIT"]).nullable().catch(null),
+	status: z.string().nullable().catch(null),
+	booking_date: z.string().nullable().catch(null),
+	value_date: z.string().nullable().catch(null),
+	transaction_date: z.string().nullable().catch(null),
+	creditor: z.object({ name: text }).nullable().catch(null),
+	debtor: z.object({ name: text }).nullable().catch(null),
+	bank_transaction_code: z.object({ description: text }).nullable().catch(null),
+	remittance_information: z
+		.array(z.unknown())
+		.catch([])
+		.transform((lines) =>
+			lines.flatMap((line) =>
+				typeof line === "string" && line.trim() !== "" ? [line.trim()] : [],
+			),
+		),
+});
+
+/**
+ * One page of a statement. Lines stay unknown here and are parsed one by
+ * one, so an unreadable line is refused alone.
+ */
+export const transactionsPageSchema = z.object({
+	transactions: z.array(z.unknown()),
+	continuation_key: z.string().min(1).nullable().catch(null),
+});
 
 /**
  * The provider's error code, kept only when it looks like one: a free-text

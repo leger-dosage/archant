@@ -7,6 +7,7 @@ import type { Context, MiddlewareHandler } from "hono";
 
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { except } from "hono/combine";
 import { csrf } from "hono/csrf";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
@@ -25,6 +26,7 @@ import { reportsRoutes } from "./routes/reports.ts";
 import { rulesRoutes } from "./routes/rules.ts";
 import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
+import { syncRoutes } from "./routes/sync.ts";
 import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
@@ -47,6 +49,8 @@ export type AppDeps = ServiceDeps &
 		 * development, where Vite serves it and proxies `/api` here.
 		 */
 		webDist?: string | undefined;
+		/** `SYNC_SECRET`, the bearer token of `POST /api/sync`; unset, it refuses every call. */
+		syncSecret?: string | undefined;
 	};
 
 /**
@@ -68,6 +72,7 @@ function createApi(deps: AppDeps) {
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/bank-connections", bankConnectionsRoutes(deps))
+		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }
@@ -136,7 +141,13 @@ export function createApp(deps: AppDeps) {
 		// A form post needs no preflight, so a foreign page could submit an
 		// upload with the session cookie attached. JSON requests are left to the
 		// browser's CORS preflight, which this API never answers.
-		.use("/api/*", csrf({ origin: new URL(deps.trustedOrigin).origin }))
+		.use(
+			"/api/*",
+			// The scheduled sync carries a bearer secret, which no foreign page can
+			// attach, and a cron's bodiless `curl -X POST` has no content type,
+			// which `csrf()` takes for a form from no origin.
+			except("/api/sync", csrf({ origin: new URL(deps.trustedOrigin).origin })),
+		)
 		// Better Auth answers in its own shape, outside the envelope and outside
 		// `AppType`; the interface calls it through `better-auth/react`.
 		.on(["GET", "POST"], "/api/auth/*", async (c) =>

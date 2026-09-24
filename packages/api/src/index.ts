@@ -44,6 +44,7 @@ const app = createApp({
 	trustedProxies: env.TRUSTED_PROXIES,
 	clientAddress: (c) => getConnInfo(c).remote.address,
 	webDist: env.WEB_DIST,
+	syncSecret: env.SYNC_SECRET,
 	...bankDepsFromEnv(env),
 });
 

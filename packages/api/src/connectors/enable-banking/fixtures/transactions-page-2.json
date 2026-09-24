@@ -1,0 +1,27 @@
+{
+	"transactions": [
+		{
+			"entry_reference": "20260921-0005",
+			"transaction_amount": { "currency": "EUR", "amount": "9.99" },
+			"credit_debit_indicator": "DBIT",
+			"status": "BOOK",
+			"booking_date": "2026-09-21",
+			"remittance_information": ["NETFLIX.COM", "Abonnement mensuel"]
+		},
+		{
+			"entry_reference": "20260921-0006",
+			"transaction_amount": { "currency": "EUR", "amount": "1.00" },
+			"credit_debit_indicator": "DBIT",
+			"status": "INFO",
+			"booking_date": "2026-09-21"
+		},
+		{
+			"entry_reference": "20260922-0007",
+			"transaction_amount": { "currency": "EUR", "amount": "15.00" },
+			"credit_debit_indicator": "CRDT",
+			"status": "BOOK",
+			"booking_date": "2026-09-22"
+		}
+	],
+	"continuation_key": null
+}

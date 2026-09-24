@@ -4,13 +4,13 @@ import { randomUUID } from "node:crypto";
 
 import { createDb } from "@archant/data/client";
 
-import { FAKE_ACCOUNTS, FAKE_BANKS } from "./fake-enable-banking.ts";
-import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { FAILING_BANK, FAKE_ACCOUNTS, FAKE_BANKS, FAKE_LINES } from "./fake-enable-banking.ts";
+import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 import { DATABASE_FILE, TIME_ZONE } from "./settings.ts";
 
-// Stories 10.1 and 10.2: connecting a bank from « Réglages > Banques », then
-// deciding what each of its accounts becomes, against the fake Enable
-// Banking that e2e/start-api.ts starts on loopback.
+// Stories 10.1 to 10.3: connecting a bank from « Réglages > Banques »,
+// deciding what each of its accounts becomes, then syncing them, against the
+// fake Enable Banking that e2e/start-api.ts starts on loopback.
 
 const PAGE = "/settings/banks";
 
@@ -68,16 +68,18 @@ test("another country lists its own banks", async ({ page }) => {
 
 const CONNECTION_URL = /\/settings\/banks\/([0-9a-f-]{36})$/u;
 
-/** Connects Banque Démo and returns once its page is open, with its id. */
-async function connect(page: Page): Promise<string> {
+/** Connects `bank`, Banque Démo by default, and returns once its page is open, with its id. */
+async function connect(page: Page, bank = "Banque Démo"): Promise<string> {
 	await visit(page);
-	await banks(page).getByRole("button", { name: "Connecter Banque Démo" }).click();
+	await banks(page)
+		.getByRole("button", { name: `Connecter ${bank}` })
+		.click();
 
 	// The fake bank approves at once and sends the browser back through the
 	// return page, which posts the code and lands on the connection's page.
-	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
+	await expect(toast(page, `${bank} est connectée.`)).toBeVisible();
 	await expect(page).toHaveURL(CONNECTION_URL);
-	await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 2, name: bank })).toBeVisible();
 
 	return CONNECTION_URL.exec(page.url())?.[1] ?? "";
 }
@@ -287,4 +289,80 @@ test("an unknown connection says so and links back to Banques", async ({ page })
 	await expect(page.getByRole("alert")).toContainText("Cette connexion n'existe pas.");
 	await page.getByRole("link", { name: "Retour aux banques" }).click();
 	await expect(page).toHaveURL(/\/settings\/banks$/u);
+});
+
+/** A transaction row of the account page, by its label. */
+const transactionRow = (page: Page, label: string) =>
+	page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
+
+test("linking an account syncs the bank's booked lines, once, and the pages show the last sync", async ({
+	page,
+}) => {
+	const connectionId = await connect(page);
+	await expect(page.getByText("Jamais synchronisée")).toBeVisible();
+
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+
+	await page.goto(`/accounts/${accountId}`);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toContainText(euros(-4290));
+	await expect(transactionRow(page, FAKE_LINES.salary.label)).toContainText(euros(250_000));
+	// From the second page of the statement.
+	await expect(transactionRow(page, FAKE_LINES.subscription.label)).toBeVisible();
+	// Pending lines are Story 10.4's.
+	await expect(transactionRow(page, FAKE_LINES.pending.label)).toHaveCount(0);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toHaveCount(1);
+	await expect(page.getByRole("main")).toContainText("1 234,56 €");
+
+	await transactionRow(page, FAKE_LINES.groceries.label).click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	await expect(
+		sheet.getByText("Synchronisée depuis Enable Banking", { exact: true }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
+
+	// A second run within the hour is refused, and nothing is fetched twice.
+	await page.goto(`/settings/banks/${connectionId}`);
+	await page.getByRole("button", { name: "Synchroniser" }).click();
+	await expect(
+		toast(page, "Cette banque a été synchronisée il y a moins d'une heure."),
+	).toBeVisible();
+
+	await visit(page);
+	const row = page
+		.getByRole("list", { name: "Banques connectées" })
+		.getByRole("listitem")
+		.filter({ has: page.locator(`[href="/settings/banks/${connectionId}"]`) });
+	await expect(row).toContainText("Dernière synchronisation :");
+	await expect(row).not.toContainText("Jamais synchronisée");
+});
+
+test("an account the bank fails to list shows the error, and the other one still syncs", async ({
+	page,
+}) => {
+	await connect(page, FAILING_BANK);
+
+	// Both accounts, as suggested: the card's transactions answer 500.
+	await validate(page).click();
+
+	await expect(toast(page, "2 comptes reliés à la banque.")).toBeVisible();
+	await expect(
+		page.getByText(
+			"La dernière synchronisation a échoué : Enable Banking n'a pas répondu correctement.",
+		),
+	).toBeVisible();
+	await expect(page.getByText("Jamais synchronisée")).toBeVisible();
+
+	const checkingId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	const cardId = await linkedAccountId(page, FAKE_ACCOUNTS.card.name);
+	await page.goto(`/accounts/${checkingId}`);
+	await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
+	await page.goto(`/accounts/${cardId}`);
+	await expect(page.getByRole("main")).toContainText("300,00 €");
+	await expect(transactionRow(page, FAKE_LINES.salary.label)).toHaveCount(0);
 });
