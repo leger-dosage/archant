@@ -15,7 +15,11 @@ import {
 	RULE_OPERATORS,
 	RULE_VALUE_MAX_LENGTH,
 	isRuleOperatorOf,
+	isValuelessAction,
 } from "@archant/data/rules";
+
+import { DIRECTIONS } from "../domain/cash-flow.ts";
+import { LABEL_MAX_LENGTH } from "./transactions.ts";
 
 /** Past this a rule is no longer read at a glance; Sure sets no limit. */
 export const MAX_RULE_CONDITIONS = 50;
@@ -84,7 +88,12 @@ function issue(context: z.core.$RefinementCtx, path: (string | number)[], code: 
 	context.addIssue({ code: "custom", path, message: code });
 }
 
-/** A leaf condition's operator and value, reported under `path`. */
+/** The values a type condition takes: the list's directions. */
+export const RULE_TYPE_VALUES = DIRECTIONS;
+
+const isDirection = (value: string) => RULE_TYPE_VALUES.some((known) => known === value);
+
+/** A leaf condition's operator and value, reported under `path`. `is_null` reads no value. */
 function checkLeaf(
 	leaf: Leaf,
 	path: (string | number)[],
@@ -95,6 +104,10 @@ function checkLeaf(
 		issue(context, [...path, "operator"], "invalid_value");
 	}
 
+	if (leaf.operator === "is_null") {
+		return;
+	}
+
 	const value = leaf.value?.trim() ?? "";
 
 	if (value === "") {
@@ -103,8 +116,15 @@ function checkLeaf(
 		return;
 	}
 
-	if (leaf.conditionType === "transaction_name" && value.length > RULE_VALUE_MAX_LENGTH) {
+	const text =
+		leaf.conditionType === "transaction_name" || leaf.conditionType === "transaction_notes";
+
+	if (text && value.length > RULE_VALUE_MAX_LENGTH) {
 		issue(context, [...path, "value"], "too_big");
+	}
+
+	if (leaf.conditionType === "transaction_type" && !isDirection(value)) {
+		issue(context, [...path, "value"], "invalid_value");
 	}
 
 	if (leaf.conditionType === "transaction_amount") {
@@ -117,8 +137,12 @@ function checkLeaf(
 	}
 }
 
-/** One stored value: the trimmed text, the amount in minor units. */
-function storedValue(leaf: Leaf, currency: CurrencyCode): string {
+/** One stored value: the trimmed text, the amount in minor units, null for `is_null`. */
+function storedValue(leaf: Leaf, currency: CurrencyCode): string | null {
+	if (leaf.operator === "is_null") {
+		return null;
+	}
+
 	const value = leaf.value?.trim() ?? "";
 
 	return leaf.conditionType === "transaction_amount" ? String(parseAmount(value, currency)) : value;
@@ -127,7 +151,8 @@ function storedValue(leaf: Leaf, currency: CurrencyCode): string {
 export type RuleLeafRequest = {
 	conditionType: Exclude<RuleConditionType, "compound">;
 	operator: RuleOperator;
-	value: string;
+	/** `null` for `is_null`. */
+	value: string | null;
 };
 
 export type RuleGroupRequest = {
@@ -142,7 +167,8 @@ export type RuleRequest = {
 	name: string | null;
 	effectiveDate: string | null;
 	conditions: RuleConditionRequest[];
-	actions: { actionType: RuleActionType; value: string }[];
+	/** `value` is `null` for an exclusion. */
+	actions: { actionType: RuleActionType; value: string | null }[];
 };
 
 /**
@@ -150,7 +176,8 @@ export type RuleRequest = {
  * form reports the API's field codes. Built per currency: the amount is typed
  * in the reporting currency and stored in its minor units. Groups nest one
  * level deep, a rule needs one action at least, and no action type twice, as
- * in Sure.
+ * in Sure. An exclusion takes no value; every other action needs one, a
+ * rename its new label.
  */
 export function ruleSchema(currency: CurrencyCode) {
 	return z
@@ -190,8 +217,20 @@ export function ruleSchema(currency: CurrencyCode) {
 
 				seen.add(action.actionType);
 
-				if ((action.value?.trim() ?? "") === "") {
-					issue(context, ["actions", index, "value"], "too_small");
+				const value = action.value?.trim() ?? "";
+				const path = ["actions", index, "value"];
+
+				if (isValuelessAction(action.actionType)) {
+					if (action.value !== undefined && action.value !== null) {
+						issue(context, path, "invalid_value");
+					}
+				} else if (value === "") {
+					issue(context, path, "too_small");
+				} else if (
+					action.actionType === "set_transaction_name" &&
+					value.length > LABEL_MAX_LENGTH
+				) {
+					issue(context, path, "too_big");
 				}
 			}
 		})
@@ -226,7 +265,7 @@ export function ruleSchema(currency: CurrencyCode) {
 			}),
 			actions: rule.actions.map((action) => ({
 				actionType: action.actionType,
-				value: action.value?.trim() ?? "",
+				value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
 			})),
 		}));
 }

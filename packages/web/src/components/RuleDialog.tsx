@@ -1,24 +1,36 @@
 import type { CategoryData } from "@/hooks/useCategories";
+import type { MerchantData } from "@/hooks/useMerchants";
 import type { RuleData } from "@/hooks/useRules";
+import type { TagData } from "@/hooks/useTags";
+import type { ReactNode } from "react";
 import type { Control, FieldErrors, Path } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PlusIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { get, useController, useFieldArray, useForm, useFormState } from "react-hook-form";
+import {
+	get,
+	useController,
+	useFieldArray,
+	useForm,
+	useFormState,
+	useWatch,
+} from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { RuleFormInput } from "@archant/api/schemas/rules";
-import { ruleSchema } from "@archant/api/schemas/rules";
+import { RULE_TYPE_VALUES, ruleSchema } from "@archant/api/schemas/rules";
 import type { CurrencyCode } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-import type { RuleConditionType } from "@archant/data/rules";
-import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
+import type { RuleActionType, RuleConditionType } from "@archant/data/rules";
+import { RULE_ACTION_TYPES, RULE_OPERATORS_BY_TYPE, isValuelessAction } from "@archant/data/rules";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryDot } from "@/components/CategoryDot";
 import { DateField } from "@/components/DateField";
+import { MerchantCombobox } from "@/components/MerchantCombobox";
+import { TagCombobox } from "@/components/TagCombobox";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -55,6 +67,11 @@ const LEAF_TYPES: readonly LeafType[] = [
 	"transaction_name",
 	"transaction_amount",
 	"transaction_account",
+	"transaction_merchant",
+	"transaction_category",
+	"transaction_tag",
+	"transaction_notes",
+	"transaction_type",
 ];
 
 const newLeaf = (): LeafValues => ({
@@ -70,9 +87,12 @@ const newGroup = (): ConditionValues => ({
 	conditions: [newLeaf()],
 });
 
-const newAction = (): FormValues["actions"][number] => ({
-	actionType: "set_transaction_category",
-	value: "",
+type ActionValues = FormValues["actions"][number];
+
+const newAction = (actionType: RuleActionType = "set_transaction_category"): ActionValues => ({
+	actionType,
+	// An exclusion takes no value: the schema refuses one.
+	value: isValuelessAction(actionType) ? null : "",
 });
 
 // Sure's new rule starts with one condition and one action to fill in.
@@ -182,18 +202,224 @@ const described = (path: string, error: ShownError | undefined) =>
 
 type AccountOption = { id: string; name: string };
 
-/** One condition on a label, an amount or an account. */
+/** Every list a value picker offers, loaded by the page. */
+type Options = {
+	accounts: readonly AccountOption[];
+	categories: readonly CategoryData[];
+	merchants: readonly MerchantData[];
+	tags: readonly TagData[];
+};
+
+/**
+ * A button showing the chosen merchant, category or tag, opening its
+ * combobox in a popover; `children` gets the function that closes it.
+ */
+function PickerField({
+	id,
+	label,
+	chosen,
+	placeholder,
+	deleted,
+	invalid,
+	describedBy,
+	children,
+}: {
+	id: string;
+	label: string;
+	/** The picked row's name and colour; `undefined` when none is picked or it was deleted. */
+	chosen: { name: string; color?: string } | undefined;
+	placeholder: string;
+	/** Shown instead of the placeholder when an id is set but names no row. */
+	deleted: string | null;
+	invalid: boolean;
+	describedBy: { "aria-describedby"?: string };
+	children: (close: () => void) => ReactNode;
+}) {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					id={id}
+					type="button"
+					variant="outline"
+					className="w-full min-w-0 justify-start font-normal"
+					aria-label={label}
+					aria-invalid={invalid}
+					{...describedBy}
+				>
+					{chosen === undefined ? (
+						<span className="text-muted-foreground">{deleted ?? placeholder}</span>
+					) : (
+						<>
+							{chosen.color !== undefined && <CategoryDot color={chosen.color} />}
+							<span className="truncate">{chosen.name}</span>
+						</>
+					)}
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) min-w-64 p-0">
+				{children(() => setOpen(false))}
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+/** The text a picker shows for a set id that names no row any more, `null` when unset. */
+const deletedText = (value: string | null | undefined, text: string) =>
+	value === "" || value === null || value === undefined ? null : text;
+
+/** The row a condition or an action names, by its table. */
+type ReferenceKind = "account" | "merchant" | "category" | "tag";
+
+const LEAF_REFERENCES = {
+	transaction_account: "account",
+	transaction_merchant: "merchant",
+	transaction_category: "category",
+	transaction_tag: "tag",
+} as const satisfies Partial<Record<LeafType, ReferenceKind>>;
+
+const ACTION_REFERENCES = {
+	set_transaction_category: "category",
+	set_transaction_merchant: "merchant",
+	set_transaction_tags: "tag",
+	set_as_transfer_or_payment: "account",
+} as const satisfies Partial<Record<RuleActionType, ReferenceKind>>;
+
+/**
+ * The value naming an account, a merchant, a category or a tag: a select for
+ * an account, a combobox behind a button for the others. Shared by conditions
+ * and actions.
+ */
+function ReferenceField({
+	kind,
+	id,
+	label,
+	value,
+	onPick,
+	invalid,
+	describedBy,
+	options,
+}: {
+	kind: ReferenceKind;
+	id: string;
+	label: string;
+	/** The picked id, `""` for none. */
+	value: string;
+	onPick: (id: string) => void;
+	invalid: boolean;
+	describedBy: { "aria-describedby"?: string };
+	options: Options;
+}) {
+	const { t } = useTranslation();
+	const pickerProps = { id, label, invalid, describedBy };
+	const picked = value === "" ? undefined : value;
+
+	switch (kind) {
+		case "account":
+			return (
+				<Select value={value} onValueChange={onPick}>
+					<SelectTrigger
+						id={id}
+						className="w-full"
+						aria-label={label}
+						aria-invalid={invalid}
+						{...describedBy}
+					>
+						{/* A deleted account is in no option: say so rather than show the empty placeholder. */}
+						{value !== "" && !options.accounts.some((account) => account.id === value) ? (
+							<span>{t("rules.summary.deletedAccount")}</span>
+						) : (
+							<SelectValue placeholder={t("rules.form.accountPlaceholder")} />
+						)}
+					</SelectTrigger>
+					<SelectContent>
+						{options.accounts.map((account) => (
+							<SelectItem key={account.id} value={account.id}>
+								{account.name}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			);
+		case "merchant":
+			return (
+				<PickerField
+					{...pickerProps}
+					chosen={options.merchants.find((candidate) => candidate.id === value)}
+					placeholder={t("rules.form.merchantPlaceholder")}
+					deleted={deletedText(value, t("rules.summary.deletedMerchant"))}
+				>
+					{(close) => (
+						<MerchantCombobox
+							merchants={options.merchants}
+							value={picked}
+							mode="target"
+							onSelect={(merchantId) => {
+								onPick(merchantId ?? "");
+								close();
+							}}
+						/>
+					)}
+				</PickerField>
+			);
+		case "category":
+			return (
+				<PickerField
+					{...pickerProps}
+					chosen={options.categories.find((candidate) => candidate.id === value)}
+					placeholder={t("rules.form.categoryPlaceholder")}
+					deleted={deletedText(value, t("rules.summary.deletedCategory"))}
+				>
+					{(close) => (
+						<CategoryCombobox
+							categories={options.categories}
+							value={picked}
+							allowNone={false}
+							onSelect={(categoryId) => {
+								onPick(categoryId ?? "");
+								close();
+							}}
+						/>
+					)}
+				</PickerField>
+			);
+		default:
+			return (
+				<PickerField
+					{...pickerProps}
+					chosen={options.tags.find((candidate) => candidate.id === value)}
+					placeholder={t("rules.form.tagPlaceholder")}
+					deleted={deletedText(value, t("rules.summary.deletedTag"))}
+				>
+					{(close) => (
+						<TagCombobox
+							tags={options.tags}
+							value={picked === undefined ? [] : [picked]}
+							onToggle={(tagId) => {
+								onPick(tagId);
+								close();
+							}}
+						/>
+					)}
+				</PickerField>
+			);
+	}
+}
+
+/** One condition on a label, an amount, an account, a merchant, a category, a tag, notes or a type. */
 function LeafRow({
 	control,
 	name,
 	label,
-	accounts,
+	options,
 	onRemove,
 }: {
 	control: Control<FormValues>;
 	name: LeafName;
 	label: string;
-	accounts: readonly AccountOption[];
+	options: Options;
 	onRemove: () => void;
 }) {
 	const { t } = useTranslation();
@@ -206,6 +432,70 @@ function LeafRow({
 	const operatorError = errorAt(errors, `${name}.operator`);
 	const valueError = errorAt(errors, `${name}.value`) ?? errorAt(errors, name);
 	const valueId = `rule-${name.replaceAll(".", "-")}-value`;
+	const valueLabel = t("rules.form.value", { index: label });
+	const current = value.field.value ?? "";
+	const pick = (next: string) => value.field.onChange(next);
+	const pickerProps = {
+		id: valueId,
+		label: valueLabel,
+		invalid: valueError !== undefined,
+		describedBy: described(`${name}.value`, valueError),
+	};
+
+	const valueField = (): ReactNode => {
+		switch (leafType) {
+			case "transaction_type":
+				return (
+					<Select value={current} onValueChange={pick}>
+						<SelectTrigger
+							id={valueId}
+							className="w-full"
+							aria-label={valueLabel}
+							aria-invalid={valueError !== undefined}
+							{...described(`${name}.value`, valueError)}
+						>
+							<SelectValue placeholder={t("rules.form.typePlaceholder")} />
+						</SelectTrigger>
+						<SelectContent>
+							{RULE_TYPE_VALUES.map((option) => (
+								<SelectItem key={option} value={option}>
+									{t(`rules.types.${option}`)}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				);
+			case "transaction_account":
+			case "transaction_merchant":
+			case "transaction_category":
+			case "transaction_tag":
+				return (
+					<ReferenceField
+						{...pickerProps}
+						kind={LEAF_REFERENCES[leafType]}
+						value={current}
+						onPick={pick}
+						options={options}
+					/>
+				);
+			default:
+				return (
+					<Input
+						id={valueId}
+						autoComplete="off"
+						aria-label={valueLabel}
+						aria-invalid={valueError !== undefined}
+						{...described(`${name}.value`, valueError)}
+						{...(leafType === "transaction_amount"
+							? { inputMode: "decimal" as const, className: "text-right tabular-nums" }
+							: {})}
+						value={current}
+						onChange={value.field.onChange}
+						onBlur={value.field.onBlur}
+					/>
+				);
+		}
+	};
 
 	return (
 		<div className="flex flex-col gap-1">
@@ -236,7 +526,17 @@ function LeafRow({
 						))}
 					</SelectContent>
 				</Select>
-				<Select value={operator.field.value ?? ""} onValueChange={operator.field.onChange}>
+				<Select
+					value={operator.field.value ?? ""}
+					onValueChange={(next) => {
+						// « est vide » reads no value: the field goes, and so does what it held.
+						if (next === "is_null") {
+							value.field.onChange(null);
+						}
+
+						operator.field.onChange(next);
+					}}
+				>
 					<SelectTrigger
 						className="w-52 shrink-0"
 						aria-label={t("rules.form.operator", { index: label })}
@@ -256,50 +556,7 @@ function LeafRow({
 						})}
 					</SelectContent>
 				</Select>
-				<div className="min-w-0 flex-1">
-					{leafType === "transaction_account" ? (
-						<Select value={value.field.value ?? ""} onValueChange={value.field.onChange}>
-							<SelectTrigger
-								id={valueId}
-								className="w-full"
-								aria-label={t("rules.form.value", { index: label })}
-								aria-invalid={valueError !== undefined}
-								{...described(`${name}.value`, valueError)}
-							>
-								{/* A deleted account is in no option: say so rather than show the empty placeholder. */}
-								{value.field.value !== "" &&
-								value.field.value !== null &&
-								value.field.value !== undefined &&
-								!accounts.some((account) => account.id === value.field.value) ? (
-									<span>{t("rules.summary.deletedAccount")}</span>
-								) : (
-									<SelectValue placeholder={t("rules.form.accountPlaceholder")} />
-								)}
-							</SelectTrigger>
-							<SelectContent>
-								{accounts.map((account) => (
-									<SelectItem key={account.id} value={account.id}>
-										{account.name}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : (
-						<Input
-							id={valueId}
-							autoComplete="off"
-							aria-label={t("rules.form.value", { index: label })}
-							aria-invalid={valueError !== undefined}
-							{...described(`${name}.value`, valueError)}
-							{...(leafType === "transaction_amount"
-								? { inputMode: "decimal" as const, className: "text-right tabular-nums" }
-								: {})}
-							value={value.field.value ?? ""}
-							onChange={value.field.onChange}
-							onBlur={value.field.onBlur}
-						/>
-					)}
-				</div>
+				<div className="min-w-0 flex-1">{operator.field.value !== "is_null" && valueField()}</div>
 				<Button
 					type="button"
 					variant="ghost"
@@ -320,12 +577,12 @@ function LeafRow({
 function GroupRow({
 	control,
 	index,
-	accounts,
+	options,
 	onRemove,
 }: {
 	control: Control<FormValues>;
 	index: number;
-	accounts: readonly AccountOption[];
+	options: Options;
 	onRemove: () => void;
 }) {
 	const { t } = useTranslation();
@@ -374,7 +631,7 @@ function GroupRow({
 					control={control}
 					name={`conditions.${index}.conditions.${position}`}
 					label={`${label}.${position + 1}`}
-					accounts={accounts}
+					options={options}
 					onRemove={() => children.remove(position)}
 				/>
 			))}
@@ -392,67 +649,114 @@ function GroupRow({
 	);
 }
 
-/** The « Catégorie » action's value: the category combobox behind a button showing the choice. */
-function CategoryAction({
+/** One action: its type, among those no other action holds, then its value. */
+function ActionRow({
 	control,
 	index,
-	categories,
+	options,
+	taken,
+	onRemove,
 }: {
 	control: Control<FormValues>;
 	index: number;
-	categories: readonly CategoryData[];
+	options: Options;
+	/** The types the other actions hold: a rule holds each type once, as in Sure. */
+	taken: ReadonlySet<RuleActionType>;
+	onRemove: () => void;
 }) {
 	const { t } = useTranslation();
-	const [open, setOpen] = useState(false);
 	const { errors } = useFormState({ control });
+	const type = useController({ control, name: `actions.${index}.actionType` });
 	const value = useController({ control, name: `actions.${index}.value` });
+	const actionType: RuleActionType = type.field.value;
+	const label = String(index + 1);
 	const path = `actions.${index}.value`;
 	const error = errorAt(errors, path) ?? errorAt(errors, `actions.${index}`);
-	const category = categories.find((candidate) => candidate.id === value.field.value);
 	const id = `rule-action-${index}`;
+	const current = value.field.value ?? "";
+	// The value's name is the action's: « Catégorie », « Renommer », « Virement avec ».
+	const valueLabel = t(`rules.actionTypes.${actionType}`);
+	const pick = (next: string) => value.field.onChange(next);
+	const pickerProps = {
+		id,
+		label: valueLabel,
+		invalid: error !== undefined,
+		describedBy: described(path, error),
+	};
+
+	const valueField = (): ReactNode => {
+		switch (actionType) {
+			case "set_transaction_category":
+			case "set_transaction_merchant":
+			case "set_transaction_tags":
+			case "set_as_transfer_or_payment":
+				return (
+					<ReferenceField
+						{...pickerProps}
+						kind={ACTION_REFERENCES[actionType]}
+						value={current}
+						onPick={pick}
+						options={options}
+					/>
+				);
+			case "set_transaction_name":
+				return (
+					<Input
+						id={id}
+						autoComplete="off"
+						aria-label={valueLabel}
+						aria-invalid={error !== undefined}
+						{...described(path, error)}
+						value={current}
+						onChange={value.field.onChange}
+						onBlur={value.field.onBlur}
+					/>
+				);
+			default:
+				return <p className="py-2 text-sm text-muted-foreground">{t("rules.form.excludeHint")}</p>;
+		}
+	};
 
 	return (
-		<div className="flex flex-1 flex-col gap-1">
-			<div className="flex items-center gap-2">
-				<Label htmlFor={id} className="w-36 shrink-0">
-					{t("rules.form.setCategory")}
-				</Label>
-				<Popover open={open} onOpenChange={setOpen}>
-					<PopoverTrigger asChild>
-						<Button
-							id={id}
-							type="button"
-							variant="outline"
-							className="min-w-0 flex-1 justify-start font-normal"
-							aria-invalid={error !== undefined}
-							{...described(path, error)}
-						>
-							{category === undefined ? (
-								<span className="text-muted-foreground">
-									{value.field.value === "" || value.field.value === null
-										? t("rules.form.categoryPlaceholder")
-										: t("rules.summary.deletedCategory")}
-								</span>
-							) : (
-								<>
-									<CategoryDot color={category.color} />
-									<span className="truncate">{category.name}</span>
-								</>
-							)}
-						</Button>
-					</PopoverTrigger>
-					<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
-						<CategoryCombobox
-							categories={categories}
-							value={value.field.value ?? undefined}
-							allowNone={false}
-							onSelect={(categoryId) => {
-								value.field.onChange(categoryId ?? "");
-								setOpen(false);
-							}}
-						/>
-					</PopoverContent>
-				</Popover>
+		<div className="flex flex-col gap-1">
+			<div className="flex items-start gap-2">
+				<Select
+					value={actionType}
+					onValueChange={(next) => {
+						const picked = RULE_ACTION_TYPES.find((candidate) => candidate === next);
+
+						if (picked !== undefined) {
+							type.field.onChange(picked);
+							value.field.onChange(newAction(picked).value);
+						}
+					}}
+				>
+					<SelectTrigger
+						className="w-52 shrink-0"
+						aria-label={t("rules.form.action", { index: label })}
+					>
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{RULE_ACTION_TYPES.filter((option) => option === actionType || !taken.has(option)).map(
+							(option) => (
+								<SelectItem key={option} value={option}>
+									{t(`rules.actionTypes.${option}`)}
+								</SelectItem>
+							),
+						)}
+					</SelectContent>
+				</Select>
+				<div className="min-w-0 flex-1">{valueField()}</div>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					aria-label={t("rules.form.removeAction", { index: label })}
+					onClick={onRemove}
+				>
+					<XIcon />
+				</Button>
 			</div>
 			<FieldMessage id={errorId(path)} error={error} />
 		</div>
@@ -464,21 +768,20 @@ type RuleDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	/** The rule to edit; absent to create one. */
 	rule?: RuleData | undefined;
-	accounts: readonly AccountOption[];
-	categories: readonly CategoryData[];
+	options: Options;
 	reportingCurrency: CurrencyCode;
 };
 
 /**
  * Creates or edits a rule, as Sure's modal: a name and a start date, both
- * optional, then « Si » its conditions and groups, then « Alors » its action.
+ * optional, then « Si » its conditions and groups, then « Alors » its
+ * actions, one per type.
  */
 export function RuleDialog({
 	open,
 	onOpenChange,
 	rule,
-	accounts,
-	categories,
+	options,
 	reportingCurrency,
 }: RuleDialogProps) {
 	const { t } = useTranslation();
@@ -496,6 +799,10 @@ export function RuleDialog({
 	const actions = useFieldArray({ control: form.control, name: "actions" });
 	const effectiveDate = useController({ control: form.control, name: "effectiveDate" });
 	const actionsError = errorAt(errors, "actions");
+	const actionTypes = useWatch({ control: form.control, name: "actions" }).map(
+		(action) => action.actionType,
+	);
+	const remaining = RULE_ACTION_TYPES.filter((type) => !actionTypes.includes(type));
 
 	// Keyed on the id: the page hands over the rule from the current list, a
 	// new object on every refetch, which must not wipe what is being typed.
@@ -600,7 +907,7 @@ export function RuleDialog({
 									key={field.id}
 									control={form.control}
 									index={index}
-									accounts={accounts}
+									options={options}
 									onRemove={() => conditions.remove(index)}
 								/>
 							) : (
@@ -609,7 +916,7 @@ export function RuleDialog({
 									control={form.control}
 									name={`conditions.${index}`}
 									label={String(index + 1)}
-									accounts={accounts}
+									options={options}
 									onRemove={() => conditions.remove(index)}
 								/>
 							),
@@ -641,21 +948,16 @@ export function RuleDialog({
 							{t("rules.form.actions")}
 						</h3>
 						{actions.fields.map((field, index) => (
-							<div key={field.id} className="flex items-start gap-2">
-								<CategoryAction control={form.control} index={index} categories={categories} />
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon"
-									aria-label={t("rules.form.removeAction")}
-									onClick={() => actions.remove(index)}
-								>
-									<XIcon />
-								</Button>
-							</div>
+							<ActionRow
+								key={field.id}
+								control={form.control}
+								index={index}
+								options={options}
+								taken={new Set(actionTypes.filter((_, position) => position !== index))}
+								onRemove={() => actions.remove(index)}
+							/>
 						))}
-						{/* One action type for now, and a rule holds each type once. */}
-						{actions.fields.length === 0 && (
+						{remaining.length > 0 && (
 							<Button
 								type="button"
 								variant="outline"
@@ -663,7 +965,13 @@ export function RuleDialog({
 								className="self-start"
 								aria-invalid={actionsError !== undefined}
 								{...described("actions", actionsError)}
-								onClick={() => actions.append(newAction())}
+								onClick={() => {
+									const [next] = remaining;
+
+									if (next !== undefined) {
+										actions.append(newAction(next));
+									}
+								}}
 							>
 								<PlusIcon />
 								{t("rules.form.addAction")}

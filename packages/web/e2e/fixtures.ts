@@ -325,21 +325,21 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
-		 * Creates a rule setting `categoryId`, as the form does. Every rule
-		 * reaches every later transaction of the shared database, so the test
-		 * that creates one deletes it with `deleteRules`.
+		 * Creates a rule with `actions`, as the form does. Every rule reaches
+		 * every later transaction of the shared database, so the test that
+		 * creates one deletes it with `deleteRules`.
 		 */
 		async createRule(input: {
 			name?: string;
-			conditions: { conditionType: string; operator: string; value: string }[];
-			categoryId: string;
+			conditions: { conditionType: string; operator: string; value: string | null }[];
+			actions: { actionType: string; value: string | null }[];
 		}): Promise<string> {
 			return created(
 				await request.post("/api/rules", {
 					data: {
 						name: input.name ?? null,
 						conditions: input.conditions,
-						actions: [{ actionType: "set_transaction_category", value: input.categoryId }],
+						actions: input.actions,
 					},
 				}),
 			);

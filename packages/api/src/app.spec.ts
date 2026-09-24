@@ -4547,6 +4547,173 @@ describe("rules", () => {
 		]);
 		expect(rows.filter((row) => row.category === null)).toHaveLength(3);
 	});
+
+	// Story 8.2: the other conditions and actions.
+
+	async function detailsOf(accountId: string) {
+		return temp.db.all<{
+			label: string;
+			category: string | null;
+			merchant: string | null;
+			excluded: number;
+			tags: string | null;
+		}>(
+			sql`select t.label as label, t.category_id as category, t.merchant_id as merchant, t.excluded as excluded, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
+		);
+	}
+
+	it("sets the merchant, a tag and the label and excludes the lines of an OFX import, chaining two rules", async () => {
+		const account = await openAccount();
+		const bakery = await createMerchant(uniqueCategory("Boulangerie"));
+		const breakfast = await createTag(uniqueCategory("Petit-déjeuner"));
+		await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "boulangerie")],
+			actions: [
+				{ actionType: "set_transaction_merchant", value: bakery.id },
+				{ actionType: "set_transaction_name", value: "Boulangerie du coin" },
+				{ actionType: "exclude_transaction" },
+			],
+		});
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		await createRule({
+			conditions: [
+				ruleLeaf("transaction_merchant", "=", bakery.id),
+				ruleLeaf("transaction_category", "is_null", null),
+				ruleLeaf("transaction_tag", "is_null", null),
+			],
+			actions: [{ actionType: "set_transaction_tags", value: breakfast.id }],
+		});
+		const preview = await uploaded(account.id, await creditAgricole());
+
+		await request("POST", `/api/imports/${preview.id}/confirm`);
+
+		const rows = await detailsOf(account.id);
+		expect(rows.filter((row) => row.merchant === bakery.id)).toEqual([
+			{
+				label: "Boulangerie du coin",
+				category: null,
+				merchant: bakery.id,
+				excluded: 1,
+				tags: breakfast.id,
+			},
+			{
+				label: "Boulangerie du coin",
+				category: null,
+				merchant: bakery.id,
+				excluded: 1,
+				tags: breakfast.id,
+			},
+		]);
+		expect(rows.filter((row) => row.excluded === 1)).toHaveLength(2);
+		expect(rows.filter((row) => row.tags !== null)).toHaveLength(2);
+	});
+
+	it("matches notes and type on a transaction typed by hand, and never renames it", async () => {
+		const account = await openAccount();
+		const gifts = await createCategory(uniqueCategory("Cadeaux"));
+		await createRule({
+			conditions: [
+				ruleLeaf("transaction_notes", "like", "anniversaire"),
+				ruleLeaf("transaction_type", "=", "expense"),
+			],
+			actions: [categoryAction(gifts.id), { actionType: "set_transaction_name", value: "Cadeau" }],
+		});
+
+		await postTransaction(account.id, { ...expense, label: "Fnac", notes: "Anniversaire Léa" });
+		await postTransaction(account.id, {
+			...expense,
+			label: "Remboursement",
+			amount: "42,90",
+			notes: "Anniversaire Léa",
+		});
+		await postTransaction(account.id, { ...expense, label: "Sans notes", notes: "" });
+
+		await expect(detailsOf(account.id)).resolves.toMatchObject([
+			{ label: "Fnac", category: gifts.id },
+			{ label: "Remboursement", category: null },
+			{ label: "Sans notes", category: null },
+		]);
+	});
+
+	it("pairs a line with the one candidate on the account « Virement avec » names", async () => {
+		const joint = await openAccount();
+		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+		await postTransaction(livret.id, { ...expense, label: "VIR RECU", amount: "777,31" });
+		await postTransaction(card.id, { ...expense, label: "REMBOURSEMENT", amount: "777,31" });
+		await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "epargne")],
+			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
+		});
+
+		await postTransaction(joint.id, { ...expense, label: "VIR EPARGNE", amount: "-777,31" });
+
+		const pairs = await temp.db.all<{ outflow: string; inflow: string; kind: string }>(
+			sql`select eo.account_id as outflow, ei.account_id as inflow, t.kind as kind from transfers t join entries eo on eo.id = t.outflow_transaction_id join entries ei on ei.id = t.inflow_transaction_id where eo.account_id = ${joint.id}`,
+		);
+		expect(pairs).toEqual([{ outflow: joint.id, inflow: livret.id, kind: "internal_move" }]);
+	});
+
+	it.each([
+		[
+			"an empty rename",
+			[],
+			[{ actionType: "set_transaction_name", value: " " }],
+			[{ path: "actions.0.value", code: "too_small" }],
+		],
+		[
+			"a value on an exclusion",
+			[],
+			[{ actionType: "exclude_transaction", value: "yes" }],
+			[{ path: "actions.0.value", code: "invalid_value" }],
+		],
+		[
+			"an unknown merchant, tag and account",
+			[],
+			[
+				{ actionType: "set_transaction_merchant", value: "nope" },
+				{ actionType: "set_transaction_tags", value: "nope" },
+				{ actionType: "set_as_transfer_or_payment", value: "nope" },
+			],
+			[
+				{ path: "actions.0.value", code: "invalid_value" },
+				{ path: "actions.1.value", code: "invalid_value" },
+				{ path: "actions.2.value", code: "invalid_value" },
+			],
+		],
+		[
+			"an unknown merchant, category and tag in conditions",
+			[
+				ruleLeaf("transaction_merchant", "=", "nope"),
+				ruleLeaf("transaction_category", "=", "nope"),
+				ruleLeaf("transaction_tag", "=", "nope"),
+			],
+			[{ actionType: "exclude_transaction" }],
+			[
+				{ path: "conditions.0.value", code: "invalid_value" },
+				{ path: "conditions.1.value", code: "invalid_value" },
+				{ path: "conditions.2.value", code: "invalid_value" },
+			],
+		],
+		[
+			"an unknown type",
+			[ruleLeaf("transaction_type", "=", "refund")],
+			[{ actionType: "exclude_transaction" }],
+			[{ path: "conditions.0.value", code: "invalid_value" }],
+		],
+		[
+			"« est vide » on the label",
+			[ruleLeaf("transaction_name", "is_null", null)],
+			[{ actionType: "exclude_transaction" }],
+			[{ path: "conditions.0.operator", code: "invalid_value" }],
+		],
+	])("refuses %s with the field", async (_label, conditions, actions, fields) => {
+		const { status, body } = await request("POST", "/api/rules", { conditions, actions });
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual(fields);
+		expect((await request("GET", "/api/rules")).body).toEqual({ data: [] });
+	});
 });
 
 // Story 4.5: bulk edit.

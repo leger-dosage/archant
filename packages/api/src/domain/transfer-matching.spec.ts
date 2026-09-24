@@ -1,4 +1,4 @@
-import type { TransferSide } from "./transfer-matching.ts";
+import type { ExpectingSide, TransferSide } from "./transfer-matching.ts";
 
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +8,7 @@ import {
 	TRANSFER_WINDOW_DAYS,
 	isTransferCandidate,
 	mutualMatches,
+	narrowToExpected,
 	transferKindOf,
 } from "./transfer-matching.ts";
 
@@ -151,5 +152,43 @@ describe("mutualMatches", () => {
 			["n1", "c1"],
 			["n3", "c3"],
 		]);
+	});
+});
+
+const on = (
+	id: string,
+	accountId: string,
+	expectedAccountId: string | null = null,
+): ExpectingSide => ({
+	id,
+	accountId,
+	expectedAccountId,
+});
+
+describe("narrowToExpected", () => {
+	it("keeps every candidate when no side expects an account", () => {
+		expect(narrowToExpected(on("n", "joint"), [on("b", "livret"), on("c", "card")])).toEqual([
+			"b",
+			"c",
+		]);
+	});
+
+	it("keeps only the candidates on the account the source expects", () => {
+		const source = on("n", "joint", "livret");
+
+		expect(narrowToExpected(source, [on("b", "livret"), on("c", "card")])).toEqual(["b"]);
+		expect(
+			narrowToExpected(source, [on("b1", "livret"), on("c", "card"), on("b2", "livret")]),
+		).toEqual(["b1", "b2"]);
+		expect(narrowToExpected(source, [on("c", "card")])).toEqual([]);
+	});
+
+	it("keeps only the candidates expecting the source's account, when one does", () => {
+		expect(
+			narrowToExpected(on("b", "livret"), [on("n", "joint", "livret"), on("o", "card")]),
+		).toEqual(["n"]);
+		expect(narrowToExpected(on("b", "livret"), [on("n", "joint", "pea"), on("o", "card")])).toEqual(
+			["n", "o"],
+		);
 	});
 });

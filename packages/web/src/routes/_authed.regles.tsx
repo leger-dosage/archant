@@ -23,7 +23,9 @@ import { Switch } from "@/components/ui/switch";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useMerchants } from "@/hooks/useMerchants";
 import { useDeleteRule, useRules, useSetRuleEnabled } from "@/hooks/useRules";
+import { useTags } from "@/hooks/useTags";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { ruleSummary } from "@/lib/rule-summary";
@@ -107,6 +109,8 @@ function RulesPage() {
 	const rules = useRules();
 	const accounts = useAccounts();
 	const categories = useCategories();
+	const merchants = useMerchants();
+	const tags = useTags();
 	const deleteRule = useDeleteRule();
 	const [opened, setOpened] = useState<Opened | null>(null);
 	const [open, setOpen] = useState(false);
@@ -115,16 +119,26 @@ function RulesPage() {
 		() => (accounts.data?.groups ?? []).flatMap((group) => group.accounts),
 		[accounts.data],
 	);
-	const categoryList = categories.data ?? [];
+	const options = useMemo(
+		() => ({
+			accounts: accountList,
+			categories: categories.data ?? [],
+			merchants: merchants.data ?? [],
+			tags: tags.data ?? [],
+		}),
+		[accountList, categories.data, merchants.data, tags.data],
+	);
 	const reported = accounts.data?.reportingCurrency ?? DEFAULT_CURRENCY;
 	const reportingCurrency = isCurrencyCode(reported) ? reported : DEFAULT_CURRENCY;
 	const names: SummaryNames = useMemo(
 		() => ({
 			accounts: new Map(accountList.map((account) => [account.id, account.name])),
-			categories: new Map((categories.data ?? []).map((category) => [category.id, category.name])),
+			categories: new Map(options.categories.map((category) => [category.id, category.name])),
+			merchants: new Map(options.merchants.map((merchant) => [merchant.id, merchant.name])),
+			tags: new Map(options.tags.map((tag) => [tag.id, tag.name])),
 			reportingCurrency,
 		}),
-		[accountList, categories.data, reportingCurrency],
+		[accountList, options, reportingCurrency],
 	);
 	const rule =
 		opened === null || opened.action === "add"
@@ -132,9 +146,9 @@ function RulesPage() {
 			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted elsewhere since it opened: nothing left to act on.
 	const gone = opened !== null && opened.action !== "add" && rule === undefined;
-	const ready =
-		rules.data !== undefined && accounts.data !== undefined && categories.data !== undefined;
-	const failed = [rules, accounts, categories].find((query) => query.isError);
+	const queries = [rules, accounts, categories, merchants, tags];
+	const ready = queries.every((query) => query.data !== undefined);
+	const failed = queries.find((query) => query.isError);
 
 	useEffect(() => {
 		if (gone) {
@@ -181,9 +195,9 @@ function RulesPage() {
 					<Button
 						variant="outline"
 						onClick={() => {
-							void rules.refetch();
-							void accounts.refetch();
-							void categories.refetch();
+							for (const query of queries) {
+								void query.refetch();
+							}
 						}}
 					>
 						{t("common.retry")}
@@ -216,8 +230,7 @@ function RulesPage() {
 					open={open}
 					onOpenChange={setOpen}
 					rule={rule}
-					accounts={accountList}
-					categories={categoryList}
+					options={options}
 					reportingCurrency={reportingCurrency}
 				/>
 			)}

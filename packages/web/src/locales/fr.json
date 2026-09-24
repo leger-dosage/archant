@@ -772,7 +772,7 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Une règle classe les nouvelles opérations à leur arrivée, saisies ou importées. Les règles s'appliquent dans l'ordre de la liste, et la dernière qui correspond l'emporte. Une catégorie choisie à la main n'est jamais remplacée.",
+		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, exclusion ou virement attendu. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
 		"empty": "Aucune règle pour l'instant.",
 		"add": "Ajouter une règle",
 		"mobile": "Disponible sur ordinateur",
@@ -781,26 +781,42 @@
 		"edit": "Modifier",
 		"delete": "Supprimer",
 		"enabled": "Règle activée.",
-		"disabled": "Règle désactivée. Les opérations déjà classées gardent leur catégorie.",
+		"disabled": "Règle désactivée. Les opérations qu'elle a déjà modifiées restent telles quelles.",
 		"summary": {
 			"condition": "Si {{field}} {{operator}} {{value}}, alors {{action}}",
+			"emptyCondition": "Si {{field}} {{operator}}, alors {{action}}",
 			"all": "Toutes les opérations, alors {{action}}",
 			"more_one": "{{summary}}, et {{count}} autre condition",
 			"more_other": "{{summary}}, et {{count}} autres conditions",
+			"moreActions_one": "{{summary}}, et {{count}} autre action",
+			"moreActions_other": "{{summary}}, et {{count}} autres actions",
 			"category": "Catégorie {{name}}",
+			"merchant": "Marchand {{name}}",
+			"tag": "Ajouter l'étiquette {{name}}",
+			"rename": "Renommer en « {{name}} »",
+			"exclude": "Exclure",
+			"transfer": "Virement avec {{name}}",
 			"deletedAccount": "Compte supprimé",
-			"deletedCategory": "Catégorie supprimée"
+			"deletedCategory": "Catégorie supprimée",
+			"deletedMerchant": "Marchand supprimé",
+			"deletedTag": "Étiquette supprimée"
 		},
 		"fields": {
 			"transaction_name": "Libellé",
 			"transaction_amount": "Montant",
 			"transaction_account": "Compte",
+			"transaction_merchant": "Marchand",
+			"transaction_category": "Catégorie",
+			"transaction_tag": "Étiquette",
+			"transaction_notes": "Notes",
+			"transaction_type": "Type",
 			"compound": "Groupe de conditions"
 		},
 		"operators": {
 			"contains": "contient",
 			"equals": "est égal à",
 			"is": "est",
+			"isNull": "est vide",
 			"gt": ">",
 			"gte": "≥",
 			"lt": "<",
@@ -809,6 +825,19 @@
 			"ne": "≠",
 			"all": "Toutes les conditions",
 			"any": "Au moins une condition"
+		},
+		"types": {
+			"income": "Revenu",
+			"expense": "Dépense",
+			"transfer": "Virement"
+		},
+		"actionTypes": {
+			"set_transaction_category": "Catégorie",
+			"set_transaction_merchant": "Marchand",
+			"set_transaction_tags": "Ajouter une étiquette",
+			"set_transaction_name": "Renommer",
+			"exclude_transaction": "Exclure",
+			"set_as_transfer_or_payment": "Virement avec un compte"
 		},
 		"form": {
 			"addTitle": "Ajouter une règle",
@@ -833,9 +862,13 @@
 			"addToGroup": "Ajouter une condition au groupe",
 			"accountPlaceholder": "Choisir un compte",
 			"actions": "Alors",
-			"setCategory": "Catégorie",
 			"categoryPlaceholder": "Choisir une catégorie",
-			"removeAction": "Retirer l'action",
+			"merchantPlaceholder": "Choisir un marchand",
+			"tagPlaceholder": "Choisir une étiquette",
+			"typePlaceholder": "Choisir un type",
+			"excludeHint": "L'opération est exclue des rapports.",
+			"action": "Action {{index}}",
+			"removeAction": "Retirer l'action {{index}}",
 			"addAction": "Ajouter une action",
 			"save": "Enregistrer",
 			"created": "Règle ajoutée.",
@@ -843,7 +876,7 @@
 		},
 		"deleteDialog": {
 			"title": "Supprimer la règle « {{name}} » ?",
-			"description": "Les opérations déjà classées par cette règle gardent leur catégorie.",
+			"description": "Les opérations que cette règle a déjà modifiées restent telles quelles.",
 			"action": "Supprimer",
 			"deleted": "Règle supprimée."
 		}

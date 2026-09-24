@@ -30,9 +30,10 @@ export const rules = sqliteTable("rules", {
 /**
  * Sure's `Rule::Condition`. A `compound` condition is a group whose
  * sub-conditions point at it through `parent_id`, one level deep. `value` is
- * text as in Sure: the label, the amount in minor units, or an account id,
- * with no foreign key, so a deleted account leaves the rule inert rather than
- * blocking the delete.
+ * text as in Sure: the label or the notes, the amount in minor units, a
+ * direction, or an account, merchant, category or tag id, with no foreign
+ * key, so a deleted one leaves the condition inert rather than blocking the
+ * delete. `is_null` stores null.
  */
 export const ruleConditions = sqliteTable(
 	"rule_conditions",
@@ -74,9 +75,10 @@ export const ruleConditions = sqliteTable(
 );
 
 /**
- * Sure's `Rule::Action`. `value` is a category id without a foreign key, for
- * the same reason as a condition's account: a deleted category makes the
- * action write nothing.
+ * Sure's `Rule::Action`. `value` is a category, merchant, tag or account id
+ * without a foreign key, for the same reason as a condition's account: a
+ * deleted one makes the action write nothing. It is the new label for a
+ * rename, and null for an exclusion, which needs nothing more.
  */
 export const ruleActions = sqliteTable(
 	"rule_actions",
@@ -87,7 +89,7 @@ export const ruleActions = sqliteTable(
 			.references(() => rules.id, { onDelete: "cascade" }),
 		position: integer("position").notNull(),
 		actionType: text("action_type").$type<RuleActionType>().notNull(),
-		value: text("value").notNull(),
+		value: text("value"),
 	},
 	(table) => [
 		index("rule_actions_rule").on(table.ruleId),
