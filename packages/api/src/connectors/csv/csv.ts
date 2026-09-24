@@ -328,6 +328,7 @@ function toLine(
 		label,
 		reference: null,
 		notes: notes === "" ? null : notes,
+		pending: false,
 	};
 }
 

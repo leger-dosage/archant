@@ -23,6 +23,7 @@ import {
 	FIXTURE_CARD_UID,
 	FIXTURE_CHECKING_UID,
 	FIXTURE_SESSION_ID,
+	fixtures,
 	mockProvider,
 	transactionsPage,
 } from "../testing/enable-banking.ts";
@@ -142,6 +143,30 @@ async function transactionCount(accountId: string) {
 	return row?.total;
 }
 
+async function pendingOf(accountId: string) {
+	return temp.db.all<{ date: string; amount: number; missed: number }>(
+		sql`select e.date, e.amount, t.pending_missed_syncs as missed from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and t.pending = 1 order by e.date`,
+	);
+}
+
+/** The fixtures, with the first page's pending line left out. */
+function withoutPending() {
+	const page = z
+		.object({ transactions: z.array(z.record(z.string(), z.unknown())) })
+		.loose()
+		.parse(fixtures.transactionsPage1);
+
+	return mockProvider({
+		transactions: (url) =>
+			url.searchParams.get("continuation_key") === "page-2"
+				? transactionsPage(url)
+				: HttpResponse.json({
+						...page,
+						transactions: page.transactions.filter((line) => line["status"] !== "PDNG"),
+					}),
+	});
+}
+
 async function connectionRow(id: string) {
 	return temp.db.select().from(bankConnections).where(eq(bankConnections.id, id)).get();
 }
@@ -200,19 +225,27 @@ const logLine = z.record(z.string(), z.unknown());
 
 describe("windowStart", () => {
 	it("reads three months back for an account never synced", () => {
-		expect(windowStart(null, "2026-09-24", "Europe/Paris")).toBe("2026-06-26");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", null)).toBe("2026-06-26");
 	});
 
 	it("reads from seven days before the last sync, on its day in the app's zone", () => {
 		// 23:30 UTC on the 20th is the 21st in Paris.
-		expect(windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris")).toBe(
-			"2026-09-14",
-		);
+		expect(
+			windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris", null),
+		).toBe("2026-09-14");
+	});
+
+	it("starts no later than the oldest pending entry, so its absence means something", () => {
+		const yesterday = Date.parse("2026-09-23T10:00:00Z");
+
+		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-04")).toBe("2026-09-04");
+		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-20")).toBe("2026-09-16");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2026-06-01")).toBe("2026-06-01");
 	});
 });
 
 describe("syncConnection", () => {
-	it("brings the bank's booked lines in once, and sets today's balance to the bank's", async () => {
+	it("brings the bank's lines in once, and sets today's balance to the bank's with the pending line", async () => {
 		const requests = mockProvider();
 		const connectionId = await newConnection();
 		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -223,10 +256,14 @@ describe("syncConnection", () => {
 		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
 			["?date_from=2026-06-26", "?date_from=2026-06-26&continuation_key=page-2"],
 		);
-		// Five booked lines; the pending and the informational ones stay out.
-		await expect(transactionCount(accountId)).resolves.toBe(5);
+		// Five booked lines and the pending one; the informational one stays out.
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 0 },
+		]);
+		// The bank's booked 1 234,56, less the pending 12,00 it leaves out.
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
-			amount: 123456,
+			amount: 122256,
 			currency: "EUR",
 		});
 		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
@@ -251,9 +288,9 @@ describe("syncConnection", () => {
 		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).at(-2)?.search).toBe(
 			"?date_from=2026-09-17",
 		);
-		await expect(transactionCount(accountId)).resolves.toBe(5);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
 		await expect(balanceOn(deps(), accountId, "2026-09-25")).resolves.toMatchObject({
-			amount: 123456,
+			amount: 122256,
 		});
 	});
 
@@ -266,7 +303,7 @@ describe("syncConnection", () => {
 		const status = await syncConnection(deps(), connectionId);
 
 		expect(status).toEqual({ lastSyncedAt: NOW - 2 * DAY, lastError: "BANK_PROVIDER_ERROR" });
-		await expect(transactionCount(good.accountId)).resolves.toBe(5);
+		await expect(transactionCount(good.accountId)).resolves.toBe(6);
 		await expect(transactionCount(bad.accountId)).resolves.toBe(0);
 		await expect(bankAccountSyncedAt(good.bankAccountId)).resolves.toBe(NOW);
 		await expect(bankAccountSyncedAt(bad.bankAccountId)).resolves.toBeNull();
@@ -295,7 +332,85 @@ describe("syncConnection", () => {
 		expect(transactionRequests(requests, FIXTURE_CARD_UID)[0]?.search).toBe(
 			"?date_from=2026-06-27",
 		);
-		await expect(transactionCount(bad.accountId)).resolves.toBe(5);
+		await expect(transactionCount(bad.accountId)).resolves.toBe(6);
+	});
+
+	it("reads from the oldest pending entry when it is older than the overlap", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		await temp.db.run(
+			sql`update entries set date = '2026-09-04' where account_id = ${accountId} and id in (select entry_id from transactions where pending = 1)`,
+		);
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).at(-2)?.search).toBe(
+			"?date_from=2026-09-04",
+		);
+	});
+
+	it("deletes a pending entry missing from two successful syncs in a row", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		withoutPending();
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 1 },
+		]);
+		vi.setSystemTime(NOW + 2 * DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([]);
+		await expect(transactionCount(accountId)).resolves.toBe(5);
+		await expect(balanceOn(deps(), accountId, "2026-09-26")).resolves.toMatchObject({
+			amount: 123456,
+		});
+	});
+
+	it("starts the count over when the pending line comes back", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		withoutPending();
+		vi.setSystemTime(NOW + DAY);
+		await syncConnection(deps(), connectionId);
+		mockProvider();
+		vi.setSystemTime(NOW + 2 * DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 0 },
+		]);
+	});
+
+	it("never counts a failed sync as a miss", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		withoutPending();
+		vi.setSystemTime(NOW + DAY);
+		await syncConnection(deps(), connectionId);
+		failingOn(FIXTURE_CHECKING_UID);
+		vi.setSystemTime(NOW + 2 * DAY);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 1 },
+		]);
 	});
 
 	it("refuses while another sync holds the lease, and reads nothing", async () => {
@@ -321,7 +436,7 @@ describe("syncConnection", () => {
 		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
 			lastSyncedAt: NOW,
 		});
-		await expect(transactionCount(accountId)).resolves.toBe(5);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
 	});
 
 	it("refuses a connection synced less than an hour ago", async () => {
@@ -431,7 +546,7 @@ describe("syncConnection", () => {
 			lastSyncedAt: NOW,
 			lastError: null,
 		});
-		await expect(transactionCount(accountId)).resolves.toBe(5);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
 		expect(requests.length).toBeGreaterThan(0);
 	});
 

@@ -6,9 +6,8 @@ import { addDays } from "./dates.ts";
 
 /**
  * One line of a statement, as every source hands it to the ledger (AD-3).
- * Narrowed to the fields stored so far: `originalAmount` and `pending` arrive
- * with Epic 10, together with their columns, so no source ever sets a field
- * the ledger silently drops.
+ * Narrowed to the fields stored so far: `originalAmount` arrives with its
+ * column, so no source ever sets a field the ledger silently drops.
  */
 export type NormalizedTransaction = {
 	/** The source's own id for the line, OFX `FITID`; `null` when it has none. */
@@ -21,6 +20,11 @@ export type NormalizedTransaction = {
 	/** A cheque or QIF `N` number the bank printed; `null` when it has none. */
 	reference: string | null;
 	notes: string | null;
+	/**
+	 * Not booked by the bank yet (FR51). Only a bank connector sets it: a file
+	 * lists booked lines.
+	 */
+	pending: boolean;
 };
 
 /**

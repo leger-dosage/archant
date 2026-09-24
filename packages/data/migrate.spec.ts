@@ -1390,6 +1390,51 @@ describe("bank sync", () => {
 	});
 });
 
+describe("pending transactions", () => {
+	it("keeps every transaction and key booked with no missed sync when 0029 adds pending", async () => {
+		const before = await migratedBefore("0029");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, excluded, locked_fields) values ('e1', 'Boulangerie', 1, '["label"]')`,
+		);
+		await insertKey(before, "fp:1", "e1", "csv");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, excluded, locked_fields as locked, pending, pending_missed_syncs as missed from transactions`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				label: "Boulangerie",
+				excluded: 1,
+				locked: '["label"]',
+				pending: 0,
+				missed: 0,
+			},
+		]);
+		await expect(
+			database.all(sql`select entry_id as entryId, key from entry_keys`),
+		).resolves.toEqual([{ entryId: "e1", key: "fp:1" }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("starts a transaction booked with no missed sync", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await database.run(sql`insert into transactions (entry_id, label) values ('e1', 'A')`);
+
+		await expect(
+			database.get(sql`select pending, pending_missed_syncs as missed from transactions`),
+		).resolves.toEqual({ pending: 0, missed: 0 });
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

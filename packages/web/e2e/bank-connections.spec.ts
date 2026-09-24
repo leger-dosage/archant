@@ -236,7 +236,7 @@ test("creating an account shows the bank balance in the sidebar, and a skipped r
 
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
-	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+	await expect(sidebarAccount(page, accountId)).toContainText("1 231,36 €");
 
 	// Skipped: nothing written, still offered, after a reload too.
 	await page.reload();
@@ -269,11 +269,11 @@ test("linking an account fed by hand keeps its transactions and ends on the bank
 		"href",
 		`/accounts/${account.id}`,
 	);
-	await expect(sidebarAccount(page, account.id)).toContainText("1 234,56 €");
+	await expect(sidebarAccount(page, account.id)).toContainText("1 231,36 €");
 
 	await page.goto(`/accounts/${account.id}`);
 	await expect(page.getByText(label)).toBeVisible();
-	await expect(page.getByRole("main")).toContainText("1 234,56 €");
+	await expect(page.getByRole("main")).toContainText("1 231,36 €");
 
 	// Each account links once: it is no longer offered to the next connection.
 	await connect(page);
@@ -295,7 +295,7 @@ test("an unknown connection says so and links back to Banques", async ({ page })
 const transactionRow = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
 
-test("linking an account syncs the bank's booked lines, once, and the pages show the last sync", async ({
+test("linking an account syncs the bank's lines, once, and the pages show the last sync", async ({
 	page,
 }) => {
 	const connectionId = await connect(page);
@@ -307,17 +307,24 @@ test("linking an account syncs the bank's booked lines, once, and the pages show
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
-	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+	// The bank's booked 1 234,56 €, less the pending 3,20 € it leaves out.
+	await expect(sidebarAccount(page, accountId)).toContainText("1 231,36 €");
 
 	await page.goto(`/accounts/${accountId}`);
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toContainText(euros(-4290));
 	await expect(transactionRow(page, FAKE_LINES.salary.label)).toContainText(euros(250_000));
 	// From the second page of the statement.
 	await expect(transactionRow(page, FAKE_LINES.subscription.label)).toBeVisible();
-	// Pending lines are Story 10.4's.
-	await expect(transactionRow(page, FAKE_LINES.pending.label)).toHaveCount(0);
+	// The pending line sits at the top of today, named in words beside its amount.
+	const pendingRow = transactionRow(page, FAKE_LINES.pending.label);
+	await expect(pendingRow).toContainText("En attente");
+	await expect(pendingRow).toContainText(euros(-320));
+	await expect(page.getByRole("main").locator("[data-transaction-id]").first()).toContainText(
+		FAKE_LINES.pending.label,
+	);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).not.toContainText("En attente");
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toHaveCount(1);
-	await expect(page.getByRole("main")).toContainText("1 234,56 €");
+	await expect(page.getByRole("main")).toContainText("1 231,36 €");
 
 	await transactionRow(page, FAKE_LINES.groceries.label).click();
 	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });

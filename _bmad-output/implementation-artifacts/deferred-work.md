@@ -101,3 +101,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
   summary: No test covers the « Synchronisation terminée » toast or the silent `SYNC_TOO_RECENT` after linking.
   evidence: The e2e clicks « Synchroniser » only in a refused state; the API paths behind both are covered.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
+  summary: A pending line the bank keeps listing beside its booked version, same line or with new figures and no reference, lives as a second entry counted in the balance until two misses delete it.
+  evidence: Step 3 never merges a pending line by amount, so a second purchase of the same amount is never lost; Sure instead drops pending rows that match a booked row by fingerprint or `entry_reference` (`enable_banking_item/importer.rb:466-526`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
+  summary: Two misses an hour apart delete a pending entry, with what the user set on it, when the bank drops the pending line a little before listing the booked one.
+  evidence: The one-hour gap between button syncs is the only spacing; a minimum delay between misses would need the intent's « two consecutive syncs » renegotiated.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
+  summary: Pending entries of a deleted or disconnected connection lose `connection_id` on their keys, so no sync absorbs or deletes them and they stay in the balance.
+  evidence: medium. Story 10.5's disconnection should delete or book the connection's pending entries when it turns the anchor into a reconciliation.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
+  summary: The second of two identical same-day pending lines without a reference is taken for the first once the first is booked, then deleted after two misses and recreated when booked.
+  evidence: medium. The fingerprint's occurrence index shifts when the statement loses the first pending line; the booked entry keeps the old pending fingerprint. Fixing it changes AD-7's keys.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
+  summary: A `PDNG` line with no `booking_date` and a future `value_date` would be dated in the future, so today's balance would leave it out.
+  evidence: unverified. A real bank's pending payload settles it; the fixtures carry `transaction_date` only, and AD-18 fixes the date order.

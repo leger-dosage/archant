@@ -3,6 +3,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { CashFlowRow, Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
+import type { PendingCandidate } from "../domain/pending.ts";
 import type { RowPlan, RuleCandidate } from "../domain/rules/matching.ts";
 import type {
 	NormalizedTransaction,
@@ -22,6 +23,7 @@ import {
 	count,
 	desc,
 	eq,
+	exists,
 	gt,
 	gte,
 	inArray,
@@ -75,6 +77,7 @@ import {
 import { toStoredBalance, toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
+import { MAX_MISSED_SYNCS, absorbPending } from "../domain/pending.ts";
 import { planActions } from "../domain/rules/matching.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
@@ -210,7 +213,10 @@ async function lastBalanceDay(tx: Transaction, accountId: string, timeZone: stri
 /**
  * A bank-linked account's balances, rewritten whole from its opening date:
  * a change on any day moves every earlier one, since they derive from the
- * bank's balance backward (AD-8).
+ * bank's balance backward (AD-8). The bank's balance is a booked one, so the
+ * pending entries dated on or before it go on top (AD-18); later ones move
+ * the balance forward as any line does. The stored anchor stays the bank's
+ * figure.
  */
 async function recomputeBackward(
 	tx: Transaction,
@@ -219,6 +225,19 @@ async function recomputeBackward(
 	openingDate: IsoDate,
 	timeZone: string,
 ): Promise<void> {
+	const unbooked = await tx
+		.select({ amount: entries.amount })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(
+			and(
+				eq(entries.accountId, account.id),
+				eq(transactions.pending, true),
+				lte(entries.date, anchor.date),
+			),
+		);
+	const pendingOnAnchor = unbooked.reduce((total, row) => total + row.amount, 0);
+	const sign = classificationOf(account.type) === "asset" ? 1 : -1;
 	const movements = await tx
 		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
 		.from(entries)
@@ -231,7 +250,7 @@ async function recomputeBackward(
 		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "reconciliation")));
 	const rows: NewBalance[] = reverseBalances({
 		from: openingDate,
-		anchor,
+		anchor: { date: anchor.date, balance: toMinorUnits(anchor.balance + sign * pendingOnAnchor) },
 		valuations: reconciliations.map((row) => ({
 			date: row.date,
 			balance: toMinorUnits(row.balance),
@@ -658,19 +677,20 @@ async function connectionConnector(
 	return row.connector;
 }
 
-/** The entry holding each key already, looked up 500 keys per query. */
+/** The entry holding each key already, and whether it is pending, looked up 500 keys per query. */
 async function entriesByKey(
 	tx: Transaction,
 	accountId: string,
 	source: EntryKeySource,
 	keys: readonly string[],
-): Promise<Map<string, string>> {
-	const found = new Map<string, string>();
+): Promise<Map<string, KnownEntry>> {
+	const found = new Map<string, KnownEntry>();
 
 	await inSequence(keys, KEYS_PER_LOOKUP, async (chunk) => {
 		const rows = await tx
-			.select({ key: entryKeys.key, entryId: entryKeys.entryId })
+			.select({ key: entryKeys.key, entryId: entryKeys.entryId, pending: transactions.pending })
 			.from(entryKeys)
+			.innerJoin(transactions, eq(transactions.entryId, entryKeys.entryId))
 			.where(
 				and(
 					eq(entryKeys.accountId, accountId),
@@ -680,11 +700,45 @@ async function entriesByKey(
 			);
 
 		for (const row of rows) {
-			found.set(row.key, row.entryId);
+			found.set(row.key, { entryId: row.entryId, pending: row.pending });
 		}
 	});
 
 	return found;
+}
+
+type KnownEntry = { entryId: string; pending: boolean };
+
+/**
+ * The account's pending entries carrying a key of the connection (AD-17):
+ * those a statement of that connection speaks for, so its booked lines may
+ * absorb them and its silence counts as a miss.
+ */
+async function pendingOfConnection(tx: Transaction, accountId: string, connectionId: string) {
+	return tx
+		.select({
+			id: entries.id,
+			date: entries.date,
+			amount: entries.amount,
+			createdAt: entries.createdAt,
+			missedSyncs: transactions.pendingMissedSyncs,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(transactions.pending, true),
+				exists(
+					tx
+						.select({ key: entryKeys.key })
+						.from(entryKeys)
+						.where(
+							and(eq(entryKeys.entryId, entries.id), eq(entryKeys.connectionId, connectionId)),
+						),
+				),
+			),
+		);
 }
 
 /**
@@ -729,7 +783,17 @@ type Keyed = { ref: string; line: NormalizedTransaction; keys: LineKeys };
 
 type Paired = Keyed & { entryId: string };
 
-type Groups = { created: Keyed[]; present: Paired[]; matched: Paired[]; duplicates: Keyed[] };
+/**
+ * `absorbed` holds step 3's lines (AD-17): a booked line taking over a pending
+ * entry, or a pending line refreshing one. Only a sync has them.
+ */
+type Groups = {
+	created: Keyed[];
+	present: Paired[];
+	matched: Paired[];
+	duplicates: Keyed[];
+	absorbed: Paired[];
+};
 
 function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): PreviewLine {
 	return {
@@ -755,13 +819,15 @@ type KeyTarget = {
 /**
  * Writes the keys of a statement's lines onto their entries (AD-7). Two
  * lines of one statement may share an external id: the second keeps its
- * fingerprint only.
+ * fingerprint only. A key already stored fails the write, unless
+ * `keepExisting`: an absorbed line brings the key that found its entry.
  */
 async function attachKeys(
 	tx: Transaction,
 	accountId: string,
 	target: KeyTarget,
 	lines: readonly { entryId: string; keys: LineKeys }[],
+	options: { keepExisting?: boolean } = {},
 ): Promise<void> {
 	const claimed = new Set<string>();
 	const rows = lines.flatMap(({ entryId, keys }) =>
@@ -781,50 +847,99 @@ async function attachKeys(
 			}),
 	);
 
-	await inSequence(rows, ROWS_PER_INSERT, (chunk) => tx.insert(entryKeys).values(chunk));
+	await inSequence(rows, ROWS_PER_INSERT, (chunk) => {
+		const insert = tx.insert(entryKeys).values(chunk);
+
+		return options.keepExisting === true ? insert.onConflictDoNothing() : insert;
+	});
 }
 
 /**
  * Sorts the accepted lines of a keyed statement into present, matched,
- * possible duplicates and created (AD-7), each in statement order.
+ * possible duplicates, absorbed and created (AD-7, AD-17), each in statement
+ * order. Step 3 runs between key matching and pairing, for a sync only: a
+ * key hit on a pending entry absorbs the line, whatever its status, unless a
+ * booked line of the same statement booked that entry first; a booked line no
+ * key found takes a pending entry of the connection by amount and date. A
+ * pending line never pairs by amount and date: it is recognised or created.
  */
 async function groupLines(
 	tx: Transaction,
 	accountId: string,
-	source: EntryKeySource,
+	target: KeyTarget,
 	accepted: readonly Keyed[],
 ): Promise<Groups> {
 	const known = await entriesByKey(
 		tx,
 		accountId,
-		source,
+		target.source,
 		accepted.flatMap(({ keys }) =>
 			keys.external === null ? [keys.fingerprint] : [keys.fingerprint, keys.external],
 		),
 	);
-	const groups: Groups = { created: [], present: [], matched: [], duplicates: [] };
+	const groups: Groups = { created: [], present: [], matched: [], duplicates: [], absorbed: [] };
 	const remaining: (Keyed & { date: IsoDate; amount: MinorUnits })[] = [];
+	// Entries this statement already booked or refreshed: a later pending line
+	// for a booked one changes nothing, and step 3's amount match skips both.
+	const booked = new Set<string>();
+	const claimed = new Set<string>();
 
 	for (const item of accepted) {
-		const entryId =
+		const hit =
 			known.get(item.keys.fingerprint) ??
 			(item.keys.external === null ? undefined : known.get(item.keys.external));
 
-		if (entryId === undefined) {
+		if (hit === undefined) {
 			remaining.push({ ...item, date: item.line.date, amount: item.line.amount });
+		} else if (hit.pending && !booked.has(hit.entryId)) {
+			// Only a bank connector's keys sit on a pending entry: only a sync gets here.
+			groups.absorbed.push({ ...item, entryId: hit.entryId });
+			claimed.add(hit.entryId);
+
+			if (!item.line.pending) {
+				booked.add(hit.entryId);
+			}
 		} else {
-			groups.present.push({ ...item, entryId });
+			groups.present.push({ ...item, entryId: hit.entryId });
+		}
+	}
+
+	const pendingLines = remaining.filter(({ line }) => line.pending);
+	const bookedLines = remaining.filter(({ line }) => !line.pending);
+	const survivors =
+		target.connectionId === null
+			? []
+			: (await pendingOfConnection(tx, accountId, target.connectionId))
+					.filter(({ id }) => !claimed.has(id))
+					.map((row): PendingCandidate => ({
+						id: row.id,
+						date: row.date,
+						amount: toMinorUnits(row.amount),
+						createdAt: row.createdAt,
+					}));
+	const unpaired: typeof remaining = [];
+
+	for (const { line: item, survivorId } of absorbPending(bookedLines, survivors)) {
+		if (survivorId === null) {
+			unpaired.push(item);
+		} else {
+			groups.absorbed.push({
+				ref: item.ref,
+				line: item.line,
+				keys: item.keys,
+				entryId: survivorId,
+			});
 		}
 	}
 
 	const candidates = await pairCandidates(
 		tx,
 		accountId,
-		source,
-		remaining.map(({ date }) => date),
+		target.source,
+		unpaired.map(({ date }) => date),
 	);
 
-	for (const { line: item, pairing } of pairLines(remaining, candidates)) {
+	for (const { line: item, pairing } of pairLines(unpaired, candidates)) {
 		const keyed = { ref: item.ref, line: item.line, keys: item.keys };
 
 		if (pairing.kind === "matched") {
@@ -835,6 +950,9 @@ async function groupLines(
 			groups.created.push(keyed);
 		}
 	}
+
+	groups.created.push(...pendingLines.map(({ ref, line, keys }) => ({ ref, line, keys })));
+	groups.created.sort((a, b) => Number(a.ref) - Number(b.ref));
 
 	return groups;
 }
@@ -952,10 +1070,11 @@ function planCurrentAnchor(
 
 /**
  * Writes a statement into one account, in one transaction, following the
- * pipeline order of AD-4. Step 3 arrives with pending lines, in its slot. A
- * manual line carries no key and is always created; an import's or a sync's
- * lines are keyed and grouped (AD-7). With `dryRun`, the groups are computed
- * and nothing is written. Confirming an import refuses with
+ * pipeline order of AD-4. A manual line carries no key and is always
+ * created; an import's or a sync's lines are keyed and grouped (AD-7), and a
+ * sync's reconcile with pending entries (AD-17): absorbed in place, or
+ * counted missing and deleted at the second miss in a row. With `dryRun`, the
+ * groups are computed and nothing is written. Confirming an import refuses with
  * `IMPORT_PREVIEW_STALE` when the groups differ from its preview, and marks
  * it confirmed with its counts in the same transaction. A sync's statement
  * balance rewrites the account's `current_anchor` instead of adding a
@@ -1022,8 +1141,8 @@ export async function ingest(
 			// 2. Key matching, batched per statement (AD-7). A manual line has no key.
 			const grouped: Groups =
 				keyTarget === null
-					? { created: accepted, present: [], matched: [], duplicates: [] }
-					: await groupLines(tx, accountId, keyTarget.source, accepted);
+					? { created: accepted, present: [], matched: [], duplicates: [], absorbed: [] }
+					: await groupLines(tx, accountId, keyTarget, accepted);
 			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
 				...item,
 				line: null,
@@ -1105,10 +1224,20 @@ export async function ingest(
 				throw new AppError("IMPORT_PREVIEW_STALE", "The account changed since the preview.");
 			}
 
-			// 3. Pending reconciliation arrives with Story 10.4.
+			// 3. Pending reconciliation (AD-17): each absorbed line updates its
+			// entry in place, keeping its id and everything the user set.
+			const now = Date.now();
+			const absorbedFrom: IsoDate[] = [];
+
+			if (keyTarget !== null) {
+				await oneByOne(grouped.absorbed, async ({ entryId, line, keys }) => {
+					absorbedFrom.push(
+						await absorb(tx, entryId, { line, keys }, keyTarget, options.origin, now),
+					);
+				});
+			}
 
 			// 4. Insert the new entries, attach keys to matched ones.
-			const now = Date.now();
 			const rows = written.map((item) => ({ ...item, id: crypto.randomUUID() }));
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
@@ -1139,6 +1268,7 @@ export async function ingest(
 						notes: line.notes,
 						reference: line.reference,
 						possibleDuplicate: duplicate,
+						pending: line.pending,
 						lockedFields: locksOf(line),
 					})),
 				),
@@ -1173,6 +1303,20 @@ export async function ingest(
 					.update(entries)
 					.set({ date: opening.date, amount: opening.balance, updatedAt: now })
 					.where(eq(entries.id, account.openingId));
+			}
+
+			// A pending entry of the connection this statement did not speak for
+			// counts a miss; the second in a row deletes it. A failed sync rolls
+			// back with this transaction, so it never counts.
+			const missedFrom: IsoDate[] = [];
+
+			if (connectionId !== null) {
+				const seen = new Set([
+					...grouped.absorbed.map(({ entryId }) => entryId),
+					...rows.map(({ id }) => id),
+				]);
+
+				missedFrom.push(...(await countMissedSyncs(tx, accountId, connectionId, seen)));
 			}
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
@@ -1222,6 +1366,8 @@ export async function ingest(
 			// 8. Recompute balances from the earliest date this write touched.
 			const [earliest] = [
 				...rows.map(({ line }) => line.date),
+				...absorbedFrom,
+				...missedFrom,
 				...(opening === null ? [] : [opening.date]),
 				...(snapshotDate === null ? [] : [snapshotDate]),
 				...(anchorWritten === null ? [] : [anchorWritten]),
@@ -1763,6 +1909,108 @@ export async function updateTransaction(
 }
 
 /**
+ * Step 3's write (AD-17): the survivor takes the line's date, amount, label
+ * and notes, except the fields a user locked (`changeOf`), and its status;
+ * its missed syncs start over, and the line's keys join the ones it has. The
+ * old keys stay, so the bank sending the old pending line again finds a
+ * booked entry and changes nothing. The id, the category, the merchant, the
+ * tags, the transfer and the exclusion stay as they are, and rules do not run
+ * again. Returns the earlier of the old and new dates, where balances move.
+ */
+async function absorb(
+	tx: Transaction,
+	survivorId: string,
+	line: { line: NormalizedTransaction; keys: LineKeys },
+	keyTarget: KeyTarget,
+	origin: Origin,
+	now: number,
+): Promise<IsoDate> {
+	const current = await transactionRow(tx, survivorId);
+	const change = changeOf(
+		current,
+		{
+			date: line.line.date,
+			amount: line.line.amount,
+			label: line.line.label,
+			notes: line.line.notes,
+		},
+		origin,
+	);
+	const { next } = change;
+
+	await tx
+		.update(entries)
+		.set({ date: next.date, amount: next.amount, updatedAt: now })
+		.where(eq(entries.id, survivorId));
+	await tx
+		.update(transactions)
+		.set({
+			...detailOf(current, change, origin),
+			pending: line.line.pending,
+			pendingMissedSyncs: 0,
+		})
+		.where(eq(transactions.entryId, survivorId));
+	await attachKeys(tx, current.accountId, keyTarget, [{ entryId: survivorId, keys: line.keys }], {
+		keepExisting: true,
+	});
+
+	return minDate(current.date, next.date);
+}
+
+/**
+ * Deletes transactions and every row that points at them, in the order their
+ * foreign keys allow. Without its keys, a line comes back on re-import, as in
+ * Sure; without its transfer, the other side is a standard transaction again.
+ * The caller recomputes balances.
+ */
+async function deleteTransactionRows(tx: Transaction, ids: readonly string[]): Promise<void> {
+	await tx.delete(entryKeys).where(inArray(entryKeys.entryId, ids));
+	await tx.delete(transfers).where(transferOf(ids));
+	await tx.delete(rejectedTransfers).where(rejectedOf(ids));
+	await tx.delete(taggings).where(inArray(taggings.transactionId, ids));
+	await tx.delete(transactions).where(inArray(transactions.entryId, ids));
+	await tx.delete(entries).where(inArray(entries.id, ids));
+}
+
+/**
+ * Counts a miss on every pending entry of the connection outside `seen`, and
+ * deletes those reaching `MAX_MISSED_SYNCS` (AD-17). Returns the dates of the
+ * deleted ones, where balances move.
+ */
+async function countMissedSyncs(
+	tx: Transaction,
+	accountId: string,
+	connectionId: string,
+	seen: ReadonlySet<string>,
+): Promise<IsoDate[]> {
+	const missed = (await pendingOfConnection(tx, accountId, connectionId)).filter(
+		({ id }) => !seen.has(id),
+	);
+	const gone = missed.filter(({ missedSyncs }) => missedSyncs + 1 >= MAX_MISSED_SYNCS);
+	const kept = missed.filter(({ missedSyncs }) => missedSyncs + 1 < MAX_MISSED_SYNCS);
+
+	await inSequence(kept, KEYS_PER_LOOKUP, (chunk) =>
+		tx
+			.update(transactions)
+			.set({ pendingMissedSyncs: sql`${transactions.pendingMissedSyncs} + 1` })
+			.where(
+				inArray(
+					transactions.entryId,
+					chunk.map(({ id }) => id),
+				),
+			),
+	);
+	await inSequence(gone, KEYS_PER_LOOKUP, (chunk) =>
+		deleteTransactionRows(
+			tx,
+			chunk.map(({ id }) => id),
+		),
+	);
+
+	return gone.map(({ date }) => date);
+}
+
+/**
  * Deletes a transaction for good, as Sure does, and recomputes its account's
  * balances from its date. The rows past the new end go with it.
  */
@@ -1776,16 +2024,7 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
-			// Keys, taggings, the transfer, its rejected pairs and the detail row
-			// first: their foreign keys restrict deleting the entry. Without its
-			// keys, the line comes back on re-import, as in Sure; without its
-			// transfer, the other side is a standard transaction again.
-			await tx.delete(entryKeys).where(eq(entryKeys.entryId, entryId));
-			await tx.delete(transfers).where(transferOf([entryId]));
-			await tx.delete(rejectedTransfers).where(rejectedOf([entryId]));
-			await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
-			await tx.delete(transactions).where(eq(transactions.entryId, entryId));
-			await tx.delete(entries).where(eq(entries.id, entryId));
+			await deleteTransactionRows(tx, [entryId]);
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
 		},
 		{ behavior: "immediate" },
@@ -2838,6 +3077,8 @@ export type TransactionRecord = {
 	reference: string | null;
 	/** Left out of reports (AD-9), still counted in the balance. */
 	excluded: boolean;
+	/** Not booked by the bank yet: counted in the balance, left out of cash flow (AD-8, AD-9). */
+	pending: boolean;
 	/** `null` is « Sans catégorie ». */
 	categoryId: string | null;
 	/** `null` is « Sans marchand ». */
@@ -2877,6 +3118,7 @@ const transactionColumns = {
 	notes: transactions.notes,
 	reference: transactions.reference,
 	excluded: transactions.excluded,
+	pending: transactions.pending,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
 };
@@ -3245,7 +3487,13 @@ export async function listTransactions(
 		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
 		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
 		.where(where)
-		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
+		// A pending row sits at the top of its day: the bank has not settled it yet.
+		.orderBy(
+			desc(entries.date),
+			desc(transactions.pending),
+			desc(entries.createdAt),
+			desc(entries.id),
+		)
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
 	const totals = !needsTransactionColumns(filter)
@@ -3336,7 +3584,7 @@ export async function cashFlowByCategory(
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(and(where, eq(transactions.excluded, false)))
+		.where(and(where, eq(transactions.excluded, false), eq(transactions.pending, false)))
 		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
 
 	return rows.map(toRecord);
@@ -3629,6 +3877,41 @@ export async function findSnapshot(deps: ServiceDeps, id: string): Promise<Snaps
 	const withGap = await gapReader(deps.db, row.accountId, [row.date]);
 
 	return withGap(row);
+}
+
+/**
+ * The date of the account's oldest pending transaction carrying a key of the
+ * connection, `null` when it has none. Scoped as `countMissedSyncs` is: an
+ * entry whose connection is gone would otherwise hold the window back forever.
+ */
+export async function oldestPendingDate(
+	deps: Pick<ServiceDeps, "db">,
+	accountId: string,
+	connectionId: string,
+): Promise<IsoDate | null> {
+	const row = await deps.db
+		.select({ date: entries.date })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(transactions.pending, true),
+				exists(
+					deps.db
+						.select({ key: entryKeys.key })
+						.from(entryKeys)
+						.where(
+							and(eq(entryKeys.entryId, entries.id), eq(entryKeys.connectionId, connectionId)),
+						),
+				),
+			),
+		)
+		.orderBy(entries.date)
+		.limit(1)
+		.get();
+
+	return row?.date ?? null;
 }
 
 /** A page of an account's snapshots with their gaps, most recent first (AD-15). */

@@ -59,6 +59,7 @@ async function transactionsOf(tagId: string, count: number): Promise<string[]> {
 					label: `HOTEL ${index}`,
 					reference: null,
 					notes: null,
+					pending: false,
 				})),
 				balance: null,
 				rejected: [],

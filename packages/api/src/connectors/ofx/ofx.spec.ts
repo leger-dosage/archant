@@ -91,6 +91,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "CB CAFÉ DE LA GARE",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 				{
 					externalId: "0000002",
@@ -100,6 +101,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "PRLV SEPA EDF Électricité échéance septembre",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 				{
 					externalId: "0000003",
@@ -109,6 +111,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "VIR SALAIRE",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 				{
 					externalId: "0000004",
@@ -118,6 +121,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "CB BOULANGERIE",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 				{
 					externalId: "0000005",
@@ -127,6 +131,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "CB BOULANGERIE",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 			],
 		});
@@ -146,6 +151,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				label: "CARTE 03/09 PHARMACIE Pharmacie Hôtel de Ville",
 				reference: null,
 				notes: null,
+				pending: false,
 			},
 			{
 				externalId: "BRS-0002",
@@ -155,6 +161,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				label: "VIR Épargne",
 				reference: null,
 				notes: null,
+				pending: false,
 			},
 			{
 				externalId: "BRS-0003",
@@ -164,6 +171,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 				label: "PRLV Free Mobile Forfait & options",
 				reference: null,
 				notes: null,
+				pending: false,
 			},
 		]);
 	});
@@ -183,6 +191,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "CARTE X0000 HÔTEL DU PORT",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 				{
 					externalId: "SG-CB-0002",
@@ -192,6 +201,7 @@ describe("ofxSource.parse on the committed bank fixtures", () => {
 					label: "CARTE X0000 ÉLECTROMÉNAGER Réfrigérateur",
 					reference: null,
 					notes: null,
+					pending: false,
 				},
 			],
 		});

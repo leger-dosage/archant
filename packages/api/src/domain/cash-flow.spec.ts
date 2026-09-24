@@ -39,8 +39,8 @@ describe("direction", () => {
 	});
 });
 
-const counted = (value: CashFlowTransaction, excluded = false) =>
-	countsInCashFlow({ ...value, excluded });
+const counted = (value: CashFlowTransaction, excluded = false, pending = false) =>
+	countsInCashFlow({ ...value, excluded, pending });
 
 describe("countsInCashFlow", () => {
 	it("counts income and expenses, not an excluded row nor a transfer side", () => {
@@ -52,6 +52,11 @@ describe("countsInCashFlow", () => {
 		expect(counted(tx(-40000, { kind: "loan_payment" }))).toBe(true);
 		expect(counted(tx(40000, { kind: "investment_contribution" }))).toBe(false);
 		expect(counted(tx(-40000, { kind: "investment_contribution" }), true)).toBe(false);
+	});
+
+	it("never counts a pending row", () => {
+		expect(counted(tx(-1200), false, true)).toBe(false);
+		expect(counted(tx(3000), false, true)).toBe(false);
 	});
 });
 

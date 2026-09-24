@@ -461,11 +461,20 @@ export function TransactionList({
 															{item.excluded && (
 																<ExcludedMarker label={t("transactions.excluded")} />
 															)}
+															{/* Named in words beside the muted amount, never by colour alone. */}
+															{item.pending && (
+																<Badge
+																	variant="outline"
+																	className="font-normal text-muted-foreground"
+																>
+																	{t("transactions.pending")}
+																</Badge>
+															)}
 															<Money
 																amount={item.amount}
 																currency={item.currency}
 																signed
-																muted={item.excluded}
+																muted={item.excluded || item.pending}
 															/>
 														</span>
 													</button>

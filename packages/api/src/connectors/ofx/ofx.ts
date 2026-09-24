@@ -165,6 +165,7 @@ function toLine(
 		label: Array.from(label).slice(0, LABEL_MAX_LENGTH).join(""),
 		reference: null,
 		notes: null,
+		pending: false,
 	};
 }
 

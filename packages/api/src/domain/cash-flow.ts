@@ -35,18 +35,18 @@ export function direction(tx: CashFlowTransaction): Direction {
 	return tx.amount > 0 ? "income" : "expense";
 }
 
-/** What `countsInCashFlow` reads: `direction`'s fields and the exclusion flag. */
-export type CountedTransaction = CashFlowTransaction & { excluded: boolean };
+/** What `countsInCashFlow` reads: `direction`'s fields, the exclusion and pending flags. */
+export type CountedTransaction = CashFlowTransaction & { excluded: boolean; pending: boolean };
 
 /**
- * Whether a transaction enters a cash-flow report: not excluded, and income
- * or expense by `direction`. Which accounts count is the caller's choice, the
+ * Whether a transaction enters a cash-flow report: not excluded, not pending
+ * (AD-9: its booked version counts once the bank settles it), and income or
+ * expense by `direction`. Which accounts count is the caller's choice, the
  * reporting-currency set of `services/reports.ts`. `ledger.ts` holds its SQL
- * twin in `cashFlowByCategory`, tied by a parity test. Pending transactions
- * arrive with Epic 10, which adds them here and to the twin.
+ * twin in `cashFlowByCategory`, tied by a parity test.
  */
 export function countsInCashFlow(tx: CountedTransaction): boolean {
-	return !tx.excluded && direction(tx) !== "transfer";
+	return !tx.excluded && !tx.pending && direction(tx) !== "transfer";
 }
 
 /** The signed sum of counted transactions sharing a category and a sign. */

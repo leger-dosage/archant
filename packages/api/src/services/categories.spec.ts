@@ -79,6 +79,7 @@ async function transactionsIn(categoryId: string | null, count: number): Promise
 					label: `Achat ${index}`,
 					reference: null,
 					notes: null,
+					pending: false,
 				})),
 				balance: null,
 				rejected: [],

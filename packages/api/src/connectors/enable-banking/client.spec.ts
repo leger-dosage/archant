@@ -436,6 +436,15 @@ describe("toTransaction", () => {
 			label: "Boulangerie",
 			reference: null,
 			notes: "CB BOULANGERIE\n20/09",
+			pending: false,
+		});
+	});
+
+	it("keeps a pending line as pending", () => {
+		expect(toTransaction(line({ status: "PDNG" }), SINCE)).toMatchObject({
+			externalId: "ref-1",
+			amount: -1000,
+			pending: true,
 		});
 	});
 
@@ -517,8 +526,8 @@ describe("toTransaction", () => {
 		).toMatchObject({ date: "2026-09-18" });
 	});
 
-	it("drops every line that is not booked, and those before the window", () => {
-		for (const status of ["PDNG", "INFO", "CNCL", "HOLD", "OTHR", null]) {
+	it("drops every line neither booked nor pending, and those before the window", () => {
+		for (const status of ["INFO", "CNCL", "HOLD", "OTHR", null]) {
 			expect(toTransaction(line({ status }), SINCE)).toBeNull();
 		}
 
@@ -557,18 +566,50 @@ describe("fetchStatement", () => {
 		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
 
 		expect(
-			statement.transactions.map(({ label, amount, date, externalId }) => ({
+			statement.transactions.map(({ label, amount, date, externalId, pending }) => ({
 				label,
 				amount,
 				date,
 				externalId,
+				pending,
 			})),
 		).toEqual([
-			{ label: "Carrefour Market", amount: -4290, date: "2026-09-20", externalId: "20260920-0001" },
-			{ label: "Employeur Test", amount: 250000, date: "2026-09-15", externalId: "20260915-0002" },
-			{ label: "Prélèvement", amount: -6000, date: "2026-09-18", externalId: null },
-			{ label: "NETFLIX.COM", amount: -999, date: "2026-09-21", externalId: "20260921-0005" },
-			{ label: "Virement entrant", amount: 1500, date: "2026-09-22", externalId: "20260922-0007" },
+			{
+				label: "Carrefour Market",
+				amount: -4290,
+				date: "2026-09-20",
+				externalId: "20260920-0001",
+				pending: false,
+			},
+			{
+				label: "Employeur Test",
+				amount: 250000,
+				date: "2026-09-15",
+				externalId: "20260915-0002",
+				pending: false,
+			},
+			{
+				label: "Boulangerie Test",
+				amount: -1200,
+				date: "2026-09-23",
+				externalId: "20260923-0003",
+				pending: true,
+			},
+			{ label: "Prélèvement", amount: -6000, date: "2026-09-18", externalId: null, pending: false },
+			{
+				label: "NETFLIX.COM",
+				amount: -999,
+				date: "2026-09-21",
+				externalId: "20260921-0005",
+				pending: false,
+			},
+			{
+				label: "Virement entrant",
+				amount: 1500,
+				date: "2026-09-22",
+				externalId: "20260922-0007",
+				pending: false,
+			},
 		]);
 		expect(statement.rejected).toEqual([]);
 		expect(statement.balance).toEqual({ amount: 123456, currency: "EUR", date: null });
@@ -582,7 +623,7 @@ describe("fetchStatement", () => {
 	it("refuses an unreadable line by its position across pages, and keeps the others", async () => {
 		pages(
 			{ transactions: [line(), line({ booking_date: "soon" })], continuation_key: "1" },
-			{ transactions: [line({ status: "PDNG" }), 42, line()], continuation_key: null },
+			{ transactions: [line({ status: "INFO" }), 42, line()], continuation_key: null },
 		);
 
 		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);

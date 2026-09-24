@@ -76,9 +76,9 @@ export type BankConnector = {
 	 */
 	fetchBalance: (uid: string) => Promise<BankBalance | null>;
 	/**
-	 * The account's booked lines dated `since` or later, every page, then its
-	 * balance as `fetchBalance` reads it. A line it cannot read goes to
-	 * `rejected`; a pending or cancelled one is left out.
+	 * The account's booked and pending lines dated `since` or later, every
+	 * page, then its balance as `fetchBalance` reads it. A line it cannot read
+	 * goes to `rejected`; a cancelled or informational one is left out.
 	 */
 	fetchStatement: (uid: string, since: IsoDate) => Promise<BankStatement>;
 };

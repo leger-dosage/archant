@@ -80,6 +80,7 @@ async function addRows(
 				label,
 				reference: null,
 				notes: null,
+				pending: false,
 			})),
 			balance: null,
 			rejected: [],

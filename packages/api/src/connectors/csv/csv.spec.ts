@@ -56,6 +56,7 @@ describe("csvSource.parse on the committed bank fixtures", () => {
 			label: "CARTE X1234 CAFE DE LA GARE",
 			reference: null,
 			notes: "CARTE X1234 02/09 CAFE DE LA GARE",
+			pending: false,
 		});
 		expect(parsed.transactions[1]?.notes).toBe("Électricité échéance septembre");
 		expect(parsed.transactions[2]?.label).toBe("Prélèvement Crédit Agricole");
