@@ -3,10 +3,23 @@
 	"accounts": [
 		{
 			"uid": "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
-			"identification_hash": "anonymised-hash",
-			"account_id": { "iban": "FR7600000000000000000000000" },
-			"name": "Compte courant",
-			"currency": "EUR"
+			"identification_hash": "anonymised-hash-checking",
+			"account_id": { "iban": "FR7630001007941234567890185" },
+			"name": "M. Jean Exemple",
+			"details": null,
+			"product": "Compte courant",
+			"currency": "EUR",
+			"cash_account_type": "CACC",
+			"usage": "PRIV",
+			"account_servicer": { "bic_fi": "BTSTFRPP" }
+		},
+		{
+			"uid": "2f3e4d5c-6b7a-4980-a1b2-c3d4e5f6a7b8",
+			"identification_hash": "anonymised-hash-card",
+			"account_id": null,
+			"name": "Carte Visa Premier",
+			"currency": "EUR",
+			"cash_account_type": "CARD"
 		}
 	],
 	"aspsp": { "name": "Banque Test", "country": "FR" },

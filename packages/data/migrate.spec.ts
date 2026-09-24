@@ -1252,6 +1252,78 @@ describe("bank connections", () => {
 	});
 });
 
+const insertBankAccount = (database: Database, id: string, connectionId: string, hash: string) =>
+	database.run(
+		sql`insert into bank_accounts (id, bank_connection_id, identification_hash, provider_uid, name, currency, created_at, updated_at) values (${id}, ${connectionId}, ${hash}, ${`uid-${id}`}, 'Compte courant', 'EUR', 0, 0)`,
+	);
+
+describe("bank accounts", () => {
+	it("holds an identification hash once per connection", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1");
+		await insertConnection(database, "c2");
+		await insertBankAccount(database, "b1", "c1", "hash-1");
+
+		await expect(insertBankAccount(database, "b2", "c1", "hash-1")).rejects.toThrow();
+		await expect(insertBankAccount(database, "b3", "c2", "hash-1")).resolves.toBeDefined();
+		await expect(insertBankAccount(database, "b4", "c1", "hash-2")).resolves.toBeDefined();
+	});
+
+	it("feeds one account at most, and an account from one bank account at most", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1");
+		await insertBankAccount(database, "b1", "c1", "hash-1");
+		await insertBankAccount(database, "b2", "c1", "hash-2");
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertAccount(database, "a2", "depository", "checking");
+		await insertAccount(database, "a3", "depository", "checking");
+
+		await expect(
+			database.run(sql`update accounts set bank_account_id = 'b1' where id = 'a1'`),
+		).resolves.toBeDefined();
+		await expect(
+			database.run(sql`update accounts set bank_account_id = 'b1' where id = 'a2'`),
+		).rejects.toThrow();
+		await expect(
+			database.run(sql`update accounts set bank_account_id = 'nope' where id = 'a2'`),
+		).rejects.toThrow();
+		// Any number of accounts fed by no bank.
+		await expect(
+			database.all(sql`select id from accounts where bank_account_id is null order by id`),
+		).resolves.toEqual([{ id: "a2" }, { id: "a3" }]);
+	});
+
+	it("goes with its connection, and leaves the account it fed with its history", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1");
+		await insertBankAccount(database, "b1", "c1", "hash-1");
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "valuation", "opening_anchor");
+		await database.run(sql`update accounts set bank_account_id = 'b1' where id = 'a1'`);
+
+		await database.run(sql`delete from bank_connections where id = 'c1'`);
+
+		await expect(database.all(sql`select id from bank_accounts`)).resolves.toEqual([]);
+		await expect(
+			database.all(sql`select id, bank_account_id as bankAccountId from accounts`),
+		).resolves.toEqual([{ id: "a1", bankAccountId: null }]);
+		await expect(database.all(sql`select id from entries`)).resolves.toEqual([{ id: "e1" }]);
+	});
+
+	it("keeps every account unlinked when 0027 adds the column", async () => {
+		const before = await migratedBefore("0027");
+		await insertAccount(before, "a1", "depository", "checking");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, bank_account_id as bankAccountId from accounts`),
+		).resolves.toEqual([{ id: "a1", bankAccountId: null }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

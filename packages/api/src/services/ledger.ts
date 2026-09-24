@@ -63,8 +63,13 @@ import type { Account, NewBalance, Transfer } from "@archant/data/types";
 
 import { forwardBalances } from "../domain/balances/forward.ts";
 import { fillDays } from "../domain/balances/history.ts";
-import { snapshotGap, snapshotRejectionFor } from "../domain/balances/snapshot.ts";
-import { toStoredBalance } from "../domain/balances/stored-balance.ts";
+import { reverseBalances } from "../domain/balances/reverse.ts";
+import {
+	snapshotGap,
+	snapshotGapBackward,
+	snapshotRejectionFor,
+} from "../domain/balances/snapshot.ts";
+import { toStoredBalance, toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
 import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
 import { planActions } from "../domain/rules/matching.ts";
@@ -186,11 +191,93 @@ async function lastBalanceOnOrBefore(
 		.get();
 }
 
+/** `max(today, latest entry date)`: the last day an account's balances run to. */
+async function lastBalanceDay(tx: Transaction, accountId: string, timeZone: string) {
+	// An array rather than `.get()`: the account always holds its opening anchor.
+	const latest = await tx
+		.select({ date: entries.date })
+		.from(entries)
+		.where(eq(entries.accountId, accountId))
+		.orderBy(desc(entries.date))
+		.limit(1);
+
+	return latest.reduce((end, row) => maxDate(end, row.date), today(timeZone));
+}
+
+/**
+ * A bank-linked account's balances, rewritten whole from its opening date:
+ * a change on any day moves every earlier one, since they derive from the
+ * bank's balance backward (AD-8).
+ */
+async function recomputeBackward(
+	tx: Transaction,
+	account: Pick<Account, "id" | "type" | "currency">,
+	anchor: DailyBalance,
+	openingDate: IsoDate,
+	timeZone: string,
+): Promise<void> {
+	const movements = await tx
+		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
+		.from(entries)
+		.where(and(eq(entries.accountId, account.id), eq(entries.kind, "transaction")))
+		.groupBy(entries.date);
+	// The opening anchor bounds the range; its amount plays no part.
+	const reconciliations = await tx
+		.select({ date: entries.date, balance: entries.amount })
+		.from(entries)
+		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "reconciliation")));
+	const rows: NewBalance[] = reverseBalances({
+		from: openingDate,
+		anchor,
+		valuations: reconciliations.map((row) => ({
+			date: row.date,
+			balance: toMinorUnits(row.balance),
+		})),
+		movements: movements.map((row) => ({ date: row.date, amount: toMinorUnits(row.amount) })),
+		until: await lastBalanceDay(tx, account.id, timeZone),
+		classification: classificationOf(account.type),
+	}).map((row) => ({ accountId: account.id, currency: account.currency, ...row }));
+
+	await tx.delete(balances).where(eq(balances.accountId, account.id));
+	await inSequence(rows, BALANCE_ROWS_PER_INSERT, (chunk) => tx.insert(balances).values(chunk));
+}
+
+/**
+ * The bank balance a linked account is computed backward from (AD-8), with
+ * its opening date; `undefined` for an account computed forward.
+ */
+async function backwardAnchor(db: Pick<ServiceDeps["db"], "select">, accountId: string) {
+	const openingAnchor = alias(entries, "opening_anchor");
+
+	return db
+		.select({ date: entries.date, balance: entries.amount, openingDate: openingAnchor.date })
+		.from(entries)
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.innerJoin(
+			openingAnchor,
+			and(
+				eq(openingAnchor.accountId, entries.accountId),
+				eq(openingAnchor.valuationKind, "opening_anchor"),
+			),
+		)
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(entries.valuationKind, "current_anchor"),
+				isNotNull(accounts.bankAccountId),
+			),
+		)
+		.orderBy(desc(entries.date))
+		.limit(1)
+		.get();
+}
+
 /**
  * Rewrites an account's daily balances from `affected`, the earliest date the
  * write touched, to `max(today, latest entry date)`, and deletes the rows past
  * that end. Called by every ledger write inside its own transaction, so no
- * commit ever leaves `balances` stale (AD-2).
+ * commit ever leaves `balances` stale (AD-2). A bank-linked account with a
+ * bank balance is computed backward from it, whole; any other forward.
  */
 async function recomputeBalances(
 	tx: Transaction,
@@ -198,6 +285,22 @@ async function recomputeBalances(
 	affected: IsoDate,
 	timeZone: string,
 ): Promise<void> {
+	// Read here rather than passed in: an ingest or a revert may just have
+	// moved the opening date.
+	const anchor = await backwardAnchor(tx, account.id);
+
+	if (anchor !== undefined) {
+		await recomputeBackward(
+			tx,
+			account,
+			{ date: anchor.date, balance: toMinorUnits(anchor.balance) },
+			anchor.openingDate,
+			timeZone,
+		);
+
+		return;
+	}
+
 	const previous = await lastBalanceOnOrBefore(tx, account.id, addDays(affected, -1));
 	// Rows stop where the last write ended. A line dated past that day leaves a
 	// gap the recompute fills from the last stored row. No row at all means the
@@ -225,14 +328,7 @@ async function recomputeBalances(
 				gte(entries.date, from),
 			),
 		);
-	// An array rather than `.get()`: the account always holds its opening anchor.
-	const latest = await tx
-		.select({ date: entries.date })
-		.from(entries)
-		.where(eq(entries.accountId, account.id))
-		.orderBy(desc(entries.date))
-		.limit(1);
-	const until = latest.reduce((end, row) => maxDate(end, row.date), today(timeZone));
+	const until = await lastBalanceDay(tx, account.id, timeZone);
 
 	const rows: NewBalance[] = forwardBalances({
 		from,
@@ -300,6 +396,7 @@ export async function createAccount(
 		details: input.details ?? null,
 		active: true,
 		excludedFromReports: false,
+		bankAccountId: null,
 		createdAt: now,
 		updatedAt: now,
 	};
@@ -324,6 +421,56 @@ export async function createAccount(
 	);
 
 	return account;
+}
+
+/**
+ * Makes `bankAccountId` feed the account, Sure's `link_existing_account`,
+ * and writes the bank's balance as its `current_anchor` dated today: the
+ * account is then computed backward from it (AD-8). `balance` is the bank's
+ * signed figure, `null` when the bank gave none, which leaves the account
+ * computed forward. Entries, the opening anchor and reconciliations stay.
+ */
+export async function linkBankAccount(
+	deps: ServiceDeps,
+	accountId: string,
+	input: { bankAccountId: string; balance: MinorUnits | null },
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const account = await accountWithOpeningDate(tx, accountId);
+			const now = Date.now();
+
+			await tx
+				.update(accounts)
+				.set({ bankAccountId: input.bankAccountId, updatedAt: now })
+				.where(eq(accounts.id, accountId));
+
+			// One current anchor per account, the bank's latest balance. Deleted
+			// even without a new one: an anchor left by an earlier link would
+			// otherwise turn the account backward from a stale figure.
+			await tx
+				.delete(entries)
+				.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "current_anchor")));
+
+			if (input.balance !== null) {
+				await tx.insert(entries).values({
+					id: crypto.randomUUID(),
+					accountId,
+					kind: "valuation",
+					valuationKind: "current_anchor",
+					date: today(deps.timeZone),
+					amount: toStoredBankBalance(account, input.balance),
+					currency: account.currency,
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+
+			await recomputeBalances(tx, account, account.openingDate, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
 }
 
 /**
@@ -3259,16 +3406,18 @@ type SnapshotRow = {
  * a row.
  */
 async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readonly IsoDate[]) {
-	const previousRows = await db
+	// A linked account derives each day before its bank balance from the day
+	// after: the gap is read against that day, since the day before is itself
+	// derived from the snapshot and would always agree with it.
+	const anchor = await backwardAnchor(db, accountId);
+	const nextDays = dates.map((date) => addDays(date, 1));
+	const balanceRows = await db
 		.select({ date: balances.date, balance: balances.balance })
 		.from(balances)
 		.where(
 			and(
 				eq(balances.accountId, accountId),
-				inArray(
-					balances.date,
-					dates.map((date) => addDays(date, -1)),
-				),
+				inArray(balances.date, [...dates.map((date) => addDays(date, -1)), ...nextDays]),
 			),
 		);
 	const movementRows = await db
@@ -3278,33 +3427,44 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 			and(
 				eq(entries.accountId, accountId),
 				eq(entries.kind, "transaction"),
-				inArray(entries.date, [...dates]),
+				inArray(entries.date, [...dates, ...nextDays]),
 			),
 		)
 		.groupBy(entries.date);
-	const previous = new Map(previousRows.map((row) => [row.date, row.balance]));
+	const stored = new Map(balanceRows.map((row) => [row.date, row.balance]));
 	const movements = new Map(movementRows.map((row) => [row.date, row.amount]));
 
 	return ({ type, ...row }: SnapshotRow): SnapshotRecord => {
-		const before = previous.get(addDays(row.date, -1));
+		const backward = anchor !== undefined && row.date < anchor.date;
+		const neighbour = addDays(row.date, backward ? 1 : -1);
+		const known = stored.get(neighbour);
 
 		// Balances are written from the opening date on, and a snapshot is dated
-		// after it, so the day before always has a row; a missing one is a bug.
-		if (before === undefined) {
+		// after it and not after today, so the neighbouring day always has a
+		// row; a missing one is a bug.
+		if (known === undefined) {
 			throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 		}
 
 		const balance = toMinorUnits(row.balance);
+		const classification = classificationOf(type);
 
 		return {
 			...row,
 			balance,
-			...snapshotGap({
-				previous: toMinorUnits(before),
-				movements: toMinorUnits(movements.get(row.date) ?? 0),
-				recorded: balance,
-				classification: classificationOf(type),
-			}),
+			...(backward
+				? snapshotGapBackward({
+						next: toMinorUnits(known),
+						nextMovements: toMinorUnits(movements.get(neighbour) ?? 0),
+						recorded: balance,
+						classification,
+					})
+				: snapshotGap({
+						previous: toMinorUnits(known),
+						movements: toMinorUnits(movements.get(row.date) ?? 0),
+						recorded: balance,
+						classification,
+					})),
 		};
 	};
 }

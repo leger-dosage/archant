@@ -72,8 +72,13 @@ function BankReturnPage() {
 			{
 				onSuccess: (connection) => {
 					toast.success(t("banks.return.connected", { name: connection.institutionName }));
-					// Replaced, so Back never lands on a spent code.
-					void navigate({ to: "/settings/banks", replace: true });
+					// Replaced, so Back never lands on a spent code. On to the
+					// connection's accounts, which the user decides about next.
+					void navigate({
+						to: "/settings/banks/$connectionId",
+						params: { connectionId: connection.id },
+						replace: true,
+					});
 				},
 			},
 		);

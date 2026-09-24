@@ -70,6 +70,24 @@ export function isSubtypeOf(type: AccountType, subtype: string | null): boolean 
 }
 
 /**
+ * What a bank account can become, the targets of Sure's
+ * `CASH_ACCOUNT_TYPE_MAP`: only these types hold a bank's cash balance.
+ */
+export const BANK_ACCOUNT_TARGETS = [
+	{ type: "depository", subtype: "checking" },
+	{ type: "depository", subtype: "savings" },
+	{ type: "credit_card", subtype: null },
+	{ type: "loan", subtype: "other" },
+	{ type: "loan", subtype: "mortgage" },
+] as const satisfies readonly { type: AccountType; subtype: AccountSubtype | null }[];
+
+export type BankAccountTarget = (typeof BANK_ACCOUNT_TARGETS)[number];
+
+export function isBankAccountTarget(type: AccountType, subtype: string | null): boolean {
+	return BANK_ACCOUNT_TARGETS.some((target) => target.type === type && target.subtype === subtype);
+}
+
+/**
  * What a loan carries besides its balance, in `accounts.details`. Every field
  * is optional: the outstanding balance is all a loan needs. The rate is in
  * basis points (3,45 % is 345), so the two decimals lenders quote stay exact

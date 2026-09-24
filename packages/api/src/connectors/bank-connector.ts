@@ -1,3 +1,4 @@
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 
 import { AppError } from "../lib/errors.ts";
@@ -21,17 +22,36 @@ export type AuthorizationRequest = {
 	redirectUrl: string;
 };
 
+/** An account the bank shares under a session, with nothing that identifies its holder. */
+export type BankAccountRef = {
+	/** Scoped to the session: the reference every data call takes. */
+	uid: string;
+	/** Stable across sessions: what a renewed consent's accounts are matched on. */
+	identificationHash: string;
+	name: string;
+	/** The last four characters of the IBAN; the rest never leaves the connector. */
+	ibanLast4: string | null;
+	currency: CurrencyCode;
+	/** ISO 20022 cash account type, such as `CACC`, upper-cased. */
+	cashAccountType: string | null;
+};
+
 /** An open session: a bearer credential for the account data until the consent ends. */
 export type BankSession = {
 	sessionId: string;
 	/** Epoch milliseconds. */
 	consentExpiresAt: number;
+	/** The accounts the user shared, which the provider lists only here. */
+	accounts: BankAccountRef[];
 };
+
+/** A bank's balance as it prints it: signed, never converted to a stored balance (AD-5). */
+export type BankBalance = { amount: MinorUnits; currency: CurrencyCode };
 
 /**
  * A bank aggregator behind the connector port (AD-3). Like a file source it
  * never touches the database: the service stores what it returns. Later
- * stories add account listing, statements and revocation.
+ * stories add statements and revocation.
  */
 export type BankConnector = {
 	id: BankConnectorId;
@@ -40,6 +60,11 @@ export type BankConnector = {
 	startAuthorization: (request: AuthorizationRequest) => Promise<{ url: string }>;
 	/** Trades the callback's `code` for a session. */
 	completeAuthorization: (code: string) => Promise<BankSession>;
+	/**
+	 * The account's current balance (AD-18): the interim booked one, else
+	 * the closing booked one; `null` when the bank gives neither.
+	 */
+	fetchBalance: (uid: string) => Promise<BankBalance | null>;
 };
 
 /** What a log line may say about a provider failure: numbers and a code, never a payload. */

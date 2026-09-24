@@ -63,12 +63,14 @@ export const queryKeys = {
 	},
 	/**
 	 * Bank connections. `setup` and `institutions` never change while the page
-	 * is open; a new connection invalidates `list` only.
+	 * is open; a new connection invalidates `list` only. Linking rewrites
+	 * `accounts(id)` from its own answer.
 	 */
 	bankConnections: {
 		setup: ["bank-connections", "setup"] as const,
 		list: ["bank-connections", "list"] as const,
 		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
+		accounts: (connectionId: string) => ["bank-connections", "accounts", connectionId] as const,
 	},
 	transactions: {
 		/**

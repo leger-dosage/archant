@@ -52,3 +52,28 @@ export function snapshotGap(input: SnapshotGapInput): { computed: MinorUnits; ga
 
 	return { computed: toMinorUnits(computed), gap: toMinorUnits(input.recorded - computed) };
 }
+
+export type SnapshotGapBackwardInput = {
+	/** Stored balance at the end of the day after the snapshot. */
+	next: MinorUnits;
+	/** Sum of the signed transaction amounts dated on the day after the snapshot. */
+	nextMovements: MinorUnits;
+	/** The snapshot's stored balance. */
+	recorded: MinorUnits;
+	classification: Classification;
+};
+
+/**
+ * `snapshotGap` for a day a bank-linked account derives backward: the
+ * balance `reverseBalances` would give it without the snapshot, the next
+ * day's less that day's movements.
+ */
+export function snapshotGapBackward(input: SnapshotGapBackwardInput): {
+	computed: MinorUnits;
+	gap: MinorUnits;
+} {
+	const sign = input.classification === "asset" ? 1 : -1;
+	const computed = input.next - sign * input.nextMovements;
+
+	return { computed: toMinorUnits(computed), gap: toMinorUnits(input.recorded - computed) };
+}

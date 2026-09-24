@@ -7,8 +7,8 @@ import { z } from "zod";
 
 /**
  * A stand-in for Enable Banking on loopback, so the suite never reaches the
- * network (AD-16). It serves what the API calls, `/aspsps`, `/auth` and
- * `/sessions`, plus the bank's consent page, which approves at once and
+ * network (AD-16). It serves what the API calls, `/aspsps`, `/auth`,
+ * `/sessions` and `/accounts/{uid}/balances`, plus the bank's consent page, which approves at once and
  * sends the browser back to `redirect_url` with a `code` and the `state`.
  * It checks each request's RS256 token against the public key, as the real
  * service would refuse an unsigned one.
@@ -16,6 +16,20 @@ import { z } from "zod";
 
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = ["Banque Démo", "Caisse Régionale Exemple", "Néobanque Test"] as const;
+
+/**
+ * The accounts every session shares: a current account and a card. Each
+ * session gets fresh uids, as the real service does, and the same hashes.
+ */
+export const FAKE_ACCOUNTS = {
+	checking: {
+		name: "Compte courant Démo",
+		ibanLast4: "0185",
+		/** `ITBD`, as the bank prints it. */
+		balance: "1234.56",
+	},
+	card: { name: "Carte Démo", balance: "-300.00" },
+} as const;
 
 /** 180 days, above the 90-day cap, so the API must ask for 90. */
 const MAXIMUM_CONSENT_SECONDS = 180 * 86_400;
@@ -78,6 +92,8 @@ export async function startFakeEnableBanking(options: {
 }): Promise<{ url: string; close: () => void }> {
 	const pending = new Map<string, Pending>();
 	const codes = new Map<string, Pending>();
+	// uid → the balance the bank reports for it.
+	const balances = new Map<string, string>();
 	let origin = "";
 
 	const server = createServer((request, response) => {
@@ -161,10 +177,50 @@ export async function startFakeEnableBanking(options: {
 				}
 
 				codes.delete(String(body["code"]));
+				const checkingUid = randomUUID();
+				const cardUid = randomUUID();
+				balances.set(checkingUid, FAKE_ACCOUNTS.checking.balance);
+				balances.set(cardUid, FAKE_ACCOUNTS.card.balance);
 				json(response, 200, {
 					session_id: randomUUID(),
-					accounts: [],
+					accounts: [
+						{
+							uid: checkingUid,
+							identification_hash: "fake-hash-checking",
+							account_id: { iban: `FR76300010079412345678${FAKE_ACCOUNTS.checking.ibanLast4}` },
+							name: "M. Démo",
+							product: FAKE_ACCOUNTS.checking.name,
+							currency: "EUR",
+							cash_account_type: "CACC",
+						},
+						{
+							uid: cardUid,
+							identification_hash: "fake-hash-card",
+							name: FAKE_ACCOUNTS.card.name,
+							currency: "EUR",
+							cash_account_type: "CARD",
+						},
+					],
 					access: { valid_until: attempt.validUntil },
+				});
+				return;
+			}
+
+			const balancePath = /^\/accounts\/([^/]+)\/balances$/u.exec(url.pathname);
+
+			if (request.method === "GET" && balancePath !== null) {
+				const amount = balances.get(decodeURIComponent(balancePath[1] ?? ""));
+
+				if (amount === undefined) {
+					json(response, 404, { code: 404, message: "Unknown account", error: "NOT_FOUND" });
+					return;
+				}
+
+				json(response, 200, {
+					balances: [
+						{ balance_amount: { currency: "EUR", amount: "0.00" }, balance_type: "XPCD" },
+						{ balance_amount: { currency: "EUR", amount }, balance_type: "ITBD" },
+					],
 				});
 				return;
 			}

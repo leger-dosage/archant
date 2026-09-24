@@ -26,7 +26,13 @@ import {
 	TEST_ENCRYPTION_KEY_BASE64,
 	TEST_PKCS1_BASE64,
 } from "./testing/bank.ts";
-import { FIXTURE_AUTH_URL, FIXTURE_SESSION_ID, mockProvider } from "./testing/enable-banking.ts";
+import {
+	FIXTURE_AUTH_URL,
+	FIXTURE_CHECKING_UID,
+	FIXTURE_IBAN_HEAD,
+	FIXTURE_SESSION_ID,
+	mockProvider,
+} from "./testing/enable-banking.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
 
 let template: SignedInTemplate;
@@ -6595,8 +6601,137 @@ describe("/api/bank-connections", () => {
 				headers: { "content-type": "application/json", origin: "http://localhost:5173" },
 				body: JSON.stringify({ code: "c", state: "s" }),
 			}),
+			app.request("/api/bank-connections/c1/accounts"),
+			app.request("/api/bank-connections/c1/accounts", {
+				method: "POST",
+				headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+				body: JSON.stringify({ links: [] }),
+			}),
 		]);
 
-		expect(responses.map((response) => response.status)).toEqual([401, 401, 401]);
+		expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401]);
+	});
+
+	async function connectedApp() {
+		const requests = mockProvider();
+		const app = await bankApp();
+		const client = testClient(app).api["bank-connections"];
+		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		const completed = await client.callback.$post({ json: { code: "the-code", state } });
+		const connection = (await completed.json()).data;
+
+		return { app, client, connection };
+	}
+
+	it("lists a connection's bank accounts, then creates one from the bank", async () => {
+		const { app, client, connection } = await connectedApp();
+
+		const listResponse = await client[":id"].accounts.$get({ param: { id: connection.id } });
+		expect(listResponse.status).toBe(200);
+		const rows = (await listResponse.json()).data;
+		expect(JSON.stringify(rows)).not.toContain(FIXTURE_CHECKING_UID);
+		expect(JSON.stringify(rows)).not.toContain(FIXTURE_IBAN_HEAD);
+		const checking = rows.find((row) => row.name === "Compte courant");
+		expect(checking).toMatchObject({
+			ibanLast4: "0185",
+			currency: "EUR",
+			suggestion: { type: "depository", subtype: "checking" },
+			account: null,
+			candidates: [],
+		});
+
+		const linked = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: {
+				links: [
+					{
+						bankAccountId: checking?.id ?? "",
+						action: "create",
+						type: "depository",
+						subtype: "checking",
+					},
+				],
+			},
+		});
+		expect(linked.status).toBe(200);
+		const after = (await linked.json()).data.find((row) => row.id === checking?.id);
+		expect(after?.account).toMatchObject({ name: "Compte courant" });
+
+		const account = await testClient(app).api.accounts[":id"].$get({
+			param: { id: after?.account?.id ?? "" },
+		});
+		expect(await account.json()).toMatchObject({ data: { balance: 123456 } });
+	});
+
+	it("refuses a type no bank account becomes, an empty list and an unknown connection", async () => {
+		const { app, client, connection } = await connectedApp();
+
+		const investment = await app.request(`/api/bank-connections/${connection.id}/accounts`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				links: [{ bankAccountId: "b1", action: "create", type: "investment", subtype: "pea" }],
+			}),
+		});
+		expect(investment.status).toBe(400);
+		expect(errorBody.parse(await investment.json()).error.fields).toEqual([
+			{ path: "links.0.subtype", code: "invalid_subtype" },
+		]);
+
+		const empty = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: { links: [] },
+		});
+		expect(empty.status).toBe(400);
+
+		const unknown = await client[":id"].accounts.$get({ param: { id: "nope" } });
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("answers 503 on a connection's accounts while unconfigured", async () => {
+		const app = await bankApp({
+			...configuredBank(),
+			bankConnector: null,
+			encryptionKey: null,
+			bankSetup: ["ENCRYPTION_KEY"],
+		});
+
+		const responses = await Promise.all([
+			app.request("/api/bank-connections/c1/accounts"),
+			app.request("/api/bank-connections/c1/accounts", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ links: [] }),
+			}),
+		]);
+
+		expect(responses.map((response) => response.status)).toEqual([503, 503]);
+	});
+
+	it("answers BANK_PROVIDER_ERROR when the bank's balance cannot be read", async () => {
+		const { client, connection } = await connectedApp();
+		const rows = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data;
+		mockProvider({ balances: () => Response.json({ error: "ASPSP_ERROR" }, { status: 500 }) });
+
+		const response = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: {
+				links: rows.map((row) => ({
+					bankAccountId: row.id,
+					action: "create" as const,
+					type: "credit_card" as const,
+					subtype: null,
+				})),
+			},
+		});
+
+		expect(response.status).toBe(502);
+		expect(errorBody.parse(await response.json()).error.code).toBe("BANK_PROVIDER_ERROR");
 	});
 });

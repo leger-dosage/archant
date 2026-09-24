@@ -1,9 +1,10 @@
 import type { AccountSubtype, AccountType, LoanDetails } from "../account-types.ts";
 
 import { sql } from "drizzle-orm";
-import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { ACCOUNT_TYPE_IDS, ACCOUNT_TYPES } from "../account-types.ts";
+import { bankAccounts } from "./bank-accounts.ts";
 import { inList } from "./check.ts";
 
 export const accounts = sqliteTable(
@@ -24,10 +25,18 @@ export const accounts = sqliteTable(
 		excludedFromReports: integer("excluded_from_reports", { mode: "boolean" })
 			.notNull()
 			.default(false),
+		// The bank account that feeds it, which makes it computed backward from
+		// the bank balance (AD-8). Unique: one bank account feeds one account at
+		// most, and the reverse. Cleared when its connection goes, so the
+		// account and its history outlive the consent.
+		bankAccountId: text("bank_account_id").references(() => bankAccounts.id, {
+			onDelete: "set null",
+		}),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
 	(table) => [
+		uniqueIndex("accounts_bank_account_unique").on(table.bankAccountId),
 		check("accounts_type_check", sql`${table.type} in ${inList(ACCOUNT_TYPE_IDS)}`),
 		// One clause per type, so the database refuses a savings credit card as
 		// firmly as the API does. `is not null` is spelled out because `null in

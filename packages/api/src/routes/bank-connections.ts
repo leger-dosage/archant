@@ -7,12 +7,16 @@ import { createMiddleware } from "hono/factory";
 import { validationError } from "../lib/zod-error.ts";
 import {
 	completeConnectionSchema,
+	connectionParamSchema,
 	institutionsQuerySchema,
+	linkBankAccountsSchema,
 	startConnectionSchema,
 } from "../schemas/bank-connections.ts";
 import {
 	bankSetup,
 	completeConnection,
+	linkBankAccounts,
+	listBankAccounts,
 	listConnections,
 	listInstitutions,
 	requireBankConnector,
@@ -60,6 +64,35 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 					}
 				}),
 				async (c) => c.json({ data: await completeConnection(deps, c.req.valid("json")) }, 200),
+			)
+			.get(
+				"/:id/accounts",
+				zValidator("param", connectionParamSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) => c.json({ data: await listBankAccounts(deps, c.req.valid("param").id) }, 200),
+			)
+			.post(
+				"/:id/accounts",
+				zValidator("param", connectionParamSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				zValidator("json", linkBankAccountsSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) =>
+					c.json(
+						{
+							data: await linkBankAccounts(deps, c.req.valid("param").id, c.req.valid("json")),
+						},
+						200,
+					),
 			)
 	);
 }

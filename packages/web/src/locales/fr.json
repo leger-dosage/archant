@@ -985,6 +985,22 @@
 			"connected": "{{name}} est connectée.",
 			"refused": "La banque n'a pas donné son accord.",
 			"back": "Retour aux banques"
+		},
+		"manage": "Gérer les comptes de {{name}}",
+		"accounts": {
+			"description": "Choisissez ce que devient chaque compte de la banque : un nouveau compte, un compte existant dont la banque reprend le solde, ou rien.",
+			"list": "Comptes de la banque",
+			"empty": "La banque n'a partagé aucun compte.",
+			"notFound": "Cette connexion n'existe pas.",
+			"choice": "Que faire de {{name}}",
+			"skip": "Ignorer",
+			"create": "Nouveau compte",
+			"createAs": "Nouveau : {{type}}",
+			"linkTo": "Associer à",
+			"linkedTo": "Associé à",
+			"submit": "Valider",
+			"linked_one": "{{count}} compte relié à la banque.",
+			"linked_other": "{{count}} comptes reliés à la banque."
 		}
 	},
 	"security": {

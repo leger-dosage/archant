@@ -1,13 +1,16 @@
 import type { Page } from "@playwright/test";
 
+import { randomUUID } from "node:crypto";
+
 import { createDb } from "@archant/data/client";
 
-import { FAKE_BANKS } from "./fake-enable-banking.ts";
-import { expect, test } from "./fixtures.ts";
+import { FAKE_ACCOUNTS, FAKE_BANKS } from "./fake-enable-banking.ts";
+import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 import { DATABASE_FILE, TIME_ZONE } from "./settings.ts";
 
-// Story 10.1: connecting a bank from « Réglages > Banques », against the fake
-// Enable Banking that e2e/start-api.ts starts on loopback.
+// Stories 10.1 and 10.2: connecting a bank from « Réglages > Banques », then
+// deciding what each of its accounts becomes, against the fake Enable
+// Banking that e2e/start-api.ts starts on loopback.
 
 const PAGE = "/settings/banks";
 
@@ -63,17 +66,55 @@ test("another country lists its own banks", async ({ page }) => {
 	await expect(banks(page).getByRole("button")).toHaveCount(1);
 });
 
-test("choosing a bank and approving lands on Banques with the connection and its consent end", async ({
-	page,
-}) => {
-	await visit(page);
+const CONNECTION_URL = /\/settings\/banks\/([0-9a-f-]{36})$/u;
 
+/** Connects Banque Démo and returns once its page is open, with its id. */
+async function connect(page: Page): Promise<string> {
+	await visit(page);
 	await banks(page).getByRole("button", { name: "Connecter Banque Démo" }).click();
 
 	// The fake bank approves at once and sends the browser back through the
-	// return page, which posts the code and lands on the list.
+	// return page, which posts the code and lands on the connection's page.
 	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
-	await expect(page).toHaveURL(/\/settings\/banks$/u);
+	await expect(page).toHaveURL(CONNECTION_URL);
+	await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+
+	return CONNECTION_URL.exec(page.url())?.[1] ?? "";
+}
+
+const bankAccountRows = (page: Page) => page.getByRole("list", { name: "Comptes de la banque" });
+
+const choice = (page: Page, name: string) =>
+	page.getByRole("combobox", { name: `Que faire de ${name}` });
+
+async function choose(page: Page, name: string, option: string) {
+	await choice(page, name).click();
+	await page.getByRole("option", { name: option, exact: true }).click();
+}
+
+const validate = (page: Page) => page.getByRole("button", { name: "Valider" });
+
+/** The sidebar's link to an account, which carries its balance. */
+const sidebarAccount = (page: Page, accountId: string) =>
+	page.locator(`[data-sidebar="menu-button"][href="/accounts/${accountId}"]`);
+
+/** The id of the account a bank account's row links to. */
+async function linkedAccountId(page: Page, name: string): Promise<string> {
+	const link = bankAccountRows(page)
+		.getByRole("listitem")
+		.filter({ hasText: name })
+		.getByRole("link", { name });
+	await expect(link).toBeVisible();
+
+	return (await link.getAttribute("href"))?.split("/").at(-1) ?? "";
+}
+
+test("choosing a bank and approving lands on its accounts, and Banques lists it with its consent end", async ({
+	page,
+}) => {
+	const connectionId = await connect(page);
+
+	await visit(page);
 
 	// The bank allows 180 days; Archant asks for 90 at most.
 	const consentEnd = longDate.format(new Date(Date.now() + 90 * 86_400_000));
@@ -81,6 +122,11 @@ test("choosing a bank and approving lands on Banques with the connection and its
 	const row = connections.getByRole("listitem").filter({ hasText: "Banque Démo" }).last();
 	await expect(row).toContainText("France");
 	await expect(row).toContainText(`Consentement valable jusqu'au ${consentEnd}`);
+	await connections
+		.getByRole("link", { name: "Gérer les comptes de Banque Démo" })
+		.and(page.locator(`[href="/settings/banks/${connectionId}"]`))
+		.click();
+	await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
 
 	const db = await createDb(`file:${DATABASE_FILE}`);
 
@@ -157,4 +203,88 @@ test("a spent or unknown state shows the translated error", async ({ page }) => 
 	await expect(page.getByRole("alert")).toContainText(
 		"Cette autorisation bancaire est inconnue, déjà utilisée ou expirée.",
 	);
+});
+
+test("a new connection shows each bank account with its masked IBAN, its currency and a suggestion", async ({
+	page,
+}) => {
+	await connect(page);
+
+	const rows = bankAccountRows(page).getByRole("listitem");
+	await expect(rows).toHaveCount(2);
+	const checking = rows.filter({ hasText: FAKE_ACCOUNTS.checking.name });
+	await expect(checking).toContainText(`•••• ${FAKE_ACCOUNTS.checking.ibanLast4}`);
+	await expect(checking).toContainText("EUR");
+	await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toHaveText("Nouveau : Compte courant");
+	await expect(choice(page, FAKE_ACCOUNTS.card.name)).toHaveText("Nouveau : Carte de crédit");
+
+	await choice(page, FAKE_ACCOUNTS.card.name).click();
+	await expect(page.getByRole("option", { name: "Ignorer" })).toBeVisible();
+	await expect(page.getByRole("option", { name: "Nouveau : Prêt immobilier" })).toBeVisible();
+	await page.keyboard.press("Escape");
+});
+
+test("creating an account shows the bank balance in the sidebar, and a skipped row stays selectable", async ({
+	page,
+}) => {
+	await connect(page);
+
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+
+	// Skipped: nothing written, still offered, after a reload too.
+	await page.reload();
+	await expect(choice(page, FAKE_ACCOUNTS.card.name)).toBeVisible();
+	await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toBeHidden();
+	await choose(page, FAKE_ACCOUNTS.card.name, "Nouveau : Carte de crédit");
+	await validate(page).click();
+
+	const cardId = await linkedAccountId(page, FAKE_ACCOUNTS.card.name);
+	// The bank prints -300,00; the card owes 300,00.
+	await expect(sidebarAccount(page, cardId)).toContainText("300,00 €");
+	await expect(validate(page)).toBeHidden();
+});
+
+test("linking an account fed by hand keeps its transactions and ends on the bank balance", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Joint"), openingDate: daysAgo(30) });
+	const label = uniqueName("Boulangerie");
+	await api.addTransaction(account.id, { date: daysAgo(5), label, amount: "-42,90" });
+
+	await connect(page);
+	await choose(page, FAKE_ACCOUNTS.checking.name, account.name);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	await expect(bankAccountRows(page).getByRole("link", { name: account.name })).toHaveAttribute(
+		"href",
+		`/accounts/${account.id}`,
+	);
+	await expect(sidebarAccount(page, account.id)).toContainText("1 234,56 €");
+
+	await page.goto(`/accounts/${account.id}`);
+	await expect(page.getByText(label)).toBeVisible();
+	await expect(page.getByRole("main")).toContainText("1 234,56 €");
+
+	// Each account links once: it is no longer offered to the next connection.
+	await connect(page);
+	await choice(page, FAKE_ACCOUNTS.checking.name).click();
+	await expect(page.getByRole("option", { name: "Nouveau : Compte courant" })).toBeVisible();
+	await expect(page.getByRole("option", { name: account.name })).toBeHidden();
+	await page.keyboard.press("Escape");
+});
+
+test("an unknown connection says so and links back to Banques", async ({ page }) => {
+	await page.goto(`/settings/banks/${randomUUID()}`);
+
+	await expect(page.getByRole("alert")).toContainText("Cette connexion n'existe pas.");
+	await page.getByRole("link", { name: "Retour aux banques" }).click();
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
 });

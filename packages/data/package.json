@@ -16,6 +16,7 @@
 		"./schema/accounts": "./schema/accounts.ts",
 		"./schema/auth": "./schema/auth.ts",
 		"./schema/balances": "./schema/balances.ts",
+		"./schema/bank-accounts": "./schema/bank-accounts.ts",
 		"./schema/bank-connections": "./schema/bank-connections.ts",
 		"./schema/categories": "./schema/categories.ts",
 		"./schema/entries": "./schema/entries.ts",

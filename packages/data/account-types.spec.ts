@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
+	BANK_ACCOUNT_TARGETS,
 	classificationOf,
 	isAccountSubtype,
+	isBankAccountTarget,
 	isSubtypeOf,
 } from "./account-types.ts";
 
@@ -72,5 +74,20 @@ describe("account types", () => {
 		expect(isAccountSubtype("single_family_home")).toBe(true);
 		expect(isAccountSubtype("car")).toBe(false);
 		expect(isAccountSubtype(null)).toBe(false);
+	});
+});
+
+describe("bank account targets", () => {
+	it("are valid type and subtype pairs", () => {
+		for (const target of BANK_ACCOUNT_TARGETS) {
+			expect(isSubtypeOf(target.type, target.subtype)).toBe(true);
+		}
+	});
+
+	it("hold a bank's cash, never an investment or a consumer loan", () => {
+		expect(isBankAccountTarget("depository", "savings")).toBe(true);
+		expect(isBankAccountTarget("credit_card", null)).toBe(true);
+		expect(isBankAccountTarget("loan", "consumer")).toBe(false);
+		expect(isBankAccountTarget("investment", "pea")).toBe(false);
 	});
 });

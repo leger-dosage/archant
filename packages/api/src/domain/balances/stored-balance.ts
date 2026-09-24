@@ -12,3 +12,16 @@ import { toMinorUnits } from "@archant/data/money";
 export function toStoredBalance(account: { type: AccountType }, signed: MinorUnits): MinorUnits {
 	return classificationOf(account.type) === "asset" ? signed : toMinorUnits(0 - signed);
 }
+
+/**
+ * A bank's balance as a stored balance, as Sure's Enable Banking import
+ * does: an asset's is the signed figure, a liability's the absolute value.
+ * Banks disagree on the sign of what a card or a loan owes, where a file
+ * statement follows OFX; only its size is certain.
+ */
+export function toStoredBankBalance(
+	account: { type: AccountType },
+	signed: MinorUnits,
+): MinorUnits {
+	return classificationOf(account.type) === "asset" ? signed : toMinorUnits(Math.abs(signed));
+}
