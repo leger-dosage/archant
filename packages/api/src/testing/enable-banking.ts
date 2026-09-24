@@ -29,6 +29,7 @@ export const fixtures = {
 	aspsps: await load("aspsps-fr.json"),
 	auth: await load("auth.json"),
 	session: await load("session.json"),
+	balances: await load("balances.json"),
 	redirectNotAllowed: await load("error-redirect-not-allowed.json"),
 	unauthorized: await load("error-unauthorized.json"),
 };
@@ -37,6 +38,11 @@ export const FIXTURE_SESSION_ID = "4b1a9f0e-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
 export const FIXTURE_AUTH_URL =
 	"https://tilisy.enablebanking.com/welcome?sessionid=0d6c1b52-7a47-4e0c-9f6c-3f0b1c2d3e4f";
 export const FIXTURE_CONSENT_END = Date.parse("2026-12-20T10:00:00Z");
+/** The session's current account, `CACC`, and its card, `CARD`. */
+export const FIXTURE_CHECKING_UID = "7c8d9e0f-1a2b-4c3d-8e4f-5a6b7c8d9e0f";
+export const FIXTURE_CARD_UID = "2f3e4d5c-6b7a-4980-a1b2-c3d4e5f6a7b8";
+/** Every character of the checking account's IBAN but the last four. */
+export const FIXTURE_IBAN_HEAD = "FR763000100794123456789";
 
 export type ProviderRequest = {
 	method: string;
@@ -46,18 +52,18 @@ export type ProviderRequest = {
 	body: unknown;
 };
 
-type Endpoint = "aspsps" | "auth" | "sessions";
+type Endpoint = "aspsps" | "auth" | "sessions" | "balances";
 
 /**
- * Serves the three endpoints from the fixtures, or from `overrides`, and
+ * Serves the four endpoints from the fixtures, or from `overrides`, and
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
-	overrides: Partial<Record<Endpoint, () => Response>> = {},
+	overrides: Partial<Record<Endpoint, (url: URL) => Response>> = {},
 ): ProviderRequest[] {
 	const requests: ProviderRequest[] = [];
 	const answer =
-		(endpoint: Endpoint, fallback: () => Response) =>
+		(endpoint: Endpoint, fallback: (url: URL) => Response) =>
 		async ({ request }: { request: Request }) => {
 			const url = new URL(request.url);
 			requests.push({
@@ -68,7 +74,7 @@ export function mockProvider(
 				body: request.method === "GET" ? undefined : await request.json(),
 			});
 
-			return (overrides[endpoint] ?? fallback)();
+			return (overrides[endpoint] ?? fallback)(url);
 		};
 
 	server.use(
@@ -83,6 +89,10 @@ export function mockProvider(
 		http.post(
 			`${TEST_PROVIDER_URL}/sessions`,
 			answer("sessions", () => HttpResponse.json(fixtures.session)),
+		),
+		http.get(
+			`${TEST_PROVIDER_URL}/accounts/:uid/balances`,
+			answer("balances", () => HttpResponse.json(fixtures.balances)),
 		),
 	);
 

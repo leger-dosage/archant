@@ -1,6 +1,7 @@
 import type { accounts } from "./schema/accounts.ts";
 import type { sessions, users } from "./schema/auth.ts";
 import type { balances } from "./schema/balances.ts";
+import type { bankAccounts } from "./schema/bank-accounts.ts";
 import type { bankConnections } from "./schema/bank-connections.ts";
 import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
@@ -79,3 +80,6 @@ export type NewRecurringTransaction = InferInsertModel<typeof recurringTransacti
 
 export type BankConnection = InferSelectModel<typeof bankConnections>;
 export type NewBankConnection = InferInsertModel<typeof bankConnections>;
+
+export type BankAccount = InferSelectModel<typeof bankAccounts>;
+export type NewBankAccount = InferInsertModel<typeof bankAccounts>;

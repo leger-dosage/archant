@@ -1,6 +1,6 @@
 import type { BankConnectionData, InstitutionData } from "@/hooks/useBankConnections";
 
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { BuildingIcon, ChevronRightIcon, Loader2Icon, SearchIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -248,19 +248,29 @@ function Connections() {
 				) : (
 					<ul aria-label={t("banks.connections")} className="divide-y rounded-lg border">
 						{list.map((connection) => (
-							<li key={connection.id} className="flex flex-col gap-0.5 px-4 py-3">
-								<span className="font-medium">{connection.institutionName}</span>
-								<span className="text-sm text-muted-foreground">
-									{countryName(connection.country)}
-									{connection.consentExpiresAt !== null && (
-										<>
-											{" · "}
-											{t("banks.consentUntil", {
-												date: consentDate.format(new Date(connection.consentExpiresAt)),
-											})}
-										</>
-									)}
-								</span>
+							<li key={connection.id}>
+								<Link
+									to="/settings/banks/$connectionId"
+									params={{ connectionId: connection.id }}
+									aria-label={t("banks.manage", { name: connection.institutionName })}
+									className="flex items-center gap-4 px-4 py-3 transition-colors outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
+								>
+									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+										<span className="font-medium">{connection.institutionName}</span>
+										<span className="text-sm text-muted-foreground">
+											{countryName(connection.country)}
+											{connection.consentExpiresAt !== null && (
+												<>
+													{" · "}
+													{t("banks.consentUntil", {
+														date: consentDate.format(new Date(connection.consentExpiresAt)),
+													})}
+												</>
+											)}
+										</span>
+									</span>
+									<ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+								</Link>
 							</li>
 						))}
 					</ul>

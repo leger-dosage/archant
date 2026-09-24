@@ -1,19 +1,38 @@
 import type { BankConnector } from "../connectors/bank-connector.ts";
 import type { Env } from "../env.ts";
+import type { FieldError } from "../lib/errors.ts";
 import type { Logger } from "../lib/logger.ts";
-import type { CompleteConnectionInput, StartConnectionInput } from "../schemas/bank-connections.ts";
+import type {
+	CompleteConnectionInput,
+	LinkBankAccountsInput,
+	StartConnectionInput,
+} from "../schemas/bank-connections.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { AnyColumn } from "drizzle-orm";
 
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
+import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import type { BankConnectionStatus } from "@archant/data/schema/bank-connections";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import type { Account, BankAccount } from "@archant/data/types";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
 import { createBankConnector } from "../connectors/registry.ts";
+import { toStoredBankBalance } from "../domain/balances/stored-balance.ts";
+import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
+import { addMonths, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { encrypt } from "./crypto.ts";
+import { createAccount, linkBankAccount } from "./ledger.ts";
+
+/** The value an upsert tried to insert into `column`, named from the schema. */
+const excluded = (column: AnyColumn) => sql`excluded.${sql.identifier(column.name)}`;
 
 /** Where the bank sends the browser back: a page of the interface, not an API route. */
 export const REDIRECT_PATH = "/settings/banks/callback";
@@ -138,7 +157,7 @@ function toRecord(row: typeof bankConnections.$inferSelect): BankConnectionRecor
 	};
 }
 
-const byName = new Intl.Collator("fr", { sensitivity: "base" });
+const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
 export async function listInstitutions(
 	deps: BankConnectionDeps,
@@ -270,22 +289,59 @@ export async function completeConnection(
 		throw error;
 	}
 
-	const [row] = await deps.db
-		.update(bankConnections)
-		.set({
-			status: "active",
-			sessionId: encrypt(encryptionKey, session.sessionId),
-			consentExpiresAt: session.consentExpiresAt,
-			updatedAt: Date.now(),
-		})
-		.where(eq(bankConnections.id, claimed.id))
-		.returning();
+	const row = await deps.db.transaction(async (tx) => {
+		const updatedAt = Date.now();
+		const [updated] = await tx
+			.update(bankConnections)
+			.set({
+				status: "active",
+				sessionId: encrypt(encryptionKey, session.sessionId),
+				consentExpiresAt: session.consentExpiresAt,
+				updatedAt,
+			})
+			.where(eq(bankConnections.id, claimed.id))
+			.returning();
 
-	if (row === undefined) {
-		throw invalidAuthorization();
-	}
+		if (updated === undefined) {
+			throw invalidAuthorization();
+		}
 
-	deps.logger.info({ connectionId: row.id }, "bank connected");
+		// Sure's `import_accounts_from_session`: the provider lists a
+		// session's accounts only here, so they are kept with it.
+		if (session.accounts.length > 0) {
+			await tx
+				.insert(bankAccounts)
+				.values(
+					session.accounts.map((account) => ({
+						id: randomUUID(),
+						bankConnectionId: updated.id,
+						identificationHash: account.identificationHash,
+						providerUid: account.uid,
+						name: account.name,
+						ibanLast4: account.ibanLast4,
+						currency: account.currency,
+						cashAccountType: account.cashAccountType,
+						createdAt: updatedAt,
+						updatedAt,
+					})),
+				)
+				.onConflictDoUpdate({
+					target: [bankAccounts.bankConnectionId, bankAccounts.identificationHash],
+					set: {
+						providerUid: excluded(bankAccounts.providerUid),
+						name: excluded(bankAccounts.name),
+						ibanLast4: excluded(bankAccounts.ibanLast4),
+						currency: excluded(bankAccounts.currency),
+						cashAccountType: excluded(bankAccounts.cashAccountType),
+						updatedAt,
+					},
+				});
+		}
+
+		return updated;
+	});
+
+	deps.logger.info({ connectionId: row.id, accounts: session.accounts.length }, "bank connected");
 
 	return toRecord(row);
 }
@@ -301,4 +357,236 @@ export async function listConnections(deps: BankConnectionDeps): Promise<BankCon
 		.orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
 
 	return rows.map(toRecord);
+}
+
+/** A way to feed a bank account into the ledger, as the page offers it. */
+export type BankAccountTargetRecord = { type: AccountType; subtype: AccountSubtype | null };
+
+/** An existing account the bank account may feed. */
+export type LinkCandidateRecord = {
+	id: string;
+	name: string;
+	type: AccountType;
+	subtype: AccountSubtype | null;
+};
+
+/** A bank account as the connection page shows it: no uid, no hash, never the full IBAN. */
+export type BankAccountRecord = {
+	id: string;
+	name: string;
+	ibanLast4: string | null;
+	currency: string;
+	/** What the bank's type suggests creating; `null` suggests skipping it. */
+	suggestion: BankAccountTargetRecord | null;
+	/** The account it feeds, `null` while it feeds none. */
+	account: { id: string; name: string } | null;
+	/** Existing accounts it may feed, by name; empty once linked. */
+	candidates: LinkCandidateRecord[];
+};
+
+async function activeConnection(deps: BankConnectionDeps, connectionId: string) {
+	const row = await deps.db
+		.select({ id: bankConnections.id })
+		.from(bankConnections)
+		.where(and(eq(bankConnections.id, connectionId), eq(bankConnections.status, "active")))
+		.get();
+
+	if (row === undefined) {
+		throw new AppError("NOT_FOUND", "No bank connection has this id.");
+	}
+
+	return row;
+}
+
+function candidatesFor(bankAccount: BankAccount, all: readonly Account[]): LinkCandidateRecord[] {
+	return all
+		.filter((account) => isLinkCandidate(account, bankAccount))
+		.map(({ id, name, type, subtype }) => ({ id, name, type, subtype }))
+		.toSorted((left, right) => byName.compare(left.name, right.name));
+}
+
+function targetRecord(target: BankAccountTarget | null): BankAccountTargetRecord | null {
+	return target === null ? null : { type: target.type, subtype: target.subtype };
+}
+
+/**
+ * Sure's `setup_accounts`: every bank account of a connection, the account
+ * it feeds or, until it feeds one, the choices the page offers for it.
+ */
+export async function listBankAccounts(
+	deps: BankConnectionDeps,
+	connectionId: string,
+): Promise<BankAccountRecord[]> {
+	requireBankConnector(deps);
+	await activeConnection(deps, connectionId);
+
+	const rows = await deps.db
+		.select()
+		.from(bankAccounts)
+		.where(eq(bankAccounts.bankConnectionId, connectionId))
+		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.name), asc(bankAccounts.id));
+	const all = await deps.db.select().from(accounts);
+	const linked = new Map(
+		all.flatMap((account) =>
+			account.bankAccountId === null ? [] : [[account.bankAccountId, account] as const],
+		),
+	);
+
+	return rows.map((row): BankAccountRecord => {
+		const account = linked.get(row.id);
+
+		return {
+			id: row.id,
+			name: row.name,
+			ibanLast4: row.ibanLast4,
+			currency: row.currency,
+			suggestion: targetRecord(suggestedTarget(row.cashAccountType)),
+			account: account === undefined ? null : { id: account.id, name: account.name },
+			candidates: account === undefined ? candidatesFor(row, all) : [],
+		};
+	});
+}
+
+const invalidLink = (path: string): FieldError => ({ path, code: "invalid_value" });
+
+/** A stored bank account's currency, which the connector checked on the way in. */
+function currencyOf(bankAccount: BankAccount): CurrencyCode {
+	if (!isCurrencyCode(bankAccount.currency)) {
+		throw new Error("A bank account holds a currency the connector should have refused.");
+	}
+
+	return bankAccount.currency;
+}
+
+/**
+ * Sure's `complete_account_setup` and `link_existing_account` in one post:
+ * checks every link against what `listBankAccounts` offers, reads each
+ * chosen bank account's balance, then creates or links them all in one
+ * transaction. A refused link or a provider failure writes nothing.
+ */
+export async function linkBankAccounts(
+	deps: BankConnectionDeps,
+	connectionId: string,
+	input: LinkBankAccountsInput,
+): Promise<BankAccountRecord[]> {
+	const { connector } = requireBankConnector(deps);
+	await activeConnection(deps, connectionId);
+
+	const ids = input.links.map((link) => link.bankAccountId);
+	const rows = await deps.db
+		.select()
+		.from(bankAccounts)
+		.where(and(eq(bankAccounts.bankConnectionId, connectionId), inArray(bankAccounts.id, ids)));
+	const byId = new Map(rows.map((row) => [row.id, row]));
+	const all = await deps.db.select().from(accounts);
+	const taken = new Set(all.map((account) => account.bankAccountId));
+	const errors: FieldError[] = [];
+	const seenBankAccounts = new Set<string>();
+	const seenAccounts = new Set<string>();
+	const planned: { link: LinkBankAccountsInput["links"][number]; bankAccount: BankAccount }[] = [];
+
+	for (const [index, link] of input.links.entries()) {
+		const bankAccount = byId.get(link.bankAccountId);
+
+		if (
+			bankAccount === undefined ||
+			taken.has(bankAccount.id) ||
+			seenBankAccounts.has(bankAccount.id)
+		) {
+			errors.push(invalidLink(`links.${index}.bankAccountId`));
+			continue;
+		}
+
+		seenBankAccounts.add(bankAccount.id);
+
+		if (link.action === "link") {
+			const target = all.find((account) => account.id === link.accountId);
+
+			if (
+				target === undefined ||
+				seenAccounts.has(target.id) ||
+				!isLinkCandidate(target, bankAccount)
+			) {
+				errors.push(invalidLink(`links.${index}.accountId`));
+				continue;
+			}
+
+			seenAccounts.add(target.id);
+		}
+
+		planned.push({ link, bankAccount });
+	}
+
+	if (errors.length > 0) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", errors);
+	}
+
+	// Every balance before any write: one failure leaves the connection as it was.
+	let balances: (MinorUnits | null)[];
+
+	try {
+		balances = await Promise.all(
+			planned.map(async ({ bankAccount }) => {
+				const balance = await connector.fetchBalance(bankAccount.providerUid);
+
+				// No conversion (FR56 wants the bank's own figure): a balance in
+				// another currency is as good as none.
+				return balance !== null && balance.currency === bankAccount.currency
+					? balance.amount
+					: null;
+			}),
+		);
+	} catch (error) {
+		logFailure(deps, connectionId, error);
+		throw error;
+	}
+
+	const openingDate = addMonths(today(deps.timeZone), -24);
+
+	await deps.db.transaction(async (tx) => {
+		const inner: ServiceDeps = { ...deps, db: tx };
+		const write = async ({ link, bankAccount }: (typeof planned)[number], index: number) => {
+			const balance = balances[index] ?? null;
+			const accountId =
+				link.action === "link"
+					? link.accountId
+					: (
+							await createAccount(
+								inner,
+								{
+									name: bankAccount.name,
+									type: link.type,
+									subtype: link.subtype,
+									currency: currencyOf(bankAccount),
+									// Sure's `OpeningBalanceManager.default_date`: two years back,
+									// at the bank's balance, which the backward computation then
+									// ignores.
+									openingBalance:
+										balance === null
+											? toMinorUnits(0)
+											: toStoredBankBalance({ type: link.type }, balance),
+									openingDate,
+								},
+								{ origin: "sync" },
+							)
+						).id;
+
+			await linkBankAccount(
+				inner,
+				accountId,
+				{ bankAccountId: bankAccount.id, balance },
+				{ origin: "sync" },
+			);
+		};
+
+		// In sequence: each ledger call opens a savepoint on this one connection.
+		await planned.reduce<Promise<void>>(
+			(previous, item, index) => previous.then(() => write(item, index)),
+			Promise.resolve(),
+		);
+	});
+
+	deps.logger.info({ connectionId, linked: planned.length }, "bank accounts linked");
+
+	return listBankAccounts(deps, connectionId);
 }

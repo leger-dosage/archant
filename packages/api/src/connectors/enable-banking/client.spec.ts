@@ -11,14 +11,18 @@ import {
 } from "../../testing/bank.ts";
 import {
 	FIXTURE_AUTH_URL,
+	FIXTURE_CARD_UID,
+	FIXTURE_CHECKING_UID,
 	FIXTURE_CONSENT_END,
+	FIXTURE_IBAN_HEAD,
 	FIXTURE_SESSION_ID,
 	fixtures,
 	mockProvider,
 } from "../../testing/enable-banking.ts";
 import { BankProviderError } from "../bank-connector.ts";
 import { createBankConnector } from "../registry.ts";
-import { consentValidUntil } from "./client.ts";
+import { consentValidUntil, toBankAccount } from "./client.ts";
+import { sessionAccountSchema } from "./schemas.ts";
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
 const DAY = 86_400_000;
@@ -199,13 +203,36 @@ describe("startAuthorization", () => {
 });
 
 describe("completeAuthorization", () => {
-	it("opens a session and reads when the consent ends", async () => {
+	it("opens a session and reads when the consent ends and which accounts it shares", async () => {
 		const requests = mockProvider();
 
-		await expect(connector.completeAuthorization("the-code")).resolves.toEqual({
+		const session = await connector.completeAuthorization("the-code");
+
+		expect(session).toEqual({
 			sessionId: FIXTURE_SESSION_ID,
 			consentExpiresAt: FIXTURE_CONSENT_END,
+			accounts: [
+				{
+					uid: FIXTURE_CHECKING_UID,
+					identificationHash: "anonymised-hash-checking",
+					name: "Compte courant",
+					ibanLast4: "0185",
+					currency: "EUR",
+					cashAccountType: "CACC",
+				},
+				{
+					uid: FIXTURE_CARD_UID,
+					identificationHash: "anonymised-hash-card",
+					name: "Carte Visa Premier",
+					ibanLast4: null,
+					currency: "EUR",
+					cashAccountType: "CARD",
+				},
+			],
 		});
+		// Neither the holder's name nor the full IBAN goes further.
+		expect(JSON.stringify(session)).not.toContain(FIXTURE_IBAN_HEAD);
+		expect(JSON.stringify(session)).not.toContain("Jean Exemple");
 		expect(requests).toEqual([
 			expect.objectContaining({ method: "POST", path: "/sessions", body: { code: "the-code" } }),
 		]);
@@ -225,6 +252,25 @@ describe("completeAuthorization", () => {
 		});
 	});
 
+	it("drops an account it cannot read and keeps the others", async () => {
+		mockProvider({
+			sessions: () =>
+				HttpResponse.json({
+					session_id: "s",
+					access: { valid_until: "2026-12-20T10:00:00Z" },
+					accounts: [
+						{ uid: "u1", currency: "XXX", name: "Compte en devise inconnue" },
+						{ currency: "EUR", name: "Compte sans uid" },
+						{ uid: "u2", currency: "EUR", name: "Compte lisible" },
+					],
+				}),
+		});
+
+		const session = await connector.completeAuthorization("the-code");
+
+		expect(session.accounts).toMatchObject([{ uid: "u2", name: "Compte lisible" }]);
+	});
+
 	it("refuses a consent end that is a bare date", async () => {
 		mockProvider({
 			sessions: () => HttpResponse.json({ session_id: "s", access: { valid_until: "2026-12-20" } }),
@@ -233,6 +279,123 @@ describe("completeAuthorization", () => {
 		await expect(connector.completeAuthorization("the-code")).rejects.toMatchObject({
 			code: "BANK_PROVIDER_ERROR",
 		});
+	});
+});
+
+const account = (fields: Record<string, unknown>) =>
+	toBankAccount(sessionAccountSchema.parse({ uid: "u1", currency: "EUR", ...fields }));
+
+describe("toBankAccount", () => {
+	it("names the account from its details first, then its product, then its name", () => {
+		expect(account({ details: "Livret A", product: "Épargne", name: "M. X" }).name).toBe(
+			"Livret A",
+		);
+		expect(account({ details: "  ", product: "Épargne", name: "M. X" }).name).toBe("Épargne");
+		expect(account({ name: "Compte joint" }).name).toBe("Compte joint");
+	});
+
+	it("falls back to the IBAN's last four characters, spaces dropped, or to a bare name", () => {
+		expect(account({ account_id: { iban: "FR76 3000 1007 9412 3456 7890 185" } })).toMatchObject({
+			name: "Compte •••• 0185",
+			ibanLast4: "0185",
+		});
+		expect(account({ account_id: { other: { identification: "123" } } })).toMatchObject({
+			name: "Compte",
+			ibanLast4: null,
+		});
+	});
+
+	it("uses the uid as identity when the bank sends no hash, and upper-cases the type", () => {
+		expect(account({ cash_account_type: "svgs" })).toMatchObject({
+			identificationHash: "u1",
+			cashAccountType: "SVGS",
+		});
+		expect(account({ identification_hash: 42 })).toMatchObject({
+			identificationHash: "u1",
+			cashAccountType: null,
+		});
+	});
+
+	it("falls through a label longer than an account name to the next choice", () => {
+		expect(account({ details: "x".repeat(101), product: "Livret A" }).name).toBe("Livret A");
+		expect(account({ details: "x".repeat(100) }).name).toBe("x".repeat(100));
+	});
+
+	it("refuses an unknown currency", () => {
+		expect(sessionAccountSchema.safeParse({ uid: "u1", currency: "XXX" }).success).toBe(false);
+	});
+});
+
+const balances = (...items: Record<string, unknown>[]) =>
+	mockProvider({ balances: () => HttpResponse.json({ balances: items }) });
+
+const balance = (type: string, amount: string, extra: Record<string, unknown> = {}) => ({
+	balance_amount: { amount, currency: "EUR" },
+	balance_type: type,
+	...extra,
+});
+
+describe("fetchBalance", () => {
+	it("reads the interim booked balance before the closing one, as minor units", async () => {
+		const requests = mockProvider();
+
+		await expect(connector.fetchBalance(FIXTURE_CHECKING_UID)).resolves.toEqual({
+			amount: 123456,
+			currency: "EUR",
+		});
+		expect(requests).toEqual([
+			expect.objectContaining({
+				method: "GET",
+				path: `/accounts/${FIXTURE_CHECKING_UID}/balances`,
+			}),
+		]);
+	});
+
+	it("falls back to the closing booked balance", async () => {
+		balances(balance("XPCD", "5.00"), balance("CLBD", "-300.00"));
+
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toEqual({
+			amount: -30000,
+			currency: "EUR",
+		});
+	});
+
+	it("gives nothing when the bank has no booked balance", async () => {
+		balances(balance("XPCD", "5.00"));
+
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toBeNull();
+	});
+
+	it("makes a debit balance negative, and leaves a credit one as it is", async () => {
+		balances(balance("ITBD", "300.00", { credit_debit_indicator: "DBIT" }));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({
+			amount: -30000,
+		});
+
+		balances(balance("ITBD", "300.00", { credit_debit_indicator: "CRDT" }));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({
+			amount: 30000,
+		});
+	});
+
+	it("refuses an amount with more decimals than its currency, or not a number", async () => {
+		balances(balance("ITBD", "12.345"));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+
+		balances(balance("ITBD", "1e3"));
+		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+	});
+
+	it("passes a provider failure on", async () => {
+		mockProvider({ balances: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }) });
+
+		const error = await rejection(connector.fetchBalance(FIXTURE_CARD_UID));
+
+		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
 	});
 });
 

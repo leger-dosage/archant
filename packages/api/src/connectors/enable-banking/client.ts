@@ -1,12 +1,16 @@
-import type { BankConnector, Institution } from "../bank-connector.ts";
+import type { BankAccountRef, BankConnector, Institution } from "../bank-connector.ts";
+import type { sessionAccountSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
 import type { z } from "zod";
+
+import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { BankProviderError } from "../bank-connector.ts";
 import { signJwt } from "./jwt.ts";
 import {
 	aspspsResponseSchema,
 	authResponseSchema,
+	balancesResponseSchema,
 	errorResponseSchema,
 	sessionResponseSchema,
 } from "./schemas.ts";
@@ -39,6 +43,32 @@ const failed = (status: number | null, providerCode: string | null = null) =>
 		status,
 		providerCode,
 	});
+
+/** AD-18: the interim booked balance, else the closing booked one. */
+const BALANCE_TYPES = ["ITBD", "CLBD"] as const;
+
+/**
+ * A session account as the port hands it on. The name is Sure's choice
+ * order, `details` then `product` then `name`, and only the IBAN's last four
+ * characters survive this function.
+ */
+export function toBankAccount(account: z.output<typeof sessionAccountSchema>): BankAccountRef {
+	const iban = account.account_id?.iban?.replaceAll(/\s/gu, "") ?? null;
+	const ibanLast4 = iban === null ? null : iban.slice(-4);
+
+	return {
+		uid: account.uid,
+		identificationHash: account.identification_hash ?? account.uid,
+		name:
+			account.details ??
+			account.product ??
+			account.name ??
+			(ibanLast4 === null ? "Compte" : `Compte •••• ${ibanLast4}`),
+		ibanLast4,
+		currency: account.currency,
+		cashAccountType: account.cash_account_type?.toUpperCase() ?? null,
+	};
+}
 
 type Call = { method: "GET" | "POST"; path: string; body?: unknown };
 
@@ -144,7 +174,38 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				sessionResponseSchema,
 			);
 
-			return { sessionId: session.session_id, consentExpiresAt: session.access.valid_until };
+			return {
+				sessionId: session.session_id,
+				consentExpiresAt: session.access.valid_until,
+				accounts: session.accounts.map(toBankAccount),
+			};
+		},
+
+		async fetchBalance(uid) {
+			const { balances } = await call(
+				config,
+				{ method: "GET", path: `/accounts/${encodeURIComponent(uid)}/balances` },
+				balancesResponseSchema,
+			);
+			const chosen = BALANCE_TYPES.map((type) =>
+				balances.find((balance) => balance.balance_type === type),
+			).find((balance) => balance !== undefined);
+
+			if (chosen === undefined) {
+				return null;
+			}
+
+			const { amount, currency } = chosen.balance_amount;
+			const parsed = parseAmount(amount, currency);
+
+			if (parsed === null) {
+				throw failed(200);
+			}
+
+			return {
+				amount: chosen.credit_debit_indicator === "DBIT" ? toMinorUnits(-Math.abs(parsed)) : parsed,
+				currency,
+			};
 		},
 	};
 }

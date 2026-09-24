@@ -1,10 +1,10 @@
-import type { InferResponseType } from "hono/client";
+import type { InferRequestType, InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { BankCountry } from "@archant/data/bank-countries";
 
-import { api, unwrap } from "@/lib/api";
+import { api, errorCodeOf, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
 const bank = api["bank-connections"];
@@ -12,6 +12,15 @@ const bank = api["bank-connections"];
 export type InstitutionData = InferResponseType<typeof bank.institutions.$get, 200>["data"][number];
 
 export type BankConnectionData = InferResponseType<typeof bank.$get, 200>["data"][number];
+
+export type BankAccountData = InferResponseType<
+	(typeof bank)[":id"]["accounts"]["$get"],
+	200
+>["data"][number];
+
+export type BankAccountLink = InferRequestType<
+	(typeof bank)[":id"]["accounts"]["$post"]
+>["json"]["links"][number];
 
 /** Whether the server can connect a bank, and the variables it lacks otherwise. */
 export function useBankSetup() {
@@ -57,5 +66,37 @@ export function useCompleteBankConnection() {
 		mutationFn: async (input: { code: string; state: string }) =>
 			(await unwrap(bank.callback.$post({ json: input }))).data,
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+	});
+}
+
+/** A connection's bank accounts, what each feeds and what it could feed. */
+export function useBankAccounts(connectionId: string) {
+	return useQuery({
+		queryKey: queryKeys.bankConnections.accounts(connectionId),
+		queryFn: async () =>
+			(await unwrap(bank[":id"].accounts.$get({ param: { id: connectionId } }))).data,
+		// An unknown connection stays unknown: the page says so at once rather
+		// than after three retries.
+		retry: (failureCount, error) =>
+			!["NOT_FOUND", "UNAUTHORIZED"].includes(errorCodeOf(error)) && failureCount < 3,
+	});
+}
+
+/**
+ * Creates or links the chosen bank accounts. The answer is the new list;
+ * every account query goes stale, since a new account or a new balance
+ * shows in the sidebar.
+ */
+export function useLinkBankAccounts(connectionId: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (links: BankAccountLink[]) =>
+			(await unwrap(bank[":id"].accounts.$post({ param: { id: connectionId }, json: { links } })))
+				.data,
+		onSuccess: async (list) => {
+			queryClient.setQueryData(queryKeys.bankConnections.accounts(connectionId), list);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+		},
 	});
 }

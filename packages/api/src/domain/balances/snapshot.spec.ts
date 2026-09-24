@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { snapshotGap, snapshotRejectionFor } from "./snapshot.ts";
+import { snapshotGap, snapshotGapBackward, snapshotRejectionFor } from "./snapshot.ts";
 
 const m = toMinorUnits;
 const context = { openingDate: "2026-01-10", today: "2026-09-21" };
@@ -68,5 +68,30 @@ describe("snapshotGap", () => {
 				classification: "asset",
 			}),
 		).toEqual({ computed: -8000, gap: 0 });
+	});
+});
+
+describe("snapshotGapBackward", () => {
+	it("takes the next day's balance less its movements on an asset", () => {
+		expect(
+			snapshotGapBackward({
+				next: m(100000),
+				nextMovements: m(-2000),
+				recorded: m(50000),
+				classification: "asset",
+			}),
+		).toEqual({ computed: 102000, gap: -52000 });
+	});
+
+	it("adds the next day's movements back on a liability", () => {
+		// A card owing 300,00 after a -30,00 purchase owed 270,00 the day before.
+		expect(
+			snapshotGapBackward({
+				next: m(30000),
+				nextMovements: m(-3000),
+				recorded: m(27000),
+				classification: "liability",
+			}),
+		).toEqual({ computed: 27000, gap: 0 });
 	});
 });

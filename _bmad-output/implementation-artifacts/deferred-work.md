@@ -83,3 +83,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1-connect-a-bank.md`
   summary: The CI `image` job does not check that `docker-compose.yml` passes the Enable Banking variables and `ENCRYPTION_KEY` to the container.
   evidence: The job sets only `BETTER_AUTH_SECRET` and never calls `GET /api/bank-connections/setup`; a typo in one of the three pass-through lines stays green.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-link-bank-accounts.md`
+  summary: The `current_anchor` is dated today even when it comes from `CLBD`, whose `reference_date` is often yesterday, so today's booked transactions would be subtracted once too many going backward.
+  evidence: `balanceSchema` drops `reference_date`; `linkBankAccount` writes `today(deps.timeZone)`. Harmless while only files feed entries; Story 10.3 imports today's transactions and should date the anchor from the balance.
+- source_spec: `_bmad-output/implementation-artifacts/spec-10-2-link-bank-accounts.md`
+  summary: No test proves that a failure in the middle of `linkBankAccounts`'s write transaction leaves nothing written.
+  evidence: Every tested failure happens before the first write; removing the outer transaction keeps all tests green. Only a concurrent request reaches a mid-batch failure today.

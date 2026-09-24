@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { toStoredBalance } from "./stored-balance.ts";
+import { toStoredBalance, toStoredBankBalance } from "./stored-balance.ts";
 
 const m = toMinorUnits;
 
@@ -21,5 +21,17 @@ describe("toStoredBalance", () => {
 	it("gives zero, never a signed zero", () => {
 		expect(Object.is(toStoredBalance({ type: "credit_card" }, m(0)), 0)).toBe(true);
 		expect(Object.is(toStoredBalance({ type: "depository" }, m(0)), 0)).toBe(true);
+	});
+});
+
+describe("toStoredBankBalance", () => {
+	it("keeps an asset's bank balance signed", () => {
+		expect(toStoredBankBalance({ type: "depository" }, m(123456))).toBe(123456);
+		expect(toStoredBankBalance({ type: "depository" }, m(-5000))).toBe(-5000);
+	});
+
+	it("owes a liability's bank balance whichever its sign", () => {
+		expect(toStoredBankBalance({ type: "credit_card" }, m(-30000))).toBe(30000);
+		expect(toStoredBankBalance({ type: "loan" }, m(15000000))).toBe(15000000);
 	});
 });

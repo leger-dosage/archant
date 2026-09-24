@@ -9,6 +9,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
+import { bankConnections } from "@archant/data/schema/bank-connections";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
@@ -42,6 +44,7 @@ import {
 	findTransaction,
 	importOrigins,
 	ingest,
+	linkBankAccount,
 	listSnapshots,
 	listTransactions,
 	matchTransfer,
@@ -5435,5 +5438,338 @@ describe("applyRulePlanToHistory", () => {
 		await expect(transferRows(outflow)).resolves.toMatchObject([
 			{ outflowTransactionId: outflow, inflowTransactionId: inflow, kind: "internal_move" },
 		]);
+	});
+});
+
+/** A bank account on a connection of its own, as the callback stores it. */
+async function newBankAccount() {
+	const connectionId = crypto.randomUUID();
+	const id = crypto.randomUUID();
+	await temp.db.insert(bankConnections).values({
+		id: connectionId,
+		connector: "enable-banking",
+		institutionName: "Banque Test",
+		country: "FR",
+		status: "active",
+		createdAt: 0,
+		updatedAt: 0,
+	});
+	await temp.db.insert(bankAccounts).values({
+		id,
+		bankConnectionId: connectionId,
+		identificationHash: `hash-${id}`,
+		providerUid: `uid-${id}`,
+		name: "Compte courant",
+		currency: "EUR",
+		createdAt: 0,
+		updatedAt: 0,
+	});
+
+	return { id, connectionId };
+}
+
+async function valuationsOf(accountId: string) {
+	return temp.db
+		.select({ kind: entries.valuationKind, date: entries.date, amount: entries.amount })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.kind, "valuation")))
+		.orderBy(entries.date);
+}
+
+const link = (accountId: string, bankAccountId: string, balance: number | null) =>
+	linkBankAccount(
+		deps(),
+		accountId,
+		{ bankAccountId, balance: balance === null ? null : toMinorUnits(balance) },
+		{ origin: "sync" },
+	);
+
+describe("linkBankAccount", () => {
+	it("takes today's bank balance and derives every earlier day backward", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4290) });
+		await add(account.id, { date: "2026-09-15", amount: toMinorUnits(250000) });
+		const entriesBefore = await temp.db
+			.select()
+			.from(entries)
+			.where(eq(entries.accountId, account.id));
+
+		await link(account.id, bank.id, 100000);
+
+		const stored = await temp.db.select().from(accounts).where(eq(accounts.id, account.id)).get();
+		expect(stored?.bankAccountId).toBe(bank.id);
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-21", amount: 100000 },
+		]);
+		// Nothing the account held changes: only the anchor is added.
+		await expect(
+			temp.db.select().from(entries).where(eq(entries.accountId, account.id)),
+		).resolves.toEqual(expect.arrayContaining(entriesBefore));
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(100000);
+		expect(days.get("2026-09-15")).toBe(100000);
+		expect(days.get("2026-09-14")).toBe(-150000);
+		expect(days.get("2026-09-10")).toBe(-150000);
+		expect(days.get("2026-09-09")).toBe(-145710);
+		// The opening amount is ignored: its day is derived like any other.
+		expect(days.get("2026-09-01")).toBe(-145710);
+		expect(days.has("2026-08-31")).toBe(false);
+		expect(days.size).toBe(21);
+	});
+
+	it("resets a reconciled day to its value, and derives the days before it from it", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-1000) });
+		await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-11", balance: toMinorUnits(50000) },
+			{ origin: "user" },
+		);
+
+		await link(account.id, bank.id, 100000);
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(100000);
+		expect(days.get("2026-09-12")).toBe(100000);
+		expect(days.get("2026-09-11")).toBe(50000);
+		expect(days.get("2026-09-05")).toBe(50000);
+		expect(days.get("2026-09-04")).toBe(51000);
+		expect(days.get("2026-09-01")).toBe(51000);
+	});
+
+	it("owes a card's bank balance, whichever sign the bank gives it", async () => {
+		const card = await openChecking({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: toMinorUnits(0),
+		});
+		const bank = await newBankAccount();
+
+		await link(card.id, bank.id, -30000);
+
+		await expect(balanceOn(deps(), card.id, "2026-09-21")).resolves.toEqual({
+			amount: 30000,
+			currency: "EUR",
+		});
+		await expect(valuationsOf(card.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-21",
+			amount: 30000,
+		});
+	});
+
+	it("links without an anchor when the bank gives no balance, and stays forward", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4290) });
+
+		await link(account.id, bank.id, null);
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+		]);
+		const days = await history(account.id);
+		expect(days.get("2026-09-01")).toBe(123456);
+		expect(days.get("2026-09-21")).toBe(119166);
+	});
+
+	it("replaces an earlier bank balance rather than adding a second one", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000);
+		setToday("2026-09-22T10:00:00Z");
+
+		await link(account.id, bank.id, 90000);
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-22", amount: 90000 },
+		]);
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(90000);
+		expect(days.get("2026-09-22")).toBe(90000);
+	});
+
+	it("drops an earlier anchor when relinked without a balance, and goes forward", async () => {
+		const account = await openChecking();
+		const first = await newBankAccount();
+		await link(account.id, first.id, 100000);
+		// The connection goes: the link clears, the anchor stays behind.
+		await temp.db.delete(bankConnections).where(eq(bankConnections.id, first.connectionId));
+		const second = await newBankAccount();
+
+		await link(account.id, second.id, null);
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4290) });
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+		]);
+		const days = await history(account.id);
+		expect(days.get("2026-09-01")).toBe(123456);
+		expect(days.get("2026-09-21")).toBe(119166);
+	});
+
+	it("refuses an unknown account and writes nothing", async () => {
+		const bank = await newBankAccount();
+
+		await expect(link(crypto.randomUUID(), bank.id, 100000)).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+
+	it("refuses a bank account that already feeds another account", async () => {
+		const first = await openChecking();
+		const second = await openChecking();
+		const bank = await newBankAccount();
+		await link(first.id, bank.id, 100000);
+
+		await expect(link(second.id, bank.id, 100000)).rejects.toThrow();
+		await expect(valuationsOf(second.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+		]);
+	});
+});
+
+describe("a bank-linked account", () => {
+	async function linked(balance = 100000) {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, balance);
+
+		return { account, bank };
+	}
+
+	it("recomputes every earlier day when a transaction is added, today staying the bank's", async () => {
+		const { account } = await linked();
+
+		await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-2000) });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(100000);
+		expect(days.get("2026-09-05")).toBe(100000);
+		expect(days.get("2026-09-04")).toBe(102000);
+		expect(days.get("2026-09-01")).toBe(102000);
+	});
+
+	it("recomputes every earlier day when a transaction is deleted", async () => {
+		const { account } = await linked();
+		const id = await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-2000) });
+
+		await deleteTransaction(deps(), id, { origin: "user" });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-04")).toBe(100000);
+		expect(days.get("2026-09-01")).toBe(100000);
+	});
+
+	it("goes forward from the bank balance for a day after it", async () => {
+		const { account } = await linked();
+
+		await add(account.id, { date: "2026-09-25", amount: toMinorUnits(-500) });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(100000);
+		expect(days.get("2026-09-24")).toBe(100000);
+		expect(days.get("2026-09-25")).toBe(99500);
+		expect(days.get("2026-09-20")).toBe(100000);
+	});
+
+	it("follows an earlier opening date an import moves it to", async () => {
+		const { account } = await linked();
+
+		await ingest(
+			deps(),
+			account.id,
+			{
+				transactions: [line({ date: "2026-08-20", amount: toMinorUnits(-1000) })],
+				balance: null,
+				rejected: [],
+			},
+			{ manual: true },
+			{ origin: "user", moveOpeningDate: "2026-08-19" },
+		);
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-21")).toBe(100000);
+		expect(days.get("2026-08-20")).toBe(100000);
+		expect(days.get("2026-08-19")).toBe(101000);
+		expect(days.has("2026-08-18")).toBe(false);
+	});
+
+	it("reads a snapshot's gap against the day after it, derived backward from the bank", async () => {
+		const { account } = await linked();
+		await add(account.id, { date: "2026-09-12", amount: toMinorUnits(-2000) });
+		await add(account.id, { date: "2026-09-11", amount: toMinorUnits(-700) });
+		await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-11", balance: toMinorUnits(50000) },
+			{ origin: "user" },
+		);
+
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+
+		// The 12th ends on the bank's 1 000,00 and spent 20,00: the 11th would
+		// have ended on 1 020,00 without the snapshot.
+		expect(items).toMatchObject([
+			{ date: "2026-09-11", balance: 50000, computed: 102000, gap: -52000 },
+		]);
+		await expect(findSnapshot(deps(), items[0]?.id ?? "")).resolves.toMatchObject({
+			computed: 102000,
+			gap: -52000,
+		});
+	});
+
+	it("reads an earlier snapshot against the day after it, which the later one set", async () => {
+		const { account } = await linked();
+		await add(account.id, { date: "2026-09-11", amount: toMinorUnits(-700) });
+		const snap = (date: string, balance: number) =>
+			recordSnapshot(
+				deps(),
+				account.id,
+				{ date, balance: toMinorUnits(balance) },
+				{ origin: "user" },
+			);
+		await snap("2026-09-11", 50000);
+		await snap("2026-09-05", 60000);
+
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+
+		// Nothing moves on the 6th, which ends on 500,00 + 7,00 carried back from the 11th.
+		expect(items.find((item) => item.date === "2026-09-05")).toMatchObject({
+			computed: 50700,
+			gap: 9300,
+		});
+	});
+
+	it("reads a snapshot on the bank balance's day forward, as any other account", async () => {
+		const { account } = await linked();
+		await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-21", balance: toMinorUnits(90000) },
+			{ origin: "user" },
+		);
+
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+
+		expect(items).toMatchObject([{ date: "2026-09-21", computed: 100000, gap: -10000 }]);
+	});
+
+	it("goes forward again once its connection is gone, the anchor left aside", async () => {
+		const { account, bank } = await linked();
+		await temp.db.delete(bankConnections).where(eq(bankConnections.id, bank.connectionId));
+
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4290) });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-09")).toBe(100000);
+		expect(days.get("2026-09-10")).toBe(95710);
+		expect(days.get("2026-09-21")).toBe(95710);
 	});
 });
