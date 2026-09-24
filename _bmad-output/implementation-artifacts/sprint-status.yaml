@@ -29,77 +29,77 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-24-2026 20:24
+last_updated: 09-24-2026 21:09
 project: archant
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: in-progress
-  1-1-create-an-account-and-see-it-listed: review
-  1-2-record-transactions-by-hand: review
-  1-3-daily-balance-history: review
-  1-4-balance-snapshots: review
-  1-7-end-to-end-tests-for-the-interface: review
-  1-5-list-and-filter-transactions-across-accounts: review
-  1-6-manage-accounts: review
-  1-8-command-palette-and-keyboard-shortcuts: review
+  epic-1: done
+  1-1-create-an-account-and-see-it-listed: done
+  1-2-record-transactions-by-hand: done
+  1-3-daily-balance-history: done
+  1-4-balance-snapshots: done
+  1-7-end-to-end-tests-for-the-interface: done
+  1-5-list-and-filter-transactions-across-accounts: done
+  1-6-manage-accounts: done
+  1-8-command-palette-and-keyboard-shortcuts: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
-  2-1-import-an-ofx-file-with-preview: review
-  2-2-use-the-ofx-ledger-balance: review
-  2-3-import-a-csv-file-with-a-saved-mapping: review
-  2-4-import-a-qif-file: review
-  2-5-import-history-and-revert: review
+  epic-2: done
+  2-1-import-an-ofx-file-with-preview: done
+  2-2-use-the-ofx-ledger-balance: done
+  2-3-import-a-csv-file-with-a-saved-mapping: done
+  2-4-import-a-qif-file: done
+  2-5-import-history-and-revert: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
-  3-1-first-launch-setup-and-sign-in: review
-  3-2-sign-out-change-password-reset-from-the-server: review
-  3-3-run-archant-from-one-container: review
+  epic-3: done
+  3-1-first-launch-setup-and-sign-in: done
+  3-2-sign-out-change-password-reset-from-the-server: done
+  3-3-run-archant-from-one-container: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
-  4-1-default-categories-and-category-management: review
-  4-2-categorise-transactions-and-filter-by-category: review
-  4-3-merchants: review
-  4-4-tags: review
-  4-5-bulk-edit: review
+  epic-4: done
+  4-1-default-categories-and-category-management: done
+  4-2-categorise-transactions-and-filter-by-category: done
+  4-3-merchants: done
+  4-4-tags: done
+  4-5-bulk-edit: done
   epic-4-retrospective: optional
 
-  epic-5: in-progress
-  5-1-mark-two-transactions-as-a-transfer: review
-  5-2-automatic-transfer-matching: review
+  epic-5: done
+  5-1-mark-two-transactions-as-a-transfer: done
+  5-2-automatic-transfer-matching: done
   epic-5-retrospective: optional
 
-  epic-6: in-progress
-  6-1-net-worth-and-its-history: review
-  6-2-monthly-income-and-expenses-by-category: review
+  epic-6: done
+  6-1-net-worth-and-its-history: done
+  6-2-monthly-income-and-expenses-by-category: done
   epic-6-retrospective: optional
 
-  epic-7: in-progress
-  7-1-loan-accounts: review
-  7-2-investment-accounts-pea: review
-  7-3-property-and-vehicle-accounts: review
+  epic-7: done
+  7-1-loan-accounts: done
+  7-2-investment-accounts-pea: done
+  7-3-property-and-vehicle-accounts: done
   epic-7-retrospective: optional
 
-  epic-8: in-progress
-  8-1-create-a-categorisation-rule: review
-  8-2-more-rule-conditions-and-actions: review
-  8-3-apply-rules-to-existing-transactions: review
+  epic-8: done
+  8-1-create-a-categorisation-rule: done
+  8-2-more-rule-conditions-and-actions: done
+  8-3-apply-rules-to-existing-transactions: done
   epic-8-retrospective: optional
 
-  epic-9: in-progress
-  9-1-detect-recurring-transactions: review
-  9-2-recurring-transactions-page: review
+  epic-9: done
+  9-1-detect-recurring-transactions: done
+  9-2-recurring-transactions-page: done
   epic-9-retrospective: optional
 
-  epic-10: in-progress
-  10-1-connect-a-bank: review
-  10-2-link-bank-accounts: review
-  10-3-sync-transactions-and-balances: review
-  10-4-pending-transactions: review
-  10-5-consent-renewal-and-disconnection: review
-  10-6-merge-or-dismiss-a-possible-duplicate: review
+  epic-10: done
+  10-1-connect-a-bank: done
+  10-2-link-bank-accounts: done
+  10-3-sync-transactions-and-balances: done
+  10-4-pending-transactions: done
+  10-5-consent-renewal-and-disconnection: done
+  10-6-merge-or-dismiss-a-possible-duplicate: done
   epic-10-retrospective: optional

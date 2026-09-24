@@ -2,12 +2,13 @@
 
 Long-lived project knowledge. Planning and implementation artifacts live in `_bmad-output/`, not here.
 
-| Document                                   | What it covers                                             |
-| ------------------------------------------ | ---------------------------------------------------------- |
-| [project-overview.md](project-overview.md) | What Archant is, which Sure features are in scope, and why |
-| [tech-stack.md](tech-stack.md)             | Every dependency, its role, and its current version        |
-| [deployment.md](deployment.md)             | Docker, Turso, the other targets, and the scheduled sync   |
-| [adr/](adr/)                               | Architecture decision records                              |
+| Document                                   | What it covers                                                                           |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [project-overview.md](project-overview.md) | What Archant is, which Sure features are in scope, and why                               |
+| [tech-stack.md](tech-stack.md)             | Every dependency, its role, and its current version                                      |
+| [sure-parity.md](sure-parity.md)           | Each Sure feature area, what Archant does instead, and why                               |
+| [deployment.md](deployment.md)             | Docker, upgrades, backups, Enable Banking, scheduled sync, password reset, other targets |
+| [adr/](adr/)                               | Architecture decision records                                                            |
 
 ## Decision records
 

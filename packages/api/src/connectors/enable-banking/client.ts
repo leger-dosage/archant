@@ -39,15 +39,14 @@ export type EnableBankingConfig = {
 	apiUrl: string;
 };
 
-/** Sure asks for 90 days at most, even from a bank that allows 180. */
+/** 90 days at most, even from a bank that allows 180; Sure asks for 180 by default. */
 const MAX_CONSENT_SECONDS = 90 * 86_400;
 
 // A bank's listing can be slow; a request stuck longer is not coming back.
 const TIMEOUT_MS = 30_000;
 
 /**
- * When the consent asked for ends: the bank's own maximum, capped at 90
- * days, as Sure does.
+ * When the consent asked for ends: the bank's own maximum, capped at 90 days.
  */
 export function consentValidUntil(now: number, maximumConsentValidity: number | null): Date {
 	const seconds = Math.min(maximumConsentValidity ?? MAX_CONSENT_SECONDS, MAX_CONSENT_SECONDS);

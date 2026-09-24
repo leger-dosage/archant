@@ -4,8 +4,8 @@ import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core
 export const TAG_NAME_MAX_LENGTH = 60;
 
 /**
- * A mark that follows a trip or a project across categories. No colour, as in
- * Sure the tag's name is all a row shows.
+ * A mark that follows a trip or a project across categories. No colour, where
+ * Sure gives each tag one: see docs/sure-parity.md.
  */
 export const tags = sqliteTable(
 	"tags",

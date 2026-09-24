@@ -480,10 +480,10 @@ describe("amountOf", () => {
 	});
 });
 
-describe("qifDateOrder", () => {
-	const order = (...dates: string[]) =>
-		qifDateOrder(utf8(bank(...dates.flatMap((date) => [`D${date}`, "T-1,00", "PA", "^"]))));
+const order = (...dates: string[]) =>
+	qifDateOrder(utf8(bank(...dates.flatMap((date) => [`D${date}`, "T-1,00", "PA", "^"]))));
 
+describe("qifDateOrder", () => {
 	it("picks day-first and calls it ambiguous when every date reads both ways", () => {
 		expect(order("01/02/2026", "03/04/2026")).toEqual({ dateOrder: "day-first", ambiguous: true });
 	});
