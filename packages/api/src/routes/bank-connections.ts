@@ -22,6 +22,7 @@ import {
 	requireBankConnector,
 	startConnection,
 } from "../services/bank-connections.ts";
+import { syncConnection } from "../services/sync.ts";
 
 export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 	return (
@@ -73,6 +74,15 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 					}
 				}),
 				async (c) => c.json({ data: await listBankAccounts(deps, c.req.valid("param").id) }, 200),
+			)
+			.post(
+				"/:id/sync",
+				zValidator("param", connectionParamSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) => c.json({ data: await syncConnection(deps, c.req.valid("param").id) }, 200),
 			)
 			.post(
 				"/:id/accounts",

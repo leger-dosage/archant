@@ -2,7 +2,8 @@
 title: 'Story 10.3: Sync transactions and balances'
 type: 'feature'
 created: '2026-09-24'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '9779f20e08cb4410136369c81b2c661f59785706'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -71,14 +72,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/data/migrate.spec.ts`, schema files, `drizzle/0028_*` -- failing tests for the widened source check, `connection_id` set null on connection delete, and the new columns; then the migration.
-- [ ] `packages/api/src/connectors/enable-banking/*.spec.ts`, `client.ts`, `schemas.ts`, `fixtures/*`, `bank-connector.ts` -- mapping, label fallbacks, statuses, pages, repeated key, `date_from` filter, balance date; 100 % branches.
-- [ ] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- connection source keys, anchor rewrite, anchor date, file convergence and tie through a bank line, sheet source.
-- [ ] `packages/api/src/services/sync.spec.ts`, `sync.ts` -- the matrix, window per bank account, lease expiry, recurring failure swallowed, log capture.
-- [ ] `packages/api/src/env.ts`, `routes/sync.ts`, `routes/bank-connections.ts`, `app.ts`, `app.spec.ts`, `lib/errors.ts` -- the two routes, 401 without reading, 409s, 503.
-- [ ] `packages/web/e2e/fake-enable-banking.ts`, web routes, hook, sheet, `fr.json` -- status, button, sync after linking.
-- [ ] `packages/web/e2e/bank-connections.spec.ts` -- sync shows the bank's lines and the last sync time; a failed account shows the error; the sheet names « Enable Banking ».
-- [ ] `.env.example`, `docs/deployment.md`, `AGENTS.md` if a convention changed -- the secret and a cron example.
+- [x] `packages/data/migrate.spec.ts`, schema files, `drizzle/0028_*` -- failing tests for the widened source check, `connection_id` set null on connection delete, and the new columns; then the migration.
+- [x] `packages/api/src/connectors/enable-banking/*.spec.ts`, `client.ts`, `schemas.ts`, `fixtures/*`, `bank-connector.ts` -- mapping, label fallbacks, statuses, pages, repeated key, `date_from` filter, balance date; 100 % branches.
+- [x] `packages/api/src/services/ledger.spec.ts`, `ledger.ts` -- connection source keys, anchor rewrite, anchor date, file convergence and tie through a bank line, sheet source.
+- [x] `packages/api/src/services/sync.spec.ts`, `sync.ts` -- the matrix, window per bank account, lease expiry, recurring failure swallowed, log capture.
+- [x] `packages/api/src/env.ts`, `routes/sync.ts`, `routes/bank-connections.ts`, `app.ts`, `app.spec.ts`, `lib/errors.ts` -- the two routes, 401 without reading, 409s, 503.
+- [x] `packages/web/e2e/fake-enable-banking.ts`, web routes, hook, sheet, `fr.json` -- status, button, sync after linking.
+- [x] `packages/web/e2e/bank-connections.spec.ts` -- sync shows the bank's lines and the last sync time; a failed account shows the error; the sheet names « Enable Banking ».
+- [x] `.env.example`, `docs/deployment.md`, `AGENTS.md` if a convention changed -- the secret and a cron example.
 
 **Acceptance Criteria:**
 - Given linked accounts, when the cron route or the button runs, then transactions since the window start land once, the account's balance today equals the bank balance, and a second run creates nothing.
@@ -86,9 +87,46 @@ context:
 
 ## Implementation Notes
 
+- Enable Banking prints ISO dates (`2026-09-12`), which `providerDate` refuses: `providerIsoDate` in `domain/provider-date.ts` reads them.
+- `/api/sync` is excluded from `csrf()` in `app.ts`: a cron's bodiless `curl -X POST` has no content type, which `csrf()` takes for a cross-site form. A foreign page cannot attach the bearer header, so the exclusion opens nothing.
+- A line without `credit_debit_indicator` is rejected `INVALID_AMOUNT` rather than read as a credit as Sure does, so a payment is never booked as income.
+- drizzle-kit generated `0028` copying a `connection_id` the old `entry_keys` never had; the `INSERT` is fixed by hand, with a comment and a test that keys survive the rebuild.
+- `importOrigins` lets a bank key win over a file key: an entry a sync paired with is fed by the bank from then on.
+- A button sync right after « Valider » that meets `SYNC_TOO_RECENT` or `SYNC_IN_PROGRESS` stays silent; other errors toast.
+- Review patches: the lease is released only by the run that holds it; a connection with no linked active account keeps its sync state; `entry_keys_connection` index; relinking resets `bank_accounts.last_synced_at`; the sync hook refreshes recurring; `Bearer` is matched case-insensitively.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| Finding | Verdict | Evidence / route |
+|---|---|---|
+| Lease released unconditionally in `finally` (blind, edge) | medium | A run past `LEASE_MS` clears the lease a second run took. Patch: release where `sync_started_at` is its own. |
+| One-hour gate reads `last_synced_at`, which a failing account never advances (blind, edge) | low | The cron runs daily and a button press is attended, so no unattended quota is at risk; a retry after a failure is what the user wants. Rejected. |
+| A connection with no linked account gets `last_synced_at` stamped (edge) | medium | A cron before linking makes the sync after « Valider » answer `SYNC_TOO_RECENT` silently for an hour. Patch. |
+| Expired consent answers 200 and « Synchronisation terminée » on the button (blind, edge, verification) | low | Consent lasts 90 days and the « consent expired » status is Story 10.5's per intent. Deferred. |
+| `syncAll` records no `last_error` when `runSync` throws (blind) | low | Only a database failure reaches it; per-account errors are recorded. Rejected. |
+| Rejected lines are counted, not surfaced (blind) | low | Unreadable provider lines are rare; logged by count as file imports are. Rejected. |
+| No index on `entry_keys.connection_id` (blind) | low | `ON DELETE SET NULL` scans the table; one-line index on an unreleased migration. Patch. |
+| `bank_accounts.last_synced_at` survives a relink (blind, edge) | low | Relinking after deleting the account gives 7 days instead of 90. One-line reset. Patch. |
+| Sync hook does not invalidate recurring (blind) | low | `runSync` runs `detectRecurring`; stale page until reload. Patch. |
+| French fallback labels stored as data (blind) | false | The intent names « Virement entrant » / « Virement sortant »; default category names are French data too (AD-12). |
+| `Bearer` scheme matched case-sensitively (blind, edge) | low | RFC 7235 makes it case-insensitive; one regex. Patch. |
+| `syncTime` formatter duplicated in two routes (blind) | low | Two identical formatters, no divergence in output format; cosmetic. Rejected. |
+| Cron example lacks `--max-time` (blind) | low | Documentation nicety. Rejected. |
+| `importOrigins` name now covers banks (blind) | low | Cosmetic. Rejected. |
+| Spec `in-review` vs sprint `in-progress` (blind) | false | The sprint status syncs when the review ends. |
+| `ingest` does not check the account belongs to the connection (blind) | low | Only `runSync` passes a connection, with its own linked accounts. Rejected. |
+| Truncated pagination drops lines silently (edge) | low | Same caps as Sure's importer; 100 pages is far beyond a household's 90 days. Rejected. |
+| Anchor kept silently on a currency mismatch (edge) | low | Same rule as 10.2's link, by intent. Rejected. |
+| Malformed `booking_date` does not fall back to `value_date` (edge) | low | Unlikely from a bank; the line is rejected, not misdated. Rejected. |
+| A deleted synced transaction returns on the next sync within the overlap (edge) | medium | Deleting removes its keys; the 7-day overlap reads it again. Needs tombstones, a design change. Deferred. |
+| Lines before a linked account's opening date rejected every run (edge) | low | Same rule as every source (AD-4 step 1). Rejected. |
+| Connection deleted between select and lease answers `SYNC_TOO_RECENT` (edge) | low | A race on a pending-only delete. Rejected. |
+| `bank_accounts.last_synced_at` written outside the ingest transaction (edge) | low | A failure there re-reads the window next time, harmless with keys. Rejected. |
+| Revert of a file keeping a sync-paired entry is untested (verification) | medium | The `isNull(import_id)` guard in `unclaimedBeyond` is the only protection. Patch: test. |
+| `SYNC_SECRET` wiring through `index.ts` untested (verification) | medium | Removing it keeps every test green. Patch: `index.spec.ts`. |
+| Button toasts untested (verification) | low | Presentational wiring; API paths are covered. Deferred. |
 
 ## Design Notes
 

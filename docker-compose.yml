@@ -28,6 +28,9 @@ services:
       ENABLE_BANKING_APPLICATION_ID: ${ENABLE_BANKING_APPLICATION_ID:-}
       ENABLE_BANKING_PRIVATE_KEY: ${ENABLE_BANKING_PRIVATE_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # The bearer token of POST /api/sync. Empty, the scheduled sync is
+      # refused and only the connection page's button syncs.
+      SYNC_SECRET: ${SYNC_SECRET:-}
     volumes:
       # The whole database is this volume. Back it up, not the image.
       - archant-data:/data

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-24-2026 15:30
+last_updated: 09-24-2026 16:23
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -98,7 +98,7 @@ development_status:
   epic-10: in-progress
   10-1-connect-a-bank: review
   10-2-link-bank-accounts: review
-  10-3-sync-transactions-and-balances: ready-for-dev
+  10-3-sync-transactions-and-balances: review
   10-4-pending-transactions: backlog
   10-5-consent-renewal-and-disconnection: backlog
   10-6-merge-or-dismiss-a-possible-duplicate: backlog

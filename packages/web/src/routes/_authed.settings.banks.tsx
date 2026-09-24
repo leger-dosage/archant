@@ -54,6 +54,14 @@ const consentDate = new Intl.DateTimeFormat("fr-FR", {
 	year: "numeric",
 });
 
+const syncTime = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	year: "numeric",
+	hour: "2-digit",
+	minute: "2-digit",
+});
+
 /** Case and accents ignored, as a user types a bank's name. */
 const folded = (text: string) =>
 	text
@@ -267,6 +275,13 @@ function Connections() {
 													})}
 												</>
 											)}
+										</span>
+										<span className="text-sm text-muted-foreground">
+											{connection.lastSyncedAt === null
+												? t("banks.sync.never")
+												: t("banks.sync.last", {
+														when: syncTime.format(new Date(connection.lastSyncedAt)),
+													})}
 										</span>
 									</span>
 									<ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden />

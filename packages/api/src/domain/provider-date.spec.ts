@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { providerDate } from "./provider-date.ts";
+import { providerDate, providerIsoDate } from "./provider-date.ts";
 
 describe("providerDate", () => {
 	it("reads the literal date part, whatever time and zone follow", () => {
@@ -27,5 +27,19 @@ describe("providerDate", () => {
 	it("refuses a year before 1900, as account dates do", () => {
 		expect(providerDate("18991231")).toBeNull();
 		expect(providerDate("19000101")).toBe("1900-01-01");
+	});
+});
+
+describe("providerIsoDate", () => {
+	it("reads the date part of an ISO date or date-time, never through a zone", () => {
+		expect(providerIsoDate("2026-09-12")).toBe("2026-09-12");
+		expect(providerIsoDate("2026-09-12T23:30:00+02:00")).toBe("2026-09-12");
+	});
+
+	it("refuses anything else, and a day the month lacks", () => {
+		expect(providerIsoDate("20260912")).toBeNull();
+		expect(providerIsoDate("2026-09-123")).toBeNull();
+		expect(providerIsoDate("12/09/2026")).toBeNull();
+		expect(providerIsoDate("2026-02-30")).toBeNull();
 	});
 });

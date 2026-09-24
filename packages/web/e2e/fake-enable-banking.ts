@@ -5,14 +5,24 @@ import { randomUUID, verify } from "node:crypto";
 import { createServer } from "node:http";
 import { z } from "zod";
 
+import { TIME_ZONE } from "./settings.ts";
+
 /**
  * A stand-in for Enable Banking on loopback, so the suite never reaches the
  * network (AD-16). It serves what the API calls, `/aspsps`, `/auth`,
  * `/sessions` and `/accounts/{uid}/balances`, plus the bank's consent page, which approves at once and
- * sends the browser back to `redirect_url` with a `code` and the `state`.
+ * sends the browser back to `redirect_url` with a `code` and the `state`,
+ * and `/accounts/{uid}/transactions`, two pages of lines dated a few days
+ * back.
  * It checks each request's RS256 token against the public key, as the real
  * service would refuse an unsigned one.
  */
+
+/**
+ * The bank whose card fails to list its transactions: a connection to it
+ * syncs its current account and records the card's error.
+ */
+export const FAILING_BANK = "Néobanque Test";
 
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = ["Banque Démo", "Caisse Régionale Exemple", "Néobanque Test"] as const;
@@ -31,10 +41,90 @@ export const FAKE_ACCOUNTS = {
 	card: { name: "Carte Démo", balance: "-300.00" },
 } as const;
 
+/** The booked lines every account lists, as their labels show; plus a pending one and an informational one, which never show. */
+export const FAKE_LINES = {
+	groceries: { label: "Supermarché Démo", amount: "-42.90", daysAgo: 3 },
+	salary: { label: "Salaire Démo", amount: "2500.00", daysAgo: 10 },
+	subscription: { label: "ABONNEMENT DEMO", amount: "-9.99", daysAgo: 2 },
+	pending: { label: "Boulangerie en attente" },
+} as const;
+
+/** A day `days` before today in the suite's zone, as the bank prints it. */
+function daysAgo(days: number): string {
+	const today = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(new Date());
+
+	return new Date(Date.parse(`${today}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** A signed amount as Enable Banking prints it: unsigned, the direction apart. */
+const unsigned = (value: string) => ({ currency: "EUR", amount: value.replace("-", "") });
+
+const direction = (value: string) => (value.startsWith("-") ? "DBIT" : "CRDT");
+
+/** One page of `uid`'s statement: the first without a key, the second on `page-2`. */
+function transactionsPage(uid: string, continuationKey: string | null) {
+	const { groceries, salary, subscription, pending } = FAKE_LINES;
+
+	if (continuationKey === "page-2") {
+		return {
+			transactions: [
+				{
+					entry_reference: `${uid}-3`,
+					transaction_amount: unsigned(subscription.amount),
+					credit_debit_indicator: direction(subscription.amount),
+					status: "BOOK",
+					booking_date: daysAgo(subscription.daysAgo),
+					remittance_information: [subscription.label],
+				},
+				{
+					entry_reference: `${uid}-4`,
+					transaction_amount: unsigned("-1.00"),
+					credit_debit_indicator: "DBIT",
+					status: "INFO",
+					booking_date: daysAgo(1),
+					remittance_information: ["INFORMATION"],
+				},
+			],
+			continuation_key: null,
+		};
+	}
+
+	return {
+		transactions: [
+			{
+				entry_reference: `${uid}-1`,
+				transaction_id: randomUUID(),
+				transaction_amount: unsigned(groceries.amount),
+				creditor: { name: groceries.label },
+				credit_debit_indicator: direction(groceries.amount),
+				status: "BOOK",
+				booking_date: daysAgo(groceries.daysAgo),
+				remittance_information: ["CB SUPERMARCHE DEMO"],
+			},
+			{
+				entry_reference: `${uid}-2`,
+				transaction_amount: unsigned(salary.amount),
+				debtor: { name: salary.label },
+				credit_debit_indicator: direction(salary.amount),
+				status: "BOOK",
+				value_date: daysAgo(salary.daysAgo),
+			},
+			{
+				transaction_amount: unsigned("-3.20"),
+				creditor: { name: pending.label },
+				credit_debit_indicator: "DBIT",
+				status: "PDNG",
+				transaction_date: daysAgo(0),
+			},
+		],
+		continuation_key: "page-2",
+	};
+}
+
 /** 180 days, above the 90-day cap, so the API must ask for 90. */
 const MAXIMUM_CONSENT_SECONDS = 180 * 86_400;
 
-type Pending = { state: string; redirectUrl: string; validUntil: string };
+type Pending = { state: string; redirectUrl: string; validUntil: string; bank: string };
 
 function base64url(text: string): Buffer {
 	return Buffer.from(text, "base64url");
@@ -94,6 +184,8 @@ export async function startFakeEnableBanking(options: {
 	const codes = new Map<string, Pending>();
 	// uid → the balance the bank reports for it.
 	const balances = new Map<string, string>();
+	// The uids whose transactions answer 500.
+	const failing = new Set<string>();
 	let origin = "";
 
 	const server = createServer((request, response) => {
@@ -150,6 +242,7 @@ export async function startFakeEnableBanking(options: {
 			if (request.method === "POST" && url.pathname === "/auth") {
 				const body = await readJson(request);
 				const access = body["access"];
+				const aspsp = body["aspsp"];
 				const authorizationId = randomUUID();
 				pending.set(authorizationId, {
 					state: String(body["state"]),
@@ -157,6 +250,10 @@ export async function startFakeEnableBanking(options: {
 					validUntil:
 						typeof access === "object" && access !== null && "valid_until" in access
 							? String(access.valid_until)
+							: "",
+					bank:
+						typeof aspsp === "object" && aspsp !== null && "name" in aspsp
+							? String(aspsp.name)
 							: "",
 				});
 
@@ -181,6 +278,11 @@ export async function startFakeEnableBanking(options: {
 				const cardUid = randomUUID();
 				balances.set(checkingUid, FAKE_ACCOUNTS.checking.balance);
 				balances.set(cardUid, FAKE_ACCOUNTS.card.balance);
+
+				if (attempt.bank === FAILING_BANK) {
+					failing.add(cardUid);
+				}
+
 				json(response, 200, {
 					session_id: randomUUID(),
 					accounts: [
@@ -222,6 +324,25 @@ export async function startFakeEnableBanking(options: {
 						{ balance_amount: { currency: "EUR", amount }, balance_type: "ITBD" },
 					],
 				});
+				return;
+			}
+
+			const transactionsPath = /^\/accounts\/([^/]+)\/transactions$/u.exec(url.pathname);
+
+			if (request.method === "GET" && transactionsPath !== null) {
+				const uid = decodeURIComponent(transactionsPath[1] ?? "");
+
+				if (!balances.has(uid)) {
+					json(response, 404, { code: 404, message: "Unknown account", error: "NOT_FOUND" });
+					return;
+				}
+
+				if (failing.has(uid)) {
+					json(response, 500, { code: 500, message: "Bank down", error: "ASPSP_ERROR" });
+					return;
+				}
+
+				json(response, 200, transactionsPage(uid, url.searchParams.get("continuation_key")));
 				return;
 			}
 

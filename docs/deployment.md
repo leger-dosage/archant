@@ -33,6 +33,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id. See [Connecting a bank](#connecting-a-bank).                                                                        |
 | `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM.                                                                                                  |
 | `ENCRYPTION_KEY`                | no       | Encrypts bank session ids at rest, base64 of 32 bytes.                                                                                             |
+| `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
 
 The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/web/dist`, and port 8787. The server runs as the unprivileged `node` user.
 
@@ -101,9 +102,22 @@ Archant asks each bank for 90 days of consent, as Sure does, or less when the ba
 
 ## Scheduled synchronisation
 
-`POST /api/sync` is protected by a shared secret and is the only entry point for synchronisation. How it gets called is a per-platform detail: a system cron or a timer in the container, a scheduled GitHub Action calling the route, or whatever the host provides.
+`POST /api/sync` syncs every active bank connection, with `Authorization: Bearer <SYNC_SECRET>`. How it gets called is a per-platform detail: a system cron or a timer on the host, a scheduled GitHub Action calling the route, or whatever the host provides. Without the header, with a wrong secret, or while `SYNC_SECRET` is unset, it answers `401` and reads nothing. Each connection page also has a « Synchroniser » button, which works without the secret.
 
-Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day.
+```bash
+# crontab -e on the host, every morning at 6:
+0 6 * * * curl --fail --silent --show-error -X POST -H "Authorization: Bearer $SYNC_SECRET" https://archant.example.org/api/sync
+```
+
+The answer names each connection and what happened to it:
+
+```json
+{ "data": { "connections": [{ "id": "…", "result": "synced" }] } }
+```
+
+`synced` means every linked account synced. `failed` means at least one did not: the others are committed, the connection page shows the error, and the next run retries the failed account from where it last succeeded. `skipped` means a sync ran less than an hour ago, one is still running, or the consent has ended.
+
+Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads three months back; each later one reads from seven days before its last success, so a line the bank books late still arrives, once.
 
 ## A lost password
 

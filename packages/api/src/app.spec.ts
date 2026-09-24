@@ -6735,3 +6735,171 @@ describe("/api/bank-connections", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("BANK_PROVIDER_ERROR");
 	});
 });
+
+/** The scheduled sync, as a cron's `curl -X POST` sends it: no body, no origin. */
+const cron = (app: ReturnType<typeof buildTestApp>, authorization?: string) =>
+	app.request("/api/sync", {
+		method: "POST",
+		headers: authorization === undefined ? {} : { authorization },
+	});
+
+describe("bank sync routes", () => {
+	const SECRET = "a-sync-secret-of-at-least-32-characters";
+
+	async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configuredBank()) {
+		own = await freshDatabase();
+		logLines = [];
+		const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
+
+		return { db: own.db, app: buildTestApp(own.db, logger, undefined, {}, bank) };
+	}
+
+	async function linkedConnection(app: ReturnType<typeof buildTestApp>) {
+		const requests = mockProvider();
+		const client = testClient(withSession(app, template.cookie)).api["bank-connections"];
+		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		const connection = (await (await client.callback.$post({ json: { code: "c", state } })).json())
+			.data;
+		const rows = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data;
+		const checking = rows.find((row) => row.name === "Compte courant");
+		const linked = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: {
+				links: [
+					{
+						bankAccountId: checking?.id ?? "",
+						action: "create",
+						type: "depository",
+						subtype: "checking",
+					},
+				],
+			},
+		});
+		const account = (await linked.json()).data.find((row) => row.id === checking?.id)?.account;
+
+		return { client, connection, accountId: account?.id ?? "", requests };
+	}
+
+	it("refuses a missing, wrong or unset secret before reading anything", async () => {
+		const { db, app } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
+		const select = vi.spyOn(db, "select");
+
+		const responses = [
+			await cron(app),
+			await cron(app, `Bearer ${SECRET}x`),
+			await cron(app, SECRET),
+			await cron(app, "Bearer "),
+			await cron(app, `Basic ${SECRET}`),
+		];
+		const unset = await cron((await syncApp()).app, `Bearer ${SECRET}`);
+
+		expect([...responses, unset].map((response) => response.status)).toEqual([
+			401, 401, 401, 401, 401, 401,
+		]);
+		expect(errorBody.parse(await unset.json()).error.code).toBe("UNAUTHORIZED");
+		expect(select).not.toHaveBeenCalled();
+	});
+
+	it("syncs every connection for the cron, then skips one synced within the hour", async () => {
+		const { app } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
+		const { connection, accountId } = await linkedConnection(app);
+
+		const first = await cron(app, `Bearer ${SECRET}`);
+
+		expect(first.status).toBe(200);
+		expect(await first.json()).toEqual({
+			data: { connections: [{ id: connection.id, result: "synced" }] },
+		});
+		const synced = await testClient(withSession(app, template.cookie)).api.transactions.$get({
+			query: { account: accountId },
+		});
+		expect((await synced.json()).data.items.map((item) => item.source)).toContainEqual({
+			kind: "bank",
+			connector: "enable-banking",
+		});
+
+		// The scheme is case-insensitive (RFC 7235).
+		const second = await cron(app, `bearer ${SECRET}`);
+		expect(second.status).toBe(200);
+		expect(await second.json()).toEqual({
+			data: { connections: [{ id: connection.id, result: "skipped" }] },
+		});
+	});
+
+	it("answers 503 to a right secret while the bank is unconfigured", async () => {
+		const { app } = await syncApp({
+			...configuredBank(),
+			bankConnector: null,
+			encryptionKey: null,
+			bankSetup: ["ENCRYPTION_KEY"],
+			syncSecret: SECRET,
+		});
+
+		const response = await cron(app, `Bearer ${SECRET}`);
+
+		expect(response.status).toBe(503);
+		expect(errorBody.parse(await response.json()).error.code).toBe("BANK_CONNECTOR_UNAVAILABLE");
+	});
+
+	it("syncs a connection from its button, then refuses a second run within the hour", async () => {
+		const { app } = await syncApp();
+		const { client, connection } = await linkedConnection(app);
+
+		const first = await client[":id"].sync.$post({ param: { id: connection.id } });
+
+		expect(first.status).toBe(200);
+		expect(await first.json()).toEqual({
+			data: { lastSyncedAt: Date.now(), lastError: null },
+		});
+		const connections = await client.$get();
+		expect((await connections.json()).data).toEqual([
+			expect.objectContaining({ id: connection.id, lastSyncedAt: Date.now(), lastError: null }),
+		]);
+
+		const second = await client[":id"].sync.$post({ param: { id: connection.id } });
+
+		expect(second.status).toBe(409);
+		expect(errorBody.parse(await second.json()).error.code).toBe("SYNC_TOO_RECENT");
+	});
+
+	it("answers SYNC_IN_PROGRESS while a sync holds the lease", async () => {
+		const { app, db } = await syncApp();
+		const { client, connection } = await linkedConnection(app);
+		await db.run(
+			sql`update bank_connections set sync_started_at = ${Date.now() - 120_000} where id = ${connection.id}`,
+		);
+
+		const response = await client[":id"].sync.$post({ param: { id: connection.id } });
+
+		expect(response.status).toBe(409);
+		expect(errorBody.parse(await response.json()).error.code).toBe("SYNC_IN_PROGRESS");
+	});
+
+	it("guards the button with the session and answers 503 while unconfigured", async () => {
+		const { app } = await syncApp();
+		const signedOut = await app.request("/api/bank-connections/c1/sync", {
+			method: "POST",
+			headers: { origin: "http://localhost:5173" },
+		});
+		const { app: unconfigured } = await syncApp({
+			...configuredBank(),
+			bankConnector: null,
+			encryptionKey: null,
+			bankSetup: ["ENCRYPTION_KEY"],
+		});
+		const refused = await withSession(unconfigured, template.cookie).request(
+			"/api/bank-connections/c1/sync",
+			{ method: "POST" },
+		);
+		const unknown = await testClient(withSession(app, template.cookie)).api["bank-connections"][
+			":id"
+		].sync.$post({ param: { id: "nope" } });
+
+		expect([signedOut.status, refused.status, unknown.status]).toEqual([401, 503, 404]);
+	});
+});

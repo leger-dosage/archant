@@ -32,7 +32,7 @@ export type TestNetwork = { peer?: string; trustedProxies?: string[] };
 
 export type TestBank = Partial<
 	Pick<BankConnectionDeps, "bankConnector" | "encryptionKey" | "bankSetup">
->;
+> & { syncSecret?: string };
 
 /** No bank variable set, as on a fresh install: every bank route but `setup` answers 503. */
 const NO_BANK = {

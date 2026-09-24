@@ -31,3 +31,14 @@ export function providerDate(text: string): IsoDate | null {
 
 	return addDays(date, 0) === date ? date : null;
 }
+
+// A date, or a date-time: `2026-09-12` or `2026-09-12T08:00:00+02:00`.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T|$)/u;
+
+/**
+ * The same literal date part from an ISO 8601 date, as Enable Banking prints
+ * it (`2026-09-12`). `null` when the text is not one, or not a real day.
+ */
+export function providerIsoDate(text: string): IsoDate | null {
+	return ISO_DATE.test(text) ? providerDate(text.slice(0, 10).replaceAll("-", "")) : null;
+}

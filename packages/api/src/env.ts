@@ -112,6 +112,9 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.transform((value) => Buffer.from(value, "base64"))
 				.refine((key) => key.length === ENCRYPTION_KEY_BYTES)
 				.optional(),
+			// The bearer token `POST /api/sync` accepts. Unset, the route refuses
+			// every call and only the interface's button syncs.
+			SYNC_SECRET: z.string().min(32).optional(),
 			// Overridden only by the end-to-end suite, which points it at a fake.
 			ENABLE_BANKING_API_URL: z
 				.url({ protocol: /^https?$/u })

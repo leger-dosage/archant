@@ -44,10 +44,13 @@ import type { CurrencyCode, MinorUnits, Money } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { BANK_CONNECTOR_IDS, bankConnections } from "@archant/data/schema/bank-connections";
+import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import { categories } from "@archant/data/schema/categories";
 import type { CategoryOrigin } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
+import type { EntryKeySource } from "@archant/data/schema/entry-keys";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
@@ -423,17 +426,64 @@ export async function createAccount(
 	return account;
 }
 
+/** A bank's balance for the anchor: signed as it prints it, and the day it describes, if it says. */
+export type AnchorBalance = { amount: MinorUnits; date: IsoDate | null };
+
+/**
+ * The day a `current_anchor` holds: the one the bank's balance describes,
+ * never later than today. A closing balance often describes yesterday; dated
+ * today, the backward computation would subtract today's lines a second time.
+ */
+function anchorDate(balance: AnchorBalance, day: IsoDate): IsoDate {
+	return balance.date === null ? day : minDate(balance.date, day);
+}
+
+/**
+ * Replaces the account's `current_anchor` with `anchor`, a stored balance,
+ * or removes it for `null`. Returns the date written.
+ */
+async function writeCurrentAnchor(
+	tx: Transaction,
+	account: Pick<Account, "id" | "currency">,
+	anchor: { date: IsoDate; balance: MinorUnits } | null,
+	now: number,
+): Promise<IsoDate | null> {
+	// One current anchor per account, the bank's latest balance.
+	await tx
+		.delete(entries)
+		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "current_anchor")));
+
+	if (anchor === null) {
+		return null;
+	}
+
+	await tx.insert(entries).values({
+		id: crypto.randomUUID(),
+		accountId: account.id,
+		kind: "valuation",
+		valuationKind: "current_anchor",
+		date: anchor.date,
+		amount: anchor.balance,
+		currency: account.currency,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	return anchor.date;
+}
+
 /**
  * Makes `bankAccountId` feed the account, Sure's `link_existing_account`,
- * and writes the bank's balance as its `current_anchor` dated today: the
- * account is then computed backward from it (AD-8). `balance` is the bank's
- * signed figure, `null` when the bank gave none, which leaves the account
- * computed forward. Entries, the opening anchor and reconciliations stay.
+ * and writes the bank's balance as its `current_anchor`, dated the day the
+ * balance describes: the account is then computed backward from it (AD-8).
+ * `balance` is the bank's signed figure, `null` when the bank gave none,
+ * which leaves the account computed forward. Entries, the opening anchor and
+ * reconciliations stay.
  */
 export async function linkBankAccount(
 	deps: ServiceDeps,
 	accountId: string,
-	input: { bankAccountId: string; balance: MinorUnits | null },
+	input: { bankAccountId: string; balance: AnchorBalance | null },
 	_options: { origin: Origin },
 ): Promise<void> {
 	await deps.db.transaction(
@@ -446,26 +496,19 @@ export async function linkBankAccount(
 				.set({ bankAccountId: input.bankAccountId, updatedAt: now })
 				.where(eq(accounts.id, accountId));
 
-			// One current anchor per account, the bank's latest balance. Deleted
-			// even without a new one: an anchor left by an earlier link would
-			// otherwise turn the account backward from a stale figure.
-			await tx
-				.delete(entries)
-				.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "current_anchor")));
-
-			if (input.balance !== null) {
-				await tx.insert(entries).values({
-					id: crypto.randomUUID(),
-					accountId,
-					kind: "valuation",
-					valuationKind: "current_anchor",
-					date: today(deps.timeZone),
-					amount: toStoredBankBalance(account, input.balance),
-					currency: account.currency,
-					createdAt: now,
-					updatedAt: now,
-				});
-			}
+			// Deleted even without a new one: an anchor left by an earlier link
+			// would otherwise turn the account backward from a stale figure.
+			await writeCurrentAnchor(
+				tx,
+				account,
+				input.balance === null
+					? null
+					: {
+							date: anchorDate(input.balance, today(deps.timeZone)),
+							balance: toStoredBankBalance(account, input.balance.amount),
+						},
+				now,
+			);
 
 			await recomputeBalances(tx, account, account.openingDate, deps.timeZone);
 		},
@@ -475,10 +518,10 @@ export async function linkBankAccount(
 
 /**
  * Where the statement comes from. A manual line carries no key; an import's
- * lines are keyed under its source (AD-7). Bank sync adds its connection with
- * Epic 10.
+ * lines are keyed under its source, a sync's under its connection's
+ * connector (AD-7).
  */
-export type IngestSource = { manual: true } | { importId: string };
+export type IngestSource = { manual: true } | { importId: string } | { connectionId: string };
 
 export type IngestOptions = {
 	origin: Origin;
@@ -597,11 +640,29 @@ async function previewedImport(tx: Transaction, importId: string, accountId: str
 	return row;
 }
 
+/** The connector a bank connection's lines are keyed under; anything else is unknown. */
+async function connectionConnector(
+	tx: Transaction,
+	connectionId: string,
+): Promise<BankConnectorId> {
+	const row = await tx
+		.select({ connector: bankConnections.connector })
+		.from(bankConnections)
+		.where(eq(bankConnections.id, connectionId))
+		.get();
+
+	if (row === undefined) {
+		throw new AppError("NOT_FOUND", "No bank connection has this id.");
+	}
+
+	return row.connector;
+}
+
 /** The entry holding each key already, looked up 500 keys per query. */
 async function entriesByKey(
 	tx: Transaction,
 	accountId: string,
-	source: FileSourceId,
+	source: EntryKeySource,
 	keys: readonly string[],
 ): Promise<Map<string, string>> {
 	const found = new Map<string, string>();
@@ -633,7 +694,7 @@ async function entriesByKey(
 async function pairCandidates(
 	tx: Transaction,
 	accountId: string,
-	source: FileSourceId,
+	source: EntryKeySource,
 	dates: readonly IsoDate[],
 ): Promise<PairCandidate[]> {
 	const sorted = dates.toSorted();
@@ -681,13 +742,25 @@ function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): Prev
 }
 
 /**
- * Writes the keys of an import's lines onto their entries (AD-7). Two lines
- * of one file may share a FITID: the second keeps its fingerprint only.
+ * Who a keyed ingest writes for: an import, or a bank connection. Keys carry
+ * one of the two ids, so a revert finds its import's and a disconnection
+ * leaves its connection's in place.
+ */
+type KeyTarget = {
+	source: EntryKeySource;
+	importId: string | null;
+	connectionId: string | null;
+};
+
+/**
+ * Writes the keys of a statement's lines onto their entries (AD-7). Two
+ * lines of one statement may share an external id: the second keeps its
+ * fingerprint only.
  */
 async function attachKeys(
 	tx: Transaction,
 	accountId: string,
-	target: { id: string; source: FileSourceId },
+	target: KeyTarget,
 	lines: readonly { entryId: string; keys: LineKeys }[],
 ): Promise<void> {
 	const claimed = new Set<string>();
@@ -697,7 +770,14 @@ async function attachKeys(
 			.map((key) => {
 				claimed.add(key);
 
-				return { entryId, accountId, source: target.source, key, importId: target.id };
+				return {
+					entryId,
+					accountId,
+					source: target.source,
+					key,
+					importId: target.importId,
+					connectionId: target.connectionId,
+				};
 			}),
 	);
 
@@ -705,13 +785,13 @@ async function attachKeys(
 }
 
 /**
- * Sorts the accepted lines of an import into present, matched, possible
- * duplicates and created (AD-7), each in statement order.
+ * Sorts the accepted lines of a keyed statement into present, matched,
+ * possible duplicates and created (AD-7), each in statement order.
  */
 async function groupLines(
 	tx: Transaction,
 	accountId: string,
-	source: FileSourceId,
+	source: EntryKeySource,
 	accepted: readonly Keyed[],
 ): Promise<Groups> {
 	const known = await entriesByKey(
@@ -853,13 +933,33 @@ async function writeStatementBalance(
 }
 
 /**
+ * Step 7 for a sync, planned: the bank's balance becomes the account's
+ * `current_anchor` (AD-8), dated the day it describes and never after today.
+ * Skipped in another currency: FR56 wants the bank's own figure, unconverted.
+ */
+function planCurrentAnchor(
+	account: { type: AccountType; currency: string },
+	statementBalance: StatementBalance,
+	day: IsoDate,
+): StatementBalanceOutcome {
+	const date = anchorDate(statementBalance, day);
+	const balance = toStoredBankBalance(account, statementBalance.amount);
+
+	return statementBalance.currency === account.currency
+		? { status: "recorded", date, balance }
+		: { status: "skipped", date, balance, reason: "CURRENCY_MISMATCH" };
+}
+
+/**
  * Writes a statement into one account, in one transaction, following the
- * pipeline order of AD-4. Steps 3, 5 and 6 arrive with their epics, in
- * their slot. A manual line carries no key and is always created; an
- * import's lines are keyed and grouped (AD-7). With `dryRun`, the groups are
- * computed and nothing is written. Confirming an import refuses with
+ * pipeline order of AD-4. Step 3 arrives with pending lines, in its slot. A
+ * manual line carries no key and is always created; an import's or a sync's
+ * lines are keyed and grouped (AD-7). With `dryRun`, the groups are computed
+ * and nothing is written. Confirming an import refuses with
  * `IMPORT_PREVIEW_STALE` when the groups differ from its preview, and marks
- * it confirmed with its counts in the same transaction.
+ * it confirmed with its counts in the same transaction. A sync's statement
+ * balance rewrites the account's `current_anchor` instead of adding a
+ * reconciliation.
  */
 export async function ingest(
 	deps: ServiceDeps,
@@ -878,6 +978,17 @@ export async function ingest(
 							...(await previewedImport(tx, source.importId, accountId)),
 						}
 					: null;
+			const connectionId = "connectionId" in source ? source.connectionId : null;
+			const keyTarget: KeyTarget | null =
+				target !== null
+					? { source: target.source, importId: target.id, connectionId: null }
+					: connectionId === null
+						? null
+						: {
+								source: await connectionConnector(tx, connectionId),
+								importId: null,
+								connectionId,
+							};
 			const moveTo =
 				options.moveOpeningDate !== undefined && options.moveOpeningDate < account.openingDate
 					? options.moveOpeningDate
@@ -910,9 +1021,9 @@ export async function ingest(
 
 			// 2. Key matching, batched per statement (AD-7). A manual line has no key.
 			const grouped: Groups =
-				target === null
+				keyTarget === null
 					? { created: accepted, present: [], matched: [], duplicates: [] }
-					: await groupLines(tx, accountId, target.source, accepted);
+					: await groupLines(tx, accountId, keyTarget.source, accepted);
 			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
 				...item,
 				line: null,
@@ -951,11 +1062,15 @@ export async function ingest(
 							),
 						};
 			// 7. The statement balance, planned here so the preview shows it and
-			// the digest covers it. Only an import carries one today.
+			// the digest covers it. A manual statement carries none.
 			const balancePlan =
 				target === null || statement.balance === null
 					? null
 					: await planStatementBalance(tx, account, statement.balance, context, target.id);
+			const anchorPlan =
+				connectionId === null || statement.balance === null
+					? null
+					: planCurrentAnchor(account, statement.balance, context.today);
 			const digest = previewDigest([
 				...(["created", "present", "matched", "duplicates"] as const).flatMap((group) =>
 					groups[group].map(({ ref, entryId }) => ({ group, ref, entryId })),
@@ -979,7 +1094,7 @@ export async function ingest(
 				digest,
 				openingSuggestion: earliestRefused === undefined ? null : addDays(earliestRefused, -1),
 				opening,
-				balance: balancePlan?.outcome ?? null,
+				balance: balancePlan?.outcome ?? anchorPlan,
 			};
 
 			if (options.dryRun === true) {
@@ -990,7 +1105,7 @@ export async function ingest(
 				throw new AppError("IMPORT_PREVIEW_STALE", "The account changed since the preview.");
 			}
 
-			// 3. Pending reconciliation arrives with Epic 10.
+			// 3. Pending reconciliation arrives with Story 10.4.
 
 			// 4. Insert the new entries, attach keys to matched ones.
 			const now = Date.now();
@@ -1029,11 +1144,14 @@ export async function ingest(
 				),
 			);
 
-			if (target !== null) {
-				await attachKeys(tx, accountId, target, [
+			if (keyTarget !== null) {
+				await attachKeys(tx, accountId, keyTarget, [
 					...rows.map(({ id, keys }) => ({ entryId: id, keys })),
 					...grouped.matched.map(({ entryId, keys }) => ({ entryId, keys })),
 				]);
+			}
+
+			if (target !== null) {
 				await tx
 					.update(imports)
 					.set({
@@ -1096,12 +1214,17 @@ export async function ingest(
 			// 7. The statement balance (AD-8).
 			const snapshotDate =
 				balancePlan === null ? null : await writeStatementBalance(tx, account, balancePlan, now);
+			const anchorWritten =
+				anchorPlan?.status === "recorded"
+					? await writeCurrentAnchor(tx, account, anchorPlan, now)
+					: null;
 
 			// 8. Recompute balances from the earliest date this write touched.
 			const [earliest] = [
 				...rows.map(({ line }) => line.date),
 				...(opening === null ? [] : [opening.date]),
 				...(snapshotDate === null ? [] : [snapshotDate]),
+				...(anchorWritten === null ? [] : [anchorWritten]),
 			].toSorted();
 
 			if (earliest !== undefined) {
@@ -2835,18 +2958,27 @@ function withTransferLink<Row extends TransferColumns>(
 	};
 }
 
-/** Where an imported entry came from; `confirmedAt` is epoch milliseconds. */
-export type ImportOrigin = { source: FileSourceId; confirmedAt: number | null };
+/**
+ * Where a keyed entry came from: a file import, `confirmedAt` in epoch
+ * milliseconds, or a bank connector.
+ */
+export type EntryOrigin =
+	| { kind: "import"; source: FileSourceId; confirmedAt: number | null }
+	| { kind: "bank"; connector: BankConnectorId };
 
-/** The import behind each of `entryIds` that has one; manual entries are absent. */
+/**
+ * The origin of each of `entryIds` that has keys; manual entries are absent.
+ * A bank's key wins over a file's: an entry a sync paired with is fed by the
+ * bank from then on.
+ */
 export async function importOrigins(
 	deps: ServiceDeps,
 	entryIds: readonly string[],
-): Promise<Map<string, ImportOrigin>> {
-	const found = new Map<string, ImportOrigin>();
+): Promise<Map<string, EntryOrigin>> {
+	const found = new Map<string, EntryOrigin>();
 
 	await inSequence(entryIds, KEYS_PER_LOOKUP, async (chunk) => {
-		const rows = await deps.db
+		const imported = await deps.db
 			.selectDistinct({
 				entryId: entryKeys.entryId,
 				source: imports.source,
@@ -2855,9 +2987,21 @@ export async function importOrigins(
 			.from(entryKeys)
 			.innerJoin(imports, eq(imports.id, entryKeys.importId))
 			.where(inArray(entryKeys.entryId, chunk));
+		const synced = await deps.db
+			.selectDistinct({
+				entryId: entryKeys.entryId,
+				// Narrowed by the `where` below, which the column type cannot see.
+				connector: sql<BankConnectorId>`${entryKeys.source}`,
+			})
+			.from(entryKeys)
+			.where(and(inArray(entryKeys.entryId, chunk), inArray(entryKeys.source, BANK_CONNECTOR_IDS)));
 
-		for (const { entryId, ...origin } of rows) {
-			found.set(entryId, origin);
+		for (const { entryId, ...origin } of imported) {
+			found.set(entryId, { kind: "import", ...origin });
+		}
+
+		for (const { entryId, connector } of synced) {
+			found.set(entryId, { kind: "bank", connector });
 		}
 	});
 

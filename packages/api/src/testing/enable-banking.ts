@@ -30,6 +30,8 @@ export const fixtures = {
 	auth: await load("auth.json"),
 	session: await load("session.json"),
 	balances: await load("balances.json"),
+	transactionsPage1: await load("transactions-page-1.json"),
+	transactionsPage2: await load("transactions-page-2.json"),
 	redirectNotAllowed: await load("error-redirect-not-allowed.json"),
 	unauthorized: await load("error-unauthorized.json"),
 };
@@ -52,10 +54,19 @@ export type ProviderRequest = {
 	body: unknown;
 };
 
-type Endpoint = "aspsps" | "auth" | "sessions" | "balances";
+type Endpoint = "aspsps" | "auth" | "sessions" | "balances" | "transactions";
+
+/** The fixture pages: the first without a key, the second on `page-2`. */
+export function transactionsPage(url: URL): Response {
+	return HttpResponse.json(
+		url.searchParams.get("continuation_key") === "page-2"
+			? fixtures.transactionsPage2
+			: fixtures.transactionsPage1,
+	);
+}
 
 /**
- * Serves the four endpoints from the fixtures, or from `overrides`, and
+ * Serves the five endpoints from the fixtures, or from `overrides`, and
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
@@ -93,6 +104,10 @@ export function mockProvider(
 		http.get(
 			`${TEST_PROVIDER_URL}/accounts/:uid/balances`,
 			answer("balances", () => HttpResponse.json(fixtures.balances)),
+		),
+		http.get(
+			`${TEST_PROVIDER_URL}/accounts/:uid/transactions`,
+			answer("transactions", transactionsPage),
 		),
 	);
 

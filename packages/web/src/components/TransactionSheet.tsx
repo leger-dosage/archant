@@ -843,7 +843,11 @@ export function TransactionSheet({
 										reference: transaction.reference,
 									},
 								)
-							: t("transactions.sources.manual")}
+							: transaction?.source.kind === "bank"
+								? t("transactions.sources.bank", {
+										connector: t(`transactions.sources.connectors.${transaction.source.connector}`),
+									})
+								: t("transactions.sources.manual")}
 					</SheetDescription>
 				</SheetHeader>
 				<TransactionForm

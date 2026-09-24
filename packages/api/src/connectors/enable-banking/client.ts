@@ -1,10 +1,24 @@
-import type { BankAccountRef, BankConnector, Institution } from "../bank-connector.ts";
-import type { sessionAccountSchema } from "./schemas.ts";
+import type { IsoDate } from "../../domain/dates.ts";
+import type {
+	NormalizedTransaction,
+	ParsedStatement,
+	RejectionCode,
+} from "../../domain/statement.ts";
+import type {
+	BankAccountRef,
+	BankBalance,
+	BankConnector,
+	BankStatement,
+	Institution,
+} from "../bank-connector.ts";
+import type { balanceSchema, sessionAccountSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
 import type { z } from "zod";
 
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 
+import { providerIsoDate } from "../../domain/provider-date.ts";
+import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { BankProviderError } from "../bank-connector.ts";
 import { signJwt } from "./jwt.ts";
 import {
@@ -13,6 +27,8 @@ import {
 	balancesResponseSchema,
 	errorResponseSchema,
 	sessionResponseSchema,
+	transactionSchema,
+	transactionsPageSchema,
 } from "./schemas.ts";
 
 export type EnableBankingConfig = {
@@ -70,6 +86,114 @@ export function toBankAccount(account: z.output<typeof sessionAccountSchema>): B
 	};
 }
 
+/** Sure's `EnableBankingItem::Importer`: a bank looping on its own key stops here. */
+export const MAX_PAGES = 100;
+
+/** By code points, so an emoji at the limit is never cut in half. */
+const capped = (value: string, length: number) => Array.from(value).slice(0, length).join("");
+
+/**
+ * Sure's `EnableBankingEntry::Processor#name`: the other side of the line,
+ * the bank's code description, the first remittance line, else the
+ * direction.
+ */
+function labelOf(line: z.output<typeof transactionSchema>, debit: boolean): string {
+	const counterparty = debit ? line.creditor : line.debtor;
+
+	return capped(
+		counterparty?.name ??
+			line.bank_transaction_code?.description ??
+			line.remittance_information[0] ??
+			(debit ? "Virement sortant" : "Virement entrant"),
+		LABEL_MAX_LENGTH,
+	);
+}
+
+/**
+ * One line as the ledger takes it (AD-18); `null` when it is not booked, or
+ * dated before `since` because the bank ignored `date_from`; otherwise the
+ * reason the line is refused.
+ */
+export function toTransaction(
+	raw: unknown,
+	since: IsoDate,
+): NormalizedTransaction | RejectionCode | null {
+	const parsed = transactionSchema.safeParse(raw);
+
+	// Not even an object: nothing, the amount included, can be read.
+	if (!parsed.success) {
+		return "INVALID_AMOUNT";
+	}
+
+	const line = parsed.data;
+
+	// Pending lines are Story 10.4's; cancelled and informational ones never count.
+	if (line.status !== "BOOK") {
+		return null;
+	}
+
+	const rawDate = line.booking_date ?? line.value_date ?? line.transaction_date;
+	const date = rawDate === null ? null : providerIsoDate(rawDate);
+
+	if (date === null) {
+		return "INVALID_DATE";
+	}
+
+	if (date < since) {
+		return null;
+	}
+
+	const money = line.transaction_amount;
+	const magnitude = money === null ? null : parseAmount(money.amount, money.currency);
+	const direction = line.credit_debit_indicator;
+
+	// No direction, no sign: guessing one would book a payment as income.
+	if (money === null || magnitude === null || direction === null) {
+		return "INVALID_AMOUNT";
+	}
+
+	const debit = direction === "DBIT";
+	const notes = line.remittance_information.join("\n");
+
+	return {
+		// Never `transaction_id`: some banks change it between two reads.
+		externalId: line.entry_reference,
+		date,
+		amount: toMinorUnits(debit ? -Math.abs(magnitude) : Math.abs(magnitude)),
+		currency: money.currency,
+		label: labelOf(line, debit),
+		reference: null,
+		notes: notes === "" ? null : capped(notes, NOTES_MAX_LENGTH),
+	};
+}
+
+/**
+ * AD-18: the interim booked balance, else the closing booked one, with the
+ * day it describes; `null` when the bank gives neither.
+ */
+function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): BankBalance | null {
+	const chosen = BALANCE_TYPES.map((type) =>
+		balances.find((balance) => balance.balance_type === type),
+	).find((balance) => balance !== undefined);
+
+	if (chosen === undefined) {
+		return null;
+	}
+
+	const { amount, currency } = chosen.balance_amount;
+	const parsed = parseAmount(amount, currency);
+
+	if (parsed === null) {
+		throw failed(200);
+	}
+
+	return {
+		amount: chosen.credit_debit_indicator === "DBIT" ? toMinorUnits(-Math.abs(parsed)) : parsed,
+		currency,
+		date: chosen.reference_date === null ? null : providerIsoDate(chosen.reference_date),
+	};
+}
+
 type Call = { method: "GET" | "POST"; path: string; body?: unknown };
 
 async function call<Schema extends z.ZodType>(
@@ -113,6 +237,51 @@ async function call<Schema extends z.ZodType>(
 
 /** Enable Banking behind the bank connector port, after Sure's `Provider::EnableBanking`. */
 export function createEnableBankingConnector(config: EnableBankingConfig): BankConnector {
+	async function fetchBalance(uid: string): Promise<BankBalance | null> {
+		const { balances } = await call(
+			config,
+			{ method: "GET", path: `/accounts/${encodeURIComponent(uid)}/balances` },
+			balancesResponseSchema,
+		);
+
+		return chooseBalance(balances);
+	}
+
+	/**
+	 * Every raw line since `since`, page after page. Sure's importer follows
+	 * the key until none comes back, it comes back a second time, or a
+	 * hundred pages went by.
+	 */
+	async function fetchLines(uid: string, since: IsoDate): Promise<unknown[]> {
+		const seen = new Set<string>();
+		const fromPage = async (continuationKey: string | null, page: number): Promise<unknown[]> => {
+			const query = new URLSearchParams({ date_from: since });
+
+			if (continuationKey !== null) {
+				query.set("continuation_key", continuationKey);
+			}
+
+			const { transactions, continuation_key: next } = await call(
+				config,
+				{
+					method: "GET",
+					path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
+				},
+				transactionsPageSchema,
+			);
+
+			if (next === null || seen.has(next) || page + 1 >= MAX_PAGES) {
+				return transactions;
+			}
+
+			seen.add(next);
+
+			return [...transactions, ...(await fromPage(next, page + 1))];
+		};
+
+		return fromPage(null, 0);
+	}
+
 	return {
 		id: "enable-banking",
 
@@ -181,31 +350,22 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			};
 		},
 
-		async fetchBalance(uid) {
-			const { balances } = await call(
-				config,
-				{ method: "GET", path: `/accounts/${encodeURIComponent(uid)}/balances` },
-				balancesResponseSchema,
-			);
-			const chosen = BALANCE_TYPES.map((type) =>
-				balances.find((balance) => balance.balance_type === type),
-			).find((balance) => balance !== undefined);
+		fetchBalance,
 
-			if (chosen === undefined) {
-				return null;
+		async fetchStatement(uid, since): Promise<BankStatement> {
+			const statement: Omit<ParsedStatement, "balance"> = { transactions: [], rejected: [] };
+
+			for (const [position, raw] of (await fetchLines(uid, since)).entries()) {
+				const mapped = toTransaction(raw, since);
+
+				if (typeof mapped === "string") {
+					statement.rejected.push({ ref: String(position), reason: mapped });
+				} else if (mapped !== null) {
+					statement.transactions.push(mapped);
+				}
 			}
 
-			const { amount, currency } = chosen.balance_amount;
-			const parsed = parseAmount(amount, currency);
-
-			if (parsed === null) {
-				throw failed(200);
-			}
-
-			return {
-				amount: chosen.credit_debit_indicator === "DBIT" ? toMinorUnits(-Math.abs(parsed)) : parsed,
-				currency,
-			};
+			return { ...statement, balance: await fetchBalance(uid) };
 		},
 	};
 }

@@ -1324,6 +1324,72 @@ describe("bank accounts", () => {
 	});
 });
 
+describe("bank sync", () => {
+	it("accepts a key from a bank connector, and forgets its connection once it goes", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertConnection(database, "c1");
+
+		await expect(
+			database.run(
+				sql`insert into entry_keys (entry_id, account_id, source, key, connection_id) values ('e1', 'a1', 'enable-banking', 'ext:1', 'c1')`,
+			),
+		).resolves.toBeDefined();
+		await expect(
+			database.run(
+				sql`insert into entry_keys (entry_id, account_id, source, key, connection_id) values ('e1', 'a1', 'enable-banking', 'ext:2', 'nope')`,
+			),
+		).rejects.toThrow();
+		await expect(insertKey(database, "fp:1", "e1", "plaid")).rejects.toThrow();
+
+		await database.run(sql`delete from bank_connections where id = 'c1'`);
+
+		await expect(
+			database.all(sql`select source, key, connection_id as connectionId from entry_keys`),
+		).resolves.toEqual([{ source: "enable-banking", key: "ext:1", connectionId: null }]);
+	});
+
+	it("starts a connection and a bank account never synced and unleased", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1");
+		await insertBankAccount(database, "b1", "c1", "hash-1");
+
+		await expect(
+			database.get(
+				sql`select last_synced_at as lastSyncedAt, last_error as lastError, sync_started_at as syncStartedAt from bank_connections`,
+			),
+		).resolves.toEqual({ lastSyncedAt: null, lastError: null, syncStartedAt: null });
+		await expect(
+			database.get(sql`select last_synced_at as lastSyncedAt from bank_accounts`),
+		).resolves.toEqual({ lastSyncedAt: null });
+	});
+
+	it("keeps every key when 0028 rebuilds entry_keys", async () => {
+		const before = await migratedBefore("0028");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertKey(before, "fp:1", "e1", "csv");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, source, key, import_id as importId, connection_id as connectionId from entry_keys`,
+			),
+		).resolves.toEqual([
+			{ entryId: "e1", source: "csv", key: "fp:1", importId: null, connectionId: null },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('entry_keys') where name = 'entry_keys_connection'`,
+			),
+		).resolves.toEqual([{ name: "entry_keys_connection" }]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

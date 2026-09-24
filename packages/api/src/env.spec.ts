@@ -37,6 +37,7 @@ describe("validateEnv", () => {
 		expect(env.ENABLE_BANKING_PRIVATE_KEY).toBeUndefined();
 		expect(env.ENCRYPTION_KEY).toBeUndefined();
 		expect(env.ENABLE_BANKING_API_URL).toBe("https://api.enablebanking.com");
+		expect(env.SYNC_SECRET).toBeUndefined();
 	});
 
 	it("accepts an absolute WEB_DIST and names a relative one", () => {
@@ -139,5 +140,12 @@ describe("validateEnv", () => {
 		expect(() =>
 			validateEnv({ ...required, ENABLE_BANKING_API_URL: "ftp://api.enablebanking.com" }),
 		).toThrow(/ENABLE_BANKING_API_URL/);
+	});
+
+	it("reads a sync secret of 32 characters or more, and names a shorter one", () => {
+		expect(validateEnv({ ...required, SYNC_SECRET: "s".repeat(32) }).SYNC_SECRET).toBe(
+			"s".repeat(32),
+		);
+		expect(() => validateEnv({ ...required, SYNC_SECRET: "s".repeat(31) })).toThrow(/SYNC_SECRET/);
 	});
 });

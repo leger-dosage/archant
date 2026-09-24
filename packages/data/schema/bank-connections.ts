@@ -38,6 +38,13 @@ export const bankConnections = sqliteTable(
 		sessionId: text("session_id"),
 		// Epoch milliseconds, in clear: the expiry banner queries it.
 		consentExpiresAt: integer("consent_expires_at"),
+		// Epoch milliseconds of the last run where every account synced.
+		lastSyncedAt: integer("last_synced_at"),
+		// The `AppError` code of the latest failed run, cleared by a clean one.
+		lastError: text("last_error"),
+		// The sync lease: set while a run holds the connection, and treated as
+		// free after ten minutes so a crashed run never locks it for good.
+		syncStartedAt: integer("sync_started_at"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

@@ -53,6 +53,8 @@ async function listening(child: ChildProcess): Promise<string[]> {
 	});
 }
 
+const SYNC_SECRET = "archant-index-sync-secret-of-32-characters";
+
 let directory: string;
 let port: number;
 let child: ChildProcess;
@@ -71,6 +73,7 @@ beforeAll(async () => {
 			LOG_LEVEL: "info",
 			BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
 			BETTER_AUTH_URL: `http://localhost:${port}`,
+			SYNC_SECRET,
 		},
 	});
 	logLines = await listening(child);
@@ -98,6 +101,22 @@ describe("the server entrypoint", () => {
 		const listened = logLines.findIndex((line) => line.includes("Archant API listening"));
 		expect(migrated).toBeGreaterThanOrEqual(0);
 		expect(migrated).toBeLessThan(listened);
+	});
+
+	it("hands SYNC_SECRET to the scheduled sync route", async () => {
+		server.use(http.post(`http://127.0.0.1:${port}/*`, () => passthrough()));
+		const sync = (headers: Record<string, string>) =>
+			fetch(`http://127.0.0.1:${port}/api/sync`, { method: "POST", headers });
+
+		const refused = await sync({});
+		// Past the secret, the bank variables this server lacks answer.
+		const accepted = await sync({ authorization: `Bearer ${SYNC_SECRET}` });
+
+		expect(refused.status).toBe(401);
+		expect(accepted.status).toBe(503);
+		await expect(accepted.json()).resolves.toMatchObject({
+			error: { code: "BANK_CONNECTOR_UNAVAILABLE" },
+		});
 	});
 
 	it("exits within one second of SIGTERM", async () => {
