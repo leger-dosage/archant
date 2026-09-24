@@ -33,6 +33,7 @@
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
+		"jose": "^6.2.12",
 		"ofx-js": "1.1.1",
 		"papaparse": "5.7.0",
 		"pino": "^10.3.1",

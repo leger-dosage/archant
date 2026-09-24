@@ -1,6 +1,7 @@
 import type { ErrorBody } from "./lib/errors.ts";
 import type { Logger } from "./lib/logger.ts";
 import type { Auth } from "./services/auth.ts";
+import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
 import type { Context, MiddlewareHandler } from "hono";
 
@@ -13,6 +14,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { withForwardedFor } from "./lib/client-address.ts";
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
@@ -27,24 +29,25 @@ import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
 
-export type AppDeps = ServiceDeps & {
-	logger: Logger;
-	auth: Auth;
-	/** `BETTER_AUTH_URL`'s origin: the only one a form post is accepted from. */
-	trustedOrigin: string;
-	/** `TRUSTED_PROXIES`, also given to Better Auth. */
-	trustedProxies: string[];
-	/**
-	 * The TCP peer's address, `undefined` for an in-process request. Passed in
-	 * so no route reads a Node socket; `index.ts` builds it with `getConnInfo`.
-	 */
-	clientAddress: (c: Context) => string | undefined;
-	/**
-	 * `WEB_DIST`: the built interface, served under `/` when set. Unset in
-	 * development, where Vite serves it and proxies `/api` here.
-	 */
-	webDist?: string | undefined;
-};
+export type AppDeps = ServiceDeps &
+	BankConnectionDeps & {
+		logger: Logger;
+		auth: Auth;
+		/** `BETTER_AUTH_URL`'s origin: the only one a form post is accepted from. */
+		trustedOrigin: string;
+		/** `TRUSTED_PROXIES`, also given to Better Auth. */
+		trustedProxies: string[];
+		/**
+		 * The TCP peer's address, `undefined` for an in-process request. Passed in
+		 * so no route reads a Node socket; `index.ts` builds it with `getConnInfo`.
+		 */
+		clientAddress: (c: Context) => string | undefined;
+		/**
+		 * `WEB_DIST`: the built interface, served under `/` when set. Unset in
+		 * development, where Vite serves it and proxies `/api` here.
+		 */
+		webDist?: string | undefined;
+	};
 
 /**
  * Every API route, relative to `/api`. Mounts are chained on purpose: `AppType`
@@ -64,6 +67,7 @@ function createApi(deps: AppDeps) {
 		.route("/rules", rulesRoutes(deps))
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
+		.route("/bank-connections", bankConnectionsRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }

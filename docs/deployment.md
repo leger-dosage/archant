@@ -23,13 +23,16 @@ Run exactly one container per database file. SQLite takes one writer, and two se
 
 Compose reads them from the shell, or from a `.env` file next to `docker-compose.yml`, for interpolation only. It never passes that file to the container: the development `DATABASE_URL` and `BETTER_AUTH_URL` it holds would break it.
 
-| Variable             | Required | What it does                                                                                                                                       |
-| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET` | yes      | Signs session cookies, at least 32 characters. Compose refuses to start without it.                                                                |
-| `ARCHANT_URL`        | no       | The address the browser uses, passed to the server as `BETTER_AUTH_URL`. Defaults to `http://localhost:8787`. A sign-in from any other is refused. |
-| `TRUSTED_PROXIES`    | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                |
-| `APP_TIMEZONE`       | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                             |
-| `LOG_LEVEL`          | no       | pino level. Defaults to `info`.                                                                                                                    |
+| Variable                        | Required | What it does                                                                                                                                       |
+| ------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`            | yes      | Signs session cookies, at least 32 characters. Compose refuses to start without it.                                                                |
+| `ARCHANT_URL`                   | no       | The address the browser uses, passed to the server as `BETTER_AUTH_URL`. Defaults to `http://localhost:8787`. A sign-in from any other is refused. |
+| `TRUSTED_PROXIES`               | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                |
+| `APP_TIMEZONE`                  | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                             |
+| `LOG_LEVEL`                     | no       | pino level. Defaults to `info`.                                                                                                                    |
+| `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id. See [Connecting a bank](#connecting-a-bank).                                                                        |
+| `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM.                                                                                                  |
+| `ENCRYPTION_KEY`                | no       | Encrypts bank session ids at rest, base64 of 32 bytes.                                                                                             |
 
 The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/web/dist`, and port 8787. The server runs as the unprivileged `node` user.
 
@@ -66,6 +69,35 @@ These stay possible and none of them will have a file in this repository, by des
 - **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
 - **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
 - **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
+
+## Connecting a bank
+
+Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional: without the three variables below, Réglages > Banques names the missing ones, the bank routes answer `503`, and everything else, file import included, works as before. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
+
+1. Create an application in the Enable Banking control panel. The panel can generate the key pair and download the private key as a PEM file; keep that file, since Archant needs it. To generate the pair yourself and upload the public certificate instead:
+
+   ```bash
+   openssl req -new -newkey rsa:2048 -nodes -x509 -days 3650 -subj "/CN=archant" \
+     -keyout private.pem -out public.crt
+   ```
+
+2. Register the redirect URL of the application: your `ARCHANT_URL` (`BETTER_AUTH_URL` outside the container) followed by `/reglages/banques/retour`, for instance `https://archant.example.org/reglages/banques/retour`, or `http://localhost:5173/reglages/banques/retour` in development. The bank sends the browser back there. Any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
+
+3. Set the variables, next to `BETTER_AUTH_SECRET`:
+
+   ```bash
+   export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
+   # PKCS#1 (BEGIN RSA PRIVATE KEY) and PKCS#8 (BEGIN PRIVATE KEY) both work.
+   export ENABLE_BANKING_PRIVATE_KEY="$(base64 < private.pem | tr -d '\n')"
+   export ENCRYPTION_KEY="$(openssl rand -base64 32)"
+   docker compose up --build --detach --wait
+   ```
+
+The key is base64-encoded because a multi-line PEM does not survive every `.env` parser or hosting control panel.
+
+`ENCRYPTION_KEY` encrypts each bank session with AES-256-GCM before it reaches the database. Back it up apart from the database: a dump alone gives nobody access to your bank data. Losing the key, or changing it, leaves the stored sessions unreadable; the only way back is to connect each bank again.
+
+Archant asks each bank for 90 days of consent, as Sure does, or less when the bank allows less.
 
 ## Scheduled synchronisation
 

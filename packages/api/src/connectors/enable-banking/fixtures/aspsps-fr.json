@@ -1,0 +1,30 @@
+{
+	"aspsps": [
+		{
+			"name": "Banque Test",
+			"country": "FR",
+			"logo": "https://enablebanking.com/brands/FR/Banque%20Test/",
+			"bic": "BTSTFRPP",
+			"maximum_consent_validity": 15552000,
+			"beta": false,
+			"psu_types": ["personal", "business"],
+			"auth_methods": [{ "name": "redirect", "approach": "REDIRECT", "psu_type": "personal" }],
+			"required_psu_headers": ["psu-ip-address"]
+		},
+		{
+			"name": "Crédit Exemple",
+			"country": "FR",
+			"logo": null,
+			"maximum_consent_validity": 2592000,
+			"beta": true,
+			"psu_types": ["personal"]
+		},
+		{
+			"name": "Caisse Sans Limite",
+			"country": "FR",
+			"logo": "not a url",
+			"bic": "",
+			"psu_types": ["personal"]
+		}
+	]
+}

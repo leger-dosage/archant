@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { startFakeEnableBanking } from "./fake-enable-banking.ts";
 import { DATABASE_FILE, PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 // Started by playwright.config.ts once the interface is built. One fresh
@@ -14,6 +16,12 @@ const directory = dirname(DATABASE_FILE);
 await rm(directory, { recursive: true, force: true });
 await mkdir(directory, { recursive: true });
 const databaseUrl = `file:${DATABASE_FILE}`;
+
+// A key pair per run, never committed: the fake checks the API's tokens with
+// the public half.
+const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+const applicationId = "archant-e2e";
+const bank = await startFakeEnableBanking({ publicKey, applicationId });
 
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {
@@ -38,6 +46,13 @@ const api = spawn(process.execPath, [entrypoint], {
 		// not share Better Auth's rate-limit buckets. Every request here comes
 		// from loopback, so nothing outside the suite can use this trust.
 		TRUSTED_PROXIES: "127.0.0.1,::1",
+		// Bank connection against the local fake, so no request leaves loopback.
+		ENABLE_BANKING_APPLICATION_ID: applicationId,
+		ENABLE_BANKING_PRIVATE_KEY: Buffer.from(
+			privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+		).toString("base64"),
+		ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+		ENABLE_BANKING_API_URL: bank.url,
 	},
 });
 
@@ -52,6 +67,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 api.on("exit", (code) => {
+	bank.close();
 	void rm(directory, { recursive: true, force: true }).finally(() => {
 		// Stopped by Playwright is a clean end; the API crashing or being killed
 		// on its own is not.

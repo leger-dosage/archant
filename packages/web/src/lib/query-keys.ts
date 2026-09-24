@@ -61,6 +61,15 @@ export const queryKeys = {
 	recurring: {
 		all: ["recurring"] as const,
 	},
+	/**
+	 * Bank connections. `setup` and `institutions` never change while the page
+	 * is open; a new connection invalidates `list` only.
+	 */
+	bankConnections: {
+		setup: ["bank-connections", "setup"] as const,
+		list: ["bank-connections", "list"] as const,
+		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

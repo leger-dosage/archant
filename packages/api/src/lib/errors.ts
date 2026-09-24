@@ -17,9 +17,20 @@ export const ERROR_STATUSES = {
 	IMPORT_PREVIEW_STALE: 409,
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
+	/** An unknown, already used or expired `state` on a bank's callback. Nothing is written. */
+	BANK_AUTHORIZATION_INVALID: 400,
 	INTERNAL_ERROR: 500,
+	/** Enable Banking failed or answered what its schema does not allow. No payload is kept. */
+	BANK_PROVIDER_ERROR: 502,
+	/**
+	 * Enable Banking refused the callback URL, which must be registered in its
+	 * control panel; `params.url` names it, as Sure does.
+	 */
+	BANK_REDIRECT_NOT_ALLOWED: 502,
 	/** The health check could not read the database. */
 	SERVICE_UNAVAILABLE: 503,
+	/** A bank route while an Enable Banking variable or `ENCRYPTION_KEY` is unset. */
+	BANK_CONNECTOR_UNAVAILABLE: 503,
 } as const satisfies Record<string, ContentfulStatusCode>;
 
 export type ErrorCode = keyof typeof ERROR_STATUSES;

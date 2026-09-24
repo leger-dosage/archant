@@ -1,5 +1,6 @@
 import type { Logger } from "../lib/logger.ts";
 import type { Auth } from "../services/auth.ts";
+import type { BankConnectionDeps } from "../services/bank-connections.ts";
 import type { TempDatabase } from "./temp-database.ts";
 
 import type { Database } from "@archant/data/client";
@@ -29,11 +30,23 @@ export function createTestAuth(
 /** A TCP peer and the proxies trusted, for specs about the client address. */
 export type TestNetwork = { peer?: string; trustedProxies?: string[] };
 
+export type TestBank = Partial<
+	Pick<BankConnectionDeps, "bankConnector" | "encryptionKey" | "bankSetup">
+>;
+
+/** No bank variable set, as on a fresh install: every bank route but `setup` answers 503. */
+const NO_BANK = {
+	bankConnector: null,
+	encryptionKey: null,
+	bankSetup: ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY", "ENCRYPTION_KEY"],
+} as const;
+
 export function buildTestApp(
 	db: Database,
 	logger: Logger = createLogger("silent"),
 	auth?: Auth,
 	network: TestNetwork & { webDist?: string } = {},
+	bank: TestBank = {},
 ): TestApp {
 	const trustedProxies = network.trustedProxies ?? [];
 
@@ -47,6 +60,9 @@ export function buildTestApp(
 		// In process there is no socket unless a spec names a peer.
 		clientAddress: () => network.peer,
 		webDist: network.webDist,
+		...NO_BANK,
+		...bank,
+		redirectUrl: `${TEST_ORIGIN}/reglages/banques/retour`,
 	});
 }
 

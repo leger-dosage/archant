@@ -6,6 +6,7 @@ export const Route = createFileRoute("/_authed/reglages")({
 });
 
 const SECTIONS = [
+	{ to: "/reglages/banques", label: "settings.sections.banks" },
 	{ to: "/reglages/categories", label: "settings.sections.categories" },
 	{ to: "/reglages/marchands", label: "settings.sections.merchants" },
 	{ to: "/reglages/etiquettes", label: "settings.sections.tags" },

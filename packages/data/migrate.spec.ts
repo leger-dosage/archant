@@ -1212,6 +1212,46 @@ describe("recurring transactions", () => {
 	});
 });
 
+const insertConnection = (
+	database: Database,
+	id: string,
+	fields: { status?: string; state?: string | null; connector?: string } = {},
+) =>
+	database.run(
+		sql`insert into bank_connections (id, connector, institution_name, country, status, authorization_state, created_at, updated_at) values (${id}, ${fields.connector ?? "enable-banking"}, 'Banque Test', 'FR', ${fields.status ?? "pending"}, ${fields.state === undefined ? `state-${id}` : fields.state}, 0, 0)`,
+	);
+
+describe("bank connections", () => {
+	it("accepts only a known status and connector", async () => {
+		const database = await migrated();
+
+		await expect(insertConnection(database, "c1")).resolves.toBeDefined();
+		await expect(insertConnection(database, "c2", { status: "active" })).resolves.toBeDefined();
+		await expect(insertConnection(database, "c3", { status: "revoked" })).rejects.toThrow();
+		await expect(insertConnection(database, "c4", { connector: "plaid" })).rejects.toThrow();
+	});
+
+	it("keeps an authorization state unique, and any number of cleared ones", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1", { state: "s1" });
+
+		await expect(insertConnection(database, "c2", { state: "s1" })).rejects.toThrow();
+		await expect(insertConnection(database, "c3", { state: null })).resolves.toBeDefined();
+		await expect(insertConnection(database, "c4", { state: null })).resolves.toBeDefined();
+	});
+
+	it("starts without a session or a consent expiry", async () => {
+		const database = await migrated();
+		await insertConnection(database, "c1");
+
+		await expect(
+			database.get(
+				sql`select session_id as sessionId, consent_expires_at as expiresAt from bank_connections`,
+			),
+		).resolves.toEqual({ sessionId: null, expiresAt: null });
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

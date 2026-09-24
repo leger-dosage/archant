@@ -23,6 +23,11 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
+      # Bank connection, all optional; see docs/deployment.md. Empty, the bank
+      # routes answer 503 and the rest of the app works.
+      ENABLE_BANKING_APPLICATION_ID: ${ENABLE_BANKING_APPLICATION_ID:-}
+      ENABLE_BANKING_PRIVATE_KEY: ${ENABLE_BANKING_PRIVATE_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     volumes:
       # The whole database is this volume. Back it up, not the image.
       - archant-data:/data

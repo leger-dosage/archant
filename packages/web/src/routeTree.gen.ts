@@ -20,10 +20,12 @@ import { Route as AuthedReglesRouteImport } from './routes/_authed.regles'
 import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes.index'
 import { Route as AuthedComptesAccountIdRouteImport } from './routes/_authed.comptes.$accountId'
 import { Route as AuthedReglagesIndexRouteImport } from './routes/_authed.reglages.index'
+import { Route as AuthedReglagesBanquesRouteImport } from './routes/_authed.reglages.banques'
 import { Route as AuthedReglagesCategoriesRouteImport } from './routes/_authed.reglages.categories'
 import { Route as AuthedReglagesEtiquettesRouteImport } from './routes/_authed.reglages.etiquettes'
 import { Route as AuthedReglagesMarchandsRouteImport } from './routes/_authed.reglages.marchands'
 import { Route as AuthedReglagesSecuriteRouteImport } from './routes/_authed.reglages.securite'
+import { Route as AuthedReglagesBanquesRetourRouteImport } from './routes/_authed.reglages.banques_.retour'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
@@ -79,6 +81,11 @@ const AuthedReglagesIndexRoute = AuthedReglagesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedReglagesRoute,
 } as any)
+const AuthedReglagesBanquesRoute = AuthedReglagesBanquesRouteImport.update({
+  id: '/banques',
+  path: '/banques',
+  getParentRoute: () => AuthedReglagesRoute,
+} as any)
 const AuthedReglagesCategoriesRoute =
   AuthedReglagesCategoriesRouteImport.update({
     id: '/categories',
@@ -101,6 +108,12 @@ const AuthedReglagesSecuriteRoute = AuthedReglagesSecuriteRouteImport.update({
   path: '/securite',
   getParentRoute: () => AuthedReglagesRoute,
 } as any)
+const AuthedReglagesBanquesRetourRoute =
+  AuthedReglagesBanquesRetourRouteImport.update({
+    id: '/banques_/retour',
+    path: '/banques/retour',
+    getParentRoute: () => AuthedReglagesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -111,12 +124,14 @@ export interface FileRoutesByFullPath {
   '/reglages': typeof AuthedReglagesRouteWithChildren
   '/regles': typeof AuthedReglesRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/reglages/banques': typeof AuthedReglagesBanquesRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
   '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes/': typeof AuthedComptesIndexRoute
   '/reglages/': typeof AuthedReglagesIndexRoute
+  '/reglages/banques/retour': typeof AuthedReglagesBanquesRetourRoute
 }
 export interface FileRoutesByTo {
   '/connexion': typeof ConnexionRoute
@@ -126,12 +141,14 @@ export interface FileRoutesByTo {
   '/regles': typeof AuthedReglesRoute
   '/': typeof AuthedIndexRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/reglages/banques': typeof AuthedReglagesBanquesRoute
   '/reglages/categories': typeof AuthedReglagesCategoriesRoute
   '/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/comptes': typeof AuthedComptesIndexRoute
   '/reglages': typeof AuthedReglagesIndexRoute
+  '/reglages/banques/retour': typeof AuthedReglagesBanquesRetourRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -144,12 +161,14 @@ export interface FileRoutesById {
   '/_authed/regles': typeof AuthedReglesRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/comptes/$accountId': typeof AuthedComptesAccountIdRoute
+  '/_authed/reglages/banques': typeof AuthedReglagesBanquesRoute
   '/_authed/reglages/categories': typeof AuthedReglagesCategoriesRoute
   '/_authed/reglages/etiquettes': typeof AuthedReglagesEtiquettesRoute
   '/_authed/reglages/marchands': typeof AuthedReglagesMarchandsRoute
   '/_authed/reglages/securite': typeof AuthedReglagesSecuriteRoute
   '/_authed/comptes/': typeof AuthedComptesIndexRoute
   '/_authed/reglages/': typeof AuthedReglagesIndexRoute
+  '/_authed/reglages/banques_/retour': typeof AuthedReglagesBanquesRetourRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -162,12 +181,14 @@ export interface FileRouteTypes {
     | '/reglages'
     | '/regles'
     | '/comptes/$accountId'
+    | '/reglages/banques'
     | '/reglages/categories'
     | '/reglages/etiquettes'
     | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes/'
     | '/reglages/'
+    | '/reglages/banques/retour'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connexion'
@@ -177,12 +198,14 @@ export interface FileRouteTypes {
     | '/regles'
     | '/'
     | '/comptes/$accountId'
+    | '/reglages/banques'
     | '/reglages/categories'
     | '/reglages/etiquettes'
     | '/reglages/marchands'
     | '/reglages/securite'
     | '/comptes'
     | '/reglages'
+    | '/reglages/banques/retour'
   id:
     | '__root__'
     | '/_authed'
@@ -194,12 +217,14 @@ export interface FileRouteTypes {
     | '/_authed/regles'
     | '/_authed/'
     | '/_authed/comptes/$accountId'
+    | '/_authed/reglages/banques'
     | '/_authed/reglages/categories'
     | '/_authed/reglages/etiquettes'
     | '/_authed/reglages/marchands'
     | '/_authed/reglages/securite'
     | '/_authed/comptes/'
     | '/_authed/reglages/'
+    | '/_authed/reglages/banques_/retour'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -287,6 +312,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedReglagesIndexRouteImport
       parentRoute: typeof AuthedReglagesRoute
     }
+    '/_authed/reglages/banques': {
+      id: '/_authed/reglages/banques'
+      path: '/banques'
+      fullPath: '/reglages/banques'
+      preLoaderRoute: typeof AuthedReglagesBanquesRouteImport
+      parentRoute: typeof AuthedReglagesRoute
+    }
     '/_authed/reglages/categories': {
       id: '/_authed/reglages/categories'
       path: '/categories'
@@ -315,23 +347,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedReglagesSecuriteRouteImport
       parentRoute: typeof AuthedReglagesRoute
     }
+    '/_authed/reglages/banques_/retour': {
+      id: '/_authed/reglages/banques_/retour'
+      path: '/banques/retour'
+      fullPath: '/reglages/banques/retour'
+      preLoaderRoute: typeof AuthedReglagesBanquesRetourRouteImport
+      parentRoute: typeof AuthedReglagesRoute
+    }
   }
 }
 
 interface AuthedReglagesRouteChildren {
+  AuthedReglagesBanquesRoute: typeof AuthedReglagesBanquesRoute
   AuthedReglagesCategoriesRoute: typeof AuthedReglagesCategoriesRoute
   AuthedReglagesEtiquettesRoute: typeof AuthedReglagesEtiquettesRoute
   AuthedReglagesMarchandsRoute: typeof AuthedReglagesMarchandsRoute
   AuthedReglagesSecuriteRoute: typeof AuthedReglagesSecuriteRoute
   AuthedReglagesIndexRoute: typeof AuthedReglagesIndexRoute
+  AuthedReglagesBanquesRetourRoute: typeof AuthedReglagesBanquesRetourRoute
 }
 
 const AuthedReglagesRouteChildren: AuthedReglagesRouteChildren = {
+  AuthedReglagesBanquesRoute: AuthedReglagesBanquesRoute,
   AuthedReglagesCategoriesRoute: AuthedReglagesCategoriesRoute,
   AuthedReglagesEtiquettesRoute: AuthedReglagesEtiquettesRoute,
   AuthedReglagesMarchandsRoute: AuthedReglagesMarchandsRoute,
   AuthedReglagesSecuriteRoute: AuthedReglagesSecuriteRoute,
   AuthedReglagesIndexRoute: AuthedReglagesIndexRoute,
+  AuthedReglagesBanquesRetourRoute: AuthedReglagesBanquesRetourRoute,
 }
 
 const AuthedReglagesRouteWithChildren = AuthedReglagesRoute._addFileChildren(
