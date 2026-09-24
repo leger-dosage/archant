@@ -59,6 +59,13 @@ export const SHORTCUTS = [
 		inFields: false,
 	},
 	{
+		id: "goRecurring",
+		keys: ["g>r"],
+		label: "shortcuts.labels.goRecurring",
+		section: "navigation",
+		inFields: false,
+	},
+	{
 		id: "goRules",
 		keys: ["g>u"],
 		label: "shortcuts.labels.goRules",

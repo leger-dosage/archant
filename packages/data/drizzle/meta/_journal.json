@@ -176,6 +176,13 @@
       "when": 1790241789366,
       "tag": "0024_add_recurring_transactions",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1790244123622,
+      "tag": "0025_add_recurring_status",
+      "breakpoints": true
     }
   ]
 }

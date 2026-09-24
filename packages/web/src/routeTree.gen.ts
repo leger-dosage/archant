@@ -14,6 +14,7 @@ import { Route as ConnexionRouteImport } from './routes/connexion'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthedOperationsRouteImport } from './routes/_authed.operations'
+import { Route as AuthedRecurrencesRouteImport } from './routes/_authed.recurrences'
 import { Route as AuthedReglagesRouteImport } from './routes/_authed.reglages'
 import { Route as AuthedReglesRouteImport } from './routes/_authed.regles'
 import { Route as AuthedComptesIndexRouteImport } from './routes/_authed.comptes.index'
@@ -46,6 +47,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const AuthedOperationsRoute = AuthedOperationsRouteImport.update({
   id: '/operations',
   path: '/operations',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedRecurrencesRoute = AuthedRecurrencesRouteImport.update({
+  id: '/recurrences',
+  path: '/recurrences',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedReglagesRoute = AuthedReglagesRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
   '/operations': typeof AuthedOperationsRoute
+  '/recurrences': typeof AuthedRecurrencesRoute
   '/reglages': typeof AuthedReglagesRouteWithChildren
   '/regles': typeof AuthedReglesRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
   '/operations': typeof AuthedOperationsRoute
+  '/recurrences': typeof AuthedRecurrencesRoute
   '/regles': typeof AuthedReglesRoute
   '/': typeof AuthedIndexRoute
   '/comptes/$accountId': typeof AuthedComptesAccountIdRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/connexion': typeof ConnexionRoute
   '/setup': typeof SetupRoute
   '/_authed/operations': typeof AuthedOperationsRoute
+  '/_authed/recurrences': typeof AuthedRecurrencesRoute
   '/_authed/reglages': typeof AuthedReglagesRouteWithChildren
   '/_authed/regles': typeof AuthedReglesRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
     | '/connexion'
     | '/setup'
     | '/operations'
+    | '/recurrences'
     | '/reglages'
     | '/regles'
     | '/comptes/$accountId'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
     | '/connexion'
     | '/setup'
     | '/operations'
+    | '/recurrences'
     | '/regles'
     | '/'
     | '/comptes/$accountId'
@@ -178,6 +189,7 @@ export interface FileRouteTypes {
     | '/connexion'
     | '/setup'
     | '/_authed/operations'
+    | '/_authed/recurrences'
     | '/_authed/reglages'
     | '/_authed/regles'
     | '/_authed/'
@@ -231,6 +243,13 @@ declare module '@tanstack/react-router' {
       path: '/operations'
       fullPath: '/operations'
       preLoaderRoute: typeof AuthedOperationsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/recurrences': {
+      id: '/_authed/recurrences'
+      path: '/recurrences'
+      fullPath: '/recurrences'
+      preLoaderRoute: typeof AuthedRecurrencesRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/reglages': {
@@ -321,6 +340,7 @@ const AuthedReglagesRouteWithChildren = AuthedReglagesRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedOperationsRoute: typeof AuthedOperationsRoute
+  AuthedRecurrencesRoute: typeof AuthedRecurrencesRoute
   AuthedReglagesRoute: typeof AuthedReglagesRouteWithChildren
   AuthedReglesRoute: typeof AuthedReglesRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
@@ -330,6 +350,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedOperationsRoute: AuthedOperationsRoute,
+  AuthedRecurrencesRoute: AuthedRecurrencesRoute,
   AuthedReglagesRoute: AuthedReglagesRouteWithChildren,
   AuthedReglesRoute: AuthedReglesRoute,
   AuthedIndexRoute: AuthedIndexRoute,

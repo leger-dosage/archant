@@ -53,6 +53,14 @@ export const queryKeys = {
 		/** Under `all`, one rule's or, for `null`, every enabled rule's count. */
 		preview: (ruleId: string | null) => ["rules", "preview", ruleId] as const,
 	},
+	/**
+	 * Every recurring pattern, one query: a household has a few dozen. Not
+	 * invalidated by transaction writes: the page refetches on mount, which
+	 * covers a detection run by a confirmed import.
+	 */
+	recurring: {
+		all: ["recurring"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

@@ -17,6 +17,7 @@
 		"dashboard": "Tableau de bord",
 		"accounts": "Comptes",
 		"operations": "Opérations",
+		"recurring": "Récurrences",
 		"rules": "Règles",
 		"settings": "Réglages",
 		"signOut": "Se déconnecter",
@@ -70,6 +71,7 @@
 			"goDashboard": "Aller au tableau de bord",
 			"goAccounts": "Aller aux comptes",
 			"goOperations": "Aller aux opérations",
+			"goRecurring": "Aller aux récurrences",
 			"goRules": "Aller aux règles",
 			"goSettings": "Aller aux réglages",
 			"newTransaction": "Ajouter une opération sur la page d'un compte",
@@ -321,6 +323,12 @@
 			"dialogDescription": "Choisissez l'opération de montant opposé qui forme l'autre côté de ce virement.",
 			"candidates": "Opérations candidates",
 			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 4 jours près"
+		},
+		"recurring": {
+			"title": "Récurrence",
+			"description": "Suivez cette opération comme un paiement qui revient chaque mois.",
+			"add": "Ajouter aux récurrences",
+			"added": "Opération ajoutée aux récurrences"
 		}
 	},
 	"operations": {
@@ -768,6 +776,42 @@
 			"none": "Aucune opération n'a cette étiquette.",
 			"action": "Supprimer",
 			"deleted": "Étiquette « {{name}} » supprimée."
+		}
+	},
+	"recurring": {
+		"title": "Récurrences",
+		"description": "Les abonnements et factures qui reviennent chaque mois, détectés sur les trois derniers mois d'opérations. Confirmez ceux que vous voulez suivre, écartez les autres. Une récurrence détectée sans opération depuis deux mois devient inactive.",
+		"empty": "Aucune récurrence pour l'instant. Lancez la détection ou ajoutez-en une depuis une opération.",
+		"detect": "Détecter",
+		"detected_zero": "Aucune récurrence détectée",
+		"detected_one": "{{count}} récurrence détectée",
+		"detected_other": "{{count}} récurrences détectées",
+		"columns": {
+			"name": "Nom",
+			"account": "Compte",
+			"amount": "Montant",
+			"next": "Prochaine échéance",
+			"status": "Statut",
+			"actions": "Actions"
+		},
+		"statuses": {
+			"detected": "Détectée",
+			"confirmed": "Confirmée",
+			"inactive": "Inactive",
+			"dismissed": "Écartée"
+		},
+		"manual": "Ajoutée à la main",
+		"actions": "Actions pour {{name}}",
+		"confirm": "Confirmer",
+		"deactivate": "Désactiver",
+		"dismiss": "Écarter",
+		"confirmed": "Récurrence confirmée",
+		"deactivated": "Récurrence désactivée",
+		"dismissDialog": {
+			"title": "Écarter « {{name}} » ?",
+			"description": "Elle disparaîtra de la liste et la détection ne la proposera plus. Ses opérations ne seront pas modifiées.",
+			"action": "Écarter",
+			"dismissed": "Récurrence écartée"
 		}
 	},
 	"rules": {

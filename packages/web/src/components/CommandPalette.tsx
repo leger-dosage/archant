@@ -113,6 +113,12 @@ export function CommandPalette() {
 			run: () => void navigate({ to: "/operations" }),
 		},
 		{
+			id: "go-recurring",
+			label: t("nav.recurring"),
+			shortcut: "goRecurring",
+			run: () => void navigate({ to: "/recurrences" }),
+		},
+		{
 			id: "go-rules",
 			label: t("nav.rules"),
 			shortcut: "goRules",

@@ -76,3 +76,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-9-1-detect-recurring-transactions.md`
   summary: A stored pattern that detection no longer finds stays as it was, so a pattern regrouped under a merchant assigned later leaves its label-keyed twin behind, and a reverted import leaves counts and dates computed on deleted rows.
   evidence: medium. Story 9.1 keeps undetected rows as Sure does; Story 9.2's inactive transition (no occurrence for more than two expected periods) must cover both, or the page lists them as current.
+- source_spec: `_bmad-output/implementation-artifacts/spec-9-2-recurring-transactions-page.md`
+  summary: A confirmed or inactive pattern that detection does not find again keeps its dates, so its next date slips into the past; a manual add or a confirm on an old row keeps its old dates too.
+  evidence: medium. Detection refreshes only the patterns it finds, as Sure's identifier does; Sure runs a separate pass over manual rows. A manual item whose transaction has fewer than three occurrences in three months shows a past « Prochaine échéance » until detection finds it.

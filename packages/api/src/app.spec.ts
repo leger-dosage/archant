@@ -6276,3 +6276,127 @@ describe("POST /api/recurring/detect", () => {
 		expect(await response.json()).toEqual({ data: { detected: 0 } });
 	});
 });
+
+describe("/api/recurring", () => {
+	async function monthlyNetflix() {
+		const { app, account } = await ownRecurringAccount();
+		const add = async (date: string) => {
+			const response = await app.request(`/api/accounts/${account.id}/transactions`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ date, label: "Netflix", amount: "-13,99" }),
+			});
+
+			return z.object({ data: z.object({ id: z.string() }) }).parse(await response.json()).data.id;
+		};
+		const ids = [await add("2026-07-05"), await add("2026-08-05"), await add("2026-09-05")];
+
+		return { app, account, ids };
+	}
+
+	it("lists the detected patterns with their account", async () => {
+		const { app, account } = await monthlyNetflix();
+		await testClient(app).api.recurring.detect.$post();
+
+		const response = await testClient(app).api.recurring.$get();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			data: [
+				expect.objectContaining({
+					accountId: account.id,
+					accountName: valid.name,
+					merchantName: null,
+					label: "Netflix",
+					amount: -1399,
+					currency: "EUR",
+					expectedDayOfMonth: 5,
+					status: "detected",
+					manual: false,
+				}),
+			],
+		});
+	});
+
+	it("adds a pattern from a transaction", async () => {
+		const { app, ids } = await monthlyNetflix();
+
+		const response = await testClient(app).api.recurring.$post({ json: { entryId: ids[2]! } });
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			data: { label: "Netflix", occurrenceCount: 1, status: "confirmed", manual: true },
+		});
+	});
+
+	it("answers NOT_FOUND for an unknown transaction, VALIDATION_ERROR for a missing one", async () => {
+		own = await freshDatabase();
+		const client = testClient(buildApp(own.db)).api.recurring;
+
+		const unknown = await client.$post({ json: { entryId: "nope" } });
+
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
+
+		const missing = await buildApp(own.db).request("/api/recurring", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "{}",
+		});
+
+		expect(missing.status).toBe(400);
+		expect(errorBody.parse(await missing.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "entryId" }],
+		});
+	});
+
+	it("confirms a pattern, and refuses a move its status cannot make", async () => {
+		const { app } = await monthlyNetflix();
+		const client = testClient(app).api.recurring;
+		await client.detect.$post();
+		const { data } = await (await client.$get()).json();
+		const id = data[0]!.id;
+
+		const deactivated = await client[":id"].$patch({
+			param: { id },
+			json: { status: "inactive" },
+		});
+
+		expect(deactivated.status).toBe(400);
+		expect(errorBody.parse(await deactivated.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "status", code: "invalid_value" }],
+		});
+
+		const confirmed = await client[":id"].$patch({ param: { id }, json: { status: "confirmed" } });
+
+		expect(confirmed.status).toBe(200);
+		expect(await confirmed.json()).toMatchObject({ data: { id, status: "confirmed" } });
+	});
+
+	it("refuses an unknown status, and answers NOT_FOUND for an unknown id", async () => {
+		own = await freshDatabase();
+		const app = buildApp(own.db);
+
+		const unknownStatus = await app.request("/api/recurring/nope", {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ status: "deleted" }),
+		});
+
+		expect(unknownStatus.status).toBe(400);
+		expect(errorBody.parse(await unknownStatus.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "status" }],
+		});
+
+		const unknownId = await testClient(app).api.recurring[":id"].$patch({
+			param: { id: "nope" },
+			json: { status: "confirmed" },
+		});
+
+		expect(unknownId.status).toBe(404);
+		expect(errorBody.parse(await unknownId.json()).error.code).toBe("NOT_FOUND");
+	});
+});

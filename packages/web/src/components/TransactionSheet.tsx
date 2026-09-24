@@ -12,6 +12,7 @@ import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
+import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
 import { AmountField } from "@/components/AmountField";
 import { CategoryCombobox } from "@/components/CategoryCombobox";
@@ -37,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useAddRecurring } from "@/hooks/useRecurring";
 import { useTags } from "@/hooks/useTags";
 import {
 	useCreateTransaction,
@@ -405,6 +407,56 @@ function TransferBlock({
 	);
 }
 
+const expenseKinds: ReadonlySet<string> = new Set(EXPENSE_TRANSFER_KINDS);
+
+/**
+ * Not a transfer side, or a spent one: a loan payment's or investment
+ * contribution's outflow, which detection groups too (`direction` in the API).
+ */
+const recurrable = (amount: number, transfer: TransferLink) =>
+	transfer === null || (amount < 0 && expenseKinds.has(transfer.kind));
+
+/**
+ * The sheet's « Récurrence » block: adds the saved transaction to the
+ * recurring patterns, confirmed, at once and apart from the form, as the
+ * transfer block does. Hidden on a transfer side the API refuses.
+ */
+function RecurringBlock({
+	transaction,
+	dirty,
+}: {
+	transaction: TransactionData;
+	/** Unsaved edits: the API would read the saved row, not what the form shows. */
+	dirty: boolean;
+}) {
+	const { t } = useTranslation();
+	const addRecurring = useAddRecurring();
+
+	return (
+		<section aria-labelledby="transaction-recurring-title" className="flex flex-col gap-1.5">
+			<h3 id="transaction-recurring-title" className="text-sm font-medium">
+				{t("transactions.recurring.title")}
+			</h3>
+			<div className="flex flex-col items-start gap-2">
+				<p className="text-sm text-muted-foreground">{t("transactions.recurring.description")}</p>
+				<Button
+					type="button"
+					variant="outline"
+					disabled={dirty || addRecurring.isPending}
+					onClick={() =>
+						addRecurring.mutate(transaction.id, {
+							onSuccess: () => toast.success(t("transactions.recurring.added")),
+							onError: (error) => showErrorToast(errorCodeOf(error)),
+						})
+					}
+				>
+					{t("transactions.recurring.add")}
+				</Button>
+			</div>
+		</section>
+	);
+}
+
 type TransactionFormProps = {
 	account: SheetAccount;
 	transaction: TransactionData | null;
@@ -543,6 +595,9 @@ function TransactionForm({
 			>
 				{transaction !== null && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
+				)}
+				{transaction !== null && recurrable(transaction.amount, transfer) && (
+					<RecurringBlock transaction={transaction} dirty={isDirty} />
 				)}
 
 				<div className="flex flex-col gap-1.5">
