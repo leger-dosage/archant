@@ -6,6 +6,7 @@ import type {
 	BulkFilterRequest,
 	BulkSelectionRequest,
 	BulkUpdateRequest,
+	MergeDuplicateRequest,
 	TransactionFilterRequest,
 	TransactionInput,
 	TransactionPatchInput,
@@ -13,6 +14,7 @@ import type {
 import type { ServiceDeps } from "./deps.ts";
 import type {
 	BulkSelection,
+	DuplicateCandidate,
 	TransactionFilter,
 	TransactionListRecord,
 	TransactionRecord,
@@ -323,6 +325,35 @@ export async function deleteTransaction(deps: ServiceDeps, id: string): Promise<
 	await ledger.deleteTransaction(deps, id, { origin: "user" });
 
 	return { id };
+}
+
+/** What « Fusionner avec… » lists for a possible duplicate, nearest date first. */
+export async function listDuplicateCandidates(
+	deps: ServiceDeps,
+	id: string,
+): Promise<DuplicateCandidate[]> {
+	return ledger.duplicateCandidates(deps, id);
+}
+
+/**
+ * Merges a possible duplicate into the candidate the user picked, on the
+ * user's behalf, and returns that candidate as it now stands.
+ */
+export async function mergeDuplicate(
+	deps: ServiceDeps,
+	id: string,
+	body: MergeDuplicateRequest,
+): Promise<TransactionItem> {
+	await ledger.mergeDuplicate(deps, id, body.into);
+
+	return found(deps, body.into);
+}
+
+/** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
+export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await ledger.dismissDuplicate(deps, id);
+
+	return found(deps, id);
 }
 
 async function selectionOf(

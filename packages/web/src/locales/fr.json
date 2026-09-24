@@ -329,6 +329,20 @@
 			"candidates": "Opérations candidates",
 			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 4 jours près"
 		},
+		"duplicate": {
+			"flag": "Doublon possible",
+			"description": "Un import ou une synchronisation a trouvé deux opérations aussi proches de celle-ci et l'a ajoutée plutôt que de choisir.",
+			"mergeWith": "Fusionner avec…",
+			"dismiss": "Ce n'est pas un doublon",
+			"dialogTitle": "Fusionner avec…",
+			"dialogDescription": "Choisissez l'opération que celle-ci répète. Celle-ci est supprimée. L'opération choisie est conservée avec ses propres champs et reçoit les étiquettes et le virement de celle-ci.",
+			"candidates": "Opérations candidates",
+			"noCandidate": "Aucune opération du même montant dans ce compte à 3 jours près",
+			"merge": "Fusionner",
+			"merged": "Opérations fusionnées",
+			"dismissed": "Ce n'est plus signalé comme doublon",
+			"notCandidate": "Cette opération ne peut plus être fusionnée avec celle-ci. Choisissez-en une autre."
+		},
 		"recurring": {
 			"title": "Récurrence",
 			"description": "Suivez cette opération comme un paiement qui revient chaque mois.",
@@ -1071,6 +1085,7 @@
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
+		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
 		"SERVICE_UNAVAILABLE": "La base de données ne répond pas. Réessayez dans un instant.",

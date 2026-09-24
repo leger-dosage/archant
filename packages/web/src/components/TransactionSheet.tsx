@@ -19,6 +19,8 @@ import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
+import { DuplicateDialog } from "@/components/DuplicateDialog";
+import { DuplicateFlag } from "@/components/DuplicateFlag";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { TagCombobox } from "@/components/TagCombobox";
 import { TransferDialog } from "@/components/TransferDialog";
@@ -37,6 +39,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
+import { useDismissDuplicate, useMergeDuplicate } from "@/hooks/useDuplicates";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useAddRecurring } from "@/hooks/useRecurring";
 import { useTags } from "@/hooks/useTags";
@@ -407,6 +410,115 @@ function TransferBlock({
 	);
 }
 
+/**
+ * The sheet's « Doublon possible » block, shown while the flag holds:
+ * « Fusionner avec… » deletes this transaction into the one picked, and
+ * « Ce n'est pas un doublon » clears the flag. Both save at once, apart from
+ * the form, as the transfer block does. A merge or a dismissal made in
+ * another tab hides the block rather than offering it again.
+ */
+function DuplicateBlock({
+	transaction,
+	onDismissed,
+	onMerged,
+	onResolved,
+	onGone,
+}: {
+	transaction: TransactionData;
+	onDismissed: () => void;
+	onMerged: (survivorId: string) => void;
+	/** Dismissed elsewhere meanwhile. */
+	onResolved: () => void;
+	/** Merged away elsewhere meanwhile: nothing is left to edit. */
+	onGone: () => void;
+}) {
+	const { t } = useTranslation();
+	const mergeDuplicate = useMergeDuplicate();
+	const dismissDuplicate = useDismissDuplicate();
+	const [picking, setPicking] = useState(false);
+
+	const failed = (error: unknown) => {
+		const code = errorCodeOf(error);
+
+		if (code === "DUPLICATE_RESOLVED") {
+			setPicking(false);
+			onResolved();
+		}
+
+		if (code === "NOT_FOUND") {
+			setPicking(false);
+			onGone();
+		}
+
+		if (code === "VALIDATION_ERROR") {
+			// The candidate changed meanwhile; the list refreshes with the mutation.
+			toast.error(t("transactions.duplicate.notCandidate"));
+		} else {
+			showErrorToast(code);
+		}
+	};
+
+	const merge = (into: string) =>
+		mergeDuplicate.mutate(
+			{ id: transaction.id, into },
+			{
+				onSuccess: (survivor) => {
+					setPicking(false);
+					toast.success(t("transactions.duplicate.merged"));
+					onMerged(survivor.id);
+				},
+				onError: failed,
+			},
+		);
+
+	const dismiss = () =>
+		dismissDuplicate.mutate(transaction.id, {
+			onSuccess: () => {
+				toast.success(t("transactions.duplicate.dismissed"));
+				onDismissed();
+			},
+			onError: failed,
+		});
+
+	return (
+		<section aria-labelledby="transaction-duplicate-title" className="flex flex-col gap-1.5">
+			<h3 id="transaction-duplicate-title" className="text-sm font-medium">
+				<DuplicateFlag />
+			</h3>
+			<p className="text-sm text-muted-foreground">{t("transactions.duplicate.description")}</p>
+			<div className="flex flex-wrap gap-2">
+				<Button
+					type="button"
+					variant="outline"
+					disabled={dismissDuplicate.isPending}
+					onClick={() => setPicking(true)}
+				>
+					{t("transactions.duplicate.mergeWith")}
+				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					disabled={mergeDuplicate.isPending || dismissDuplicate.isPending}
+					onClick={dismiss}
+				>
+					{t("transactions.duplicate.dismiss")}
+				</Button>
+			</div>
+			<DuplicateDialog
+				transactionId={transaction.id}
+				open={picking}
+				onOpenChange={setPicking}
+				onMerge={merge}
+				pending={mergeDuplicate.isPending}
+			/>
+		</section>
+	);
+}
+
+/** A row's button in the page, found again after a refetch remounted it. */
+const rowById = (id: string) =>
+	document.querySelector<HTMLElement>(`[data-transaction-id="${CSS.escape(id)}"]`);
+
 const expenseKinds: ReadonlySet<string> = new Set(EXPENSE_TRANSFER_KINDS);
 
 /**
@@ -462,6 +574,8 @@ type TransactionFormProps = {
 	transaction: TransactionData | null;
 	/** After a save or a delete. */
 	onClose: () => void;
+	/** After a merge: this transaction is gone, focus goes to the survivor's row. */
+	onMerged: (survivorId: string) => void;
 	/** Annuler: the sheet decides whether to ask first. */
 	onCancel: () => void;
 	onDirtyChange: (dirty: boolean) => void;
@@ -471,6 +585,7 @@ function TransactionForm({
 	account,
 	transaction,
 	onClose,
+	onMerged,
 	onCancel,
 	onDirtyChange,
 }: TransactionFormProps) {
@@ -480,6 +595,10 @@ function TransactionForm({
 	const deleteTransaction = useDeleteTransaction(account.id);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [transfer, setTransfer] = useState<TransferLink>(transaction?.transfer ?? null);
+	// Hidden once resolved here; a refetch clearing the flag hides it too.
+	const [duplicateHidden, setDuplicateHidden] = useState(false);
+	const duplicate = transaction?.possibleDuplicate === true && !duplicateHidden;
+	const formRef = useRef<HTMLFormElement>(null);
 	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
 	const form = useForm<TransactionFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
@@ -578,6 +697,7 @@ function TransactionForm({
 	return (
 		<>
 			<form
+				ref={formRef}
 				id="transaction-form"
 				noValidate
 				className="flex flex-1 flex-col gap-4 overflow-y-auto px-4"
@@ -593,6 +713,21 @@ function TransactionForm({
 					}
 				}}
 			>
+				{transaction !== null && duplicate && (
+					<DuplicateBlock
+						transaction={transaction}
+						onDismissed={() => {
+							setDuplicateHidden(true);
+							// The block goes with the button that had focus: the next control takes it.
+							requestAnimationFrame(() =>
+								formRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus(),
+							);
+						}}
+						onMerged={onMerged}
+						onResolved={() => setDuplicateHidden(true)}
+						onGone={onClose}
+					/>
+				)}
 				{transaction !== null && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
 				)}
@@ -785,6 +920,8 @@ export function TransactionSheet({
 	// Radix returns focus to a `SheetTrigger`; this sheet is opened from rows
 	// and buttons of the page instead, so it remembers which one itself.
 	const opener = useRef<HTMLElement | null>(null);
+	// A merge deletes the row that opened the sheet: focus goes to the survivor's.
+	const survivor = useRef<string | null>(null);
 	const setDirty = useCallback((value: boolean) => {
 		dirty.current = value;
 	}, []);
@@ -816,9 +953,12 @@ export function TransactionSheet({
 				onCloseAutoFocus={(event) => {
 					const id = opener.current?.dataset["transactionId"];
 					const target =
-						opener.current?.isConnected === true || id === undefined
-							? opener.current
-							: document.querySelector<HTMLElement>(`[data-transaction-id="${CSS.escape(id)}"]`);
+						survivor.current !== null
+							? rowById(survivor.current)
+							: opener.current?.isConnected === true || id === undefined
+								? opener.current
+								: rowById(id);
+					survivor.current = null;
 
 					if (target?.isConnected === true) {
 						event.preventDefault();
@@ -857,6 +997,11 @@ export function TransactionSheet({
 					account={account}
 					transaction={transaction}
 					onClose={() => {
+						dirty.current = false;
+						onOpenChange(false);
+					}}
+					onMerged={(survivorId) => {
+						survivor.current = survivorId;
 						dirty.current = false;
 						onOpenChange(false);
 					}}

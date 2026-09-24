@@ -44,8 +44,10 @@ export const transactions = sqliteTable(
 		// Kept out of future reports (AD-9), never out of the account's balance:
 		// the money did move.
 		excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),
-		// Set when an import found two entries equally near this line and created
-		// it rather than guess; the merge action arrives with a later story.
+		// Set when an import or a sync found two entries equally near this line
+		// and created it rather than guess. Only ever set on insert; the user
+		// clears it by merging the row into the entry it repeats, which deletes
+		// it, or by dismissing the flag.
 		possibleDuplicate: integer("possible_duplicate", { mode: "boolean" }).notNull().default(false),
 		// A line the bank has not booked yet (FR51). It counts in balances and stays
 		// out of cash flow (AD-8, AD-9); its booked version absorbs it in place.
