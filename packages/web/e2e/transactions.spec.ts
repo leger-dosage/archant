@@ -25,7 +25,7 @@ test("a transaction is added, edited and deleted, and the balance follows each",
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
 	const label = uniqueName("Boulangerie");
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 	await expect(page.getByText("Aucune opération.")).toBeVisible();
 
@@ -73,7 +73,7 @@ test("the newest transaction is listed first", async ({ page, api }) => {
 	await api.addTransaction(account.id, { date: daysAgo(3), label: "Récente", amount: "-1" });
 	await api.addTransaction(account.id, { date: daysAgo(6), label: "Moyenne", amount: "-1" });
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 
 	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
 		/Récente/u,
@@ -89,7 +89,7 @@ test("Esc asks before discarding unsaved changes, and closes at once without any
 	const account = await api.openAccount();
 	const label = uniqueName("Abandonnée");
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 
 	let sheet = await openNewSheet(page);
 	await page.keyboard.press("Escape");
@@ -116,7 +116,7 @@ test("⌘Enter saves the transaction", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "100,00" });
 	const label = uniqueName("Raccourci");
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 
 	const sheet = await openNewSheet(page);
 	await sheet.getByLabel("Libellé").fill(label);
@@ -133,7 +133,7 @@ test("a date on the opening date is refused next to the date field", async ({ pa
 	const openingDate = daysAgo(10);
 	const account = await api.openAccount({ openingDate });
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 
 	const sheet = await openNewSheet(page);
 	await sheet.getByLabel("Date", { exact: true }).fill(typed(openingDate));
@@ -154,7 +154,7 @@ test("a card purchase of -30,00 raises the outstanding balance by 30,00 €", as
 	const card = await api.openAccount({ kind: "credit_card", openingBalance: "500,00" });
 	const liabilities = await api.groupTotal("liability");
 
-	await page.goto(`/comptes/${card.id}`);
+	await page.goto(`/accounts/${card.id}`);
 	await expect(header(page, card.name)).toContainText("Carte de crédit");
 	await expect(header(page, card.name)).toContainText(euros(50_000));
 
@@ -175,7 +175,7 @@ test("the list pages at 50 transactions", async ({ page, api }) => {
 
 	await api.addDailyTransactions(account.id, 51, "Lot");
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	const rows = page.getByRole("main").getByRole("button", { name: /^Lot \d{2}/u });
 	const pages = page.getByRole("navigation", { name: "Pages des opérations" });
 

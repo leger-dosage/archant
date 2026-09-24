@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures.ts";
 // container does.
 
 test("reloading a deep link shows the page", async ({ page }) => {
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
 	const reloaded = await page.reload();

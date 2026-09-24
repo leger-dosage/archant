@@ -34,9 +34,9 @@ async function withRows(api: Api, prefix: string, count = 3) {
 	return account;
 }
 
-/** Opens `/operations` on the rows labelled with `q`, and waits for them. */
+/** Opens `/transactions` on the rows labelled with `q`, and waits for them. */
 async function visitOperations(page: Page, q: string, extra = "") {
-	await page.goto(`/operations?q=${encodeURIComponent(q)}${extra}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(q)}${extra}`);
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	await expect(rowItem(page, q).first()).toBeVisible();
 }

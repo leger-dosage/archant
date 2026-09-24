@@ -41,7 +41,7 @@ Accounts update themselves every day from the bank, so the user never imports a 
 
 ## UX & Interaction Patterns
 
-- Bank connections live under settings, `/reglages/...`, in a Banques section.
+- Bank connections live under settings, `/settings/...`, in a Banques section.
 - Banners: a full-width warning strip above page content with an icon, one sentence and one action, dismissible for the session only. Three cases: consent expiring within 14 days (Renouveler), consent expired (Reconnecter), last sync older than 48 hours (Voir la connexion). Warning colour is reserved for these and possible duplicates. Wording names the bank and date, for example « Le consentement de BoursoBank expire le 12 octobre. »
 - Renewal flow: banner, bank consent, back on the connection page with linked accounts unchanged; « Synchroniser » runs once and the connection shows « Dernière synchronisation : à l'instant ».
 - Sync in progress: spinner on the connection's sync button; a second click is refused with « Synchronisation déjà en cours. »

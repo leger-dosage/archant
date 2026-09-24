@@ -60,7 +60,7 @@ const searchSchema = z.object({
 	importsPage: z.number().int().min(1).optional().catch(undefined),
 });
 
-export const Route = createFileRoute("/_authed/comptes/$accountId")({
+export const Route = createFileRoute("/_authed/accounts/$accountId")({
 	validateSearch: searchSchema,
 	component: AccountPage,
 });
@@ -80,7 +80,7 @@ function useClampAccountPage(
 	const goTo = useCallback(
 		(lastPage: number) =>
 			void navigate({
-				to: "/comptes/$accountId",
+				to: "/accounts/$accountId",
 				params: { accountId },
 				search: (previous) => ({ ...previous, ...pageSearch(param, lastPage) }),
 				replace: true,
@@ -148,7 +148,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					target={{ to: "/comptes/$accountId", accountId, param: "page" }}
+					target={{ to: "/accounts/$accountId", accountId, param: "page" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("transactions.paginationLabel")}
@@ -203,7 +203,7 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					target={{ to: "/comptes/$accountId", accountId, param: "snapshotsPage" }}
+					target={{ to: "/accounts/$accountId", accountId, param: "snapshotsPage" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("snapshots.paginationLabel")}
@@ -246,7 +246,7 @@ function ImportsPanel({ accountId, page }: { accountId: string; page: number }) 
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					target={{ to: "/comptes/$accountId", accountId, param: "importsPage" }}
+					target={{ to: "/accounts/$accountId", accountId, param: "importsPage" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("imports.history.paginationLabel")}
@@ -344,7 +344,7 @@ function AccountPage() {
 			<div className="flex w-full max-w-[1200px] flex-col items-start gap-3 p-6">
 				<h1 className="text-3xl font-semibold tracking-tight">{t("accountDetail.notFound")}</h1>
 				<Button asChild variant="outline">
-					<Link to="/comptes">{t("accountDetail.backToAccounts")}</Link>
+					<Link to="/accounts">{t("accountDetail.backToAccounts")}</Link>
 				</Button>
 			</div>
 		);

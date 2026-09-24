@@ -38,7 +38,7 @@ const tab = (page: Page, name: string, count: number) =>
 const step = (page: Page) => dialog(page).locator('[aria-current="step"]');
 
 async function openImport(page: Page, accountId: string, name: string) {
-	await page.goto(`/comptes/${accountId}`);
+	await page.goto(`/accounts/${accountId}`);
 	await expect(header(page, name)).toBeVisible();
 	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page)).toBeVisible();

@@ -9,7 +9,7 @@ import { DATABASE_FILE, TIME_ZONE } from "./settings.ts";
 // Story 10.1: connecting a bank from « Réglages > Banques », against the fake
 // Enable Banking that e2e/start-api.ts starts on loopback.
 
-const PAGE = "/reglages/banques";
+const PAGE = "/settings/banks";
 
 const banks = (page: Page) => page.getByRole("list", { name: "Banques disponibles" });
 
@@ -73,7 +73,7 @@ test("choosing a bank and approving lands on Banques with the connection and its
 	// The fake bank approves at once and sends the browser back through the
 	// return page, which posts the code and lands on the list.
 	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
-	await expect(page).toHaveURL(/\/reglages\/banques$/u);
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
 
 	// The bank allows 180 days; Archant asks for 90 at most.
 	const consentEnd = longDate.format(new Date(Date.now() + 90 * 86_400_000));
@@ -99,7 +99,7 @@ test("choosing a bank and approving lands on Banques with the connection and its
 });
 
 test("a redirect URL the provider refuses is named in the toast", async ({ page }) => {
-	const url = "http://localhost:8788/reglages/banques/retour";
+	const url = "http://localhost:8788/settings/banks/callback";
 	await page.route("**/api/bank-connections", (route) =>
 		route.request().method() === "POST"
 			? route.fulfill({
@@ -113,7 +113,7 @@ test("a redirect URL the provider refuses is named in the toast", async ({ page 
 	await banks(page).getByRole("button", { name: "Connecter Banque Démo" }).click();
 
 	await expect(toast(page, url)).toBeVisible();
-	await expect(page).toHaveURL(/\/reglages\/banques$/u);
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
 });
 
 test("a server without ENCRYPTION_KEY names it and links to the guide", async ({ page }) => {
@@ -141,17 +141,17 @@ test("a bank refusal shows its message without calling the API", async ({ page }
 		}
 	});
 
-	await page.goto("/reglages/banques/retour?error=access_denied&state=whatever");
+	await page.goto("/settings/banks/callback?error=access_denied&state=whatever");
 
 	await expect(page.getByRole("alert")).toContainText("La banque n'a pas donné son accord.");
 	await page.getByRole("link", { name: "Retour aux banques" }).click();
-	await expect(page).toHaveURL(/\/reglages\/banques$/u);
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
 	expect(callbacks).toEqual([]);
 });
 
 test("a spent or unknown state shows the translated error", async ({ page }) => {
 	await page.goto(
-		"/reglages/banques/retour?code=a-code&state=00000000-0000-4000-8000-000000000000",
+		"/settings/banks/callback?code=a-code&state=00000000-0000-4000-8000-000000000000",
 	);
 
 	await expect(page.getByRole("alert")).toContainText(

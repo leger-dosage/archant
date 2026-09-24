@@ -29,7 +29,7 @@ test("an empty household sees the empty state and a button to add an account", a
 		}),
 	);
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 	await expect(page.getByText("Aucun compte pour l'instant.")).toBeVisible();
@@ -43,7 +43,7 @@ test("an account created through the form is listed under its group, in the side
 	const name = uniqueName("Courant");
 	const before = await api.groupTotal("asset");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
@@ -84,7 +84,7 @@ test("a depository account is listed under assets and a credit card under liabil
 	const assetTotal = await api.groupTotal("asset");
 	const liabilityTotal = await api.groupTotal("liability");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 
 	const assets = page.getByRole("region", { name: "Actifs" });
 	const liabilities = page.getByRole("region", { name: "Passifs" });
@@ -109,7 +109,7 @@ test("a mortgage created through the form is listed under « Passifs », its pag
 }) => {
 	const name = uniqueName("Prêt immobilier");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -148,7 +148,7 @@ test("a loan's new rate in Paramètres shows in its header", async ({ page, api 
 		details: { interestRate: "4,9" },
 	});
 
-	await page.goto(`/comptes/${loan.id}?tab=settings`);
+	await page.goto(`/accounts/${loan.id}?tab=settings`);
 	const details = page.getByRole("list", { name: "Détails du prêt" });
 	await expect(details).toHaveText("Taux : 4,90 %");
 	await expect(page.getByLabel("Taux (%)")).toHaveValue("4,90");
@@ -178,7 +178,7 @@ test("a PEA created through the form is listed under « Actifs » with its value
 	const name = uniqueName("Plan actions");
 	const before = await api.groupTotal("asset");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -218,7 +218,7 @@ test("a home created through the form with its estimated value is listed under �
 	const name = uniqueName("Résidence principale");
 	const before = await api.groupTotal("asset");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -253,7 +253,7 @@ test("a vehicle created through the form with its estimated value is listed unde
 }) => {
 	const name = uniqueName("Voiture");
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -274,7 +274,7 @@ test("a vehicle created through the form with its estimated value is listed unde
 });
 
 test("invalid fields show their message next to the field", async ({ page }) => {
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
@@ -308,7 +308,7 @@ test("a field error from the API is shown next to its field", async ({ page }) =
 		});
 	});
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("button", { name: "Ajouter un compte" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
@@ -323,7 +323,7 @@ test("a field error from the API is shown next to its field", async ({ page }) =
 
 test("the theme switches between light and dark and is remembered", async ({ page }) => {
 	await page.emulateMedia({ colorScheme: "light" });
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	const root = page.locator("html");
 
 	await expect(root).not.toHaveClass(/dark/u);

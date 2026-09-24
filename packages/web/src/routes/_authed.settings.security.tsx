@@ -20,7 +20,7 @@ import { showErrorToast } from "@/lib/error-toast";
 import { fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 
-export const Route = createFileRoute("/_authed/reglages/securite")({
+export const Route = createFileRoute("/_authed/settings/security")({
 	component: SecurityPage,
 });
 
@@ -94,7 +94,7 @@ function SecurityPage() {
 			// `main.tsx` never sees this one: the redirect belongs here.
 			queryClient.setQueryData(queryKeys.session, null);
 			await router.navigate({
-				to: "/connexion",
+				to: "/sign-in",
 				search: { redirect: router.state.location.href },
 			});
 		} else if (error.status === 429) {

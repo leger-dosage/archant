@@ -20,7 +20,7 @@ import { useDeleteTag, useTags } from "@/hooks/useTags";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
-export const Route = createFileRoute("/_authed/reglages/etiquettes")({
+export const Route = createFileRoute("/_authed/settings/tags")({
 	component: TagsPage,
 });
 

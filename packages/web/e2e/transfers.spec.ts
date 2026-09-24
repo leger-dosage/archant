@@ -25,9 +25,9 @@ function uniqueAmount(): string {
 	return `${randomInt(100, 900)},${String(randomInt(100)).padStart(2, "0")}`;
 }
 
-/** Opens `/operations` on the rows labelled with `q`, and waits for them. */
+/** Opens `/transactions` on the rows labelled with `q`, and waits for them. */
 async function visitOperations(page: Page, q: string, search = "") {
-	await page.goto(`/operations?q=${encodeURIComponent(q)}${search}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(q)}${search}`);
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	await expect(rowItem(page, q).first()).toBeVisible();
 }
@@ -198,7 +198,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(rowItem(page, into).getByText("Remboursement de prêt")).toBeVisible();
 	await expect(rowButton(page, out)).toContainText(`Vers ${loan.name}`);
 
-	await page.goto(`/comptes/${loan.id}`);
+	await page.goto(`/accounts/${loan.id}`);
 	await expect(
 		page.getByRole("heading", { level: 1, name: loan.name }).locator(".."),
 	).toContainText(euros(17_880_000));
@@ -250,7 +250,7 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await expect(rowItem(page, into).getByText("Versement", { exact: true })).toBeVisible();
 	await expect(rowButton(page, out)).toContainText(`Vers ${pea.name}`);
 
-	await page.goto(`/comptes/${pea.id}`);
+	await page.goto(`/accounts/${pea.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: pea.name }).locator("..")).toContainText(
 		euros(2_550_000),
 	);

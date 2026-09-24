@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_authed")({
 			throw redirect({ to: "/setup" });
 		}
 
-		throw redirect({ to: "/connexion", search: { redirect: location.href } });
+		throw redirect({ to: "/sign-in", search: { redirect: location.href } });
 	},
 	component: AuthedLayout,
 });
@@ -46,11 +46,11 @@ function GlobalShortcuts() {
 	useShortcut("palette", () => setPaletteOpen(true));
 	useShortcut("shortcuts", () => setShortcutsOpen(true));
 	useShortcut("goDashboard", () => void navigate({ to: "/" }));
-	useShortcut("goAccounts", () => void navigate({ to: "/comptes" }));
-	useShortcut("goOperations", () => void navigate({ to: "/operations" }));
-	useShortcut("goRecurring", () => void navigate({ to: "/recurrences" }));
-	useShortcut("goRules", () => void navigate({ to: "/regles" }));
-	useShortcut("goSettings", () => void navigate({ to: "/reglages" }));
+	useShortcut("goAccounts", () => void navigate({ to: "/accounts" }));
+	useShortcut("goOperations", () => void navigate({ to: "/transactions" }));
+	useShortcut("goRecurring", () => void navigate({ to: "/recurring" }));
+	useShortcut("goRules", () => void navigate({ to: "/rules" }));
+	useShortcut("goSettings", () => void navigate({ to: "/settings" }));
 
 	return null;
 }

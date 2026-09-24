@@ -58,6 +58,7 @@ The target layout is three packages. None exists yet: each one appears when the 
 ## Key conventions
 
 - **File names are kebab-case** (`lib/exchange-rate.ts`, `routes/transactions.ts`). React components are PascalCase (`TransactionRow.tsx`), hooks are camelCase (`useAccounts.ts`).
+- **URLs are English** (`/settings/banks`, never `/reglages/banques`), as in Sure. Only visible text is translated; a URL must read the same in every locale, and a self-hoster registers some of them with a provider.
 - **No barrel files.** Direct imports only. The single `index.ts` allowed is a runtime entrypoint.
 - **Tests are co-located** and named `*.spec.ts(x)`: `exchange-rate.ts` sits next to `exchange-rate.spec.ts`.
 - **Why-comments.** Comment the reason, never the mechanism. A non-obvious configuration line carries the incident that produced it. This is the strongest stylistic signature of these repositories.

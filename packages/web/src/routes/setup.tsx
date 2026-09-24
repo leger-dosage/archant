@@ -39,7 +39,7 @@ export const Route = createFileRoute("/setup")({
 		}
 
 		if (!(await isSetupOpen())) {
-			throw redirect({ to: "/connexion" });
+			throw redirect({ to: "/sign-in" });
 		}
 	},
 	component: SetupPage,
@@ -81,7 +81,7 @@ function SetupPage() {
 
 			// Someone finished setup first: the account to sign in to exists.
 			if (apiError.code === "FORBIDDEN") {
-				await navigate({ to: "/connexion" });
+				await navigate({ to: "/sign-in" });
 				return;
 			}
 
@@ -101,7 +101,7 @@ function SetupPage() {
 		const { error } = await authClient.signIn.email({ email, password });
 
 		if (error !== null) {
-			await navigate({ to: "/connexion" });
+			await navigate({ to: "/sign-in" });
 			return;
 		}
 

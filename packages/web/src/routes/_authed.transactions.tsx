@@ -37,7 +37,7 @@ import {
 	withoutFilter,
 } from "@/lib/transaction-filters";
 
-export const Route = createFileRoute("/_authed/operations")({
+export const Route = createFileRoute("/_authed/transactions")({
 	validateSearch: operationsSearchSchema,
 	component: OperationsPage,
 });
@@ -286,7 +286,7 @@ function OperationsPage() {
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					target={{ to: "/operations" }}
+					target={{ to: "/transactions" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("transactions.paginationLabel")}

@@ -1,16 +1,16 @@
 import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-export const Route = createFileRoute("/_authed/reglages")({
+export const Route = createFileRoute("/_authed/settings")({
 	component: SettingsLayout,
 });
 
 const SECTIONS = [
-	{ to: "/reglages/banques", label: "settings.sections.banks" },
-	{ to: "/reglages/categories", label: "settings.sections.categories" },
-	{ to: "/reglages/marchands", label: "settings.sections.merchants" },
-	{ to: "/reglages/etiquettes", label: "settings.sections.tags" },
-	{ to: "/reglages/securite", label: "settings.sections.security" },
+	{ to: "/settings/banks", label: "settings.sections.banks" },
+	{ to: "/settings/categories", label: "settings.sections.categories" },
+	{ to: "/settings/merchants", label: "settings.sections.merchants" },
+	{ to: "/settings/tags", label: "settings.sections.tags" },
+	{ to: "/settings/security", label: "settings.sections.security" },
 ] as const;
 
 function SettingsLayout() {

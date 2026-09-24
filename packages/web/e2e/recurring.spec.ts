@@ -3,11 +3,11 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 9.2: recurring transactions at `/recurrences`. One database serves the
+// Story 9.2: recurring transactions at `/recurring`. One database serves the
 // whole run and detection reads every account, so each test finds its rows
 // by a label no other test uses.
 
-const PAGE = "/recurrences";
+const PAGE = "/recurring";
 
 const table = (page: Page) => page.getByRole("table", { name: "Récurrences" });
 
@@ -163,7 +163,7 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 	const label = uniqueName("Cotisation");
 	await api.addTransaction(account.id, { date: daysAgo(3), label, amount: "-15,00" });
 
-	await page.goto(`/operations?q=${encodeURIComponent(label)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	await page
 		.getByRole("main")
 		.getByRole("listitem")
@@ -187,14 +187,14 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 });
 
 test("the sidebar and g r open Récurrences", async ({ page }) => {
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page
 		.locator('[data-sidebar="sidebar"]')
 		.getByRole("link", { name: "Récurrences", exact: true })
 		.click();
-	await expect(page).toHaveURL(/\/recurrences$/u);
+	await expect(page).toHaveURL(/\/recurring$/u);
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 	await page.keyboard.press("g");
 	await page.keyboard.press("r");

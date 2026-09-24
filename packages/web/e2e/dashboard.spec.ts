@@ -239,7 +239,7 @@ test("a parent line rolls up its sub-category, beside « Sans catégorie »", as
 
 	await rows.nth(1).click();
 
-	await expect(page).toHaveURL(/\/operations\?/u);
+	await expect(page).toHaveURL(/\/transactions\?/u);
 	await expect(page).toHaveURL(/[?&]category=[^&]*none/u);
 	await expect(page).toHaveURL(/[?&]direction=[^&]*expense/u);
 	await expect(page).toHaveURL(/[?&]from=2024-04-01(&|$)/u);
@@ -263,7 +263,7 @@ test("a category line opens its rows of the month in « Opérations »", async (
 	await page.goto("/?month=2024-05");
 	await side(page, "Mai 2024", "Dépenses").getByRole("link", { name: leisure.name }).click();
 
-	await expect(page).toHaveURL(/\/operations\?/u);
+	await expect(page).toHaveURL(/\/transactions\?/u);
 	await expect(page).toHaveURL(new RegExp(leisure.id, "u"));
 	await expect(page).toHaveURL(/[?&]from=2024-05-01(&|$)/u);
 	await expect(page).toHaveURL(/[?&]to=2024-05-31(&|$)/u);

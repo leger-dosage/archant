@@ -21,7 +21,7 @@ import { useDeleteMerchant, useMerchants } from "@/hooks/useMerchants";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
-export const Route = createFileRoute("/_authed/reglages/marchands")({
+export const Route = createFileRoute("/_authed/settings/merchants")({
 	component: MerchantsPage,
 });
 

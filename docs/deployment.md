@@ -81,7 +81,7 @@ Archant reads bank data through [Enable Banking](https://enablebanking.com), a l
      -keyout private.pem -out public.crt
    ```
 
-2. Register the redirect URL of the application: your `ARCHANT_URL` (`BETTER_AUTH_URL` outside the container) followed by `/reglages/banques/retour`, for instance `https://archant.example.org/reglages/banques/retour`, or `http://localhost:5173/reglages/banques/retour` in development. The bank sends the browser back there. Any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
+2. Register the redirect URL of the application: your `ARCHANT_URL` (`BETTER_AUTH_URL` outside the container) followed by `/settings/banks/callback`, for instance `https://archant.example.org/settings/banks/callback`, or `http://localhost:5173/settings/banks/callback` in development. The bank sends the browser back there. Any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
 
 3. Set the variables, next to `BETTER_AUTH_SECRET`:
 

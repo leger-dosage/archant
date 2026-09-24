@@ -34,7 +34,7 @@ function CategoryRow({
 	return (
 		<li>
 			<Link
-				to="/operations"
+				to="/transactions"
 				search={{
 					category: [line.categoryId ?? UNCATEGORISED],
 					// « Sans catégorie » sits on both sides: its list keeps this side's rows.

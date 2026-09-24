@@ -16,7 +16,7 @@ const text = z.union([z.string(), z.number()]).transform(String);
 const isoDate = z.iso.date();
 
 /**
- * The search params of `/operations`. A value from an old or hand-edited link
+ * The search params of `/transactions`. A value from an old or hand-edited link
  * that the API would refuse is dropped rather than failing the page, and the
  * other filters stay: each param is checked on its own, then an end before
  * its start loses the end.

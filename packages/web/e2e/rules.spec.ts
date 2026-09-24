@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, sgml, test, typed, uniqueName } from "./fixtures.ts";
 
-// Stories 8.1, 8.2 and 8.3: rules at `/regles`. One database serves the whole
+// Stories 8.1, 8.2 and 8.3: rules at `/rules`. One database serves the whole
 // run, and a rule reaches every transaction added after it, so each test
 // deletes its rules before the next one starts.
 
@@ -10,7 +10,7 @@ test.afterEach(async ({ api }) => {
 	await api.deleteRules();
 });
 
-const PAGE = "/regles";
+const PAGE = "/rules";
 
 const rulesList = (page: Page) => page.getByRole("list", { name: "Règles" });
 
@@ -38,9 +38,9 @@ const labelLike = (value: string) => ({
 	value,
 });
 
-/** A transaction's category chip on `/operations`, narrowed to its label. */
+/** A transaction's category chip on `/transactions`, narrowed to its label. */
 async function expectCategory(page: Page, label: string, category: string) {
-	await page.goto(`/operations?q=${encodeURIComponent(label)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	await expect(
 		page
 			.getByRole("main")
@@ -56,17 +56,17 @@ async function visit(page: Page) {
 }
 
 test("the sidebar and g u open Règles, empty at first", async ({ page }) => {
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page
 		.locator('[data-sidebar="sidebar"]')
 		.getByRole("link", { name: "Règles", exact: true })
 		.click();
 
-	await expect(page).toHaveURL(/\/regles$/u);
+	await expect(page).toHaveURL(/\/rules$/u);
 	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toBeVisible();
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 	await page.keyboard.press("g");
 	await page.keyboard.press("u");
@@ -392,7 +392,7 @@ test("a rule with four actions sets the merchant, a tag and the label of an impo
 		account.id,
 		sgml([{ daysAgo: 2, amount: "-42,90", label: `CB ${marker} MKTP`, fitid: uniqueName("A") }]),
 	);
-	await page.goto(`/operations?q=${encodeURIComponent(renamed)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(renamed)}`);
 	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: renamed });
 	await expect(row).toContainText(merchant.name);
 	await expect(row).toContainText(tag.name);
@@ -426,7 +426,7 @@ test("a rule « Virement avec » pairs a matching line with the one opposite lin
 		amount: `-${amount}`,
 	});
 
-	await page.goto(`/operations?q=${encodeURIComponent(marker)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(marker)}`);
 	const rowOf = (label: string) =>
 		page.getByRole("main").getByRole("listitem").filter({ hasText: label });
 	await expect(rowOf(`${marker} départ`).getByText("Virement", { exact: true })).toBeVisible();

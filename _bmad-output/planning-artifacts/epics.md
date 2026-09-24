@@ -1147,7 +1147,7 @@ So that recurring shops are categorised without my help.
 
 **Acceptance Criteria:**
 
-**Given** the « Règles » page at `/regles`, reached from the sidebar or `g u`
+**Given** the « Règles » page at `/rules`, reached from the sidebar or `g u`
 **When** I create a rule
 **Then** I give it an optional name, one or more conditions, a « Catégorie » action and an optional start date « À partir du »; without a start date it applies to transactions of any date, as Sure's `effective_date`
 

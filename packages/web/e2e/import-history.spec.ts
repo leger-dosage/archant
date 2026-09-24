@@ -23,7 +23,7 @@ const header = (page: Page, name: string) =>
 const today = () => formatShortDate(daysAgo(0));
 
 async function openImportsTab(page: Page, account: { id: string; name: string }) {
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	await expect(header(page, account.name)).toBeVisible();
 	await page.getByRole("tab", { name: "Imports" }).click();
 }

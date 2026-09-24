@@ -85,7 +85,7 @@ function PickerButton({
 }
 
 /**
- * The actions on the ticked rows, shown at the bottom of `/operations` while
+ * The actions on the ticked rows, shown at the bottom of `/transactions` while
  * one is ticked: the count, « Tout sélectionner », then the category, the
  * merchant, tags to add, the exclusion and the delete. A success unticks
  * every row and states the count; a failure keeps them, with a destructive

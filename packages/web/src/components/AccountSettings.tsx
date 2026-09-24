@@ -273,7 +273,7 @@ function DeleteSection({ account }: { account: AccountDetailData }) {
 					formatted: countFormat.format(count ?? 0),
 				});
 
-	// The hook leaves for `/comptes` itself, which closes the dialog with the page.
+	// The hook leaves for `/accounts` itself, which closes the dialog with the page.
 	const remove = async () => {
 		try {
 			await deleteAccount.mutateAsync();

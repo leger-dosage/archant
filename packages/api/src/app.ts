@@ -110,7 +110,7 @@ function serveInterface(app: Hono, root: string) {
 		serveStatic({ root }),
 		notFound,
 	);
-	// Any other path is a client-side route, such as a reloaded `/comptes`.
+	// Any other path is a client-side route, such as a reloaded `/accounts`.
 	app.get(
 		"*",
 		cacheControl("no-cache"),

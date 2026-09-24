@@ -55,7 +55,7 @@ test("⌘K opens the palette with its three groups, and Esc gives focus back", a
 	api,
 }) => {
 	await api.openAccount();
-	await visit(page, "/comptes");
+	await visit(page, "/accounts");
 	const link = page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: "Opérations" });
 	await link.focus();
 
@@ -74,30 +74,30 @@ test("⌘K opens the palette with its three groups, and Esc gives focus back", a
 test("typing an account's name then Enter opens that account", async ({ page, api }) => {
 	const livret = await api.openAccount({ name: uniqueName("Livret A"), kind: "savings" });
 
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await openPalette(page);
 	await paletteInput(page).fill(livret.name.toLowerCase());
 	await expect(option(page, new RegExp(livret.name))).toBeVisible();
 	await page.keyboard.press("Enter");
 
-	await expect(page).toHaveURL(new RegExp(`/comptes/${livret.id}$`, "u"));
+	await expect(page).toHaveURL(new RegExp(`/accounts/${livret.id}$`, "u"));
 	await expect(page.getByRole("heading", { level: 1, name: livret.name })).toBeVisible();
 	await expect(palette(page)).toBeHidden();
 });
 
 test("the palette opens the settings", async ({ page }) => {
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await openPalette(page);
 	await paletteInput(page).fill("reglages");
 	await expect(option(page, /^Réglages/u)).toBeVisible();
 	await page.keyboard.press("Enter");
 
-	await expect(page).toHaveURL(/\/reglages\/categories$/u);
+	await expect(page).toHaveURL(/\/settings\/categories$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Réglages" })).toBeVisible();
 });
 
 test("the palette opens the dashboard", async ({ page }) => {
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await openPalette(page);
 	await paletteInput(page).fill("tableau");
 	await expect(option(page, /^Tableau de bord/u)).toBeVisible();
@@ -108,7 +108,7 @@ test("the palette opens the dashboard", async ({ page }) => {
 });
 
 test("the palette matches without accents", async ({ page }) => {
-	await visit(page, "/comptes");
+	await visit(page, "/accounts");
 	await openPalette(page);
 	await paletteInput(page).fill("operations");
 
@@ -124,7 +124,7 @@ test("a deactivated account is not in the « Comptes » group", async ({ page, a
 	});
 	expect(response.ok()).toBe(true);
 
-	await visit(page, "/comptes");
+	await visit(page, "/accounts");
 	await openPalette(page);
 	await paletteInput(page).fill(prefix);
 
@@ -138,7 +138,7 @@ test("the palette runs the page's actions and adds an account from anywhere", as
 }) => {
 	const account = await api.openAccount();
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await openPalette(page);
 	await paletteInput(page).fill("ajouter une operation");
@@ -148,7 +148,7 @@ test("the palette runs the page's actions and adds an account from anywhere", as
 	await page.keyboard.press("Escape");
 	await expect(page.getByRole("dialog", { name: "Ajouter une opération" })).toBeHidden();
 
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await openPalette(page);
 	await expect(option(page, /^Ajouter une opération/u)).toHaveCount(0);
 	await paletteInput(page).fill("ajouter un compte");
@@ -163,7 +163,7 @@ test("the palette records a snapshot on an account page and switches the theme",
 }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(30) });
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await openPalette(page);
 	await paletteInput(page).fill("enregistrer un solde");
@@ -186,7 +186,7 @@ test("the palette records a snapshot on an account page and switches the theme",
 test("the palette offers no snapshot on an account opened today", async ({ page, api }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(0) });
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await openPalette(page);
 	await paletteInput(page).fill("enregistrer un solde");
@@ -197,7 +197,7 @@ test("the palette offers no snapshot on an account opened today", async ({ page,
 test("g d, g c, g o and g s go to the dashboard, the accounts, the transactions and the settings", async ({
 	page,
 }) => {
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 
 	await page.keyboard.press("g");
@@ -207,16 +207,16 @@ test("g d, g c, g o and g s go to the dashboard, the accounts, the transactions 
 
 	await page.keyboard.press("g");
 	await page.keyboard.press("c");
-	await expect(page).toHaveURL(/\/comptes\/?$/u);
+	await expect(page).toHaveURL(/\/accounts\/?$/u);
 
 	await page.keyboard.press("g");
 	await page.keyboard.press("o");
-	await expect(page).toHaveURL(/\/operations$/u);
+	await expect(page).toHaveURL(/\/transactions$/u);
 
 	await page.keyboard.press("g");
 	await page.keyboard.press("s");
-	// `/reglages` opens its first section.
-	await expect(page).toHaveURL(/\/reglages\/categories$/u);
+	// `/settings` opens its first section.
+	await expect(page).toHaveURL(/\/settings\/categories$/u);
 });
 
 test("⌘K opens the palette from the search field, and Esc gives focus back to it", async ({
@@ -224,7 +224,7 @@ test("⌘K opens the palette from the search field, and Esc gives focus back to 
 }) => {
 	const prefix = uniqueName("Champ");
 
-	await visit(page, `/operations?q=${encodeURIComponent(prefix)}`);
+	await visit(page, `/transactions?q=${encodeURIComponent(prefix)}`);
 	await searchBox(page).focus();
 	await openPalette(page);
 	await page.keyboard.press("Escape");
@@ -234,23 +234,23 @@ test("⌘K opens the palette from the search field, and Esc gives focus back to 
 });
 
 test("Enter on a control other than a row keeps its own action", async ({ page }) => {
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await page
 		.locator('[data-sidebar="sidebar"]')
 		.getByRole("link", { name: "Comptes", exact: true })
 		.focus();
 	await page.keyboard.press("Enter");
 
-	await expect(page).toHaveURL(/\/comptes\/?$/u);
+	await expect(page).toHaveURL(/\/accounts\/?$/u);
 });
 
 test("letters typed in a field stay in the field", async ({ page }) => {
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await searchBox(page).click();
 	await page.keyboard.type("gc");
 
 	await expect(searchBox(page)).toHaveValue("gc");
-	await expect(page).toHaveURL(/\/operations/u);
+	await expect(page).toHaveURL(/\/transactions/u);
 });
 
 test("no shortcut fires while a sheet is open", async ({ page, api }) => {
@@ -258,7 +258,7 @@ test("no shortcut fires while a sheet is open", async ({ page, api }) => {
 	const label = uniqueName("Calque");
 	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-1" });
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await rows(page).first().click();
 	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
 	await expect(sheet).toBeVisible();
@@ -269,7 +269,7 @@ test("no shortcut fires while a sheet is open", async ({ page, api }) => {
 	await page.keyboard.press("o");
 
 	await expect(palette(page)).toBeHidden();
-	await expect(page).toHaveURL(new RegExp(`/comptes/${account.id}$`, "u"));
+	await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}$`, "u"));
 	await expect(sheet).toBeVisible();
 });
 
@@ -277,7 +277,7 @@ test("j, j, j, k then e open the second row, and / focuses the search", async ({
 	const prefix = uniqueName("Clavier");
 	await threeRows(api, prefix);
 
-	await visit(page, `/operations?q=${encodeURIComponent(prefix)}`);
+	await visit(page, `/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(3);
 
 	await page.keyboard.press("j");
@@ -309,7 +309,7 @@ test("Enter opens the focused row, and the arrows move once a row has focus", as
 	const prefix = uniqueName("Flèches");
 	await threeRows(api, prefix);
 
-	await visit(page, `/operations?q=${encodeURIComponent(prefix)}`);
+	await visit(page, `/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(3);
 
 	await page.keyboard.press("ArrowDown");
@@ -334,7 +334,7 @@ test("j on the last row keeps the focus there", async ({ page, api }) => {
 	const prefix = uniqueName("Fin");
 	await threeRows(api, prefix);
 
-	await visit(page, `/operations?q=${encodeURIComponent(prefix)}`);
+	await visit(page, `/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(3);
 	await rows(page).nth(2).focus();
 
@@ -347,7 +347,7 @@ test("j and k work on the account page's Opérations tab", async ({ page, api })
 	const prefix = uniqueName("Onglet");
 	const account = await threeRows(api, prefix);
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(rows(page)).toHaveCount(3);
 	await page.keyboard.press("j");
 	await page.keyboard.press("j");
@@ -360,18 +360,18 @@ test("j and k work on the account page's Opérations tab", async ({ page, api })
 test("/ does nothing on an account page", async ({ page, api }) => {
 	const account = await api.openAccount();
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await page.keyboard.press("Shift+/");
 
 	await expect(page.locator(":focus")).toHaveCount(0);
-	await expect(page).toHaveURL(new RegExp(`/comptes/${account.id}$`, "u"));
+	await expect(page).toHaveURL(new RegExp(`/accounts/${account.id}$`, "u"));
 });
 
 test("n opens the new-transaction sheet on an account page", async ({ page, api }) => {
 	const account = await api.openAccount();
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 	await page.keyboard.press("n");
 
@@ -379,7 +379,7 @@ test("n opens the new-transaction sheet on an account page", async ({ page, api 
 });
 
 test("? lists every shortcut, and the sidebar shows each page's keys", async ({ page }) => {
-	await visit(page, "/comptes");
+	await visit(page, "/accounts");
 	await page.keyboard.press("Shift+?");
 
 	const dialog = page.getByRole("dialog", { name: "Raccourcis clavier" });
@@ -433,7 +433,7 @@ test("? lists every shortcut, and the sidebar shows each page's keys", async ({ 
 test("the header buttons open the palette and the shortcuts, showing their keys", async ({
 	page,
 }) => {
-	await visit(page, "/comptes");
+	await visit(page, "/accounts");
 
 	const search = page.getByRole("button", { name: "Commandes", exact: true });
 	await expect(await hoverTooltip(page, search)).toHaveText(/^Palette de commandes (⌘K|Ctrl K)$/u);
@@ -461,11 +461,11 @@ test("the header buttons open the palette and the shortcuts, showing their keys"
 test("the search field and « Ajouter une opération » show their keys", async ({ page, api }) => {
 	const account = await api.openAccount();
 
-	await visit(page, "/operations");
+	await visit(page, "/transactions");
 	await expect(await hoverTooltip(page, searchBox(page))).toHaveText("Rechercher /");
 	await page.mouse.move(0, 0);
 
-	await visit(page, `/comptes/${account.id}`);
+	await visit(page, `/accounts/${account.id}`);
 	await expect(
 		await hoverTooltip(
 			page,

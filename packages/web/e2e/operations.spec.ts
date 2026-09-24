@@ -69,7 +69,7 @@ test("every account's transactions are listed, most recent first, with the accou
 	const prefix = uniqueName("Croisé");
 	const { checking, card } = await twoAccounts(api, prefix);
 
-	await page.goto("/comptes");
+	await page.goto("/accounts");
 	await page.getByRole("link", { name: "Opérations" }).click();
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	await search(page, prefix);
@@ -97,7 +97,7 @@ test("the text search finds a label or a note, case aside", async ({ page, api }
 	});
 	await api.addTransaction(account.id, { date: daysAgo(1), label: "Boulangerie", amount: "-3" });
 
-	await page.goto("/operations");
+	await page.goto("/transactions");
 	await search(page, word.toLowerCase());
 
 	await expect(rows(page)).toHaveText([/Épicerie/u, new RegExp(`CB ${word}`, "u")]);
@@ -108,7 +108,7 @@ test("the account filter narrows the list to the chosen account", async ({ page,
 	const prefix = uniqueName("Compte");
 	const { checking } = await twoAccounts(api, prefix);
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(6);
 
 	const menu = await openFilter(page, "Compte");
@@ -124,7 +124,7 @@ test("the period filter keeps the days between its ends, both included", async (
 	const prefix = uniqueName("Période");
 	await twoAccounts(api, prefix);
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	const menu = await openFilter(page, "Période");
 	await menu.getByLabel("Du", { exact: true }).fill(typed(daysAgo(8)));
 	await menu.getByLabel("Au", { exact: true }).fill(typed(daysAgo(4)));
@@ -135,7 +135,7 @@ test("the period filter keeps the days between its ends, both included", async (
 });
 
 test("a period ending before it starts is refused in the menu", async ({ page }) => {
-	await page.goto("/operations");
+	await page.goto("/transactions");
 	const menu = await openFilter(page, "Période");
 	await menu.getByLabel("Du", { exact: true }).fill(typed(daysAgo(2)));
 	await menu.getByLabel("Au", { exact: true }).fill(typed(daysAgo(5)));
@@ -148,7 +148,7 @@ test("a period ending before it starts is refused in the menu", async ({ page })
 });
 
 test("an amount range the API would refuse is refused in the menu", async ({ page }) => {
-	await page.goto("/operations");
+	await page.goto("/transactions");
 	let menu = await openFilter(page, "Montant");
 	await menu.getByLabel("Minimum").fill("60");
 	await menu.getByLabel("Maximum").fill("50");
@@ -188,7 +188,7 @@ test("the amount filter compares absolute values, expenses and income alike", as
 		amount: "-12,00",
 	});
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(3);
 
 	const menu = await openFilter(page, "Montant");
@@ -211,7 +211,7 @@ test("combined filters survive a reload, and a removed chip widens the list agai
 	const prefix = uniqueName("Combiné");
 	const { checking } = await twoAccounts(api, prefix);
 
-	await page.goto("/operations");
+	await page.goto("/transactions");
 	await search(page, prefix);
 	let menu = await openFilter(page, "Compte");
 	await menu.getByLabel(checking.name).check();
@@ -250,14 +250,14 @@ test("filters matching nothing say so, and « Effacer les filtres » clears ever
 	});
 
 	await page.goto(
-		`/operations?q=${encodeURIComponent(uniqueName("Introuvable"))}&amountMin=%221%22&from=${daysAgo(5)}`,
+		`/transactions?q=${encodeURIComponent(uniqueName("Introuvable"))}&amountMin=%221%22&from=${daysAgo(5)}`,
 	);
 
 	await expect(page.getByText("Aucune opération ne correspond à ces filtres.")).toBeVisible();
 	await expect(summary(page)).toHaveText(`0 résultat · Total : ${euros(0)}`);
 	await page.getByRole("button", { name: "Effacer les filtres" }).click();
 
-	await expect(page).toHaveURL(/\/operations$/u);
+	await expect(page).toHaveURL(/\/transactions$/u);
 	await expect(searchBox(page)).toHaveValue("");
 	await expect(page.getByRole("button", { name: /^Retirer le filtre/u })).toHaveCount(0);
 	await expect(rows(page).first()).toBeVisible();
@@ -287,7 +287,7 @@ test("the total adds the euro rows, excluded ones included, and counts the other
 		amount: "-10.00",
 	});
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 
 	await expect(summary(page)).toHaveText(`3 résultats · Total : +${euros(5710)}`);
 	await expect(
@@ -300,7 +300,7 @@ test("the list pages at 50 transactions, and a reload keeps the page", async ({ 
 	const prefix = uniqueName("Page");
 	await api.addDailyTransactions(account.id, 51, prefix);
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	const pages = page.getByRole("navigation", { name: "Pages des opérations" });
 
 	await expect(rows(page)).toHaveCount(50);
@@ -324,7 +324,7 @@ test("a page past the last one goes back to the last page", async ({ page, api }
 	const prefix = uniqueName("Au-delà");
 	await api.addDailyTransactions(account.id, 51, prefix);
 
-	await page.goto(`/operations?q=${encodeURIComponent(prefix)}&page=5`);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}&page=5`);
 	const pages = page.getByRole("navigation", { name: "Pages des opérations" });
 
 	await expect(pages).toContainText("Page 2 sur 2");
@@ -341,7 +341,7 @@ test("a transaction excluded in the sheet is marked on both lists, and the balan
 	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-42,90" });
 	const balance = euros(100_000 - 4290);
 
-	await page.goto(`/operations?q=${encodeURIComponent(label)}`);
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	await row(page, label).click();
 	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
 	const exclude = sheet.getByRole("switch", { name: "Exclure des rapports" });
@@ -352,7 +352,7 @@ test("a transaction excluded in the sheet is marked on both lists, and the balan
 	await expect(sheet).toBeHidden();
 	await expectExcluded(page, label);
 
-	await page.goto(`/comptes/${account.id}`);
+	await page.goto(`/accounts/${account.id}`);
 	await expect(
 		page.getByRole("heading", { level: 1, name: account.name }).locator(".."),
 	).toContainText(balance);

@@ -57,7 +57,7 @@ const searchSchema = z.object({
 	runsPage: z.number().int().min(1).optional().catch(undefined),
 });
 
-export const Route = createFileRoute("/_authed/regles")({
+export const Route = createFileRoute("/_authed/rules")({
 	validateSearch: searchSchema,
 	component: RulesPage,
 });
@@ -163,7 +163,7 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 	const goTo = useCallback(
 		(lastPage: number) =>
 			void navigate({
-				to: "/regles",
+				to: "/rules",
 				search: (previous) => ({ ...previous, ...pageSearch("runsPage", lastPage) }),
 				replace: true,
 			}),
@@ -224,7 +224,7 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
-					target={{ to: "/regles", param: "runsPage" }}
+					target={{ to: "/rules", param: "runsPage" }}
 					page={page}
 					pageCount={pageCount}
 					label={t("rules.runs.paginationLabel")}
