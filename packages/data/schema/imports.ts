@@ -89,7 +89,9 @@ export const imports = sqliteTable(
 		revertedAt: integer("reverted_at"),
 		// The opening date before confirm moved the anchor back, written only
 		// then. The moved-in lines shifted the anchor's amount; a revert gives
-		// back the share of the lines it deletes dated on or before this day.
+		// back the share of the lines it deletes dated on or before this day,
+		// and moves the anchor's date back toward it, as far as the entries
+		// still on the account allow.
 		previousOpeningDate: text("previous_opening_date"),
 	},
 	(table) => [

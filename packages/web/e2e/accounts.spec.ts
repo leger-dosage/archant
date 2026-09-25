@@ -71,6 +71,45 @@ test("an account created through the form is listed under its group, in the side
 	await expect(sidebarGroup(page, "Actifs")).toContainText(euros(before + 123_456));
 });
 
+// Story 11.1: the opening balance is an end-of-day balance, so an opening
+// dated today would refuse today's line.
+test("an account created with the form's default opening date accepts a transaction dated today", async ({
+	page,
+}) => {
+	const name = uniqueName("Livret");
+	const label = uniqueName("Boulangerie");
+	const [year, month, day] = daysAgo(0).split("-");
+	const twoYearsAgo = `${Number(year) - 2}-${month}-${month === "02" && day === "29" ? "28" : day}`;
+
+	await page.goto("/accounts");
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByLabel("Solde initial").fill("1 000,00");
+	await expect(dialog.getByLabel("Date du solde")).toHaveValue(typed(twoYearsAgo));
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page
+		.getByRole("main")
+		.getByRole("link", { name: new RegExp(name) })
+		.click();
+	await page.getByRole("button", { name: "Ajouter une opération" }).first().click();
+	const sheet = page.getByRole("dialog", { name: "Ajouter une opération" });
+	await expect(sheet.getByLabel("Date", { exact: true })).toHaveValue(typed(daysAgo(0)));
+	await sheet.getByLabel("Libellé").fill(label);
+	await sheet.getByLabel("Montant").fill("42,90");
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(sheet).toBeHidden();
+	await expect(
+		page.getByRole("main").getByRole("button", { name: new RegExp(label) }),
+	).toContainText(euros(-4290));
+	await expect(page.getByRole("heading", { level: 1, name }).locator("..")).toContainText(
+		euros(100_000 - 4290),
+	);
+});
+
 test("a depository account is listed under assets and a credit card under liabilities", async ({
 	page,
 	api,

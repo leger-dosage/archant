@@ -9,6 +9,7 @@ import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CategoryKind } from "@archant/data/schema/categories";
+import type { CsvMapping } from "@archant/data/schema/imports";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
 import { TIME_ZONE, WEB_URL } from "./settings.ts";
@@ -233,14 +234,33 @@ export function apiHelpers(request: APIRequestContext) {
 			return created(await request.post(`/api/accounts/${accountId}/snapshots`, { data: input }));
 		},
 
-		/** Uploads a file and confirms its preview unchanged, as « Importer » does. Returns the import's id. */
-		async importFile(accountId: string, buffer: Buffer, name = "releve.ofx"): Promise<string> {
+		/**
+		 * Uploads a file and confirms its preview unchanged, as « Importer »
+		 * does; a CSV file is read with `csv` first. Returns the import's id.
+		 */
+		async importFile(
+			accountId: string,
+			buffer: Buffer,
+			name = "releve.ofx",
+			csv?: CsvMapping,
+		): Promise<string> {
+			const mimeType = csv === undefined ? "application/x-ofx" : "text/csv";
 			const id = await created(
 				await request.post(`/api/accounts/${accountId}/imports`, {
 					headers: sameOrigin,
-					multipart: { file: { name, mimeType: "application/x-ofx", buffer } },
+					multipart: { file: { name, mimeType, buffer } },
 				}),
 			);
+
+			if (csv !== undefined) {
+				const mapped = await request.post(`/api/imports/${id}/preview`, {
+					headers: sameOrigin,
+					data: { moveOpeningDate: null, csv },
+				});
+
+				expect(mapped.ok(), `${mapped.url()} answered ${await mapped.text()}`).toBe(true);
+			}
+
 			const response = await request.post(`/api/imports/${id}/confirm`, { headers: sameOrigin });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);

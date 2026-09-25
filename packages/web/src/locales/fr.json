@@ -488,7 +488,7 @@
 			"rejected": "Rejetées"
 		},
 		"hints": {
-			"matched": "Ces opérations existent déjà, saisies à la main. Elles seront reliées au fichier, sans être modifiées.",
+			"matched": "Ces opérations existent déjà dans le compte. Elles seront reliées au fichier, sans être modifiées.",
 			"duplicates": "Deux opérations proches ressemblent à chacune de ces lignes. Elles seront créées quand même, à vérifier ensuite."
 		},
 		"summary": "{{created}} à créer, {{present}} déjà présentes, {{matched}} rapprochées, {{duplicates}} doublons possibles, {{rejected}} rejetées.",

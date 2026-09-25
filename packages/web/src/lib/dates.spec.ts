@@ -7,6 +7,7 @@ import {
 	isoToFrench,
 	monthHeading,
 	toIsoMonth,
+	yearsAgo,
 } from "./dates.ts";
 
 describe("frenchToIso", () => {
@@ -47,6 +48,18 @@ describe("dayHeading", () => {
 			kind: "date",
 			text: "15 septembre 2025",
 		});
+	});
+});
+
+describe("yearsAgo", () => {
+	it("is the same local day, years back", () => {
+		expect(yearsAgo(2, new Date(2026, 8, 25, 23, 59))).toBe("2024-09-25");
+		expect(yearsAgo(2, new Date(2026, 0, 1, 0, 1))).toBe("2024-01-01");
+	});
+
+	it("clamps 29 February to the 28th", () => {
+		expect(yearsAgo(2, new Date(2028, 1, 29))).toBe("2026-02-28");
+		expect(yearsAgo(4, new Date(2028, 1, 29))).toBe("2024-02-29");
 	});
 });
 
