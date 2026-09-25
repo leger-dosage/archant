@@ -6362,6 +6362,46 @@ describe("GET /api/reports/cash-flow", () => {
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
+	it("counts a loan payment's outflow in the category picked on it", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const loan = await openOwn({ ...august, ...mortgage });
+		const housing = await ownCategory("Logement");
+		const outflow = await spend(checking.id, "-1 200,00", undefined, "2026-09-12");
+		await spend(loan.id, "1 200,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("loan_payment");
+
+		await sendOwn("PATCH", `/api/transactions/${outflow}`, { categoryId: housing });
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			expenses: -120000,
+			lines: { income: [], expense: [line(housing, "Logement", -120000)] },
+		});
+		const drilled = await listed(`?category=${housing}&from=2026-09-01&to=2026-09-30`);
+		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
+	});
+
+	it("keeps and counts the category a contribution had before its match", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const account = await openOwn({ ...august, ...pea });
+		const savings = await ownCategory("Épargne");
+		const outflow = await spend(checking.id, "-500,00", savings, "2026-09-12");
+		await spend(account.id, "500,00", undefined, "2026-09-12");
+		const [matched] = (await listed("?direction=transfer")).items;
+		expect(matched?.transfer?.kind).toBe("investment_contribution");
+
+		const data = await cashFlowOf("2026-09");
+
+		expect(data).toMatchObject({
+			expenses: -50000,
+			lines: { income: [], expense: [line(savings, "Épargne", -50000)] },
+		});
+		const { items } = await listed(`?category=${savings}`);
+		expect(items.map((item) => item.id)).toEqual([outflow]);
+		expect(items[0]?.categoryId).toBe(savings);
+	});
+
 	it("counts neither side of a move between two investments", async () => {
 		const account = await openOwn({ ...august, ...pea });
 		const lifeInsurance = await openOwn({

@@ -2311,7 +2311,11 @@ export type BulkPatch = {
 async function selectedRows(tx: Transaction, selection: BulkSelection) {
 	const query = (where: SQL | undefined) =>
 		tx
-			.select({ id: entries.id, ...editableColumns, inTransfer: inAnyTransfer.mapWith(Boolean) })
+			.select({
+				id: entries.id,
+				...editableColumns,
+				categoryHidden: isTransferSide.mapWith(Boolean),
+			})
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
 			.where(and(eq(entries.kind, "transaction"), where));
@@ -2392,7 +2396,7 @@ export async function bulkUpdateTransactions(
 			>();
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 
-			for (const { id, inTransfer, ...row } of rows) {
+			for (const { id, categoryHidden, ...row } of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
 				const tagIds =
 					added === undefined ? undefined : [...new Set([...current.tagIds, ...added])];
@@ -2403,9 +2407,11 @@ export async function bulkUpdateTransactions(
 
 				const change = changeOf(
 					current,
-					// A transfer side has no category to set: it would stay hidden, and
-					// come back unasked when the transfer is dissociated.
-					{ categoryId: inTransfer ? undefined : categoryId, merchantId, excluded, tagIds },
+					// A transfer side the dashboard does not count has no category to
+					// set: it would stay hidden, and come back unasked when the transfer
+					// is dissociated. The spent outflow of a loan payment or an
+					// investment contribution is counted in its category, so it takes one.
+					{ categoryId: categoryHidden ? undefined : categoryId, merchantId, excluded, tagIds },
 					options.origin,
 				);
 

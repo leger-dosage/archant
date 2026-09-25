@@ -4584,7 +4584,7 @@ describe("transfer sides and categories", () => {
 		expect(all.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
-	it("sets a bulk category on standard rows only, other fields on every row", async () => {
+	it("sets no bulk category on an internal move, other fields on every row", async () => {
 		const { checking: joint, livret, outflow, inflow } = await matchedPair();
 		const standard = await add(joint.id, { amount: toMinorUnits(-transferAmount()) });
 		const groceries = await newCategory("Courses");
@@ -4605,6 +4605,28 @@ describe("transfer sides and categories", () => {
 		await expect(categoryOriginOf(outflow)).resolves.toBeNull();
 		await expect(lockedFields(outflow)).resolves.toEqual([...(outflowLocks ?? []), "excluded"]);
 		await expect(findTransaction(deps(), outflow)).resolves.toMatchObject({ excluded: true });
+	});
+
+	it("sets a bulk category on the spent outflow of a loan payment, as the dashboard counts it", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const mortgage = await openLoan();
+		const loan = await loanPaymentOf(joint.id, mortgage.id);
+		const move = await pairOf("internal_move", joint.id, livret.id);
+		const housing = await newCategory("Logement");
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ ids: [loan.outflow, loan.inflow, move.outflow, move.inflow] },
+				{ categoryId: housing },
+				{ origin: "user" },
+			),
+		).resolves.toBe(4);
+
+		await expect(categoryOf(loan.outflow)).resolves.toBe(housing);
+		await expect(categoryOf(loan.inflow)).resolves.toBeNull();
+		await expect(categoryOf(move.outflow)).resolves.toBeNull();
+		await expect(categoryOf(move.inflow)).resolves.toBeNull();
 	});
 });
 

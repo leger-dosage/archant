@@ -31,7 +31,7 @@ import {
 	useSetTransactionTags,
 } from "@/hooks/useTransactions";
 import { dayHeading } from "@/lib/dates";
-import { TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
+import { showsCategory, TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
 import { cn } from "@/lib/utils";
 
 type TransactionListProps = {
@@ -138,7 +138,9 @@ function CategoryChip({
 
 /**
  * A transfer side's chip, where a standard row has its category: not a
- * button, since a transfer has no category to pick until it is dissociated.
+ * button, since a side the dashboard does not count has no category to pick
+ * until it is dissociated. A spent outflow shows its category instead
+ * (`showsCategory`), and its kind moves to the subtitle.
  */
 function TransferChip({ kind }: { kind: NonNullable<TransactionData["transfer"]>["kind"] }) {
 	const { t } = useTranslation();
@@ -293,15 +295,13 @@ export function TransactionList({
 	useShortcut(
 		"categoriseRow",
 		() => {
-			const id = focusedRowId();
-			// A transfer side shows no category to change.
-			const transfer = items.find((item) => item.id === id)?.transfer ?? null;
+			const item = items.find((candidate) => candidate.id === focusedRowId());
 
 			if (bulk()) {
 				onBulkPick?.("category");
-			} else if (id !== undefined && transfer === null) {
-				openedFromRow.current = id;
-				setPicking(id);
+			} else if (item !== undefined && showsCategory(item.amount, item.transfer)) {
+				openedFromRow.current = item.id;
+				setPicking(item.id);
 			}
 		},
 		{ when: rowOrBulk },
@@ -361,13 +361,21 @@ export function TransactionList({
 						<ul>
 							{day.items.map((item) => {
 								const caption = transferCaption(item);
-								// A transfer side names the other account where a purchase names its merchant.
+								const categoryShown = showsCategory(item.amount, item.transfer);
+								// A transfer side names the other account where a purchase names its
+								// merchant. A spent outflow shows its category, so its kind joins the
+								// subtitle, as Sure's « Loan payment • A → B ».
 								const subtitle =
-									caption !== null
-										? t(caption.key, { account: caption.account })
-										: item.merchantId === null
+									caption === null
+										? item.merchantId === null
 											? undefined
-											: merchantNames.get(item.merchantId);
+											: merchantNames.get(item.merchantId)
+										: categoryShown && item.transfer !== null
+											? t("transactions.transfer.spentCaption", {
+													kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
+													caption: t(caption.key, { account: caption.account }),
+												})
+											: t(caption.key, { account: caption.account });
 								const rowTags = item.tagIds
 									.flatMap((id) => {
 										const name = tagNames.get(id);
@@ -514,7 +522,7 @@ export function TransactionList({
 													)}
 												</PopoverContent>
 											</Popover>
-											{item.transfer !== null ? (
+											{item.transfer !== null && !categoryShown ? (
 												<TransferChip kind={item.transfer.kind} />
 											) : (
 												<CategoryChip

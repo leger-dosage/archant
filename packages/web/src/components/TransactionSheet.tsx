@@ -12,7 +12,6 @@ import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
-import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
 import { AmountField } from "@/components/AmountField";
 import { CategoryCombobox } from "@/components/CategoryCombobox";
@@ -55,7 +54,7 @@ import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
-import { TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
+import { showsCategory, TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
 
 const FIELD_NAMES = [
 	"date",
@@ -519,15 +518,6 @@ function DuplicateBlock({
 const rowById = (id: string) =>
 	document.querySelector<HTMLElement>(`[data-transaction-id="${CSS.escape(id)}"]`);
 
-const expenseKinds: ReadonlySet<string> = new Set(EXPENSE_TRANSFER_KINDS);
-
-/**
- * Not a transfer side, or a spent one: a loan payment's or investment
- * contribution's outflow, which detection groups too (`direction` in the API).
- */
-const recurrable = (amount: number, transfer: TransferLink) =>
-	transfer === null || (amount < 0 && expenseKinds.has(transfer.kind));
-
 /**
  * The sheet's « Récurrence » block: adds the saved transaction to the
  * recurring patterns, confirmed, at once and apart from the form, as the
@@ -653,8 +643,11 @@ function TransactionForm({
 				const { dirtyFields } = form.formState;
 				const input = {
 					...rest,
-					// Hidden once a transfer is matched in this sheet: not the user's to save.
-					...(dirtyFields.categoryId === true && transfer === null ? { categoryId } : {}),
+					// Hidden once a transfer the dashboard does not count is matched in
+					// this sheet: not the user's to save.
+					...(dirtyFields.categoryId === true && showsCategory(transaction.amount, transfer)
+						? { categoryId }
+						: {}),
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
 					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
 				};
@@ -731,7 +724,7 @@ function TransactionForm({
 				{transaction !== null && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
 				)}
-				{transaction !== null && recurrable(transaction.amount, transfer) && (
+				{transaction !== null && showsCategory(transaction.amount, transfer) && (
 					<RecurringBlock transaction={transaction} dirty={isDirty} />
 				)}
 
@@ -786,8 +779,8 @@ function TransactionForm({
 					<FieldMessage id="transaction-notes-error" error={errors.notes} />
 				</div>
 
-				{/* A transfer side has no category to pick: it is neither spent nor earned. */}
-				{transaction !== null && transfer === null && (
+				{/* A transfer side the dashboard does not count has no category to pick. */}
+				{transaction !== null && showsCategory(transaction.amount, transfer) && (
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
 						<CategoryField
