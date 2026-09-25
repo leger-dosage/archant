@@ -1,7 +1,7 @@
 ---
 name: Archant
 status: final
-updated: '2026-09-21'
+updated: '2026-09-25'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
@@ -24,7 +24,7 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | --- | --- | --- | --- | --- |
 | First-launch setup | `/setup` | First visit with no user | Create the administrator | 3 |
 | Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
-| Dashboard | `/` | Sidebar, `g d` | Net worth, its history, the month's income and expenses by category | 6 |
+| Dashboard | `/` | Sidebar, `g d` | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
 | Accounts | `/accounts` | Sidebar, `g c` | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
 | Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports, Paramètres | 1 |
 | Import | Dialog over account detail | "Importer" on an account, `i` | File, column mapping, preview, confirmation | 2 |
@@ -37,7 +37,7 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 
 Until Epic 6 ships, `/` redirects to `/accounts`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
-→ Composition reference: [mockups/key-dashboard.html](mockups/key-dashboard.html), [mockups/key-transactions.html](mockups/key-transactions.html). This spine wins on conflict.
+→ Composition reference: [mockups/key-direction-a.html](mockups/key-direction-a.html), which shows the dashboard, the transactions list, the empty dashboard, the logo and the favicon. This spine and `DESIGN.md` win on conflict.
 
 ## Voice and Tone
 
@@ -87,7 +87,7 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 | State | Surface | Treatment |
 | --- | --- | --- |
 | First launch | `/setup` | A single card: « Créer le compte administrateur », email, password twice. No other route reachable. |
-| No account | Accounts, dashboard | « Aucun compte pour l'instant. » and one button, « Ajouter un compte ». |
+| No account | Accounts, dashboard | A card with a tinted icon, « Aucun compte pour l'instant », one sentence, « Connectez une banque ou importez un relevé pour voir votre patrimoine ici. », and one button, « Ajouter un compte ». |
 | Account without transactions | Account detail | « Aucune opération. » with two actions: « Importer un fichier » and « Ajouter une opération ». |
 | Loading | Any list or chart | Skeleton rows matching the layout; no spinner over content. |
 | Filters with no result | Transactions | « Aucune opération ne correspond à ces filtres. » and « Effacer les filtres ». |
@@ -140,10 +140,11 @@ WCAG 2.2 AA on every surface, NFR13.
 
 ## Inspiration & Anti-patterns
 
-- **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; amounts as the only colour; Geist; the net worth chart as the dashboard's centre.
-- **Taken from Linear:** the command palette, `g` shortcuts, `j`/`k`, compact rows, flat bordered surfaces, filters as chips.
+- **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; Geist; the net worth chart as the dashboard's centre; since Epic 12, its grey page and white cards, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states.
+- **Taken from Linear:** the command palette, `g` shortcuts, `j`/`k`, filters as chips.
 - **Departure from Sure:** expenses are not red, the primary button is black rather than a colour, and there is no AI assistant surface.
-- **Rejected:** onboarding tours and celebratory animations; a colourful dashboard of cards; infinite scroll; showing an amount in red to scold spending.
+- **Rejected:** onboarding tours and celebratory animations; infinite scroll; showing an amount in red to scold spending; fetched merchant logos, which would send merchant names to a third party.
+- **Considered for Epic 12 and set aside:** a ledger direction with an ink accent and a warm home direction with a terracotta accent, both further from Sure; two Evidence-inspired variants, one with Evidence's figures, charts and tables in cards, one turning the dashboard into a monthly report. Their mocks stay in `.working/`.
 - **Later candidate:** Sure's privacy mode, which blurs amounts on screen.
 
 ## Key Flows
