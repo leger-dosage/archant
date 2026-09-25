@@ -1557,7 +1557,7 @@ describe("revertImport", () => {
 		]);
 	});
 
-	it("keeps the opening date the import moved, and gives its amount back the lines' shift", async () => {
+	it("puts the opening date and amount back, with no balance before it", async () => {
 		const account = await openChecking();
 		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-1000) });
 		const before = await history(account.id);
@@ -1575,15 +1575,84 @@ describe("revertImport", () => {
 			removed: { transactions: 3, snapshot: 0 },
 		});
 
-		// As Sure: the date stays where the import put it.
-		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-08-19");
-		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toMatchObject({
-			amount: 123456,
-		});
-		await expect(historyFrom(account.id, "2026-09-01")).resolves.toEqual(before);
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+		]);
+		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
-	it("gives back only its own share when a later import moved the opening further", async () => {
+	it("reads the same file the same way once reverted", async () => {
+		const account = await openChecking();
+		const file = statementOf(
+			line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
+			line({ date: "2026-09-05", amount: toMinorUnits(-300), label: "Pain" }),
+		);
+		const first = await importStatement(account.id, file, { moveOpeningDate: "2026-08-19" });
+		const imported = await history(account.id);
+
+		await revert(first.importId);
+		const { result } = await importStatement(account.id, file, {
+			moveOpeningDate: "2026-08-19",
+		});
+
+		expect(counts(result)).toMatchObject({ created: 2, rejected: 0 });
+		await expect(history(account.id)).resolves.toEqual(imported);
+	});
+
+	it("stops the opening date the day before a line another source still holds", async () => {
+		const account = await openChecking();
+		const first = await importStatement(
+			account.id,
+			statementOf(
+				line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
+				line({ date: "2026-08-25", amount: toMinorUnits(-700), label: "Pain" }),
+			),
+			{ moveOpeningDate: "2026-08-19" },
+		);
+		const csv = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-08-26", amount: toMinorUnits(-700), label: "CB PAIN" })),
+			{ source: "csv" },
+		);
+		expect(counts(csv.result)).toMatchObject({ matched: 1 });
+		const kept = await historyFrom(account.id, "2026-08-24");
+
+		await expect(revert(first.importId)).resolves.toMatchObject({
+			removed: { transactions: 1, snapshot: 0 },
+		});
+
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-08-24");
+		// 1 234,56 + 27,00 shifted in, less the 20,00 given back.
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-08-24", amount: 123456 + 700 },
+		]);
+		await expect(history(account.id)).resolves.toEqual(kept);
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+	});
+
+	it("stops the opening date the day before a snapshot, whatever the entry's kind", async () => {
+		const account = await openChecking();
+		const { importId } = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" })),
+			{ moveOpeningDate: "2026-08-19" },
+		);
+		const kept = await snapshot(account.id, "2026-08-22", 120000);
+
+		await revert(importId);
+
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-08-21");
+		await expect(snapshotsOf(account.id)).resolves.toEqual([
+			expect.objectContaining({ id: kept, date: "2026-08-22", balance: 120000 }),
+		]);
+		const [first] = (await history(account.id)).keys();
+		expect(first).toBe("2026-08-21");
+	});
+
+	it("keeps the opening where a later import moved it further", async () => {
 		const account = await openChecking();
 		const alone = await openChecking();
 		const later = statementOf(
@@ -1603,37 +1672,35 @@ describe("revertImport", () => {
 		await expect(history(account.id)).resolves.toEqual(await history(alone.id));
 	});
 
-	it("keeps the shift of a moved-in line another source still holds", async () => {
+	it("undoes two moves fully when reverted in reverse order", async () => {
 		const account = await openChecking();
+		const before = await history(account.id);
 		const first = await importStatement(
 			account.id,
-			statementOf(
-				line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
-				line({ date: "2026-08-25", amount: toMinorUnits(-700), label: "Pain" }),
-			),
+			statementOf(line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" })),
 			{ moveOpeningDate: "2026-08-19" },
 		);
-		const csv = await importStatement(
+		const second = await importStatement(
 			account.id,
-			statementOf(line({ date: "2026-08-26", amount: toMinorUnits(-700), label: "CB PAIN" })),
-			{ source: "csv" },
+			statementOf(line({ date: "2026-08-10", amount: toMinorUnits(-500), label: "Pain" })),
+			{ moveOpeningDate: "2026-08-09" },
 		);
-		expect(counts(csv.result)).toMatchObject({ matched: 1 });
 
-		await expect(revert(first.importId)).resolves.toMatchObject({
-			removed: { transactions: 1, snapshot: 0 },
-		});
+		await revert(second.importId);
 
-		// 1 234,56 + 27,00 shifted in, less the 20,00 given back.
-		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toMatchObject({
-			amount: 123456 + 700,
-		});
-		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
-			amount: 123456,
-		});
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-08-19", amount: 123456 + 2000 },
+		]);
+
+		await revert(first.importId);
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+		]);
+		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
-	it("gives a credit card's opening back its amount owed, keeping the date", async () => {
+	it("gives a credit card's opening back its amount owed and its date", async () => {
 		const card = await openChecking({
 			name: "Carte",
 			type: "credit_card",
@@ -1650,11 +1717,28 @@ describe("revertImport", () => {
 
 		await revert(importId);
 
-		await expect(openingDateOf(deps(), card.id)).resolves.toBe("2026-08-24");
-		await expect(balanceOn(deps(), card.id, "2026-08-24")).resolves.toMatchObject({
-			amount: 50000,
+		await expect(valuationsOf(card.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 50000 },
+		]);
+		await expect(history(card.id)).resolves.toEqual(before);
+	});
+
+	it("puts a bank-linked account's opening date back and derives its balances from there", async () => {
+		const { account } = await linkedAccount();
+		const before = await history(account.id);
+		const { importId } = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" })),
+			{ moveOpeningDate: "2026-08-19" },
+		);
+		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toMatchObject({
+			amount: 102000,
 		});
-		await expect(historyFrom(card.id, "2026-09-01")).resolves.toEqual(before);
+
+		await revert(importId);
+
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
+		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
 	it("deletes the possible duplicates the import created, and counts them beforehand", async () => {

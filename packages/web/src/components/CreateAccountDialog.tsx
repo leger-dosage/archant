@@ -33,7 +33,7 @@ import {
 import { useCreateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
-import { toIsoDate } from "@/lib/dates";
+import { yearsAgo } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
@@ -59,7 +59,9 @@ const defaults = (): CreateAccountInput => ({
 	subtype: "checking",
 	currency: DEFAULT_CURRENCY,
 	openingBalance: "",
-	openingDate: toIsoDate(),
+	// Sure's `OpeningBalanceManager#default_date`: a line dated today must land
+	// after the opening balance, which is an end-of-day balance.
+	openingDate: yearsAgo(2),
 	details: { originalAmount: "", interestRate: "", endDate: "" },
 });
 

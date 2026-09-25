@@ -5,6 +5,18 @@ export function toIsoDate(now: Date = new Date()): string {
 	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/**
+ * The same calendar day `years` years before `now`, in the browser's time
+ * zone. 29 February falls back to the 28th, as Rails' `years.ago` does for
+ * Sure's default opening date.
+ */
+export function yearsAgo(years: number, now: Date = new Date()): string {
+	const year = now.getFullYear() - years;
+	const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+
+	return toIsoDate(new Date(year, now.getMonth(), Math.min(now.getDate(), lastDay)));
+}
+
 export function isoToDate(iso: string): Date | undefined {
 	const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(iso);
 

@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { toMinorUnits } from "@archant/data/money";
 
 import { formatShortDate, formatSignedMoney, formatTableDate } from "../src/lib/balance-change.ts";
-import { daysAgo, euros, expect, ofxDate, sgml, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, ofxDate, sgml, test, typed, uniqueName } from "./fixtures.ts";
 
 // Stories 2.1 and 2.2: import an OFX file with preview, and its ledger
 // balance. Files are built here with dates relative to today, so they always
@@ -209,6 +209,45 @@ test("a transaction added since the preview shows the stale message over the new
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 	await expect(dialog(page)).toBeHidden();
 	await expect(page.getByText("3 opérations importées.")).toBeVisible();
+});
+
+// Story 11.1: a matched line may come from a file or a bank as well as by
+// hand, so the hint names no origin.
+test("a line matching one a CSV file brought says it exists in the account", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const [cafe] = threeLines();
+	await api.importFile(
+		account.id,
+		Buffer.from(
+			["Date;Libellé;Montant", `${typed(daysAgo(12))};${uniqueName("CAFE")};-42,90`, ""].join(
+				"\r\n",
+			),
+		),
+		"releve.csv",
+		{
+			delimiter: ";",
+			skipRows: 0,
+			hasHeader: true,
+			dateFormat: "DD/MM/YYYY",
+			decimal: ",",
+			sign: "inflows-positive",
+			columns: ["date", "label", "amount"],
+		},
+	);
+
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml([{ ...cafe, daysAgo: 11 }]));
+	await tab(page, "Rapprochées", 1).click();
+
+	await expect(
+		dialog(page).getByText(
+			"Ces opérations existent déjà dans le compte. Elles seront reliées au fichier, sans être modifiées.",
+		),
+	).toBeVisible();
+	await expect(dialog(page).getByText(/à la main/u)).toHaveCount(0);
 });
 
 test("a text file shows the unreadable-file message", async ({ page, api }) => {

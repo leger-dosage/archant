@@ -1,7 +1,7 @@
 import type { Line } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
-import { formatShortDate } from "../src/lib/balance-change.ts";
+import { formatShortDate, formatTableDate } from "../src/lib/balance-change.ts";
 import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
 
 // Story 2.5: the account's Imports tab lists its imports and reverts one.
@@ -144,6 +144,58 @@ test("a reverted file imported again lists its lines under À créer", async ({ 
 		"true",
 	);
 	await expect(dialog.getByRole("tab", { name: "Déjà présentes 0" })).toBeVisible();
+});
+
+// Story 11.1: a revert puts the opening date back, so the same file is read
+// the same way again instead of counting on top.
+test("a revert puts back the opening date a file moved, and the file imported again gives the same balance", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	const id = uniqueName("O").replace(" ", "-");
+	const file = sgml([
+		{ daysAgo: 35, amount: "-20,00", label: uniqueName("CB ANCIEN"), fitid: `${id}-1` },
+		{ daysAgo: 30, amount: "50,00", label: uniqueName("VIR ANCIEN"), fitid: `${id}-2` },
+	]);
+	const dialog = page.getByRole("dialog", { name: "Importer un fichier" });
+	const move = `Avancer la date d'ouverture au ${formatTableDate(daysAgo(36))}`;
+	const importWithMove = async () => {
+		await page.getByRole("button", { name: "Importer", exact: true }).click();
+		await dialog
+			.getByLabel("Relevé bancaire")
+			.setInputFiles({ name: "releve.ofx", mimeType: "application/x-ofx", buffer: file });
+		await expect(dialog.getByRole("tab", { name: "Rejetées 2" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+		await dialog.getByRole("button", { name: move }).click();
+		await expect(
+			dialog.getByText(
+				`Le solde du ${formatTableDate(daysAgo(30))}, date d'ouverture actuelle, ne change pas.`,
+				{ exact: false },
+			),
+		).toBeVisible();
+		await dialog.getByRole("button", { name: "Importer 2 opérations" }).click();
+		await expect(dialog).toBeHidden();
+	};
+
+	await openImportsTab(page, account);
+	await importWithMove();
+	await expect(header(page, account.name)).toContainText(euros(100_000));
+
+	await page.getByRole("tab", { name: "Imports" }).click();
+	await page.getByRole("button", { name: `Annuler l'import de releve.ofx du ${today()}` }).click();
+	await page
+		.getByRole("alertdialog", { name: "Annuler l'import de releve.ofx ?" })
+		.getByRole("button", { name: "Supprimer 2 opérations" })
+		.click();
+	await expect(page.getByText("Import annulé, 2 opérations supprimées.")).toBeVisible();
+	await expect(header(page, account.name)).toContainText(euros(100_000));
+
+	// The lines fall before the opening date again, which the offer names.
+	await importWithMove();
+	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
 test("reverting an import that only matched manual transactions deletes nothing", async ({

@@ -124,3 +124,9 @@
   summary: The import preview's explanation under the matched group says the lines were entered by hand, even when they came from another file.
   evidence: low, reproduced. The `fr.json` string predates Epic 2's cross-file matching.
   planned: Story 11.1 in `_bmad-output/planning-artifacts/epics.md`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-1-opening-dates-that-accept-today-and-survive-a-revert.md`
+  summary: Reverting the older of two imports that both moved the opening date first leaves the date where the newer one found it, so re-importing the older file counts its lines past that date on top.
+  evidence: medium, traced in `restoreOpening`: the older revert is blocked by the newer import's lines, and the newer revert restores its own `previous_opening_date`. Reverting newest first restores fully. A complete fix stores each import's shift or moved-to date, a migration.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-1-opening-dates-that-accept-today-and-survive-a-revert.md`
+  summary: A moved-in line whose amount the user edited before the revert gives the edited amount back to the opening anchor, so the old opening day's balance drifts by the edit.
+  evidence: medium, pre-existing since Spec 2.5: `revertImport` sums the current amounts of the deleted lines. Storing the shift on `imports` at confirm would settle it.
