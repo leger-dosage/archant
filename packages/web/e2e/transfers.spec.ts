@@ -20,6 +20,22 @@ const sheet = (page: Page) => page.getByRole("dialog", { name: "Modifier l'opér
 
 const picker = (page: Page) => page.getByRole("dialog", { name: "Rapprocher un virement" });
 
+const categoryButtons = (page: Page, label: string) =>
+	rowItem(page, label).getByRole("button", { name: /^Catégorie/u });
+
+/** Opens the row's sheet, checks it has no « Catégorie » field, and closes it. */
+async function expectNoCategoryField(page: Page, label: string) {
+	await rowButton(page, label).click();
+	// The transfer block first, so the absent field is not checked before the sheet opens.
+	await expect(sheet(page).getByRole("button", { name: "Dissocier" })).toBeVisible();
+	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveCount(0);
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
+}
+
+const categorySearch = (page: Page) =>
+	page.getByRole("combobox", { name: "Rechercher une catégorie" });
+
 /** An amount in euros no other test uses, as typed: `517,23`. */
 function uniqueAmount(): string {
 	return `${randomInt(100, 900)},${String(randomInt(100)).padStart(2, "0")}`;
@@ -231,11 +247,20 @@ test("a payment into a credit card is linked on creation as « Remboursement de 
 
 	await expect(rowItem(page, out).getByText("Remboursement de carte")).toBeVisible();
 	await expect(rowItem(page, into).getByText("Remboursement de carte")).toBeVisible();
+	await expect(rowButton(page, out)).not.toContainText("Remboursement de carte ·");
 	await expect(rowButton(page, out)).toContainText(`Vers ${card.name}`);
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
+	// Neither side is counted by the dashboard, so neither has a category.
+	await expect(categoryButtons(page, out)).toHaveCount(0);
+	await expect(categoryButtons(page, into)).toHaveCount(0);
+	await rowButton(page, out).focus();
+	await page.keyboard.press("c");
+	await expect(categorySearch(page)).toHaveCount(0);
+	await expectNoCategoryField(page, out);
+	await expectNoCategoryField(page, into);
 });
 
-test("a repayment into a loan shows « Remboursement de prêt », lowers what it owes and counts in « Dépenses »", async ({
+test("a repayment into a loan shows « Remboursement de prêt », lowers what it owes and counts in « Dépenses » under the category picked on it", async ({
 	page,
 	api,
 }) => {
@@ -269,10 +294,27 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await api.unlinkTransfer(outId);
 	await api.matchTransfer(outId, intoId);
 
+	const housing = await api.createCategory({ name: uniqueName("Logement") });
+
 	await visitOperations(page, prefix);
-	await expect(rowItem(page, out).getByText("Remboursement de prêt")).toBeVisible();
+	// The dashboard counts the outflow in its category, so the row shows it,
+	// and the kind moves to the subtitle; the loan side keeps the chip.
+	await expect(rowButton(page, out)).toContainText(`Remboursement de prêt · Vers ${loan.name}`);
+	await expect(
+		rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }),
+	).toBeVisible();
 	await expect(rowItem(page, into).getByText("Remboursement de prêt")).toBeVisible();
-	await expect(rowButton(page, out)).toContainText(`Vers ${loan.name}`);
+	await expect(rowItem(page, into)).not.toContainText("Remboursement de prêt ·");
+	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
+	await expect(categoryButtons(page, into)).toHaveCount(0);
+
+	await rowButton(page, out).focus();
+	await page.keyboard.press("c");
+	await categorySearch(page).fill(housing.name);
+	await page.getByRole("option", { name: housing.name }).click();
+	await expect(
+		rowItem(page, out).getByRole("button", { name: `Catégorie : ${housing.name}` }),
+	).toBeVisible();
 
 	await page.goto(`/accounts/${loan.id}`);
 	await expect(
@@ -280,14 +322,22 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	).toContainText(euros(17_880_000));
 
 	await page.goto("/?month=2024-06");
+	const expenses = page
+		.getByRole("region", { name: "Juin 2024" })
+		.getByRole("group", { name: "Dépenses", exact: true });
+	await expect(expenses).toContainText(euros(-120_000));
+	await expect(expenses.getByRole("link", { name: housing.name })).toContainText(euros(-120_000));
+
+	// Dissociated, the outflow is a standard row that keeps its category.
+	await api.unlinkTransfer(outId);
+	await visitOperations(page, prefix);
 	await expect(
-		page
-			.getByRole("region", { name: "Juin 2024" })
-			.getByRole("group", { name: "Dépenses", exact: true }),
-	).toContainText(euros(-120_000));
+		rowItem(page, out).getByRole("button", { name: `Catégorie : ${housing.name}` }),
+	).toBeVisible();
+	await expect(rowButton(page, out)).not.toContainText("Vers");
 });
 
-test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses »", async ({
+test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses » under the category picked in its sheet", async ({
 	page,
 	api,
 }) => {
@@ -321,10 +371,25 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await api.unlinkTransfer(outId);
 	await api.matchTransfer(outId, intoId);
 
+	const savings = await api.createCategory({ name: uniqueName("Épargne") });
+
 	await visitOperations(page, prefix);
-	await expect(rowItem(page, out).getByText("Versement", { exact: true })).toBeVisible();
+	await expect(rowButton(page, out)).toContainText(`Versement · Vers ${pea.name}`);
 	await expect(rowItem(page, into).getByText("Versement", { exact: true })).toBeVisible();
-	await expect(rowButton(page, out)).toContainText(`Vers ${pea.name}`);
+	await expect(categoryButtons(page, into)).toHaveCount(0);
+
+	await rowButton(page, out).click();
+	const field = sheet(page).getByRole("button", { name: "Catégorie", exact: true });
+	await expect(field).toHaveText("Sans catégorie");
+	await field.click();
+	await categorySearch(page).fill(savings.name);
+	await page.getByRole("option", { name: savings.name }).click();
+	await sheet(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(sheet(page)).toBeHidden();
+	await expect(
+		rowItem(page, out).getByRole("button", { name: `Catégorie : ${savings.name}` }),
+	).toBeVisible();
+	await expectNoCategoryField(page, into);
 
 	await page.goto(`/accounts/${pea.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: pea.name }).locator("..")).toContainText(
@@ -348,6 +413,9 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
+	await expect(categoryButtons(page, out)).toHaveCount(0);
+	await expect(categoryButtons(page, into)).toHaveCount(0);
+	await expectNoCategoryField(page, out);
 	await rowButton(page, into).click();
 	await expect(sheet(page).getByText(`Depuis ${checking.name}`)).toBeVisible();
 	await sheet(page).getByRole("button", { name: "Dissocier" }).click();

@@ -309,6 +309,7 @@
 			"title": "Virement",
 			"to": "Vers {{account}}",
 			"from": "Depuis {{account}}",
+			"spentCaption": "{{kind}} · {{caption}}",
 			"kinds": {
 				"internal_move": "Virement",
 				"credit_card_payment": "Remboursement de carte",
