@@ -6143,7 +6143,9 @@ describe("ingest from a bank connection", () => {
 	});
 
 	it("dates the anchor on the balance's own day, never after today", async () => {
-		const { account, bank } = await linkedChecking();
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000, "2026-09-19");
 
 		await sync(
 			account.id,
@@ -6167,7 +6169,9 @@ describe("ingest from a bank connection", () => {
 	});
 
 	it("keeps the anchor when the bank gives no balance, or one in another currency", async () => {
-		const { account, bank } = await linkedChecking();
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000, "2026-09-19");
 
 		const none = await sync(account.id, bank.connectionId, [newBankLine()]);
 		const foreign = await sync(account.id, bank.connectionId, [], {
@@ -6183,11 +6187,10 @@ describe("ingest from a bank connection", () => {
 			balance: 1,
 			reason: "CURRENCY_MISMATCH",
 		});
-		await expect(valuationsOf(account.id)).resolves.toContainEqual({
-			kind: "current_anchor",
-			date: "2026-09-21",
-			amount: 100000,
-		});
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-19", amount: 100000 },
+		]);
 		expect((await history(account.id)).get("2026-09-21")).toBe(100000);
 	});
 
@@ -6346,7 +6349,7 @@ async function createdBySync(
 }
 
 describe("pending transactions", () => {
-	it("stores a pending line, counts it in the balance and leaves it out of cash flow", async () => {
+	it("stores a pending line, and leaves it out of the balance and of cash flow", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 
@@ -6356,7 +6359,7 @@ describe("pending transactions", () => {
 
 		await expect(rowOf(id)).resolves.toMatchObject({ amount, pending: true, missed: 0 });
 		const days = await history(account.id);
-		expect(days.get("2026-09-21")).toBe(100000 + amount);
+		expect(days.get("2026-09-21")).toBe(100000);
 		expect(days.get("2026-09-20")).toBe(100000);
 		await expect(
 			cashFlowByCategory(deps(), {
@@ -6368,8 +6371,10 @@ describe("pending transactions", () => {
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ pending: true });
 	});
 
-	it("adds the pending entries on or before the bank balance's day on top of it", async () => {
-		const { account, bank } = await linkedChecking();
+	it("leaves every pending entry out, before, on or after the bank balance's day", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000, "2026-09-20");
 		const [before, on, after] = [-transferAmount(), -transferAmount(), -transferAmount()];
 
 		await sync(
@@ -6385,10 +6390,10 @@ describe("pending transactions", () => {
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-17")).toBe(100000);
-		expect(days.get("2026-09-18")).toBe(100000 + before);
-		expect(days.get("2026-09-20")).toBe(100000 + before + on);
-		expect(days.get("2026-09-21")).toBe(100000 + before + on + after);
-		// The stored anchor stays the bank's own figure.
+		expect(days.get("2026-09-18")).toBe(100000);
+		expect(days.get("2026-09-20")).toBe(100000);
+		expect(days.get("2026-09-21")).toBe(100000);
+		await expect(transactionCount(account.id)).resolves.toBe(3);
 		await expect(valuationsOf(account.id)).resolves.toContainEqual({
 			kind: "current_anchor",
 			date: "2026-09-20",
@@ -6396,7 +6401,7 @@ describe("pending transactions", () => {
 		});
 	});
 
-	it("adds a card's pending payment to what it owes", async () => {
+	it("leaves a card's pending payment out of what it owes", async () => {
 		const { account, bank } = await linkedChecking(-50000, {
 			name: "Carte",
 			type: "credit_card",
@@ -6408,8 +6413,59 @@ describe("pending transactions", () => {
 		await sync(account.id, bank.connectionId, [pendingLine(amount, { date: "2026-09-21" })]);
 
 		const days = await history(account.id);
-		expect(days.get("2026-09-21")).toBe(50000 - amount);
+		expect(days.get("2026-09-21")).toBe(50000);
 		expect(days.get("2026-09-20")).toBe(50000);
+	});
+
+	it("leaves a pending entry out of a manual account's balances, computed forward", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { date: "2026-09-15" }),
+		]);
+		await unlink(account.id);
+
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4292) });
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-14")).toBe(100000 - 4292);
+		expect(days.get("2026-09-15")).toBe(100000 - 4292);
+		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-15", pending: true });
+	});
+
+	it("never moves the days up to a bank figure when a pending line on that day books later", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000, "2026-09-15");
+		const amount = -transferAmount();
+		await sync(
+			account.id,
+			bank.connectionId,
+			[pendingLine(amount, { externalId: "p-across", date: "2026-09-15" })],
+			{ amount: toMinorUnits(100000), currency: "EUR", date: "2026-09-15" },
+		);
+		const before = await history(account.id);
+
+		await sync(
+			account.id,
+			bank.connectionId,
+			[bookedLine(amount, { externalId: "p-across", date: "2026-09-18" })],
+			{ amount: toMinorUnits(100000 + amount), currency: "EUR", date: "2026-09-20" },
+		);
+
+		const days = await history(account.id);
+		for (const [date, balance] of before) {
+			if (date <= "2026-09-15") {
+				expect(days.get(date)).toBe(balance);
+			}
+		}
+		expect(days.get("2026-09-17")).toBe(100000);
+		expect(days.get("2026-09-18")).toBe(100000 + amount);
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "reconciliation", date: "2026-09-15", amount: 100000 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 100000 + amount },
+		]);
 	});
 
 	it("books a pending entry in place by its reference, keeping what the user set", async () => {
@@ -6884,7 +6940,7 @@ describe("unlinkBankAccount", () => {
 		expect(days.get("2026-09-21")).toBe(100000);
 	});
 
-	it("keeps the pending lines on and before the bank's day in the balance", async () => {
+	it("keeps the bank's booked figure, the pending lines left out as before", async () => {
 		const { account, bank, link: linkIt } = await linkedAt(100000);
 		await linkIt();
 		const amount = -transferAmount();
@@ -6914,7 +6970,8 @@ describe("unlinkBankAccount", () => {
 			{ origin: "sync" },
 		);
 		const before = await history(account.id);
-		expect(before.get("2026-09-21")).toBe(100000 + 2 * amount);
+		expect(before.get("2026-09-21")).toBe(100000);
+		expect(before.get("2026-09-11")).toBe(100000 - amount);
 
 		await unlink(account.id);
 
@@ -6922,7 +6979,7 @@ describe("unlinkBankAccount", () => {
 		await expect(valuationsOf(account.id)).resolves.toContainEqual({
 			kind: "reconciliation",
 			date: "2026-09-21",
-			amount: 100000 + 2 * amount,
+			amount: 100000,
 		});
 		const pending = await temp.db
 			.select({ pending: transactions.pending })
@@ -7048,6 +7105,243 @@ describe("unlinkBankAccount", () => {
 
 	it("refuses an unknown account", async () => {
 		await expect(unlink(crypto.randomUUID())).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+// Story 11.7: each bank balance a sync received stays, as a reconciliation.
+
+/** A bank balance in euros, describing the end of `date`. */
+const figure = (amount: number, date: string) => ({
+	amount: toMinorUnits(amount),
+	currency: "EUR",
+	date,
+});
+
+/** A checking account linked to a bank that said `balance` at the end of `date`. */
+async function linkedOn(
+	date: string | null,
+	balance = 100000,
+	overrides: Partial<NewAccountInput> = {},
+) {
+	const account = await openChecking(overrides);
+	const bank = await newBankAccount();
+	await link(account.id, bank.id, balance, date);
+
+	return { account, bank };
+}
+
+async function valuationIds(accountId: string) {
+	return temp.db
+		.select({ id: entries.id, kind: entries.valuationKind, date: entries.date })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.kind, "valuation")))
+		.orderBy(entries.date);
+}
+
+describe("a sync's earlier bank balances", () => {
+	it("turns the anchor into a reconciliation on its day, keeping its id, for a later balance", async () => {
+		const { account, bank } = await linkedOn("2026-09-19");
+		const [, previous] = await valuationIds(account.id);
+
+		const result = await sync(account.id, bank.connectionId, [], figure(90000, "2026-09-20"));
+
+		expect(result.balance).toEqual({ status: "recorded", date: "2026-09-20", balance: 90000 });
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "reconciliation", date: "2026-09-19", amount: 100000 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
+		]);
+		const [, converted] = await valuationIds(account.id);
+		expect(converted?.id).toBe(previous?.id);
+		const row = await temp.db
+			.select({ importId: entries.importId })
+			.from(entries)
+			.where(eq(entries.id, converted?.id ?? ""))
+			.get();
+		expect(row?.importId).toBeNull();
+		const days = await history(account.id);
+		expect(days.get("2026-09-19")).toBe(100000);
+		expect(days.get("2026-09-20")).toBe(90000);
+		await expect(
+			listSnapshots(deps(), account.id, { page: 1, pageSize: 50 }),
+		).resolves.toMatchObject({
+			items: [{ id: previous?.id, date: "2026-09-19", balance: 100000 }],
+			total: 1,
+		});
+	});
+
+	it("only updates the anchor for a balance of the same day", async () => {
+		const { account, bank } = await linkedOn("2026-09-19");
+		const [, previous] = await valuationIds(account.id);
+
+		await sync(account.id, bank.connectionId, [], figure(95000, "2026-09-19"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-19", amount: 95000 },
+		]);
+		const [, updated] = await valuationIds(account.id);
+		expect(updated?.id).toBe(previous?.id);
+	});
+
+	it("moves only the days between two bank balances for a line the bank never sent", async () => {
+		const { account, bank } = await linkedOn("2026-09-15");
+		const before = await history(account.id);
+
+		// The bank went from 1 000,00 to 900,00; the lines it sent make 50,00.
+		await sync(
+			account.id,
+			bank.connectionId,
+			[
+				newBankLine({ externalId: "m-1", date: "2026-09-17", amount: toMinorUnits(-3001) }),
+				newBankLine({ externalId: "m-2", date: "2026-09-19", amount: toMinorUnits(-1999) }),
+			],
+			figure(90000, "2026-09-20"),
+		);
+
+		const days = await history(account.id);
+		for (const [date, balance] of before) {
+			if (date <= "2026-09-15") {
+				expect(days.get(date)).toBe(balance);
+			}
+		}
+		// The missing 50,00 falls on the days after the older figure; the days
+		// up to it are unchanged.
+		expect(days.get("2026-09-16")).toBe(95000);
+		expect(days.get("2026-09-17")).toBe(91999);
+		expect(days.get("2026-09-18")).toBe(91999);
+		expect(days.get("2026-09-19")).toBe(90000);
+		expect(days.get("2026-09-20")).toBe(90000);
+	});
+
+	it("moves an anchor dated after the new balance's day back to it, no reconciliation written", async () => {
+		// The bank gave no date at link: the anchor sits on today.
+		const { account, bank } = await linkedOn(null);
+		const [, previous] = await valuationIds(account.id);
+
+		await sync(account.id, bank.connectionId, [], figure(99000, "2026-09-20"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 99000 },
+		]);
+		const [, moved] = await valuationIds(account.id);
+		expect(moved?.id).toBe(previous?.id);
+		const days = await history(account.id);
+		expect(days.get("2026-09-20")).toBe(99000);
+		expect(days.get("2026-09-21")).toBe(99000);
+	});
+
+	it("reads a snapshot's gap without the pending line on the day after it", async () => {
+		const { account, bank } = await linkedOn(null);
+		await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-10", balance: toMinorUnits(98000) },
+			{ origin: "user" },
+		);
+
+		await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "g-1", date: "2026-09-11", amount: toMinorUnits(-500) }),
+			pendingLine(-transferAmount(), { externalId: "g-2", date: "2026-09-11" }),
+		]);
+
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+		expect(items).toMatchObject([
+			{ date: "2026-09-10", balance: 98000, computed: 100500, gap: -2500 },
+		]);
+	});
+
+	it("leaves a pending line out of the reconciliations an unlink writes", async () => {
+		const { account, bank } = await linkedOn("2026-09-15");
+		await sync(
+			account.id,
+			bank.connectionId,
+			[pendingLine(-transferAmount(), { externalId: "u-1", date: "2026-09-16" })],
+			figure(100000, "2026-09-18"),
+		);
+		const before = await history(account.id);
+
+		await unlink(account.id);
+
+		await expect(history(account.id)).resolves.toEqual(before);
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 100000 },
+			{ kind: "reconciliation", date: "2026-09-15", amount: 100000 },
+			{ kind: "reconciliation", date: "2026-09-18", amount: 100000 },
+		]);
+	});
+
+	it("deletes the anchor when a snapshot already holds its day, the snapshot kept", async () => {
+		const { account, bank } = await linkedOn("2026-09-19");
+		const recorded = await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-19", balance: toMinorUnits(98000) },
+			{ origin: "user" },
+		);
+
+		await sync(account.id, bank.connectionId, [], figure(90000, "2026-09-20"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "reconciliation", date: "2026-09-19", amount: 98000 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
+		]);
+		const [, kept] = await valuationIds(account.id);
+		expect(kept?.id).toBe(recorded.status === "recorded" ? recorded.id : "");
+	});
+
+	it("deletes an anchor dated on the opening date, where no snapshot may sit", async () => {
+		const { account, bank } = await linkedOn("2026-09-10", 100000, { openingDate: "2026-09-10" });
+
+		await sync(account.id, bank.connectionId, [], figure(90000, "2026-09-20"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-10", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
+		]);
+	});
+
+	it("writes the first bank balance of an account linked without one", async () => {
+		const { account, bank } = await linkedOn(null, 0);
+		await link(account.id, bank.id, null);
+
+		await sync(account.id, bank.connectionId, [], figure(90000, "2026-09-20"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
+		]);
+		expect((await history(account.id)).get("2026-09-01")).toBe(90000);
+	});
+
+	it("keeps every balance of a chain of bank figures when unlinked", async () => {
+		const { account, bank } = await linkedOn("2026-09-15");
+		await sync(
+			account.id,
+			bank.connectionId,
+			[newBankLine({ externalId: "c-1", date: "2026-09-16", amount: toMinorUnits(-3003) })],
+			figure(95000, "2026-09-17"),
+		);
+		await sync(
+			account.id,
+			bank.connectionId,
+			[newBankLine({ externalId: "c-2", date: "2026-09-18", amount: toMinorUnits(-2003) })],
+			figure(92000, "2026-09-19"),
+		);
+		const before = await history(account.id);
+
+		await unlink(account.id);
+
+		await expect(history(account.id)).resolves.toEqual(before);
+		await expect(valuationsOf(account.id)).resolves.toEqual(
+			expect.arrayContaining([
+				{ kind: "reconciliation", date: "2026-09-15", amount: 100000 },
+				{ kind: "reconciliation", date: "2026-09-17", amount: 95000 },
+				{ kind: "reconciliation", date: "2026-09-19", amount: 92000 },
+			]),
+		);
 	});
 });
 
