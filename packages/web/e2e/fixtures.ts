@@ -230,6 +230,13 @@ export function apiHelpers(request: APIRequestContext) {
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
+		/** Turns « Compte actif » off, as the account's settings do. */
+		async deactivateAccount(id: string) {
+			const response = await request.patch(`/api/accounts/${id}`, { data: { active: false } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
 		async recordSnapshot(accountId: string, input: { date: string; balance: string }) {
 			return created(await request.post(`/api/accounts/${accountId}/snapshots`, { data: input }));
 		},

@@ -31,6 +31,7 @@ import { addDays } from "../domain/dates.ts";
 import { lineKeys } from "../domain/keys.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { updateAccount } from "./accounts.ts";
 import {
 	balanceOn,
 	balancesBetween,
@@ -4625,6 +4626,115 @@ async function rejectedRows(entryId: string) {
 const suggested = async (entryId: string) =>
 	(await findTransaction(deps(), entryId))?.transferSuggested;
 
+// Story 11.2: neither an excluded row nor a row of a deactivated account is a
+// side, as Sure's `Family::AutoTransferMatchable`.
+
+const exclude = (entryId: string) =>
+	updateTransaction(deps(), entryId, { excluded: true }, { origin: "user" });
+
+const deactivate = (accountId: string) => updateAccount(deps(), accountId, { active: false });
+
+describe("transfer matching and excluded or inactive sides", () => {
+	it("never offers, links or suggests an excluded candidate", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		await exclude(inflow);
+
+		const outflow = await add(joint.id, { date: "2026-09-11", amount: toMinorUnits(-amount) });
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
+		await expect(suggested(outflow)).resolves.toBe(false);
+		await expect(suggested(inflow)).resolves.toBe(false);
+		await refusedMatch(outflow, inflow);
+		await refusedMatch(inflow, outflow);
+	});
+
+	it("gives an excluded source no candidate", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		await exclude(outflow);
+
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
+		await expect(suggested(outflow)).resolves.toBe(false);
+		await expect(suggested(inflow)).resolves.toBe(false);
+		await refusedMatch(outflow, inflow);
+		await refusedMatch(inflow, outflow);
+	});
+
+	it("never offers, links or suggests a row of a deactivated account, either side", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		await deactivate(livret.id);
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		const outflow = await add(joint.id, { date: "2026-09-12", amount: toMinorUnits(-amount) });
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
+		await expect(suggested(outflow)).resolves.toBe(false);
+		await expect(suggested(inflow)).resolves.toBe(false);
+		await refusedMatch(outflow, inflow);
+		await refusedMatch(inflow, outflow);
+	});
+
+	it("links the real pair beside an excluded twin, which no longer breaks uniqueness", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		const twin = await add(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		await exclude(twin);
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+
+		const [transfer] = await transferRows(outflow);
+		expect(transfer).toMatchObject({ outflowTransactionId: outflow, inflowTransactionId: inflow });
+
+		// Unlinked, the outflow has one candidate left: no suggestion.
+		await unmatchTransfer(deps(), transfer?.id ?? "", { origin: "user" });
+		await expect(transferCandidates(deps(), outflow)).resolves.toMatchObject([{ id: inflow }]);
+		await expect(suggested(outflow)).resolves.toBe(false);
+		await expect(suggested(inflow)).resolves.toBe(false);
+	});
+
+	it("links the real pair beside a twin on a deactivated account", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		await deactivate(card.id);
+		const twin = await add(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+
+		const [transfer] = await transferRows(outflow);
+		expect(transfer).toMatchObject({ outflowTransactionId: outflow, inflowTransactionId: inflow });
+		await expect(transferRows(twin)).resolves.toEqual([]);
+
+		await unmatchTransfer(deps(), transfer?.id ?? "", { origin: "user" });
+		await expect(transferCandidates(deps(), outflow)).resolves.toMatchObject([{ id: inflow }]);
+		await expect(suggested(outflow)).resolves.toBe(false);
+		await expect(suggested(inflow)).resolves.toBe(false);
+	});
+
+	it("keeps an existing transfer when a side is excluded or its account deactivated", async () => {
+		const { outflow, inflow, livret, transfer } = await matchedPair();
+
+		await exclude(outflow);
+		await deactivate(livret.id);
+
+		await expect(transferRows(outflow)).resolves.toEqual([transfer]);
+		await expect(transferRows(inflow)).resolves.toEqual([transfer]);
+	});
+});
+
 describe("automatic transfer matching", () => {
 	it("links a unique pair on creation as an internal move, moving nothing else", async () => {
 		const { checking: joint, livret } = await openHousehold();
@@ -5131,6 +5241,19 @@ describe("rules at ingestion", () => {
 		await expect(expectedOf(id)).resolves.toBe(livret.id);
 		await expect(transferRows(id)).resolves.toEqual([]);
 		await expect(transactionCount(livret.id)).resolves.toBe(0);
+	});
+
+	it("never links a line a rule excludes, step 5 running before step 6", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const inflow = await add(livret.id, { amount: toMinorUnits(amount) });
+		await newRuleWith([{ actionType: "exclude_transaction" }], [labelLike("interne")]);
+
+		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR INTERNE" });
+
+		await expect(excludedOf(outflow)).resolves.toBe(true);
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferRows(inflow)).resolves.toEqual([]);
 	});
 
 	it("pairs a line with the one candidate on the expected account, whatever other accounts hold", async () => {
