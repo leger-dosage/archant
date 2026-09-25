@@ -5,7 +5,7 @@ import type { bankAccounts } from "./schema/bank-accounts.ts";
 import type { bankConnections } from "./schema/bank-connections.ts";
 import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
-import type { entryKeys } from "./schema/entry-keys.ts";
+import type { deletedEntryKeys, entryKeys } from "./schema/entry-keys.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { merchants } from "./schema/merchants.ts";
@@ -32,6 +32,9 @@ export type NewBalance = InferInsertModel<typeof balances>;
 
 export type EntryKey = InferSelectModel<typeof entryKeys>;
 export type NewEntryKey = InferInsertModel<typeof entryKeys>;
+
+export type DeletedEntryKey = InferSelectModel<typeof deletedEntryKeys>;
+export type NewDeletedEntryKey = InferInsertModel<typeof deletedEntryKeys>;
 
 export type Import = InferSelectModel<typeof imports>;
 export type NewImport = InferInsertModel<typeof imports>;

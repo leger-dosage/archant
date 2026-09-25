@@ -52,7 +52,7 @@ import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import { categories } from "@archant/data/schema/categories";
 import type { CategoryOrigin } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
-import { entryKeys } from "@archant/data/schema/entry-keys";
+import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
 import type { EntryKeySource } from "@archant/data/schema/entry-keys";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
@@ -892,6 +892,72 @@ async function entriesByKey(
 type KnownEntry = { entryId: string; pending: boolean };
 
 /**
+ * The key a tombstone is judged by: the reference when the line has one,
+ * since a new line's fingerprint may shift onto a deleted one's index, else
+ * the fingerprint.
+ */
+const tombstoneLookupKey = (keys: LineKeys) => keys.external ?? keys.fingerprint;
+
+/** Only a bank connector's keys are ever tombstoned: a file's lines come back on re-import. */
+const isBankConnector = (source: EntryKeySource): source is BankConnectorId =>
+	BANK_CONNECTOR_IDS.some((id) => id === source);
+
+/** The keys among `keys` the user deleted an entry under, looked up 500 keys per query. */
+async function tombstonedKeys(
+	tx: Transaction,
+	accountId: string,
+	source: BankConnectorId,
+	keys: readonly string[],
+): Promise<Set<string>> {
+	const found = new Set<string>();
+
+	await inSequence(keys, KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await tx
+			.select({ key: deletedEntryKeys.key })
+			.from(deletedEntryKeys)
+			.where(
+				and(
+					eq(deletedEntryKeys.accountId, accountId),
+					eq(deletedEntryKeys.source, source),
+					inArray(deletedEntryKeys.key, chunk),
+				),
+			);
+
+		for (const row of rows) {
+			found.add(row.key);
+		}
+	});
+
+	return found;
+}
+
+/**
+ * Keeps the bank keys of the entries `ids` as tombstones, so a sync never
+ * brings back a transaction the user deleted. File keys are not kept:
+ * re-importing a file brings its lines back, as in Sure.
+ */
+async function tombstoneBankKeys(
+	tx: Transaction,
+	ids: readonly string[],
+	now: number,
+): Promise<void> {
+	await tx
+		.insert(deletedEntryKeys)
+		.select(
+			tx
+				.select({
+					accountId: entryKeys.accountId,
+					source: entryKeys.source,
+					key: entryKeys.key,
+					deletedAt: sql<number>`${now}`.as("deleted_at"),
+				})
+				.from(entryKeys)
+				.where(and(inArray(entryKeys.entryId, ids), inArray(entryKeys.source, BANK_CONNECTOR_IDS))),
+		)
+		.onConflictDoNothing();
+}
+
+/**
  * The account's pending entries carrying a key of the connection (AD-17):
  * those a statement of that connection speaks for, so its booked lines may
  * absorb them and its silence counts as a miss.
@@ -1088,8 +1154,11 @@ async function attachKeys(
  * recognised within their group of identical lines (`assignIdentical`), and
  * booked lines no key found take a pending entry of the connection by amount
  * and date. A pending line never pairs by amount and date: it is recognised,
- * present on the entry its fingerprint names, or created. The keys of the
- * lines step 1 refused are looked up too, for the entries they name.
+ * present on the entry its fingerprint names, or created. A line no live key
+ * resolves is dropped when its reference, or its fingerprint when it has
+ * none, is a tombstone: the user deleted its entry, so it is neither
+ * recognised in its group, paired, absorbed by amount, nor created. The keys
+ * of the lines step 1 refused are looked up too, for the entries they name.
  */
 async function groupLines(
 	tx: Transaction,
@@ -1147,6 +1216,17 @@ async function groupLines(
 		}
 	}
 
+	const tombstoned = isBankConnector(target.source)
+		? await tombstonedKeys(
+				tx,
+				accountId,
+				target.source,
+				[...remaining, ...[...identical.values()].flat()].map(({ keys }) =>
+					tombstoneLookupKey(keys),
+				),
+			)
+		: new Set<string>();
+	const isTombstoned = ({ keys }: Keyed) => tombstoned.has(tombstoneLookupKey(keys));
 	const pendingEntries =
 		target.connectionId === null
 			? []
@@ -1160,7 +1240,9 @@ async function groupLines(
 	);
 	const unattributed = new Set(held.keys());
 
-	for (const [triple, lines] of identical) {
+	for (const [triple, listed] of identical) {
+		// A deleted reference never reaches the group: it could take a live twin.
+		const lines = listed.filter((item) => item.keys.external === null || !isTombstoned(item));
 		// Each held key belongs to one triple: once all are placed, no index is left to try.
 		const lowest = new Map<string, GroupCandidate>();
 
@@ -1200,18 +1282,19 @@ async function groupLines(
 				groups.absorbed.push({ ...item, entryId });
 				groups.grouped.add(item.ref);
 				claimed.add(entryId);
-			} else if (named === undefined) {
-				groups.created.push(item);
-			} else if (named.pending && item.keys.external !== null) {
-				// A reference no entry holds is a new line, though its fingerprint
-				// names a pending entry under another reference: it goes in, and
-				// leaves that fingerprint where it is.
-				groups.created.push(item);
-				groups.sharing.add(item.ref);
-			} else {
+			} else if (named !== undefined && (!named.pending || item.keys.external === null)) {
 				// Booked, or refreshed by another line of this statement: that entry
 				// listed again. Creating it would store the key twice.
 				groups.present.push({ ...item, entryId: named.entryId });
+			} else if (!isTombstoned(item)) {
+				groups.created.push(item);
+
+				if (named !== undefined) {
+					// A reference no entry holds is a new line, though its fingerprint
+					// names a pending entry under another reference: it goes in, and
+					// leaves that fingerprint where it is.
+					groups.sharing.add(item.ref);
+				}
 			}
 		}
 	}
@@ -1226,7 +1309,10 @@ async function groupLines(
 		}));
 	const unpaired: typeof remaining = [];
 
-	for (const { line: item, survivorId } of absorbPending(remaining, survivors)) {
+	for (const { line: item, survivorId } of absorbPending(
+		remaining.filter((listed) => !isTombstoned(listed)),
+		survivors,
+	)) {
 		if (survivorId === null) {
 			unpaired.push(item);
 		} else {
@@ -2456,7 +2542,9 @@ async function countMissedSyncs(
 
 /**
  * Deletes a transaction for good, as Sure does, and recomputes its account's
- * balances from its date. The rows past the new end go with it.
+ * balances from its date. The rows past the new end go with it. Its bank keys
+ * stay as tombstones, so the next sync, which rereads the last week, does not
+ * bring it back; its file keys go, so re-importing the file does.
  */
 export async function deleteTransaction(
 	deps: ServiceDeps,
@@ -2468,6 +2556,7 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
+			await tombstoneBankKeys(tx, [entryId], Date.now());
 			await deleteTransactionRows(tx, [entryId]);
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
 		},
@@ -2645,9 +2734,9 @@ export async function bulkUpdateTransactions(
 
 /**
  * Deletes every selected transaction for good, all or nothing, as
- * `deleteTransaction` does one, and returns how many went. Recomputes each
- * affected account once, from its earliest deleted date, as `revertImport`
- * does.
+ * `deleteTransaction` does one, bank keys kept as tombstones, and returns
+ * how many went. Recomputes each affected account once, from its earliest
+ * deleted date, as `revertImport` does.
  */
 export async function bulkDeleteTransactions(
 	deps: ServiceDeps,
@@ -2665,6 +2754,9 @@ export async function bulkDeleteTransactions(
 				earliest.set(row.accountId, known === undefined ? row.date : minDate(known, row.date));
 			}
 
+			const now = Date.now();
+
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) => tombstoneBankKeys(tx, chunk, now));
 			// The same order as `deleteTransaction`: their foreign keys restrict
 			// deleting the entry.
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
@@ -3067,13 +3159,14 @@ export async function revertImport(
 
 /**
  * Deletes an account and everything it holds, as one write: its entries'
- * keys, its transactions' taggings, transfers and rejected pairs, its
- * transactions, all its entries, snapshots and opening anchor included, its
- * daily balances, its imports, then the account. Children go first, since
- * their foreign keys restrict. A transfer's other side, on another account,
- * stays as a standard transaction, as Sure's `cleanup_transfers` leaves it.
- * Every delete selects by `account_id` through a subquery, never a list of
- * ids, so a history of 50,000 transactions binds one parameter, not 50,000.
+ * keys and the tombstones of the ones the user deleted, its transactions'
+ * taggings, transfers and rejected pairs, its transactions, all its entries,
+ * snapshots and opening anchor included, its daily balances, its imports,
+ * then the account. Children go first, since their foreign keys restrict. A
+ * transfer's other side, on another account, stays as a standard
+ * transaction, as Sure's `cleanup_transfers` leaves it. Every delete selects
+ * by `account_id` through a subquery, never a list of ids, so a history of
+ * 50,000 transactions binds one parameter, not 50,000.
  */
 export async function deleteAccount(
 	deps: ServiceDeps,
@@ -3085,6 +3178,7 @@ export async function deleteAccount(
 			await accountWithOpeningDate(tx, accountId);
 
 			await tx.delete(entryKeys).where(eq(entryKeys.accountId, accountId));
+			await tx.delete(deletedEntryKeys).where(eq(deletedEntryKeys.accountId, accountId));
 			await tx
 				.delete(taggings)
 				.where(

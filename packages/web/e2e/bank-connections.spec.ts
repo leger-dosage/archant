@@ -421,6 +421,37 @@ test("a bank that gives no balance on sync still brings its lines, and says the 
 	await expect(toast(page, "Synchronisation terminée avec une erreur.")).toHaveCount(0);
 });
 
+// Story 11.6: the next sync rereads the last week, and must not bring back
+// what the user deleted.
+test("a synced transaction deleted from its sheet stays deleted after the next sync", async ({
+	page,
+}) => {
+	const connectionId = await connect(page);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+
+	await page.goto(`/accounts/${accountId}`);
+	const label = FAKE_LINES.groceries.label;
+	await transactionRow(page, label).click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	await sheet.getByRole("button", { name: "Supprimer" }).click();
+	const confirm = page.getByRole("alertdialog", { name: `Supprimer l'opération « ${label} » ?` });
+	await confirm.getByRole("button", { name: "Supprimer" }).click();
+	await expect(sheet).toBeHidden();
+	await expect(transactionRow(page, label)).toHaveCount(0);
+
+	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
+	await page.goto(`/settings/banks/${connectionId}`);
+	await page.getByRole("button", { name: "Synchroniser" }).click();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+	await page.goto(`/accounts/${accountId}`);
+	await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
+	await expect(transactionRow(page, label)).toHaveCount(0);
+});
+
 // Story 10.5. A banner shows on every page, so each test below puts its
 // connection back out of sight when it ends, pass or fail.
 

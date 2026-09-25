@@ -1483,6 +1483,34 @@ describe("pending misses by day", () => {
 	});
 });
 
+describe("deleted entry keys", () => {
+	it("starts empty when 0032 runs, and refuses a file source or an unknown account", async () => {
+		const before = await migratedBefore("0032");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertKey(before, "fp:1", "e1", "enable-banking");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select * from deleted_entry_keys`)).resolves.toEqual([]);
+		await expect(
+			database.all(sql`select entry_id as entryId, key from entry_keys`),
+		).resolves.toEqual([{ entryId: "e1", key: "fp:1" }]);
+		await expect(
+			database.run(
+				sql`insert into deleted_entry_keys (account_id, source, key, deleted_at) values ('a1', 'csv', 'fp:1', 0)`,
+			),
+		).rejects.toThrow();
+		await expect(
+			database.run(
+				sql`insert into deleted_entry_keys (account_id, source, key, deleted_at) values ('nope', 'enable-banking', 'fp:1', 0)`,
+			),
+		).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);
