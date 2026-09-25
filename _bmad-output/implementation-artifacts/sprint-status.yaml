@@ -113,4 +113,12 @@ development_status:
   11-6-a-transaction-i-delete-stays-deleted: backlog
   11-7-a-synced-account-keeps-each-bank-balance-it-received: backlog
   11-8-recurring-series-stay-single-and-current: backlog
+  11-9-a-first-start-that-says-what-is-wrong: backlog
+  11-10-the-interface-package-is-named-app: backlog
+  11-11-account-actions-in-the-account-s-menu: backlog
+  11-12-create-tags-merchants-and-categories-where-they-are-picked: backlog
+  11-13-no-command-palette-and-no-single-key-shortcuts: backlog
+  11-14-enable-banking-set-up-from-the-interface: backlog
   epic-11-retrospective: optional
+  epic-12: backlog
+  epic-12-retrospective: optional

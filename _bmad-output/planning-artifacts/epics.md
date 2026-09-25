@@ -227,7 +227,7 @@ FR54: Epic 10 - Disconnect a bank
 FR55: Epic 10 - Connection status
 FR56: Epic 10 - Bank balance as reference
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1.
 
 ## Epic List
 
@@ -281,10 +281,15 @@ The user sees their subscriptions and regular bills, and when the next one is du
 Accounts update themselves every day from the bank, and converge with the history already imported from files.
 **FRs covered:** FR43 (partial), FR48, FR49, FR50, FR51, FR52, FR53, FR54, FR55, FR56
 
-### Epic 11: Reliability
+### Epic 11: Reliability and first-use fixes
 
-Every figure Archant shows can be trusted with real bank data: the bugs found after Epic 10, while comparing Archant with Sure and preparing the manual QA, are fixed before a real bank is connected.
-**FRs covered:** none new; hardens FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56
+Every figure Archant shows can be trusted with real bank data, and a first-time user gets from `git clone` to a connected bank without reading code: the bugs found after Epic 10 and the findings of the owner's manual QA are fixed before a real bank is connected.
+**FRs covered:** none new; hardens FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56; eases FR3, FR29, FR30, FR36, FR48
+
+### Epic 12: A visual identity of its own
+
+Archant looks like itself rather than like a monochrome Sure: colour, icons, charts worth looking at, a logo and a favicon.
+**FRs covered:** none new; revises UX-DR1
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -1505,9 +1510,9 @@ So that a file import and a bank sync never leave me with two copies of one oper
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
-## Epic 11: Reliability
+## Epic 11: Reliability and first-use fixes
 
-Every figure Archant shows can be trusted with real bank data. Each story fixes a bug recorded in `_bmad-output/implementation-artifacts/deferred-work.md`, found after Epic 10 while comparing Archant with Sure (`docs/sure-parity.md`) and preparing the manual QA. No story adds a feature; the differences with Sure marked « No decision recorded » in `docs/sure-parity.md` stay out until the owner decides them. Where Sure's behaviour settles a design question, the story follows it, as every epic before. Stories 11.4 to 11.7 touch the bank sync and come before a real bank is connected.
+Every figure Archant shows can be trusted with real bank data, and a first-time user gets from `git clone` to a connected bank without reading code. Stories 11.1 to 11.8 each fix a bug recorded in `_bmad-output/implementation-artifacts/deferred-work.md`, found after Epic 10 while comparing Archant with Sure (`docs/sure-parity.md`). Stories 11.9 to 11.14 act on the owner's manual QA of 2026-09-25, run from `_bmad-output/implementation-artifacts/manual-qa-scenarios.md`: each makes something that exists easier to find or to use, or removes something the owner does not want. The differences with Sure marked « No decision recorded » in `docs/sure-parity.md` stay out until the owner decides them. Where Sure's behaviour settles a design question, the story follows it, as every epic before. Stories 11.4 to 11.7 touch the bank sync and come before a real bank is connected.
 
 ### Story 11.1: Opening dates that accept today and survive a revert
 
@@ -1713,6 +1718,178 @@ So that the recurring page can be trusted.
 **When** I revert it
 **Then** the series' count and dates no longer include the deleted transactions
 
+**Given** a transaction whose merchant, or label without a merchant, already has a series
+**When** its sheet opens
+**Then** the « Récurrence » block names that series and links to the recurring page instead of offering « Ajouter aux récurrences », and the API never creates a second series for the same merchant or label
+
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.9: A first start that says what is wrong
+
+As someone starting Archant for the first time,
+I want the API and the interface to tell me what is wrong in words,
+So that a busy port or a missing server never ends on a raw error code.
+
+**Requirements:** NFR12
+
+**Acceptance Criteria:**
+
+**Given** another server already answers on `localhost` at the API's port, as `wrangler dev` did during the manual QA while the API listened beside it
+**When** the API starts
+**Then** it stops with a log that names the port and the `PORT` variable, instead of listening while the other server answers
+
+**Given** the interface cannot reach the API, or gets an answer that does not come from Archant
+**When** a page loads
+**Then** a page in French says that the API does not answer, names `pnpm api start:dev` and `PORT`, and offers to retry: the root route has an error page, and a code such as `NETWORK_ERROR` is never the only thing shown
+
+**Given** the README's « Getting started »
+**When** I read it
+**Then** it says that the database is the SQLite file `local.db` at the root of the repository, which the API creates and migrates at start, so that no container or database server is needed
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.10: The interface package is named app
+
+As a contributor,
+I want the interface package to be called `app`,
+So that `web` stays free for a public site or a documentation site.
+
+**Requirements:** none; a rename
+
+**Acceptance Criteria:**
+
+**Given** the repository
+**When** this story ships
+**Then** `packages/web` is `packages/app`, `@archant/web` is `@archant/app`, and the root alias is `pnpm app`
+
+**Given** the `Dockerfile`, the CI workflows, the Playwright configuration, `AGENTS.md`, `README.md` and `docs/`
+**When** I search them for `packages/web`, `@archant/web` or `pnpm web`
+**Then** nothing is left, while `_bmad-output/` keeps its history as written
+
+**Given** the renamed package
+**When** the verification gate runs and the CI job `image` builds and starts the container
+**Then** everything passes, with the same behaviour as before
+
+### Story 11.11: Account actions in the account's menu
+
+As the household's administrator,
+I want to edit or delete an account from its own page,
+So that I do not have to look for a « Paramètres » tab.
+
+**Requirements:** FR3, FR4
+
+**Acceptance Criteria:**
+
+**Given** an account's page
+**When** I open the « … » menu beside its name, as Sure's account menu
+**Then** it offers « Modifier », « Exclure des rapports » or « Inclure dans les rapports », « Désactiver » and « Supprimer le compte », and the « Paramètres » tab is gone
+
+**Given** « Modifier »
+**When** I choose it
+**Then** a dialog edits what the « Paramètres » tab edited, with the same rules
+
+**Given** an account linked to a bank
+**When** I open its menu
+**Then** « Supprimer le compte » is not offered and the menu says to disconnect the bank first, as Sure offers deletion only for an account that is not linked, and the API refuses the deletion of a linked account with its own error code
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.12: Create tags, merchants and categories where they are picked
+
+As the household's administrator,
+I want to create a tag, a merchant or a category wherever I manage or pick one,
+So that writing a rule or tidying the settings never sends me elsewhere first.
+
+**Requirements:** FR29, FR30, FR36
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Étiquettes » or « Réglages › Marchands »
+**When** I choose « Nouvelle étiquette » or « Nouveau marchand »
+**Then** a dialog creates it, as Sure's tag and merchant pages each have a « New » button, and the empty state offers the same action
+
+**Given** the rule dialog
+**When** I type a name that does not exist in its merchant, category or tag picker
+**Then** the picker offers to create it, as the transaction sheet's pickers do, and the rule uses the new item
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.13: No command palette and no single-key shortcuts
+
+As the household's administrator,
+I want an interface without the command palette and the keyboard shortcuts,
+So that the screens carry only what I use.
+
+**Requirements:** withdraws UX-DR7; NFR13 still holds
+
+**Acceptance Criteria:**
+
+**Given** the interface
+**When** this story ships
+**Then** the command palette, the shortcuts dialog, the single-key shortcuts (`g` navigation, `j`/`k`, `x`, `e`, `/`, `?`) and the shortcut hints in tooltips and in the sidebar are gone
+
+**Given** the transaction sheet and every dialog
+**When** I use the keyboard
+**Then** `Esc` closes, `⌘Enter` saves the sheet, and every page and action stays reachable with `Tab` and the arrow keys, as NFR13 requires
+
+**Given** a dependency that no code uses any more
+**When** the story ships
+**Then** it is removed from `package.json` and from `docs/tech-stack.md`
+
+**Given** `EXPERIENCE.md`, UX-DR7 in this file and the « Keyboard » row of `docs/sure-parity.md`
+**When** the story ships
+**Then** they describe the interface without shortcuts, and UX-DR7 is marked withdrawn
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.14: Enable Banking set up from the interface
+
+As the household's administrator,
+I want to enter my Enable Banking application in the interface,
+So that connecting a bank never requires editing a file on the server.
+
+**Requirements:** FR48, NFR4
+
+**Acceptance Criteria:**
+
+**Given** no Enable Banking application configured
+**When** I open « Réglages › Banques »
+**Then** the page lists the steps, as Sure's Enable Banking panel does: create an application on the Enable Banking portal, register the redirect address shown with a copy button, then enter the application ID and upload the private key `.pem` file
+
+**Given** an application ID and a private key
+**When** I save them
+**Then** a call to Enable Banking checks them before anything is stored, a refusal is shown in words, and an accepted key is stored encrypted with `ENCRYPTION_KEY`, never logged and never returned by an endpoint
+
+**Given** no `ENCRYPTION_KEY`
+**When** I open the page
+**Then** it says that this variable is needed and links to `docs/deployment.md#connecting-a-bank`
+
+**Given** `ENABLE_BANKING_APPLICATION_ID` and `ENABLE_BANKING_PRIVATE_KEY` set in the environment
+**When** I open the page
+**Then** the environment wins and the page shows the application as configured by the server, read-only
+
+**Given** at least one bank connection
+**When** I try to change the application
+**Then** the change is refused until every connection is disconnected, as Sure locks its configuration while a connection is authenticated
+
+**Given** the architecture spine and `docs/deployment.md`
+**When** the story ships
+**Then** the spine records where the Enable Banking credentials live, and the « Connecting a bank » section, whose anchor the interface links to, describes the interface first
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 12: A visual identity of its own
+
+Archant looks like itself rather than like a monochrome Sure. The owner's manual QA of 2026-09-25 found the interface austere next to Sure: little colour, few icons, plain charts, no favicon. `DESIGN.md` is revised first with the BMAD UX step, which settles the palette, the icon set, the chart style, the logo and the favicon; the stories are written from the revised `DESIGN.md`, one per group of screens, and none is planned before it.
