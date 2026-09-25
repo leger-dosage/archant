@@ -4014,6 +4014,12 @@ describe("transferCandidates", () => {
 	});
 });
 
+const refusedMatch = async (source: string, counterpart: string) =>
+	expect(matchTransfer(deps(), source, counterpart, { origin: "user" })).rejects.toMatchObject({
+		code: "VALIDATION_ERROR",
+		fields: [{ path: "counterpartId", code: "not_a_candidate" }],
+	});
+
 describe("matchTransfer", () => {
 	it("links a move to savings as an internal move, moving no balance and touching nothing else", async () => {
 		const { checking: joint, livret } = await openHousehold();
@@ -4110,16 +4116,10 @@ describe("matchTransfer", () => {
 		const otherZero = await add(livret.id, { amount: toMinorUnits(0) });
 		const sameAccount = await add(joint.id, { amount: toMinorUnits(amount) });
 
-		const refused = async (source: string, counterpart: string) =>
-			expect(matchTransfer(deps(), source, counterpart, { origin: "user" })).rejects.toMatchObject({
-				code: "VALIDATION_ERROR",
-				fields: [{ path: "counterpartId", code: "not_a_candidate" }],
-			});
-
-		await refused(euros, usd);
-		await refused(zero, otherZero);
-		await refused(euros, sameAccount);
-		await refused(euros, "nope");
+		await refusedMatch(euros, usd);
+		await refusedMatch(zero, otherZero);
+		await refusedMatch(euros, sameAccount);
+		await refusedMatch(euros, "nope");
 		await expect(
 			temp.db.select().from(transfers).where(eq(transfers.outflowTransactionId, euros)),
 		).resolves.toEqual([]);
@@ -4752,14 +4752,14 @@ describe("rejectTransfer", () => {
 	});
 });
 
+async function rejectedPair() {
+	const pair = await matchedPair();
+	await rejectTransfer(deps(), pair.transfer.id, { origin: "user" });
+
+	return pair;
+}
+
 describe("a rejected pair when a side goes", () => {
-	async function rejectedPair() {
-		const pair = await matchedPair();
-		await rejectTransfer(deps(), pair.transfer.id, { origin: "user" });
-
-		return pair;
-	}
-
 	it("goes with a deleted side", async () => {
 		const { outflow, inflow } = await rejectedPair();
 
@@ -5166,11 +5166,11 @@ async function expectedOf(entryId: string) {
 	return row?.expected;
 }
 
-describe("applyRulePlan", () => {
-	async function write(plan: Map<string, RowPlan>) {
-		return temp.db.transaction(async (tx) => applyRulePlan(tx, plan, { origin: "rule" }));
-	}
+async function write(plan: Map<string, RowPlan>) {
+	return temp.db.transaction(async (tx) => applyRulePlan(tx, plan, { origin: "rule" }));
+}
 
+describe("applyRulePlan", () => {
 	it("writes nothing for an empty plan", async () => {
 		await expect(write(new Map())).resolves.toEqual({ changed: [], marked: [] });
 	});
@@ -5343,10 +5343,10 @@ describe("applyRulePlan", () => {
 
 // Story 8.3: applying rules to history reads every transaction as a rule does.
 
-describe("ruleCandidates", () => {
-	const candidatesOf = async (ids: readonly string[], from: string | null = null) =>
-		(await ruleCandidates(temp.db, from)).filter((candidate) => ids.includes(candidate.id));
+const candidatesOf = async (ids: readonly string[], from: string | null = null) =>
+	(await ruleCandidates(temp.db, from)).filter((candidate) => ids.includes(candidate.id));
 
+describe("ruleCandidates", () => {
 	it("reads what a rule reads and writes, locks and the transfer kind included", async () => {
 		const { outflow, inflow, livret } = await matchedPair();
 		const account = await openChecking();
@@ -5687,17 +5687,17 @@ describe("linkBankAccount", () => {
 	});
 });
 
+async function linkedAccount(balance = 100000) {
+	const account = await openChecking();
+	const bank = await newBankAccount();
+	await link(account.id, bank.id, balance);
+
+	return { account, bank };
+}
+
 describe("a bank-linked account", () => {
-	async function linked(balance = 100000) {
-		const account = await openChecking();
-		const bank = await newBankAccount();
-		await link(account.id, bank.id, balance);
-
-		return { account, bank };
-	}
-
 	it("recomputes every earlier day when a transaction is added, today staying the bank's", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 
 		await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-2000) });
 
@@ -5709,7 +5709,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("recomputes every earlier day when a transaction is deleted", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 		const id = await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-2000) });
 
 		await deleteTransaction(deps(), id, { origin: "user" });
@@ -5720,7 +5720,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("goes forward from the bank balance for a day after it", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 
 		await add(account.id, { date: "2026-09-25", amount: toMinorUnits(-500) });
 
@@ -5732,7 +5732,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("follows an earlier opening date an import moves it to", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 
 		await ingest(
 			deps(),
@@ -5754,7 +5754,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("reads a snapshot's gap against the day after it, derived backward from the bank", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 		await add(account.id, { date: "2026-09-12", amount: toMinorUnits(-2000) });
 		await add(account.id, { date: "2026-09-11", amount: toMinorUnits(-700) });
 		await recordSnapshot(
@@ -5778,7 +5778,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("reads an earlier snapshot against the day after it, which the later one set", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 		await add(account.id, { date: "2026-09-11", amount: toMinorUnits(-700) });
 		const snap = (date: string, balance: number) =>
 			recordSnapshot(
@@ -5800,7 +5800,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("reads a snapshot on the bank balance's day forward, as any other account", async () => {
-		const { account } = await linked();
+		const { account } = await linkedAccount();
 		await recordSnapshot(
 			deps(),
 			account.id,
@@ -5814,7 +5814,7 @@ describe("a bank-linked account", () => {
 	});
 
 	it("goes forward again once its connection is gone, the anchor left aside", async () => {
-		const { account, bank } = await linked();
+		const { account, bank } = await linkedAccount();
 		await temp.db.delete(bankConnections).where(eq(bankConnections.id, bank.connectionId));
 
 		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4290) });
@@ -5831,47 +5831,47 @@ describe("a bank-linked account", () => {
 /** The bank's 995,00, as it describes the end of `date`. */
 const bankBalance = (date: string) => ({ amount: toMinorUnits(99500), currency: "EUR", date });
 
+async function linkedChecking(balance = 100000, overrides: Partial<NewAccountInput> = {}) {
+	const account = await openChecking(overrides);
+	const bank = await newBankAccount();
+	await link(account.id, bank.id, balance);
+
+	return { account, bank };
+}
+
+const sync = (
+	accountId: string,
+	connectionId: string,
+	lines: NormalizedTransaction[],
+	balance: ParsedStatement["balance"] = null,
+) =>
+	ingest(
+		deps(),
+		accountId,
+		{ transactions: lines, balance, rejected: [] },
+		{ connectionId },
+		{ origin: "sync" },
+	);
+
+const newBankLine = (overrides: Partial<NormalizedTransaction> = {}) =>
+	line({ externalId: "EB1", date: "2026-09-12", label: "CARREFOUR", ...overrides });
+
+async function keyRows(entryId: string) {
+	return temp.db
+		.select({
+			source: entryKeys.source,
+			importId: entryKeys.importId,
+			connectionId: entryKeys.connectionId,
+		})
+		.from(entryKeys)
+		.where(eq(entryKeys.entryId, entryId));
+}
+
 describe("ingest from a bank connection", () => {
-	async function linkedChecking(balance = 100000) {
-		const account = await openChecking();
-		const bank = await newBankAccount();
-		await link(account.id, bank.id, balance);
-
-		return { account, bank };
-	}
-
-	const sync = (
-		accountId: string,
-		connectionId: string,
-		lines: NormalizedTransaction[],
-		balance: ParsedStatement["balance"] = null,
-	) =>
-		ingest(
-			deps(),
-			accountId,
-			{ transactions: lines, balance, rejected: [] },
-			{ connectionId },
-			{ origin: "sync" },
-		);
-
-	const bankLine = (overrides: Partial<NormalizedTransaction> = {}) =>
-		line({ externalId: "EB1", date: "2026-09-12", label: "CARREFOUR", ...overrides });
-
-	async function keyRows(entryId: string) {
-		return temp.db
-			.select({
-				source: entryKeys.source,
-				importId: entryKeys.importId,
-				connectionId: entryKeys.connectionId,
-			})
-			.from(entryKeys)
-			.where(eq(entryKeys.entryId, entryId));
-	}
-
 	it("keys its lines under the connector and the connection, and rewrites the anchor", async () => {
 		const { account, bank } = await linkedChecking();
 
-		const result = await sync(account.id, bank.connectionId, [bankLine()], {
+		const result = await sync(account.id, bank.connectionId, [newBankLine()], {
 			amount: toMinorUnits(95710),
 			currency: "EUR",
 			date: "2026-09-21",
@@ -5899,7 +5899,7 @@ describe("ingest from a bank connection", () => {
 
 	it("creates nothing the second time, keyed by reference or, without one, by fingerprint", async () => {
 		const { account, bank } = await linkedChecking();
-		const lines = [bankLine(), bankLine({ externalId: null, label: "SANS REFERENCE" })];
+		const lines = [newBankLine(), newBankLine({ externalId: null, label: "SANS REFERENCE" })];
 		await sync(account.id, bank.connectionId, lines);
 
 		const again = await sync(account.id, bank.connectionId, lines);
@@ -5915,7 +5915,7 @@ describe("ingest from a bank connection", () => {
 		await sync(
 			account.id,
 			bank.connectionId,
-			[bankLine({ date: "2026-09-21", amount: toMinorUnits(-500) })],
+			[newBankLine({ date: "2026-09-21", amount: toMinorUnits(-500) })],
 			bankBalance("2026-09-20"),
 		);
 
@@ -5936,7 +5936,7 @@ describe("ingest from a bank connection", () => {
 	it("keeps the anchor when the bank gives no balance, or one in another currency", async () => {
 		const { account, bank } = await linkedChecking();
 
-		const none = await sync(account.id, bank.connectionId, [bankLine()]);
+		const none = await sync(account.id, bank.connectionId, [newBankLine()]);
 		const foreign = await sync(account.id, bank.connectionId, [], {
 			amount: toMinorUnits(1),
 			currency: "USD",
@@ -5969,7 +5969,7 @@ describe("ingest from a bank connection", () => {
 		);
 		const [csvEntry = ""] = result.created;
 
-		const synced = await sync(account.id, bank.connectionId, [bankLine()]);
+		const synced = await sync(account.id, bank.connectionId, [newBankLine()]);
 
 		expect(synced.created).toEqual([]);
 		expect(synced.groups.matched).toEqual([
@@ -5995,7 +5995,7 @@ describe("ingest from a bank connection", () => {
 			{ source: "csv" },
 		);
 		const [csvEntry = ""] = result.created;
-		await sync(account.id, bank.connectionId, [bankLine()]);
+		await sync(account.id, bank.connectionId, [newBankLine()]);
 
 		await expect(removableOf(deps(), [importId])).resolves.toEqual(
 			new Map([[importId, { transactions: 0, snapshot: 0 }]]),
@@ -6017,7 +6017,7 @@ describe("ingest from a bank connection", () => {
 			{ source: "csv" },
 		);
 
-		const synced = await sync(account.id, bank.connectionId, [bankLine()]);
+		const synced = await sync(account.id, bank.connectionId, [newBankLine()]);
 
 		const [id = ""] = synced.created;
 		expect(synced.groups.duplicates).toHaveLength(1);
@@ -6032,10 +6032,10 @@ describe("ingest from a bank connection", () => {
 
 	it("never pairs with an entry another sync of the same connector wrote", async () => {
 		const { account, bank } = await linkedChecking();
-		await sync(account.id, bank.connectionId, [bankLine()]);
+		await sync(account.id, bank.connectionId, [newBankLine()]);
 
 		const synced = await sync(account.id, bank.connectionId, [
-			bankLine({ externalId: "EB2", date: "2026-09-13", label: "AUTRE" }),
+			newBankLine({ externalId: "EB2", date: "2026-09-13", label: "AUTRE" }),
 		]);
 
 		expect(synced.created).toHaveLength(1);
@@ -6045,7 +6045,7 @@ describe("ingest from a bank connection", () => {
 	it("refuses lines on or before the opening date, as any source", async () => {
 		const { account, bank } = await linkedChecking();
 
-		const synced = await sync(account.id, bank.connectionId, [bankLine({ date: "2026-09-01" })]);
+		const synced = await sync(account.id, bank.connectionId, [newBankLine({ date: "2026-09-01" })]);
 
 		expect(synced.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
 	});
@@ -6053,7 +6053,7 @@ describe("ingest from a bank connection", () => {
 	it("refuses an unknown connection and writes nothing", async () => {
 		const { account } = await linkedChecking();
 
-		await expect(sync(account.id, crypto.randomUUID(), [bankLine()])).rejects.toMatchObject({
+		await expect(sync(account.id, crypto.randomUUID(), [newBankLine()])).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
@@ -6062,79 +6062,61 @@ describe("ingest from a bank connection", () => {
 
 // Story 10.4: pending lines, their booked version and their disappearance.
 
+// Amounts of their own: step 6 would link them to another test's rows.
+const pendingLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) =>
+	line({
+		externalId: "ref-1",
+		date: "2026-09-19",
+		amount: toMinorUnits(amount),
+		label: "BOULANGERIE EN ATTENTE",
+		pending: true,
+		...overrides,
+	});
+
+async function rowOf(entryId: string) {
+	return temp.db
+		.select({
+			date: entries.date,
+			amount: entries.amount,
+			label: transactions.label,
+			notes: transactions.notes,
+			pending: transactions.pending,
+			missed: transactions.pendingMissedSyncs,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(eq(entries.id, entryId))
+		.get();
+}
+
+async function valuationsIds(accountId: string) {
+	const rows = await temp.db
+		.select({ id: entries.id })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.kind, "valuation")));
+
+	return rows.map(({ id }) => id);
+}
+
+const bookedLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) =>
+	pendingLine(amount, { label: "BOULANGERIE", pending: false, ...overrides });
+
+async function createdBySync(
+	accountId: string,
+	connectionId: string,
+	lines: NormalizedTransaction[],
+) {
+	const result = await sync(accountId, connectionId, lines);
+
+	return result.created;
+}
+
 describe("pending transactions", () => {
-	async function linkedChecking(balance = 100000, overrides: Partial<NewAccountInput> = {}) {
-		const account = await openChecking(overrides);
-		const bank = await newBankAccount();
-		await link(account.id, bank.id, balance);
-
-		return { account, bank };
-	}
-
-	const sync = (
-		accountId: string,
-		connectionId: string,
-		lines: NormalizedTransaction[],
-		balance: ParsedStatement["balance"] = null,
-	) =>
-		ingest(
-			deps(),
-			accountId,
-			{ transactions: lines, balance, rejected: [] },
-			{ connectionId },
-			{ origin: "sync" },
-		);
-
-	// Amounts of their own: step 6 would link them to another test's rows.
-	const pendingLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) =>
-		line({
-			externalId: "ref-1",
-			date: "2026-09-19",
-			amount: toMinorUnits(amount),
-			label: "BOULANGERIE EN ATTENTE",
-			pending: true,
-			...overrides,
-		});
-
-	const bookedLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) =>
-		pendingLine(amount, { label: "BOULANGERIE", pending: false, ...overrides });
-
-	async function rowOf(entryId: string) {
-		return temp.db
-			.select({
-				date: entries.date,
-				amount: entries.amount,
-				label: transactions.label,
-				notes: transactions.notes,
-				pending: transactions.pending,
-				missed: transactions.pendingMissedSyncs,
-			})
-			.from(entries)
-			.innerJoin(transactions, eq(transactions.entryId, entries.id))
-			.where(eq(entries.id, entryId))
-			.get();
-	}
-
-	async function valuationsIds(accountId: string) {
-		const rows = await temp.db
-			.select({ id: entries.id })
-			.from(entries)
-			.where(and(eq(entries.accountId, accountId), eq(entries.kind, "valuation")));
-
-		return rows.map(({ id }) => id);
-	}
-
-	async function created(accountId: string, connectionId: string, lines: NormalizedTransaction[]) {
-		const result = await sync(accountId, connectionId, lines);
-
-		return result.created;
-	}
-
 	it("stores a pending line, counts it in the balance and leaves it out of cash flow", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 
-		const [id = ""] = await created(account.id, bank.connectionId, [
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { date: "2026-09-21" }),
 		]);
 
@@ -6200,7 +6182,7 @@ describe("pending transactions", () => {
 		const { account, bank } = await linkedChecking();
 		const other = await openChecking({ name: "Livret" });
 		const amount = transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(-amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(-amount)]);
 		const category = await newCategory("Courses");
 		const tag = await newTag("Vacances");
 		await updateTransaction(deps(), id, { categoryId: category, tagIds: [tag] }, asUser);
@@ -6238,7 +6220,7 @@ describe("pending transactions", () => {
 	it("changes nothing when the bank sends the old pending line again", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		await sync(account.id, bank.connectionId, [bookedLine(amount, { date: "2026-09-20" })]);
 
 		const again = await sync(account.id, bank.connectionId, [pendingLine(amount)]);
@@ -6251,7 +6233,7 @@ describe("pending transactions", () => {
 	it("books once when one statement holds the booked line, then the pending one", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 
 		await sync(account.id, bank.connectionId, [
 			bookedLine(amount, { date: "2026-09-20" }),
@@ -6265,7 +6247,7 @@ describe("pending transactions", () => {
 	it("refreshes a pending entry from its pending line, and starts its missed syncs over", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		await sync(account.id, bank.connectionId, []);
 		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1 });
 
@@ -6286,7 +6268,7 @@ describe("pending transactions", () => {
 	it("books a pending entry without reference by amount within 5 days", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { externalId: null, date: "2026-09-16" }),
 		]);
 
@@ -6308,7 +6290,7 @@ describe("pending transactions", () => {
 	it("keeps a label the user locked, and takes the booked amount and date", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		await updateTransaction(deps(), id, { label: "Pain du dimanche" }, asUser);
 
 		await sync(account.id, bank.connectionId, [bookedLine(amount - 30, { date: "2026-09-20" })]);
@@ -6324,7 +6306,7 @@ describe("pending transactions", () => {
 	it("creates a booked line more than 5 days from the pending entry, which counts a miss", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [pendingId = ""] = await created(account.id, bank.connectionId, [
+		const [pendingId = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { externalId: null, date: "2026-09-10" }),
 		]);
 
@@ -6339,7 +6321,7 @@ describe("pending transactions", () => {
 	it("gives a booked line to the pending entry at the nearest date", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [far = "", near = ""] = await created(account.id, bank.connectionId, [
+		const [far = "", near = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { externalId: null, date: "2026-09-18" }),
 			pendingLine(amount, { externalId: null, date: "2026-09-20" }),
 		]);
@@ -6356,7 +6338,7 @@ describe("pending transactions", () => {
 		const { account, bank } = await linkedChecking();
 		const other = await newBankAccount();
 		const amount = -transferAmount();
-		const [pendingId = ""] = await created(account.id, other.connectionId, [
+		const [pendingId = ""] = await createdBySync(account.id, other.connectionId, [
 			pendingLine(amount, { externalId: null }),
 		]);
 
@@ -6388,7 +6370,7 @@ describe("pending transactions", () => {
 	it("deletes a pending entry missing from two syncs in a row, with its keys and tags", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { date: "2026-09-21" }),
 		]);
 		await updateTransaction(deps(), id, { tagIds: [await newTag("Hôtel")] }, asUser);
@@ -6438,7 +6420,7 @@ describe("pending transactions", () => {
 	it("creates a booked line beside a pending entry its own pending line refreshes", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 
 		const synced = await sync(account.id, bank.connectionId, [
 			pendingLine(amount),
@@ -6453,7 +6435,7 @@ describe("pending transactions", () => {
 	it("runs no rule again on the entry a booked line absorbs", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		const category = await newCategory("Boulangerie");
 		const rule = await createRule(deps(), {
 			effectiveDate: null,
@@ -6480,7 +6462,7 @@ describe("pending transactions", () => {
 	it("keeps an amount the user locked, and takes the booked date", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [id = ""] = await created(account.id, bank.connectionId, [pendingLine(amount)]);
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		await updateTransaction(deps(), id, { amount: toMinorUnits(amount - 7) }, asUser);
 
 		await sync(account.id, bank.connectionId, [bookedLine(amount - 40, { date: "2026-09-20" })]);
@@ -6514,7 +6496,7 @@ describe("pending transactions", () => {
 
 	it("puts a pending row at the top of its day", async () => {
 		const { account, bank } = await linkedChecking();
-		const [pendingId = ""] = await created(account.id, bank.connectionId, [
+		const [pendingId = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(-transferAmount(), { date: "2026-09-12" }),
 		]);
 		setToday("2026-09-21T10:00:01Z");
@@ -6528,22 +6510,22 @@ describe("pending transactions", () => {
 
 // Story 10.5: a disconnected bank's accounts carry on as manual ones.
 
+const unlink = (accountId: string) => unlinkBankAccount(deps(), accountId, { origin: "sync" });
+
+async function linkedAt(balance: number, overrides: Partial<NewAccountInput> = {}) {
+	const account = await openChecking(overrides);
+	const bank = await newBankAccount();
+
+	return { account, bank, link: () => link(account.id, bank.id, balance) };
+}
+
+async function bankAccountOf(accountId: string) {
+	const row = await temp.db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+
+	return row?.bankAccountId;
+}
+
 describe("unlinkBankAccount", () => {
-	const unlink = (accountId: string) => unlinkBankAccount(deps(), accountId, { origin: "sync" });
-
-	async function linkedAt(balance: number, overrides: Partial<NewAccountInput> = {}) {
-		const account = await openChecking(overrides);
-		const bank = await newBankAccount();
-
-		return { account, bank, link: () => link(account.id, bank.id, balance) };
-	}
-
-	async function bankAccountOf(accountId: string) {
-		const row = await temp.db.select().from(accounts).where(eq(accounts.id, accountId)).get();
-
-		return row?.bankAccountId;
-	}
-
 	it("keeps every balance while the bank's figure becomes a reconciliation", async () => {
 		const { account, link: linkIt } = await linkedAt(100000);
 		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-transferAmount()) });
@@ -6747,82 +6729,62 @@ describe("unlinkBankAccount", () => {
 /** The other side's amount, for a transfer or a rejected pair. */
 const opposite = (amount: number) => toMinorUnits(-amount);
 
+async function flagOf(entryId: string) {
+	const row = await temp.db
+		.select({ flagged: transactions.possibleDuplicate })
+		.from(transactions)
+		.where(eq(transactions.entryId, entryId))
+		.get();
+
+	return row?.flagged;
+}
+
+/**
+ * Two manual entries two days apart, then an OFX line between them: a tie,
+ * created flagged. Amounts are unique, so no transfer links any of them.
+ */
+async function fileTie(
+	dates: [string, string, string] = ["2026-09-04", "2026-09-05", "2026-09-06"],
+) {
+	const account = await openChecking();
+	const amount = toMinorUnits(-transferAmount());
+	const [before, on, after] = dates;
+	const first = await add(account.id, { date: before, amount, label: "PEAGE A" });
+	// A second later, so the older entry comes first among equally near ones.
+	vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+	const second = await add(account.id, { date: after, amount, label: "PEAGE B" });
+	const { importId, result } = await importStatement(
+		account.id,
+		statementOf(line({ externalId: "P1", date: on, amount, label: "PEAGE" })),
+	);
+	const [flagged = ""] = result.created;
+
+	return { account, amount, first, second, flagged, importId };
+}
+
+/** Two CSV lines two days apart, then a bank line between them: a tie from a sync. */
+async function bankTie(sign = -1) {
+	const account = await openChecking();
+	const bank = await newBankAccount();
+	await link(account.id, bank.id, 100000);
+	const amount = toMinorUnits(sign * transferAmount());
+	const { result } = await importStatement(
+		account.id,
+		statementOf(
+			line({ date: "2026-09-11", amount, label: "CB CARREFOUR" }),
+			line({ date: "2026-09-13", amount, label: "CB CARREFOUR" }),
+		),
+		{ source: "csv" },
+	);
+	const [fileLine = "", other = ""] = result.created;
+	const bankLine = line({ externalId: "EB1", date: "2026-09-12", amount, label: "CARREFOUR" });
+	const synced = await sync(account.id, bank.connectionId, [bankLine]);
+	const [flagged = ""] = synced.created;
+
+	return { account, bank, amount, fileLine, other, flagged, bankLine };
+}
+
 describe("possible duplicates", () => {
-	const sync = (accountId: string, connectionId: string, lines: NormalizedTransaction[]) =>
-		ingest(
-			deps(),
-			accountId,
-			{ transactions: lines, balance: null, rejected: [] },
-			{ connectionId },
-			{ origin: "sync" },
-		);
-
-	async function keyRows(entryId: string) {
-		return temp.db
-			.select({
-				source: entryKeys.source,
-				importId: entryKeys.importId,
-				connectionId: entryKeys.connectionId,
-			})
-			.from(entryKeys)
-			.where(eq(entryKeys.entryId, entryId));
-	}
-
-	async function flagOf(entryId: string) {
-		const row = await temp.db
-			.select({ flagged: transactions.possibleDuplicate })
-			.from(transactions)
-			.where(eq(transactions.entryId, entryId))
-			.get();
-
-		return row?.flagged;
-	}
-
-	/**
-	 * Two manual entries two days apart, then an OFX line between them: a tie,
-	 * created flagged. Amounts are unique, so no transfer links any of them.
-	 */
-	async function fileTie(
-		dates: [string, string, string] = ["2026-09-04", "2026-09-05", "2026-09-06"],
-	) {
-		const account = await openChecking();
-		const amount = toMinorUnits(-transferAmount());
-		const [before, on, after] = dates;
-		const first = await add(account.id, { date: before, amount, label: "PEAGE A" });
-		// A second later, so the older entry comes first among equally near ones.
-		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
-		const second = await add(account.id, { date: after, amount, label: "PEAGE B" });
-		const { importId, result } = await importStatement(
-			account.id,
-			statementOf(line({ externalId: "P1", date: on, amount, label: "PEAGE" })),
-		);
-		const [flagged = ""] = result.created;
-
-		return { account, amount, first, second, flagged, importId };
-	}
-
-	/** Two CSV lines two days apart, then a bank line between them: a tie from a sync. */
-	async function bankTie(sign = -1) {
-		const account = await openChecking();
-		const bank = await newBankAccount();
-		await link(account.id, bank.id, 100000);
-		const amount = toMinorUnits(sign * transferAmount());
-		const { result } = await importStatement(
-			account.id,
-			statementOf(
-				line({ date: "2026-09-11", amount, label: "CB CARREFOUR" }),
-				line({ date: "2026-09-13", amount, label: "CB CARREFOUR" }),
-			),
-			{ source: "csv" },
-		);
-		const [fileLine = "", other = ""] = result.created;
-		const bankLine = line({ externalId: "EB1", date: "2026-09-12", amount, label: "CARREFOUR" });
-		const synced = await sync(account.id, bank.connectionId, [bankLine]);
-		const [flagged = ""] = synced.created;
-
-		return { account, bank, amount, fileLine, other, flagged, bankLine };
-	}
-
 	describe("duplicateCandidates", () => {
 		it("lists the same account's entries of the same amount within 3 days, nearest first", async () => {
 			const { account, amount, first, second, flagged } = await fileTie();

@@ -19,9 +19,20 @@ Archant re-implements the parts of [Sure](https://github.com/we-promise/sure) th
 
 Why these, and what was rejected: [docs/adr/0001-technology-stack.md](docs/adr/0001-technology-stack.md).
 
-## Status
+## Features
 
-Early. You can create checking, savings and credit card accounts and see them listed with their balances. Each feature is scoped first, then built along with the packages and dependencies it needs, and nothing is added ahead of that need.
+The interface is in French. Everything below works without a bank connection except the last line.
+
+- Accounts: checking, savings, credit card, loan, investment (PEA, assurance vie, compte-titres), property and vehicle, with a daily balance history and dated balance snapshots.
+- Transactions entered by hand, filtered across accounts, and edited in bulk.
+- Import of OFX, CSV (with a saved column mapping) and QIF files, with a preview, deduplication, an import history and revert.
+- Categories, merchants and tags, and rules that categorise, tag, rename or exclude new and existing transactions.
+- Transfers between accounts, marked by hand or matched automatically.
+- Recurring transactions, detected from history and listed with their next date.
+- A dashboard with net worth over time and monthly income and expenses by category.
+- A command palette and keyboard shortcuts.
+- One administrator account, created on first launch, with a password reset from the server's shell.
+- Bank synchronisation through Enable Banking: connect a bank, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
 
 ## Structure
 
@@ -44,19 +55,18 @@ Node.js 24+, pnpm 10+.
 ```bash
 git clone git@github.com:leger-dosage/archant.git
 cd archant
-pnpm install
+pnpm install --frozen-lockfile
 cp .env.example .env
 ```
 
-Then, in separate terminals:
+Set `BETTER_AUTH_SECRET` in `.env`, from `openssl rand -base64 32`: the API refuses to start without it. Then, in separate terminals:
 
 ```bash
-pnpm data migrate:local   # creates local.db at the repository root
-pnpm api start:dev        # API on http://localhost:8787
+pnpm api start:dev        # API on http://localhost:8787; migrates local.db at the repository root first
 pnpm web start:dev        # interface on http://localhost:5173, proxies /api to the API
 ```
 
-Open http://localhost:5173.
+Open http://localhost:5173 and create the administrator. `pnpm data migrate:local` applies migrations without starting the API. To connect a bank in development, see [Connecting a bank](docs/deployment.md#connecting-a-bank).
 
 ## Scripts
 
@@ -70,7 +80,7 @@ Open http://localhost:5173.
 | `pnpm test:e2e`     | Run the Playwright suite           |
 | `pnpm api <script>` | Run a script inside `@archant/api` |
 
-`pnpm web` and `pnpm data` do the same for the two other packages.
+`pnpm web` and `pnpm data` do the same for the two other packages. `pnpm test:e2e` needs Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`.
 
 ## Deploying
 
@@ -81,7 +91,7 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
 ```
 
-Open http://localhost:8787 and create the administrator. Reverse proxies, variables, upgrades and other targets are described in [docs/deployment.md](docs/deployment.md).
+Open http://localhost:8787 and create the administrator. [docs/deployment.md](docs/deployment.md) covers the variables, reverse proxies, upgrades, backups, connecting a bank in sandbox or production, the scheduled sync, password reset and other targets.
 
 ## Contributing
 

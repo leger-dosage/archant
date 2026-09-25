@@ -12,17 +12,21 @@ For one household that is the wrong shape. Archant keeps the domain modelling, w
 
 ## Scope
 
-Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. Nothing below is committed until its spec exists.
+Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. The ten epics of `_bmad-output/planning-artifacts/epics.md` have shipped:
 
-Early scope, in build order, is kept in `_bmad-output/planning-artifacts/feature-inventory.md`:
-
-- Accounts and balances, with history
-- Transaction import from CSV, QIF and OFX files
-- Categories, internal transfers, and a rules engine for automatic categorisation
-- Dashboard and charts
-- Enable Banking synchronisation, behind a connector interface that other providers can implement
+- Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment (valued by snapshots, without holdings), property and vehicle accounts
+- Transaction import from CSV, QIF and OFX files, with preview, deduplication and revert
+- First-launch setup, sign-in, and a single container for deployment
+- Categories, merchants, tags and bulk edit
+- Internal transfers, matched by hand or automatically
+- A dashboard with net worth over time and monthly income and expenses by category
+- A rules engine on Sure's rule model
+- Recurring transaction detection and a page listing them
+- Enable Banking synchronisation: consent, account linking, scheduled sync, pending transactions, renewal, disconnection and duplicate merging
 
 One running instance is one household. Amounts are in euros, but every amount carries its currency code.
+
+[sure-parity.md](sure-parity.md) compares each area with Sure: what is at parity, what differs on purpose and why, what comes later, and what has no recorded decision yet. What comes back later is listed in `_bmad-output/planning-artifacts/feature-inventory.md`.
 
 Explicit non-goals: multi-tenancy beyond one household, a hosted offering, investment portfolio tracking at parity with Sure, server-side rendering, SEO.
 
@@ -30,7 +34,7 @@ Explicit non-goals: multi-tenancy beyond one household, a hosted offering, inves
 
 These are the places where the work is, and they are not the user interface.
 
-1. **Consent expiry.** A PSD2 consent lasts 90 to 180 days. Re-authentication is a first-class flow, not an error case.
-2. **Pending transactions.** A pending entry becomes final, changes amount, and must not produce a duplicate. Sure documents this at length for each provider; the same care applies here.
-3. **Deduplication.** Two sources for the same transaction, a file import and an API sync, must converge on one row.
-4. **Money.** Integer minor units and an explicit currency, everywhere, with historical rates for reporting.
+1. **Consent expiry.** A bank consent lasts at most what the bank allows, and Archant asks for 90 days at most. Renewal is a first-class flow, warned 14 days ahead, not an error case.
+2. **Pending transactions.** A pending entry becomes final, may change amount, and must not produce a duplicate. The booked line updates the pending entry in place; a pending line the bank stops listing is deleted after two syncs.
+3. **Deduplication.** Two sources for the same transaction, a file import and a bank sync, must converge on one row. Keys written at import time do most of it; a tie is flagged for the user to merge or dismiss.
+4. **Money.** Integer minor units and an explicit currency, everywhere. Totals use one reporting currency and leave other currencies out, with a notice, until historical exchange rates exist.

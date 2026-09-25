@@ -1,0 +1,21 @@
+!Type:Bank
+D01/07/2026
+T8 000,00
+POpening Balance
+L[Livret A]
+^
+D02/07/2026
+T300,00
+PVIR PERM DEPUIS CPT JOINT
+MVirement permanent épargne
+^
+D03/08/2026
+T500,00
+PVIR PERM DEPUIS CPT JOINT
+MVirement permanent épargne
+^
+D02/09/2026
+T300,00
+PVIR PERM DEPUIS CPT JOINT
+MVirement permanent épargne
+^

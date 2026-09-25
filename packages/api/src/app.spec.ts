@@ -888,6 +888,13 @@ describe("GET /api/accounts/:id/balances", () => {
 	});
 });
 
+const locksOf = async (id: string) =>
+	(
+		await temp.db.get<{ locked: string }>(
+			sql`select locked_fields as locked from transactions where entry_id = ${id}`,
+		)
+	)?.locked;
+
 describe("PATCH /api/transactions/:id", () => {
 	it("moves and changes a transaction, and the balance follows", async () => {
 		const account = await openAccount();
@@ -1009,13 +1016,6 @@ describe("PATCH /api/transactions/:id", () => {
 			.object({ data: z.object({ id: z.string() }) })
 			.parse((await postTransaction(account.id, expense)).body).data.id;
 		const groceries = await createCategory(uniqueCategory("Courses"));
-		const locksOf = async (id: string) =>
-			(
-				await temp.db.get<{ locked: string }>(
-					sql`select locked_fields as locked from transactions where entry_id = ${id}`,
-				)
-			)?.locked;
-
 		await request("PATCH", `/api/transactions/${set}`, { categoryId: groceries.id });
 		// The sheet sends the category it shows, whatever else it saves.
 		await request("PATCH", `/api/transactions/${unchanged}`, {
@@ -1923,20 +1923,20 @@ describe("DELETE /api/snapshots/:id", () => {
 	});
 });
 
-describe("the opening anchor", () => {
-	async function anchorOf(accountId: string) {
-		// Raw on purpose: only the ledger may import the entries table (AD-2).
-		const [anchor] = await temp.db.all<{ id: string; date: string; amount: number }>(
-			sql`select id, date, amount from entries where account_id = ${accountId} and valuation_kind = 'opening_anchor'`,
-		);
+async function anchorOf(accountId: string) {
+	// Raw on purpose: only the ledger may import the entries table (AD-2).
+	const [anchor] = await temp.db.all<{ id: string; date: string; amount: number }>(
+		sql`select id, date, amount from entries where account_id = ${accountId} and valuation_kind = 'opening_anchor'`,
+	);
 
-		if (anchor === undefined) {
-			throw new Error("The account has no opening anchor.");
-		}
-
-		return anchor;
+	if (anchor === undefined) {
+		throw new Error("The account has no opening anchor.");
 	}
 
+	return anchor;
+}
+
+describe("the opening anchor", () => {
 	it("cannot be deleted as a transaction", async () => {
 		const account = await openAccount();
 		const anchor = await anchorOf(account.id);
@@ -2409,20 +2409,20 @@ describe("GET /api/accounts with inactive and excluded accounts", () => {
 	});
 });
 
+async function countRows(accountId: string) {
+	// Raw on purpose: only the ledger may import these tables (AD-2).
+	const [row] = await temp.db.all<Record<string, number>>(
+		sql`select
+			(select count(*) from accounts where id = ${accountId}) as accounts,
+			(select count(*) from entries where account_id = ${accountId}) as entries,
+			(select count(*) from transactions where entry_id in (select id from entries where account_id = ${accountId})) as transactions,
+			(select count(*) from balances where account_id = ${accountId}) as balances`,
+	);
+
+	return row;
+}
+
 describe("DELETE /api/accounts/:id", () => {
-	async function countRows(accountId: string) {
-		// Raw on purpose: only the ledger may import these tables (AD-2).
-		const [row] = await temp.db.all<Record<string, number>>(
-			sql`select
-				(select count(*) from accounts where id = ${accountId}) as accounts,
-				(select count(*) from entries where account_id = ${accountId}) as entries,
-				(select count(*) from transactions where entry_id in (select id from entries where account_id = ${accountId})) as transactions,
-				(select count(*) from balances where account_id = ${accountId}) as balances`,
-		);
-
-		return row;
-	}
-
 	it("deletes the account, its transactions, snapshot and balances, and nothing else", async () => {
 		const account = await openAccount();
 		const other = await openAccount({ name: "Livret A", subtype: "savings" });
@@ -4372,6 +4372,38 @@ const ruleLeaf = (conditionType: string, operator: string, value: string | null)
 
 const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
 
+async function categoriesOf(accountId: string) {
+	const rows = await temp.db.all<{
+		label: string;
+		category: string | null;
+		origin: string | null;
+	}>(
+		sql`select t.label as label, t.category_id as category, t.category_origin as origin from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
+	);
+
+	return rows;
+}
+
+// Story 8.2: the other conditions and actions.
+
+async function detailsOf(accountId: string) {
+	return temp.db.all<{
+		label: string;
+		category: string | null;
+		merchant: string | null;
+		excluded: number;
+		tags: string | null;
+	}>(
+		sql`select t.label as label, t.category_id as category, t.merchant_id as merchant, t.excluded as excluded, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
+	);
+}
+
+async function pairedAccounts(entryId: string) {
+	return temp.db.all<{ outflow: string; inflow: string }>(
+		sql`select eo.account_id as outflow, ei.account_id as inflow from transfers t join entries eo on eo.id = t.outflow_transaction_id join entries ei on ei.id = t.inflow_transaction_id where t.outflow_transaction_id = ${entryId} or t.inflow_transaction_id = ${entryId}`,
+	);
+}
+
 describe("rules", () => {
 	// A rule reaches every later transaction of this shared database.
 	afterEach(async () => {
@@ -4394,18 +4426,6 @@ describe("rules", () => {
 		expect(status).toBe(201);
 
 		return ruleBody.parse(created).data;
-	}
-
-	async function categoriesOf(accountId: string) {
-		const rows = await temp.db.all<{
-			label: string;
-			category: string | null;
-			origin: string | null;
-		}>(
-			sql`select t.label as label, t.category_id as category, t.category_origin as origin from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
-		);
-
-		return rows;
 	}
 
 	it("creates, lists, replaces, switches off and deletes a rule", async () => {
@@ -4659,20 +4679,6 @@ describe("rules", () => {
 		expect(rows.filter((row) => row.category === null)).toHaveLength(3);
 	});
 
-	// Story 8.2: the other conditions and actions.
-
-	async function detailsOf(accountId: string) {
-		return temp.db.all<{
-			label: string;
-			category: string | null;
-			merchant: string | null;
-			excluded: number;
-			tags: string | null;
-		}>(
-			sql`select t.label as label, t.category_id as category, t.merchant_id as merchant, t.excluded as excluded, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.date, t.label`,
-		);
-	}
-
 	it("sets the merchant, a tag and the label and excludes the lines of an OFX import, chaining two rules", async () => {
 		const account = await openAccount();
 		const bakery = await createMerchant(uniqueCategory("Boulangerie"));
@@ -4864,12 +4870,6 @@ describe("rules", () => {
 		expect(status).toBe(200);
 
 		return applicationBody.parse(body).data.runs;
-	}
-
-	async function pairedAccounts(entryId: string) {
-		return temp.db.all<{ outflow: string; inflow: string }>(
-			sql`select eo.account_id as outflow, ei.account_id as inflow from transfers t join entries eo on eo.id = t.outflow_transaction_id join entries ei on ei.id = t.inflow_transaction_id where t.outflow_transaction_id = ${entryId} or t.inflow_transaction_id = ${entryId}`,
-		);
 	}
 
 	it("counts, then changes, only the rows neither locked nor already there, and records the run", async () => {
@@ -5315,17 +5315,75 @@ describe("POST /api/transactions/bulk-delete", () => {
 	});
 });
 
+async function ownRequest(method: string, path: string, body?: unknown) {
+	const response = await buildApp(own?.db).request(path, {
+		method,
+		headers: { "content-type": "application/json" },
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+
+	return { status: response.status, body: z.unknown().parse(await response.json()) };
+}
+
+/**
+ * −500 on the checking account, +500 on the Livret A three days later, which
+ * links them on creation, and +500 six days later, too far to be a candidate.
+ */
+async function household() {
+	const checking = await openOwn({ name: "Compte courant" });
+	const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
+	const card = await openOwn({
+		name: "Carte",
+		type: "credit_card",
+		subtype: null,
+		openingBalance: "0",
+	});
+	const outflow = await postOwn(checking.id, {
+		date: "2026-09-10",
+		label: "VIR LIVRET A",
+		amount: "-500,00",
+	});
+	const inflow = await postOwn(livret.id, {
+		date: "2026-09-13",
+		label: "VIR COMPTE COURANT",
+		amount: "500,00",
+	});
+	const later = await postOwn(livret.id, {
+		date: "2026-09-16",
+		label: "Plus tard",
+		amount: "500,00",
+	});
+	const [automatic] = (await listed("?direction=transfer")).items;
+
+	return {
+		checking,
+		livret,
+		card,
+		outflow,
+		inflow,
+		later,
+		transferId: automatic?.transfer?.id ?? "",
+	};
+}
+
+const notFound = async (method: string, path: string, body?: unknown) => {
+	const response = await ownRequest(method, path, body);
+
+	expect(response.status).toBe(404);
+	expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+};
+
+/** `household()` with its automatic link undone, for the tests that match by hand. */
+async function unlinkedHousehold() {
+	const found = await household();
+	const { status } = await ownRequest("DELETE", `/api/transfers/${found.transferId}`);
+
+	expect(status).toBe(200);
+
+	return found;
+}
+
 describe("transfers", () => {
-	async function ownRequest(method: string, path: string, body?: unknown) {
-		const response = await buildApp(own?.db).request(path, {
-			method,
-			headers: { "content-type": "application/json" },
-			...(body === undefined ? {} : { body: JSON.stringify(body) }),
-		});
-
-		return { status: response.status, body: z.unknown().parse(await response.json()) };
-	}
-
 	const candidateList = z.object({
 		data: z.array(
 			z.object({
@@ -5348,57 +5406,6 @@ describe("transfers", () => {
 			kind: z.enum(TRANSFER_KINDS),
 		}),
 	});
-
-	/**
-	 * −500 on the checking account, +500 on the Livret A three days later, which
-	 * links them on creation, and +500 six days later, too far to be a candidate.
-	 */
-	async function household() {
-		const checking = await openOwn({ name: "Compte courant" });
-		const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
-		const card = await openOwn({
-			name: "Carte",
-			type: "credit_card",
-			subtype: null,
-			openingBalance: "0",
-		});
-		const outflow = await postOwn(checking.id, {
-			date: "2026-09-10",
-			label: "VIR LIVRET A",
-			amount: "-500,00",
-		});
-		const inflow = await postOwn(livret.id, {
-			date: "2026-09-13",
-			label: "VIR COMPTE COURANT",
-			amount: "500,00",
-		});
-		const later = await postOwn(livret.id, {
-			date: "2026-09-16",
-			label: "Plus tard",
-			amount: "500,00",
-		});
-		const [automatic] = (await listed("?direction=transfer")).items;
-
-		return {
-			checking,
-			livret,
-			card,
-			outflow,
-			inflow,
-			later,
-			transferId: automatic?.transfer?.id ?? "",
-		};
-	}
-
-	/** `household()` with its automatic link undone, for the tests that match by hand. */
-	async function unlinkedHousehold() {
-		const found = await household();
-		const { status } = await ownRequest("DELETE", `/api/transfers/${found.transferId}`);
-
-		expect(status).toBe(200);
-
-		return found;
-	}
 
 	it("links a move to savings on creation", async () => {
 		const { checking, outflow, inflow, transferId } = await household();
@@ -5667,13 +5674,6 @@ describe("transfers", () => {
 	it("answers NOT_FOUND for an unknown transaction or transfer", async () => {
 		const { inflow } = await household();
 
-		const notFound = async (method: string, path: string, body?: unknown) => {
-			const response = await ownRequest(method, path, body);
-
-			expect(response.status).toBe(404);
-			expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
-		};
-
 		await notFound("GET", "/api/transactions/nope/transfer-candidates");
 		await notFound("POST", "/api/transfers", { transactionId: "nope", counterpartId: inflow });
 		await notFound("DELETE", "/api/transfers/nope");
@@ -5790,17 +5790,42 @@ const tollOfx = () =>
 		"<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR<BANKTRANLIST>\n<STMTTRN><DTPOSTED>20260905<TRNAMT>-10.00<FITID>T1<NAME>PEAGE</STMTTRN>\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
 	);
 
+async function importToll(accountId: string) {
+	const app = buildApp(own?.db);
+	const form = new FormData();
+	form.append("file", new File([tollOfx()], "releve.ofx"));
+	const uploadResponse = await app.request(`/api/accounts/${accountId}/imports`, {
+		method: "POST",
+		body: form,
+	});
+	const { data } = importBody.parse(await uploadResponse.json());
+	const response = await app.request(`/api/imports/${data.id}/confirm`, { method: "POST" });
+
+	expect(response.status).toBe(200);
+
+	return data.groups;
+}
+
+/** −10,00 typed by hand on the 4th and the 6th, then the OFX line of the 5th: a tie. */
+async function tie() {
+	const account = await openOwn({ name: "Compte courant" });
+	const first = await postOwn(account.id, {
+		date: "2026-09-04",
+		label: "Péage A",
+		amount: "-10",
+	});
+	const second = await postOwn(account.id, {
+		date: "2026-09-06",
+		label: "Péage B",
+		amount: "-10",
+	});
+	await importToll(account.id);
+	const flagged = (await listed("")).items.find((item) => item.possibleDuplicate)?.id ?? "";
+
+	return { account, first, second, flagged };
+}
+
 describe("possible duplicates", () => {
-	async function ownRequest(method: string, path: string, body?: unknown) {
-		const response = await buildApp(own?.db).request(path, {
-			method,
-			headers: { "content-type": "application/json" },
-			...(body === undefined ? {} : { body: JSON.stringify(body) }),
-		});
-
-		return { status: response.status, body: z.unknown().parse(await response.json()) };
-	}
-
 	const candidateList = z.object({
 		data: z.array(
 			z.object({
@@ -5816,41 +5841,6 @@ describe("possible duplicates", () => {
 	});
 
 	const itemBody = z.object({ data: listItem.omit({ accountName: true }) });
-
-	async function importToll(accountId: string) {
-		const app = buildApp(own?.db);
-		const form = new FormData();
-		form.append("file", new File([tollOfx()], "releve.ofx"));
-		const uploadResponse = await app.request(`/api/accounts/${accountId}/imports`, {
-			method: "POST",
-			body: form,
-		});
-		const { data } = importBody.parse(await uploadResponse.json());
-		const response = await app.request(`/api/imports/${data.id}/confirm`, { method: "POST" });
-
-		expect(response.status).toBe(200);
-
-		return data.groups;
-	}
-
-	/** −10,00 typed by hand on the 4th and the 6th, then the OFX line of the 5th: a tie. */
-	async function tie() {
-		const account = await openOwn({ name: "Compte courant" });
-		const first = await postOwn(account.id, {
-			date: "2026-09-04",
-			label: "Péage A",
-			amount: "-10",
-		});
-		const second = await postOwn(account.id, {
-			date: "2026-09-06",
-			label: "Péage B",
-			amount: "-10",
-		});
-		await importToll(account.id);
-		const flagged = (await listed("")).items.find((item) => item.possibleDuplicate)?.id ?? "";
-
-		return { account, first, second, flagged };
-	}
 
 	it("flags the tie, lists its candidates, and merges it into the one picked", async () => {
 		const { account, first, second, flagged } = await tie();
@@ -6198,55 +6188,60 @@ const line = (
 ) => ({ categoryId, name, color: categoryId === null ? null : "#e99537", amount, share });
 
 /** The I/O matrix of Story 6.2, each test in its own database. */
+async function cashFlowOf(month: string) {
+	own ??= await freshDatabase();
+	const response = await testClient(buildApp(own.db)).api.reports["cash-flow"].$get({
+		query: { month },
+	});
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+async function sendOwn(method: string, path: string, body?: unknown) {
+	const response = await buildApp(own?.db).request(path, {
+		method,
+		headers: { "content-type": "application/json" },
+		...(body === undefined ? {} : { body: JSON.stringify(body) }),
+	});
+	const json = z.unknown().parse(await response.json());
+
+	expect(response.status, JSON.stringify(json)).toBeLessThan(300);
+
+	return json;
+}
+
+const refusedReport = async (query: string, code: string) => {
+	const { status, body } = await request("GET", `/api/reports/cash-flow${query}`);
+
+	expect(status).toBe(400);
+	expect(errorBody.parse(body).error).toMatchObject({
+		code: "VALIDATION_ERROR",
+		fields: [{ path: "month", code }],
+	});
+};
+
+async function ownCategory(name: string, overrides: Partial<CreateCategoryInput> = {}) {
+	own ??= await freshDatabase();
+	const body = await sendOwn("POST", "/api/categories", category(name, overrides));
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+}
+
+async function spend(accountId: string, amount: string, categoryId?: string, date = "2026-09-10") {
+	const id = await postOwn(accountId, { date, label: "Opération", amount });
+
+	if (categoryId !== undefined) {
+		await sendOwn("PATCH", `/api/transactions/${id}`, { categoryId });
+	}
+
+	return id;
+}
+
 describe("GET /api/reports/cash-flow", () => {
 	// Opened before September, so a row can sit on the month's first day.
 	const august = { openingDate: "2026-08-01" } as const;
-
-	async function cashFlowOf(month: string) {
-		own ??= await freshDatabase();
-		const response = await testClient(buildApp(own.db)).api.reports["cash-flow"].$get({
-			query: { month },
-		});
-
-		expect(response.status).toBe(200);
-
-		return (await response.json()).data;
-	}
-
-	async function sendOwn(method: string, path: string, body?: unknown) {
-		const response = await buildApp(own?.db).request(path, {
-			method,
-			headers: { "content-type": "application/json" },
-			...(body === undefined ? {} : { body: JSON.stringify(body) }),
-		});
-		const json = z.unknown().parse(await response.json());
-
-		expect(response.status, JSON.stringify(json)).toBeLessThan(300);
-
-		return json;
-	}
-
-	async function ownCategory(name: string, overrides: Partial<CreateCategoryInput> = {}) {
-		own ??= await freshDatabase();
-		const body = await sendOwn("POST", "/api/categories", category(name, overrides));
-
-		return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
-	}
-
-	async function spend(
-		accountId: string,
-		amount: string,
-		categoryId?: string,
-		date = "2026-09-10",
-	) {
-		const id = await postOwn(accountId, { date, label: "Opération", amount });
-
-		if (categoryId !== undefined) {
-			await sendOwn("PATCH", `/api/transactions/${id}`, { categoryId });
-		}
-
-		return id;
-	}
 
 	it("rolls a sub-category up into its parent", async () => {
 		const account = await openOwn(august);
@@ -6453,19 +6448,9 @@ describe("GET /api/reports/cash-flow", () => {
 	});
 
 	it("refuses a month that does not exist, or none", async () => {
-		const refused = async (query: string, code: string) => {
-			const { status, body } = await request("GET", `/api/reports/cash-flow${query}`);
-
-			expect(status).toBe(400);
-			expect(errorBody.parse(body).error).toMatchObject({
-				code: "VALIDATION_ERROR",
-				fields: [{ path: "month", code }],
-			});
-		};
-
-		await refused("?month=2026-13", "invalid_format");
-		await refused("?month=2026-9", "invalid_format");
-		await refused("", "invalid_type");
+		await refusedReport("?month=2026-13", "invalid_format");
+		await refusedReport("?month=2026-9", "invalid_format");
+		await refusedReport("", "invalid_type");
 	});
 });
 
@@ -6500,23 +6485,23 @@ describe("POST /api/recurring/detect", () => {
 	});
 });
 
+async function monthlyNetflix() {
+	const { app, account } = await ownRecurringAccount();
+	const add = async (date: string) => {
+		const response = await app.request(`/api/accounts/${account.id}/transactions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date, label: "Netflix", amount: "-13,99" }),
+		});
+
+		return z.object({ data: z.object({ id: z.string() }) }).parse(await response.json()).data.id;
+	};
+	const ids = [await add("2026-07-05"), await add("2026-08-05"), await add("2026-09-05")];
+
+	return { app, account, ids };
+}
+
 describe("/api/recurring", () => {
-	async function monthlyNetflix() {
-		const { app, account } = await ownRecurringAccount();
-		const add = async (date: string) => {
-			const response = await app.request(`/api/accounts/${account.id}/transactions`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ date, label: "Netflix", amount: "-13,99" }),
-			});
-
-			return z.object({ data: z.object({ id: z.string() }) }).parse(await response.json()).data.id;
-		};
-		const ids = [await add("2026-07-05"), await add("2026-08-05"), await add("2026-09-05")];
-
-		return { app, account, ids };
-	}
-
 	it("lists the detected patterns with their account", async () => {
 		const { app, account } = await monthlyNetflix();
 		await testClient(app).api.recurring.detect.$post();
@@ -6640,15 +6625,29 @@ function configuredBank() {
 	return { bankConnector, encryptionKey, bankSetup };
 }
 
+async function bankApp(bank = configuredBank()) {
+	own = await freshDatabase();
+	logLines = [];
+	const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
+
+	return withSession(buildTestApp(own.db, logger, undefined, {}, bank), template.cookie);
+}
+
+async function connectedApp() {
+	const requests = mockProvider();
+	const app = await bankApp();
+	const client = testClient(app).api["bank-connections"];
+	await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+	const { state } = z
+		.object({ state: z.string() })
+		.parse(requests.find((sent) => sent.path === "/auth")?.body);
+	const completed = await client.callback.$post({ json: { code: "the-code", state } });
+	const connection = (await completed.json()).data;
+
+	return { app, client, connection };
+}
+
 describe("/api/bank-connections", () => {
-	async function bankApp(bank = configuredBank()) {
-		own = await freshDatabase();
-		logLines = [];
-		const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
-
-		return withSession(buildTestApp(own.db, logger, undefined, {}, bank), template.cookie);
-	}
-
 	it("connects a bank: list, start, callback, then the list of connections", async () => {
 		const requests = mockProvider();
 		const client = testClient(await bankApp()).api["bank-connections"];
@@ -6820,20 +6819,6 @@ describe("/api/bank-connections", () => {
 
 		expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 401, 401]);
 	});
-
-	async function connectedApp() {
-		const requests = mockProvider();
-		const app = await bankApp();
-		const client = testClient(app).api["bank-connections"];
-		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
-		const { state } = z
-			.object({ state: z.string() })
-			.parse(requests.find((sent) => sent.path === "/auth")?.body);
-		const completed = await client.callback.$post({ json: { code: "the-code", state } });
-		const connection = (await completed.json()).data;
-
-		return { app, client, connection };
-	}
 
 	it("renews a connection's consent, then disconnects it", async () => {
 		const { client, connection } = await connectedApp();
@@ -7010,47 +6995,46 @@ const cron = (app: ReturnType<typeof buildTestApp>, authorization?: string) =>
 		headers: authorization === undefined ? {} : { authorization },
 	});
 
+async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configuredBank()) {
+	own = await freshDatabase();
+	logLines = [];
+	const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
+
+	return { db: own.db, app: buildTestApp(own.db, logger, undefined, {}, bank) };
+}
+
+async function linkedConnection(app: ReturnType<typeof buildTestApp>) {
+	const requests = mockProvider();
+	const client = testClient(withSession(app, template.cookie)).api["bank-connections"];
+	await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+	const { state } = z
+		.object({ state: z.string() })
+		.parse(requests.find((sent) => sent.path === "/auth")?.body);
+	const connection = (await (await client.callback.$post({ json: { code: "c", state } })).json())
+		.data;
+	const rows = (await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json())
+		.data;
+	const checking = rows.find((row) => row.name === "Compte courant");
+	const linked = await client[":id"].accounts.$post({
+		param: { id: connection.id },
+		json: {
+			links: [
+				{
+					bankAccountId: checking?.id ?? "",
+					action: "create",
+					type: "depository",
+					subtype: "checking",
+				},
+			],
+		},
+	});
+	const account = (await linked.json()).data.find((row) => row.id === checking?.id)?.account;
+
+	return { client, connection, accountId: account?.id ?? "", requests };
+}
+
 describe("bank sync routes", () => {
 	const SECRET = "a-sync-secret-of-at-least-32-characters";
-
-	async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configuredBank()) {
-		own = await freshDatabase();
-		logLines = [];
-		const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
-
-		return { db: own.db, app: buildTestApp(own.db, logger, undefined, {}, bank) };
-	}
-
-	async function linkedConnection(app: ReturnType<typeof buildTestApp>) {
-		const requests = mockProvider();
-		const client = testClient(withSession(app, template.cookie)).api["bank-connections"];
-		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
-		const { state } = z
-			.object({ state: z.string() })
-			.parse(requests.find((sent) => sent.path === "/auth")?.body);
-		const connection = (await (await client.callback.$post({ json: { code: "c", state } })).json())
-			.data;
-		const rows = (
-			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
-		).data;
-		const checking = rows.find((row) => row.name === "Compte courant");
-		const linked = await client[":id"].accounts.$post({
-			param: { id: connection.id },
-			json: {
-				links: [
-					{
-						bankAccountId: checking?.id ?? "",
-						action: "create",
-						type: "depository",
-						subtype: "checking",
-					},
-				],
-			},
-		});
-		const account = (await linked.json()).data.find((row) => row.id === checking?.id)?.account;
-
-		return { client, connection, accountId: account?.id ?? "", requests };
-	}
 
 	it("refuses a missing, wrong or unset secret before reading anything", async () => {
 		const { db, app } = await syncApp({ ...configuredBank(), syncSecret: SECRET });

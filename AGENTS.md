@@ -6,16 +6,12 @@ Self-hosted personal finance for one household. Bank data comes from Enable Bank
 
 ```bash
 pnpm install --frozen-lockfile
-cp .env.example .env
+cp .env.example .env   # then set BETTER_AUTH_SECRET: the API refuses to start without it
+pnpm api start:dev     # Hono server on http://localhost:8787, migrates local.db first
+pnpm web start:dev     # Vite dev server on http://localhost:5173, proxies /api
 ```
 
-No package exists yet, so there is nothing to start. The first feature that needs a package creates it, along with the scripts below that run it.
-
-```bash
-pnpm data migrate:local
-pnpm api start:dev     # Hono server on http://localhost:8787
-pnpm web start:dev     # Vite dev server on http://localhost:5173
-```
+`pnpm data migrate:local` migrates without starting the API; `pnpm data generate` writes a migration after a schema change. `pnpm api reset-password <email>` resets the administrator's password.
 
 ## Verification Gate
 
@@ -45,7 +41,7 @@ Non-goals: multi-tenancy beyond one household, a managed SaaS offering, server-s
 
 ## Monorepo structure
 
-The target layout is three packages. None exists yet: each one appears when the first feature needs it, with only the dependencies that feature uses. The layout exists so that two features never invent two structures.
+Three packages, and no fourth: a new feature finds its place in one of them, so that two features never invent two structures. A dependency arrives with the feature that uses it.
 
 | Package         | Role                                                       | Runtime |
 | --------------- | ---------------------------------------------------------- | ------- |
@@ -108,7 +104,7 @@ Every end-to-end test runs signed in as the administrator that the `setup` Playw
 
 ## Deployment
 
-The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume: `BETTER_AUTH_SECRET=... docker compose up --build --detach --wait`, then http://localhost:8787. `Dockerfile`, `docker-compose.yml` and `.dockerignore` make it the only target with files in the repository. The server applies migrations before it listens and answers `GET /api/health`; it serves the interface only when `WEB_DIST` is set, so `pnpm api start:dev` serves none. The runtime image holds the production dependencies of `@archant/api` and `@archant/data` only; `.pnpmfile.cjs` drops optional peers that would otherwise pull in vitest, drizzle-kit and TypeScript. The CI job `image` builds it, starts it, probes it and checks that it stops on SIGTERM. Variables, reverse proxies and the password reset in the container are in `docs/deployment.md`. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.
+The reference target is a container serving the built interface and the API on the same port, against a SQLite file on a volume: `BETTER_AUTH_SECRET=... docker compose up --build --detach --wait`, then http://localhost:8787. `Dockerfile`, `docker-compose.yml` and `.dockerignore` make it the only target with files in the repository. The server applies migrations before it listens and answers `GET /api/health`; it serves the interface only when `WEB_DIST` is set, so `pnpm api start:dev` serves none. The runtime image holds the production dependencies of `@archant/api` and `@archant/data` only; `.pnpmfile.cjs` drops optional peers that would otherwise pull in vitest, drizzle-kit and TypeScript. The CI job `image` builds it, starts it, probes it and checks that it stops on SIGTERM. Variables, reverse proxies, upgrades, backups, the Enable Banking setup and the password reset are in `docs/deployment.md`; the interface links to its `#connecting-a-bank` anchor, so keep that heading. Other targets are documented in `docs/deployment.md` and reached through configuration, never through a branch in application code. See `docs/adr/0002-container-reference-target.md`.
 
 Scheduled synchronisation is a protected `POST /api/sync` route. Every platform triggers it its own way, a system cron or a scheduled GitHub Action, and the route does not care which.
 

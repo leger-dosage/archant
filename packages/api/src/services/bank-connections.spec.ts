@@ -285,14 +285,14 @@ describe("startConnection", () => {
 	});
 });
 
+async function started() {
+	const requests = mockProvider();
+	await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+
+	return sentState(requests);
+}
+
 describe("completeConnection", () => {
-	async function started() {
-		const requests = mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
-
-		return sentState(requests);
-	}
-
 	it("stores an active connection with its session encrypted and its consent end", async () => {
 		const state = await started();
 		const service = deps();
@@ -669,6 +669,22 @@ describe("listBankAccounts", () => {
 	});
 });
 
+async function refusedLink(input: Parameters<typeof linkBankAccounts>[2], connectionId: string) {
+	const accountsBefore = await temp.db.select().from(accounts);
+	const entriesBefore = await allEntries();
+	const requests = mockProvider();
+
+	const error: unknown = await linkBankAccounts(deps(), connectionId, input).catch(
+		(reason: unknown) => reason,
+	);
+
+	await expect(temp.db.select().from(accounts)).resolves.toEqual(accountsBefore);
+	await expect(allEntries()).resolves.toEqual(entriesBefore);
+	expect(requests).toEqual([]);
+
+	return error;
+}
+
 describe("linkBankAccounts", () => {
 	const today = "2026-09-24";
 
@@ -865,29 +881,13 @@ describe("linkBankAccounts", () => {
 		]);
 	});
 
-	async function refused(input: Parameters<typeof linkBankAccounts>[2], connectionId: string) {
-		const accountsBefore = await temp.db.select().from(accounts);
-		const entriesBefore = await allEntries();
-		const requests = mockProvider();
-
-		const error: unknown = await linkBankAccounts(deps(), connectionId, input).catch(
-			(reason: unknown) => reason,
-		);
-
-		await expect(temp.db.select().from(accounts)).resolves.toEqual(accountsBefore);
-		await expect(allEntries()).resolves.toEqual(entriesBefore);
-		expect(requests).toEqual([]);
-
-		return error;
-	}
-
 	it("refuses an account in another currency and writes nothing", async () => {
 		const connection = await connected();
 		const { checking } = await bankAccountsOf(connection.id);
 		const usd = await openAccount({ currency: "USD" });
 
 		await expect(
-			refused(
+			refusedLink(
 				{ links: [{ bankAccountId: checking.id, action: "link", accountId: usd.id }] },
 				connection.id,
 			),
@@ -910,19 +910,19 @@ describe("linkBankAccounts", () => {
 		const { checking: otherChecking } = await bankAccountsOf(other.id);
 
 		await expect(
-			refused(
+			refusedLink(
 				{ links: [{ bankAccountId: otherChecking.id, action: "link", accountId: visa.id }] },
 				other.id,
 			),
 		).resolves.toMatchObject({ fields: [{ path: "links.0.accountId" }] });
 		await expect(
-			refused(
+			refusedLink(
 				{ links: [{ bankAccountId: checking.id, action: "link", accountId: "nope" }] },
 				connection.id,
 			),
 		).resolves.toMatchObject({ fields: [{ path: "links.0.accountId" }] });
 		await expect(
-			refused(
+			refusedLink(
 				{
 					links: [
 						{ bankAccountId: checking.id, action: "link", accountId: account.id },
@@ -947,7 +947,7 @@ describe("linkBankAccounts", () => {
 		const create = { action: "create", type: "depository", subtype: "checking" } as const;
 
 		await expect(
-			refused(
+			refusedLink(
 				{
 					links: [
 						{ bankAccountId: card.id, ...create },
@@ -970,7 +970,7 @@ describe("linkBankAccounts", () => {
 
 	it("answers NOT_FOUND for an unknown connection", async () => {
 		await expect(
-			refused(
+			refusedLink(
 				{ links: [{ bankAccountId: "b1", action: "link", accountId: "a1" }] },
 				crypto.randomUUID(),
 			),
@@ -1271,47 +1271,47 @@ async function keysOf(accountId: string) {
 	);
 }
 
+/** A linked connection with a booked and a pending synced line on its checking account. */
+async function synced() {
+	const linked = await linkedConnection();
+	const [checkingAccount = ""] = linked.accountIds;
+	const line = {
+		currency: "EUR" as const,
+		label: "Boulangerie",
+		reference: null,
+		notes: null,
+	};
+	await ingest(
+		{ db: temp.db, timeZone: "Europe/Paris" },
+		checkingAccount,
+		{
+			transactions: [
+				{
+					...line,
+					externalId: "b-1",
+					date: "2026-09-20",
+					amount: toMinorUnits(-1717),
+					pending: false,
+				},
+				{
+					...line,
+					externalId: "p-1",
+					date: "2026-09-23",
+					amount: toMinorUnits(-1919),
+					pending: true,
+				},
+			],
+			balance: null,
+			rejected: [],
+		},
+		{ connectionId: linked.connection.id },
+		{ origin: "sync" },
+	);
+
+	return { ...linked, checkingAccount };
+}
+
 describe("disconnectConnection", () => {
-	/** A linked connection with a booked and a pending synced line on its checking account. */
-	async function synced() {
-		const linked = await linkedConnection();
-		const [checkingAccount = ""] = linked.accountIds;
-		const line = {
-			currency: "EUR" as const,
-			label: "Boulangerie",
-			reference: null,
-			notes: null,
-		};
-		await ingest(
-			{ db: temp.db, timeZone: "Europe/Paris" },
-			checkingAccount,
-			{
-				transactions: [
-					{
-						...line,
-						externalId: "b-1",
-						date: "2026-09-20",
-						amount: toMinorUnits(-1717),
-						pending: false,
-					},
-					{
-						...line,
-						externalId: "p-1",
-						date: "2026-09-23",
-						amount: toMinorUnits(-1919),
-						pending: true,
-					},
-				],
-				balance: null,
-				rejected: [],
-			},
-			{ connectionId: linked.connection.id },
-			{ origin: "sync" },
-		);
-
-		return { ...linked, checkingAccount };
-	}
-
 	it("revokes the session, keeps the accounts as manual ones with their history, and deletes the connection", async () => {
 		const { connection, accountIds, checkingAccount } = await synced();
 		const history = await Promise.all(accountIds.map(balancesOf));

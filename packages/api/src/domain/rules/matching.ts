@@ -89,7 +89,7 @@ export type CategoryAction = { type: "set_transaction_category"; categoryId: str
 
 export type MerchantAction = { type: "set_transaction_merchant"; merchantId: string | null };
 
-/** Adds one tag and keeps the others, as Sure's `set_transaction_tags` does with one tag. */
+/** Adds one tag and keeps the others; Sure's `set_transaction_tags` adds several at once. */
 export type TagAction = { type: "set_transaction_tags"; tagId: string | null };
 
 export type RenameAction = { type: "set_transaction_name"; label: string };

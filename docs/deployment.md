@@ -15,7 +15,11 @@ docker compose up --build --detach --wait
 
 Open http://localhost:8787. The first visit leads to `/setup`, which creates the administrator.
 
-At start the server applies pending migrations, then listens. An upgrade is `git pull` followed by the same `docker compose up --build --detach --wait`, with no separate migration command. `GET /api/health` answers `200 {"data":{"status":"ok"}}` once it can query the database and `503` when it cannot; the image's `HEALTHCHECK` calls it, which is what `--wait` waits for.
+If `--wait` reports the container as unhealthy or exited, `docker compose logs archant` says why: a missing or unreadable variable stops the server at startup and names itself there.
+
+To reach it from another device on the home network, such as a phone, set `ARCHANT_URL` to the address that device uses, for instance `http://192.168.1.20:8787`, then run `docker compose up --detach --wait` again. The server refuses a sign-in from any address other than `ARCHANT_URL`, so the machine itself then has to use that address too. Anything beyond the home network belongs behind a reverse proxy with HTTPS.
+
+At start the server applies pending migrations, then listens; see [Upgrading](#upgrading). `GET /api/health` answers `200 {"data":{"status":"ok"}}` once it can query the database and `503` when it cannot; the image's `HEALTHCHECK` calls it, which is what `--wait` waits for.
 
 Run exactly one container per database file. SQLite takes one writer, and two servers on one volume would each believe they own it.
 
@@ -62,47 +66,110 @@ Without `!override`, Compose appends this entry to the port list instead of repl
 
 `docker compose stop` ends the server at once. `init: true` gives the container a PID 1 that forwards SIGTERM to Node; SQLite in WAL mode keeps every committed transaction, so nothing waits for open connections. CI checks that the container exits with code 143, killed by SIGTERM, within a one-second timeout.
 
-## Other targets
+`docker compose down` keeps the data; `docker compose down --volumes` deletes the volume, and with it the database.
 
-These stay possible and none of them will have a file in this repository, by design: adding one must never fork the application code.
+## Upgrading
 
-- **A plain Node host.** Install, build the interface with `pnpm web build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/web/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
-- **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
-- **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
-- **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
+Take a backup first, as described in [Backups](#backups). Migrations only go forward: the way back from a failed upgrade is the previous commit and that backup, never an older image on the migrated file.
+
+```bash
+git pull
+docker compose up --build --detach --wait
+```
+
+There is no separate migration command. The server applies pending migrations before it listens, and `--wait` returns once `GET /api/health` answers, which proves they ran. From a checkout, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev` does the same.
+
+## Backups
+
+No free tier backs up your data for you, and this file holds your bank history. Schedule a copy to storage off the machine, and restore it once to check it works.
+
+The database runs in WAL mode: recent writes sit in `archant.db-wal` until SQLite folds them into `archant.db`. Copying `archant.db` alone, or the volume while the server writes, loses them or yields a broken file. Take the copy with `VACUUM INTO` instead, which writes a consistent, self-contained file while the server keeps running. The image carries no `sqlite3`, so Node's built-in `node:sqlite` runs it:
+
+```bash
+docker compose exec archant node -e "new (require('node:sqlite').DatabaseSync)('/data/archant.db').exec(\"VACUUM INTO '/data/backup.db'\")"
+docker compose cp archant:/data/backup.db "./archant-$(date +%F).db"
+docker compose exec archant rm /data/backup.db
+```
+
+`VACUUM INTO` refuses to overwrite a file, hence the `rm`. From a checkout, the same command works on `local.db`, or `sqlite3 local.db "VACUUM INTO 'backup.db'"` where `sqlite3` is installed.
+
+The backup holds bank session ids encrypted with `ENCRYPTION_KEY`, and user sessions signed with `BETTER_AUTH_SECRET`. Keep both keys somewhere safe, apart from the backups: restored without `ENCRYPTION_KEY`, every bank has to be connected again.
+
+To restore, stop the server, replace the file, and delete the WAL files: a WAL left over from the old database would be replayed onto the restored one.
+
+```bash
+docker compose stop
+docker compose run --rm --no-deps --volume "$PWD:/restore:ro" archant \
+  sh -c 'cp /restore/archant-2026-09-24.db /data/archant.db && rm -f /data/archant.db-wal /data/archant.db-shm'
+docker compose up --detach --wait
+```
+
+A backup older than the code is fine: the server migrates it at start. Moving from a checkout to the container is the same restore, with a backup of `local.db` as the file.
 
 ## Connecting a bank
 
-Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional: without the three variables below, Réglages > Banques names the missing ones, the bank routes answer `503`, and everything else, file import included, works as before. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
+Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional: without `ENABLE_BANKING_APPLICATION_ID`, `ENABLE_BANKING_PRIVATE_KEY` and `ENCRYPTION_KEY`, the bank routes answer `503`, « Réglages » › « Banques » lists the missing variables under « La connexion bancaire n'est pas configurée », and everything else, file import included, works. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
 
-1. Create an application in the Enable Banking control panel. The panel can generate the key pair and download the private key as a PEM file; keep that file, since Archant needs it. To generate the pair yourself and upload the public certificate instead:
+### Sandbox or production
 
-   ```bash
-   openssl req -new -newkey rsa:2048 -nodes -x509 -days 3650 -subj "/CN=archant" \
-     -keyout private.pem -out public.crt
-   ```
+An Enable Banking application belongs to one environment, sandbox or production, for good. Both use the same API, `https://api.enablebanking.com`, so Archant needs no setting to tell them apart: the application id decides.
 
-2. Register the redirect URL of the application: your `ARCHANT_URL` (`BETTER_AUTH_URL` outside the container) followed by `/settings/banks/callback`, for instance `https://archant.example.org/settings/banks/callback`, or `http://localhost:5173/settings/banks/callback` in development. The bank sends the browser back there. Any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
+- **Sandbox** needs only an account on the control panel. Its banks serve simulated data, including Enable Banking's Mock ASPSP, offered for every country and needing no credentials. Start here to try the flow.
+- **Production** reads your real accounts. Without a contract with Enable Banking, the panel activates the application in restricted mode through "Activate by linking accounts": only the accounts you link there are readable, which Enable Banking allows for personal use.
 
-3. Set the variables, next to `BETTER_AUTH_SECRET`:
+### 1. Register the application
 
-   ```bash
-   export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
-   # PKCS#1 (BEGIN RSA PRIVATE KEY) and PKCS#8 (BEGIN PRIVATE KEY) both work.
-   export ENABLE_BANKING_PRIVATE_KEY="$(base64 < private.pem | tr -d '\n')"
-   export ENCRYPTION_KEY="$(openssl rand -base64 32)"
-   docker compose up --build --detach --wait
-   ```
+In the [control panel](https://enablebanking.com/cp/applications), register a new application:
 
-The key is base64-encoded because a multi-line PEM does not survive every `.env` parser or hosting control panel.
+- Environment: Sandbox to try, Production for your own accounts. Production also asks for a description, a GDPR contact email, and privacy policy and terms URLs.
+- Name: shown to you on the consent screen, `Archant` will do.
+- Redirect URLs: Archant's address followed by `/settings/banks/callback`. That address is `BETTER_AUTH_URL` from a checkout, `ARCHANT_URL` for the container:
 
-`ENCRYPTION_KEY` encrypts each bank session with AES-256-GCM before it reaches the database. Back it up apart from the database: a dump alone gives nobody access to your bank data. Losing the key, or changing it, leaves the stored sessions unreadable; the only way back is to connect each bank again.
+  | Where Archant runs           | Redirect URL to register                              |
+  | ---------------------------- | ----------------------------------------------------- |
+  | `pnpm web start:dev`         | `http://localhost:5173/settings/banks/callback`       |
+  | The container, default       | `http://localhost:8787/settings/banks/callback`       |
+  | The container behind a proxy | `https://archant.example.org/settings/banks/callback` |
 
-Archant asks each bank for 90 days of consent, as Sure does, or less when the bank allows less.
+  Register every one you use. The bank sends the browser back there; any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
+
+- Key: keep the default, which generates the key pair in the browser. Registering downloads the private key as `<application id>.pem`; keep that file. To bring your own key instead, generate it and upload the certificate:
+
+  ```bash
+  openssl req -new -newkey rsa:2048 -nodes -x509 -days 3650 -subj "/CN=archant" \
+    -keyout private.pem -out public.crt
+  ```
+
+### 2. Set the variables
+
+The private key goes in base64, because a multi-line PEM does not survive every `.env` parser or hosting control panel. PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`) both work.
+
+```bash
+export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
+# The file the panel downloaded, or private.pem if you brought your own key.
+export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pem" | tr -d '\n')"
+export ENCRYPTION_KEY="$(openssl rand -base64 32)"
+docker compose up --build --detach --wait
+```
+
+From a checkout, write the same three values in `.env` and restart `pnpm api start:dev`: its `--watch` reloads on code changes, not on `.env`.
+
+`ENCRYPTION_KEY` encrypts each bank session with AES-256-GCM before it reaches the database. Back it up apart from the database, so a leaked backup alone gives nobody access to your bank data. Losing the key, or changing it, leaves the stored sessions unreadable; the only way back is to connect each bank again.
+
+### 3. Connect in the interface
+
+1. Open « Réglages » › « Banques », at `/settings/banks`.
+2. Pick the « Pays », then the bank under « Banques disponibles ». « Rechercher une banque » filters by name or BIC.
+3. Give your consent on the bank's site, or on the sandbox bank's page. The browser comes back to « Connexion à votre banque », then to the connection's page.
+4. For each account under « Comptes de la banque », choose « Nouveau : … » to create an Archant account, an existing account under « Associer à » to let the bank take over its balance, or « Ignorer ». Press « Valider »: the linked accounts sync at once.
+
+The connection's page, reached from « Banques connectées », shows the last sync and its error, and holds « Synchroniser », « Renouveler le consentement » and « Déconnecter ». Disconnecting turns the linked accounts into manual ones and keeps their transactions.
+
+Archant asks each bank for 90 days of consent, or less when the bank allows less. Before it ends, a warning offers « Renouveler ». Once it has ended, syncing stops and the warning offers « Reconnecter »; nothing is deleted, and the next sync picks up where the last one stopped.
 
 ## Scheduled synchronisation
 
-`POST /api/sync` syncs every active bank connection, with `Authorization: Bearer <SYNC_SECRET>`. How it gets called is a per-platform detail: a system cron or a timer on the host, a scheduled GitHub Action calling the route, or whatever the host provides. Without the header, with a wrong secret, or while `SYNC_SECRET` is unset, it answers `401` and reads nothing. Each connection page also has a « Synchroniser » button, which works without the secret.
+`POST /api/sync` syncs every active bank connection, with `Authorization: Bearer <SYNC_SECRET>`. How it gets called is a per-platform detail: a system cron or a timer on the host, a scheduled GitHub Action calling the route, or whatever the host provides. Without the header, with a wrong secret, or while `SYNC_SECRET` is unset, it answers `401` and reads nothing; with the right secret but no Enable Banking configuration, `503`. Each connection page also has a « Synchroniser » button, which works without the secret and obeys the same one-hour spacing: pressed within an hour of the last sync, the one that follows linking included, it answers « Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard. »
 
 ```bash
 # crontab -e on the host, every morning at 6:
@@ -115,13 +182,15 @@ The answer names each connection and what happened to it:
 { "data": { "connections": [{ "id": "…", "result": "synced" }] } }
 ```
 
-`synced` means every linked account synced. `failed` means at least one did not: the others are committed, the connection page shows the error, and the next run retries the failed account from where it last succeeded. `skipped` means a sync ran less than an hour ago, one is still running, or the consent has ended.
+`synced` means every linked account synced. `failed` means at least one did not: the others are committed, the connection page shows the error, and the next run retries the failed account from where it last succeeded. `skipped` means a sync ran less than an hour ago or one is still running. `consent_expired` means the consent has ended and nothing was read until it is renewed.
 
 Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads three months back; each later one reads from seven days before its last success, so a line the bank books late still arrives, once.
 
-## A lost password
+## Passwords
 
-There is no password reset by email: Archant sends no mail and holds no reset token. The way back in is a shell on the machine running the API:
+Signed in, change the password in « Réglages » › « Sécurité ». That closes the sessions open on other devices.
+
+A lost password has no reset by email: Archant sends no mail and holds no reset token. The way back in is a shell on the machine running the API:
 
 ```bash
 pnpm api reset-password admin@example.com
@@ -131,6 +200,11 @@ docker compose exec -it archant node packages/api/src/cli/reset-password.ts admi
 
 The command asks for the new password twice without echoing it, never accepts it as an argument, and closes every session of that user. It needs `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`: from a checkout it reads them from the same `.env` the server does, and in the container they are already set. A terminal is required, hence `-it`.
 
-## Backups
+## Other targets
 
-No free tier backs up your data for you. Whatever the target, schedule a dump of the database to object storage, and verify a restore at least once. This holds bank history; losing it is the failure that actually matters.
+These stay possible and none of them will have a file in this repository, by design: adding one must never fork the application code.
+
+- **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm web build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/web/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
+- **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
+- **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
+- **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
