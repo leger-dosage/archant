@@ -7158,6 +7158,27 @@ describe("bank sync routes", () => {
 		expect(errorBody.parse(await second.json()).error.code).toBe("SYNC_TOO_RECENT");
 	});
 
+	it("never lists again a synced transaction deleted since the last sync", async () => {
+		const { app } = await syncApp();
+		const { client, connection, accountId } = await linkedConnection(app);
+		const api = testClient(withSession(app, template.cookie)).api;
+		await client[":id"].sync.$post({ param: { id: connection.id } });
+		const labels = async () =>
+			(await (await api.transactions.$get({ query: { account: accountId } })).json()).data.items;
+		const netflix = (await labels()).find((item) => item.label.includes("NETFLIX"));
+
+		const deleted = await api.transactions[":id"].$delete({ param: { id: netflix?.id ?? "" } });
+		// Past the hour a sync from the button waits.
+		vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000);
+		const synced = await client[":id"].sync.$post({ param: { id: connection.id } });
+
+		expect(deleted.status).toBe(200);
+		expect(synced.status).toBe(200);
+		expect((await labels()).map((item) => item.label)).not.toContainEqual(
+			expect.stringContaining("NETFLIX"),
+		);
+	});
+
 	it("answers CONSENT_EXPIRED from the button, and reports it to the cron", async () => {
 		const { app, db } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
 		const { client, connection } = await linkedConnection(app);

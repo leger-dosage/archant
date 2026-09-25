@@ -1,5 +1,7 @@
+import type { BankConnectorId } from "./bank-connections.ts";
+
 import { sql } from "drizzle-orm";
-import { check, index, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "./accounts.ts";
 import { BANK_CONNECTOR_IDS, bankConnections } from "./bank-connections.ts";
@@ -48,5 +50,27 @@ export const entryKeys = sqliteTable(
 		// Deleting a connection sets its keys' `connection_id` to null: without
 		// the index, every deletion scans the whole table.
 		index("entry_keys_connection").on(table.connectionId),
+	],
+);
+
+/**
+ * The bank keys of an entry the user deleted, so a sync, which rereads the
+ * last week, never brings it back. File keys are not kept: re-importing a
+ * file is the user asking for its lines again. Nothing lifts a tombstone.
+ */
+export const deletedEntryKeys = sqliteTable(
+	"deleted_entry_keys",
+	{
+		// Restrict, not cascade: the ledger deletes the tombstones before the account.
+		accountId: text("account_id")
+			.notNull()
+			.references(() => accounts.id, { onDelete: "restrict" }),
+		source: text("source").$type<BankConnectorId>().notNull(),
+		key: text("key").notNull(),
+		deletedAt: integer("deleted_at").notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.accountId, table.source, table.key] }),
+		check("deleted_entry_keys_source_check", sql`${table.source} in ${inList(BANK_CONNECTOR_IDS)}`),
 	],
 );

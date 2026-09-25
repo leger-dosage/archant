@@ -12,6 +12,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
+import { addDays } from "../domain/dates.ts";
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
 import {
@@ -30,7 +31,7 @@ import {
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
 import { encrypt } from "./crypto.ts";
-import { balanceOn, createAccount, linkBankAccount } from "./ledger.ts";
+import { balanceOn, createAccount, deleteTransaction, linkBankAccount } from "./ledger.ts";
 import * as recurringService from "./recurring.ts";
 import { syncAll, syncConnection, windowStart } from "./sync.ts";
 
@@ -367,6 +368,28 @@ describe("syncConnection", () => {
 		await expect(balanceOn(deps(), accountId, "2026-09-25")).resolves.toMatchObject({
 			amount: 122256,
 		});
+	});
+
+	it("never brings back a line the user deleted when the next sync rereads it", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		const [latest] = await temp.db.all<{ id: string; date: string }>(
+			sql`select e.id, e.date from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and t.pending = 0 order by e.date desc limit 1`,
+		);
+		const dayBefore = addDays(latest?.date ?? "", -1);
+		const before = await balanceOn(deps(), accountId, dayBefore);
+		const count = (await transactionCount(accountId)) ?? 0;
+		await deleteTransaction(deps(), latest?.id ?? "", { origin: "user" });
+		const deleted = await balanceOn(deps(), accountId, dayBefore);
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(transactionCount(accountId)).resolves.toBe(count - 1);
+		expect(deleted).not.toEqual(before);
+		await expect(balanceOn(deps(), accountId, dayBefore)).resolves.toEqual(deleted);
 	});
 
 	it("commits the accounts that sync and rolls back the one that fails", async () => {
