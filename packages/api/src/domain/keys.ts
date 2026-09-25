@@ -22,6 +22,14 @@ export type LineKeys = { fingerprint: string; external: string | null };
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
+/** What makes two lines identical: the date, the amount and the normalised label. */
+export const tripleOf = (line: Omit<KeyedLine, "externalId">): string =>
+	`${line.date}|${line.amount}|${normalizeLabel(line.label)}`;
+
+/** The fingerprint of the `occurrence`-th line, from 0, of a `tripleOf`. */
+export const fingerprintOf = (triple: string, occurrence: number): string =>
+	`fp:${sha256(`${triple}|${occurrence}`)}`;
+
 /**
  * Every line with its keys, in statement order. The fingerprint hashes the
  * date, the amount, the normalised label and the line's rank among identical
@@ -35,15 +43,14 @@ export function lineKeys<Line extends KeyedLine>(
 	const seen = new Map<string, number>();
 
 	return lines.map((line) => {
-		const label = normalizeLabel(line.label);
-		const triple = `${line.date}|${line.amount}|${label}`;
+		const triple = tripleOf(line);
 		const occurrence = seen.get(triple) ?? 0;
 		seen.set(triple, occurrence + 1);
 
 		return {
 			line,
 			keys: {
-				fingerprint: `fp:${sha256(`${triple}|${occurrence}`)}`,
+				fingerprint: fingerprintOf(triple, occurrence),
 				external: line.externalId === null ? null : `ext:${line.externalId}`,
 			},
 		};

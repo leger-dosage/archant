@@ -7,7 +7,10 @@ import { daysBetween } from "./dates.ts";
 /** How far apart a booked line and its pending entry may be dated and still meet (AD-17). */
 export const PENDING_WINDOW_DAYS = 5;
 
-/** Consecutive successful syncs without its line after which a pending entry goes (AD-17). */
+/**
+ * Successful syncs without its line, on different days, after which a
+ * pending entry goes (AD-17).
+ */
 export const MAX_MISSED_SYNCS = 2;
 
 /** A pending entry a booked line may absorb. */
@@ -56,4 +59,58 @@ export function absorbPending<Line extends { date: IsoDate; amount: MinorUnits }
 
 		return { line, survivorId: best.candidate.id };
 	});
+}
+
+/**
+ * The highest occurrence index, plus one, searched for among a group's
+ * fingerprints (AD-17): no household lists that many identical lines on one
+ * day, and the search stays cheap on a long history.
+ */
+export const MAX_IDENTICAL_LINES = 100;
+
+/** A pending entry holding the fingerprint of a group of identical lines. */
+export type GroupCandidate = {
+	id: string;
+	/** The lowest occurrence index among the group's fingerprints it holds. */
+	occurrence: number;
+	createdAt: number;
+	/** Holds an `ext:` key: a line with a reference would have found it by that. */
+	referenced: boolean;
+};
+
+/**
+ * Recognises the pending lines of one group, identical by date, amount and
+ * normalised label, among the pending entries holding a fingerprint of that
+ * group (AD-17). Identical lines cannot be told apart, only counted, and a
+ * line's occurrence index shifts once an earlier twin is booked: the bank
+ * books the oldest first, so the lines, in statement order, take the last
+ * candidates, ordered by occurrence, then age, then id. A line with a
+ * reference never takes a candidate with one. Returns every line with its
+ * entry, `null` for a line left over, in the order given.
+ */
+export function assignIdentical<Line extends { referenced: boolean }>(
+	lines: readonly Line[],
+	candidates: readonly GroupCandidate[],
+): { line: Line; entryId: string | null }[] {
+	const ordered = candidates.toSorted(
+		(a, b) => a.occurrence - b.occurrence || a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+	);
+	const used = new Set<string>();
+
+	return lines
+		.toReversed()
+		.map((line) => {
+			const taken = ordered.findLast(
+				(candidate) => !used.has(candidate.id) && !(line.referenced && candidate.referenced),
+			);
+
+			if (taken === undefined) {
+				return { line, entryId: null };
+			}
+
+			used.add(taken.id);
+
+			return { line, entryId: taken.id };
+		})
+		.toReversed();
 }

@@ -31,6 +31,7 @@ import {
 	toBankAccount,
 	toTransaction,
 	withoutRepeats,
+	withoutSettledPending,
 } from "./client.ts";
 import { signJwt } from "./jwt.ts";
 import { sessionAccountSchema } from "./schemas.ts";
@@ -939,6 +940,74 @@ describe("a line listed twice", () => {
 				line({ status: null }),
 			]),
 		).toEqual(new Set([0, 1, 2, 3, 4, 5]));
+	});
+});
+
+const pending = (extra: Record<string, unknown> = {}) =>
+	line({ status: "PDNG", booking_date: null, transaction_date: "2026-09-18", ...extra });
+
+describe("withoutSettledPending", () => {
+	it("drops a pending line whose booked version shares its entry reference", () => {
+		expect(
+			withoutSettledPending([
+				line({ entry_reference: "r1", transaction_id: "t2" }),
+				pending({ entry_reference: "r1", transaction_id: "t1" }),
+			]),
+		).toEqual(new Set([0]));
+	});
+
+	it("drops a pending line whose booked version shares its transaction id", () => {
+		expect(
+			withoutSettledPending([
+				pending({ entry_reference: "r1", transaction_id: "t1" }),
+				line({ entry_reference: "r2", transaction_id: "t1" }),
+			]),
+		).toEqual(new Set([1]));
+	});
+
+	it("drops a pending line with no id equal in content to a booked one", () => {
+		const alike = { entry_reference: null, booking_date: "2026-09-20" };
+
+		expect(withoutSettledPending([line(alike), pending(alike)])).toEqual(new Set([0]));
+	});
+
+	it("keeps a pending line the booked one shares nothing with", () => {
+		expect(
+			withoutSettledPending([
+				line({ entry_reference: "r2" }),
+				pending({ entry_reference: "r1" }),
+				pending({ entry_reference: null }),
+				line({ entry_reference: null, creditor: { name: "Autre" } }),
+			]),
+		).toEqual(new Set([0, 1, 2, 3]));
+	});
+
+	it("never drops a booked line, nor one it cannot read or of another status", () => {
+		expect(
+			withoutSettledPending([
+				line({ entry_reference: "r1" }),
+				line({ entry_reference: "r1" }),
+				42,
+				line({ entry_reference: "r1", status: "INFO" }),
+			]),
+		).toEqual(new Set([0, 1, 2, 3]));
+	});
+
+	it("keeps only the booked version when the bank lists both", async () => {
+		pages({
+			transactions: [
+				pending({ entry_reference: "r1" }),
+				line({ entry_reference: "r1", creditor: { name: "SUPERMARCHE" } }),
+			],
+			continuation_key: null,
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(statement.transactions).toEqual([
+			expect.objectContaining({ externalId: "r1", pending: false, label: "SUPERMARCHE" }),
+		]);
+		expect(statement.rejected).toEqual([]);
 	});
 });
 

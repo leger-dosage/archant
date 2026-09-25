@@ -52,10 +52,13 @@ export const transactions = sqliteTable(
 		// A line the bank has not booked yet (FR51). It counts in balances and stays
 		// out of cash flow (AD-8, AD-9); its booked version absorbs it in place.
 		pending: integer("pending", { mode: "boolean" }).notNull().default(false),
-		// Consecutive successful syncs whose statement no longer carried this pending
-		// line; the second one deletes it (AD-17). Lives here rather than on
-		// `entries` because only a transaction can be pending.
+		// Successful syncs, on different days, whose statement no longer carried
+		// this pending line; the second one deletes it (AD-17). Lives here rather
+		// than on `entries` because only a transaction can be pending.
 		pendingMissedSyncs: integer("pending_missed_syncs").notNull().default(0),
+		// The day, in the app's time zone, of the last miss counted: two syncs an
+		// hour apart around a bank dropping the line before booking it count once.
+		pendingMissedOn: text("pending_missed_on"),
 		// Written only by `origin: "user"` ledger calls; read by every later writer.
 		lockedFields: text("locked_fields", { mode: "json" })
 			.$type<LockableField[]>()

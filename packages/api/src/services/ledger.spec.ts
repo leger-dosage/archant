@@ -6315,6 +6315,7 @@ async function rowOf(entryId: string) {
 			notes: transactions.notes,
 			pending: transactions.pending,
 			missed: transactions.pendingMissedSyncs,
+			missedOn: transactions.pendingMissedOn,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
@@ -6437,6 +6438,7 @@ describe("pending transactions", () => {
 			notes: null,
 			pending: false,
 			missed: 0,
+			missedOn: null,
 		});
 		await expect(categoryOf(id)).resolves.toBe(category);
 		await expect(tagsOf(id)).resolves.toEqual([tag]);
@@ -6477,12 +6479,28 @@ describe("pending transactions", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
+	it("books once when one statement holds the pending line, then the booked one", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			pendingLine(amount, { date: "2026-09-21" }),
+			bookedLine(amount, { date: "2026-09-20" }),
+		]);
+
+		expect(synced.created).toEqual([]);
+		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-20", pending: false });
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
 	it("refreshes a pending entry from its pending line, and starts its missed syncs over", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+		setToday("2026-09-22T10:00:00Z");
 		await sync(account.id, bank.connectionId, []);
-		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1 });
+		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1, missedOn: "2026-09-22" });
 
 		await sync(account.id, bank.connectionId, [
 			pendingLine(amount - 100, { label: "BOULANGERIE CB", notes: "CB 19/09" }),
@@ -6495,6 +6513,7 @@ describe("pending transactions", () => {
 			notes: "CB 19/09",
 			pending: true,
 			missed: 0,
+			missedOn: null,
 		});
 	});
 
@@ -6600,7 +6619,7 @@ describe("pending transactions", () => {
 		expect(synced.created).not.toContain(result.created[0]);
 	});
 
-	it("deletes a pending entry missing from two syncs in a row, with its keys and tags", async () => {
+	it("deletes a pending entry missing from syncs on two days, with its keys and tags", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
@@ -6608,14 +6627,63 @@ describe("pending transactions", () => {
 		]);
 		await updateTransaction(deps(), id, { tagIds: [await newTag("Hôtel")] }, asUser);
 
+		setToday("2026-09-22T21:00:00Z");
 		await sync(account.id, bank.connectionId, []);
-		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1 });
+		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1, missedOn: "2026-09-22" });
+		// Past midnight in Paris, still the 22nd in UTC: the app's day has turned.
+		setToday("2026-09-22T22:30:00Z");
 		await sync(account.id, bank.connectionId, []);
 
 		await expect(rowOf(id)).resolves.toBeUndefined();
 		await expect(keysOf(id)).resolves.toEqual([]);
 		await expect(tagsOf(id)).resolves.toEqual([]);
 		expect((await history(account.id)).get("2026-09-21")).toBe(100000);
+	});
+
+	it("counts one miss for two syncs an hour apart without the line", async () => {
+		const { account, bank } = await linkedChecking();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(-transferAmount(), { date: "2026-09-21" }),
+		]);
+
+		setToday("2026-09-22T10:00:00Z");
+		await sync(account.id, bank.connectionId, []);
+		setToday("2026-09-22T11:00:00Z");
+		await sync(account.id, bank.connectionId, []);
+
+		await expect(rowOf(id)).resolves.toMatchObject({
+			pending: true,
+			missed: 1,
+			missedOn: "2026-09-22",
+		});
+	});
+
+	it("counts no miss on a pending entry a refused line still names", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			pendingLine(amount, { date: "2026-08-31" }),
+		]);
+
+		expect(synced.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
+	});
+
+	it("counts no miss on a pending entry a refused line names by its fingerprint", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: null }),
+		]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: null, currency: "USD" }),
+		]);
+
+		expect(synced.rejected).toEqual([{ ref: "0", reason: "CURRENCY_MISMATCH" }]);
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
 	});
 
 	it("counts no miss for a read that stopped part way", async () => {
@@ -7374,5 +7442,187 @@ describe("possible duplicates", () => {
 				code: "NOT_FOUND",
 			});
 		});
+	});
+});
+
+// Story 11.5: identical pending lines, told apart by their count and order only.
+
+const twin = (amount: number) => pendingLine(amount, { externalId: null });
+
+const settled = (amount: number) =>
+	bookedLine(amount, { externalId: null, date: "2026-09-20", label: "CB BOULANGERIE 19/09" });
+
+/** Two identical pending entries, then the first one booked beside the second's line. */
+async function firstBooked() {
+	const { account, bank } = await linkedChecking();
+	const amount = -transferAmount();
+	const [first = "", second = ""] = await createdBySync(account.id, bank.connectionId, [
+		twin(amount),
+		twin(amount),
+	]);
+	const synced = await sync(account.id, bank.connectionId, [settled(amount), twin(amount)]);
+
+	return { account, bank, amount, first, second, synced };
+}
+
+describe("identical pending lines", () => {
+	it("refreshes the second entry and books the first when the first is booked", async () => {
+		const { account, first, second, synced } = await firstBooked();
+
+		expect(synced.created).toEqual([]);
+		await expect(rowOf(first)).resolves.toMatchObject({
+			pending: false,
+			label: "CB BOULANGERIE 19/09",
+			missed: 0,
+		});
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("keeps the second entry when the next statement lists its line first", async () => {
+		const { account, bank, amount, first, second } = await firstBooked();
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount), settled(amount)]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.present).toEqual([expect.objectContaining({ entryId: first })]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("books the second entry in place in its turn", async () => {
+		const { account, bank, amount, first, second } = await firstBooked();
+
+		const synced = await sync(account.id, bank.connectionId, [settled(amount), settled(amount)]);
+
+		expect(synced.created).toEqual([]);
+		await expect(rowOf(first)).resolves.toMatchObject({ pending: false });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: false });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("finds the booked entry again for a pending line listed beside its booked version", async () => {
+		const { account, bank, amount, first, second } = await firstBooked();
+
+		const synced = await sync(account.id, bank.connectionId, [
+			twin(amount),
+			twin(amount),
+			settled(amount),
+		]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.present).toEqual([
+			expect.objectContaining({ ref: "0", entryId: first }),
+			expect.objectContaining({ ref: "2", entryId: first }),
+		]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("gives each of several twins its own entry, in the order they were created", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const ids = await createdBySync(account.id, bank.connectionId, [
+			twin(amount),
+			twin(amount),
+			twin(amount),
+		]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			twin(amount),
+			twin(amount),
+			twin(amount),
+		]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.present).toEqual([]);
+		const rows = await Promise.all(ids.map(async (id) => rowOf(id)));
+		expect(rows.map((row) => [row?.pending, row?.missed])).toEqual([
+			[true, 0],
+			[true, 0],
+			[true, 0],
+		]);
+	});
+
+	it("recognises an entry holding two fingerprints of its group once", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [first = "", second = ""] = await createdBySync(account.id, bank.connectionId, [
+			twin(amount),
+			twin(amount),
+		]);
+		await deleteTransaction(deps(), first, { origin: "user" });
+		// The second entry takes the first one's fingerprint beside its own.
+		await sync(account.id, bank.connectionId, [twin(amount)]);
+		await expect(keysOf(second)).resolves.toHaveLength(2);
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount)]);
+
+		expect(synced.created).toEqual([]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("still recognises the third of three twins once the first two are deleted", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [first = "", second = "", third = ""] = await createdBySync(
+			account.id,
+			bank.connectionId,
+			[twin(amount), twin(amount), twin(amount)],
+		);
+		await deleteTransaction(deps(), first, { origin: "user" });
+		await deleteTransaction(deps(), second, { origin: "user" });
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount)]);
+
+		expect(synced.created).toEqual([]);
+		await expect(rowOf(third)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("never gives a new reference the pending entry of another one", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [earlier = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: "r2" }),
+		]);
+
+		const [later = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: "r3" }),
+		]);
+		await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "r2", date: "2026-09-20" }),
+			pendingLine(amount, { externalId: "r3" }),
+		]);
+
+		expect(later).not.toBe(earlier);
+		await expect(rowOf(earlier)).resolves.toMatchObject({ pending: false });
+		await expect(rowOf(later)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("never creates a line whose fingerprint an entry found by its reference holds", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount), pendingLine(amount)]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.present).toEqual([expect.objectContaining({ ref: "0", entryId: id })]);
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("creates a pending line beside a pending entry of another group", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [twin(amount)]);
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount - 1), twin(amount)]);
+
+		expect(synced.created).toHaveLength(1);
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 });

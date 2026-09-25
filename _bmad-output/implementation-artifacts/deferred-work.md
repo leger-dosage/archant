@@ -130,3 +130,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-1-opening-dates-that-accept-today-and-survive-a-revert.md`
   summary: A moved-in line whose amount the user edited before the revert gives the edited amount back to the opening anchor, so the old opening day's balance drifts by the edit.
   evidence: medium, pre-existing since Spec 2.5: `revertImport` sums the current amounts of the deleted lines. Storing the shift on `imports` at confirm would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-5-pending-and-booked-versions-never-count-twice.md`
+  summary: A new pending purchase with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so the purchase never counts.
+  evidence: medium, pre-existing: before Story 11.5 a pending line was looked up by fingerprint first. Creating such a line with `keepExisting` keys, as Story 11.5 does when the fingerprint names a pending entry, would settle it.

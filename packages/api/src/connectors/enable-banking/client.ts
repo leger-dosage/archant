@@ -165,6 +165,51 @@ export function withoutRepeats(raw: readonly unknown[]): Set<number> {
 	return kept;
 }
 
+/**
+ * Sure's `compute_external_id`: the transaction id, else the entry
+ * reference, else the content key.
+ */
+const identityOf = (line: z.output<typeof transactionSchema>) =>
+	line.transaction_id ?? line.entry_reference ?? contentKey(line);
+
+/**
+ * The positions of `raw` to keep once settled pending lines go, as Sure's
+ * `EnableBankingItem::Importer` drops them: a pending line whose booked
+ * version the same response lists, under the same entry reference or the
+ * same `identityOf`. Some banks list both until the pending one expires; the
+ * ledger would otherwise count the payment twice. Every other line is kept.
+ */
+export function withoutSettledPending(raw: readonly unknown[]): Set<number> {
+	const parsed = raw.map((item) => transactionSchema.safeParse(item));
+	const booked = new Set<string>();
+
+	for (const item of parsed) {
+		if (item.success && item.data.status === "BOOK") {
+			booked.add(`id:${identityOf(item.data)}`);
+
+			if (item.data.entry_reference !== null) {
+				booked.add(`ref:${item.data.entry_reference}`);
+			}
+		}
+	}
+
+	const kept = new Set<number>();
+
+	for (const [position, item] of parsed.entries()) {
+		const settled =
+			item.success &&
+			item.data.status === "PDNG" &&
+			(booked.has(`id:${identityOf(item.data)}`) ||
+				(item.data.entry_reference !== null && booked.has(`ref:${item.data.entry_reference}`)));
+
+		if (!settled) {
+			kept.add(position);
+		}
+	}
+
+	return kept;
+}
+
 /** By code points, so an emoji at the limit is never cut in half. */
 const capped = (value: string, length: number) => Array.from(value).slice(0, length).join("");
 
@@ -485,11 +530,13 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 
 		async fetchStatement(uid, since, today): Promise<BankStatement> {
 			const { lines, interrupted, from } = await readFrom(uid, since, fallbackStarts(since, today));
-			const kept = withoutRepeats(lines);
+			const unique = withoutRepeats(lines);
+			const unsettled = withoutSettledPending(lines);
 			const statement: BankStatement = { transactions: [], rejected: [], from, interrupted };
 
 			for (const [position, raw] of lines.entries()) {
-				const mapped = kept.has(position) ? toTransaction(raw, from) : null;
+				const kept = unique.has(position) && unsettled.has(position);
+				const mapped = kept ? toTransaction(raw, from) : null;
 
 				if (typeof mapped === "string") {
 					statement.rejected.push({ ref: String(position), reason: mapped });

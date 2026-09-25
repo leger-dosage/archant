@@ -1462,6 +1462,27 @@ describe("consent renewal", () => {
 	});
 });
 
+describe("pending misses by day", () => {
+	it("keeps every pending transaction with its missed syncs and no missed day when 0031 runs", async () => {
+		const before = await migratedBefore("0031");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, pending, pending_missed_syncs) values ('e1', 'Carte', 1, 1)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, pending, pending_missed_syncs as missed, pending_missed_on as missedOn from transactions`,
+			),
+		).resolves.toEqual([{ entryId: "e1", pending: 1, missed: 1, missedOn: null }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

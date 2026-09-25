@@ -451,6 +451,66 @@ describe("syncConnection", () => {
 		});
 	});
 
+	it("counts one miss for two syncs an hour apart without the pending line", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		withoutPending();
+		vi.setSystemTime(NOW + DAY);
+		await syncConnection(deps(), connectionId);
+		// Just over an hour on: the spacing between syncs refuses anything sooner.
+		vi.setSystemTime(NOW + DAY + 61 * MINUTE);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastError: null,
+		});
+
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 1 },
+		]);
+	});
+
+	it("keeps one entry for a pending line listed beside its booked version", async () => {
+		const page = z
+			.object({ transactions: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.transactionsPage1);
+		const [groceries] = page.transactions;
+		mockProvider({
+			transactions: (url) =>
+				url.searchParams.get("continuation_key") === "page-2"
+					? transactionsPage(url)
+					: HttpResponse.json({
+							...page,
+							transactions: [
+								...page.transactions,
+								{
+									...groceries,
+									transaction_id: null,
+									status: "PDNG",
+									booking_date: null,
+									value_date: null,
+									transaction_date: "2026-09-21",
+								},
+							],
+						}),
+		});
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 0 },
+		]);
+		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
+			amount: 122256,
+			currency: "EUR",
+		});
+	});
+
 	it("starts the count over when the pending line comes back", async () => {
 		mockProvider();
 		const connectionId = await newConnection();

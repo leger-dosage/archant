@@ -3,7 +3,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { CashFlowRow, Direction } from "../domain/cash-flow.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../domain/keys.ts";
-import type { PendingCandidate } from "../domain/pending.ts";
+import type { GroupCandidate, PendingCandidate } from "../domain/pending.ts";
 import type { RowPlan, RuleCandidate } from "../domain/rules/matching.ts";
 import type {
 	NormalizedTransaction,
@@ -77,8 +77,20 @@ import {
 } from "../domain/balances/snapshot.ts";
 import { toStoredBalance, toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { addDays, daysBetween, maxDate, minDate, today } from "../domain/dates.ts";
-import { MATCH_WINDOW_DAYS, lineKeys, pairLines, previewDigest } from "../domain/keys.ts";
-import { MAX_MISSED_SYNCS, absorbPending } from "../domain/pending.ts";
+import {
+	MATCH_WINDOW_DAYS,
+	fingerprintOf,
+	lineKeys,
+	pairLines,
+	previewDigest,
+	tripleOf,
+} from "../domain/keys.ts";
+import {
+	MAX_IDENTICAL_LINES,
+	MAX_MISSED_SYNCS,
+	absorbPending,
+	assignIdentical,
+} from "../domain/pending.ts";
 import { planActions } from "../domain/rules/matching.ts";
 import { rejectionFor } from "../domain/statement.ts";
 import { LIKE_ESCAPE, escapeLike } from "../domain/transaction-filter.ts";
@@ -892,6 +904,7 @@ async function pendingOfConnection(tx: Transaction, accountId: string, connectio
 			amount: entries.amount,
 			createdAt: entries.createdAt,
 			missedSyncs: transactions.pendingMissedSyncs,
+			missedOn: transactions.pendingMissedOn,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
@@ -909,6 +922,36 @@ async function pendingOfConnection(tx: Transaction, accountId: string, connectio
 				),
 			),
 		);
+}
+
+/**
+ * The `fp:` keys the entries `ids` hold under `source`, each with its entry
+ * and whether that entry holds an `ext:` key too.
+ */
+async function heldFingerprints(
+	tx: Transaction,
+	source: EntryKeySource,
+	ids: readonly string[],
+): Promise<Map<string, Omit<GroupCandidate, "occurrence">>> {
+	const rows: { key: string; id: string; createdAt: number }[] = [];
+
+	await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+		rows.push(
+			...(await tx
+				.select({ key: entryKeys.key, id: entries.id, createdAt: entries.createdAt })
+				.from(entryKeys)
+				.innerJoin(entries, eq(entries.id, entryKeys.entryId))
+				.where(and(eq(entryKeys.source, source), inArray(entryKeys.entryId, chunk)))),
+		);
+	});
+
+	const referenced = new Set(rows.filter(({ key }) => key.startsWith("ext:")).map(({ id }) => id));
+
+	return new Map(
+		rows
+			.filter(({ key }) => key.startsWith("fp:"))
+			.map(({ key, id, createdAt }) => [key, { id, createdAt, referenced: referenced.has(id) }]),
+	);
 }
 
 /**
@@ -955,7 +998,9 @@ type Paired = Keyed & { entryId: string };
 
 /**
  * `absorbed` holds step 3's lines (AD-17): a booked line taking over a pending
- * entry, or a pending line refreshing one. Only a sync has them.
+ * entry, or a pending line refreshing one. Only a sync has them. `named`
+ * holds the entries a refused line's key names; `sharing`, the refs of
+ * created lines whose fingerprint another entry already holds.
  */
 type Groups = {
 	created: Keyed[];
@@ -963,6 +1008,8 @@ type Groups = {
 	matched: Paired[];
 	duplicates: Keyed[];
 	absorbed: Paired[];
+	named: string[];
+	sharing: Set<string>;
 };
 
 function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): PreviewLine {
@@ -1027,39 +1074,58 @@ async function attachKeys(
 /**
  * Sorts the accepted lines of a keyed statement into present, matched,
  * possible duplicates, absorbed and created (AD-7, AD-17), each in statement
- * order. Step 3 runs between key matching and pairing, for a sync only: a
- * key hit on a pending entry absorbs the line, whatever its status, unless a
- * booked line of the same statement booked that entry first; a booked line no
- * key found takes a pending entry of the connection by amount and date. A
- * pending line never pairs by amount and date: it is recognised or created.
+ * order. A booked line is looked up by its fingerprint, then its external
+ * key; a pending line by its external key only, since its fingerprint shifts
+ * once an identical line before it is booked. A key hit on a pending entry
+ * absorbs the line, whatever its status, unless a booked line of the same
+ * statement booked that entry first. Pending lines no key found are then
+ * recognised within their group of identical lines (`assignIdentical`), and
+ * booked lines no key found take a pending entry of the connection by amount
+ * and date. A pending line never pairs by amount and date: it is recognised,
+ * present on the entry its fingerprint names, or created. The keys of the
+ * lines step 1 refused are looked up too, for the entries they name.
  */
 async function groupLines(
 	tx: Transaction,
 	accountId: string,
 	target: KeyTarget,
 	accepted: readonly Keyed[],
+	refusedKeys: readonly string[],
 ): Promise<Groups> {
-	const known = await entriesByKey(
-		tx,
-		accountId,
-		target.source,
-		accepted.flatMap(({ keys }) =>
+	const known = await entriesByKey(tx, accountId, target.source, [
+		...accepted.flatMap(({ keys }) =>
 			keys.external === null ? [keys.fingerprint] : [keys.fingerprint, keys.external],
 		),
-	);
-	const groups: Groups = { created: [], present: [], matched: [], duplicates: [], absorbed: [] };
+		...refusedKeys,
+	]);
+	const groups: Groups = {
+		created: [],
+		present: [],
+		matched: [],
+		duplicates: [],
+		absorbed: [],
+		sharing: new Set(),
+		named: refusedKeys.flatMap((key) => {
+			const entry = known.get(key);
+
+			return entry === undefined ? [] : [entry.entryId];
+		}),
+	};
 	const remaining: (Keyed & { date: IsoDate; amount: MinorUnits })[] = [];
+	const identical = new Map<string, Keyed[]>();
 	// Entries this statement already booked or refreshed: a later pending line
 	// for a booked one changes nothing, and step 3's amount match skips both.
 	const booked = new Set<string>();
 	const claimed = new Set<string>();
 
 	for (const item of accepted) {
-		const hit =
-			known.get(item.keys.fingerprint) ??
-			(item.keys.external === null ? undefined : known.get(item.keys.external));
+		const byExternal = item.keys.external === null ? undefined : known.get(item.keys.external);
+		const hit = item.line.pending ? byExternal : (known.get(item.keys.fingerprint) ?? byExternal);
 
-		if (hit === undefined) {
+		if (hit === undefined && item.line.pending) {
+			const triple = tripleOf(item.line);
+			identical.set(triple, [...(identical.get(triple) ?? []), item]);
+		} else if (hit === undefined) {
 			remaining.push({ ...item, date: item.line.date, amount: item.line.amount });
 		} else if (hit.pending && !booked.has(hit.entryId)) {
 			// Only a bank connector's keys sit on a pending entry: only a sync gets here.
@@ -1074,22 +1140,81 @@ async function groupLines(
 		}
 	}
 
-	const pendingLines = remaining.filter(({ line }) => line.pending);
-	const bookedLines = remaining.filter(({ line }) => !line.pending);
-	const survivors =
+	const pendingEntries =
 		target.connectionId === null
 			? []
-			: (await pendingOfConnection(tx, accountId, target.connectionId))
-					.filter(({ id }) => !claimed.has(id))
-					.map((row): PendingCandidate => ({
-						id: row.id,
-						date: row.date,
-						amount: toMinorUnits(row.amount),
-						createdAt: row.createdAt,
-					}));
+			: await pendingOfConnection(tx, accountId, target.connectionId);
+	const held = await heldFingerprints(
+		tx,
+		target.source,
+		identical.size === 0
+			? []
+			: pendingEntries.filter(({ id }) => !claimed.has(id)).map(({ id }) => id),
+	);
+	const unattributed = new Set(held.keys());
+
+	for (const [triple, lines] of identical) {
+		// Each held key belongs to one triple: once all are placed, no index is left to try.
+		const lowest = new Map<string, GroupCandidate>();
+
+		for (
+			let occurrence = 0;
+			occurrence < MAX_IDENTICAL_LINES && unattributed.size > 0;
+			occurrence += 1
+		) {
+			const key = fingerprintOf(triple, occurrence);
+			const entry = held.get(key);
+
+			if (entry !== undefined && !lowest.has(entry.id)) {
+				lowest.set(entry.id, { ...entry, occurrence });
+			}
+
+			unattributed.delete(key);
+		}
+
+		const candidates = [...lowest.values()].filter(({ id }) => !claimed.has(id));
+
+		const assigned = assignIdentical(
+			lines.map((item) => ({ item, referenced: item.keys.external !== null })),
+			candidates,
+		);
+
+		for (const {
+			line: { item },
+			entryId,
+		} of assigned) {
+			const named = entryId === null ? known.get(item.keys.fingerprint) : undefined;
+
+			if (entryId !== null) {
+				groups.absorbed.push({ ...item, entryId });
+				claimed.add(entryId);
+			} else if (named === undefined) {
+				groups.created.push(item);
+			} else if (named.pending && item.keys.external !== null) {
+				// A reference no entry holds is a new line, though its fingerprint
+				// names a pending entry under another reference: it goes in, and
+				// leaves that fingerprint where it is.
+				groups.created.push(item);
+				groups.sharing.add(item.ref);
+			} else {
+				// Booked, or refreshed by another line of this statement: that entry
+				// listed again. Creating it would store the key twice.
+				groups.present.push({ ...item, entryId: named.entryId });
+			}
+		}
+	}
+
+	const survivors = pendingEntries
+		.filter(({ id }) => !claimed.has(id))
+		.map((row): PendingCandidate => ({
+			id: row.id,
+			date: row.date,
+			amount: toMinorUnits(row.amount),
+			createdAt: row.createdAt,
+		}));
 	const unpaired: typeof remaining = [];
 
-	for (const { line: item, survivorId } of absorbPending(bookedLines, survivors)) {
+	for (const { line: item, survivorId } of absorbPending(remaining, survivors)) {
 		if (survivorId === null) {
 			unpaired.push(item);
 		} else {
@@ -1121,8 +1246,9 @@ async function groupLines(
 		}
 	}
 
-	groups.created.push(...pendingLines.map(({ ref, line, keys }) => ({ ref, line, keys })));
-	groups.created.sort((a, b) => Number(a.ref) - Number(b.ref));
+	for (const group of [groups.created, groups.present, groups.absorbed]) {
+		group.sort((a, b) => Number(a.ref) - Number(b.ref));
+	}
 
 	return groups;
 }
@@ -1243,8 +1369,9 @@ function planCurrentAnchor(
  * pipeline order of AD-4. A manual line carries no key and is always
  * created; an import's or a sync's lines are keyed and grouped (AD-7), and a
  * sync's reconcile with pending entries (AD-17): absorbed in place, or, when
- * dated `missesFrom` or later, counted missing and deleted at the second miss
- * in a row. With `dryRun`, the groups are computed and nothing is written.
+ * dated `missesFrom` or later and named by no line of the statement, refused
+ * ones included, counted missing once a day at most and deleted at the
+ * second miss. With `dryRun`, the groups are computed and nothing is written.
  * Confirming an import refuses with `IMPORT_PREVIEW_STALE` when the groups
  * differ from its preview, and marks
  * it confirmed with its counts in the same transaction. A sync's statement
@@ -1291,6 +1418,8 @@ export async function ingest(
 			};
 			const accepted: Keyed[] = [];
 			const refused: (RejectedLine & { line: NonNullable<RejectedLine["line"]> })[] = [];
+			// A refused line still names its entry: a pending one it names is not missed.
+			const refusedKeys: string[] = [];
 
 			// 1. Reject lines the account cannot hold. Keys cover every line,
 			// refused ones included, so a line's occurrence index never depends on
@@ -1307,14 +1436,23 @@ export async function ingest(
 						reason,
 						line: { date: line.date, amount: line.amount, label: line.label },
 					});
+					refusedKeys.push(...[keys.fingerprint, keys.external].filter((key) => key !== null));
 				}
 			}
 
 			// 2. Key matching, batched per statement (AD-7). A manual line has no key.
 			const grouped: Groups =
 				keyTarget === null
-					? { created: accepted, present: [], matched: [], duplicates: [], absorbed: [] }
-					: await groupLines(tx, accountId, keyTarget, accepted);
+					? {
+							created: accepted,
+							present: [],
+							matched: [],
+							duplicates: [],
+							absorbed: [],
+							named: [],
+							sharing: new Set(),
+						}
+					: await groupLines(tx, accountId, keyTarget, accepted, refusedKeys);
 			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
 				...item,
 				line: null,
@@ -1447,10 +1585,21 @@ export async function ingest(
 			);
 
 			if (keyTarget !== null) {
+				const sharing = rows.filter(({ ref }) => grouped.sharing.has(ref));
+
 				await attachKeys(tx, accountId, keyTarget, [
-					...rows.map(({ id, keys }) => ({ entryId: id, keys })),
+					...rows
+						.filter(({ ref }) => !grouped.sharing.has(ref))
+						.map(({ id, keys }) => ({ entryId: id, keys })),
 					...grouped.matched.map(({ entryId, keys }) => ({ entryId, keys })),
 				]);
+				await attachKeys(
+					tx,
+					accountId,
+					keyTarget,
+					sharing.map(({ id, keys }) => ({ entryId: id, keys })),
+					{ keepExisting: true },
+				);
 			}
 
 			if (target !== null) {
@@ -1478,18 +1627,22 @@ export async function ingest(
 			}
 
 			// A pending entry of the connection this statement did not speak for
-			// counts a miss; the second in a row deletes it. A failed sync rolls
-			// back with this transaction, and an interrupted one reads too little
-			// to tell, so neither counts.
+			// counts a miss, one per day at most; the second deletes it. A line the
+			// statement refused still speaks for the entry it names. A failed sync
+			// rolls back with this transaction, and an interrupted one reads too
+			// little to tell, so neither counts.
 			const missedFrom: IsoDate[] = [];
 
 			if (connectionId !== null && missesFrom !== null) {
 				const seen = new Set([
 					...grouped.absorbed.map(({ entryId }) => entryId),
 					...rows.map(({ id }) => id),
+					...grouped.named,
 				]);
 
-				missedFrom.push(...(await countMissedSyncs(tx, accountId, connectionId, missesFrom, seen)));
+				missedFrom.push(
+					...(await countMissedSyncs(tx, accountId, connectionId, missesFrom, seen, context.today)),
+				);
 			}
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
@@ -2084,11 +2237,12 @@ export async function updateTransaction(
 /**
  * Step 3's write (AD-17): the survivor takes the line's date, amount, label
  * and notes, except the fields a user locked (`changeOf`), and its status;
- * its missed syncs start over, and the line's keys join the ones it has. The
- * old keys stay, so the bank sending the old pending line again finds a
- * booked entry and changes nothing. The id, the category, the merchant, the
- * tags, the transfer and the exclusion stay as they are, and rules do not run
- * again. Returns the earlier of the old and new dates, where balances move.
+ * its missed syncs start over, their count and their last day both, and the
+ * line's keys join the ones it has. The old keys stay, so the bank sending
+ * the old pending line again finds a booked entry and changes nothing. The
+ * id, the category, the merchant, the tags, the transfer and the exclusion
+ * stay as they are, and rules do not run again. Returns the earlier of the
+ * old and new dates, where balances move.
  */
 async function absorb(
 	tx: Transaction,
@@ -2121,6 +2275,7 @@ async function absorb(
 			...detailOf(current, change, origin),
 			pending: line.line.pending,
 			pendingMissedSyncs: 0,
+			pendingMissedOn: null,
 		})
 		.where(eq(transactions.entryId, survivorId));
 	await attachKeys(tx, current.accountId, keyTarget, [{ entryId: survivorId, keys: line.keys }], {
@@ -2236,8 +2391,11 @@ async function deleteTransactionRows(tx: Transaction, ids: readonly string[]): P
 
 /**
  * Counts a miss on every pending entry of the connection dated `from` or
- * later and outside `seen`, and deletes those reaching `MAX_MISSED_SYNCS`
- * (AD-17). Returns the dates of the deleted ones, where balances move.
+ * later and outside `seen`, unless one was counted on `day` already, and
+ * deletes those reaching `MAX_MISSED_SYNCS` (AD-17). Two syncs an hour apart
+ * both missing a line the bank dropped a little before booking it count
+ * once, so the booked line still finds its entry the next day. Returns the
+ * dates of the deleted ones, where balances move.
  */
 async function countMissedSyncs(
 	tx: Transaction,
@@ -2245,9 +2403,11 @@ async function countMissedSyncs(
 	connectionId: string,
 	from: IsoDate,
 	seen: ReadonlySet<string>,
+	day: IsoDate,
 ): Promise<IsoDate[]> {
 	const missed = (await pendingOfConnection(tx, accountId, connectionId)).filter(
-		({ id, date }) => date >= from && !seen.has(id),
+		({ id, date, missedOn }) =>
+			date >= from && !seen.has(id) && (missedOn === null || missedOn < day),
 	);
 	const gone = missed.filter(({ missedSyncs }) => missedSyncs + 1 >= MAX_MISSED_SYNCS);
 	const kept = missed.filter(({ missedSyncs }) => missedSyncs + 1 < MAX_MISSED_SYNCS);
@@ -2255,7 +2415,10 @@ async function countMissedSyncs(
 	await inSequence(kept, KEYS_PER_LOOKUP, (chunk) =>
 		tx
 			.update(transactions)
-			.set({ pendingMissedSyncs: sql`${transactions.pendingMissedSyncs} + 1` })
+			.set({
+				pendingMissedSyncs: sql`${transactions.pendingMissedSyncs} + 1`,
+				pendingMissedOn: day,
+			})
 			.where(
 				inArray(
 					transactions.entryId,
