@@ -19,6 +19,8 @@ const side = (overrides: Partial<TransferSide> = {}): TransferSide => ({
 	amount: toMinorUnits(-50000),
 	currency: "EUR",
 	inTransfer: false,
+	excluded: false,
+	accountActive: true,
 	...overrides,
 });
 
@@ -66,6 +68,16 @@ describe("isTransferCandidate", () => {
 	it("refuses a side already in a transfer", () => {
 		expect(isTransferCandidate(outflow, { ...inflow, inTransfer: true })).toBe(false);
 		expect(isTransferCandidate({ ...outflow, inTransfer: true }, inflow)).toBe(false);
+	});
+
+	it("refuses an excluded side, whichever side", () => {
+		expect(isTransferCandidate(outflow, { ...inflow, excluded: true })).toBe(false);
+		expect(isTransferCandidate({ ...outflow, excluded: true }, inflow)).toBe(false);
+	});
+
+	it("refuses a side on an inactive account, whichever side", () => {
+		expect(isTransferCandidate(outflow, { ...inflow, accountActive: false })).toBe(false);
+		expect(isTransferCandidate({ ...outflow, accountActive: false }, inflow)).toBe(false);
 	});
 });
 

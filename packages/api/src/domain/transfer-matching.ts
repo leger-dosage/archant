@@ -23,14 +23,19 @@ export type TransferSide = {
 	currency: string;
 	/** Already the outflow or the inflow of a transfer. */
 	inTransfer: boolean;
+	/** Left out of reports by the user or a rule. */
+	excluded: boolean;
+	/** Whether the side's account is active, not deactivated. */
+	accountActive: boolean;
 };
 
 /**
  * Whether `a` and `b` can be the two sides of one transfer: two transactions
  * of opposite, non-zero amounts in two accounts of one currency, dated within
- * `TRANSFER_WINDOW_DAYS`, neither already matched. Symmetric, so the manual
- * picker and the automatic matcher of Story 5.2 agree whichever side they
- * start from. No conversion: a cross-currency move is two standard rows.
+ * `TRANSFER_WINDOW_DAYS`, neither already matched nor excluded, both
+ * accounts active, as Sure's `Family::AutoTransferMatchable`. Symmetric, so
+ * the manual picker and the automatic matcher of Story 5.2 agree whichever
+ * side they start from. No conversion: a cross-currency move is two standard rows.
  */
 export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 	return (
@@ -42,7 +47,11 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 		a.currency === b.currency &&
 		Math.abs(daysBetween(a.date, b.date)) <= TRANSFER_WINDOW_DAYS &&
 		!a.inTransfer &&
-		!b.inTransfer
+		!b.inTransfer &&
+		!a.excluded &&
+		!b.excluded &&
+		a.accountActive &&
+		b.accountActive
 	);
 }
 

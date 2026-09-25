@@ -101,6 +101,82 @@ test("« Rapprocher un virement » offers only the opposite amount within four d
 	).toBeVisible();
 });
 
+// Story 11.2: as Sure's `Family::AutoTransferMatchable`, an excluded row or a
+// row of a deactivated account is never the other side of a transfer.
+
+test("« Rapprocher un virement » offers neither an excluded row nor a row of a deactivated account", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Écarté");
+	const { checking, livret } = await openHousehold(api);
+	const closed = await api.openAccount({ name: uniqueName("Ancien livret"), kind: "savings" });
+	await api.deactivateAccount(closed.id);
+	const amount = uniqueAmount();
+	const out = `${prefix} départ`;
+	const excluded = `${prefix} exclue`;
+	const inactive = `${prefix} inactive`;
+	const excludedId = await api.addTransaction(livret.id, {
+		date: daysAgo(8),
+		label: excluded,
+		amount,
+	});
+	await api.excludeTransaction(excludedId);
+	await api.addTransaction(closed.id, { date: daysAgo(9), label: inactive, amount });
+	await api.addTransaction(checking.id, { date: daysAgo(10), label: out, amount: `-${amount}` });
+
+	await visitOperations(page, prefix);
+	await expect(rowButton(page, out)).not.toContainText("Virement possible");
+	await rowButton(page, out).click();
+	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
+
+	await expect(
+		picker(page).getByText(
+			"Aucune opération de montant opposé dans un autre compte à 4 jours près",
+		),
+	).toBeVisible();
+	await expect(picker(page).getByRole("list", { name: "Opérations candidates" })).toHaveCount(0);
+
+	// The excluded row has no candidate either, the outflow included.
+	await page.keyboard.press("Escape");
+	await expect(picker(page)).toBeHidden();
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
+	await rowButton(page, excluded).click();
+	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
+	await expect(
+		picker(page).getByText(
+			"Aucune opération de montant opposé dans un autre compte à 4 jours près",
+		),
+	).toBeVisible();
+});
+
+test("an excluded twin does not keep the real pair from linking", async ({ page, api }) => {
+	const prefix = uniqueName("Jumeau");
+	const { checking, livret } = await openHousehold(api);
+	const card = await api.openAccount({
+		name: uniqueName("Carte"),
+		kind: "credit_card",
+		openingBalance: "0",
+	});
+	const amount = uniqueAmount();
+	const out = `${prefix} départ`;
+	const into = `${prefix} arrivée`;
+	const twinId = await api.addTransaction(card.id, {
+		date: daysAgo(5),
+		label: `${prefix} jumeau`,
+		amount,
+	});
+	await api.excludeTransaction(twinId);
+	await api.addTransaction(livret.id, { date: daysAgo(5), label: into, amount });
+	await api.addTransaction(checking.id, { date: daysAgo(6), label: out, amount: `-${amount}` });
+
+	await visitOperations(page, prefix);
+
+	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
+	await expect(rowButton(page, out)).not.toContainText("Virement possible");
+});
+
 test("picking the candidate links both rows, each naming the other account", async ({
 	page,
 	api,

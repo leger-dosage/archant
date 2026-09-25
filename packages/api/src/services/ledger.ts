@@ -3022,9 +3022,11 @@ const WINDOW_AFTER = `+${TRANSFER_WINDOW_DAYS} days`;
  * The SQL prefilter of `isTransferCandidate`: `candidate` has the opposite,
  * non-zero amount of `source`, in another account of its currency, within
  * the window, neither is in a transfer, and the user never rejected the pair.
- * One condition serves the picker, `matchTransfer`'s re-check, step 6 of
- * `ingest` and the list's suggestion, so none of them can offer a pair
- * another refuses.
+ * `candidatePairQuery` adds `matchableSide` on both sides, which reads the
+ * transaction and account rows this condition does not join. One search
+ * serves the picker, `matchTransfer`'s re-check, step 6 of `ingest`,
+ * `applyRulePlanToHistory` and the list's suggestion, so none of them can
+ * offer a pair another refuses.
  */
 function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
 	return and(
@@ -3045,6 +3047,18 @@ function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
 	);
 }
 
+/**
+ * The SQL of `isTransferCandidate`'s `excluded` and `accountActive`: neither
+ * an excluded row nor a row of a deactivated account is ever a side, as
+ * Sure's `Family::AutoTransferMatchable`.
+ */
+function matchableSide(
+	transaction: Record<"excluded", SQLiteColumn>,
+	account: Record<"active", SQLiteColumn>,
+): SQL | undefined {
+	return and(eq(transaction.excluded, false), eq(account.active, true));
+}
+
 const sideColumns = {
 	id: entries.id,
 	kind: entries.kind,
@@ -3054,6 +3068,8 @@ const sideColumns = {
 	amount: entries.amount,
 	currency: entries.currency,
 	inTransfer: inAnyTransfer.mapWith(Boolean),
+	excluded: transactions.excluded,
+	accountActive: accounts.active,
 };
 
 /** One transaction as the matching rule reads it, `undefined` when the id names none. */
@@ -3097,6 +3113,8 @@ function candidatePairQuery(
 				amount: sourceEntry.amount,
 				currency: sourceEntry.currency,
 				inTransfer: inTransferSql(sourceEntry.id).mapWith(Boolean),
+				excluded: sourceTransaction.excluded,
+				accountActive: sourceAccount.active,
 				expectedAccountId: sourceTransaction.expectedTransferAccountId,
 			},
 			candidate: {
@@ -3115,6 +3133,8 @@ function candidatePairQuery(
 		.where(
 			and(
 				inArray(sourceEntry.id, [...sourceIds]),
+				matchableSide(sourceTransaction, sourceAccount),
+				matchableSide(transactions, accounts),
 				counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
 			),
 		)
@@ -3125,9 +3145,9 @@ type CandidatePair = Awaited<ReturnType<typeof candidatePairQuery>>[number];
 
 /**
  * Every candidate of each of `sourceIds`, 500 sources per query, ordered by
- * date, then the older entry. SQL narrows them with `candidateOf`;
- * `isTransferCandidate` then has the last word. `counterpartId` keeps that
- * one candidate only.
+ * date, then the older entry. SQL narrows them with `candidateOf` and
+ * `matchableSide`; `isTransferCandidate` then has the last word.
+ * `counterpartId` keeps that one candidate only.
  */
 async function candidatePairs(
 	db: Pick<Transaction, "select">,
@@ -3275,7 +3295,7 @@ export async function transferCandidates(
  * no category, lock or tag changes: the two rows stay what they were, only
  * their direction changes. Throws `NOT_FOUND` for an unknown `entryId`,
  * `VALIDATION_ERROR` on `counterpartId` when it is no candidate, unknown,
- * already matched or rejected included.
+ * already matched, rejected, excluded or on a deactivated account included.
  */
 export async function matchTransfer(
 	deps: ServiceDeps,
