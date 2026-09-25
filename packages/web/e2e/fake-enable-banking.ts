@@ -31,12 +31,23 @@ export const FAILING_BANK = "Néobanque Test";
  */
 export const BALANCELESS_BANK = "Banque Sans Solde";
 
+/**
+ * The bank whose balance describes yesterday at 1 200,00 € for the link and
+ * the sync it starts, then today at the usual 1 234,56 €: a later sync
+ * brings a new bank figure while the first one stays.
+ */
+export const DATED_BANK = "Banque Datée";
+
+/** The balance `DATED_BANK` gives first, dated yesterday. */
+const DATED_FIRST_BALANCE = "1200.00";
+
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = [
 	"Banque Démo",
 	"Caisse Régionale Exemple",
 	"Néobanque Test",
 	BALANCELESS_BANK,
+	DATED_BANK,
 ] as const;
 
 /**
@@ -217,6 +228,8 @@ export async function startFakeEnableBanking(options: {
 	// The uids whose balance answers once, then 500; those already read.
 	const balanceless = new Set<string>();
 	const balanceRead = new Set<string>();
+	// The current account of each `DATED_BANK` session, with the number of times its balance was read.
+	const datedReads = new Map<string, number>();
 	// Every session opened and not revoked yet.
 	const sessions = new Set<string>();
 	let origin = "";
@@ -321,6 +334,10 @@ export async function startFakeEnableBanking(options: {
 					balanceless.add(cardUid);
 				}
 
+				if (attempt.bank === DATED_BANK) {
+					datedReads.set(checkingUid, 0);
+				}
+
 				const sessionId = randomUUID();
 				sessions.add(sessionId);
 
@@ -379,11 +396,28 @@ export async function startFakeEnableBanking(options: {
 				}
 
 				balanceRead.add(uid);
+				const reads = datedReads.get(uid);
+				// Read once to link, once by the sync that follows: both yesterday's.
+				const booked =
+					reads === undefined
+						? { balance_amount: { currency: "EUR", amount }, balance_type: "ITBD" }
+						: {
+								balance_amount: {
+									currency: "EUR",
+									amount: reads < 2 ? DATED_FIRST_BALANCE : amount,
+								},
+								balance_type: "ITBD",
+								reference_date: daysAgo(reads < 2 ? 1 : 0),
+							};
+
+				if (reads !== undefined) {
+					datedReads.set(uid, reads + 1);
+				}
 
 				json(response, 200, {
 					balances: [
 						{ balance_amount: { currency: "EUR", amount: "0.00" }, balance_type: "XPCD" },
-						{ balance_amount: { currency: "EUR", amount }, balance_type: "ITBD" },
+						booked,
 					],
 				});
 				return;

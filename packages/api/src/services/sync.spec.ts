@@ -33,6 +33,7 @@ import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./ban
 import { encrypt } from "./crypto.ts";
 import { balanceOn, createAccount, deleteTransaction, linkBankAccount } from "./ledger.ts";
 import * as recurringService from "./recurring.ts";
+import { getNetWorth } from "./reports.ts";
 import { syncAll, syncConnection, windowStart } from "./sync.ts";
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
@@ -261,6 +262,21 @@ async function anchorOf(accountId: string) {
 	return row;
 }
 
+/** The fixtures' balances, the booked one the ledger takes set to `amount`. */
+function bankBalancesWith(amount: string) {
+	const { balances } = z
+		.object({ balances: z.array(z.record(z.string(), z.unknown())) })
+		.parse(fixtures.balances);
+
+	return {
+		balances: balances.map((row) =>
+			row["balance_type"] === "ITBD"
+				? { ...row, balance_amount: { currency: "EUR", amount } }
+				: row,
+		),
+	};
+}
+
 const balancesFailing = () => HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 });
 
 /** Enable Banking refusing every `date_from` before `accepted`, `null` refusing them all. */
@@ -321,7 +337,7 @@ describe("windowStart", () => {
 });
 
 describe("syncConnection", () => {
-	it("brings the bank's lines in once, and sets today's balance to the bank's with the pending line", async () => {
+	it("brings the bank's lines in once, and sets today's balance to the bank's booked one", async () => {
 		const requests = mockProvider();
 		const connectionId = await newConnection();
 		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -337,9 +353,9 @@ describe("syncConnection", () => {
 		await expect(pendingOf(accountId)).resolves.toEqual([
 			{ date: "2026-09-23", amount: -1200, missed: 0 },
 		]);
-		// The bank's booked 1 234,56, less the pending 12,00 it leaves out.
+		// The bank's booked 1 234,56: the pending 12,00 counts in no balance.
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
-			amount: 122256,
+			amount: 123456,
 			currency: "EUR",
 		});
 		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
@@ -366,8 +382,33 @@ describe("syncConnection", () => {
 		);
 		await expect(transactionCount(accountId)).resolves.toBe(6);
 		await expect(balanceOn(deps(), accountId, "2026-09-25")).resolves.toMatchObject({
-			amount: 122256,
+			amount: 123456,
 		});
+	});
+
+	it("keeps the first day's bank balance as a snapshot when the next day brings another", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		const before = await getNetWorth(deps(), "6M");
+		vi.setSystemTime(NOW + DAY);
+		mockProvider({ balances: () => HttpResponse.json(bankBalancesWith("1200.00")) });
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(anchorOf(accountId)).resolves.toEqual({ date: "2026-09-25", amount: 120000 });
+		await expect(
+			temp.db.all(
+				sql`select date, amount from entries where account_id = ${accountId} and valuation_kind = 'reconciliation'`,
+			),
+		).resolves.toEqual([{ date: "2026-09-24", amount: 123456 }]);
+		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toMatchObject({
+			amount: 123456,
+		});
+		const after = await getNetWorth(deps(), "6M");
+		expect(after.points.filter(({ date }) => date <= "2026-09-24")).toEqual(before.points);
+		expect(after.netWorth).toBe(120000);
 	});
 
 	it("never brings back a line the user deleted when the next sync rereads it", async () => {
@@ -529,7 +570,7 @@ describe("syncConnection", () => {
 			{ date: "2026-09-23", amount: -1200, missed: 0 },
 		]);
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
-			amount: 122256,
+			amount: 123456,
 			currency: "EUR",
 		});
 	});

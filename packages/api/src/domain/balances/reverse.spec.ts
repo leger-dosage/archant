@@ -64,6 +64,26 @@ describe("reverseBalances", () => {
 		).toEqual([53000, 52000, 50000, 100000, 100000]);
 	});
 
+	it("moves only the days between two bank figures for a line missing between them", () => {
+		// The bank said 1 000,00 on the 2nd, then 900,00 on the 5th; the lines
+		// it sent in between make 50,00 only.
+		const movements = [
+			{ date: "2026-09-02", amount: m(-700) },
+			{ date: "2026-09-03", amount: m(-3000) },
+			{ date: "2026-09-04", amount: m(-2000) },
+		];
+		const figures = (anchor: number) =>
+			balances({
+				...linked,
+				anchor: { date: "2026-09-05", balance: m(anchor) },
+				valuations: [{ date: "2026-09-02", balance: m(100000) }],
+				movements,
+			});
+
+		expect(figures(95000)).toEqual([100700, 100000, 97000, 95000, 95000]);
+		expect(figures(90000)).toEqual([100700, 100000, 92000, 90000, 90000]);
+	});
+
 	it("keeps the anchor day at the anchor, a reconciliation on that day included", () => {
 		expect(
 			balances({

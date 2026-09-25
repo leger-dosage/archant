@@ -224,12 +224,30 @@ async function lastBalanceDay(tx: Transaction, accountId: string, timeZone: stri
 }
 
 /**
+ * The account's booked transactions summed per day, on the rows `where`
+ * keeps. Every balance reads its movements here: a pending line counts in no
+ * balance until the bank books it (AD-8), as Sure's `Entry.excluding_pending`.
+ */
+async function bookedMovements(
+	db: Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">,
+	accountId: string,
+	where?: SQL,
+) {
+	return db
+		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(and(eq(entries.accountId, accountId), eq(transactions.pending, false), where))
+		.groupBy(entries.date);
+}
+
+/**
  * A bank-linked account's balances, rewritten whole from its opening date:
  * a change on any day moves every earlier one, since they derive from the
- * bank's balance backward (AD-8). The bank's balance is a booked one, so the
- * pending entries dated on or before it go on top (AD-18); later ones move
- * the balance forward as any line does. The stored anchor stays the bank's
- * figure.
+ * bank's balance backward (AD-8), each reconciliation, an earlier bank
+ * figure included, fixing its own day. Pending entries play no part, as
+ * Sure's `Entry.excluding_pending`: the bank's balance is a booked one
+ * (AD-18).
  */
 async function recomputeBackward(
 	tx: Transaction,
@@ -238,24 +256,7 @@ async function recomputeBackward(
 	openingDate: IsoDate,
 	timeZone: string,
 ): Promise<void> {
-	const unbooked = await tx
-		.select({ amount: entries.amount })
-		.from(entries)
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(
-			and(
-				eq(entries.accountId, account.id),
-				eq(transactions.pending, true),
-				lte(entries.date, anchor.date),
-			),
-		);
-	const pendingOnAnchor = unbooked.reduce((total, row) => total + row.amount, 0);
-	const sign = classificationOf(account.type) === "asset" ? 1 : -1;
-	const movements = await tx
-		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
-		.from(entries)
-		.where(and(eq(entries.accountId, account.id), eq(entries.kind, "transaction")))
-		.groupBy(entries.date);
+	const movements = await bookedMovements(tx, account.id);
 	// The opening anchor bounds the range; its amount plays no part.
 	const reconciliations = await tx
 		.select({ date: entries.date, balance: entries.amount })
@@ -263,7 +264,7 @@ async function recomputeBackward(
 		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "reconciliation")));
 	const rows: NewBalance[] = reverseBalances({
 		from: openingDate,
-		anchor: { date: anchor.date, balance: toMinorUnits(anchor.balance + sign * pendingOnAnchor) },
+		anchor,
 		valuations: reconciliations.map((row) => ({
 			date: row.date,
 			balance: toMinorUnits(row.balance),
@@ -342,17 +343,7 @@ async function recomputeBalances(
 	// account is being created: its opening anchor sets the first balance.
 	const [from, opening] =
 		previous === undefined ? [affected, 0] : [addDays(previous.date, 1), previous.balance];
-	const movements = await tx
-		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
-		.from(entries)
-		.where(
-			and(
-				eq(entries.accountId, account.id),
-				eq(entries.kind, "transaction"),
-				gte(entries.date, from),
-			),
-		)
-		.groupBy(entries.date);
+	const movements = await bookedMovements(tx, account.id, gte(entries.date, from));
 	const valuations = await tx
 		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
@@ -472,7 +463,9 @@ function anchorDate(balance: AnchorBalance, day: IsoDate): IsoDate {
 
 /**
  * Replaces the account's `current_anchor` with `anchor`, a stored balance,
- * or removes it for `null`. Returns the date written.
+ * or removes it for `null`. A link and an unlink replace the anchor through it
+ * without keeping the earlier figure; a sync goes through
+ * `rotateCurrentAnchor`, which keeps it. Returns the date written.
  */
 async function writeCurrentAnchor(
 	tx: Transaction,
@@ -502,6 +495,60 @@ async function writeCurrentAnchor(
 	});
 
 	return anchor.date;
+}
+
+/**
+ * Step 7 for a sync, written: the bank's new balance becomes the account's
+ * `current_anchor`, and the one it supersedes, dated an earlier day, becomes
+ * a `reconciliation` on that day, keeping its id, as Sure's
+ * `Account::CurrentBalanceManager#preserve_anchor_as_reconciliation_if_stale`.
+ * Each figure the bank gave then fixes its own day, so a line the bank never
+ * sent moves only the days between the two figures around it (AD-8). An
+ * anchor dated the new balance's day or later is updated in place, amount
+ * and date, as Sure's `update_current_anchor`: a later figure the bank now
+ * dates earlier is stale, and must not stay fixed. The old figure is deleted
+ * instead when a snapshot already holds its day, the user's value winning as
+ * AD-8 has it, or when it is dated on or before the opening date, where no
+ * snapshot may sit. Returns the earliest date written.
+ */
+async function rotateCurrentAnchor(
+	tx: Transaction,
+	account: Pick<Account, "id" | "currency">,
+	anchor: { date: IsoDate; balance: MinorUnits },
+	openingDate: IsoDate,
+	now: number,
+): Promise<IsoDate> {
+	const previous = await tx
+		.select({ id: entries.id, date: entries.date })
+		.from(entries)
+		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "current_anchor")))
+		.get();
+
+	if (previous !== undefined && previous.date >= anchor.date) {
+		await tx
+			.update(entries)
+			.set({ date: anchor.date, amount: anchor.balance, updatedAt: now })
+			.where(eq(entries.id, previous.id));
+
+		return anchor.date;
+	}
+
+	if (previous !== undefined) {
+		const kept =
+			previous.date > openingDate &&
+			(await snapshotOn(tx, account.id, previous.date)) === undefined;
+
+		await (kept
+			? tx
+					.update(entries)
+					.set({ valuationKind: "reconciliation", importId: null, updatedAt: now })
+					.where(eq(entries.id, previous.id))
+			: tx.delete(entries).where(eq(entries.id, previous.id)));
+	}
+
+	await writeCurrentAnchor(tx, account, anchor, now);
+
+	return previous?.date ?? anchor.date;
 }
 
 /**
@@ -631,8 +678,8 @@ function unlinkReconciliations(input: {
 /**
  * Sure's `unlink`: the account stops being fed by a bank and becomes a
  * manual one, computed forward, with every stored balance as it was (AD-8).
- * The bank's last figure becomes a reconciliation on its day, pending lines
- * included, since that is the balance the page showed; the opening anchor
+ * The bank's last figure becomes a reconciliation on its day, booked lines
+ * only, since that is the balance the page showed; the opening anchor
  * takes the stored balance of the opening date; the `current_anchor` goes.
  * An account without a bank balance, already computed forward, only loses
  * its link.
@@ -664,17 +711,11 @@ export async function unlinkBankAccount(
 				.where(
 					and(eq(balances.accountId, accountId), between(balances.date, account.openingDate, last)),
 				);
-			const movements = await tx
-				.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
-				.from(entries)
-				.where(
-					and(
-						eq(entries.accountId, accountId),
-						eq(entries.kind, "transaction"),
-						between(entries.date, account.openingDate, last),
-					),
-				)
-				.groupBy(entries.date);
+			const movements = await bookedMovements(
+				tx,
+				accountId,
+				between(entries.date, account.openingDate, last),
+			);
 			const reconciled = await tx
 				.select({ date: entries.date })
 				.from(entries)
@@ -1446,8 +1487,10 @@ async function writeStatementBalance(
 
 /**
  * Step 7 for a sync, planned: the bank's balance becomes the account's
- * `current_anchor` (AD-8), dated the day it describes and never after today.
- * Skipped in another currency: FR56 wants the bank's own figure, unconverted.
+ * `current_anchor` (AD-8), dated the day it describes and never after today;
+ * the one it supersedes stays as a reconciliation (`rotateCurrentAnchor`).
+ * Skipped in another currency: FR56 wants the bank's own figure, unconverted,
+ * and then nothing changes.
  */
 function planCurrentAnchor(
 	account: { type: AccountType; currency: string },
@@ -1473,8 +1516,8 @@ function planCurrentAnchor(
  * Confirming an import refuses with `IMPORT_PREVIEW_STALE` when the groups
  * differ from its preview, and marks
  * it confirmed with its counts in the same transaction. A sync's statement
- * balance rewrites the account's `current_anchor` instead of adding a
- * reconciliation.
+ * balance becomes the account's `current_anchor`, the anchor it supersedes
+ * a reconciliation on its own day.
  */
 export async function ingest(
 	deps: ServiceDeps,
@@ -1785,12 +1828,19 @@ export async function ingest(
 				now,
 			);
 
-			// 7. The statement balance (AD-8).
+			// 7. The statement balance (AD-8). A sync's earlier bank figure stays
+			// as a reconciliation, so one missing line cannot shift the whole past.
 			const snapshotDate =
 				balancePlan === null ? null : await writeStatementBalance(tx, account, balancePlan, now);
 			const anchorWritten =
 				anchorPlan?.status === "recorded"
-					? await writeCurrentAnchor(tx, account, anchorPlan, now)
+					? await rotateCurrentAnchor(
+							tx,
+							account,
+							anchorPlan,
+							opening?.date ?? account.openingDate,
+							now,
+						)
 					: null;
 
 			// 8. Recompute balances from the earliest date this write touched.
@@ -4587,17 +4637,11 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 				inArray(balances.date, [...dates.map((date) => addDays(date, -1)), ...nextDays]),
 			),
 		);
-	const movementRows = await db
-		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
-		.from(entries)
-		.where(
-			and(
-				eq(entries.accountId, accountId),
-				eq(entries.kind, "transaction"),
-				inArray(entries.date, [...dates, ...nextDays]),
-			),
-		)
-		.groupBy(entries.date);
+	const movementRows = await bookedMovements(
+		db,
+		accountId,
+		inArray(entries.date, [...dates, ...nextDays]),
+	);
 	const stored = new Map(balanceRows.map((row) => [row.date, row.balance]));
 	const movements = new Map(movementRows.map((row) => [row.date, row.amount]));
 
