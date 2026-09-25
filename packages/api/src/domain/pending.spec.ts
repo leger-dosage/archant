@@ -59,9 +59,14 @@ const candidate = (
 	referenced = false,
 ): GroupCandidate => ({ id, occurrence, createdAt, referenced });
 
+/** `l1` is a line, `r1` one with a reference, `l1=e1` one whose fingerprint `e1` holds. */
 const assigned = (lines: string[], candidates: GroupCandidate[]) =>
 	assignIdentical(
-		lines.map((name) => ({ name, referenced: name.startsWith("r") })),
+		lines.map((spec) => {
+			const [name = "", holder = null] = spec.split("=");
+
+			return { name, referenced: name.startsWith("r"), holder };
+		}),
 		candidates,
 	).map(({ line, entryId }) => [line.name, entryId]);
 
@@ -101,6 +106,26 @@ describe("assignIdentical", () => {
 			["r2", "e1"],
 		]);
 		expect(assigned(["r1"], [candidate("e1", 0, 0, true)])).toEqual([["r1", null]]);
+	});
+
+	it("gives a line the candidate holding its fingerprint when the group did not shrink", () => {
+		expect(assigned(["l1=e1", "l2"], [candidate("e1", 0)])).toEqual([
+			["l1", "e1"],
+			["l2", null],
+		]);
+		expect(assigned(["l1", "l2=e2"], [candidate("e2", 1)])).toEqual([
+			["l1", null],
+			["l2", "e2"],
+		]);
+		expect(assigned(["l1=e1", "l2=e1"], [candidate("e1", 0), candidate("e2", 1)])).toEqual([
+			["l1", "e1"],
+			["l2", "e2"],
+		]);
+		expect(assigned(["r1=e1"], [candidate("e1", 0, 0, true)])).toEqual([["r1", null]]);
+	});
+
+	it("ignores the fingerprint's holder once the group shrank, since its index shifted", () => {
+		expect(assigned(["l1=e1"], [candidate("e1", 0), candidate("e2", 1)])).toEqual([["l1", "e2"]]);
 	});
 
 	it("leaves every line over without a candidate, and needs no line", () => {

@@ -7544,7 +7544,7 @@ describe("identical pending lines", () => {
 		]);
 	});
 
-	it("recognises an entry holding two fingerprints of its group once", async () => {
+	it("keeps one fingerprint per group once an index shifted, so a twin bought since goes in", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [first = "", second = ""] = await createdBySync(account.id, bank.connectionId, [
@@ -7552,15 +7552,15 @@ describe("identical pending lines", () => {
 			twin(amount),
 		]);
 		await deleteTransaction(deps(), first, { origin: "user" });
-		// The second entry takes the first one's fingerprint beside its own.
+		// The second entry's line now carries the first one's index.
 		await sync(account.id, bank.connectionId, [twin(amount)]);
-		await expect(keysOf(second)).resolves.toHaveLength(2);
+		await expect(keysOf(second)).resolves.toHaveLength(1);
 
-		const synced = await sync(account.id, bank.connectionId, [twin(amount)]);
+		const synced = await sync(account.id, bank.connectionId, [twin(amount), twin(amount)]);
 
-		expect(synced.created).toEqual([]);
+		expect(synced.created).toHaveLength(1);
 		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
-		await expect(transactionCount(account.id)).resolves.toBe(1);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
 	it("still recognises the third of three twins once the first two are deleted", async () => {
@@ -7612,6 +7612,19 @@ describe("identical pending lines", () => {
 		expect(synced.created).toEqual([]);
 		expect(synced.groups.present).toEqual([expect.objectContaining({ ref: "0", entryId: id })]);
 		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("creates a twin bought since, and recognises both lines next time", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		await createdBySync(account.id, bank.connectionId, [twin(amount)]);
+
+		const synced = await sync(account.id, bank.connectionId, [twin(amount), twin(amount)]);
+		const again = await sync(account.id, bank.connectionId, [twin(amount), twin(amount)]);
+
+		expect(synced.created).toHaveLength(1);
+		expect(again.created).toHaveLength(0);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
 	it("creates a pending line beside a pending entry of another group", async () => {

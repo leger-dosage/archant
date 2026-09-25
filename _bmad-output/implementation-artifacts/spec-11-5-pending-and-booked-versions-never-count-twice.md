@@ -81,6 +81,7 @@ context:
 
 - A pending line left over by its group whose fingerprint names a booked entry, or a pending one another line of the statement refreshed, is present on it, unless the line carries a reference and the entry is pending: then it is created, and its fingerprint stays with the entry already holding it (`sharing` in `services/ledger.ts`).
 - Review fixes: the occurrence search is capped at `MAX_IDENTICAL_LINES` (100) instead of a bound drawn from the account's key count, which fell short once earlier twins were deleted; a line with a reference never takes a group candidate holding one, so a new purchase no longer takes over the entry of an absent one.
+- Post-review fix: a group of identical pending lines as long as its candidates, or longer, first gives each line the entry holding its own fingerprint (`holder` in `assignIdentical`), and an entry recognised by its group takes no fingerprint of that group (`grouped` in `services/ledger.ts`). Aligning on the last candidates alone took a twin bought later for the existing entry, so it was never created.
 - The settled-pending rule is `withoutSettledPending` in the connector; its `transaction_id` and `entry_reference` identities share one namespace, as Sure's `compute_external_id` does.
 
 ## Spec Change Log
@@ -107,6 +108,7 @@ context:
 | A booked line refused by `toTransaction` still settles its pending copy (edge) | low | Needs a bank sending a booked line with an unreadable amount; Sure behaves the same. | rejected |
 | A booked line with the twins' triple, listed after a pending twin, books the other twin (edge, claim) | low | Ids swap between two indistinguishable lines; counts and balances stay right, nothing is deleted. | rejected |
 | A new pending purchase with an unknown reference whose fingerprint names a booked entry is taken as present (implementation report) | medium | Pre-existing: pending lines were looked up fingerprint first before this story. | defer |
+| A twin bought later the same day is taken for the existing entry and never created (owner-requested read of `groupLines`) | high | One pending entry, then two identical lines: the new one took it, the old one's fingerprint named it, so it was present. The pre-story code created it. | patch |
 | Verification gap layer | false | No gap found. | rejected |
 
 ## Design Notes

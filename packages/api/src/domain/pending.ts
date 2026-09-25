@@ -81,14 +81,17 @@ export type GroupCandidate = {
 /**
  * Recognises the pending lines of one group, identical by date, amount and
  * normalised label, among the pending entries holding a fingerprint of that
- * group (AD-17). Identical lines cannot be told apart, only counted, and a
- * line's occurrence index shifts once an earlier twin is booked: the bank
- * books the oldest first, so the lines, in statement order, take the last
- * candidates, ordered by occurrence, then age, then id. A line with a
- * reference never takes a candidate with one. Returns every line with its
- * entry, `null` for a line left over, in the order given.
+ * group (AD-17). A group as long as the candidates, or longer, lost no line:
+ * its fingerprints did not shift, so each line first takes the candidate
+ * holding its own (`holder`), and a line bought since is left over. A shorter
+ * group lost a line, and an index shifts once an earlier twin is booked:
+ * identical lines cannot be told apart, only counted, and the bank books the
+ * oldest first, so the lines, in statement order, take the last candidates,
+ * ordered by occurrence, then age, then id. A line with a reference never
+ * takes a candidate with one. Returns every line with its entry, `null` for a
+ * line left over, in the order given.
  */
-export function assignIdentical<Line extends { referenced: boolean }>(
+export function assignIdentical<Line extends { referenced: boolean; holder: string | null }>(
 	lines: readonly Line[],
 	candidates: readonly GroupCandidate[],
 ): { line: Line; entryId: string | null }[] {
@@ -96,21 +99,33 @@ export function assignIdentical<Line extends { referenced: boolean }>(
 		(a, b) => a.occurrence - b.occurrence || a.createdAt - b.createdAt || a.id.localeCompare(b.id),
 	);
 	const used = new Set<string>();
+	const taken = new Map<number, string>();
+	const free = (line: Line, candidate: GroupCandidate) =>
+		!used.has(candidate.id) && !(line.referenced && candidate.referenced);
+	const take = (index: number, candidate: GroupCandidate | undefined) => {
+		if (candidate !== undefined) {
+			used.add(candidate.id);
+			taken.set(index, candidate.id);
+		}
+	};
 
-	return lines
-		.toReversed()
-		.map((line) => {
-			const taken = ordered.findLast(
-				(candidate) => !used.has(candidate.id) && !(line.referenced && candidate.referenced),
+	if (lines.length >= ordered.length) {
+		for (const [index, line] of lines.entries()) {
+			take(
+				index,
+				ordered.find((candidate) => candidate.id === line.holder && free(line, candidate)),
 			);
+		}
+	}
 
-			if (taken === undefined) {
-				return { line, entryId: null };
-			}
+	for (const [index, line] of [...lines.entries()].toReversed()) {
+		if (!taken.has(index)) {
+			take(
+				index,
+				ordered.findLast((candidate) => free(line, candidate)),
+			);
+		}
+	}
 
-			used.add(taken.id);
-
-			return { line, entryId: taken.id };
-		})
-		.toReversed();
+	return lines.map((line, index) => ({ line, entryId: taken.get(index) ?? null }));
 }

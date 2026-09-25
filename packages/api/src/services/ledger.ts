@@ -1000,7 +1000,9 @@ type Paired = Keyed & { entryId: string };
  * `absorbed` holds step 3's lines (AD-17): a booked line taking over a pending
  * entry, or a pending line refreshing one. Only a sync has them. `named`
  * holds the entries a refused line's key names; `sharing`, the refs of
- * created lines whose fingerprint another entry already holds.
+ * created lines whose fingerprint another entry already holds; `grouped`,
+ * the refs of absorbed lines recognised within their group of identical
+ * lines, whose fingerprint the entry does not take.
  */
 type Groups = {
 	created: Keyed[];
@@ -1010,6 +1012,7 @@ type Groups = {
 	absorbed: Paired[];
 	named: string[];
 	sharing: Set<string>;
+	grouped: Set<string>;
 };
 
 function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): PreviewLine {
@@ -1033,6 +1036,9 @@ type KeyTarget = {
 	connectionId: string | null;
 };
 
+/** A line's keys as written: `null` for one its entry must not take. */
+type WrittenKeys = { fingerprint: string | null; external: string | null };
+
 /**
  * Writes the keys of a statement's lines onto their entries (AD-7). Two
  * lines of one statement may share an external id: the second keeps its
@@ -1043,7 +1049,7 @@ async function attachKeys(
 	tx: Transaction,
 	accountId: string,
 	target: KeyTarget,
-	lines: readonly { entryId: string; keys: LineKeys }[],
+	lines: readonly { entryId: string; keys: WrittenKeys }[],
 	options: { keepExisting?: boolean } = {},
 ): Promise<void> {
 	const claimed = new Set<string>();
@@ -1105,6 +1111,7 @@ async function groupLines(
 		duplicates: [],
 		absorbed: [],
 		sharing: new Set(),
+		grouped: new Set(),
 		named: refusedKeys.flatMap((key) => {
 			const entry = known.get(key);
 
@@ -1175,7 +1182,11 @@ async function groupLines(
 		const candidates = [...lowest.values()].filter(({ id }) => !claimed.has(id));
 
 		const assigned = assignIdentical(
-			lines.map((item) => ({ item, referenced: item.keys.external !== null })),
+			lines.map((item) => ({
+				item,
+				referenced: item.keys.external !== null,
+				holder: held.get(item.keys.fingerprint)?.id ?? null,
+			})),
 			candidates,
 		);
 
@@ -1187,6 +1198,7 @@ async function groupLines(
 
 			if (entryId !== null) {
 				groups.absorbed.push({ ...item, entryId });
+				groups.grouped.add(item.ref);
 				claimed.add(entryId);
 			} else if (named === undefined) {
 				groups.created.push(item);
@@ -1451,6 +1463,7 @@ export async function ingest(
 							absorbed: [],
 							named: [],
 							sharing: new Set(),
+							grouped: new Set(),
 						}
 					: await groupLines(tx, accountId, keyTarget, accepted, refusedKeys);
 			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
@@ -1540,9 +1553,14 @@ export async function ingest(
 			const absorbedFrom: IsoDate[] = [];
 
 			if (keyTarget !== null) {
-				await oneByOne(grouped.absorbed, async ({ entryId, line, keys }) => {
+				await oneByOne(grouped.absorbed, async ({ ref, entryId, line, keys }) => {
+					// An entry keeps one fingerprint per group: a second one, from a
+					// shifted index, would later name it for a twin bought since, which
+					// would then never go in.
+					const taken = grouped.grouped.has(ref) ? { ...keys, fingerprint: null } : keys;
+
 					absorbedFrom.push(
-						await absorb(tx, entryId, { line, keys }, keyTarget, options.origin, now),
+						await absorb(tx, entryId, { line, keys: taken }, keyTarget, options.origin, now),
 					);
 				});
 			}
@@ -2247,7 +2265,7 @@ export async function updateTransaction(
 async function absorb(
 	tx: Transaction,
 	survivorId: string,
-	line: { line: NormalizedTransaction; keys: LineKeys },
+	line: { line: NormalizedTransaction; keys: WrittenKeys },
 	keyTarget: KeyTarget,
 	origin: Origin,
 	now: number,
