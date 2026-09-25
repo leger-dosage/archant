@@ -156,7 +156,7 @@ NFR14: Dependencies stay few and popular; each new one is justified in its pull 
 
 Source: `ux-designs/ux-archant-2026-09-21/DESIGN.md` and `EXPERIENCE.md`. Both bind every interface story; they win over any wording here.
 
-UX-DR1: The shadcn/ui neutral base with the brand layer of `DESIGN.md` (colours for light and dark mode, Geist and Geist Mono, radii 4/6/8), dark mode following the system with a manual override. Story 1.1.
+UX-DR1: The shadcn/ui neutral base with the brand layer of `DESIGN.md` (colours for light and dark mode, Geist and Geist Mono, radii 6/8/10/12, Sure's grey page with white cards and ring shadow, tinted icons, category pills, the arch logo), dark mode following the system with a manual override. Story 1.1; revised by Epic 12, Stories 12.1 to 12.4.
 UX-DR2: One `Money` component renders every amount: `fr-FR`, tabular figures, income green with a plus, expenses in the foreground colour with a true minus, muted for pending and excluded with a badge or icon. Story 1.1.
 UX-DR3: Sidebar with navigation entries and the accounts grouped under Actifs and Passifs with totals and balances, collapsing below 1024 px and becoming a sheet below 768 px. Stories 1.1, 1.6.
 UX-DR4: Transaction sheet with save on `⌘Enter`, `Esc` to close, a prompt only when changes are unsaved, and the transaction's source shown. Story 1.2.
@@ -286,9 +286,9 @@ Accounts update themselves every day from the bank, and converge with the histor
 Every figure Archant shows can be trusted with real bank data, and a first-time user gets from `git clone` to a connected bank without reading code: the bugs found after Epic 10 and the findings of the owner's manual QA are fixed before a real bank is connected.
 **FRs covered:** none new; hardens FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56; eases FR3, FR29, FR30, FR36, FR48
 
-### Epic 12: A visual identity of its own
+### Epic 12: A warmer interface, close to Sure
 
-Archant looks like itself rather than like a monochrome Sure: colour, icons, charts worth looking at, a logo and a favicon.
+Archant stops looking austere: Sure's grey page and white cards, colour through tinted icons and category pills, a donut and a trend-coloured net worth chart, a balance sheet by account type, a logo and a favicon, as `DESIGN.md` now specifies.
 **FRs covered:** none new; revises UX-DR1
 
 ## Epic 1: Track accounts and transactions by hand
@@ -1890,6 +1890,128 @@ So that connecting a bank never requires editing a file on the server.
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
-## Epic 12: A visual identity of its own
+## Epic 12: A warmer interface, close to Sure
 
-Archant looks like itself rather than like a monochrome Sure. The owner's manual QA of 2026-09-25 found the interface austere next to Sure: little colour, few icons, plain charts, no favicon. `DESIGN.md` is revised first with the BMAD UX step, which settles the palette, the icon set, the chart style, the logo and the favicon; the stories are written from the revised `DESIGN.md`, one per group of screens, and none is planned before it.
+The owner's manual QA of 2026-09-25 found the interface austere next to Sure: little colour, few icons, plain charts, no favicon. The BMAD UX step then compared three directions and two Evidence-inspired variants in HTML mocks; the owner chose the one closest to Sure and approved its logo and favicon. `DESIGN.md` and `EXPERIENCE.md` in `_bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/` now specify it, with [mockups/key-direction-a.html](ux-designs/ux-archant-2026-09-21/mockups/key-direction-a.html) as the visual reference; the spines win on conflict with the mock.
+
+No story adds a feature or an endpoint: every figure the new screens show is already served by the API. Epic 12 starts after Epic 11, whose Story 11.10 renames the interface package and Story 11.13 removes the shortcut hints these screens would otherwise carry. Story 12.1 comes first; the three others can follow in any order.
+
+### Story 12.1: The brand foundation
+
+As the household's administrator,
+I want Archant to look like one product from the sidebar to the browser tab,
+So that every later screen builds on the same surfaces, icons and logo.
+
+**Requirements:** UX-DR1, UX-DR3, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the theme in the interface's stylesheet
+**When** this story ships
+**Then** it carries the tokens of `DESIGN.md` for light and dark mode: the grey page, white cards, the tray, the ring shadow, radii 6, 8, 10 and 12, the account type colours and the trend colours
+
+**Given** one component for tinted icons and one for category pills
+**When** they render a category, an account type, a transfer, an uncategorised row or a merchant without a category
+**Then** they follow `DESIGN.md`: the colour at 10% behind a lucide icon in the full colour, or the merchant's first letter, and a pill whose text is the colour darkened until it reaches 4.5:1 on its tint, for any colour the household picks
+
+**Given** the sidebar
+**When** it renders
+**Then** it shows the arch logo beside « Archant », a lucide icon before each entry, the active entry as a white raised tile, and each account with its tinted type icon, subtype and balance
+
+**Given** the browser tab and a home-screen bookmark
+**When** Archant is open
+**Then** the tab shows the arch favicon as an SVG with a 32 px PNG fallback, in the logo colour of the current mode
+
+**Given** the settings navigation
+**When** it renders
+**Then** each entry has its lucide icon, as Sure's settings navigation
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest, including the contrast of the pill text helper
+
+### Story 12.2: The dashboard
+
+As the household's administrator,
+I want the dashboard to greet me and show my money at a glance,
+So that one look tells me where the household stands this month.
+
+**Requirements:** FR34, FR35, UX-DR5
+
+**Acceptance Criteria:**
+
+**Given** the dashboard with at least one account
+**When** it loads
+**Then** it opens with « Bonjour » and the user's first name, one muted sentence and the two actions, as in the reference mock
+
+**Given** the net worth card
+**When** it renders a period
+**Then** it shows the value, the change with a trend arrow, the assets and liabilities totals, and an area chart whose 2 px line and 6 % to 0 % gradient take the trend colour of that period, with no grid and only the first and last dates, keeping the text summary and « Voir le tableau »
+
+**Given** the month's flow card
+**When** it renders a month
+**Then** it shows income, expenses and « Épargne du mois », an outflows donut in the category colours with the total in its centre, and a tray listing each category with its tinted icon, amount and share
+
+**Given** the balance sheet card
+**When** it renders
+**Then** Actifs and Passifs each show their total, a 6 px weight bar split by account type in the type colours with a dot legend and percentages, and a tray of their accounts
+
+**Given** a fresh instance with no account
+**When** the dashboard loads
+**Then** it shows the empty state card of `DESIGN.md` with « Ajouter un compte »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 12.3: Transactions and accounts
+
+As the household's administrator,
+I want the transactions and accounts pages to carry the same colour and icons as the dashboard,
+So that I recognise a category or an account without reading its name.
+
+**Requirements:** FR5, UX-DR6
+
+**Acceptance Criteria:**
+
+**Given** the transactions list, on its page or an account's page
+**When** it renders
+**Then** each day group is a tray with the day's subtotal, and each row shows the category's tinted icon or the merchant's letter, the label with its caption, the category pill, the account and the amount
+
+**Given** a pending, recurring, internal transfer or possible duplicate row
+**When** it renders
+**Then** it carries the matching badge of `DESIGN.md`, each with an icon
+
+**Given** the accounts page and an account's page
+**When** they render
+**Then** accounts are grouped in trays under Actifs and Passifs with their tinted type icon, and the account's page opens with its type icon, name and balance in `amount-hero` inside cards
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 12.4: The remaining screens
+
+As the household's administrator,
+I want every other screen to match,
+So that no page looks left over from before.
+
+**Requirements:** UX-DR1, UX-DR8, UX-DR10, UX-DR11
+
+**Acceptance Criteria:**
+
+**Given** the recurring page, the rules page, the settings pages (banks, categories, merchants, tags, security), the import dialog, the sign-in page and the first-launch setup page
+**When** they render
+**Then** they use the cards, trays, tinted icons, pills, badges and empty states of `DESIGN.md`, and the sign-in and setup pages show the arch logo
+
+**Given** any empty list in those screens
+**When** it renders
+**Then** it shows the empty state card of `DESIGN.md` with one action
+
+**Given** light and dark mode
+**When** each screen of Epic 12 renders
+**Then** every text pair meets WCAG 2.2 AA, checked by a Vitest test over the theme's token pairs
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
