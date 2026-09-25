@@ -4,7 +4,13 @@ import { randomUUID } from "node:crypto";
 
 import { createDb } from "@archant/data/client";
 
-import { FAILING_BANK, FAKE_ACCOUNTS, FAKE_BANKS, FAKE_LINES } from "./fake-enable-banking.ts";
+import {
+	BALANCELESS_BANK,
+	FAILING_BANK,
+	FAKE_ACCOUNTS,
+	FAKE_BANKS,
+	FAKE_LINES,
+} from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 import { DATABASE_FILE, TIME_ZONE, WEB_URL } from "./settings.ts";
 
@@ -373,6 +379,45 @@ test("an account the bank fails to list shows the error, and the other one still
 	await page.goto(`/accounts/${cardId}`);
 	await expect(page.getByRole("main")).toContainText("300,00 €");
 	await expect(transactionRow(page, FAKE_LINES.salary.label)).toHaveCount(0);
+});
+
+test("a bank that gives no balance on sync still brings its lines, and says the balance is the previous one", async ({
+	page,
+}) => {
+	const connectionId = await connect(page, BALANCELESS_BANK);
+
+	// The balance answers when the account is linked, then 500 on the sync.
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	const notice = page.getByRole("status").filter({
+		hasText:
+			"Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente.",
+	});
+	await expect(notice).toBeVisible();
+	await expect(notice).not.toHaveClass(/text-destructive/u);
+	await expect(page.getByText("La dernière synchronisation a échoué")).toBeHidden();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	await page.goto(`/accounts/${accountId}`);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toBeVisible();
+	await expect(transactionRow(page, FAKE_LINES.subscription.label)).toBeVisible();
+	// The 1 234,56 € given when linked, less the pending 3,20 € it leaves out.
+	await expect(page.getByRole("main")).toContainText("1 231,36 €");
+
+	// Two hours later, the button's own sync warns rather than fails.
+	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
+	await page.goto(`/settings/banks/${connectionId}`);
+	await page.getByRole("button", { name: "Synchroniser" }).click();
+	await expect(
+		toast(
+			page,
+			"Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente.",
+		),
+	).toBeVisible();
+	await expect(toast(page, "Synchronisation terminée avec une erreur.")).toHaveCount(0);
 });
 
 // Story 10.5. A banner shows on every page, so each test below puts its

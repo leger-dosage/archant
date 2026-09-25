@@ -25,8 +25,19 @@ import { TIME_ZONE } from "./settings.ts";
  */
 export const FAILING_BANK = "Néobanque Test";
 
+/**
+ * The bank that gives each account's balance once, when it is linked, then
+ * answers 500: its syncs bring the lines in and keep the linked balance.
+ */
+export const BALANCELESS_BANK = "Banque Sans Solde";
+
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
-export const FAKE_BANKS = ["Banque Démo", "Caisse Régionale Exemple", "Néobanque Test"] as const;
+export const FAKE_BANKS = [
+	"Banque Démo",
+	"Caisse Régionale Exemple",
+	"Néobanque Test",
+	BALANCELESS_BANK,
+] as const;
 
 /**
  * The accounts every session shares: a current account and a card. Each
@@ -191,6 +202,9 @@ export async function startFakeEnableBanking(options: {
 	const balances = new Map<string, string>();
 	// The uids whose transactions answer 500.
 	const failing = new Set<string>();
+	// The uids whose balance answers once, then 500; those already read.
+	const balanceless = new Set<string>();
+	const balanceRead = new Set<string>();
 	// Every session opened and not revoked yet.
 	const sessions = new Set<string>();
 	let origin = "";
@@ -290,6 +304,11 @@ export async function startFakeEnableBanking(options: {
 					failing.add(cardUid);
 				}
 
+				if (attempt.bank === BALANCELESS_BANK) {
+					balanceless.add(checkingUid);
+					balanceless.add(cardUid);
+				}
+
 				const sessionId = randomUUID();
 				sessions.add(sessionId);
 
@@ -334,12 +353,20 @@ export async function startFakeEnableBanking(options: {
 			const balancePath = /^\/accounts\/([^/]+)\/balances$/u.exec(url.pathname);
 
 			if (request.method === "GET" && balancePath !== null) {
-				const amount = balances.get(decodeURIComponent(balancePath[1] ?? ""));
+				const uid = decodeURIComponent(balancePath[1] ?? "");
+				const amount = balances.get(uid);
 
 				if (amount === undefined) {
 					json(response, 404, { code: 404, message: "Unknown account", error: "NOT_FOUND" });
 					return;
 				}
+
+				if (balanceless.has(uid) && balanceRead.has(uid)) {
+					json(response, 500, { code: 500, message: "Bank down", error: "ASPSP_ERROR" });
+					return;
+				}
+
+				balanceRead.add(uid);
 
 				json(response, 200, {
 					balances: [

@@ -201,7 +201,7 @@ describe("startConnection", () => {
 
 		const auth = requests.find((request) => request.path === "/auth");
 		expect(auth?.body).toMatchObject({
-			access: { valid_until: new Date(NOW + 90 * DAY).toISOString() },
+			access: { valid_until: new Date(NOW + 90 * DAY - MINUTE).toISOString() },
 			aspsp: { name: "Banque Test", country: "FR" },
 			redirect_url: "http://localhost:5173/settings/banks/callback",
 		});
@@ -225,7 +225,7 @@ describe("startConnection", () => {
 		await startConnection(deps(), { country: "FR", institution: "Crédit Exemple" });
 
 		expect(requests.find((request) => request.path === "/auth")?.body).toMatchObject({
-			access: { valid_until: new Date(NOW + 30 * DAY).toISOString() },
+			access: { valid_until: new Date(NOW + 30 * DAY - MINUTE).toISOString() },
 		});
 	});
 
@@ -1304,7 +1304,7 @@ async function synced() {
 			balance: null,
 			rejected: [],
 		},
-		{ connectionId: linked.connection.id },
+		{ connectionId: linked.connection.id, missesFrom: "2026-06-26" },
 		{ origin: "sync" },
 	);
 

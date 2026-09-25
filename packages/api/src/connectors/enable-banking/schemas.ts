@@ -112,6 +112,8 @@ const text = z
  */
 export const transactionSchema = z.object({
 	entry_reference: text,
+	// Never a key (AD-18), only part of what tells two copies of a line apart.
+	transaction_id: text,
 	transaction_amount: z.object({ amount: z.string(), currency: z.string() }).nullable().catch(null),
 	credit_debit_indicator: z.enum(["CRDT", "DBIT"]).nullable().catch(null),
 	status: z.string().nullable().catch(null),

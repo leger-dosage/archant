@@ -1,3 +1,5 @@
+import type * as jwt from "./jwt.ts";
+
 import { jwtVerify } from "jose";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,14 +20,33 @@ import {
 	FIXTURE_SESSION_ID,
 	fixtures,
 	mockProvider,
+	transactionsPage,
 } from "../../testing/enable-banking.ts";
 import { BankProviderError } from "../bank-connector.ts";
 import { createBankConnector } from "../registry.ts";
-import { MAX_PAGES, consentValidUntil, toBankAccount, toTransaction } from "./client.ts";
+import {
+	MAX_PAGES,
+	consentValidUntil,
+	fallbackStarts,
+	toBankAccount,
+	toTransaction,
+	withoutRepeats,
+} from "./client.ts";
+import { signJwt } from "./jwt.ts";
 import { sessionAccountSchema } from "./schemas.ts";
 
+// A spy that signs for real, so one test can make a single signature fail.
+vi.mock("./jwt.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof jwt>();
+
+	return { ...actual, signJwt: vi.fn(actual.signJwt) };
+});
+
 const NOW = Date.parse("2026-09-24T10:00:00Z");
+const TODAY = "2026-09-24";
 const DAY = 86_400_000;
+/** The minute a consent is asked short of its maximum. */
+const MARGIN = 60_000;
 
 // A trailing slash on the URL must not double the one of each path.
 const connector = createBankConnector("enable-banking", {
@@ -71,16 +92,16 @@ async function rejection(promise: Promise<unknown>): Promise<BankProviderError> 
 }
 
 describe("consentValidUntil", () => {
-	it("caps the bank's maximum at 90 days", () => {
-		expect(consentValidUntil(NOW, 180 * 86_400).getTime()).toBe(NOW + 90 * DAY);
+	it("caps the bank's maximum at 90 days, less a minute", () => {
+		expect(consentValidUntil(NOW, 180 * 86_400).getTime()).toBe(NOW + 90 * DAY - MARGIN);
 	});
 
-	it("keeps a shorter maximum", () => {
-		expect(consentValidUntil(NOW, 30 * 86_400).getTime()).toBe(NOW + 30 * DAY);
+	it("keeps a shorter maximum, less a minute", () => {
+		expect(consentValidUntil(NOW, 30 * 86_400).getTime()).toBe(NOW + 30 * DAY - MARGIN);
 	});
 
-	it("asks for 90 days when the bank says nothing", () => {
-		expect(consentValidUntil(NOW, null).getTime()).toBe(NOW + 90 * DAY);
+	it("asks for 90 days less a minute when the bank says nothing", () => {
+		expect(consentValidUntil(NOW, null).getTime()).toBe(NOW + 90 * DAY - MARGIN);
 	});
 });
 
@@ -146,7 +167,7 @@ describe("startAuthorization", () => {
 				method: "POST",
 				path: "/auth",
 				body: {
-					access: { valid_until: new Date(NOW + 90 * DAY).toISOString() },
+					access: { valid_until: new Date(NOW + 90 * DAY - MARGIN).toISOString() },
 					aspsp: { name: "Banque Test", country: "FR" },
 					state: request.state,
 					redirect_url: request.redirectUrl,
@@ -166,7 +187,7 @@ describe("startAuthorization", () => {
 		});
 
 		expect(requests[0]?.body).toMatchObject({
-			access: { valid_until: new Date(NOW + 30 * DAY).toISOString() },
+			access: { valid_until: new Date(NOW + 30 * DAY - MARGIN).toISOString() },
 		});
 	});
 
@@ -590,10 +611,10 @@ const pages = (...items: Record<string, unknown>[]) =>
 	});
 
 describe("fetchStatement", () => {
-	it("reads every page from the window start, then the balance", async () => {
+	it("reads every page from the window start, and never the balance", async () => {
 		const requests = mockProvider();
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
 
 		expect(
 			statement.transactions.map(({ label, amount, date, externalId, pending }) => ({
@@ -642,21 +663,24 @@ describe("fetchStatement", () => {
 			},
 		]);
 		expect(statement.rejected).toEqual([]);
-		expect(statement.balance).toEqual({ amount: 123456, currency: "EUR", date: null });
+		expect(statement).toMatchObject({ from: SINCE, interrupted: null });
+		expect(statement).not.toHaveProperty("balance");
 		expect(requests.map(({ path, search }) => `${path}${search}`)).toEqual([
 			`/accounts/${FIXTURE_CHECKING_UID}/transactions?date_from=2026-06-26`,
 			`/accounts/${FIXTURE_CHECKING_UID}/transactions?date_from=2026-06-26&continuation_key=page-2`,
-			`/accounts/${FIXTURE_CHECKING_UID}/balances`,
 		]);
 	});
 
 	it("refuses an unreadable line by its position across pages, and keeps the others", async () => {
 		pages(
 			{ transactions: [line(), line({ booking_date: "soon" })], continuation_key: "1" },
-			{ transactions: [line({ status: "INFO" }), 42, line()], continuation_key: null },
+			{
+				transactions: [line({ status: "INFO" }), 42, line({ transaction_id: "tx-2" })],
+				continuation_key: null,
+			},
 		);
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
 
 		expect(statement.transactions).toHaveLength(2);
 		expect(statement.rejected).toEqual([
@@ -668,10 +692,10 @@ describe("fetchStatement", () => {
 	it("stops on a key it has already followed", async () => {
 		const requests = pages(
 			{ transactions: [line()], continuation_key: "1" },
-			{ transactions: [line()], continuation_key: "1" },
+			{ transactions: [line({ transaction_id: "tx-2" })], continuation_key: "1" },
 		);
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
 
 		expect(statement.transactions).toHaveLength(2);
 		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(2);
@@ -681,12 +705,12 @@ describe("fetchStatement", () => {
 		const requests = mockProvider({
 			transactions: (url) =>
 				HttpResponse.json({
-					transactions: [line()],
+					transactions: [line({ transaction_id: url.searchParams.get("continuation_key") })],
 					continuation_key: String(Number(url.searchParams.get("continuation_key") ?? 0) + 1),
 				}),
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
 
 		expect(statement.transactions).toHaveLength(MAX_PAGES);
 		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(MAX_PAGES);
@@ -694,25 +718,227 @@ describe("fetchStatement", () => {
 
 	it("takes a page with an odd key as the last one, and refuses one without lines", async () => {
 		pages({ transactions: [line()], continuation_key: 7 });
-		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE)).resolves.toMatchObject({
+		await expect(
+			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY),
+		).resolves.toMatchObject({
 			transactions: [expect.objectContaining({ externalId: "ref-1" })],
 		});
 
 		pages({ continuation_key: null });
-		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE)).rejects.toMatchObject({
+		await expect(
+			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY),
+		).rejects.toMatchObject({
 			code: "BANK_PROVIDER_ERROR",
 		});
 	});
 
-	it("passes a provider failure on, before reading the balance", async () => {
+	it("throws a provider failure on the first page, asking for no other period", async () => {
 		const requests = mockProvider({
 			transactions: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
 
 		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
-		expect(requests.some(({ path }) => path.endsWith("/balances"))).toBe(false);
+		expect(requests).toHaveLength(1);
+	});
+
+	it("keeps the pages read before a failure, and names the failure", async () => {
+		const requests = mockProvider({
+			transactions: (url) =>
+				url.searchParams.get("continuation_key") === "page-2"
+					? HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 })
+					: transactionsPage(url),
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual([
+			"20260920-0001",
+			"20260915-0002",
+			"20260923-0003",
+			null,
+		]);
+		expect(statement.from).toBe(SINCE);
+		expect(statement.interrupted).toBeInstanceOf(BankProviderError);
+		expect(statement.interrupted?.failure).toEqual({ status: 500, providerCode: "ASPSP_ERROR" });
+		expect(requests).toHaveLength(2);
+	});
+
+	it("throws what is not a provider failure, even after the first page", async () => {
+		mockProvider();
+		vi.mocked(signJwt)
+			.mockImplementationOnce(async (...args) => {
+				const actual = await vi.importActual<typeof jwt>("./jwt.ts");
+
+				return actual.signJwt(...args);
+			})
+			.mockRejectedValueOnce(new Error("key unreadable"));
+
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY)).rejects.toThrow(
+			"key unreadable",
+		);
+	});
+
+	it("throws what is not a provider failure on the first page, asking for no other period", async () => {
+		const requests = mockProvider();
+		vi.mocked(signJwt).mockRejectedValueOnce(new Error("key unreadable"));
+
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY)).rejects.toThrow(
+			"key unreadable",
+		);
+		expect(requests).toEqual([]);
+	});
+});
+
+const refused = () =>
+	HttpResponse.json(
+		{ error: "WRONG_TRANSACTIONS_PERIOD", message: "The period is too long" },
+		{ status: 400 },
+	);
+
+/** Refuses every `date_from` earlier than `accepted`; `null` refuses them all. */
+function acceptingFrom(accepted: string | null) {
+	return mockProvider({
+		transactions: (url) => {
+			const from = url.searchParams.get("date_from") ?? "";
+
+			return accepted === null || from < accepted
+				? refused()
+				: HttpResponse.json({
+						transactions: [
+							line({ entry_reference: "old", booking_date: "2026-07-01" }),
+							line({ entry_reference: "recent", booking_date: "2026-09-20" }),
+						],
+						continuation_key: null,
+					});
+		},
+	});
+}
+
+const dateFroms = (requests: ReturnType<typeof mockProvider>) =>
+	requests.map(({ search }) => new URLSearchParams(search).get("date_from"));
+
+describe("a refused period", () => {
+	it("lists the shorter windows that start later than the refused one", () => {
+		expect(fallbackStarts("2026-06-26", TODAY)).toEqual(["2026-06-27", "2026-07-26", "2026-08-25"]);
+		expect(fallbackStarts("2026-07-26", TODAY)).toEqual(["2026-08-25"]);
+		expect(fallbackStarts("2026-09-17", TODAY)).toEqual([]);
+	});
+
+	it("asks again for 89 days, and reads from the start the bank accepted", async () => {
+		const requests = acceptingFrom("2026-06-27");
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
+		expect(statement.from).toBe("2026-06-27");
+		expect(statement.interrupted).toBeNull();
+		expect(statement.transactions).toHaveLength(2);
+	});
+
+	it("goes down to 60 then 30 days, dropping the lines before the accepted start", async () => {
+		const requests = acceptingFrom("2026-08-25");
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27", "2026-07-26", "2026-08-25"]);
+		expect(statement.from).toBe("2026-08-25");
+		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual(["recent"]);
+	});
+
+	it("fails once the 30-day window is refused too", async () => {
+		const requests = acceptingFrom(null);
+
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status: 400, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
+		expect(requests).toHaveLength(4);
+	});
+
+	it("asks for no longer window than a short one the bank refused", async () => {
+		const requests = acceptingFrom(null);
+
+		await expect(
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-09-17", TODAY),
+		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR" });
+		expect(dateFroms(requests)).toEqual(["2026-09-17"]);
+	});
+
+	it("skips a fallback that starts no later than the refused window", async () => {
+		const requests = acceptingFrom(null);
+
+		await expect(
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-07-26", TODAY),
+		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR" });
+		expect(dateFroms(requests)).toEqual(["2026-07-26", "2026-08-25"]);
+	});
+});
+
+describe("a line listed twice", () => {
+	it("keeps one copy of lines alike in every field but their reference", async () => {
+		pages({
+			transactions: [
+				line({ entry_reference: "ref-1" }),
+				line({ entry_reference: "ref-2" }),
+				line({ entry_reference: "ref-3", transaction_id: "tx-3" }),
+			],
+			continuation_key: null,
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual(["ref-1", "ref-3"]);
+	});
+
+	it("keeps the booked copy of a line also listed as pending", async () => {
+		pages({
+			transactions: [
+				line({ entry_reference: "pending", status: "PDNG" }),
+				line({ entry_reference: "booked", status: "BOOK" }),
+				line({ entry_reference: "pending-again", status: "PDNG" }),
+			],
+			continuation_key: null,
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(statement.transactions).toEqual([
+			expect.objectContaining({ externalId: "booked", pending: false }),
+		]);
+	});
+
+	it("tells lines apart by date, amount, currency, both sides, remittance, id and direction", () => {
+		const variants = [
+			line(),
+			line({ booking_date: "2026-09-21" }),
+			line({ booking_date: null, value_date: "2026-09-19" }),
+			line({ booking_date: null, transaction_date: "2026-09-18" }),
+			line({ transaction_amount: { amount: "11.00", currency: "EUR" } }),
+			line({ transaction_amount: { amount: "10.00", currency: "USD" } }),
+			line({ creditor: { name: "Autre" } }),
+			line({ debtor: null }),
+			line({ remittance_information: ["CB BOULANGERIE"] }),
+			line({ transaction_id: "tx-1" }),
+			line({ credit_debit_indicator: "CRDT" }),
+		];
+
+		expect(withoutRepeats(variants).size).toBe(variants.length);
+		expect(withoutRepeats([line(), line({ entry_reference: "other" })])).toEqual(new Set([0]));
+	});
+
+	it("leaves unreadable, cancelled and informational lines to the mapping", () => {
+		expect(
+			withoutRepeats([
+				42,
+				42,
+				line({ status: "INFO" }),
+				line({ status: "INFO" }),
+				line({ status: null }),
+				line({ status: null }),
+			]),
+		).toEqual(new Set([0, 1, 2, 3, 4, 5]));
 	});
 });
 

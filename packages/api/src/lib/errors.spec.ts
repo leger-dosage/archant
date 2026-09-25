@@ -16,6 +16,7 @@ describe("AppError", () => {
 		expect(new AppError("BANK_CONNECTOR_UNAVAILABLE", "x").status).toBe(503);
 		expect(new AppError("BANK_PROVIDER_ERROR", "x").status).toBe(502);
 		expect(new AppError("BANK_REDIRECT_NOT_ALLOWED", "x").status).toBe(502);
+		expect(new AppError("BANK_BALANCE_UNAVAILABLE", "x").status).toBe(502);
 		expect(new AppError("BANK_AUTHORIZATION_INVALID", "x").status).toBe(400);
 	});
 
