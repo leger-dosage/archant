@@ -5,7 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { lineKeys as keyLines, pairLines as pairWithLines, previewDigest } from "./keys.ts";
+import {
+	fingerprintOf,
+	lineKeys as keyLines,
+	pairLines as pairWithLines,
+	previewDigest,
+	tripleOf,
+} from "./keys.ts";
 
 const lineKeys = (lines: Parameters<typeof keyLines>[0]) => keyLines(lines).map(({ keys }) => keys);
 
@@ -55,6 +61,16 @@ describe("lineKeys", () => {
 		const lines = [line("2026-09-12", -1)];
 
 		expect(keyLines(lines)[0]?.line).toBe(lines[0]);
+	});
+
+	it("fingerprints a triple at an index as lineKeys does", () => {
+		const twins = [line("2026-09-12", -1000, "Péage"), line("2026-09-12", -1000, "PEAGE ")];
+		const triple = tripleOf(line("2026-09-12", -1000, "péage"));
+
+		expect(lineKeys(twins).map((key) => key.fingerprint)).toEqual([
+			fingerprintOf(triple, 0),
+			fingerprintOf(triple, 1),
+		]);
 	});
 
 	it("keys the same line the same way whatever its FITID", () => {

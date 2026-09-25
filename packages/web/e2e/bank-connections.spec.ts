@@ -329,6 +329,7 @@ test("linking an account syncs the bank's lines, once, and the pages show the la
 	await expect(page.getByRole("main").locator("[data-transaction-id]").first()).toContainText(
 		FAKE_LINES.pending.label,
 	);
+	// Listed booked and pending under one reference, it counts once.
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).not.toContainText("En attente");
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toHaveCount(1);
 	await expect(page.getByRole("main")).toContainText("1 231,36 €");

@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `pending_missed_on` text;

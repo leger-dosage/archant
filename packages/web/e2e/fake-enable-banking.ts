@@ -117,6 +117,18 @@ function transactionsPage(uid: string, continuationKey: string | null) {
 				booking_date: daysAgo(groceries.daysAgo),
 				remittance_information: ["CB SUPERMARCHE DEMO"],
 			},
+			// The groceries' pending version, still listed the day after: some banks
+			// keep it beside the booked line until it expires.
+			{
+				entry_reference: `${uid}-1`,
+				transaction_id: randomUUID(),
+				transaction_amount: unsigned(groceries.amount),
+				creditor: { name: groceries.label },
+				credit_debit_indicator: direction(groceries.amount),
+				status: "PDNG",
+				transaction_date: daysAgo(groceries.daysAgo - 1),
+				remittance_information: ["CB SUPERMARCHE DEMO"],
+			},
 			{
 				entry_reference: `${uid}-2`,
 				transaction_amount: unsigned(salary.amount),
