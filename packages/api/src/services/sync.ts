@@ -1,4 +1,4 @@
-import type { BankStatement } from "../connectors/bank-connector.ts";
+import type { BankBalance, BankStatement } from "../connectors/bank-connector.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { ParsedStatement } from "../domain/statement.ts";
 import type { ErrorCode } from "../lib/errors.ts";
@@ -10,7 +10,8 @@ import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
-import { addDays, minDate, today } from "../domain/dates.ts";
+import { BankProviderError } from "../connectors/bank-connector.ts";
+import { addDays, daysBetween, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { LEASE_MS, codeOf, logFailure, requireBankConnector } from "./bank-connections.ts";
 import { ingest, oldestPendingDate } from "./ledger.ts";
@@ -55,12 +56,18 @@ export function windowStart(
 	return oldestPending === null ? start : minDate(start, oldestPending);
 }
 
-/** The statement as the ledger takes it: a balance that names no day is today's. */
-function toParsedStatement(statement: BankStatement, day: IsoDate): ParsedStatement {
-	const { balance } = statement;
-
+/**
+ * The read and its balance, read apart, as the ledger takes them: a balance
+ * that names no day is today's.
+ */
+function toParsedStatement(
+	statement: BankStatement,
+	balance: BankBalance | null,
+	day: IsoDate,
+): ParsedStatement {
 	return {
-		...statement,
+		transactions: statement.transactions,
+		rejected: statement.rejected,
 		balance: balance === null ? null : { ...balance, date: balance.date ?? day },
 	};
 }
@@ -107,9 +114,14 @@ function refusal(syncStartedAt: number | null, now: number): AppError {
 /**
  * Syncs every linked bank account of the connection whose account is active,
  * one `ingest` each: a failed account rolls back alone and keeps its window.
- * The connection's last sync moves only when every account succeeded; its
- * last error holds the latest failed run's code. Recurring detection runs
- * once, after every account, and never fails the sync.
+ * A read that stops after its first page writes the lines read, counts no
+ * pending entry missing and keeps its window too, so the next read starts
+ * where this one did. The balance is read after a complete read only, and a
+ * balance the bank does not give costs the balance alone. The connection's
+ * last sync moves only when every account succeeded; its last error holds
+ * the first failed account's code, else `BANK_BALANCE_UNAVAILABLE` when a
+ * balance was missing. Recurring detection runs once, after every account,
+ * and never fails the sync.
  */
 async function runSync(
 	deps: BankConnectionDeps,
@@ -138,6 +150,31 @@ async function runSync(
 		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
 	const errors: ErrorCode[] = [];
 	let created = 0;
+	let balanceMissing = false;
+
+	/**
+	 * The balance after a complete read; `null`, logged by its code, when the
+	 * bank fails it. Anything else is no answer from the bank and fails the
+	 * account.
+	 */
+	const readBalance = async (uid: string, accountId: string): Promise<BankBalance | null> => {
+		try {
+			return await connector.fetchBalance(uid);
+		} catch (error) {
+			if (!(error instanceof BankProviderError)) {
+				throw error;
+			}
+
+			balanceMissing = true;
+			logFailure(deps, connectionId, error);
+			deps.logger.warn(
+				{ connectionId, accountId, code: codeOf(error) },
+				"bank account balance unavailable",
+			);
+
+			return null;
+		}
+	};
 
 	// In sequence: every ingest takes the write lock, and a bank reads one
 	// account at a time anyway.
@@ -145,28 +182,58 @@ async function runSync(
 		await previous;
 
 		try {
-			const statement = await connector.fetchStatement(
-				item.providerUid,
-				windowStart(
-					item.lastSyncedAt,
-					day,
-					deps.timeZone,
-					await oldestPendingDate(deps, item.accountId, connectionId),
-				),
+			const since = windowStart(
+				item.lastSyncedAt,
+				day,
+				deps.timeZone,
+				await oldestPendingDate(deps, item.accountId, connectionId),
 			);
+			const statement = await connector.fetchStatement(item.providerUid, since, day);
+			const { interrupted } = statement;
+
+			if (statement.from !== since) {
+				deps.logger.info(
+					{ connectionId, accountId: item.accountId, windowDays: daysBetween(statement.from, day) },
+					"bank account window shortened",
+				);
+			}
+
+			const balance =
+				interrupted === null ? await readBalance(item.providerUid, item.accountId) : null;
+			// Read before `ingest`, so the lines and the anchor commit together.
 			const result = await ingest(
 				deps,
 				item.accountId,
-				toParsedStatement(statement, day),
-				{ connectionId },
+				toParsedStatement(statement, balance, day),
+				{ connectionId, missesFrom: interrupted === null ? statement.from : null },
 				{ origin: "sync" },
 			);
+
+			created += result.created.length;
+
+			if (interrupted !== null) {
+				const code = codeOf(interrupted);
+
+				errors.push(code);
+				logFailure(deps, connectionId, interrupted);
+				deps.logger.warn(
+					{
+						connectionId,
+						accountId: item.accountId,
+						code,
+						lines: statement.transactions.length,
+						created: result.created.length,
+					},
+					"bank account read interrupted",
+				);
+
+				return;
+			}
 
 			await deps.db
 				.update(bankAccounts)
 				.set({ lastSyncedAt: startedAt })
 				.where(eq(bankAccounts.id, item.bankAccountId));
-			created += result.created.length;
 			deps.logger.info(
 				{
 					connectionId,
@@ -203,7 +270,11 @@ async function runSync(
 		.update(bankConnections)
 		.set(
 			firstError === undefined
-				? { lastSyncedAt: startedAt, lastError: null, updatedAt: Date.now() }
+				? {
+						lastSyncedAt: startedAt,
+						lastError: balanceMissing ? "BANK_BALANCE_UNAVAILABLE" : null,
+						updatedAt: Date.now(),
+					}
 				: { lastError: firstError, updatedAt: Date.now() },
 		)
 		.where(eq(bankConnections.id, connectionId));

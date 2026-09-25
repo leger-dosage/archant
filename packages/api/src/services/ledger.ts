@@ -703,9 +703,14 @@ export async function unlinkBankAccount(
 /**
  * Where the statement comes from. A manual line carries no key; an import's
  * lines are keyed under its source, a sync's under its connection's
- * connector (AD-7).
+ * connector (AD-7). A sync's `missesFrom` is the first day its read speaks
+ * for: a pending entry dated before it is not missing, only unread. `null`
+ * when the read stopped part way and speaks for no pending entry.
  */
-export type IngestSource = { manual: true } | { importId: string } | { connectionId: string };
+export type IngestSource =
+	| { manual: true }
+	| { importId: string }
+	| { connectionId: string; missesFrom: IsoDate | null };
 
 export type IngestOptions = {
 	origin: Origin;
@@ -1237,10 +1242,11 @@ function planCurrentAnchor(
  * Writes a statement into one account, in one transaction, following the
  * pipeline order of AD-4. A manual line carries no key and is always
  * created; an import's or a sync's lines are keyed and grouped (AD-7), and a
- * sync's reconcile with pending entries (AD-17): absorbed in place, or
- * counted missing and deleted at the second miss in a row. With `dryRun`, the
- * groups are computed and nothing is written. Confirming an import refuses with
- * `IMPORT_PREVIEW_STALE` when the groups differ from its preview, and marks
+ * sync's reconcile with pending entries (AD-17): absorbed in place, or, when
+ * dated `missesFrom` or later, counted missing and deleted at the second miss
+ * in a row. With `dryRun`, the groups are computed and nothing is written.
+ * Confirming an import refuses with `IMPORT_PREVIEW_STALE` when the groups
+ * differ from its preview, and marks
  * it confirmed with its counts in the same transaction. A sync's statement
  * balance rewrites the account's `current_anchor` instead of adding a
  * reconciliation.
@@ -1263,6 +1269,7 @@ export async function ingest(
 						}
 					: null;
 			const connectionId = "connectionId" in source ? source.connectionId : null;
+			const missesFrom = "connectionId" in source ? source.missesFrom : null;
 			const keyTarget: KeyTarget | null =
 				target !== null
 					? { source: target.source, importId: target.id, connectionId: null }
@@ -1472,16 +1479,17 @@ export async function ingest(
 
 			// A pending entry of the connection this statement did not speak for
 			// counts a miss; the second in a row deletes it. A failed sync rolls
-			// back with this transaction, so it never counts.
+			// back with this transaction, and an interrupted one reads too little
+			// to tell, so neither counts.
 			const missedFrom: IsoDate[] = [];
 
-			if (connectionId !== null) {
+			if (connectionId !== null && missesFrom !== null) {
 				const seen = new Set([
 					...grouped.absorbed.map(({ entryId }) => entryId),
 					...rows.map(({ id }) => id),
 				]);
 
-				missedFrom.push(...(await countMissedSyncs(tx, accountId, connectionId, seen)));
+				missedFrom.push(...(await countMissedSyncs(tx, accountId, connectionId, missesFrom, seen)));
 			}
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
@@ -2227,18 +2235,19 @@ async function deleteTransactionRows(tx: Transaction, ids: readonly string[]): P
 }
 
 /**
- * Counts a miss on every pending entry of the connection outside `seen`, and
- * deletes those reaching `MAX_MISSED_SYNCS` (AD-17). Returns the dates of the
- * deleted ones, where balances move.
+ * Counts a miss on every pending entry of the connection dated `from` or
+ * later and outside `seen`, and deletes those reaching `MAX_MISSED_SYNCS`
+ * (AD-17). Returns the dates of the deleted ones, where balances move.
  */
 async function countMissedSyncs(
 	tx: Transaction,
 	accountId: string,
 	connectionId: string,
+	from: IsoDate,
 	seen: ReadonlySet<string>,
 ): Promise<IsoDate[]> {
 	const missed = (await pendingOfConnection(tx, accountId, connectionId)).filter(
-		({ id }) => !seen.has(id),
+		({ id, date }) => date >= from && !seen.has(id),
 	);
 	const gone = missed.filter(({ missedSyncs }) => missedSyncs + 1 >= MAX_MISSED_SYNCS);
 	const kept = missed.filter(({ missedSyncs }) => missedSyncs + 1 < MAX_MISSED_SYNCS);

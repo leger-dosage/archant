@@ -55,8 +55,23 @@ export type BankSession = {
  */
 export type BankBalance = { amount: MinorUnits; currency: CurrencyCode; date: IsoDate | null };
 
-/** A statement as a bank connector reads it: its balance may carry no date. */
-export type BankStatement = Omit<ParsedStatement, "balance"> & { balance: BankBalance | null };
+/**
+ * An account's lines as a bank connector reads them, without a balance: the
+ * sync reads that apart, so a balance failure never costs the lines.
+ */
+export type BankStatement = Omit<ParsedStatement, "balance"> & {
+	/**
+	 * The first day actually read: the one asked for, or a later one when the
+	 * bank refused that period. No line before it is kept, and nothing before
+	 * it says whether a pending entry went away.
+	 */
+	from: IsoDate;
+	/**
+	 * The failure that stopped the read after its first page, `null` when every
+	 * page came back. The lines hold the pages read before it.
+	 */
+	interrupted: BankProviderError | null;
+};
 
 /**
  * A bank aggregator behind the connector port (AD-3). Like a file source it
@@ -81,10 +96,13 @@ export type BankConnector = {
 	fetchBalance: (uid: string) => Promise<BankBalance | null>;
 	/**
 	 * The account's booked and pending lines dated `since` or later, every
-	 * page, then its balance as `fetchBalance` reads it. A line it cannot read
+	 * page, a line the bank lists twice kept once. A bank that refuses the
+	 * period is asked again for a shorter one ending `today`; one that fails
+	 * after the first page leaves the pages read and says so in
+	 * `interrupted`. A failure on the first page throws. A line it cannot read
 	 * goes to `rejected`; a cancelled or informational one is left out.
 	 */
-	fetchStatement: (uid: string, since: IsoDate) => Promise<BankStatement>;
+	fetchStatement: (uid: string, since: IsoDate, today: IsoDate) => Promise<BankStatement>;
 };
 
 /** What a log line may say about a provider failure: numbers and a code, never a payload. */

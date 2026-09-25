@@ -6068,17 +6068,21 @@ async function linkedChecking(balance = 100000, overrides: Partial<NewAccountInp
 	return { account, bank };
 }
 
+/** A read that speaks for every pending entry, however old. */
+const EVERY_DAY = "2000-01-01";
+
 const sync = (
 	accountId: string,
 	connectionId: string,
 	lines: NormalizedTransaction[],
 	balance: ParsedStatement["balance"] = null,
+	missesFrom: string | null = EVERY_DAY,
 ) =>
 	ingest(
 		deps(),
 		accountId,
 		{ transactions: lines, balance, rejected: [] },
-		{ connectionId },
+		{ connectionId, missesFrom },
 		{ origin: "sync" },
 	);
 
@@ -6614,6 +6618,32 @@ describe("pending transactions", () => {
 		expect((await history(account.id)).get("2026-09-21")).toBe(100000);
 	});
 
+	it("counts no miss for a read that stopped part way", async () => {
+		const { account, bank } = await linkedChecking();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(-transferAmount(), { date: "2026-09-21" }),
+		]);
+
+		await sync(account.id, bank.connectionId, [], null, null);
+		await sync(account.id, bank.connectionId, [], null, null);
+
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
+	});
+
+	it("counts a miss only on a pending entry dated from the read's first day", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [before = "", onFirstDay = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: "p-1", date: "2026-09-10" }),
+			pendingLine(amount - 1, { externalId: "p-2", date: "2026-09-11" }),
+		]);
+
+		await sync(account.id, bank.connectionId, [], null, "2026-09-11");
+
+		await expect(rowOf(before)).resolves.toMatchObject({ date: "2026-09-10", missed: 0 });
+		await expect(rowOf(onFirstDay)).resolves.toMatchObject({ date: "2026-09-11", missed: 1 });
+	});
+
 	it("names the date of the oldest pending entry, none once booked", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
@@ -6812,7 +6842,7 @@ describe("unlinkBankAccount", () => {
 				balance: null,
 				rejected: [],
 			},
-			{ connectionId: bank.connectionId },
+			{ connectionId: bank.connectionId, missesFrom: EVERY_DAY },
 			{ origin: "sync" },
 		);
 		const before = await history(account.id);

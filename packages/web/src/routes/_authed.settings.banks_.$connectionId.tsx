@@ -81,6 +81,9 @@ function linkOf(row: BankAccountData, choice: Choice): BankAccountLink | null {
 
 const JUST_NOW_MS = 60_000;
 
+// The lines synced and only the balance is missing: a warning, not a failure.
+const BALANCE_UNAVAILABLE = "BANK_BALANCE_UNAVAILABLE";
+
 const syncTime = new Intl.DateTimeFormat("fr-FR", {
 	day: "numeric",
 	month: "long",
@@ -114,6 +117,8 @@ function SyncStatus({
 			onSuccess: (status) => {
 				if (status.lastError === null) {
 					toast.success(t("banks.sync.done"));
+				} else if (status.lastError === BALANCE_UNAVAILABLE) {
+					toast.warning(t("banks.sync.balanceUnavailable"));
 				} else {
 					toast.error(t("banks.sync.failed"));
 				}
@@ -135,7 +140,12 @@ function SyncStatus({
 										: syncTime.format(new Date(lastSyncedAt)),
 							})}
 				</p>
-				{lastError !== null && (
+				{lastError === BALANCE_UNAVAILABLE && (
+					<p role="status" className="text-muted-foreground">
+						{t("banks.sync.balanceUnavailable")}
+					</p>
+				)}
+				{lastError !== null && lastError !== BALANCE_UNAVAILABLE && (
 					<p role="status" className="text-destructive">
 						{t("banks.sync.lastError", {
 							error: t(`errors.${isErrorCode(lastError) ? lastError : "INTERNAL_ERROR"}`),

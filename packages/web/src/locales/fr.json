@@ -1006,7 +1006,8 @@
 			"lastError": "La dernière synchronisation a échoué : {{error}}",
 			"submit": "Synchroniser",
 			"done": "Synchronisation terminée.",
-			"failed": "Synchronisation terminée avec une erreur."
+			"failed": "Synchronisation terminée avec une erreur.",
+			"balanceUnavailable": "Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente."
 		},
 		"return": {
 			"title": "Connexion à votre banque",
@@ -1092,6 +1093,7 @@
 		"SERVICE_UNAVAILABLE": "La base de données ne répond pas. Réessayez dans un instant.",
 		"BANK_CONNECTOR_UNAVAILABLE": "La connexion bancaire n'est pas configurée sur ce serveur.",
 		"BANK_PROVIDER_ERROR": "Enable Banking n'a pas répondu correctement. Réessayez dans un instant.",
+		"BANK_BALANCE_UNAVAILABLE": "La banque n'a pas donné le solde. Le solde affiché reste celui de la synchronisation précédente.",
 		"BANK_REDIRECT_NOT_ALLOWED": "Enable Banking refuse l'adresse de retour. Enregistrez {{url}} dans les réglages de votre application Enable Banking, puis réessayez.",
 		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",

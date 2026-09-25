@@ -223,6 +223,81 @@ function failingThirdUpdate(): BankConnectionDeps {
 
 const logLine = z.record(z.string(), z.unknown());
 
+/** Every log line, without the timestamps, process and duration any figure may hide in. */
+function logged(): Record<string, unknown>[] {
+	return logLines.map((line) => {
+		const {
+			time: _time,
+			pid: _pid,
+			hostname: _host,
+			durationMs: _duration,
+			...rest
+		} = logLine.parse(JSON.parse(line));
+
+		return rest;
+	});
+}
+
+/** The fixtures' amounts and names, which no log line may carry. */
+const FIXTURE_SECRETS = ["4290", "42.90", "250000", "123456", "1234.56", "1200", "Carrefour"];
+
+function expectNoSecretLogged() {
+	const text = logged()
+		.map((line) => JSON.stringify(line))
+		.join("\n");
+
+	for (const secret of [...FIXTURE_SECRETS, FIXTURE_CHECKING_UID, FIXTURE_CARD_UID]) {
+		expect(text).not.toContain(secret);
+	}
+}
+
+/** The account's current anchor: the bank balance it last recorded. */
+async function anchorOf(accountId: string) {
+	const [row] = await temp.db.all<{ date: string; amount: number }>(
+		sql`select date, amount from entries where account_id = ${accountId} and valuation_kind = 'current_anchor'`,
+	);
+
+	return row;
+}
+
+const balancesFailing = () => HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 });
+
+/** Enable Banking refusing every `date_from` before `accepted`, `null` refusing them all. */
+function refusingBefore(accepted: string | null, page: (url: URL) => Response = transactionsPage) {
+	return mockProvider({
+		transactions: (url) =>
+			accepted === null || (url.searchParams.get("date_from") ?? "") < accepted
+				? HttpResponse.json({ error: "WRONG_TRANSACTIONS_PERIOD" }, { status: 400 })
+				: page(url),
+	});
+}
+
+/** The fixtures' first page, less its pending line when `withPending` is false. */
+function firstPage(withPending: boolean) {
+	const page = z
+		.object({ transactions: z.array(z.record(z.string(), z.unknown())) })
+		.loose()
+		.parse(fixtures.transactionsPage1);
+
+	return HttpResponse.json({
+		...page,
+		transactions: page.transactions.filter((line) => withPending || line["status"] !== "PDNG"),
+	});
+}
+
+/** Page one as the fixtures, less the pending line unless asked, then a 500 on page two. */
+function failingOnPageTwo(withPending = true) {
+	return mockProvider({
+		transactions: (url) =>
+			url.searchParams.get("continuation_key") === "page-2"
+				? HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 })
+				: firstPage(withPending),
+	});
+}
+
+const balanceRequests = (requests: ReturnType<typeof mockProvider>) =>
+	requests.filter(({ path }) => path.endsWith("/balances"));
+
 describe("windowStart", () => {
 	it("reads three months back for an account never synced", () => {
 		expect(windowStart(null, "2026-09-24", "Europe/Paris", null)).toBe("2026-06-26");
@@ -668,36 +743,14 @@ describe("syncConnection", () => {
 
 		await syncConnection(syncDeps, connectionId);
 
-		// Timestamps, the process and the duration are numbers any figure may hide in.
-		const logged = logLines
-			.map((line) => {
-				const {
-					time: _time,
-					pid: _pid,
-					hostname: _host,
-					durationMs: _duration,
-					...rest
-				} = logLine.parse(JSON.parse(line));
-
-				return JSON.stringify(rest);
-			})
+		const text = logged()
+			.map((line) => JSON.stringify(line))
 			.join("\n");
-		expect(logged).toContain('"msg":"bank account synced"');
-		expect(logged).toContain('"code":"BANK_PROVIDER_ERROR"');
-		for (const secret of [
-			"4290",
-			"42.90",
-			"250000",
-			"123456",
-			"1234.56",
-			"Carrefour",
-			FIXTURE_CHECKING_UID,
-			FIXTURE_CARD_UID,
-			FIXTURE_SESSION_ID,
-		]) {
-			expect(logged).not.toContain(secret);
-		}
-		expect(logged).not.toMatch(/FR\d{2}/u);
+		expect(text).toContain('"msg":"bank account synced"');
+		expect(text).toContain('"code":"BANK_PROVIDER_ERROR"');
+		expectNoSecretLogged();
+		expect(text).not.toContain(FIXTURE_SESSION_ID);
+		expect(text).not.toMatch(/FR\d{2}/u);
 	});
 
 	it("answers BANK_CONNECTOR_UNAVAILABLE while unconfigured", async () => {
@@ -706,6 +759,247 @@ describe("syncConnection", () => {
 		await expect(
 			syncConnection({ ...deps(), bankConnector: null }, connectionId),
 		).rejects.toMatchObject({ code: "BANK_CONNECTOR_UNAVAILABLE" });
+	});
+});
+
+describe("a bank read that fails part way", () => {
+	it("syncs the lines of an account whose balance fails, keeping its previous balance", async () => {
+		const requests = mockProvider({ balances: balancesFailing });
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const anchor = await anchorOf(accountId);
+
+		await expect(syncAll(deps())).resolves.toEqual([{ id: connectionId, result: "synced" }]);
+
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await expect(anchorOf(accountId)).resolves.toEqual(anchor);
+		expect(anchor).toMatchObject({ amount: 100000 });
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 0 },
+		]);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			lastSyncedAt: NOW,
+			lastError: "BANK_BALANCE_UNAVAILABLE",
+		});
+		expect(balanceRequests(requests)).toHaveLength(1);
+		expect(logged()).toContainEqual(
+			expect.objectContaining({
+				msg: "bank account balance unavailable",
+				accountId,
+				code: "BANK_PROVIDER_ERROR",
+			}),
+		);
+		expectNoSecretLogged();
+	});
+
+	it("clears the balance's error once a sync reads it", async () => {
+		mockProvider({ balances: balancesFailing });
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		mockProvider();
+		vi.setSystemTime(NOW + DAY);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW + DAY,
+			lastError: null,
+		});
+		await expect(anchorOf(accountId)).resolves.toMatchObject({ amount: 123456 });
+	});
+
+	it("fails the account on a balance error that is not the bank's answer", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const syncDeps = deps();
+		const connector = syncDeps.bankConnector;
+
+		if (connector === null) {
+			throw new Error("The test deps have no bank connector.");
+		}
+
+		vi.spyOn(connector, "fetchBalance").mockRejectedValue(new Error("amount 123456 refused"));
+
+		await expect(syncConnection(syncDeps, connectionId)).resolves.toEqual({
+			lastSyncedAt: null,
+			lastError: "INTERNAL_ERROR",
+		});
+		await expect(transactionCount(accountId)).resolves.toBe(0);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBeNull();
+		expectNoSecretLogged();
+	});
+
+	it("names another account's failure before a missing balance", async () => {
+		mockProvider({
+			balances: (url) =>
+				url.pathname.includes(FIXTURE_CHECKING_UID)
+					? balancesFailing()
+					: HttpResponse.json(fixtures.balances),
+			transactions: (url) =>
+				url.pathname.includes(FIXTURE_CARD_UID)
+					? HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 })
+					: transactionsPage(url),
+		});
+		const connectionId = await newConnection({ lastSyncedAt: NOW - 2 * DAY });
+		const good = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const bad = await linkedAccount(connectionId, FIXTURE_CARD_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW - 2 * DAY,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		await expect(transactionCount(good.accountId)).resolves.toBe(6);
+		await expect(anchorOf(good.accountId)).resolves.toMatchObject({ amount: 100000 });
+		await expect(bankAccountSyncedAt(good.bankAccountId)).resolves.toBe(NOW);
+		await expect(transactionCount(bad.accountId)).resolves.toBe(0);
+		await expect(bankAccountSyncedAt(bad.bankAccountId)).resolves.toBeNull();
+	});
+
+	it("reads 89 days back when the bank refuses the first window", async () => {
+		const requests = refusingBefore("2026-06-27");
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
+			[
+				"?date_from=2026-06-26",
+				"?date_from=2026-06-27",
+				"?date_from=2026-06-27&continuation_key=page-2",
+			],
+		);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
+		expect(logged()).toContainEqual(
+			expect.objectContaining({ msg: "bank account window shortened", accountId, windowDays: 89 }),
+		);
+	});
+
+	it("fails the account when the bank refuses 89, 60 and 30 days too", async () => {
+		const requests = refusingBefore(null);
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: null,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID)).toHaveLength(4);
+		await expect(transactionCount(accountId)).resolves.toBe(0);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBeNull();
+	});
+
+	it("asks for no other window when a short one is refused", async () => {
+		const requests = refusingBefore(null);
+		const connectionId = await newConnection({ lastSyncedAt: NOW - 2 * DAY });
+		const { bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await temp.db
+			.update(bankAccounts)
+			.set({ lastSyncedAt: NOW - 2 * DAY })
+			.where(eq(bankAccounts.id, bankAccountId));
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
+			["?date_from=2026-09-15"],
+		);
+	});
+
+	it("counts no miss on a pending entry older than the window the bank accepted", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		// Eighty days before the next sync's day, the 25th.
+		await temp.db.run(
+			sql`update entries set date = '2026-07-07' where account_id = ${accountId} and id in (select entry_id from transactions where pending = 1)`,
+		);
+		vi.setSystemTime(NOW + DAY);
+		const requests = refusingBefore("2026-07-27", (url) =>
+			url.searchParams.get("continuation_key") === "page-2"
+				? transactionsPage(url)
+				: firstPage(false),
+		);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW + DAY,
+			lastError: null,
+		});
+		// The 89-day window starts before the refused one: never asked.
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
+			[
+				"?date_from=2026-07-07",
+				"?date_from=2026-07-27",
+				"?date_from=2026-07-27&continuation_key=page-2",
+			],
+		);
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-07-07", amount: -1200, missed: 0 },
+		]);
+		expect(logged()).toContainEqual(
+			expect.objectContaining({ msg: "bank account window shortened", windowDays: 60 }),
+		);
+	});
+
+	it("keeps the lines of the pages read before a failure, reads no balance and leaves the account failed", async () => {
+		const requests = failingOnPageTwo();
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncAll(deps())).resolves.toEqual([{ id: connectionId, result: "failed" }]);
+
+		// Page one: three booked lines and the pending one.
+		await expect(transactionCount(accountId)).resolves.toBe(4);
+		await expect(anchorOf(accountId)).resolves.toMatchObject({ amount: 100000 });
+		expect(balanceRequests(requests)).toEqual([]);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBeNull();
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			lastSyncedAt: null,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		expect(logged()).toContainEqual(
+			expect.objectContaining({
+				msg: "bank account read interrupted",
+				accountId,
+				code: "BANK_PROVIDER_ERROR",
+				lines: 4,
+			}),
+		);
+		expectNoSecretLogged();
+
+		// The next read starts from the same day, and recognises what page one wrote.
+		const again = mockProvider();
+		vi.setSystemTime(NOW + 2 * 60 * MINUTE);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastError: null,
+		});
+		expect(transactionRequests(again, FIXTURE_CHECKING_UID)[0]?.search).toBe(
+			"?date_from=2026-06-26",
+		);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+	});
+
+	it("counts no miss on a read that stopped part way, and keeps the account's window", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		failingOnPageTwo(false);
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([
+			{ date: "2026-09-23", amount: -1200, missed: 0 },
+		]);
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({ lastSyncedAt: NOW });
 	});
 });
 

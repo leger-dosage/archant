@@ -38,6 +38,11 @@ export const ERROR_STATUSES = {
 	 * control panel; `params.url` names it, as Sure does.
 	 */
 	BANK_REDIRECT_NOT_ALLOWED: 502,
+	/**
+	 * A sync's last state, never an answer: the lines synced but the bank gave
+	 * no balance, so the account keeps the one of the sync before.
+	 */
+	BANK_BALANCE_UNAVAILABLE: 502,
 	/** The health check could not read the database. */
 	SERVICE_UNAVAILABLE: 503,
 	/** A bank route while an Enable Banking variable or `ENCRYPTION_KEY` is unset. */

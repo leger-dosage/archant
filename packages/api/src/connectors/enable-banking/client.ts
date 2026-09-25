@@ -1,9 +1,5 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type {
-	NormalizedTransaction,
-	ParsedStatement,
-	RejectionCode,
-} from "../../domain/statement.ts";
+import type { NormalizedTransaction, RejectionCode } from "../../domain/statement.ts";
 import type {
 	BankAccountRef,
 	BankBalance,
@@ -17,6 +13,7 @@ import type { z } from "zod";
 
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 
+import { addDays } from "../../domain/dates.ts";
 import { providerIsoDate } from "../../domain/provider-date.ts";
 import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { BankProviderError } from "../bank-connector.ts";
@@ -42,14 +39,21 @@ export type EnableBankingConfig = {
 /** 90 days at most, even from a bank that allows 180; Sure asks for 180 by default. */
 const MAX_CONSENT_SECONDS = 90 * 86_400;
 
+// Sure's `Provider::EnableBanking`: a consent asked for to the second of the
+// bank's maximum is refused by some banks once the request has travelled.
+const CONSENT_MARGIN_SECONDS = 60;
+
 // A bank's listing can be slow; a request stuck longer is not coming back.
 const TIMEOUT_MS = 30_000;
 
 /**
- * When the consent asked for ends: the bank's own maximum, capped at 90 days.
+ * When the consent asked for ends: the bank's own maximum, capped at 90 days,
+ * a minute short of it.
  */
 export function consentValidUntil(now: number, maximumConsentValidity: number | null): Date {
-	const seconds = Math.min(maximumConsentValidity ?? MAX_CONSENT_SECONDS, MAX_CONSENT_SECONDS);
+	const seconds =
+		Math.min(maximumConsentValidity ?? MAX_CONSENT_SECONDS, MAX_CONSENT_SECONDS) -
+		CONSENT_MARGIN_SECONDS;
 
 	return new Date(now + seconds * 1000);
 }
@@ -88,6 +92,78 @@ export function toBankAccount(account: z.output<typeof sessionAccountSchema>): B
 
 /** Sure's `EnableBankingItem::Importer`: a bank looping on its own key stops here. */
 export const MAX_PAGES = 100;
+
+/**
+ * Sure's `EnableBankingItem::Importer`: the windows, in days before today,
+ * asked for when a bank refuses the period with `WRONG_TRANSACTIONS_PERIOD`.
+ */
+export const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
+
+/**
+ * The starts to try after `since` is refused, in order: each fallback window
+ * ending `today`, but only those that start later than `since`, since a
+ * longer window than the refused one would be refused too.
+ */
+export function fallbackStarts(since: IsoDate, today: IsoDate): IsoDate[] {
+	return FALLBACK_WINDOW_DAYS.map((days) => addDays(today, -days)).filter((start) => start > since);
+}
+
+const refusedPeriod = (error: unknown) =>
+	error instanceof BankProviderError && error.failure.providerCode === "WRONG_TRANSACTIONS_PERIOD";
+
+/** Booked beats pending; any other status never reaches the ledger. */
+const rankOf = (status: string | null) => (status === "BOOK" ? 2 : status === "PDNG" ? 1 : 0);
+
+/**
+ * Sure's `build_transaction_content_key`: what makes two lines the same line
+ * when the bank lists it twice, under two `entry_reference`s. Neither the
+ * reference nor the status is part of it, so a booked copy and a pending one
+ * are the same line.
+ */
+function contentKey(line: z.output<typeof transactionSchema>): string {
+	return JSON.stringify([
+		line.booking_date ?? line.value_date ?? line.transaction_date,
+		line.transaction_amount,
+		line.creditor,
+		line.debtor,
+		line.remittance_information,
+		line.transaction_id,
+		line.credit_debit_indicator,
+	]);
+}
+
+/**
+ * The positions of `raw` to keep: one copy of each booked or pending line,
+ * the booked one when both exist, else the first. A line that cannot be read,
+ * or with another status, is kept: the mapping refuses or drops it.
+ */
+export function withoutRepeats(raw: readonly unknown[]): Set<number> {
+	const chosen = new Map<string, { position: number; rank: number }>();
+	const kept = new Set<number>();
+
+	for (const [position, item] of raw.entries()) {
+		const parsed = transactionSchema.safeParse(item);
+		const rank = parsed.success ? rankOf(parsed.data.status) : 0;
+
+		if (!parsed.success || rank === 0) {
+			kept.add(position);
+			continue;
+		}
+
+		const key = contentKey(parsed.data);
+		const current = chosen.get(key);
+
+		if (current === undefined || rank > current.rank) {
+			chosen.set(key, { position, rank });
+		}
+	}
+
+	for (const { position } of chosen.values()) {
+		kept.add(position);
+	}
+
+	return kept;
+}
 
 /** By code points, so an emoji at the limit is never cut in half. */
 const capped = (value: string, length: number) => Array.from(value).slice(0, length).join("");
@@ -253,36 +329,80 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 	/**
 	 * Every raw line since `since`, page after page. Sure's importer follows
 	 * the key until none comes back, it comes back a second time, or a
-	 * hundred pages went by.
+	 * hundred pages went by. A provider failure after the first page keeps
+	 * the pages read, as Sure does; on the first page it throws.
 	 */
-	async function fetchLines(uid: string, since: IsoDate): Promise<unknown[]> {
+	async function fetchLines(
+		uid: string,
+		since: IsoDate,
+	): Promise<{ lines: unknown[]; interrupted: BankProviderError | null }> {
 		const seen = new Set<string>();
-		const fromPage = async (continuationKey: string | null, page: number): Promise<unknown[]> => {
+		const lines: unknown[] = [];
+		const fromPage = async (
+			continuationKey: string | null,
+			page: number,
+		): Promise<BankProviderError | null> => {
 			const query = new URLSearchParams({ date_from: since });
 
 			if (continuationKey !== null) {
 				query.set("continuation_key", continuationKey);
 			}
 
-			const { transactions, continuation_key: next } = await call(
-				config,
-				{
-					method: "GET",
-					path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
-				},
-				transactionsPageSchema,
-			);
+			let answer: z.output<typeof transactionsPageSchema>;
+
+			try {
+				answer = await call(
+					config,
+					{
+						method: "GET",
+						path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
+					},
+					transactionsPageSchema,
+				);
+			} catch (error) {
+				if (page === 0 || !(error instanceof BankProviderError)) {
+					throw error;
+				}
+
+				return error;
+			}
+
+			lines.push(...answer.transactions);
+			const next = answer.continuation_key;
 
 			if (next === null || seen.has(next) || page + 1 >= MAX_PAGES) {
-				return transactions;
+				return null;
 			}
 
 			seen.add(next);
 
-			return [...transactions, ...(await fromPage(next, page + 1))];
+			return fromPage(next, page + 1);
 		};
+		const interrupted = await fromPage(null, 0);
 
-		return fromPage(null, 0);
+		return { lines, interrupted };
+	}
+
+	/**
+	 * `fetchLines` from `since`, else from each fallback start while the bank
+	 * refuses the period on the first page; the last refusal throws.
+	 */
+	async function readFrom(
+		uid: string,
+		from: IsoDate,
+		fallbacks: readonly IsoDate[],
+	): Promise<{ lines: unknown[]; interrupted: BankProviderError | null; from: IsoDate }> {
+		try {
+			return { ...(await fetchLines(uid, from)), from };
+		} catch (error) {
+			const [next, ...rest] = fallbacks;
+
+			if (next === undefined || !refusedPeriod(error)) {
+				throw error;
+			}
+
+			return readFrom(uid, next, rest);
+		}
 	}
 
 	return {
@@ -363,11 +483,13 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 
 		fetchBalance,
 
-		async fetchStatement(uid, since): Promise<BankStatement> {
-			const statement: Omit<ParsedStatement, "balance"> = { transactions: [], rejected: [] };
+		async fetchStatement(uid, since, today): Promise<BankStatement> {
+			const { lines, interrupted, from } = await readFrom(uid, since, fallbackStarts(since, today));
+			const kept = withoutRepeats(lines);
+			const statement: BankStatement = { transactions: [], rejected: [], from, interrupted };
 
-			for (const [position, raw] of (await fetchLines(uid, since)).entries()) {
-				const mapped = toTransaction(raw, since);
+			for (const [position, raw] of lines.entries()) {
+				const mapped = kept.has(position) ? toTransaction(raw, from) : null;
 
 				if (typeof mapped === "string") {
 					statement.rejected.push({ ref: String(position), reason: mapped });
@@ -376,7 +498,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				}
 			}
 
-			return { ...statement, balance: await fetchBalance(uid) };
+			return statement;
 		},
 	};
 }

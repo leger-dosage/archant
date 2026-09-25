@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-25-2026 16:26
+last_updated: 09-25-2026 17:10
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -108,7 +108,7 @@ development_status:
   11-1-opening-dates-that-accept-today-and-survive-a-revert: review
   11-2-transfer-matching-ignores-excluded-transactions-and-inactive-accounts: review
   11-3-the-category-of-a-loan-payment-or-an-investment-contribution: review
-  11-4-a-bank-read-survives-a-partial-failure: backlog
+  11-4-a-bank-read-survives-a-partial-failure: review
   11-5-pending-and-booked-versions-never-count-twice: backlog
   11-6-a-transaction-i-delete-stays-deleted: backlog
   11-7-a-synced-account-keeps-each-bank-balance-it-received: backlog
