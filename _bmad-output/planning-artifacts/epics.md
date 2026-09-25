@@ -9,6 +9,8 @@ inputDocuments:
   - docs/adr/0002-container-reference-target.md
   - docs/deployment.md
   - _bmad-output/implementation-artifacts/scaffolding-lessons.md
+  - _bmad-output/implementation-artifacts/deferred-work.md
+  - docs/sure-parity.md
   - _bmad-output/planning-artifacts/architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/DESIGN.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/EXPERIENCE.md
@@ -225,6 +227,8 @@ FR54: Epic 10 - Disconnect a bank
 FR55: Epic 10 - Connection status
 FR56: Epic 10 - Bank balance as reference
 
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8.
+
 ## Epic List
 
 ### Epic 1: Track accounts and transactions by hand
@@ -276,6 +280,11 @@ The user sees their subscriptions and regular bills, and when the next one is du
 
 Accounts update themselves every day from the bank, and converge with the history already imported from files.
 **FRs covered:** FR43 (partial), FR48, FR49, FR50, FR51, FR52, FR53, FR54, FR55, FR56
+
+### Epic 11: Reliability
+
+Every figure Archant shows can be trusted with real bank data: the bugs found after Epic 10, while comparing Archant with Sure and preparing the manual QA, are fixed before a real bank is connected.
+**FRs covered:** none new; hardens FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -1496,3 +1505,214 @@ So that a file import and a bank sync never leave me with two copies of one oper
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
 
+## Epic 11: Reliability
+
+Every figure Archant shows can be trusted with real bank data. Each story fixes a bug recorded in `_bmad-output/implementation-artifacts/deferred-work.md`, found after Epic 10 while comparing Archant with Sure (`docs/sure-parity.md`) and preparing the manual QA. No story adds a feature; the differences with Sure marked « No decision recorded » in `docs/sure-parity.md` stay out until the owner decides them. Where Sure's behaviour settles a design question, the story follows it, as every epic before. Stories 11.4 to 11.7 touch the bank sync and come before a real bank is connected.
+
+### Story 11.1: Opening dates that accept today and survive a revert
+
+As the household's administrator,
+I want a new account to take today's transactions, and a reverted import to leave the account as it found it,
+So that neither the first minute nor an undo corrupts a balance.
+
+**Requirements:** FR1, FR18
+
+**Acceptance Criteria:**
+
+**Given** the account form with its default opening date
+**When** I create an account, then record a transaction dated today
+**Then** the transaction is accepted and the balance includes it
+
+**Given** an import that moved the account's opening date and amount after I accepted the move
+**When** I revert that import
+**Then** the opening anchor gets back both its previous date and its previous amount, and importing the same file again yields the same balance as the first time
+
+**Given** an import preview whose matched lines were created by another file
+**When** the preview explains the matched group
+**Then** the explanation does not say those transactions were entered by hand
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.2: Transfer matching ignores excluded transactions and inactive accounts
+
+As the household's administrator,
+I want transfer matching to leave aside what I excluded and accounts I deactivated,
+So that a real transfer is never blocked or mismatched by a row I set aside.
+
+**Requirements:** FR31
+
+**Acceptance Criteria:**
+
+**Given** an excluded transaction, or a transaction of a deactivated account
+**When** automatic matching runs, or the manual transfer dialog lists candidates
+**Then** that transaction is never a candidate, as in Sure's `Family::AutoTransferMatchable`
+
+**Given** a real transfer pair and a third, excluded transaction of the opposite amount within the window
+**When** automatic matching runs
+**Then** the real pair is matched: the excluded row does not break mutual uniqueness
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.3: The category of a loan payment or an investment contribution
+
+As the household's administrator,
+I want to see and change the category of a loan payment or an investment contribution,
+So that what the dashboard counts is what the list shows.
+
+**Requirements:** FR33, FR35
+
+**Acceptance Criteria:**
+
+**Given** the outflow side of a loan payment or an investment contribution
+**When** the list or its sheet shows it
+**Then** its category is shown and editable, as Sure lets a loan payment keep one, while internal moves and card payments keep hiding theirs
+
+**Given** such an outflow with a category
+**When** the dashboard shows the month
+**Then** it counts in that category, and without one it counts as uncategorised, so the dashboard and the list agree
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.4: A bank read survives a partial failure
+
+As the household's administrator,
+I want one failing call to the bank to cost as little as possible,
+So that an account keeps syncing when the bank misbehaves in a small way.
+
+**Requirements:** FR50, NFR8
+
+**Acceptance Criteria:**
+
+**Given** a linked account whose balance call fails while its transactions answer
+**When** sync runs
+**Then** the transactions are synced, the previous balance stays the reference, and the connection records the balance error
+
+**Given** a bank that refuses the requested period with `WRONG_TRANSACTIONS_PERIOD`
+**When** sync runs
+**Then** it retries with shorter windows, 89, 60 then 30 days as Sure's `Provider::EnableBanking` does, and the account syncs within the window the bank accepts
+
+**Given** a bank that fails after the first page of transactions
+**When** sync runs
+**Then** the pages already read are written, the account is marked failed so the next sync reads again from its last success, and no pending entry absent from the partial read counts as missed
+
+**Given** one response that lists the same operation twice under two references with identical content
+**When** it is synced
+**Then** one transaction is created, as Sure removes such repeats
+
+**Given** a bank advertising a maximum consent validity
+**When** a consent is requested
+**Then** it asks for 60 seconds less than that maximum, capped at 90 days, since Sure found banks refusing the exact maximum
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.5: Pending and booked versions never count twice
+
+As the household's administrator,
+I want a card payment to count once, from the moment it is pending to the day it is booked,
+So that my current balance is right between two syncs.
+
+**Requirements:** FR51
+
+**Acceptance Criteria:**
+
+**Given** a bank that keeps listing a pending line beside its booked version
+**When** sync runs
+**Then** the pending line is dropped when a booked line matches it by `entry_reference` or fingerprint, as Sure's `EnableBankingItem::Importer` does, and the balance counts the operation once
+
+**Given** a pending entry missing from the bank's answer
+**When** sync runs
+**Then** it counts as missed only when that sync ran on a later day than the previous miss, so two button syncs an hour apart never delete it
+
+**Given** a pending line the import pipeline rejects, such as one dated before the opening date
+**When** sync runs
+**Then** it does not count as a miss for the entry it matched
+
+**Given** two identical pending lines without a reference on the same day
+**When** the bank books the first
+**Then** the second stays the same entry until it is booked in turn: it is never taken for the first, deleted, then created again
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.6: A transaction I delete stays deleted
+
+As the household's administrator,
+I want a synced transaction I delete to stay gone,
+So that the next sync does not bring it back.
+
+**Requirements:** FR50, FR52
+
+**Acceptance Criteria:**
+
+**Given** a transaction that came from a bank sync
+**When** I delete it
+**Then** its bank keys are kept as a tombstone, and a later sync whose overlap covers its date does not create it again
+
+**Given** a transaction that never came from a bank
+**When** I delete it
+**Then** nothing is kept, as today
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.7: A synced account keeps each bank balance it received
+
+As the household's administrator,
+I want every balance the bank reported to stay a fixed point of the account's history,
+So that a missing or deleted line shifts the history only since the last bank figure.
+
+**Requirements:** FR56
+
+**Acceptance Criteria:**
+
+**Given** a synced account with a current anchor from an earlier day
+**When** a sync brings a new bank balance
+**Then** the earlier anchor becomes a reconciliation at its date, as Sure's `Account::CurrentBalanceManager` does, and the new balance becomes the current anchor
+
+**Given** a line missing between two bank figures
+**When** the history is computed backward
+**Then** only the days between those two figures move, and net worth before the older figure stays the same
+
+**Given** AD-8 in the architecture spine
+**When** this story ships
+**Then** AD-8 describes the chain of reconciliations
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 11.8: Recurring series stay single and current
+
+As the household's administrator,
+I want each subscription listed once, with a next date that is not in the past,
+So that the recurring page can be trusted.
+
+**Requirements:** FR40, FR41
+
+**Acceptance Criteria:**
+
+**Given** a recurring series
+**When** I rename it or set its merchant, then detection runs again
+**Then** the same series is updated and no second one appears
+
+**Given** a confirmed or manual series whose next date has passed
+**When** detection runs, or a matching transaction arrives
+**Then** its dates move forward from its latest occurrence, as Sure's separate pass over manual series does
+
+**Given** an import that fed a series' occurrences
+**When** I revert it
+**Then** the series' count and dates no longer include the deleted transactions
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
