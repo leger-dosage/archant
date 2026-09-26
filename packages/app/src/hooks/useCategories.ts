@@ -17,28 +17,34 @@ export function useCategories() {
 	});
 }
 
+type CategoryShown = {
+	color: string | null;
+	icon: CategoryData["icon"] | null;
+	name: string | null;
+};
+
 /**
- * What a chip shows for a transaction's category: its colour and name,
+ * What a chip shows for a transaction's category: its colour, icon and name,
  * « Sans catégorie » for `null`, « Catégorie inconnue » for an id the list
  * lacks, and a `null` name while the list loads.
  */
-export function useCategoryShown(id: string | null): { color: string | null; name: string | null } {
+export function useCategoryShown(id: string | null): CategoryShown {
 	const { t } = useTranslation();
 	const categories = useCategories().data;
 
 	if (id === null) {
-		return { color: null, name: t("transactions.category.none") };
+		return { color: null, icon: null, name: t("transactions.category.none") };
 	}
 
 	if (categories === undefined) {
-		return { color: null, name: null };
+		return { color: null, icon: null, name: null };
 	}
 
 	const category = categories.find((candidate) => candidate.id === id);
 
 	return category === undefined
-		? { color: null, name: t("operations.chips.unknownCategory") }
-		: { color: category.color, name: category.name };
+		? { color: null, icon: null, name: t("operations.chips.unknownCategory") }
+		: { color: category.color, icon: category.icon, name: category.name };
 }
 
 export function useCreateCategory() {

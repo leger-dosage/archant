@@ -23,6 +23,7 @@ import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
+import { TintedIcon } from "@/components/TintedIcon";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,10 @@ const ACCOUNT_TABS = ["transactions", "snapshots", "imports"] as const;
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
 const DEFAULT_TAB: AccountTab = "transactions";
+
+// DESIGN.md keeps shadows for popovers, menus, sheets and dialogs; shadcn's
+// active tab has one, taken off here rather than in the copied component.
+const FLAT_TAB = "group-data-[variant=default]/tabs-list:data-active:shadow-none";
 
 // Absent means the first page, the default period and the Opérations tab, so
 // links to an account need no search params. A value from an old or
@@ -328,7 +333,16 @@ function AccountPage() {
 
 	return (
 		<Page
-			icon={WalletIcon}
+			icon={
+				account.data === undefined ? (
+					// The `md` tinted icon's box, so the title does not move once it loads.
+					<span className="grid size-[22px] shrink-0 place-items-center">
+						<WalletIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+					</span>
+				) : (
+					<TintedIcon subject={{ kind: "account", type: account.data.type }} />
+				)
+			}
 			title={account.data?.name ?? t("accountDetail.title")}
 			actions={
 				account.data !== undefined ? (
@@ -393,9 +407,15 @@ function AccountPage() {
 
 			<Tabs value={tab} onValueChange={changeTab} className="gap-3">
 				<TabsList aria-label={t("accountDetail.tabs.label")}>
-					<TabsTrigger value="transactions">{t("accountDetail.tabs.transactions")}</TabsTrigger>
-					<TabsTrigger value="snapshots">{t("accountDetail.tabs.snapshots")}</TabsTrigger>
-					<TabsTrigger value="imports">{t("accountDetail.tabs.imports")}</TabsTrigger>
+					<TabsTrigger value="transactions" className={FLAT_TAB}>
+						{t("accountDetail.tabs.transactions")}
+					</TabsTrigger>
+					<TabsTrigger value="snapshots" className={FLAT_TAB}>
+						{t("accountDetail.tabs.snapshots")}
+					</TabsTrigger>
+					<TabsTrigger value="imports" className={FLAT_TAB}>
+						{t("accountDetail.tabs.imports")}
+					</TabsTrigger>
 				</TabsList>
 				<TabsContent value="transactions">
 					<TransactionsPanel

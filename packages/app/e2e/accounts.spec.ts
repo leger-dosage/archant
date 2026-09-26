@@ -141,6 +141,41 @@ test("a depository account is listed under assets and a credit card under liabil
 	await expect(pageGroupHeader(page, "Passifs")).toContainText(euros(liabilityTotal));
 });
 
+// Story 12.3: sections with the accounts' type icons, and the type icon in an
+// account's title bar.
+test("each group is a section whose accounts carry their type icon, as the account's title bar does", async ({
+	page,
+	api,
+}) => {
+	const savings = await api.openAccount({ name: uniqueName("Livret"), kind: "savings" });
+	const card = await api.openAccount({ name: uniqueName("Carte"), kind: "credit_card" });
+
+	await page.goto("/accounts");
+
+	const assets = page.getByRole("region", { name: "Actifs" });
+	const liabilities = page.getByRole("region", { name: "Passifs" });
+	await expect(assets).toHaveClass(/bg-section/u);
+	await expect(liabilities).toHaveClass(/bg-section/u);
+	await expect(
+		assets
+			.getByRole("link", { name: new RegExp(savings.name) })
+			.locator('[data-slot="tinted-icon"] svg.lucide-landmark'),
+	).toBeVisible();
+	await expect(
+		liabilities
+			.getByRole("link", { name: new RegExp(card.name) })
+			.locator('[data-slot="tinted-icon"] svg.lucide-credit-card'),
+	).toBeVisible();
+
+	await liabilities.getByRole("link", { name: new RegExp(card.name) }).click();
+
+	const titleBar = page.getByRole("heading", { level: 1, name: card.name }).locator("..");
+	await expect(titleBar.locator('[data-slot="tinted-icon"] svg.lucide-credit-card')).toBeVisible();
+	await expect(
+		titleBar.getByRole("button", { name: `Actions du compte ${card.name}` }),
+	).toBeVisible();
+});
+
 // Story 7.1: loan accounts.
 
 test("a mortgage created through the form is listed under « Passifs », its page showing its details", async ({

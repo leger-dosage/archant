@@ -12,10 +12,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { ACCOUNT_TYPES } from "@archant/data/account-types";
+import { toMinorUnits } from "@archant/data/money";
 
 import styles from "../styles.css?raw";
 import { contrastRatio } from "./contrast.ts";
-import { ACCOUNT_TYPE_TINTS, HOVER_ROW, resolveTint } from "./tint.ts";
+import { ACCOUNT_TYPE_TINTS, HOVER_ROW, resolveTint, rowSubject } from "./tint.ts";
 import { TRANSFER_COLOR } from "./transfers.ts";
 
 const MODES = ["light", "dark"] as const;
@@ -104,4 +105,45 @@ it("covers every account type, with the hex of its `--type-*` token", () => {
 	// The hover row is `--accent` in both modes.
 	expect(styles).toContain(`--accent: ${HOVER_ROW.light};`);
 	expect(styles).toContain(`--accent: ${HOVER_ROW.dark};`);
+});
+
+describe("rowSubject", () => {
+	const food = { color: "#27a644", icon: "utensils" } as const;
+	const outflow = toMinorUnits(-5000);
+
+	it("draws a transfer side that shows no category as the transfer arrows", () => {
+		expect(
+			rowSubject({ amount: outflow, transfer: { kind: "internal_move" } }, food, "Banque"),
+		).toEqual({ kind: "transfer" });
+		// The inflow of a loan payment is not spent: no category.
+		expect(
+			rowSubject({ amount: toMinorUnits(5000), transfer: { kind: "loan_payment" } }, null, null),
+		).toEqual({ kind: "transfer" });
+	});
+
+	it("draws a spent loan payment with its category, as its pill", () => {
+		expect(rowSubject({ amount: outflow, transfer: { kind: "loan_payment" } }, food, null)).toEqual(
+			{ kind: "category", ...food },
+		);
+	});
+
+	it("draws a category before a merchant", () => {
+		expect(rowSubject({ amount: outflow, transfer: null }, food, "Carrefour")).toEqual({
+			kind: "category",
+			...food,
+		});
+	});
+
+	it("draws a merchant without a category as the merchant", () => {
+		expect(rowSubject({ amount: outflow, transfer: null }, null, "Carrefour")).toEqual({
+			kind: "merchant",
+			name: "Carrefour",
+		});
+	});
+
+	it("draws a bare row as uncategorised", () => {
+		expect(rowSubject({ amount: outflow, transfer: null }, null, null)).toEqual({
+			kind: "uncategorised",
+		});
+	});
 });
