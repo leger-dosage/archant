@@ -4,14 +4,14 @@
 	"type": "module",
 	"scripts": {
 		"api": "pnpm --filter @archant/api",
-		"web": "pnpm --filter @archant/web",
+		"app": "pnpm --filter @archant/app",
 		"data": "pnpm --filter @archant/data",
 		"format": "oxfmt .",
 		"lint:code": "oxlint --type-aware --max-warnings 0 --no-error-on-unmatched-pattern",
 		"lint:format": "oxfmt --check .",
 		"typecheck": "pnpm -r typecheck",
 		"test": "pnpm -r test",
-		"test:e2e": "pnpm --filter @archant/web test:e2e"
+		"test:e2e": "pnpm --filter @archant/app test:e2e"
 	},
 	"devDependencies": {
 		"@shadcn/lint": "^0.2.0",

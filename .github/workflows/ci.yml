@@ -52,7 +52,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Playwright starts the API and the built interface itself, so nothing
       # else has to be booted here. Only the browser is missing from the runner.
-      - run: pnpm --filter @archant/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @archant/app exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       # `vite build` regenerates the tracked routeTree.gen.ts; it must not change.
       - run: git diff --exit-code
@@ -60,7 +60,7 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: packages/web/playwright-report
+          path: packages/app/playwright-report
           retention-days: 7
 
   # The container is the reference deployment target (ADR 0002): build it,

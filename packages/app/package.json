@@ -1,5 +1,5 @@
 {
-	"name": "@archant/web",
+	"name": "@archant/app",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",

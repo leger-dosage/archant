@@ -4,7 +4,7 @@ coverage
 playwright-report
 test-results
 # The end-to-end suite's signed-in browser state: a live session cookie.
-packages/web/e2e/.auth
+packages/app/e2e/.auth
 *.tsbuildinfo
 
 # Local secrets. `.env.example` is committed and is the contract.

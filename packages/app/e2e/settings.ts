@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Not a dev port (8787 or 5173): the suite runs beside `pnpm api start:dev`
-// and `pnpm web start:dev` without touching their database. One port, as in
+// and `pnpm app start:dev` without touching their database. One port, as in
 // the container: the API serves the built interface itself.
 export const PORT = 8788;
 

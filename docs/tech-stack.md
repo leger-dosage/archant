@@ -38,7 +38,7 @@ Oxfmt restores it, through `sortImports` with the custom group in `.oxfmtrc.json
 
 It is younger than the rest of the stack, announced as beta in February 2026 even though its own documentation calls it production-ready. The escape hatch is cheap: reinstall Prettier, restore `.prettierrc` with `{ "useTabs": true }`, run `pnpm format` once.
 
-## Interface — `@archant/web`
+## Interface — `@archant/app`
 
 | Package                                                         | Version               | Role                                                    |
 | --------------------------------------------------------------- | --------------------- | ------------------------------------------------------- |

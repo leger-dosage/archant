@@ -41,10 +41,10 @@ describe("validateEnv", () => {
 	});
 
 	it("accepts an absolute WEB_DIST and names a relative one", () => {
-		expect(validateEnv({ ...required, WEB_DIST: "/app/packages/web/dist" }).WEB_DIST).toBe(
-			"/app/packages/web/dist",
+		expect(validateEnv({ ...required, WEB_DIST: "/app/packages/app/dist" }).WEB_DIST).toBe(
+			"/app/packages/app/dist",
 		);
-		expect(() => validateEnv({ ...required, WEB_DIST: "packages/web/dist" })).toThrow(/WEB_DIST/);
+		expect(() => validateEnv({ ...required, WEB_DIST: "packages/app/dist" })).toThrow(/WEB_DIST/);
 	});
 
 	it("reads the port as a number and names one out of range", () => {

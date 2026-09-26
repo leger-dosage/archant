@@ -39,7 +39,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ENCRYPTION_KEY`                | no       | Encrypts bank session ids at rest, base64 of 32 bytes.                                                                                             |
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
 
-The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/web/dist`, and port 8787. The server runs as the unprivileged `node` user.
+The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, and port 8787. The server runs as the unprivileged `node` user.
 
 ### Behind a reverse proxy
 
@@ -127,7 +127,7 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
 
   | Where Archant runs           | Redirect URL to register                              |
   | ---------------------------- | ----------------------------------------------------- |
-  | `pnpm web start:dev`         | `http://localhost:5173/settings/banks/callback`       |
+  | `pnpm app start:dev`         | `http://localhost:5173/settings/banks/callback`       |
   | The container, default       | `http://localhost:8787/settings/banks/callback`       |
   | The container behind a proxy | `https://archant.example.org/settings/banks/callback` |
 
@@ -204,7 +204,7 @@ The command asks for the new password twice without echoing it, never accepts it
 
 These stay possible and none of them will have a file in this repository, by design: adding one must never fork the application code.
 
-- **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm web build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/web/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
+- **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm app build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/app/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
 - **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
 - **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
 - **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
