@@ -122,7 +122,7 @@ FR56: A linked account uses the balance reported by the bank as its reference an
 FR57: Creating the first administrator requires a setup token that only someone with access to the server can read, so a stranger who finds a fresh instance cannot claim it.
 FR58: The user can turn on two-factor sign-in with a time-based one-time code (TOTP) and single-use backup codes, as in Sure.
 FR59: Every release publishes a versioned container image, for amd64 and arm64, that a self-hoster pulls and pins; the interface shows the running version.
-FR60: The server copies the database before applying a pending migration and once a night, and shows when the last copy succeeded; a command takes a consistent backup on demand, and another restores one.
+FR60: Before applying a pending migration, the server copies the database beside it, so a failed upgrade can go back to the previous version with that copy.
 
 ### NonFunctional Requirements
 
@@ -155,7 +155,7 @@ NFR16: The default deployment exposes nothing it does not need: the container pu
 - `POST /api/sync` is protected by a shared secret and meant to run once a day, triggered by a cron or a scheduled GitHub Action.
 - GitHub Actions runs the verification gate on every pull request and exercises the container once it exists.
 - Enable Banking credentials (application id and private key) come from the environment.
-- Backups are taken by the application before a migration, once a night and on demand through a command (FR60); copying them off the machine, encrypted, is documented in `docs/hosting.md`, not done by the application.
+- The application copies the database before a migration (FR60). Other backups are taken by hand with the `VACUUM INTO` recipe of `docs/deployment.md`; scheduled and off-site backups are deferred until the owner wants them.
 - Amounts are signed from the account's point of view: negative means money leaving the account. A liability's balance is displayed as a positive outstanding amount. The architecture fixes the storage convention.
 - Every story ships automated tests for its acceptance criteria: Playwright end-to-end tests for what the interface shows, Vitest for domain, services and routes. A story is not done while one of its criteria is only checked by hand. Story 1.7 creates the Playwright harness and covers Stories 1.1 to 1.4; every story after it adds its own tests.
 - The architecture spine, `architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md`, binds every story; its `AD-n` rules win over any wording here.
@@ -238,7 +238,7 @@ FR56: Epic 10 - Bank balance as reference
 FR57: Epic 13 - Setup token
 FR58: Epic 13 - Two-factor sign-in
 FR59: Epic 13 - Versioned image and visible version
-FR60: Epic 13 - Backups before migration and nightly, backup and restore commands
+FR60: Epic 13 - Copy before migration
 
 Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, and revises the additional requirement on backups.
 
@@ -306,7 +306,7 @@ Archant stops looking austere: Sure's content (a greeting, colour through tinted
 
 ### Epic 13: Ready for real bank data
 
-The owner hosts Archant somewhere other than their laptop, connects a real bank through Enable Banking's production environment, and upgrades it without risking the data: the findings of the security audit of 2026-09-26 are fixed, releases ship as versioned images, the database is copied before every migration and every night to encrypted storage off the machine, and a guide takes the owner from nothing to Archant running at home, reachable only through Tailscale.
+The owner hosts Archant somewhere other than their laptop, connects a real bank through Enable Banking's production environment, and upgrades it without risking the data: the findings of the security audit of 2026-09-26 are fixed, releases ship as versioned images, the database is copied before every migration, and a guide takes the owner from nothing to Archant running at home, reachable only through Tailscale.
 **FRs covered:** FR57, FR58, FR59, FR60; NFR15, NFR16
 
 ## Epic 1: Track accounts and transactions by hand
@@ -2054,7 +2054,7 @@ Where Sure settles a question, the story follows it: two-factor sign-in is TOTP 
 
 The hosting research of 2026-09-26 ranked, for bank data first and cost second: a machine at home reachable only through Tailscale (free), a VPS in France at about 4.60 € a month (OVH VPS-1) or in Germany (Hetzner), then Fly.io at about 2 to 3 dollars a month. Render, Koyeb and Railway's free tiers have no persistent disk; Google Cloud's free VM is outside the EU; Oracle's Always Free tier halved its quota without notice in 2026 and reclaims idle instances; Turso would move the bank history to a third party. Cloudflare Workers with D1, considered in ADR 0001 and set aside by ADR 0002, does not fit the free plan: 10 ms of CPU and 50 subrequests per request, a D1 query counting as one, no interactive transaction where the API opens 46, and every query refused for the rest of the day past 100,000 rows written.
 
-On 2026-09-27 the owner chose the machine at home, reachable only through Tailscale, a private encrypted network between their own devices. Nothing listens on the internet: Enable Banking's consent redirect is a navigation of the owner's browser, which is on the tailnet, and every call to Enable Banking leaves the server outbound. A home machine can die, be stolen or be encrypted by ransomware, so the owner asked that the data not depend on it: Story 13.6 copies the database every night, and Story 13.7 sends those copies, encrypted, off the machine and alerts when that stops. Stories 13.1 to 13.4 still ship: a tailnet shrinks the attack surface, it does not replace a sign-in that holds on its own.
+On 2026-09-27 the owner chose the machine at home, reachable only through Tailscale, a private encrypted network between their own devices. Nothing listens on the internet: Enable Banking's consent redirect is a navigation of the owner's browser, which is on the tailnet, and every call to Enable Banking leaves the server outbound. A home machine can die or be stolen. On 2026-09-27 the owner judged scheduled and off-site backups too much for the project's maturity, after comparing Litestream (continuous, but no client-side encryption since v0.5) with offen/docker-volume-backup (nightly, GPG-encrypted, needing a nightly copy from the server): neither is planned. Story 13.6 keeps the one copy that protects the likeliest loss, a failed upgrade, and Story 13.7 documents the manual backup and what a lost machine costs. Stories 13.1 to 13.4 still ship: a tailnet shrinks the attack surface, it does not replace a sign-in that holds on its own.
 
 Stories 13.1 to 13.4 can ship in any order; 13.6 needs 13.5's version number; 13.7 comes last, since it documents all of them.
 
@@ -2200,11 +2200,11 @@ So that upgrading is a pull, and going back is choosing the previous tag.
 **When** `pnpm test` and the CI jobs run
 **Then** every acceptance criterion above has an automated test; the release workflow is checked by `actionlint` in CI
 
-### Story 13.6: Backups the server takes itself
+### Story 13.6: A copy before every migration
 
 As the household's administrator,
-I want the server to copy my database before it migrates it and every night, and a command to back up and restore,
-So that a failed upgrade or a bad import never costs me my history.
+I want the server to copy my database before it migrates it,
+So that a failed upgrade never costs me my history.
 
 **Requirements:** FR60, FR46
 
@@ -2212,23 +2212,11 @@ So that a failed upgrade or a bad import never costs me my history.
 
 **Given** a database file with at least one pending migration
 **When** the server starts
-**Then** before migrating it writes a consistent copy with `VACUUM INTO` to `backups/` beside the database, named after the running version and the time, keeps the five most recent such copies, and refuses to migrate if the copy fails; with no pending migration, or a `libsql://` database, it copies nothing and says so in the log
-
-**Given** `node packages/api/src/cli/backup.ts`, run in the container or from a checkout
-**When** the server is running or stopped
-**Then** it writes a consistent copy, checks it with `PRAGMA integrity_check`, prints its path, and keeps the 14 most recent on-demand copies
-
-**Given** a running server with a database file
-**When** a night passes
-**Then** it takes the same checked copy once a day at an hour set by `BACKUP_HOUR`, 3 by default in `APP_TIMEZONE`, keeps the 14 most recent, logs a failure at `error` without stopping, and « Réglages » shows the time of the last successful copy, with a warning when it is older than two days
-
-**Given** `node packages/api/src/cli/restore.ts <file>` with the server stopped
-**When** it runs
-**Then** it refuses a file that fails `PRAGMA integrity_check` or holds no Archant migration table, copies the current database aside first, replaces it, removes the WAL and shared-memory files, and the next start migrates the restored file forward
+**Then** before migrating it writes a consistent copy with `VACUUM INTO` to `backups/` beside the database, named after the running version and the time, keeps the five most recent, and refuses to migrate if the copy fails; with no pending migration, or a `libsql://` database, it copies nothing and says so in the log
 
 **Given** `docs/deployment.md`
 **When** a self-hoster reads « Upgrading » and « Backups »
-**Then** they describe the pinned tag, `docker compose pull`, the automatic copy, going back to the previous tag with the pre-migration copy, and the two commands, replacing the manual `VACUUM INTO` recipe
+**Then** they describe the pinned tag, `docker compose pull`, the automatic copy, and going back to the previous tag by restoring that copy with the existing restore recipe
 
 **Given** the finished story
 **When** `pnpm test` and the CI `image` job run
@@ -2237,8 +2225,8 @@ So that a failed upgrade or a bad import never costs me my history.
 ### Story 13.7: Hosting at home behind Tailscale
 
 As the household's administrator,
-I want a guide that takes me from a machine at home to Archant reachable only through Tailscale, backed up off the machine and connected to my real bank,
-So that I can run it on real data knowing that losing the machine does not lose my history.
+I want a guide that takes me from a machine at home to Archant reachable only through Tailscale and connected to my real bank,
+So that I can run it on real data without guessing what I missed.
 
 **Requirements:** FR46, FR57, FR58, FR59, FR60, NFR16
 
@@ -2250,15 +2238,11 @@ So that I can run it on real data knowing that losing the machine does not lose 
 
 **Given** the guide
 **When** it reaches backups
-**Then** it sends the nightly copies of Story 13.6 off the machine with the official `restic/restic` image reading the volume read-only, encrypted, to one storage it names with its free allowance, after the sync in the same cron job; `restic forget --prune` keeps 7 daily, 4 weekly and 12 monthly snapshots; `restic check` runs weekly; each run pings a dead man's switch such as healthchecks.io, which e-mails the owner when a night is missed
-
-**Given** the guide
-**When** it reaches restoring
-**Then** it restores the latest snapshot onto a fresh machine with `restic restore` and Story 13.6's `restore.ts`, and asks the reader to do it once before connecting a real bank
+**Then** it points to the `VACUUM INTO` recipe of `docs/deployment.md`, suggests copying the file to another device from time to time, and states plainly that nothing else is backed up: a dead or stolen machine loses everything since the last manual copy
 
 **Given** the guide
 **When** it lists what to keep off the machine
-**Then** it names the restic password, `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`, kept in a password manager apart from the backups, and says what each loss costs: no restore at all, every bank to reconnect, every session signed out
+**Then** it names `ENCRYPTION_KEY` and `BETTER_AUTH_SECRET`, kept in a password manager apart from the backups, and says what each loss costs: every bank to reconnect, every session signed out
 
 **Given** « Connecting a bank » in `docs/deployment.md`
 **When** it covers production

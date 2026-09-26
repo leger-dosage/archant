@@ -132,6 +132,6 @@ development_status:
   13-3-the-container-exposes-nothing-it-does-not-need: backlog
   13-4-two-factor-sign-in: backlog
   13-5-versioned-images: backlog
-  13-6-backups-the-server-takes-itself: backlog
+  13-6-a-copy-before-every-migration: backlog
   13-7-hosting-at-home-behind-tailscale: backlog
   epic-13-retrospective: optional
