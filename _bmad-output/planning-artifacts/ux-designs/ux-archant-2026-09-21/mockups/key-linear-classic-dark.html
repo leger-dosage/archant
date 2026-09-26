@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Archant, direction A, Linear Light et Linear Classic Dark (maquette)</title>
+<style>
+/* Epic 12, iteration "Linear Classic Dark": light mode from Linear Light tokens; dark surfaces derived in LCH
+   from Linear's Classic Dark generator inputs (base #1F2023, accent #5E6AD2, contrast 30), not copied from Linear.
+   Every contrast ratio shown in the page is computed by the generator script, WCAG 2.2 formula. */
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#D6D6DA;font-family:'Inter Variable','Inter',system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;font-feature-settings:"cv01","ss03";font-size:13px;line-height:1.5;color:#282A30;padding:32px 0}
+.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.th-dark{--bg:#1A1B1E;--panel:#1F2023;--sec:#252629;--hover:#2B2D30;--active:#27282B;--bg3:#303134;--t1:#EEEFF1;--t2:#CBCCCE;--t3:#929496;--t4:#757677;--b1:#323336;--b2:#3F4044;--line:#2D2E31;--grid:#292A2E;--accent:#818AF6;--sel:#292C3F;--brand:#5E6AD2;--link:#818AF6;--income:#2BA947;--chrome:#1A1B1E;--logo:#EEEFF1;--gh:#252629;--tint:17%;color-scheme:dark;}
+.th-dark .k-food{--c:#FC7840;--ci:#FC7840;--ct:#FEBCA0}
+.th-dark .k-home{--c:#F0BF00;--ci:#F0BF00;--ct:#F5D454}
+.th-dark .k-transport{--c:#4EA7FC;--ci:#4EA7FC;--ct:#A5D2FD}
+.th-dark .k-subs{--c:#9D6FE8;--ci:#9D6FE8;--ct:#D2BDF4}
+.th-dark .k-health{--c:#E2609C;--ci:#E2609C;--ct:#F2B6D1}
+.th-dark .k-leisure{--c:#00B8CC;--ci:#00B8CC;--ct:#80DCE6}
+.th-dark .k-income{--c:#27A644;--ci:#27A644;--ct:#9CD6A9}
+.th-dark .k-transfer{--c:#5E6AD2;--ci:#707AD7;--ct:#BABFEC}
+.th-dark .k-none{--c:#929496;--ci:#929496;--ct:#CACBCC}
+.th-dark .k-dep{--c:#9D6FE8;--ci:#9D6FE8;--ct:#D2BDF4}
+.th-dark .k-inv{--c:#4EA7FC;--ci:#4EA7FC;--ct:#A5D2FD}
+.th-dark .k-prop{--c:#00B8CC;--ci:#00B8CC;--ct:#80DCE6}
+.th-dark .k-cc{--c:#EB5757;--ci:#EB5757;--ct:#F6B5B5}
+.th-dark .k-loan{--c:#C95FD8;--ci:#C95FD8;--ct:#E7B7ED}
+.th-dark .k-warn{--c:#FC7840;--ci:#FC7840;--ct:#FEBCA0}
+.th-light{--bg:#F8F8F8;--panel:#FFFFFF;--sec:#FFFFFF;--hover:#F4F4F4;--active:#EEEDEF;--bg3:#F4F2F4;--t1:#282A30;--t2:#3C4149;--t3:#6F6E77;--t4:#86848D;--b1:#E9E8EA;--b2:#DCDBDD;--line:#EAEAEB;--grid:#F0F0F1;--accent:#7170FF;--sel:#F1F1FF;--brand:#5E6AD2;--link:#5E6AD2;--income:#1E8034;--chrome:#EEEDEF;--logo:#282A30;--gh:#F8F8F8;--tint:10%;color-scheme:light;}
+.th-light .k-food{--c:#FC7840;--ci:#D66636;--ct:#A64F2A}
+.th-light .k-home{--c:#F0BF00;--ci:#A88600;--ct:#826700}
+.th-light .k-transport{--c:#4EA7FC;--ci:#418BD1;--ct:#326BA1}
+.th-light .k-subs{--c:#9D6FE8;--ci:#9A6DE3;--ct:#7754B0}
+.th-light .k-health{--c:#E2609C;--ci:#D45A93;--ct:#A54672}
+.th-light .k-leisure{--c:#00B8CC;--ci:#0095A5;--ct:#00727E}
+.th-light .k-income{--c:#27A644;--ci:#24993F;--ct:#1C7630}
+.th-light .k-transfer{--c:#5E6AD2;--ci:#5E6AD2;--ct:#535DB9}
+.th-light .k-none{--c:#6F6E77;--ci:#6F6E77;--ct:#66656D}
+.th-light .k-dep{--c:#9D6FE8;--ci:#9A6DE3;--ct:#7754B0}
+.th-light .k-inv{--c:#4EA7FC;--ci:#418BD1;--ct:#326BA1}
+.th-light .k-prop{--c:#00B8CC;--ci:#0095A5;--ct:#00727E}
+.th-light .k-cc{--c:#EB5757;--ci:#E25454;--ct:#B04141}
+.th-light .k-loan{--c:#C95FD8;--ci:#C15BCF;--ct:#9546A0}
+.th-light .k-warn{--c:#FC7840;--ci:#D66636;--ct:#A64F2A}
+
+/* Documentation blocks */
+.doc{width:1440px;margin:0 auto 32px;background:#FFFFFF;border:1px solid #E4E2E4;border-radius:12px;padding:28px 32px}
+.doc h1{font-size:20px;font-weight:590;letter-spacing:-.01em;margin-bottom:6px}
+.doc .kicker{font-size:12px;font-weight:510;color:#5E6AD2;margin-bottom:6px}
+.doc p.rationale{font-size:14px;max-width:960px;color:#3C4149;margin-bottom:22px}
+.doc-cols{display:grid;grid-template-columns:1fr 1.15fr;gap:40px}
+.doc h2{font-size:13px;font-weight:590;margin-bottom:8px}
+.doc p.note{font-size:12px;color:#6F6E77;margin-top:10px}
+.cost{list-style:none}
+.cost li{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid #EAEAEB;font-size:12.5px;color:#3C4149}
+.cost li:last-child{border-bottom:none}
+.tag{font-size:11px;font-weight:510;border-radius:4px;padding:1px 6px;white-space:nowrap;align-self:center;background:#F4F2F4;color:#3C4149;border:1px solid #E4E2E4}
+.tag.medium{background:#FFF4EC;color:#9A3A10;border-color:#F8D5C0}
+table.hex{width:100%;border-collapse:collapse;font-size:12px}
+table.hex th{text-align:left;font-weight:510;color:#6F6E77;padding:4px 6px;border-bottom:1px solid #DCDBDD}
+table.hex td{padding:4px 6px;border-bottom:1px solid #EAEAEB;vertical-align:middle;color:#3C4149}
+table.hex td.r{text-align:right;font-variant-numeric:tabular-nums}
+table.hex code{font-family:'Berkeley Mono',ui-monospace,Menlo,monospace;font-size:11px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.fail{color:#A1321F;font-weight:510}
+.section-label{width:1440px;margin:0 auto 10px;font-size:13px;font-weight:590;color:#3C4149}
+.section-label small{font-weight:400;color:#6F6E77;margin-left:8px;font-size:12px}
+
+/* Browser frame */
+.frame{width:1440px;margin:0 auto 44px;border-radius:12px;overflow:hidden;background:var(--bg);color:var(--t1);box-shadow:0 0 0 1px rgba(0,0,0,.14)}
+.chrome{height:36px;background:var(--chrome);display:flex;align-items:center;gap:16px;padding:0 14px;border-bottom:1px solid var(--b1)}
+.dots{display:flex;gap:6px}.dots span{width:10px;height:10px;border-radius:9999px;background:var(--b2)}
+.address{flex:1;max-width:520px;height:22px;background:var(--bg);border:1px solid var(--b1);border-radius:6px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:var(--t3)}
+.address svg{width:11px;height:11px}
+.app{display:flex;min-height:900px}
+
+/* Sidebar on the base background, no border */
+.sb{width:240px;flex-shrink:0;padding:10px 8px 10px 10px;display:flex;flex-direction:column}
+.ws{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;margin-bottom:8px;font-weight:590;font-size:13px}
+.ws .logo{width:18px;height:18px;color:var(--logo)}
+.ws .grow{flex:1}
+.ib{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--t3)}
+.ib svg{width:15px;height:15px}
+.ib.bd{border:1px solid var(--b1);background:var(--panel)}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;font-size:13px;font-weight:510;color:var(--t2);text-decoration:none}
+.nav a svg{width:16px;height:16px;color:var(--t3)}
+.nav a.on{background:var(--active);color:var(--t1)}
+.nav a.on svg{color:var(--t1)}
+.sl{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:510;color:var(--t3);padding:0 8px;margin:18px 0 4px;height:24px}
+.sl svg{width:13px;height:13px}
+.gh{display:flex;justify-content:space-between;align-items:center;height:26px;padding:0 8px;font-size:12px;color:var(--t3)}
+.gh .num{color:var(--t2)}
+.acc{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;font-size:13px;color:var(--t2)}
+.acc .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acc .num{font-size:12px;color:var(--t3)}
+.foot{margin-top:auto;display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;font-size:13px;color:var(--t2)}
+.me{width:20px;height:20px;border-radius:9999px;background:var(--brand);color:#FFFFFF;display:grid;place-items:center;font-size:11px;font-weight:590}
+
+/* Inset panel */
+.panel{flex:1;min-width:0;margin:8px 8px 8px 0;background:var(--panel);border:1px solid var(--b1);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.tb{height:44px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 12px 0 18px;border-bottom:1px solid var(--line)}
+.crumb{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:510;color:var(--t1)}
+.crumb svg{width:15px;height:15px;color:var(--t3)}
+.crumb .sep{color:var(--t4)}
+.crumb .dim{color:var(--t3);font-weight:400}
+.tb .grow{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:6px;font:inherit;font-size:12.5px;font-weight:510;border:1px solid var(--b1);background:var(--sec);color:var(--t1);white-space:nowrap}
+.btn svg{width:14px;height:14px;color:var(--t3)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#FFFFFF}
+.btn.primary svg{color:#FFFFFF}
+.link{color:var(--link);font-weight:510;text-decoration:none;font-size:12.5px}
+.content{padding:24px 28px 32px}
+.hello{margin-bottom:20px}
+.hello h1{font-size:20px;font-weight:590;letter-spacing:-.01em;line-height:1.3}
+.hello p{color:var(--t3);font-size:13px}
+
+/* Bordered sections replace A's shadowed cards */
+.sec{background:var(--sec);border:1px solid var(--b1);border-radius:8px;overflow:hidden}
+.sh{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px 0 16px;border-bottom:1px solid var(--line)}
+.sh h2{font-size:15px;font-weight:590;letter-spacing:-.005em}
+.sbody{padding:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.lbl{font-size:12px;color:var(--t3)}
+.seg{display:inline-flex;gap:1px;border:1px solid var(--b1);border-radius:6px;padding:1px;background:var(--panel)}
+.seg span{font-size:12px;font-weight:510;height:22px;line-height:22px;padding:0 9px;border-radius:4px;color:var(--t3)}
+.seg span.on{background:var(--active);color:var(--t1)}
+
+/* Tinted icons and pills (A), per-mode tint */
+.tile{width:22px;height:22px;border-radius:6px;flex-shrink:0;display:grid;place-items:center;background:color-mix(in oklab,var(--c) var(--tint),transparent);color:var(--ci)}
+.tile svg{width:13px;height:13px}
+.tile.xs{width:18px;height:18px;border-radius:5px}.tile.xs svg{width:11px;height:11px}
+.tile.lg{width:36px;height:36px;border-radius:8px}.tile.lg svg{width:18px;height:18px}
+.tile .letter{font-size:11px;font-weight:590;color:var(--ct)}
+.pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px 0 6px;border-radius:9999px;font-size:12px;font-weight:510;color:var(--ct);background:color-mix(in oklab,var(--c) var(--tint),transparent)}
+.pill svg{width:12px;height:12px;color:var(--ci)}
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;border-radius:5px;font-size:11.5px;font-weight:510;white-space:nowrap;background:var(--bg3);color:var(--t2)}
+.badge svg{width:12px;height:12px;color:var(--t3)}
+.badge.warn{background:color-mix(in oklab,var(--c) var(--tint),transparent);color:var(--ct)}
+.badge.warn svg{color:var(--ci)}
+
+/* Net worth */
+.nw{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end}
+.nw-val{font-size:28px;font-weight:590;letter-spacing:-.02em;line-height:1.2;margin:2px 0 4px}
+.delta{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:510;color:var(--income)}
+.delta svg{width:14px;height:14px}
+.delta .per{color:var(--t3);font-weight:400}
+.nw-side{display:flex;gap:28px}
+.nw-side .num{font-size:15px;font-weight:590}
+.chart{position:relative;margin-top:14px;height:210px}
+.chart .yl{position:absolute;left:0;width:46px;font-size:11px;color:var(--t3);transform:translateY(-50%)}
+.chart svg{position:absolute;left:52px;right:0;top:0;width:calc(100% - 52px);height:190px}
+.chart .xl{position:absolute;left:52px;right:0;bottom:0;display:flex;justify-content:space-between;font-size:11px;color:var(--t3)}
+.summary{font-size:12px;color:var(--t3);margin-top:10px}
+
+/* Flow */
+.tots{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line)}
+.tots>div{padding:12px 16px}
+.tots>div+div{border-left:1px solid var(--line)}
+.tots .num{font-size:17px;font-weight:590;letter-spacing:-.01em}
+.inc{color:var(--income)}
+.flow{display:grid;grid-template-columns:168px 1fr;gap:16px;align-items:center;padding:14px 16px 8px}
+.donut{position:relative;width:160px;height:160px}
+.donut svg{width:160px;height:160px}
+.donut .c{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.donut .c small{display:block;font-size:11px;color:var(--t3)}
+.donut .c b{font-size:15px;font-weight:590}
+.lh{display:flex;align-items:center;gap:10px;height:28px;padding:0 4px;font-size:12px;color:var(--t3);border-bottom:1px solid var(--line)}
+.r{display:flex;align-items:center;gap:10px;height:36px;padding:0 4px;border-bottom:1px solid var(--line);font-size:13px}
+.r:last-child{border-bottom:none}
+.r .grow,.lh .grow{flex:1;min-width:0}
+.r .cap{color:var(--t3);font-size:12px;margin-left:6px}
+.pct{width:44px;text-align:right;font-size:12px;color:var(--t3)}
+.r .num{font-weight:510}
+
+/* Balance sheet */
+.bs{padding:14px 16px 6px}
+.bs+.bs{border-top:1px solid var(--line)}
+.bsh{display:flex;justify-content:space-between;align-items:baseline}
+.bsh h3{font-size:13px;font-weight:590}
+.bsh .num{font-size:14px;font-weight:590}
+.wbar{display:flex;gap:2px;height:4px;border-radius:9999px;overflow:hidden;margin:10px 0 8px}
+.wbar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--t3);margin-bottom:6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend span::before{content:'';width:7px;height:7px;border-radius:2px;background:var(--c)}
+
+/* Transactions list, Linear list view */
+.tools{height:44px;display:flex;align-items:center;gap:8px;padding:0 12px 0 18px;border-bottom:1px solid var(--line)}
+.search{width:340px;height:28px;border-radius:6px;border:1px solid var(--b1);background:var(--panel);display:flex;align-items:center;gap:8px;padding:0 9px;color:var(--t3);font-size:12.5px}
+.search.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.search svg{width:14px;height:14px}
+.search .caret{width:1px;height:14px;background:var(--t1);margin-left:-4px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border:1px dashed var(--b2);border-radius:6px;font-size:12px;color:var(--t3)}
+.chip svg{width:13px;height:13px}
+.gh2{display:flex;align-items:center;gap:8px;height:36px;padding:0 18px 0 18px;background:var(--hover);border-bottom:1px solid var(--line);font-size:13px;font-weight:510}
+.gh2 .n{color:var(--t3);font-weight:400}
+.gh2 .grow{flex:1}
+.gh2 .num{color:var(--t2);font-weight:510;font-size:12.5px}
+.gh2{background:var(--gh)}
+.tx{display:grid;grid-template-columns:16px 22px minmax(0,1fr) 170px 120px 116px;gap:12px;align-items:center;height:36px;padding:0 18px;border-bottom:1px solid var(--line);font-size:13px;position:relative}
+.tx .lb{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden}
+.tx .lb b{font-weight:510}
+.tx .lb .cap{color:var(--t3);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.tx .acct{font-size:12.5px;color:var(--t2);display:flex;align-items:center;gap:6px}
+.tx .amt{text-align:right;font-weight:510}
+.tx.muted .lb b,.tx.muted .amt{color:var(--t3)}
+.tx.hov{background:var(--hover)}
+.tx.sel{background:var(--sel)}
+.tx.sel::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--accent)}
+.cb{width:14px;height:14px;border-radius:4px;border:1px solid var(--t4);display:grid;place-items:center}
+.cb.on{background:var(--accent);border-color:var(--accent);color:#FFFFFF}
+.cb svg{width:10px;height:10px}
+.legend-note{font-size:12px;color:var(--t3);padding:12px 18px}
+
+/* Empty state */
+.empty{max-width:480px;margin:36px auto 0;text-align:center;padding:36px 32px}
+.empty .tile{margin:0 auto 14px}
+.empty h2{font-size:15px;font-weight:590;margin-bottom:4px}
+.empty p{color:var(--t3);font-size:13px;margin-bottom:18px}
+
+/* Logo */
+.logos{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.lg-pane{border-radius:10px;padding:28px;display:flex;flex-direction:column;gap:22px;background:var(--bg);color:var(--t1);border:1px solid var(--b1)}
+.lg-row{display:flex;align-items:center;gap:36px}
+.mark{display:grid;place-items:center;width:128px;height:128px;border-radius:10px;background:var(--panel);border:1px solid var(--b1)}
+.lockup{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:590;letter-spacing:-.01em}
+.fav{display:flex;gap:28px;align-items:flex-end}
+.fav figure{text-align:center;font-size:12px;color:var(--t3)}
+.fav figcaption{margin-top:8px}
+.tab{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;background:var(--panel);border:1px solid var(--b1);border-bottom:none;border-radius:8px 8px 0 0;font-size:12px;color:var(--t2)}
+
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-utensils" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-heart-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7Z"/><path d="M3.2 12h6.3l.5-1 2 4.5 2-7 1.5 3.5h5.3"/></symbol>
+    <symbol id="i-ticket" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></symbol>
+    <symbol id="i-dollar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></symbol>
+    <symbol id="i-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></symbol>
+    <symbol id="i-dashed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3.9"/></symbol>
+    <symbol id="i-landmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 22h18"/><path d="M6 18v-7"/><path d="M10 18v-7"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M12 2 20 7H4z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></symbol>
+    <symbol id="i-hand-coins" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17"/><path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.8-2.9l-4.2 3.9"/><path d="m2 16 6 6"/><circle cx="16" cy="9" r="2.9"/><circle cx="6" cy="5" r="3"/></symbol>
+    <symbol id="i-dashboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.5 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <!-- Archant mark: an arch (the ledger's vault) whose crossbar reads as an A -->
+    <symbol id="logo" viewBox="0 0 32 32"><path fill="currentColor" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol></defs>
+</svg>
+
+
+<section class="doc">
+  <div class="kicker">Epic 12 · Itération « Linear » sur la direction A, sombre classique</div>
+  <h1>Direction A, Linear Light et Linear Classic Dark</h1>
+  <p class="rationale">Le mode clair reste celui de l'itération précédente, repris des jetons de Linear Light. Le mode sombre suit désormais Linear Classic Dark, un anthracite plus chaud et plus clair que le quasi-noir <span class="num">#08090A</span> du thème Dark par défaut, avec le contenu un cran plus clair que la barre latérale. En sombre, l'indigo <span class="num">#5E6AD2</span> garde le bouton principal et la teinte de sélection, et un indigo éclairci <span class="num">#818AF6</span> porte les liens, le focus et la courbe.</p>
+  <p class="note" style="margin:-12px 0 22px;max-width:960px">Les fonds sombres ne sont pas copiés de Linear. Ils sont dérivés par ce script des entrées du générateur de Linear, <code>generateTheme({ base: #1F2023, accent: #5E6AD2, contrast: 30 })</code> : même teinte et même chroma que la base en LCH, luminance décalée par pas. Ce sont des approximations du rendu de Linear.</p>
+  <div class="doc-cols">
+    <div>
+      <h2>Ce que ça coûte à construire</h2>
+      <ul class="cost">
+        <li><span>Thème : deux jeux de variables CSS, clair et sombre, qui surchargent les jetons shadcn dans <code>index.css</code></span><span class="tag">peu coûteux</span></li>
+        <li><span>Panneau encastré : un seul composant de mise en page, barre latérale sur le fond, panneau bordé avec sa barre de titre</span><span class="tag">peu coûteux</span></li>
+        <li><span>Inter via <code>@fontsource-variable/inter</code> à la place de Geist, avec <code>cv01</code> et <code>ss03</code>. Changement de dépendance à justifier dans la pull request</span><span class="tag">peu coûteux</span></li>
+        <li><span>Cartes de A en sections bordées : retirer l'ombre de <code>Card</code>, garder la bordure</span><span class="tag">peu coûteux</span></li>
+        <li><span>Liste des opérations en lignes de 36 px, en-têtes de jour, survol et sélection</span><span class="tag">peu coûteux</span></li>
+        <li><span>Couleurs de texte et d'icône des catégories calculées par mode, teinte 10 % en clair et 17 % en sombre : l'assistant de contraste prévu pour A prend un paramètre de plus</span><span class="tag">peu coûteux</span></li>
+        <li><span>Courbe de patrimoine avec grille et axes : <code>CartesianGrid</code> et <code>YAxis</code> de Recharts</span><span class="tag">peu coûteux</span></li>
+        <li><span>Anneau des dépenses, comme dans A</span><span class="tag medium">moyen</span></li>
+        <li><span>Mode sombre traité à égalité : chaque écran revu et vérifié deux fois</span><span class="tag medium">moyen</span></li>
+        <li><span>Barres de poids, logo, favicon et état vide, comme dans A</span><span class="tag">peu coûteux</span></li>
+      </ul>
+      <p class="note">Le texte quaternaire de Linear échoue en texte courant, donc les libellés d'axe utilisent le tertiaire. Il ne sert qu'au contour des cases à cocher, où 3:1 suffit. L'accent <span class="num">#7170FF</span> fait 3,84:1 sur blanc : en clair il ne porte aucun texte, les liens prennent l'indigo <span class="num">#5E6AD2</span>. Le vert <span class="num">#27A644</span> fait 3,17:1 sur blanc, donc les revenus en clair utilisent <span class="num">#1E8034</span>, le même vert assombri par le script jusqu'à 5:1. En sombre, il fait 4,36:1 sur la ligne survolée, le fond le plus clair qui le porte : le script l'éclaircit en LCH jusqu'à <span class="num">#2BA947</span>. L'accent sombre <span class="num">#818AF6</span> est l'indigo <span class="num">#5E6AD2</span> éclairci en LCH jusqu'à 4,5:1 sur la ligne survolée.</p>
+    </div>
+    <div>
+      <h2>Valeurs utilisées et contrastes calculés</h2>
+      <table class="hex"><thead><tr><th>Rôle</th><th>Clair</th><th class="r">Ratio</th><th>Sombre</th><th class="r">Ratio</th></tr></thead><tbody><tr><td>Texte principal</td><td><i class="sw" style="background:#282A30"></i><code>#282A30</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">14,34</td><td><i class="sw" style="background:#EEEFF1"></i><code>#EEEFF1</code> <span style="color:#86848D">sur</span> <code>#1F2023</code></td><td class="r ">14,16</td></tr><tr><td>Texte secondaire</td><td><i class="sw" style="background:#3C4149"></i><code>#3C4149</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">10,27</td><td><i class="sw" style="background:#CBCCCE"></i><code>#CBCCCE</code> <span style="color:#86848D">sur</span> <code>#1F2023</code></td><td class="r ">10,14</td></tr><tr><td>Texte tertiaire, panneau</td><td><i class="sw" style="background:#6F6E77"></i><code>#6F6E77</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">5,03</td><td><i class="sw" style="background:#929496"></i><code>#929496</code> <span style="color:#86848D">sur</span> <code>#252629</code></td><td class="r ">4,97</td></tr><tr><td>Texte tertiaire, barre latérale</td><td><i class="sw" style="background:#6F6E77"></i><code>#6F6E77</code> <span style="color:#86848D">sur</span> <code>#F8F8F8</code></td><td class="r ">4,74</td><td><i class="sw" style="background:#929496"></i><code>#929496</code> <span style="color:#86848D">sur</span> <code>#1A1B1E</code></td><td class="r ">5,66</td></tr><tr><td>Texte tertiaire, pire fond</td><td><i class="sw" style="background:#6F6E77"></i><code>#6F6E77</code> <span style="color:#86848D">sur</span> <code>#F4F4F4</code> <span style="color:#6F6E77">ligne survolée</span></td><td class="r ">4,58</td><td><i class="sw" style="background:#929496"></i><code>#929496</code> <span style="color:#86848D">sur</span> <code>#292C3F</code> <span style="color:#6F6E77">ligne sélectionnée</span></td><td class="r ">4,52</td></tr><tr><td>Texte quaternaire, échoue en texte</td><td><i class="sw" style="background:#86848D"></i><code>#86848D</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code> <span style="color:#6F6E77">contour de case</span></td><td class="r ">3,68</td><td><i class="sw" style="background:#757677"></i><code>#757677</code> <span style="color:#86848D">sur</span> <code>#2B2D30</code> <span style="color:#6F6E77">contour de case</span></td><td class="r ">3,03</td></tr><tr><td>Lien</td><td><i class="sw" style="background:#5E6AD2"></i><code>#5E6AD2</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">4,70</td><td><i class="sw" style="background:#818AF6"></i><code>#818AF6</code> <span style="color:#86848D">sur</span> <code>#1F2023</code></td><td class="r ">5,35</td></tr><tr><td>Lien, section</td><td><i class="sw" style="background:#5E6AD2"></i><code>#5E6AD2</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">4,70</td><td><i class="sw" style="background:#818AF6"></i><code>#818AF6</code> <span style="color:#86848D">sur</span> <code>#252629</code></td><td class="r ">4,97</td></tr><tr><td>Accent non-texte</td><td><i class="sw" style="background:#7170FF"></i><code>#7170FF</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code> <span style="color:#6F6E77">focus, barre de sélection, courbe</span></td><td class="r ">3,84</td><td><i class="sw" style="background:#818AF6"></i><code>#818AF6</code> <span style="color:#86848D">sur</span> <code>#252629</code> <span style="color:#6F6E77">focus, barre de sélection, courbe</span></td><td class="r ">4,97</td></tr><tr><td>Coche blanche sur la case</td><td><i class="sw" style="background:#FFFFFF"></i><code>#FFFFFF</code> <span style="color:#86848D">sur</span> <code>#7170FF</code></td><td class="r ">3,84</td><td><i class="sw" style="background:#FFFFFF"></i><code>#FFFFFF</code> <span style="color:#86848D">sur</span> <code>#818AF6</code></td><td class="r ">3,04</td></tr><tr><td>Bouton principal, texte blanc</td><td><i class="sw" style="background:#FFFFFF"></i><code>#FFFFFF</code> <span style="color:#86848D">sur</span> <code>#5E6AD2</code></td><td class="r ">4,70</td><td><i class="sw" style="background:#FFFFFF"></i><code>#FFFFFF</code> <span style="color:#86848D">sur</span> <code>#5E6AD2</code></td><td class="r ">4,70</td></tr><tr><td>Revenus</td><td><i class="sw" style="background:#1E8034"></i><code>#1E8034</code> <span style="color:#86848D">sur</span> <code>#FFFFFF</code></td><td class="r ">5,01</td><td><i class="sw" style="background:#2BA947"></i><code>#2BA947</code> <span style="color:#86848D">sur</span> <code>#252629</code></td><td class="r ">4,95</td></tr><tr><td>Revenus, pire fond</td><td><i class="sw" style="background:#1E8034"></i><code>#1E8034</code> <span style="color:#86848D">sur</span> <code>#F4F4F4</code></td><td class="r ">4,55</td><td><i class="sw" style="background:#2BA947"></i><code>#2BA947</code> <span style="color:#86848D">sur</span> <code>#2B2D30</code></td><td class="r ">4,52</td></tr><tr><td>Badge neutre</td><td><i class="sw" style="background:#3C4149"></i><code>#3C4149</code> <span style="color:#86848D">sur</span> <code>#F4F2F4</code></td><td class="r ">9,22</td><td><i class="sw" style="background:#CBCCCE"></i><code>#CBCCCE</code> <span style="color:#86848D">sur</span> <code>#303134</code></td><td class="r ">8,09</td></tr><tr><td>Texte sur ligne sélectionnée</td><td><i class="sw" style="background:#282A30"></i><code>#282A30</code> <span style="color:#86848D">sur</span> <code>#F1F1FF</code></td><td class="r ">12,82</td><td><i class="sw" style="background:#EEEFF1"></i><code>#EEEFF1</code> <span style="color:#86848D">sur</span> <code>#292C3F</code></td><td class="r ">11,96</td></tr></tbody></table>
+      <p class="note">Fonds clair : base <code>#F8F8F8</code>, panneau <code>#FFFFFF</code>, survol <code>#F4F4F4</code>, actif <code>#EEEDEF</code>, bordure <code>#E9E8EA</code>, filet <code>#EAEAEB</code>. Fonds sombre, luminance LCH relative à la base <code>#1F2023</code> : barre latérale <code>#1A1B1E</code> (−2,5), panneau <code>#1F2023</code> (0), section et en-tête de jour <code>#252629</code> (+3), actif <code>#27282B</code> (+4), survol <code>#2B2D30</code> (+6), badge <code>#303134</code> (+8), filet <code>#2D2E31</code> (+6,5), bordure <code>#323336</code> (+9), bordure forte <code>#3F4044</code> (+15). Sélection <code>#292C3F</code> : 16 % de <code>#5E6AD2</code> sur le panneau. La grille du graphique utilise <code>#F0F0F1</code> et <code>#292A2E</code>, plus pâles que les filets.</p>
+    </div>
+  </div>
+  <h2 style="margin-top:22px">Catégories et types de compte</h2>
+  <table class="hex"><thead><tr><th>Élément</th><th>Couleur de base</th><th>Clair : texte de pastille · icône, sur la teinte 10 % posée sur le survol</th><th>Sombre : texte · icône, sur la teinte 17 % posée sur le survol</th></tr></thead><tbody><tr><td>Alimentation <span style="color:#86848D">(Linear orange)</span></td><td><i class="sw" style="background:#FC7840"></i><code>#FC7840</code></td><td><code>#A64F2A</code> 4,64 · icône <code>#D66636</code> 3,01</td><td><code>#FEBCA0</code> 6,50 · icône <code>#FC7840</code> 3,98</td></tr><tr><td>Logement <span style="color:#86848D">(Linear jaune)</span></td><td><i class="sw" style="background:#F0BF00"></i><code>#F0BF00</code></td><td><code>#826700</code> 4,69 · icône <code>#A88600</code> 3,00</td><td><code>#F5D454</code> 6,52 · icône <code>#F0BF00</code> 5,49</td></tr><tr><td>Transport <span style="color:#86848D">(Linear bleu)</span></td><td><i class="sw" style="background:#4EA7FC"></i><code>#4EA7FC</code></td><td><code>#326BA1</code> 4,68 · icône <code>#418BD1</code> 3,01</td><td><code>#A5D2FD</code> 6,51 · icône <code>#4EA7FC</code> 4,06</td></tr><tr><td>Abonnements <span style="color:#86848D">(violet de A désaturé)</span></td><td><i class="sw" style="background:#9D6FE8"></i><code>#9D6FE8</code></td><td><code>#7754B0</code> 4,69 · icône <code>#9A6DE3</code> 3,04</td><td><code>#D2BDF4</code> 6,54 · icône <code>#9D6FE8</code> 3,12</td></tr><tr><td>Santé <span style="color:#86848D">(rose de A désaturé)</span></td><td><i class="sw" style="background:#E2609C"></i><code>#E2609C</code></td><td><code>#A54672</code> 4,62 · icône <code>#D45A93</code> 3,02</td><td><code>#F2B6D1</code> 6,53 · icône <code>#E2609C</code> 3,37</td></tr><tr><td>Loisirs <span style="color:#86848D">(Linear sarcelle)</span></td><td><i class="sw" style="background:#00B8CC"></i><code>#00B8CC</code></td><td><code>#00727E</code> 4,73 · icône <code>#0095A5</code> 3,00</td><td><code>#80DCE6</code> 6,56 · icône <code>#00B8CC</code> 4,30</td></tr><tr><td>Revenus <span style="color:#86848D">(Linear vert)</span></td><td><i class="sw" style="background:#27A644"></i><code>#27A644</code></td><td><code>#1C7630</code> 4,69 · icône <code>#24993F</code> 3,03</td><td><code>#9CD6A9</code> 6,55 · icône <code>#27A644</code> 3,44</td></tr><tr><td>Virement <span style="color:#86848D">(Linear indigo)</span></td><td><i class="sw" style="background:#5E6AD2"></i><code>#5E6AD2</code></td><td><code>#535DB9</code> 4,66 · icône <code>#5E6AD2</code> 3,79</td><td><code>#BABFEC</code> 6,54 · icône <code>#707AD7</code> 3,04</td></tr><tr><td>Sans catégorie <span style="color:#86848D">(text-tertiary du mode)</span></td><td><i class="sw" style="background:#6F6E77"></i><code>#6F6E77</code></td><td><code>#66656D</code> 4,66 · icône <code>#6F6E77</code> 4,07</td><td><code>#CACBCC</code> 6,51 · icône <code>#929496</code> 3,47</td></tr><tr><td>Courant, Épargne <span style="color:#86848D">(violet de A désaturé)</span></td><td><i class="sw" style="background:#9D6FE8"></i><code>#9D6FE8</code></td><td><code>#7754B0</code> 4,69 · icône <code>#9A6DE3</code> 3,04</td><td><code>#D2BDF4</code> 6,54 · icône <code>#9D6FE8</code> 3,12</td></tr><tr><td>Investissement <span style="color:#86848D">(Linear bleu)</span></td><td><i class="sw" style="background:#4EA7FC"></i><code>#4EA7FC</code></td><td><code>#326BA1</code> 4,68 · icône <code>#418BD1</code> 3,01</td><td><code>#A5D2FD</code> 6,51 · icône <code>#4EA7FC</code> 4,06</td></tr><tr><td>Bien immobilier <span style="color:#86848D">(Linear sarcelle)</span></td><td><i class="sw" style="background:#00B8CC"></i><code>#00B8CC</code></td><td><code>#00727E</code> 4,73 · icône <code>#0095A5</code> 3,00</td><td><code>#80DCE6</code> 6,56 · icône <code>#00B8CC</code> 4,30</td></tr><tr><td>Carte de crédit <span style="color:#86848D">(Linear rouge)</span></td><td><i class="sw" style="background:#EB5757"></i><code>#EB5757</code></td><td><code>#B04141</code> 4,63 · icône <code>#E25454</code> 3,02</td><td><code>#F6B5B5</code> 6,58 · icône <code>#EB5757</code> 3,25</td></tr><tr><td>Prêt <span style="color:#86848D">(magenta de A désaturé)</span></td><td><i class="sw" style="background:#C95FD8"></i><code>#C95FD8</code></td><td><code>#9546A0</code> 4,69 · icône <code>#C15BCF</code> 3,03</td><td><code>#E7B7ED</code> 6,54 · icône <code>#C95FD8</code> 3,22</td></tr><tr><td>Doublon possible <span style="color:#86848D">(Linear orange)</span></td><td><i class="sw" style="background:#FC7840"></i><code>#FC7840</code></td><td><code>#A64F2A</code> 4,64 · icône <code>#D66636</code> 3,01</td><td><code>#FEBCA0</code> 6,50 · icône <code>#FC7840</code> 3,98</td></tr></tbody></table>
+  <p class="note">Texte visé 4,6:1 en clair et 6,5:1 en sombre pour une teinte plus claire, icône visée 3:1, toujours mesurés sur le fond le moins favorable, la ligne survolée. La teinte de 17 % reste : sur l'anthracite, elle se détache du survol autant que sur le quasi-noir, de 1,24:1 à 1,34:1 selon la couleur. Les segments de l'anneau et des barres gardent la couleur de base.</p>
+</section>
+<div class="section-label">1a. Tableau de bord, mode sombre</div>
+
+<div class="frame th-dark">
+  <div class="chrome"><div class="dots"><span></span><span></span><span></span></div><div class="address"><svg><use href="#i-lock"/></svg>archant.local/</div></div>
+  <div class="app">
+    <nav class="sb" aria-label="Navigation principale">
+  <div class="ws"><svg class="logo"><use href="#logo"/></svg><span class="grow">Archant</span><span class="ib"><svg><use href="#i-search"/></svg></span><span class="ib bd"><svg><use href="#i-plus"/></svg></span></div>
+  <div class="nav"><a class="on"><svg><use href="#i-dashboard"/></svg>Tableau de bord</a><a class=""><svg><use href="#i-wallet"/></svg>Comptes</a><a class=""><svg><use href="#i-receipt"/></svg>Opérations</a><a class=""><svg><use href="#i-calendar"/></svg>Récurrences</a><a class=""><svg><use href="#i-filter"/></svg>Règles</a><a class=""><svg><use href="#i-settings"/></svg>Réglages</a></div>
+  <div class="sl"><span>Comptes</span><svg><use href="#i-plus"/></svg></div>
+  
+  <div class="gh"><span>Actifs</span><span class="num">291 118,68 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Compte joint</span><span class="num">3 483,90 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Livret A</span><span class="num">9 100,00 €</span></div>
+  <div class="acc"><span class="tile xs k-inv"><svg><use href="#i-chart"/></svg></span><span class="nm">PEA</span><span class="num">42 534,78 €</span></div>
+  <div class="acc"><span class="tile xs k-prop"><svg><use href="#i-home"/></svg></span><span class="nm">Maison</span><span class="num">236 000,00 €</span></div>
+  <div class="gh" style="margin-top:6px"><span>Passifs</span><span class="num">13 437,20 €</span></div>
+  <div class="acc"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span><span class="nm">Carte Visa</span><span class="num">−1 137,20 €</span></div>
+  <div class="acc"><span class="tile xs k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="nm">Prêt auto</span><span class="num">−12 300,00 €</span></div>
+  <div class="foot"><span class="me">G</span><span>Guillaume</span></div>
+</nav>
+    <main class="panel">
+      <div class="tb">
+        <div class="crumb"><svg><use href="#i-dashboard"/></svg>Tableau de bord</div><span class="grow"></span>
+        <button class="btn"><svg><use href="#i-upload"/></svg>Importer un fichier</button>
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>Nouvelle opération</button>
+      </div>
+      <div class="content">
+        <div class="hello"><h1>Bonjour Guillaume</h1><p>Voici où en sont les finances du foyer.</p></div>
+
+        <section class="sec">
+          <div class="sh"><h2>Patrimoine net</h2><div class="seg"><span>1 mois</span><span>3 mois</span><span class="on">6 mois</span><span>1 an</span><span>Tout</span></div></div>
+          <div class="sbody">
+            <div class="nw">
+              <div>
+                <div class="nw-val num">277 681,48 €</div>
+                <div class="delta"><svg><use href="#i-trend"/></svg><span class="num">+3 412,20 € (+1,2 %)</span><span class="per">sur 6 mois</span></div>
+              </div>
+              <div class="nw-side">
+                <div><div class="lbl">Actifs</div><div class="num">291 118,68 €</div></div>
+                <div><div class="lbl">Passifs</div><div class="num">13 437,20 €</div></div>
+              </div>
+            </div>
+            <div class="chart" role="img" aria-label="Patrimoine net sur 6 mois, de 274 269,28 € à 277 681,48 €">
+  <span class="yl num" style="top:35.2px">278 k€</span><span class="yl num" style="top:66.5px">277 k€</span><span class="yl num" style="top:97.8px">276 k€</span><span class="yl num" style="top:129.1px">275 k€</span><span class="yl num" style="top:160.4px">274 k€</span>
+  <svg viewBox="0 0 1000 170" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="g-dark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#818AF6" stop-opacity="0.14"/><stop offset="1" stop-color="#818AF6" stop-opacity="0"/></linearGradient></defs>
+    <line x1="0" x2="1000" y1="31.5" y2="31.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="59.5" y2="59.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="87.5" y2="87.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="115.5" y2="115.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="143.5" y2="143.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    <path fill="url(#g-dark)" d="M0.0 136.0 L38.5 115.4 L76.9 126.7 L115.4 145.2 L153.8 153.2 L192.3 124.3 L230.8 91.5 L269.2 90.5 L307.7 119.0 L346.2 114.7 L384.6 96.4 L423.1 69.7 L461.5 95.4 L500.0 120.8 L538.5 110.8 L576.9 73.6 L615.4 41.8 L653.8 67.0 L692.3 86.1 L730.8 68.3 L769.2 51.9 L807.7 43.3 L846.2 59.6 L884.6 70.1 L923.1 43.3 L961.5 11.2 L1000.0 40.4 L1000 170 L0 170 Z"/>
+    <path fill="none" stroke="#818AF6" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" d="M0.0 136.0 L38.5 115.4 L76.9 126.7 L115.4 145.2 L153.8 153.2 L192.3 124.3 L230.8 91.5 L269.2 90.5 L307.7 119.0 L346.2 114.7 L384.6 96.4 L423.1 69.7 L461.5 95.4 L500.0 120.8 L538.5 110.8 L576.9 73.6 L615.4 41.8 L653.8 67.0 L692.3 86.1 L730.8 68.3 L769.2 51.9 L807.7 43.3 L846.2 59.6 L884.6 70.1 L923.1 43.3 L961.5 11.2 L1000.0 40.4"/>
+  </svg>
+  <div class="xl"><span>25 mars</span><span>avr.</span><span>mai</span><span>juin</span><span>juil.</span><span>août</span><span>25 sept.</span></div>
+</div>
+            <div class="summary">Le patrimoine net passe de 274 269,28 € à 277 681,48 € en 6 mois. <a class="link" href="#">Voir le tableau</a></div>
+          </div>
+        </section>
+
+        <div class="grid2">
+          <section class="sec">
+            <div class="sh"><h2>Flux de septembre 2026</h2><div class="seg"><span class="on">Dépenses</span><span>Revenus</span></div></div>
+            <div class="tots">
+              <div><div class="lbl">Revenus</div><div class="num inc">+6 820,00 €</div></div>
+              <div><div class="lbl">Dépenses</div><div class="num">−4 312,57 €</div></div>
+              <div><div class="lbl">Épargne du mois</div><div class="num">2 507,43 €</div></div>
+            </div>
+            <div class="flow">
+              <div class="donut"><svg viewBox="0 0 160 160" role="img" aria-label="Répartition des dépenses de septembre par catégorie"><g fill="none" stroke-width="5" transform="rotate(-90 80 80)"><circle cx="80" cy="80" r="64" stroke="#929496" stroke-dasharray="156.32 402.12" stroke-dashoffset="0.00"/><circle cx="80" cy="80" r="64" stroke="#F0BF00" stroke-dasharray="114.36 402.12" stroke-dashoffset="-158.52"/><circle cx="80" cy="80" r="64" stroke="#FC7840" stroke-dasharray="61.61 402.12" stroke-dashoffset="-275.07"/><circle cx="80" cy="80" r="64" stroke="#4EA7FC" stroke-dasharray="26.93 402.12" stroke-dashoffset="-338.88"/><circle cx="80" cy="80" r="64" stroke="#00B8CC" stroke-dasharray="17.51 402.12" stroke-dashoffset="-368.01"/><circle cx="80" cy="80" r="64" stroke="#9D6FE8" stroke-dasharray="6.19 402.12" stroke-dashoffset="-387.72"/><circle cx="80" cy="80" r="64" stroke="#E2609C" stroke-dasharray="3.81 402.12" stroke-dashoffset="-396.11"/></g></svg><div class="c"><div><small>Dépenses</small><b class="num">4 312,57 €</b></div></div></div>
+              <div>
+                <div class="lh"><span class="grow">Catégorie</span><span>Montant</span><span class="pct">Part</span></div>
+                <div class="r"><span class="tile  k-none"><svg><use href="#i-dashed"/></svg></span><span class="grow">Sans catégorie</span><span class="num">1 700,00 €</span><span class="pct num">39,4 %</span></div><div class="r"><span class="tile  k-home"><svg><use href="#i-home"/></svg></span><span class="grow">Logement</span><span class="num">1 250,00 €</span><span class="pct num">29,0 %</span></div><div class="r"><span class="tile  k-food"><svg><use href="#i-utensils"/></svg></span><span class="grow">Alimentation</span><span class="num">684,32 €</span><span class="pct num">15,9 %</span></div><div class="r"><span class="tile  k-transport"><svg><use href="#i-car"/></svg></span><span class="grow">Transport</span><span class="num">312,40 €</span><span class="pct num">7,2 %</span></div><div class="r"><span class="tile  k-leisure"><svg><use href="#i-ticket"/></svg></span><span class="grow">Loisirs</span><span class="num">211,38 €</span><span class="pct num">4,9 %</span></div><div class="r"><span class="tile  k-subs"><svg><use href="#i-repeat"/></svg></span><span class="grow">Abonnements</span><span class="num">89,97 €</span><span class="pct num">2,1 %</span></div><div class="r"><span class="tile  k-health"><svg><use href="#i-heart-pulse"/></svg></span><span class="grow">Santé</span><span class="num">64,50 €</span><span class="pct num">1,5 %</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sh"><h2>Bilan</h2><a class="link" href="#">Tous les comptes</a></div>
+            <div class="bs">
+              <div class="bsh"><h3>Actifs</h3><span class="num">291 118,68 €</span></div>
+              <div class="wbar" aria-hidden="true"><i style="width:4.3%;background:#9D6FE8"></i><i style="width:14.6%;background:#4EA7FC"></i><i style="width:81.1%;background:#00B8CC"></i></div>
+              <div class="legend"><span class="k-dep">Comptes bancaires 4,3 %</span><span class="k-inv">Investissement 14,6 %</span><span class="k-prop">Bien immobilier 81,1 %</span></div>
+              <div class="r"><span class="tile  k-dep"><svg><use href="#i-landmark"/></svg></span><span class="grow">Compte joint<span class="cap">Courant</span></span><span class="num">3 483,90 €</span></div><div class="r"><span class="tile  k-dep"><svg><use href="#i-landmark"/></svg></span><span class="grow">Livret A<span class="cap">Épargne</span></span><span class="num">9 100,00 €</span></div><div class="r"><span class="tile  k-inv"><svg><use href="#i-chart"/></svg></span><span class="grow">PEA<span class="cap">Investissement</span></span><span class="num">42 534,78 €</span></div><div class="r"><span class="tile  k-prop"><svg><use href="#i-home"/></svg></span><span class="grow">Maison<span class="cap">Bien immobilier</span></span><span class="num">236 000,00 €</span></div>
+            </div>
+            <div class="bs">
+              <div class="bsh"><h3>Passifs</h3><span class="num">13 437,20 €</span></div>
+              <div class="wbar" aria-hidden="true"><i style="width:8.5%;background:#EB5757"></i><i style="width:91.5%;background:#C95FD8"></i></div>
+              <div class="legend"><span class="k-cc">Carte de crédit 8,5 %</span><span class="k-loan">Prêt 91,5 %</span></div>
+              <div class="r"><span class="tile  k-cc"><svg><use href="#i-card"/></svg></span><span class="grow">Carte Visa<span class="cap">Carte de crédit</span></span><span class="num">−1 137,20 €</span></div>
+              <div class="r"><span class="tile  k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="grow">Prêt auto<span class="cap">Prêt</span></span><span class="num">−12 300,00 €</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="section-label">1b. Tableau de bord, mode clair</div>
+
+<div class="frame th-light">
+  <div class="chrome"><div class="dots"><span></span><span></span><span></span></div><div class="address"><svg><use href="#i-lock"/></svg>archant.local/</div></div>
+  <div class="app">
+    <nav class="sb" aria-label="Navigation principale">
+  <div class="ws"><svg class="logo"><use href="#logo"/></svg><span class="grow">Archant</span><span class="ib"><svg><use href="#i-search"/></svg></span><span class="ib bd"><svg><use href="#i-plus"/></svg></span></div>
+  <div class="nav"><a class="on"><svg><use href="#i-dashboard"/></svg>Tableau de bord</a><a class=""><svg><use href="#i-wallet"/></svg>Comptes</a><a class=""><svg><use href="#i-receipt"/></svg>Opérations</a><a class=""><svg><use href="#i-calendar"/></svg>Récurrences</a><a class=""><svg><use href="#i-filter"/></svg>Règles</a><a class=""><svg><use href="#i-settings"/></svg>Réglages</a></div>
+  <div class="sl"><span>Comptes</span><svg><use href="#i-plus"/></svg></div>
+  
+  <div class="gh"><span>Actifs</span><span class="num">291 118,68 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Compte joint</span><span class="num">3 483,90 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Livret A</span><span class="num">9 100,00 €</span></div>
+  <div class="acc"><span class="tile xs k-inv"><svg><use href="#i-chart"/></svg></span><span class="nm">PEA</span><span class="num">42 534,78 €</span></div>
+  <div class="acc"><span class="tile xs k-prop"><svg><use href="#i-home"/></svg></span><span class="nm">Maison</span><span class="num">236 000,00 €</span></div>
+  <div class="gh" style="margin-top:6px"><span>Passifs</span><span class="num">13 437,20 €</span></div>
+  <div class="acc"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span><span class="nm">Carte Visa</span><span class="num">−1 137,20 €</span></div>
+  <div class="acc"><span class="tile xs k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="nm">Prêt auto</span><span class="num">−12 300,00 €</span></div>
+  <div class="foot"><span class="me">G</span><span>Guillaume</span></div>
+</nav>
+    <main class="panel">
+      <div class="tb">
+        <div class="crumb"><svg><use href="#i-dashboard"/></svg>Tableau de bord</div><span class="grow"></span>
+        <button class="btn"><svg><use href="#i-upload"/></svg>Importer un fichier</button>
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>Nouvelle opération</button>
+      </div>
+      <div class="content">
+        <div class="hello"><h1>Bonjour Guillaume</h1><p>Voici où en sont les finances du foyer.</p></div>
+
+        <section class="sec">
+          <div class="sh"><h2>Patrimoine net</h2><div class="seg"><span>1 mois</span><span>3 mois</span><span class="on">6 mois</span><span>1 an</span><span>Tout</span></div></div>
+          <div class="sbody">
+            <div class="nw">
+              <div>
+                <div class="nw-val num">277 681,48 €</div>
+                <div class="delta"><svg><use href="#i-trend"/></svg><span class="num">+3 412,20 € (+1,2 %)</span><span class="per">sur 6 mois</span></div>
+              </div>
+              <div class="nw-side">
+                <div><div class="lbl">Actifs</div><div class="num">291 118,68 €</div></div>
+                <div><div class="lbl">Passifs</div><div class="num">13 437,20 €</div></div>
+              </div>
+            </div>
+            <div class="chart" role="img" aria-label="Patrimoine net sur 6 mois, de 274 269,28 € à 277 681,48 €">
+  <span class="yl num" style="top:35.2px">278 k€</span><span class="yl num" style="top:66.5px">277 k€</span><span class="yl num" style="top:97.8px">276 k€</span><span class="yl num" style="top:129.1px">275 k€</span><span class="yl num" style="top:160.4px">274 k€</span>
+  <svg viewBox="0 0 1000 170" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="g-light" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7170FF" stop-opacity="0.08"/><stop offset="1" stop-color="#7170FF" stop-opacity="0"/></linearGradient></defs>
+    <line x1="0" x2="1000" y1="31.5" y2="31.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="59.5" y2="59.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="87.5" y2="87.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="115.5" y2="115.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/><line x1="0" x2="1000" y1="143.5" y2="143.5" stroke="var(--grid)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+    <path fill="url(#g-light)" d="M0.0 136.0 L38.5 115.4 L76.9 126.7 L115.4 145.2 L153.8 153.2 L192.3 124.3 L230.8 91.5 L269.2 90.5 L307.7 119.0 L346.2 114.7 L384.6 96.4 L423.1 69.7 L461.5 95.4 L500.0 120.8 L538.5 110.8 L576.9 73.6 L615.4 41.8 L653.8 67.0 L692.3 86.1 L730.8 68.3 L769.2 51.9 L807.7 43.3 L846.2 59.6 L884.6 70.1 L923.1 43.3 L961.5 11.2 L1000.0 40.4 L1000 170 L0 170 Z"/>
+    <path fill="none" stroke="#7170FF" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" d="M0.0 136.0 L38.5 115.4 L76.9 126.7 L115.4 145.2 L153.8 153.2 L192.3 124.3 L230.8 91.5 L269.2 90.5 L307.7 119.0 L346.2 114.7 L384.6 96.4 L423.1 69.7 L461.5 95.4 L500.0 120.8 L538.5 110.8 L576.9 73.6 L615.4 41.8 L653.8 67.0 L692.3 86.1 L730.8 68.3 L769.2 51.9 L807.7 43.3 L846.2 59.6 L884.6 70.1 L923.1 43.3 L961.5 11.2 L1000.0 40.4"/>
+  </svg>
+  <div class="xl"><span>25 mars</span><span>avr.</span><span>mai</span><span>juin</span><span>juil.</span><span>août</span><span>25 sept.</span></div>
+</div>
+            <div class="summary">Le patrimoine net passe de 274 269,28 € à 277 681,48 € en 6 mois. <a class="link" href="#">Voir le tableau</a></div>
+          </div>
+        </section>
+
+        <div class="grid2">
+          <section class="sec">
+            <div class="sh"><h2>Flux de septembre 2026</h2><div class="seg"><span class="on">Dépenses</span><span>Revenus</span></div></div>
+            <div class="tots">
+              <div><div class="lbl">Revenus</div><div class="num inc">+6 820,00 €</div></div>
+              <div><div class="lbl">Dépenses</div><div class="num">−4 312,57 €</div></div>
+              <div><div class="lbl">Épargne du mois</div><div class="num">2 507,43 €</div></div>
+            </div>
+            <div class="flow">
+              <div class="donut"><svg viewBox="0 0 160 160" role="img" aria-label="Répartition des dépenses de septembre par catégorie"><g fill="none" stroke-width="5" transform="rotate(-90 80 80)"><circle cx="80" cy="80" r="64" stroke="#6F6E77" stroke-dasharray="156.32 402.12" stroke-dashoffset="0.00"/><circle cx="80" cy="80" r="64" stroke="#F0BF00" stroke-dasharray="114.36 402.12" stroke-dashoffset="-158.52"/><circle cx="80" cy="80" r="64" stroke="#FC7840" stroke-dasharray="61.61 402.12" stroke-dashoffset="-275.07"/><circle cx="80" cy="80" r="64" stroke="#4EA7FC" stroke-dasharray="26.93 402.12" stroke-dashoffset="-338.88"/><circle cx="80" cy="80" r="64" stroke="#00B8CC" stroke-dasharray="17.51 402.12" stroke-dashoffset="-368.01"/><circle cx="80" cy="80" r="64" stroke="#9D6FE8" stroke-dasharray="6.19 402.12" stroke-dashoffset="-387.72"/><circle cx="80" cy="80" r="64" stroke="#E2609C" stroke-dasharray="3.81 402.12" stroke-dashoffset="-396.11"/></g></svg><div class="c"><div><small>Dépenses</small><b class="num">4 312,57 €</b></div></div></div>
+              <div>
+                <div class="lh"><span class="grow">Catégorie</span><span>Montant</span><span class="pct">Part</span></div>
+                <div class="r"><span class="tile  k-none"><svg><use href="#i-dashed"/></svg></span><span class="grow">Sans catégorie</span><span class="num">1 700,00 €</span><span class="pct num">39,4 %</span></div><div class="r"><span class="tile  k-home"><svg><use href="#i-home"/></svg></span><span class="grow">Logement</span><span class="num">1 250,00 €</span><span class="pct num">29,0 %</span></div><div class="r"><span class="tile  k-food"><svg><use href="#i-utensils"/></svg></span><span class="grow">Alimentation</span><span class="num">684,32 €</span><span class="pct num">15,9 %</span></div><div class="r"><span class="tile  k-transport"><svg><use href="#i-car"/></svg></span><span class="grow">Transport</span><span class="num">312,40 €</span><span class="pct num">7,2 %</span></div><div class="r"><span class="tile  k-leisure"><svg><use href="#i-ticket"/></svg></span><span class="grow">Loisirs</span><span class="num">211,38 €</span><span class="pct num">4,9 %</span></div><div class="r"><span class="tile  k-subs"><svg><use href="#i-repeat"/></svg></span><span class="grow">Abonnements</span><span class="num">89,97 €</span><span class="pct num">2,1 %</span></div><div class="r"><span class="tile  k-health"><svg><use href="#i-heart-pulse"/></svg></span><span class="grow">Santé</span><span class="num">64,50 €</span><span class="pct num">1,5 %</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sec">
+            <div class="sh"><h2>Bilan</h2><a class="link" href="#">Tous les comptes</a></div>
+            <div class="bs">
+              <div class="bsh"><h3>Actifs</h3><span class="num">291 118,68 €</span></div>
+              <div class="wbar" aria-hidden="true"><i style="width:4.3%;background:#9D6FE8"></i><i style="width:14.6%;background:#4EA7FC"></i><i style="width:81.1%;background:#00B8CC"></i></div>
+              <div class="legend"><span class="k-dep">Comptes bancaires 4,3 %</span><span class="k-inv">Investissement 14,6 %</span><span class="k-prop">Bien immobilier 81,1 %</span></div>
+              <div class="r"><span class="tile  k-dep"><svg><use href="#i-landmark"/></svg></span><span class="grow">Compte joint<span class="cap">Courant</span></span><span class="num">3 483,90 €</span></div><div class="r"><span class="tile  k-dep"><svg><use href="#i-landmark"/></svg></span><span class="grow">Livret A<span class="cap">Épargne</span></span><span class="num">9 100,00 €</span></div><div class="r"><span class="tile  k-inv"><svg><use href="#i-chart"/></svg></span><span class="grow">PEA<span class="cap">Investissement</span></span><span class="num">42 534,78 €</span></div><div class="r"><span class="tile  k-prop"><svg><use href="#i-home"/></svg></span><span class="grow">Maison<span class="cap">Bien immobilier</span></span><span class="num">236 000,00 €</span></div>
+            </div>
+            <div class="bs">
+              <div class="bsh"><h3>Passifs</h3><span class="num">13 437,20 €</span></div>
+              <div class="wbar" aria-hidden="true"><i style="width:8.5%;background:#EB5757"></i><i style="width:91.5%;background:#C95FD8"></i></div>
+              <div class="legend"><span class="k-cc">Carte de crédit 8,5 %</span><span class="k-loan">Prêt 91,5 %</span></div>
+              <div class="r"><span class="tile  k-cc"><svg><use href="#i-card"/></svg></span><span class="grow">Carte Visa<span class="cap">Carte de crédit</span></span><span class="num">−1 137,20 €</span></div>
+              <div class="r"><span class="tile  k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="grow">Prêt auto<span class="cap">Prêt</span></span><span class="num">−12 300,00 €</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="section-label">2a. Opérations, mode sombre</div>
+
+<div class="frame th-dark">
+  <div class="chrome"><div class="dots"><span></span><span></span><span></span></div><div class="address"><svg><use href="#i-lock"/></svg>archant.local/transactions</div></div>
+  <div class="app" style="min-height:640px">
+    <nav class="sb" aria-label="Navigation principale">
+  <div class="ws"><svg class="logo"><use href="#logo"/></svg><span class="grow">Archant</span><span class="ib"><svg><use href="#i-search"/></svg></span><span class="ib bd"><svg><use href="#i-plus"/></svg></span></div>
+  <div class="nav"><a class=""><svg><use href="#i-dashboard"/></svg>Tableau de bord</a><a class=""><svg><use href="#i-wallet"/></svg>Comptes</a><a class="on"><svg><use href="#i-receipt"/></svg>Opérations</a><a class=""><svg><use href="#i-calendar"/></svg>Récurrences</a><a class=""><svg><use href="#i-filter"/></svg>Règles</a><a class=""><svg><use href="#i-settings"/></svg>Réglages</a></div>
+  <div class="sl"><span>Comptes</span><svg><use href="#i-plus"/></svg></div>
+  
+  <div class="gh"><span>Actifs</span><span class="num">291 118,68 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Compte joint</span><span class="num">3 483,90 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Livret A</span><span class="num">9 100,00 €</span></div>
+  <div class="acc"><span class="tile xs k-inv"><svg><use href="#i-chart"/></svg></span><span class="nm">PEA</span><span class="num">42 534,78 €</span></div>
+  <div class="acc"><span class="tile xs k-prop"><svg><use href="#i-home"/></svg></span><span class="nm">Maison</span><span class="num">236 000,00 €</span></div>
+  <div class="gh" style="margin-top:6px"><span>Passifs</span><span class="num">13 437,20 €</span></div>
+  <div class="acc"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span><span class="nm">Carte Visa</span><span class="num">−1 137,20 €</span></div>
+  <div class="acc"><span class="tile xs k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="nm">Prêt auto</span><span class="num">−12 300,00 €</span></div>
+  <div class="foot"><span class="me">G</span><span>Guillaume</span></div>
+</nav>
+    <main class="panel">
+      <div class="tb">
+        <div class="crumb"><svg><use href="#i-receipt"/></svg>Opérations<span class="sep">›</span><span class="dim">Septembre 2026</span></div><span class="grow"></span>
+        <button class="btn"><svg><use href="#i-upload"/></svg>Importer un fichier</button>
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>Nouvelle opération</button>
+      </div>
+      <div class="tools">
+        <div class="search focus"><svg><use href="#i-search"/></svg><span class="caret"></span>Rechercher une opération</div>
+        <span class="chip"><svg><use href="#i-filter"/></svg>Filtrer</span>
+        <span class="grow" style="flex:1"></span>
+        <span class="lbl">1 sélectionnée</span>
+      </div>
+      <div class="gh2"><span>Aujourd'hui</span><span class="n">2</span><span class="grow"></span><span class="num">−97,81 €</span></div>
+      <div class="tx hov"><span class="cb "></span><span class="tile  k-food"><svg><use href="#i-utensils"/></svg></span>
+  <div class="lb"><b>Carrefour Market</b><span class="cap">CB CARREFOUR MKT PARIS 11</span></div>
+  <span><span class="pill k-food"><svg><use href="#i-utensils"/></svg>Alimentation</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−84,32 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile  k-subs"><svg><use href="#i-repeat"/></svg></span>
+  <div class="lb"><b>Netflix</b><span class="badge"><svg><use href="#i-repeat"/></svg>Récurrent</span><span class="cap">NETFLIX.COM</span></div>
+  <span><span class="pill k-subs"><svg><use href="#i-repeat"/></svg>Abonnements</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−13,49 €</span></div>
+      <div class="gh2"><span>Hier</span><span class="n">2</span><span class="grow"></span><span class="num">+3 364,00 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile  k-income"><svg><use href="#i-dollar"/></svg></span>
+  <div class="lb"><b>Salaire Septembre</b><span class="cap">VIR SEPA ACME SAS</span></div>
+  <span><span class="pill k-income"><svg><use href="#i-dollar"/></svg>Revenus</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num inc">+3 410,00 €</span></div>
+      <div class="tx muted"><span class="cb "></span><span class="tile  k-transport"><svg><use href="#i-car"/></svg></span>
+  <div class="lb"><b>SNCF Connect</b><span class="badge"><svg><use href="#i-clock"/></svg>En attente</span><span class="cap">SNCF CONNECT</span></div>
+  <span><span class="pill k-transport"><svg><use href="#i-car"/></svg>Transport</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−46,00 €</span></div>
+      <div class="gh2"><span>lundi 22 septembre</span><span class="n">3</span><span class="grow"></span><span class="num">−52,79 €</span></div>
+      <div class="tx muted"><span class="cb "></span><span class="tile  k-transfer"><svg><use href="#i-arrows"/></svg></span>
+  <div class="lb"><b>Virement vers Livret A</b><span class="badge"><svg><use href="#i-arrows"/></svg>Virement interne</span><span class="cap">Exclu des flux</span></div>
+  <span><span class="pill k-transfer"><svg><use href="#i-arrows"/></svg>Virement</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−500,00 €</span></div>
+      <div class="tx sel"><span class="cb on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="tile  k-health"><svg><use href="#i-heart-pulse"/></svg></span>
+  <div class="lb"><b>Pharmacie des Halles</b><span class="cap">CB PHARMACIE DES HALLES</span></div>
+  <span><span class="pill k-health"><svg><use href="#i-heart-pulse"/></svg>Santé</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−12,80 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile k-none"><span class="letter">A</span></span>
+  <div class="lb"><b>Amazon</b><span class="badge warn k-warn"><svg><use href="#i-alert"/></svg>Doublon possible</span><span class="cap">AMAZON EU SARL</span></div>
+  <span><span class="pill k-none"><svg><use href="#i-dashed"/></svg>Sans catégorie</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−39,99 €</span></div>
+      <div class="legend-note">États montrés : survol sur Carrefour Market, sélection sur Pharmacie des Halles, focus clavier sur la recherche.</div>
+    </main>
+  </div>
+</div>
+<div class="section-label">2b. Opérations, mode clair</div>
+
+<div class="frame th-light">
+  <div class="chrome"><div class="dots"><span></span><span></span><span></span></div><div class="address"><svg><use href="#i-lock"/></svg>archant.local/transactions</div></div>
+  <div class="app" style="min-height:640px">
+    <nav class="sb" aria-label="Navigation principale">
+  <div class="ws"><svg class="logo"><use href="#logo"/></svg><span class="grow">Archant</span><span class="ib"><svg><use href="#i-search"/></svg></span><span class="ib bd"><svg><use href="#i-plus"/></svg></span></div>
+  <div class="nav"><a class=""><svg><use href="#i-dashboard"/></svg>Tableau de bord</a><a class=""><svg><use href="#i-wallet"/></svg>Comptes</a><a class="on"><svg><use href="#i-receipt"/></svg>Opérations</a><a class=""><svg><use href="#i-calendar"/></svg>Récurrences</a><a class=""><svg><use href="#i-filter"/></svg>Règles</a><a class=""><svg><use href="#i-settings"/></svg>Réglages</a></div>
+  <div class="sl"><span>Comptes</span><svg><use href="#i-plus"/></svg></div>
+  
+  <div class="gh"><span>Actifs</span><span class="num">291 118,68 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Compte joint</span><span class="num">3 483,90 €</span></div>
+  <div class="acc"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span><span class="nm">Livret A</span><span class="num">9 100,00 €</span></div>
+  <div class="acc"><span class="tile xs k-inv"><svg><use href="#i-chart"/></svg></span><span class="nm">PEA</span><span class="num">42 534,78 €</span></div>
+  <div class="acc"><span class="tile xs k-prop"><svg><use href="#i-home"/></svg></span><span class="nm">Maison</span><span class="num">236 000,00 €</span></div>
+  <div class="gh" style="margin-top:6px"><span>Passifs</span><span class="num">13 437,20 €</span></div>
+  <div class="acc"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span><span class="nm">Carte Visa</span><span class="num">−1 137,20 €</span></div>
+  <div class="acc"><span class="tile xs k-loan"><svg><use href="#i-hand-coins"/></svg></span><span class="nm">Prêt auto</span><span class="num">−12 300,00 €</span></div>
+  <div class="foot"><span class="me">G</span><span>Guillaume</span></div>
+</nav>
+    <main class="panel">
+      <div class="tb">
+        <div class="crumb"><svg><use href="#i-receipt"/></svg>Opérations<span class="sep">›</span><span class="dim">Septembre 2026</span></div><span class="grow"></span>
+        <button class="btn"><svg><use href="#i-upload"/></svg>Importer un fichier</button>
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>Nouvelle opération</button>
+      </div>
+      <div class="tools">
+        <div class="search focus"><svg><use href="#i-search"/></svg><span class="caret"></span>Rechercher une opération</div>
+        <span class="chip"><svg><use href="#i-filter"/></svg>Filtrer</span>
+        <span class="grow" style="flex:1"></span>
+        <span class="lbl">1 sélectionnée</span>
+      </div>
+      <div class="gh2"><span>Aujourd'hui</span><span class="n">2</span><span class="grow"></span><span class="num">−97,81 €</span></div>
+      <div class="tx hov"><span class="cb "></span><span class="tile  k-food"><svg><use href="#i-utensils"/></svg></span>
+  <div class="lb"><b>Carrefour Market</b><span class="cap">CB CARREFOUR MKT PARIS 11</span></div>
+  <span><span class="pill k-food"><svg><use href="#i-utensils"/></svg>Alimentation</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−84,32 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile  k-subs"><svg><use href="#i-repeat"/></svg></span>
+  <div class="lb"><b>Netflix</b><span class="badge"><svg><use href="#i-repeat"/></svg>Récurrent</span><span class="cap">NETFLIX.COM</span></div>
+  <span><span class="pill k-subs"><svg><use href="#i-repeat"/></svg>Abonnements</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−13,49 €</span></div>
+      <div class="gh2"><span>Hier</span><span class="n">2</span><span class="grow"></span><span class="num">+3 364,00 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile  k-income"><svg><use href="#i-dollar"/></svg></span>
+  <div class="lb"><b>Salaire Septembre</b><span class="cap">VIR SEPA ACME SAS</span></div>
+  <span><span class="pill k-income"><svg><use href="#i-dollar"/></svg>Revenus</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num inc">+3 410,00 €</span></div>
+      <div class="tx muted"><span class="cb "></span><span class="tile  k-transport"><svg><use href="#i-car"/></svg></span>
+  <div class="lb"><b>SNCF Connect</b><span class="badge"><svg><use href="#i-clock"/></svg>En attente</span><span class="cap">SNCF CONNECT</span></div>
+  <span><span class="pill k-transport"><svg><use href="#i-car"/></svg>Transport</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−46,00 €</span></div>
+      <div class="gh2"><span>lundi 22 septembre</span><span class="n">3</span><span class="grow"></span><span class="num">−52,79 €</span></div>
+      <div class="tx muted"><span class="cb "></span><span class="tile  k-transfer"><svg><use href="#i-arrows"/></svg></span>
+  <div class="lb"><b>Virement vers Livret A</b><span class="badge"><svg><use href="#i-arrows"/></svg>Virement interne</span><span class="cap">Exclu des flux</span></div>
+  <span><span class="pill k-transfer"><svg><use href="#i-arrows"/></svg>Virement</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−500,00 €</span></div>
+      <div class="tx sel"><span class="cb on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="tile  k-health"><svg><use href="#i-heart-pulse"/></svg></span>
+  <div class="lb"><b>Pharmacie des Halles</b><span class="cap">CB PHARMACIE DES HALLES</span></div>
+  <span><span class="pill k-health"><svg><use href="#i-heart-pulse"/></svg>Santé</span></span>
+  <span class="acct"><span class="tile xs k-dep"><svg><use href="#i-landmark"/></svg></span>Compte joint</span><span class="amt num">−12,80 €</span></div>
+      <div class="tx "><span class="cb "></span><span class="tile k-none"><span class="letter">A</span></span>
+  <div class="lb"><b>Amazon</b><span class="badge warn k-warn"><svg><use href="#i-alert"/></svg>Doublon possible</span><span class="cap">AMAZON EU SARL</span></div>
+  <span><span class="pill k-none"><svg><use href="#i-dashed"/></svg>Sans catégorie</span></span>
+  <span class="acct"><span class="tile xs k-cc"><svg><use href="#i-card"/></svg></span>Carte Visa</span><span class="amt num">−39,99 €</span></div>
+      <div class="legend-note">États montrés : survol sur Carrefour Market, sélection sur Pharmacie des Halles, focus clavier sur la recherche.</div>
+    </main>
+  </div>
+</div>
+<div class="section-label">3. Tableau de bord, instance neuve<small>mode clair</small></div>
+
+<div class="frame th-light">
+  <div class="chrome"><div class="dots"><span></span><span></span><span></span></div><div class="address"><svg><use href="#i-lock"/></svg>archant.local/</div></div>
+  <div class="app" style="min-height:460px">
+    <nav class="sb" aria-label="Navigation principale">
+  <div class="ws"><svg class="logo"><use href="#logo"/></svg><span class="grow">Archant</span><span class="ib"><svg><use href="#i-search"/></svg></span><span class="ib bd"><svg><use href="#i-plus"/></svg></span></div>
+  <div class="nav"><a class="on"><svg><use href="#i-dashboard"/></svg>Tableau de bord</a><a class=""><svg><use href="#i-wallet"/></svg>Comptes</a><a class=""><svg><use href="#i-receipt"/></svg>Opérations</a><a class=""><svg><use href="#i-settings"/></svg>Réglages</a></div>
+  <div class="sl"><span>Comptes</span><svg><use href="#i-plus"/></svg></div>
+  <div class="gh"><span>Aucun compte</span></div>
+  <div class="foot"><span class="me">G</span><span>Guillaume</span></div>
+</nav>
+    <main class="panel">
+      <div class="tb"><div class="crumb"><svg><use href="#i-dashboard"/></svg>Tableau de bord</div></div>
+      <div class="content">
+        <div class="hello"><h1>Bonjour Guillaume</h1><p>Archant est prêt. Il ne manque que vos comptes.</p></div>
+        <section class="sec empty">
+          <span class="tile lg k-transfer"><svg><use href="#i-landmark"/></svg></span>
+          <h2>Aucun compte pour l'instant</h2>
+          <p>Connectez une banque ou importez un relevé pour voir votre patrimoine ici.</p>
+          <button class="btn primary"><svg><use href="#i-plus"/></svg>Ajouter un compte</button>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="section-label">4. Logo et favicon sur les deux fonds</div>
+<section class="doc"><div class="logos"><div class="lg-pane th-dark">
+  <div class="lg-row">
+    <div class="mark"><svg width="80" height="80" style="color:var(--logo)" role="img" aria-label="Logo Archant"><use href="#logo"/></svg></div>
+    <div class="lockup"><svg width="26" height="26" style="color:var(--logo)" aria-hidden="true"><use href="#logo"/></svg>Archant</div>
+  </div>
+  <div class="fav">
+    <figure><svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path fill="#EEEFF1" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg><figcaption>16 px</figcaption></figure>
+    <figure><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path fill="#EEEFF1" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg><figcaption>32 px</figcaption></figure>
+    <figure><div class="tab"><svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path fill="#EEEFF1" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg>Tableau de bord · Archant</div><figcaption>Onglet, mode sombre</figcaption></figure>
+  </div>
+</div><div class="lg-pane th-light">
+  <div class="lg-row">
+    <div class="mark"><svg width="80" height="80" style="color:var(--logo)" role="img" aria-label="Logo Archant"><use href="#logo"/></svg></div>
+    <div class="lockup"><svg width="26" height="26" style="color:var(--logo)" aria-hidden="true"><use href="#logo"/></svg>Archant</div>
+  </div>
+  <div class="fav">
+    <figure><svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path fill="#282A30" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg><figcaption>16 px</figcaption></figure>
+    <figure><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path fill="#282A30" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg><figcaption>32 px</figcaption></figure>
+    <figure><div class="tab"><svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path fill="#282A30" fill-rule="evenodd" d="M4 28V15C4 8.4 9.4 3 16 3s12 5.4 12 12v13h-6.5v-7h-11v7H4ZM10.5 17V15a5.5 5.5 0 0 1 11 0v2Z"/></svg>Tableau de bord · Archant</div><figcaption>Onglet, mode clair</figcaption></figure>
+  </div>
+</div></div>
+<p class="note" style="font-size:12px;color:#6F6E77;margin-top:14px">L'arche de A, inchangée, en une seule couleur : <span class="num">#EEEFF1</span> sur fond sombre, <span class="num">#282A30</span> sur fond clair, soit le texte principal de chaque mode.</p></section>
+</body>
+</html>
