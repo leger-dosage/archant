@@ -130,7 +130,7 @@ test("the same QIF file again is already present, and confirm is disabled", asyn
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 	await expect(dialog(page)).toBeHidden();
 
-	await page.keyboard.press("i");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await choose(page, file);
 
 	await expect(tab(page, "Déjà présentes", 3)).toHaveAttribute("aria-selected", "true");

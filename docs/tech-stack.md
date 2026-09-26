@@ -57,8 +57,7 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 | `shadcn` (CLI, and its `tailwind.css`)                          | 4.21.x                | Copies components into `src/components/ui/`             |
 | `radix-ui`                                                      | 1.6.x                 | Primitives behind the shadcn components                 |
 | `class-variance-authority` / `cn` / `tw-animate-css`            | 0.7.x / 0.4.x / 1.4.x | shadcn component variants, class merging, animations    |
-| `cmdk`                                                          | 1.1.x                 | Command palette                                         |
-| `react-hotkeys-hook`                                            | 5.3.x                 | Keyboard shortcuts                                      |
+| `cmdk`                                                          | 1.1.x                 | Searchable pickers, through `ui/command.tsx`            |
 | `recharts` / `react-is`                                         | 3.10.1 / 19.3.x       | Balance chart; `react-is` is the peer recharts needs    |
 | `lucide-react`                                                  | 1.48.x                | Icons                                                   |
 | `sonner`                                                        | 2.0.x                 | Toasts                                                  |

@@ -220,10 +220,6 @@ test("picking the candidate links both rows, each naming the other account", asy
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
 	await expect(rowItem(page, into).getByText("Virement", { exact: true })).toBeVisible();
 	await expect(rowItem(page, out).getByRole("button", { name: /^Catégorie/ })).toHaveCount(0);
-	// `c` has no category to open on a transfer side.
-	await rowButton(page, out).focus();
-	await page.keyboard.press("c");
-	await expect(page.getByRole("combobox", { name: "Rechercher une catégorie" })).toHaveCount(0);
 });
 
 test("a payment into a credit card is linked on creation as « Remboursement de carte »", async ({
@@ -253,9 +249,6 @@ test("a payment into a credit card is linked on creation as « Remboursement de 
 	// Neither side is counted by the dashboard, so neither has a category.
 	await expect(categoryButtons(page, out)).toHaveCount(0);
 	await expect(categoryButtons(page, into)).toHaveCount(0);
-	await rowButton(page, out).focus();
-	await page.keyboard.press("c");
-	await expect(categorySearch(page)).toHaveCount(0);
 	await expectNoCategoryField(page, out);
 	await expectNoCategoryField(page, into);
 });
@@ -308,8 +301,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
 	await expect(categoryButtons(page, into)).toHaveCount(0);
 
-	await rowButton(page, out).focus();
-	await page.keyboard.press("c");
+	await rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }).click();
 	await categorySearch(page).fill(housing.name);
 	await page.getByRole("option", { name: housing.name }).click();
 	await expect(

@@ -162,7 +162,7 @@ UX-DR3: Sidebar with navigation entries and the accounts grouped under Actifs an
 UX-DR4: Transaction sheet with save on `⌘Enter`, `Esc` to close, a prompt only when changes are unsaved, and the transaction's source shown. Story 1.2.
 UX-DR5: Charts with a text summary and a « Voir les données » table alternative, keyboard cursor, no animation under reduced motion. Stories 1.3, 6.1, 6.2.
 UX-DR6: Transactions list grouped by day headers, filters as removable chips kept in the URL, result count and signed total of the filtered rows. Story 1.5.
-UX-DR7: Command palette on `⌘K` / `Ctrl+K` and the keyboard shortcuts of `EXPERIENCE.md` (`g` navigation, `j`/`k`, `x`, `e`, `/`, `?`), off inside text fields, each with a visible equivalent. Story 1.8; the `x` selection and its `Shift` extension, Story 4.5.
+UX-DR7 (Withdrawn by Story 11.13): Command palette on `⌘K` / `Ctrl+K` and the keyboard shortcuts of `EXPERIENCE.md` (`g` navigation, `j`/`k`, `x`, `e`, `/`, `?`), off inside text fields, each with a visible equivalent. Story 1.8; the `x` selection and its `Shift` extension, Story 4.5.
 UX-DR8: Import dialog with steps Fichier, Colonnes, Aperçu, preview tabs per group with counts, and a confirm button stating the count. Stories 2.1, 2.3.
 UX-DR9: Bulk bar at the bottom of the transactions list with « Tout sélectionner (N résultats) ». Story 4.5.
 UX-DR10: Warning banners for consent expiry, expired consent and stale sync, one action each. Story 10.5.

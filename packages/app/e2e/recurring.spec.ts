@@ -224,17 +224,12 @@ test("the sheet names a transaction's detected series and links to it, and offer
 	await expect(other).not.toContainText("fait partie de la récurrence");
 });
 
-test("the sidebar and g r open Récurrences", async ({ page }) => {
+test("the sidebar opens Récurrences", async ({ page }) => {
 	await page.goto("/accounts");
 	await page
 		.locator('[data-sidebar="sidebar"]')
 		.getByRole("link", { name: "Récurrences", exact: true })
 		.click();
 	await expect(page).toHaveURL(/\/recurring$/u);
-
-	await page.goto("/accounts");
-	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
-	await page.keyboard.press("g");
-	await page.keyboard.press("r");
 	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
 });

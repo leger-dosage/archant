@@ -1,7 +1,7 @@
 import type { NetWorthData } from "@/hooks/useNetWorth";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
@@ -11,11 +11,11 @@ import { monthSchema } from "@archant/api/schemas/reports";
 
 import { BalanceChart, PeriodToggle, changeText } from "@/components/BalanceChart";
 import { CashFlowCard } from "@/components/CashFlowCard";
+import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useCommands } from "@/hooks/useCommands";
 import { useNetWorth } from "@/hooks/useNetWorth";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoMonth } from "@/lib/dates";
@@ -138,8 +138,7 @@ function DashboardPage() {
 	const currentMonth = toIsoMonth();
 	const { period = DEFAULT_BALANCE_PERIOD, month = currentMonth } = Route.useSearch();
 	const navigate = Route.useNavigate();
-	// The dialog lives in the root layout, so the palette opens it from any page.
-	const { setCreatingAccount } = useCommands();
+	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
 
 	useEffect(() => {
@@ -192,6 +191,7 @@ function DashboardPage() {
 					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
 				</div>
 			)}
+			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 		</div>
 	);
 }

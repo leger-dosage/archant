@@ -1,14 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 import { AccountGroups, AccountGroupsSkeleton } from "@/components/AccountGroups";
+import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useCommands } from "@/hooks/useCommands";
 import { errorCodeOf } from "@/lib/api";
 
 // Absent means inactive accounts stay hidden, so links need no search params.
@@ -26,8 +26,7 @@ function AccountsPage() {
 	const accounts = useAccounts();
 	const { showInactive = false } = Route.useSearch();
 	const navigate = Route.useNavigate();
-	// The dialog lives in the root layout, so the palette opens it from any page.
-	const { setCreatingAccount } = useCommands();
+	const [creatingAccount, setCreatingAccount] = useState(false);
 	const all = accounts.data?.groups.flatMap((group) => group.accounts) ?? [];
 	const hasAccounts = all.length > 0;
 	const hasInactive = all.some((account) => !account.active);
@@ -82,6 +81,7 @@ function AccountsPage() {
 					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
 				</div>
 			)}
+			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 		</div>
 	);
 }

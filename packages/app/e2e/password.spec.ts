@@ -79,7 +79,7 @@ test("changing the password keeps this session and refuses the old password", as
 
 // Last test of the last project: signing out ends the session every other
 // test would have needed, so it can strand nothing.
-test("the palette signs out", async ({ page }) => {
+test("the new password signs in, and the user menu signs out", async ({ page }) => {
 	// The saved session died with the password change above, so this test signs
 	// in with the new one; nothing follows it to spend a session on.
 	await page.goto("/accounts");
@@ -88,11 +88,8 @@ test("the palette signs out", async ({ page }) => {
 	await page.getByRole("button", { name: "Se connecter" }).click();
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
-	await page.keyboard.press("ControlOrMeta+K");
-	const palette = page.getByRole("dialog", { name: "Palette de commandes" });
-	await palette.getByRole("combobox").fill("deconnecter");
-	await expect(palette.getByRole("option", { name: "Se déconnecter" })).toBeVisible();
-	await page.keyboard.press("Enter");
+	await page.getByRole("button", { name: ADMIN.email }).click();
+	await page.getByRole("menuitem", { name: "Se déconnecter" }).click();
 
 	await expect(page).toHaveURL(/\/sign-in$/u);
 });

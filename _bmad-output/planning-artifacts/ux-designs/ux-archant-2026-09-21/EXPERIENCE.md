@@ -24,16 +24,15 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | --- | --- | --- | --- | --- |
 | First-launch setup | `/setup` | First visit with no user | Create the administrator | 3 |
 | Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
-| Dashboard | `/` | Sidebar, `g d` | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
-| Accounts | `/accounts` | Sidebar, `g c` | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
+| Dashboard | `/` | Sidebar | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
+| Accounts | `/accounts` | Sidebar | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
 | Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports; account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
-| Import | Dialog over account detail | "Importer" on an account, `i` | File, column mapping, preview, confirmation | 2 |
-| Transactions | `/transactions` | Sidebar, `g o` | All transactions, filters in the URL, bulk actions | 1 |
-| Transaction | Sheet over the current page | Row click, `Enter`, `e` | Edit every field | 1 |
-| Recurring | `/recurring` | Sidebar, `g r` | Subscriptions and bills with the next date | 9 |
-| Rules | `/rules` | Sidebar, `g u` | Rules list and editor | 8 |
-| Settings | `/settings/...` | Sidebar footer, `g s` | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
-| Command palette | Overlay | `⌘K` / `Ctrl+K` | Go anywhere, run any action, find an account or a transaction | 1 |
+| Import | Dialog over account detail | "Importer" on an account | File, column mapping, preview, confirmation | 2 |
+| Transactions | `/transactions` | Sidebar | All transactions, filters in the URL, bulk actions | 1 |
+| Transaction | Sheet over the current page | Row click, or `Enter` on a focused row | Edit every field | 1 |
+| Recurring | `/recurring` | Sidebar | Subscriptions and bills with the next date | 9 |
+| Rules | `/rules` | Sidebar | Rules list and editor | 8 |
+| Settings | `/settings/...` | Sidebar footer | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
 
 Until Epic 6 ships, `/` redirects to `/accounts`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
@@ -69,14 +68,13 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 | Component | Use | Behavioural rules |
 | --- | --- | --- |
 | Sidebar | Everywhere once signed in | Accounts listed under Comptes, grouped, with balances; inactive accounts hidden. Clicking an account opens its detail. The group header toggles open or closed and remembers it. |
-| Transaction row | Transactions, account detail | Click or `Enter` opens the transaction sheet. The category chip opens a combobox in place; choosing saves immediately with an optimistic update and an undo toast. Checkbox or `x` selects. |
+| Transaction row | Transactions, account detail | Click or `Enter` opens the transaction sheet. The category chip opens a combobox in place; choosing saves immediately with an optimistic update and an undo toast. Its checkbox selects it; the bulk bar's ticked checkbox, « Vider la sélection », unticks every row. |
 | Transaction sheet | Over any list | Fields: date, label, amount, account (read-only for imported ones), category, merchant, tags, notes, exclude from reports. Saves on `⌘Enter` or the Enregistrer button; `Esc` closes and asks only if changes are unsaved. Shows the source (manuel, import OFX du 12 sept., Enable Banking) and, when relevant, the linked transfer. |
 | Filter bar | Transactions | Filters as removable chips: compte, période, montant, texte, then catégorie, étiquette, marchand, sens as their epics ship. Every filter is in the URL. The result count and the signed total of the filtered rows show at the right. |
-| Bulk bar | Transactions | Appears at the bottom when a row is selected: count, « Tout sélectionner (N résultats) », then Catégorie, Marchand, Étiquettes, Exclure, Supprimer. Supprimer confirms with the count. |
+| Bulk bar | Transactions | Appears at the bottom when a row is selected: a ticked checkbox, « Vider la sélection », that unticks every row, then the count, « Tout sélectionner (N résultats) », then Catégorie, Marchand, Étiquettes, Exclure, Supprimer. Supprimer confirms with the count. |
 | Import dialog | Account detail | Steps shown at the top: Fichier, Colonnes (CSV only), Aperçu. Drop zone or file picker; the format is detected. The preview shows one tab per group with its count: À créer, Déjà présentes, Rapprochées, Doublons possibles, Rejetées. Confirm button states the count: « Importer 42 opérations ». |
 | CSV mapping | Import dialog | First ten rows as a table; a select above each column (Date, Libellé, Montant, Débit, Crédit, Notes, Ignorer). Delimiter, date format, decimal separator and sign convention prefilled with French defaults. The preview below updates as the mapping changes. |
 | Combobox | Category, merchant, tags, account | Type to filter, arrows to move, `Enter` to pick. Merchant and tags offer « Créer "…" » as the last option; in the rule dialog, category does too, creating a top-level expense category with the form's defaults, edited later under « Réglages › Catégories ». A merge target offers no « Créer ». Categories show parents with their children indented. |
-| Command palette | Global | Groups: Aller à, Actions, Comptes, Opérations (search by label, at least 3 characters). `Enter` runs the highlighted item. Recent items first when the query is empty. |
 | Stat block | Dashboard, account detail | Value, then the change over the chosen period in amount and percentage. |
 | Chart | Dashboard, account detail | Hover or arrow keys move a cursor that shows date and amount. A « Voir les données » toggle shows the same series as a table. |
 | Banner | Top of content | Consent expiring within 14 days, consent expired, last sync older than 48 hours. One action each: Renouveler, Reconnecter, Voir la connexion. Dismissible for the session only. |
@@ -104,16 +102,13 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 
 ## Interaction Primitives
 
-Keyboard first, as in Linear. The mouse works everywhere; the keyboard is faster.
+No command palette and no keyboard shortcut but one: the interface keeps what the browser and Radix give, and every action has a visible button, link or menu item.
 
-- `⌘K` / `Ctrl+K`: command palette.
-- `g d` dashboard, `g c` accounts, `g o` transactions, `g r` recurring, `g u` rules, `g s` settings.
-- In a list: `j` / `k` or arrows move, `x` selects, `Shift` + move extends the selection, `Enter` or `e` opens, `c` category, `m` merchant, `t` tags, `Backspace` deletes after confirmation.
-- `n` new transaction in the current account or the last used one, `i` import into the current account.
-- `/` focuses the search filter. `Esc` closes the topmost layer or clears the selection.
-- `?` shows every shortcut.
-
-Single-letter shortcuts are off while focus is in a text field. Every shortcut has a visible equivalent in a button or a menu, which shows the shortcut in its tooltip.
+- `Tab` moves through the page in reading order: the sidebar links, then the page's controls, then each transaction row.
+- `Enter` activates the focused button or link; on a transaction row it opens the sheet.
+- Arrow keys move inside menus, tabs and comboboxes, and move a chart's cursor; comboboxes filter as you type and pick with `Enter`.
+- `Esc` closes the topmost layer and returns focus to what opened it.
+- `⌘Enter` / `Ctrl+Enter` saves the transaction sheet, and the Enregistrer button says so in its `title`.
 
 Banned: infinite scroll (pages of 50, AD-15), drag and drop as the only way to do something, hover-only actions on touch screens, modal stacks deeper than one level, auto-saving a whole form on blur.
 
@@ -141,7 +136,7 @@ WCAG 2.2 AA on every surface, NFR13.
 ## Inspiration & Anti-patterns
 
 - **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; Geist; the net worth chart as the dashboard's centre; since Epic 12, its grey page and white cards, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states.
-- **Taken from Linear:** the command palette, `g` shortcuts, `j`/`k`, filters as chips.
+- **Taken from Linear:** filters as chips.
 - **Departure from Sure:** expenses are not red, the primary button is black rather than a colour, and there is no AI assistant surface.
 - **Rejected:** onboarding tours and celebratory animations; infinite scroll; showing an amount in red to scold spending; fetched merchant logos, which would send merchant names to a third party.
 - **Considered for Epic 12 and set aside:** a ledger direction with an ink accent and a warm home direction with a terracotta accent, both further from Sure; two Evidence-inspired variants, one with Evidence's figures, charts and tables in cards, one turning the dashboard into a monthly report. Their mocks stay in `.working/`.
@@ -155,7 +150,7 @@ The protagonist is Camille, who runs the household's money and uses Archant on a
 
 1. Camille opens Archant for the first time and creates the administrator account.
 2. The accounts page is empty. They press « Ajouter un compte », name it « Compte joint », pick Compte courant, and set the opening balance at 1 January 2025.
-3. On the account, they press `i`, drop the OFX file exported from their bank, and see the preview: 312 à créer, 4 rejetées « avant la date d'ouverture ».
+3. On the account, they press « Importer », drop the OFX file exported from their bank, and see the preview: 312 à créer, 4 rejetées « avant la date d'ouverture ».
 4. They press « Avancer la date d'ouverture au 28 décembre 2024 »; the rejected tab empties.
 5. They press « Importer 316 opérations ».
 6. **Climax:** The balance chart draws a year of history, and the balance at the top matches the one in their banking app to the cent, because the file's closing balance was recorded as a snapshot.
@@ -165,8 +160,8 @@ Failure: the file is a PDF renamed `.ofx`. The dialog says « Ce fichier n'est p
 ### Flow 2 — Cleaning up after an import (Epics 4, 5)
 
 1. Camille opens Opérations, filters on « Sans catégorie » and on the last month: 58 results.
-2. They type `/`, search « carrefour », press `x` on the first row, then `Shift+j` to extend the selection to the 9 rows.
-3. They press `c`, type « cour », pick Courses, `Enter`. The rows update; a toast offers to undo.
+2. They search « carrefour », tick the first row, then `Shift`+click the ninth to extend the selection to the 9 rows.
+3. They press « Catégorie » in the bulk bar, type « cour », pick Courses with `Enter`. The rows update and a toast states the count.
 4. They clear the search. A transfer of −500 € to the Livret A shows « Virement » and the savings account's name: it was matched automatically.
 5. **Climax:** The « Sans catégorie » count drops to 12, and the filtered total at the right shows what is left to sort.
 

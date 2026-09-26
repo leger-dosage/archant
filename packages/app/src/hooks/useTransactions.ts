@@ -97,7 +97,7 @@ export function useUpdateTransaction(accountId: string) {
 }
 
 /** The fields a row edits in place, with an optimistic update and « Annuler ». */
-type RowValues = { categoryId: string | null; merchantId: string | null; tagIds: string[] };
+type RowValues = { categoryId: string | null };
 
 type RowField = keyof RowValues;
 
@@ -125,22 +125,10 @@ const ROW_FIELDS = {
 		toast: "category",
 		counts: queryKeys.categories.all,
 	},
-	merchantId: {
-		changed: "transactions.merchant.changed",
-		undo: "transactions.merchant.undo",
-		toast: "merchant",
-		counts: queryKeys.merchants.all,
-	},
-	tagIds: {
-		changed: "transactions.tags.changed",
-		undo: "transactions.tags.undo",
-		toast: "tags",
-		counts: queryKeys.tags.all,
-	},
 } as const;
 
 /**
- * Sets one row's category, merchant or tags from the list. The row changes at once
+ * Sets one row's category from the list. The row changes at once
  * in every cached list; a success toast offers « Annuler », which sets the
  * previous value back, by hand again, so it stays locked. A failure puts the
  * rows back and shows a destructive toast.
@@ -217,15 +205,6 @@ function useSetRowField<Field extends RowField>(field: Field) {
 
 export function useSetTransactionCategory() {
 	return useSetRowField("categoryId");
-}
-
-export function useSetTransactionMerchant() {
-	return useSetRowField("merchantId");
-}
-
-/** Replaces one row's tags from the list, as a whole set, with « Annuler ». */
-export function useSetTransactionTags() {
-	return useSetRowField("tagIds");
 }
 
 export function useDeleteTransaction(accountId: string) {

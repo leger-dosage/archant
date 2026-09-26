@@ -133,6 +133,9 @@ test("a household without accounts sees the empty state", async ({ page }) => {
 	await expect(page.getByText("Aucun compte pour l'instant.")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
 	await expect(card(page)).toHaveCount(0);
+
+	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await expect(page.getByRole("dialog", { name: "Ajouter un compte" })).toBeVisible();
 });
 
 // Story 6.2: monthly income and expenses by category. Each test owns a month

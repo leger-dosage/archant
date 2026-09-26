@@ -871,6 +871,7 @@ function TransactionForm({
 						form="transaction-form"
 						disabled={isSubmitting}
 						title={t("transactions.form.saveShortcut")}
+						aria-keyshortcuts="Meta+Enter Control+Enter"
 					>
 						{t("transactions.form.save")}
 					</Button>

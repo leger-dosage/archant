@@ -21,8 +21,6 @@ export type Selection = {
 	toggle: (id: string) => void;
 	/** Ticks every row from the last toggled one to `id`, both included. */
 	extendTo: (id: string) => void;
-	/** Ticks `id`, keeping the rest. */
-	add: (id: string) => void;
 	selectAll: () => void;
 	clear: () => void;
 };
@@ -93,12 +91,6 @@ export function useSelection(scope: string, pageIds: readonly string[]): Selecti
 					anchor: id,
 				};
 			}),
-		add: (id) =>
-			update((current) => ({
-				...current,
-				ids: current.all || current.ids.includes(id) ? current.ids : [...current.ids, id],
-				anchor: id,
-			})),
 		selectAll: () => update((current) => ({ ...current, all: true })),
 		clear: () => update(() => emptyIn(scope)),
 	};

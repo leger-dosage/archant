@@ -139,3 +139,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-12-create-tags-merchants-and-categories-where-they-are-picked.md`
   summary: Test that a category created from the rule dialog's picker shows its name on the picker's button before the categories list is refetched.
   evidence: Removing the `setQueryData` call of `useCreateCategory` breaks no test: Playwright retries the button text until the refetch lands.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-13-no-command-palette-and-no-single-key-shortcuts.md`
+  summary: Add a « Aller au contenu » skip link before the sidebar, so a keyboard user reaches the page without tabbing through every account.
+  evidence: With the `g` keys gone, reaching a transaction row at full width took over 100 `Tab` presses in the shared e2e database; `keyboard.spec.ts` runs at 900 px to stay under that.
