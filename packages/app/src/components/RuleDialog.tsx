@@ -21,13 +21,14 @@ import { toast } from "sonner";
 
 import type { RuleFormInput } from "@archant/api/schemas/rules";
 import { RULE_TYPE_VALUES, ruleSchema } from "@archant/api/schemas/rules";
+import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CurrencyCode } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { RuleActionType, RuleConditionType } from "@archant/data/rules";
 import { RULE_ACTION_TYPES, RULE_OPERATORS_BY_TYPE, isValuelessAction } from "@archant/data/rules";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
-import { CategoryDot } from "@/components/CategoryDot";
+import { CategoryPill } from "@/components/CategoryPill";
 import { DateField } from "@/components/DateField";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { TagCombobox } from "@/components/TagCombobox";
@@ -226,8 +227,11 @@ function PickerField({
 }: {
 	id: string;
 	label: string;
-	/** The picked row's name and colour; `undefined` when none is picked or it was deleted. */
-	chosen: { name: string; color?: string } | undefined;
+	/**
+	 * The picked row's name, with a category's colour and icon; `undefined`
+	 * when none is picked or it was deleted.
+	 */
+	chosen: { name: string; color?: string; icon?: CategoryIcon } | undefined;
 	placeholder: string;
 	/** Shown instead of the placeholder when an id is set but names no row. */
 	deleted: string | null;
@@ -251,11 +255,12 @@ function PickerField({
 				>
 					{chosen === undefined ? (
 						<span className="text-muted-foreground">{deleted ?? placeholder}</span>
+					) : chosen.color !== undefined && chosen.icon !== undefined ? (
+						<CategoryPill
+							category={{ name: chosen.name, color: chosen.color, icon: chosen.icon }}
+						/>
 					) : (
-						<>
-							{chosen.color !== undefined && <CategoryDot color={chosen.color} />}
-							<span className="truncate">{chosen.name}</span>
-						</>
+						<span className="truncate">{chosen.name}</span>
 					)}
 				</Button>
 			</PopoverTrigger>

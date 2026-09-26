@@ -1,14 +1,17 @@
 import type { MerchantData } from "@/hooks/useMerchants";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, StoreIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { MerchantDialog } from "@/components/MerchantDialog";
 import { MergeMerchantDialog } from "@/components/MergeMerchantDialog";
+import { Section } from "@/components/Section";
+import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -44,7 +47,8 @@ function MerchantRow({
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex min-h-11 items-center gap-3 py-1">
+		<div className="flex min-h-11 items-center gap-3 px-4 py-1">
+			<TintedIcon subject={{ kind: "merchant", name: merchant.name }} />
 			<span className="min-w-0 flex-1 truncate">{merchant.name}</span>
 			<span className="shrink-0 text-sm text-muted-foreground tabular-nums">
 				{t("merchants.transactions", { count: merchant.transactionCount })}
@@ -119,48 +123,64 @@ function MerchantsPage() {
 		});
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-6">
-			<div className="flex items-start justify-between gap-4">
-				<div className="flex flex-col gap-1">
-					<h2 className="text-lg font-semibold">{t("merchants.title")}</h2>
-					<p className="text-sm text-muted-foreground">{t("merchants.description")}</p>
-				</div>
-				<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+		<div className="flex max-w-2xl flex-col gap-4">
+			<div className="flex flex-col gap-1">
+				<h2 className="type-display">{t("merchants.title")}</h2>
+				<p className="text-sm text-muted-foreground">{t("merchants.description")}</p>
 			</div>
 
-			{merchants.isPending && (
-				<div className="flex flex-col gap-2">
-					<Skeleton className="h-11 w-full" />
-					<Skeleton className="h-11 w-full" />
-				</div>
-			)}
-
-			{merchants.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
-					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(merchants.error)}`)}</p>
-					<Button variant="outline" onClick={() => void merchants.refetch()}>
-						{t("common.retry")}
-					</Button>
-				</div>
-			)}
-
-			{merchants.data !== undefined &&
-				(list.length === 0 ? (
-					<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
-						<p className="text-muted-foreground">{t("merchants.empty")}</p>
-						<Button variant="outline" onClick={() => show({ action: "create" })}>
+			<Section
+				level={3}
+				title={t("merchants.list")}
+				action={
+					// An empty list offers its own, the one way forward.
+					merchants.data !== undefined && list.length === 0 ? undefined : (
+						<Button size="sm" onClick={() => show({ action: "create" })}>
 							{t("merchants.add")}
 						</Button>
+					)
+				}
+			>
+				{merchants.isPending && (
+					<div className="flex flex-col gap-2 p-4">
+						<Skeleton className="h-11 w-full" />
+						<Skeleton className="h-11 w-full" />
 					</div>
-				) : (
-					<ul aria-label={t("merchants.title")} className="divide-y">
-						{list.map((item) => (
-							<li key={item.id}>
-								<MerchantRow merchant={item} onAction={(action) => show({ action, id: item.id })} />
-							</li>
-						))}
-					</ul>
-				))}
+				)}
+
+				{merchants.isError && (
+					<div role="alert" className="flex flex-col items-start gap-3 p-4">
+						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(merchants.error)}`)}</p>
+						<Button variant="outline" onClick={() => void merchants.refetch()}>
+							{t("common.retry")}
+						</Button>
+					</div>
+				)}
+
+				{merchants.data !== undefined &&
+					(list.length === 0 ? (
+						<EmptyState
+							level={4}
+							icon={{ kind: "transfer", icon: StoreIcon }}
+							title={t("merchants.empty.title")}
+							description={t("merchants.empty.description")}
+							action={
+								<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+							}
+						/>
+					) : (
+						<ul aria-label={t("merchants.title")} className="divide-y divide-line">
+							{list.map((item) => (
+								<li key={item.id}>
+									<MerchantRow
+										merchant={item}
+										onAction={(action) => show({ action, id: item.id })}
+									/>
+								</li>
+							))}
+						</ul>
+					))}
+			</Section>
 
 			{(opened?.action === "create" || (opened?.action === "rename" && merchant !== undefined)) && (
 				<MerchantDialog open={open} onOpenChange={setOpen} merchant={merchant} />

@@ -16,6 +16,7 @@ import { z } from "zod";
 import { BANK_ACCOUNT_TARGETS } from "@archant/data/account-types";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -128,7 +129,7 @@ function SyncStatus({
 	};
 
 	return (
-		<div className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center">
+		<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
 				<p>
 					{lastSyncedAt === null
@@ -402,69 +403,80 @@ function BankConnectionPage() {
 	return (
 		<div className="flex max-w-2xl flex-col gap-6">
 			<div className="flex flex-col gap-1">
-				<h2 className="text-lg font-semibold">{title}</h2>
+				<h2 className="type-display">{title}</h2>
 				<p className="text-sm text-muted-foreground">{t("banks.accounts.description")}</p>
 			</div>
 
-			{connection !== undefined && <SyncStatus connection={connection} sync={sync} />}
-
 			{connection !== undefined && (
-				<ConnectionActions
-					connection={connection}
-					linkedCount={linkedCount}
-					disconnect={disconnect}
-					onDisconnect={(onFailure) => disconnectNow(connection.institutionName, onFailure)}
-				/>
+				<Section level={3} title={t("banks.sync.title")}>
+					<div className="flex flex-col gap-4 p-4">
+						<SyncStatus connection={connection} sync={sync} />
+						<ConnectionActions
+							connection={connection}
+							linkedCount={linkedCount}
+							disconnect={disconnect}
+							onDisconnect={(onFailure) => disconnectNow(connection.institutionName, onFailure)}
+						/>
+					</div>
+				</Section>
 			)}
 
-			{accounts.isPending && (
-				<div className="flex flex-col gap-2">
-					<Skeleton className="h-16 w-full" />
-					<Skeleton className="h-16 w-full" />
-				</div>
-			)}
+			<Section level={3} title={t("banks.accounts.list")}>
+				{accounts.isPending && (
+					<div className="flex flex-col gap-2 p-4">
+						<Skeleton className="h-16 w-full" />
+						<Skeleton className="h-16 w-full" />
+					</div>
+				)}
 
-			{accounts.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
-					<p className="text-muted-foreground">
-						{errorCodeOf(accounts.error) === "NOT_FOUND"
-							? t("banks.accounts.notFound")
-							: t(`errors.${errorCodeOf(accounts.error)}`)}
-					</p>
-					<Link to="/settings/banks" className="text-sm font-medium underline underline-offset-4">
-						{t("banks.return.back")}
-					</Link>
-				</div>
-			)}
+				{accounts.isError && (
+					<div role="alert" className="flex flex-col items-start gap-3 p-4">
+						<p className="text-muted-foreground">
+							{errorCodeOf(accounts.error) === "NOT_FOUND"
+								? t("banks.accounts.notFound")
+								: t(`errors.${errorCodeOf(accounts.error)}`)}
+						</p>
+						<Link to="/settings/banks" className="text-sm font-medium underline underline-offset-4">
+							{t("banks.return.back")}
+						</Link>
+					</div>
+				)}
 
-			{accounts.data !== undefined &&
-				(rows.length === 0 ? (
-					<p className="text-sm text-muted-foreground">{t("banks.accounts.empty")}</p>
-				) : (
-					<form
-						className="flex flex-col items-start gap-4"
-						onSubmit={(event) => {
-							event.preventDefault();
-							submit();
-						}}
-					>
-						<ul aria-label={t("banks.accounts.list")} className="w-full divide-y rounded-lg border">
-							{rows.map((row) => (
-								<BankAccountRow
-									key={row.id}
-									row={row}
-									choice={choiceOf(row)}
-									onChoose={(choice) => setChoices((current) => ({ ...current, [row.id]: choice }))}
-								/>
-							))}
-						</ul>
-						{rows.some((row) => row.account === null) && (
-							<Button type="submit" disabled={link.isPending || links.length === 0}>
-								{t("banks.accounts.submit")}
-							</Button>
-						)}
-					</form>
-				))}
+				{accounts.data !== undefined &&
+					(rows.length === 0 ? (
+						<p className="px-4 py-3 text-sm text-muted-foreground">{t("banks.accounts.empty")}</p>
+					) : (
+						<form
+							className="flex flex-col items-start gap-4"
+							onSubmit={(event) => {
+								event.preventDefault();
+								submit();
+							}}
+						>
+							<ul aria-label={t("banks.accounts.list")} className="w-full divide-y divide-line">
+								{rows.map((row) => (
+									<BankAccountRow
+										key={row.id}
+										row={row}
+										choice={choiceOf(row)}
+										onChoose={(choice) =>
+											setChoices((current) => ({ ...current, [row.id]: choice }))
+										}
+									/>
+								))}
+							</ul>
+							{rows.some((row) => row.account === null) && (
+								<Button
+									type="submit"
+									className="mx-4 mb-4"
+									disabled={link.isPending || links.length === 0}
+								>
+									{t("banks.accounts.submit")}
+								</Button>
+							)}
+						</form>
+					))}
+			</Section>
 		</div>
 	);
 }

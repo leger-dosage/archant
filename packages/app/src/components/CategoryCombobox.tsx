@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { CATEGORY_NAME_MAX_LENGTH } from "@archant/data/category-presets";
 
-import { CategoryDot } from "@/components/CategoryDot";
+import { TintedIcon } from "@/components/TintedIcon";
 import {
 	Command,
 	CommandEmpty,
@@ -99,7 +99,10 @@ export function CategoryCombobox({
 			className={child ? "pl-6" : undefined}
 			onSelect={() => onSelect(category.id)}
 		>
-			<CategoryDot color={category.color} />
+			<TintedIcon
+				subject={{ kind: "category", color: category.color, icon: category.icon }}
+				size="sm"
+			/>
 			<span className="truncate">{category.name}</span>
 		</CommandItem>
 	);
@@ -122,7 +125,7 @@ export function CategoryCombobox({
 							data-checked={value === null}
 							onSelect={() => onSelect(null)}
 						>
-							<CategoryDot color={null} />
+							<TintedIcon subject={{ kind: "uncategorised" }} size="sm" />
 							<span>{none}</span>
 						</CommandItem>
 					)}

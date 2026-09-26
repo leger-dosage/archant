@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { toMinorUnits } from "@archant/data/money";
 
 import { formatShortDate, formatSignedMoney, formatTableDate } from "../src/lib/balance-change.ts";
-import { daysAgo, euros, expect, ofxDate, sgml, test, typed, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, ofxDate, rgb, sgml, test, typed, uniqueName } from "./fixtures.ts";
 
 // Stories 2.1 and 2.2: import an OFX file with preview, and its ledger
 // balance. Files are built here with dates relative to today, so they always
@@ -78,6 +78,20 @@ test.describe("OFX files 1.x and 2.x", () => {
 
 			await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Aperçu/u);
 			await expect(tab(page, "À créer", 3)).toHaveAttribute("aria-selected", "true");
+			// Story 12.4: the current step's number on the primary colour, the
+			// finished one checked, each tab's count in its own counter.
+			const steps = dialog(page).getByRole("list", { name: "Étapes de l'import" });
+			await expect(steps.locator('[aria-current="step"] > span')).toHaveCSS(
+				"background-color",
+				rgb("#5e6ad2"),
+			);
+			await expect(
+				steps.getByRole("listitem").filter({ hasText: "Fichier" }).locator("svg.lucide-check"),
+			).toBeVisible();
+			const counter = tab(page, "À créer", 3).locator("span").last();
+			await expect(counter).toHaveText("3");
+			await expect(counter).toHaveCSS("height", "20px");
+			await expect(counter).toHaveCSS("background-color", rgb("#f4f2f4"));
 			await expect(tab(page, "Déjà présentes", 0)).toBeVisible();
 			await expect(tab(page, "Rapprochées", 0)).toBeVisible();
 			await expect(tab(page, "Doublons possibles", 0)).toBeVisible();

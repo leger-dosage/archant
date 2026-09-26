@@ -1,7 +1,16 @@
 import type { AccountDetailData } from "@/hooks/useAccount";
 
 import { Link } from "@tanstack/react-router";
-import { EllipsisIcon } from "lucide-react";
+import {
+	CirclePauseIcon,
+	CirclePlayIcon,
+	EllipsisIcon,
+	EyeIcon,
+	EyeOffIcon,
+	PencilIcon,
+	Trash2Icon,
+	UnplugIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -103,15 +112,26 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="w-auto">
 					<DropdownMenuItem onSelect={() => setEditing(true)}>
+						<PencilIcon aria-hidden="true" className="size-3.5" />
 						{t("accountActions.edit")}
 					</DropdownMenuItem>
 					<DropdownMenuItem
 						disabled={updateAccount.isPending}
 						onSelect={() => void toggleExcluded()}
 					>
+						{account.excludedFromReports ? (
+							<EyeIcon aria-hidden="true" className="size-3.5" />
+						) : (
+							<EyeOffIcon aria-hidden="true" className="size-3.5" />
+						)}
 						{t(account.excludedFromReports ? "accountActions.include" : "accountActions.exclude")}
 					</DropdownMenuItem>
 					<DropdownMenuItem disabled={updateAccount.isPending} onSelect={() => void toggleActive()}>
+						{account.active ? (
+							<CirclePauseIcon aria-hidden="true" className="size-3.5" />
+						) : (
+							<CirclePlayIcon aria-hidden="true" className="size-3.5" />
+						)}
 						{t(account.active ? "accountActions.deactivate" : "accountActions.reactivate")}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
@@ -122,6 +142,7 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 							disabled={count === undefined}
 							onSelect={() => setConfirming(true)}
 						>
+							<Trash2Icon aria-hidden="true" className="size-3.5" />
 							{t("accountActions.delete.action")}
 						</DropdownMenuItem>
 					) : (
@@ -130,6 +151,7 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 								to="/settings/banks/$connectionId"
 								params={{ connectionId: account.bankConnection.id }}
 							>
+								<UnplugIcon aria-hidden="true" className="size-3.5" />
 								{t("accountActions.disconnectToDelete", {
 									institutionName: account.bankConnection.institutionName,
 								})}

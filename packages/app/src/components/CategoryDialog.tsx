@@ -11,6 +11,7 @@ import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
 import type { CategoryColor } from "@archant/data/category-presets";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
+import type { CategoryKind } from "@archant/data/schema/categories";
 import { CATEGORY_KINDS } from "@archant/data/schema/categories";
 
 import { ChoiceField } from "@/components/ChoiceField";
@@ -46,6 +47,9 @@ const valuesOf = (category: CategoryData): CreateCategoryInput => ({
 	parentId: category.parentId,
 });
 
+const blank = (kind: CategoryKind | undefined): CreateCategoryInput =>
+	kind === undefined ? newCategory() : { ...newCategory(), kind };
+
 function isSwatch(color: string): color is CategoryColor {
 	return CATEGORY_COLORS.some((swatch) => swatch === color);
 }
@@ -71,19 +75,27 @@ type CategoryDialogProps = {
 	category?: CategoryData | undefined;
 	/** Every category, for the parent choice. */
 	categories: readonly CategoryData[];
+	/** The type a new category starts with, as an empty group's button sets it. */
+	kind?: CategoryKind | undefined;
 };
 
 /**
  * Creates or edits a category. Once a parent is chosen, the type and colour
  * disappear: the child takes its parent's, as the API enforces.
  */
-export function CategoryDialog({ open, onOpenChange, category, categories }: CategoryDialogProps) {
+export function CategoryDialog({
+	open,
+	onOpenChange,
+	category,
+	categories,
+	kind: presetKind,
+}: CategoryDialogProps) {
 	const { t } = useTranslation();
 	const createCategory = useCreateCategory();
 	const updateCategory = useUpdateCategory();
 	const form = useForm<CreateCategoryInput>({
 		resolver: zodResolver(createCategorySchema),
-		defaultValues: category === undefined ? newCategory() : valuesOf(category),
+		defaultValues: category === undefined ? blank(presetKind) : valuesOf(category),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const kind = useController({ control: form.control, name: "kind" });
@@ -114,9 +126,9 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 
 	useEffect(() => {
 		if (open) {
-			form.reset(latest.current === undefined ? newCategory() : valuesOf(latest.current));
+			form.reset(latest.current === undefined ? blank(presetKind) : valuesOf(latest.current));
 		}
-	}, [open, categoryId, form]);
+	}, [open, categoryId, presetKind, form]);
 
 	const submit = form.handleSubmit(async (values) => {
 		try {

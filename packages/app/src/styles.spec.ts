@@ -40,8 +40,11 @@ const pairs: [string, string][] = [
 	...ACCENT_TEXT.flatMap((text) =>
 		ACCENT_SURFACES.map((surface): [string, string] => [text, surface]),
 	),
+	// The primary button, and the import dialog's current step number.
 	["primary-foreground", "primary"],
-	// A status badge's text on its own background, on any row.
+	// A status badge's text on its own background, on any row, and the import
+	// preview's tab counters: the badge is opaque, so the section under it
+	// does not change the pair.
 	["foreground-secondary", "badge"],
 ];
 
@@ -87,15 +90,33 @@ function over(color: string, share: number, surface: string): string {
 		.join("")}`;
 }
 
-// « Doublon possible »: the warning text on its own tint, `bg-warning/6`
-// light and `/17` dark, over every surface a row takes.
+// A warning badge, « Doublon possible » or a connection's consent and sync
+// alerts: the warning text on its own tint, `bg-warning/6` light and `/17`
+// dark, over every surface a row or a section takes.
 describe.each([
 	["light", light, 0.06],
 	["dark", dark, 0.17],
-])("the %s duplicate badge", (_, tokens, share) => {
-	it.each(["background", "accent", "hover", "selection"])("meets WCAG AA on %s", (surface) => {
+])("the %s warning badge", (_, tokens, share) => {
+	it.each(["background", "section", "accent", "hover", "selection"])(
+		"meets WCAG AA on %s",
+		(surface) => {
+			const warning = tokens.get("warning") ?? "";
+			const fill = over(warning, share, tokens.get(surface) ?? "");
+
+			expect(contrastRatio(warning, fill)).toBeGreaterThanOrEqual(4.5);
+		},
+	);
+});
+
+// BankAlerts' strip over the panel and the credentials notice inside its
+// section: the warning text on `bg-warning/10`, in both modes.
+describe.each([
+	["light", light],
+	["dark", dark],
+])("the %s warning notice", (_, tokens) => {
+	it.each(["background", "section"])("meets WCAG AA on %s", (surface) => {
 		const warning = tokens.get("warning") ?? "";
-		const fill = over(warning, share, tokens.get(surface) ?? "");
+		const fill = over(warning, 0.1, tokens.get(surface) ?? "");
 
 		expect(contrastRatio(warning, fill)).toBeGreaterThanOrEqual(4.5);
 	});

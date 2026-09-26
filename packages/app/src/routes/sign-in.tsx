@@ -10,8 +10,8 @@ import { z } from "zod";
 
 import { setupSchema } from "@archant/api/schemas/setup";
 
+import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient, sessionQuery } from "@/lib/auth-client";
@@ -103,50 +103,42 @@ function SignInPage() {
 		errors[name] === undefined ? {} : { "aria-describedby": `${name}-error` };
 
 	return (
-		<main className="flex min-h-svh items-center justify-center p-6">
-			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle>
-						<h1 className="text-xl font-semibold">{t("signIn.title")}</h1>
-					</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="email">{t("signIn.email")}</Label>
-							<Input
-								id="email"
-								type="email"
-								autoComplete="username"
-								aria-invalid={errors.email !== undefined}
-								{...describedBy("email")}
-								{...form.register("email")}
-							/>
-							<FieldMessage id="email-error" error={errors.email} />
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="password">{t("signIn.password")}</Label>
-							<Input
-								id="password"
-								type="password"
-								autoComplete="current-password"
-								aria-invalid={errors.password !== undefined}
-								{...describedBy("password")}
-								{...form.register("password")}
-							/>
-							<FieldMessage id="password-error" error={errors.password} />
-						</div>
-						<Button type="submit" disabled={isSubmitting}>
-							{t("signIn.submit")}
-						</Button>
-						{failure !== null && (
-							<p role="alert" className="text-sm text-destructive">
-								{t(`signIn.${failure}`)}
-							</p>
-						)}
-					</form>
-				</CardContent>
-			</Card>
-		</main>
+		<OutsideShell className="flex flex-col gap-6">
+			<h1 className="type-display">{t("signIn.title")}</h1>
+			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="email">{t("signIn.email")}</Label>
+					<Input
+						id="email"
+						type="email"
+						autoComplete="username"
+						aria-invalid={errors.email !== undefined}
+						{...describedBy("email")}
+						{...form.register("email")}
+					/>
+					<FieldMessage id="email-error" error={errors.email} />
+				</div>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="password">{t("signIn.password")}</Label>
+					<Input
+						id="password"
+						type="password"
+						autoComplete="current-password"
+						aria-invalid={errors.password !== undefined}
+						{...describedBy("password")}
+						{...form.register("password")}
+					/>
+					<FieldMessage id="password-error" error={errors.password} />
+				</div>
+				<Button type="submit" disabled={isSubmitting}>
+					{t("signIn.submit")}
+				</Button>
+				{failure !== null && (
+					<p role="alert" className="text-sm text-destructive">
+						{t(`signIn.${failure}`)}
+					</p>
+				)}
+			</form>
+		</OutsideShell>
 	);
 }

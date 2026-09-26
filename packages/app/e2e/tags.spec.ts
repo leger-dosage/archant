@@ -76,7 +76,7 @@ test("a tag added from the header is listed with no transaction", async ({ page 
 	const name = uniqueName("Voyage");
 
 	await page.goto(PAGE);
-	// The header's, first: an empty list shows a second one below.
+	// The section header's, or an empty list's own in its place.
 	await page.getByRole("button", { name: "Ajouter une étiquette", exact: true }).first().click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter une étiquette" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -117,7 +117,9 @@ test("an empty tag list says so and offers the button that adds one", async ({ p
 	);
 
 	await page.goto(PAGE);
-	const empty = page.getByText("Aucune étiquette pour l'instant.").locator("..");
+	const empty = page
+		.getByRole("heading", { name: "Aucune étiquette pour l'instant" })
+		.locator("..");
 	await expect(empty).toBeVisible();
 	await empty.getByRole("button", { name: "Ajouter une étiquette", exact: true }).click();
 

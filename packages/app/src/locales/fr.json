@@ -627,7 +627,11 @@
 			"income": "Revenus",
 			"expense": "Dépenses"
 		},
-		"groupEmpty": "Aucune catégorie de ce type.",
+		"groupEmpty": {
+			"income": "Aucune catégorie de revenus",
+			"expense": "Aucune catégorie de dépenses",
+			"description": "Ajoutez-en une pour classer ces opérations."
+		},
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
 		"actions": "Actions pour {{name}}",
@@ -733,8 +737,12 @@
 	"merchants": {
 		"title": "Marchands",
 		"description": "Un marchand regroupe les libellés d'un même commerce. Ajoutez-en un ici, ou depuis une opération ou une règle en tapant son nom.",
+		"list": "Tous les marchands",
 		"add": "Ajouter un marchand",
-		"empty": "Aucun marchand pour l'instant.",
+		"empty": {
+			"title": "Aucun marchand pour l'instant",
+			"description": "Un marchand regroupe les opérations d'un même commerce, quel que soit le libellé de la banque."
+		},
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
 		"actions": "Actions pour {{name}}",
@@ -774,8 +782,12 @@
 	"tags": {
 		"title": "Étiquettes",
 		"description": "Une étiquette suit un voyage ou un projet à travers les catégories. Ajoutez-en une ici, ou depuis une opération ou une règle en tapant son nom.",
+		"list": "Toutes les étiquettes",
 		"add": "Ajouter une étiquette",
-		"empty": "Aucune étiquette pour l'instant.",
+		"empty": {
+			"title": "Aucune étiquette pour l'instant",
+			"description": "Une étiquette réunit des opérations de plusieurs catégories, un voyage ou des travaux par exemple."
+		},
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
 		"actions": "Actions pour {{name}}",
@@ -804,7 +816,12 @@
 	"recurring": {
 		"title": "Récurrences",
 		"description": "Les abonnements et factures qui reviennent chaque mois, détectés sur les trois derniers mois d'opérations. Confirmez ceux que vous voulez suivre, écartez les autres. Une récurrence détectée sans opération depuis deux mois devient inactive.",
-		"empty": "Aucune récurrence pour l'instant. Lancez la détection ou ajoutez-en une depuis une opération.",
+		"list": "Toutes les récurrences",
+		"empty": {
+			"title": "Aucune récurrence pour l'instant",
+			"description": "Lancez la détection ou ajoutez-en une depuis une opération.",
+			"action": "Détecter les récurrences"
+		},
 		"detect": "Détecter",
 		"detected_zero": "Aucune récurrence détectée",
 		"detected_one": "{{count}} récurrence détectée",
@@ -840,7 +857,11 @@
 	"rules": {
 		"title": "Règles",
 		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, exclusion ou virement attendu. Elle ne touche les opérations existantes que si vous l'appliquez. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
-		"empty": "Aucune règle pour l'instant.",
+		"list": "Ordre d'application",
+		"empty": {
+			"title": "Aucune règle pour l'instant",
+			"description": "Une règle complète les nouvelles opérations à leur arrivée : catégorie, marchand, étiquette ou libellé."
+		},
 		"add": "Ajouter une règle",
 		"mobile": "Disponible sur ordinateur",
 		"actions": "Actions pour {{name}}",
@@ -986,6 +1007,7 @@
 	"banks": {
 		"title": "Banques",
 		"description": "Connectez une banque pour qu'Archant lise vos comptes à votre place. Vous donnez votre accord sur le site de la banque, qui peut le retirer à tout moment ; Archant ne voit jamais vos identifiants.",
+		"picker": "Connecter une banque",
 		"unavailable": {
 			"title": "La connexion bancaire n'est pas configurée",
 			"description": "Définissez cette variable d'environnement sur le serveur, puis redémarrez-le :",
@@ -1022,7 +1044,11 @@
 		"bic": "BIC : {{bic}}",
 		"connect": "Connecter {{name}}",
 		"connections": "Banques connectées",
-		"noConnections": "Aucune banque connectée pour l'instant.",
+		"noConnections": {
+			"title": "Aucune banque connectée pour l'instant",
+			"description": "Choisissez votre banque ci-dessus : ses comptes arriveront ici une fois votre accord donné.",
+			"action": "Choisir une banque"
+		},
 		"consentUntil": "Consentement valable jusqu'au {{date}}",
 		"sync": {
 			"last": "Dernière synchronisation : {{when}}",
@@ -1032,7 +1058,8 @@
 			"submit": "Synchroniser",
 			"done": "Synchronisation terminée.",
 			"failed": "Synchronisation terminée avec une erreur.",
-			"balanceUnavailable": "Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente."
+			"balanceUnavailable": "Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente.",
+			"title": "Synchronisation"
 		},
 		"return": {
 			"title": "Connexion à votre banque",
@@ -1058,6 +1085,8 @@
 			"linked_other": "{{count}} comptes reliés à la banque."
 		},
 		"consentExpired": "Consentement expiré",
+		"consentExpiring": "Consentement bientôt expiré",
+		"syncStale": "Synchronisation en retard",
 		"alerts": {
 			"label": "Avertissements bancaires",
 			"consent_expiring": "Le consentement de {{bank}} expire le {{date}}.",

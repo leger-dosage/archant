@@ -89,7 +89,16 @@ test("each settings entry has its icon", async ({ page }) => {
 	);
 });
 
-test("the title bar holds the page's icon, its h1 and its actions", async ({ page }) => {
+test("the title bar holds the page's icon, its h1 and its actions", async ({ page, api }) => {
+	// A series to list: an empty list moves « Détecter » into its empty state.
+	const account = await api.openAccount({ openingDate: daysAgo(5) });
+	await api.addRecurring(
+		await api.addTransaction(account.id, {
+			date: daysAgo(1),
+			label: "Abonnement",
+			amount: "-9,99",
+		}),
+	);
 	await page.goto("/recurring");
 	const bar = titleBar(page, "Récurrences");
 

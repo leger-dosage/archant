@@ -16,13 +16,13 @@ import { formatMoney } from "@archant/data/money";
 
 import { AmountField } from "@/components/AmountField";
 import { CategoryCombobox } from "@/components/CategoryCombobox";
-import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { DuplicateDialog } from "@/components/DuplicateDialog";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TagCombobox } from "@/components/TagCombobox";
+import { TintedIcon } from "@/components/TintedIcon";
 import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +55,7 @@ import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
-import { showsCategory, TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
+import { showsCategory, transferCaption } from "@/lib/transfers";
 
 const FIELD_NAMES = [
 	"date",
@@ -142,7 +142,7 @@ function CategoryField({
 }) {
 	const categories = useCategories();
 	const [open, setOpen] = useState(false);
-	const { color, name } = useCategoryShown(value);
+	const { color, icon, name } = useCategoryShown(value);
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -155,7 +155,14 @@ function CategoryField({
 					aria-invalid={invalid}
 					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
 				>
-					<CategoryDot color={color} />
+					<TintedIcon
+						subject={
+							color === null || icon === null
+								? { kind: "uncategorised" }
+								: { kind: "category", color, icon }
+						}
+						size="sm"
+					/>
 					{name === null ? (
 						<Skeleton className="h-3 w-24" />
 					) : (
@@ -382,7 +389,7 @@ function TransferBlock({
 					<p className="flex min-w-0 flex-col text-sm">
 						<span className="truncate">{t(caption.key, { account: caption.account })}</span>
 						<span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-							<CategoryDot color={TRANSFER_COLOR} />
+							<TintedIcon subject={{ kind: "transfer" }} size="sm" />
 							{t(`transactions.transfer.kinds.${transfer.kind}`)}
 						</span>
 					</p>

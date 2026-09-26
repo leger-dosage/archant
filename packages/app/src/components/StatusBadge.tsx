@@ -1,6 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 
-import { ArrowLeftRightIcon, ClockIcon, RepeatIcon, TriangleAlertIcon } from "lucide-react";
+import {
+	ArrowLeftRightIcon,
+	CircleCheckIcon,
+	CirclePauseIcon,
+	ClockAlertIcon,
+	ClockIcon,
+	HandIcon,
+	RefreshCwOffIcon,
+	RepeatIcon,
+	SparklesIcon,
+	TriangleAlertIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
@@ -21,6 +32,19 @@ const STATUSES = {
 	},
 	// The warning tint, which DESIGN.md keeps for states that need attention.
 	duplicate: { icon: TriangleAlertIcon, key: "transactions.duplicate.flag", warning: true },
+	// A series' state is information, never an alarm: all neutral.
+	recurringDetected: { icon: SparklesIcon, key: "recurring.statuses.detected", warning: false },
+	recurringConfirmed: {
+		icon: CircleCheckIcon,
+		key: "recurring.statuses.confirmed",
+		warning: false,
+	},
+	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", warning: false },
+	recurringManual: { icon: HandIcon, key: "recurring.manual", warning: false },
+	// A connection that needs the user, as BankAlerts' strip says above the page.
+	consentExpiring: { icon: ClockAlertIcon, key: "banks.consentExpiring", warning: true },
+	consentExpired: { icon: TriangleAlertIcon, key: "banks.consentExpired", warning: true },
+	syncStale: { icon: RefreshCwOffIcon, key: "banks.syncStale", warning: true },
 } as const satisfies Record<string, { icon: LucideIcon; key: string; warning: boolean }>;
 
 export type Status = keyof typeof STATUSES;

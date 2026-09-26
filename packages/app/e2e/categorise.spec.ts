@@ -217,8 +217,12 @@ test("a category picked in the sheet shows on the row once saved", async ({ page
 	await expect(field).toHaveText("Sans catégorie");
 	await field.click();
 	await categorySearch(page).fill(category.name);
-	await page.getByRole("option", { name: category.name }).click();
+	// Story 12.4: each option and the field show the category's tinted icon.
+	const option = page.getByRole("option", { name: category.name });
+	await expect(option.locator('[data-slot="tinted-icon"] svg.lucide-tag')).toBeVisible();
+	await option.click();
 	await expect(field).toHaveText(category.name);
+	await expect(field.locator('[data-slot="tinted-icon"] svg.lucide-tag')).toBeVisible();
 	await sheet.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(sheet).toBeHidden();

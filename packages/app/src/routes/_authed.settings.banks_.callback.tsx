@@ -27,7 +27,7 @@ function Failure({ message }: { message: string }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
 			<p>{message}</p>
 			<Link
 				to="/settings/banks"
@@ -89,7 +89,7 @@ function BankReturnPage() {
 
 	return (
 		<div className="flex max-w-2xl flex-col gap-6">
-			<h2 className="text-lg font-semibold">{t("banks.return.title")}</h2>
+			<h2 className="type-display">{t("banks.return.title")}</h2>
 
 			{refused && <Failure message={t("banks.return.refused")} />}
 
