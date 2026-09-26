@@ -8,6 +8,11 @@
 		"retry": "Réessayer",
 		"cancel": "Annuler"
 	},
+	"startError": {
+		"apiDownTitle": "L'API ne répond pas",
+		"apiDownDescription": "En développement, démarrez-la avec pnpm api start:dev. Si elle est déjà démarrée, un autre serveur occupe peut-être son port : arrêtez-le, ou choisissez un autre port avec la variable PORT de .env.",
+		"title": "Une erreur est survenue"
+	},
 	"pagination": {
 		"previous": "Précédent",
 		"next": "Suivant",

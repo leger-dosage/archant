@@ -66,7 +66,7 @@ pnpm api start:dev        # API on http://localhost:8787; migrates local.db at t
 pnpm web start:dev        # interface on http://localhost:5173, proxies /api to the API
 ```
 
-Open http://localhost:5173 and create the administrator. `pnpm data migrate:local` applies migrations without starting the API. To connect a bank in development, see [Connecting a bank](docs/deployment.md#connecting-a-bank).
+The database is the SQLite file `local.db` at the repository root, which the API creates and migrates when it starts, so no container or database server is needed. Open http://localhost:5173 and create the administrator. `pnpm data migrate:local` applies migrations without starting the API. To connect a bank in development, see [Connecting a bank](docs/deployment.md#connecting-a-bank).
 
 ## Scripts
 

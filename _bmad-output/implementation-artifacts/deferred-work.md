@@ -133,3 +133,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-5-pending-and-booked-versions-never-count-twice.md`
   summary: A new pending purchase with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so the purchase never counts.
   evidence: medium, pre-existing: before Story 11.5 a pending line was looked up by fingerprint first. Creating such a line with `keepExisting` keys, as Story 11.5 does when the fingerprint names a pending entry, would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-9-a-first-start-that-says-what-is-wrong.md`
+  summary: No automated test reaches the API server's `error` handler (`EADDRINUSE` or another listen failure) in `packages/api/src/index.ts`.
+  evidence: The loopback probe always stops the process first in tests; removing the handler keeps the suite green. A portable way to make the bind fail after the probe (non-loopback address on Linux, privileged port) was not found.
