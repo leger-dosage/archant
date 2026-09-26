@@ -64,7 +64,7 @@ test("a new name and subtype show in the header, the sidebar, /accounts and /tra
 	await expect(sidebarRow(page, name)).toBeVisible();
 
 	await page.reload();
-	const header = page.getByRole("heading", { level: 1, name }).locator("..");
+	const header = page.getByRole("region", { name, exact: true });
 	await expect(header).toContainText("Épargne");
 	await expect(header).toContainText(euros(48_000));
 	await expect(sidebarRow(page, name)).toContainText(euros(48_000));
@@ -153,7 +153,9 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 
 	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Désactiver" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » désactivé.`)).toBeVisible();
-	await expect(page.getByRole("heading", { level: 1 })).toContainText("Inactif");
+	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
+		"Inactif",
+	);
 
 	const toggled = await openMenu(page, account.name);
 	await expect(toggled.getByRole("menuitem")).toHaveText([
@@ -184,7 +186,9 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 	await page.goto(`/accounts/${account.id}`);
 	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Désactiver" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » désactivé.`)).toBeVisible();
-	await expect(page.getByRole("heading", { level: 1 })).toContainText("Inactif");
+	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
+		"Inactif",
+	);
 	await expect(sidebarRow(page, account.name)).toHaveCount(0);
 
 	// Its balance of 99,00 leaves the Actifs total.
@@ -228,7 +232,9 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 	await row.click();
 	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Réactiver" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » réactivé.`)).toBeVisible();
-	await expect(page.getByRole("heading", { level: 1 })).not.toContainText("Inactif");
+	await expect(page.getByRole("region", { name: account.name, exact: true })).not.toContainText(
+		"Inactif",
+	);
 	await expect(sidebarRow(page, account.name)).toBeVisible();
 
 	await page.goto("/accounts");

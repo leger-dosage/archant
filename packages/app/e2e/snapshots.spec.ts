@@ -7,8 +7,7 @@ import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 1.4: balance snapshots.
 
-const header = (page: Page, name: string) =>
-	page.getByRole("heading", { level: 1, name }).locator("..");
+const header = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 
 // Anchored: « 1 septembre 2026 » is also the end of « 11 septembre 2026 ».
 const snapshotRow = (page: Page, iso: string) =>

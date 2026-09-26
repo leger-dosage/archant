@@ -6,18 +6,21 @@
 
 export const CATEGORY_NAME_MAX_LENGTH = 60;
 
-/** Sure's ten swatches, the only colours the form offers. */
+/**
+ * DESIGN.md's ten swatches, Linear's register, the only colours the form
+ * offers. Existing categories keep theirs: see `CATEGORY_COLOR_PATTERN`.
+ */
 export const CATEGORY_COLORS = [
-	"#e99537",
-	"#4da568",
-	"#6471eb",
-	"#db5a54",
-	"#df4e92",
-	"#c44fe9",
-	"#eb5429",
-	"#61c9ea",
-	"#805dee",
-	"#6ad28a",
+	"#fc7840",
+	"#f0bf00",
+	"#4ea7fc",
+	"#00b8cc",
+	"#27a644",
+	"#5e6ad2",
+	"#eb5757",
+	"#9d6fe8",
+	"#e2609c",
+	"#c95fd8",
 ] as const;
 
 export type CategoryColor = (typeof CATEGORY_COLORS)[number];

@@ -73,14 +73,20 @@ test("the former shortcuts open nothing, go nowhere and move no focus", async ({
 	await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("the header holds the sidebar trigger only", async ({ page }) => {
+test("the title bar holds the sidebar trigger and the page's own actions only", async ({
+	page,
+	api,
+}) => {
+	// « Ajouter un compte » sits in the title bar once an account exists.
+	await api.openAccount();
 	await visit(page, "/accounts");
 
 	const header = page.locator("header");
 	await expect(
 		header.getByRole("button", { name: "Réduire ou déplier la barre latérale" }),
 	).toBeVisible();
-	await expect(header.getByRole("button")).toHaveCount(1);
+	await expect(header.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(header.getByRole("button")).toHaveCount(2);
 	await expect(page.getByRole("button", { name: "Rechercher", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Commandes", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Raccourcis clavier", exact: true })).toHaveCount(

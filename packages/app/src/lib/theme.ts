@@ -74,6 +74,8 @@ export function useThemeChoice(): ThemeChoice {
  * resolved value is the snapshot itself: with the choice as snapshot, an OS
  * switch under "system" would change nothing React can see.
  */
-export function useResolvedTheme(): "light" | "dark" {
+export type ResolvedTheme = "light" | "dark";
+
+export function useResolvedTheme(): ResolvedTheme {
 	return useSyncExternalStore(subscribe, () => (isDark(choice) ? "dark" : "light"));
 }

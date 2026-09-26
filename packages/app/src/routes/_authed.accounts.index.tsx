@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { WalletIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 import { AccountGroups, AccountGroupsSkeleton } from "@/components/AccountGroups";
 import { CreateAccountDialog } from "@/components/CreateAccountDialog";
+import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -36,14 +38,15 @@ function AccountsPage() {
 	}, [t]);
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
-			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-3xl font-semibold tracking-tight">{t("accounts.title")}</h1>
-				{hasAccounts && (
+		<Page
+			icon={WalletIcon}
+			title={t("accounts.title")}
+			actions={
+				hasAccounts ? (
 					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
-				)}
-			</div>
-
+				) : undefined
+			}
+		>
 			{accounts.isPending && <AccountGroupsSkeleton />}
 
 			{accounts.isError && (
@@ -82,6 +85,6 @@ function AccountsPage() {
 				</div>
 			)}
 			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
-		</div>
+		</Page>
 	);
 }

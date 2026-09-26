@@ -3,6 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { WalletIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -18,6 +19,7 @@ import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
+import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
@@ -296,12 +298,11 @@ function AccountPage() {
 
 	if (notFound) {
 		return (
-			<div className="flex w-full max-w-[1200px] flex-col items-start gap-3 p-6">
-				<h1 className="text-3xl font-semibold tracking-tight">{t("accountDetail.notFound")}</h1>
+			<Page icon={WalletIcon} title={t("accountDetail.notFound")} className="items-start gap-3">
 				<Button asChild variant="outline">
 					<Link to="/accounts">{t("accountDetail.backToAccounts")}</Link>
 				</Button>
-			</div>
+			</Page>
 		);
 	}
 
@@ -326,7 +327,26 @@ function AccountPage() {
 	};
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
+		<Page
+			icon={WalletIcon}
+			title={account.data?.name ?? t("accountDetail.title")}
+			actions={
+				account.data !== undefined ? (
+					<>
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button variant="outline" onClick={() => setImporting(true)} disabled={!canImport}>
+									{t("imports.open")}
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent side="bottom">{t("imports.title")}</TooltipContent>
+						</Tooltip>
+						<Button onClick={openNew}>{t("transactions.add")}</Button>
+						<AccountMenu account={account.data} />
+					</>
+				) : undefined
+			}
+		>
 			{account.isError && (
 				<ListError error={account.error} onRetry={() => void account.refetch()} />
 			)}
@@ -340,40 +360,21 @@ function AccountPage() {
 			)}
 
 			{account.data !== undefined && (
-				<div className="flex flex-wrap items-end justify-between gap-4">
-					{/* The menu sits right after the name; the rest wraps below as one column. */}
-					<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-						<h1 className="flex min-w-0 items-center gap-3 text-3xl font-semibold tracking-tight">
-							<span className="truncate">{account.data.name}</span>
-							{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
-						</h1>
-						<AccountMenu account={account.data} />
-						<div className="flex basis-full flex-col gap-1">
-							<p className="text-sm text-muted-foreground">
-								{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
-							</p>
-							{account.data.details !== null && (
-								<LoanSummary details={account.data.details} currency={account.data.currency} />
-							)}
-							<Money
-								amount={account.data.balance}
-								currency={account.data.currency}
-								className="amount-hero mt-2"
-							/>
-						</div>
-					</div>
-					<div className="flex gap-2">
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button variant="outline" onClick={() => setImporting(true)} disabled={!canImport}>
-									{t("imports.open")}
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="bottom">{t("imports.title")}</TooltipContent>
-						</Tooltip>
-						<Button onClick={openNew}>{t("transactions.add")}</Button>
-					</div>
-				</div>
+				// Named by the title bar's `h1`: the account's name.
+				<section aria-labelledby={PAGE_TITLE_ID} className="flex flex-col gap-1">
+					<p className="flex items-center gap-2 text-sm text-muted-foreground">
+						{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
+						{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
+					</p>
+					{account.data.details !== null && (
+						<LoanSummary details={account.data.details} currency={account.data.currency} />
+					)}
+					<Money
+						amount={account.data.balance}
+						currency={account.data.currency}
+						className="amount-hero mt-2"
+					/>
+				</section>
 			)}
 
 			<section aria-labelledby="balance-heading" className="flex flex-col gap-3">
@@ -436,6 +437,6 @@ function AccountPage() {
 					<ImportDialog account={writable} open={importing} onOpenChange={setImporting} />
 				</>
 			)}
-		</div>
+		</Page>
 	);
 }

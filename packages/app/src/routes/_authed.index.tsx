@@ -1,6 +1,7 @@
 import type { NetWorthData } from "@/hooks/useNetWorth";
 
 import { createFileRoute } from "@tanstack/react-router";
+import { LayoutDashboardIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -13,6 +14,7 @@ import { BalanceChart, PeriodToggle, changeText } from "@/components/BalanceChar
 import { CashFlowCard } from "@/components/CashFlowCard";
 import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { Money } from "@/components/Money";
+import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -164,9 +166,7 @@ function DashboardPage() {
 		});
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
-			<h1 className="text-3xl font-semibold tracking-tight">{t("dashboard.title")}</h1>
-
+		<Page icon={LayoutDashboardIcon} title={t("dashboard.title")}>
 			{accounts.isPending && <Skeleton className="h-96 w-full rounded-lg" aria-hidden="true" />}
 
 			{accounts.isError && (
@@ -192,6 +192,6 @@ function DashboardPage() {
 				</div>
 			)}
 			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
-		</div>
+		</Page>
 	);
 }

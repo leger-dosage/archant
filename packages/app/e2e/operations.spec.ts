@@ -353,9 +353,9 @@ test("a transaction excluded in the sheet is marked on both lists, and the balan
 	await expectExcluded(page, label);
 
 	await page.goto(`/accounts/${account.id}`);
-	await expect(
-		page.getByRole("heading", { level: 1, name: account.name }).locator(".."),
-	).toContainText(balance);
+	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
+		balance,
+	);
 	await expectExcluded(page, label);
 
 	await row(page, label).click();

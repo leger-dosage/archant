@@ -105,7 +105,7 @@ test("an account created with the form's default opening date accepts a transact
 	await expect(
 		page.getByRole("main").getByRole("button", { name: new RegExp(label) }),
 	).toContainText(euros(-4290));
-	await expect(page.getByRole("heading", { level: 1, name }).locator("..")).toContainText(
+	await expect(page.getByRole("region", { name, exact: true })).toContainText(
 		euros(100_000 - 4290),
 	);
 });

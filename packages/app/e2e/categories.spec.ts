@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
-import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { adjustToContrast } from "../src/lib/contrast.ts";
+import { daysAgo, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
 // Story 4.1: default categories and category management. One database serves
 // the whole run, so each test works on categories of its own and never
@@ -30,6 +31,27 @@ async function openAction(
 	await page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).click();
 	await page.getByRole("menuitem", { name: action }).click();
 }
+
+/** DESIGN.md's palette, in the order the form offers it. */
+const SWATCHES = [
+	"Orange",
+	"Jaune",
+	"Bleu",
+	"Turquoise",
+	"Vert",
+	"Indigo",
+	"Rouge",
+	"Violet",
+	"Rose",
+	"Magenta",
+];
+
+/** The dialog's live tinted icon of the category being edited. */
+const preview = (dialog: Locator) =>
+	dialog.getByRole("img", { name: "Aperçu de la catégorie" }).locator('[data-slot="tinted-icon"]');
+
+/** A tinted icon's colour in light mode: the category's, adjusted to 3:1 on the hover row. */
+const iconColor = (hex: string) => rgb(adjustToContrast(hex, "#f4f4f4", 3));
 
 const EXPENSE_DEFAULTS = [
 	"Courses",
@@ -94,8 +116,19 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await page.getByRole("button", { name: "Ajouter une catégorie" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
 	await dialog.getByLabel("Nom").fill(name);
+	const swatches = dialog.getByRole("group", { name: "Couleur" }).getByRole("radio");
+	await expect(swatches).toHaveCount(SWATCHES.length);
+	expect(
+		await swatches.evaluateAll((radios) =>
+			radios.map((radio) => radio.parentElement?.textContent ?? ""),
+		),
+	).toEqual(SWATCHES);
+	await expect(swatches.first()).toBeChecked();
+	await expect(preview(dialog)).toHaveCSS("color", iconColor("#fc7840"));
 	await pick(dialog, "Rouge");
 	await pick(dialog, "Chien");
+	await expect(preview(dialog).locator("svg.lucide-dog")).toBeVisible();
+	await expect(preview(dialog)).toHaveCSS("color", iconColor("#eb5757"));
 	await dialog.getByRole("button", { name: "Ajouter une catégorie" }).click();
 	await expect(page.getByText(`Catégorie « ${name} » ajoutée.`)).toBeVisible();
 
@@ -103,13 +136,13 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await expect(row(group(page, "Dépenses"), name).locator("svg.lucide-dog")).toBeVisible();
 	await expect(row(page, name).locator("span[aria-hidden]").first()).toHaveCSS(
 		"background-color",
-		"rgb(219, 90, 84)",
+		"rgb(235, 87, 87)",
 	);
 
 	await openAction(page, name, "Modifier");
 	const edit = page.getByRole("dialog", { name: "Modifier la catégorie" });
 	await edit.getByLabel("Nom").fill(renamed);
-	await pick(edit, "Bleu ciel");
+	await pick(edit, "Bleu");
 	await edit.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText(`Catégorie « ${renamed} » enregistrée.`)).toBeVisible();
 
@@ -117,12 +150,13 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await expect(row(page, name)).toHaveCount(0);
 	await expect(row(page, renamed).locator("span[aria-hidden]").first()).toHaveCSS(
 		"background-color",
-		"rgb(97, 201, 234)",
+		"rgb(78, 167, 252)",
 	);
 
 	await openAction(page, renamed, "Modifier");
 	await edit.getByRole("combobox", { name: "Catégorie parente" }).click();
 	await page.getByRole("option", { name: parent.name }).click();
+	await expect(preview(edit)).toHaveCSS("color", iconColor("#4da568"));
 	// A child takes its parent's type and colour, so the form stops offering them.
 	await expect(edit.getByRole("group", { name: "Couleur" })).toHaveCount(0);
 	await expect(edit.getByRole("combobox", { name: "Type" })).toHaveCount(0);
@@ -136,6 +170,25 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 		"background-color",
 		"rgb(77, 165, 104)",
 	);
+});
+
+test("a default's colour outside the palette is offered first, selected, and previewed", async ({
+	page,
+}) => {
+	await page.goto(PAGE);
+	await openAction(page, "Revenus", "Modifier");
+	const edit = page.getByRole("dialog", { name: "Modifier la catégorie" });
+	const swatches = edit.getByRole("group", { name: "Couleur" }).getByRole("radio");
+
+	await expect(swatches).toHaveCount(SWATCHES.length + 1);
+	await expect(swatches.first()).toBeChecked();
+	await expect(edit.getByRole("radio", { name: "Couleur actuelle" })).toBeChecked();
+	await expect(preview(edit)).toHaveCSS("color", iconColor("#22c55e"));
+	await expect(preview(edit).locator("svg.lucide-circle-dollar-sign")).toBeVisible();
+
+	// Closed without saving: the defaults stay as they are for every other test.
+	await edit.getByRole("button", { name: "Annuler" }).click();
+	await expect(edit).toBeHidden();
 });
 
 test("the delete dialog shows the transaction count and where they can go", async ({

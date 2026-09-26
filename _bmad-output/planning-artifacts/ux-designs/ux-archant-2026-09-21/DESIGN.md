@@ -11,6 +11,8 @@ colors:
   # Unlisted shadcn tokens (popover, input, secondary, destructive-foreground...) inherit the neutral base.
   # Light is Linear Light, read from linear.app's stylesheets. Dark is derived in LCH from the inputs
   # Linear's client passes its Classic Dark theme (base #1F2023, accent #5E6AD2, contrast 30).
+  # AA wins over a hex: light muted-foreground, money-muted, money-income and link, and dark
+  # destructive, are moved in OKLCH, lightness only, to the least change that passes 4.5:1.
   background: '#F8F8F8'
   panel: '#FFFFFF'
   section: '#FFFFFF'
@@ -20,7 +22,7 @@ colors:
   selection: '#F1F1FF'
   foreground: '#282A30'
   foreground-secondary: '#3C4149'
-  muted-foreground: '#6F6E77'
+  muted-foreground: '#6C6B73'
   border: '#E9E8EA'
   border-strong: '#DCDBDD'
   line: '#EAEAEB'
@@ -28,13 +30,13 @@ colors:
   primary: '#5E6AD2'
   primary-foreground: '#FFFFFF'
   accent-brand: '#7170FF'
-  link: '#5E6AD2'
+  link: '#5A65CC'
   ring: '#7170FF'
   destructive: '#C91313'
   warning: '#A64F2A'
-  money-income: '#1E8034'
+  money-income: '#1D7F34'
   money-expense: '#282A30'
-  money-muted: '#6F6E77'
+  money-muted: '#6C6B73'
   trend-up: '#27A644'
   trend-down: '#EB5757'
   background-dark: '#1A1B1E'
@@ -56,7 +58,7 @@ colors:
   accent-brand-dark: '#818AF6'
   link-dark: '#818AF6'
   ring-dark: '#818AF6'
-  destructive-dark: '#ED4E4E'
+  destructive-dark: '#FE5C5A'
   warning-dark: '#FEBCA0'
   money-income-dark: '#2BA947'
   money-expense-dark: '#EEEFF1'
@@ -210,9 +212,9 @@ The light values are Linear Light's, read from linear.app's stylesheets on 2026-
 
 - **Surfaces.** `{colors.background}` behind the sidebar, `{colors.panel}` for the inset panel that holds the page, `{colors.section}` for bordered sections inside it, `{colors.hover}` under a hovered row, `{colors.active}` for the active sidebar item, `{colors.selection}` for selected rows. Dark mode steps the charcoal the same way: sidebar `#1A1B1E`, panel `#1F2023`, section `#252629`, hover `#2B2D30`.
 - **Text.** `{colors.foreground}` primary, `{colors.foreground-secondary}` for secondary text and badges, `{colors.muted-foreground}` for captions, axis labels and icons. Linear's quaternary text colour fails AA and is not used for text.
-- **Indigo.** The primary button is `#5E6AD2` with white text (4.70:1) in both modes. In light mode the accent `#7170FF` only marks focus, selection and the chart line, since it reaches 3.84:1 on white; links use `#5E6AD2`. In dark mode the accent and links are `#818AF6`, the indigo lightened to 4.54:1 on a hovered row.
+- **Indigo.** The primary button is `#5E6AD2` with white text (4.70:1) in both modes. In light mode the accent `#7170FF` only marks focus, selection and the chart line, since it reaches 3.84:1 on white; links use `#5A65CC`, the indigo darkened to 4.5:1 on a selected row. In dark mode the accent and links are `#818AF6`, the indigo lightened to 4.54:1 on a hovered row.
 - **Category colours** are each category's own, set in the category settings. They appear only as a tint behind an icon, as a pill, or as a chart segment. The palette offered for a new category follows Linear's register: orange `#FC7840`, yellow `#F0BF00`, blue `#4EA7FC`, teal `#00B8CC`, green `#27A644`, indigo `#5E6AD2`, red `#EB5757`, violet `#9D6FE8`, pink `#E2609C`, magenta `#C95FD8`. Existing categories keep the colour they have. **Account type colours** are fixed: `{colors.type-depository}`, `{colors.type-investment}`, `{colors.type-property}`, `{colors.type-vehicle}`, `{colors.type-credit-card}`, `{colors.type-loan}`. Transfers use `{colors.transfer}`; uncategorised uses the muted text colour.
-- **Money.** Income is `#1E8034` in light (Linear's green darkened to 5:1 on white) and `#2BA947` in dark, with a plus sign. Expenses are the text colour: spending is the normal case and is never shown in red. Pending and excluded amounts use `{colors.money-muted}`, always paired with a badge or an icon.
+- **Money.** Income is `#1D7F34` in light (Linear's green darkened to 4.5:1 on a selected row) and `#2BA947` in dark, with a plus sign. Expenses are the text colour: spending is the normal case and is never shown in red. Pending and excluded amounts use `{colors.money-muted}`, always paired with a badge or an icon.
 - **Trend up and down (`#27A644`, `#EB5757`)** only colour the arrow beside the net worth change. They never colour an amount.
 - **Destructive** is only for delete actions and errors. **Warning** is only for consent expiry, stale sync and possible duplicates, drawn as an orange-tinted badge.
 

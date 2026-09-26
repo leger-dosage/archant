@@ -27,8 +27,7 @@ function threeLines(): [Line, Line, Line] {
 	];
 }
 
-const header = (page: Page, name: string) =>
-	page.getByRole("heading", { level: 1, name }).locator("..");
+const header = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Importer un fichier" });
 

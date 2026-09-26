@@ -4,9 +4,8 @@ import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 1.2: record transactions by hand.
 
-/** The block under the account's name: subtype and current balance. */
-const header = (page: Page, name: string) =>
-	page.getByRole("heading", { level: 1, name }).locator("..");
+/** The account's summary, the region its name labels: subtype and current balance. */
+const header = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 
 const row = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("button", { name: new RegExp(label) });
