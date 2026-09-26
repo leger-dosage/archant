@@ -718,6 +718,7 @@ describe("GET /api/accounts/:id/transactions", () => {
 
 		expect(response.status).toBe(200);
 		expect(data.items.map((item) => item.label)).toEqual(["B", "A", "C"]);
+		expect(data.items[0]).toMatchObject({ accountType: "depository", recurring: false });
 		expect(data).toMatchObject({ page: 1, pageSize: 50, total: 3 });
 
 		const second = await (
@@ -1167,6 +1168,8 @@ const listItem = z.object({
 	id: z.string(),
 	accountId: z.string(),
 	accountName: z.string(),
+	accountType: z.string(),
+	recurring: z.boolean(),
 	date: z.string(),
 	label: z.string(),
 	amount: z.number(),
@@ -1256,8 +1259,13 @@ describe("GET /api/transactions", () => {
 
 		expect(data.items.map((item) => item.label)).toEqual(["L5", "L4", "L3", "L2", "L1", "L0"]);
 		expect(data).toMatchObject({ page: 1, pageSize: 50, total: 6 });
-		expect(data.items[0]).toMatchObject({ accountName: "Carte", excluded: false });
-		expect(data.items[1]).toMatchObject({ accountName: "Compte joint" });
+		expect(data.items[0]).toMatchObject({
+			accountName: "Carte",
+			accountType: "credit_card",
+			excluded: false,
+			recurring: false,
+		});
+		expect(data.items[1]).toMatchObject({ accountName: "Compte joint", accountType: "depository" });
 	});
 
 	it("combines account, start date and text in the label or the notes", async () => {
@@ -5882,7 +5890,9 @@ describe("possible duplicates", () => {
 		),
 	});
 
-	const itemBody = z.object({ data: listItem.omit({ accountName: true }) });
+	const itemBody = z.object({
+		data: listItem.omit({ accountName: true, accountType: true, recurring: true }),
+	});
 
 	it("flags the tie, lists its candidates, and merges it into the one picked", async () => {
 		const { account, first, second, flagged } = await tie();
@@ -6670,6 +6680,45 @@ describe("/api/recurring", () => {
 
 		expect(confirmed.status).toBe(200);
 		expect(await confirmed.json()).toMatchObject({ data: { id, status: "confirmed" } });
+	});
+
+	it("marks the rows of a series recurring in both lists, until it is dismissed", async () => {
+		const { app, account, ids } = await monthlyNetflix();
+		const other = await app.request(`/api/accounts/${account.id}/transactions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date: "2026-09-06", label: "Boulangerie", amount: "-4,20" }),
+		});
+		const otherId = z.object({ data: z.object({ id: z.string() }) }).parse(await other.json())
+			.data.id;
+		const flags = async (path: string) => {
+			const response = await app.request(path);
+			const { data } = z
+				.object({ data: z.object({ items: z.array(listItem) }) })
+				.parse(await response.json());
+
+			return new Map(data.items.map((item) => [item.id, item.recurring]));
+		};
+		const added = await testClient(app).api.recurring.$post({ json: { entryId: ids[2]! } });
+		const { data: series } = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse(await added.json());
+
+		const lists = await Promise.all(
+			["/api/transactions", `/api/accounts/${account.id}/transactions`].map(flags),
+		);
+
+		for (const flagged of lists) {
+			expect(ids.map((id) => flagged.get(id))).toEqual([true, true, true]);
+			expect(flagged.get(otherId)).toBe(false);
+		}
+
+		await testClient(app).api.recurring[":id"].$patch({
+			param: { id: series.id },
+			json: { status: "dismissed" },
+		});
+
+		expect([...(await flags("/api/transactions")).values()]).toEqual([false, false, false, false]);
 	});
 
 	it("answers the series of a transaction, null without one, NOT_FOUND for an unknown entry", async () => {

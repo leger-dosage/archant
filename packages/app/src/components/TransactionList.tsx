@@ -2,15 +2,15 @@ import type { CategoryData } from "@/hooks/useCategories";
 import type { Selection } from "@/hooks/useSelection";
 import type { TransactionData } from "@/hooks/useTransactions";
 
-import { ArrowLeftRightIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
-import { CategoryDot } from "@/components/CategoryDot";
-import { DuplicateFlag } from "@/components/DuplicateFlag";
+import { CategoryPill, TransferPill } from "@/components/CategoryPill";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { Money } from "@/components/Money";
+import { StatusBadge } from "@/components/StatusBadge";
+import { TintedIcon } from "@/components/TintedIcon";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -21,7 +21,9 @@ import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
 import { dayHeading } from "@/lib/dates";
-import { showsCategory, TRANSFER_COLOR, transferCaption } from "@/lib/transfers";
+import { rowSubject } from "@/lib/tint";
+import { groupByDay } from "@/lib/transaction-days";
+import { showsCategory, transferCaption } from "@/lib/transfers";
 import { cn } from "@/lib/utils";
 
 type TransactionListProps = {
@@ -32,23 +34,6 @@ type TransactionListProps = {
 	/** Ticks rows for a bulk action; without it, rows have no checkbox. */
 	selection?: Selection;
 };
-
-function groupByDay(items: readonly TransactionData[]) {
-	const days: { date: string; items: TransactionData[] }[] = [];
-
-	for (const item of items) {
-		const last = days.at(-1);
-
-		// The API sorts by date first, so a day's rows are always adjacent.
-		if (last?.date === item.date) {
-			last.items.push(item);
-		} else {
-			days.push({ date: item.date, items: [item] });
-		}
-	}
-
-	return days;
-}
 
 function DayTitle({ date }: { date: string }) {
 	const { t } = useTranslation();
@@ -70,13 +55,17 @@ type CategoryChipProps = {
 	onPick: (categoryId: string | null) => void;
 };
 
+// From 768 px, over the row button's empty cell, so the pill sits in its column.
+const CATEGORY_SLOT =
+	"ml-2 flex min-h-7 max-w-full min-w-0 items-center self-start md:col-start-2 md:row-start-1 md:ml-0 md:self-center md:justify-self-start";
+
 /**
- * The row's category: its dot and name, or « Sans catégorie ». A button of its
- * own beside the row's, never inside it, that opens the combobox in place.
+ * The row's category pill, or « Sans catégorie ». A button of its own beside
+ * the row's, never inside it, that opens the combobox in place.
  */
 function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: CategoryChipProps) {
 	const { t } = useTranslation();
-	const { color, name } = useCategoryShown(transaction.categoryId);
+	const { color, icon, name } = useCategoryShown(transaction.categoryId);
 
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
@@ -90,13 +79,18 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 									? t("transactions.category.change")
 									: t("transactions.category.chip", { name })
 							}
-							className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:ml-0 md:w-44 md:shrink-0 md:self-center"
+							className={cn(
+								CATEGORY_SLOT,
+								"rounded-full outline-none hover:ring-1 hover:ring-border-strong focus-visible:ring-2 focus-visible:ring-ring md:relative md:z-10",
+							)}
 						>
-							<CategoryDot color={color} />
 							{name === null ? (
-								<Skeleton className="h-3 w-20" />
+								<Skeleton className="h-5 w-24 rounded-full" />
 							) : (
-								<span className="truncate">{name}</span>
+								<CategoryPill
+									category={color === null || icon === null ? null : { name, color, icon }}
+									fallback={name}
+								/>
 							)}
 						</button>
 					</PopoverTrigger>
@@ -115,34 +109,18 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 }
 
 /**
- * A transfer side's chip, where a standard row has its category: not a
+ * A transfer side's pill, where a standard row has its category: not a
  * button, since a side the dashboard does not count has no category to pick
  * until it is dissociated. A spent outflow shows its category instead
- * (`showsCategory`), and its kind moves to the subtitle.
+ * (`showsCategory`), and its kind moves to the caption.
  */
 function TransferChip({ kind }: { kind: NonNullable<TransactionData["transfer"]>["kind"] }) {
 	const { t } = useTranslation();
 
 	return (
-		<span className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start px-2 text-xs text-muted-foreground md:ml-0 md:w-44 md:shrink-0 md:self-center">
-			<CategoryDot color={TRANSFER_COLOR} />
-			<span className="truncate">{t(`transactions.transfer.kinds.${kind}`)}</span>
-		</span>
-	);
-}
-
-/**
- * « Virement possible »: automatic matching found several candidates and left
- * the pick to the user. Neutral, as the warning colour belongs to states that
- * need attention (DESIGN.md), and a suggestion does not.
- */
-function TransferSuggestedFlag() {
-	const { t } = useTranslation();
-
-	return (
-		<span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-			<ArrowLeftRightIcon className="size-3.5" aria-hidden="true" />
-			{t("transactions.transfer.suggested")}
+		// Lets a click through to the row button beneath, as the rest of the row does.
+		<span className={cn(CATEGORY_SLOT, "pointer-events-none")}>
+			<TransferPill name={t(`transactions.transfer.kinds.${kind}`)} />
 		</span>
 	);
 }
@@ -200,6 +178,7 @@ export function TransactionList({
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
+	const categoryOf = new Map((categories.data ?? []).map((category) => [category.id, category]));
 	const setCategory = useSetTransactionCategory();
 	const merchants = useMerchants();
 	const merchantNames = new Map(
@@ -211,33 +190,58 @@ export function TransactionList({
 	const [picking, setPicking] = useState<string | null>(null);
 
 	return (
-		<div className="flex flex-col gap-4">
+		// Headers and rows share their lines, as one table: no gap between days.
+		<div className="flex flex-col border-t border-line">
 			{groupByDay(items).map((day) => {
 				const headingId = `day-${day.date}`;
 
 				return (
 					<section key={day.date} aria-labelledby={headingId}>
-						<h3 id={headingId} className="border-b pb-1 text-xs font-medium text-muted-foreground">
-							<DayTitle date={day.date} />
-						</h3>
+						{/* Not a list item: the list holds the rows alone. */}
+						<div
+							data-slot="day-header"
+							className="flex min-h-9 items-center gap-2 border-b border-line bg-section px-2"
+						>
+							<h3 id={headingId} className="font-medium">
+								<DayTitle date={day.date} />
+							</h3>
+							<span className="text-muted-foreground">
+								<span aria-hidden="true">{day.items.length}</span>
+								<span className="sr-only">
+									{t("transactions.days.count", { count: day.items.length })}
+								</span>
+							</span>
+							<span className="ml-auto flex flex-wrap justify-end gap-x-3 text-foreground-secondary">
+								{day.subtotals.map((subtotal) => (
+									<Money
+										key={subtotal.currency}
+										amount={subtotal.amount}
+										currency={subtotal.currency}
+										plusSign
+									/>
+								))}
+							</span>
+						</div>
 						<ul>
 							{day.items.map((item) => {
 								const caption = transferCaption(item);
 								const categoryShown = showsCategory(item.amount, item.transfer);
+								const merchantName =
+									item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
 								// A transfer side names the other account where a purchase names its
 								// merchant. A spent outflow shows its category, so its kind joins the
-								// subtitle, as Sure's « Loan payment • A → B ».
+								// caption, as Sure's « Loan payment • A → B ».
 								const subtitle =
 									caption === null
-										? item.merchantId === null
-											? undefined
-											: merchantNames.get(item.merchantId)
+										? merchantName
 										: categoryShown && item.transfer !== null
 											? t("transactions.transfer.spentCaption", {
 													kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
 													caption: t(caption.key, { account: caption.account }),
 												})
 											: t(caption.key, { account: caption.account });
+								const category =
+									item.categoryId === null ? undefined : categoryOf.get(item.categoryId);
 								const rowTags = item.tagIds
 									.flatMap((id) => {
 										const name = tagNames.get(id);
@@ -250,9 +254,11 @@ export function TransactionList({
 								return (
 									<li
 										key={item.id}
+										data-selected={selected || undefined}
 										className={cn(
-											"flex rounded-md hover:bg-muted has-[[data-transaction-id]:focus-visible]:bg-muted",
-											selected && "bg-muted",
+											"relative flex border-b border-line hover:bg-hover has-[[data-transaction-id]:focus-visible]:bg-hover md:h-9 md:items-center",
+											selected &&
+												"bg-selection before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent-brand hover:bg-selection has-[[data-transaction-id]:focus-visible]:bg-selection",
 										)}
 									>
 										{selection !== undefined && (
@@ -264,69 +270,103 @@ export function TransactionList({
 												}
 											/>
 										)}
-										{/* Two lines below 768 px: label, merchant and amount, then the category. */}
-										<div className="flex min-w-0 flex-1 flex-col pb-1 md:flex-row md:items-center md:gap-2 md:pb-0">
+										{/*
+										 * Two lines below 768 px: label, caption and amount, then the
+										 * category. From 768 px one line of columns: the row button spans
+										 * them all, and the category button sits over its empty cell.
+										 */}
+										<div
+											className={cn(
+												"flex min-w-0 flex-1 flex-col pb-1 md:grid md:h-full md:items-center md:gap-x-3 md:pb-0",
+												// The label's column stays wider than the other three together
+												// at 1280 px, so the row button's centre, where a pointer or a
+												// test aims, lies on the label rather than under the pill.
+												showAccount
+													? "md:grid-cols-[minmax(0,1fr)_9rem_9rem_7.5rem]"
+													: "md:grid-cols-[minmax(0,1fr)_9rem_7.5rem]",
+											)}
+										>
 											<button
 												type="button"
 												// Lets the sheet give focus back to this row after an edit
 												// moved it under another day, which remounts it.
 												data-transaction-id={item.id}
 												onClick={() => onOpen(item)}
-												className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:flex-1"
+												className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:col-span-full md:row-start-1 md:grid md:h-full md:min-h-0 md:grid-cols-subgrid md:gap-x-3"
 											>
-												<span className="flex min-w-0 flex-1 flex-col">
-													<span className="flex min-w-0 items-center gap-1.5">
-														<span className="truncate" title={item.label}>
-															{item.label}
-														</span>
-														{item.transfer === null && item.transferSuggested && (
-															<TransferSuggestedFlag />
+												<span className="flex min-w-0 flex-1 items-center gap-2">
+													<TintedIcon
+														subject={rowSubject(
+															item,
+															category === undefined ? null : category,
+															merchantName ?? null,
 														)}
-														{item.possibleDuplicate && <DuplicateFlag />}
-													</span>
-													{(subtitle !== undefined || rowTags.length > 0) && (
-														<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-															{subtitle !== undefined && (
-																<span className="truncate">{subtitle}</span>
+														className="max-md:self-start max-md:mt-2"
+													/>
+													<span className="flex min-w-0 flex-1 flex-col md:flex-row md:items-center md:gap-2">
+														{/* Below 768 px the badges wrap under the label rather than squeeze it. */}
+														<span className="flex min-w-0 items-center gap-1.5 max-md:flex-wrap">
+															<span className="truncate font-medium" title={item.label}>
+																{item.label}
+															</span>
+															{item.pending && <StatusBadge status="pending" />}
+															{/* The sheet's own condition: a side it shows no category for has no series. */}
+															{item.recurring && categoryShown && (
+																<StatusBadge status="recurring" />
 															)}
-															{rowTags.slice(0, SHOWN_TAGS).map((name) => (
-																<Badge
-																	key={name}
-																	variant="outline"
-																	className="max-w-32 font-normal text-muted-foreground"
-																>
-																	<span className="truncate">{name}</span>
-																</Badge>
-															))}
-															{rowTags.length > SHOWN_TAGS && (
-																<Badge
-																	variant="outline"
-																	className="font-normal text-muted-foreground"
-																>
-																	{t("transactions.tags.more", {
-																		count: rowTags.length - SHOWN_TAGS,
-																	})}
-																</Badge>
+															{item.transfer !== null && <StatusBadge status="transfer" />}
+															{item.transfer === null && item.transferSuggested && (
+																<StatusBadge status="transferSuggested" />
 															)}
+															{item.possibleDuplicate && <StatusBadge status="duplicate" />}
 														</span>
-													)}
+														{(subtitle !== undefined || rowTags.length > 0) && (
+															// The caption gives way before the label on one line.
+															<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground md:shrink-[4]">
+																{subtitle !== undefined && (
+																	<span className="truncate">{subtitle}</span>
+																)}
+																{rowTags.slice(0, SHOWN_TAGS).map((name) => (
+																	<Badge
+																		key={name}
+																		variant="outline"
+																		className="max-w-32 font-normal text-muted-foreground"
+																	>
+																		<span className="truncate">{name}</span>
+																	</Badge>
+																))}
+																{rowTags.length > SHOWN_TAGS && (
+																	<Badge
+																		variant="outline"
+																		className="font-normal text-muted-foreground"
+																	>
+																		{t("transactions.tags.more", {
+																			count: rowTags.length - SHOWN_TAGS,
+																		})}
+																	</Badge>
+																)}
+															</span>
+														)}
+													</span>
 												</span>
+												{/* Left empty: the category button stays outside this one, keeping its own name, and sits over it. */}
+												<span aria-hidden="true" className="hidden md:block" />
 												{showAccount && (
 													<span
-														className="w-40 shrink-0 truncate text-xs text-muted-foreground max-md:w-24"
+														data-slot="row-account"
+														className="flex w-40 min-w-0 shrink-0 items-center gap-1.5 text-xs text-foreground-secondary max-md:w-24 md:w-auto"
 														title={item.accountName}
 													>
-														{item.accountName}
+														<TintedIcon
+															size="sm"
+															subject={{ kind: "account", type: item.accountType }}
+														/>
+														<span className="truncate">{item.accountName}</span>
 													</span>
 												)}
-												<span className="flex shrink-0 items-center gap-1.5">
+												<span className="flex shrink-0 items-center justify-end gap-1.5">
 													{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
-													{/* Named in words beside the muted amount, never by colour alone. */}
-													{item.pending && (
-														<Badge variant="outline" className="font-normal text-muted-foreground">
-															{t("transactions.pending")}
-														</Badge>
-													)}
+													{/* Named in words by its badge, never by colour alone. */}
 													<Money
 														amount={item.amount}
 														currency={item.currency}
@@ -369,13 +409,16 @@ export function TransactionList({
 
 export function TransactionListSkeleton() {
 	return (
-		<div className="flex flex-col gap-2" aria-hidden="true">
-			<Skeleton className="h-4 w-32" />
-			<Skeleton className="h-9 w-full" />
-			<Skeleton className="h-9 w-full" />
-			<Skeleton className="h-9 w-full" />
-			<Skeleton className="h-4 w-32" />
-			<Skeleton className="h-9 w-full" />
+		// The list's own shape, so the page does not jump when the rows land.
+		<div className="flex flex-col border-t border-line" aria-hidden="true">
+			<div className="flex h-9 items-center border-b border-line bg-section px-2">
+				<Skeleton className="h-4 w-32" />
+			</div>
+			{[0, 1, 2].map((index) => (
+				<div key={index} className="flex h-9 items-center border-b border-line px-2">
+					<Skeleton className="h-5 w-full" />
+				</div>
+			))}
 		</div>
 	);
 }

@@ -408,6 +408,11 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		/** Follows a transaction as a confirmed series, as the sheet's « Récurrence » button does. */
+		async addRecurring(entryId: string): Promise<string> {
+			return created(await request.post("/api/recurring", { data: { entryId } }));
+		},
+
 		/** Links two transactions as a transfer, as a pick in « Rapprocher un virement » does. */
 		async matchTransfer(transactionId: string, counterpartId: string): Promise<string> {
 			return created(

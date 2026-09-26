@@ -41,6 +41,8 @@ const pairs: [string, string][] = [
 		ACCENT_SURFACES.map((surface): [string, string] => [text, surface]),
 	),
 	["primary-foreground", "primary"],
+	// A status badge's text on its own background, on any row.
+	["foreground-secondary", "badge"],
 ];
 
 describe.each([
@@ -68,5 +70,33 @@ describe("the panel", () => {
 		expect(dark.get("background")).toBe("#1f2023");
 		expect(light.get("card")).toBe(light.get("background"));
 		expect(dark.get("card")).toBe(dark.get("background"));
+	});
+});
+
+const channel = (hex: string, index: number) =>
+	Number.parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
+
+/** `share` of `color` over `surface`, as the browser composites a translucent fill. */
+function over(color: string, share: number, surface: string): string {
+	return `#${[0, 1, 2]
+		.map((index) =>
+			Math.round(channel(color, index) * share + channel(surface, index) * (1 - share))
+				.toString(16)
+				.padStart(2, "0"),
+		)
+		.join("")}`;
+}
+
+// « Doublon possible »: the warning text on its own tint, `bg-warning/6`
+// light and `/17` dark, over every surface a row takes.
+describe.each([
+	["light", light, 0.06],
+	["dark", dark, 0.17],
+])("the %s duplicate badge", (_, tokens, share) => {
+	it.each(["background", "accent", "hover", "selection"])("meets WCAG AA on %s", (surface) => {
+		const warning = tokens.get("warning") ?? "";
+		const fill = over(warning, share, tokens.get(surface) ?? "");
+
+		expect(contrastRatio(warning, fill)).toBeGreaterThanOrEqual(4.5);
 	});
 });

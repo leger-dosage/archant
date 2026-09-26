@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
+import { isValidElement } from "react";
 import { useTranslation } from "react-i18next";
 
 import { BankAlerts } from "@/components/BankAlerts";
@@ -12,8 +13,11 @@ import { cn } from "@/lib/utils";
 export const PAGE_TITLE_ID = "page-title";
 
 type PageProps = {
-	/** The page's lucide icon, as in the sidebar. */
-	icon: LucideIcon;
+	/**
+	 * The page's lucide icon, as in the sidebar, or an icon already rendered,
+	 * such as an account's tinted type icon.
+	 */
+	icon: LucideIcon | ReactElement;
 	/** The page's single `h1`. */
 	title: ReactNode;
 	/** The page's actions, on the right of the title bar. */
@@ -23,12 +27,16 @@ type PageProps = {
 	children: ReactNode;
 };
 
+function PageIcon({ icon: Icon }: { icon: LucideIcon }) {
+	return <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />;
+}
+
 /**
  * Every signed-in page's frame inside the inset panel: the title bar, the
  * bank alerts, then the content. The title is the page's `h1`, so a screen
  * reader still lands on one heading per page.
  */
-export function Page({ icon: Icon, title, actions, className, children }: PageProps) {
+export function Page({ icon, title, actions, className, children }: PageProps) {
 	const { t } = useTranslation();
 
 	return (
@@ -41,7 +49,7 @@ export function Page({ icon: Icon, title, actions, className, children }: PagePr
 					</TooltipTrigger>
 					<TooltipContent side="bottom">{t("nav.toggleSidebar")}</TooltipContent>
 				</Tooltip>
-				<Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+				{isValidElement(icon) ? icon : <PageIcon icon={icon} />}
 				<h1 id={PAGE_TITLE_ID} className="min-w-24 flex-1 truncate text-sm font-medium">
 					{title}
 				</h1>

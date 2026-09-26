@@ -175,6 +175,14 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 	await expect(toast(page, "Opération ajoutée aux récurrences")).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(sheet).toBeHidden();
+	// The list follows the new series without a reload.
+	await expect(
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ hasText: label })
+			.locator('[data-slot="status-badge"]'),
+	).toHaveText("Récurrent");
 
 	await visit(page);
 	await expect(row(page, label)).toContainText("Confirmée");

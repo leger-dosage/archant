@@ -226,7 +226,9 @@
 		"empty": "Aucune opération.",
 		"days": {
 			"today": "Aujourd'hui",
-			"yesterday": "Hier"
+			"yesterday": "Hier",
+			"count_one": "{{count}} opération",
+			"count_other": "{{count}} opérations"
 		},
 		"paginationLabel": "Pages des opérations",
 		"form": {
@@ -267,6 +269,7 @@
 		},
 		"excluded": "Exclue des rapports",
 		"pending": "En attente",
+		"recurringBadge": "Récurrent",
 		"category": {
 			"none": "Sans catégorie",
 			"chip": "Catégorie : {{name}}",
@@ -309,6 +312,7 @@
 			"matched": "Virement rapproché",
 			"unmatched": "Virement dissocié",
 			"rejected": "Virement dissocié, il ne sera plus proposé",
+			"internal": "Virement interne",
 			"suggested": "Virement possible",
 			"suggestion": "Plusieurs opérations pourraient former l'autre côté de ce virement.",
 			"dialogTitle": "Rapprocher un virement",

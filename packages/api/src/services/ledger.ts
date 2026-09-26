@@ -3929,8 +3929,14 @@ export type TransferLink = {
 	counterpartAccountName: string;
 };
 
-/** A transaction as a list shows it, with its account's name. */
-export type TransactionListRecord = TransactionRecord & { accountName: string };
+/**
+ * A transaction as a list shows it, with its account's name and type, read in
+ * the same join so a row of an inactive or hidden account still gets its icon.
+ */
+export type TransactionListRecord = TransactionRecord & {
+	accountName: string;
+	accountType: AccountType;
+};
 
 const transactionColumns = {
 	id: entries.id,
@@ -4303,6 +4309,7 @@ export async function listTransactions(
 			...transactionColumns,
 			...transferColumns,
 			accountName: accounts.name,
+			accountType: accounts.type,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))

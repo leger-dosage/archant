@@ -38,6 +38,7 @@ import {
 import { getAccount } from "./accounts.ts";
 import { withChildren } from "./categories.ts";
 import * as ledger from "./ledger.ts";
+import { recurringEntryIds } from "./recurring.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /**
@@ -53,7 +54,11 @@ export type TransactionSource =
 
 export type TransactionItem = TransactionRecord & { source: TransactionSource };
 
-export type TransactionListItem = TransactionListRecord & { source: TransactionSource };
+export type TransactionListItem = TransactionListRecord & {
+	source: TransactionSource;
+	/** Held by a series that is not dismissed, as the sheet's « Récurrent » section reads it. */
+	recurring: boolean;
+};
 
 export type TransactionPage = {
 	items: TransactionListItem[];
@@ -106,6 +111,19 @@ async function withSources<Row extends TransactionRecord>(
 			source: sourceOf(origin, deps.timeZone),
 		};
 	});
+}
+
+/** A list page's records with their source and their recurring flag, in two queries. */
+async function listItemsOf(
+	deps: ServiceDeps,
+	records: readonly TransactionListRecord[],
+): Promise<TransactionListItem[]> {
+	const recurring = await recurringEntryIds(deps.db, records);
+
+	return (await withSources(deps, records)).map((record) => ({
+		...record,
+		recurring: recurring.has(record.id),
+	}));
 }
 
 // The ledger names why it refused a line; the form shows it under the date.
@@ -162,7 +180,7 @@ export async function listAccountTransactions(
 	const { items, total } = await ledger.listTransactions(deps, { accountIds: [accountId] }, page);
 
 	return {
-		items: await withSources(deps, items),
+		items: await listItemsOf(deps, items),
 		page: page.page,
 		pageSize: page.pageSize,
 		total,
@@ -244,7 +262,7 @@ export async function listAllTransactions(
 	const counted = sums.find((row) => row.currency === currency);
 
 	return {
-		items: await withSources(deps, items),
+		items: await listItemsOf(deps, items),
 		...page,
 		total,
 		sum: {
