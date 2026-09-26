@@ -9,6 +9,7 @@ import {
 	addRecurringFromEntry,
 	detectRecurring,
 	listRecurring,
+	recurringOfEntry,
 	setRecurringStatus,
 } from "../services/recurring.ts";
 
@@ -24,6 +25,9 @@ export function recurringRoutes(deps: ServiceDeps) {
 			}),
 			async (c) =>
 				c.json({ data: await addRecurringFromEntry(deps, c.req.valid("json").entryId) }, 200),
+		)
+		.get("/by-entry/:entryId", async (c) =>
+			c.json({ data: await recurringOfEntry(deps, c.req.param("entryId")) }, 200),
 		)
 		.patch(
 			"/:id",

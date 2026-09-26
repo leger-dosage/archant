@@ -60,6 +60,8 @@ export const queryKeys = {
 	 */
 	recurring: {
 		all: ["recurring"] as const,
+		/** Under `all`: adding, confirming or detecting refreshes the sheet's series. */
+		ofEntry: (entryId: string) => ["recurring", "entry", entryId] as const,
 	},
 	/**
 	 * Bank connections. `setup` and `institutions` never change while the page

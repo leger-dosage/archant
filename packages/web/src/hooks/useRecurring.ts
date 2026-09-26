@@ -17,6 +17,15 @@ export function useRecurring() {
 	});
 }
 
+/** The series a transaction belongs to, `null` without one. */
+export function useRecurringOfEntry(entryId: string) {
+	return useQuery({
+		queryKey: queryKeys.recurring.ofEntry(entryId),
+		queryFn: async () =>
+			(await unwrap(api.recurring["by-entry"][":entryId"].$get({ param: { entryId } }))).data,
+	});
+}
+
 // A pattern is not a transaction: none of these writes touches the ledger.
 function useInvalidateRecurring() {
 	const queryClient = useQueryClient();

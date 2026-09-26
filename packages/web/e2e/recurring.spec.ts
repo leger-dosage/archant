@@ -186,6 +186,44 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
 });
 
+async function openSheet(page: Page, label: string) {
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	await page
+		.getByRole("main")
+		.getByRole("listitem")
+		.filter({ hasText: label })
+		.locator("button[data-transaction-id]")
+		.first()
+		.click();
+
+	return page.getByRole("dialog", { name: "Modifier l'opération" });
+}
+
+test("the sheet names a transaction's detected series and links to it, and offers to add one otherwise", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Abonnement");
+	const single = uniqueName("Achat");
+	await addMonthly(api, account.id, label, "-9,99", 7);
+	await api.addTransaction(account.id, { date: daysAgo(2), label: single, amount: "-24,00" });
+
+	await visit(page);
+	await detect(page);
+
+	const sheet = await openSheet(page, label);
+	await expect(sheet).toContainText(`Cette opération fait partie de la récurrence « ${label} ».`);
+	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toHaveCount(0);
+	await sheet.getByRole("link", { name: "Voir les récurrences" }).click();
+	await expect(page).toHaveURL(/\/recurring$/u);
+	await expect(row(page, label)).toContainText("Détectée");
+
+	const other = await openSheet(page, single);
+	await expect(other.getByRole("button", { name: "Ajouter aux récurrences" })).toBeVisible();
+	await expect(other).not.toContainText("fait partie de la récurrence");
+});
+
 test("the sidebar and g r open Récurrences", async ({ page }) => {
 	await page.goto("/accounts");
 	await page

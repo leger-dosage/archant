@@ -425,8 +425,9 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 }
 
 /**
- * Recurring detection once the lines are committed. The import is done by
- * then: a failure here is logged, code only, and never fails the request.
+ * Recurring detection once a confirm or a revert is committed, so series
+ * follow the lines it wrote or removed. The import is done by then: a
+ * failure here is logged, code only, and never fails the request.
  */
 async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
 	try {
@@ -499,18 +500,19 @@ export async function listImports(
 
 /**
  * Undoes a confirmed import (AD-7). The ledger checks the status under its
- * write lock, so two reverts racing each other delete once.
+ * write lock, so two reverts racing each other delete once. Recurring
+ * detection then recomputes the series built on the removed lines.
  */
 export async function revertImport(deps: ImportDeps, id: string): Promise<RevertedImport> {
 	const started = performance.now();
 
 	try {
 		const { removed } = await ledger.revertImport(deps, id, { origin: "user" });
+		// The revert's own time: detection after it logs its own failure.
+		const durationMs = Math.round(performance.now() - started);
 
-		deps.logger.info(
-			{ importId: id, removed, durationMs: Math.round(performance.now() - started) },
-			"import reverted",
-		);
+		await detectAfterImport(deps, id);
+		deps.logger.info({ importId: id, removed, durationMs }, "import reverted");
 
 		return { id, removed };
 	} catch (error) {

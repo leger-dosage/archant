@@ -2878,6 +2878,44 @@ describe("POST /api/imports/:id/confirm", () => {
 	});
 });
 
+describe("POST /api/imports/:id/revert and recurring detection", () => {
+	it("deletes the detected series whose every line it removed", async () => {
+		const { app, db, account } = await ownRecurringAccount();
+		const { id } = await confirmOwnImport(app, account.id);
+		await expect(recurringRows(db)).resolves.toHaveLength(1);
+
+		const response = await app.request(`/api/imports/${id}/revert`, { method: "POST" });
+
+		expect(response.status).toBe(200);
+		await expect(recurringRows(db)).resolves.toEqual([]);
+	});
+
+	it("answers 200 when detection throws, and logs the import id and code only", async () => {
+		const { app, db, account } = await ownRecurringAccount();
+		const { id } = await confirmOwnImport(app, account.id);
+		logLines = [];
+		vi.spyOn(recurringService, "detectRecurring").mockRejectedValue(
+			new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"),
+		);
+
+		const response = await app.request(`/api/imports/${id}/revert`, { method: "POST" });
+
+		expect(response.status).toBe(200);
+		await expect(transactionsOfDb(db, account.id)).resolves.toBe(0);
+		const failures = logLines
+			.map((line) => z.record(z.string(), z.unknown()).parse(JSON.parse(line)))
+			.filter((line) => line["level"] === 50);
+		expect(failures).toEqual([
+			expect.objectContaining({
+				importId: id,
+				code: "INTERNAL_ERROR",
+				msg: "recurring detection failed",
+			}),
+		]);
+		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
+	});
+});
+
 describe("POST /api/imports/:id/preview", () => {
 	it("moves the opening date back on request, and confirm keeps today's balance", async () => {
 		const account = await openAccount({ openingDate: "2026-09-05" });
@@ -6621,6 +6659,29 @@ describe("/api/recurring", () => {
 
 		expect(confirmed.status).toBe(200);
 		expect(await confirmed.json()).toMatchObject({ data: { id, status: "confirmed" } });
+	});
+
+	it("answers the series of a transaction, null without one, NOT_FOUND for an unknown entry", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring["by-entry"][":entryId"];
+
+		const before = await client.$get({ param: { entryId: ids[2]! } });
+
+		expect(before.status).toBe(200);
+		expect(await before.json()).toEqual({ data: null });
+
+		await testClient(app).api.recurring.detect.$post();
+		const found = await client.$get({ param: { entryId: ids[2]! } });
+
+		expect(found.status).toBe(200);
+		expect(await found.json()).toMatchObject({
+			data: { label: "Netflix", amount: -1399, status: "detected" },
+		});
+
+		const unknown = await client.$get({ param: { entryId: "nope" } });
+
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
 	});
 
 	it("refuses an unknown status, and answers NOT_FOUND for an unknown id", async () => {

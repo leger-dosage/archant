@@ -9,8 +9,11 @@ import { merchants } from "@archant/data/schema/merchants";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
+import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { confirmImport, createImport, revertImport } from "./imports.ts";
 import {
+	bulkUpdateTransactions,
 	createAccount,
 	findTransaction,
 	ingest,
@@ -21,8 +24,10 @@ import {
 	addRecurringFromEntry,
 	detectRecurring,
 	listRecurring,
+	recurringOfEntry,
 	setRecurringStatus,
 } from "./recurring.ts";
+import { applyRules, createRule } from "./rules.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -94,12 +99,44 @@ async function addRows(
 
 const stored = () => temp.db.select().from(recurringTransactions);
 
+/** One by one: each update takes the write lock. */
+const rename = (ids: readonly string[], label: string) =>
+	ids.reduce<Promise<unknown>>(
+		(pending, id) =>
+			pending.then(() => updateTransaction(deps(), id, { label }, { origin: "user" })),
+		Promise.resolve(),
+	);
+
+const importDeps = () => ({ ...deps(), logger: createLogger("silent") });
+
+/** Imports an OFX file of `label` rows on `dates` and returns the import's id. */
+async function importRows(accountId: string, dates: readonly string[], label = "PRLV EDF") {
+	const lines = dates.map(
+		(date, index) =>
+			`<STMTTRN><DTPOSTED>${date.replaceAll("-", "")}<TRNAMT>-65.00<FITID>F${index}<NAME>${label}</STMTTRN>`,
+	);
+	const bytes = new TextEncoder().encode(
+		`<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>EUR<BANKTRANLIST>\n${lines.join("\n")}\n</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>`,
+	);
+	const preview = await createImport(importDeps(), accountId, { name: "releve.ofx", bytes });
+
+	await confirmImport(importDeps(), preview.id);
+
+	return preview.id;
+}
+
 const setStatus = (id: string, status: RecurringStatus) =>
 	temp.db.update(recurringTransactions).set({ status }).where(eq(recurringTransactions.id, id));
 
-/** Detects the monthly EDF bill of 07-10, 08-10 and 09-10 and returns its row. */
-async function detectedBill(accountId: string) {
-	await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+/**
+ * Detects the monthly EDF bill of 07-10, 08-10 and 09-10 and returns its row;
+ * with `ids`, the rows are already there.
+ */
+async function detectedBill(accountId: string, ids?: readonly string[]) {
+	if (ids === undefined) {
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+	}
+
 	await detectRecurring(deps());
 	const [row] = await stored();
 
@@ -168,16 +205,25 @@ describe("detectRecurring", () => {
 		]);
 	});
 
-	it("keeps a stored pattern it no longer detects", async () => {
+	it("recomputes a stored pattern it no longer detects from its current rows", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		await detectRecurring(deps());
-		const before = await stored();
+		const [before] = await stored();
 
 		vi.setSystemTime(new Date("2026-10-26T10:00:00Z"));
 
 		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 0 });
-		await expect(stored()).resolves.toEqual(before);
+		// 2026-07-10 fell out of the three months.
+		await expect(stored()).resolves.toEqual([
+			{
+				...before,
+				occurrenceCount: 2,
+				lastOccurrenceDate: "2026-09-10",
+				nextExpectedDate: "2026-10-10",
+				updatedAt: Date.parse("2026-10-26T10:00:00Z"),
+			},
+		]);
 	});
 
 	it("detects a latest row 45 days old, not 46", async () => {
@@ -263,7 +309,12 @@ describe("detectRecurring and statuses", () => {
 
 		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 0 });
 		await expect(stored()).resolves.toEqual([
-			{ ...row, status: "inactive", updatedAt: Date.parse("2026-09-21T10:00:00Z") },
+			{
+				...row,
+				status: "inactive",
+				occurrenceCount: 1,
+				updatedAt: Date.parse("2026-09-21T10:00:00Z"),
+			},
 		]);
 	});
 
@@ -290,7 +341,16 @@ describe("detectRecurring and statuses", () => {
 		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
 		await detectRecurring(deps());
 
-		await expect(stored()).resolves.toEqual([{ ...row, status: "confirmed" }]);
+		// Six months back for a confirmed pattern: its three rows still count.
+		await expect(stored()).resolves.toEqual([
+			{
+				...row,
+				status: "confirmed",
+				occurrenceCount: 3,
+				nextExpectedDate: "2026-10-01",
+				updatedAt: Date.parse("2026-09-21T10:00:00Z"),
+			},
+		]);
 	});
 
 	it("updates an inactive pattern detected again and keeps it inactive", async () => {
@@ -339,16 +399,22 @@ describe("detectRecurring and statuses", () => {
 		await expect(stored()).resolves.toEqual([{ ...row, status: "dismissed" }]);
 	});
 
-	it("keeps a manual pattern detection does not find", async () => {
+	it("keeps a manual pattern detection does not find, due from today on", async () => {
 		const accountId = await account();
 		const [entryId = ""] = await addRows(accountId, ["2026-09-05"]);
 		await addRecurringFromEntry(deps(), entryId);
-		const before = await stored();
+		const [before] = await stored();
 
 		vi.setSystemTime(new Date("2026-12-21T10:00:00Z"));
 
 		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 0 });
-		await expect(stored()).resolves.toEqual(before);
+		await expect(stored()).resolves.toEqual([
+			{
+				...before,
+				nextExpectedDate: "2027-01-05",
+				updatedAt: Date.parse("2026-12-21T10:00:00Z"),
+			},
+		]);
 	});
 
 	it("keeps a stale detected pattern detected when detection finds it again", async () => {
@@ -468,6 +534,25 @@ describe("setRecurringStatus", () => {
 		await expect(stored()).resolves.toMatchObject([{ status: "confirmed" }]);
 	});
 
+	it("moves a past next date from today on when it confirms, not when it dismisses", async () => {
+		const accountId = await account();
+		const row = await detectedBill(accountId);
+		await temp.db
+			.update(recurringTransactions)
+			.set({ nextExpectedDate: "2026-09-10" })
+			.where(eq(recurringTransactions.id, row.id));
+
+		await expect(setRecurringStatus(deps(), row.id, "dismissed")).resolves.toMatchObject({
+			nextExpectedDate: "2026-09-10",
+		});
+		await setStatus(row.id, "detected");
+		await expect(setRecurringStatus(deps(), row.id, "confirmed")).resolves.toMatchObject({
+			status: "confirmed",
+			nextExpectedDate: "2026-10-10",
+		});
+		await expect(stored()).resolves.toMatchObject([{ nextExpectedDate: "2026-10-10" }]);
+	});
+
 	it("deactivates a confirmed pattern only", async () => {
 		const accountId = await account();
 		const row = await detectedBill(accountId);
@@ -585,6 +670,22 @@ describe("addRecurringFromEntry", () => {
 		await expect(stored()).resolves.toEqual([{ ...row, status: "confirmed" }]);
 	});
 
+	it("moves a past next date from today on when it confirms a stored pattern", async () => {
+		const accountId = await account();
+		const row = await detectedBill(accountId);
+		await temp.db
+			.update(recurringTransactions)
+			.set({ nextExpectedDate: "2026-09-10" })
+			.where(eq(recurringTransactions.id, row.id));
+		const [entryId = ""] = await addRows(accountId, ["2026-09-10"]);
+
+		await expect(addRecurringFromEntry(deps(), entryId)).resolves.toMatchObject({
+			id: row.id,
+			status: "confirmed",
+			nextExpectedDate: "2026-10-10",
+		});
+	});
+
 	it("confirms a dismissed pattern of the same key", async () => {
 		const accountId = await account();
 		const row = await detectedBill(accountId);
@@ -595,6 +696,39 @@ describe("addRecurringFromEntry", () => {
 			id: row.id,
 			status: "confirmed",
 		});
+	});
+
+	it("confirms the series of the same key at another amount rather than add a twin", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "NETFLIX", -1349);
+		await detectRecurring(deps());
+		const [row] = await stored();
+		const [entryId = ""] = await addRows(accountId, ["2026-09-12"], "NETFLIX", -1599);
+
+		await expect(addRecurringFromEntry(deps(), entryId)).resolves.toMatchObject({
+			id: row!.id,
+			amount: -1349,
+			status: "confirmed",
+		});
+		await expect(stored()).resolves.toEqual([{ ...row, status: "confirmed" }]);
+	});
+
+	it("confirms the one of the same amount first, else the latest", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-08"], "NETFLIX", -1349);
+		await addRows(accountId, ["2026-07-15", "2026-08-15", "2026-09-15"], "NETFLIX", -1399);
+		await detectRecurring(deps());
+		const idOf = new Map((await stored()).map((row) => [row.amount, row.id]));
+		const [same = ""] = await addRows(accountId, ["2026-09-10"], "NETFLIX", -1349);
+		const [other = ""] = await addRows(accountId, ["2026-09-12"], "NETFLIX", -1599);
+
+		await expect(addRecurringFromEntry(deps(), same)).resolves.toMatchObject({
+			id: idOf.get(-1349),
+		});
+		await expect(addRecurringFromEntry(deps(), other)).resolves.toMatchObject({
+			id: idOf.get(-1399),
+		});
+		await expect(stored()).resolves.toHaveLength(2);
 	});
 
 	it("refuses a transfer side", async () => {
@@ -647,5 +781,316 @@ describe("addRecurringFromEntry", () => {
 		await expect(
 			addRecurringFromEntry(deps(), snapshot.status === "recorded" ? snapshot.id : ""),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+describe("detectRecurring keeps a renamed series single", () => {
+	it("follows its rows to the merchant a bulk edit set", async () => {
+		const accountId = await account();
+		const ids = await addRows(
+			accountId,
+			["2026-07-10", "2026-08-10", "2026-09-10"],
+			"PRLV NETFLIX",
+		);
+		await detectRecurring(deps());
+		const [row] = await stored();
+		await temp.db
+			.insert(merchants)
+			.values({ id: "netflix", name: "Netflix", createdAt: 0, updatedAt: 0 });
+		await bulkUpdateTransactions(deps(), { ids }, { merchantId: "netflix" }, { origin: "user" });
+
+		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 1 });
+		await expect(stored()).resolves.toEqual([
+			{ ...row, merchantId: "netflix", labelKey: null, label: "PRLV NETFLIX" },
+		]);
+	});
+
+	it("follows its rows to the label a rule gave them, confirmed", async () => {
+		const accountId = await account();
+		// Imported: a rule never renames a row typed by hand, whose label is locked.
+		await importRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const [row] = await stored();
+		await setStatus(row!.id, "confirmed");
+		await createRule(deps(), {
+			name: "EDF",
+			conditions: [{ conditionType: "transaction_name", operator: "like", value: "edf" }],
+			actions: [{ actionType: "set_transaction_name", value: "EDF ENERGIE" }],
+		});
+		await applyRules(deps());
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toEqual([
+			{ ...row, status: "confirmed", labelKey: "edf energie", label: "EDF ENERGIE" },
+		]);
+	});
+
+	it("keeps a dismissed series dismissed, with no detected twin", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const row = await detectedBill(accountId, ids);
+		await setStatus(row.id, "dismissed");
+		await rename(ids, "EDF ENERGIE");
+
+		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 0 });
+		await expect(stored()).resolves.toEqual([
+			{ ...row, status: "dismissed", labelKey: "edf energie", label: "EDF ENERGIE" },
+		]);
+	});
+
+	it("drops a detected twin already on the new key and moves the confirmed series", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const row = await detectedBill(accountId, ids);
+		await setStatus(row.id, "confirmed");
+		await rename(ids, "EDF ENERGIE");
+		await temp.db
+			.insert(recurringTransactions)
+			.values({ ...row, id: "twin", labelKey: "edf energie", label: "EDF ENERGIE" });
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toEqual([
+			{ ...row, status: "confirmed", labelKey: "edf energie", label: "EDF ENERGIE" },
+		]);
+	});
+
+	it("stays put when only its latest row was renamed, and no twin comes back", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const row = await detectedBill(accountId, ids);
+		await rename([ids[2]!], "EDF ENERGIE");
+
+		await detectRecurring(deps());
+		await addRows(accountId, ["2026-09-12"]);
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{ id: row.id, labelKey: "prlv edf", lastOccurrenceDate: "2026-09-12", occurrenceCount: 3 },
+		]);
+	});
+
+	it("stays put when its last day's rows were renamed to two keys", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10", "2026-09-10"]);
+		const row = await detectedBill(accountId, ids);
+		await setStatus(row.id, "confirmed");
+		await rename([ids[2]!], "GAZ");
+		await rename([ids[3]!], "EAU");
+
+		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 0 });
+		await expect(stored()).resolves.toEqual([
+			{
+				...row,
+				status: "confirmed",
+				labelKey: "prlv edf",
+				lastOccurrenceDate: "2026-08-10",
+				nextExpectedDate: "2026-10-10",
+				occurrenceCount: 2,
+			},
+		]);
+	});
+});
+
+describe("detectRecurring keeps every series current", () => {
+	it("moves a late confirmed series' next date from today on", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-05-15", "2026-06-15", "2026-07-15"]);
+		vi.setSystemTime(new Date("2026-08-01T10:00:00Z"));
+		await detectRecurring(deps());
+		const [row] = await stored();
+		await setStatus(row!.id, "confirmed");
+
+		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{
+				id: row!.id,
+				status: "confirmed",
+				lastOccurrenceDate: "2026-07-15",
+				nextExpectedDate: "2026-10-15",
+			},
+		]);
+	});
+
+	it("moves a past next date from today on when a pattern updates a confirmed series", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-06-21", "2026-07-18", "2026-08-18"]);
+		vi.setSystemTime(new Date("2026-08-20T10:00:00Z"));
+		await detectRecurring(deps());
+		const [row] = await stored();
+		await setStatus(row!.id, "confirmed");
+
+		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+
+		// The pattern alone would say 2026-09-18.
+		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 1 });
+		await expect(stored()).resolves.toMatchObject([
+			{ id: row!.id, expectedDayOfMonth: 18, nextExpectedDate: "2026-10-18" },
+		]);
+	});
+
+	it("catches a manual series up with the rows that came since", async () => {
+		const accountId = await account();
+		const [entryId = ""] = await addRows(accountId, ["2026-06-03"]);
+		const added = await addRecurringFromEntry(deps(), entryId);
+		await addRows(accountId, ["2026-07-03", "2026-08-03", "2026-09-03"]);
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{
+				id: added.id,
+				status: "confirmed",
+				manual: true,
+				occurrenceCount: 3,
+				lastOccurrenceDate: "2026-09-03",
+				nextExpectedDate: "2026-10-03",
+			},
+		]);
+	});
+
+	it("reads a manual series six months back when no pattern finds it", async () => {
+		const accountId = await account();
+		const [entryId = ""] = await addRows(accountId, ["2026-04-03"]);
+		const added = await addRecurringFromEntry(deps(), entryId);
+		await addRows(accountId, ["2026-05-04", "2026-09-02"]);
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{
+				id: added.id,
+				occurrenceCount: 3,
+				lastOccurrenceDate: "2026-09-02",
+				nextExpectedDate: "2026-10-03",
+			},
+		]);
+	});
+
+	it("recounts a series after a revert, from the rows left", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const importId = await importRows(accountId, ["2026-07-14", "2026-08-14"]);
+		const [row] = await stored();
+		expect(row).toMatchObject({ occurrenceCount: 5, lastOccurrenceDate: "2026-09-10" });
+
+		await revertImport(importDeps(), importId);
+
+		await expect(stored()).resolves.toEqual([
+			{ ...row, expectedDayOfMonth: 10, occurrenceCount: 3, lastOccurrenceDate: "2026-09-10" },
+		]);
+	});
+
+	it("recounts a series no pattern finds after a revert", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-07-10", "2026-08-10"]);
+		const importId = await importRows(accountId, ["2026-09-10"]);
+		const [row] = await stored();
+		expect(row).toMatchObject({ occurrenceCount: 3 });
+
+		await revertImport(importDeps(), importId);
+
+		await expect(stored()).resolves.toEqual([
+			{
+				...row,
+				occurrenceCount: 2,
+				lastOccurrenceDate: "2026-08-10",
+				nextExpectedDate: "2026-09-10",
+			},
+		]);
+	});
+
+	it("deletes a detected series whose every row a revert removed", async () => {
+		const accountId = await account();
+		const importId = await importRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		await expect(stored()).resolves.toHaveLength(1);
+
+		await revertImport(importDeps(), importId);
+
+		await expect(stored()).resolves.toEqual([]);
+	});
+
+	it("keeps a confirmed series whose every row a revert removed, count 0", async () => {
+		const accountId = await account();
+		const importId = await importRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const [row] = await stored();
+		await setStatus(row!.id, "confirmed");
+
+		await revertImport(importDeps(), importId);
+
+		const [after] = await stored();
+		expect(after).toEqual({ ...row, status: "confirmed", occurrenceCount: 0 });
+		expect(after!.nextExpectedDate >= "2026-09-21").toBe(true);
+	});
+
+	it("moves a past next date from today on when a revert leaves a confirmed series empty", async () => {
+		const accountId = await account();
+		vi.setSystemTime(new Date("2026-08-20T10:00:00Z"));
+		const importId = await importRows(accountId, ["2026-06-15", "2026-07-15", "2026-08-15"]);
+		const [row] = await stored();
+		await setStatus(row!.id, "confirmed");
+		expect(row).toMatchObject({ nextExpectedDate: "2026-09-15" });
+
+		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+		await revertImport(importDeps(), importId);
+
+		await expect(stored()).resolves.toMatchObject([
+			{ id: row!.id, status: "confirmed", occurrenceCount: 0, nextExpectedDate: "2026-10-15" },
+		]);
+	});
+
+	it("deletes a detected series left with no row and marks nothing inactive for it", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-05-15", "2026-06-15", "2026-07-15"]);
+		vi.setSystemTime(new Date("2026-08-01T10:00:00Z"));
+		await detectRecurring(deps());
+		await rename(ids, "AUTRE CHOSE");
+		await temp.db.update(recurringTransactions).set({ lastOccurrenceDate: "2026-07-20" });
+
+		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toEqual([]);
+	});
+});
+
+describe("recurringOfEntry", () => {
+	it("answers the series of the transaction's account and key, the same amount first", async () => {
+		const accountId = await account();
+		const [transaction = ""] = await addRows(accountId, ["2026-06-10"], "NETFLIX", -1599);
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-08"], "NETFLIX", -1349);
+		await addRows(accountId, ["2026-07-15", "2026-08-15", "2026-09-15"], "NETFLIX", -1399);
+		await detectRecurring(deps());
+		const idOf = new Map((await stored()).map((row) => [row.amount, row.id]));
+		const [same = ""] = await addRows(accountId, ["2026-09-10"], "NETFLIX", -1349);
+
+		await expect(recurringOfEntry(deps(), same)).resolves.toMatchObject({
+			id: idOf.get(-1349),
+			label: "NETFLIX",
+			accountName: "Compte",
+		});
+		// No series at -15,99: the latest of the key.
+		await expect(recurringOfEntry(deps(), transaction)).resolves.toMatchObject({
+			id: idOf.get(-1399),
+		});
+	});
+
+	it("skips a dismissed series, and answers null without one", async () => {
+		const accountId = await account();
+		const row = await detectedBill(accountId);
+		const [entryId = ""] = await addRows(accountId, ["2026-09-11"]);
+		const [other = ""] = await addRows(accountId, ["2026-09-11"], "AUTRE");
+
+		await expect(recurringOfEntry(deps(), other)).resolves.toBeNull();
+
+		await setStatus(row.id, "dismissed");
+
+		await expect(recurringOfEntry(deps(), entryId)).resolves.toBeNull();
+	});
+
+	it("answers NOT_FOUND for an unknown entry", async () => {
+		await expect(recurringOfEntry(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 });

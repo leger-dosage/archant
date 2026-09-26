@@ -2,6 +2,7 @@ import type { CashFlowTransaction } from "./cash-flow.ts";
 import type { IsoDate } from "./dates.ts";
 
 import type { MinorUnits } from "@archant/data/money";
+import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
 import { direction } from "./cash-flow.ts";
 import { addDays, addMonths, daysBetween, withDay } from "./dates.ts";
@@ -36,6 +37,8 @@ export type RecurringPattern = {
 
 // Sure's thresholds (`RecurringTransaction::Identifier`).
 export const LOOKBACK_MONTHS = 3;
+// Sure's `update_manual_recurring_transactions` looks six months back.
+export const MANUAL_LOOKBACK_MONTHS = 6;
 const MIN_OCCURRENCES = 3;
 const STALE_AFTER_DAYS = 45;
 const MAX_DAY_SPREAD = 5;
@@ -179,4 +182,216 @@ export function nextDateFrom(today: IsoDate, day: number): IsoDate {
 /** Whether a pattern last seen on `lastDate` has missed more than two expected periods. */
 export function isStale(lastDate: IsoDate, today: IsoDate): boolean {
 	return lastDate < addMonths(today, -INACTIVE_AFTER_MONTHS);
+}
+
+/**
+ * What identifies a series besides its account and amount: its merchant, or
+ * else its normalised label, never both.
+ */
+export type SeriesKey = { merchantId: string | null; labelKey: string | null };
+
+export function seriesKeyOf(
+	candidate: Pick<RecurringCandidate, "merchantId" | "label">,
+): SeriesKey {
+	return candidate.merchantId === null
+		? { merchantId: null, labelKey: normalizeLabel(candidate.label) }
+		: { merchantId: candidate.merchantId, labelKey: null };
+}
+
+const sameKey = (a: SeriesKey, b: SeriesKey) =>
+	a.merchantId === b.merchantId && a.labelKey === b.labelKey;
+
+/** A stored series as the passes around detection read it. */
+export type StoredSeries = SeriesKey & {
+	id: string;
+	accountId: string;
+	label: string;
+	amount: MinorUnits;
+	currency: string;
+	status: RecurringStatus;
+	manual: boolean;
+	expectedDayOfMonth: number;
+	lastOccurrenceDate: IsoDate;
+	nextExpectedDate: IsoDate;
+	occurrenceCount: number;
+};
+
+/** One write of `rekey`, applied in order: a move may need a delete before it. */
+export type RekeyStep =
+	| { kind: "delete"; id: string }
+	| ({ kind: "move"; id: string; label: string } & SeriesKey);
+
+/**
+ * A series whose latest transaction no longer carries its key follows that
+ * transaction: renaming the rows or setting their merchant must not leave a
+ * twin behind. It moves only once no row of its refresh window keeps the old
+ * key, or renaming just the latest row would move it and the older rows
+ * would come back as a twin. The transactions of its account, amount and
+ * currency on its last date must carry exactly one other key; two identical
+ * payments renamed apart on one day leave it where it is rather than guess. A `detected` row
+ * already on the target key gives way; any other holder stays and the moving
+ * row goes, since the user settled that one. Returns the steps and the
+ * series as they stand after them.
+ */
+export function rekey(
+	stored: readonly StoredSeries[],
+	candidates: readonly RecurringCandidate[],
+	today: IsoDate,
+): { steps: RekeyStep[]; stored: StoredSeries[] } {
+	const spent = candidates.filter((candidate) => direction(candidate) !== "transfer");
+	const steps: RekeyStep[] = [];
+	let current = [...stored];
+
+	for (const { id } of stored) {
+		const row = current.find((series) => series.id === id);
+
+		// Deleted earlier as the holder of another row's new key.
+		if (row === undefined) {
+			continue;
+		}
+
+		const sameDay = spent.filter(
+			(candidate) =>
+				candidate.accountId === row.accountId &&
+				candidate.amount === row.amount &&
+				candidate.date === row.lastOccurrenceDate,
+		);
+
+		if (
+			sameDay.some((candidate) => sameKey(seriesKeyOf(candidate), row)) ||
+			occurrencesOf(row, candidates, today).length > 0
+		) {
+			continue;
+		}
+
+		// The last one of a key wins its label, as detection's latest row does.
+		const targets = new Map(
+			sameDay
+				.filter((candidate) => candidate.currency === row.currency)
+				.map((candidate) => [JSON.stringify(seriesKeyOf(candidate)), candidate]),
+		);
+		if (targets.size !== 1) {
+			continue;
+		}
+
+		const target = [...targets.values()][0]!;
+		const key = seriesKeyOf(target);
+		const holder = current.find(
+			(series) =>
+				series.accountId === row.accountId && series.amount === row.amount && sameKey(series, key),
+		);
+
+		if (holder !== undefined && holder.status !== "detected") {
+			steps.push({ kind: "delete", id: row.id });
+			current = current.filter((series) => series.id !== row.id);
+			continue;
+		}
+
+		if (holder !== undefined) {
+			steps.push({ kind: "delete", id: holder.id });
+			current = current.filter((series) => series.id !== holder.id);
+		}
+
+		steps.push({ kind: "move", id: row.id, ...key, label: target.label });
+		current = current.map((series) =>
+			series.id === row.id ? { ...series, ...key, label: target.label } : series,
+		);
+	}
+
+	return { steps, stored: current };
+}
+
+/** Whether a series is the user's: its next date then never lies in the past. */
+export function isKept(series: Pick<StoredSeries, "status" | "manual">): boolean {
+	return series.status === "confirmed" || series.manual;
+}
+
+/** How far back a series' occurrences are read: six months for the user's, as Sure's manual pass. */
+export function lookbackOf(series: Pick<StoredSeries, "status" | "manual">): number {
+	return isKept(series) ? MANUAL_LOOKBACK_MONTHS : LOOKBACK_MONTHS;
+}
+
+/**
+ * Sure's `find_matching_transaction_entries`: the transactions of the
+ * series' account, key, amount and currency, transfers left out, within 5
+ * days of its expected day, from `lookbackOf` months back. Oldest first.
+ */
+export function occurrencesOf(
+	series: StoredSeries,
+	candidates: readonly RecurringCandidate[],
+	today: IsoDate,
+): RecurringCandidate[] {
+	const from = addMonths(today, -lookbackOf(series));
+
+	return candidates
+		.filter(
+			(candidate) =>
+				candidate.accountId === series.accountId &&
+				candidate.amount === series.amount &&
+				candidate.currency === series.currency &&
+				candidate.date >= from &&
+				direction(candidate) !== "transfer" &&
+				sameKey(seriesKeyOf(candidate), series) &&
+				dayDistance(Number(candidate.date.slice(8, 10)), series.expectedDayOfMonth) <=
+					MAX_DAY_SPREAD,
+		)
+		.toSorted((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/** A next date of the user's series, moved to the expected day from today on once passed. */
+export function currentNextDate(next: IsoDate, day: number, today: IsoDate): IsoDate {
+	return next < today ? nextDateFrom(today, day) : next;
+}
+
+export type SeriesRefresh =
+	| { kind: "delete" }
+	| {
+			kind: "update";
+			label: string;
+			lastOccurrenceDate: IsoDate;
+			nextExpectedDate: IsoDate;
+			occurrenceCount: number;
+	  };
+
+/**
+ * Sure's `update_manual_recurring_transactions`, run on every series no
+ * pattern updated: count, latest date and label come from its current
+ * transactions. A `detected` series whose last date lies inside the window
+ * yet has none left lost its rows, to a revert or a delete, and goes; any
+ * other keeps its last date with a count of 0.
+ */
+export function refreshSeries(
+	series: StoredSeries,
+	candidates: readonly RecurringCandidate[],
+	today: IsoDate,
+): SeriesRefresh {
+	const found = occurrencesOf(series, candidates, today);
+	const latest = found.at(-1);
+	const day = series.expectedDayOfMonth;
+	const current = (next: IsoDate) => (isKept(series) ? currentNextDate(next, day, today) : next);
+
+	if (latest === undefined) {
+		if (
+			series.status === "detected" &&
+			series.lastOccurrenceDate >= addMonths(today, -lookbackOf(series))
+		) {
+			return { kind: "delete" };
+		}
+
+		return {
+			kind: "update",
+			label: series.label,
+			lastOccurrenceDate: series.lastOccurrenceDate,
+			nextExpectedDate: current(series.nextExpectedDate),
+			occurrenceCount: 0,
+		};
+	}
+
+	return {
+		kind: "update",
+		label: latest.label,
+		lastOccurrenceDate: latest.date,
+		nextExpectedDate: current(nextExpectedDate(latest.date, day)),
+		occurrenceCount: found.length,
+	};
 }

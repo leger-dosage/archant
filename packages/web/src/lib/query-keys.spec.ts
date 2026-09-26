@@ -106,3 +106,16 @@ describe("queryKeys.transactions.cashFlow", () => {
 		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
 	});
 });
+
+describe("queryKeys.recurring.ofEntry", () => {
+	it("goes stale with the recurring list", async () => {
+		const client = new QueryClient();
+		const series = queryKeys.recurring.ofEntry("e1");
+		client.setQueryData(series, null);
+
+		// What adding, confirming or detecting does through `useInvalidateRecurring`.
+		await client.invalidateQueries({ queryKey: queryKeys.recurring.all });
+
+		expect(client.getQueryState(series)?.isInvalidated).toBe(true);
+	});
+});
