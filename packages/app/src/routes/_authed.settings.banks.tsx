@@ -1,26 +1,31 @@
+import type { Status } from "@/components/StatusBadge";
 import type {
 	BankConnectionData,
 	BankSetupData,
 	InstitutionData,
 } from "@/hooks/useBankConnections";
-import type { FormEvent } from "react";
+import type { FormEvent, RefObject } from "react";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
 import {
 	BuildingIcon,
 	ChevronRightIcon,
 	CopyIcon,
+	LandmarkIcon,
 	Loader2Icon,
 	LockIcon,
 	SearchIcon,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { BankCountry } from "@archant/data/bank-countries";
 import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
 
+import { EmptyState } from "@/components/EmptyState";
+import { Section } from "@/components/Section";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -80,6 +85,12 @@ const syncTime = new Intl.DateTimeFormat("fr-FR", {
 	minute: "2-digit",
 });
 
+const ALERT_BADGES = {
+	consent_expiring: "consentExpiring",
+	consent_expired: "consentExpired",
+	sync_stale: "syncStale",
+} as const satisfies Record<NonNullable<BankConnectionData["alert"]>, Status>;
+
 /** Case and accents ignored, as a user types a bank's name. */
 const folded = (text: string) =>
 	text
@@ -97,7 +108,7 @@ function Unavailable({ missing }: { missing: string[] }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
 			<p className="font-medium">{t("banks.unavailable.title")}</p>
 			<p className="text-sm text-muted-foreground">{t("banks.unavailable.description")}</p>
 			<ul className="flex flex-col gap-1">
@@ -212,107 +223,105 @@ function CredentialsForm({ setup }: { setup: BankSetupData }) {
 	};
 
 	return (
-		<section aria-labelledby="bank-credentials-title" className="flex flex-col gap-4">
-			<div className="flex flex-col gap-1">
-				<h3 id="bank-credentials-title" className="text-base font-semibold">
-					{t("banks.credentials.title")}
-				</h3>
+		<Section id="bank-credentials-title" level={3} title={t("banks.credentials.title")}>
+			<div className="flex flex-col gap-4 p-4">
 				<p className="text-sm text-muted-foreground">{t("banks.credentials.description")}</p>
-			</div>
 
-			<ol
-				aria-label={t("banks.credentials.steps")}
-				className="flex list-decimal flex-col gap-2 pl-5 text-sm"
-			>
-				<li>
-					<Trans
-						i18nKey="banks.credentials.step1"
-						components={{
-							portal: (
-								<a
-									href={ENABLE_BANKING_PORTAL}
-									target="_blank"
-									rel="noreferrer"
-									className="font-medium underline underline-offset-4"
-								/>
-							),
-						}}
-					/>
-				</li>
-				<li className="flex flex-col gap-1.5">
-					<span>{t("banks.credentials.step2")}</span>
-					<RedirectAddress url={setup.redirectUrl} />
-				</li>
-				<li>{t("banks.credentials.step3")}</li>
-			</ol>
-
-			{locked && (
-				<div role="status" className="flex gap-3 rounded-lg border border-amber-500/50 p-4">
-					<LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-					<div className="flex flex-col gap-1">
-						<p className="text-sm font-medium">{t("banks.credentials.lockedTitle")}</p>
-						<p className="text-sm text-muted-foreground">
-							{t("banks.credentials.lockedDescription")}
-						</p>
-					</div>
-				</div>
-			)}
-
-			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
-				<fieldset disabled={locked || save.isPending} className="flex flex-col gap-4">
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor={applicationIdId}>{t("banks.credentials.applicationId")}</Label>
-						<Input
-							id={applicationIdId}
-							value={applicationId}
-							autoComplete="off"
-							spellCheck={false}
-							aria-invalid={fieldErrors["applicationId"] !== undefined}
-							{...(fieldErrors["applicationId"] === undefined
-								? {}
-								: { "aria-describedby": "applicationId-error" })}
-							onChange={(event) => setApplicationId(event.target.value)}
+				<ol
+					aria-label={t("banks.credentials.steps")}
+					className="flex list-decimal flex-col gap-2 pl-5 text-sm"
+				>
+					<li>
+						<Trans
+							i18nKey="banks.credentials.step1"
+							components={{
+								portal: (
+									<a
+										href={ENABLE_BANKING_PORTAL}
+										target="_blank"
+										rel="noreferrer"
+										className="font-medium underline underline-offset-4"
+									/>
+								),
+							}}
 						/>
-						{fieldError("applicationId")}
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor={privateKeyId}>{t("banks.credentials.privateKey")}</Label>
-						<Input
-							id={privateKeyId}
-							type="file"
-							accept=".pem,.key,application/x-pem-file"
-							aria-invalid={fieldErrors["privateKey"] !== undefined}
-							aria-describedby={
-								fieldErrors["privateKey"] === undefined
-									? "privateKey-hint"
-									: "privateKey-error privateKey-hint"
-							}
-							onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-						/>
-						{fieldError("privateKey")}
-						<p id="privateKey-hint" className="text-xs text-muted-foreground">
-							{t("banks.credentials.privateKeyHint")}
-						</p>
-					</div>
-				</fieldset>
+					</li>
+					<li className="flex flex-col gap-1.5">
+						<span>{t("banks.credentials.step2")}</span>
+						<RedirectAddress url={setup.redirectUrl} />
+					</li>
+					<li>{t("banks.credentials.step3")}</li>
+				</ol>
 
-				{failure !== null && (
-					<p
-						role="alert"
-						className="rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+				{locked && (
+					<div
+						role="status"
+						className="flex gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
 					>
-						{failure}
-					</p>
+						<LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+						<div className="flex flex-col gap-1">
+							<p className="font-medium">{t("banks.credentials.lockedTitle")}</p>
+							<p>{t("banks.credentials.lockedDescription")}</p>
+						</div>
+					</div>
 				)}
 
-				<div>
-					<Button type="submit" disabled={locked || save.isPending}>
-						{save.isPending && <Loader2Icon className="animate-spin" aria-hidden />}
-						{t("banks.credentials.submit")}
-					</Button>
-				</div>
-			</form>
-		</section>
+				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+					<fieldset disabled={locked || save.isPending} className="flex flex-col gap-4">
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor={applicationIdId}>{t("banks.credentials.applicationId")}</Label>
+							<Input
+								id={applicationIdId}
+								value={applicationId}
+								autoComplete="off"
+								spellCheck={false}
+								aria-invalid={fieldErrors["applicationId"] !== undefined}
+								{...(fieldErrors["applicationId"] === undefined
+									? {}
+									: { "aria-describedby": "applicationId-error" })}
+								onChange={(event) => setApplicationId(event.target.value)}
+							/>
+							{fieldError("applicationId")}
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor={privateKeyId}>{t("banks.credentials.privateKey")}</Label>
+							<Input
+								id={privateKeyId}
+								type="file"
+								accept=".pem,.key,application/x-pem-file"
+								aria-invalid={fieldErrors["privateKey"] !== undefined}
+								aria-describedby={
+									fieldErrors["privateKey"] === undefined
+										? "privateKey-hint"
+										: "privateKey-error privateKey-hint"
+								}
+								onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+							/>
+							{fieldError("privateKey")}
+							<p id="privateKey-hint" className="text-xs text-muted-foreground">
+								{t("banks.credentials.privateKeyHint")}
+							</p>
+						</div>
+					</fieldset>
+
+					{failure !== null && (
+						<p
+							role="alert"
+							className="rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+						>
+							{failure}
+						</p>
+					)}
+
+					<div>
+						<Button type="submit" disabled={locked || save.isPending}>
+							{save.isPending && <Loader2Icon className="animate-spin" aria-hidden />}
+							{t("banks.credentials.submit")}
+						</Button>
+					</div>
+				</form>
+			</div>
+		</Section>
 	);
 }
 
@@ -327,25 +336,21 @@ function EnvironmentCredentials({
 	const { t } = useTranslation();
 
 	return (
-		<section
-			aria-labelledby="bank-credentials-title"
-			className="flex flex-col gap-1 rounded-lg border p-4"
-		>
-			<h3 id="bank-credentials-title" className="text-base font-semibold">
-				{t("banks.credentials.title")}
-			</h3>
-			<p className="text-sm">{t("banks.credentials.environment")}</p>
-			{applicationId !== null && (
+		<Section id="bank-credentials-title" level={3} title={t("banks.credentials.title")}>
+			<div className="flex flex-col gap-1 p-4">
+				<p className="text-sm">{t("banks.credentials.environment")}</p>
+				{applicationId !== null && (
+					<p className="text-sm text-muted-foreground">
+						{t("banks.credentials.current", { id: applicationId })}
+					</p>
+				)}
 				<p className="text-sm text-muted-foreground">
-					{t("banks.credentials.current", { id: applicationId })}
+					{t("banks.credentials.environmentDescription")}
 				</p>
-			)}
-			<p className="text-sm text-muted-foreground">
-				{t("banks.credentials.environmentDescription")}
-			</p>
-			<p className="mt-2 text-sm">{t("banks.credentials.redirectLabel")}</p>
-			<RedirectAddress url={redirectUrl} />
-		</section>
+				<p className="mt-2 text-sm">{t("banks.credentials.redirectLabel")}</p>
+				<RedirectAddress url={redirectUrl} />
+			</div>
+		</Section>
 	);
 }
 
@@ -451,7 +456,7 @@ function Institutions({ country }: { country: BankCountry }) {
 			)}
 
 			{institutions.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
+				<div role="alert" className="flex flex-col items-start gap-3">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(institutions.error)}`)}</p>
 					<Button variant="outline" onClick={() => void institutions.refetch()}>
 						{t("common.retry")}
@@ -482,27 +487,35 @@ function Institutions({ country }: { country: BankCountry }) {
 	);
 }
 
-function Connections() {
+/** `onChooseBank` sends the user to the picker above, the one way to add a bank. */
+function Connections({ onChooseBank }: { onChooseBank: () => void }) {
 	const { t } = useTranslation();
 	const connections = useBankConnections(true);
 	const list: BankConnectionData[] = connections.data ?? [];
 
 	return (
-		<section aria-labelledby="bank-connections-title" className="flex flex-col gap-3">
-			<h3 id="bank-connections-title" className="text-base font-semibold">
-				{t("banks.connections")}
-			</h3>
-			{connections.isPending && <Skeleton className="h-14 w-full" />}
+		<Section id="bank-connections-title" level={3} title={t("banks.connections")}>
+			{connections.isPending && (
+				<div className="p-4">
+					<Skeleton className="h-14 w-full" />
+				</div>
+			)}
 			{connections.isError && (
-				<p role="alert" className="text-sm text-muted-foreground">
+				<p role="alert" className="p-4 text-sm text-muted-foreground">
 					{t(`errors.${errorCodeOf(connections.error)}`)}
 				</p>
 			)}
 			{connections.data !== undefined &&
 				(list.length === 0 ? (
-					<p className="text-sm text-muted-foreground">{t("banks.noConnections")}</p>
+					<EmptyState
+						level={4}
+						icon={{ kind: "transfer", icon: LandmarkIcon }}
+						title={t("banks.noConnections.title")}
+						description={t("banks.noConnections.description")}
+						action={<Button onClick={onChooseBank}>{t("banks.noConnections.action")}</Button>}
+					/>
 				) : (
-					<ul aria-label={t("banks.connections")} className="divide-y rounded-lg border">
+					<ul aria-label={t("banks.connections")} className="divide-y divide-line">
 						{list.map((connection) => (
 							<li key={connection.id}>
 								<Link
@@ -512,15 +525,16 @@ function Connections() {
 									className="flex items-center gap-4 px-4 py-3 transition-colors outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
 								>
 									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-										<span className="font-medium">{connection.institutionName}</span>
+										<span className="flex flex-wrap items-center gap-2">
+											<span className="font-medium">{connection.institutionName}</span>
+											{connection.alert !== null && (
+												<StatusBadge status={ALERT_BADGES[connection.alert]} />
+											)}
+										</span>
 										<span className="text-sm text-muted-foreground">
 											{countryName(connection.country)}
-											{connection.alert === "consent_expired" ? (
-												<>
-													{" · "}
-													{t("banks.consentExpired")}
-												</>
-											) : (
+											{/* An ended consent has no date left to show: its badge says it. */}
+											{connection.alert !== "consent_expired" &&
 												connection.consentExpiresAt !== null && (
 													<>
 														{" · "}
@@ -528,8 +542,7 @@ function Connections() {
 															date: consentDate.format(new Date(connection.consentExpiresAt)),
 														})}
 													</>
-												)
-											)}
+												)}
 										</span>
 										<span className="text-sm text-muted-foreground">
 											{connection.lastSyncedAt === null
@@ -545,7 +558,7 @@ function Connections() {
 						))}
 					</ul>
 				))}
-		</section>
+		</Section>
 	);
 }
 
@@ -563,18 +576,22 @@ function BanksPage() {
 	}, [t]);
 
 	const data = setup.data;
+	const pickerRef = useRef<HTMLButtonElement>(null);
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-6">
+		<div className="flex max-w-2xl flex-col gap-4">
 			<div className="flex flex-col gap-1">
-				<h2 className="text-lg font-semibold">{t("banks.title")}</h2>
+				<h2 className="type-display">{t("banks.title")}</h2>
 				<p className="text-sm text-muted-foreground">{t("banks.description")}</p>
 			</div>
 
 			{setup.isPending && <Skeleton className="h-24 w-full" />}
 
 			{setup.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-6">
+				<div
+					role="alert"
+					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
+				>
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(setup.error)}`)}</p>
 					<Button variant="outline" onClick={() => void setup.refetch()}>
 						{t("common.retry")}
@@ -589,8 +606,12 @@ function BanksPage() {
 					<CredentialsForm setup={data} />
 				) : (
 					<>
-						<ConnectBank />
-						<Connections />
+						<Section level={3} title={t("banks.picker")}>
+							<div className="flex flex-col gap-3 p-4">
+								<ConnectBank countryRef={pickerRef} />
+							</div>
+						</Section>
+						<Connections onChooseBank={() => pickerRef.current?.focus()} />
 						{data.source === "environment" ? (
 							<EnvironmentCredentials
 								applicationId={data.applicationId}
@@ -606,7 +627,7 @@ function BanksPage() {
 	);
 }
 
-function ConnectBank() {
+function ConnectBank({ countryRef }: { countryRef: RefObject<HTMLButtonElement | null> }) {
 	const { t } = useTranslation();
 	const countryId = useId();
 	const [country, setCountry] = useState<BankCountry>(DEFAULT_BANK_COUNTRY);
@@ -625,7 +646,7 @@ function ConnectBank() {
 						}
 					}}
 				>
-					<SelectTrigger id={countryId} className="w-full sm:w-64">
+					<SelectTrigger ref={countryRef} id={countryId} className="w-full sm:w-64">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>

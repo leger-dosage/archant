@@ -13,6 +13,10 @@ const table = (page: Page) => page.getByRole("table", { name: "Récurrences" });
 
 const row = (page: Page, label: string) => table(page).getByRole("row").filter({ hasText: label });
 
+/** Story 12.4: a row's status badge, by its status. */
+const badge = (page: Page, label: string, status: string) =>
+	row(page, label).locator(`[data-slot="status-badge"][data-status="${status}"]`);
+
 const toast = (page: Page, text: string | RegExp) =>
 	page.locator("[data-sonner-toast]").filter({ hasText: text });
 
@@ -59,7 +63,8 @@ async function addMonthly(api: Api, accountId: string, label: string, amount: st
 }
 
 async function detect(page: Page) {
-	await page.getByRole("button", { name: "Détecter" }).click();
+	// An empty list offers « Détecter les récurrences » in place of the title bar's.
+	await page.getByRole("button", { name: /^Détecter( les récurrences)?$/u }).click();
 	await expect(toast(page, /récurrences? détectées?/u).first()).toBeVisible();
 }
 
@@ -86,6 +91,14 @@ test("« Détecter » lists monthly rows with their account, amount and next dat
 	await expect(first).toContainText(euros(-1399));
 	await expect(first).toContainText(tableDate.format(new Date(`${earlyNext}T00:00:00Z`)));
 	await expect(first).toContainText("Détectée");
+	await expect(
+		badge(page, early, "recurringDetected").locator("svg.lucide-sparkles"),
+	).toBeVisible();
+	// The name's letter icon, then the account's type icon.
+	const icons = first.locator('[data-slot="tinted-icon"]');
+	await expect(icons).toHaveCount(2);
+	await expect(icons.first()).toHaveText(early.charAt(0).toLocaleUpperCase("fr"));
+	await expect(icons.nth(1).locator("svg.lucide-landmark")).toBeVisible();
 	await expect(row(page, late)).toContainText(euros(-6500));
 	await expect(row(page, late)).toContainText(tableDate.format(new Date(`${lateNext}T00:00:00Z`)));
 
@@ -114,6 +127,9 @@ test("confirming a detected item shows « Confirmée », and deactivating it « 
 	await expect(toast(page, "Récurrence confirmée")).toBeVisible();
 	await expect(row(page, label)).toContainText("Confirmée");
 	await expect(row(page, label)).not.toContainText("Détectée");
+	await expect(
+		badge(page, label, "recurringConfirmed").locator("svg.lucide-circle-check"),
+	).toBeVisible();
 
 	await row(page, label)
 		.getByRole("button", { name: `Actions pour ${label}` })
@@ -122,6 +138,9 @@ test("confirming a detected item shows « Confirmée », and deactivating it « 
 
 	await expect(toast(page, "Récurrence désactivée")).toBeVisible();
 	await expect(row(page, label)).toContainText("Inactive");
+	await expect(
+		badge(page, label, "recurringInactive").locator("svg.lucide-circle-pause"),
+	).toBeVisible();
 });
 
 test("a dismissed item disappears and stays gone after « Détecter »", async ({ page, api }) => {
@@ -188,6 +207,14 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 	await expect(row(page, label)).toContainText("Confirmée");
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
 	await expect(row(page, label)).toContainText(account.name);
+	// Two neutral badges: a manual series is no alarm.
+	await expect(row(page, label).locator('[data-slot="status-badge"]')).toHaveCount(2);
+	await expect(badge(page, label, "recurringManual").locator("svg.lucide-hand")).toBeVisible();
+	await Promise.all(
+		["recurringConfirmed", "recurringManual"].map((status) =>
+			expect(badge(page, label, status)).toHaveClass(/\bbg-badge\b/u),
+		),
+	);
 
 	await detect(page);
 	await expect(row(page, label)).toContainText("Confirmée");

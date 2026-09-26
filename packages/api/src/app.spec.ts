@@ -6613,6 +6613,7 @@ describe("/api/recurring", () => {
 				expect.objectContaining({
 					accountId: account.id,
 					accountName: valid.name,
+					accountType: valid.type,
 					merchantName: null,
 					label: "Netflix",
 					amount: -1399,

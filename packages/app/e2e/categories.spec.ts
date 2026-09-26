@@ -9,7 +9,7 @@ import { daysAgo, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
 const PAGE = "/settings/categories";
 
-/** A category's row: its dot, icon, name, count and menu. */
+/** A category's row: its tinted icon, name, count and menu. */
 const row = (scope: Page | Locator, name: string) =>
 	scope.getByRole("button", { name: `Actions pour ${name}`, exact: true }).locator("..");
 
@@ -78,9 +78,9 @@ test("a fresh instance lists the defaults under Revenus and Dépenses, each with
 
 	const income = group(page, "Revenus");
 	await expect(row(income, "Revenus")).toBeVisible();
-	await expect(row(income, "Revenus").locator("span[aria-hidden]").first()).toHaveCSS(
-		"background-color",
-		"rgb(34, 197, 94)",
+	await expect(row(income, "Revenus").locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#22c55e"),
 	);
 	await expect(row(income, "Revenus").locator("svg.lucide-circle-dollar-sign")).toBeVisible();
 
@@ -91,9 +91,9 @@ test("a fresh instance lists the defaults under Revenus and Dépenses, each with
 	expect(names).toEqual(
 		expect.arrayContaining(EXPENSE_DEFAULTS.map((name) => `Actions pour ${name}`)),
 	);
-	await expect(row(expenses, "Courses").locator("span[aria-hidden]").first()).toHaveCSS(
-		"background-color",
-		"rgb(64, 119, 6)",
+	await expect(row(expenses, "Courses").locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#407706"),
 	);
 	await expect(row(expenses, "Courses").locator("svg.lucide-shopping-bag")).toBeVisible();
 	await expect(row(expenses, "Revenus")).toHaveCount(0);
@@ -134,9 +134,9 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 
 	await page.reload();
 	await expect(row(group(page, "Dépenses"), name).locator("svg.lucide-dog")).toBeVisible();
-	await expect(row(page, name).locator("span[aria-hidden]").first()).toHaveCSS(
-		"background-color",
-		"rgb(235, 87, 87)",
+	await expect(row(page, name).locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#eb5757"),
 	);
 
 	await openAction(page, name, "Modifier");
@@ -148,9 +148,9 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 
 	await page.reload();
 	await expect(row(page, name)).toHaveCount(0);
-	await expect(row(page, renamed).locator("span[aria-hidden]").first()).toHaveCSS(
-		"background-color",
-		"rgb(78, 167, 252)",
+	await expect(row(page, renamed).locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#4ea7fc"),
 	);
 
 	await openAction(page, renamed, "Modifier");
@@ -166,9 +166,9 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await page.reload();
 	const parentItem = page.getByRole("listitem").filter({ has: row(page, parent.name) });
 	await expect(row(parentItem.getByRole("list"), renamed)).toBeVisible();
-	await expect(row(page, renamed).locator("span[aria-hidden]").first()).toHaveCSS(
-		"background-color",
-		"rgb(77, 165, 104)",
+	await expect(row(page, renamed).locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#4da568"),
 	);
 });
 

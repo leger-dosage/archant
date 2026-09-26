@@ -3,6 +3,7 @@ import type { ServiceDeps } from "./deps.ts";
 
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
+import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -33,6 +34,7 @@ export type RecurringRecord = {
 	id: string;
 	accountId: string;
 	accountName: string;
+	accountType: AccountType;
 	merchantId: string | null;
 	merchantName: string | null;
 	label: string;
@@ -249,6 +251,7 @@ const recordColumns = {
 	id: recurringTransactions.id,
 	accountId: recurringTransactions.accountId,
 	accountName: accounts.name,
+	accountType: accounts.type,
 	merchantId: recurringTransactions.merchantId,
 	merchantName: merchants.name,
 	label: recurringTransactions.label,

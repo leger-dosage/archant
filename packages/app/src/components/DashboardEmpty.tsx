@@ -1,7 +1,7 @@
 import { LandmarkIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { TintedIcon } from "@/components/TintedIcon";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 
 /** The dashboard of a household without accounts: one way forward, « Ajouter un compte ». */
@@ -9,16 +9,16 @@ export function DashboardEmpty({ onAddAccount }: { onAddAccount: () => void }) {
 	const { t } = useTranslation();
 
 	return (
-		<section
-			aria-labelledby="dashboard-empty-heading"
-			className="flex flex-col items-center gap-3 rounded-lg border bg-section px-6 py-10 text-center"
-		>
-			<TintedIcon subject={{ kind: "transfer", icon: LandmarkIcon }} size="lg" />
-			<h2 id="dashboard-empty-heading" className="type-title">
-				{t("dashboard.empty.title")}
-			</h2>
-			<p className="max-w-sm text-muted-foreground">{t("dashboard.empty.description")}</p>
-			<Button onClick={onAddAccount}>{t("accounts.add")}</Button>
-		</section>
+		// No section around it: the dashboard has nothing else to show, so the
+		// empty state is its own bordered region.
+		<EmptyState
+			labelled
+			level={2}
+			className="rounded-lg border bg-section"
+			icon={{ kind: "transfer", icon: LandmarkIcon }}
+			title={t("dashboard.empty.title")}
+			description={t("dashboard.empty.description")}
+			action={<Button onClick={onAddAccount}>{t("accounts.add")}</Button>}
+		/>
 	);
 }

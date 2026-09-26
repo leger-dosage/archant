@@ -1,6 +1,7 @@
 import type { CategoryData } from "@/hooks/useCategories";
 import type { MerchantData } from "@/hooks/useMerchants";
 import type { TagData } from "@/hooks/useTags";
+import type { TintSubject } from "@/lib/tint";
 import type {
 	Direction,
 	FilterKind,
@@ -18,8 +19,8 @@ import {
 	parseAmountBound,
 } from "@archant/api/schemas/transactions";
 
-import { CategoryDot } from "@/components/CategoryDot";
 import { DateField } from "@/components/DateField";
+import { TintedIcon } from "@/components/TintedIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,14 +96,14 @@ function toggled(selected: ReadonlySet<string>, id: string, checked: boolean): S
 function CategoryCheckbox({
 	id,
 	label,
-	color,
+	subject,
 	child = false,
 	selected,
 	onChange,
 }: {
 	id: string;
 	label: string;
-	color: string | null;
+	subject: TintSubject;
 	child?: boolean;
 	selected: ReadonlySet<string>;
 	onChange: (next: Set<string>) => void;
@@ -115,7 +116,7 @@ function CategoryCheckbox({
 				checked={selected.has(id)}
 				onChange={(event) => onChange(toggled(selected, id, event.target.checked))}
 			/>
-			<CategoryDot color={color} />
+			<TintedIcon subject={subject} size="sm" />
 			<span className="truncate">{label}</span>
 		</label>
 	);
@@ -151,7 +152,7 @@ function CategoryEditor({
 					<CategoryCheckbox
 						id={UNCATEGORISED}
 						label={t("operations.chips.uncategorised")}
-						color={null}
+						subject={{ kind: "uncategorised" }}
 						selected={selected}
 						onChange={setSelected}
 					/>
@@ -160,7 +161,7 @@ function CategoryEditor({
 							key={parent.id}
 							id={parent.id}
 							label={parent.name}
-							color={parent.color}
+							subject={{ kind: "category", color: parent.color, icon: parent.icon }}
 							selected={selected}
 							onChange={setSelected}
 						/>,
@@ -169,7 +170,7 @@ function CategoryEditor({
 								key={child.id}
 								id={child.id}
 								label={child.name}
-								color={child.color}
+								subject={{ kind: "category", color: child.color, icon: child.icon }}
 								child
 								selected={selected}
 								onChange={setSelected}

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
@@ -22,6 +22,20 @@ async function openMenu(page: Page, name: string) {
 	await expect(menu).toBeVisible();
 
 	return menu;
+}
+
+/** Each entry's lucide icon, in order, at 14 px. */
+async function expectMenuIcons(menu: Locator, icons: readonly string[]) {
+	const items = menu.getByRole("menuitem");
+	await expect(items).toHaveCount(icons.length);
+
+	await Promise.all(
+		icons.map(async (icon, index) => {
+			const svg = items.nth(index).locator(`svg.lucide-${icon}`);
+			await expect(svg).toBeVisible();
+			await expect(svg).toHaveCSS("width", "14px");
+		}),
+	);
 }
 
 /** Opens the account's page, then its « Modifier le compte » dialog. */
@@ -147,6 +161,8 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 		"Désactiver",
 		"Supprimer le compte",
 	]);
+	// Story 12.4: a 14 px icon before each entry.
+	await expectMenuIcons(menu, ["pencil", "eye-off", "circle-pause", "trash-2"]);
 	await menu.getByRole("menuitem", { name: "Exclure des rapports" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » exclu des rapports.`)).toBeVisible();
 	await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -164,6 +180,7 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 		"Réactiver",
 		"Supprimer le compte",
 	]);
+	await expectMenuIcons(toggled, ["pencil", "eye", "circle-play", "trash-2"]);
 	await toggled.getByRole("menuitem", { name: "Inclure dans les rapports" }).click();
 	await expect(
 		page.getByText(`Compte « ${account.name} » inclus dans les rapports.`),

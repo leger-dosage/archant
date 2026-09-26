@@ -63,7 +63,7 @@ test("the sidebar opens Règles, empty at first", async ({ page }) => {
 		.click();
 
 	await expect(page).toHaveURL(/\/rules$/u);
-	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toBeVisible();
 });
 
@@ -159,6 +159,12 @@ test("« Modifier » reopens the form filled in and saves, « Supprimer » remov
 	await expect(dialog(page).getByRole("button", { name: "Catégorie", exact: true })).toContainText(
 		category.name,
 	);
+	// Story 12.4: the pick shows as the category's pill, with its icon.
+	await expect(
+		dialog(page)
+			.getByRole("button", { name: "Catégorie", exact: true })
+			.locator('[data-slot="category-pill"] svg.lucide-tag'),
+	).toBeVisible();
 	await value.fill(after);
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
@@ -178,7 +184,7 @@ test("« Modifier » reopens the form filled in and saves, « Supprimer » remov
 	await confirm.getByRole("button", { name: "Supprimer" }).click();
 
 	await expect(confirm).toBeHidden();
-	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
 test("« Modifier » on an amount rule shows the amount as typed, and saving it unchanged keeps it", async ({
@@ -248,7 +254,7 @@ test("the form points at an empty value or a missing action, and saves nothing",
 	await expect(dialog(page).getByText("Ajoutez au moins une action.")).toBeVisible();
 
 	await dialog(page).getByRole("button", { name: "Annuler" }).click();
-	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
 test("a narrow screen says the page needs a computer", async ({ page }) => {
@@ -440,7 +446,7 @@ test("the form points at an empty « Renommer » and saves nothing", async ({ pa
 	await expect(rename).toHaveAttribute("aria-invalid", "true");
 	await expect(dialog(page).getByText("Ce champ est obligatoire.")).toBeVisible();
 	await dialog(page).getByRole("button", { name: "Annuler" }).click();
-	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
 // Story 8.3: applying rules to existing transactions.

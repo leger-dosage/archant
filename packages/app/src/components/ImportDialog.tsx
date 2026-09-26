@@ -2,6 +2,7 @@ import type { ImportGroupsData, ImportPreviewData } from "@/hooks/useImports";
 import type { ImportGroup } from "@/lib/import-preview";
 import type { DragEvent } from "react";
 
+import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -70,6 +71,7 @@ type Step = "file" | "columns" | "preview";
 function Steps({ current, csv }: { current: Step; csv: boolean }) {
 	const { t } = useTranslation();
 	const steps: readonly Step[] = csv ? ["file", "columns", "preview"] : ["file", "preview"];
+	const currentIndex = steps.indexOf(current);
 
 	return (
 		<ol aria-label={t("imports.steps.label")} className="flex gap-4 text-sm">
@@ -82,8 +84,15 @@ function Steps({ current, csv }: { current: Step; csv: boolean }) {
 						step === current && "font-medium text-foreground",
 					)}
 				>
-					<span className="flex size-5 items-center justify-center rounded-full border text-xs tabular-nums">
-						{index + 1}
+					<span
+						className={cn(
+							"flex size-5 items-center justify-center rounded-full border text-xs tabular-nums",
+							step === current && "border-primary bg-primary text-primary-foreground",
+							index < currentIndex && "border-badge bg-badge text-foreground-secondary",
+						)}
+					>
+						{/* The step's name follows; the check only repeats that it is done. */}
+						{index < currentIndex ? <CheckIcon aria-hidden="true" className="size-3" /> : index + 1}
 					</span>
 					{t(`imports.steps.${step}`)}
 				</li>
@@ -210,7 +219,7 @@ function StatementBalanceNote({
 		});
 	}
 
-	return <p className="rounded-md border p-3">{text}</p>;
+	return <p className="rounded-md border bg-section p-3">{text}</p>;
 }
 
 type PreviewProps = {
@@ -261,13 +270,16 @@ function Preview({
 			)}
 
 			{stale && (
-				<p role="alert" className="rounded-md border border-destructive/50 p-3 text-destructive">
+				<p
+					role="alert"
+					className="rounded-md border border-destructive/50 bg-section p-3 text-destructive"
+				>
 					{t("errors.IMPORT_PREVIEW_STALE")}
 				</p>
 			)}
 
 			{preview.opening !== null && (
-				<p className="rounded-md border p-3">
+				<p className="rounded-md border bg-section p-3">
 					{t("imports.openingMoved", {
 						date: formatTableDate(preview.opening.date),
 						amount: formatMoney({ amount: preview.opening.balance, currency }),
@@ -285,7 +297,9 @@ function Preview({
 					{IMPORT_GROUPS.map((group) => (
 						<TabsTrigger key={group} value={group}>
 							{t(`imports.groups.${group}`)}{" "}
-							<span className="text-muted-foreground tabular-nums">{counts[group]}</span>
+							<span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-badge px-1 text-xs text-foreground-secondary tabular-nums">
+								{counts[group]}
+							</span>
 						</TabsTrigger>
 					))}
 				</TabsList>

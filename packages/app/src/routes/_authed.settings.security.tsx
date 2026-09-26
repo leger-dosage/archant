@@ -11,8 +11,8 @@ import { z } from "zod";
 
 import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
@@ -65,7 +65,7 @@ function FieldMessage({ id, error }: { id: string; error: FieldError | undefined
  * The first name the dashboard greets, Better Auth's `user.name`. Saved
  * through Better Auth's own update, never a route of ours (AD-13).
  */
-function ProfileCard() {
+function ProfileSection() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const router = useRouter();
@@ -104,14 +104,9 @@ function ProfileCard() {
 	});
 
 	return (
-		<Card className="max-w-md">
-			<CardHeader>
-				<CardTitle>
-					<h2 className="text-lg font-semibold">{t("profile.title")}</h2>
-				</CardTitle>
-				<CardDescription>{t("profile.description")}</CardDescription>
-			</CardHeader>
-			<CardContent>
+		<Section title={t("profile.title")} className="max-w-md">
+			<div className="flex flex-col gap-4 p-4">
+				<p className="text-sm text-muted-foreground">{t("profile.description")}</p>
 				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="name">{t("profile.firstName")}</Label>
@@ -128,8 +123,8 @@ function ProfileCard() {
 						{t("profile.submit")}
 					</Button>
 				</form>
-			</CardContent>
-		</Card>
+			</div>
+		</Section>
 	);
 }
 
@@ -142,13 +137,13 @@ function SecurityPage() {
 
 	return (
 		<div className="flex flex-col gap-6">
-			<ProfileCard />
-			<PasswordCard />
+			<ProfileSection />
+			<PasswordSection />
 		</div>
 	);
 }
 
-function PasswordCard() {
+function PasswordSection() {
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const router = useRouter();
@@ -202,14 +197,9 @@ function PasswordCard() {
 	};
 
 	return (
-		<Card className="max-w-md">
-			<CardHeader>
-				<CardTitle>
-					<h2 className="text-lg font-semibold">{t("security.title")}</h2>
-				</CardTitle>
-				<CardDescription>{t("security.description")}</CardDescription>
-			</CardHeader>
-			<CardContent>
+		<Section title={t("security.title")} className="max-w-md">
+			<div className="flex flex-col gap-4 p-4">
+				<p className="text-sm text-muted-foreground">{t("security.description")}</p>
 				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="currentPassword">{t("security.currentPassword")}</Label>
@@ -254,7 +244,7 @@ function PasswordCard() {
 						{t("security.submit")}
 					</Button>
 				</form>
-			</CardContent>
-		</Card>
+			</div>
+		</Section>
 	);
 }

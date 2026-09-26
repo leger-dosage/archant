@@ -2,7 +2,7 @@ import type { RuleData, RuleRunData } from "@/hooks/useRules";
 import type { SummaryNames } from "@/lib/rule-summary";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, FunnelIcon } from "lucide-react";
+import { EllipsisIcon, FunnelIcon, ListFilterIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -11,9 +11,11 @@ import { z } from "zod";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { RuleDialog } from "@/components/RuleDialog";
+import { SECTION_TABLE_INSET, Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -110,7 +112,7 @@ function RuleRow({
 	const title = rule.name ?? summary;
 
 	return (
-		<div className="flex min-h-14 items-center gap-3 py-2">
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2">
 			<div className="flex min-w-0 flex-1 flex-col">
 				<span className="truncate">{title}</span>
 				{rule.name !== null && (
@@ -176,52 +178,55 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 	const labelOf = (run: RuleRunData) => run.rule.name ?? ruleSummary(run.rule, names, t);
 
 	return (
-		<section aria-labelledby="rule-runs" className="flex max-w-3xl flex-col gap-3">
-			<h2 id="rule-runs" className="text-lg font-semibold">
-				{t("rules.runs.title")}
-			</h2>
+		<div className="flex max-w-3xl flex-col gap-3">
+			<Section id="rule-runs" title={t("rules.runs.title")}>
+				{runs.isPending && (
+					<div className="p-4">
+						<Skeleton className="h-9 w-full" />
+					</div>
+				)}
 
-			{runs.isPending && <Skeleton className="h-9 w-full" />}
+				{runs.isError && (
+					<div role="alert" className="flex flex-col items-start gap-3 p-4">
+						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(runs.error)}`)}</p>
+						<Button variant="outline" onClick={() => void runs.refetch()}>
+							{t("common.retry")}
+						</Button>
+					</div>
+				)}
 
-			{runs.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
-					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(runs.error)}`)}</p>
-					<Button variant="outline" onClick={() => void runs.refetch()}>
-						{t("common.retry")}
-					</Button>
-				</div>
-			)}
+				{/* A secondary list: a sentence, no action, as in Sure. */}
+				{data !== undefined && data.total === 0 && (
+					<p className="px-4 py-3 text-sm text-muted-foreground">{t("rules.runs.empty")}</p>
+				)}
 
-			{data !== undefined && data.total === 0 && (
-				<p className="text-sm text-muted-foreground">{t("rules.runs.empty")}</p>
-			)}
-
-			{data !== undefined && data.total > 0 && (
-				<Table aria-labelledby="rule-runs">
-					<TableHeader>
-						<TableRow>
-							<TableHead scope="col">{t("rules.runs.columns.date")}</TableHead>
-							<TableHead scope="col">{t("rules.runs.columns.rule")}</TableHead>
-							<TableHead scope="col" className="text-right">
-								{t("rules.runs.columns.matched")}
-							</TableHead>
-							<TableHead scope="col" className="text-right">
-								{t("rules.runs.columns.changed")}
-							</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{data.items.map((run) => (
-							<TableRow key={run.id} className="h-9">
-								<TableCell className="whitespace-nowrap">{dayOf(run.executedAt)}</TableCell>
-								<TableCell className="max-w-96 truncate">{labelOf(run)}</TableCell>
-								<TableCell className="text-right tabular-nums">{run.matchedCount}</TableCell>
-								<TableCell className="text-right tabular-nums">{run.changedCount}</TableCell>
+				{data !== undefined && data.total > 0 && (
+					<Table aria-labelledby="rule-runs" className={SECTION_TABLE_INSET}>
+						<TableHeader>
+							<TableRow>
+								<TableHead scope="col">{t("rules.runs.columns.date")}</TableHead>
+								<TableHead scope="col">{t("rules.runs.columns.rule")}</TableHead>
+								<TableHead scope="col" className="text-right">
+									{t("rules.runs.columns.matched")}
+								</TableHead>
+								<TableHead scope="col" className="text-right">
+									{t("rules.runs.columns.changed")}
+								</TableHead>
 							</TableRow>
-						))}
-					</TableBody>
-				</Table>
-			)}
+						</TableHeader>
+						<TableBody>
+							{data.items.map((run) => (
+								<TableRow key={run.id} className="h-9">
+									<TableCell className="whitespace-nowrap">{dayOf(run.executedAt)}</TableCell>
+									<TableCell className="max-w-96 truncate">{labelOf(run)}</TableCell>
+									<TableCell className="text-right tabular-nums">{run.matchedCount}</TableCell>
+									<TableCell className="text-right tabular-nums">{run.changedCount}</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				)}
+			</Section>
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
@@ -231,7 +236,7 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 					label={t("rules.runs.paginationLabel")}
 				/>
 			)}
-		</section>
+		</div>
 	);
 }
 
@@ -355,7 +360,10 @@ function RulesPage() {
 						>
 							{t("rules.apply.all")}
 						</Button>
-						<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
+						{/* An empty list offers its own, the one way forward. */}
+						{!(ready && failed === undefined && list.length === 0) && (
+							<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
+						)}
 					</>
 				) : undefined
 			}
@@ -376,7 +384,10 @@ function RulesPage() {
 			)}
 
 			{desktop && failed !== undefined && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
+				<div
+					role="alert"
+					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
+				>
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
 					<Button
 						variant="outline"
@@ -395,22 +406,33 @@ function RulesPage() {
 				ready &&
 				failed === undefined &&
 				(list.length === 0 ? (
-					<p className="text-sm text-muted-foreground">{t("rules.empty")}</p>
+					<Section title={t("rules.list")} className="max-w-3xl">
+						<EmptyState
+							icon={{ kind: "transfer", icon: ListFilterIcon }}
+							title={t("rules.empty.title")}
+							description={t("rules.empty.description")}
+							action={
+								<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
+							}
+						/>
+					</Section>
 				) : (
-					<ul aria-label={t("rules.title")} className="max-w-3xl divide-y">
-						{list.map((item) => (
-							<li key={item.id}>
-								<RuleRow
-									rule={item}
-									summary={summaryOf(item)}
-									onEdit={() => openDialog({ action: "edit", id: item.id })}
-									onApply={() => void askToApply(item)}
-									applyDisabled={previewing}
-									onDelete={() => openDialog({ action: "delete", id: item.id })}
-								/>
-							</li>
-						))}
-					</ul>
+					<Section title={t("rules.list")} className="max-w-3xl">
+						<ul aria-label={t("rules.title")} className="divide-y divide-line">
+							{list.map((item) => (
+								<li key={item.id}>
+									<RuleRow
+										rule={item}
+										summary={summaryOf(item)}
+										onEdit={() => openDialog({ action: "edit", id: item.id })}
+										onApply={() => void askToApply(item)}
+										applyDisabled={previewing}
+										onDelete={() => openDialog({ action: "delete", id: item.id })}
+									/>
+								</li>
+							))}
+						</ul>
+					</Section>
 				))}
 
 			{desktop && ready && (opened?.action === "add" || opened?.action === "edit") && (

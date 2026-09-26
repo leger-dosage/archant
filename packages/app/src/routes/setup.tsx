@@ -10,8 +10,8 @@ import { z } from "zod";
 
 import { setupSchema } from "@archant/api/schemas/setup";
 
+import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api, unwrap } from "@/lib/api";
@@ -118,75 +118,69 @@ function SetupPage() {
 	};
 
 	return (
-		<main className="flex min-h-svh items-center justify-center p-6">
-			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle>
-						<h1 className="text-xl font-semibold">{t("setup.title")}</h1>
-					</CardTitle>
-					<CardDescription>{t("setup.description")}</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="name">{t("setup.firstName")}</Label>
-							<Input
-								id="name"
-								autoComplete="given-name"
-								aria-invalid={errors.name !== undefined}
-								{...describedBy("name", "name-hint")}
-								{...form.register("name")}
-							/>
-							<p id="name-hint" className="text-xs text-muted-foreground">
-								{t("setup.firstNameHint")}
-							</p>
-							<FieldMessage id="name-error" error={errors.name} />
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="email">{t("setup.email")}</Label>
-							<Input
-								id="email"
-								type="email"
-								autoComplete="username"
-								aria-invalid={errors.email !== undefined}
-								{...describedBy("email")}
-								{...form.register("email")}
-							/>
-							<FieldMessage id="email-error" error={errors.email} />
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="password">{t("setup.password")}</Label>
-							<Input
-								id="password"
-								type="password"
-								autoComplete="new-password"
-								aria-invalid={errors.password !== undefined}
-								{...describedBy("password", "password-hint")}
-								{...form.register("password")}
-							/>
-							<p id="password-hint" className="text-xs text-muted-foreground">
-								{t("setup.passwordHint")}
-							</p>
-							<FieldMessage id="password-error" error={errors.password} />
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="confirmPassword">{t("setup.confirmPassword")}</Label>
-							<Input
-								id="confirmPassword"
-								type="password"
-								autoComplete="new-password"
-								aria-invalid={errors.confirmPassword !== undefined}
-								{...describedBy("confirmPassword")}
-								{...form.register("confirmPassword")}
-							/>
-							<FieldMessage id="confirmPassword-error" error={errors.confirmPassword} />
-						</div>
-						<Button type="submit" disabled={isSubmitting}>
-							{t("setup.submit")}
-						</Button>
-					</form>
-				</CardContent>
-			</Card>
-		</main>
+		<OutsideShell className="flex flex-col gap-6">
+			<div className="flex flex-col gap-1.5">
+				<h1 className="type-display">{t("setup.title")}</h1>
+				<p className="text-sm text-muted-foreground">{t("setup.description")}</p>
+			</div>
+			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="name">{t("setup.firstName")}</Label>
+					<Input
+						id="name"
+						autoComplete="given-name"
+						aria-invalid={errors.name !== undefined}
+						{...describedBy("name", "name-hint")}
+						{...form.register("name")}
+					/>
+					<p id="name-hint" className="text-xs text-muted-foreground">
+						{t("setup.firstNameHint")}
+					</p>
+					<FieldMessage id="name-error" error={errors.name} />
+				</div>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="email">{t("setup.email")}</Label>
+					<Input
+						id="email"
+						type="email"
+						autoComplete="username"
+						aria-invalid={errors.email !== undefined}
+						{...describedBy("email")}
+						{...form.register("email")}
+					/>
+					<FieldMessage id="email-error" error={errors.email} />
+				</div>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="password">{t("setup.password")}</Label>
+					<Input
+						id="password"
+						type="password"
+						autoComplete="new-password"
+						aria-invalid={errors.password !== undefined}
+						{...describedBy("password", "password-hint")}
+						{...form.register("password")}
+					/>
+					<p id="password-hint" className="text-xs text-muted-foreground">
+						{t("setup.passwordHint")}
+					</p>
+					<FieldMessage id="password-error" error={errors.password} />
+				</div>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="confirmPassword">{t("setup.confirmPassword")}</Label>
+					<Input
+						id="confirmPassword"
+						type="password"
+						autoComplete="new-password"
+						aria-invalid={errors.confirmPassword !== undefined}
+						{...describedBy("confirmPassword")}
+						{...form.register("confirmPassword")}
+					/>
+					<FieldMessage id="confirmPassword-error" error={errors.confirmPassword} />
+				</div>
+				<Button type="submit" disabled={isSubmitting}>
+					{t("setup.submit")}
+				</Button>
+			</form>
+		</OutsideShell>
 	);
 }

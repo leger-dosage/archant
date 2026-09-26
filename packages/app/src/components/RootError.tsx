@@ -3,6 +3,7 @@ import type { ErrorComponentProps } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
+import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
 import { errorCodeOf } from "@/lib/api";
 import { errorMessage } from "@/lib/error-toast";
@@ -25,18 +26,16 @@ export function RootError({ error, reset }: ErrorComponentProps) {
 	}
 
 	return (
-		<main className="flex min-h-svh items-center justify-center p-6">
-			<div className="flex w-full max-w-md flex-col gap-4">
-				<h1 className="text-xl font-semibold">
-					{apiDown ? t("startError.apiDownTitle") : t("startError.title")}
-				</h1>
-				<p className="text-sm text-muted-foreground">
-					{apiDown ? t("startError.apiDownDescription") : errorMessage(error)}
-				</p>
-				<Button className="self-start" onClick={() => void retry()}>
-					{t("common.retry")}
-				</Button>
-			</div>
-		</main>
+		<OutsideShell className="flex max-w-md flex-col gap-4">
+			<h1 className="type-display">
+				{apiDown ? t("startError.apiDownTitle") : t("startError.title")}
+			</h1>
+			<p className="text-sm text-muted-foreground">
+				{apiDown ? t("startError.apiDownDescription") : errorMessage(error)}
+			</p>
+			<Button className="self-start" onClick={() => void retry()}>
+				{t("common.retry")}
+			</Button>
+		</OutsideShell>
 	);
 }

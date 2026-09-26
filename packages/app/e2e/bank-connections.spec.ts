@@ -319,6 +319,8 @@ test("choosing a bank and approving lands on its accounts, and Banques lists it 
 	const row = connections.getByRole("listitem").filter({ hasText: "Banque Démo" }).last();
 	await expect(row).toContainText("France");
 	await expect(row).toContainText(`Consentement valable jusqu'au ${consentEnd}`);
+	// No alert, no badge.
+	await expect(row.locator('[data-slot="status-badge"]')).toHaveCount(0);
 	await connections
 		.getByRole("link", { name: "Gérer les comptes de Banque Démo" })
 		.and(page.locator(`[href="/settings/banks/${connectionId}"]`))
@@ -742,6 +744,20 @@ const bannerDate = new Intl.DateTimeFormat("fr-FR", {
 
 const banners = (page: Page) => page.getByRole("region", { name: "Avertissements bancaires" });
 
+/** Story 12.4: the warning badge a connection's row shows for its alert, on « Banques ». */
+async function expectRowBadge(page: Page, connectionId: string, status: string, text: string) {
+	await visit(page);
+	const badge = page
+		.getByRole("list", { name: "Banques connectées" })
+		.getByRole("listitem")
+		.filter({ has: page.locator(`[href="/settings/banks/${connectionId}"]`) })
+		.locator('[data-slot="status-badge"]');
+	await expect(badge).toHaveCount(1);
+	await expect(badge).toHaveAttribute("data-status", status);
+	await expect(badge).toHaveText(text);
+	await expect(badge).toHaveClass(/\btext-warning\b/u);
+}
+
 /** Moves a connection's consent end or last sync, as time passing would. */
 async function age(
 	connectionId: string,
@@ -799,6 +815,7 @@ test("an expiring consent shows a banner on every page, and renewing it keeps th
 			consentExpiresAt: expiresAt,
 			lastSyncedAt: Date.now() - 5 * 60 * 1000,
 		});
+		await expectRowBadge(page, connectionId, "consentExpiring", "Consentement bientôt expiré");
 
 		await page.goto("/transactions");
 		const banner = banners(page);
@@ -869,6 +886,7 @@ test("an expired consent says sync has stopped, and the button answers with a to
 			.filter({ has: page.locator(`[href="/settings/banks/${connectionId}"]`) });
 		await expect(row).toContainText("Consentement expiré");
 		await expect(row).not.toContainText("Consentement valable");
+		await expectRowBadge(page, connectionId, "consentExpired", "Consentement expiré");
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {
 			headers: { origin: WEB_URL },
@@ -891,6 +909,7 @@ test("a sync stopped for more than 48 hours leads to its connection", async ({ p
 
 		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
 		await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+		await expectRowBadge(page, connectionId, "syncStale", "Synchronisation en retard");
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {
 			headers: { origin: WEB_URL },

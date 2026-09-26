@@ -112,7 +112,7 @@ test("a merchant added from the header is listed with no transaction", async ({ 
 	const name = uniqueName("Boulangerie");
 
 	await page.goto(PAGE);
-	// The header's, first: an empty list shows a second one below.
+	// The section header's, or an empty list's own in its place.
 	await page.getByRole("button", { name: "Ajouter un marchand", exact: true }).first().click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un marchand" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -123,6 +123,10 @@ test("a merchant added from the header is listed with no transaction", async ({ 
 		page.locator("[data-sonner-toast]").filter({ hasText: `Marchand « ${name} » ajouté.` }),
 	).toBeVisible();
 	await expect(merchantRow(page, name)).toContainText("0 opération");
+	// Story 12.4: the row's letter icon, the name's first letter.
+	await expect(merchantRow(page, name).locator('[data-slot="tinted-icon"]')).toHaveText(
+		name.charAt(0).toLocaleUpperCase("fr"),
+	);
 });
 
 test("a merchant name held in another case keeps the dialog open with the error under the field", async ({
@@ -153,7 +157,7 @@ test("an empty merchant list says so and offers the button that adds one", async
 	);
 
 	await page.goto(PAGE);
-	const empty = page.getByText("Aucun marchand pour l'instant.").locator("..");
+	const empty = page.getByRole("heading", { name: "Aucun marchand pour l'instant" }).locator("..");
 	await expect(empty).toBeVisible();
 	await empty.getByRole("button", { name: "Ajouter un marchand", exact: true }).click();
 
