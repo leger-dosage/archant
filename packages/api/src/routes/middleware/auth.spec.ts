@@ -101,6 +101,39 @@ describe("roles", () => {
 	});
 });
 
+/** Better Auth's own profile update, as the security page sends it. */
+const updateUser = (body: unknown) =>
+	signedIn().request("/api/auth/update-user", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+
+async function storedName() {
+	const rows = await temp.db.all<{ name: string }>(sql`select name from users`);
+
+	return rows.map((row) => row.name);
+}
+
+describe("the first name", () => {
+	it("stores a trimmed name, then clears it", async () => {
+		expect((await updateUser({ name: " Camille " })).status).toBe(200);
+		await expect(storedName()).resolves.toEqual(["Camille"]);
+
+		expect((await updateUser({ name: "   " })).status).toBe(200);
+		await expect(storedName()).resolves.toEqual([""]);
+	});
+
+	it("refuses a name of 61 characters, and keeps the stored one", async () => {
+		await updateUser({ name: "Camille" });
+
+		const response = await updateUser({ name: "x".repeat(61) });
+
+		expect(response.status).toBe(400);
+		await expect(storedName()).resolves.toEqual(["Camille"]);
+	});
+});
+
 describe("Better Auth's endpoints", () => {
 	it("refuses a public sign-up, and creates no user", async () => {
 		const response = await anonymous().request("/api/auth/sign-up/email", {

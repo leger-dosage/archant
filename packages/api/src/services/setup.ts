@@ -59,7 +59,8 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 			body: {
 				email: input.email,
 				password: input.password,
-				name: input.email.split("@")[0] ?? input.email,
+				// Better Auth requires a name; blank means no greeting by name.
+				name: input.name ?? "",
 				role: "admin",
 			},
 		});

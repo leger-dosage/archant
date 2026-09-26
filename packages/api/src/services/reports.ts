@@ -144,6 +144,7 @@ export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<C
 				name: categories.name,
 				kind: categories.kind,
 				color: categories.color,
+				icon: categories.icon,
 				parentId: categories.parentId,
 			})
 			.from(categories),

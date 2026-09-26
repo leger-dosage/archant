@@ -64,7 +64,7 @@ const category = (
 	id: string,
 	kind: CashFlowCategory["kind"] = "expense",
 	parentId: string | null = null,
-): CashFlowCategory => ({ id, name: id, kind, color: `#${id}`, parentId });
+): CashFlowCategory => ({ id, name: id, kind, color: `#${id}`, icon: "tag", parentId });
 
 const row = (categoryId: string | null, amount: number): CashFlowRow => ({
 	categoryId,
@@ -84,7 +84,14 @@ describe("cashFlowBreakdown", () => {
 
 		expect(result.expenses).toBe(-5000);
 		expect(result.lines.expense).toEqual([
-			{ categoryId: "Courses", name: "Courses", color: "#Courses", amount: -5000, share: 1 },
+			{
+				categoryId: "Courses",
+				name: "Courses",
+				color: "#Courses",
+				icon: "tag",
+				amount: -5000,
+				share: 1,
+			},
 		]);
 	});
 
@@ -97,7 +104,14 @@ describe("cashFlowBreakdown", () => {
 			lines: {
 				income: [],
 				expense: [
-					{ categoryId: "Courses", name: "Courses", color: "#Courses", amount: -6000, share: 1 },
+					{
+						categoryId: "Courses",
+						name: "Courses",
+						color: "#Courses",
+						icon: "tag",
+						amount: -6000,
+						share: 1,
+					},
 				],
 			},
 		});
@@ -110,8 +124,12 @@ describe("cashFlowBreakdown", () => {
 			income: 10000,
 			expenses: -4000,
 			lines: {
-				income: [{ categoryId: null, name: null, color: null, amount: 10000, share: 1 }],
-				expense: [{ categoryId: null, name: null, color: null, amount: -4000, share: 1 }],
+				income: [
+					{ categoryId: null, name: null, color: null, icon: null, amount: 10000, share: 1 },
+				],
+				expense: [
+					{ categoryId: null, name: null, color: null, icon: null, amount: -4000, share: 1 },
+				],
 			},
 		});
 	});
@@ -120,7 +138,7 @@ describe("cashFlowBreakdown", () => {
 		const result = cashFlowBreakdown([row("gone", -1000)], all);
 
 		expect(result.lines.expense).toEqual([
-			{ categoryId: null, name: null, color: null, amount: -1000, share: 1 },
+			{ categoryId: null, name: null, color: null, icon: null, amount: -1000, share: 1 },
 		]);
 	});
 

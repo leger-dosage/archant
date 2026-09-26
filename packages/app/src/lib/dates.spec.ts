@@ -5,7 +5,7 @@ import {
 	dayHeading,
 	frenchToIso,
 	isoToFrench,
-	monthHeading,
+	ofMonth,
 	toIsoMonth,
 	yearsAgo,
 } from "./dates.ts";
@@ -78,9 +78,11 @@ describe("addMonthsTo", () => {
 	});
 });
 
-describe("monthHeading", () => {
-	it("names the month and year, capitalised", () => {
-		expect(monthHeading("2026-08")).toBe("Août 2026");
-		expect(monthHeading("2027-01")).toBe("Janvier 2027");
+describe("ofMonth", () => {
+	it("follows a noun, eliding before a vowel", () => {
+		expect(ofMonth("2026-09")).toBe("de septembre 2026");
+		expect(ofMonth("2024-04")).toBe("d'avril 2024");
+		expect(ofMonth("2024-08")).toBe("d'août 2024");
+		expect(ofMonth("2024-10")).toBe("d'octobre 2024");
 	});
 });

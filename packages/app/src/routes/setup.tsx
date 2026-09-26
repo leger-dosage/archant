@@ -30,7 +30,7 @@ const setupFormSchema = setupSchema
 
 type SetupFormValues = z.input<typeof setupFormSchema>;
 
-const API_FIELDS = ["email", "password"] as const;
+const API_FIELDS = ["name", "email", "password"] as const;
 
 export const Route = createFileRoute("/setup")({
 	beforeLoad: async ({ context }) => {
@@ -65,7 +65,7 @@ function SetupPage() {
 	const queryClient = useQueryClient();
 	const form = useForm<SetupFormValues>({
 		resolver: zodResolver(setupFormSchema),
-		defaultValues: { email: "", password: "", confirmPassword: "" },
+		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
 	});
 	const { errors, isSubmitting } = form.formState;
 
@@ -73,9 +73,9 @@ function SetupPage() {
 		document.title = t("app.pageTitle", { page: t("setup.title"), app: t("app.name") });
 	}, [t]);
 
-	const submit = form.handleSubmit(async ({ email, password }) => {
+	const submit = form.handleSubmit(async ({ name, email, password }) => {
 		try {
-			await unwrap(api.setup.$post({ json: { email, password } }));
+			await unwrap(api.setup.$post({ json: { name, email, password } }));
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 
@@ -128,6 +128,20 @@ function SetupPage() {
 				</CardHeader>
 				<CardContent>
 					<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="name">{t("setup.firstName")}</Label>
+							<Input
+								id="name"
+								autoComplete="given-name"
+								aria-invalid={errors.name !== undefined}
+								{...describedBy("name", "name-hint")}
+								{...form.register("name")}
+							/>
+							<p id="name-hint" className="text-xs text-muted-foreground">
+								{t("setup.firstNameHint")}
+							</p>
+							<FieldMessage id="name-error" error={errors.name} />
+						</div>
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="email">{t("setup.email")}</Label>
 							<Input

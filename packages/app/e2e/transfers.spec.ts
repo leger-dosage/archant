@@ -314,11 +314,15 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	);
 
 	await page.goto("/?month=2024-06");
-	const expenses = page
-		.getByRole("region", { name: "Juin 2024" })
-		.getByRole("group", { name: "Dépenses", exact: true });
-	await expect(expenses).toContainText(euros(-120_000));
-	await expect(expenses.getByRole("link", { name: housing.name })).toContainText(euros(-120_000));
+	const june = page.getByRole("region", { name: "Flux de juin 2024" });
+	await expect(june.getByRole("group", { name: "Dépenses", exact: true })).toContainText(
+		euros(-120_000),
+	);
+	await expect(
+		june
+			.getByRole("list", { name: "Dépenses par catégorie" })
+			.getByRole("link", { name: housing.name }),
+	).toContainText(euros(-120_000));
 
 	// Dissociated, the outflow is a standard row that keeps its category.
 	await api.unlinkTransfer(outId);
@@ -391,7 +395,7 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await page.goto("/?month=2024-07");
 	await expect(
 		page
-			.getByRole("region", { name: "Juillet 2024" })
+			.getByRole("region", { name: "Flux de juillet 2024" })
 			.getByRole("group", { name: "Dépenses", exact: true }),
 	).toContainText(euros(-50_000));
 });

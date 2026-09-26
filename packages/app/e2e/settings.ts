@@ -24,6 +24,9 @@ export const TIME_ZONE = "Europe/Paris";
 /** The administrator the setup project creates through `/setup`. */
 export const ADMIN = { email: "admin@archant.test", password: "mot de passe du test" } as const;
 
+/** The first name `setup` gives the administrator, which the dashboard greets. */
+export const ADMIN_FIRST_NAME = "Camille";
+
 /**
  * The signed-in browser state the setup project saves and every other test
  * starts from. Gitignored: it holds a live session cookie.

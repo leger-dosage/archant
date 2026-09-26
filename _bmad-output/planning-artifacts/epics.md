@@ -1954,7 +1954,7 @@ So that one look tells me where the household stands this month.
 
 **Given** the dashboard with at least one account
 **When** it loads
-**Then** it opens with « Bonjour » followed by the first name when one is set, or « Bonjour » alone, then one muted sentence, with the two actions in the title bar
+**Then** it opens with « Bonjour » followed by the first name when one is set, or « Bonjour » alone, then one muted sentence, with « Ajouter un compte » in the title bar
 
 **Given** the net worth section
 **When** it renders a period
