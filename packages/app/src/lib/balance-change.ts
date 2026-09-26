@@ -1,11 +1,71 @@
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
+import { formatMoney, isCurrencyCode, minorUnitsOf } from "@archant/data/money";
 
 /** A change of balance: `+12,40 €` up, `−12,40 €` down, `0,00 €` flat. */
 export function formatSignedMoney(amount: MinorUnits, currency: string): string {
 	const formatted = formatMoney({ amount, currency });
 
 	return amount > 0 ? `+${formatted}` : formatted;
+}
+
+function isDecimalString(value: string): value is `${number}` {
+	return /^-?\d+(?:\.\d+)?$/u.test(value);
+}
+
+const compactFormats = new Map<string, Intl.NumberFormat>();
+
+function compactFormat(currency: string): Intl.NumberFormat {
+	let format = compactFormats.get(currency);
+
+	if (format === undefined) {
+		format = new Intl.NumberFormat("fr-FR", {
+			style: "currency",
+			currency,
+			notation: "compact",
+			maximumFractionDigits: 1,
+		});
+		compactFormats.set(currency, format);
+	}
+
+	return format;
+}
+
+/**
+ * A chart's axis label: `275 k€`, `1,2 M€`, `−3 k€`. The value is rebuilt as
+ * a decimal string, as `formatMoney` does, so no float division touches it.
+ */
+export function formatCompactMoney(amount: MinorUnits, currency: string): string {
+	const decimals = isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;
+	const digits = String(Math.abs(amount)).padStart(decimals + 1, "0");
+	const decimal =
+		decimals === 0 ? digits : `${digits.slice(0, -decimals)}.${digits.slice(-decimals)}`;
+	const exact = `${amount < 0 ? "-" : ""}${decimal}`;
+
+	if (!isDecimalString(exact)) {
+		throw new RangeError("Cannot format a non-integer amount.");
+	}
+
+	const parts = compactFormat(currency).formatToParts(exact);
+
+	return (
+		parts
+			// ICU puts a space between `k` and `€`; the design reads « 275 k€ ».
+			// A currency shown as its code, `k JPY`, keeps the space.
+			.filter((part, index) => {
+				const next = parts[index + 1];
+
+				return !(
+					part.type === "literal" &&
+					parts[index - 1]?.type === "compact" &&
+					next?.type === "currency" &&
+					!/^[A-Z]{3}$/u.test(next.value)
+				);
+			})
+			.map((part) => part.value)
+			.join("")
+			// CLDR's French minus is a hyphen; typography and DESIGN.md want U+2212.
+			.replace("-", "−")
+	);
 }
 
 const percentFormat = new Intl.NumberFormat("fr-FR", {

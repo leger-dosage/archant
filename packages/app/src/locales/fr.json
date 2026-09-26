@@ -46,14 +46,52 @@
 		"change": "{{change}} {{over}}",
 		"summary": "Patrimoine net : {{balance}}, {{change}} {{over}}.",
 		"leftOut": "Hors des totaux, faute de conversion : {{names}}.",
+		"greeting": "Bonjour",
+		"greetingWithName": "Bonjour {{name}}",
+		"intro": "Voici où en sont les finances du foyer.",
+		"introEmpty": "Archant est prêt. Il ne manque que vos comptes.",
 		"cashFlow": {
-			"thisMonth": "Ce mois-ci",
+			"title": "Flux {{ofMonth}}",
 			"previous": "Mois précédent",
 			"next": "Mois suivant",
 			"income": "Revenus",
 			"expenses": "Dépenses",
+			"savings": "Épargne du mois",
+			"side": "Répartition affichée",
+			"breakdown": {
+				"income": "Revenus par catégorie",
+				"expense": "Dépenses par catégorie"
+			},
+			"donut": {
+				"income_one": "Répartition des revenus {{ofMonth}} : {{total}} sur {{count}} catégorie.",
+				"income_other": "Répartition des revenus {{ofMonth}} : {{total}} sur {{count}} catégories.",
+				"expense_one": "Répartition des dépenses {{ofMonth}} : {{total}} sur {{count}} catégorie.",
+				"expense_other": "Répartition des dépenses {{ofMonth}} : {{total}} sur {{count}} catégories."
+			},
 			"uncategorised": "Sans catégorie",
+			"emptySide": {
+				"income": "Aucun revenu ce mois-ci.",
+				"expense": "Aucune dépense ce mois-ci."
+			},
 			"empty": "Aucune opération ce mois-ci."
+		},
+		"balanceSheet": {
+			"title": "Bilan",
+			"allAccounts": "Tous les comptes",
+			"legend": "Répartition par type de compte",
+			"accounts": "Comptes",
+			"types": {
+				"depository": "Comptes bancaires",
+				"investment": "Investissement",
+				"property": "Bien immobilier",
+				"vehicle": "Véhicule",
+				"credit_card": "Carte de crédit",
+				"loan": "Prêt"
+			}
+		},
+		"empty": {
+			"title": "Aucun compte pour l'instant",
+			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici."
 		}
 	},
 	"accounts": {
@@ -179,7 +217,7 @@
 		"summary": "Solde : {{balance}}, {{change}} {{over}}.",
 		"changeWithPercent": "{{amount}} ({{percent}})",
 		"empty": "Aucun solde sur cette période.",
-		"showData": "Voir les données",
+		"showData": "Voir le tableau",
 		"date": "Date",
 		"balance": "Solde"
 	},
@@ -1036,6 +1074,13 @@
 			"done": "La connexion à {{bank}} est supprimée."
 		}
 	},
+	"profile": {
+		"title": "Profil",
+		"description": "Le tableau de bord vous accueille par ce prénom. Laissé vide, il dit simplement « Bonjour ».",
+		"firstName": "Prénom",
+		"submit": "Enregistrer le prénom",
+		"saved": "Prénom enregistré."
+	},
 	"security": {
 		"title": "Sécurité",
 		"description": "Le mot de passe du compte administrateur. Le modifier ferme les sessions ouvertes sur les autres appareils.",
@@ -1048,6 +1093,8 @@
 	"setup": {
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
+		"firstName": "Prénom",
+		"firstNameHint": "Facultatif. Le tableau de bord vous accueille par ce prénom.",
 		"email": "Adresse e-mail",
 		"password": "Mot de passe",
 		"passwordHint": "Au moins 8 caractères.",

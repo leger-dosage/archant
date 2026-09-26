@@ -22,7 +22,8 @@ import { TRANSFER_COLOR } from "@/lib/transfers";
 /** What a tinted icon or a pill stands for. */
 export type TintSubject =
 	| { kind: "account"; type: AccountType }
-	| { kind: "transfer" }
+	/** The transfer indigo, on another icon where a screen needs one, such as the empty dashboard's bank. */
+	| { kind: "transfer"; icon?: LucideIcon }
 	| { kind: "uncategorised" }
 	| { kind: "merchant"; name: string }
 	| { kind: "category"; color: string; icon: CategoryIcon };
@@ -99,7 +100,7 @@ export function resolveTint(subject: TintSubject, mode: ResolvedTheme): Tint {
 			return colored(color, { icon }, mode);
 		}
 		case "transfer":
-			return colored(TRANSFER_COLOR, { icon: ArrowLeftRightIcon }, mode);
+			return colored(TRANSFER_COLOR, { icon: subject.icon ?? ArrowLeftRightIcon }, mode);
 		case "uncategorised":
 			return muted({ icon: CircleDashedIcon }, mode);
 		case "merchant": {

@@ -6221,13 +6221,20 @@ describe("GET /api/reports/net-worth", () => {
 	});
 });
 
-/** A line of the cash-flow breakdown, in the colour `category()` gives. */
+/** A line of the cash-flow breakdown, in the colour and icon `category()` gives. */
 const line = (
 	categoryId: string | null,
 	name: string | null,
 	amount: number,
 	share: number | null = 1,
-) => ({ categoryId, name, color: categoryId === null ? null : "#e99537", amount, share });
+) => ({
+	categoryId,
+	name,
+	color: categoryId === null ? null : "#e99537",
+	icon: categoryId === null ? null : "tag",
+	amount,
+	share,
+});
 
 /** The I/O matrix of Story 6.2, each test in its own database. */
 async function cashFlowOf(month: string) {

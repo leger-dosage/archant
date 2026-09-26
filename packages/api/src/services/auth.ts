@@ -2,10 +2,13 @@ import type { Logger } from "../lib/logger.ts";
 
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
 import { admin } from "better-auth/plugins";
 
 import type { Database } from "@archant/data/client";
 import { authAccounts, sessions, users, verifications } from "@archant/data/schema/auth";
+
+import { firstNameSchema } from "../schemas/setup.ts";
 
 export type AuthOptions = {
 	db: Database;
@@ -63,6 +66,31 @@ export function createAuth({ db, secret, baseURL, trustedProxies, logger }: Auth
 		// No public sign-up: the only user is the administrator setup creates.
 		emailAndPassword: { enabled: true, disableSignUp: true },
 		plugins: [admin({ defaultRole: "admin" })],
+		databaseHooks: {
+			user: {
+				update: {
+					// `/update-user` takes any string as a name; the security form's
+					// rule is enforced here too, so a hand-made request stores
+					// nothing the form would refuse. Every other update, such as a
+					// password change touching `updatedAt`, carries no name.
+					before: async (user) => {
+						if (user.name === undefined) {
+							return { data: user };
+						}
+
+						const parsed = firstNameSchema.safeParse(user.name);
+
+						if (!parsed.success) {
+							// Returning `false` would not do: `/update-user` then answers
+							// success with the refused name, having stored nothing.
+							throw APIError.fromStatus("BAD_REQUEST", { message: "The first name is invalid." });
+						}
+
+						return { data: { ...user, name: parsed.data } };
+					},
+				},
+			},
+		},
 		disabledPaths: ADMIN_PATHS,
 		// `x-forwarded-for` is rebuilt from the TCP peer before Better Auth sees
 		// it (lib/client-address.ts); this list is where its walk stops.

@@ -1,3 +1,4 @@
+import type { CategoryIcon } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { CategoryKind } from "@archant/data/schema/categories";
@@ -57,14 +58,16 @@ export type CashFlowCategory = {
 	name: string;
 	kind: CategoryKind;
 	color: string;
+	icon: CategoryIcon;
 	parentId: string | null;
 };
 
-/** One line of the breakdown; « Sans catégorie » has no id, name or colour. */
+/** One line of the breakdown; « Sans catégorie » has no id, name, colour or icon. */
 export type CashFlowLine = {
 	categoryId: string | null;
 	name: string | null;
 	color: string | null;
+	icon: CategoryIcon | null;
 	/** Signed: a refund lowers an expense line, which stays negative. */
 	amount: MinorUnits;
 	/** The line over its group's total, `null` when that total is zero. */
@@ -133,9 +136,10 @@ export function cashFlowBreakdown(
 				categoryId: entry.category.id,
 				name: entry.category.name,
 				color: entry.category.color,
+				icon: entry.category.icon,
 				amount: toMinorUnits(entry.amount),
 			})),
-		{ categoryId: null, name: null, color: null, amount: uncategorised },
+		{ categoryId: null, name: null, color: null, icon: null, amount: uncategorised },
 	];
 	const income = sortedWithShares(linesOf("income", toMinorUnits(uncategorisedIncome)));
 	const expense = sortedWithShares(linesOf("expense", toMinorUnits(uncategorisedExpense)));

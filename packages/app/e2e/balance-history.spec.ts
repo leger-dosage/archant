@@ -42,12 +42,12 @@ test("each period selects, and the summary names it", async ({ page, api }) => {
 	await expect(summary).toContainText("sur 1 mois");
 });
 
-test("« Voir les données » shows the series as a table", async ({ page, api }) => {
+test("« Voir le tableau » shows the series as a table", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(60) });
 	await api.addTransaction(account.id, { date: daysAgo(10), label: "Loyer", amount: "-100,00" });
 
 	await page.goto(`/accounts/${account.id}`);
-	const toggle = page.getByRole("button", { name: "Voir les données" });
+	const toggle = page.getByRole("button", { name: "Voir le tableau" });
 
 	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 	await toggle.click();

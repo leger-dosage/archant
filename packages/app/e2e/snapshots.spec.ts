@@ -73,7 +73,7 @@ test("a loan's snapshot sets what it owes, and its history follows from that dat
 	await expect(header(page, loan.name)).toContainText(euros(17_500_000));
 
 	await page.getByRole("tab", { name: "Opérations" }).click();
-	await page.getByRole("button", { name: "Voir les données" }).click();
+	await page.getByRole("button", { name: "Voir le tableau" }).click();
 	const table = page.getByRole("table");
 	await expect(table.getByRole("row").nth(1)).toContainText(euros(17_500_000));
 	await expect(table.getByRole("row", { name: dayRow(date) })).toContainText(euros(17_500_000));
@@ -105,7 +105,7 @@ test("a PEA's snapshot sets its value, and its history follows from that date", 
 	await expect(header(page, account.name)).toContainText(euros(2_630_000));
 
 	await page.getByRole("tab", { name: "Opérations" }).click();
-	await page.getByRole("button", { name: "Voir les données" }).click();
+	await page.getByRole("button", { name: "Voir le tableau" }).click();
 	const table = page.getByRole("table");
 	await expect(table.getByRole("row").nth(1)).toContainText(euros(2_630_000));
 	await expect(table.getByRole("row", { name: dayRow(date) })).toContainText(euros(2_630_000));
@@ -140,7 +140,7 @@ test("a home's new estimated value sets its balance and history, with no transac
 
 	await page.getByRole("tab", { name: "Opérations" }).click();
 	await expect(page.getByText("Aucune opération.")).toBeVisible();
-	await page.getByRole("button", { name: "Voir les données" }).click();
+	await page.getByRole("button", { name: "Voir le tableau" }).click();
 	const table = page.getByRole("table");
 	await expect(table.getByRole("row").nth(1)).toContainText(euros(33_500_000));
 	await expect(table.getByRole("row", { name: dayRow(date) })).toContainText(euros(33_500_000));

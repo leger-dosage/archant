@@ -118,9 +118,12 @@ const monthYear = new Intl.DateTimeFormat("fr-FR", {
 	timeZone: "UTC",
 });
 
-/** `2026-08` as « Août 2026 », capitalised as a heading. */
-export function monthHeading(month: string): string {
+/**
+ * `2026-09` as « de septembre 2026 », to follow a noun: « Flux de septembre
+ * 2026 ». Avril, août and octobre elide: « d'avril 2024 ».
+ */
+export function ofMonth(month: string): string {
 	const text = monthYear.format(new Date(`${month}-01T00:00:00Z`));
 
-	return text.charAt(0).toLocaleUpperCase("fr-FR") + text.slice(1);
+	return /^[aeiouéâ]/u.test(text) ? `d'${text}` : `de ${text}`;
 }

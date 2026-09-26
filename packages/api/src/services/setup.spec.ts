@@ -65,7 +65,7 @@ describe("POST /api/setup", () => {
 		expect(response.status).toBe(201);
 		const { data } = createdBody.parse(await response.json());
 		await expect(usersOf(db)).resolves.toEqual([
-			{ email: "admin@example.test", name: "Admin", role: "admin" },
+			{ email: "admin@example.test", name: "", role: "admin" },
 		]);
 		await expect(setupRowsOf(db)).resolves.toHaveLength(1);
 		const closed = await app.request("/api/setup");
@@ -75,6 +75,20 @@ describe("POST /api/setup", () => {
 		const logs = logLines.join("\n");
 		expect(logs).toContain(data.id);
 		expect(logs).not.toMatch(/admin@example|correct horse/iu);
+	});
+
+	it.each([
+		[undefined, ""],
+		["  ", ""],
+		[" Camille ", "Camille"],
+		["x".repeat(60), "x".repeat(60)],
+	])("stores the first name %j as %j", async (name, stored) => {
+		const { app, db } = await freshApp();
+
+		const response = await postSetup(app, { ...ADMIN, ...(name === undefined ? {} : { name }) });
+
+		expect(response.status).toBe(201);
+		await expect(usersOf(db)).resolves.toMatchObject([{ name: stored }]);
 	});
 
 	it("answers FORBIDDEN once a user exists, and writes nothing", async () => {
@@ -108,6 +122,7 @@ describe("POST /api/setup", () => {
 		[{ ...ADMIN, password: "x".repeat(129) }, "password", "password_too_long"],
 		[{ ...ADMIN, email: "admin" }, "email", "invalid_email"],
 		[{ ...ADMIN, email: " " }, "email", "too_small"],
+		[{ ...ADMIN, name: "x".repeat(61) }, "name", "too_big"],
 	])("refuses %j with its field code and writes nothing", async (body, path, code) => {
 		const { app, db } = await freshApp();
 

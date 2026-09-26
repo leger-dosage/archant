@@ -6,11 +6,11 @@ import type { TooltipContentProps } from "recharts";
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { BALANCE_PERIODS } from "@archant/api/schemas/balances";
-import { formatMoney } from "@archant/data/money";
+import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -27,12 +27,14 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorCodeOf } from "@/lib/api";
 import {
+	formatCompactMoney,
 	formatSignedMoney,
 	formatSignedPercent,
 	formatTableDate,
 	formatTick,
 	formatTooltipDate,
 } from "@/lib/balance-change";
+import { axisTicks } from "@/lib/chart-axis";
 
 /**
  * What the chart draws: an account's balance history or the household's net
@@ -82,7 +84,7 @@ function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: S
 	const change = changeText(t, history.change, history.currency);
 
 	return (
-		<p className="text-sm">
+		<p className="text-sm text-muted-foreground">
 			{t(summaryKey, {
 				balance: formatMoney({ amount: last.balance, currency: history.currency }),
 				change,
@@ -118,30 +120,48 @@ function BalanceTooltip({
 }
 
 function Chart({ history, valueLabel }: { history: ChartHistory; valueLabel: string }) {
+	const gradientId = useId();
 	const config = {
-		balance: { label: valueLabel, color: "var(--chart-1)" },
+		balance: { label: valueLabel, color: "var(--accent-brand)" },
 	} satisfies ChartConfig;
 	const byDate = new Map(history.points.map((point) => [point.date, point]));
 	const longRange = history.points.length > LONG_RANGE_POINTS;
+	const ticks = axisTicks(history.points.map((point) => point.balance));
 
 	return (
 		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHT}`}>
 			{/* Arrow keys move the tooltip cursor one day at a time. */}
-			<LineChart
+			<AreaChart
 				accessibilityLayer
 				data={history.points}
-				margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+				margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
 			>
-				{/* No grid: the axis line is the one faint baseline. */}
+				<defs>
+					<linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0%" stopColor="var(--color-balance)" stopOpacity={0.14} />
+						<stop offset="100%" stopColor="var(--color-balance)" stopOpacity={0} />
+					</linearGradient>
+				</defs>
+				<CartesianGrid vertical={false} stroke="var(--grid)" />
 				<XAxis
 					dataKey="date"
 					tickLine={false}
-					axisLine={{ stroke: "var(--border)" }}
+					axisLine={false}
 					tickMargin={8}
 					minTickGap={32}
 					tickFormatter={(value: string) => formatTick(value, longRange)}
 				/>
-				<YAxis hide domain={["dataMin", "dataMax"]} />
+				<YAxis
+					domain={[ticks.at(0) ?? "auto", ticks.at(-1) ?? "auto"]}
+					ticks={ticks}
+					tickLine={false}
+					axisLine={false}
+					tickMargin={4}
+					width={64}
+					tickFormatter={(value: number) =>
+						formatCompactMoney(toMinorUnits(value), history.currency)
+					}
+				/>
 				<ChartTooltip
 					cursor={{ stroke: "var(--border)" }}
 					isAnimationActive={false}
@@ -154,17 +174,18 @@ function Chart({ history, valueLabel }: { history: ChartHistory; valueLabel: str
 						/>
 					)}
 				/>
-				<Line
+				<Area
 					dataKey="balance"
 					type="linear"
 					stroke="var(--color-balance)"
-					strokeWidth={2}
+					strokeWidth={1.5}
+					fill={`url(#${CSS.escape(gradientId)})`}
 					// A lone point, such as an account opened today, draws no line.
 					dot={history.points.length === 1}
 					activeDot={{ r: 4 }}
 					isAnimationActive={false}
 				/>
-			</LineChart>
+			</AreaChart>
 		</ChartContainer>
 	);
 }
@@ -280,6 +301,11 @@ export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartPr
 
 			{data !== undefined && data.points.length > 0 && (
 				<>
+					{showTable ? (
+						<DataTable history={data} id={tableId} valueLabel={valueLabel} />
+					) : (
+						<Chart history={data} valueLabel={valueLabel} />
+					)}
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<Summary history={data} summaryKey={summaryKey} />
 						<Button
@@ -292,11 +318,6 @@ export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartPr
 							{t("balances.showData")}
 						</Button>
 					</div>
-					{showTable ? (
-						<DataTable history={data} id={tableId} valueLabel={valueLabel} />
-					) : (
-						<Chart history={data} valueLabel={valueLabel} />
-					)}
 				</>
 			)}
 		</>
