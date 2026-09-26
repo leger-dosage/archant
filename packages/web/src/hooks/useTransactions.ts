@@ -83,13 +83,15 @@ export function useUpdateTransaction(accountId: string) {
 		mutationFn: async ({ id, input }: { id: string; input: TransactionPatchInput }) =>
 			(await unwrap(api.transactions[":id"].$patch({ param: { id }, json: input }))).data,
 		// The sheet can change the category, the merchant and the tags too, and
-		// with them their counts.
+		// with them their counts; a new label or merchant changes the series the
+		// sheet names.
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
 			]),
 	});
 }
@@ -262,11 +264,17 @@ export type BulkPatch = BulkUpdateInput["patch"];
 /** Sets a category or a merchant, adds tags or changes the exclusion on a selection. */
 export function useBulkUpdateTransactions() {
 	const invalidate = useInvalidateBulk();
+	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: async (input: BulkUpdateInput) =>
 			(await unwrap(api.transactions["bulk-update"].$post({ json: input }))).data,
-		onSuccess: () => invalidate({ balances: false }),
+		// A new merchant changes the series the sheet names.
+		onSuccess: () =>
+			Promise.all([
+				invalidate({ balances: false }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+			]),
 		onError: (error) => showErrorToast(errorCodeOf(error)),
 	});
 }

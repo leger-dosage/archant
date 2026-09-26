@@ -348,7 +348,9 @@
 			"title": "Récurrence",
 			"description": "Suivez cette opération comme un paiement qui revient chaque mois.",
 			"add": "Ajouter aux récurrences",
-			"added": "Opération ajoutée aux récurrences"
+			"added": "Opération ajoutée aux récurrences",
+			"member": "Cette opération fait partie de la récurrence « {{name}} ».",
+			"open": "Voir les récurrences"
 		}
 	},
 	"operations": {

@@ -3,6 +3,7 @@ import type { TransferCandidateData } from "@/hooks/useTransfers";
 import type { FieldError } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -40,7 +41,7 @@ import { Switch } from "@/components/ui/switch";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useDismissDuplicate, useMergeDuplicate } from "@/hooks/useDuplicates";
 import { useMerchants } from "@/hooks/useMerchants";
-import { useAddRecurring } from "@/hooks/useRecurring";
+import { useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
 import { useTags } from "@/hooks/useTags";
 import {
 	useCreateTransaction,
@@ -519,9 +520,10 @@ const rowById = (id: string) =>
 	document.querySelector<HTMLElement>(`[data-transaction-id="${CSS.escape(id)}"]`);
 
 /**
- * The sheet's « Récurrence » block: adds the saved transaction to the
- * recurring patterns, confirmed, at once and apart from the form, as the
- * transfer block does. Hidden on a transfer side the API refuses.
+ * The sheet's « Récurrence » block: names the series the saved transaction
+ * belongs to, with a link to the page, or else adds it to the recurring
+ * patterns, confirmed, at once and apart from the form, as the transfer
+ * block does. Hidden on a transfer side the API refuses.
  */
 function RecurringBlock({
 	transaction,
@@ -532,6 +534,7 @@ function RecurringBlock({
 	dirty: boolean;
 }) {
 	const { t } = useTranslation();
+	const series = useRecurringOfEntry(transaction.id);
 	const addRecurring = useAddRecurring();
 
 	return (
@@ -539,22 +542,37 @@ function RecurringBlock({
 			<h3 id="transaction-recurring-title" className="text-sm font-medium">
 				{t("transactions.recurring.title")}
 			</h3>
-			<div className="flex flex-col items-start gap-2">
-				<p className="text-sm text-muted-foreground">{t("transactions.recurring.description")}</p>
-				<Button
-					type="button"
-					variant="outline"
-					disabled={dirty || addRecurring.isPending}
-					onClick={() =>
-						addRecurring.mutate(transaction.id, {
-							onSuccess: () => toast.success(t("transactions.recurring.added")),
-							onError: (error) => showErrorToast(errorCodeOf(error)),
-						})
-					}
-				>
-					{t("transactions.recurring.add")}
-				</Button>
-			</div>
+			{series.isPending ? (
+				<Skeleton className="h-9 w-full" />
+			) : series.data ? (
+				<div className="flex flex-col items-start gap-2">
+					<p className="text-sm text-muted-foreground">
+						{t("transactions.recurring.member", {
+							name: series.data.merchantName ?? series.data.label,
+						})}
+					</p>
+					<Button variant="outline" asChild>
+						<Link to="/recurring">{t("transactions.recurring.open")}</Link>
+					</Button>
+				</div>
+			) : (
+				<div className="flex flex-col items-start gap-2">
+					<p className="text-sm text-muted-foreground">{t("transactions.recurring.description")}</p>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={dirty || addRecurring.isPending}
+						onClick={() =>
+							addRecurring.mutate(transaction.id, {
+								onSuccess: () => toast.success(t("transactions.recurring.added")),
+								onError: (error) => showErrorToast(errorCodeOf(error)),
+							})
+						}
+					>
+						{t("transactions.recurring.add")}
+					</Button>
+				</div>
+			)}
 		</section>
 	);
 }

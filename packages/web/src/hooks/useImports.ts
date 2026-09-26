@@ -1,6 +1,6 @@
 import type { InferResponseType } from "hono/client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ImportPreviewInput } from "@archant/api/schemas/imports";
 
@@ -53,12 +53,18 @@ export function useAccountImports(accountId: string, page: number) {
  */
 export function useRevertImport(accountId: string) {
 	const invalidate = useInvalidateAccount(accountId);
+	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: async (id: string) =>
 			(await unwrap(api.imports[":id"].revert.$post({ param: { id } }))).data,
 		// On failure too: a 409 means another tab reverted it, and the row must say so.
-		onSettled: invalidate,
+		// The server runs recurring detection after a revert, so series change too.
+		onSettled: () =>
+			Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+			]),
 	});
 }
 
@@ -84,10 +90,16 @@ export function usePreviewImport() {
 
 export function useConfirmImport(accountId: string) {
 	const invalidate = useInvalidateAccount(accountId);
+	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: async (id: string) =>
 			(await unwrap(api.imports[":id"].confirm.$post({ param: { id } }))).data,
-		onSuccess: invalidate,
+		// The server runs recurring detection after a confirm, so series change too.
+		onSuccess: () =>
+			Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+			]),
 	});
 }
