@@ -31,7 +31,7 @@ Modular monolith, ports and adapters. One Node process, three packages.
 - **Services** (`packages/api/src/services/`): use cases. They open database transactions, call the domain and the connectors, and are the only code that touches the database.
 - **Adapters in** (`packages/api/src/routes/`): Hono routes. They parse input with Zod, call one service function, and shape the envelope.
 - **Adapters out** (`packages/api/src/connectors/`): file parsers and bank connectors behind the connector port. Pure except for the bank connectors' HTTP calls.
-- **Interface** (`packages/web/`): a single-page app that talks to the API only through the typed client.
+- **Interface** (`packages/app/`): a single-page app that talks to the API only through the typed client.
 - **Data** (`packages/data/`): Drizzle schema, derived types, and isomorphic constants and helpers such as money and account types.
 
 There is no household entity: one running instance is one household.
@@ -40,8 +40,8 @@ There is no household entity: one running instance is one household.
 
 ```mermaid
 graph LR
-  web["@archant/web"] -->|"AppType from app.ts, schemas/"| api["api: app.ts, schemas/"]
-  web --> data["@archant/data"]
+  app["@archant/app"] -->|"AppType from app.ts, schemas/"| api["api: app.ts, schemas/"]
+  app --> data["@archant/data"]
   api --> routes["api/routes"]
   routes --> services["api/services"]
   services --> domain["api/domain"]
@@ -52,7 +52,7 @@ graph LR
   cli["api/cli"] --> services
 ```
 
-An arrow means "may import". The web package imports only `app.ts` for the `AppType` type and files under `schemas/`.
+An arrow means "may import". The app package imports only `app.ts` for the `AppType` type and files under `schemas/`.
 
 ### AD-1 — Layers and dependency direction [ADOPTED]
 
@@ -173,7 +173,7 @@ An arrow means "may import". The web package imports only `app.ts` for the `AppT
 
 - **Binds:** all routes; NFR7
 - **Prevents:** two list endpoints paginating differently, forms unable to show a field error, and the interface losing its types.
-- **Rule:** Every route lives under `/api`, returns `{ data }` or `{ error: { code, message, fields? } }`, where `fields` is `{ path, code }[]` for `VALIDATION_ERROR` only, built by one Zod-error mapper. Routes are mounted by chaining in `packages/api/src/app.ts`, which exports `AppType`; handlers are `async`, return errors with `c.json(..., status)` rather than `c.notFound()`, and the web package pins the same Hono version. Lists take `page` (from 1) and `pageSize` (default 50, max 200), return `{ items, page, pageSize, total }`, and order by `date DESC, created_at DESC, id DESC`. Bulk actions accept `ids` or the list's filter object. Import uploads are `multipart/form-data` with a 5 MB `bodyLimit`. Request schemas live in `packages/api/src/schemas/` and import only `zod` and `@archant/data`. Error codes are a closed union in `packages/api/src/lib/errors.ts`; the interface translates `errors.<CODE>`.
+- **Rule:** Every route lives under `/api`, returns `{ data }` or `{ error: { code, message, fields? } }`, where `fields` is `{ path, code }[]` for `VALIDATION_ERROR` only, built by one Zod-error mapper. Routes are mounted by chaining in `packages/api/src/app.ts`, which exports `AppType`; handlers are `async`, return errors with `c.json(..., status)` rather than `c.notFound()`, and the app package pins the same Hono version. Lists take `page` (from 1) and `pageSize` (default 50, max 200), return `{ items, page, pageSize, total }`, and order by `date DESC, created_at DESC, id DESC`. Bulk actions accept `ids` or the list's filter object. Import uploads are `multipart/form-data` with a 5 MB `bodyLimit`. Request schemas live in `packages/api/src/schemas/` and import only `zod` and `@archant/data`. Error codes are a closed union in `packages/api/src/lib/errors.ts`; the interface translates `errors.<CODE>`.
 
 ### AD-16 — Tests never reach the network
 
@@ -210,7 +210,7 @@ An arrow means "may import". The web package imports only `app.ts` for the `AppT
 | Interface to API | The client calls the relative base `/api`. In development, Vite proxies `/api` to port 8787, so there is no CORS and no build-time API URL. |
 | Interface state | Server state only through TanStack Query, keys from one `queryKeys` object per resource. List filters live in URL search params validated by TanStack Router. |
 | Interface text | i18next, French as the only locale, keys by page (`accounts.form.name`). No literal visible string in a component. |
-| Components | shadcn/ui copied into `packages/web/src/components/ui/`, domain components in `components/`. Money is rendered by one `<Money>` component calling `formatMoney`. Visual decisions come from `DESIGN.md` and `EXPERIENCE.md` produced by `bmad-ux`. |
+| Components | shadcn/ui copied into `packages/app/src/components/ui/`, domain components in `components/`. Money is rendered by one `<Money>` component calling `formatMoney`. Visual decisions come from `DESIGN.md` and `EXPERIENCE.md` produced by `bmad-ux`. |
 
 ## Stack
 
@@ -298,7 +298,7 @@ packages/
     domain/            # balances/, keys, transfer-matching, cash-flow, recurring, statement, provider-date
     connectors/        # registry.ts, ofx/, csv/, qif/, enable-banking/
     lib/errors.ts
-  web/src/
+  app/src/
     routes/            # TanStack Router file routes
     components/ui/     # shadcn/ui
     components/

@@ -40,7 +40,7 @@ The three packages exist; each grows only with the features that need it.
 
 ```
 packages/
-  web/    Vite + React single-page app
+  app/    Vite + React single-page app
   api/    Hono server, REST and scheduled sync
   data/   Drizzle schema and database client shared by both
 docs/     Project documentation and decision records
@@ -63,7 +63,7 @@ Set `BETTER_AUTH_SECRET` in `.env`, from `openssl rand -base64 32`: the API refu
 
 ```bash
 pnpm api start:dev        # API on http://localhost:8787; migrates local.db at the repository root first
-pnpm web start:dev        # interface on http://localhost:5173, proxies /api to the API
+pnpm app start:dev        # interface on http://localhost:5173, proxies /api to the API
 ```
 
 The database is the SQLite file `local.db` at the repository root, which the API creates and migrates when it starts, so no container or database server is needed. Open http://localhost:5173 and create the administrator. `pnpm data migrate:local` applies migrations without starting the API. To connect a bank in development, see [Connecting a bank](docs/deployment.md#connecting-a-bank).
@@ -80,7 +80,7 @@ The database is the SQLite file `local.db` at the repository root, which the API
 | `pnpm test:e2e`     | Run the Playwright suite           |
 | `pnpm api <script>` | Run a script inside `@archant/api` |
 
-`pnpm web` and `pnpm data` do the same for the two other packages. `pnpm test:e2e` needs Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`.
+`pnpm app` and `pnpm data` do the same for the two other packages. `pnpm test:e2e` needs Chromium once per machine: `pnpm --filter @archant/app exec playwright install chromium`.
 
 ## Deploying
 

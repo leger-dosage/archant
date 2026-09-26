@@ -8,7 +8,7 @@ Self-hosted personal finance for one household. Bank data comes from Enable Bank
 pnpm install --frozen-lockfile
 cp .env.example .env   # then set BETTER_AUTH_SECRET: the API refuses to start without it
 pnpm api start:dev     # Hono server on http://localhost:8787, migrates local.db first
-pnpm web start:dev     # Vite dev server on http://localhost:5173, proxies /api
+pnpm app start:dev     # Vite dev server on http://localhost:5173, proxies /api
 ```
 
 `pnpm data migrate:local` migrates without starting the API; `pnpm data generate` writes a migration after a schema change. `pnpm api reset-password <email>` resets the administrator's password.
@@ -45,7 +45,7 @@ Three packages, and no fourth: a new feature finds its place in one of them, so 
 
 | Package         | Role                                                       | Runtime |
 | --------------- | ---------------------------------------------------------- | ------- |
-| `@archant/web`  | Vite + React SPA (interface)                               | Browser |
+| `@archant/app`  | Vite + React SPA (interface)                               | Browser |
 | `@archant/api`  | Hono server (REST + scheduled sync)                        | Node    |
 | `@archant/data` | Drizzle schema and derived types, shared by the two others | —       |
 
@@ -96,11 +96,11 @@ Vitest for unit and integration tests, Playwright for end-to-end. Coverage is ex
 
 No test reaches the network. An unmocked request fails the test that sent it, naming the URL.
 
-End-to-end tests live in `packages/web/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/web exec playwright install chromium`. `pnpm test:e2e` builds the interface, then starts one server on port 8788 that serves it beside the API, as the container does, against a fresh SQLite file the server migrates itself. It runs beside the dev servers without touching `local.db`. That server trusts loopback as a reverse proxy, so the `clientAddress` fixture can give each test its own `x-forwarded-for`, and with it its own sign-in rate-limit bucket. Tests create their own accounts through the API, then drive the interface by role and accessible name.
+End-to-end tests live in `packages/app/e2e/`. They need Chromium once per machine: `pnpm --filter @archant/app exec playwright install chromium`. `pnpm test:e2e` builds the interface, then starts one server on port 8788 that serves it beside the API, as the container does, against a fresh SQLite file the server migrates itself. It runs beside the dev servers without touching `local.db`. That server trusts loopback as a reverse proxy, so the `clientAddress` fixture can give each test its own `x-forwarded-for`, and with it its own sign-in rate-limit bucket. Tests create their own accounts through the API, then drive the interface by role and accessible name.
 
 Three Playwright projects run in order: `setup`, then `chromium`, then `password`. `password` holds the password-change test and runs last, because that change revokes every session of the single user, the saved administrator session included.
 
-Every end-to-end test runs signed in as the administrator that the `setup` Playwright project creates through `/setup`, the only moment the database has no user. Its session is saved to `packages/web/e2e/.auth/admin.json`, which is gitignored. A test that must start signed out sets an empty `storageState`. API specs sign in once per file through `packages/api/src/testing/auth.ts`, never once per test: Better Auth allows three sign-ins per ten seconds.
+Every end-to-end test runs signed in as the administrator that the `setup` Playwright project creates through `/setup`, the only moment the database has no user. Its session is saved to `packages/app/e2e/.auth/admin.json`, which is gitignored. A test that must start signed out sets an empty `storageState`. API specs sign in once per file through `packages/api/src/testing/auth.ts`, never once per test: Better Auth allows three sign-ins per ten seconds.
 
 ## Deployment
 

@@ -9,7 +9,7 @@ playwright-report
 **/playwright-report
 test-results
 **/test-results
-packages/web/e2e/.auth
+packages/app/e2e/.auth
 *.tsbuildinfo
 
 # A development `.env` would reach the build, and Vite inlines `VITE_*`

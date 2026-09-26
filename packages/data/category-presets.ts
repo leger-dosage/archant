@@ -1,7 +1,7 @@
 /**
  * What a category may look like. Names only, no components: the API validates
  * an icon without depending on `lucide-react`, and the interface maps each
- * name to its component (packages/web/src/lib/category-icons.ts).
+ * name to its component (packages/app/src/lib/category-icons.ts).
  */
 
 export const CATEGORY_NAME_MAX_LENGTH = 60;

@@ -66,7 +66,7 @@ const app = createApp({
 	...bankDepsFromEnv(env),
 });
 
-// Vite proxies `/api` here in development; see packages/web/vite.config.ts.
+// Vite proxies `/api` here in development; see packages/app/vite.config.ts.
 // With `WEB_DIST` set, as in the container, this port also serves the
 // interface. No SIGTERM handler: Node dies on the signal at once, and SQLite
 // in WAL mode keeps every committed transaction, while waiting for keep-alive
