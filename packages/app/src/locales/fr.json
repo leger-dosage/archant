@@ -291,6 +291,7 @@
 			"change": "Changer la catégorie",
 			"search": "Rechercher une catégorie",
 			"empty": "Aucune catégorie trouvée.",
+			"create": "Créer \"{{name}}\"",
 			"changed": "Catégorie modifiée",
 			"undo": "Annuler"
 		},
@@ -746,7 +747,8 @@
 	},
 	"merchants": {
 		"title": "Marchands",
-		"description": "Un marchand regroupe les libellés d'un même commerce. Créez-en un depuis une opération, en tapant son nom dans le champ Marchand.",
+		"description": "Un marchand regroupe les libellés d'un même commerce. Ajoutez-en un ici, ou depuis une opération ou une règle en tapant son nom.",
+		"add": "Ajouter un marchand",
 		"empty": "Aucun marchand pour l'instant.",
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
@@ -754,11 +756,14 @@
 		"rename": "Renommer",
 		"merge": "Fusionner",
 		"delete": "Supprimer",
-		"renameDialog": {
-			"title": "Renommer « {{name}} »",
-			"description": "Toutes les opérations de ce marchand afficheront le nouveau nom.",
+		"dialog": {
+			"addTitle": "Ajouter un marchand",
+			"addDescription": "Liez-le ensuite à des opérations, à la main ou par une règle.",
+			"renameTitle": "Renommer « {{name}} »",
+			"renameDescription": "Toutes les opérations de ce marchand afficheront le nouveau nom.",
 			"name": "Nom",
-			"action": "Renommer",
+			"rename": "Renommer",
+			"created": "Marchand « {{name}} » ajouté.",
 			"saved": "Marchand « {{name}} » renommé.",
 			"nameTaken": "Un marchand porte déjà ce nom."
 		},
@@ -783,18 +788,22 @@
 	},
 	"tags": {
 		"title": "Étiquettes",
-		"description": "Une étiquette suit un voyage ou un projet à travers les catégories. Créez-en une depuis une opération, en tapant son nom dans le champ Étiquettes.",
+		"description": "Une étiquette suit un voyage ou un projet à travers les catégories. Ajoutez-en une ici, ou depuis une opération ou une règle en tapant son nom.",
+		"add": "Ajouter une étiquette",
 		"empty": "Aucune étiquette pour l'instant.",
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
 		"actions": "Actions pour {{name}}",
 		"rename": "Renommer",
 		"delete": "Supprimer",
-		"renameDialog": {
-			"title": "Renommer « {{name}} »",
-			"description": "Toutes les opérations de cette étiquette afficheront le nouveau nom.",
+		"dialog": {
+			"addTitle": "Ajouter une étiquette",
+			"addDescription": "Posez-la ensuite sur des opérations, à la main ou par une règle.",
+			"renameTitle": "Renommer « {{name}} »",
+			"renameDescription": "Toutes les opérations de cette étiquette afficheront le nouveau nom.",
 			"name": "Nom",
-			"action": "Renommer",
+			"rename": "Renommer",
+			"created": "Étiquette « {{name}} » ajoutée.",
 			"saved": "Étiquette « {{name}} » renommée.",
 			"nameTaken": "Une étiquette porte déjà ce nom."
 		},

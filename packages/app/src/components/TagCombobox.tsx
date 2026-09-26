@@ -18,6 +18,7 @@ import {
 import { useCreateTag } from "@/hooks/useTags";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { isNewName } from "@/lib/name-key";
 import { matchesCommand } from "@/lib/shortcuts";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their
@@ -28,14 +29,6 @@ const CREATE = "create";
 function filterByName(value: string, search: string, keywords: string[] = []): number {
 	// « Créer » names exactly what was typed, so it always matches.
 	return value === CREATE || matchesCommand(keywords.join(" "), search) ? 1 : 0;
-}
-
-/**
- * The name the API would store, folded as it compares names: « Créer » is
- * only offered for a name no tag holds yet.
- */
-function nameKey(name: string): string {
-	return name.trim().normalize("NFC").toLocaleLowerCase("fr");
 }
 
 type TagComboboxProps = {
@@ -63,10 +56,11 @@ export function TagCombobox({ tags, value, onToggle }: TagComboboxProps) {
 	const typed = search.trim();
 	const canCreate =
 		!full &&
-		typed !== "" &&
-		// The API would refuse a longer name.
-		typed.normalize("NFC").length <= TAG_NAME_MAX_LENGTH &&
-		!tags.some((tag) => nameKey(tag.name) === nameKey(typed));
+		isNewName(
+			typed,
+			tags.map((tag) => tag.name),
+			TAG_NAME_MAX_LENGTH,
+		);
 
 	const create = () => {
 		if (createTag.isPending) {

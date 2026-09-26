@@ -653,3 +653,184 @@ test("the runs table pages to older runs", async ({ page, api }) => {
 	await expect(page).toHaveURL(/runsPage=2/u);
 	await expect(runRow(page, older)).toBeVisible();
 });
+
+// Story 11.12: the rule dialog's pickers create what they cannot find.
+
+/** Types `name` in the open picker's search, then picks « Créer "…" », offered last. */
+async function createFromPicker(page: Page, search: string, name: string) {
+	await page.getByRole("combobox", { name: search }).fill(name);
+	const options = page.getByRole("option");
+	await expect(options.last()).toHaveText(`Créer "${name}"`);
+	await options.last().click();
+}
+
+test("a merchant created from the action's picker is picked and read back in the list", async ({
+	page,
+}) => {
+	const marker = uniqueName("CB FNAC").replace(" ", "-");
+	const name = uniqueName("Fnac");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await choose(page, "Action 1", "Marchand");
+	await dialog(page).getByRole("button", { name: "Marchand", exact: true }).click();
+	await expect(page.getByRole("option", { name: "Sans marchand" })).toHaveCount(0);
+	await createFromPicker(page, "Rechercher un marchand", name);
+
+	await expect(dialog(page).getByRole("button", { name: "Marchand", exact: true })).toHaveText(
+		name,
+	);
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(
+		ruleRow(page, `Si Libellé contient ${marker}, alors Marchand ${name}`),
+	).toBeVisible();
+});
+
+test("a category created from the action's picker lands at the top of Dépenses", async ({
+	page,
+}) => {
+	const marker = uniqueName("CB CINEMA").replace(" ", "-");
+	const name = uniqueName("Cinéma");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await createFromPicker(page, "Rechercher une catégorie", name);
+
+	await expect(dialog(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveText(
+		name,
+	);
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(
+		ruleRow(page, `Si Libellé contient ${marker}, alors Catégorie ${name}`),
+	).toBeVisible();
+
+	await page.goto("/settings/categories");
+	const expenses = page.getByRole("region", { name: "Dépenses", exact: true });
+	// A top-level row sits in the group's own list, not in a parent's nested one.
+	await expect(
+		expenses
+			.locator(":scope > ul > li > div")
+			.getByRole("button", { name: `Actions pour ${name}`, exact: true }),
+	).toBeVisible();
+});
+
+test("a tag created from the condition's picker is picked and read back in the list", async ({
+	page,
+	api,
+}) => {
+	const category = await api.createCategory();
+	const name = uniqueName("Vacances");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await choose(page, "Champ de la condition 1", "Étiquette");
+	await dialog(page).getByRole("button", { name: "Valeur de la condition 1", exact: true }).click();
+	await createFromPicker(page, "Rechercher une étiquette", name);
+
+	await expect(
+		dialog(page).getByRole("button", { name: "Valeur de la condition 1", exact: true }),
+	).toHaveText(name);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: category.name, exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(
+		ruleRow(page, `Si Étiquette est ${name}, alors Catégorie ${category.name}`),
+	).toBeVisible();
+});
+
+test("a name already held in another case offers no « Créer » in the rule's pickers", async ({
+	page,
+	api,
+}) => {
+	const merchant = await api.createMerchant(uniqueName("Decathlon"));
+	const category = await api.createCategory();
+	const tag = await api.createTag(uniqueName("Sport"));
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page
+		.getByRole("combobox", { name: "Rechercher une catégorie" })
+		.fill(category.name.toUpperCase());
+	await expect(page.getByRole("option", { name: category.name, exact: true })).toBeVisible();
+	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+	await page.keyboard.press("Escape");
+
+	await choose(page, "Action 1", "Marchand");
+	await dialog(page).getByRole("button", { name: "Marchand", exact: true }).click();
+	await page
+		.getByRole("combobox", { name: "Rechercher un marchand" })
+		.fill(merchant.name.toUpperCase());
+	await expect(page.getByRole("option", { name: merchant.name, exact: true })).toBeVisible();
+	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+	await page.keyboard.press("Escape");
+
+	await choose(page, "Champ de la condition 1", "Étiquette");
+	await dialog(page).getByRole("button", { name: "Valeur de la condition 1", exact: true }).click();
+	await page
+		.getByRole("combobox", { name: "Rechercher une étiquette" })
+		.fill(tag.name.toUpperCase());
+	await expect(page.getByRole("option", { name: tag.name, exact: true })).toBeVisible();
+	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+});
+
+for (const refused of [
+	{
+		path: "merchants",
+		field: "Marchand",
+		search: "Rechercher un marchand",
+		placeholder: "Choisir un marchand",
+	},
+	{
+		path: "categories",
+		field: "Catégorie",
+		search: "Rechercher une catégorie",
+		placeholder: "Choisir une catégorie",
+	},
+	{
+		path: "tags",
+		field: "Ajouter une étiquette",
+		search: "Rechercher une étiquette",
+		placeholder: "Choisir une étiquette",
+	},
+] as const) {
+	test(`a ${refused.path} creation the server refuses shows a destructive toast and keeps the picker open`, async ({
+		page,
+	}) => {
+		await page.route(`**/api/${refused.path}`, (route) =>
+			route.request().method() === "POST"
+				? route.fulfill({
+						status: 500,
+						json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong." } },
+					})
+				: route.continue(),
+		);
+		const name = uniqueName("Darty");
+		await visit(page);
+
+		await page.getByRole("button", { name: "Ajouter une règle" }).click();
+		if (refused.field !== "Catégorie") {
+			await choose(page, "Action 1", refused.field);
+		}
+		const button = dialog(page).getByRole("button", { name: refused.field, exact: true });
+		await button.click();
+		await createFromPicker(page, refused.search, name);
+
+		await expect(
+			page
+				.locator("[data-sonner-toast]")
+				.filter({ hasText: "Une erreur inattendue s'est produite." }),
+		).toBeVisible();
+		await expect(page.getByRole("option", { name: `Créer "${name}"` })).toBeVisible();
+		await expect(button).toHaveText(refused.placeholder);
+	});
+}

@@ -30,19 +30,12 @@ import { ApiError } from "@/lib/api";
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { newCategory } from "@/lib/new-category";
 
 const FIELD_NAMES = ["name", "kind", "color", "icon", "parentId"] as const;
 
 // Radix Select refuses an empty value, so « no parent » needs a token of its own.
 const NO_PARENT = "none";
-
-const defaults = (): CreateCategoryInput => ({
-	name: "",
-	kind: "expense",
-	color: CATEGORY_COLORS[0],
-	icon: "tag",
-	parentId: null,
-});
 
 const valuesOf = (category: CategoryData): CreateCategoryInput => ({
 	name: category.name,
@@ -89,7 +82,7 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 	const updateCategory = useUpdateCategory();
 	const form = useForm<CreateCategoryInput>({
 		resolver: zodResolver(createCategorySchema),
-		defaultValues: category === undefined ? defaults() : valuesOf(category),
+		defaultValues: category === undefined ? newCategory() : valuesOf(category),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const kind = useController({ control: form.control, name: "kind" });
@@ -117,7 +110,7 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 
 	useEffect(() => {
 		if (open) {
-			form.reset(latest.current === undefined ? defaults() : valuesOf(latest.current));
+			form.reset(latest.current === undefined ? newCategory() : valuesOf(latest.current));
 		}
 	}, [open, categoryId, form]);
 

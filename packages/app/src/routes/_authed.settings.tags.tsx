@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { RenameTagDialog } from "@/components/RenameTagDialog";
+import { TagDialog } from "@/components/TagDialog";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -31,7 +31,7 @@ type Action = "rename" | "delete";
  * mid-animation. An id, not the tag: the dialog reads it from the current
  * list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: Action; id: string };
+type Opened = { action: "create" } | { action: Action; id: string };
 
 function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) => void }) {
 	const { t } = useTranslation();
@@ -62,8 +62,8 @@ function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) =>
 }
 
 /**
- * Tags are created from a transaction, by typing a new name in its combobox;
- * this page renames and deletes them.
+ * Creates, renames and deletes tags. A transaction's or a rule's combobox
+ * creates one too, by typing a new name.
  */
 function TagsPage() {
 	const { t } = useTranslation();
@@ -72,9 +72,12 @@ function TagsPage() {
 	const [opened, setOpened] = useState<Opened | null>(null);
 	const [open, setOpen] = useState(false);
 	const list = tags.data ?? [];
-	const tag = opened === null ? undefined : list.find((candidate) => candidate.id === opened.id);
+	const tag =
+		opened === null || opened.action === "create"
+			? undefined
+			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && tag === undefined;
+	const gone = opened !== null && opened.action !== "create" && tag === undefined;
 
 	useEffect(() => {
 		if (gone) {
@@ -82,6 +85,11 @@ function TagsPage() {
 			setOpened(null);
 		}
 	}, [gone]);
+
+	const show = (next: Opened) => {
+		setOpened(next);
+		setOpen(true);
+	};
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("tags.title"), app: t("app.name") });
@@ -98,9 +106,12 @@ function TagsPage() {
 
 	return (
 		<div className="flex max-w-2xl flex-col gap-6">
-			<div className="flex flex-col gap-1">
-				<h2 className="text-lg font-semibold">{t("tags.title")}</h2>
-				<p className="text-sm text-muted-foreground">{t("tags.description")}</p>
+			<div className="flex items-start justify-between gap-4">
+				<div className="flex flex-col gap-1">
+					<h2 className="text-lg font-semibold">{t("tags.title")}</h2>
+					<p className="text-sm text-muted-foreground">{t("tags.description")}</p>
+				</div>
+				<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>
 			</div>
 
 			{tags.isPending && (
@@ -121,25 +132,24 @@ function TagsPage() {
 
 			{tags.data !== undefined &&
 				(list.length === 0 ? (
-					<p className="text-sm text-muted-foreground">{t("tags.empty")}</p>
+					<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
+						<p className="text-muted-foreground">{t("tags.empty")}</p>
+						<Button variant="outline" onClick={() => show({ action: "create" })}>
+							{t("tags.add")}
+						</Button>
+					</div>
 				) : (
 					<ul aria-label={t("tags.title")} className="divide-y">
 						{list.map((item) => (
 							<li key={item.id}>
-								<TagRow
-									tag={item}
-									onAction={(action) => {
-										setOpened({ action, id: item.id });
-										setOpen(true);
-									}}
-								/>
+								<TagRow tag={item} onAction={(action) => show({ action, id: item.id })} />
 							</li>
 						))}
 					</ul>
 				))}
 
-			{opened?.action === "rename" && tag !== undefined && (
-				<RenameTagDialog open={open} onOpenChange={setOpen} tag={tag} />
+			{(opened?.action === "create" || (opened?.action === "rename" && tag !== undefined)) && (
+				<TagDialog open={open} onOpenChange={setOpen} tag={tag} />
 			)}
 			{opened?.action === "delete" && tag !== undefined && (
 				<ConfirmDialog

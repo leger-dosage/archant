@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 4.4: tag management under « Réglages ». One database serves the
+// Stories 4.4 and 11.12: tag management under « Réglages ». One database serves the
 // whole run, so each test works on tags of its own.
 
 const PAGE = "/settings/tags";
@@ -70,4 +70,56 @@ test("deleting a used tag, once confirmed, takes it off its rows", async ({ page
 	await expect(tagRow(page, tag.name)).toHaveCount(0);
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).not.toContainText(tag.name);
+});
+
+test("a tag added from the header is listed with no transaction", async ({ page }) => {
+	const name = uniqueName("Voyage");
+
+	await page.goto(PAGE);
+	// The header's, first: an empty list shows a second one below.
+	await page.getByRole("button", { name: "Ajouter une étiquette", exact: true }).first().click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter une étiquette" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("button", { name: "Ajouter une étiquette", exact: true }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(
+		page.locator("[data-sonner-toast]").filter({ hasText: `Étiquette « ${name} » ajoutée.` }),
+	).toBeVisible();
+	await expect(tagRow(page, name)).toContainText("0 opération");
+});
+
+test("a tag name held in another case keeps the dialog open with the error under the field", async ({
+	page,
+	api,
+}) => {
+	const existing = await api.createTag(uniqueName("Voyage"));
+	const upper = existing.name.toUpperCase();
+
+	await page.goto(PAGE);
+	await page.getByRole("button", { name: "Ajouter une étiquette", exact: true }).first().click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter une étiquette" });
+	await dialog.getByLabel("Nom").fill(upper);
+	await dialog.getByRole("button", { name: "Ajouter une étiquette", exact: true }).click();
+
+	await expect(dialog.getByText("Une étiquette porte déjà ce nom.")).toBeVisible();
+	await expect(dialog.getByLabel("Nom")).toHaveAttribute("aria-invalid", "true");
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(tagRow(page, existing.name)).toBeVisible();
+	await expect(tagRow(page, upper)).toHaveCount(0);
+});
+
+test("an empty tag list says so and offers the button that adds one", async ({ page }) => {
+	// The shared database already holds other tests' tags; the empty state
+	// is what the API's empty list looks like.
+	await page.route("**/api/tags", (route) =>
+		route.request().method() === "GET" ? route.fulfill({ json: { data: [] } }) : route.continue(),
+	);
+
+	await page.goto(PAGE);
+	const empty = page.getByText("Aucune étiquette pour l'instant.").locator("..");
+	await expect(empty).toBeVisible();
+	await empty.getByRole("button", { name: "Ajouter une étiquette", exact: true }).click();
+
+	await expect(page.getByRole("dialog", { name: "Ajouter une étiquette" })).toBeVisible();
 });

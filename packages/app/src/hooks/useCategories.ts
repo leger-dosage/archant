@@ -47,7 +47,15 @@ export function useCreateCategory() {
 	return useMutation({
 		mutationFn: async (input: CreateCategoryInput) =>
 			(await unwrap(api.categories.$post({ json: input }))).data,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+		// Added at once, so a picker that created it shows its name before the
+		// list comes back.
+		onSuccess: (category) => {
+			queryClient.setQueryData<CategoryData[]>(queryKeys.categories.all, (list) =>
+				list === undefined ? list : [...list, category],
+			);
+
+			return queryClient.invalidateQueries({ queryKey: queryKeys.categories.all });
+		},
 	});
 }
 
