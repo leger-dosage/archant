@@ -14,10 +14,12 @@ import {
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryIcon } from "@archant/data/category-presets";
+import type { MinorUnits } from "@archant/data/money";
+import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { adjustToContrast } from "@/lib/contrast";
-import { TRANSFER_COLOR } from "@/lib/transfers";
+import { showsCategory, TRANSFER_COLOR } from "@/lib/transfers";
 
 /** What a tinted icon or a pill stands for. */
 export type TintSubject =
@@ -116,4 +118,30 @@ export function resolveTint(subject: TintSubject, mode: ResolvedTheme): Tint {
 	}
 
 	return colored(subject.color, { icon: CATEGORY_ICON_COMPONENTS[subject.icon] }, mode);
+}
+
+/**
+ * A transaction row's icon, first match: a transfer side that shows no
+ * category, then its category, then its merchant's first letter, else
+ * « Sans catégorie ». A spent loan payment shows its category, as its pill
+ * does. `category` and `merchantName` are `null` when absent or not loaded.
+ */
+export function rowSubject(
+	transaction: { amount: MinorUnits; transfer: { kind: TransferKind } | null },
+	category: { color: string; icon: CategoryIcon } | null,
+	merchantName: string | null,
+): TintSubject {
+	if (transaction.transfer !== null && !showsCategory(transaction.amount, transaction.transfer)) {
+		return { kind: "transfer" };
+	}
+
+	if (category !== null) {
+		return { kind: "category", color: category.color, icon: category.icon };
+	}
+
+	if (merchantName !== null) {
+		return { kind: "merchant", name: merchantName };
+	}
+
+	return { kind: "uncategorised" };
 }

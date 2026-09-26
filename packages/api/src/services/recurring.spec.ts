@@ -24,6 +24,7 @@ import {
 	addRecurringFromEntry,
 	detectRecurring,
 	listRecurring,
+	recurringEntryIds,
 	recurringOfEntry,
 	setRecurringStatus,
 } from "./recurring.ts";
@@ -1092,5 +1093,59 @@ describe("recurringOfEntry", () => {
 
 	it("answers NOT_FOUND for an unknown entry", async () => {
 		await expect(recurringOfEntry(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+const rowsOf = (ids: readonly string[]) =>
+	Promise.all(ids.map(async (id) => (await findTransaction(deps(), id))!));
+
+describe("recurringEntryIds", () => {
+	it("flags a row of a merchant's series on its account, whatever its amount", async () => {
+		const accountId = await account();
+		await temp.db
+			.insert(merchants)
+			.values({ id: "netflix", name: "Netflix", createdAt: 0, updatedAt: 0 });
+		const [first = ""] = await addRows(accountId, ["2026-08-28"], "NETFLIX.COM", -1399);
+		const [dearer = ""] = await addRows(accountId, ["2026-09-20"], "NFLX PAIEMENT", -1799);
+		await updateTransaction(deps(), first, { merchantId: "netflix" }, { origin: "user" });
+		await updateTransaction(deps(), dearer, { merchantId: "netflix" }, { origin: "user" });
+		const [bare = ""] = await addRows(accountId, ["2026-09-20"], "NETFLIX.COM", -1399);
+		await addRecurringFromEntry(deps(), first);
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([first, dearer, bare]))).resolves.toEqual(
+			new Set([first, dearer]),
+		);
+	});
+
+	it("flags a row by its normalised label when it has no merchant", async () => {
+		const accountId = await account();
+		await detectedBill(accountId);
+		const [later = ""] = await addRows(accountId, ["2026-09-21"], "prlv  edf", -7000);
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([later]))).resolves.toEqual(
+			new Set([later]),
+		);
+	});
+
+	it("leaves out a row whose only series is dismissed", async () => {
+		const accountId = await account();
+		const row = await detectedBill(accountId);
+		const [entryId = ""] = await addRows(accountId, ["2026-09-21"]);
+		await setStatus(row.id, "dismissed");
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([entryId]))).resolves.toEqual(new Set());
+	});
+
+	it("leaves out a row on another account than the series", async () => {
+		const withSeries = await account("Compte B");
+		const without = await account("Compte A");
+		await detectedBill(withSeries);
+		const [entryId = ""] = await addRows(without, ["2026-09-21"]);
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([entryId]))).resolves.toEqual(new Set());
+	});
+
+	it("reads nothing for an empty page", async () => {
+		await expect(recurringEntryIds(temp.db, [])).resolves.toEqual(new Set());
 	});
 });

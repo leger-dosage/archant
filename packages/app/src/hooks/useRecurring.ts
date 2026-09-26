@@ -26,11 +26,16 @@ export function useRecurringOfEntry(entryId: string) {
 	});
 }
 
-// A pattern is not a transaction: none of these writes touches the ledger.
+// None of these writes touches the ledger, but a list row shows « Récurrent »
+// from the series its account and key match, so the lists follow a change.
 function useInvalidateRecurring() {
 	const queryClient = useQueryClient();
 
-	return () => queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all });
+	return () =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+		]);
 }
 
 export function useDetectRecurring() {

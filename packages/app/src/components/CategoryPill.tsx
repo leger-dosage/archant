@@ -1,3 +1,5 @@
+import type { TintSubject } from "@/lib/tint";
+
 import { useTranslation } from "react-i18next";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
@@ -8,26 +10,17 @@ import { cn } from "@/lib/utils";
 
 type PillCategory = { name: string; color: string; icon: CategoryIcon };
 
-/**
- * DESIGN.md's category pill: the category's icon and name on its tint, the
- * text adjusted to stay readable on any row. Without a category, a muted
- * « Sans catégorie ».
- */
-export function CategoryPill({
-	category,
+function TintPill({
+	subject,
+	name,
 	className,
 }: {
-	category: PillCategory | null;
-	className?: string;
+	subject: TintSubject;
+	name: string;
+	className?: string | undefined;
 }) {
-	const { t } = useTranslation();
 	const mode = useResolvedTheme();
-	const tint = resolveTint(
-		category === null
-			? { kind: "uncategorised" }
-			: { kind: "category", color: category.color, icon: category.icon },
-		mode,
-	);
+	const tint = resolveTint(subject, mode);
 
 	return (
 		<span
@@ -45,7 +38,43 @@ export function CategoryPill({
 					style={{ color: tint.icon }}
 				/>
 			)}
-			<span className="truncate">{category?.name ?? t("transactions.category.none")}</span>
+			<span className="truncate">{name}</span>
 		</span>
 	);
+}
+
+/**
+ * DESIGN.md's category pill: the category's icon and name on its tint, the
+ * text adjusted to stay readable on any row. Without a category, a muted
+ * pill: « Sans catégorie », or `fallback` when the category is unknown.
+ */
+export function CategoryPill({
+	category,
+	fallback,
+	className,
+}: {
+	category: PillCategory | null;
+	fallback?: string;
+	className?: string;
+}) {
+	const { t } = useTranslation();
+
+	return category === null ? (
+		<TintPill
+			subject={{ kind: "uncategorised" }}
+			name={fallback ?? t("transactions.category.none")}
+			className={className}
+		/>
+	) : (
+		<TintPill
+			subject={{ kind: "category", color: category.color, icon: category.icon }}
+			name={category.name}
+			className={className}
+		/>
+	);
+}
+
+/** A transfer side's kind, in the transfer indigo, where a row shows its category. */
+export function TransferPill({ name, className }: { name: string; className?: string }) {
+	return <TintPill subject={{ kind: "transfer" }} name={name} className={className} />;
 }

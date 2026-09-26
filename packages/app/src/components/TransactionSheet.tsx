@@ -20,8 +20,8 @@ import { CategoryDot } from "@/components/CategoryDot";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { DuplicateDialog } from "@/components/DuplicateDialog";
-import { DuplicateFlag } from "@/components/DuplicateFlag";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
+import { StatusBadge } from "@/components/StatusBadge";
 import { TagCombobox } from "@/components/TagCombobox";
 import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
@@ -483,7 +483,7 @@ function DuplicateBlock({
 	return (
 		<section aria-labelledby="transaction-duplicate-title" className="flex flex-col gap-1.5">
 			<h3 id="transaction-duplicate-title" className="text-sm font-medium">
-				<DuplicateFlag />
+				<StatusBadge status="duplicate" />
 			</h3>
 			<p className="text-sm text-muted-foreground">{t("transactions.duplicate.description")}</p>
 			<div className="flex flex-wrap gap-2">

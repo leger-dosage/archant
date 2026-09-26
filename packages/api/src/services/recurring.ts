@@ -371,6 +371,49 @@ async function seriesOfTransaction(
 		);
 }
 
+/**
+ * The ids of `rows` a non-dismissed series holds, by `recurringOfEntry`'s
+ * rule: the series of the row's account and key, whatever its amount. One
+ * query for a whole page, never one per row.
+ */
+export async function recurringEntryIds(
+	db: Pick<ServiceDeps["db"], "select">,
+	rows: readonly { id: string; accountId: string; merchantId: string | null; label: string }[],
+): Promise<Set<string>> {
+	if (rows.length === 0) {
+		return new Set();
+	}
+
+	// A page holds at most a few hundred rows, so its accounts stay well below
+	// SQLite's bound-parameter cap.
+	const series = await db
+		.select({
+			accountId: recurringTransactions.accountId,
+			merchantId: recurringTransactions.merchantId,
+			labelKey: recurringTransactions.labelKey,
+		})
+		.from(recurringTransactions)
+		.where(
+			and(
+				inArray(recurringTransactions.accountId, [...new Set(rows.map((row) => row.accountId))]),
+				ne(recurringTransactions.status, "dismissed"),
+			),
+		);
+	const held = new Set(
+		series.map((row) => JSON.stringify([row.accountId, row.merchantId, row.labelKey])),
+	);
+
+	return new Set(
+		rows
+			.filter((row) => {
+				const key = seriesKeyOf(row);
+
+				return held.has(JSON.stringify([row.accountId, key.merchantId, key.labelKey]));
+			})
+			.map((row) => row.id),
+	);
+}
+
 async function transactionOf(deps: ServiceDeps, entryId: string) {
 	const transaction = await findTransaction(deps, entryId);
 
