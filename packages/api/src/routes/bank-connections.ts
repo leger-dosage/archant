@@ -10,10 +10,10 @@ import {
 	connectionParamSchema,
 	institutionsQuerySchema,
 	linkBankAccountsSchema,
+	saveBankCredentialsSchema,
 	startConnectionSchema,
 } from "../schemas/bank-connections.ts";
 import {
-	bankSetup,
 	completeConnection,
 	disconnectConnection,
 	linkBankAccounts,
@@ -21,21 +21,35 @@ import {
 	listConnections,
 	listInstitutions,
 	renewConnection,
-	requireBankConnector,
 	startConnection,
 } from "../services/bank-connections.ts";
+import {
+	bankSetup,
+	resolveBankConnector,
+	saveBankCredentials,
+} from "../services/bank-credentials.ts";
 import { syncConnection } from "../services/sync.ts";
 
 export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 	return (
 		new Hono()
 			// Always answers: the page reads it to name what is missing.
-			.get("/setup", (c) => c.json({ data: bankSetup(deps) }, 200))
-			// Registered after `/setup`, which answers without reaching it: every
-			// other route is refused before its input is even read.
+			.get("/setup", async (c) => c.json({ data: await bankSetup(deps) }, 200))
+			// Before the guard: it is how credentials come to exist at all.
+			.put(
+				"/credentials",
+				zValidator("json", saveBankCredentialsSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) => c.json({ data: await saveBankCredentials(deps, c.req.valid("json")) }, 200),
+			)
+			// Registered after `/setup` and `/credentials`, which answer without
+			// reaching it: every other route is refused before its input is even read.
 			.use(
 				createMiddleware(async (_c, next) => {
-					requireBankConnector(deps);
+					await resolveBankConnector(deps);
 					await next();
 				}),
 			)

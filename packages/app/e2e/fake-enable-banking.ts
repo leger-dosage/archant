@@ -9,7 +9,7 @@ import { TIME_ZONE } from "./settings.ts";
 
 /**
  * A stand-in for Enable Banking on loopback, so the suite never reaches the
- * network (AD-16). It serves what the API calls, `/aspsps`, `/auth`,
+ * network (AD-16). It serves what the API calls, `/application`, `/aspsps`, `/auth`,
  * `/sessions`, `DELETE /sessions/{id}` and `/accounts/{uid}/balances`, plus
  * the bank's consent page, which approves at once and
  * sends the browser back to `redirect_url` with a `code` and the `state`,
@@ -218,6 +218,8 @@ const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect 
 export async function startFakeEnableBanking(options: {
 	publicKey: KeyObject;
 	applicationId: string;
+	/** The one address the application lists, as registered in the portal. */
+	redirectUrl: string;
 }): Promise<{ url: string; close: () => void }> {
 	const pending = new Map<string, Pending>();
 	const codes = new Map<string, Pending>();
@@ -265,6 +267,17 @@ export async function startFakeEnableBanking(options: {
 
 			if (!tokenIsValid(request.headers.authorization, options.publicKey, options.applicationId)) {
 				json(response, 401, { code: 401, message: "Invalid token", error: "UNAUTHORIZED" });
+				return;
+			}
+
+			if (request.method === "GET" && url.pathname === "/application") {
+				json(response, 200, {
+					name: "Archant e2e",
+					kid: options.applicationId,
+					environment: "SANDBOX",
+					redirect_urls: [options.redirectUrl],
+					active: true,
+				});
 				return;
 			}
 

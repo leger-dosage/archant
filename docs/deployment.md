@@ -34,9 +34,9 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `TRUSTED_PROXIES`               | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                |
 | `APP_TIMEZONE`                  | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                             |
 | `LOG_LEVEL`                     | no       | pino level. Defaults to `info`.                                                                                                                    |
-| `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id. See [Connecting a bank](#connecting-a-bank).                                                                        |
-| `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM.                                                                                                  |
-| `ENCRYPTION_KEY`                | no       | Encrypts bank session ids at rest, base64 of 32 bytes.                                                                                             |
+| `ENCRYPTION_KEY`                | no       | Encrypts bank session ids and the Enable Banking key at rest, base64 of 32 bytes. See [Connecting a bank](#connecting-a-bank).                     |
+| `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                     |
+| `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                       |
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
 
 The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, and port 8787. The server runs as the unprivileged `node` user.
@@ -108,7 +108,7 @@ A backup older than the code is fine: the server migrates it at start. Moving fr
 
 ## Connecting a bank
 
-Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional: without `ENABLE_BANKING_APPLICATION_ID`, `ENABLE_BANKING_PRIVATE_KEY` and `ENCRYPTION_KEY`, the bank routes answer `503`, « Réglages » › « Banques » lists the missing variables under « La connexion bancaire n'est pas configurée », and everything else, file import included, works. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
+Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional, and set up from the interface: the server needs one variable, `ENCRYPTION_KEY`, and « Réglages » › « Banques » takes the Enable Banking application ID and its private key. Without `ENCRYPTION_KEY`, the bank routes answer `503`, the page names it under « La connexion bancaire n'est pas configurée », and everything else, file import included, works. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
 
 ### Sandbox or production
 
@@ -123,7 +123,7 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
 
 - Environment: Sandbox to try, Production for your own accounts. Production also asks for a description, a GDPR contact email, and privacy policy and terms URLs.
 - Name: shown to you on the consent screen, `Archant` will do.
-- Redirect URLs: Archant's address followed by `/settings/banks/callback`. That address is `BETTER_AUTH_URL` from a checkout, `ARCHANT_URL` for the container:
+- Redirect URLs: Archant's address followed by `/settings/banks/callback`. « Réglages » › « Banques » shows it with a copy button. That address is `BETTER_AUTH_URL` from a checkout, `ARCHANT_URL` for the container:
 
   | Where Archant runs           | Redirect URL to register                              |
   | ---------------------------- | ----------------------------------------------------- |
@@ -131,7 +131,7 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
   | The container, default       | `http://localhost:8787/settings/banks/callback`       |
   | The container behind a proxy | `https://archant.example.org/settings/banks/callback` |
 
-  Register every one you use. The bank sends the browser back there; any other URL makes Enable Banking refuse the connection, and Archant then shows the exact URL to register.
+  Register every one you use. The bank sends the browser back there; any other URL makes Enable Banking refuse the connection. Archant checks the list when the credentials are saved, and names the exact URL to register when it is missing.
 
 - Key: keep the default, which generates the key pair in the browser. Registering downloads the private key as `<application id>.pem`; keep that file. To bring your own key instead, generate it and upload the certificate:
 
@@ -140,23 +140,33 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
     -keyout private.pem -out public.crt
   ```
 
-### 2. Set the variables
+### 2. Set the encryption key
 
-The private key goes in base64, because a multi-line PEM does not survive every `.env` parser or hosting control panel. PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`) both work.
+`ENCRYPTION_KEY` encrypts each bank session, and the private key saved from the interface, with AES-256-GCM before they reach the database. Back it up apart from the database, so a leaked backup alone gives nobody access to your bank data. Losing the key, or changing it, leaves what it encrypted unreadable, and every bank must be connected again. Once no bank is connected, the page asks for the Enable Banking credentials again; while one still is, the page stays locked and disconnecting cannot revoke its session, a known limitation.
 
 ```bash
-export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
-# The file the panel downloaded, or private.pem if you brought your own key.
-export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pem" | tr -d '\n')"
 export ENCRYPTION_KEY="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
 ```
 
-From a checkout, write the same three values in `.env` and restart `pnpm api start:dev`: its `--watch` reloads on code changes, not on `.env`.
+From a checkout, write the value in `.env` and restart `pnpm api start:dev`: its `--watch` reloads on code changes, not on `.env`.
 
-`ENCRYPTION_KEY` encrypts each bank session with AES-256-GCM before it reaches the database. Back it up apart from the database, so a leaked backup alone gives nobody access to your bank data. Losing the key, or changing it, leaves the stored sessions unreadable; the only way back is to connect each bank again.
+### 3. Save the credentials in the interface
 
-### 3. Connect in the interface
+Open « Réglages » › « Banques », at `/settings/banks`. Under « Application Enable Banking », enter the « Identifiant de l'application » and choose the `.pem` file the panel downloaded, or `private.pem` if you brought your own key; a file holding the key after its certificate works too. Press « Enregistrer ».
+
+Archant signs a request to Enable Banking with the pair before it keeps anything: a pair the provider refuses, or an application that does not list the redirect URL, saves nothing and says why. The application ID is stored as is, the key encrypted. They can be changed from the same page while no bank is connected; once one is, the form is locked, as in Sure, until every bank is disconnected.
+
+#### Or pin them in the environment
+
+A self-hoster who keeps secrets in a vault can set `ENABLE_BANKING_APPLICATION_ID` and `ENABLE_BANKING_PRIVATE_KEY` instead. They win over anything saved in the interface, which then shows « Enable Banking est configuré par le serveur. » and no form. Set both or neither: one alone stops the server at startup, naming the other. The private key goes in base64, because a multi-line PEM does not survive every `.env` parser or hosting control panel. PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`) both work. Disconnect every bank before removing the variables, for the same reason: the page stays locked while a bank is connected, and its session belongs to the pinned application.
+
+```bash
+export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
+export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pem" | tr -d '\n')"
+```
+
+### 4. Connect a bank
 
 1. Open « Réglages » › « Banques », at `/settings/banks`.
 2. Pick the « Pays », then the bank under « Banques disponibles ». « Rechercher une banque » filters by name or BIC.

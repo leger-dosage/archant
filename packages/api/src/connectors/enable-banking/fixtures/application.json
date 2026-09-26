@@ -1,0 +1,13 @@
+{
+	"name": "Archant",
+	"description": "Personal finance for one household",
+	"kid": "00000000-0000-4000-8000-00000000a11d",
+	"environment": "PRODUCTION",
+	"redirect_urls": [
+		"https://archant.example.com/settings/banks/callback",
+		"http://localhost:5173/settings/banks/callback"
+	],
+	"active": true,
+	"countries": ["FR"],
+	"services": ["AIS"]
+}

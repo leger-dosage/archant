@@ -13,6 +13,7 @@ import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { server } from "../../vitest.setup.ts";
+import * as registry from "../connectors/registry.ts";
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
 import {
@@ -34,7 +35,6 @@ import {
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	bankDepsFromEnv,
-	bankSetup,
 	completeConnection,
 	disconnectConnection,
 	linkBankAccounts,
@@ -46,6 +46,14 @@ import {
 } from "./bank-connections.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { balanceOn, createAccount, ingest } from "./ledger.ts";
+
+// A spy that builds the real connector, so one test can make a single call
+// throw something no provider answer produces.
+vi.mock("../connectors/registry.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof registry>();
+
+	return { ...actual, createBankConnector: vi.fn(actual.createBankConnector) };
+});
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
 const DAY = 86_400_000;
@@ -111,28 +119,21 @@ function sentState(requests: ReturnType<typeof mockProvider>): string {
 }
 
 describe("bankDepsFromEnv", () => {
-	it("is available with the three variables, and redirects to the return page", () => {
+	it("carries the pair, the key and the provider, and redirects to the return page", () => {
 		const bank = bankDepsFromEnv(validateEnv(FULL_ENV));
 
-		expect(bankSetup(bank)).toEqual({ available: true, missing: [] });
-		expect(bank.bankConnector?.id).toBe("enable-banking");
+		expect(bank.bankCredentials?.applicationId).toBe(TEST_APPLICATION_ID);
+		expect(bank.bankCredentials?.privateKey.asymmetricKeyType).toBe("rsa");
+		expect(bank.encryptionKey).toHaveLength(32);
+		expect(bank.bankApiUrl).toBe(TEST_PROVIDER_URL);
 		expect(bank.redirectUrl).toBe("http://localhost:5173/settings/banks/callback");
 	});
 
-	it("names ENCRYPTION_KEY alone when it is the one missing", () => {
-		const bank = bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENCRYPTION_KEY: "" }));
-
-		expect(bankSetup(bank)).toEqual({ available: false, missing: ["ENCRYPTION_KEY"] });
-		expect(bank.bankConnector).toBeNull();
-	});
-
-	it("names every missing variable, never a value", () => {
+	it("carries no pair and no key without the variables", () => {
 		const bank = bankDepsFromEnv(validateEnv(BASE_ENV));
 
-		expect(bankSetup(bank)).toEqual({
-			available: false,
-			missing: ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY", "ENCRYPTION_KEY"],
-		});
+		expect(bank.bankCredentials).toBeNull();
+		expect(bank.encryptionKey).toBeNull();
 	});
 });
 
@@ -1371,25 +1372,15 @@ describe("disconnectConnection", () => {
 
 	it("disconnects when the revocation throws something unexpected", async () => {
 		const { connection } = await linkedConnection();
-		const service = deps();
-		const connector = service.bankConnector;
+		const actual = await vi.importActual<typeof registry>("../connectors/registry.ts");
+		vi.mocked(registry.createBankConnector).mockImplementationOnce((id, config) => ({
+			...actual.createBankConnector(id, config),
+			revokeAuthorization: () => Promise.reject(new Error("boom")),
+		}));
 
-		if (connector === null) {
-			throw new Error("The connector is configured in these tests.");
-		}
-
-		await expect(
-			disconnectConnection(
-				{
-					...service,
-					bankConnector: {
-						...connector,
-						revokeAuthorization: () => Promise.reject(new Error("boom")),
-					},
-				},
-				connection.id,
-			),
-		).resolves.toMatchObject({ accounts: 2 });
+		await expect(disconnectConnection(deps(), connection.id)).resolves.toMatchObject({
+			accounts: 2,
+		});
 		expect(logLines.join("")).toContain('"code":"INTERNAL_ERROR"');
 	});
 

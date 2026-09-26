@@ -1,4 +1,4 @@
-import type { BankBalance, BankStatement } from "../connectors/bank-connector.ts";
+import type { BankBalance, BankConnector, BankStatement } from "../connectors/bank-connector.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { ParsedStatement } from "../domain/statement.ts";
 import type { ErrorCode } from "../lib/errors.ts";
@@ -13,7 +13,8 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import { BankProviderError } from "../connectors/bank-connector.ts";
 import { addDays, daysBetween, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { LEASE_MS, codeOf, logFailure, requireBankConnector } from "./bank-connections.ts";
+import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
+import { resolveBankConnector } from "./bank-credentials.ts";
 import { ingest, oldestPendingDate } from "./ledger.ts";
 import { detectRecurring } from "./recurring.ts";
 
@@ -125,10 +126,10 @@ function refusal(syncStartedAt: number | null, now: number): AppError {
  */
 async function runSync(
 	deps: BankConnectionDeps,
+	connector: BankConnector,
 	connectionId: string,
 	startedAt: number,
 ): Promise<{ failed: number; created: number; synced: number }> {
-	const { connector } = requireBankConnector(deps);
 	const day = today(deps.timeZone, new Date(startedAt));
 	const linked = await deps.db
 		.select({
@@ -301,6 +302,7 @@ type Connection = { id: string; consentExpiresAt: number | null; syncStartedAt: 
  */
 async function syncOne(
 	deps: BankConnectionDeps,
+	connector: BankConnector,
 	connection: Connection,
 	trigger: SyncTrigger,
 ): Promise<SyncResult> {
@@ -342,7 +344,7 @@ async function syncOne(
 	}
 
 	try {
-		const outcome = await runSync(deps, connection.id, startedAt);
+		const outcome = await runSync(deps, connector, connection.id, startedAt);
 
 		deps.logger.info(
 			{ connectionId: connection.id, trigger, ...outcome, durationMs: Date.now() - startedAt },
@@ -375,7 +377,7 @@ export async function syncConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<SyncStatus> {
-	requireBankConnector(deps);
+	const { connector } = await resolveBankConnector(deps);
 
 	const connection = await deps.db
 		.select(connectionColumns)
@@ -387,7 +389,7 @@ export async function syncConnection(
 		throw new AppError("NOT_FOUND", "No bank connection has this id.");
 	}
 
-	await syncOne(deps, connection, "button");
+	await syncOne(deps, connector, connection, "button");
 
 	const status = await deps.db
 		.select({ lastSyncedAt: bankConnections.lastSyncedAt, lastError: bankConnections.lastError })
@@ -405,7 +407,8 @@ export async function syncConnection(
 export async function syncAll(
 	deps: BankConnectionDeps,
 ): Promise<{ id: string; result: SyncResult }[]> {
-	requireBankConnector(deps);
+	// Once for the whole run: every connection syncs under the same credentials.
+	const { connector } = await resolveBankConnector(deps);
 
 	const connections = await deps.db
 		.select(connectionColumns)
@@ -418,7 +421,10 @@ export async function syncAll(
 		await previous;
 
 		try {
-			results.push({ id: connection.id, result: await syncOne(deps, connection, "cron") });
+			results.push({
+				id: connection.id,
+				result: await syncOne(deps, connector, connection, "cron"),
+			});
 		} catch (error) {
 			deps.logger.error({ connectionId: connection.id, code: codeOf(error) }, "bank sync failed");
 			results.push({ id: connection.id, result: "failed" });

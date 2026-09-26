@@ -25,6 +25,11 @@ export const aspspsResponseSchema = z.object({ aspsps: z.array(aspspSchema) });
 // travels further: any body, or none, is a success.
 export const revokeResponseSchema = z.unknown();
 
+// `GET /application`, read only to check a pair before it is saved: the
+// addresses the bank may send the browser back to. The rest, the name and
+// the environment included, stays here.
+export const applicationResponseSchema = z.object({ redirect_urls: z.array(z.string()) });
+
 // The browser is sent there: anything but http(s) would be a script URL.
 export const authResponseSchema = z.object({ url: httpUrl });
 

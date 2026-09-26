@@ -25,12 +25,15 @@ import {
 	TEST_APPLICATION_ID,
 	TEST_ENCRYPTION_KEY_BASE64,
 	TEST_PKCS1_BASE64,
+	TEST_PRIVATE_KEY,
+	TEST_PROVIDER_URL,
 } from "./testing/bank.ts";
 import {
 	FIXTURE_AUTH_URL,
 	FIXTURE_CHECKING_UID,
 	FIXTURE_IBAN_HEAD,
 	FIXTURE_SESSION_ID,
+	fixtures,
 	mockProvider,
 } from "./testing/enable-banking.ts";
 import { createTempDatabase } from "./testing/temp-database.ts";
@@ -6713,7 +6716,7 @@ describe("/api/recurring", () => {
 
 // PKCS#1, as an older control panel export, so the whole path signs with it.
 function configuredBank() {
-	const { bankConnector, encryptionKey, bankSetup } = bankDepsFromEnv(
+	const { bankCredentials, encryptionKey, bankApiUrl } = bankDepsFromEnv(
 		validateEnv({
 			DATABASE_URL: "file:x.db",
 			BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
@@ -6724,7 +6727,7 @@ function configuredBank() {
 		}),
 	);
 
-	return { bankConnector, encryptionKey, bankSetup };
+	return { bankCredentials, encryptionKey, bankApiUrl };
 }
 
 async function bankApp(bank = configuredBank()) {
@@ -6755,7 +6758,16 @@ describe("/api/bank-connections", () => {
 		const client = testClient(await bankApp()).api["bank-connections"];
 
 		const setup = await client.setup.$get();
-		expect(await setup.json()).toEqual({ data: { available: true, missing: [] } });
+		expect(await setup.json()).toEqual({
+			data: {
+				available: true,
+				source: "environment",
+				applicationId: TEST_APPLICATION_ID,
+				redirectUrl: "http://localhost:5173/settings/banks/callback",
+				locked: false,
+				missing: [],
+			},
+		});
 
 		const institutions = await client.institutions.$get({ query: { country: "FR" } });
 		expect(institutions.status).toBe(200);
@@ -6859,18 +6871,121 @@ describe("/api/bank-connections", () => {
 		]);
 	});
 
+	it("saves credentials from the interface, then connects with them, never returning the key", async () => {
+		const requests = mockProvider();
+		const app = await bankApp({
+			bankCredentials: null,
+			encryptionKey: Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+			bankApiUrl: TEST_PROVIDER_URL,
+		});
+		const client = testClient(app).api["bank-connections"];
+		const pem = TEST_PRIVATE_KEY.export({ type: "pkcs1", format: "pem" }).toString();
+
+		const before = await client.setup.$get();
+		expect((await before.json()).data).toMatchObject({ available: false, source: null });
+		expect((await client.$get()).status).toBe(503);
+
+		const saved = await client.credentials.$put({
+			json: { applicationId: ` ${TEST_APPLICATION_ID} `, privateKey: pem },
+		});
+		expect(saved.status).toBe(200);
+		const body = await saved.text();
+		expect(JSON.parse(body)).toEqual({
+			data: {
+				available: true,
+				source: "interface",
+				applicationId: TEST_APPLICATION_ID,
+				redirectUrl: "http://localhost:5173/settings/banks/callback",
+				locked: false,
+				missing: [],
+			},
+		});
+		expect(body).not.toContain("PRIVATE KEY");
+		expect(requests.map((sent) => sent.path)).toEqual(["/application"]);
+
+		const institutions = await client.institutions.$get({ query: { country: "FR" } });
+		expect(institutions.status).toBe(200);
+
+		const stored = await own?.db.all<{ key: string; value: string }>(
+			sql`select key, value from settings where key like 'enable_banking_%' order by key`,
+		);
+		expect(stored?.map((row) => row.key)).toEqual([
+			"enable_banking_application_id",
+			"enable_banking_private_key",
+		]);
+		expect(stored?.[0]?.value).toBe(TEST_APPLICATION_ID);
+		expect(stored?.[1]?.value).toMatch(/^v1:/u);
+		expect(logLines.join("")).not.toContain("PRIVATE KEY");
+	});
+
+	it("refuses to save credentials the server pins, a pair the provider refuses, or no key at all", async () => {
+		const pem = TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString();
+		const put = (app: Awaited<ReturnType<typeof bankApp>>, privateKey = pem) =>
+			testClient(app).api["bank-connections"].credentials.$put({
+				json: { applicationId: TEST_APPLICATION_ID, privateKey },
+			});
+		const interfaceBank = {
+			bankCredentials: null,
+			encryptionKey: Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+			bankApiUrl: TEST_PROVIDER_URL,
+		};
+
+		mockProvider();
+		const fromEnvironment = await put(await bankApp());
+		expect(fromEnvironment.status).toBe(409);
+		expect(errorBody.parse(await fromEnvironment.json()).error.code).toBe(
+			"BANK_CREDENTIALS_FROM_ENVIRONMENT",
+		);
+
+		const noEncryption = await put(await bankApp({ ...interfaceBank, encryptionKey: null }));
+		expect(noEncryption.status).toBe(503);
+		expect(errorBody.parse(await noEncryption.json()).error.code).toBe(
+			"BANK_CONNECTOR_UNAVAILABLE",
+		);
+
+		const notAKey = await put(await bankApp(interfaceBank), "hello");
+		expect(notAKey.status).toBe(400);
+		expect(errorBody.parse(await notAKey.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "privateKey", code: "invalid_private_key" }],
+		});
+
+		const blank = await testClient(await bankApp(interfaceBank)).api[
+			"bank-connections"
+		].credentials.$put({ json: { applicationId: " ", privateKey: pem } });
+		expect(errorBody.parse(await blank.json()).error.fields).toEqual([
+			{ path: "applicationId", code: "too_small" },
+		]);
+
+		mockProvider({
+			application: () => Response.json(fixtures.unauthorized, { status: 401 }),
+		});
+		const refusedApp = await bankApp(interfaceBank);
+		const refused = await put(refusedApp);
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("BANK_CREDENTIALS_REFUSED");
+		await expect(
+			own?.db.all(sql`select key from settings where key like 'enable_banking_%'`),
+		).resolves.toEqual([]);
+	});
+
 	it("names the missing variables and answers 503 elsewhere, while accounts still answer", async () => {
 		const app = await bankApp({
 			...configuredBank(),
-			bankConnector: null,
 			encryptionKey: null,
-			bankSetup: ["ENCRYPTION_KEY"],
 		});
 		const client = testClient(app).api;
 
 		const setup = await client["bank-connections"].setup.$get();
 		expect(await setup.json()).toEqual({
-			data: { available: false, missing: ["ENCRYPTION_KEY"] },
+			data: {
+				available: false,
+				source: "environment",
+				applicationId: TEST_APPLICATION_ID,
+				redirectUrl: "http://localhost:5173/settings/banks/callback",
+				locked: false,
+				missing: ["ENCRYPTION_KEY"],
+			},
 		});
 
 		const refused = await Promise.all([
@@ -7112,9 +7227,7 @@ describe("/api/bank-connections", () => {
 	it("answers 503 on a connection's accounts while unconfigured", async () => {
 		const app = await bankApp({
 			...configuredBank(),
-			bankConnector: null,
 			encryptionKey: null,
-			bankSetup: ["ENCRYPTION_KEY"],
 		});
 
 		const responses = await Promise.all([
@@ -7250,9 +7363,7 @@ describe("bank sync routes", () => {
 	it("answers 503 to a right secret while the bank is unconfigured", async () => {
 		const { app } = await syncApp({
 			...configuredBank(),
-			bankConnector: null,
 			encryptionKey: null,
-			bankSetup: ["ENCRYPTION_KEY"],
 			syncSecret: SECRET,
 		});
 
@@ -7346,9 +7457,7 @@ describe("bank sync routes", () => {
 		});
 		const { app: unconfigured } = await syncApp({
 			...configuredBank(),
-			bankConnector: null,
 			encryptionKey: null,
-			bankSetup: ["ENCRYPTION_KEY"],
 		});
 		const refused = await withSession(unconfigured, template.cookie).request(
 			"/api/bank-connections/c1/sync",

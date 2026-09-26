@@ -12,6 +12,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
+import * as registry from "../connectors/registry.ts";
 import { addDays } from "../domain/dates.ts";
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
@@ -35,6 +36,14 @@ import { balanceOn, createAccount, deleteTransaction, linkBankAccount } from "./
 import * as recurringService from "./recurring.ts";
 import { getNetWorth } from "./reports.ts";
 import { syncAll, syncConnection, windowStart } from "./sync.ts";
+
+// A spy that builds the real connector, so one test can make a single call
+// throw something no provider answer produces.
+vi.mock("../connectors/registry.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof registry>();
+
+	return { ...actual, createBankConnector: vi.fn(actual.createBankConnector) };
+});
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
 const MINUTE = 60_000;
@@ -881,7 +890,7 @@ describe("syncConnection", () => {
 		const connectionId = await newConnection();
 
 		await expect(
-			syncConnection({ ...deps(), bankConnector: null }, connectionId),
+			syncConnection({ ...deps(), bankCredentials: null }, connectionId),
 		).rejects.toMatchObject({ code: "BANK_CONNECTOR_UNAVAILABLE" });
 	});
 });
@@ -936,16 +945,13 @@ describe("a bank read that fails part way", () => {
 		mockProvider();
 		const connectionId = await newConnection();
 		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		const syncDeps = deps();
-		const connector = syncDeps.bankConnector;
+		const actual = await vi.importActual<typeof registry>("../connectors/registry.ts");
+		vi.mocked(registry.createBankConnector).mockImplementationOnce((id, config) => ({
+			...actual.createBankConnector(id, config),
+			fetchBalance: () => Promise.reject(new Error("amount 123456 refused")),
+		}));
 
-		if (connector === null) {
-			throw new Error("The test deps have no bank connector.");
-		}
-
-		vi.spyOn(connector, "fetchBalance").mockRejectedValue(new Error("amount 123456 refused"));
-
-		await expect(syncConnection(syncDeps, connectionId)).resolves.toEqual({
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
 			lastSyncedAt: null,
 			lastError: "INTERNAL_ERROR",
 		});
@@ -1205,7 +1211,7 @@ describe("syncAll", () => {
 	});
 
 	it("answers BANK_CONNECTOR_UNAVAILABLE while unconfigured", async () => {
-		await expect(syncAll({ ...deps(), bankConnector: null })).rejects.toMatchObject({
+		await expect(syncAll({ ...deps(), encryptionKey: null })).rejects.toMatchObject({
 			code: "BANK_CONNECTOR_UNAVAILABLE",
 		});
 	});

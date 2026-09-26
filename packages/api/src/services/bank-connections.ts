@@ -2,12 +2,12 @@ import type { BankConnector } from "../connectors/bank-connector.ts";
 import type { ConnectionAlert } from "../domain/bank-connection-alert.ts";
 import type { Env } from "../env.ts";
 import type { ErrorCode, FieldError } from "../lib/errors.ts";
-import type { Logger } from "../lib/logger.ts";
 import type {
 	CompleteConnectionInput,
 	LinkBankAccountsInput,
 	StartConnectionInput,
 } from "../schemas/bank-connections.ts";
+import type { BankCredentialDeps } from "./bank-credentials.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { AnchorBalance } from "./ledger.ts";
 import type { AnyColumn } from "drizzle-orm";
@@ -25,12 +25,12 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import type { Account, BankAccount } from "@archant/data/types";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
-import { createBankConnector } from "../connectors/registry.ts";
 import { toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
 import { connectionAlert } from "../domain/bank-connection-alert.ts";
 import { addMonths, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { resolveBankConnector } from "./bank-credentials.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { createAccount, linkBankAccount, unlinkBankAccount } from "./ledger.ts";
 
@@ -46,20 +46,8 @@ export const AUTHORIZATION_TTL_MS = 30 * 60 * 1000;
 /** A run that crashed leaves its sync lease behind; after this long, it is free again. */
 export const LEASE_MS = 10 * 60 * 1000;
 
-/** What is needed to connect a bank, and which of it is missing. */
-export type BankConnectionDeps = ServiceDeps & {
-	logger: Logger;
-	/** `null` while a variable is missing: every bank route but `setup` then answers 503. */
-	bankConnector: BankConnector | null;
-	/** `ENCRYPTION_KEY`, 32 bytes. */
-	encryptionKey: Uint8Array | null;
-	/** The unset variables' names, never their values. */
-	bankSetup: readonly string[];
-	/** `BETTER_AUTH_URL` + `REDIRECT_PATH`, registered with the provider. */
-	redirectUrl: string;
-};
-
-export type BankSetup = { available: boolean; missing: string[] };
+/** What a bank route needs: the connector is resolved per call from these. */
+export type BankConnectionDeps = BankCredentialDeps;
 
 export type InstitutionRecord = {
 	name: string;
@@ -97,47 +85,20 @@ type BankEnv = Pick<
 /** The bank part of the app's dependencies, from the validated environment. */
 export function bankDepsFromEnv(
 	env: BankEnv,
-): Pick<BankConnectionDeps, "bankConnector" | "encryptionKey" | "bankSetup" | "redirectUrl"> {
+): Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl" | "redirectUrl"> {
 	const applicationId = env.ENABLE_BANKING_APPLICATION_ID;
 	const privateKey = env.ENABLE_BANKING_PRIVATE_KEY;
-	const encryptionKey = env.ENCRYPTION_KEY ?? null;
-	const missing = [
-		...(applicationId === undefined ? ["ENABLE_BANKING_APPLICATION_ID"] : []),
-		...(privateKey === undefined ? ["ENABLE_BANKING_PRIVATE_KEY"] : []),
-		...(encryptionKey === null ? ["ENCRYPTION_KEY"] : []),
-	];
 
 	return {
-		bankConnector:
-			applicationId === undefined || privateKey === undefined || encryptionKey === null
+		// `validateEnv` refuses one without the other.
+		bankCredentials:
+			applicationId === undefined || privateKey === undefined
 				? null
-				: createBankConnector("enable-banking", {
-						applicationId,
-						privateKey,
-						apiUrl: env.ENABLE_BANKING_API_URL,
-					}),
-		encryptionKey,
-		bankSetup: missing,
+				: { applicationId, privateKey },
+		encryptionKey: env.ENCRYPTION_KEY ?? null,
+		bankApiUrl: env.ENABLE_BANKING_API_URL,
 		redirectUrl: new URL(REDIRECT_PATH, env.BETTER_AUTH_URL).toString(),
 	};
-}
-
-export function bankSetup(deps: Pick<BankConnectionDeps, "bankSetup">): BankSetup {
-	return { available: deps.bankSetup.length === 0, missing: [...deps.bankSetup] };
-}
-
-/** The connector and key, or `BANK_CONNECTOR_UNAVAILABLE` when either is missing. */
-export function requireBankConnector(
-	deps: Pick<BankConnectionDeps, "bankConnector" | "encryptionKey">,
-): { connector: BankConnector; encryptionKey: Uint8Array } {
-	if (deps.bankConnector === null || deps.encryptionKey === null) {
-		throw new AppError(
-			"BANK_CONNECTOR_UNAVAILABLE",
-			"Bank connection is not configured on this server.",
-		);
-	}
-
-	return { connector: deps.bankConnector, encryptionKey: deps.encryptionKey };
 }
 
 const invalidAuthorization = () =>
@@ -182,7 +143,7 @@ export async function listInstitutions(
 	deps: BankConnectionDeps,
 	country: string,
 ): Promise<InstitutionRecord[]> {
-	const { connector } = requireBankConnector(deps);
+	const { connector } = await resolveBankConnector(deps);
 
 	try {
 		const institutions = await connector.listInstitutions(country);
@@ -223,7 +184,7 @@ export async function startConnection(
 	deps: BankConnectionDeps,
 	input: StartConnectionInput,
 ): Promise<{ url: string }> {
-	const { connector } = requireBankConnector(deps);
+	const { connector } = await resolveBankConnector(deps);
 	const now = Date.now();
 
 	// Abandoned attempts: the user closed the bank's page, or never came back.
@@ -295,7 +256,7 @@ export async function renewConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<{ url: string }> {
-	const { connector } = requireBankConnector(deps);
+	const { connector } = await resolveBankConnector(deps);
 	const connection = await activeConnection(deps, connectionId);
 	const institution = await findInstitution(
 		deps,
@@ -361,7 +322,7 @@ export async function completeConnection(
 	deps: BankConnectionDeps,
 	input: CompleteConnectionInput,
 ): Promise<BankConnectionRecord> {
-	const { connector, encryptionKey } = requireBankConnector(deps);
+	const { connector, encryptionKey } = await resolveBankConnector(deps);
 	const now = Date.now();
 
 	// One statement, so two posts of the same state cannot both claim it.
@@ -477,7 +438,7 @@ export async function completeConnection(
 
 /** Every open connection, oldest first. */
 export async function listConnections(deps: BankConnectionDeps): Promise<BankConnectionRecord[]> {
-	requireBankConnector(deps);
+	await resolveBankConnector(deps);
 
 	const rows = await deps.db
 		.select()
@@ -552,7 +513,7 @@ export async function listBankAccounts(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<BankAccountRecord[]> {
-	requireBankConnector(deps);
+	await resolveBankConnector(deps);
 	await activeConnection(deps, connectionId);
 
 	const rows = await deps.db
@@ -604,7 +565,7 @@ export async function linkBankAccounts(
 	connectionId: string,
 	input: LinkBankAccountsInput,
 ): Promise<BankAccountRecord[]> {
-	const { connector } = requireBankConnector(deps);
+	const { connector } = await resolveBankConnector(deps);
 	await activeConnection(deps, connectionId);
 
 	const ids = input.links.map((link) => link.bankAccountId);
@@ -787,7 +748,7 @@ export async function disconnectConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<{ id: string; accounts: number }> {
-	const { connector, encryptionKey } = requireBankConnector(deps);
+	const { connector, encryptionKey } = await resolveBankConnector(deps);
 	const connection = await activeConnection(deps, connectionId);
 	const now = Date.now();
 	const [leased] = await deps.db

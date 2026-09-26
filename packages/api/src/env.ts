@@ -1,3 +1,5 @@
+import type { KeyObject } from "node:crypto";
+
 import { createEnv } from "@t3-oss/env-core";
 import { createPrivateKey } from "node:crypto";
 import { isAbsolute } from "node:path";
@@ -17,14 +19,13 @@ function isTimeZone(value: string): boolean {
 export const ENCRYPTION_KEY_BYTES = 32;
 
 /**
- * The PEM behind a base64 value, when Node reads it as an RSA private key,
- * PKCS#1 (`BEGIN RSA PRIVATE KEY`) or PKCS#8 (`BEGIN PRIVATE KEY`) alike.
- * Base64, because a multi-line PEM does not survive every `.env` parser or
- * control panel.
+ * The RSA private key a PEM holds, PKCS#1 (`BEGIN RSA PRIVATE KEY`) or
+ * PKCS#8 (`BEGIN PRIVATE KEY`) alike, and a key bundled after its
+ * certificate, as some control panels hand them out; `null` for anything else.
  */
-function rsaPrivateKey(value: string) {
+export function rsaPrivateKey(pem: string): KeyObject | null {
 	try {
-		const key = createPrivateKey(Buffer.from(value, "base64").toString("utf8"));
+		const key = createPrivateKey(pem);
 
 		return key.asymmetricKeyType === "rsa" ? key : null;
 	} catch {
@@ -82,10 +83,12 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.string()
 				.refine((value) => isAbsolute(value))
 				.optional(),
-			// Enable Banking (Story 10.1). All optional: without the three below the
-			// bank routes answer 503 and the rest of the app is untouched. A value
-			// present but unreadable still fails startup, as a bad secret does:
-			// a typo would otherwise look like an unconfigured feature.
+			// Enable Banking (Story 10.1). Optional: without them the credentials
+			// saved from « Réglages › Banques » apply (Story 11.14); with them, they
+			// win, so a secret pinned in a vault is never overridden by a click.
+			// Both or neither, and a value present but unreadable fails startup,
+			// as a bad secret does: a typo would otherwise look like an
+			// unconfigured feature.
 			ENABLE_BANKING_APPLICATION_ID: z.string().trim().min(1).optional(),
 			ENABLE_BANKING_PRIVATE_KEY: z
 				.string()
@@ -95,7 +98,9 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 						return undefined;
 					}
 
-					const key = rsaPrivateKey(value);
+					// Base64, because a multi-line PEM does not survive every `.env`
+					// parser or control panel.
+					const key = rsaPrivateKey(Buffer.from(value, "base64").toString("utf8"));
 
 					if (key === null) {
 						context.addIssue({ code: "custom", message: "invalid_private_key" });
@@ -105,8 +110,10 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return key;
 				}),
-			// Encrypts bank session ids at rest. Losing it means reconnecting
-			// every bank; changing it without a migration has the same effect.
+			// Encrypts bank session ids and the private key saved from the
+			// interface at rest. Losing it means setting Enable Banking up again
+			// and reconnecting every bank; changing it without a migration has
+			// the same effect.
 			ENCRYPTION_KEY: z
 				.base64()
 				.transform((value) => Buffer.from(value, "base64"))
@@ -120,6 +127,21 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.url({ protocol: /^https?$/u })
 				.default("https://api.enablebanking.com"),
 		},
+		// One variable of the pair alone is a half-finished setup: the stored
+		// credentials would silently apply instead, so startup names the other.
+		createFinalSchema: (shape) =>
+			z.object(shape).superRefine((env, context) => {
+				const pair = ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY"] as const;
+				const [first, second] = pair.map((name) => env[name] !== undefined);
+
+				if (first !== second) {
+					context.addIssue({
+						code: "custom",
+						path: [first === true ? pair[1] : pair[0]],
+						message: "missing_pair",
+					});
+				}
+			}),
 		runtimeEnv,
 		emptyStringAsUndefined: true,
 		onValidationError: (issues) => {

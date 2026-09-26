@@ -143,3 +143,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-13-no-command-palette-and-no-single-key-shortcuts.md`
   summary: Add a « Aller au contenu » skip link before the sidebar, so a keyboard user reaches the page without tabbing through every account.
   evidence: With the `g` keys gone, reaching a transaction row at full width took over 100 `Tab` presses in the shared e2e database; `keyboard.spec.ts` runs at 900 px to stay under that.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-14-enable-banking-set-up-from-the-interface.md`
+  summary: With a bank still connected, credentials that no longer resolve (an `ENCRYPTION_KEY` lost or changed, or the `ENABLE_BANKING_*` variables removed) leave the page locked and every bank route at 503, disconnection included, so nothing unlocks it.
+  evidence: medium, pre-existing since Spec 10.5: `disconnectConnection` needs a connector and a readable session id. Story 11.14 adds the environment-to-interface path to it. Disconnecting without revoking at the provider when no connector resolves would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-14-enable-banking-set-up-from-the-interface.md`
+  summary: An unknown application ID may be answered by `GET /application` with a 4xx other than 401 or 403, which would show as `BANK_PROVIDER_ERROR` instead of `BANK_CREDENTIALS_REFUSED`.
+  evidence: medium, unverified: the fake and the fixtures only return 401. One save against the sandbox with a mistyped application ID would settle it.

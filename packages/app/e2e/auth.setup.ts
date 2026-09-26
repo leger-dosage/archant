@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "./fixtures.ts";
-import { ADMIN, ADMIN_STATE, WEB_URL } from "./settings.ts";
+import { ADMIN, ADMIN_STATE, BANK_APPLICATION_ID, BANK_KEY_FILE, WEB_URL } from "./settings.ts";
 
 // Story 3.1: the first launch. The only moment the database has no user, so
 // the setup project is where it is tested, and where the session every other
@@ -27,4 +29,14 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
 
 	await page.context().storageState({ path: ADMIN_STATE });
+
+	// Story 11.14: the server has no Enable Banking variable, so every bank
+	// test runs on the credentials saved here, as a household saves them.
+	const saved = await page.request.put("/api/bank-connections/credentials", {
+		data: {
+			applicationId: BANK_APPLICATION_ID,
+			privateKey: await readFile(BANK_KEY_FILE, "utf8"),
+		},
+	});
+	expect(saved.status()).toBe(200);
 });
