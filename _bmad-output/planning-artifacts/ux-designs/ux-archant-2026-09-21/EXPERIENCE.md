@@ -1,7 +1,7 @@
 ---
 name: Archant
 status: final
-updated: '2026-09-25'
+updated: '2026-09-26'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
@@ -36,7 +36,7 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 
 Until Epic 6 ships, `/` redirects to `/accounts`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
-→ Composition reference: [mockups/key-direction-a.html](mockups/key-direction-a.html), which shows the dashboard, the transactions list, the empty dashboard, the logo and the favicon. This spine and `DESIGN.md` win on conflict.
+→ Composition reference: [mockups/key-linear-classic-dark.html](mockups/key-linear-classic-dark.html), which shows the dashboard and the transactions list in both modes, the empty dashboard, the logo and the favicon. This spine and `DESIGN.md` win on conflict.
 
 ## Voice and Tone
 
@@ -135,11 +135,11 @@ WCAG 2.2 AA on every surface, NFR13.
 
 ## Inspiration & Anti-patterns
 
-- **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; Geist; the net worth chart as the dashboard's centre; since Epic 12, its grey page and white cards, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states.
-- **Taken from Linear:** filters as chips.
-- **Departure from Sure:** expenses are not red, the primary button is black rather than a colour, and there is no AI assistant surface.
+- **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; the net worth chart as the dashboard's centre; since Epic 12, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states.
+- **Taken from Linear:** filters as chips; since Epic 12, its Light and Classic Dark themes, Inter with its alternate glyphs, the sidebar on the base background with the page in one inset panel and a title bar, borders instead of shadows, 36px rows, and an indigo primary button.
+- **Departure from Sure:** expenses are not red, the surfaces and type are Linear's rather than Sure's, and there is no AI assistant surface.
 - **Rejected:** onboarding tours and celebratory animations; infinite scroll; showing an amount in red to scold spending; fetched merchant logos, which would send merchant names to a third party.
-- **Considered for Epic 12 and set aside:** a ledger direction with an ink accent and a warm home direction with a terracotta accent, both further from Sure; two Evidence-inspired variants, one with Evidence's figures, charts and tables in cards, one turning the dashboard into a monthly report. Their mocks stay in `.working/`.
+- **Considered for Epic 12 and set aside:** Sure's own skin (grey page, white shadowed cards, black primary button), first chosen then replaced by Linear's; a ledger direction with an ink accent and a warm home direction with a terracotta accent; two Evidence-inspired variants, one with Evidence's figures, charts and tables in cards, one turning the dashboard into a monthly report; Linear's default near-black Dark, replaced by Classic Dark. Their mocks stay in `.working/`.
 - **Later candidate:** Sure's privacy mode, which blurs amounts on screen.
 
 ## Key Flows

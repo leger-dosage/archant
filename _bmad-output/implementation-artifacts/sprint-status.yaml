@@ -104,21 +104,21 @@ development_status:
   10-6-merge-or-dismiss-a-possible-duplicate: done
   epic-10-retrospective: optional
 
-  epic-11: in-progress
-  11-1-opening-dates-that-accept-today-and-survive-a-revert: review
-  11-2-transfer-matching-ignores-excluded-transactions-and-inactive-accounts: review
-  11-3-the-category-of-a-loan-payment-or-an-investment-contribution: review
-  11-4-a-bank-read-survives-a-partial-failure: review
-  11-5-pending-and-booked-versions-never-count-twice: review
-  11-6-a-transaction-i-delete-stays-deleted: review
-  11-7-a-synced-account-keeps-each-bank-balance-it-received: review
-  11-8-recurring-series-stay-single-and-current: review
-  11-9-a-first-start-that-says-what-is-wrong: review
+  epic-11: done
+  11-1-opening-dates-that-accept-today-and-survive-a-revert: done
+  11-2-transfer-matching-ignores-excluded-transactions-and-inactive-accounts: done
+  11-3-the-category-of-a-loan-payment-or-an-investment-contribution: done
+  11-4-a-bank-read-survives-a-partial-failure: done
+  11-5-pending-and-booked-versions-never-count-twice: done
+  11-6-a-transaction-i-delete-stays-deleted: done
+  11-7-a-synced-account-keeps-each-bank-balance-it-received: done
+  11-8-recurring-series-stay-single-and-current: done
+  11-9-a-first-start-that-says-what-is-wrong: done
   11-10-the-interface-package-is-named-app: done
-  11-11-account-actions-in-the-account-s-menu: review
-  11-12-create-tags-merchants-and-categories-where-they-are-picked: review
-  11-13-no-command-palette-and-no-single-key-shortcuts: review
-  11-14-enable-banking-set-up-from-the-interface: review
+  11-11-account-actions-in-the-account-s-menu: done
+  11-12-create-tags-merchants-and-categories-where-they-are-picked: done
+  11-13-no-command-palette-and-no-single-key-shortcuts: done
+  11-14-enable-banking-set-up-from-the-interface: done
   epic-11-retrospective: optional
   epic-12: backlog
   12-1-the-brand-foundation: backlog
