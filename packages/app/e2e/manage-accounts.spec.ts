@@ -15,10 +15,24 @@ const pageRow = (page: Page, name: string) =>
 const sidebarRow = (page: Page, name: string) =>
 	page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: new RegExp(name) });
 
-async function openSettings(page: Page, accountId: string) {
-	await page.goto(`/accounts/${accountId}`);
-	await page.getByRole("tab", { name: "Paramètres" }).click();
-	await expect(page).toHaveURL(/[?&]tab=settings/u);
+/** Opens the account's « … » menu beside its name. */
+async function openMenu(page: Page, name: string) {
+	await page.getByRole("button", { name: `Actions du compte ${name}` }).click();
+	const menu = page.getByRole("menu");
+	await expect(menu).toBeVisible();
+
+	return menu;
+}
+
+/** Opens the account's page, then its « Modifier le compte » dialog. */
+async function openEdit(page: Page, account: { id: string; name: string }) {
+	await page.goto(`/accounts/${account.id}`);
+	const menu = await openMenu(page, account.name);
+	await menu.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(dialog).toBeVisible();
+
+	return dialog;
 }
 
 /** The account options of the « Filtrer » menu on `/transactions`. */
@@ -39,12 +53,15 @@ test("a new name and subtype show in the header, the sidebar, /accounts and /tra
 	await api.addTransaction(account.id, { date: daysAgo(3), label, amount: "-20,00" });
 	const name = uniqueName("Livret A");
 
-	await openSettings(page, account.id);
-	await page.getByLabel("Nom").fill(` ${name} `);
-	await page.getByRole("combobox", { name: "Type" }).click();
+	const dialog = await openEdit(page, account);
+	await dialog.getByLabel("Nom").fill(` ${name} `);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "Épargne" }).click();
-	await page.getByRole("button", { name: "Enregistrer" }).click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText(`Compte « ${name} » enregistré.`)).toBeVisible();
+	await expect(dialog).toBeHidden();
+	await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+	await expect(sidebarRow(page, name)).toBeVisible();
 
 	await page.reload();
 	const header = page.getByRole("heading", { level: 1, name }).locator("..");
@@ -68,13 +85,91 @@ test("a credit card offers no type to choose, and a blank name is refused", asyn
 }) => {
 	const card = await api.openAccount({ kind: "credit_card" });
 
-	await openSettings(page, card.id);
-	await expect(page.getByRole("combobox", { name: "Type" })).toHaveCount(0);
-	await page.getByLabel("Nom").fill("  ");
-	await page.getByRole("button", { name: "Enregistrer" }).click();
+	const dialog = await openEdit(page, card);
+	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
+	await dialog.getByLabel("Nom").fill("  ");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
-	await expect(page.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
+	await expect(dialog.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
+	await expect(dialog).toBeVisible();
+	await page.reload();
 	await expect(page.getByRole("heading", { level: 1, name: card.name })).toBeVisible();
+});
+
+test("Esc or Annuler closes the edit dialog without saving, and it reopens as saved", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Inchangé") });
+
+	const dialog = await openEdit(page, account);
+	await dialog.getByLabel("Nom").fill("Brouillon");
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+	await expect(
+		page.getByRole("button", { name: `Actions du compte ${account.name}` }),
+	).toBeFocused();
+
+	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
+	await dialog.getByLabel("Nom").fill("  ");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(dialog).toBeHidden();
+
+	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
+	await expect(dialog.getByLabel("Nom")).not.toHaveAttribute("aria-invalid", "true");
+	await page.keyboard.press("Escape");
+	await page.reload();
+	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
+});
+
+test("the account's menu holds its actions, labelled by its state, and the page has no Paramètres tab", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Menu") });
+
+	// An old link to the removed tab falls back to Opérations.
+	await page.goto(`/accounts/${account.id}?tab=settings`);
+	await expect(page.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+	await expect(page.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+
+	const menu = await openMenu(page, account.name);
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Exclure des rapports",
+		"Désactiver",
+		"Supprimer le compte",
+	]);
+	await menu.getByRole("menuitem", { name: "Exclure des rapports" }).click();
+	await expect(page.getByText(`Compte « ${account.name} » exclu des rapports.`)).toBeVisible();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+
+	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Désactiver" }).click();
+	await expect(page.getByText(`Compte « ${account.name} » désactivé.`)).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1 })).toContainText("Inactif");
+
+	const toggled = await openMenu(page, account.name);
+	await expect(toggled.getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Inclure dans les rapports",
+		"Réactiver",
+		"Supprimer le compte",
+	]);
+	await toggled.getByRole("menuitem", { name: "Inclure dans les rapports" }).click();
+	await expect(
+		page.getByText(`Compte « ${account.name} » inclus dans les rapports.`),
+	).toBeVisible();
+	await expect(
+		(await openMenu(page, account.name)).getByRole("menuitem", { name: "Exclure des rapports" }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
 });
 
 test("a deactivated account leaves /accounts, the sidebar and the filter, and comes back when reactivated", async ({
@@ -86,8 +181,8 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-1,00" });
 	const before = await api.groupTotal("asset");
 
-	await openSettings(page, account.id);
-	await page.getByRole("button", { name: "Désactiver le compte" }).click();
+	await page.goto(`/accounts/${account.id}`);
+	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Désactiver" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » désactivé.`)).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1 })).toContainText("Inactif");
 	await expect(sidebarRow(page, account.name)).toHaveCount(0);
@@ -131,8 +226,7 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 
 	await page.goto("/accounts?showInactive=true");
 	await row.click();
-	await page.getByRole("tab", { name: "Paramètres" }).click();
-	await page.getByRole("button", { name: "Réactiver le compte" }).click();
+	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Réactiver" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » réactivé.`)).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1 })).not.toContainText("Inactif");
 	await expect(sidebarRow(page, account.name)).toBeVisible();
@@ -186,9 +280,10 @@ test("an excluded account stays listed, muted with the eye-off icon, out of its 
 	const account = await api.openAccount({ name: uniqueName("Exclu"), openingBalance: "250,00" });
 	const before = await api.groupTotal("asset");
 
-	await openSettings(page, account.id);
-	await page.getByRole("switch", { name: "Exclure des rapports" }).click();
-	await page.getByRole("button", { name: "Enregistrer" }).click();
+	// The edit dialog keeps the switch, as Sure's edit form; the menu is the short way.
+	const dialog = await openEdit(page, account);
+	await dialog.getByRole("switch", { name: "Exclure des rapports" }).click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » enregistré.`)).toBeVisible();
 
 	expect(await api.groupTotal("asset")).toBe(before - 25_000);
@@ -223,8 +318,12 @@ test("deleting an account states its transactions, then removes it and them", as
 	const other = await api.openAccount({ name: uniqueName("Gardé") });
 	await api.addTransaction(other.id, { date: daysAgo(1), label: `${prefix} gardée`, amount: "-1" });
 
-	await openSettings(page, account.id);
-	await page.getByRole("button", { name: "Supprimer le compte" }).click();
+	await page.goto(`/accounts/${account.id}`);
+	await (
+		await openMenu(page, account.name)
+	)
+		.getByRole("menuitem", { name: "Supprimer le compte" })
+		.click();
 
 	const dialog = page.getByRole("alertdialog", {
 		name: `Supprimer le compte « ${account.name} » et ses 3 opérations ?`,
@@ -268,8 +367,12 @@ test("deleting an account without transactions asks without a count, and Annuler
 }) => {
 	const account = await api.openAccount({ name: uniqueName("Vide") });
 
-	await openSettings(page, account.id);
-	await page.getByRole("button", { name: "Supprimer le compte" }).click();
+	await page.goto(`/accounts/${account.id}`);
+	await (
+		await openMenu(page, account.name)
+	)
+		.getByRole("menuitem", { name: "Supprimer le compte" })
+		.click();
 	const dialog = page.getByRole("alertdialog", {
 		name: `Supprimer le compte « ${account.name} » ?`,
 	});

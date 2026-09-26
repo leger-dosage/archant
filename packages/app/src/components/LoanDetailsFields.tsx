@@ -32,7 +32,7 @@ function FieldMessage({ id, error }: { id: string; error: FieldError | undefined
 
 /**
  * A loan's optional amount borrowed, rate and end date, as the create dialog
- * and the Paramètres tab both edit them. Each form wires its own fields in, so
+ * and the account edit dialog both edit them. Each form wires its own fields in, so
  * this stays typed without knowing the form.
  */
 export function LoanDetailsFields({

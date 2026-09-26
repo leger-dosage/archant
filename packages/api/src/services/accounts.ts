@@ -16,6 +16,8 @@ import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/ac
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
+import { bankConnections } from "@archant/data/schema/bank-connections";
 import type { Account } from "@archant/data/types";
 
 import { today } from "../domain/dates.ts";
@@ -132,6 +134,8 @@ export type AccountDetail = AccountSummary & {
 	openingDate: IsoDate;
 	/** A loan's original amount, rate and end date, each null when not given; null for other types. */
 	details: LoanDetails | null;
+	/** The bank connection that feeds it, null for a manual account. */
+	bankConnection: { id: string; institutionName: string } | null;
 };
 
 /** One account as its page shows it. */
@@ -143,11 +147,22 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		throw new AppError("NOT_FOUND", "No account has this id.");
 	}
 
+	const bankConnection =
+		account.bankAccountId === null
+			? undefined
+			: await deps.db
+					.select({ id: bankConnections.id, institutionName: bankConnections.institutionName })
+					.from(bankAccounts)
+					.innerJoin(bankConnections, eq(bankConnections.id, bankAccounts.bankConnectionId))
+					.where(eq(bankAccounts.id, account.bankAccountId))
+					.get();
+
 	return {
 		...(await summarise(deps, account, today(deps.timeZone))),
 		classification: classificationOf(account.type),
 		openingDate,
 		details: account.details,
+		bankConnection: bankConnection ?? null,
 	};
 }
 
@@ -208,8 +223,27 @@ export async function updateAccount(
 	return getAccount(deps, id);
 }
 
-/** Deletes an account and everything it holds, on the user's behalf. */
+/**
+ * Deletes an account and everything it holds, on the user's behalf. A linked
+ * account is refused, as Sure's `cannot_delete_linked`: deleting it would
+ * leave its bank account unlinked and offered for linking again. The check
+ * lives here, not in the ledger, whose delete also serves disconnection.
+ */
 export async function deleteAccount(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	const account = await deps.db
+		.select({ bankAccountId: accounts.bankAccountId })
+		.from(accounts)
+		.where(eq(accounts.id, id))
+		.get();
+
+	if (account === undefined) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	if (account.bankAccountId !== null) {
+		throw new AppError("ACCOUNT_LINKED", "Disconnect the bank before deleting this account.");
+	}
+
 	await deleteLedgerAccount(deps, id, { origin: "user" });
 
 	return { id };

@@ -214,7 +214,7 @@ export type UpdateAccountInput = z.input<typeof updateAccountSchema>;
 export type UpdateAccountRequest = z.output<typeof updateAccountSchema>;
 
 /**
- * The Paramètres form: the name and subtype as typed, the exclusion switch,
+ * The account's edit dialog: the name and subtype as typed, the exclusion switch,
  * and a loan's details, checked the way the API checks them. The account's
  * currency decides how many decimals the amount borrowed may have.
  */

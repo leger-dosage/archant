@@ -16,7 +16,7 @@ export function formatRate(basisPoints: number): string {
 	return `${rateToText(basisPoints)} %`;
 }
 
-/** Stored details back into the text the Paramètres form edits, blank when unknown. */
+/** Stored details back into the text the account edit dialog edits, blank when unknown. */
 export function loanDetailsToInput(
 	details: LoanDetails | null,
 	currency: string,

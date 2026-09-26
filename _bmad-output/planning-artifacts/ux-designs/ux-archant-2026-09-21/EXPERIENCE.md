@@ -26,7 +26,7 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
 | Dashboard | `/` | Sidebar, `g d` | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
 | Accounts | `/accounts` | Sidebar, `g c` | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
-| Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports, Paramètres | 1 |
+| Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports; account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
 | Import | Dialog over account detail | "Importer" on an account, `i` | File, column mapping, preview, confirmation | 2 |
 | Transactions | `/transactions` | Sidebar, `g o` | All transactions, filters in the URL, bulk actions | 1 |
 | Transaction | Sheet over the current page | Row click, `Enter`, `e` | Edit every field | 1 |

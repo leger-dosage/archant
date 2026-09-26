@@ -28,6 +28,11 @@ export const ERROR_STATUSES = {
 	SYNC_TOO_RECENT: 409,
 	/** This bank connection's consent has ended: nothing is read until it is renewed. */
 	CONSENT_EXPIRED: 409,
+	/**
+	 * A delete of an account a bank still feeds: the next sync would offer its
+	 * bank account for linking again, so the bank is disconnected first, as Sure.
+	 */
+	ACCOUNT_LINKED: 409,
 	/** An unknown, already used or expired `state` on a bank's callback. Nothing is written. */
 	BANK_AUTHORIZATION_INVALID: 400,
 	INTERNAL_ERROR: 500,
