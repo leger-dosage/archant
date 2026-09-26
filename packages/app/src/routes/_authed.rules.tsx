@@ -2,7 +2,7 @@ import type { RuleData, RuleRunData } from "@/hooks/useRules";
 import type { SummaryNames } from "@/lib/rule-summary";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, FunnelIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { z } from "zod";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { RuleDialog } from "@/components/RuleDialog";
 import { Button } from "@/components/ui/button";
@@ -341,11 +342,12 @@ function RulesPage() {
 	};
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
-			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-3xl font-semibold tracking-tight">{t("rules.title")}</h1>
-				{desktop && (
-					<div className="flex items-center gap-2">
+		<Page
+			icon={FunnelIcon}
+			title={t("rules.title")}
+			actions={
+				desktop ? (
+					<>
 						<Button
 							variant="outline"
 							disabled={!hasEnabled || previewing}
@@ -354,9 +356,10 @@ function RulesPage() {
 							{t("rules.apply.all")}
 						</Button>
 						<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
-					</div>
-				)}
-			</div>
+					</>
+				) : undefined
+			}
+		>
 			<p className="max-w-2xl text-sm text-muted-foreground">{t("rules.description")}</p>
 
 			{!desktop && (
@@ -483,6 +486,6 @@ function RulesPage() {
 					}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

@@ -96,6 +96,10 @@ export function euros(amount: number): string {
 	return formatMoney({ amount: toMinorUnits(amount), currency: "EUR" });
 }
 
+/** `#rrggbb` as the browser computes it. */
+export const rgb = (hex: string) =>
+	`rgb(${[1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16)).join(", ")})`;
+
 /** A line of an OFX statement built by `sgml`, dated `daysAgo` days before today. */
 export type Line = { daysAgo: number; amount: string; label: string; fitid: string };
 

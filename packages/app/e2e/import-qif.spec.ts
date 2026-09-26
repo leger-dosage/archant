@@ -50,8 +50,7 @@ function ambiguousDay(): { date: string; swapped: string } {
 	throw new Error("No day of the last 40 reads both ways.");
 }
 
-const header = (page: Page, name: string) =>
-	page.getByRole("heading", { level: 1, name }).locator("..");
+const header = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Importer un fichier" });
 

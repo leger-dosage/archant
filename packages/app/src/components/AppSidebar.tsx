@@ -2,18 +2,20 @@ import type { AccountGroupData } from "@/hooks/useAccounts";
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+	CalendarIcon,
 	ChevronRightIcon,
+	FunnelIcon,
 	LayoutDashboardIcon,
-	ListIcon,
-	RepeatIcon,
-	WandSparklesIcon,
+	ReceiptIcon,
 	WalletIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
+import { ArchLogo } from "@/components/ArchLogo";
 import { Money } from "@/components/Money";
 import { ThemeMenu } from "@/components/ThemeMenu";
+import { TintedIcon } from "@/components/TintedIcon";
 import {
 	Sidebar,
 	SidebarContent,
@@ -31,9 +33,10 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { cn } from "@/lib/utils";
 
-// DESIGN.md: the active entry carries a 2 px accent bar on its left edge.
-const ACTIVE_INDICATOR =
-	"data-active:bg-sidebar-accent data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-accent-brand data-active:before:content-['']";
+// DESIGN.md `sidebar-item`: 28 px, secondary text and a muted icon; the
+// active entry takes the active background and the primary text, no bar.
+const ENTRY =
+	"h-7 font-medium text-foreground-secondary [&>svg]:text-muted-foreground data-active:[&>svg]:text-sidebar-accent-foreground";
 
 function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; currency: string }) {
 	const { t } = useTranslation();
@@ -67,10 +70,11 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === `/accounts/${account.id}`}
-								className={cn("justify-between gap-2 pl-6", ACTIVE_INDICATOR)}
+								className="h-7 gap-2 text-foreground-secondary"
 							>
 								<Link to="/accounts/$accountId" params={{ accountId: account.id }}>
-									<span className="truncate">{account.name}</span>
+									<TintedIcon subject={{ kind: "account", type: account.type }} size="sm" />
+									<span className="min-w-0 flex-1 truncate">{account.name}</span>
 									<AccountBalance account={account} className="text-xs" />
 								</Link>
 							</SidebarMenuButton>
@@ -118,13 +122,14 @@ export function AppSidebar() {
 	const showAccounts = isMobile || state === "expanded";
 
 	return (
-		<Sidebar collapsible="icon">
+		<Sidebar collapsible="icon" variant="inset">
 			<SidebarHeader>
 				<div className="flex h-8 items-center gap-2 px-2 font-semibold group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-					<span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-xs text-primary-foreground">
-						{t("app.name").charAt(0)}
+					{/* The mark carries the name, so it stays named once collapsed to icons. */}
+					<ArchLogo label={t("app.name")} />
+					<span aria-hidden="true" className="truncate group-data-[collapsible=icon]:hidden">
+						{t("app.name")}
 					</span>
-					<span className="truncate group-data-[collapsible=icon]:hidden">{t("app.name")}</span>
 				</div>
 			</SidebarHeader>
 			<SidebarContent>
@@ -135,7 +140,7 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/"}
 								tooltip={t("nav.dashboard")}
-								className={ACTIVE_INDICATOR}
+								className={ENTRY}
 							>
 								<Link to="/">
 									<LayoutDashboardIcon />
@@ -146,10 +151,10 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								// Exact: on an account page its own row carries the indicator.
+								// Exact: on an account page its own row is the active one.
 								isActive={pathname === "/accounts" || pathname === "/accounts/"}
 								tooltip={t("nav.accounts")}
-								className={ACTIVE_INDICATOR}
+								className={ENTRY}
 							>
 								<Link to="/accounts">
 									<WalletIcon />
@@ -162,10 +167,10 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/transactions"}
 								tooltip={t("nav.operations")}
-								className={ACTIVE_INDICATOR}
+								className={ENTRY}
 							>
 								<Link to="/transactions">
-									<ListIcon />
+									<ReceiptIcon />
 									<span>{t("nav.operations")}</span>
 								</Link>
 							</SidebarMenuButton>
@@ -175,10 +180,10 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/recurring"}
 								tooltip={t("nav.recurring")}
-								className={ACTIVE_INDICATOR}
+								className={ENTRY}
 							>
 								<Link to="/recurring">
-									<RepeatIcon />
+									<CalendarIcon />
 									<span>{t("nav.recurring")}</span>
 								</Link>
 							</SidebarMenuButton>
@@ -188,10 +193,10 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/rules"}
 								tooltip={t("nav.rules")}
-								className={ACTIVE_INDICATOR}
+								className={ENTRY}
 							>
 								<Link to="/rules">
-									<WandSparklesIcon />
+									<FunnelIcon />
 									<span>{t("nav.rules")}</span>
 								</Link>
 							</SidebarMenuButton>

@@ -62,7 +62,7 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 | `lucide-react`                                                  | 1.48.x                | Icons                                                   |
 | `sonner`                                                        | 2.0.x                 | Toasts                                                  |
 | `react-day-picker`                                              | 10.0.x                | French calendar in date fields                          |
-| `@fontsource-variable/geist`, `@fontsource-variable/geist-mono` | 5.3.x                 | Geist and Geist Mono, self-hosted                       |
+| `@fontsource-variable/inter`, `@fontsource-variable/geist-mono` | 5.3.x                 | Inter for text, Geist Mono for code, self-hosted        |
 | `@types/react` / `@types/react-dom`                             | 19.3.x                | React types                                             |
 | `vitest`                                                        | 5.0.x                 | Unit tests                                              |
 | `@playwright/test`                                              | 1.63.x                | End-to-end tests in `e2e/`                              |

@@ -309,9 +309,9 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	).toBeVisible();
 
 	await page.goto(`/accounts/${loan.id}`);
-	await expect(
-		page.getByRole("heading", { level: 1, name: loan.name }).locator(".."),
-	).toContainText(euros(17_880_000));
+	await expect(page.getByRole("region", { name: loan.name, exact: true })).toContainText(
+		euros(17_880_000),
+	);
 
 	await page.goto("/?month=2024-06");
 	const expenses = page
@@ -384,7 +384,7 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await expectNoCategoryField(page, into);
 
 	await page.goto(`/accounts/${pea.id}`);
-	await expect(page.getByRole("heading", { level: 1, name: pea.name }).locator("..")).toContainText(
+	await expect(page.getByRole("region", { name: pea.name, exact: true })).toContainText(
 		euros(2_550_000),
 	);
 

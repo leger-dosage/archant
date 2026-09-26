@@ -1,13 +1,14 @@
 import type { RecurringData, RecurringMove } from "@/hooks/useRecurring";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon } from "lucide-react";
+import { CalendarIcon, EllipsisIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Money } from "@/components/Money";
+import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -124,13 +125,15 @@ function RecurringPage() {
 		);
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-6 p-6">
-			<div className="flex items-center justify-between gap-4">
-				<h1 className="text-3xl font-semibold tracking-tight">{t("recurring.title")}</h1>
+		<Page
+			icon={CalendarIcon}
+			title={t("recurring.title")}
+			actions={
 				<Button variant="outline" disabled={detect.isPending} onClick={runDetection}>
 					{t("recurring.detect")}
 				</Button>
-			</div>
+			}
+		>
 			<p className="max-w-2xl text-sm text-muted-foreground">{t("recurring.description")}</p>
 
 			{recurring.isPending && (
@@ -235,6 +238,6 @@ function RecurringPage() {
 					}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

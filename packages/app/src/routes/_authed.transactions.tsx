@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind } from "@/lib/transaction-filters";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { SearchIcon } from "lucide-react";
+import { ReceiptIcon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +11,7 @@ import { isCurrencyCode } from "@archant/data/money";
 
 import { BulkBar } from "@/components/BulkBar";
 import { Money } from "@/components/Money";
+import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { TransactionFilters } from "@/components/TransactionFilters";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
@@ -180,9 +181,7 @@ function OperationsPage() {
 	const clear = () => void navigate({ search: {} });
 
 	return (
-		<div className="flex w-full max-w-[1200px] flex-col gap-4 p-6">
-			<h1 className="text-3xl font-semibold tracking-tight">{t("operations.title")}</h1>
-
+		<Page icon={ReceiptIcon} title={t("operations.title")} className="gap-4">
 			<div className="flex flex-wrap items-center gap-2">
 				<SearchField q={search.q} />
 				<TransactionFilters
@@ -284,6 +283,6 @@ function OperationsPage() {
 					onOpenChange={(open) => setSheet((current) => ({ ...current, open }))}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

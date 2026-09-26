@@ -597,16 +597,16 @@
 			"expense": "Dépense"
 		},
 		"colors": {
-			"#e99537": "Orange",
-			"#4da568": "Vert",
-			"#6471eb": "Bleu",
-			"#db5a54": "Rouge",
-			"#df4e92": "Rose",
-			"#c44fe9": "Violet",
-			"#eb5429": "Orange vif",
-			"#61c9ea": "Bleu ciel",
-			"#805dee": "Mauve",
-			"#6ad28a": "Vert clair"
+			"#fc7840": "Orange",
+			"#f0bf00": "Jaune",
+			"#4ea7fc": "Bleu",
+			"#00b8cc": "Turquoise",
+			"#27a644": "Vert",
+			"#5e6ad2": "Indigo",
+			"#eb5757": "Rouge",
+			"#9d6fe8": "Violet",
+			"#e2609c": "Rose",
+			"#c95fd8": "Magenta"
 		},
 		"icons": {
 			"circle-dollar-sign": "Pièce",
@@ -659,6 +659,7 @@
 			"kind": "Type",
 			"color": "Couleur",
 			"currentColor": "Couleur actuelle",
+			"preview": "Aperçu de la catégorie",
 			"icon": "Icône",
 			"save": "Enregistrer",
 			"created": "Catégorie « {{name}} » ajoutée.",

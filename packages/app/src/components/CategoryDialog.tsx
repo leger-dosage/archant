@@ -14,6 +14,7 @@ import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets"
 import { CATEGORY_KINDS } from "@archant/data/schema/categories";
 
 import { ChoiceField } from "@/components/ChoiceField";
+import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -101,6 +102,9 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 	const colors: string[] = isSwatch(color.field.value)
 		? [...CATEGORY_COLORS]
 		: [color.field.value, ...CATEGORY_COLORS];
+	// A child shows in its parent's colour, as the API stores it.
+	const previewColor =
+		parents.find((parent) => parent.id === parentId.field.value)?.color ?? color.field.value;
 
 	// Keyed on the id: the page hands over the category from the current list,
 	// a new object on every refetch, which must not wipe what is being typed.
@@ -157,17 +161,26 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 					className="flex flex-col gap-4"
 					onSubmit={(event) => void submit(event)}
 				>
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="category-name">{t("categories.form.name")}</Label>
-						<Input
-							id="category-name"
-							autoComplete="off"
-							aria-invalid={errors.name !== undefined}
-							{...describedBy("name")}
-							{...form.register("name")}
-						/>
-						<FieldMessage id="category-name-error" error={errors.name} />
+					<div className="flex items-end gap-3">
+						{/* Sure's form previews the category as the lists will draw it. */}
+						<div role="img" aria-label={t("categories.form.preview")} className="py-0.5">
+							<TintedIcon
+								subject={{ kind: "category", color: previewColor, icon: icon.field.value }}
+								size="lg"
+							/>
+						</div>
+						<div className="flex min-w-0 flex-1 flex-col gap-1.5">
+							<Label htmlFor="category-name">{t("categories.form.name")}</Label>
+							<Input
+								id="category-name"
+								autoComplete="off"
+								aria-invalid={errors.name !== undefined}
+								{...describedBy("name")}
+								{...form.register("name")}
+							/>
+						</div>
 					</div>
+					<FieldMessage id="category-name-error" error={errors.name} />
 
 					<div className="flex flex-col gap-1.5">
 						<ChoiceField

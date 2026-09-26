@@ -2,8 +2,8 @@ import type { MinorUnits } from "@archant/data/money";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
-/** The transfer chip's dot, as in `key-transactions.html`: no category has it. */
-export const TRANSFER_COLOR = "#7A5AF8";
+/** DESIGN.md's `transfer` colour, also `--transfer` in styles.css. */
+export const TRANSFER_COLOR = "#5e6ad2";
 
 type TransferSide = {
 	amount: MinorUnits;
