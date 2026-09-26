@@ -86,9 +86,6 @@ function SidebarProvider({
 		return isMobile ? setOpenMobile((current) => !current) : setOpen((current) => !current);
 	}, [isMobile, setOpen, setOpenMobile]);
 
-	// `⌘B` is bound by the root layout through the shortcut catalogue, so it
-	// stays off under an open dialog like every other shortcut.
-
 	// We add a state so that we can do data-state="expanded" or "collapsed".
 	// This makes it easier to style the sidebar with Tailwind classes.
 	const state = open ? "expanded" : "collapsed";

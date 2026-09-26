@@ -55,7 +55,7 @@ async function visit(page: Page) {
 	await expect(page.getByRole("heading", { level: 1, name: "Règles" })).toBeVisible();
 }
 
-test("the sidebar and g u open Règles, empty at first", async ({ page }) => {
+test("the sidebar opens Règles, empty at first", async ({ page }) => {
 	await page.goto("/accounts");
 	await page
 		.locator('[data-sidebar="sidebar"]')
@@ -65,12 +65,6 @@ test("the sidebar and g u open Règles, empty at first", async ({ page }) => {
 	await expect(page).toHaveURL(/\/rules$/u);
 	await expect(page.getByText("Aucune règle pour l'instant.")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toBeVisible();
-
-	await page.goto("/accounts");
-	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
-	await page.keyboard.press("g");
-	await page.keyboard.press("u");
-	await expect(page.getByRole("heading", { level: 1, name: "Règles" })).toBeVisible();
 });
 
 test("a rule saved from the form categorises the next matching transaction", async ({

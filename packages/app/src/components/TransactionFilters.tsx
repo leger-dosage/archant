@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { categoryTree } from "@/lib/category-tree";
-import { matchesCommand } from "@/lib/shortcuts";
+import { matchesSearch } from "@/lib/search-match";
 import { DIRECTIONS, FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
 
 /**
@@ -207,7 +207,7 @@ function SearchableEditor({
 		return new Set((selectedIds ?? []).filter((id) => known.has(id)));
 	});
 	const [search, setSearch] = useState("");
-	const shown = items.filter((item) => matchesCommand(item.name, search));
+	const shown = items.filter((item) => matchesSearch(item.name, search));
 
 	return (
 		<EditorForm onSubmit={() => onApply(selected.size === 0 ? undefined : [...selected])}>

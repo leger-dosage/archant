@@ -13,7 +13,6 @@ import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
 import { Money } from "@/components/Money";
-import { ShortcutHint } from "@/components/ShortcutHint";
 import { ThemeMenu } from "@/components/ThemeMenu";
 import {
 	Sidebar,
@@ -135,10 +134,7 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/"}
-								tooltip={{
-									children: <ShortcutHint id="goDashboard" label={t("nav.dashboard")} />,
-									hidden: false,
-								}}
+								tooltip={t("nav.dashboard")}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/">
@@ -152,11 +148,7 @@ export function AppSidebar() {
 								asChild
 								// Exact: on an account page its own row carries the indicator.
 								isActive={pathname === "/accounts" || pathname === "/accounts/"}
-								// Shown expanded too: the tooltip is where the shortcut is learnt.
-								tooltip={{
-									children: <ShortcutHint id="goAccounts" label={t("nav.accounts")} />,
-									hidden: false,
-								}}
+								tooltip={t("nav.accounts")}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/accounts">
@@ -169,10 +161,7 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/transactions"}
-								tooltip={{
-									children: <ShortcutHint id="goOperations" label={t("nav.operations")} />,
-									hidden: false,
-								}}
+								tooltip={t("nav.operations")}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/transactions">
@@ -185,10 +174,7 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/recurring"}
-								tooltip={{
-									children: <ShortcutHint id="goRecurring" label={t("nav.recurring")} />,
-									hidden: false,
-								}}
+								tooltip={t("nav.recurring")}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/recurring">
@@ -201,10 +187,7 @@ export function AppSidebar() {
 							<SidebarMenuButton
 								asChild
 								isActive={pathname === "/rules"}
-								tooltip={{
-									children: <ShortcutHint id="goRules" label={t("nav.rules")} />,
-									hidden: false,
-								}}
+								tooltip={t("nav.rules")}
 								className={ACTIVE_INDICATOR}
 							>
 								<Link to="/rules">

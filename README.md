@@ -30,7 +30,6 @@ The interface is in French. Everything below works without a bank connection exc
 - Transfers between accounts, marked by hand or matched automatically.
 - Recurring transactions, detected from history and listed with their next date.
 - A dashboard with net worth over time and monthly income and expenses by category.
-- A command palette and keyboard shortcuts.
 - One administrator account, created on first launch, with a password reset from the server's shell.
 - Bank synchronisation through Enable Banking: connect a bank, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
 

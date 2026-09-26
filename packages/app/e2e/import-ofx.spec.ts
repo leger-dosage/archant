@@ -135,7 +135,7 @@ test("the same file again is already present, and confirm is disabled", async ({
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 	await expect(dialog(page)).toBeHidden();
 
-	await page.keyboard.press("i");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page)).toBeVisible();
 	await choose(page, file);
 
@@ -262,7 +262,7 @@ test("a text file shows the unreadable-file message", async ({ page, api }) => {
 	await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Fichier/u);
 });
 
-test("the palette offers the import on an account page, and a narrow screen is told to use a computer", async ({
+test("« Importer » opens the import on an account page, and a narrow screen is told to use a computer", async ({
 	page,
 	api,
 }) => {
@@ -270,12 +270,7 @@ test("the palette offers the import on an account page, and a narrow screen is t
 
 	await page.goto(`/accounts/${account.id}`);
 	await expect(header(page, account.name)).toBeVisible();
-	await page.keyboard.press("ControlOrMeta+K");
-	await page
-		.getByRole("dialog", { name: "Palette de commandes" })
-		.getByRole("combobox")
-		.fill("importer");
-	await page.keyboard.press("Enter");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page).getByLabel("Relevé bancaire")).toBeVisible();
 	await page.keyboard.press("Escape");
 
@@ -425,7 +420,7 @@ test("the same lines with a later ledger balance offer « Enregistrer le solde �
 	await expect(dialog(page)).toBeHidden();
 	await expect(header(page, account.name)).toContainText(euros(240_861));
 
-	await page.keyboard.press("i");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page)).toBeVisible();
 	await choose(page, sgml(lines, { ledger: { amount: "2500,00", daysAgo: 1 } }));
 

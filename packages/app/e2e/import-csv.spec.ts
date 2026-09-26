@@ -149,7 +149,7 @@ test("the next CSV into the same account opens on its preview, and the columns c
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 	await expect(dialog(page)).toBeHidden();
 
-	await page.keyboard.press("i");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await expect(dialog(page)).toBeVisible();
 	await choose(page, csvFile(threeLines()));
 
@@ -177,7 +177,7 @@ test("the same CSV again is already present, and confirm is disabled", async ({ 
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 	await expect(dialog(page)).toBeHidden();
 
-	await page.keyboard.press("i");
+	await page.getByRole("button", { name: "Importer", exact: true }).click();
 	await choose(page, file);
 
 	await expect(tab(page, "Déjà présentes", 3)).toHaveAttribute("aria-selected", "true");

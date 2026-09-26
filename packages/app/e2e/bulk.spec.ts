@@ -49,7 +49,7 @@ async function tick(page: Page, labels: string[]) {
 	}, Promise.resolve());
 }
 
-test("ticking two rows shows « 2 sélectionnées », and Esc hides the bar", async ({ page, api }) => {
+test("ticking two rows shows « 2 sélectionnées »", async ({ page, api }) => {
 	const prefix = uniqueName("Tri");
 	await withRows(api, prefix);
 
@@ -58,10 +58,6 @@ test("ticking two rows shows « 2 sélectionnées », and Esc hides the bar", as
 
 	await expect(bar(page)).toContainText("2 sélectionnées");
 	await expect(checkbox(page, labelOf(prefix, 2))).not.toBeChecked();
-	await page.keyboard.press("Escape");
-
-	await expect(bar(page)).toBeHidden();
-	await expect(checkbox(page, labelOf(prefix, 1))).not.toBeChecked();
 });
 
 test("Esc closing the bar's category list keeps the selection", async ({ page, api }) => {
@@ -93,23 +89,22 @@ test("changing the search clears the selection", async ({ page, api }) => {
 	await expect(checkbox(page, labelOf(prefix, 1))).not.toBeChecked();
 });
 
-test("x then Shift+j twice selects three rows", async ({ page, api }) => {
-	const prefix = uniqueName("Clavier");
-	await withRows(api, prefix, 4);
+test("« Vider la sélection » unticks every row", async ({ page, api }) => {
+	const prefix = uniqueName("Vider");
+	await withRows(api, prefix);
 
 	await visitOperations(page, prefix);
-	await page.keyboard.press("j");
-	await expect(rowButton(page, labelOf(prefix, 1))).toBeFocused();
-	await page.keyboard.press("x");
-	await page.keyboard.press("Shift+J");
-	await page.keyboard.press("Shift+J");
+	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 3)]);
+	await expect(bar(page)).toContainText("2 sélectionnées");
+	const clear = bar(page).getByRole("checkbox", { name: "Vider la sélection" });
+	await expect(clear).toBeChecked();
+	await clear.click();
 
-	await expect(rowButton(page, labelOf(prefix, 3))).toBeFocused();
-	await expect(bar(page)).toContainText("3 sélectionnées");
+	await expect(bar(page)).toBeHidden();
 	await Promise.all(
-		[1, 2, 3].map((day) => expect(checkbox(page, labelOf(prefix, day))).toBeChecked()),
+		[1, 2, 3].map((day) => expect(checkbox(page, labelOf(prefix, day))).not.toBeChecked()),
 	);
-	await expect(checkbox(page, labelOf(prefix, 4))).not.toBeChecked();
+	await expect(rowButton(page, labelOf(prefix, 1))).toBeFocused();
 });
 
 test("Shift+click on a checkbox two rows below the ticked one selects the three", async ({
@@ -170,7 +165,7 @@ test("a merchant, a tag and the exclusion set in the bar show on every selected 
 	await expect(toast(page, "Marchand modifié sur 2 opérations")).toBeVisible();
 
 	await tick(page, labels);
-	await page.keyboard.press("t");
+	await bar(page).getByRole("button", { name: "Étiquettes" }).click();
 	await page.getByRole("combobox", { name: "Rechercher une étiquette" }).fill(tag.name);
 	await page.getByRole("option", { name: tag.name }).click();
 	await page.keyboard.press("Escape");

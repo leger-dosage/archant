@@ -1,11 +1,10 @@
-import type { BulkPicker } from "@/components/BulkBar";
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind } from "@/lib/transaction-filters";
 
 import { createFileRoute } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isCurrencyCode } from "@archant/data/money";
@@ -13,20 +12,17 @@ import { isCurrencyCode } from "@archant/data/money";
 import { BulkBar } from "@/components/BulkBar";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
-import { ShortcutHint } from "@/components/ShortcutHint";
 import { TransactionFilters } from "@/components/TransactionFilters";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useSelection } from "@/hooks/useSelection";
-import { useShortcut } from "@/hooks/useShortcut";
 import { useTags } from "@/hooks/useTags";
 import { useTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
@@ -47,20 +43,13 @@ const SEARCH_DELAY_MS = 300;
 
 /**
  * The search field, bound to `q`. It keeps what is typed, trailing spaces
- * included, and writes the trimmed text to the URL once typing pauses. `/`
- * focuses it from anywhere on the page.
+ * included, and writes the trimmed text to the URL once typing pauses.
  */
 function SearchField({ q }: { q: string | undefined }) {
 	const { t } = useTranslation();
 	const navigate = Route.useNavigate();
 	const [text, setText] = useState(q ?? "");
 	const [shown, setShown] = useState(q);
-	const input = useRef<HTMLInputElement>(null);
-
-	useShortcut("search", () => {
-		input.current?.focus();
-		input.current?.select();
-	});
 
 	// Follows the URL when it changes from elsewhere: « Effacer les filtres »,
 	// the back button.
@@ -94,27 +83,14 @@ function SearchField({ q }: { q: string | undefined }) {
 				aria-hidden="true"
 				className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
 			/>
-			<Tooltip>
-				<TooltipTrigger
-					asChild
-					// Hover only: a hint opening on focus would sit over the filters
-					// while the user types.
-					onFocus={(event) => event.preventDefault()}
-				>
-					<Input
-						ref={input}
-						type="search"
-						aria-label={t("operations.search")}
-						placeholder={t("operations.searchPlaceholder")}
-						className="pl-8"
-						value={text}
-						onChange={(event) => setText(event.target.value)}
-					/>
-				</TooltipTrigger>
-				<TooltipContent side="bottom">
-					<ShortcutHint id="search" label={t("operations.search")} />
-				</TooltipContent>
-			</Tooltip>
+			<Input
+				type="search"
+				aria-label={t("operations.search")}
+				placeholder={t("operations.searchPlaceholder")}
+				className="pl-8"
+				value={text}
+				onChange={(event) => setText(event.target.value)}
+			/>
 		</div>
 	);
 }
@@ -170,7 +146,6 @@ function OperationsPage() {
 		JSON.stringify([filters, page]),
 		shownItems.map((item) => item.id),
 	);
-	const [bulkPicker, setBulkPicker] = useState<BulkPicker | null>(null);
 	const accountOptions: FilterAccount[] = useMemo(
 		() =>
 			accounts.data?.groups.flatMap((group) =>
@@ -280,7 +255,7 @@ function OperationsPage() {
 					onOpen={(transaction) => setSheet({ open: true, transaction })}
 					// The previous page's rows, shown while the next loads, cannot be ticked
 					// under the new filters.
-					{...(transactions.isPlaceholderData ? {} : { selection, onBulkPick: setBulkPicker })}
+					{...(transactions.isPlaceholderData ? {} : { selection })}
 				/>
 			)}
 
@@ -299,8 +274,6 @@ function OperationsPage() {
 					target={selection.target}
 					total={data.total}
 					filters={filters}
-					picker={bulkPicker}
-					onPickerChange={setBulkPicker}
 				/>
 			)}
 

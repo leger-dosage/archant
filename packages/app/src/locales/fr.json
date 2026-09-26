@@ -38,62 +38,6 @@
 		"dark": "Sombre",
 		"current": "{{label}} : {{choice}}"
 	},
-	"commands": {
-		"title": "Palette de commandes",
-		"description": "Aller à une page, lancer une action ou ouvrir un compte.",
-		"placeholder": "Rechercher une page, une action, un compte",
-		"empty": "Aucun résultat.",
-		"open": "Commandes",
-		"groups": {
-			"goTo": "Aller à",
-			"actions": "Actions",
-			"accounts": "Comptes"
-		},
-		"recordSnapshot": "Enregistrer un solde",
-		"showShortcuts": "Afficher les raccourcis",
-		"themes": {
-			"system": "Suivre le thème du système",
-			"light": "Utiliser le thème clair",
-			"dark": "Utiliser le thème sombre"
-		},
-		"importFile": "Importer un fichier"
-	},
-	"shortcuts": {
-		"title": "Raccourcis clavier",
-		"description": "Les raccourcis d'une seule lettre ne s'appliquent pas pendant la saisie dans un champ.",
-		"open": "Raccourcis clavier",
-		"or": "ou",
-		"sections": {
-			"general": "Général",
-			"navigation": "Navigation",
-			"actions": "Actions",
-			"lists": "Listes d'opérations"
-		},
-		"labels": {
-			"palette": "Ouvrir la palette de commandes",
-			"toggleSidebar": "Réduire ou déplier la barre latérale",
-			"shortcuts": "Afficher les raccourcis",
-			"goDashboard": "Aller au tableau de bord",
-			"goAccounts": "Aller aux comptes",
-			"goOperations": "Aller aux opérations",
-			"goRecurring": "Aller aux récurrences",
-			"goRules": "Aller aux règles",
-			"goSettings": "Aller aux réglages",
-			"newTransaction": "Ajouter une opération sur la page d'un compte",
-			"search": "Rechercher dans les opérations",
-			"nextRow": "Opération suivante",
-			"previousRow": "Opération précédente",
-			"openRow": "Ouvrir l'opération",
-			"importFile": "Importer un fichier sur la page d'un compte",
-			"categoriseRow": "Changer la catégorie de l'opération",
-			"setMerchantRow": "Changer le marchand de l'opération",
-			"setTagsRow": "Changer les étiquettes de l'opération",
-			"toggleRow": "Sélectionner l'opération",
-			"extendNext": "Étendre la sélection à l'opération suivante",
-			"extendPrevious": "Étendre la sélection à l'opération précédente",
-			"clearSelection": "Vider la sélection"
-		}
-	},
 	"dashboard": {
 		"title": "Tableau de bord",
 		"netWorth": "Patrimoine net",
@@ -300,18 +244,14 @@
 			"unknown": "Marchand inconnu",
 			"search": "Rechercher un marchand",
 			"empty": "Aucun marchand trouvé.",
-			"create": "Créer \"{{name}}\"",
-			"changed": "Marchand modifié",
-			"undo": "Annuler"
+			"create": "Créer \"{{name}}\""
 		},
 		"tags": {
 			"none": "Aucune étiquette",
 			"search": "Rechercher une étiquette",
 			"empty": "Aucune étiquette trouvée.",
 			"create": "Créer \"{{name}}\"",
-			"more": "+{{count}}",
-			"changed": "Étiquettes modifiées",
-			"undo": "Annuler"
+			"more": "+{{count}}"
 		},
 		"transfer": {
 			"title": "Virement",
@@ -420,6 +360,8 @@
 		"bulk": {
 			"toolbar": "Actions sur la sélection",
 			"selectRow": "Sélectionner « {{label}} »",
+			"toggleRow": "Sélectionner l'opération",
+			"clear": "Vider la sélection",
 			"selected_one": "{{count}} sélectionnée",
 			"selected_other": "{{count}} sélectionnées",
 			"selectAll_one": "Tout sélectionner ({{count}} résultat)",

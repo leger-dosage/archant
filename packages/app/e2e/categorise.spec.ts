@@ -126,33 +126,34 @@ test("« Annuler » in the toast puts « Sans catégorie » back", async ({ page
 	await expect(chipOf(page, label, "Sans catégorie")).toBeVisible();
 });
 
-test("c on a focused row opens its category combobox", async ({ page, api }) => {
+test("Enter on the category chip opens its combobox, and Esc gives focus back to the chip", async ({
+	page,
+	api,
+}) => {
 	const label = uniqueName("Pharmacie");
 	await oneTransaction(api, label);
 
 	await visitOperations(page, label);
-	await page.keyboard.press("j");
-	await expect(rowButton(page, label)).toBeFocused();
-	await page.keyboard.press("c");
+	await chipOf(page, label, "Sans catégorie").focus();
+	await page.keyboard.press("Enter");
 
 	await expect(categorySearch(page)).toBeFocused();
 	await expect(page.getByRole("option", { name: "Sans catégorie" })).toBeVisible();
 
-	// Focus goes back to the row, so `j` carries on from there.
 	await page.keyboard.press("Escape");
 	await expect(categorySearch(page)).toBeHidden();
-	await expect(rowButton(page, label)).toBeFocused();
+	await expect(chipOf(page, label, "Sans catégorie")).toBeFocused();
 
-	await page.keyboard.press("c");
+	await page.keyboard.press("Enter");
 	await page.keyboard.type("cour");
 	await page.keyboard.press("Enter");
 	await expect(chipOf(page, label, "Courses")).toBeVisible();
-	await expect(rowButton(page, label)).toBeFocused();
+	await expect(chipOf(page, label, "Courses")).toBeFocused();
 
-	// The chip names the shortcut in its tooltip.
+	// The tooltip names the action, with no key.
 	await page.mouse.move(0, 0);
 	await chipOf(page, label, "Courses").hover();
-	await expect(page.getByRole("tooltip")).toHaveText(/Changer la catégorie\s*C/u);
+	await expect(page.getByRole("tooltip")).toHaveText("Changer la catégorie");
 });
 
 test("the category filter keeps « Sans catégorie » rows, or the rows of two categories, and names them in its chip", async ({

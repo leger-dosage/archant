@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
@@ -19,7 +19,6 @@ import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory
 import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { Pagination } from "@/components/Pagination";
-import { ShortcutHint } from "@/components/ShortcutHint";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
@@ -32,9 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAccount } from "@/hooks/useAccount";
 import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
-import { usePageCommands } from "@/hooks/useCommands";
 import { useAccountImports } from "@/hooks/useImports";
-import { useShortcut } from "@/hooks/useShortcut";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
@@ -290,54 +287,12 @@ function AccountPage() {
 		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
 			? { id: account.data.id, currency, openingDate: account.data.openingDate }
 			: undefined;
-	// The same conditions as the « Ajouter une opération » and « Ajouter un
-	// solde » buttons, so the palette and `n` never offer what the page does not.
 	const canAddTransaction = account.data !== undefined;
 	// A snapshot must fall after the opening date and not after today: an
 	// account opened today or later has no valid date yet.
 	const canAddSnapshot = writable !== undefined && writable.openingDate < toIsoDate();
 	// The dialog needs the account's currency, like the two forms.
 	const canImport = writable !== undefined;
-	const commands = useMemo(
-		() => [
-			...(canAddTransaction
-				? [
-						{
-							id: "add-transaction",
-							label: t("transactions.add"),
-							shortcut: "newTransaction" as const,
-							run: () => setSheet({ open: true, transaction: null }),
-						},
-					]
-				: []),
-			...(canImport
-				? [
-						{
-							id: "import-file",
-							label: t("commands.importFile"),
-							shortcut: "importFile" as const,
-							run: () => setImporting(true),
-						},
-					]
-				: []),
-			...(canAddSnapshot
-				? [
-						{
-							id: "record-snapshot",
-							label: t("commands.recordSnapshot"),
-							run: () => setSnapshotDialog({ open: true, snapshot: null }),
-						},
-					]
-				: []),
-		],
-		[canAddSnapshot, canAddTransaction, canImport, t],
-	);
-
-	usePageCommands(commands);
-	useShortcut("newTransaction", () => setSheet({ open: true, transaction: null }), {
-		enabled: canAddTransaction,
-	});
-	useShortcut("importFile", () => setImporting(true), { enabled: canImport });
 
 	if (notFound) {
 		return (
@@ -414,18 +369,9 @@ function AccountPage() {
 									{t("imports.open")}
 								</Button>
 							</TooltipTrigger>
-							<TooltipContent side="bottom">
-								<ShortcutHint id="importFile" label={t("commands.importFile")} />
-							</TooltipContent>
+							<TooltipContent side="bottom">{t("imports.title")}</TooltipContent>
 						</Tooltip>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button onClick={openNew}>{t("transactions.add")}</Button>
-							</TooltipTrigger>
-							<TooltipContent side="bottom">
-								<ShortcutHint id="newTransaction" label={t("transactions.add")} />
-							</TooltipContent>
-						</Tooltip>
+						<Button onClick={openNew}>{t("transactions.add")}</Button>
 					</div>
 				</div>
 			)}
