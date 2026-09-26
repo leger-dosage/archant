@@ -97,6 +97,17 @@ test("typing in a row's category combobox and pressing Enter sets it at once, an
 	await expect(chipOf(page, label, "Courses")).toBeVisible();
 });
 
+test("a row's category combobox offers no « Créer » for an unknown name", async ({ page, api }) => {
+	const label = uniqueName("Marché");
+	await oneTransaction(api, label);
+
+	await visitOperations(page, label);
+	await chipOf(page, label, "Sans catégorie").click();
+	await categorySearch(page).fill(uniqueName("Absente"));
+
+	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+});
+
 test("« Annuler » in the toast puts « Sans catégorie » back", async ({ page, api }) => {
 	const label = uniqueName("Épicerie");
 	await oneTransaction(api, label);

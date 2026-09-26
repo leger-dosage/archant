@@ -1,4 +1,4 @@
-import type { MerchantData } from "@/hooks/useMerchants";
+import type { TagData } from "@/hooks/useTags";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef } from "react";
@@ -6,8 +6,8 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import type { MerchantInput } from "@archant/api/schemas/merchants";
-import { merchantSchema } from "@archant/api/schemas/merchants";
+import type { TagInput } from "@archant/api/schemas/tags";
+import { tagSchema } from "@archant/api/schemas/tags";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,44 +20,56 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useRenameMerchant } from "@/hooks/useMerchants";
+import { useCreateTag, useRenameTag } from "@/hooks/useTags";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["name"] as const;
 
-type RenameMerchantDialogProps = {
-	merchant: MerchantData;
+type TagDialogProps = {
+	/** The tag to rename; absent to create one. */
+	tag?: TagData | undefined;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 };
 
-/** Renames a merchant; every transaction linked to it shows the new name. */
-export function RenameMerchantDialog({ merchant, open, onOpenChange }: RenameMerchantDialogProps) {
+/**
+ * Creates a tag by name, or renames one: every transaction carrying it
+ * shows the new name.
+ */
+export function TagDialog({ tag, open, onOpenChange }: TagDialogProps) {
 	const { t } = useTranslation();
-	const renameMerchant = useRenameMerchant();
-	const form = useForm<MerchantInput>({
-		resolver: zodResolver(merchantSchema),
-		defaultValues: { name: merchant.name },
+	const createTag = useCreateTag();
+	const renameTag = useRenameTag();
+	const form = useForm<TagInput>({
+		resolver: zodResolver(tagSchema),
+		defaultValues: { name: tag?.name ?? "" },
 	});
 	const { errors, isSubmitting } = form.formState;
 	const error = errors.name;
-	// Keyed on the id: the page hands over the merchant from the current list,
+	// Keyed on the id: the page hands over the tag from the current list,
 	// a new object on every refetch, which must not wipe what is being typed.
-	const latest = useRef(merchant);
-	latest.current = merchant;
+	const tagId = tag?.id;
+	const latest = useRef(tag);
+	latest.current = tag;
 
 	useEffect(() => {
 		if (open) {
-			form.reset({ name: latest.current.name });
+			form.reset({ name: latest.current?.name ?? "" });
 		}
-	}, [open, merchant.id, form]);
+	}, [open, tagId, form]);
 
 	const submit = form.handleSubmit(async (values) => {
 		try {
-			const saved = await renameMerchant.mutateAsync({ id: merchant.id, name: values.name });
-			toast.success(t("merchants.renameDialog.saved", { name: saved.name }));
+			if (tag === undefined) {
+				const created = await createTag.mutateAsync(values);
+				toast.success(t("tags.dialog.created", { name: created.name }));
+			} else {
+				const saved = await renameTag.mutateAsync({ id: tag.id, name: values.name });
+				toast.success(t("tags.dialog.saved", { name: saved.name }));
+			}
+
 			onOpenChange(false);
 		} catch (caught) {
 			const apiError = caught instanceof ApiError ? caught : new ApiError("INTERNAL_ERROR");
@@ -79,29 +91,33 @@ export function RenameMerchantDialog({ merchant, open, onOpenChange }: RenameMer
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent showCloseButton={false}>
 				<DialogHeader>
-					<DialogTitle>{t("merchants.renameDialog.title", { name: merchant.name })}</DialogTitle>
-					<DialogDescription>{t("merchants.renameDialog.description")}</DialogDescription>
+					<DialogTitle>
+						{tag === undefined
+							? t("tags.dialog.addTitle")
+							: t("tags.dialog.renameTitle", { name: tag.name })}
+					</DialogTitle>
+					<DialogDescription>
+						{t(tag === undefined ? "tags.dialog.addDescription" : "tags.dialog.renameDescription")}
+					</DialogDescription>
 				</DialogHeader>
 				<form
-					id="merchant-form"
+					id="tag-form"
 					noValidate
 					className="flex flex-col gap-1.5"
 					onSubmit={(event) => void submit(event)}
 				>
-					<Label htmlFor="merchant-name">{t("merchants.renameDialog.name")}</Label>
+					<Label htmlFor="tag-name">{t("tags.dialog.name")}</Label>
 					<Input
-						id="merchant-name"
+						id="tag-name"
 						autoComplete="off"
 						aria-invalid={error !== undefined}
-						{...(error === undefined ? {} : { "aria-describedby": "merchant-name-error" })}
+						{...(error === undefined ? {} : { "aria-describedby": "tag-name-error" })}
 						{...form.register("name")}
 					/>
 					{code !== null && (
-						<p id="merchant-name-error" className="text-xs text-destructive">
+						<p id="tag-name-error" className="text-xs text-destructive">
 							{/* The shared message names a category. */}
-							{code === "name_taken"
-								? t("merchants.renameDialog.nameTaken")
-								: t(`errors.fields.${code}`)}
+							{code === "name_taken" ? t("tags.dialog.nameTaken") : t(`errors.fields.${code}`)}
 						</p>
 					)}
 				</form>
@@ -109,8 +125,8 @@ export function RenameMerchantDialog({ merchant, open, onOpenChange }: RenameMer
 					<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 						{t("common.cancel")}
 					</Button>
-					<Button type="submit" form="merchant-form" disabled={isSubmitting}>
-						{t("merchants.renameDialog.action")}
+					<Button type="submit" form="tag-form" disabled={isSubmitting}>
+						{t(tag === undefined ? "tags.add" : "tags.dialog.rename")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

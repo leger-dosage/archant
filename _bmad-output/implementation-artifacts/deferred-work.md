@@ -136,3 +136,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-9-a-first-start-that-says-what-is-wrong.md`
   summary: No automated test reaches the API server's `error` handler (`EADDRINUSE` or another listen failure) in `packages/api/src/index.ts`.
   evidence: The loopback probe always stops the process first in tests; removing the handler keeps the suite green. A portable way to make the bind fail after the probe (non-loopback address on Linux, privileged port) was not found.
+- source_spec: `_bmad-output/implementation-artifacts/spec-11-12-create-tags-merchants-and-categories-where-they-are-picked.md`
+  summary: Test that a category created from the rule dialog's picker shows its name on the picker's button before the categories list is refetched.
+  evidence: Removing the `setQueryData` call of `useCreateCategory` breaks no test: Playwright retries the button text until the refetch lands.

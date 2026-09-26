@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-26-2026 11:00
+last_updated: 09-26-2026 11:51
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -116,7 +116,7 @@ development_status:
   11-9-a-first-start-that-says-what-is-wrong: review
   11-10-the-interface-package-is-named-app: done
   11-11-account-actions-in-the-account-s-menu: review
-  11-12-create-tags-merchants-and-categories-where-they-are-picked: backlog
+  11-12-create-tags-merchants-and-categories-where-they-are-picked: review
   11-13-no-command-palette-and-no-single-key-shortcuts: backlog
   11-14-enable-banking-set-up-from-the-interface: backlog
   epic-11-retrospective: optional

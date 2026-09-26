@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 4.3: merchant management under « Réglages ». One database serves the
+// Stories 4.3 and 11.12: merchant management under « Réglages ». One database serves the
 // whole run, so each test works on merchants of its own.
 
 const PAGE = "/settings/merchants";
@@ -73,6 +73,7 @@ test("merging a merchant into another moves its rows and removes it", async ({ p
 	await search.fill(target.name);
 	// Neither « Sans marchand », nor « Créer », nor the merchant itself.
 	await expect(page.getByRole("option", { name: "Sans marchand" })).toHaveCount(0);
+	await search.fill(uniqueName("Absent"));
 	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
 	await search.fill(source.name);
 	await expect(page.getByRole("option", { name: source.name })).toHaveCount(0);
@@ -105,4 +106,56 @@ test("deleting a used merchant, once confirmed, leaves its rows without a mercha
 	await expect(merchantRow(page, merchant.name)).toHaveCount(0);
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).not.toContainText(merchant.name);
+});
+
+test("a merchant added from the header is listed with no transaction", async ({ page }) => {
+	const name = uniqueName("Boulangerie");
+
+	await page.goto(PAGE);
+	// The header's, first: an empty list shows a second one below.
+	await page.getByRole("button", { name: "Ajouter un marchand", exact: true }).first().click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un marchand" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("button", { name: "Ajouter un marchand", exact: true }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(
+		page.locator("[data-sonner-toast]").filter({ hasText: `Marchand « ${name} » ajouté.` }),
+	).toBeVisible();
+	await expect(merchantRow(page, name)).toContainText("0 opération");
+});
+
+test("a merchant name held in another case keeps the dialog open with the error under the field", async ({
+	page,
+	api,
+}) => {
+	const existing = await api.createMerchant(uniqueName("Boulangerie"));
+	const upper = existing.name.toUpperCase();
+
+	await page.goto(PAGE);
+	await page.getByRole("button", { name: "Ajouter un marchand", exact: true }).first().click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un marchand" });
+	await dialog.getByLabel("Nom").fill(upper);
+	await dialog.getByRole("button", { name: "Ajouter un marchand", exact: true }).click();
+
+	await expect(dialog.getByText("Un marchand porte déjà ce nom.")).toBeVisible();
+	await expect(dialog.getByLabel("Nom")).toHaveAttribute("aria-invalid", "true");
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(merchantRow(page, existing.name)).toBeVisible();
+	await expect(merchantRow(page, upper)).toHaveCount(0);
+});
+
+test("an empty merchant list says so and offers the button that adds one", async ({ page }) => {
+	// The shared database already holds other tests' merchants; the empty state
+	// is what the API's empty list looks like.
+	await page.route("**/api/merchants", (route) =>
+		route.request().method() === "GET" ? route.fulfill({ json: { data: [] } }) : route.continue(),
+	);
+
+	await page.goto(PAGE);
+	const empty = page.getByText("Aucun marchand pour l'instant.").locator("..");
+	await expect(empty).toBeVisible();
+	await empty.getByRole("button", { name: "Ajouter un marchand", exact: true }).click();
+
+	await expect(page.getByRole("dialog", { name: "Ajouter un marchand" })).toBeVisible();
 });

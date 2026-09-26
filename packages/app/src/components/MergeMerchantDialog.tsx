@@ -99,7 +99,8 @@ export function MergeMerchantDialog({
 							<MerchantCombobox
 								merchants={merchants}
 								value={targetId}
-								mode="target"
+								allowNone={false}
+								allowCreate={false}
 								exclude={merchant.id}
 								onSelect={(id) => {
 									setTargetId(id);

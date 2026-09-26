@@ -355,7 +355,7 @@ function ReferenceField({
 						<MerchantCombobox
 							merchants={options.merchants}
 							value={picked}
-							mode="target"
+							allowNone={false}
 							onSelect={(merchantId) => {
 								onPick(merchantId ?? "");
 								close();
@@ -377,6 +377,7 @@ function ReferenceField({
 							categories={options.categories}
 							value={picked}
 							allowNone={false}
+							allowCreate
 							onSelect={(categoryId) => {
 								onPick(categoryId ?? "");
 								close();

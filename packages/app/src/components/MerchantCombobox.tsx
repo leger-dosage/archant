@@ -17,6 +17,7 @@ import {
 import { useCreateMerchant } from "@/hooks/useMerchants";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { isNewName } from "@/lib/name-key";
 import { matchesCommand } from "@/lib/shortcuts";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their
@@ -30,14 +31,6 @@ function filterByName(value: string, search: string, keywords: string[] = []): n
 	return value === CREATE || matchesCommand(keywords.join(" "), search) ? 1 : 0;
 }
 
-/**
- * The name the API would store, folded as it compares names: « Créer » is
- * only offered for a name no merchant holds yet.
- */
-function nameKey(name: string): string {
-	return name.trim().normalize("NFC").toLocaleLowerCase("fr");
-}
-
 type MerchantComboboxProps = {
 	/** Sorted by name, as the API lists them. */
 	merchants: readonly MerchantData[];
@@ -47,8 +40,10 @@ type MerchantComboboxProps = {
 	 */
 	value: string | null | undefined;
 	onSelect: (merchantId: string | null) => void;
-	/** A merge target picker offers neither « Sans marchand » nor « Créer ». */
-	mode?: "edit" | "target";
+	/** Offers « Sans marchand » first; a merge target or a rule's value has no such choice. */
+	allowNone?: boolean;
+	/** Offers « Créer "…" » last; a merge target must already exist. */
+	allowCreate?: boolean;
 	/** Left out of the list: the merged merchant itself. */
 	exclude?: string;
 };
@@ -63,7 +58,8 @@ export function MerchantCombobox({
 	merchants,
 	value,
 	onSelect,
-	mode = "edit",
+	allowNone = true,
+	allowCreate = true,
 	exclude,
 }: MerchantComboboxProps) {
 	const { t } = useTranslation();
@@ -73,11 +69,12 @@ export function MerchantCombobox({
 	const offered = merchants.filter((merchant) => merchant.id !== exclude);
 	const typed = search.trim();
 	const canCreate =
-		mode === "edit" &&
-		typed !== "" &&
-		// The API would refuse a longer name.
-		typed.normalize("NFC").length <= MERCHANT_NAME_MAX_LENGTH &&
-		!merchants.some((merchant) => nameKey(merchant.name) === nameKey(typed));
+		allowCreate &&
+		isNewName(
+			typed,
+			merchants.map((merchant) => merchant.name),
+			MERCHANT_NAME_MAX_LENGTH,
+		);
 
 	const create = () => {
 		if (createMerchant.isPending) {
@@ -104,7 +101,7 @@ export function MerchantCombobox({
 			<CommandList>
 				<CommandEmpty>{t("transactions.merchant.empty")}</CommandEmpty>
 				<CommandGroup>
-					{mode === "edit" && (
+					{allowNone && (
 						<CommandItem
 							value={NONE}
 							keywords={[none]}

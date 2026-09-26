@@ -7,8 +7,8 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { MerchantDialog } from "@/components/MerchantDialog";
 import { MergeMerchantDialog } from "@/components/MergeMerchantDialog";
-import { RenameMerchantDialog } from "@/components/RenameMerchantDialog";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -32,7 +32,7 @@ type Action = "rename" | "merge" | "delete";
  * mid-animation. An id, not the merchant: the dialog reads it from the
  * current list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: Action; id: string };
+type Opened = { action: "create" } | { action: Action; id: string };
 
 function MerchantRow({
 	merchant,
@@ -76,8 +76,8 @@ function MerchantRow({
 }
 
 /**
- * Merchants are created from a transaction, by typing a new name in its
- * combobox; this page renames, merges and deletes them.
+ * Creates, renames, merges and deletes merchants. A transaction's or a rule's
+ * combobox creates one too, by typing a new name.
  */
 function MerchantsPage() {
 	const { t } = useTranslation();
@@ -87,9 +87,11 @@ function MerchantsPage() {
 	const [open, setOpen] = useState(false);
 	const list = merchants.data ?? [];
 	const merchant =
-		opened === null ? undefined : list.find((candidate) => candidate.id === opened.id);
+		opened === null || opened.action === "create"
+			? undefined
+			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted or merged elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && merchant === undefined;
+	const gone = opened !== null && opened.action !== "create" && merchant === undefined;
 
 	useEffect(() => {
 		if (gone) {
@@ -97,6 +99,11 @@ function MerchantsPage() {
 			setOpened(null);
 		}
 	}, [gone]);
+
+	const show = (next: Opened) => {
+		setOpened(next);
+		setOpen(true);
+	};
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("merchants.title"), app: t("app.name") });
@@ -113,9 +120,12 @@ function MerchantsPage() {
 
 	return (
 		<div className="flex max-w-2xl flex-col gap-6">
-			<div className="flex flex-col gap-1">
-				<h2 className="text-lg font-semibold">{t("merchants.title")}</h2>
-				<p className="text-sm text-muted-foreground">{t("merchants.description")}</p>
+			<div className="flex items-start justify-between gap-4">
+				<div className="flex flex-col gap-1">
+					<h2 className="text-lg font-semibold">{t("merchants.title")}</h2>
+					<p className="text-sm text-muted-foreground">{t("merchants.description")}</p>
+				</div>
+				<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
 			</div>
 
 			{merchants.isPending && (
@@ -136,25 +146,24 @@ function MerchantsPage() {
 
 			{merchants.data !== undefined &&
 				(list.length === 0 ? (
-					<p className="text-sm text-muted-foreground">{t("merchants.empty")}</p>
+					<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
+						<p className="text-muted-foreground">{t("merchants.empty")}</p>
+						<Button variant="outline" onClick={() => show({ action: "create" })}>
+							{t("merchants.add")}
+						</Button>
+					</div>
 				) : (
 					<ul aria-label={t("merchants.title")} className="divide-y">
 						{list.map((item) => (
 							<li key={item.id}>
-								<MerchantRow
-									merchant={item}
-									onAction={(action) => {
-										setOpened({ action, id: item.id });
-										setOpen(true);
-									}}
-								/>
+								<MerchantRow merchant={item} onAction={(action) => show({ action, id: item.id })} />
 							</li>
 						))}
 					</ul>
 				))}
 
-			{opened?.action === "rename" && merchant !== undefined && (
-				<RenameMerchantDialog open={open} onOpenChange={setOpen} merchant={merchant} />
+			{(opened?.action === "create" || (opened?.action === "rename" && merchant !== undefined)) && (
+				<MerchantDialog open={open} onOpenChange={setOpen} merchant={merchant} />
 			)}
 			{opened?.action === "merge" && merchant !== undefined && (
 				<MergeMerchantDialog
