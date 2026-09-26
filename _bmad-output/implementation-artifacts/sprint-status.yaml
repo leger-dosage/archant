@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-26-2026 09:00
+last_updated: 09-26-2026 10:19
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -113,7 +113,7 @@ development_status:
   11-6-a-transaction-i-delete-stays-deleted: review
   11-7-a-synced-account-keeps-each-bank-balance-it-received: review
   11-8-recurring-series-stay-single-and-current: review
-  11-9-a-first-start-that-says-what-is-wrong: backlog
+  11-9-a-first-start-that-says-what-is-wrong: review
   11-10-the-interface-package-is-named-app: backlog
   11-11-account-actions-in-the-account-s-menu: backlog
   11-12-create-tags-merchants-and-categories-where-they-are-picked: backlog

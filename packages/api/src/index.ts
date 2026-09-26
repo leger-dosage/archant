@@ -7,6 +7,7 @@ import { runMigrations } from "@archant/data/migrate";
 import { createApp } from "./app.ts";
 import { validateEnv } from "./env.ts";
 import { createLogger } from "./lib/logger.ts";
+import { loopbackListener } from "./lib/port.ts";
 import { createAuth } from "./services/auth.ts";
 import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
@@ -14,6 +15,23 @@ import { seedDefaults } from "./services/seed.ts";
 
 const env = validateEnv(process.env);
 const logger = createLogger(env.LOG_LEVEL);
+
+/** Ends the process with one line a first-time user can act on, and no stack trace. */
+function portTaken(port: number): never {
+	logger.fatal(
+		{ port },
+		`Port ${port} is already in use by another server. Stop it, or set PORT in .env to a free port.`,
+	);
+	process.exit(1);
+}
+
+// A server already on the loopback would receive Vite's proxied requests while
+// this one listens beside it (see `loopbackListener`). Checked before
+// migrating, so a conflict touches no database.
+if ((await loopbackListener(env.PORT)) !== null) {
+	portTaken(env.PORT);
+}
+
 // Before anything reads a table: an upgrade is a new image and a restart, with
 // no separate command to forget. `drizzle-kit` is not needed for this.
 await runMigrations(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN);
@@ -53,6 +71,16 @@ const app = createApp({
 // interface. No SIGTERM handler: Node dies on the signal at once, and SQLite
 // in WAL mode keeps every committed transaction, while waiting for keep-alive
 // sockets to close could outlast `docker compose stop`.
-serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
 	logger.info({ port: info.port }, "Archant API listening");
+});
+// Where the bind itself fails, as on Linux, this also catches a server that
+// took the port since the check above; on macOS SO_REUSEADDR binds beside it.
+server.on("error", (error: NodeJS.ErrnoException) => {
+	if (error.code === "EADDRINUSE") {
+		portTaken(env.PORT);
+	}
+
+	logger.fatal({ port: env.PORT, code: error.code }, "The API server failed");
+	process.exit(1);
 });

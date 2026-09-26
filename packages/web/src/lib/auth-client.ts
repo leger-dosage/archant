@@ -22,7 +22,12 @@ export type Session = typeof authClient.$Infer.Session;
 export const sessionQuery = queryOptions({
 	queryKey: queryKeys.session,
 	queryFn: async (): Promise<Session | null> => {
-		const { data, error } = await authClient.getSession();
+		// better-fetch throws the browser's `TypeError` when no response arrives,
+		// and returns an error when one does but is not Better Auth's, such as
+		// another server's 404 page: either way the API is not there.
+		const { data, error } = await authClient.getSession().catch(() => {
+			throw new ApiError("NETWORK_ERROR");
+		});
 
 		if (error !== null) {
 			throw new ApiError("NETWORK_ERROR");
@@ -30,6 +35,8 @@ export const sessionQuery = queryOptions({
 
 		return data;
 	},
+	// Only `NETWORK_ERROR` is thrown: retrying would delay the page that says so by the backoff.
+	retry: false,
 	staleTime: Number.POSITIVE_INFINITY,
 });
 

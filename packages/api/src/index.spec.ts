@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { server } from "../vitest.setup.ts";
 
@@ -51,6 +52,20 @@ async function listening(child: ChildProcess): Promise<string[]> {
 			reject(new Error(`The server exited with ${code} before listening: ${lines.join("\n")}`));
 		});
 	});
+}
+
+/** Every line the process logged, once it has exited, with its exit code. */
+async function outcome(child: ChildProcess): Promise<{ code: number | null; lines: string[] }> {
+	let output = "";
+	child.stdout?.on("data", (chunk: Buffer) => {
+		output += chunk.toString();
+	});
+	// `close`, not `exit`: only then is stdout drained, fatal line included.
+	const code = await new Promise<number | null>((resolve) => {
+		child.once("close", resolve);
+	});
+
+	return { code, lines: output.split("\n").filter((line) => line !== "") };
 }
 
 const SYNC_SECRET = "archant-index-sync-secret-of-32-characters";
@@ -133,4 +148,58 @@ describe("the server entrypoint", () => {
 		expect(performance.now() - started).toBeLessThan(1000);
 		expect({ code, signal }).toEqual({ code: null, signal: "SIGTERM" });
 	});
+});
+
+const fatalLine = z.object({ level: z.number(), port: z.number(), msg: z.string() });
+
+describe("the server entrypoint, on a port another server holds", () => {
+	it.each(["127.0.0.1", "::1"])(
+		"stops before migrating when %s answers on PORT",
+		async (host) => {
+			const holder = createServer((socket) => socket.destroy());
+			holder.listen(0, host);
+			await once(holder, "listening");
+			const address = holder.address();
+
+			if (address === null || typeof address === "string") {
+				throw new Error("No TCP port was assigned.");
+			}
+
+			let conflicting: ChildProcess | undefined;
+
+			try {
+				conflicting = spawn(process.execPath, [entrypoint], {
+					stdio: ["ignore", "pipe", "pipe"],
+					env: {
+						DATABASE_URL: `file:${join(directory, "conflict.db")}`,
+						PORT: String(address.port),
+						LOG_LEVEL: "info",
+						BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+						BETTER_AUTH_URL: `http://localhost:${address.port}`,
+					},
+				});
+				let stderr = "";
+				conflicting.stderr?.on("data", (chunk: Buffer) => {
+					stderr += chunk.toString();
+				});
+
+				const { code, lines } = await outcome(conflicting);
+
+				expect(code).toBe(1);
+				expect(lines).toHaveLength(1);
+				const line = fatalLine.parse(JSON.parse(lines[0] ?? "{}"));
+				expect(line).toMatchObject({ level: 60, port: address.port });
+				expect(line.msg).toContain(String(address.port));
+				expect(line.msg).toContain("PORT");
+				expect(lines.join("\n")).not.toContain("migrations applied");
+				expect(stderr).toBe("");
+			} finally {
+				// A regression starts the server beside the holder: do not leave it running.
+				conflicting?.kill("SIGKILL");
+				holder.close();
+				await once(holder, "close");
+			}
+		},
+		30_000,
+	);
 });
