@@ -560,6 +560,7 @@ describe("GET /api/accounts/:id", () => {
 			openingDate: "2026-09-01",
 			balance: 123456,
 			details: null,
+			bankConnection: null,
 		});
 	});
 
@@ -7017,6 +7018,69 @@ describe("/api/bank-connections", () => {
 			param: { id: after?.account?.id ?? "" },
 		});
 		expect(await account.json()).toMatchObject({ data: { balance: 123456 } });
+	});
+
+	it("names a linked account's connection, and refuses to delete it until disconnected", async () => {
+		const { app, client, connection } = await connectedApp();
+		const rows = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data;
+		const checking = rows.find((row) => row.name === "Compte courant");
+		const linked = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: {
+				links: [
+					{
+						bankAccountId: checking?.id ?? "",
+						action: "create",
+						type: "depository",
+						subtype: "checking",
+					},
+				],
+			},
+		});
+		const accountId =
+			(await linked.json()).data.find((row) => row.id === checking?.id)?.account?.id ?? "";
+		const accounts = testClient(app).api.accounts[":id"];
+		const total = async () =>
+			(await (await accounts.transactions.$get({ param: { id: accountId }, query: {} })).json())
+				.data.total;
+		// Linking syncs nothing yet: one line typed by hand gives the delete something to lose.
+		const added = await accounts.transactions.$post({ param: { id: accountId }, json: expense });
+		expect(added.status).toBe(201);
+		const totalBefore = await total();
+
+		const detail = await accounts.$get({ param: { id: accountId } });
+		expect((await detail.json()).data).toMatchObject({
+			bankConnection: { id: connection.id, institutionName: "Banque Test" },
+		});
+
+		const refused = await accounts.$delete({ param: { id: accountId } });
+
+		expect(refused.status).toBe(409);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("ACCOUNT_LINKED");
+		const still = await accounts.$get({ param: { id: accountId } });
+		expect(still.status).toBe(200);
+		expect((await still.json()).data).toMatchObject({
+			balance: 123456,
+			bankConnection: { id: connection.id },
+		});
+		expect(totalBefore).toBeGreaterThan(0);
+		await expect(total()).resolves.toBe(totalBefore);
+		const after = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data.find((row) => row.id === checking?.id);
+		expect(after?.account).toMatchObject({ id: accountId });
+
+		mockProvider();
+		await client[":id"].$delete({ param: { id: connection.id } });
+		const unlinked = await accounts.$get({ param: { id: accountId } });
+		expect((await unlinked.json()).data).toMatchObject({ bankConnection: null });
+
+		const deleted = await accounts.$delete({ param: { id: accountId } });
+
+		expect(deleted.status).toBe(200);
+		expect(await deleted.json()).toEqual({ data: { id: accountId } });
 	});
 
 	it("refuses a type no bank account becomes, an empty list and an unknown connection", async () => {

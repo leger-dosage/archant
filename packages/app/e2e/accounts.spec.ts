@@ -179,7 +179,7 @@ test("a mortgage created through the form is listed under « Passifs », its pag
 	]);
 });
 
-test("a loan's new rate in Paramètres shows in its header", async ({ page, api }) => {
+test("a loan's new rate in the edit dialog shows in its header", async ({ page, api }) => {
 	const loan = await api.openAccount({
 		name: uniqueName("Prêt"),
 		kind: "consumer",
@@ -187,21 +187,25 @@ test("a loan's new rate in Paramètres shows in its header", async ({ page, api 
 		details: { interestRate: "4,9" },
 	});
 
-	await page.goto(`/accounts/${loan.id}?tab=settings`);
+	await page.goto(`/accounts/${loan.id}`);
 	const details = page.getByRole("list", { name: "Détails du prêt" });
 	await expect(details).toHaveText("Taux : 4,90 %");
-	await expect(page.getByLabel("Taux (%)")).toHaveValue("4,90");
-	await expect(page.getByLabel("Montant emprunté")).toHaveValue("");
-	await page.getByLabel("Taux (%)").fill("3,456");
-	await page.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(page.getByLabel("Taux (%)")).toHaveAccessibleDescription(
+	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(dialog.getByLabel("Taux (%)")).toHaveValue("4,90");
+	await expect(dialog.getByLabel("Montant emprunté")).toHaveValue("");
+	await dialog.getByLabel("Taux (%)").fill("3,456");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog.getByLabel("Taux (%)")).toHaveAccessibleDescription(
 		"Taux invalide. Exemple : 3,45, entre 0 et 100.",
 	);
 
-	await page.getByLabel("Taux (%)").fill("3,75");
-	await page.getByRole("button", { name: "Enregistrer" }).click();
+	await dialog.getByLabel("Taux (%)").fill("3,75");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(page.getByText(`Compte « ${loan.name} » enregistré.`)).toBeVisible();
+	await expect(dialog).toBeHidden();
 	await expect(details).toHaveText("Taux : 3,75 %");
 	await page.reload();
 	await expect(details).toHaveText("Taux : 3,75 %");

@@ -169,8 +169,7 @@
 			"label": "Vues du compte",
 			"transactions": "Opérations",
 			"snapshots": "Soldes",
-			"imports": "Imports",
-			"settings": "Paramètres"
+			"imports": "Imports"
 		}
 	},
 	"loanDetails": {
@@ -184,27 +183,30 @@
 			"endDate": "Fin : {{date}}"
 		}
 	},
-	"accountSettings": {
-		"title": "Paramètres du compte",
-		"name": "Nom",
-		"subtype": "Type",
-		"excludedFromReports": "Exclure des rapports",
-		"excludedFromReportsHint": "Le compte reste affiché, mais son solde n'est plus compté dans le total de son groupe.",
-		"save": "Enregistrer",
-		"saved": "Compte « {{name}} » enregistré.",
-		"activation": {
-			"deactivateTitle": "Désactiver le compte",
-			"deactivateDescription": "Le compte disparaît des listes et n'est plus compté dans les totaux. Ses opérations et son historique sont conservés, et vous pouvez le réactiver à tout moment.",
-			"deactivate": "Désactiver le compte",
-			"deactivated": "Compte « {{name}} » désactivé.",
-			"reactivateTitle": "Réactiver le compte",
-			"reactivateDescription": "Le compte est désactivé : il n'apparaît plus dans les listes ni dans les totaux. Le réactiver l'y remet.",
-			"reactivate": "Réactiver le compte",
-			"reactivated": "Compte « {{name}} » réactivé."
+	"accountActions": {
+		"menu": "Actions du compte {{name}}",
+		"edit": "Modifier",
+		"exclude": "Exclure des rapports",
+		"include": "Inclure dans les rapports",
+		"excluded": "Compte « {{name}} » exclu des rapports.",
+		"included": "Compte « {{name}} » inclus dans les rapports.",
+		"deactivate": "Désactiver",
+		"reactivate": "Réactiver",
+		"deactivated": "Compte « {{name}} » désactivé.",
+		"reactivated": "Compte « {{name}} » réactivé.",
+		"disconnectToDelete": "Déconnecter {{institutionName}} pour supprimer ce compte",
+		"form": {
+			"title": "Modifier le compte",
+			"description": "La devise, le solde d'ouverture et la date d'ouverture ne changent pas après la création du compte.",
+			"name": "Nom",
+			"subtype": "Type",
+			"excludedFromReports": "Exclure des rapports",
+			"excludedFromReportsHint": "Le compte reste affiché, mais son solde n'est plus compté dans le total de son groupe.",
+			"cancel": "Annuler",
+			"save": "Enregistrer",
+			"saved": "Compte « {{name}} » enregistré."
 		},
 		"delete": {
-			"sectionTitle": "Supprimer le compte",
-			"sectionDescription": "Le compte est supprimé définitivement, avec ses opérations, ses soldes saisis et l'historique de son solde.",
 			"action": "Supprimer le compte",
 			"titleEmpty": "Supprimer le compte « {{name}} » ?",
 			"title_one": "Supprimer le compte « {{name}} » et son opération ?",
@@ -1106,6 +1108,7 @@
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
 		"CONSENT_EXPIRED": "Le consentement de cette banque a expiré. Renouvelez-le pour reprendre la synchronisation.",
+		"ACCOUNT_LINKED": "Ce compte est relié à une banque. Déconnectez la banque avant de le supprimer.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

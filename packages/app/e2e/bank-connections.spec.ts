@@ -260,6 +260,48 @@ test("creating an account shows the bank balance in the sidebar, and a skipped r
 	await expect(validate(page)).toBeHidden();
 });
 
+test("a linked account's menu offers no deletion, only its connection's page", async ({ page }) => {
+	const connectionId = await connect(page);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+
+	await page.goto(`/accounts/${accountId}`);
+	await page
+		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
+		.click();
+	const menu = page.getByRole("menu");
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Exclure des rapports",
+		"Désactiver",
+		"Déconnecter Banque Démo pour supprimer ce compte",
+	]);
+	await menu
+		.getByRole("menuitem", { name: "Déconnecter Banque Démo pour supprimer ce compte" })
+		.click();
+
+	await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
+
+	// Once disconnected, the same page's cache must offer deletion again.
+	await page.getByRole("button", { name: "Déconnecter" }).click();
+	await page
+		.getByRole("alertdialog", { name: "Déconnecter Banque Démo ?" })
+		.getByRole("button", { name: "Déconnecter" })
+		.click();
+	await expect(toast(page, "La connexion à Banque Démo est supprimée.")).toBeVisible();
+	await sidebarAccount(page, accountId).click();
+	await expect(page).toHaveURL(new RegExp(`/accounts/${accountId}$`, "u"));
+	await page
+		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
+		.click();
+	const unlinked = page.getByRole("menu");
+	await expect(unlinked.getByRole("menuitem", { name: "Supprimer le compte" })).toBeVisible();
+	await expect(unlinked.getByRole("menuitem", { name: /^Déconnecter Banque Démo/u })).toHaveCount(
+		0,
+	);
+});
+
 test("linking an account fed by hand keeps its transactions and ends on the bank balance", async ({
 	page,
 	api,

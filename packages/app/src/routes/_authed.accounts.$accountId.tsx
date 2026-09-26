@@ -12,7 +12,7 @@ import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/ba
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
-import { AccountSettings } from "@/components/AccountSettings";
+import { AccountMenu } from "@/components/AccountMenu";
 import { BalanceChart, PeriodToggle } from "@/components/BalanceChart";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
@@ -42,7 +42,7 @@ import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots", "imports", "settings"] as const;
+const ACCOUNT_TABS = ["transactions", "snapshots", "imports"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -50,8 +50,8 @@ const DEFAULT_TAB: AccountTab = "transactions";
 
 // Absent means the first page, the default period and the Opérations tab, so
 // links to an account need no search params. A value from an old or
-// hand-edited link that no longer exists falls back to the default rather
-// than failing the page.
+// hand-edited link that no longer exists, such as the former `tab=settings`,
+// falls back to the default rather than failing the page.
 const searchSchema = z.object({
 	page: z.number().int().min(1).optional().catch(undefined),
 	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
@@ -386,22 +386,26 @@ function AccountPage() {
 
 			{account.data !== undefined && (
 				<div className="flex flex-wrap items-end justify-between gap-4">
-					<div className="flex min-w-0 flex-col gap-1">
+					{/* The menu sits right after the name; the rest wraps below as one column. */}
+					<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
 						<h1 className="flex min-w-0 items-center gap-3 text-3xl font-semibold tracking-tight">
 							<span className="truncate">{account.data.name}</span>
 							{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
 						</h1>
-						<p className="text-sm text-muted-foreground">
-							{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
-						</p>
-						{account.data.details !== null && (
-							<LoanSummary details={account.data.details} currency={account.data.currency} />
-						)}
-						<Money
-							amount={account.data.balance}
-							currency={account.data.currency}
-							className="amount-hero mt-2"
-						/>
+						<AccountMenu account={account.data} />
+						<div className="flex basis-full flex-col gap-1">
+							<p className="text-sm text-muted-foreground">
+								{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
+							</p>
+							{account.data.details !== null && (
+								<LoanSummary details={account.data.details} currency={account.data.currency} />
+							)}
+							<Money
+								amount={account.data.balance}
+								currency={account.data.currency}
+								className="amount-hero mt-2"
+							/>
+						</div>
 					</div>
 					<div className="flex gap-2">
 						<Tooltip>
@@ -445,7 +449,6 @@ function AccountPage() {
 					<TabsTrigger value="transactions">{t("accountDetail.tabs.transactions")}</TabsTrigger>
 					<TabsTrigger value="snapshots">{t("accountDetail.tabs.snapshots")}</TabsTrigger>
 					<TabsTrigger value="imports">{t("accountDetail.tabs.imports")}</TabsTrigger>
-					<TabsTrigger value="settings">{t("accountDetail.tabs.settings")}</TabsTrigger>
 				</TabsList>
 				<TabsContent value="transactions">
 					<TransactionsPanel
@@ -467,9 +470,6 @@ function AccountPage() {
 				</TabsContent>
 				<TabsContent value="imports">
 					<ImportsPanel accountId={accountId} page={importsPage} />
-				</TabsContent>
-				<TabsContent value="settings">
-					{account.data !== undefined && <AccountSettings account={account.data} />}
 				</TabsContent>
 			</Tabs>
 
