@@ -90,7 +90,7 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 									? t("transactions.category.change")
 									: t("transactions.category.chip", { name })
 							}
-							className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:ml-0 md:w-44 md:shrink-0 md:self-center"
+							className="ml-2 flex min-h-7 max-w-full min-w-0 items-center gap-1.5 self-start rounded-md px-2 text-xs text-muted-foreground outline-none hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring md:ml-0 md:w-44 md:shrink-0 md:self-center"
 						>
 							<CategoryDot color={color} />
 							{name === null ? (

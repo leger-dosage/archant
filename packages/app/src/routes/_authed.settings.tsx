@@ -1,16 +1,18 @@
 import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
+import { BanknoteIcon, ShapesIcon, ShieldCheckIcon, StoreIcon, TagsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 export const Route = createFileRoute("/_authed/settings")({
 	component: SettingsLayout,
 });
 
+// Sure's icons, from `settings/_settings_nav.html.erb`.
 const SECTIONS = [
-	{ to: "/settings/banks", label: "settings.sections.banks" },
-	{ to: "/settings/categories", label: "settings.sections.categories" },
-	{ to: "/settings/merchants", label: "settings.sections.merchants" },
-	{ to: "/settings/tags", label: "settings.sections.tags" },
-	{ to: "/settings/security", label: "settings.sections.security" },
+	{ to: "/settings/banks", label: "settings.sections.banks", icon: BanknoteIcon },
+	{ to: "/settings/categories", label: "settings.sections.categories", icon: ShapesIcon },
+	{ to: "/settings/merchants", label: "settings.sections.merchants", icon: StoreIcon },
+	{ to: "/settings/tags", label: "settings.sections.tags", icon: TagsIcon },
+	{ to: "/settings/security", label: "settings.sections.security", icon: ShieldCheckIcon },
 ] as const;
 
 function SettingsLayout() {
@@ -26,9 +28,11 @@ function SettingsLayout() {
 							<li key={section.to}>
 								<Link
 									to={section.to}
-									activeProps={{ className: "bg-accent text-accent-foreground" }}
-									className="block rounded-md px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+									// The sidebar's raised tile: `bg-accent` vanishes on the page grey.
+									activeProps={{ className: "bg-card font-medium text-foreground shadow-ring" }}
+									className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-card"
 								>
+									<section.icon className="size-4 shrink-0" />
 									{t(section.label)}
 								</Link>
 							</li>

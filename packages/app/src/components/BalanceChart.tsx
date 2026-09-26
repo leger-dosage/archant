@@ -183,7 +183,7 @@ function DataTable({
 	return (
 		<div id={id} className={`${CHART_HEIGHT} overflow-y-auto rounded-lg border`}>
 			<Table>
-				<TableHeader className="sticky top-0 bg-background">
+				<TableHeader className="sticky top-0 bg-card">
 					<TableRow>
 						<TableHead scope="col">{t("balances.date")}</TableHead>
 						<TableHead scope="col" className="text-right">

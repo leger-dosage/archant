@@ -16,7 +16,8 @@
 		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/tags": "./src/schemas/tags.ts",
 		"./schemas/transactions": "./src/schemas/transactions.ts",
-		"./schemas/transfers": "./src/schemas/transfers.ts"
+		"./schemas/transfers": "./src/schemas/transfers.ts",
+		"./services/default-categories": "./src/services/default-categories.ts"
 	},
 	"scripts": {
 		"start:dev": "node --env-file-if-exists=../../.env --watch src/index.ts",
