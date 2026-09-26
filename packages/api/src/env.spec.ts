@@ -123,6 +123,15 @@ describe("validateEnv", () => {
 	});
 
 	it.each([
+		["ENABLE_BANKING_APPLICATION_ID", { ENABLE_BANKING_PRIVATE_KEY: TEST_PKCS8_BASE64 }],
+		["ENABLE_BANKING_PRIVATE_KEY", { ENABLE_BANKING_APPLICATION_ID: "app-id" }],
+	])("names %s when only the other half of the pair is set", (missing, half) => {
+		expect(() => validateEnv({ ...required, ...half })).toThrow(
+			`Invalid environment variables: ${missing}`,
+		);
+	});
+
+	it.each([
 		["16 bytes", Buffer.alloc(16).toString("base64")],
 		["33 bytes", Buffer.alloc(33).toString("base64")],
 		["not base64", "not base64 at all!"],

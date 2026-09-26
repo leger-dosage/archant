@@ -19,6 +19,7 @@ import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.t
 import { BankProviderError } from "../bank-connector.ts";
 import { signJwt } from "./jwt.ts";
 import {
+	applicationResponseSchema,
 	aspspsResponseSchema,
 	authResponseSchema,
 	balancesResponseSchema,
@@ -452,6 +453,16 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 
 	return {
 		id: "enable-banking",
+
+		async describeApplication() {
+			const application = await call(
+				config,
+				{ method: "GET", path: "/application" },
+				applicationResponseSchema,
+			);
+
+			return { redirectUrls: application.redirect_urls };
+		},
 
 		async listInstitutions(country) {
 			const { aspsps } = await call(

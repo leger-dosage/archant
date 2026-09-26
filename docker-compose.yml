@@ -23,11 +23,14 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
-      # Bank connection, all optional; see docs/deployment.md. Empty, the bank
-      # routes answer 503 and the rest of the app works.
+      # Bank connection, optional; see docs/deployment.md. Without
+      # ENCRYPTION_KEY the bank routes answer 503 and the rest of the app
+      # works; with it, Réglages > Banques takes the Enable Banking
+      # credentials. The two ENABLE_BANKING_* variables, both or neither,
+      # override what the interface saved.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ENABLE_BANKING_APPLICATION_ID: ${ENABLE_BANKING_APPLICATION_ID:-}
       ENABLE_BANKING_PRIVATE_KEY: ${ENABLE_BANKING_PRIVATE_KEY:-}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       # The bearer token of POST /api/sync. Empty, the scheduled sync is
       # refused and only the connection page's button syncs.
       SYNC_SECRET: ${SYNC_SECRET:-}

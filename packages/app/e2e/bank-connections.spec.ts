@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { createDb } from "@archant/data/client";
 
@@ -14,12 +14,20 @@ import {
 	FAKE_LINES,
 } from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
-import { DATABASE_FILE, TIME_ZONE, WEB_URL } from "./settings.ts";
+import {
+	BANK_APPLICATION_ID,
+	BANK_KEY_FILE,
+	DATABASE_FILE,
+	TIME_ZONE,
+	WEB_URL,
+} from "./settings.ts";
 
 // Stories 10.1 to 10.5: connecting a bank from « Réglages > Banques »,
 // deciding what each of its accounts becomes, syncing them, then renewing or
 // disconnecting it, against the fake Enable Banking that e2e/start-api.ts
-// starts on loopback.
+// starts on loopback. Story 11.14: setting Enable Banking up from the same
+// page; the `setup` project saved the run's credentials already, and the
+// tests that save them again run first, before any bank locks them.
 
 const PAGE = "/settings/banks";
 
@@ -39,6 +47,184 @@ async function visit(page: Page) {
 	await page.goto(PAGE);
 	await expect(page.getByRole("heading", { level: 2, name: "Banques" })).toBeVisible();
 }
+
+const REDIRECT_URL = `${WEB_URL}/settings/banks/callback`;
+
+const SETUP = "**/api/bank-connections/setup";
+
+type Setup = {
+	available: boolean;
+	source: "environment" | "interface" | null;
+	applicationId: string | null;
+	redirectUrl: string;
+	locked: boolean;
+	missing: string[];
+};
+
+const setupData = (fields: Partial<Setup>): { data: Setup } => ({
+	data: {
+		available: true,
+		source: "interface",
+		applicationId: BANK_APPLICATION_ID,
+		redirectUrl: REDIRECT_URL,
+		locked: false,
+		missing: [],
+		...fields,
+	},
+});
+
+/**
+ * The page as a fresh install shows it: the first read of the setup says
+ * nothing is configured, every later one is the server's own answer.
+ */
+async function visitUnconfigured(page: Page) {
+	await page.route(
+		SETUP,
+		(route) =>
+			route.fulfill({
+				json: setupData({ available: false, source: null, applicationId: null }),
+			}),
+		{ times: 1 },
+	);
+	await visit(page);
+}
+
+const applicationIdField = (page: Page) =>
+	page.getByRole("textbox", { name: "Identifiant de l'application" });
+
+const keyFile = (page: Page) => page.getByLabel("Clé privée (fichier .pem)");
+
+const saveCredentials = (page: Page) => page.getByRole("button", { name: "Enregistrer" });
+
+test("a fresh install lists Sure's steps, with the redirect address to copy, and no country", async ({
+	page,
+	context,
+}) => {
+	await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+	await visitUnconfigured(page);
+
+	const steps = page.getByRole("list", { name: "Étapes" }).getByRole("listitem");
+	await expect(steps).toHaveCount(3);
+	await expect(steps.nth(0).getByRole("link", { name: "portail Enable Banking" })).toHaveAttribute(
+		"href",
+		/enablebanking\.com/u,
+	);
+	await expect(steps.nth(1)).toContainText(REDIRECT_URL);
+	await expect(applicationIdField(page)).toBeVisible();
+	await expect(keyFile(page)).toHaveAttribute("type", "file");
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+
+	await page.getByRole("button", { name: "Copier l'adresse de retour" }).click();
+	await expect(toast(page, "Adresse copiée.")).toBeVisible();
+	expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(REDIRECT_URL);
+});
+
+test("a key the provider refuses, or a file that holds none, saves nothing", async ({ page }) => {
+	const saves: number[] = [];
+	page.on("response", (response) => {
+		if (response.url().endsWith("/api/bank-connections/credentials")) {
+			saves.push(response.status());
+		}
+	});
+	await visitUnconfigured(page);
+
+	await applicationIdField(page).fill(BANK_APPLICATION_ID);
+	await keyFile(page).setInputFiles({
+		name: "autre.pem",
+		mimeType: "application/x-pem-file",
+		buffer: Buffer.from(
+			generateKeyPairSync("rsa", { modulusLength: 2048 })
+				.privateKey.export({ type: "pkcs8", format: "pem" })
+				.toString(),
+		),
+	});
+	await saveCredentials(page).click();
+
+	await expect(page.getByRole("alert")).toContainText(
+		"Enable Banking refuse cet identifiant et cette clé.",
+	);
+
+	await keyFile(page).setInputFiles({
+		name: "notes.txt",
+		mimeType: "text/plain",
+		buffer: Buffer.from("pas une clé"),
+	});
+	await saveCredentials(page).click();
+
+	await expect(
+		page.getByText("Ce fichier ne contient pas de clé privée RSA lisible."),
+	).toBeVisible();
+	await expect(keyFile(page)).toHaveAttribute("aria-invalid", "true");
+	expect(saves).toEqual([400, 400]);
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+});
+
+test("the right key is saved encrypted, and the page moves on to the country", async ({ page }) => {
+	await visitUnconfigured(page);
+
+	await applicationIdField(page).fill(BANK_APPLICATION_ID);
+	await keyFile(page).setInputFiles(BANK_KEY_FILE);
+	await saveCredentials(page).click();
+
+	await expect(toast(page, "Identifiants Enable Banking enregistrés.")).toBeVisible();
+	await expect(page.getByRole("combobox", { name: "Pays" })).toHaveText("France");
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeVisible();
+	// Saved from the interface, it stays editable below the banks.
+	await expect(applicationIdField(page)).toHaveValue(BANK_APPLICATION_ID);
+
+	const db = await createDb(`file:${DATABASE_FILE}`);
+
+	try {
+		const stored = await db.$client.execute(
+			"select key, value from settings where key like 'enable_banking_%' order by key",
+		);
+
+		expect(stored.rows.map((row) => row["key"])).toEqual([
+			"enable_banking_application_id",
+			"enable_banking_private_key",
+		]);
+		expect(stored.rows[1]?.["value"]).toMatch(/^v1:[^:]+:[^:]+:[^:]+$/u);
+	} finally {
+		db.$client.close();
+	}
+});
+
+test("an application without the redirect address names it in the form, saving nothing", async ({
+	page,
+}) => {
+	await page.route("**/api/bank-connections/credentials", (route) =>
+		route.fulfill({
+			status: 502,
+			json: {
+				error: { code: "BANK_REDIRECT_NOT_ALLOWED", message: "x", params: { url: REDIRECT_URL } },
+			},
+		}),
+	);
+	await visitUnconfigured(page);
+
+	await applicationIdField(page).fill(BANK_APPLICATION_ID);
+	await keyFile(page).setInputFiles(BANK_KEY_FILE);
+	await saveCredentials(page).click();
+
+	await expect(page.getByRole("alert")).toContainText(REDIRECT_URL);
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+});
+
+test("credentials the server sets are shown, never offered for editing", async ({ page }) => {
+	await page.route(SETUP, (route) =>
+		route.fulfill({ json: setupData({ source: "environment", applicationId: "app-du-serveur" }) }),
+	);
+
+	await visit(page);
+
+	await expect(page.getByText("Enable Banking est configuré par le serveur.")).toBeVisible();
+	await expect(page.getByText("Application : app-du-serveur")).toBeVisible();
+	await expect(page.getByText(REDIRECT_URL, { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Copier l'adresse de retour" })).toBeVisible();
+	await expect(applicationIdField(page)).toBeHidden();
+	await expect(keyFile(page)).toBeHidden();
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeVisible();
+});
 
 test("France is selected and its banks are listed, filtered by the search", async ({ page }) => {
 	await visit(page);
@@ -155,6 +341,19 @@ test("choosing a bank and approving lands on its accounts, and Banques lists it 
 	}
 });
 
+test("a connected bank locks the credentials, with Sure's warning", async ({ page }) => {
+	await connect(page);
+	await visit(page);
+
+	await expect(page.getByText("Configuration verrouillée")).toBeVisible();
+	await expect(
+		page.getByText("Déconnectez toutes les banques avant de modifier ces identifiants."),
+	).toBeVisible();
+	await expect(applicationIdField(page)).toBeDisabled();
+	await expect(keyFile(page)).toBeDisabled();
+	await expect(saveCredentials(page)).toBeDisabled();
+});
+
 test("a redirect URL the provider refuses is named in the toast", async ({ page }) => {
 	const url = "http://localhost:8788/settings/banks/callback";
 	await page.route("**/api/bank-connections", (route) =>
@@ -174,8 +373,15 @@ test("a redirect URL the provider refuses is named in the toast", async ({ page 
 });
 
 test("a server without ENCRYPTION_KEY names it and links to the guide", async ({ page }) => {
-	await page.route("**/api/bank-connections/setup", (route) =>
-		route.fulfill({ json: { data: { available: false, missing: ["ENCRYPTION_KEY"] } } }),
+	await page.route(SETUP, (route) =>
+		route.fulfill({
+			json: setupData({
+				available: false,
+				source: null,
+				applicationId: null,
+				missing: ["ENCRYPTION_KEY"],
+			}),
+		}),
 	);
 
 	await visit(page);
@@ -188,6 +394,7 @@ test("a server without ENCRYPTION_KEY names it and links to the guide", async ({
 		/docs\/deployment\.md/u,
 	);
 	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	await expect(applicationIdField(page)).toBeHidden();
 });
 
 test("a bank refusal shows its message without calling the API", async ({ page }) => {
@@ -474,6 +681,9 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 	// Yesterday's 1 200,00 €: no booked line since.
 	await expect(sidebarAccount(page, accountId)).toContainText(euros(120_000));
+	// The sync the link starts, done: aged while it runs, the connection
+	// would end it synced « à l'instant » and refuse the one below.
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 
 	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
 	await page.goto(`/settings/banks/${connectionId}`);

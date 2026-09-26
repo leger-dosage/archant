@@ -24,11 +24,33 @@ export type BankAccountLink = InferRequestType<
 	(typeof bank)[":id"]["accounts"]["$post"]
 >["json"]["links"][number];
 
-/** Whether the server can connect a bank, and the variables it lacks otherwise. */
+export type BankSetupData = InferResponseType<typeof bank.setup.$get, 200>["data"];
+
+/**
+ * Whether the server can connect a bank, where its Enable Banking
+ * credentials come from, and the variable it lacks otherwise.
+ */
 export function useBankSetup() {
 	return useQuery({
 		queryKey: queryKeys.bankConnections.setup,
 		queryFn: async () => (await unwrap(bank.setup.$get())).data,
+	});
+}
+
+/**
+ * Saves the Enable Banking application ID and the `.pem` file's text, once
+ * the server has checked them with the provider. Its answer is the new setup.
+ */
+export function useSaveBankCredentials() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (input: { applicationId: string; privateKey: string }) =>
+			(await unwrap(bank.credentials.$put({ json: input }))).data,
+		onSuccess: async (setup) => {
+			queryClient.setQueryData(queryKeys.bankConnections.setup, setup);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup });
+		},
 	});
 }
 
@@ -67,7 +89,12 @@ export function useCompleteBankConnection() {
 	return useMutation({
 		mutationFn: async (input: { code: string; state: string }) =>
 			(await unwrap(bank.callback.$post({ json: input }))).data,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+		// A first active connection locks the credentials.
+		onSuccess: () =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup }),
+			]),
 	});
 }
 
@@ -131,6 +158,8 @@ export function useDisconnectBankConnection() {
 		onSuccess: async () => {
 			await Promise.all([
 				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				// The last one gone unlocks the credentials.
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 			]);

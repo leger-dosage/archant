@@ -79,6 +79,11 @@ export type BankStatement = Omit<ParsedStatement, "balance"> & {
  */
 export type BankConnector = {
 	id: BankConnectorId;
+	/**
+	 * The application the credentials sign for, as the provider knows it:
+	 * a refused pair throws with its HTTP status, before anything is saved.
+	 */
+	describeApplication: () => Promise<{ redirectUrls: string[] }>;
 	listInstitutions: (country: string) => Promise<Institution[]>;
 	/** The URL of the bank's consent page. */
 	startAuthorization: (request: AuthorizationRequest) => Promise<{ url: string }>;

@@ -106,6 +106,40 @@ describe("consentValidUntil", () => {
 	});
 });
 
+describe("describeApplication", () => {
+	it("reads the registered redirect addresses and nothing else", async () => {
+		const requests = mockProvider();
+
+		await expect(connector.describeApplication()).resolves.toEqual({
+			redirectUrls: [
+				"https://archant.example.com/settings/banks/callback",
+				"http://localhost:5173/settings/banks/callback",
+			],
+		});
+		expect(requests).toEqual([
+			expect.objectContaining({ method: "GET", path: "/application", search: "" }),
+		]);
+		expect(requests[0]?.authorization).toMatch(/^Bearer /u);
+	});
+
+	it("throws with the status of a refused pair", async () => {
+		mockProvider({ application: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }) });
+
+		const error = await rejection(connector.describeApplication());
+
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
+	});
+
+	it("refuses an answer without its list of addresses", async () => {
+		mockProvider({ application: () => HttpResponse.json({ name: "Archant" }) });
+
+		const error = await rejection(connector.describeApplication());
+
+		expect(error.failure).toEqual({ status: 200, providerCode: null });
+	});
+});
+
 describe("listInstitutions", () => {
 	it("lists a country's banks, keeping only the fields it reads", async () => {
 		const requests = mockProvider();

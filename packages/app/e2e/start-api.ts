@@ -1,11 +1,18 @@
 import { spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeEnableBanking } from "./fake-enable-banking.ts";
-import { DATABASE_FILE, PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
+import {
+	BANK_APPLICATION_ID,
+	BANK_KEY_FILE,
+	DATABASE_FILE,
+	PORT,
+	TIME_ZONE,
+	WEB_URL,
+} from "./settings.ts";
 
 // Started by playwright.config.ts once the interface is built. One fresh
 // database per run, which the server migrates before it listens, in a file
@@ -18,10 +25,19 @@ await mkdir(directory, { recursive: true });
 const databaseUrl = `file:${DATABASE_FILE}`;
 
 // A key pair per run, never committed: the fake checks the API's tokens with
-// the public half.
+// the public half, and the private half goes where `setup` reads it.
 const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const applicationId = "archant-e2e";
-const bank = await startFakeEnableBanking({ publicKey, applicationId });
+await mkdir(dirname(BANK_KEY_FILE), { recursive: true });
+// Removed first: `mode` applies only to a file `writeFile` creates.
+await rm(BANK_KEY_FILE, { force: true });
+await writeFile(BANK_KEY_FILE, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), {
+	mode: 0o600,
+});
+const bank = await startFakeEnableBanking({
+	publicKey,
+	applicationId: BANK_APPLICATION_ID,
+	redirectUrl: `${WEB_URL}/settings/banks/callback`,
+});
 
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {
@@ -46,11 +62,11 @@ const api = spawn(process.execPath, [entrypoint], {
 		// not share Better Auth's rate-limit buckets. Every request here comes
 		// from loopback, so nothing outside the suite can use this trust.
 		TRUSTED_PROXIES: "127.0.0.1,::1",
-		// Bank connection against the local fake, so no request leaves loopback.
-		ENABLE_BANKING_APPLICATION_ID: applicationId,
-		ENABLE_BANKING_PRIVATE_KEY: Buffer.from(
-			privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-		).toString("base64"),
+		// Bank connection against the local fake, so no request leaves loopback,
+		// with the credentials `setup` saves from the interface: a pair exported
+		// in the shell would win over them.
+		ENABLE_BANKING_APPLICATION_ID: "",
+		ENABLE_BANKING_PRIVATE_KEY: "",
 		ENCRYPTION_KEY: randomBytes(32).toString("base64"),
 		ENABLE_BANKING_API_URL: bank.url,
 	},

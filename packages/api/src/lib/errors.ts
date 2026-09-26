@@ -33,14 +33,24 @@ export const ERROR_STATUSES = {
 	 * bank account for linking again, so the bank is disconnected first, as Sure.
 	 */
 	ACCOUNT_LINKED: 409,
+	/**
+	 * A change of the Enable Banking credentials while a bank is connected:
+	 * its session belongs to the current application, so it is disconnected first.
+	 */
+	BANK_CREDENTIALS_LOCKED: 409,
+	/** A change of credentials the server's `ENABLE_BANKING_*` variables pin. */
+	BANK_CREDENTIALS_FROM_ENVIRONMENT: 409,
+	/** Enable Banking refused the application ID and private key submitted. Nothing is written. */
+	BANK_CREDENTIALS_REFUSED: 400,
 	/** An unknown, already used or expired `state` on a bank's callback. Nothing is written. */
 	BANK_AUTHORIZATION_INVALID: 400,
 	INTERNAL_ERROR: 500,
 	/** Enable Banking failed or answered what its schema does not allow. No payload is kept. */
 	BANK_PROVIDER_ERROR: 502,
 	/**
-	 * Enable Banking refused the callback URL, which must be registered in its
-	 * control panel; `params.url` names it, as Sure does.
+	 * Enable Banking refused the callback URL, or the application checked
+	 * before saving its credentials does not list it; it must be registered
+	 * in its control panel, and `params.url` names it, as Sure does.
 	 */
 	BANK_REDIRECT_NOT_ALLOWED: 502,
 	/**
@@ -50,7 +60,7 @@ export const ERROR_STATUSES = {
 	BANK_BALANCE_UNAVAILABLE: 502,
 	/** The health check could not read the database. */
 	SERVICE_UNAVAILABLE: 503,
-	/** A bank route while an Enable Banking variable or `ENCRYPTION_KEY` is unset. */
+	/** A bank route while `ENCRYPTION_KEY` is unset or no Enable Banking credentials apply. */
 	BANK_CONNECTOR_UNAVAILABLE: 503,
 } as const satisfies Record<string, ContentfulStatusCode>;
 

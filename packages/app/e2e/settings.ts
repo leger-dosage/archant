@@ -29,3 +29,14 @@ export const ADMIN = { email: "admin@archant.test", password: "mot de passe du t
  * starts from. Gitignored: it holds a live session cookie.
  */
 export const ADMIN_STATE = fileURLToPath(new URL("./.auth/admin.json", import.meta.url));
+
+/** The application the fake Enable Banking knows, and `setup` saves. */
+export const BANK_APPLICATION_ID = "archant-e2e";
+
+/**
+ * The run's Enable Banking private key, as the portal hands it out: a PEM
+ * file. start-api.ts writes it, `setup` saves it through the interface's
+ * endpoint, so every bank test runs on credentials stored in the database.
+ * Gitignored with the session, and replaced each run.
+ */
+export const BANK_KEY_FILE = fileURLToPath(new URL("./.auth/enable-banking.pem", import.meta.url));

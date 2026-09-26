@@ -64,9 +64,11 @@ export const queryKeys = {
 		ofEntry: (entryId: string) => ["recurring", "entry", entryId] as const,
 	},
 	/**
-	 * Bank connections. `setup` and `institutions` never change while the page
-	 * is open; a new connection invalidates `list` only. Linking rewrites
-	 * `accounts(id)` from its own answer; a disconnection drops it.
+	 * Bank connections. `setup` changes when credentials are saved, and when a
+	 * connection completes or goes, since an active one locks them; a new
+	 * connection also invalidates `list`. `institutions` never changes while
+	 * the page is open. Linking rewrites `accounts(id)` from its own answer; a
+	 * disconnection drops it.
 	 */
 	bankConnections: {
 		setup: ["bank-connections", "setup"] as const,

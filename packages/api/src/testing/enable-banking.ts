@@ -26,6 +26,7 @@ async function load(name: string): Promise<JsonBodyType> {
  * few they must drop.
  */
 export const fixtures = {
+	application: await load("application.json"),
 	aspsps: await load("aspsps-fr.json"),
 	auth: await load("auth.json"),
 	session: await load("session.json"),
@@ -54,7 +55,14 @@ export type ProviderRequest = {
 	body: unknown;
 };
 
-type Endpoint = "aspsps" | "auth" | "sessions" | "revoke" | "balances" | "transactions";
+type Endpoint =
+	| "application"
+	| "aspsps"
+	| "auth"
+	| "sessions"
+	| "revoke"
+	| "balances"
+	| "transactions";
 
 /** The fixture pages: the first without a key, the second on `page-2`. */
 export function transactionsPage(url: URL): Response {
@@ -66,7 +74,7 @@ export function transactionsPage(url: URL): Response {
 }
 
 /**
- * Serves the six endpoints from the fixtures, or from `overrides`, and
+ * Serves the seven endpoints from the fixtures, or from `overrides`, and
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
@@ -89,6 +97,10 @@ export function mockProvider(
 		};
 
 	server.use(
+		http.get(
+			`${TEST_PROVIDER_URL}/application`,
+			answer("application", () => HttpResponse.json(fixtures.application)),
+		),
 		http.get(
 			`${TEST_PROVIDER_URL}/aspsps`,
 			answer("aspsps", () => HttpResponse.json(fixtures.aspsps)),

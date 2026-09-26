@@ -945,8 +945,30 @@
 		"description": "Connectez une banque pour qu'Archant lise vos comptes à votre place. Vous donnez votre accord sur le site de la banque, qui peut le retirer à tout moment ; Archant ne voit jamais vos identifiants.",
 		"unavailable": {
 			"title": "La connexion bancaire n'est pas configurée",
-			"description": "Définissez ces variables d'environnement sur le serveur, puis redémarrez-le :",
+			"description": "Définissez cette variable d'environnement sur le serveur, puis redémarrez-le :",
 			"docs": "Lire le guide de déploiement"
+		},
+		"credentials": {
+			"title": "Application Enable Banking",
+			"description": "Archant lit vos comptes par Enable Banking, un service agréé de connexion aux banques. Il lui faut une application Enable Banking à votre nom, créée une fois pour toutes.",
+			"steps": "Étapes",
+			"step1": "Créez une application sur le <portal>portail Enable Banking</portal>.",
+			"step2": "Enregistrez cette adresse de retour dans l'application :",
+			"step3": "Saisissez ci-dessous l'identifiant de l'application et choisissez le fichier .pem téléchargé à sa création.",
+			"copy": "Copier l'adresse de retour",
+			"copied": "Adresse copiée.",
+			"copyFailed": "La copie a échoué. Sélectionnez l'adresse et copiez-la vous-même.",
+			"applicationId": "Identifiant de l'application",
+			"privateKey": "Clé privée (fichier .pem)",
+			"privateKeyHint": "Le serveur la garde chiffrée et ne l'affiche jamais.",
+			"submit": "Enregistrer",
+			"saved": "Identifiants Enable Banking enregistrés.",
+			"current": "Application : {{id}}",
+			"environment": "Enable Banking est configuré par le serveur.",
+			"environmentDescription": "Les variables ENABLE_BANKING_APPLICATION_ID et ENABLE_BANKING_PRIVATE_KEY fixent ces identifiants. Modifiez-les sur le serveur pour en changer.",
+			"redirectLabel": "Adresse de retour à enregistrer dans l'application :",
+			"lockedTitle": "Configuration verrouillée",
+			"lockedDescription": "Déconnectez toutes les banques avant de modifier ces identifiants."
 		},
 		"country": "Pays",
 		"search": "Rechercher une banque",
@@ -1055,6 +1077,9 @@
 		"BANK_PROVIDER_ERROR": "Enable Banking n'a pas répondu correctement. Réessayez dans un instant.",
 		"BANK_BALANCE_UNAVAILABLE": "La banque n'a pas donné le solde. Le solde affiché reste celui de la synchronisation précédente.",
 		"BANK_REDIRECT_NOT_ALLOWED": "Enable Banking refuse l'adresse de retour. Enregistrez {{url}} dans les réglages de votre application Enable Banking, puis réessayez.",
+		"BANK_CREDENTIALS_REFUSED": "Enable Banking refuse cet identifiant et cette clé. Vérifiez qu'ils viennent de la même application, puis réessayez.",
+		"BANK_CREDENTIALS_LOCKED": "Déconnectez toutes les banques avant de modifier les identifiants Enable Banking.",
+		"BANK_CREDENTIALS_FROM_ENVIRONMENT": "Les variables d'environnement du serveur fixent les identifiants Enable Banking.",
 		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
@@ -1089,7 +1114,8 @@
 			"invalid_parent": "Cette catégorie parente n'est pas possible : les catégories ont deux niveaux au plus.",
 			"action_required": "Ajoutez au moins une action.",
 			"duplicate_action": "Cette action est déjà dans la règle.",
-			"nested_group": "Un groupe ne peut pas contenir un autre groupe."
+			"nested_group": "Un groupe ne peut pas contenir un autre groupe.",
+			"invalid_private_key": "Ce fichier ne contient pas de clé privée RSA lisible."
 		}
 	}
 }

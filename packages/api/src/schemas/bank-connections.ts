@@ -8,6 +8,19 @@ import {
 } from "@archant/data/account-types";
 import { BANK_COUNTRIES } from "@archant/data/bank-countries";
 
+/**
+ * What « Réglages › Banques » sends: the application ID and the `.pem`
+ * file's text, which the browser read. The service parses the key itself, so
+ * a file that holds none fails on `privateKey` like any other field.
+ */
+export const saveBankCredentialsSchema = z.object({
+	applicationId: z.string().trim().min(1).max(200),
+	// A key and its certificate fit in a few kilobytes; a larger file is not one.
+	privateKey: z.string().min(1).max(64_000),
+});
+
+export type SaveBankCredentialsInput = z.infer<typeof saveBankCredentialsSchema>;
+
 export const institutionsQuerySchema = z.object({ country: z.enum(BANK_COUNTRIES) });
 
 /** The bank the user picked; the service reads it again from the provider's list. */

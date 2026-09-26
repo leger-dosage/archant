@@ -31,14 +31,18 @@ export function createTestAuth(
 export type TestNetwork = { peer?: string; trustedProxies?: string[] };
 
 export type TestBank = Partial<
-	Pick<BankConnectionDeps, "bankConnector" | "encryptionKey" | "bankSetup">
+	Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl">
 > & { syncSecret?: string };
 
-/** No bank variable set, as on a fresh install: every bank route but `setup` answers 503. */
+/**
+ * No bank variable set, as on a fresh install: every bank route but `setup`
+ * and `credentials` answers 503. The provider URL is msw's, as in
+ * `testing/bank.ts`, which is not imported here: it generates a key pair.
+ */
 const NO_BANK = {
-	bankConnector: null,
+	bankCredentials: null,
 	encryptionKey: null,
-	bankSetup: ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY", "ENCRYPTION_KEY"],
+	bankApiUrl: "https://api.enablebanking.com",
 } as const;
 
 export function buildTestApp(
