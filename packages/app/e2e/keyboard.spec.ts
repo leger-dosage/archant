@@ -105,7 +105,9 @@ test("a collapsed sidebar's tooltip names the page, with no key", async ({ page 
 
 	await sidebar(page).getByRole("link", { name: "Comptes", exact: true }).hover();
 
-	await expect(page.getByRole("tooltip")).toHaveText("Comptes");
+	// By name: the trigger's own tooltip can still be fading out, as it did on CI.
+	// The exact text still proves the tooltip names no key.
+	await expect(page.getByRole("tooltip", { name: "Comptes" })).toHaveText("Comptes");
 });
 
 test("Tab reaches the sidebar links, then a row, and Enter opens its sheet", async ({
