@@ -150,3 +150,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-14-enable-banking-set-up-from-the-interface.md`
   summary: An unknown application ID may be answered by `GET /application` with a 4xx other than 401 or 403, which would show as `BANK_PROVIDER_ERROR` instead of `BANK_CREDENTIALS_REFUSED`.
   evidence: medium, unverified: the fake and the fixtures only return 401. One save against the sandbox with a mistyped application ID would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-12-1-the-brand-foundation.md`
+  summary: Muted text set directly on the page grey (`text-muted-foreground`, #737373 on #F7F7F7, about 4.4:1) falls below WCAG AA until its screen moves into cards.
+  evidence: Story 12.1 turned the page grey; Story 12.4's contrast acceptance criterion and the restyles of 12.2 to 12.4 close it.

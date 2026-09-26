@@ -2,7 +2,8 @@
 title: 'Story 12.1: The brand foundation'
 type: 'feature'
 created: '2026-09-26'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '2dc89e674cd1b1181ffc982837ef9eb7bd61a50c'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -53,15 +54,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/app/src/lib/pill-text-color.spec.ts` -- first: every `CATEGORY_COLORS` and default category colour, plus `#FFFF00`, `#FFFFFF`, `#000000`, reach ≥ 4.5:1 on its composited tint in both modes; a colour that already passes comes back unchanged; hue is kept.
-- [ ] `packages/app/src/lib/pill-text-color.ts` -- the helper, on `culori` (`wcagContrast`, `oklch`, `toGamut`).
-- [ ] `packages/app/src/lib/tint.spec.ts` then `tint.ts` -- `accountTypeTint`, `categoryTint`, `TRANSFER_TINT`, `UNCATEGORISED_TINT`, `merchantTint`, each returning `{ color, icon }` or `{ color, letter }`; the letter test covers « éco » → « É » and a leading space.
-- [ ] `packages/app/src/lib/theme-tokens.spec.ts` -- reads `styles.css` and checks each `DESIGN.md` token value in `:root` and `.dark`.
-- [ ] `packages/app/src/styles.css`, `components/ui/card.tsx`, `lib/transfers.ts` -- tokens, `shadow-ring`, card, transfer colour.
-- [ ] `packages/app/src/components/TintedIcon.tsx`, `CategoryPill.tsx`, `Logo.tsx` -- thin components over `tint.ts` and the helper.
-- [ ] `packages/app/src/components/AppSidebar.tsx`, `routes/_authed.settings.tsx`, `locales/fr.json` -- sidebar and settings navigation.
-- [ ] `packages/app/public/favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `index.html` -- icon links.
-- [ ] `packages/app/e2e/brand.spec.ts` -- logo beside « Archant »; active entry computed background `rgb(255, 255, 255)` with a shadow; a checking account row shows « Courant » and a tile coloured `#875BF7`; each settings link holds its `lucide-<name>` icon; `link[rel=icon]` points at an SVG the server answers with `image/svg+xml`.
+- [x] `packages/app/src/lib/pill-text-color.spec.ts` -- first: every `CATEGORY_COLORS` and default category colour, plus `#FFFF00`, `#FFFFFF`, `#000000`, reach ≥ 4.5:1 on its composited tint in both modes; a colour that already passes comes back unchanged; hue is kept.
+- [x] `packages/app/src/lib/pill-text-color.ts` -- the helper, on `culori` (`wcagContrast`, `oklch`, `toGamut`).
+- [x] `packages/app/src/lib/tint.spec.ts` then `tint.ts` -- `accountTypeTint`, `categoryTint`, `TRANSFER_TINT`, `UNCATEGORISED_TINT`, `merchantTint`, each returning `{ color, icon }` or `{ color, letter }`; the letter test covers « éco » → « É » and a leading space.
+- [x] `packages/app/src/lib/theme-tokens.spec.ts` -- reads `styles.css` and checks each `DESIGN.md` token value in `:root` and `.dark`.
+- [x] `packages/app/src/styles.css`, `components/ui/card.tsx`, `lib/transfers.ts` -- tokens, `shadow-ring`, card, transfer colour.
+- [x] `packages/app/src/components/TintedIcon.tsx`, `CategoryPill.tsx`, `Logo.tsx` -- thin components over `tint.ts` and the helper.
+- [x] `packages/app/src/components/AppSidebar.tsx`, `routes/_authed.settings.tsx`, `locales/fr.json` -- sidebar and settings navigation.
+- [x] `packages/app/public/favicon.svg`, `favicon-32.png`, `apple-touch-icon.png`, `index.html` -- icon links.
+- [x] `packages/app/e2e/brand.spec.ts` -- logo beside « Archant »; active entry computed background `rgb(255, 255, 255)` with a shadow; a checking account row shows « Courant » and a tile coloured `#875BF7`; each settings link holds its `lucide-<name>` icon; `link[rel=icon]` points at an SVG the server answers with `image/svg+xml`.
 
 **Acceptance Criteria:**
 - Given the finished story, when the verification gate of `AGENTS.md` runs, then it passes with no existing e2e selector rewritten except where an account link name gains its caption.
@@ -80,6 +81,34 @@ context:
 
 ## Implementation Notes
 
+- The sidebar caption is the kind label of `kindOf`, as the frozen intent says, so a checking account reads « Compte courant », not the mock's « Courant ». `brand.spec.ts` asserts « Compte courant »; renaming `accounts.subtypes.checking` would break `accounts.spec.ts:51` and `:61`.
+- Account type, transfer and uncategorised tints return `var(--type-*)`, `var(--transfer)` and `var(--uncategorised)`, so `styles.css` stays the single source of those colours; `TRANSFER_COLOR` is now `var(--transfer)`.
+- `@archant/api` exports `./services/default-categories`, so the pill helper's test covers the seeded colours without copying them.
+- `toGamut` runs without CSS's "roughly in gamut" shortcut (`delta` `null`): with it, clipping turned `#e99537`'s hue by about six degrees.
+- The sidebar's dark `--sidebar-accent` is now the dark card, `#171717`: the old `#0B0B0B` equals the new page grey and hid hover and the active tile.
+- No `fr.json` change was needed: the eyebrow reuses `nav.accounts` and the neutral pill `transactions.category.none`.
+
 ## Spec Change Log
 
+- Review finding: `bg-background` became the page grey, so shadcn surfaces that sit on white cards (outline button, active tab, chart tooltip) and two app surfaces (balance chart sticky header, transaction row hover) turned grey. The frozen "no other shadcn file changes" contradicts `DESIGN.md` (`button-outline` background is `card`) and Sure (outline buttons on the container colour); DESIGN.md and Sure win, so those five places move to `bg-card`. Frozen text left as written; the deviation is reported to the owner. KEEP: every other shadcn file untouched; `ui/sidebar.tsx` inset stays on the page grey.
+- Standards and spec review: the dark `--sidebar-accent`, an unlisted shadcn token, moves from `#0B0B0B` to the dark card `#171717`, because the old value now equals the page grey and hid the active tile; and the 10 % tint lives once, in `tintFill` beside `pillTint`, so the contrast search always measures the fill the components paint. The favicon follows the system scheme, as the frozen intent says, where the epic's AC reads "the current mode". KEEP: both.
+
 ## Review Triage Log
+
+| Finding | Verdict | Evidence | Route |
+|---|---|---|---|
+| Muted text (`#737373`) on the new grey page is below AA across existing pages (blind) | medium | `#737373` on `#F7F7F7` is about 4.4:1; the frozen intent excludes restyling pages, and Story 12.4's AC checks every text pair | defer (12.4) |
+| `bg-background` surfaces on white cards turn grey (blind, edge) | medium | `ui/button.tsx:13` outline, `ui/tabs.tsx:58` active tab, `ui/chart.tsx:172`, `BalanceChart.tsx:186`, `TransactionList.tsx:93` | patch (see change log) |
+| Tinted tile colour or merchant letter below contrast (blind) | false | Tiles are `aria-hidden` and always sit beside the name they illustrate; `DESIGN.md` specifies the full colour on a 10 % tint | reject |
+| `CARD_COLORS` duplicates `--card` untested (blind, verification-gap) | low | A token change would leave the pill contrast computed on the old card | patch |
+| Unused components lack render tests (blind) | low | Vitest runs in node; logic lives in tested `tint.ts` and the helper; 12.2–12.4 wire them | reject |
+| Invalid colour throws in `CategoryPill` render (blind, edge) | false | Category colours are validated by `CATEGORY_COLOR_PATTERN`; the pill's prop is a category, transfers never reach it | reject |
+| `@archant/api` exports a service for a test (blind) | low | `@archant/app` already depends on `@archant/api`; the module is data only | reject |
+| Transfer colour changes and equals the accent (blind) | false | `DESIGN.md` sets `transfer` to `#444CE7`, Sure's indigo | reject |
+| Dark mode untested in e2e; dark `muted-foreground-on-grey` unchecked (blind) | low | Token values are checked in `theme-tokens.spec.ts`; `#A3A3A3` is DESIGN's dark muted | reject |
+| Hover and active entries differ only by the ring (blind, edge) | low | Same as Sure's sidebar; cosmetic | reject |
+| Eyebrow not a group label, arbitrary values (blind) | low | Each group keeps its own labelled toggle button | reject |
+| Empty or NFD merchant name (blind, edge) | false | `api/src/schemas/merchants.ts:7-11` trims, NFC-normalises and requires length 1 | reject |
+| Favicon PNGs not requested in e2e (blind) | low | A wrong static fallback would answer HTML unnoticed; two requests close it | patch |
+| Spec imports full `culori`, masking missing `registerMode` (verification-gap) | medium | Demonstrated `TypeError` with only `culori/fn` loaded | patch |
+| `CategoryPill` imported nowhere (verification-gap) | false | Planned: 12.2–12.4 wire it | reject |

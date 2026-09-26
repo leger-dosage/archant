@@ -12,8 +12,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
+import { Logo } from "@/components/Logo";
 import { Money } from "@/components/Money";
 import { ThemeMenu } from "@/components/ThemeMenu";
+import { TintedIcon } from "@/components/TintedIcon";
 import {
 	Sidebar,
 	SidebarContent,
@@ -29,11 +31,12 @@ import {
 import { UserMenu } from "@/components/UserMenu";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
+import { kindOf } from "@/lib/account-kinds";
+import { accountTypeTint } from "@/lib/tint";
 import { cn } from "@/lib/utils";
 
-// DESIGN.md: the active entry carries a 2 px accent bar on its left edge.
-const ACTIVE_INDICATOR =
-	"data-active:bg-sidebar-accent data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-accent-brand data-active:before:content-['']";
+// DESIGN.md `sidebar-item-active`: a card-coloured tile raised off the page grey.
+const ACTIVE_TILE = "rounded-md data-active:bg-card data-active:shadow-ring";
 
 function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; currency: string }) {
 	const { t } = useTranslation();
@@ -52,7 +55,7 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 						? t("accounts.excluded", { count: group.excludedCount })
 						: undefined
 				}
-				className="flex h-8 w-full items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground outline-hidden hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+				className="flex h-8 w-full items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground-on-grey outline-hidden hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
 			>
 				<ChevronRightIcon
 					className={cn("size-3.5 shrink-0 transition-transform", open && "rotate-90")}
@@ -66,11 +69,18 @@ function SidebarAccountGroup({ group, currency }: { group: AccountGroupData; cur
 						<SidebarMenuItem key={account.id}>
 							<SidebarMenuButton
 								asChild
+								size="lg"
 								isActive={pathname === `/accounts/${account.id}`}
-								className={cn("justify-between gap-2 pl-6", ACTIVE_INDICATOR)}
+								className={cn("gap-2", ACTIVE_TILE)}
 							>
 								<Link to="/accounts/$accountId" params={{ accountId: account.id }}>
-									<span className="truncate">{account.name}</span>
+									<TintedIcon tint={accountTypeTint(account.type)} size="sm" />
+									<span className="flex min-w-0 flex-1 flex-col">
+										<span className="truncate">{account.name}</span>
+										<span className="truncate text-xs font-normal text-muted-foreground-on-grey">
+											{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
+										</span>
+									</span>
 									<AccountBalance account={account} className="text-xs" />
 								</Link>
 							</SidebarMenuButton>
@@ -101,12 +111,37 @@ function SidebarAccounts() {
 	const { groups, reportingCurrency } = accounts.data;
 
 	// Inactive accounts are hidden here; the accounts page can still show them.
-	return groups
+	const shown = groups
 		.map((group) => ({ ...group, accounts: group.accounts.filter((account) => account.active) }))
-		.filter((group) => group.accounts.length > 0)
-		.map((group) => (
-			<SidebarAccountGroup key={group.classification} group={group} currency={reportingCurrency} />
-		));
+		.filter((group) => group.accounts.length > 0);
+
+	if (shown.length === 0) {
+		return null;
+	}
+
+	return (
+		<>
+			<SidebarEyebrow />
+			{shown.map((group) => (
+				<SidebarAccountGroup
+					key={group.classification}
+					group={group}
+					currency={reportingCurrency}
+				/>
+			))}
+		</>
+	);
+}
+
+/** DESIGN.md `eyebrow`: the « Comptes » label above Actifs and Passifs. */
+function SidebarEyebrow() {
+	const { t } = useTranslation();
+
+	return (
+		<div className="px-4 pt-3 text-[11px] leading-[1.4] font-medium tracking-[0.04em] text-muted-foreground-on-grey uppercase">
+			{t("nav.accounts")}
+		</div>
+	);
 }
 
 export function AppSidebar() {
@@ -121,9 +156,7 @@ export function AppSidebar() {
 		<Sidebar collapsible="icon">
 			<SidebarHeader>
 				<div className="flex h-8 items-center gap-2 px-2 font-semibold group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-					<span className="grid size-6 shrink-0 place-items-center rounded-md bg-primary text-xs text-primary-foreground">
-						{t("app.name").charAt(0)}
-					</span>
+					<Logo />
 					<span className="truncate group-data-[collapsible=icon]:hidden">{t("app.name")}</span>
 				</div>
 			</SidebarHeader>
@@ -135,7 +168,7 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/"}
 								tooltip={t("nav.dashboard")}
-								className={ACTIVE_INDICATOR}
+								className={ACTIVE_TILE}
 							>
 								<Link to="/">
 									<LayoutDashboardIcon />
@@ -146,10 +179,10 @@ export function AppSidebar() {
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								asChild
-								// Exact: on an account page its own row carries the indicator.
+								// Exact: on an account page its own row is the raised one.
 								isActive={pathname === "/accounts" || pathname === "/accounts/"}
 								tooltip={t("nav.accounts")}
-								className={ACTIVE_INDICATOR}
+								className={ACTIVE_TILE}
 							>
 								<Link to="/accounts">
 									<WalletIcon />
@@ -162,7 +195,7 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/transactions"}
 								tooltip={t("nav.operations")}
-								className={ACTIVE_INDICATOR}
+								className={ACTIVE_TILE}
 							>
 								<Link to="/transactions">
 									<ListIcon />
@@ -175,7 +208,7 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/recurring"}
 								tooltip={t("nav.recurring")}
-								className={ACTIVE_INDICATOR}
+								className={ACTIVE_TILE}
 							>
 								<Link to="/recurring">
 									<RepeatIcon />
@@ -188,7 +221,7 @@ export function AppSidebar() {
 								asChild
 								isActive={pathname === "/rules"}
 								tooltip={t("nav.rules")}
-								className={ACTIVE_INDICATOR}
+								className={ACTIVE_TILE}
 							>
 								<Link to="/rules">
 									<WandSparklesIcon />

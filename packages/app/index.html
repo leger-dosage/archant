@@ -4,6 +4,11 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Archant</title>
+		<!-- The PNG first, sized, so a browser that reads SVG icons picks the SVG,
+		     whose own media query follows the system like the tab strip does. -->
+		<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		<script>
 			// Applied before the first paint, so a dark-mode user never sees a white
 			// flash. Kept in sync with src/lib/theme.ts, which owns the storage key.
