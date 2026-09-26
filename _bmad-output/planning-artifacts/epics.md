@@ -117,6 +117,13 @@ FR54: The user can disconnect a bank. Its accounts stay, with their history, as 
 FR55: Each connection shows its last successful sync and its last error.
 FR56: A linked account uses the balance reported by the bank as its reference and computes its history backward from it.
 
+#### Running in production
+
+FR57: Creating the first administrator requires a setup token that only someone with access to the server can read, so a stranger who finds a fresh instance cannot claim it.
+FR58: The user can turn on two-factor sign-in with a time-based one-time code (TOTP) and single-use backup codes, as in Sure.
+FR59: Every release publishes a versioned container image, for amd64 and arm64, that a self-hoster pulls and pins; the interface shows the running version.
+FR60: Before applying a pending migration, the server copies the database; a command takes a consistent backup on demand, and another restores one.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
@@ -133,6 +140,8 @@ NFR11: No test reaches the network; an unmocked request fails the test and names
 NFR12: The interface is in French first. Every visible string goes through a translation layer so another language can be added without touching components.
 NFR13: The interface is usable with the keyboard alone and meets WCAG 2.2 AA contrast.
 NFR14: Dependencies stay few and popular; each new one is justified in its pull request.
+NFR15: A request cannot exhaust the server: every route has a body size limit, sign-in attempts are limited per address and overall with a count that survives a restart, and no parser runs in time exponential in its input.
+NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy.
 
 ### Additional Requirements
 
@@ -146,7 +155,7 @@ NFR14: Dependencies stay few and popular; each new one is justified in its pull 
 - `POST /api/sync` is protected by a shared secret and meant to run once a day, triggered by a cron or a scheduled GitHub Action.
 - GitHub Actions runs the verification gate on every pull request and exercises the container once it exists.
 - Enable Banking credentials (application id and private key) come from the environment.
-- Backups are documented in `docs/deployment.md`, not automated by the application.
+- Backups are taken by the application before a migration and on demand through a command (FR60); scheduling them and copying them off the machine is documented in `docs/`, not automated by the application.
 - Amounts are signed from the account's point of view: negative means money leaving the account. A liability's balance is displayed as a positive outstanding amount. The architecture fixes the storage convention.
 - Every story ships automated tests for its acceptance criteria: Playwright end-to-end tests for what the interface shows, Vitest for domain, services and routes. A story is not done while one of its criteria is only checked by hand. Story 1.7 creates the Playwright harness and covers Stories 1.1 to 1.4; every story after it adds its own tests.
 - The architecture spine, `architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md`, binds every story; its `AD-n` rules win over any wording here.
@@ -226,8 +235,12 @@ FR53: Epic 10 - Consent expiry and renewal
 FR54: Epic 10 - Disconnect a bank
 FR55: Epic 10 - Connection status
 FR56: Epic 10 - Bank balance as reference
+FR57: Epic 13 - Setup token
+FR58: Epic 13 - Two-factor sign-in
+FR59: Epic 13 - Versioned image and visible version
+FR60: Epic 13 - Backup before migration, backup and restore commands
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, and revises the additional requirement on backups.
 
 ## Epic List
 
@@ -290,6 +303,11 @@ Every figure Archant shows can be trusted with real bank data, and a first-time 
 
 Archant stops looking austere: Sure's content (a greeting, colour through tinted icons and category pills, a donut, a balance sheet by account type) in Linear's skin (Linear Light, Linear Classic Dark, Inter, an inset panel, borders instead of shadows), with a logo and a favicon, as `DESIGN.md` now specifies.
 **FRs covered:** none new; revises UX-DR1
+
+### Epic 13: Ready for real bank data
+
+The owner hosts Archant somewhere other than their laptop, connects a real bank through Enable Banking's production environment, and upgrades it without risking the data: the findings of the security audit of 2026-09-26 are fixed, releases ship as versioned images, the database is copied before every migration, and a hosting guide covers the free and cheap options.
+**FRs covered:** FR57, FR58, FR59, FR60; NFR15, NFR16
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -2027,3 +2045,215 @@ So that no page looks left over from before.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 13: Ready for real bank data
+
+After Epic 12 the owner ran a manual QA pass and decided to host Archant and connect a real bank through Enable Banking's production environment. A security audit of the code on 2026-09-26 found one high-severity issue, three medium and four low; `pnpm audit --prod` found no known vulnerability. The high one: `/api/setup` creates the administrator for whoever calls it first, and a fresh domain's certificate lands in public certificate transparency logs that bots scan within minutes. Stories 13.1 to 13.4 fix every finding; Stories 13.5 and 13.6 make an upgrade a pull and a restart that cannot lose data; Story 13.7 writes the hosting guide the owner follows.
+
+Where Sure settles a question, the story follows it: two-factor sign-in is TOTP with backup codes, optional per user, as in Sure's `MfaController`; images are published to GHCR on version tags for amd64 and arm64, as in Sure's `publish.yml`; migrations run at boot, as in Sure's `bin/docker-entrypoint`. Archant goes further than Sure on backups, because its database is a single SQLite file the application can copy itself, where Sure delegates to a Postgres sidecar.
+
+The hosting research of 2026-09-26 ranks, for bank data first and cost second: a machine at home reachable only through Tailscale (free), a VPS in France at about 4.60 € a month (OVH VPS-1) or in Germany (Hetzner), then Fly.io at about 2 to 3 dollars a month. Render, Koyeb and Railway's free tiers have no persistent disk; Google Cloud's free VM is outside the EU; Oracle's Always Free tier halved its quota without notice in 2026 and reclaims idle instances. Turso is left out: the bank history would move to a third party.
+
+Stories 13.1 to 13.4 can ship in any order; 13.6 needs 13.5's version number; 13.7 comes last, since it documents all of them.
+
+### Story 13.1: The first administrator needs a setup token
+
+As the household's administrator,
+I want the first-launch setup to ask for a token printed in the server's logs,
+So that nobody who finds my fresh instance on the internet can create the administrator before me.
+
+**Requirements:** FR42, FR57
+
+**Acceptance Criteria:**
+
+**Given** a database with no user
+**When** the server starts
+**Then** it generates a random setup token, keeps it in memory only, and logs it once at `info` with the instruction to open `/setup`; with a user, it generates and logs nothing
+
+**Given** the setup page
+**When** I submit it
+**Then** it asks for « Jeton de configuration » beside the existing fields, and `POST /api/setup` compares it in constant time; a missing or wrong token answers `403` with a closed error code and creates nothing
+
+**Given** repeated wrong tokens
+**When** they arrive from one address
+**Then** they are rate-limited like sign-in attempts
+
+**Given** setup is done
+**When** anyone calls `POST /api/setup`
+**Then** it is refused before the body is read, as today, and `GET /api/setup` still reveals nothing beyond whether setup is open
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest, the e2e `setup` project reading the token the test server prints
+
+### Story 13.2: A request cannot exhaust the server
+
+As the household's administrator,
+I want no request, file or run of sign-in attempts to freeze or crash the server,
+So that a stranger cannot take Archant down or guess my password by brute force.
+
+**Requirements:** NFR15
+
+**Acceptance Criteria:**
+
+**Given** any route under `/api` except the file upload, which keeps its 5 MB limit
+**When** a body larger than 64 KB arrives, signed in or not
+**Then** it is refused with `413` before it is read
+
+**Given** an OFX file whose tag names are 40 characters long
+**When** it is previewed or imported
+**Then** it answers within a second, either parsed or refused as unreadable, because the exponential regular expression in `ofx-js`'s `sgml2Xml` is patched or the input is checked before it reaches it
+
+**Given** Better Auth's sign-in rate limit
+**When** the server restarts
+**Then** the counts survive, since they are stored in the database, and besides the per-address limit an overall ceiling on `/sign-in/email` across all addresses stops a distributed guess
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** every acceptance criterion above has an automated Vitest test
+
+### Story 13.3: The container exposes nothing it does not need
+
+As the household's administrator,
+I want the default container and the pages it serves to be locked down,
+So that my password never crosses the network in clear text and injected text cannot run script.
+
+**Requirements:** NFR16
+
+**Acceptance Criteria:**
+
+**Given** the default `docker-compose.yml`
+**When** it starts
+**Then** it publishes `127.0.0.1:8787` only; reaching it from the home network is a documented `compose.override.yml`, and `docs/deployment.md` drops the loopback override it no longer needs
+
+**Given** the same file
+**When** the container runs
+**Then** its root filesystem is read-only with a `tmpfs` on `/tmp`, it drops every Linux capability, runs with `no-new-privileges`, and only `/data` is writable; the CI `image` job still passes
+
+**Given** any page the server sends
+**When** a browser loads it
+**Then** it carries a Content-Security-Policy with `script-src 'self'` plus the hash of the theme script in `index.html`, `connect-src 'self'`, `object-src 'none'`, `base-uri 'none'` and `frame-ancestors 'none'`, and the interface works under it in the e2e run
+
+**Given** `BETTER_AUTH_URL` in plain `http://` on an address that is neither loopback nor private
+**When** the server starts
+**Then** it logs a warning that session cookies travel unencrypted
+
+**Given** the finished story
+**When** `pnpm test`, `pnpm test:e2e` and the CI `image` job run
+**Then** every acceptance criterion above has an automated test
+
+### Story 13.4: Two-factor sign-in
+
+As the household's administrator,
+I want to protect my sign-in with a one-time code from an authenticator app,
+So that a leaked password alone does not open my bank history.
+
+**Requirements:** FR58, FR45
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Sécurité »
+**When** I turn on two-factor sign-in after confirming my password
+**Then** it shows a QR code and the secret, turns on only once I enter a valid code, and shows ten single-use backup codes once, through Better Auth's `twoFactor` plugin
+
+**Given** two-factor sign-in is on
+**When** I sign in with the right password
+**Then** a second step asks for the code or a backup code; a used backup code never works again
+
+**Given** two-factor sign-in is on
+**When** I turn it off or regenerate the backup codes
+**Then** it asks for my password first
+
+**Given** a lost authenticator and lost backup codes
+**When** I run `reset-password` on the server
+**Then** it also turns two-factor sign-in off for that user and says so, since the server shell is the recovery path
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 13.5: Versioned images
+
+As the household's administrator,
+I want every release published as an image I can pin,
+So that upgrading is a pull, and going back is choosing the previous tag.
+
+**Requirements:** FR59, FR46
+
+**Acceptance Criteria:**
+
+**Given** a `vX.Y.Z` tag pushed to GitHub
+**When** the release workflow runs
+**Then** it runs the verification gate, builds the image for `linux/amd64` and `linux/arm64`, pushes it to `ghcr.io/leger-dosage/archant` as `X.Y.Z`, `X.Y` and `latest`, and creates a GitHub Release with generated notes; the version comes from the tag, without a commit to bump it
+
+**Given** `docker-compose.yml`
+**When** a self-hoster starts it without a checkout
+**Then** it runs `ghcr.io/leger-dosage/archant:${ARCHANT_VERSION:-latest}`, and a contributor can still build from source; the CI `image` job keeps testing the image built from the pull request
+
+**Given** « Réglages »
+**When** it renders
+**Then** it shows the running version, linked to its GitHub Release, and `GET /api/health` stays free of it
+
+**Given** the finished story
+**When** `pnpm test` and the CI jobs run
+**Then** every acceptance criterion above has an automated test; the release workflow is checked by `actionlint` in CI
+
+### Story 13.6: Backups the server takes itself
+
+As the household's administrator,
+I want the server to copy my database before it migrates it, and a command to back up and restore,
+So that a failed upgrade or a bad import never costs me my history.
+
+**Requirements:** FR60, FR46
+
+**Acceptance Criteria:**
+
+**Given** a database file with at least one pending migration
+**When** the server starts
+**Then** before migrating it writes a consistent copy with `VACUUM INTO` to `backups/` beside the database, named after the running version and the time, keeps the five most recent such copies, and refuses to migrate if the copy fails; with no pending migration, or a `libsql://` database, it copies nothing and says so in the log
+
+**Given** `node packages/api/src/cli/backup.ts`, run in the container or from a checkout
+**When** the server is running or stopped
+**Then** it writes a consistent copy, checks it with `PRAGMA integrity_check`, prints its path, and keeps the 14 most recent on-demand copies
+
+**Given** `node packages/api/src/cli/restore.ts <file>` with the server stopped
+**When** it runs
+**Then** it refuses a file that fails `PRAGMA integrity_check` or holds no Archant migration table, copies the current database aside first, replaces it, removes the WAL and shared-memory files, and the next start migrates the restored file forward
+
+**Given** `docs/deployment.md`
+**When** a self-hoster reads « Upgrading » and « Backups »
+**Then** they describe the pinned tag, `docker compose pull`, the automatic copy, going back to the previous tag with the pre-migration copy, and the two commands, replacing the manual `VACUUM INTO` recipe
+
+**Given** the finished story
+**When** `pnpm test` and the CI `image` job run
+**Then** every acceptance criterion above has an automated test, the `image` job included: a restart onto a volume with a pending migration leaves a copy in `backups/`
+
+### Story 13.7: The hosting guide
+
+As the household's administrator,
+I want a guide that takes me from nothing to Archant hosted, backed up off the machine and connected to my real bank,
+So that I can run it on real data without guessing what I missed.
+
+**Requirements:** FR46, FR57, FR58, FR59, FR60, NFR16
+
+**Acceptance Criteria:**
+
+**Given** `docs/hosting/`
+**When** a self-hoster opens it
+**Then** it holds one page per target, each giving the cost, the persistent disk, HTTPS, the daily `POST /api/sync` schedule, upgrades and backups, with the date the prices were checked: a machine at home reachable only through Tailscale with `tailscale serve`, recommended first; a VPS (OVH VPS-1, Hetzner) either private through Tailscale or public behind Caddy with a firewall; and Fly.io with a volume. It names the options ruled out and why, as in this epic's introduction
+
+**Given** the guide
+**When** it reaches backups
+**Then** it copies the backups of Story 13.6 off the machine with `restic`, encrypted, to a storage it names with its free allowance, runs them from the same schedule as the sync, and has the reader restore one once
+
+**Given** the guide
+**When** it reaches a public exposure
+**Then** a checklist covers finishing `/setup` with its token, turning on two-factor sign-in, `TRUSTED_PROXIES`, keeping the keys apart from the backups, and never publishing port 8787 beyond loopback
+
+**Given** « Connecting a bank » in `docs/deployment.md`
+**When** it covers production
+**Then** it walks through registering a production application in restricted mode with « Activate by linking accounts », with the redirect URL of the chosen target; whether a private `https://*.ts.net` redirect URL is accepted is checked by the owner with a sandbox application before the guide states it, since no official source settles it
+
+**Given** the finished story
+**When** `pnpm lint:format` runs
+**Then** every page is formatted, every internal link resolves, and the `#connecting-a-bank` anchor still exists
