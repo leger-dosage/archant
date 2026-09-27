@@ -159,6 +159,10 @@ describe("the server entrypoint", () => {
 		expect((await setup({ token: token ?? "" })).status).toBe(201);
 	});
 
+	it("gives no plain-HTTP warning on a loopback origin", () => {
+		expect(logLines.filter((line) => line.includes("travel unencrypted"))).toEqual([]);
+	});
+
 	it("exits within one second of SIGTERM", async () => {
 		const started = performance.now();
 		const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
@@ -197,6 +201,41 @@ describe("the server entrypoint, once a user exists", () => {
 			if (restarted.exitCode === null && restarted.signalCode === null) {
 				restarted.kill("SIGKILL");
 				await once(restarted, "exit");
+			}
+		}
+	}, 30_000);
+});
+
+describe("the server entrypoint, on a public plain-HTTP origin", () => {
+	it("warns once that the password travels unencrypted, and still starts", async () => {
+		const publicPort = await freePort();
+		const exposed = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${join(directory, "public.db")}`,
+				PORT: String(publicPort),
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: "http://archant.example.org",
+			},
+		});
+
+		try {
+			const warnings = (await listening(exposed)).filter((line) =>
+				line.includes("travel unencrypted"),
+			);
+
+			expect(warnings).toHaveLength(1);
+			const line = logLine.parse(JSON.parse(warnings[0] ?? "{}"));
+			expect(line.level).toBe(40);
+			expect(line.msg).toContain("BETTER_AUTH_URL");
+			expect(line.msg).toContain("ARCHANT_URL");
+			expect(line.msg).toContain("password");
+			expect(line.msg).toContain("session cookies");
+		} finally {
+			if (exposed.exitCode === null && exposed.signalCode === null) {
+				exposed.kill("SIGKILL");
+				await once(exposed, "exit");
 			}
 		}
 	}, 30_000);

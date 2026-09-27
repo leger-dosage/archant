@@ -174,7 +174,7 @@ function PasswordSection() {
 		} else if (error.status === 401) {
 			// The session is gone, a reset from the server for instance. The Better
 			// Auth client answers outside the query and mutation caches, so
-			// `main.tsx` never sees this one: the redirect belongs here.
+			// `app.tsx` never sees this one: the redirect belongs here.
 			queryClient.setQueryData(queryKeys.session, null);
 			await router.navigate({
 				to: "/sign-in",

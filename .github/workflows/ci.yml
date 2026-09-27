@@ -99,6 +99,23 @@ jobs:
           echo "$result"
           test "$result" = "401 application/json"
           grep --quiet '"code":"UNAUTHORIZED"' "$RUNNER_TEMP/body.json"
+      # The lock-down in docker-compose.yml, read back from the running
+      # container rather than trusted from the file.
+      - name: The container runs locked down
+        run: |
+          id="$(docker compose ps --quiet archant)"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$id")" = "true"
+          test "$(docker inspect --format '{{json .HostConfig.CapDrop}}' "$id")" = '["ALL"]'
+          test "$(docker inspect --format '{{json .HostConfig.SecurityOpt}}' "$id")" = '["no-new-privileges:true"]'
+          test "$(docker inspect --format '{{json .HostConfig.PortBindings}}' "$id")" = '{"8787/tcp":[{"HostIp":"127.0.0.1","HostPort":"8787"}]}'
+      # `/home/node` belongs to the server's user, so only the read-only root
+      # can refuse the write there; `/app` is root's and would refuse anyway.
+      - name: Only /data and /tmp are writable
+        run: |
+          docker compose exec -T archant touch /data/write-probe
+          docker compose exec -T archant touch /tmp/write-probe
+          if docker compose exec -T archant touch /home/node/write-probe; then exit 1; fi
+          docker compose exec -T archant rm /data/write-probe /tmp/write-probe
       # Only the production dependencies of the API and `@archant/data`;
       # .pnpmfile.cjs keeps optional peers from pulling these back in.
       - name: The runtime image carries no build or test tooling

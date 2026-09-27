@@ -465,7 +465,15 @@ export function apiHelpers(request: APIRequestContext) {
 
 export type Api = ReturnType<typeof apiHelpers>;
 
-export const test = base.extend<{ api: Api; clientAddress: void; outsideRequestGuard: void }>({
+/** The page-side function the Content-Security-Policy guard reports through. */
+const CSP_VIOLATION_BINDING = "archantCspViolation";
+
+export const test = base.extend<{
+	api: Api;
+	clientAddress: void;
+	outsideRequestGuard: void;
+	contentSecurityPolicyGuard: void;
+}>({
 	api: async ({ request }, use) => {
 		await use(apiHelpers(request));
 	},
@@ -502,6 +510,35 @@ export const test = base.extend<{ api: Api; clientAddress: void; outsideRequestG
 			);
 			await use();
 			expect(outside, `Requests outside localhost: ${outside.join(", ")}`).toEqual([]);
+		},
+		{ auto: true },
+	],
+
+	// The suite's server sends the production Content-Security-Policy, so the
+	// whole run proves the interface works under it. A blocked script, style
+	// or request fires the standard `securitypolicyviolation` event, which
+	// fails the test here naming the directive and what it blocked; Chromium's
+	// console wording has changed before and cannot be relied on.
+	contentSecurityPolicyGuard: [
+		async ({ context }, use) => {
+			const violations: string[] = [];
+
+			await context.exposeBinding(CSP_VIOLATION_BINDING, (_source, violation: string) => {
+				violations.push(violation);
+			});
+			await context.addInitScript((binding) => {
+				document.addEventListener("securitypolicyviolation", (event) => {
+					const report: unknown = Reflect.get(window, binding);
+
+					if (typeof report === "function") {
+						report(`${event.violatedDirective} blocked ${event.blockedURI}`);
+					}
+				});
+			}, CSP_VIOLATION_BINDING);
+			await use();
+			expect(violations, `Content-Security-Policy violations: ${violations.join("\n")}`).toEqual(
+				[],
+			);
 		},
 		{ auto: true },
 	],

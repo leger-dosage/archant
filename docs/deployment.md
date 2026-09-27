@@ -23,7 +23,16 @@ Without it, whoever reached `/setup` first would own the instance; a new domain'
 
 If `--wait` reports the container as unhealthy or exited, `docker compose logs archant` says why: a missing or unreadable variable stops the server at startup and names itself there.
 
-To reach it from another device on the home network, such as a phone, set `ARCHANT_URL` to the address that device uses, for instance `http://192.168.1.20:8787`, then run `docker compose up --detach --wait` again. The server refuses a sign-in from any address other than `ARCHANT_URL`, so the machine itself then has to use that address too. Anything beyond the home network belongs behind a reverse proxy with HTTPS.
+The port is published on `127.0.0.1` only, so nothing else on the network reaches the server around a reverse proxy or Tailscale. To reach it from another device on the home network, such as a phone, publish it on every interface in a `compose.override.yml` next to `docker-compose.yml`, which Compose merges on its own and `git pull` never touches:
+
+```yaml
+services:
+  archant:
+    ports: !override
+      - "8787:8787"
+```
+
+Without `!override`, Compose appends this entry to the port list instead of replacing it, and the loopback entry stays. Then set `ARCHANT_URL` to the address that device uses, for instance `http://192.168.1.20:8787`, and run `docker compose up --detach --wait` again. The server refuses a sign-in from any address other than `ARCHANT_URL`, so the machine itself then has to use that address too. Anything beyond the home network belongs behind a reverse proxy with HTTPS: on a plain `http://` address that is neither loopback nor private, the server logs a `warn` line at start, because the password and session cookies would cross the internet unencrypted.
 
 At start the server applies pending migrations, then listens; see [Upgrading](#upgrading). `GET /api/health` answers `200 {"data":{"status":"ok"}}` once it can query the database and `503` when it cannot; the image's `HEALTHCHECK` calls it, which is what `--wait` waits for.
 
@@ -45,7 +54,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                       |
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
 
-The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, and port 8787. The server runs as the unprivileged `node` user.
+The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, and port 8787. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
 
 ### Behind a reverse proxy
 
@@ -57,16 +66,7 @@ Also set `TRUSTED_PROXIES`. Without it, the server sees every visitor as the pro
 docker network inspect archant_default --format '{{(index .IPAM.Config 0).Gateway}}'
 ```
 
-The network is named after the directory holding `docker-compose.yml`. Then publish the port on loopback only, so no one can reach the container around the proxy and write that header themselves. Do it in a `compose.override.yml` next to `docker-compose.yml`, which Compose merges on its own and `git pull` never touches:
-
-```yaml
-services:
-  archant:
-    ports: !override
-      - "127.0.0.1:8787:8787"
-```
-
-Without `!override`, Compose appends this entry to the port list instead of replacing it, and the port stays published on every interface.
+The network is named after the directory holding `docker-compose.yml`. Keep the default loopback port, without the home-network override above, so no one can reach the container around the proxy and write that header themselves.
 
 ### Stopping
 
@@ -82,6 +82,8 @@ Take a backup first, as described in [Backups](#backups). Migrations only go for
 git pull
 docker compose up --build --detach --wait
 ```
+
+The port is published on `127.0.0.1` only since the container was locked down: an install reached from another device loses that access at the upgrade until it adds the home-network `compose.override.yml` described [above](#docker--the-reference-target).
 
 There is no separate migration command. The server applies pending migrations before it listens, and `--wait` returns once `GET /api/health` answers, which proves they ran. From a checkout, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev` does the same.
 

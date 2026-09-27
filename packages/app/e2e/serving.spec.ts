@@ -24,3 +24,21 @@ test("an unknown API route answers JSON, not the interface", async ({ page }) =>
 	});
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(0);
 });
+
+test("the page carries the Content-Security-Policy, and the theme script still runs under it", async ({
+	page,
+}) => {
+	await page.addInitScript(() => {
+		localStorage.setItem("archant.theme", "dark");
+	});
+	// Without the bundle, React never mounts: only the inline theme script can
+	// set the class, and it runs only if the policy's hash admits it.
+	await page.route("**/assets/*.js", (route) => route.abort());
+
+	const response = await page.goto("/accounts");
+
+	expect(response?.headers()["content-security-policy"]).toBe(
+		"script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+	);
+	await expect(page.locator("html")).toHaveClass(/\bdark\b/u);
+});

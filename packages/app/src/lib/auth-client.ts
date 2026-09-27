@@ -16,7 +16,7 @@ export type Session = typeof authClient.$Infer.Session;
 
 /**
  * The signed-in session, or `null`. Cached until a call answers
- * `UNAUTHORIZED`, which sets it to `null` (main.tsx): asking Better Auth on every
+ * `UNAUTHORIZED`, which sets it to `null` (app.tsx): asking Better Auth on every
  * navigation would add a round trip to each page for nothing.
  */
 export const sessionQuery = queryOptions({
