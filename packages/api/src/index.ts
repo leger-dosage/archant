@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { randomBytes } from "node:crypto";
 
+import { BackupError, copyBeforeMigrating, errorCode } from "@archant/data/backup";
 import { createDb } from "@archant/data/client";
 import { runMigrations } from "@archant/data/migrate";
 
@@ -27,6 +28,12 @@ if (isInsecurePublicOrigin(env.BETTER_AUTH_URL)) {
 	);
 }
 
+const SKIPPED_BACKUP = {
+	"up-to-date": "no pending migration, so no database copy",
+	new: "a new database, so no database copy",
+	remote: "a remote database, so no database copy",
+} as const;
+
 /** Ends the process with one line a first-time user can act on, and no stack trace. */
 function portTaken(port: number): never {
 	logger.fatal(
@@ -41,6 +48,46 @@ function portTaken(port: number): never {
 // migrating, so a conflict touches no database.
 if ((await loopbackListener(env.PORT)) !== null) {
 	portTaken(env.PORT);
+}
+
+// Migrations only go forward, so a file an upgrade migrated no longer opens in
+// the image it came from. Without a copy there is no way back, so a failed
+// copy stops the server before it migrates.
+try {
+	const backup = await copyBeforeMigrating({
+		url: env.DATABASE_URL,
+		authToken: env.DATABASE_AUTH_TOKEN,
+		version: env.APP_VERSION,
+		now: new Date(),
+	});
+
+	if ("copied" in backup) {
+		logger.info(
+			{ backup: backup.copied, kept: backup.kept },
+			`database copied to backups/${backup.copied} before migrating`,
+		);
+		if (backup.pruneFailed !== undefined) {
+			logger.warn(
+				{ code: backup.pruneFailed },
+				"older database copies could not be deleted from backups/",
+			);
+		}
+	} else {
+		logger.info({ skipped: backup.skipped }, SKIPPED_BACKUP[backup.skipped]);
+	}
+} catch (error) {
+	if (error instanceof BackupError) {
+		logger.fatal(
+			{ code: error.code, directory: error.directory },
+			"The database could not be copied before migrating, so it was not migrated. Free disk space or fix the permissions of the backups directory beside the database, then start again.",
+		);
+	} else {
+		logger.fatal(
+			{ code: errorCode(error) },
+			"The database could not be read before migrating, so it was not migrated. Check that DATABASE_URL names an Archant database and that no other server holds it, then start again.",
+		);
+	}
+	process.exit(1);
 }
 
 // Before anything reads a table: an upgrade is a new image and a restart, with

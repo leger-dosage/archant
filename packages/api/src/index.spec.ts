@@ -3,13 +3,17 @@ import type { ChildProcess } from "node:child_process";
 import { http, passthrough } from "msw";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+
+import { createDb } from "@archant/data/client";
+import { pendingMigrations } from "@archant/data/migrate";
+import { migrateAllButLast } from "@archant/data/testing/migrations";
 
 import { server } from "../vitest.setup.ts";
 
@@ -120,6 +124,9 @@ describe("the server entrypoint", () => {
 		const listened = logLines.findIndex((line) => line.includes("Archant API listening"));
 		expect(migrated).toBeGreaterThanOrEqual(0);
 		expect(migrated).toBeLessThan(listened);
+		expect(logLines.some((line) => line.includes("a new database, so no database copy"))).toBe(
+			true,
+		);
 	});
 
 	it("hands SYNC_SECRET to the scheduled sync route", async () => {
@@ -197,6 +204,10 @@ describe("the server entrypoint, once a user exists", () => {
 			const lines = await listening(restarted);
 
 			expect(lines.filter((line) => line.includes("setup token"))).toEqual([]);
+			expect(lines.some((line) => line.includes("no pending migration, so no database copy"))).toBe(
+				true,
+			);
+			await expect(readdir(join(directory, "backups"))).rejects.toThrow();
 		} finally {
 			if (restarted.exitCode === null && restarted.signalCode === null) {
 				restarted.kill("SIGKILL");
@@ -293,4 +304,152 @@ describe("the server entrypoint, on a port another server holds", () => {
 		},
 		30_000,
 	);
+});
+
+async function pendingAfter(file: string): Promise<"new" | "none" | number> {
+	const db = await createDb(`file:${file}`);
+	try {
+		return await pendingMigrations(db);
+	} finally {
+		db.$client.close();
+	}
+}
+
+describe("the server entrypoint, on a database with a pending migration", () => {
+	it("copies the database to backups/ before it migrates", async () => {
+		const upgradeDirectory = await mkdtemp(join(tmpdir(), "archant-upgrade-"));
+		const file = join(upgradeDirectory, "archant.db");
+		await migrateAllButLast(`file:${file}`);
+		const upgradePort = await freePort();
+		const upgraded = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${file}`,
+				PORT: String(upgradePort),
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: `http://localhost:${upgradePort}`,
+				APP_VERSION: "1.2.0",
+			},
+		});
+
+		try {
+			const lines = await listening(upgraded);
+
+			const copied = lines.findIndex((line) => line.includes("before migrating"));
+			const migrated = lines.findIndex((line) => line.includes("migrations applied"));
+			expect(copied).toBeGreaterThanOrEqual(0);
+			expect(copied).toBeLessThan(migrated);
+			expect(logLine.parse(JSON.parse(lines[copied] ?? "{}")).level).toBe(30);
+			const copies = await readdir(join(upgradeDirectory, "backups"));
+			expect(copies).toHaveLength(1);
+			expect(copies[0]).toMatch(/^archant-\d{8}T\d{6}Z-1\.2\.0\.db$/u);
+			await expect(pendingAfter(join(upgradeDirectory, "backups", copies[0] ?? ""))).resolves.toBe(
+				1,
+			);
+		} finally {
+			if (upgraded.exitCode === null && upgraded.signalCode === null) {
+				upgraded.kill("SIGKILL");
+				await once(upgraded, "exit");
+			}
+			await rm(upgradeDirectory, { recursive: true, force: true });
+		}
+	}, 30_000);
+
+	it("stops without migrating when the copy fails", async () => {
+		const upgradeDirectory = await mkdtemp(join(tmpdir(), "archant-upgrade-"));
+		const file = join(upgradeDirectory, "archant.db");
+		await migrateAllButLast(`file:${file}`);
+		await writeFile(join(upgradeDirectory, "backups"), "");
+		const upgradePort = await freePort();
+		let refused: ChildProcess | undefined;
+
+		try {
+			refused = spawn(process.execPath, [entrypoint], {
+				stdio: ["ignore", "pipe", "inherit"],
+				env: {
+					DATABASE_URL: `file:${file}`,
+					PORT: String(upgradePort),
+					LOG_LEVEL: "info",
+					BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+					BETTER_AUTH_URL: `http://localhost:${upgradePort}`,
+				},
+			});
+			// A regression that migrates and listens would never exit on its own.
+			const started = refused;
+			started.stdout?.on("data", (chunk: Buffer) => {
+				if (chunk.toString().includes("Archant API listening")) {
+					started.kill("SIGKILL");
+				}
+			});
+
+			const { code, lines } = await outcome(refused);
+
+			expect(code).toBe(1);
+			const fatal = lines
+				.map((line) => backupFatalLine.safeParse(JSON.parse(line)))
+				.find((line) => line.success && line.data.level === 60);
+			expect(fatal?.data).toMatchObject({ directory: join(upgradeDirectory, "backups") });
+			expect(fatal?.data?.code).toMatch(/^E[A-Z]+$/u);
+			expect(lines.join("\n")).not.toContain("migrations applied");
+			await expect(pendingAfter(file)).resolves.toBe(1);
+		} finally {
+			if (refused !== undefined && refused.exitCode === null && refused.signalCode === null) {
+				refused.kill("SIGKILL");
+				await once(refused, "exit");
+			}
+			await rm(upgradeDirectory, { recursive: true, force: true });
+		}
+	}, 30_000);
+
+	it("warns and keeps going when older copies cannot be deleted", async () => {
+		const upgradeDirectory = await mkdtemp(join(tmpdir(), "archant-upgrade-"));
+		const file = join(upgradeDirectory, "archant.db");
+		await migrateAllButLast(`file:${file}`);
+		// Directories under copy names: deleting them as files fails.
+		await Promise.all(
+			["01", "02", "03", "04", "05"].map((day) =>
+				mkdir(join(upgradeDirectory, "backups", `archant-200001${day}T000000Z-1.0.0.db`), {
+					recursive: true,
+				}),
+			),
+		);
+		const upgradePort = await freePort();
+		const upgraded = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${file}`,
+				PORT: String(upgradePort),
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: `http://localhost:${upgradePort}`,
+			},
+		});
+
+		try {
+			const lines = await listening(upgraded);
+
+			expect(lines.some((line) => line.includes("before migrating"))).toBe(true);
+			const warning = lines
+				.map((line) => pruneWarnLine.safeParse(JSON.parse(line)))
+				.find((line) => line.success && line.data.level === 40);
+			expect(warning?.data?.code).toEqual(expect.any(String));
+			expect(lines.some((line) => line.includes("migrations applied"))).toBe(true);
+		} finally {
+			if (upgraded.exitCode === null && upgraded.signalCode === null) {
+				upgraded.kill("SIGKILL");
+				await once(upgraded, "exit");
+			}
+			await rm(upgradeDirectory, { recursive: true, force: true });
+		}
+	}, 30_000);
+});
+
+const pruneWarnLine = z.object({ level: z.number(), code: z.string(), msg: z.string() });
+
+const backupFatalLine = z.object({
+	level: z.number(),
+	code: z.string(),
+	directory: z.string(),
+	msg: z.string(),
 });

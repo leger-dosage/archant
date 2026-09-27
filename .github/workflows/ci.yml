@@ -163,6 +163,29 @@ jobs:
           docker compose up --detach --wait --pull never
           body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
           test "$body" = '{"data":{"status":"ok"}}'
+      # An upgrade with a migration to apply: the volume is rebuilt one
+      # migration behind, by the image's own code, and the restart must copy
+      # it to /data/backups before migrating. The journal copy goes to /tmp,
+      # the one writable path besides /data.
+      - name: A restart onto a pending migration copies the database first
+        run: |
+          docker compose stop
+          docker compose run --rm --no-deps --workdir /app/packages/data --entrypoint node archant \
+            --input-type=module --eval '
+              import { rmSync, readdirSync } from "node:fs";
+              import { migrateAllButLast } from "./testing/migrations.ts";
+              for (const name of readdirSync("/data")) {
+                if (name.startsWith("archant.db")) rmSync(`/data/${name}`);
+              }
+              await migrateAllButLast("file:/data/archant.db");
+            '
+          docker compose up --detach --wait --pull never
+          copies="$(docker compose exec -T archant ls /data/backups)"
+          echo "$copies"
+          test "$(echo "$copies" | grep --count --extended-regexp '^archant-[0-9]{8}T[0-9]{6}Z-0\.0\.0\.db$')" = "1"
+          test "$(echo "$copies" | wc -l)" = "1"
+          body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
+          test "$body" = '{"data":{"status":"ok"}}'
       - if: always()
         run: docker compose logs
       - if: always()

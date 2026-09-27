@@ -1,15 +1,14 @@
 import type { Database } from "./client.ts";
 
 import { sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/libsql/migrator";
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDb } from "./client.ts";
 import { migrateFromEnv, runMigrations } from "./migrate.ts";
+import { migrateBefore } from "./testing/migrations.ts";
 
 let directory: string;
 let url: string;
@@ -257,44 +256,14 @@ describe("imports and entry keys", () => {
 	});
 });
 
-function isJournal(value: unknown): value is { entries: { tag: string }[] } {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		"entries" in value &&
-		Array.isArray(value.entries) &&
-		value.entries.every(
-			(entry: unknown) =>
-				typeof entry === "object" &&
-				entry !== null &&
-				"tag" in entry &&
-				typeof entry.tag === "string",
-		)
-	);
-}
-
 /**
  * A database migrated up to, not including, the migration whose tag starts
- * with `tag`, from a copy of the folder whose journal stops there.
+ * with `tag`.
  */
 async function migratedBefore(tag: string): Promise<Database> {
-	const folder = join(directory, "drizzle");
-	await cp(fileURLToPath(new URL("./drizzle", import.meta.url)), folder, { recursive: true });
-	const journalPath = join(folder, "meta", "_journal.json");
-	const journal: unknown = JSON.parse(await readFile(journalPath, "utf8"));
+	await migrateBefore(url, tag);
 
-	if (!isJournal(journal)) {
-		throw new Error("drizzle-kit changed the shape of its journal.");
-	}
-
-	await writeFile(
-		journalPath,
-		JSON.stringify({ ...journal, entries: journal.entries.filter((entry) => entry.tag < tag) }),
-	);
-	const before = await createDb(url);
-	await migrate(before, { migrationsFolder: folder });
-
-	return before;
+	return createDb(url);
 }
 
 const insertUser = (database: Database, id: string, role: string | null) =>

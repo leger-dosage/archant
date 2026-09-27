@@ -90,20 +90,44 @@ The network is named after the directory holding `docker-compose.yml`. Keep the 
 
 ## Upgrading
 
-Take a backup first, as described in [Backups](#backups). Migrations only go forward: the way back from a failed upgrade is the previous commit and that backup, never an older image on the migrated file.
+Pin the release you run with `ARCHANT_VERSION` in the `.env` next to `docker-compose.yml`, so that an upgrade is a decision rather than whatever `latest` points at. Set it there rather than with `export`: a new shell forgets an exported variable, and the next `up` from it would return to `latest`. To upgrade, change the line in `.env` to the new release:
+
+```dotenv
+ARCHANT_VERSION=1.3.0
+```
+
+Then pull and restart:
 
 ```bash
-git pull
-docker compose up --build --detach --wait
+docker compose pull
+docker compose up --detach --wait
 ```
+
+There is no separate migration command. The server applies pending migrations before it listens, and `--wait` returns once `GET /api/health` answers, which proves they ran.
+
+Before it migrates, the server copies the database with `VACUUM INTO` to `/data/backups`, named after the time and the release about to migrate it, such as `archant-20260927T083000Z-1.3.0.db`, and keeps the five most recent. Each copy is the size of the database, so the volume needs room for five more of it. It copies nothing when no migration is pending, and nothing from a Turso database. If the copy fails, for lack of disk space or a permission, the server logs a `fatal` line naming the error code and the directory, exits, and leaves the database as it was: free the space, then start again.
+
+Migrations only go forward, so an older image cannot open a file a newer one migrated. To go back from `1.3.0`, set `ARCHANT_VERSION` in `.env` back to the release you came from, `ARCHANT_VERSION=1.2.0`, then restore the copy whose name ends in `-1.3.0.db`, which holds the database as it was just before `1.3.0` migrated it:
+
+```bash
+docker compose run --rm --no-deps archant ls /data/backups
+docker compose stop
+docker compose run --rm --no-deps archant \
+  sh -c 'cp /data/backups/archant-20260927T083000Z-1.3.0.db /data/archant.db && rm -f /data/archant.db-wal /data/archant.db-shm'
+docker compose up --detach --wait
+```
+
+This is the restore described in [Backups](#backups), from the volume rather than from the host. Whatever was written after the upgrade is lost.
 
 The port is published on `127.0.0.1` only since the container was locked down: an install reached from another device loses that access at the upgrade until it adds the home-network `compose.override.yml` described [above](#docker--the-reference-target).
 
-There is no separate migration command. The server applies pending migrations before it listens, and `--wait` returns once `GET /api/health` answers, which proves they ran. From a checkout, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev` does the same.
+From a checkout, `git pull` then `docker compose up --build --detach --wait` builds and runs the new code, with the same copy, named `-dev`. Without Docker, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev`: the copy lands in `backups/` beside `local.db`, which git ignores. `pnpm data migrate:local` migrates without a copy.
 
 ## Backups
 
 No free tier backs up your data for you, and this file holds your bank history. Schedule a copy to storage off the machine, and restore it once to check it works.
+
+The copy the server takes before a migration, described in [Upgrading](#upgrading), is not a backup. It sits on the same disk as the database, only five are kept, and none is taken while no upgrade migrates anything. It protects an upgrade, not the data: a dead disk takes both.
 
 The database runs in WAL mode: recent writes sit in `archant.db-wal` until SQLite folds them into `archant.db`. Copying `archant.db` alone, or the volume while the server writes, loses them or yields a broken file. Take the copy with `VACUUM INTO` instead, which writes a consistent, self-contained file while the server keeps running. The image carries no `sqlite3`, so Node's built-in `node:sqlite` runs it:
 
