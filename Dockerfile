@@ -3,7 +3,10 @@
 # Node runs the server straight from its TypeScript source through type
 # stripping, so only the interface has a build step, and the image carries no
 # compiler at run time.
-FROM node:24-alpine AS builder
+# The interface is plain JavaScript, the same bundle for every platform, so it
+# builds on the machine running the build. Under emulation, as for the arm64
+# release image, it would take several times as long for the same files.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 WORKDIR /app
 RUN corepack enable
 
@@ -45,6 +48,11 @@ ENV DATABASE_URL=file:/data/archant.db
 # The API serves the built interface from the same origin, so a browser needs
 # no second port and no CORS exception.
 ENV WEB_DIST=/app/packages/app/dist
+# The release this image is, set from the tag by the release workflow and read
+# by the server for « Réglages ». Unset, as in a local build, the interface
+# says it runs a development build.
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
 
 # Created here so a new named volume inherits the unprivileged user as owner,
 # rather than root.

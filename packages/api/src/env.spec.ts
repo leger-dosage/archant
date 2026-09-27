@@ -157,4 +157,18 @@ describe("validateEnv", () => {
 		);
 		expect(() => validateEnv({ ...required, SYNC_SECRET: "s".repeat(31) })).toThrow(/SYNC_SECRET/);
 	});
+
+	it("reads a release version, and takes an empty or absent one for a development build", () => {
+		expect(validateEnv({ ...required, APP_VERSION: "1.2.3" }).APP_VERSION).toBe("1.2.3");
+		expect(validateEnv({ ...required, APP_VERSION: "10.20.30" }).APP_VERSION).toBe("10.20.30");
+		expect(validateEnv({ ...required, APP_VERSION: "" }).APP_VERSION).toBeNull();
+		expect(validateEnv(required).APP_VERSION).toBeNull();
+	});
+
+	it.each(["v1.2", "1.2", "1.2.3-rc.1", "v1.2.3", "latest", "01.2.3"])(
+		"names APP_VERSION when it is %s",
+		(version) => {
+			expect(() => validateEnv({ ...required, APP_VERSION: version })).toThrow(/APP_VERSION/);
+		},
+	);
 });

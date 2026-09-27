@@ -122,6 +122,14 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 			// The bearer token `POST /api/sync` accepts. Unset, the route refuses
 			// every call and only the interface's button syncs.
 			SYNC_SECRET: z.string().min(32).optional(),
+			// The release the image was built from, set by the Dockerfile from the
+			// tag. Digits only, without the tag's `v`: the interface puts the `v`
+			// back to link the release. Unset, this is a development build.
+			APP_VERSION: z
+				.string()
+				.regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u)
+				.optional()
+				.transform((value) => value ?? null),
 			// Overridden only by the end-to-end suite, which points it at a fake.
 			ENABLE_BANKING_API_URL: z
 				.url({ protocol: /^https?$/u })

@@ -10,6 +10,8 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { Page } from "@/components/Page";
+import { useVersion } from "@/hooks/useVersion";
+import { releaseUrl } from "@/lib/release";
 
 export const Route = createFileRoute("/_authed/settings")({
 	component: SettingsLayout,
@@ -45,11 +47,41 @@ function SettingsLayout() {
 							</li>
 						))}
 					</ul>
+					<AppVersion />
 				</nav>
 				<div className="min-w-0 flex-1">
 					<Outlet />
 				</div>
 			</div>
 		</Page>
+	);
+}
+
+/**
+ * The running release, linked to its notes. Nothing while loading or when the
+ * route fails: the version is a detail, and the settings work without it.
+ */
+function AppVersion() {
+	const { t } = useTranslation();
+	const { data } = useVersion();
+
+	if (data === undefined) {
+		return null;
+	}
+
+	const url = releaseUrl(data.version);
+	const className = "mt-4 block px-3 text-xs text-muted-foreground";
+
+	return url === null ? (
+		<p className={className}>{t("settings.developmentVersion")}</p>
+	) : (
+		<a
+			href={url}
+			target="_blank"
+			rel="noreferrer"
+			className={`${className} underline-offset-4 hover:underline`}
+		>
+			{t("settings.version", { version: data.version })}
+		</a>
 	);
 }

@@ -1002,7 +1002,9 @@
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
 			"security": "Sécurité"
-		}
+		},
+		"version": "Version {{version}}",
+		"developmentVersion": "Version de développement"
 	},
 	"banks": {
 		"title": "Banques",

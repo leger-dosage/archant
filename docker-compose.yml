@@ -1,10 +1,17 @@
-# The reference deployment: `BETTER_AUTH_SECRET=... docker compose up -d`.
+# The reference deployment: `BETTER_AUTH_SECRET=... docker compose up -d`
+# runs the published image, and `docker compose up -d --build` builds this
+# checkout instead.
 # Variables come from the shell, or from a `.env` next to this file, which
 # Compose reads for interpolation only. No `env_file: .env`: the development
 # `DATABASE_URL` and `BETTER_AUTH_URL` there would point the container at a
 # path that does not exist and at the Vite dev server's origin.
 services:
   archant:
+    # The published release, pinned with ARCHANT_VERSION, such as 1.2.3 or 1.2,
+    # so a self-hoster needs this file and no checkout. `build` stays for
+    # contributors: `up --build` builds the checkout and tags it with this
+    # name, and `up` alone pulls only when no local image has it.
+    image: ghcr.io/leger-dosage/archant:${ARCHANT_VERSION:-latest}
     build: .
     # Back after a reboot without anyone logging in.
     restart: unless-stopped

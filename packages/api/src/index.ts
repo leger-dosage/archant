@@ -86,6 +86,7 @@ const app = createApp({
 	webDist: env.WEB_DIST,
 	syncSecret: env.SYNC_SECRET,
 	setupToken,
+	version: env.APP_VERSION,
 	...bankDepsFromEnv(env),
 });
 
