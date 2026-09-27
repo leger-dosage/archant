@@ -76,6 +76,8 @@ export const queryKeys = {
 		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
 		accounts: (connectionId: string) => ["bank-connections", "accounts", connectionId] as const,
 	},
+	/** The running release. */
+	version: ["version"] as const,
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

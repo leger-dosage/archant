@@ -4,12 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow runs every job here as its gate before publishing.
+  workflow_call:
 
 permissions:
   contents: read
 
 # A new push to a pull request makes the previous run pointless. Every push to
-# `main` keeps its own verdict.
+# `main` keeps its own verdict. Called from release.yml, `github.workflow` is
+# the caller's name and the event a tag push, so a release never cancels
+# itself; release.yml sets no group of its own that this one could match.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -78,10 +82,22 @@ jobs:
           secret="$(openssl rand -base64 32)"
           echo "::add-mask::$secret"
           echo "BETTER_AUTH_SECRET=$secret" >> "$GITHUB_ENV"
-      - run: docker compose build
+      # A self-hoster without a checkout runs the published image, `latest`
+      # unless ARCHANT_VERSION pins one.
+      - name: The compose file names the published image
+        run: |
+          test "$(docker compose config --images)" = "ghcr.io/leger-dosage/archant:latest"
+          test "$(ARCHANT_VERSION=1.2.3 docker compose config --images)" = "ghcr.io/leger-dosage/archant:1.2.3"
+      # A release build, as the release workflow makes one, but with a version
+      # no tag will ever carry.
+      - run: docker compose build --build-arg APP_VERSION=0.0.0
       # `--wait` returns once the image's HEALTHCHECK passes, which needs the
-      # migrations applied and the database answering.
-      - run: docker compose up --detach --wait
+      # migrations applied and the database answering. `--pull never`: the
+      # file names the published image, and this job tests the pull request's
+      # build, never a release someone pushed earlier.
+      - run: docker compose up --detach --wait --pull never
+      - name: The image carries the version it was built with
+        run: test "$(docker compose exec -T archant printenv APP_VERSION)" = "0.0.0"
       - name: Health answers ok
         run: |
           body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
@@ -144,10 +160,23 @@ jobs:
       # An upgrade restarts on a volume already migrated.
       - name: A restart on the same volume answers ok
         run: |
-          docker compose up --detach --wait
+          docker compose up --detach --wait --pull never
           body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"
           test "$body" = '{"data":{"status":"ok"}}'
       - if: always()
         run: docker compose logs
       - if: always()
         run: docker compose down --volumes
+
+  # A mistyped expression or an unquoted shell variable in a workflow shows
+  # only when that workflow runs, and the release one runs on a tag push.
+  # The image bundles shellcheck, which checks every `run:` script too.
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker://rhysd/actionlint:1.7.11
+        with:
+          args: -color

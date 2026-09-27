@@ -24,6 +24,17 @@ describe("GET /api/health", () => {
 		await expect(response.json()).resolves.toEqual({ data: { status: "ok" } });
 	});
 
+	// The version sits behind the session guard (routes/version.ts): an
+	// anonymous caller must not learn which release to attack.
+	it("never carries the version, even on a release build", async () => {
+		const response = await buildTestApp(temp.db, createLogger("silent"), undefined, {
+			version: "1.2.3",
+		}).request("/api/health");
+
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe('{"data":{"status":"ok"}}');
+	});
+
 	it("answers SERVICE_UNAVAILABLE when the database does not answer, and logs the error name only", async () => {
 		const closed = await createTempDatabase();
 		closed.db.$client.close();

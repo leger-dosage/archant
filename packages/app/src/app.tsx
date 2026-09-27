@@ -57,6 +57,12 @@ const queryClient = new QueryClient({
 
 			const code = errorCodeOf(error);
 
+			// A detail the page works without, such as the running version, fails
+			// silently rather than greeting every visit with a toast.
+			if (query.meta?.["optional"] === true) {
+				return;
+			}
+
 			// A page that shows its own « introuvable » state needs no toast on top.
 			if (code === "NOT_FOUND" && query.meta?.["notFoundInline"] === true) {
 				return;

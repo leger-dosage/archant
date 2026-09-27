@@ -160,3 +160,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-4-two-factor-sign-in.md`
   summary: `reset-password`'s output lines, including the new « La double authentification a été désactivée. », have no test that runs the script to its end.
   evidence: `cli/reset-password.spec.ts` only checks the refusal without a terminal; covering the output needs a pseudo-terminal for the password prompt.
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-5-versioned-images.md`
+  summary: « Upgrading » in docs/deployment.md still describes `git pull` and `up --build`; image users need `docker compose pull` and going back to a previous `ARCHANT_VERSION`.
+  evidence: Story 13.5 review; the epic assigns the « Upgrading » and « Backups » rewrite to Story 13.6, whose acceptance criteria name `docker compose pull`.

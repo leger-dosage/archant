@@ -52,7 +52,7 @@ export function buildTestApp(
 	db: Database,
 	logger: Logger = createLogger("silent"),
 	auth?: Auth,
-	network: TestNetwork & { webDist?: string } = {},
+	network: TestNetwork & { webDist?: string; version?: string | null } = {},
 	bank: TestBank = {},
 ): TestApp {
 	const trustedProxies = network.trustedProxies ?? [];
@@ -68,6 +68,8 @@ export function buildTestApp(
 		clientAddress: () => network.peer,
 		webDist: network.webDist,
 		setupToken: TEST_SETUP_TOKEN,
+		// A development build unless a spec names a release.
+		version: network.version ?? null,
 		...NO_BANK,
 		...bank,
 		redirectUrl: `${TEST_ORIGIN}/settings/banks/callback`,

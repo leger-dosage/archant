@@ -33,6 +33,7 @@ import { syncRoutes } from "./routes/sync.ts";
 import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
+import { versionRoutes } from "./routes/version.ts";
 import { releaseAttempt, reserveAttempt } from "./services/sign-in-failures.ts";
 
 export type AppDeps = ServiceDeps &
@@ -60,6 +61,8 @@ export type AppDeps = ServiceDeps &
 		 * exists; `null` once one does. Never stored, never returned.
 		 */
 		setupToken: string | null;
+		/** `APP_VERSION`: the release the image was built from, `null` for a development build. */
+		version: string | null;
 	};
 
 /**
@@ -132,6 +135,7 @@ function createApi(deps: AppDeps) {
 		.route("/bank-connections", bankConnectionsRoutes(deps))
 		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
+		.route("/version", versionRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }
 

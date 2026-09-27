@@ -6,10 +6,23 @@ One codebase, several targets. `@archant/api` has a single entrypoint, `packages
 
 One image serves the built interface as static files and answers the API on the same origin. The database is a plain SQLite file on a volume. No cloud account, no second service. This is the only target with files in the repository: `Dockerfile`, `docker-compose.yml` and `.dockerignore`.
 
+Every `vX.Y.Z` tag publishes the image to `ghcr.io/leger-dosage/archant` for `linux/amd64` and `linux/arm64`, tagged `X.Y.Z`, `X.Y` and `latest`, with a [GitHub Release](https://github.com/leger-dosage/archant/releases) listing its changes. `docker-compose.yml` runs that image, so the file alone is enough, without a checkout:
+
+```bash
+mkdir archant && cd archant
+curl --fail --location --remote-name https://raw.githubusercontent.com/leger-dosage/archant/main/docker-compose.yml
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"   # keep it: rotating it signs everyone out
+docker compose up --detach --wait
+```
+
+`up` pulls `latest` the first time only, when no local image has that name, and never again on its own. `docker compose pull` fetches the newest image for the tag, then `docker compose up --detach --wait` restarts on it; the pull also replaces an image a `--build` left under the same name. To stay on a release, set `ARCHANT_VERSION`, for instance to `1.2.3`, or to `1.2` so that `docker compose pull` brings that release's fixes and nothing newer. « Réglages » shows the running version, linked to its release notes.
+
+From a checkout, `--build` builds the image from the source instead, and tags it with the same name. The interface then shows « Version de développement »:
+
 ```bash
 git clone git@github.com:leger-dosage/archant.git
 cd archant
-export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"   # keep it: rotating it signs everyone out
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
 ```
 
@@ -53,8 +66,9 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                     |
 | `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                       |
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
+| `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                   |
 
-The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, and port 8787. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
+The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, port 8787, and `APP_VERSION`, the exact release it was built from, which « Réglages » shows; a local build leaves it empty. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
 
 ### Behind a reverse proxy
 
