@@ -39,6 +39,11 @@ catalogs:
 
 pnpmfileChecksum: sha256-Dv696srmqYQ8rDGNzyxEjObur5kXvO7+a9x4vmdkcGU=
 
+patchedDependencies:
+  ofx-js@1.1.1:
+    hash: 78d86cc61425e2a51752a271531d2d75e52e76c634a38ff6af9c5eb582f7b806
+    path: patches/ofx-js@1.1.1.patch
+
 importers:
 
   .:
@@ -87,7 +92,7 @@ importers:
         version: 6.2.12
       ofx-js:
         specifier: 1.1.1
-        version: 1.1.1
+        version: 1.1.1(patch_hash=78d86cc61425e2a51752a271531d2d75e52e76c634a38ff6af9c5eb582f7b806)
       papaparse:
         specifier: 5.7.0
         version: 5.7.0
@@ -8218,7 +8223,7 @@ snapshots:
 
   obug@2.2.1: {}
 
-  ofx-js@1.1.1: {}
+  ofx-js@1.1.1(patch_hash=78d86cc61425e2a51752a271531d2d75e52e76c634a38ff6af9c5eb582f7b806): {}
 
   on-exit-leak-free@2.1.2: {}
 

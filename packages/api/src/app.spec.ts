@@ -2647,6 +2647,177 @@ describe("POST /api/accounts/:id/imports", () => {
 	});
 });
 
+/** A JSON transaction whose label pads the body to exactly `size` bytes. */
+function jsonOfSize(size: number): string {
+	const empty = JSON.stringify({ ...expense, label: "" });
+
+	return JSON.stringify({ ...expense, label: "A".repeat(size - empty.length) });
+}
+
+/**
+ * A body sent in `chunks` pieces of `chunkSize` bytes with no declared
+ * length, as `Transfer-Encoding: chunked` arrives, counting what was read.
+ */
+function chunkedBody(chunkSize: number, chunks: number) {
+	const read = { bytes: 0 };
+	let sent = 0;
+	const stream = new ReadableStream<Uint8Array>({
+		pull(controller) {
+			if (sent === chunks) {
+				controller.close();
+				return;
+			}
+
+			sent += 1;
+			read.bytes += chunkSize;
+			controller.enqueue(new Uint8Array(chunkSize).fill(0x20));
+		},
+	});
+
+	return { stream, read };
+}
+
+async function entriesOf(accountId: string) {
+	const [row] = await temp.db.all<{ count: number }>(
+		sql`select count(*) as count from entries where account_id = ${accountId} and kind = 'transaction'`,
+	);
+
+	return row?.count;
+}
+
+/** A JSON post from the interface's origin; `duplex` lets the body be a stream. */
+const postBody = (
+	app: ReturnType<typeof buildTestApp>,
+	path: string,
+	body: NonNullable<RequestInit["body"]>,
+	headers: Record<string, string> = {},
+) =>
+	app.request(path, {
+		method: "POST",
+		headers: { "content-type": "application/json", origin: "http://localhost:5173", ...headers },
+		body,
+		duplex: "half",
+	});
+
+// The I/O matrix of Story 13.2: no request makes the server read, or parse,
+// more than it must.
+describe("the body limit", () => {
+	it.each([
+		["signed out", () => buildTestApp(temp.db)],
+		["signed in", () => buildApp()],
+	])(
+		"refuses a JSON body over 64 KB %s with PAYLOAD_TOO_LARGE and writes nothing",
+		async (_name, app) => {
+			const account = await openAccount();
+
+			const response = await postBody(
+				app(),
+				`/api/accounts/${account.id}/transactions`,
+				jsonOfSize(64 * 1024 + 1),
+			);
+
+			expect(response.status).toBe(413);
+			expect(errorBody.parse(await response.json())).toEqual({
+				error: { code: "PAYLOAD_TOO_LARGE", message: "The request body is larger than 64 KB." },
+			});
+			await expect(entriesOf(account.id)).resolves.toBe(0);
+		},
+	);
+
+	it("reads a body of exactly 64 KB", async () => {
+		const account = await openAccount();
+
+		const response = await postBody(
+			buildApp(),
+			`/api/accounts/${account.id}/transactions`,
+			jsonOfSize(64 * 1024),
+		);
+
+		// Read and validated: the label is far too long, but no longer too large.
+		expect(response.status).toBe(400);
+		expect(errorBody.parse(await response.json()).error.code).toBe("VALIDATION_ERROR");
+	});
+
+	it.each(["/api/auth/sign-in/email", "/api/setup"])(
+		"refuses a body over 64 KB on %s",
+		async (path) => {
+			const response = await postBody(buildTestApp(temp.db), path, jsonOfSize(64 * 1024 + 1));
+
+			expect(response.status).toBe(413);
+			expect(errorBody.parse(await response.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
+		},
+	);
+
+	it("refuses a declared length over 64 KB without reading the body", async () => {
+		const { stream, read } = chunkedBody(1024, 100);
+
+		const response = await postBody(buildApp(), "/api/transactions/bulk-update", stream, {
+			"content-length": String(100 * 1024),
+		});
+
+		expect(response.status).toBe(413);
+		// A stream pulls one chunk ahead of any reader.
+		expect(read.bytes).toBeLessThanOrEqual(1024);
+	});
+
+	it("stops reading a chunked body at 64 KB", async () => {
+		const { stream, read } = chunkedBody(1024, 10 * 1024);
+
+		const response = await postBody(buildTestApp(temp.db), "/api/setup", stream);
+
+		expect(response.status).toBe(413);
+		expect(errorBody.parse(await response.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
+		expect(read.bytes).toBeLessThan(80 * 1024);
+	});
+
+	it("leaves the upload its own limit: a 1 MB statement is read", async () => {
+		const account = await openAccount();
+
+		const preview = await uploaded(account.id, paddedOfx(1024 * 1024));
+
+		expect(preview.groups.created).toHaveLength(1);
+	});
+
+	it("answers a statement with 40-character tag names within a second", async () => {
+		const account = await openAccount();
+		const tag = "A".repeat(40);
+		const bytes = new TextEncoder().encode(
+			`<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>EUR<BANKTRANLIST>\n<STMTTRN><DTPOSTED>20260910<TRNAMT>-12.00<FITID>P1<NAME>Librairie</STMTTRN>\n<${tag}>x\n<${tag}.${tag}>y\n</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>`,
+		);
+		const started = performance.now();
+
+		const { status } = await upload(account.id, bytes);
+
+		expect(performance.now() - started).toBeLessThan(1000);
+		expect([201, 400]).toContain(status);
+	});
+
+	it.each([
+		["5 MB of one whitespace run", MAX_IMPORT_BYTES, " "],
+		["5 MB of repeated unclosed comments", MAX_IMPORT_BYTES, "<!--"],
+		// See ofx.spec.ts: 1 MB of tags already fails in seconds if quadratic.
+		["1 MB of unfinished tags", 1024 * 1024, "<A", "", "</OFX>"],
+		["1 MB of one attribute name", 1024 * 1024, "B", "<A ", "</OFX>"],
+	])(
+		"refuses a statement of %s within a second",
+		async (_name, size, unit, lead = "", tail = "") => {
+			const account = await openAccount();
+			const start = `OFXHEADER:100\n<OFX>${lead}`;
+			const room = size - start.length - tail.length;
+			const bytes = new TextEncoder().encode(
+				start + unit.repeat(Math.floor(room / unit.length)) + tail,
+			);
+			const started = performance.now();
+
+			const { status, body } = await upload(account.id, bytes);
+
+			expect(performance.now() - started).toBeLessThan(1000);
+			expect(status).toBe(400);
+			expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
+		},
+	);
+});
+
 /** Three monthly Netflix lines at -13,99 €, the last on 5 September. */
 function netflixOfx(): Uint8Array {
 	const lines = ["20260705", "20260805", "20260905"].map(

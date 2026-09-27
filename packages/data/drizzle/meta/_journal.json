@@ -232,6 +232,13 @@
       "when": 1790368132337,
       "tag": "0032_add_deleted_entry_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1790493781819,
+      "tag": "0033_add_sign_in_limits",
+      "breakpoints": true
     }
   ]
 }

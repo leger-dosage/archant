@@ -110,3 +110,27 @@ export const verifications = sqliteTable(
 	},
 	(table) => [index("verifications_identifier").on(table.identifier)],
 );
+
+/**
+ * Better Auth's per-address rate limit, in the database so a restart does not
+ * hand a guesser a fresh allowance. `key` is the address and the path;
+ * `last_request` is epoch milliseconds, written by Better Auth as a number.
+ */
+export const rateLimits = sqliteTable("rate_limits", {
+	id: text("id").primaryKey(),
+	key: text("key").notNull().unique(),
+	count: integer("count").notNull(),
+	lastRequest: integer("last_request").notNull(),
+});
+
+/**
+ * Failed sign-ins across every address, one fixed window at a time: the
+ * ceiling that stops many addresses guessing in parallel. Not Better Auth's
+ * table: it prunes rows older than its longest window, a minute, which would
+ * reset a ten-minute count. One row, `all`.
+ */
+export const signInFailures = sqliteTable("sign_in_failures", {
+	id: text("id").primaryKey(),
+	count: integer("count").notNull(),
+	windowStartedAt: integer("window_started_at").notNull(),
+});

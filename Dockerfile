@@ -8,6 +8,9 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.cjs ./
+# pnpm applies `patches/` at install, and refuses a lockfile whose
+# `patchedDependencies` names a missing file.
+COPY patches patches
 COPY packages/data/package.json packages/data/package.json
 COPY packages/api/package.json packages/api/package.json
 COPY packages/app/package.json packages/app/package.json
@@ -22,6 +25,7 @@ ENV NODE_ENV=production
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.cjs ./
+COPY patches patches
 COPY packages/data/package.json packages/data/package.json
 COPY packages/api/package.json packages/api/package.json
 # pnpm checks every workspace manifest against the lockfile, even the ones the

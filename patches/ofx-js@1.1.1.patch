@@ -1,0 +1,69 @@
+diff --git a/ofx.js b/ofx.js
+index 2958a661b06d2160f3cfd849227084a1188e1523..f644a2ac1bb5b120898594cbcfe907a859f5e557 100644
+--- a/ofx.js
++++ b/ofx.js
+@@ -1,10 +1,12 @@
+ function sgml2Xml(sgml) {
+     return sgml
+         .replace(/>\s+</g, '><') // remove whitespace inbetween tag close/open
+-        .replace(/\s+</g, '<') // remove whitespace before a close tag
++        // Anchored at the start of a run: tried from every space of a long run
++        // without a `<`, the unanchored pattern was quadratic.
++        .replace(/(?<!\s)\s+</g, '<') // remove whitespace before a close tag
+         .replace(/>\s+/g, '>') // remove whitespace after a close tag
+         .replace(/<([A-Za-z0-9_]+)>([^<]+)<\/\1>/g, '<\$1>\$2') // remove closing tags if present. Example: <FOO>bar</FOO> becomes <FOO>bar for consistency, fixed in last step below.
+-        .replace(/<([A-Z0-9_]*)+\.+([A-Z0-9_]*)>([^<]+)/g, '<\$1\$2>\$3')
++        .replace(/<([A-Z0-9_]*)\.+([A-Z0-9_]*)>([^<]+)/g, '<\$1\$2>\$3') // `([A-Z0-9_]*)+` was exponential in the tag name's length
+         .replace(/<(\w+?)>([^<]+)/g, '<\$1>\$2</\$1>'); // Add closing tag wherever they seem to be missing: <FOO>bar becomes <FOO>bar</FOO>
+ }
+ /**
+@@ -14,7 +16,19 @@ function sgml2Xml(sgml) {
+ function parseXmlString(xml) {
+     xml = xml.trim();
+     // strip comments
+-    xml = xml.replace(/<!--[\s\S]*?-->/g, "");
++    // A scan rather than `/<!--[\s\S]*?-->/g`, which searched to the end of
++    // the text from every unclosed `<!--`. An unclosed comment has no `-->`
++    // after it, so neither has any later one: the text is kept from there.
++    let stripped = "";
++    let from = 0;
++    for (let open = xml.indexOf("<!--"); open !== -1; open = xml.indexOf("<!--", from)) {
++        const close = xml.indexOf("-->", open + 4);
++        if (close === -1)
++            break;
++        stripped += xml.slice(from, open);
++        from = close + 3;
++    }
++    xml = stripped + xml.slice(from);
+     function document() {
+         // Ignore declaration like <?xml ... ?>
+         const m = match(/^<\?xml\s*/);
+@@ -22,7 +36,7 @@ function parseXmlString(xml) {
+             while (!(eos() || is("?>"))) {
+                 attribute();
+             }
+-            match(/\?>\s*/);
++            match(/^\?>\s*/);
+         }
+         return tag();
+     }
+@@ -46,7 +60,9 @@ function parseXmlString(xml) {
+         if (match(/^\s*\/>\s*/)) {
+             return node;
+         }
+-        match(/\??>\s*/);
++        // Anchored, as every match below: unanchored, each tag searched the
++        // rest of the text, quadratic on a file of unfinished tags.
++        match(/^\??>\s*/);
+         // content
+         node.content = content();
+         // children
+@@ -66,7 +82,7 @@ function parseXmlString(xml) {
+         return m ? entities(m[1]) : "";
+     }
+     function attribute() {
+-        const m = match(/([\w:-]+)\s*=\s*("[^"]*"|'[^']*'|\w+)\s*/);
++        const m = match(/^([\w:-]+)\s*=\s*("[^"]*"|'[^']*'|\w+)\s*/);
+         if (!m)
+             return undefined;
+         return { name: m[1], value: entities(strip(m[2])) };

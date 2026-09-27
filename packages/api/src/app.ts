@@ -7,8 +7,10 @@ import type { Context, MiddlewareHandler } from "hono";
 
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { except } from "hono/combine";
 import { csrf } from "hono/csrf";
+import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 
@@ -30,6 +32,7 @@ import { syncRoutes } from "./routes/sync.ts";
 import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
+import { releaseAttempt, reserveAttempt } from "./services/sign-in-failures.ts";
 
 export type AppDeps = ServiceDeps &
 	BankConnectionDeps & {
@@ -57,6 +60,55 @@ export type AppDeps = ServiceDeps &
 		 */
 		setupToken: string | null;
 	};
+
+/**
+ * Far above any JSON body the interface sends, such as a rule with many
+ * conditions, and small enough that no caller, signed in or not, makes the
+ * server hold much. The upload has its own, larger limit.
+ */
+const MAX_BODY_BYTES = 64 * 1024;
+
+const tooLarge = () => {
+	throw new AppError("PAYLOAD_TOO_LARGE", "The request body is larger than 64 KB.");
+};
+
+/**
+ * Refuses a sign-in, before Better Auth reads it, once too many failed across
+ * every address: its own limit is per address, so a guesser with many
+ * addresses would otherwise try in parallel. Failures only are counted: a
+ * count of attempts would let one address spend the allowance alone and lock
+ * the owner out, where a failure needs Better Auth to have let it through.
+ */
+function signInCeiling(deps: AppDeps) {
+	return createMiddleware(async (c, next) => {
+		const reservation = await reserveAttempt(deps);
+
+		if (reservation === null) {
+			throw new AppError(
+				"TOO_MANY_REQUESTS",
+				"Too many failed sign-ins. Try again in a few minutes.",
+			);
+		}
+
+		await next();
+
+		if (c.res.status === 401) {
+			return;
+		}
+
+		// Better Auth has answered, a session perhaps created: a failed write
+		// here must not turn that answer into a 500. The slot then stays
+		// taken, which errs on the side of refusing.
+		try {
+			await releaseAttempt(deps, reservation);
+		} catch (error) {
+			deps.logger.error(
+				{ error: error instanceof Error ? error.name : "unknown" },
+				"sign-in ceiling: releasing a slot failed",
+			);
+		}
+	});
+}
 
 /**
  * Every API route, relative to `/api`. Mounts are chained on purpose: `AppType`
@@ -143,6 +195,15 @@ export function createApp(deps: AppDeps) {
 		// third-party site could frame the sign-in page and steer a click, and
 		// `nosniff` stops a browser from running a file under a type it guessed.
 		.use("*", secureHeaders())
+		// Before anything reads a body: a declared length over the limit is
+		// refused unread, and a chunked body stops being read at the limit.
+		.use(
+			"/api/*",
+			except(
+				"/api/accounts/:id/imports",
+				bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }),
+			),
+		)
 		// A form post needs no preflight, so a foreign page could submit an
 		// upload with the session cookie attached. JSON requests are left to the
 		// browser's CORS preflight, which this API never answers.
@@ -153,6 +214,7 @@ export function createApp(deps: AppDeps) {
 			// which `csrf()` takes for a form from no origin.
 			except("/api/sync", csrf({ origin: new URL(deps.trustedOrigin).origin })),
 		)
+		.on("POST", "/api/auth/sign-in/email", signInCeiling(deps))
 		// Better Auth answers in its own shape, outside the envelope and outside
 		// `AppType`; the interface calls it through `better-auth/react`.
 		.on(["GET", "POST"], "/api/auth/*", async (c) =>

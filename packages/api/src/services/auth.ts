@@ -6,7 +6,13 @@ import { APIError } from "better-auth/api";
 import { admin } from "better-auth/plugins";
 
 import type { Database } from "@archant/data/client";
-import { authAccounts, sessions, users, verifications } from "@archant/data/schema/auth";
+import {
+	authAccounts,
+	rateLimits,
+	sessions,
+	users,
+	verifications,
+} from "@archant/data/schema/auth";
 
 import { firstNameSchema } from "../schemas/setup.ts";
 
@@ -60,7 +66,7 @@ export function createAuth({ db, secret, baseURL, trustedProxies, logger }: Auth
 			// The adapter looks tables up by key, and with `usePlural` it appends
 			// an `s` to the renamed model too: `auth_accounts` becomes this key.
 			// The SQL table stays `auth_accounts`.
-			schema: { users, sessions, auth_accountss: authAccounts, verifications },
+			schema: { users, sessions, auth_accountss: authAccounts, verifications, rateLimits },
 		}),
 		account: { modelName: "auth_accounts" },
 		// No public sign-up: the only user is the administrator setup creates.
@@ -97,8 +103,9 @@ export function createAuth({ db, secret, baseURL, trustedProxies, logger }: Auth
 		advanced: { ipAddress: { trustedProxies } },
 		// Better Auth enables it only when NODE_ENV is production. On explicitly,
 		// so a server started any other way still slows down password guessing,
-		// and tests see the behaviour that ships.
-		rateLimit: { enabled: true },
+		// and tests see the behaviour that ships. In the database, not in
+		// memory: a restart would otherwise hand every address a fresh allowance.
+		rateLimit: { enabled: true, storage: "database" },
 		telemetry: { enabled: false },
 		logger: {
 			// The message only: Better Auth's arguments can carry an email or a

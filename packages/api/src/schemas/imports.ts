@@ -15,8 +15,9 @@ import { EARLIEST_OPENING_DATE } from "./accounts.ts";
 
 /**
  * The largest file an import accepts: far above a decade of a household's
- * statements, and a hard stop before `ofx-js`, whose SGML conversion slows
- * down exponentially on long tag names.
+ * statements, and a bound on the memory one upload takes. `ofx-js` no longer
+ * needs it for time: its super-linear regular expressions are patched
+ * (`patches/ofx-js@1.1.1.patch`).
  */
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
