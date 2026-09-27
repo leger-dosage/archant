@@ -166,3 +166,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-versioned-images.md`
   summary: The `ghcr.io/leger-dosage/archant` package stays private, so pulling the image needs `docker login ghcr.io`; making it public is deferred by the owner.
   evidence: v0.1.0 was published on 2026-09-27 and an anonymous pull answers `401 Unauthorized`. `docs/deployment.md` describes an anonymous `docker compose up`, which fails until the package is public. Settle it in Package settings › Change visibility before Story 13.7's guide relies on the pull.
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-6-a-copy-before-every-migration.md`
+  summary: The Deployment section of `AGENTS.md` does not list the `image` job's pending-migration restart check, nor that `packages/data/testing/migrations.ts` must import no dev dependency because that job runs it inside the production image.
+  evidence: Story 13.6 review. Adding vitest or another dev-only import to that helper would break the CI `image` job with a resolution error the agent guide does not explain.

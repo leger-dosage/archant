@@ -18,6 +18,7 @@ packages/app/e2e/.auth
 .env.*
 local.db
 local.db-*
+backups/
 
 .git
 .github

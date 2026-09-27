@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-27-2026 13:11
+last_updated: 09-27-2026 19:12
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -132,6 +132,6 @@ development_status:
   13-3-the-container-exposes-nothing-it-does-not-need: review
   13-4-two-factor-sign-in: review
   13-5-versioned-images: review
-  13-6-a-copy-before-every-migration: backlog
+  13-6-a-copy-before-every-migration: review
   13-7-hosting-at-home-behind-tailscale: backlog
   epic-13-retrospective: optional
