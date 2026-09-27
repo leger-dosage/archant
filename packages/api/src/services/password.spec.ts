@@ -48,9 +48,12 @@ describe("resetPassword", () => {
 		const { app, auth, cookie } = await signedInApp();
 		expect((await accountsWith(app, cookie)).status).toBe(200);
 
-		const { userId } = await resetPassword({ auth }, ADMIN.email, NEW_PASSWORD);
+		const { userId, twoFactorDisabled } = await resetPassword({ auth }, ADMIN.email, NEW_PASSWORD);
 
 		expect(userId).not.toBe("");
+		// Two-factor was never on, so the command prints no second line. The
+		// case where it was on is in two-factor.spec.ts, with its helpers.
+		expect(twoFactorDisabled).toBe(false);
 		const revoked = await accountsWith(app, cookie);
 		expect(revoked.status).toBe(401);
 		await expect(revoked.json()).resolves.toMatchObject({ error: { code: "UNAUTHORIZED" } });

@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { adminClient } from "better-auth/client/plugins";
+import { adminClient, twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 import { ApiError, api, errorCodeOf, unwrap } from "./api";
@@ -9,7 +9,9 @@ import { queryKeys } from "./query-keys";
 // and the API serves the interface in production.
 export const authClient = createAuthClient({
 	basePath: "/api/auth",
-	plugins: [adminClient()],
+	// No `onTwoFactorRedirect`: the sign-in page reads `twoFactorRedirect` in
+	// the answer and shows its second step itself, on the same page.
+	plugins: [adminClient(), twoFactorClient()],
 });
 
 export type Session = typeof authClient.$Infer.Session;

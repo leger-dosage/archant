@@ -3,13 +3,14 @@ import type { Logger } from "../lib/logger.ts";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
-import { admin } from "better-auth/plugins";
+import { admin, twoFactor } from "better-auth/plugins";
 
 import type { Database } from "@archant/data/client";
 import {
 	authAccounts,
 	rateLimits,
 	sessions,
+	twoFactors,
 	users,
 	verifications,
 } from "@archant/data/schema/auth";
@@ -66,12 +67,27 @@ export function createAuth({ db, secret, baseURL, trustedProxies, logger }: Auth
 			// The adapter looks tables up by key, and with `usePlural` it appends
 			// an `s` to the renamed model too: `auth_accounts` becomes this key.
 			// The SQL table stays `auth_accounts`.
-			schema: { users, sessions, auth_accountss: authAccounts, verifications, rateLimits },
+			schema: {
+				users,
+				sessions,
+				auth_accountss: authAccounts,
+				verifications,
+				rateLimits,
+				twoFactors,
+			},
 		}),
 		account: { modelName: "auth_accounts" },
 		// No public sign-up: the only user is the administrator setup creates.
 		emailAndPassword: { enabled: true, disableSignUp: true },
-		plugins: [admin({ defaultRole: "admin" })],
+		plugins: [
+			admin({ defaultRole: "admin" }),
+			// Every other option at its default: 6-digit, 30-second TOTP, ten
+			// backup codes stored encrypted, 5 attempts per challenge, a
+			// 15-minute lockout after 10 failures and 3 requests per 10 seconds
+			// per address on `/two-factor/*`. The issuer is what the
+			// authenticator app shows; without it, Better Auth names itself.
+			twoFactor({ issuer: "Archant" }),
+		],
 		databaseHooks: {
 			user: {
 				update: {

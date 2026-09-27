@@ -27,9 +27,9 @@ export default defineConfig({
 		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: { ...devices["Desktop Chrome"] } },
 		{
 			name: "chromium",
-			// Everything but the password change, which the project below runs
-			// once nothing needs a session any more.
-			testIgnore: /password\.spec\.ts$/u,
+			// Everything but the password change and two-factor, which the
+			// projects below run once nothing needs a session any more.
+			testIgnore: [/password\.spec\.ts$/u, /two-factor\.spec\.ts$/u],
 			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
@@ -43,6 +43,17 @@ export default defineConfig({
 			testMatch: /password\.spec\.ts$/u,
 			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
 			dependencies: ["chromium"],
+		},
+		// Last of all, signed in with the password the project above sets: the
+		// saved session died with that change, and turning two-factor on
+		// replaces the session of the page anyway. Its tests run in order on
+		// one user's state, so a retry would start from what the failed
+		// attempt left: no `retries` here either.
+		{
+			name: "two-factor",
+			testMatch: /two-factor\.spec\.ts$/u,
+			use: { ...devices["Desktop Chrome"], storageState: { cookies: [], origins: [] } },
+			dependencies: ["password"],
 		},
 	],
 	// No `reuseExistingServer`: a stale server left on this port once made a

@@ -216,7 +216,13 @@ pnpm api reset-password admin@example.com
 docker compose exec -it archant node packages/api/src/cli/reset-password.ts admin@example.com
 ```
 
-The command asks for the new password twice without echoing it, never accepts it as an argument, and closes every session of that user. It needs `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`: from a checkout it reads them from the same `.env` the server does, and in the container they are already set. A terminal is required, hence `-it`.
+The command asks for the new password twice without echoing it, never accepts it as an argument, and closes every session of that user. It also turns two-factor sign-in off, and says so on a second line when it was on: a lost phone with no backup code left is recovered the same way. It needs `DATABASE_URL`, `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`: from a checkout it reads them from the same `.env` the server does, and in the container they are already set. A terminal is required, hence `-it`.
+
+### Two-factor sign-in
+
+Optional, turned on in « Réglages » › « Sécurité »: after the password, sign-in asks for a code from an authenticator app, or one of ten single-use backup codes shown once when it is turned on. Turning it off and regenerating the backup codes both ask for the password.
+
+The authenticator secret and the backup codes are stored encrypted with `BETTER_AUTH_SECRET`. Losing or rotating that secret makes them unreadable, so no code is accepted any more: run `reset-password` above, which turns two-factor off, then turn it on again and scan the new QR code.
 
 ## Other targets
 

@@ -3,7 +3,8 @@ import type { FieldError } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -139,6 +140,7 @@ function SecurityPage() {
 		<div className="flex flex-col gap-6">
 			<ProfileSection />
 			<PasswordSection />
+			<TwoFactorSection />
 		</div>
 	);
 }
@@ -246,5 +248,304 @@ function PasswordSection() {
 				</form>
 			</div>
 		</Section>
+	);
+}
+
+const passwordSchema = z.object({ password: z.string().min(1) });
+
+type PasswordValues = z.input<typeof passwordSchema>;
+
+const totpSchema = z.object({ code: z.string().trim().min(1) });
+
+type TotpValues = z.input<typeof totpSchema>;
+
+/**
+ * What the section shows: its resting state, read from the session; the
+ * activation started, waiting for a first code; or backup codes, shown once.
+ */
+type TwoFactorStep =
+	| { kind: "idle" }
+	| { kind: "scanning"; totpURI: string; backupCodes: string[] }
+	| { kind: "codes"; backupCodes: string[] };
+
+/** The failure every call of this section shares with the password form. */
+type AuthFailure = { code?: string | undefined; status: number };
+
+/**
+ * Two-factor sign-in through Better Auth's `twoFactor` plugin (AD-13): every
+ * call here is the plugin's, which asks for the password itself. Turning it
+ * on writes nothing the next sign-in reads until a first code proves the app
+ * holds the secret.
+ */
+function TwoFactorSection() {
+	const { t } = useTranslation();
+	const queryClient = useQueryClient();
+	const router = useRouter();
+	const enabled = Route.useRouteContext({
+		select: (context) => context.session.user.twoFactorEnabled === true,
+	});
+	const [step, setStep] = useState<TwoFactorStep>({ kind: "idle" });
+	const passwordForm = useForm<PasswordValues>({
+		resolver: zodResolver(passwordSchema),
+		defaultValues: { password: "" },
+	});
+	const passwordErrors = passwordForm.formState.errors;
+
+	/** Refetches the session, then reruns `beforeLoad`, so the page reads the new state. */
+	const refreshSession = async () => {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.session, refetchType: "all" });
+		await router.invalidate();
+	};
+
+	/** What every call does with a failure but a wrong code. */
+	const handleFailure = async (error: AuthFailure) => {
+		if (error.code === "INVALID_PASSWORD") {
+			passwordForm.setError("password", { type: "custom", message: "invalid_password" });
+		} else if (error.status === 401) {
+			queryClient.setQueryData(queryKeys.session, null);
+			await router.navigate({
+				to: "/sign-in",
+				search: { redirect: router.state.location.href },
+			});
+		} else if (error.status === 429) {
+			// The plugin's limit: three requests per ten seconds on each of its paths.
+			toast.error(t("signIn.tooManyAttempts"));
+		} else {
+			showErrorToast("INTERNAL_ERROR");
+		}
+	};
+
+	const start = passwordForm.handleSubmit(async ({ password }) => {
+		const { data, error } = await authClient.twoFactor.enable({ password });
+
+		if (error !== null) {
+			await handleFailure(error);
+			return;
+		}
+
+		// Always `totp`: no `sendOTP` is configured, so the plugin offers nothing else.
+		if (data.method === "totp") {
+			passwordForm.reset({ password: "" });
+			setStep({ kind: "scanning", totpURI: data.totpURI, backupCodes: data.backupCodes });
+		}
+	});
+
+	const regenerate = passwordForm.handleSubmit(async ({ password }) => {
+		const { data, error } = await authClient.twoFactor.generateBackupCodes({ password });
+
+		if (error === null) {
+			passwordForm.reset({ password: "" });
+			setStep({ kind: "codes", backupCodes: data.backupCodes });
+			return;
+		}
+
+		await handleFailure(error);
+	});
+
+	const disable = passwordForm.handleSubmit(async ({ password }) => {
+		const { error } = await authClient.twoFactor.disable({ password });
+
+		if (error === null) {
+			passwordForm.reset({ password: "" });
+			await refreshSession();
+			toast.success(t("twoFactor.disabled"));
+			return;
+		}
+
+		await handleFailure(error);
+	});
+
+	const isSubmitting = passwordForm.formState.isSubmitting;
+
+	return (
+		<Section title={t("twoFactor.title")} className="max-w-md">
+			<div className="flex flex-col gap-4 p-4">
+				{step.kind === "scanning" ? (
+					<ScanStep
+						totpURI={step.totpURI}
+						onCancel={() => setStep({ kind: "idle" })}
+						onFailure={handleFailure}
+						onEnabled={async () => {
+							await refreshSession();
+							toast.success(t("twoFactor.enabled"));
+							setStep({ kind: "codes", backupCodes: step.backupCodes });
+						}}
+					/>
+				) : step.kind === "codes" ? (
+					<BackupCodes codes={step.backupCodes} onDone={() => setStep({ kind: "idle" })} />
+				) : (
+					<>
+						<p className="text-sm text-muted-foreground">
+							{t(enabled ? "twoFactor.descriptionOn" : "twoFactor.descriptionOff")}
+						</p>
+						<form
+							noValidate
+							className="flex flex-col gap-4"
+							// On, Enter starts nothing: regenerating and turning off each
+							// need their own button, so a password typed for one never
+							// triggers the other.
+							onSubmit={(event) => {
+								if (enabled) {
+									event.preventDefault();
+								} else {
+									void start(event);
+								}
+							}}
+						>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="twoFactorPassword">{t("twoFactor.password")}</Label>
+								<Input
+									id="twoFactorPassword"
+									type="password"
+									autoComplete="current-password"
+									aria-invalid={passwordErrors.password !== undefined}
+									{...(passwordErrors.password === undefined
+										? {}
+										: { "aria-describedby": "twoFactorPassword-error" })}
+									{...passwordForm.register("password")}
+								/>
+								<FieldMessage id="twoFactorPassword-error" error={passwordErrors.password} />
+							</div>
+							{enabled ? (
+								<>
+									<Button
+										type="button"
+										disabled={isSubmitting}
+										aria-describedby="regenerate-hint"
+										onClick={(event) => void regenerate(event)}
+									>
+										{t("twoFactor.regenerate")}
+									</Button>
+									<p id="regenerate-hint" className="text-xs text-muted-foreground">
+										{t("twoFactor.regenerateHint")}
+									</p>
+									<Button
+										type="button"
+										variant="outline"
+										disabled={isSubmitting}
+										onClick={(event) => void disable(event)}
+									>
+										{t("twoFactor.disable")}
+									</Button>
+								</>
+							) : (
+								<Button type="submit" disabled={isSubmitting}>
+									{t("twoFactor.enable")}
+								</Button>
+							)}
+						</form>
+					</>
+				)}
+			</div>
+		</Section>
+	);
+}
+
+/**
+ * The QR code and the secret it carries, then the first code. An inline SVG:
+ * the Content-Security-Policy sets no `img-src`, which a data URL would need.
+ */
+function ScanStep({
+	totpURI,
+	onCancel,
+	onFailure,
+	onEnabled,
+}: {
+	totpURI: string;
+	onCancel: () => void;
+	onFailure: (error: AuthFailure) => Promise<void>;
+	onEnabled: () => Promise<void>;
+}) {
+	const { t } = useTranslation();
+	const form = useForm<TotpValues>({
+		resolver: zodResolver(totpSchema),
+		defaultValues: { code: "" },
+	});
+	const { errors, isSubmitting } = form.formState;
+	// For an app that cannot scan: the same secret, as the URI carries it.
+	const secret = new URL(totpURI).searchParams.get("secret") ?? "";
+
+	const submit = form.handleSubmit(async ({ code }) => {
+		// Apps show the code as « 123 456 ».
+		const { error } = await authClient.twoFactor.verifyTotp({
+			code: code.replace(/\s+/gu, ""),
+		});
+
+		if (error === null) {
+			await onEnabled();
+			return;
+		}
+
+		// A 401 here is the plugin's answer to a wrong code, not a lost session.
+		if (error.code === "INVALID_CODE") {
+			form.setError("code", { type: "custom", message: "invalid_two_factor_code" });
+			return;
+		}
+
+		await onFailure(error);
+	});
+
+	return (
+		<>
+			<p className="text-sm text-muted-foreground">{t("twoFactor.scan")}</p>
+			<div className="self-start rounded-md bg-white p-3">
+				<QRCodeSVG value={totpURI} size={176} title={t("twoFactor.qrCode")} role="img" />
+			</div>
+			<div className="flex flex-col gap-1.5">
+				<p id="twoFactorSecret-label" className="text-sm font-medium">
+					{t("twoFactor.secret")}
+				</p>
+				<code
+					aria-labelledby="twoFactorSecret-label"
+					className="font-mono text-sm break-all select-all"
+				>
+					{secret}
+				</code>
+			</div>
+			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="twoFactorCode">{t("twoFactor.code")}</Label>
+					<Input
+						id="twoFactorCode"
+						inputMode="numeric"
+						autoComplete="one-time-code"
+						aria-invalid={errors.code !== undefined}
+						{...(errors.code === undefined ? {} : { "aria-describedby": "twoFactorCode-error" })}
+						{...form.register("code")}
+					/>
+					<FieldMessage id="twoFactorCode-error" error={errors.code} />
+				</div>
+				<div className="flex gap-2">
+					<Button type="submit" disabled={isSubmitting}>
+						{t("twoFactor.confirm")}
+					</Button>
+					<Button type="button" variant="outline" onClick={onCancel}>
+						{t("twoFactor.cancel")}
+					</Button>
+				</div>
+			</form>
+		</>
+	);
+}
+
+/** The ten backup codes, shown once: the server keeps them encrypted and never sends them again. */
+function BackupCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+	const { t } = useTranslation();
+
+	return (
+		<>
+			<h3 id="backupCodes-title" className="text-sm font-medium">
+				{t("twoFactor.backupCodesTitle")}
+			</h3>
+			<p className="text-sm text-muted-foreground">{t("twoFactor.backupCodesDescription")}</p>
+			<ul aria-labelledby="backupCodes-title" className="grid grid-cols-2 gap-2 font-mono text-sm">
+				{codes.map((code) => (
+					<li key={code}>{code}</li>
+				))}
+			</ul>
+			<Button type="button" onClick={onDone}>
+				{t("twoFactor.backupCodesDone")}
+			</Button>
+		</>
 	);
 }
