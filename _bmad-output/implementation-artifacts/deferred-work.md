@@ -150,3 +150,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-14-enable-banking-set-up-from-the-interface.md`
   summary: An unknown application ID may be answered by `GET /application` with a 4xx other than 401 or 403, which would show as `BANK_PROVIDER_ERROR` instead of `BANK_CREDENTIALS_REFUSED`.
   evidence: medium, unverified: the fake and the fixtures only return 401. One save against the sandbox with a mistyped application ID would settle it.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 13)
+  summary: Scheduled, off-site backups of the database, for a machine at home that can die or be stolen.
+  evidence: Deferred by the owner on 2026-09-27 as too much for the project's maturity. Compared: Litestream v0.5 (continuous to S3-compatible storage, no code, but no client-side encryption since v0.5, so the storage provider could read the transaction history) and offen/docker-volume-backup (nightly, GPG-encrypted, rotation and failure notifications, needing the server to write a nightly `VACUUM INTO` copy since copying a live WAL database can yield a broken file). The recommendation was offen/docker-volume-backup.
