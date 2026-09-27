@@ -11,6 +11,10 @@ export const ERROR_STATUSES = {
 	UNAUTHORIZED: 401,
 	/** Setup once a user exists, or a form post from a foreign origin. */
 	FORBIDDEN: 403,
+	/** Setup with a token other than the one the server logged at start. Nothing is written. */
+	SETUP_TOKEN_INVALID: 403,
+	/** More setup attempts from one address than the sign-in limit allows. The body is not read. */
+	TOO_MANY_REQUESTS: 429,
 	/** A file no source can read, or larger than 5 MB. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,
 	/** The account changed between an import's preview and its confirmation. */

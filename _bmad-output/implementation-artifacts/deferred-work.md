@@ -153,3 +153,6 @@
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 13)
   summary: Scheduled, off-site backups of the database, for a machine at home that can die or be stolen.
   evidence: Deferred by the owner on 2026-09-27 as too much for the project's maturity. Compared: Litestream v0.5 (continuous to S3-compatible storage, no code, but no client-side encryption since v0.5, so the storage provider could read the transaction history) and offen/docker-volume-backup (nightly, GPG-encrypted, rotation and failure notifications, needing the server to write a nightly `VACUUM INTO` copy since copying a live WAL database can yield a broken file). The recommendation was offen/docker-volume-backup.
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-1-the-first-administrator-needs-a-setup-token.md`
+  summary: The end-to-end section of `AGENTS.md` does not say that `start-api.ts` reads the setup token from the API's stdout into `e2e/.auth/setup-token` for the `setup` project.
+  evidence: Reverting `stdio` to `"inherit"` in `start-api.ts` would leave the setup project reading a missing file, with nothing in the agent guide pointing at why.

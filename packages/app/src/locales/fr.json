@@ -1126,6 +1126,8 @@
 	"setup": {
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
+		"token": "Jeton de configuration",
+		"tokenHint": "Affiché dans les journaux du serveur à son démarrage. Il change à chaque redémarrage.",
 		"firstName": "Prénom",
 		"firstNameHint": "Facultatif. Le tableau de bord vous accueille par ce prénom.",
 		"email": "Adresse e-mail",
@@ -1153,6 +1155,8 @@
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
+		"SETUP_TOKEN_INVALID": "Ce jeton de configuration est incorrect. Copiez celui affiché dans les journaux du serveur à son dernier démarrage.",
+		"TOO_MANY_REQUESTS": "Trop de tentatives. Réessayez dans quelques secondes.",
 		"SERVICE_UNAVAILABLE": "La base de données ne répond pas. Réessayez dans un instant.",
 		"BANK_CONNECTOR_UNAVAILABLE": "La connexion bancaire n'est pas configurée sur ce serveur.",
 		"BANK_PROVIDER_ERROR": "Enable Banking n'a pas répondu correctement. Réessayez dans un instant.",

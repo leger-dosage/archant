@@ -17,6 +17,9 @@ export const firstNameSchema = z.string().trim().max(60);
 // Shared with the setup form, whose resolver runs this same schema. Custom
 // issues carry their field code as their message (lib/zod-error.ts).
 export const setupSchema = z.object({
+	// No minimum: an empty token reaches the check and answers
+	// `SETUP_TOKEN_INVALID`, like a wrong one. The form requires one itself.
+	token: z.string().trim().max(200),
 	name: firstNameSchema.optional(),
 	email: z.string().trim().min(1, { abort: true }).refine(isEmail, "invalid_email"),
 	password: z

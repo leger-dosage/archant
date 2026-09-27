@@ -9,38 +9,58 @@ import { users } from "@archant/data/schema/auth";
 import { settings } from "@archant/data/schema/settings";
 
 import { AppError } from "../lib/errors.ts";
+import { sameSecret } from "../lib/secret.ts";
 
-export type SetupDeps = Pick<ServiceDeps, "db"> & { auth: Pick<Auth, "api">; logger: Logger };
+export type SetupDeps = Pick<ServiceDeps, "db"> & {
+	auth: Pick<Auth, "api">;
+	logger: Logger;
+	/**
+	 * The token `index.ts` generated and logged at start because no user
+	 * existed; `null` once one did, which refuses every token.
+	 */
+	setupToken: string | null;
+};
 
 const SETUP_KEY = "setup_completed_at";
 
 const closed = () => new AppError("FORBIDDEN", "Setup is already complete.");
 
-async function hasUser(deps: SetupDeps): Promise<boolean> {
+export async function hasUser(deps: Pick<ServiceDeps, "db">): Promise<boolean> {
 	const rows = await deps.db.select({ id: users.id }).from(users).limit(1);
 
 	return rows.length > 0;
 }
 
 /** Answers `403 FORBIDDEN` once a user exists, so the page knows to send the visitor to sign-in. */
-export async function getSetupStatus(deps: SetupDeps): Promise<{ open: true }> {
-	if (await hasUser(deps)) {
-		throw closed();
-	}
+export async function getSetupStatus(deps: Pick<ServiceDeps, "db">): Promise<{ open: true }> {
+	await assertSetupOpen(deps);
 
 	return { open: true };
 }
 
-/**
- * Creates the single administrator. The `setup_completed_at` row is claimed
- * first, through its primary key: Better Auth writes on its own connection,
- * so neither a user count nor a transaction around it could stop two
- * concurrent requests from both creating one.
- */
-export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise<{ id: string }> {
+/** Throws `403 FORBIDDEN` once a user exists. */
+export async function assertSetupOpen(deps: Pick<ServiceDeps, "db">): Promise<void> {
 	if (await hasUser(deps)) {
 		throw closed();
 	}
+}
+
+/**
+ * Creates the single administrator for whoever holds the setup token, which
+ * only someone reading the server's logs has: a new instance's address is
+ * public within minutes of its certificate. The `setup_completed_at` row is
+ * then claimed first, through its primary key: Better Auth writes on its own
+ * connection, so neither a user count nor a transaction around it could stop
+ * two concurrent requests from both creating one.
+ */
+export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise<{ id: string }> {
+	if (deps.setupToken === null || !sameSecret(input.token, deps.setupToken)) {
+		// Never the submitted value: it may be a near miss of the real token.
+		deps.logger.warn("setup refused: invalid setup token");
+		throw new AppError("SETUP_TOKEN_INVALID", "The setup token is invalid.");
+	}
+
+	await assertSetupOpen(deps);
 
 	const claimed = await deps.db
 		.insert(settings)

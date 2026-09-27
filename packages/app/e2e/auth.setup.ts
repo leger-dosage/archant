@@ -7,6 +7,7 @@ import {
 	ADMIN_STATE,
 	BANK_APPLICATION_ID,
 	BANK_KEY_FILE,
+	SETUP_TOKEN_FILE,
 	WEB_URL,
 } from "./settings.ts";
 
@@ -31,9 +32,21 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 
 	await expect(page.getByText("Les mots de passe ne correspondent pas.")).toBeVisible();
 	await expect(page.getByText("Ce texte est trop long.")).toBeVisible();
+	// Story 13.1: the token is required before anything is sent.
+	const token = page.getByLabel("Jeton de configuration");
+	await expect(token).toHaveAccessibleDescription(/Ce champ est obligatoire\./u);
 
 	await page.getByLabel("Prénom").fill(` ${ADMIN_FIRST_NAME} `);
 	await page.getByLabel("Confirmer le mot de passe").fill(ADMIN.password);
+	// A wrong token is refused under its field, and creates nothing.
+	await token.fill("not-the-setup-token");
+	await page.getByRole("button", { name: "Créer le compte" }).click();
+
+	await expect(token).toHaveAccessibleDescription(/Ce jeton de configuration est incorrect\./u);
+	await expect(page).toHaveURL(/\/setup$/u);
+
+	// The token the run's server printed at start, as an owner reads it in the logs.
+	await token.fill(await readFile(SETUP_TOKEN_FILE, "utf8"));
 	await page.getByRole("button", { name: "Créer le compte" }).click();
 
 	await expect(page).toHaveURL(`${WEB_URL}/`);
