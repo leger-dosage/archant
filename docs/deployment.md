@@ -2,6 +2,8 @@
 
 One codebase, several targets. `@archant/api` has a single entrypoint, `packages/api/src/index.ts`. A target is a matter of configuration and of the process that starts that file; application code never branches on the platform. The reasoning is in [adr/0002-container-reference-target.md](adr/0002-container-reference-target.md).
 
+This page is the reference for each recipe. [hosting.md](hosting.md) walks one path end to end with them: a machine at home, reachable only through Tailscale, connected to a real bank.
+
 ## Docker — the reference target
 
 One image serves the built interface as static files and answers the API on the same origin. The database is a plain SQLite file on a volume. No cloud account, no second service. This is the only target with files in the repository: `Dockerfile`, `docker-compose.yml` and `.dockerignore`.
@@ -163,6 +165,8 @@ An Enable Banking application belongs to one environment, sandbox or production,
 - **Sandbox** needs only an account on the control panel. Its banks serve simulated data, including Enable Banking's Mock ASPSP, offered for every country and needing no credentials. Start here to try the flow.
 - **Production** reads your real accounts. Without a contract with Enable Banking, the panel activates the application in restricted mode through "Activate by linking accounts": only the accounts you link there are readable, which Enable Banking allows for personal use.
 
+For production, register a second application in [step 1](#1-register-the-application) with the environment set to Production. Once it is registered, choose "Activate by linking accounts" in the panel and link, through your bank, the accounts Archant may read; the application then works in restricted mode, on those accounts only. Continue with steps 2 to 4 as for the sandbox. The credentials can only be changed while no bank is connected, so moving from a sandbox application to a production one means disconnecting the sandbox banks first.
+
 ### 1. Register the application
 
 In the [control panel](https://enablebanking.com/cp/applications), register a new application:
@@ -171,13 +175,16 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
 - Name: shown to you on the consent screen, `Archant` will do.
 - Redirect URLs: Archant's address followed by `/settings/banks/callback`. « Réglages » › « Banques » shows it with a copy button. That address is `BETTER_AUTH_URL` from a checkout, `ARCHANT_URL` for the container:
 
-  | Where Archant runs           | Redirect URL to register                              |
-  | ---------------------------- | ----------------------------------------------------- |
-  | `pnpm app start:dev`         | `http://localhost:5173/settings/banks/callback`       |
-  | The container, default       | `http://localhost:8787/settings/banks/callback`       |
-  | The container behind a proxy | `https://archant.example.org/settings/banks/callback` |
+  | Where Archant runs             | Redirect URL to register                                     |
+  | ------------------------------ | ------------------------------------------------------------ |
+  | `pnpm app start:dev`           | `http://localhost:5173/settings/banks/callback`              |
+  | The container, default         | `http://localhost:8787/settings/banks/callback`              |
+  | The container behind a proxy   | `https://archant.example.org/settings/banks/callback`        |
+  | The container behind Tailscale | `https://<machine>.<tailnet>.ts.net/settings/banks/callback` |
 
   Register every one you use. The bank sends the browser back there; any other URL makes Enable Banking refuse the connection. Archant checks the list when the credentials are saved, and names the exact URL to register when it is missing.
+
+  Behind Tailscale, the bank sends your browser back to the `ts.net` address, which resolves only on the tailnet, while every call to Enable Banking leaves the server outbound, so Archant needs no port open on the internet. No one has confirmed yet that Enable Banking accepts a `ts.net` redirect URL. Register it on a sandbox application first: if the panel refuses it, no documented path connects a bank to an instance reachable only through Tailscale.
 
 - Key: keep the default, which generates the key pair in the browser. Registering downloads the private key as `<application id>.pem`; keep that file. To bring your own key instead, generate it and upload the certificate:
 
@@ -264,9 +271,9 @@ The authenticator secret and the backup codes are stored encrypted with `BETTER_
 
 ## Other targets
 
-These stay possible and none of them will have a file in this repository, by design: adding one must never fork the application code.
+None of these will have a file in this repository, by design: adding one must never fork the application code.
 
 - **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm app build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/app/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
 - **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
 - **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
-- **Cloudflare Workers.** Possible in principle, since Hono only needs web standards, but it would need an entrypoint of its own and a `wrangler.toml`. The 10 ms of CPU per invocation fits a bank sync, which mostly waits on the network. D1's free plan hard-fails queries past its daily row limits since 1 September 2026, so Turso is the safer database there too.
+- **Cloudflare Workers with D1.** Does not fit the free plan. A request gets 10 ms of CPU and 50 subrequests, and each D1 query counts as one. D1 has no interactive transaction, where the API opens 46. Past 100,000 rows written in a day, every query is refused for the rest of the day. [ADR 0002](adr/0002-container-reference-target.md) had already set it aside for the cost of a second entrypoint; these limits settle it.
