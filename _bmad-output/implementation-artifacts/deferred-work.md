@@ -163,3 +163,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-5-versioned-images.md`
   summary: « Upgrading » in docs/deployment.md still describes `git pull` and `up --build`; image users need `docker compose pull` and going back to a previous `ARCHANT_VERSION`.
   evidence: Story 13.5 review; the epic assigns the « Upgrading » and « Backups » rewrite to Story 13.6, whose acceptance criteria name `docker compose pull`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-5-versioned-images.md`
+  summary: The `ghcr.io/leger-dosage/archant` package stays private, so pulling the image needs `docker login ghcr.io`; making it public is deferred by the owner.
+  evidence: v0.1.0 was published on 2026-09-27 and an anonymous pull answers `401 Unauthorized`. `docs/deployment.md` describes an anonymous `docker compose up`, which fails until the package is public. Settle it in Package settings › Change visibility before Story 13.7's guide relies on the pull.
