@@ -13,8 +13,13 @@ export const ERROR_STATUSES = {
 	FORBIDDEN: 403,
 	/** Setup with a token other than the one the server logged at start. Nothing is written. */
 	SETUP_TOKEN_INVALID: 403,
-	/** More setup attempts from one address than the sign-in limit allows. The body is not read. */
+	/**
+	 * More setup attempts from one address than the sign-in limit allows, or a
+	 * sign-in while too many failed across every address. The body is not read.
+	 */
 	TOO_MANY_REQUESTS: 429,
+	/** A body over 64 KB on any `/api` route but the upload. Refused before or while reading it. */
+	PAYLOAD_TOO_LARGE: 413,
 	/** A file no source can read, or larger than 5 MB. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,
 	/** The account changed between an import's preview and its confirmation. */

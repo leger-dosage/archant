@@ -69,22 +69,22 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 
 ## Server — `@archant/api`
 
-| Package                          | Version       | Role                                               |
-| -------------------------------- | ------------- | -------------------------------------------------- |
-| `hono`                           | 4.13.x        | Routing and middleware                             |
-| `@hono/node-server`              | 2.1.x         | Serves the app on Node, port 8787                  |
-| `@hono/zod-validator`            | 0.9.x         | Request validation, typed for the client           |
-| `better-auth`                    | 1.7.6         | Sessions and accounts                              |
-| `drizzle-orm`                    | 0.45.x        | Queries in `services/`                             |
-| `pino`                           | 10.3.x        | The one logger, with header redaction              |
-| `@t3-oss/env-core`               | 0.13.x        | Environment validation                             |
-| `zod`                            | 4.6.x         | Schemas at every boundary                          |
-| `jose`                           | 6.2.x         | Signs the JWT that authenticates to Enable Banking |
-| `ofx-js`                         | 1.1.1         | OFX file parsing                                   |
-| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing                                   |
-| `vitest`                         | 5.0.x         | Unit and integration tests                         |
-| `@vitest/coverage-v8`            | 5.0.x         | Branch coverage thresholds on the money paths      |
-| `msw`                            | 2.15.x        | Fails any test that reaches the network            |
+| Package                          | Version       | Role                                                          |
+| -------------------------------- | ------------- | ------------------------------------------------------------- |
+| `hono`                           | 4.13.x        | Routing and middleware                                        |
+| `@hono/node-server`              | 2.1.x         | Serves the app on Node, port 8787                             |
+| `@hono/zod-validator`            | 0.9.x         | Request validation, typed for the client                      |
+| `better-auth`                    | 1.7.6         | Sessions and accounts                                         |
+| `drizzle-orm`                    | 0.45.x        | Queries in `services/`                                        |
+| `pino`                           | 10.3.x        | The one logger, with header redaction                         |
+| `@t3-oss/env-core`               | 0.13.x        | Environment validation                                        |
+| `zod`                            | 4.6.x         | Schemas at every boundary                                     |
+| `jose`                           | 6.2.x         | Signs the JWT that authenticates to Enable Banking            |
+| `ofx-js`                         | 1.1.1         | OFX file parsing, patched in `patches/` to run in linear time |
+| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing                                              |
+| `vitest`                         | 5.0.x         | Unit and integration tests                                    |
+| `@vitest/coverage-v8`            | 5.0.x         | Branch coverage thresholds on the money paths                 |
+| `msw`                            | 2.15.x        | Fails any test that reaches the network                       |
 
 ## Data — `@archant/data`
 

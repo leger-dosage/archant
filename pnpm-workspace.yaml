@@ -28,3 +28,11 @@ onlyBuiltDependencies:
 # that asked for one. Tests here run msw in Node, which needs no worker.
 ignoredBuiltDependencies:
   - msw
+
+# ofx-js's SGML conversion ran in exponential time on long tag names, and its
+# parser in quadratic time on long whitespace runs, unclosed comments and
+# unfinished tags: a 5 MB upload could hold the server for hours. The patch
+# makes each of those regular expressions linear, with identical output on any
+# well-formed file.
+patchedDependencies:
+  ofx-js@1.1.1: patches/ofx-js@1.1.1.patch
