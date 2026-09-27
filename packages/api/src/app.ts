@@ -51,6 +51,11 @@ export type AppDeps = ServiceDeps &
 		webDist?: string | undefined;
 		/** `SYNC_SECRET`, the bearer token of `POST /api/sync`; unset, it refuses every call. */
 		syncSecret?: string | undefined;
+		/**
+		 * The token `POST /api/setup` requires, generated at start while no user
+		 * exists; `null` once one does. Never stored, never returned.
+		 */
+		setupToken: string | null;
 	};
 
 /**

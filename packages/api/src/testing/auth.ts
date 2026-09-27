@@ -17,6 +17,9 @@ const TEST_SECRET = "archant-test-secret-of-at-least-32-characters";
 
 export const ADMIN = { email: "admin@example.test", password: "correct horse battery" } as const;
 
+/** The setup token every test app is given, as `index.ts` would log it. */
+export const TEST_SETUP_TOKEN = "archant-test-setup-token";
+
 export type TestApp = ReturnType<typeof createApp>;
 
 export function createTestAuth(
@@ -64,6 +67,7 @@ export function buildTestApp(
 		// In process there is no socket unless a spec names a peer.
 		clientAddress: () => network.peer,
 		webDist: network.webDist,
+		setupToken: TEST_SETUP_TOKEN,
 		...NO_BANK,
 		...bank,
 		redirectUrl: `${TEST_ORIGIN}/settings/banks/callback`,
@@ -135,7 +139,7 @@ export async function signIn(app: TestApp, credentials: { email: string; passwor
 
 /** Runs first-launch setup, then signs in, and returns the session cookie. */
 export async function setUpAndSignIn(app: TestApp): Promise<string> {
-	const setup = await app.request("/api/setup", jsonPost(ADMIN));
+	const setup = await app.request("/api/setup", jsonPost({ ...ADMIN, token: TEST_SETUP_TOKEN }));
 
 	if (setup.status !== 201) {
 		throw new Error(`Setup failed with ${setup.status}: ${await setup.text()}`);

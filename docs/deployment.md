@@ -13,7 +13,13 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"   # keep it: rotating it 
 docker compose up --build --detach --wait
 ```
 
-Open http://localhost:8787. The first visit leads to `/setup`, which creates the administrator.
+Open http://localhost:8787. The first visit leads to `/setup`, which creates the administrator. It asks for a setup token, which only someone with access to the server can read: while the database has no user, the server prints a new one at every start, in the `msg` of a JSON `warn` line that `docker compose logs archant` shows:
+
+```text
+Setup is open. Open /setup and enter the setup token <token>. A new one is printed at every start.
+```
+
+Without it, whoever reached `/setup` first would own the instance; a new domain's certificate is public within minutes. Once the administrator exists, no token is printed and setup refuses every request.
 
 If `--wait` reports the container as unhealthy or exited, `docker compose logs archant` says why: a missing or unreadable variable stops the server at startup and names itself there.
 
@@ -33,7 +39,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ARCHANT_URL`                   | no       | The address the browser uses, passed to the server as `BETTER_AUTH_URL`. Defaults to `http://localhost:8787`. A sign-in from any other is refused. |
 | `TRUSTED_PROXIES`               | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                |
 | `APP_TIMEZONE`                  | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                             |
-| `LOG_LEVEL`                     | no       | pino level. Defaults to `info`.                                                                                                                    |
+| `LOG_LEVEL`                     | no       | pino level. Defaults to `info`. Above `warn`, the first start does not print the setup token.                                                      |
 | `ENCRYPTION_KEY`                | no       | Encrypts bank session ids and the Enable Banking key at rest, base64 of 32 bytes. See [Connecting a bank](#connecting-a-bank).                     |
 | `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                     |
 | `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                       |

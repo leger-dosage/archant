@@ -43,3 +43,10 @@ export const BANK_APPLICATION_ID = "archant-e2e";
  * Gitignored with the session, and replaced each run.
  */
 export const BANK_KEY_FILE = fileURLToPath(new URL("./.auth/enable-banking.pem", import.meta.url));
+
+/**
+ * The setup token the run's API printed at start, which start-api.ts copies
+ * here from its log for the setup project. Gitignored with the session, and
+ * replaced each run.
+ */
+export const SETUP_TOKEN_FILE = fileURLToPath(new URL("./.auth/setup-token", import.meta.url));

@@ -20,9 +20,11 @@ import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 
-// The API's schema plus the confirmation, which only the form needs.
+// The API's schema plus the confirmation, which only the form needs. The API
+// takes an empty token and refuses it as a wrong one; the form asks for one
+// before sending.
 const setupFormSchema = setupSchema
-	.extend({ confirmPassword: z.string() })
+	.extend({ token: setupSchema.shape.token.min(1), confirmPassword: z.string() })
 	.refine((value) => value.password === value.confirmPassword, {
 		path: ["confirmPassword"],
 		message: "password_mismatch",
@@ -30,7 +32,10 @@ const setupFormSchema = setupSchema
 
 type SetupFormValues = z.input<typeof setupFormSchema>;
 
-const API_FIELDS = ["name", "email", "password"] as const;
+const API_FIELDS = ["token", "name", "email", "password"] as const;
+
+/** The `type` a refused token is set with, so its field shows that code's message. */
+const TOKEN_REFUSED = "SETUP_TOKEN_INVALID";
 
 export const Route = createFileRoute("/setup")({
 	beforeLoad: async ({ context }) => {
@@ -65,7 +70,7 @@ function SetupPage() {
 	const queryClient = useQueryClient();
 	const form = useForm<SetupFormValues>({
 		resolver: zodResolver(setupFormSchema),
-		defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+		defaultValues: { token: "", name: "", email: "", password: "", confirmPassword: "" },
 	});
 	const { errors, isSubmitting } = form.formState;
 
@@ -73,15 +78,20 @@ function SetupPage() {
 		document.title = t("app.pageTitle", { page: t("setup.title"), app: t("app.name") });
 	}, [t]);
 
-	const submit = form.handleSubmit(async ({ name, email, password }) => {
+	const submit = form.handleSubmit(async ({ token, name, email, password }) => {
 		try {
-			await unwrap(api.setup.$post({ json: { name, email, password } }));
+			await unwrap(api.setup.$post({ json: { token, name, email, password } }));
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 
 			// Someone finished setup first: the account to sign in to exists.
 			if (apiError.code === "FORBIDDEN") {
 				await navigate({ to: "/sign-in" });
+				return;
+			}
+
+			if (apiError.code === "SETUP_TOKEN_INVALID") {
+				form.setError("token", { type: TOKEN_REFUSED }, { shouldFocus: true });
 				return;
 			}
 
@@ -124,6 +134,27 @@ function SetupPage() {
 				<p className="text-sm text-muted-foreground">{t("setup.description")}</p>
 			</div>
 			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="token">{t("setup.token")}</Label>
+					<Input
+						id="token"
+						autoComplete="off"
+						spellCheck={false}
+						aria-invalid={errors.token !== undefined}
+						{...describedBy("token", "token-hint")}
+						{...form.register("token")}
+					/>
+					<p id="token-hint" className="text-xs text-muted-foreground">
+						{t("setup.tokenHint")}
+					</p>
+					{errors.token?.type === TOKEN_REFUSED ? (
+						<p id="token-error" className="text-xs text-destructive">
+							{t("errors.SETUP_TOKEN_INVALID")}
+						</p>
+					) : (
+						<FieldMessage id="token-error" error={errors.token} />
+					)}
+				</div>
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="name">{t("setup.firstName")}</Label>
 					<Input

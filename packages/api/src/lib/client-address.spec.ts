@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { forwardedFor, withForwardedFor } from "./client-address.ts";
+import { SHARED_CLIENT_KEY, clientKey, forwardedFor, withForwardedFor } from "./client-address.ts";
 
 describe("forwardedFor", () => {
 	it.each([
@@ -48,5 +48,50 @@ describe("withForwardedFor", () => {
 		const request = new Request("http://localhost/", { headers: { "x-forwarded-for": "1.2.3.4" } });
 
 		expect(withForwardedFor(request, undefined, true).headers.has("x-forwarded-for")).toBe(false);
+	});
+});
+
+describe("clientKey", () => {
+	const proxies = ["127.0.0.1", "::1", "10.0.0.0/8"];
+
+	it.each([
+		["no header shares one bucket", null, [], SHARED_CLIENT_KEY],
+		["no trusted proxy believes a single value", "203.0.113.7", [], "203.0.113.7"],
+		["no trusted proxy refuses a list", "198.51.100.1, 203.0.113.7", [], SHARED_CLIENT_KEY],
+		["no trusted proxy refuses a value that is no address", "nobody", [], SHARED_CLIENT_KEY],
+		[
+			"walks right to left past the trusted proxies",
+			"198.51.100.1, 203.0.113.7, 10.1.2.3, 127.0.0.1",
+			proxies,
+			"203.0.113.7",
+		],
+		[
+			"stops at the first hop that is no address",
+			"203.0.113.7, junk, 127.0.0.1",
+			proxies,
+			SHARED_CLIENT_KEY,
+		],
+		["only trusted hops share one bucket", "10.0.0.1, 127.0.0.1", proxies, SHARED_CLIENT_KEY],
+		["an IPv4-mapped peer is its IPv4", "::ffff:203.0.113.7", [], "203.0.113.7"],
+		[
+			"an IPv4-mapped trusted proxy is trusted",
+			"203.0.113.7, ::ffff:127.0.0.1",
+			proxies,
+			"203.0.113.7",
+		],
+		[
+			"an IPv6 address counts as its /64",
+			"2001:DB8:1:2:3:4:5:6",
+			[],
+			"2001:0db8:0001:0002:0000:0000:0000:0000",
+		],
+		[
+			"a compressed IPv6 address expands",
+			"2001:db8::1, ::1",
+			proxies,
+			"2001:0db8:0000:0000:0000:0000:0000:0000",
+		],
+	] as const)("%s", (_name, forwarded, trusted, expected) => {
+		expect(clientKey(forwarded, trusted)).toBe(expected);
 	});
 });

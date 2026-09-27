@@ -1,3 +1,4 @@
+import type { TestNetwork } from "../testing/auth.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 
 import { sql } from "drizzle-orm";
@@ -5,21 +6,28 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
-import { ADMIN, TEST_ORIGIN, buildTestApp, createTestAuth } from "../testing/auth.ts";
+import {
+	ADMIN,
+	TEST_ORIGIN,
+	TEST_SETUP_TOKEN,
+	buildTestApp,
+	createTestAuth,
+} from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { completeSetup } from "./setup.ts";
 
 const createdBody = z.object({ data: z.object({ id: z.string() }) });
 
 let temp: TempDatabase | undefined;
 let logLines: string[];
 
-async function freshApp() {
+async function freshApp(network: TestNetwork = {}) {
 	temp = await createTempDatabase();
 	logLines = [];
 	const logger = createLogger("info", { write: (line: string) => logLines.push(line) });
-	const auth = createTestAuth(temp.db, logger);
+	const auth = createTestAuth(temp.db, logger, network.trustedProxies);
 
-	return { db: temp.db, auth, app: buildTestApp(temp.db, logger, auth) };
+	return { db: temp.db, auth, logger, app: buildTestApp(temp.db, logger, auth, network) };
 }
 
 afterEach(async () => {
@@ -28,11 +36,22 @@ afterEach(async () => {
 	temp = undefined;
 });
 
-const postSetup = (app: ReturnType<typeof buildTestApp>, body: unknown) =>
+/** Posts `body`, with the test app's setup token unless `body` names its own. */
+const postSetup = (
+	app: ReturnType<typeof buildTestApp>,
+	body: Record<string, unknown>,
+	headers: Record<string, string> = {},
+) => postRaw(app, JSON.stringify({ token: TEST_SETUP_TOKEN, ...body }), headers);
+
+const postRaw = (
+	app: ReturnType<typeof buildTestApp>,
+	body: string,
+	headers: Record<string, string> = {},
+) =>
 	app.request("/api/setup", {
 		method: "POST",
-		headers: { "content-type": "application/json", origin: TEST_ORIGIN },
-		body: JSON.stringify(body),
+		headers: { "content-type": "application/json", origin: TEST_ORIGIN, ...headers },
+		body,
 	});
 
 async function usersOf(db: TempDatabase["db"]) {
@@ -89,6 +108,123 @@ describe("POST /api/setup", () => {
 
 		expect(response.status).toBe(201);
 		await expect(usersOf(db)).resolves.toMatchObject([{ name: stored }]);
+	});
+
+	it.each([
+		["a wrong token", "not-the-setup-token"],
+		["an empty token", ""],
+		["a blank token", "   "],
+		["a token with one character more", `${TEST_SETUP_TOKEN}x`],
+	])("refuses %s with SETUP_TOKEN_INVALID and writes nothing", async (_name, token) => {
+		const { app, db } = await freshApp();
+
+		const response = await postSetup(app, { ...ADMIN, token });
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toEqual({
+			error: { code: "SETUP_TOKEN_INVALID", message: "The setup token is invalid." },
+		});
+		await expect(usersOf(db)).resolves.toEqual([]);
+		await expect(setupRowsOf(db)).resolves.toEqual([]);
+		expect((await app.request("/api/setup")).status).toBe(200);
+	});
+
+	it("logs a refused token without the value submitted", async () => {
+		const { app } = await freshApp();
+
+		await postSetup(app, { ...ADMIN, token: "guessed-token-value" });
+
+		const logs = logLines.join("\n");
+		expect(logs).toContain("setup refused");
+		expect(logs).not.toContain("guessed-token-value");
+		expect(logs).not.toContain(TEST_SETUP_TOKEN);
+	});
+
+	it("refuses every token when the server generated none", async () => {
+		const { auth, db, logger } = await freshApp();
+
+		await expect(
+			completeSetup({ db, auth, logger, setupToken: null }, { ...ADMIN, token: "" }),
+		).rejects.toMatchObject({ code: "SETUP_TOKEN_INVALID" });
+		await expect(usersOf(db)).resolves.toEqual([]);
+		await expect(setupRowsOf(db)).resolves.toEqual([]);
+	});
+
+	it("answers the field error to the right token with a bad email", async () => {
+		const { app } = await freshApp();
+
+		const response = await postSetup(app, { ...ADMIN, email: "admin" });
+
+		expect(response.status).toBe(400);
+		await expect(response.json()).resolves.toMatchObject({
+			error: { code: "VALIDATION_ERROR", fields: [{ path: "email", code: "invalid_email" }] },
+		});
+	});
+
+	it("answers TOO_MANY_REQUESTS to a fourth attempt in ten seconds, before reading the body", async () => {
+		const { app, db } = await freshApp({ peer: "203.0.113.7" });
+
+		const attempts = await Promise.all(
+			["guess-0", "guess-1", "guess-2"].map(async (token) => postSetup(app, { ...ADMIN, token })),
+		);
+		const statuses = attempts.map((response) => response.status);
+
+		const fourth = await postRaw(app, "not json");
+
+		expect(statuses).toEqual([403, 403, 403]);
+		expect(fourth.status).toBe(429);
+		await expect(fourth.json()).resolves.toMatchObject({ error: { code: "TOO_MANY_REQUESTS" } });
+		// The right token is refused too until the window ends.
+		expect((await postSetup(app, ADMIN)).status).toBe(429);
+		await expect(usersOf(db)).resolves.toEqual([]);
+	});
+
+	it("ignores a forged x-forwarded-for when no proxy is trusted", async () => {
+		const { app } = await freshApp({ peer: "203.0.113.7" });
+		const wrongSetup = async (address: string) =>
+			(await postSetup(app, { ...ADMIN, token: "wrong" }, { "x-forwarded-for": address })).status;
+
+		const statuses = [
+			await wrongSetup("198.51.100.1"),
+			await wrongSetup("198.51.100.2"),
+			await wrongSetup("198.51.100.3"),
+			await wrongSetup("198.51.100.4"),
+		];
+
+		expect(statuses).toEqual([403, 403, 403, 429]);
+	});
+
+	it("counts each address behind a trusted proxy on its own", async () => {
+		const { app } = await freshApp({ peer: "127.0.0.1", trustedProxies: ["127.0.0.1"] });
+
+		const addresses = ["203.0.113.7", "198.51.100.1"].flatMap((address) => [
+			address,
+			address,
+			address,
+		]);
+		const attempts = await Promise.all(
+			addresses.map(async (address) =>
+				postSetup(app, { ...ADMIN, token: "wrong" }, { "x-forwarded-for": address }),
+			),
+		);
+		const statuses = attempts.map((response) => response.status);
+
+		expect(statuses).toEqual([403, 403, 403, 403, 403, 403]);
+		expect((await postSetup(app, ADMIN, { "x-forwarded-for": "192.0.2.1" })).status).toBe(201);
+	});
+
+	it.each([
+		["a valid body", JSON.stringify({ ...ADMIN, token: TEST_SETUP_TOKEN })],
+		["an invalid body", JSON.stringify({ email: "x" })],
+		["a body that is not JSON", "not json"],
+	])("answers FORBIDDEN to %s once a user exists", async (_name, body) => {
+		const { app } = await freshApp();
+		await postSetup(app, ADMIN);
+
+		const response = await postRaw(app, body);
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
 	});
 
 	it("answers FORBIDDEN once a user exists, and writes nothing", async () => {

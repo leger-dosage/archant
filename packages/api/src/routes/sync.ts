@@ -1,9 +1,9 @@
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
 
 import { Hono } from "hono";
-import { createHash, timingSafeEqual } from "node:crypto";
 
 import { AppError } from "../lib/errors.ts";
+import { sameSecret } from "../lib/secret.ts";
 import { syncAll } from "../services/sync.ts";
 
 export type SyncRouteDeps = BankConnectionDeps & {
@@ -11,13 +11,7 @@ export type SyncRouteDeps = BankConnectionDeps & {
 	syncSecret?: string | undefined;
 };
 
-const digest = (value: string) => createHash("sha256").update(value).digest();
-
-/**
- * Whether the header carries the secret. Both sides are hashed first, so
- * `timingSafeEqual` compares equal lengths and the time taken says nothing
- * about the secret's length either.
- */
+/** Whether the header carries the secret, compared in constant time. */
 export function carriesSecret(header: string | undefined, secret: string | undefined): boolean {
 	// The scheme is case-insensitive (RFC 7235): `bearer` is as good as `Bearer`.
 	const match = /^bearer (.+)$/iu.exec(header ?? "");
@@ -26,7 +20,7 @@ export function carriesSecret(header: string | undefined, secret: string | undef
 		return false;
 	}
 
-	return timingSafeEqual(digest(match[1]), digest(secret));
+	return sameSecret(match[1], secret);
 }
 
 /**

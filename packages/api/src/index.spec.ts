@@ -70,6 +70,10 @@ async function outcome(child: ChildProcess): Promise<{ code: number | null; line
 
 const SYNC_SECRET = "archant-index-sync-secret-of-32-characters";
 
+const logLine = z.object({ level: z.number(), msg: z.string() });
+
+const SETUP_TOKEN_PATTERN = /enter the setup token (\S+)\./u;
+
 let directory: string;
 let port: number;
 let child: ChildProcess;
@@ -134,6 +138,27 @@ describe("the server entrypoint", () => {
 		});
 	});
 
+	it("logs one setup token at warn on an empty database, which setup accepts", async () => {
+		server.use(http.post(`http://127.0.0.1:${port}/*`, () => passthrough()));
+		const tokenLines = logLines.filter((line) => line.includes("setup token"));
+
+		expect(tokenLines).toHaveLength(1);
+		const line = logLine.parse(JSON.parse(tokenLines[0] ?? "{}"));
+		expect(line.level).toBe(40);
+		const token = SETUP_TOKEN_PATTERN.exec(line.msg)?.[1];
+		expect(token).toMatch(/^[\w-]{32}$/u);
+
+		const setup = (body: Record<string, string>) =>
+			fetch(`http://127.0.0.1:${port}/api/setup`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ email: "admin@example.test", password: "correct horse", ...body }),
+			});
+
+		expect((await setup({ token: "wrong" })).status).toBe(403);
+		expect((await setup({ token: token ?? "" })).status).toBe(201);
+	});
+
 	it("exits within one second of SIGTERM", async () => {
 		const started = performance.now();
 		const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
@@ -148,6 +173,33 @@ describe("the server entrypoint", () => {
 		expect(performance.now() - started).toBeLessThan(1000);
 		expect({ code, signal }).toEqual({ code: null, signal: "SIGTERM" });
 	});
+});
+
+describe("the server entrypoint, once a user exists", () => {
+	it("logs no setup token", async () => {
+		// The database the first server set up, reopened as a restart would.
+		const restarted = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${join(directory, "fresh.db")}`,
+				PORT: String(port),
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: `http://localhost:${port}`,
+			},
+		});
+
+		try {
+			const lines = await listening(restarted);
+
+			expect(lines.filter((line) => line.includes("setup token"))).toEqual([]);
+		} finally {
+			if (restarted.exitCode === null && restarted.signalCode === null) {
+				restarted.kill("SIGKILL");
+				await once(restarted, "exit");
+			}
+		}
+	}, 30_000);
 });
 
 const fatalLine = z.object({ level: z.number(), port: z.number(), msg: z.string() });

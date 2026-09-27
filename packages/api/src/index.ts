@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { randomBytes } from "node:crypto";
 
 import { createDb } from "@archant/data/client";
 import { runMigrations } from "@archant/data/migrate";
@@ -12,6 +13,7 @@ import { createAuth } from "./services/auth.ts";
 import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
 import { seedDefaults } from "./services/seed.ts";
+import { hasUser } from "./services/setup.ts";
 
 const env = validateEnv(process.env);
 const logger = createLogger(env.LOG_LEVEL);
@@ -46,6 +48,17 @@ if (seeded > 0) {
 // come back to it, and short enough that bank statements do not pile up.
 const purged = await purgeStalePreviews({ db, timeZone: env.APP_TIMEZONE });
 logger.info({ purged }, "stale import previews purged");
+// Whoever calls `/api/setup` first becomes the administrator, and a new
+// instance's address is public within minutes of its certificate. The token
+// proves access to the server. This is the one secret a log may carry: it is
+// worthless once setup is done, and a restart replaces it. `warn`, so the
+// owner sees it at `LOG_LEVEL=warn` too.
+const setupToken = (await hasUser({ db })) ? null : randomBytes(24).toString("base64url");
+if (setupToken !== null) {
+	logger.warn(
+		`Setup is open. Open /setup and enter the setup token ${setupToken}. A new one is printed at every start.`,
+	);
+}
 const auth = createAuth({
 	db,
 	secret: env.BETTER_AUTH_SECRET,
@@ -63,6 +76,7 @@ const app = createApp({
 	clientAddress: (c) => getConnInfo(c).remote.address,
 	webDist: env.WEB_DIST,
 	syncSecret: env.SYNC_SECRET,
+	setupToken,
 	...bankDepsFromEnv(env),
 });
 

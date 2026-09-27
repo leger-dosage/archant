@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { startFakeEnableBanking } from "./fake-enable-banking.ts";
@@ -10,6 +11,7 @@ import {
 	BANK_KEY_FILE,
 	DATABASE_FILE,
 	PORT,
+	SETUP_TOKEN_FILE,
 	TIME_ZONE,
 	WEB_URL,
 } from "./settings.ts";
@@ -39,9 +41,14 @@ const bank = await startFakeEnableBanking({
 	redirectUrl: `${WEB_URL}/settings/banks/callback`,
 });
 
+// A token left by an earlier run would be refused: each start prints a new one.
+await rm(SETUP_TOKEN_FILE, { force: true });
+
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {
-	stdio: "inherit",
+	// stdout piped, to read the setup token the server prints on its empty
+	// database, as an owner reads it; every line is still passed through.
+	stdio: ["inherit", "pipe", "inherit"],
 	env: {
 		...process.env,
 		DATABASE_URL: databaseUrl,
@@ -70,6 +77,16 @@ const api = spawn(process.execPath, [entrypoint], {
 		ENCRYPTION_KEY: randomBytes(32).toString("base64"),
 		ENABLE_BANKING_API_URL: bank.url,
 	},
+});
+
+createInterface({ input: api.stdout }).on("line", (line) => {
+	process.stdout.write(`${line}\n`);
+	const token = /enter the setup token (\S+)\./u.exec(line)?.[1];
+
+	if (token !== undefined) {
+		// Before the server listens, so before Playwright starts the setup project.
+		void writeFile(SETUP_TOKEN_FILE, token, { mode: 0o600 });
+	}
 });
 
 // Set once Playwright asks for a stop, so only that stop counts as clean.
