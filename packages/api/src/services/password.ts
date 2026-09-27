@@ -25,13 +25,15 @@ export type PasswordDeps = { auth: Pick<Auth, "$context"> };
  * refuses an account that already has one.
  *
  * Every session of the user is deleted, since whoever needs this has lost
- * control of the old password.
+ * control of the old password. Two-factor sign-in is turned off too: the
+ * server shell is its recovery path, for a lost phone and for a lost
+ * `BETTER_AUTH_SECRET` alike, which leaves the stored secret unreadable.
  */
 export async function resetPassword(
 	deps: PasswordDeps,
 	email: string,
 	newPassword: string,
-): Promise<{ userId: string }> {
+): Promise<{ userId: string; twoFactorDisabled: boolean }> {
 	if (newPassword.length < PASSWORD_MIN_LENGTH) {
 		throw new PasswordResetError("password_too_short");
 	}
@@ -50,6 +52,21 @@ export async function resetPassword(
 	const hash = await context.password.hash(newPassword);
 	await context.internalAdapter.updatePassword(found.user.id, hash);
 	await context.internalAdapter.deleteUserSessions(found.user.id);
+	// The plugin's field, which the core user type does not declare.
+	const wasEnabled = "twoFactorEnabled" in found.user && found.user.twoFactorEnabled === true;
 
-	return { userId: found.user.id };
+	// Off first: should the delete below fail, the user is left with a
+	// one-step sign-in, never with two-factor on and no secret to check.
+	if (wasEnabled) {
+		await context.internalAdapter.updateUser(found.user.id, { twoFactorEnabled: false });
+	}
+
+	// The secret and the backup codes go with it: turning it on again starts
+	// from a new secret, scanned again.
+	await context.adapter.deleteMany({
+		model: "twoFactor",
+		where: [{ field: "userId", value: found.user.id }],
+	});
+
+	return { userId: found.user.id, twoFactorDisabled: wasEnabled };
 }

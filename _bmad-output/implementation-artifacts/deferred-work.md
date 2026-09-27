@@ -156,3 +156,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-1-the-first-administrator-needs-a-setup-token.md`
   summary: The end-to-end section of `AGENTS.md` does not say that `start-api.ts` reads the setup token from the API's stdout into `e2e/.auth/setup-token` for the `setup` project.
   evidence: Reverting `stdio` to `"inherit"` in `start-api.ts` would leave the setup project reading a missing file, with nothing in the agent guide pointing at why.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-4-two-factor-sign-in.md`
+  summary: `reset-password`'s output lines, including the new « La double authentification a été désactivée. », have no test that runs the script to its end.
+  evidence: `cli/reset-password.spec.ts` only checks the refusal without a terminal; covering the output needs a pseudo-terminal for the password prompt.

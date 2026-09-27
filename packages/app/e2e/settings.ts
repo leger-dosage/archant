@@ -24,6 +24,12 @@ export const TIME_ZONE = "Europe/Paris";
 /** The administrator the setup project creates through `/setup`. */
 export const ADMIN = { email: "admin@archant.test", password: "mot de passe du test" } as const;
 
+/**
+ * The password the `password` project sets. The `two-factor` project, which
+ * runs after it, signs in with it.
+ */
+export const NEW_PASSWORD = "un autre mot de passe de test";
+
 /** The first name `setup` gives the administrator, which the dashboard greets. */
 export const ADMIN_FIRST_NAME = "Camille";
 

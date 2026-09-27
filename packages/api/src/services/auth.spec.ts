@@ -39,6 +39,11 @@ beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ["Date"] });
 	vi.setSystemTime(new Date("2026-09-27T10:00:00Z"));
 	temp = await createTempDatabase(template.file);
+	// The template's sign-in opened a ceiling window on the real clock. Kept,
+	// it would hold the fake clock's window open until ten minutes after the
+	// template was made, and the window assertions below would depend on the
+	// time of day the suite runs.
+	await temp.db.delete(signInFailures);
 });
 
 afterEach(async () => {

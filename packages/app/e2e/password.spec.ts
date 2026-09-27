@@ -1,11 +1,9 @@
 import { expect, test } from "./fixtures.ts";
-import { ADMIN, WEB_URL } from "./settings.ts";
+import { ADMIN, NEW_PASSWORD, WEB_URL } from "./settings.ts";
 
 // Story 3.2: changing the password. Its own Playwright project, run after
 // every other file: the change revokes every session of the single user, the
 // saved administrator session included, so nothing may follow it.
-
-const NEW_PASSWORD = "un autre mot de passe de test";
 
 // First on purpose: it writes nothing and sends no request, so it costs the
 // change below neither a rate-limit attempt nor a known password.

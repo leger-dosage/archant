@@ -22,6 +22,7 @@ const MESSAGES = {
 	password_too_short: `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`,
 	password_too_long: `Le mot de passe ne peut pas dépasser ${PASSWORD_MAX_LENGTH} caractères.`,
 	unknown_user: "Aucun utilisateur avec cette adresse.",
+	two_factor_disabled: "La double authentification a été désactivée.",
 } as const;
 
 function fail(message: string): never {
@@ -66,8 +67,10 @@ if (problem !== null) {
 	fail(MESSAGES[problem]);
 }
 
+let twoFactorDisabled = false;
+
 try {
-	await resetPassword({ auth }, email, password);
+	({ twoFactorDisabled } = await resetPassword({ auth }, email, password));
 } catch (error) {
 	if (error instanceof PasswordResetError) {
 		fail(MESSAGES[error.problem]);
@@ -78,3 +81,9 @@ try {
 
 db.$client.close();
 process.stdout.write(`Mot de passe modifié pour ${email}. Toutes les sessions ont été fermées.\n`);
+
+// Said only when it was on: the owner must know the next sign-in has one step,
+// and that turning it on again means scanning a new QR code.
+if (twoFactorDisabled) {
+	process.stdout.write(`${MESSAGES.two_factor_disabled}\n`);
+}

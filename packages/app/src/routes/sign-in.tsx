@@ -36,7 +36,25 @@ const signInSchema = z.object({
 
 type SignInValues = z.input<typeof signInSchema>;
 
-type FormFailure = "invalidCredentials" | "tooManyAttempts";
+// Presence only: whether it is a TOTP code or a backup code, and whether it
+// is right, is the server's to say.
+const codeSchema = z.object({ code: z.string().trim().min(1) });
+
+type CodeValues = z.input<typeof codeSchema>;
+
+type FormFailure = "invalidCredentials" | "tooManyAttempts" | "challengeExpired";
+
+/** A TOTP code; anything else typed in the field is taken for a backup code. */
+const TOTP_CODE = /^\d{6}$/u;
+
+/**
+ * The plugin's answers that end the challenge: its cookie expired after ten
+ * minutes, or five wrong codes spent it. Only the password step starts a new one.
+ */
+const CHALLENGE_ENDED = new Set([
+	"INVALID_TWO_FACTOR_COOKIE",
+	"TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE",
+]);
 
 export const Route = createFileRoute("/sign-in")({
 	validateSearch: searchSchema,
@@ -68,6 +86,9 @@ function SignInPage() {
 	const queryClient = useQueryClient();
 	const search = Route.useSearch();
 	const [failure, setFailure] = useState<FormFailure | null>(null);
+	// Two-factor on: the password was right and a code is now expected. No
+	// session exists yet, only the plugin's challenge cookie.
+	const [step, setStep] = useState<"password" | "code">("password");
 	const form = useForm<SignInValues>({
 		resolver: zodResolver(signInSchema),
 		defaultValues: { email: "", password: "" },
@@ -78,13 +99,22 @@ function SignInPage() {
 		document.title = t("app.pageTitle", { page: t("signIn.title"), app: t("app.name") });
 	}, [t]);
 
+	const completeSignIn = async () => {
+		queryClient.removeQueries({ queryKey: queryKeys.session });
+		await router.navigate({ href: safeRedirect(search.redirect) });
+	};
+
 	const submit = form.handleSubmit(async ({ email, password }) => {
 		setFailure(null);
-		const { error } = await authClient.signIn.email({ email, password });
+		const { data, error } = await authClient.signIn.email({ email, password });
 
 		if (error === null) {
-			queryClient.removeQueries({ queryKey: queryKeys.session });
-			await router.navigate({ href: safeRedirect(search.redirect) });
+			if ("twoFactorRedirect" in data && data.twoFactorRedirect) {
+				setStep("code");
+				return;
+			}
+
+			await completeSignIn();
 			return;
 		}
 
@@ -101,6 +131,19 @@ function SignInPage() {
 
 	const describedBy = (name: keyof SignInValues) =>
 		errors[name] === undefined ? {} : { "aria-describedby": `${name}-error` };
+
+	if (step === "code") {
+		return (
+			<CodeStep
+				onSignedIn={completeSignIn}
+				onChallengeEnded={() => {
+					form.resetField("password");
+					setFailure("challengeExpired");
+					setStep("password");
+				}}
+			/>
+		);
+	}
 
 	return (
 		<OutsideShell className="flex flex-col gap-6">
@@ -136,6 +179,81 @@ function SignInPage() {
 				{failure !== null && (
 					<p role="alert" className="text-sm text-destructive">
 						{t(`signIn.${failure}`)}
+					</p>
+				)}
+			</form>
+		</OutsideShell>
+	);
+}
+
+/**
+ * The second step, on the same page: one field that takes either the code of
+ * the authenticator app or a backup code, as Sure's does.
+ */
+function CodeStep({
+	onSignedIn,
+	onChallengeEnded,
+}: {
+	onSignedIn: () => Promise<void>;
+	onChallengeEnded: () => void;
+}) {
+	const { t } = useTranslation();
+	const [tooMany, setTooMany] = useState(false);
+	const form = useForm<CodeValues>({
+		resolver: zodResolver(codeSchema),
+		defaultValues: { code: "" },
+	});
+	const { errors, isSubmitting } = form.formState;
+
+	const submit = form.handleSubmit(async ({ code }) => {
+		setTooMany(false);
+		// Apps show a TOTP code as « 123 456 »; a backup code keeps its dash.
+		const compact = code.replace(/\s+/gu, "");
+		const { error } = TOTP_CODE.test(compact)
+			? await authClient.twoFactor.verifyTotp({ code: compact })
+			: await authClient.twoFactor.verifyBackupCode({ code: compact });
+
+		if (error === null) {
+			await onSignedIn();
+			return;
+		}
+
+		if (error.code !== undefined && CHALLENGE_ENDED.has(error.code)) {
+			onChallengeEnded();
+		} else if (error.code === "INVALID_CODE" || error.code === "INVALID_BACKUP_CODE") {
+			form.setError("code", { type: "custom", message: "invalid_two_factor_code" });
+		} else if (error.status === 429) {
+			// The plugin's own limit, or its lockout after ten wrong codes.
+			setTooMany(true);
+		} else {
+			showErrorToast("INTERNAL_ERROR");
+		}
+	});
+
+	return (
+		<OutsideShell className="flex flex-col gap-6">
+			<h1 className="type-display">{t("signIn.title")}</h1>
+			<p className="text-sm text-muted-foreground">{t("signIn.codeDescription")}</p>
+			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor="code">{t("signIn.code")}</Label>
+					<Input
+						id="code"
+						autoComplete="one-time-code"
+						autoFocus
+						spellCheck={false}
+						aria-invalid={errors.code !== undefined}
+						{...(errors.code === undefined ? {} : { "aria-describedby": "code-error" })}
+						{...form.register("code")}
+					/>
+					<FieldMessage id="code-error" error={errors.code} />
+				</div>
+				<Button type="submit" disabled={isSubmitting}>
+					{t("signIn.verify")}
+				</Button>
+				{tooMany && (
+					<p role="alert" className="text-sm text-destructive">
+						{t("signIn.tooManyAttempts")}
 					</p>
 				)}
 			</form>

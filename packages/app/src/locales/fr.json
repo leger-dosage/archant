@@ -1123,6 +1123,27 @@
 		"submit": "Modifier le mot de passe",
 		"changed": "Mot de passe modifié."
 	},
+	"twoFactor": {
+		"title": "Double authentification",
+		"descriptionOff": "Désactivée. Activée, elle demande à chaque connexion, après le mot de passe, un code donné par une application d'authentification sur votre téléphone.",
+		"descriptionOn": "Activée. Chaque connexion demande, après le mot de passe, un code de votre application d'authentification ou un code de secours.",
+		"password": "Mot de passe",
+		"enable": "Activer la double authentification",
+		"scan": "Scannez ce QR code avec votre application d'authentification, puis saisissez le code qu'elle affiche.",
+		"qrCode": "QR code de la double authentification",
+		"secret": "Clé à saisir si vous ne pouvez pas scanner",
+		"code": "Code de vérification",
+		"confirm": "Confirmer l'activation",
+		"cancel": "Annuler",
+		"enabled": "Double authentification activée.",
+		"backupCodesTitle": "Codes de secours",
+		"backupCodesDescription": "Chaque code permet une seule connexion sans votre téléphone. Conservez-les en lieu sûr : ils ne seront plus affichés.",
+		"backupCodesDone": "J'ai conservé ces codes",
+		"regenerate": "Régénérer les codes de secours",
+		"regenerateHint": "Les anciens codes de secours cessent de fonctionner.",
+		"disable": "Désactiver la double authentification",
+		"disabled": "Double authentification désactivée."
+	},
 	"setup": {
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
@@ -1142,7 +1163,11 @@
 		"password": "Mot de passe",
 		"submit": "Se connecter",
 		"invalidCredentials": "Adresse e-mail ou mot de passe invalide.",
-		"tooManyAttempts": "Trop de tentatives. Réessayez un peu plus tard."
+		"tooManyAttempts": "Trop de tentatives. Réessayez un peu plus tard.",
+		"code": "Code de vérification",
+		"codeDescription": "La double authentification est activée. Saisissez le code à six chiffres de votre application d'authentification, ou l'un de vos codes de secours.",
+		"verify": "Vérifier",
+		"challengeExpired": "La vérification a expiré ou a échoué trop de fois. Connectez-vous de nouveau."
 	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
@@ -1201,7 +1226,8 @@
 			"action_required": "Ajoutez au moins une action.",
 			"duplicate_action": "Cette action est déjà dans la règle.",
 			"nested_group": "Un groupe ne peut pas contenir un autre groupe.",
-			"invalid_private_key": "Ce fichier ne contient pas de clé privée RSA lisible."
+			"invalid_private_key": "Ce fichier ne contient pas de clé privée RSA lisible.",
+			"invalid_two_factor_code": "Code incorrect. Vérifiez l'heure de votre téléphone, ou utilisez un code de secours encore inutilisé."
 		}
 	}
 }

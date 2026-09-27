@@ -46,6 +46,9 @@ export const users = sqliteTable(
 		banned: integer("banned", { mode: "boolean" }).default(false),
 		banReason: text("ban_reason"),
 		banExpires: integer("ban_expires", { mode: "timestamp_ms" }),
+		// The `twoFactor` plugin's, `input: false`: only its own endpoints, after
+		// a valid code or the password, turn it on or off.
+		twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).default(false),
 	},
 	(table) => [check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`)],
 );
@@ -109,6 +112,29 @@ export const verifications = sqliteTable(
 		updatedAt: updatedAt(),
 	},
 	(table) => [index("verifications_identifier").on(table.identifier)],
+);
+
+/**
+ * The `twoFactor` plugin's TOTP secret and backup codes, both encrypted with
+ * `BETTER_AUTH_SECRET`. A row with `verified` false is an activation the
+ * user started and never confirmed with a code: it signs nobody in.
+ * `failed_verification_count` and `locked_until` are the plugin's account
+ * lockout, which caps wrong codes across challenges.
+ */
+export const twoFactors = sqliteTable(
+	"two_factors",
+	{
+		id: text("id").primaryKey(),
+		secret: text("secret").notNull(),
+		backupCodes: text("backup_codes").notNull(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		verified: integer("verified", { mode: "boolean" }).default(true),
+		failedVerificationCount: integer("failed_verification_count").default(0),
+		lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+	},
+	(table) => [index("two_factors_user_id").on(table.userId)],
 );
 
 /**
