@@ -7,6 +7,7 @@ import { runMigrations } from "@archant/data/migrate";
 
 import { createApp } from "./app.ts";
 import { validateEnv } from "./env.ts";
+import { isInsecurePublicOrigin } from "./lib/insecure-origin.ts";
 import { createLogger } from "./lib/logger.ts";
 import { loopbackListener } from "./lib/port.ts";
 import { createAuth } from "./services/auth.ts";
@@ -17,6 +18,14 @@ import { hasUser } from "./services/setup.ts";
 
 const env = validateEnv(process.env);
 const logger = createLogger(env.LOG_LEVEL);
+
+// A warning, not a refusal: a tailnet or a home network may carry plain HTTP
+// on a name this check cannot tell is private, and the owner decides.
+if (isInsecurePublicOrigin(env.BETTER_AUTH_URL)) {
+	logger.warn(
+		`BETTER_AUTH_URL (ARCHANT_URL with Docker Compose) is ${new URL(env.BETTER_AUTH_URL).origin}, plain HTTP on a public address: the password and session cookies travel unencrypted. Serve it over HTTPS.`,
+	);
+}
 
 /** Ends the process with one line a first-time user can act on, and no stack trace. */
 function portTaken(port: number): never {

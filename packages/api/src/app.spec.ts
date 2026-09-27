@@ -2067,12 +2067,18 @@ describe("serving the interface", () => {
 		},
 	);
 
-	it("sends security headers, so no other site can frame the page", async () => {
-		const response = await serving().request("/");
+	it.each(["/", "/accounts", "/api/health"])(
+		"sends security headers on %s, so no other site can frame it and no injected text runs script",
+		async (path) => {
+			const response = await serving().request(path);
 
-		expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
-		expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-	});
+			expect(response.headers.get("x-frame-options")).toBe("DENY");
+			expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+			expect(response.headers.get("content-security-policy")).toBe(
+				"script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+			);
+		},
+	);
 
 	it("serves a hashed asset as immutable for a year", async () => {
 		const response = await serving().request("/assets/index-abc.js");

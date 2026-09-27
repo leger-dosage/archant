@@ -15,6 +15,7 @@ import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 
 import { withForwardedFor } from "./lib/client-address.ts";
+import { CONTENT_SECURITY_POLICY } from "./lib/content-security-policy.ts";
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
@@ -194,7 +195,13 @@ export function createApp(deps: AppDeps) {
 		// Every response, pages and API alike: without `X-Frame-Options` a
 		// third-party site could frame the sign-in page and steer a click, and
 		// `nosniff` stops a browser from running a file under a type it guessed.
-		.use("*", secureHeaders())
+		// `DENY` agrees with the policy's `frame-ancestors 'none'`.
+		// The policy keeps injected text from running script. It goes on JSON
+		// too: a browser ignores it there, and splitting by path buys nothing.
+		.use(
+			"*",
+			secureHeaders({ contentSecurityPolicy: CONTENT_SECURITY_POLICY, xFrameOptions: "DENY" }),
+		)
 		// Before anything reads a body: a declared length over the limit is
 		// refused unread, and a chunked body stops being read at the limit.
 		.use(

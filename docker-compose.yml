@@ -12,8 +12,27 @@ services:
     # and Docker kills the server ten seconds later, mid-write. An init in front
     # forwards it, and the container stops at once.
     init: true
+    # Loopback only: published on every interface, the port would let anyone
+    # on the network reach the server around a reverse proxy or Tailscale, and
+    # write the X-Forwarded-For the sign-in limit trusts. docs/deployment.md
+    # gives the compose.override.yml that opens it to the home network.
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
+    # A flaw in the server or a dependency cannot rewrite the code it runs or
+    # drop a file to run later: the named volume on /data is the one path
+    # that persists a write.
+    read_only: true
+    # Scratch space for Node and SQLite, in memory, gone at every restart.
+    tmpfs:
+      - /tmp
+    # The server binds an unprivileged port and changes no owner or
+    # permission, so it needs none of Docker's default capabilities.
+    cap_drop:
+      - ALL
+    # No setuid binary in the image can hand a process more rights than it
+    # started with.
+    security_opt:
+      - "no-new-privileges:true"
     environment:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to at least 32 characters, for instance from openssl rand -base64 32}
       # The address the browser uses. Sign-ins and uploads from any other
