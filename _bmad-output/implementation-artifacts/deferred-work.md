@@ -169,3 +169,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-6-a-copy-before-every-migration.md`
   summary: The Deployment section of `AGENTS.md` does not list the `image` job's pending-migration restart check, nor that `packages/data/testing/migrations.ts` must import no dev dependency because that job runs it inside the production image.
   evidence: Story 13.6 review. Adding vitest or another dev-only import to that helper would break the CI `image` job with a resolution error the agent guide does not explain.
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-7-hosting-at-home-behind-tailscale.md`
+  summary: `docs/hosting.md` asks for `docker login ghcr.io` because the `ghcr.io/leger-dosage/archant` package is still private; making it public removes that step and fixes the anonymous pull `docs/deployment.md` describes.
+  evidence: `docker manifest inspect ghcr.io/leger-dosage/archant:latest` answered `unauthorized` on 2026-09-27 during Story 13.7's review.

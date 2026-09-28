@@ -8,6 +8,7 @@ Long-lived project knowledge. Planning and implementation artifacts live in `_bm
 | [tech-stack.md](tech-stack.md)             | Every dependency, its role, and its current version                                      |
 | [sure-parity.md](sure-parity.md)           | Each Sure feature area, what Archant does instead, and why                               |
 | [deployment.md](deployment.md)             | Docker, upgrades, backups, Enable Banking, scheduled sync, password reset, other targets |
+| [hosting.md](hosting.md)                   | The home setup end to end: a machine behind Tailscale, backups, secrets, a VPS fallback  |
 | [adr/](adr/)                               | Architecture decision records                                                            |
 
 ## Decision records

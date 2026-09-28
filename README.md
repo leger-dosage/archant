@@ -90,7 +90,7 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
 ```
 
-Open http://localhost:8787 and create the administrator. [docs/deployment.md](docs/deployment.md) covers the variables, reverse proxies, upgrades, backups, connecting a bank in sandbox or production, the scheduled sync, password reset and other targets.
+Open http://localhost:8787 and create the administrator. [docs/deployment.md](docs/deployment.md) covers the variables, reverse proxies, upgrades, backups, connecting a bank in sandbox or production, the scheduled sync, password reset and other targets. [docs/hosting.md](docs/hosting.md) walks through hosting at home, reachable only through Tailscale, and connecting a real bank.
 
 ## Contributing
 
