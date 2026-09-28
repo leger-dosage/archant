@@ -5,6 +5,11 @@
 # Compose reads for interpolation only. No `env_file: .env`: the development
 # `DATABASE_URL` and `BETTER_AUTH_URL` there would point the container at a
 # path that does not exist and at the Vite dev server's origin.
+# One project per machine, whatever the checkout's folder is called: every
+# worktree that runs `docker compose up` shares this container and the
+# `archant-data` volume, instead of leaving one of each behind.
+name: archant
+
 services:
   archant:
     # The published release, pinned with ARCHANT_VERSION, such as 1.2.3 or 1.2,
