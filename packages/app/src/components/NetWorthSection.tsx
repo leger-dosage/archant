@@ -7,6 +7,7 @@ import type { BalancePeriod } from "@archant/api/schemas/balances";
 
 import { BalanceChart, PeriodToggle, changeText } from "@/components/BalanceChart";
 import { Money } from "@/components/Money";
+import { Section } from "@/components/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNetWorth } from "@/hooks/useNetWorth";
 
@@ -27,11 +28,11 @@ function NetWorthChange({ data }: { data: NetWorthData }) {
 		data.change.amount > 0 ? TrendingUpIcon : data.change.amount < 0 ? TrendingDownIcon : null;
 
 	return (
-		<p className="flex items-center gap-1.5 text-xs">
+		<p className="flex items-center gap-1.5 text-sm">
 			{Arrow !== null && (
 				<Arrow
 					aria-hidden="true"
-					className={`size-3.5 shrink-0 ${data.change.amount > 0 ? "text-trend-up" : "text-trend-down"}`}
+					className={`size-4 shrink-0 ${data.change.amount > 0 ? "text-trend-up" : "text-trend-down"}`}
 				/>
 			)}
 			<span className="font-medium tabular-nums">
@@ -55,7 +56,7 @@ function Total({
 }) {
 	return (
 		<div role="group" aria-label={label} className="flex flex-col gap-0.5">
-			<dt className="text-xs text-muted-foreground">{label}</dt>
+			<dt className="text-sm text-muted-foreground">{label}</dt>
 			<dd>
 				<Money amount={amount} currency={currency} />
 			</dd>
@@ -79,16 +80,11 @@ export function NetWorthSection({
 	const data = netWorth.data;
 
 	return (
-		<section
-			aria-labelledby="net-worth-heading"
-			className="flex flex-col rounded-lg border bg-card"
+		<Section
+			id="net-worth-heading"
+			title={t("dashboard.netWorth")}
+			action={<PeriodToggle period={period} onPeriodChange={onPeriodChange} />}
 		>
-			<div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-				<h2 id="net-worth-heading" className="type-title">
-					{t("dashboard.netWorth")}
-				</h2>
-				<PeriodToggle period={period} onPeriodChange={onPeriodChange} />
-			</div>
 			<div className="flex flex-col gap-4 p-4">
 				<div className="flex flex-wrap items-end justify-between gap-4">
 					<div role="group" aria-labelledby="net-worth-heading" className="flex flex-col gap-1">
@@ -115,6 +111,7 @@ export function NetWorthSection({
 					history={netWorth}
 					summaryKey="dashboard.summary"
 					valueLabel={t("dashboard.netWorth")}
+					height={208}
 				/>
 				{data !== undefined && data.leftOut.length > 0 && (
 					<p className="text-xs text-muted-foreground">
@@ -124,6 +121,6 @@ export function NetWorthSection({
 					</p>
 				)}
 			</div>
-		</section>
+		</Section>
 	);
 }

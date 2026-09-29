@@ -69,6 +69,7 @@ function DashboardPage() {
 		// Sure's dashboard greets in its `h1`; the breadcrumb « Accueil » already
 		// says where the page is.
 		<Page
+			greeting
 			title={name === "" ? t("dashboard.greeting") : t("dashboard.greetingWithName", { name })}
 			// Until the accounts arrive, no sentence rather than the wrong one.
 			description={
@@ -76,22 +77,21 @@ function DashboardPage() {
 					? undefined
 					: t(hasAccounts ? "dashboard.intro" : "dashboard.introEmpty")
 			}
-			className="gap-4"
 			// Sure's dashboard has this one action; importing and adding a
 			// transaction need an account, and live on its page.
 			actions={
 				hasAccounts ? (
-					<Button size="sm" onClick={() => setCreatingAccount(true)}>
+					<Button onClick={() => setCreatingAccount(true)}>
 						<PlusIcon aria-hidden="true" />
 						{t("accounts.add")}
 					</Button>
 				) : undefined
 			}
 		>
-			{accounts.isPending && <Skeleton className="h-96 w-full rounded-lg" aria-hidden="true" />}
+			{accounts.isPending && <Skeleton className="h-96 w-full rounded-xl" aria-hidden="true" />}
 
 			{accounts.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-xl border p-8">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(accounts.error)}`)}</p>
 					<Button variant="outline" onClick={() => void accounts.refetch()}>
 						{t("common.retry")}
@@ -102,13 +102,13 @@ function DashboardPage() {
 			{accounts.data !== undefined && (
 				<>
 					{hasAccounts ? (
-						<>
+						// One column, as Sure's: beside the rail and the accounts column, a
+						// 1440 px screen leaves about 950 px, too narrow for two cards.
+						<div className="grid grid-cols-1 gap-6 2xl:grid-cols-2 2xl:items-start">
 							<NetWorthSection period={period} onPeriodChange={changePeriod} />
-							<div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-								<CashFlowSection month={month} current={currentMonth} onMonthChange={changeMonth} />
-								<BalanceSheetSection list={accounts.data} />
-							</div>
-						</>
+							<CashFlowSection month={month} current={currentMonth} onMonthChange={changeMonth} />
+							<BalanceSheetSection list={accounts.data} />
+						</div>
 					) : (
 						<DashboardEmpty onAddAccount={() => setCreatingAccount(true)} />
 					)}

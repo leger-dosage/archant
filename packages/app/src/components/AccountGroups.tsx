@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
+import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +18,8 @@ type AccountGroupsProps = {
 };
 
 /**
- * The accounts page body: Actifs then Passifs, each a section whose header
- * holds its total, each account with its tinted type icon. The
+ * The accounts page body: Actifs then Passifs, each an inset group whose
+ * header holds its total, each account with its tinted type icon. The
  * total comes from the API, which already leaves out inactive and excluded
  * accounts, so it does not change when inactive ones are shown.
  */
@@ -26,7 +27,7 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex flex-col gap-6">
 			{list.groups
 				.map((group) => ({
 					...group,
@@ -37,36 +38,26 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 					const headingId = `account-group-${group.classification}`;
 
 					return (
-						<section
+						// The heading's parent holds the total, as the accounts column's group does.
+						<InsetGroup
 							key={group.classification}
-							aria-labelledby={headingId}
-							className="flex flex-col overflow-hidden rounded-lg border bg-card"
+							id={headingId}
+							level={2}
+							title={t(`accounts.groups.${group.classification}`)}
+							total={<Money amount={group.total} currency={list.reportingCurrency} />}
+							{...(group.excludedCount > 0
+								? { note: t("accounts.excluded", { count: group.excludedCount }) }
+								: {})}
 						>
-							{/* The heading's parent holds the total, as the accounts column's group does. */}
-							<div className="flex items-center justify-between gap-4 border-b border-line px-4 py-2.5">
-								<h2 id={headingId} className="type-title">
-									{t(`accounts.groups.${group.classification}`)}
-								</h2>
-								<Money
-									amount={group.total}
-									currency={list.reportingCurrency}
-									className="type-title"
-								/>
-							</div>
-							{group.excludedCount > 0 && (
-								<p className="px-4 pt-2 text-xs text-muted-foreground">
-									{t("accounts.excluded", { count: group.excludedCount })}
-								</p>
-							)}
 							<ul className="divide-y divide-line">
 								{group.accounts.map((account) => (
 									<li key={account.id}>
 										<Link
 											to="/accounts/$accountId"
 											params={{ accountId: account.id }}
-											className="flex min-h-11 items-center gap-3 px-4 py-2 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+											className="flex items-center gap-3 p-4 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
 										>
-											<TintedIcon size="sm" subject={{ kind: "account", type: account.type }} />
+											<TintedIcon size="lg" subject={{ kind: "account", type: account.type }} />
 											<div className="min-w-0 flex-1">
 												<p className="flex min-w-0 items-center gap-2">
 													<span className="truncate font-medium">{account.name}</span>
@@ -74,7 +65,7 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 														<Badge variant="outline">{t("accounts.inactive")}</Badge>
 													)}
 												</p>
-												<p className="text-xs text-muted-foreground">
+												<p className="text-muted-foreground">
 													{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
 												</p>
 											</div>
@@ -83,7 +74,7 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 									</li>
 								))}
 							</ul>
-						</section>
+						</InsetGroup>
 					);
 				})}
 		</div>
@@ -92,19 +83,18 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 
 export function AccountGroupsSkeleton() {
 	return (
-		// A group's section, so the page does not jump when the accounts land.
-		<div
-			className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card"
-			aria-hidden="true"
-		>
-			<div className="px-4 py-2.5">
-				<Skeleton className="h-5 w-full" />
+		// A group's tray, so the page does not jump when the accounts land.
+		<div className="flex flex-col rounded-xl bg-inset p-1" aria-hidden="true">
+			<div className="px-4 py-2">
+				<Skeleton className="h-4 w-full" />
 			</div>
-			{[0, 1, 2].map((index) => (
-				<div key={index} className="flex min-h-11 items-center px-4 py-2">
-					<Skeleton className="h-7 w-full" />
-				</div>
-			))}
+			<div className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card">
+				{[0, 1, 2].map((index) => (
+					<div key={index} className="flex items-center p-4">
+						<Skeleton className="h-9 w-full" />
+					</div>
+				))}
+			</div>
 		</div>
 	);
 }

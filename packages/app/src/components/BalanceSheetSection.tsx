@@ -6,7 +6,9 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
+import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
+import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { kindOf } from "@/lib/account-kinds";
 import { balanceSheet } from "@/lib/balance-sheet";
@@ -28,64 +30,69 @@ function Group({ group, currency }: { group: BalanceSheetGroup; currency: string
 	const headingId = useId();
 
 	return (
-		<div role="group" aria-labelledby={headingId} className="flex flex-col gap-2.5 p-4">
-			<div className="flex items-baseline justify-between gap-4">
-				<h3 id={headingId} className="font-medium">
-					{t(`accounts.groups.${group.classification}`)}
-				</h3>
+		<div role="group" aria-labelledby={headingId} className="flex flex-col gap-4">
+			<div className="flex items-baseline justify-between gap-4 text-lg font-medium">
+				<h3 id={headingId}>{t(`accounts.groups.${group.classification}`)}</h3>
 				<Money amount={group.total} currency={currency} />
 			</div>
 			{group.types.length > 0 && (
-				<>
+				<div className="flex flex-col gap-3">
 					{/* The legend below carries the same shares as text. */}
-					<div aria-hidden="true" className="flex h-1 gap-0.5 overflow-hidden rounded-full">
+					<div aria-hidden="true" className="flex h-1.5 gap-1">
 						{group.types.map((entry) => (
 							<span
 								key={entry.type}
 								data-type={entry.type}
-								className="h-full rounded-full"
+								className="h-full rounded-sm"
 								style={{ flexGrow: entry.amount, backgroundColor: TYPE_COLOURS[entry.type] }}
 							/>
 						))}
 					</div>
 					<ul
 						aria-label={t("dashboard.balanceSheet.legend")}
-						className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+						className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground"
 					>
 						{group.types.map((entry) => (
-							<li key={entry.type} className="flex items-center gap-1.5">
+							<li key={entry.type} className="flex items-center gap-2">
 								<span
 									aria-hidden="true"
-									className="size-2 shrink-0 rounded-full"
+									className="size-2.5 shrink-0 rounded-full"
 									style={{ backgroundColor: TYPE_COLOURS[entry.type] }}
 								/>
 								{t(`dashboard.balanceSheet.types.${entry.type}`)}{" "}
-								<span className="tabular-nums">{shareFormat.format(entry.share)}</span>
+								<span className="text-foreground tabular-nums">
+									{shareFormat.format(entry.share)}
+								</span>
 							</li>
 						))}
 					</ul>
-				</>
+				</div>
 			)}
-			<ul aria-label={t("dashboard.balanceSheet.accounts")} className="flex flex-col">
-				{group.accounts.map((account) => (
-					<li key={account.id}>
-						<Link
-							to="/accounts/$accountId"
-							params={{ accountId: account.id }}
-							className="-mx-2 flex min-h-9 items-center gap-3 rounded-md px-2 py-1 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-						>
-							<TintedIcon subject={{ kind: "account", type: account.type }} />
-							<span className="flex min-w-0 flex-1 flex-col">
-								<span className="truncate">{account.name}</span>
-								<span className="truncate text-xs text-muted-foreground">
-									{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
+			<InsetGroup level={4} title={t("dashboard.balanceSheet.accounts")}>
+				<ul
+					aria-label={t("dashboard.balanceSheet.accounts")}
+					className="flex flex-col divide-y divide-line"
+				>
+					{group.accounts.map((account) => (
+						<li key={account.id}>
+							<Link
+								to="/accounts/$accountId"
+								params={{ accountId: account.id }}
+								className="flex min-h-14 items-center gap-3 px-4 py-2.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+							>
+								<TintedIcon subject={{ kind: "account", type: account.type }} />
+								<span className="flex min-w-0 flex-1 flex-col">
+									<span className="truncate font-medium">{account.name}</span>
+									<span className="truncate text-xs text-muted-foreground">
+										{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
+									</span>
 								</span>
-							</span>
-							<AccountBalance account={account} />
-						</Link>
-					</li>
-				))}
-			</ul>
+								<AccountBalance account={account} />
+							</Link>
+						</li>
+					))}
+				</ul>
+			</InsetGroup>
 		</div>
 	);
 }
@@ -100,23 +107,20 @@ export function BalanceSheetSection({ list }: { list: AccountListData }) {
 	const groups = balanceSheet(list).filter((group) => group.accounts.length > 0);
 
 	return (
-		<section
-			aria-labelledby="balance-sheet-heading"
-			className="flex min-w-0 flex-col rounded-lg border bg-card"
-		>
-			<div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-				<h2 id="balance-sheet-heading" className="type-title">
-					{t("dashboard.balanceSheet.title")}
-				</h2>
+		<Section
+			id="balance-sheet-heading"
+			title={t("dashboard.balanceSheet.title")}
+			action={
 				<Link to="/accounts" className="text-sm text-link hover:underline">
 					{t("dashboard.balanceSheet.allAccounts")}
 				</Link>
-			</div>
-			<div className="flex flex-col divide-y divide-line">
+			}
+		>
+			<div className="flex flex-col gap-6 p-4">
 				{groups.map((group) => (
 					<Group key={group.classification} group={group} currency={list.reportingCurrency} />
 				))}
 			</div>
-		</section>
+		</Section>
 	);
 }

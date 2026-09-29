@@ -1,5 +1,4 @@
 import type { CashFlowData, CashFlowLine } from "@/hooks/useCashFlow";
-import type { ReactNode } from "react";
 
 import { Link } from "@tanstack/react-router";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
@@ -10,7 +9,10 @@ import { Pie, PieChart } from "recharts";
 import { UNCATEGORISED } from "@archant/api/schemas/transactions";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
+import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
+import { Section } from "@/components/Section";
+import { SummaryStrip } from "@/components/SummaryStrip";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,16 +36,6 @@ const DONUT_SIZE = 128;
 const alongSide = (line: CashFlowLine, side: Side) =>
 	side === "expense" ? line.amount < 0 : line.amount > 0;
 
-/** One of the three figures above the breakdown. */
-function FlowCell({ label, children }: { label: string; children: ReactNode }) {
-	return (
-		<div role="group" aria-label={label} className="flex min-w-0 flex-col gap-0.5 px-4 py-3">
-			<span className="text-xs text-muted-foreground">{label}</span>
-			{children}
-		</div>
-	);
-}
-
 function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; data: CashFlowData }) {
 	const { t } = useTranslation();
 
@@ -58,7 +50,7 @@ function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; dat
 					from: data.from,
 					to: data.to,
 				}}
-				className="grid min-h-9 grid-cols-[auto_minmax(0,1fr)_auto_3rem] items-center gap-2 rounded-md px-2 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				className="grid min-h-12 grid-cols-[auto_minmax(0,1fr)_auto_3.5rem] items-center gap-3 px-4 py-2.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
 			>
 				<TintedIcon
 					subject={
@@ -71,7 +63,7 @@ function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; dat
 					{line.name ?? t("dashboard.cashFlow.uncategorised")}
 				</span>
 				<Money amount={line.amount} currency={data.currency} plusSign className="text-right" />
-				<span className="text-right text-xs text-muted-foreground tabular-nums">
+				<span className="text-right text-sm text-muted-foreground tabular-nums">
 					{line.share === null ? "" : shareFormat.format(line.share).replace("-", "−")}
 				</span>
 			</Link>
@@ -165,14 +157,10 @@ export function CashFlowSection({
 		data !== undefined && data.lines.income.length === 0 && data.lines.expense.length === 0;
 
 	return (
-		<section
-			aria-labelledby="cash-flow-heading"
-			className="flex min-w-0 flex-col rounded-lg border bg-card"
-		>
-			<div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-				<h2 id="cash-flow-heading" className="type-title">
-					{t("dashboard.cashFlow.title", { ofMonth: ofMonth(month) })}
-				</h2>
+		<Section
+			id="cash-flow-heading"
+			title={t("dashboard.cashFlow.title", { ofMonth: ofMonth(month) })}
+			action={
 				<div className="flex items-center gap-2">
 					<ToggleGroup
 						type="single"
@@ -211,8 +199,8 @@ export function CashFlowSection({
 						</Button>
 					</div>
 				</div>
-			</div>
-
+			}
+		>
 			{cashFlow.isPending && <Skeleton className="m-4 h-40" aria-hidden="true" />}
 
 			{cashFlow.isError && (
@@ -232,17 +220,28 @@ export function CashFlowSection({
 					inert={placeholder}
 					aria-busy={placeholder}
 				>
-					<div className="grid grid-cols-3 divide-x divide-line border-b border-line">
-						<FlowCell label={t("dashboard.cashFlow.income")}>
-							<Money amount={data.income} currency={data.currency} signed plusSign />
-						</FlowCell>
-						<FlowCell label={t("dashboard.cashFlow.expenses")}>
-							<Money amount={data.expenses} currency={data.currency} signed />
-						</FlowCell>
-						<FlowCell label={t("dashboard.cashFlow.savings")}>
-							<Money amount={toMinorUnits(data.income + data.expenses)} currency={data.currency} />
-						</FlowCell>
-					</div>
+					<SummaryStrip
+						className="border-b border-line"
+						cells={[
+							{
+								label: t("dashboard.cashFlow.income"),
+								value: <Money amount={data.income} currency={data.currency} signed plusSign />,
+							},
+							{
+								label: t("dashboard.cashFlow.expenses"),
+								value: <Money amount={data.expenses} currency={data.currency} signed />,
+							},
+							{
+								label: t("dashboard.cashFlow.savings"),
+								value: (
+									<Money
+										amount={toMinorUnits(data.income + data.expenses)}
+										currency={data.currency}
+									/>
+								),
+							},
+						]}
+					/>
 
 					{empty ? (
 						<p className="p-4 text-sm text-muted-foreground">{t("dashboard.cashFlow.empty")}</p>
@@ -253,23 +252,29 @@ export function CashFlowSection({
 					) : (
 						<div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
 							<Donut side={side} data={data} lines={lines} />
-							<ul
-								aria-label={t(`dashboard.cashFlow.breakdown.${side}`)}
-								className="flex min-w-0 flex-1 flex-col"
+							<InsetGroup
+								level={3}
+								title={t(`dashboard.cashFlow.breakdown.${side}`)}
+								className="flex-1"
 							>
-								{lines.map((line) => (
-									<CategoryRow
-										key={line.categoryId ?? UNCATEGORISED}
-										line={line}
-										side={side}
-										data={data}
-									/>
-								))}
-							</ul>
+								<ul
+									aria-label={t(`dashboard.cashFlow.breakdown.${side}`)}
+									className="flex flex-col divide-y divide-line"
+								>
+									{lines.map((line) => (
+										<CategoryRow
+											key={line.categoryId ?? UNCATEGORISED}
+											line={line}
+											side={side}
+											data={data}
+										/>
+									))}
+								</ul>
+							</InsetGroup>
 						</div>
 					)}
 				</div>
 			)}
-		</section>
+		</Section>
 	);
 }

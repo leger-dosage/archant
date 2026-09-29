@@ -23,6 +23,8 @@ type PageProps = {
 	icon?: ReactElement;
 	/** The page's single `h1`. */
 	title: ReactNode;
+	/** The dashboard's greeting: the title at 30 px from 1024 px, as Sure's. */
+	greeting?: boolean;
 	/** One muted sentence under the title. */
 	description?: ReactNode;
 	/** The page's actions, on the right of the title. */
@@ -137,6 +139,7 @@ function FoldButton() {
 export function Page({
 	icon,
 	title,
+	greeting = false,
 	description,
 	actions,
 	centred = false,
@@ -160,7 +163,10 @@ export function Page({
 						{icon}
 						<h1
 							id={PAGE_TITLE_ID}
-							className="min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]"
+							className={cn(
+								"min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]",
+								greeting && "lg:text-3xl",
+							)}
 						>
 							{title}
 						</h1>

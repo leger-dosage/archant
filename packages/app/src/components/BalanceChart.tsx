@@ -47,7 +47,13 @@ type Point = ChartHistory["points"][number];
 /** The sentence above the chart, which names what the line is. */
 type SummaryKey = "balances.summary" | "dashboard.summary";
 
-const CHART_HEIGHT = "h-64";
+/**
+ * The chart's height, and its table's: 208 px on the dashboard and 256 px on
+ * an account's page, as Sure's `h-52` and `h-64`.
+ */
+const CHART_HEIGHTS = { 208: "h-52", 256: "h-64" } as const;
+
+type ChartHeight = keyof typeof CHART_HEIGHTS;
 
 // Past about six months the axis spans a year boundary or its own day, so
 // ticks name the month and year instead of the day.
@@ -119,7 +125,15 @@ function BalanceTooltip({
 	);
 }
 
-function Chart({ history, valueLabel }: { history: ChartHistory; valueLabel: string }) {
+function Chart({
+	history,
+	valueLabel,
+	height,
+}: {
+	history: ChartHistory;
+	valueLabel: string;
+	height: ChartHeight;
+}) {
 	const gradientId = useId();
 	const config = {
 		balance: { label: valueLabel, color: "var(--accent-brand)" },
@@ -129,7 +143,7 @@ function Chart({ history, valueLabel }: { history: ChartHistory; valueLabel: str
 	const ticks = axisTicks(history.points.map((point) => point.balance));
 
 	return (
-		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHT}`}>
+		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHTS[height]}`}>
 			{/* Arrow keys move the tooltip cursor one day at a time. */}
 			<AreaChart
 				accessibilityLayer
@@ -194,15 +208,17 @@ function DataTable({
 	history,
 	id,
 	valueLabel,
+	height,
 }: {
 	history: ChartHistory;
 	id: string;
 	valueLabel: string;
+	height: ChartHeight;
 }) {
 	const { t } = useTranslation();
 
 	return (
-		<div id={id} className={`${CHART_HEIGHT} overflow-y-auto rounded-lg border`}>
+		<div id={id} className={`${CHART_HEIGHTS[height]} overflow-y-auto rounded-lg border`}>
 			<Table>
 				<TableHeader className="sticky top-0 bg-card">
 					<TableRow>
@@ -267,6 +283,8 @@ type BalanceChartProps = {
 	summaryKey: SummaryKey;
 	/** The table's column header, such as « Solde ». */
 	valueLabel: string;
+	/** In pixels, the table's as well as the chart's. */
+	height?: ChartHeight;
 };
 
 /**
@@ -274,7 +292,7 @@ type BalanceChartProps = {
  * as a table on demand (EXPERIENCE.md, accessibility floor). The caller owns
  * the query and the period control, so an account and the net worth share it.
  */
-export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartProps) {
+export function BalanceChart({ history, summaryKey, valueLabel, height = 256 }: BalanceChartProps) {
 	const { t } = useTranslation();
 	const [showTable, setShowTable] = useState(false);
 	const tableId = useId();
@@ -282,7 +300,9 @@ export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartPr
 
 	return (
 		<>
-			{history.isPending && <Skeleton className={`${CHART_HEIGHT} w-full`} aria-hidden="true" />}
+			{history.isPending && (
+				<Skeleton className={`${CHART_HEIGHTS[height]} w-full`} aria-hidden="true" />
+			)}
 
 			{history.isError && data === undefined && (
 				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
@@ -302,9 +322,9 @@ export function BalanceChart({ history, summaryKey, valueLabel }: BalanceChartPr
 			{data !== undefined && data.points.length > 0 && (
 				<>
 					{showTable ? (
-						<DataTable history={data} id={tableId} valueLabel={valueLabel} />
+						<DataTable history={data} id={tableId} valueLabel={valueLabel} height={height} />
 					) : (
-						<Chart history={data} valueLabel={valueLabel} />
+						<Chart history={data} valueLabel={valueLabel} height={height} />
 					)}
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<Summary history={data} summaryKey={summaryKey} />

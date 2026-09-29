@@ -222,13 +222,22 @@
 
 /* DESIGN.md `amount-hero`: an account's balance and the net worth. */
 @utility amount-hero {
-	font-size: 28px;
-	font-weight: 590;
+	font-size: 30px;
+	font-weight: 510;
 	line-height: 1.2;
 	letter-spacing: -0.02em;
+	font-variant-numeric: tabular-nums;
 }
 
-/* DESIGN.md `display`: the dashboard's greeting. */
+/* DESIGN.md `amount-summary`: the figures of a summary strip. */
+@utility amount-summary {
+	font-size: 20px;
+	font-weight: 510;
+	line-height: 1.4;
+	font-variant-numeric: tabular-nums;
+}
+
+/* DESIGN.md `display`: the title of a page outside the shell. */
 @utility type-display {
 	font-size: 20px;
 	font-weight: 590;
@@ -236,9 +245,9 @@
 	letter-spacing: -0.01em;
 }
 
-/* DESIGN.md `title`: a section's header. */
-@utility type-title {
-	font-size: 14px;
-	font-weight: 590;
-	line-height: 1.4;
+/* DESIGN.md `card-title`: a card's header. */
+@utility card-title {
+	font-size: 16px;
+	font-weight: 510;
+	line-height: 1.5;
 }
