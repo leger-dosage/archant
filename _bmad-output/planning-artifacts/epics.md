@@ -2058,7 +2058,7 @@ On 2026-09-27 the owner chose the machine at home, reachable only through Tailsc
 
 Stories 13.1 to 13.4 can ship in any order; 13.6 needs 13.5's version number; 13.7 comes last, since it documents all of them.
 
-On 2026-09-29 the owner followed the guide on a Mac with Docker Desktop, a machine that sleeps. Three problems came out of it. First, a daily cron misses every run the machine sleeps through, and the owner wants the code to handle a host that sleeps rather than assume a server that never does. Sure already does: its `AutoSync` concern starts a sync on the first page of the day, and its scheduled sync is an option in the hosting settings. Second, the server listens on every interface, so `pnpm api start:dev` or a plain Node host exposes the sign-in page to the whole Wi-Fi. Third, the first run was harder than it should be: `docker compose up --wait` does not show the setup token, and an `ARCHANT_URL` left empty ended in a raw `INVALID_ORIGIN` code at sign-in. Stories 13.8 to 13.10 fix them, in any order. The same day the owner registered the `ts.net` redirect URL on a production application and Enable Banking accepted it, so the guide can state it. Choosing a bank showed a fourth problem: « Banques disponibles » lists every bank of the country on the page itself, above « Banques connectées », where Sure opens a dialog with a search field focused and a list that scrolls inside it. Story 13.11 follows Sure.
+On 2026-09-29 the owner followed the guide on a Mac with Docker Desktop, a machine that sleeps. Three problems came out of it. First, a daily cron misses every run the machine sleeps through, and the owner wants the code to handle a host that sleeps rather than assume a server that never does. Sure already does: its `AutoSync` concern starts a sync on the first page of the day, and its scheduled sync is an option in the hosting settings. Second, the server listens on every interface, so `pnpm api start:dev` or a plain Node host exposes the sign-in page to the whole Wi-Fi. Third, the first run was harder than it should be: `docker compose up --wait` does not show the setup token, and an `ARCHANT_URL` left empty ended in a raw `INVALID_ORIGIN` code at sign-in. Stories 13.8 to 13.10 fix them, in any order. The same day the owner registered the `ts.net` redirect URL on a production application and Enable Banking accepted it, so the guide can state it. Choosing a bank showed a fourth problem: « Banques disponibles » lists every bank of the country on the page itself, above « Banques connectées », where Sure opens a dialog with a search field focused and a list that scrolls inside it. Story 13.11 follows Sure. Connecting Boursorama then linked no account: Enable Banking listed six, each with its `uid`, but Boursorama gives every account the currency `XXX`, ISO 4217's « no currency », and the session schema silently drops an account whose currency it cannot read. Its balances and transactions carry real currencies. Sure's `EnableBankingAccount` treats `XXX` as missing and keeps the account's known currency, else `EUR`, with a warning. Story 13.12 follows Sure.
 
 ### Story 13.1: The first administrator needs a setup token
 
@@ -2365,3 +2365,25 @@ So that I find it without scrolling past every bank of the country, and my conne
 **Given** the finished story
 **When** `pnpm test:e2e` runs
 **Then** every acceptance criterion above has an automated test, keyboard only included
+
+### Story 13.12: A bank that sends no account currency
+
+As the household's administrator,
+I want Archant to keep the accounts a bank lists even when it gives them no usable currency,
+So that connecting Boursorama links my accounts instead of none.
+
+**Requirements:** FR49, FR50
+
+**Acceptance Criteria:**
+
+**Given** a `POST /sessions` account whose `currency` is `XXX`, missing, or not a currency Archant knows
+**When** the bank connects
+**Then** the account is kept, with the currency of the Archant account it is linked to, else `EUR`, as Sure's `EnableBankingAccount` does; the server logs one `warn` line with the connection id and the count, never the account
+
+**Given** an account the session schema still cannot read, such as one without a `uid`
+**When** the bank connects
+**Then** the server logs how many accounts were dropped and which fields failed, never a value, and a connection that ends with no account says so on its page instead of an empty list
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** a test replays a session whose accounts carry `XXX`, as Boursorama's did on 2026-09-29, and every acceptance criterion above has an automated test

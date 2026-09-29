@@ -4,7 +4,7 @@
 
 ## Goal
 
-Let the owner host Archant off their laptop, connect a real bank through Enable Banking's production environment, and upgrade without risking the data. A security audit on 2026-09-26 found one high, three medium and four low findings. The high one: `/api/setup` creates the administrator for whoever calls it first, and a fresh domain's certificate appears in public certificate transparency logs that bots scan within minutes. Stories 13.1 to 13.4 fix every finding. Stories 13.5 and 13.6 make an upgrade a pull and a restart that cannot lose data. Story 13.7 writes the hosting guide: a machine at home reachable only through Tailscale; a tailnet shrinks the attack surface and does not replace a sign-in that holds on its own. The owner then followed the guide on a Mac that sleeps, and Stories 13.8 to 13.10 fix what came out of it: a daily cron misses every run the machine sleeps through, the server listens on every interface outside the container, and the first run ended in a hidden setup token and a raw `INVALID_ORIGIN`. The owner confirmed that Enable Banking accepts the `ts.net` redirect URL on a production application, so the guide can state it. Choosing a bank showed one more problem: « Banques disponibles » lists every bank of the country on the page, above « Banques connectées », and Story 13.11 moves it into a dialog. Where Sure settles a question, the story follows Sure: TOTP with backup codes optional per user (`MfaController`), images on GHCR for amd64 and arm64 on version tags (`publish.yml`), migrations at boot (`bin/docker-entrypoint`), a sync on the first page of the day (`AutoSync`), a bank picker in a dialog (`enable_banking_items/select_bank`).
+Let the owner host Archant off their laptop, connect a real bank through Enable Banking's production environment, and upgrade without risking the data. A security audit on 2026-09-26 found one high, three medium and four low findings. The high one: `/api/setup` creates the administrator for whoever calls it first, and a fresh domain's certificate appears in public certificate transparency logs that bots scan within minutes. Stories 13.1 to 13.4 fix every finding. Stories 13.5 and 13.6 make an upgrade a pull and a restart that cannot lose data. Story 13.7 writes the hosting guide: a machine at home reachable only through Tailscale; a tailnet shrinks the attack surface and does not replace a sign-in that holds on its own. The owner then followed the guide on a Mac that sleeps, and Stories 13.8 to 13.10 fix what came out of it: a daily cron misses every run the machine sleeps through, the server listens on every interface outside the container, and the first run ended in a hidden setup token and a raw `INVALID_ORIGIN`. The owner confirmed that Enable Banking accepts the `ts.net` redirect URL on a production application, so the guide can state it. Choosing a bank showed one more problem: « Banques disponibles » lists every bank of the country on the page, above « Banques connectées », and Story 13.11 moves it into a dialog. Connecting Boursorama then linked no account: it gives every account the currency `XXX`, ISO 4217's « no currency », and the session schema silently drops an account whose currency it cannot read, although its balances and transactions carry real currencies. Story 13.12 keeps those accounts. Where Sure settles a question, the story follows Sure: TOTP with backup codes optional per user (`MfaController`), images on GHCR for amd64 and arm64 on version tags (`publish.yml`), migrations at boot (`bin/docker-entrypoint`), a sync on the first page of the day (`AutoSync`), a bank picker in a dialog (`enable_banking_items/select_bank`), `XXX` treated as a missing currency (`EnableBankingAccount`).
 
 ## Stories
 
@@ -19,6 +19,7 @@ Let the owner host Archant off their laptop, connect a real bank through Enable 
 - Story 13.9: The server listens on loopback unless told otherwise
 - Story 13.10: A first run that says what to do
 - Story 13.11: Pick a bank in a dialog, as in Sure
+- Story 13.12: A bank that sends no account currency
 
 ## Requirements & Constraints
 
@@ -32,6 +33,7 @@ Let the owner host Archant off their laptop, connect a real bank through Enable 
 - A browser on an address other than `BETTER_AUTH_URL` gets a French message telling it to set `ARCHANT_URL` to the address in the address bar, never `INVALID_ORIGIN` or a bare « Forbidden »; the server logs one `warn` naming the received and expected origins.
 - The docs state that Enable Banking accepts the `ts.net` redirect URL for a production application, and that an empty `ARCHANT_URL` refuses every sign-in from the `ts.net` address.
 - Choosing a bank keeps the consent flow exactly as before; only where the list lives changes.
+- An account from `POST /sessions` whose `currency` is `XXX`, missing or unknown is kept, with the currency of the Archant account it is linked to, else `EUR`; the server logs one `warn` with the connection id and the count, never the account. An account the schema still cannot read, such as one without a `uid`, is dropped with a log of the count and the failing fields, never a value, and a connection left with no account says so on its page instead of showing an empty list. A test replays a session whose accounts carry `XXX`.
 - Provider tokens and keys stay encrypted at rest, never logged, never returned. Logs never carry an amount tied to an identity, an IBAN or a token; the setup token is the one secret deliberately logged, once.
 - Every acceptance criterion has an automated test: Playwright for what the interface shows, Vitest for the rest, the CI `image` job for container behaviour. No test reaches the network; the clock and Enable Banking are mocked. A new dependency is justified in the pull request.
 
@@ -58,7 +60,7 @@ Let the owner host Archant off their laptop, connect a real bank through Enable 
 
 ## Cross-Story Dependencies
 
-- Stories 13.1 to 13.4 ship in any order. Story 13.6 needs 13.5's version number. Story 13.7 documents 13.1 to 13.6. Stories 13.8 to 13.11 ship in any order after 13.7.
+- Stories 13.1 to 13.4 ship in any order. Story 13.6 needs 13.5's version number. Story 13.7 documents 13.1 to 13.6. Stories 13.8 to 13.12 ship in any order after 13.7.
 - Story 13.1 changes the e2e `setup` Playwright project, which reads the token the test server prints. Story 13.2's database-backed rate limit must keep the e2e `clientAddress` per-test buckets working. Story 13.3's CSP must let the interface work in the e2e run.
 - Story 13.4's `reset-password` change extends Epic 3's server-side reset.
 - Story 13.7 writes `docs/hosting.md` and updates `docs/deployment.md`; the `#connecting-a-bank` anchor must survive.
@@ -66,3 +68,4 @@ Let the owner host Archant off their laptop, connect a real bank through Enable 
 - Story 13.9 must keep the Vite proxy, `pnpm test:e2e` and the CI `image` job reaching the server; it updates the « Variables » table and « A plain Node host » in `docs/deployment.md`.
 - Story 13.10 extends Story 13.1's setup page and adds `docker compose logs archant | grep 'Setup is open'` to `docs/deployment.md` after the first `up`, since `--wait` shows no log. It also corrects the `ts.net` redirect statements in `docs/hosting.md` and « Connecting a bank » of `docs/deployment.md`, and step 5 of `docs/hosting.md`.
 - Story 13.11 reworks Epic 10's bank selection on « Réglages › Banques » and leaves its consent flow untouched.
+- Story 13.12 changes Epic 10's Enable Banking session schema and account linking; every provider response is still parsed by Zod.
