@@ -26,7 +26,7 @@ function TintPill({
 		<span
 			data-slot="category-pill"
 			className={cn(
-				"inline-flex h-5 max-w-full min-w-0 items-center gap-1.5 rounded-full pr-2 pl-1.5 text-xs",
+				"inline-flex h-6 max-w-full min-w-0 items-center gap-1.5 rounded-full pr-2.5 pl-2 text-xs",
 				className,
 			)}
 			style={{ backgroundColor: tint.fill, color: tint.text }}

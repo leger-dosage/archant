@@ -239,6 +239,12 @@
 			"count_one": "{{count}} opération",
 			"count_other": "{{count}} opérations"
 		},
+		"columns": {
+			"label": "Opération",
+			"category": "Catégorie",
+			"account": "Compte",
+			"amount": "Montant"
+		},
 		"paginationLabel": "Pages des opérations",
 		"form": {
 			"addTitle": "Ajouter une opération",
@@ -367,11 +373,13 @@
 			"direction": "Sens"
 		},
 		"removeFilter": "Retirer le filtre {{label}}",
-		"results_one": "{{count}} résultat",
-		"results_other": "{{count}} résultats",
-		"total": "Total :",
-		"skipped_one": "{{count}} opération dans une autre devise n'est pas comptée dans le total.",
-		"skipped_other": "{{count}} opérations dans une autre devise ne sont pas comptées dans le total.",
+		"summary": {
+			"count": "Opérations",
+			"income": "Revenus",
+			"expense": "Dépenses"
+		},
+		"skipped_one": "{{count}} opération dans une autre devise n'est pas comptée dans les revenus ni les dépenses.",
+		"skipped_other": "{{count}} opérations dans une autre devise ne sont pas comptées dans les revenus ni les dépenses.",
 		"empty": "Aucune opération.",
 		"noMatch": "Aucune opération ne correspond à ces filtres.",
 		"clearFilters": "Effacer les filtres",

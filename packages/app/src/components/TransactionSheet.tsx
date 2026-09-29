@@ -984,7 +984,9 @@ export function TransactionSheet({
 						target.focus();
 					}
 				}}
-				className="w-full data-[side=right]:w-full data-[side=right]:sm:max-w-md motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
+				// Sure's drawer: 550 px, 12 px off the viewport's edges with 12 px
+				// corners from 768 px; the whole screen below.
+				className="data-[side=right]:w-full data-[side=right]:border-l-0 data-[side=right]:sm:max-w-none data-[side=right]:md:inset-y-3 data-[side=right]:md:right-3 data-[side=right]:md:h-auto data-[side=right]:md:w-[550px] data-[side=right]:md:rounded-xl data-[side=right]:md:border motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
 			>
 				<SheetHeader className="border-b">
 					<SheetTitle>

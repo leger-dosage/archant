@@ -1,6 +1,8 @@
 import type { Api } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
+import { randomInt } from "node:crypto";
+
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 1.5: list and filter transactions across accounts. One database
@@ -12,7 +14,25 @@ const rows = (page: Page) => page.getByRole("main").getByRole("listitem");
 const row = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("button", { name: new RegExp(label) });
 
-const summary = (page: Page) => page.getByText(/\d+ résultats? · Total :/u);
+/** Cents as typed in the form: `4512` as `45,12`. */
+const typedCents = (cents: number) =>
+	`${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
+
+/** A figure of the summary strip over the list. */
+const figure = (page: Page, label: "Opérations" | "Revenus" | "Dépenses") =>
+	page
+		.getByRole("main")
+		.getByRole("group", { name: label, exact: true })
+		.locator(".amount-summary");
+
+/** The strip's count, then the income and the expense sums in cents. */
+async function expectSummary(page: Page, count: number, income: number, expense: number) {
+	await expect(figure(page, "Opérations")).toHaveText(String(count));
+	await expect(figure(page, "Revenus")).toHaveText(
+		income > 0 ? `+${euros(income)}` : euros(income),
+	);
+	await expect(figure(page, "Dépenses")).toHaveText(euros(expense));
+}
 
 const searchBox = (page: Page) => page.getByRole("searchbox", { name: "Rechercher" });
 
@@ -82,7 +102,7 @@ test("every account's transactions are listed, most recent first, with the accou
 		new RegExp(`${prefix} 2.*${card.name}`, "u"),
 		new RegExp(`${prefix} 1.*${checking.name}`, "u"),
 	]);
-	await expect(summary(page)).toHaveText(`6 résultats · Total : ${euros(-600)}`);
+	await expectSummary(page, 6, 0, -600);
 });
 
 test("the text search finds a label or a note, case aside", async ({ page, api }) => {
@@ -101,7 +121,7 @@ test("the text search finds a label or a note, case aside", async ({ page, api }
 	await search(page, word.toLowerCase());
 
 	await expect(rows(page)).toHaveText([/Épicerie/u, new RegExp(`CB ${word}`, "u")]);
-	await expect(summary(page)).toHaveText(`2 résultats · Total : ${euros(-300)}`);
+	await expectSummary(page, 2, 0, -300);
 });
 
 test("the account filter narrows the list to the chosen account", async ({ page, api }) => {
@@ -176,12 +196,20 @@ test("the amount filter compares absolute values, expenses and income alike", as
 }) => {
 	const account = await api.openAccount();
 	const prefix = uniqueName("Montant");
+	// Inside the 40 to 50 bounds, in cents no other test uses: a row of the
+	// opposite amount on another account would link this income to it as a
+	// transfer, which counts as neither income nor expense.
+	const earned = randomInt(4300, 5000);
 	await api.addTransaction(account.id, {
 		date: daysAgo(3),
 		label: `${prefix} A`,
 		amount: "-42,90",
 	});
-	await api.addTransaction(account.id, { date: daysAgo(2), label: `${prefix} B`, amount: "45,00" });
+	await api.addTransaction(account.id, {
+		date: daysAgo(2),
+		label: `${prefix} B`,
+		amount: typedCents(earned),
+	});
 	await api.addTransaction(account.id, {
 		date: daysAgo(1),
 		label: `${prefix} C`,
@@ -201,7 +229,7 @@ test("the amount filter compares absolute values, expenses and income alike", as
 		new RegExp(`${prefix} B`, "u"),
 		new RegExp(`${prefix} A`, "u"),
 	]);
-	await expect(summary(page)).toHaveText(`2 résultats · Total : +${euros(210)}`);
+	await expectSummary(page, 2, earned, -4290);
 });
 
 test("combined filters survive a reload, and a removed chip widens the list again", async ({
@@ -254,7 +282,7 @@ test("filters matching nothing say so, and « Effacer les filtres » clears ever
 	);
 
 	await expect(page.getByText("Aucune opération ne correspond à ces filtres.")).toBeVisible();
-	await expect(summary(page)).toHaveText(`0 résultat · Total : ${euros(0)}`);
+	await expectSummary(page, 0, 0, 0);
 	await page.getByRole("button", { name: "Effacer les filtres" }).click();
 
 	await expect(page).toHaveURL(/\/transactions$/u);
@@ -263,11 +291,14 @@ test("filters matching nothing say so, and « Effacer les filtres » clears ever
 	await expect(rows(page).first()).toBeVisible();
 });
 
-test("the total adds the euro rows, excluded ones included, and counts the others", async ({
+test("the summary adds the euro rows' income and expenses, excluded ones included, and counts the others", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Total");
+	// Cents no other test uses: a row of the opposite amount on another account
+	// would link this income to it as a transfer, which counts as neither.
+	const earned = randomInt(10_000, 90_000);
 	const euro = await api.openAccount();
 	const dollars = await api.openAccount({ name: uniqueName("Dollars"), currency: "USD" });
 	const excluded = await api.addTransaction(euro.id, {
@@ -279,7 +310,7 @@ test("the total adds the euro rows, excluded ones included, and counts the other
 	await api.addTransaction(euro.id, {
 		date: daysAgo(2),
 		label: `${prefix} revenu`,
-		amount: "100,00",
+		amount: typedCents(earned),
 	});
 	await api.addTransaction(dollars.id, {
 		date: daysAgo(1),
@@ -289,9 +320,27 @@ test("the total adds the euro rows, excluded ones included, and counts the other
 
 	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 
-	await expect(summary(page)).toHaveText(`3 résultats · Total : +${euros(5710)}`);
+	await expectSummary(page, 3, earned, -4290);
 	await expect(
-		page.getByText("1 opération dans une autre devise n'est pas comptée dans le total."),
+		page.getByText(
+			"1 opération dans une autre devise n'est pas comptée dans les revenus ni les dépenses.",
+		),
+	).toBeVisible();
+	await expect(figure(page, "Revenus")).toHaveCSS("font-size", "20px");
+	await expect(figure(page, "Revenus").locator("span")).toHaveClass(/text-money-income/u);
+	const strip = page.getByRole("main").locator('[data-slot="summary-strip"]');
+	await expect(strip).toHaveCSS("border-radius", "12px");
+	await expect(strip.locator("..")).toHaveAttribute("aria-live", "polite");
+
+	// Filtered: the strip follows the rows the list shows.
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}&direction=expense`);
+
+	await expect(rows(page)).toHaveCount(2);
+	await expectSummary(page, 2, 0, -4290);
+	await expect(
+		page.getByText(
+			"1 opération dans une autre devise n'est pas comptée dans les revenus ni les dépenses.",
+		),
 	).toBeVisible();
 });
 
@@ -305,7 +354,7 @@ test("the list pages at 50 transactions, and a reload keeps the page", async ({ 
 
 	await expect(rows(page)).toHaveCount(50);
 	await expect(pages).toContainText("Page 1 sur 2");
-	await expect(summary(page)).toContainText("51 résultats");
+	await expect(figure(page, "Opérations")).toHaveText("51");
 
 	await pages.getByRole("link", { name: "Suivant" }).click();
 

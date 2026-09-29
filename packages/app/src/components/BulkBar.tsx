@@ -59,7 +59,7 @@ function PickerButton({
 	return (
 		<Popover open={open} onOpenChange={onOpenChange}>
 			<PopoverTrigger asChild>
-				<Button variant="ghost" size="sm" className={barButton} disabled={disabled}>
+				<Button variant="ghost" className={barButton} disabled={disabled}>
 					{label}
 				</Button>
 			</PopoverTrigger>
@@ -162,8 +162,7 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 			{target.kind !== "all" && count < total && (
 				<Button
 					variant="link"
-					size="sm"
-					className="h-auto px-0 text-xs text-background/70 hover:text-background"
+					className="h-auto px-0 text-background/70 hover:text-background"
 					onClick={selection.selectAll}
 				>
 					{t("operations.bulk.selectAll", { count: total })}
@@ -222,7 +221,7 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 				</PickerButton>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<Button variant="ghost" size="sm" className={barButton} disabled={busy}>
+						<Button variant="ghost" className={barButton} disabled={busy}>
 							{t("operations.bulk.exclude")}
 						</Button>
 					</DropdownMenuTrigger>
@@ -249,7 +248,6 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 				</DropdownMenu>
 				<Button
 					variant="ghost"
-					size="sm"
 					// The bar inverts the theme, so the red darkens where the bar turns light.
 					className="text-red-400 hover:bg-background/15 hover:text-red-300 dark:text-red-600 dark:hover:text-red-700"
 					disabled={busy}

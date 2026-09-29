@@ -13,11 +13,17 @@ import { BulkBar } from "@/components/BulkBar";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
+import { SummaryStrip } from "@/components/SummaryStrip";
 import { TransactionFilters } from "@/components/TransactionFilters";
-import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
+import {
+	TransactionList,
+	TransactionListCard,
+	TransactionListSkeleton,
+} from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
@@ -41,6 +47,8 @@ export const Route = createFileRoute("/_authed/transactions")({
 
 // Long enough to skip the keystrokes of one word, short enough to feel live.
 const SEARCH_DELAY_MS = 300;
+
+const countFormat = new Intl.NumberFormat("fr-FR");
 
 /**
  * The search field, bound to `q`. It keeps what is typed, trailing spaces
@@ -181,91 +189,118 @@ function OperationsPage() {
 	const clear = () => void navigate({ search: {} });
 
 	return (
-		<Page title={t("operations.title")} className="gap-4">
-			<div className="flex flex-wrap items-center gap-2">
-				<SearchField q={search.q} />
-				<TransactionFilters
-					filters={filters}
-					accounts={accountOptions}
-					categories={categories.data ?? []}
-					merchants={merchants.data ?? []}
-					tags={tags.data ?? []}
-					onChange={change}
-					onRemove={remove}
-				/>
-				{data !== undefined && (
-					<div className="ml-auto flex flex-col items-end gap-0.5 text-xs text-muted-foreground">
-						<p aria-live="polite" className="whitespace-nowrap">
-							{t("operations.results", { count: data.total })}
-							{" · "}
-							{t("operations.total")}{" "}
-							<Money
-								amount={data.sum.amount}
-								currency={data.sum.currency}
-								plusSign
-								className="text-foreground"
-							/>
+		<Page title={t("operations.title")}>
+			{/* The strip's own shape, so the list card does not jump when the figures land. */}
+			{transactions.isPending && (
+				<div aria-hidden="true">
+					<SummaryStrip
+						className="rounded-xl border bg-card"
+						cells={(["count", "income", "expense"] as const).map((cell) => ({
+							label: t(`operations.summary.${cell}`),
+							value: <Skeleton className="h-7 w-24" />,
+						}))}
+					/>
+				</div>
+			)}
+			{data !== undefined && (
+				<div className="flex flex-col gap-2">
+					{/* Sure's summary: the count, then the income and the expenses of every matching row. */}
+					<div aria-live="polite">
+						<SummaryStrip
+							className="rounded-xl border bg-card"
+							cells={[
+								{ label: t("operations.summary.count"), value: countFormat.format(data.total) },
+								{
+									label: t("operations.summary.income"),
+									value: (
+										<Money amount={data.sum.income} currency={data.sum.currency} signed plusSign />
+									),
+								},
+								{
+									label: t("operations.summary.expense"),
+									value: <Money amount={data.sum.expense} currency={data.sum.currency} signed />,
+								},
+							]}
+						/>
+					</div>
+					{data.sum.skippedCount > 0 && (
+						<p className="text-xs text-muted-foreground">
+							{t("operations.skipped", { count: data.sum.skippedCount })}
 						</p>
-						{data.sum.skippedCount > 0 && (
-							<p>{t("operations.skipped", { count: data.sum.skippedCount })}</p>
-						)}
+					)}
+				</div>
+			)}
+
+			<TransactionListCard>
+				<div className="flex flex-wrap items-center gap-2">
+					<SearchField q={search.q} />
+					<TransactionFilters
+						filters={filters}
+						accounts={accountOptions}
+						categories={categories.data ?? []}
+						merchants={merchants.data ?? []}
+						tags={tags.data ?? []}
+						onChange={change}
+						onRemove={remove}
+					/>
+				</div>
+
+				{transactions.isPending && <TransactionListSkeleton />}
+
+				{transactions.isError && (
+					<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
+						<p className="text-muted-foreground">
+							{t(`errors.${errorCodeOf(transactions.error)}`)}
+						</p>
+						<div className="flex gap-2">
+							<Button variant="outline" onClick={() => void transactions.refetch()}>
+								{t("common.retry")}
+							</Button>
+							{/* A filter the API refuses fails every retry; this is the way out. */}
+							{filtered && (
+								<Button variant="outline" onClick={clear}>
+									{t("operations.clearFilters")}
+								</Button>
+							)}
+						</div>
 					</div>
 				)}
-			</div>
 
-			{transactions.isPending && <TransactionListSkeleton />}
-
-			{transactions.isError && (
-				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
-					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(transactions.error)}`)}</p>
-					<div className="flex gap-2">
-						<Button variant="outline" onClick={() => void transactions.refetch()}>
-							{t("common.retry")}
-						</Button>
-						{/* A filter the API refuses fails every retry; this is the way out. */}
-						{filtered && (
-							<Button variant="outline" onClick={clear}>
-								{t("operations.clearFilters")}
-							</Button>
-						)}
+				{data !== undefined && data.total === 0 && !filtered && (
+					<div className="rounded-lg border border-dashed p-8">
+						<p className="text-muted-foreground">{t("operations.empty")}</p>
 					</div>
-				</div>
-			)}
+				)}
 
-			{data !== undefined && data.total === 0 && !filtered && (
-				<div className="rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("operations.empty")}</p>
-				</div>
-			)}
+				{data !== undefined && data.total === 0 && filtered && (
+					<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
+						<p className="text-muted-foreground">{t("operations.noMatch")}</p>
+						<Button variant="outline" onClick={clear}>
+							{t("operations.clearFilters")}
+						</Button>
+					</div>
+				)}
 
-			{data !== undefined && data.total === 0 && filtered && (
-				<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("operations.noMatch")}</p>
-					<Button variant="outline" onClick={clear}>
-						{t("operations.clearFilters")}
-					</Button>
-				</div>
-			)}
+				{data !== undefined && data.total > 0 && (
+					<TransactionList
+						items={data.items}
+						showAccount
+						onOpen={(transaction) => setSheet({ open: true, transaction })}
+						// The previous page's rows, shown while the next loads, cannot be ticked
+						// under the new filters.
+						{...(transactions.isPlaceholderData ? {} : { selection })}
+					/>
+				)}
 
-			{data !== undefined && data.total > 0 && (
-				<TransactionList
-					items={data.items}
-					showAccount
-					onOpen={(transaction) => setSheet({ open: true, transaction })}
-					// The previous page's rows, shown while the next loads, cannot be ticked
-					// under the new filters.
-					{...(transactions.isPlaceholderData ? {} : { selection })}
-				/>
-			)}
-
-			{data !== undefined && pageCount > 1 && (
-				<Pagination
-					target={{ to: "/transactions" }}
-					page={page}
-					pageCount={pageCount}
-					label={t("transactions.paginationLabel")}
-				/>
-			)}
+				{data !== undefined && pageCount > 1 && (
+					<Pagination
+						target={{ to: "/transactions" }}
+						page={page}
+						pageCount={pageCount}
+						label={t("transactions.paginationLabel")}
+					/>
+				)}
+			</TransactionListCard>
 
 			{data !== undefined && selection.target !== null && (
 				<BulkBar

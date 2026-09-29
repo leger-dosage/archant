@@ -70,10 +70,17 @@ export type TransactionPage = {
 export type FilteredTransactionPage = TransactionPage & {
 	/**
 	 * The signed sum of every matching row in the reporting currency, excluded
-	 * ones included; `skippedCount` rows in another currency are left out
-	 * until exchange rates exist.
+	 * ones included, and its income and expense parts, a transfer side in
+	 * neither; `skippedCount` rows in another currency are left out until
+	 * exchange rates exist.
 	 */
-	sum: { amount: MinorUnits; currency: CurrencyCode; skippedCount: number };
+	sum: {
+		amount: MinorUnits;
+		income: MinorUnits;
+		expense: MinorUnits;
+		currency: CurrencyCode;
+		skippedCount: number;
+	};
 };
 
 function sourceOf(origin: ledger.EntryOrigin | undefined, timeZone: string): TransactionSource {
@@ -267,6 +274,8 @@ export async function listAllTransactions(
 		total,
 		sum: {
 			amount: counted?.amount ?? toMinorUnits(0),
+			income: counted?.income ?? toMinorUnits(0),
+			expense: counted?.expense ?? toMinorUnits(0),
 			currency,
 			skippedCount: sums
 				.filter((row) => row.currency !== currency)

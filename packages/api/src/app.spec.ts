@@ -1195,7 +1195,13 @@ const listBody = z.object({
 		page: z.number(),
 		pageSize: z.number(),
 		total: z.number(),
-		sum: z.object({ amount: z.number(), currency: z.string(), skippedCount: z.number() }),
+		sum: z.object({
+			amount: z.number(),
+			income: z.number(),
+			expense: z.number(),
+			currency: z.string(),
+			skippedCount: z.number(),
+		}),
 	}),
 });
 
@@ -1345,9 +1351,18 @@ describe("GET /api/transactions", () => {
 
 		const data = await listed("");
 
-		expect(data.sum).toEqual({ amount: 5710, currency: "EUR", skippedCount: 1 });
+		expect(data.sum).toEqual({
+			amount: 5710,
+			income: 10000,
+			expense: -4290,
+			currency: "EUR",
+			skippedCount: 1,
+		});
 		expect(data.total).toBe(3);
 		expect(data.items.find((item) => item.id === excluded)?.excluded).toBe(true);
+		await expect(listed("?direction=expense")).resolves.toMatchObject({
+			sum: { amount: -4290, income: 0, expense: -4290, skippedCount: 1 },
+		});
 	});
 
 	it("filters on a parent category, its children included", async () => {
@@ -1374,7 +1389,13 @@ describe("GET /api/transactions", () => {
 		const data = await listed(`?category=${parent.data.id}`);
 
 		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Loyer", "Travaux"]);
-		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		expect(data.sum).toEqual({
+			amount: -8580,
+			income: 0,
+			expense: -8580,
+			currency: "EUR",
+			skippedCount: 0,
+		});
 		await expect(listed(`?category=${child.data.id}`)).resolves.toMatchObject({ total: 1 });
 	});
 
@@ -1422,7 +1443,13 @@ describe("GET /api/transactions", () => {
 		expect(data.items.map((item) => item.label).toSorted()).toEqual(["CB CARREFOUR 1234", "LIDL"]);
 		expect(new Set(data.items.map((item) => item.merchantId))).toEqual(new Set([carrefour, lidl]));
 		expect(data.total).toBe(2);
-		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		expect(data.sum).toEqual({
+			amount: -8580,
+			income: 0,
+			expense: -8580,
+			currency: "EUR",
+			skippedCount: 0,
+		});
 		await expect(listed("?merchant=nope")).resolves.toMatchObject({ items: [], total: 0 });
 	});
 
@@ -1449,7 +1476,13 @@ describe("GET /api/transactions", () => {
 
 		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Hôtel", "Train"]);
 		expect(data.total).toBe(2);
-		expect(data.sum).toEqual({ amount: -8580, currency: "EUR", skippedCount: 0 });
+		expect(data.sum).toEqual({
+			amount: -8580,
+			income: 0,
+			expense: -8580,
+			currency: "EUR",
+			skippedCount: 0,
+		});
 		await expect(listed("?tag=nope")).resolves.toMatchObject({ items: [], total: 0 });
 	});
 
@@ -1494,7 +1527,13 @@ describe("GET /api/transactions", () => {
 		const data = await listed("?account=nope");
 
 		expect(data).toMatchObject({ items: [], total: 0 });
-		expect(data.sum).toEqual({ amount: 0, currency: "EUR", skippedCount: 0 });
+		expect(data.sum).toEqual({
+			amount: 0,
+			income: 0,
+			expense: 0,
+			currency: "EUR",
+			skippedCount: 0,
+		});
 	});
 
 	it("pages", async () => {
@@ -5646,6 +5685,10 @@ describe("transfers", () => {
 		});
 		expect(data.items.find((item) => item.id === inflow)).toMatchObject({
 			transfer: { id: transferId, counterpartAccountId: checking.id },
+		});
+		expect(data.sum).toMatchObject({ amount: 0, income: 0, expense: 0 });
+		await expect(listed("")).resolves.toMatchObject({
+			sum: { amount: 50000, income: 50000, expense: 0 },
 		});
 	});
 

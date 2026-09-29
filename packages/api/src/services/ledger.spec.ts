@@ -2556,7 +2556,7 @@ describe("listTransactions across accounts", () => {
 		).resolves.toMatchObject({ total: 1, items: [{ categoryId: groceries }] });
 		await expect(
 			sumTransactions(deps(), { accountIds, categoryIds: [groceries], uncategorised: true }),
-		).resolves.toEqual([{ currency: "EUR", amount: -8580, count: 2 }]);
+		).resolves.toEqual([{ currency: "EUR", amount: -8580, income: 0, expense: -8580, count: 2 }]);
 	});
 
 	it("filters on merchants, ORed, with count and sum to match", async () => {
@@ -2589,7 +2589,7 @@ describe("listTransactions across accounts", () => {
 		).resolves.toMatchObject({ total: 3 });
 		await expect(
 			sumTransactions(deps(), { accountIds, merchantIds: [carrefour, lidl] }),
-		).resolves.toEqual([{ currency: "EUR", amount: -12870, count: 3 }]);
+		).resolves.toEqual([{ currency: "EUR", amount: -12870, income: 0, expense: -12870, count: 3 }]);
 	});
 
 	it("filters on tags, ORed, listing and counting a row with both tags once", async () => {
@@ -2630,7 +2630,7 @@ describe("listTransactions across accounts", () => {
 		);
 		await expect(
 			sumTransactions(deps(), { accountIds, tagIds: [holidays, work] }),
-		).resolves.toEqual([{ currency: "EUR", amount: -12870, count: 3 }]);
+		).resolves.toEqual([{ currency: "EUR", amount: -12870, income: 0, expense: -12870, count: 3 }]);
 	});
 
 	it("is an empty page for an unknown account", async () => {
@@ -2642,18 +2642,31 @@ describe("listTransactions across accounts", () => {
 });
 
 describe("sumTransactions", () => {
-	it("sums and counts per currency, excluded transactions included", async () => {
+	it("sums and counts per currency, excluded and pending transactions included", async () => {
 		const { joint } = await openPair();
 		const dollars = await openChecking({ name: "Dollars", currency: "USD" });
 		const excluded = await add(joint.id, { amount: toMinorUnits(-4290) });
 		await updateTransaction(deps(), excluded, { excluded: true }, { origin: "user" });
 		await add(joint.id, { amount: toMinorUnits(10000) });
+		await add(joint.id, { amount: toMinorUnits(-800), label: "En attente", pending: true });
 		await add(dollars.id, { amount: toMinorUnits(-1000), currency: "USD" });
 
 		await expect(sumTransactions(deps(), { accountIds: [joint.id, dollars.id] })).resolves.toEqual([
-			{ currency: "EUR", amount: 5710, count: 2 },
-			{ currency: "USD", amount: -1000, count: 1 },
+			{ currency: "EUR", amount: 4910, income: 10000, expense: -5090, count: 3 },
+			{ currency: "USD", amount: -1000, income: 0, expense: -1000, count: 1 },
 		]);
+	});
+
+	it("keeps the income and the expense sums to the rows the direction filter matches", async () => {
+		const { joint } = await openPair();
+		await add(joint.id, { amount: toMinorUnits(10000) });
+		const excluded = await add(joint.id, { amount: toMinorUnits(-4290) });
+		await updateTransaction(deps(), excluded, { excluded: true }, { origin: "user" });
+		await add(joint.id, { amount: toMinorUnits(-800), label: "En attente", pending: true });
+
+		await expect(
+			sumTransactions(deps(), { accountIds: [joint.id], direction: ["expense"] }),
+		).resolves.toEqual([{ currency: "EUR", amount: -5090, income: 0, expense: -5090, count: 2 }]);
 	});
 
 	it("sums only the rows the text matches", async () => {
@@ -2662,7 +2675,7 @@ describe("sumTransactions", () => {
 		await add(joint.id, { label: "Pain", amount: toMinorUnits(-120) });
 
 		await expect(sumTransactions(deps(), { accountIds: [joint.id], q: "loyer" })).resolves.toEqual([
-			{ currency: "EUR", amount: -90000, count: 1 },
+			{ currency: "EUR", amount: -90000, income: 0, expense: -90000, count: 1 },
 		]);
 	});
 });
@@ -4461,7 +4474,18 @@ describe("the direction filter", () => {
 			listTransactions(deps(), { accountIds, direction: [] }, firstPage),
 		).resolves.toEqual({ items: [], total: 0 });
 		await expect(sumTransactions(deps(), { accountIds, direction: ["income"] })).resolves.toEqual([
-			{ currency: "EUR", amount: earned, count: 1 },
+			{ currency: "EUR", amount: earned, income: earned, expense: 0, count: 1 },
+		]);
+	});
+
+	it("counts a transfer's two sides in the signed sum, and in neither the income nor the expense sum", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		await pairOf("internal_move", joint.id, livret.id);
+		const spent = transferAmount();
+		await addStandard(joint.id, { amount: toMinorUnits(-spent), label: "expense" });
+
+		await expect(sumTransactions(deps(), { accountIds: [joint.id, livret.id] })).resolves.toEqual([
+			{ currency: "EUR", amount: -spent, income: 0, expense: -spent, count: 3 },
 		]);
 	});
 });

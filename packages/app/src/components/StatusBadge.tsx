@@ -50,7 +50,19 @@ const STATUSES = {
 export type Status = keyof typeof STATUSES;
 
 /** DESIGN.md's badge: 20 px, a 5 px radius, a 12 px icon and the status's name. */
-export function StatusBadge({ status, className }: { status: Status; className?: string }) {
+export function StatusBadge({
+	status,
+	iconBelowMd = false,
+	className,
+}: {
+	status: Status;
+	/**
+	 * Below 768 px, the icon alone, the name kept for assistive technology:
+	 * a transaction row's line has no room for a label and two named badges.
+	 */
+	iconBelowMd?: boolean;
+	className?: string;
+}) {
 	const { t } = useTranslation();
 	const { icon: Icon, key, warning } = STATUSES[status];
 
@@ -69,7 +81,7 @@ export function StatusBadge({ status, className }: { status: Status; className?:
 			)}
 		>
 			<Icon aria-hidden="true" className="size-3 shrink-0" />
-			{t(key)}
+			<span className={cn(iconBelowMd && "max-md:sr-only")}>{t(key)}</span>
 		</span>
 	);
 }
