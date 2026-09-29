@@ -79,6 +79,8 @@ context:
 - `InsetGroup` gains a `detail` slot beside its heading, for the day's count.
 - The drawer's inset and radius live in `TransactionSheet.tsx`, not `ui/sheet.tsx`, which also serves the full-screen accounts overlay.
 - Below 768 px the second line holds the date (`formatShortDate`) and the pill; the merchant caption and tags stay from 768 px up. Status badges show their icon only there (`StatusBadge`'s `iconBelowMd`), their text kept for assistive technology.
+- On /transactions the days are `h2`, straight under the page's `h1` (`TransactionList`'s `headingLevel`); an account's page keeps `h3` under its chart card's `h2`.
+- The row's category button is a 28 px target around the 24 px pill, the hover and focus ring drawn on the pill; « Filtrer » is 36 px beside the 36 px search field, as Sure's filter button.
 - Shared-database amounts: the summary and amount-filter tests type random amounts (`typedCents`), since a fixed income could be matched as a transfer with another test's row.
 
 ## Spec Change Log
@@ -100,6 +102,13 @@ context:
 | 11 | blind | Skeleton hard-codes the column header's 42 px | low | cosmetic, one constant | reject |
 | 12 | blind | Empty and error boxes framed inside the list card | low | Story 14.4, stacked on this one, turns every empty box into a card or note | reject |
 | 13 | edge | `bulk.spec.ts` count assertion matches 160 or 600 | low | `toContainText("60")` | patch |
+| 14 | spec review | The 36 px search field is untested | low | no height assertion | patch |
+| 15 | spec review | Row hover untested | low | only the selection colour is asserted | patch |
+| 16 | spec review | /transactions jumps from `h1` to the days' `h3` | medium | no `h2` between them | patch |
+| 17 | spec review | A test comment names the wrong page | low | it targets an account's page | patch |
+| 18 | standards review | `both()` writes SQL by hand | false | a Drizzle `sql` fragment, as `isTransferSide` beside it; `and()` would add an unreachable `undefined` branch | reject |
+| 19 | standards review | Overline classes copied a fourth time | medium | `InsetGroup`, `AppShell`, recurring and rules have the same string | reject here; Story 14.4, on top of this one, adds the `overline` utility for all |
+| 20 | visual QA, 14.4's floor sweep | The row's category button is 24 px, under the 28 px floor; « Filtrer » 28 px beside a 36 px field | medium | the button is the pill's slot | patch |
 
 ## Verification
 

@@ -108,6 +108,19 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 
 	// The column header: uppercase names on the grey tray, over the rows' cells.
 	const columns = page.getByRole("main").locator('[data-slot="column-header"]');
+
+	// The 36 px search field opens the list card, above the column header.
+	const card = page.getByRole("main").locator('[data-slot="list-card"]');
+	const searchBox = card.getByRole("searchbox", { name: "Rechercher" });
+	await expect(searchBox).toHaveCSS("height", "36px");
+	const [cardBox, searchBoxBox, columnsBox] = await Promise.all([
+		card.boundingBox(),
+		searchBox.boundingBox(),
+		columns.boundingBox(),
+	]);
+	// The card's 1 px border and 16 px padding.
+	expect(searchBoxBox?.y).toBeCloseTo((cardBox?.y ?? 0) + 17, 0);
+	expect((searchBoxBox?.y ?? 0) + (searchBoxBox?.height ?? 0)).toBeLessThan(columnsBox?.y ?? 0);
 	await expect(columns).toHaveCSS("background-color", rgb("#f2f2f3"));
 	await expect(columns).toHaveCSS("border-radius", "12px");
 	await expect(columns).toHaveCSS("text-transform", "uppercase");
@@ -125,7 +138,8 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	await expect(day).toHaveCount(1);
 	await expect(day).toHaveCSS("background-color", rgb("#f2f2f3"));
 	await expect(day).toHaveCSS("border-radius", "12px");
-	const dayHeading = day.getByRole("heading", { level: 3 });
+	// Directly under the page's `h1`, a day is an `h2`.
+	const dayHeading = day.getByRole("heading", { level: 2 });
 	await expect(dayHeading).toHaveCSS("text-transform", "uppercase");
 	const dayHeader = dayHeading.locator("../..");
 	await expect(dayHeader).toContainText("8 opérations");
@@ -197,6 +211,11 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	);
 	await expect(accountIcon(page, label.food).locator("svg.lucide-landmark")).toBeVisible();
 	await expect(accountIcon(page, label.repayment).locator("svg.lucide-hand-coins")).toBeVisible();
+
+	// A hovered row takes the hover colour.
+	await expect(rowItem(page, label.bare)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+	await rowButton(page, label.bare).hover();
+	await expect(rowItem(page, label.bare)).toHaveCSS("background-color", rgb("#f4f4f4"));
 
 	// A ticked row: the selection colour and the accent bar on its left edge.
 	await rowItem(page, label.food)

@@ -285,6 +285,7 @@ function OperationsPage() {
 					<TransactionList
 						items={data.items}
 						showAccount
+						headingLevel={2}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}
 						// The previous page's rows, shown while the next loads, cannot be ticked
 						// under the new filters.

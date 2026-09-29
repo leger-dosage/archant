@@ -36,6 +36,8 @@ type TransactionListProps = {
 	showAccount?: boolean;
 	/** Ticks rows for a bulk action; without it, rows have no checkbox. */
 	selection?: Selection;
+	/** The day headings' level: `h2` directly under the page's `h1`, `h3` under a card's `h2`. */
+	headingLevel?: 2 | 3;
 };
 
 function DayTitle({ date }: { date: string }) {
@@ -62,7 +64,7 @@ type CategoryChipProps = {
 // the amount's column too, and in the category column from 768 px, where the
 // button leaves that cell empty.
 const CATEGORY_SLOT =
-	"relative z-10 col-start-3 col-end-5 row-start-2 flex min-h-6 max-w-full min-w-0 items-center self-start justify-self-start md:col-end-4 md:row-start-1 md:self-center";
+	"relative z-10 col-start-3 col-end-5 row-start-2 -my-0.5 flex min-h-7 max-w-full min-w-0 items-center self-start justify-self-start md:col-end-4 md:row-start-1 md:self-center";
 
 /**
  * The columns from 768 px: the icon, the label, the category, the account
@@ -102,7 +104,8 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 							}
 							className={cn(
 								CATEGORY_SLOT,
-								"rounded-full outline-none hover:ring-1 hover:ring-border-strong focus-visible:ring-2 focus-visible:ring-ring md:relative md:z-10",
+								// A 28 px target around the 24 px pill; the ring hugs the pill.
+								"group outline-none md:relative md:z-10",
 							)}
 						>
 							{name === null ? (
@@ -111,6 +114,7 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 								<CategoryPill
 									category={color === null || icon === null ? null : { name, color, icon }}
 									fallback={name}
+									className="group-hover:ring-1 group-hover:ring-border-strong group-focus-visible:ring-2 group-focus-visible:ring-ring"
 								/>
 							)}
 						</button>
@@ -196,6 +200,7 @@ export function TransactionList({
 	onOpen,
 	showAccount = false,
 	selection,
+	headingLevel = 3,
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
@@ -243,7 +248,7 @@ export function TransactionList({
 				<InsetGroup
 					key={day.date}
 					id={`day-${day.date}`}
-					level={3}
+					level={headingLevel}
 					title={<DayTitle date={day.date} />}
 					detail={
 						<span className="shrink-0">
