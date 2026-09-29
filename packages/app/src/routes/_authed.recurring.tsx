@@ -177,19 +177,22 @@ function RecurringPage() {
 							<Table aria-label={t("recurring.title")} className={GROUP_TABLE_INSET}>
 								<TableHeader>
 									<TableRow className="border-line hover:bg-transparent">
-										<TableHead scope="col" className="overline text-muted-foreground">
+										<TableHead scope="col" className="type-overline text-muted-foreground">
 											{t("recurring.columns.name")}
 										</TableHead>
-										<TableHead scope="col" className="overline text-muted-foreground">
+										<TableHead scope="col" className="type-overline text-muted-foreground">
 											{t("recurring.columns.account")}
 										</TableHead>
-										<TableHead scope="col" className="overline text-right text-muted-foreground">
+										<TableHead
+											scope="col"
+											className="type-overline text-right text-muted-foreground"
+										>
 											{t("recurring.columns.amount")}
 										</TableHead>
-										<TableHead scope="col" className="overline text-muted-foreground">
+										<TableHead scope="col" className="type-overline text-muted-foreground">
 											{t("recurring.columns.next")}
 										</TableHead>
-										<TableHead scope="col" className="overline text-muted-foreground">
+										<TableHead scope="col" className="type-overline text-muted-foreground">
 											{t("recurring.columns.status")}
 										</TableHead>
 										<TableHead scope="col">

@@ -209,16 +209,16 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 						<Table aria-labelledby="rule-runs" className={GROUP_TABLE_INSET}>
 							<TableHeader>
 								<TableRow className="border-line hover:bg-transparent">
-									<TableHead scope="col" className="overline text-muted-foreground">
+									<TableHead scope="col" className="type-overline text-muted-foreground">
 										{t("rules.runs.columns.date")}
 									</TableHead>
-									<TableHead scope="col" className="overline text-muted-foreground">
+									<TableHead scope="col" className="type-overline text-muted-foreground">
 										{t("rules.runs.columns.rule")}
 									</TableHead>
-									<TableHead scope="col" className="overline text-right text-muted-foreground">
+									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
 										{t("rules.runs.columns.matched")}
 									</TableHead>
-									<TableHead scope="col" className="overline text-right text-muted-foreground">
+									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
 										{t("rules.runs.columns.changed")}
 									</TableHead>
 								</TableRow>

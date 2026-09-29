@@ -237,10 +237,11 @@
 	font-variant-numeric: tabular-nums;
 }
 
-/* DESIGN.md `overline`: column heads and the headers of groups, uppercase as in
-   Sure. No colour: callers add `text-muted-foreground`, which `cn` can then
-   resolve against a component's own text colour, as `TableHead`'s. */
-@utility overline {
+/* DESIGN.md `overline`: column heads and the headers of groups, uppercase as
+   in Sure. Not named `overline`, Tailwind's line over the text. No colour:
+   callers add `text-muted-foreground`, which `cn` can resolve against a
+   component's own text colour, as `TableHead`'s. */
+@utility type-overline {
 	font-size: 12px;
 	font-weight: 510;
 	line-height: 1.33;

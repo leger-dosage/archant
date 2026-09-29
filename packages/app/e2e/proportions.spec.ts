@@ -28,6 +28,8 @@ async function expectListGroup(page: Page, name: string): Promise<Locator> {
 		"text-transform",
 		"uppercase",
 	);
+	// Tailwind's own `overline` draws a line over the text: the header must not.
+	await expect(group.locator(":scope > div").first()).toHaveCSS("text-decoration-line", "none");
 
 	const card = page.locator('[data-slot="list-card"]').filter({ has: group });
 	await expect(card).toHaveCount(1);

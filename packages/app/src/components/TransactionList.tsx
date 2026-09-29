@@ -220,7 +220,7 @@ export function TransactionList({
 			<div
 				aria-hidden="true"
 				data-slot="column-header"
-				className="hidden overline rounded-xl bg-inset p-1 text-muted-foreground md:block"
+				className="hidden type-overline rounded-xl bg-inset p-1 text-muted-foreground md:block"
 			>
 				{/* The inner block's border, so the names line up with the cells. */}
 				<div className="flex items-center border border-transparent py-2">

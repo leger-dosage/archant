@@ -61,7 +61,7 @@ context:
 
 - `components/ListCard.tsx` holds `ListCard`, the card around a list's inset groups, and `GROUP_TABLE_INSET` (formerly `Section`'s `SECTION_TABLE_INSET`), for tables inside a group.
 - `InsetGroup` takes one `count`, shown after the heading and outside it so the region keeps its name, with an optional `countLabel` for assistive technology. Story 14.3's day groups (« 8 opérations ») and this story's lists share it; for the rule runs it counts every run, not the page shown.
-- `@utility overline` replaces the five copies of the uppercase header classes; it sets no colour, so `cn` can resolve `text-muted-foreground` against a component's own, as `TableHead`'s. `@utility page-title` replaces `type-display` and the page header's classes.
+- `@utility type-overline` (not `overline`, Tailwind's line over the text) replaces the five copies of the uppercase header classes; it sets no colour, so `cn` can resolve `text-muted-foreground` against a component's own, as `TableHead`'s. `@utility page-title` replaces `type-display` and the page header's classes.
 - `EmptyState` is a card; inside an inset group's white block (banks, categories) it drops its frame, and two regions kept their `h2` for the tests that read them. `EmptyNote` is the card for a sentence without an action. An account's empty Opérations tab shows the empty state alone, without the list card; /transactions says it is empty inside its list card, without a frame.
 - `Pagination`'s « Précédent » and « Suivant » never had their button styles: `Button asChild` handed its classes to `PageLink`, which dropped them. It now forwards them; the 14 px check on `sm` buttons found it.
 - Field hints and errors, subtypes, dates, axis labels and badges stay captions at 12 px; the IBAN is `code`, 12 px Geist Mono. The bulk bar's « Tout sélectionner » link stays 12 px, a caption-sized link.
@@ -98,6 +98,8 @@ context:
 | 23 | spec review | The rules phone notice's card and the rail labels' 11 px untested | low | text-only assertions | patch |
 | 24 | spec review | Pagination's styles and the connection form's extent change behaviour | false | styles the links always meant to have; the form's extent changes nothing the user does | reject |
 | 25 | spec review | `BalanceChart` and /transactions show their sentence without a card | low | both sit inside a card already; a card inside it was finding 4 | reject |
+| 26 | visual QA | Every uppercase header drew a line over its text | high | a utility named `overline` merged with Tailwind's own `overline`, `text-decoration-line: overline` | patch: renamed `type-overline`, asserted on each list group |
+| 27 | visual QA | At 390 px the centre of a row falls on its category button | false | the pill is a control of its own; a tap on it picks a category, a tap on the label opens the row | reject |
 
 ## Verification
 
