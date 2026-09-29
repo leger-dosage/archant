@@ -165,9 +165,9 @@ NFR16: The default deployment exposes nothing it does not need: the container pu
 
 Source: `ux-designs/ux-archant-2026-09-21/DESIGN.md` and `EXPERIENCE.md`. Both bind every interface story; they win over any wording here.
 
-UX-DR1: The shadcn/ui neutral base with the brand layer of `DESIGN.md` (Linear Light and Linear Classic Dark, Inter and Geist Mono, radii 5/6/8/10, the sidebar on the base background with the page in an inset panel, tinted icons, category pills, the arch logo), dark mode following the system with a manual override. Story 1.1; revised by Epic 12, Stories 12.1 to 12.4.
+UX-DR1: The shadcn/ui neutral base with the brand layer of `DESIGN.md` (Linear Light and Linear Classic Dark, Inter and Geist Mono, radii 5/6/8/10, the sidebar on the base background with the page in an inset panel, tinted icons, category pills, the arch logo), dark mode following the system with a manual override. Story 1.1; revised by Epic 12, Stories 12.1 to 12.4; revised by Epic 14, Stories 14.1 to 14.4: Sure's shell, type scale, control sizes and inset groups, with Linear's colours, Inter and lines.
 UX-DR2: One `Money` component renders every amount: `fr-FR`, tabular figures, income green with a plus, expenses in the foreground colour with a true minus, muted for pending and excluded with a badge or icon. Story 1.1.
-UX-DR3: Sidebar with navigation entries and the accounts grouped under Actifs and Passifs with totals and balances, collapsing below 1024 px and becoming a sheet below 768 px. Stories 1.1, 1.6.
+UX-DR3: Sidebar with navigation entries and the accounts grouped under Actifs and Passifs with totals and balances, collapsing below 1024 px and becoming a sheet below 768 px. Stories 1.1, 1.6; revised by Epic 14, Stories 14.1 to 14.4: Sure's rail of destinations, a foldable accounts column grouped by type with tabs Tout, Actifs, Passifs, a top bar with breadcrumbs, and below 1024 px a bottom navigation with the accounts column as a full-screen overlay.
 UX-DR4: Transaction sheet with save on `⌘Enter`, `Esc` to close, a prompt only when changes are unsaved, and the transaction's source shown. Story 1.2.
 UX-DR5: Charts with a text summary and a « Voir les données » table alternative, keyboard cursor, no animation under reduced motion. Stories 1.3, 6.1, 6.2.
 UX-DR6: Transactions list grouped by day headers, filters as removable chips kept in the URL, result count and signed total of the filtered rows. Story 1.5.
@@ -175,7 +175,7 @@ UX-DR7 (Withdrawn by Story 11.13): Command palette on `⌘K` / `Ctrl+K` and the 
 UX-DR8: Import dialog with steps Fichier, Colonnes, Aperçu, preview tabs per group with counts, and a confirm button stating the count. Stories 2.1, 2.3.
 UX-DR9: Bulk bar at the bottom of the transactions list with « Tout sélectionner (N résultats) ». Story 4.5.
 UX-DR10: Warning banners for consent expiry, expired consent and stale sync, one action each. Story 10.5.
-UX-DR11: Accessibility floor of `EXPERIENCE.md`: keyboard reach, visible focus, focus return, `aria-live` toasts, 24 px targets, WCAG 2.2 AA contrast. Every interface story.
+UX-DR11: Accessibility floor of `EXPERIENCE.md`: keyboard reach, visible focus, focus return, `aria-live` toasts, 24 px targets, WCAG 2.2 AA contrast. Every interface story; revised by Epic 14: 14 px body text and 36 px controls by default.
 
 ### FR Coverage Map
 
@@ -240,7 +240,7 @@ FR58: Epic 13 - Two-factor sign-in
 FR59: Epic 13 - Versioned image and visible version
 FR60: Epic 13 - Copy before migration
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11.
 
 ## Epic List
 
@@ -308,6 +308,11 @@ Archant stops looking austere: Sure's content (a greeting, colour through tinted
 
 The owner hosts Archant somewhere other than their laptop, connects a real bank through Enable Banking's production environment, and upgrades it without risking the data: the findings of the security audit of 2026-09-26 are fixed, releases ship as versioned images, the database is copied before every migration, and a guide takes the owner from nothing to Archant running at home, reachable only through Tailscale.
 **FRs covered:** FR57, FR58, FR59, FR60; NFR15, NFR16; revises FR50, NFR9
+
+### Epic 14: Sure's proportions under Linear's colours
+
+The interface stops reading small: Sure's shell, pages, type scale and control sizes, with Linear kept as a light layer of colours, Inter and lines, as `DESIGN.md` now specifies.
+**FRs covered:** none new; revises UX-DR1, UX-DR3, UX-DR11
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -2387,3 +2392,165 @@ So that connecting Boursorama links my accounts instead of none.
 **Given** the finished story
 **When** `pnpm test` runs
 **Then** a test replays a session whose accounts carry `XXX`, as Boursorama's did on 2026-09-29, and every acceptance criterion above has an automated test
+
+## Epic 14: Sure's proportions under Linear's colours
+
+On 2026-09-29 the owner found the interface small everywhere. The code confirms it: `packages/app/src/styles.css` sets `--text-sm` and the body to 13px, the page title is 13px inside the title bar (`packages/app/src/components/Page.tsx`), buttons and inputs are 32px (`components/ui/button.tsx`, `components/ui/input.tsx`), transaction rows 36px, dialogs 384px (`components/ui/dialog.tsx`), the transaction sheet 448px, and the content is capped at 1200px without being centred. Sure keeps Tailwind's defaults: 14px body text, page titles from 20 to 30px, 36px buttons, rows near 68px, 550px dialogs and drawer, and content at full width with 40px of padding.
+
+Epic 12 had taken Sure's content and put it in Linear's skin, sizes included. The owner asked for the reverse: Sure's pages, layouts and proportions, improved where useful, with Linear as a light layer of colours and component inspiration. A mockup, [mockups/sure-proportions-frame-and-font.html](ux-designs/ux-archant-2026-09-21/mockups/sure-proportions-frame-and-font.html), compared two frames and two fonts on the transactions page. The owner chose frame A, Sure's shell: an 84px rail of destinations, a foldable 320px accounts column, a top bar with breadcrumbs, and a bottom navigation below 1024px. They kept Inter, which reads larger than Geist at the same size and is already in place. `DESIGN.md` and `EXPERIENCE.md` in `_bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/`, updated on 2026-09-29, specify it; the spines win on conflict with the mocks.
+
+Two proportions depart from Sure on purpose: transaction rows are 56px rather than 68px, so a screen still shows a useful number of them, and cards and trays keep Linear's 1px borders rather than Sure's ring shadow. Sure's per-account sparklines, the accounts column's drag resize and the AI chat panel are left out.
+
+No route changes. Every figure is already served except one: Sure's transactions page shows the income and the expenses of the filtered rows, where Archant's list answers only their count and signed sum, so Story 14.3 adds the two sums to that response. Story 14.1 comes first; the three others can follow in any order.
+
+### Story 14.1: The shell and the scale
+
+As the household's administrator,
+I want Archant to use Sure's frame and Sure's sizes,
+So that every page reads comfortably and I find my accounts beside every page, as in Sure.
+
+**Requirements:** UX-DR1, UX-DR3, UX-DR11, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the theme in `packages/app/src/styles.css`
+**When** this story ships
+**Then** no `--text-*` token is overridden and the body is 14px, the radii are Tailwind's defaults (4, 6, 8, 12), the `container` and `inset` tokens of `DESIGN.md` replace `panel` and `section` in both modes, Linear's colours, Inter and its weights stay, and `styles.spec.ts` checks the text pairs on the new `inset` surface
+
+**Given** the shadcn components in `packages/app/src/components/ui`
+**When** they render
+**Then** buttons are 36px by default, 28px small and 48px large, with a 36px square icon button; inputs and select triggers are 36px; dialogs are 550px wide by default, 300px for confirmations and 700px when a screen asks for it; menus are at least 200px; tabs sit on the grey `inset` track
+
+**Given** any signed-in page from 1024px up
+**When** it renders
+**Then** it sits in Sure's shell of `DESIGN.md`: the rail with the arch logo, Accueil, Opérations, Comptes, Récurrent, Règles and Réglages, each an icon tile over its label, the current one marked with `aria-current`, and the avatar opening the user menu; the accounts column with « Ajouter un compte », tabs Tout, Actifs and Passifs, and the active accounts grouped by type with each group's total and each account's tinted type icon, subtype and balance; the sticky top bar with the button that folds the accounts column and the breadcrumbs
+
+**Given** the button that folds the accounts column
+**When** I fold or unfold it and reload
+**Then** the column keeps the state I chose on this device
+
+**Given** any signed-in page
+**When** it renders
+**Then** `Page.tsx` gives it Sure's page header, the title at 24px, an optional muted sentence and the page's actions, above content at full width with 40px of side padding, and the inset panel and its title bar are gone
+
+**Given** a screen narrower than 1024px
+**When** a signed-in page renders
+**Then** a top bar holds the menu, the logo and the user menu, a bottom navigation holds the rail's destinations, and the menu opens the accounts column as a full-screen overlay that `Esc` closes
+
+**Given** any settings page
+**When** it renders
+**Then** a 256px settings navigation replaces the accounts column, each entry with its icon, and the page's content is centred and at most 896px wide
+
+**Given** the sign-in, setup and root error pages
+**When** they render
+**Then** they keep the arch logo on the base background at the new type scale and control sizes
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, including the folded column surviving a reload and the bottom navigation at a phone width, Vitest for the rest; the end-to-end tests that reached a page through the sidebar reach it through the rail or the accounts column
+
+### Story 14.2: The dashboard and the accounts pages
+
+As the household's administrator,
+I want the dashboard and the accounts pages laid out as in Sure,
+So that my net worth and my accounts read at a glance, at a comfortable size.
+
+**Requirements:** FR5, FR34, FR35, UX-DR5
+
+**Acceptance Criteria:**
+
+**Given** the dashboard with at least one account
+**When** it loads
+**Then** its page header shows « Bonjour » and the first name at 30px, the muted sentence and « Ajouter un compte », and its cards follow in one column, two from 1536px wide
+
+**Given** the net worth card
+**When** it renders a period
+**Then** it shows the value at 30px, the change with its trend arrow, the Actifs and Passifs totals and the segmented period control, above a 208px area chart that keeps the text summary and « Voir le tableau »
+
+**Given** the month's flow card
+**When** it renders a month
+**Then** income, expenses and « Épargne du mois » form a summary strip with 20px figures, above the outflows donut and the categories with tinted icon, amount and share
+
+**Given** the balance sheet card
+**When** it renders
+**Then** Actifs and Passifs each show their total and a 6px weight bar by account type with its legend, then their accounts in an inset group of `DESIGN.md`
+
+**Given** the accounts page
+**When** it renders
+**Then** each group of accounts is an inset group with its name and total in the uppercase header and 36px tinted type icons in its rows
+
+**Given** an account's page
+**When** it renders
+**Then** its page header shows the type icon, the name, the actions and the account's menu, its balance reads at 30px above the chart card, and its tabs Opérations, Soldes and Imports sit on the grey track
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 14.3: The transactions list and the drawer
+
+As the household's administrator,
+I want the transactions list and the transaction drawer laid out as in Sure,
+So that I can read and sort my transactions without squinting.
+
+**Requirements:** FR20, FR21, FR23, UX-DR4, UX-DR6, UX-DR9
+
+**Acceptance Criteria:**
+
+**Given** the transactions page, filtered or not
+**When** it renders
+**Then** a summary strip shows the count of the matching rows, their income and their expenses in 20px figures, and the list response of `GET /api/transactions` carries the two sums beside the existing count and signed sum, computed like that sum in `packages/api/src/services/transactions.ts`: in the reporting currency, with the same rows left out and counted in `skippedCount`
+
+**Given** the list on the transactions page or an account's page
+**When** it renders from 1024px up
+**Then** a 36px search field and the filters open the card, an uppercase column header on the grey `inset` surface names Opération, Catégorie, Compte and Montant, and each day is an inset group whose header holds the day, the count and the day's subtotal
+
+**Given** a transaction row
+**When** it renders from 768px up
+**Then** it is 56px high, with its checkbox, a 36px tinted icon or the merchant's letter, the label over its caption with its badges, the 24px category pill, the account with its 20px type icon and the amount, and it keeps the hover and selection states of `DESIGN.md`
+
+**Given** a screen narrower than 1024px
+**When** the list renders
+**Then** the account column is dropped, and below 768px each row takes two lines, the label and the amount, then the date and the category
+
+**Given** a row I open
+**When** the transaction sheet opens
+**Then** it is a 550px drawer on the right, inset 12px from the viewport with 12px corners, full screen below 768px, and it keeps saving on `⌘Enter` and closing on `Esc`
+
+**Given** the bulk bar
+**When** rows are selected
+**Then** it uses the 36px controls of `DESIGN.md`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest, including the income and expense sums on filtered rows and with a row in another currency
+
+### Story 14.4: The remaining screens
+
+As the household's administrator,
+I want every other screen to match,
+So that no page keeps the small sizes of before.
+
+**Requirements:** UX-DR1, UX-DR8, UX-DR10, UX-DR11
+
+**Acceptance Criteria:**
+
+**Given** the recurring page, the rules page and the settings pages (banks with the Enable Banking panel, categories, merchants, tags, security)
+**When** they render
+**Then** their lists are inset groups of `DESIGN.md` inside cards, under the page header, at the new type scale
+
+**Given** the import dialog and the rule dialog
+**When** they open
+**Then** they are 700px wide; the creation and edit dialogs are 550px, and confirmations 300px
+
+**Given** the banners, the empty states and the badges
+**When** they render
+**Then** they follow `DESIGN.md`: an empty state is a card with a 36px tinted icon, a title, one sentence and one primary button
+
+**Given** any screen of Archant
+**When** it renders
+**Then** no body text is set below 14px except captions and uppercase headers at 12px and the rail's labels at 11px, and no control is smaller than 28px
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest

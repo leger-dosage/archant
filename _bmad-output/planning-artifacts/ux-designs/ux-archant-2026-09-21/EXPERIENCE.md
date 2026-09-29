@@ -1,7 +1,7 @@
 ---
 name: Archant
 status: final
-updated: '2026-09-26'
+updated: '2026-09-29'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
@@ -24,19 +24,19 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | --- | --- | --- | --- | --- |
 | First-launch setup | `/setup` | First visit with no user | Create the administrator | 3 |
 | Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
-| Dashboard | `/` | Sidebar | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
-| Accounts | `/accounts` | Sidebar | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
-| Account detail | `/accounts/:id` | Sidebar account row, accounts page | Balance, chart, tabs Opérations, Soldes, Imports; account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
+| Dashboard | `/` | Rail | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
+| Accounts | `/accounts` | Rail | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
+| Account detail | `/accounts/:id` | Accounts column, accounts page | Balance, chart, tabs Opérations, Soldes, Imports; account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
 | Import | Dialog over account detail | "Importer" on an account | File, column mapping, preview, confirmation | 2 |
-| Transactions | `/transactions` | Sidebar | All transactions, filters in the URL, bulk actions | 1 |
+| Transactions | `/transactions` | Rail | All transactions, filters in the URL, bulk actions | 1 |
 | Transaction | Sheet over the current page | Row click, or `Enter` on a focused row | Edit every field | 1 |
-| Recurring | `/recurring` | Sidebar | Subscriptions and bills with the next date | 9 |
-| Rules | `/rules` | Sidebar | Rules list and editor | 8 |
-| Settings | `/settings/...` | Sidebar footer | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
+| Recurring | `/recurring` | Rail | Subscriptions and bills with the next date | 9 |
+| Rules | `/rules` | Rail | Rules list and editor | 8 |
+| Settings | `/settings/...` | Rail | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
 
-Until Epic 6 ships, `/` redirects to `/accounts`. The sidebar lists accounts under the Comptes entry, grouped and with balances, as in Sure. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
+Until Epic 6 ships, `/` redirects to `/accounts`. Since Epic 14 the shell is Sure's: a rail of destinations, an accounts column that lists every active account grouped by type with balances, and a top bar with breadcrumbs. The accounts column shows on every signed-in page but settings, which put their own navigation column in its place. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
-→ Composition reference: [mockups/key-linear-classic-dark.html](mockups/key-linear-classic-dark.html), which shows the dashboard and the transactions list in both modes, the empty dashboard, the logo and the favicon. This spine and `DESIGN.md` win on conflict.
+→ Composition reference: [mockups/sure-proportions-frame-and-font.html](mockups/sure-proportions-frame-and-font.html) with frame A for the shell and the transactions list; [mockups/key-linear-classic-dark.html](mockups/key-linear-classic-dark.html) for the dashboard's content, the empty dashboard, the logo and the favicon, its shell and sizes superseded. This spine and `DESIGN.md` win on conflict.
 
 ## Voice and Tone
 
@@ -67,7 +67,9 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 
 | Component | Use | Behavioural rules |
 | --- | --- | --- |
-| Sidebar | Everywhere once signed in | Accounts listed under Comptes, grouped, with balances; inactive accounts hidden. Clicking an account opens its detail. The group header toggles open or closed and remembers it. |
+| Rail | Everywhere once signed in | One entry per destination, the current one marked with `aria-current`. The avatar opens the user menu: theme, Réglages, Se déconnecter. |
+| Accounts column | Every signed-in page but settings | « Ajouter un compte » opens the creation dialog. Tabs Tout, Actifs, Passifs filter the list. Accounts are grouped by type with the group's total; inactive accounts hidden. Clicking an account opens its detail. The top bar's button folds the column and the choice is remembered on the device. |
+| Top bar | Every signed-in page | Breadcrumbs name the page and its parents, each parent a link: « Accueil / Opérations », « Comptes / Compte joint », « Réglages / Catégories ». |
 | Transaction row | Transactions, account detail | Click or `Enter` opens the transaction sheet. The category chip opens a combobox in place; choosing saves immediately with an optimistic update and an undo toast. Its checkbox selects it; the bulk bar's ticked checkbox, « Vider la sélection », unticks every row. |
 | Transaction sheet | Over any list | Fields: date, label, amount, account (read-only for imported ones), category, merchant, tags, notes, exclude from reports. Saves on `⌘Enter` or the Enregistrer button; `Esc` closes and asks only if changes are unsaved. Shows the source (manuel, import OFX du 12 sept., Enable Banking) and, when relevant, the linked transfer. |
 | Filter bar | Transactions | Filters as removable chips: compte, période, montant, texte, then catégorie, étiquette, marchand, sens as their epics ship. Every filter is in the URL. The result count and the signed total of the filtered rows show at the right. |
@@ -96,7 +98,7 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 | Pending | Transaction row | Muted amount and « En attente » badge; the row sorts at the top of its day. |
 | Excluded | Transaction row | Muted amount with an eye-off icon; tooltip « Exclue des rapports ». |
 | Account in another currency | Dashboard | A notice under net worth names the account left out of totals. |
-| Sync in progress | Bank connection, sidebar | Spinner on the connection's sync button; a second click is refused with « Synchronisation déjà en cours. » |
+| Sync in progress | Bank connection, accounts column | Spinner on the connection's sync button; a second click is refused with « Synchronisation déjà en cours. » |
 | Network or server error | Anywhere | Sonner toast, destructive, with the translated message; a failed optimistic update rolls back. |
 | Session expired | Anywhere | Redirect to sign-in, then back to the same URL. |
 
@@ -104,7 +106,7 @@ Behavioural. Visual specs live in `DESIGN.md` or in shadcn's defaults.
 
 No command palette and no keyboard shortcut but one: the interface keeps what the browser and Radix give, and every action has a visible button, link or menu item.
 
-- `Tab` moves through the page in reading order: the sidebar links, then the page's controls, then each transaction row.
+- `Tab` moves through the page in reading order: the rail, the accounts column, the top bar, then the page's controls, then each transaction row.
 - `Enter` activates the focused button or link; on a transaction row it opens the sheet.
 - Arrow keys move inside menus, tabs and comboboxes, and move a chart's cursor; comboboxes filter as you type and pick with `Enter`.
 - `Esc` closes the topmost layer and returns focus to what opened it.
@@ -121,7 +123,7 @@ WCAG 2.2 AA on every surface, NFR13.
 - Amounts never rely on colour: the sign and, for pending or excluded, a badge or an icon with text carry the meaning.
 - Each chart has a text summary above it (« Patrimoine net : 84 230 €, +2,1 % sur 3 mois ») and a table alternative.
 - Page changes announce the page title; toasts are announced through an `aria-live` region; the import preview announces group counts.
-- Targets are at least 24 by 24 px; rows are 36 px high.
+- Targets are at least 24 by 24 px; controls are 36 px high by default and transaction rows 56 px.
 - `prefers-reduced-motion` removes chart animations and sheet transitions.
 - Tables are real tables with header cells; the transaction list is a grid with row selection announced.
 
@@ -129,16 +131,17 @@ WCAG 2.2 AA on every surface, NFR13.
 
 | Width | Behaviour |
 | --- | --- |
-| ≥ 1024 px | Sidebar with labels and account balances; transactions as a table. |
-| 768–1023 px | Sidebar collapses to icons; the account list moves to the accounts page. |
-| < 768 px | Sidebar becomes a sheet from the top bar. Transactions become a list of two-line rows: label and amount, then date and category. The transaction sheet opens full screen. Import and rules show « Disponible sur ordinateur ». |
+| ≥ 1024 px | Rail, accounts column and top bar; transactions as a table with category and account columns. |
+| 768–1023 px | As in Sure: a top bar with the menu, the logo and the user menu, and a bottom navigation with the rail's entries. The menu opens the accounts column as a full-screen overlay. Transactions keep the category column and drop the account column. |
+| < 768 px | As above; transactions become two-line rows: label and amount, then date and category. The transaction drawer opens full screen. Import and rules show « Disponible sur ordinateur ». |
 
 ## Inspiration & Anti-patterns
 
-- **Taken from Sure:** accounts in the sidebar with balances, grouped by assets and liabilities; the transaction drawer; the net worth chart as the dashboard's centre; since Epic 12, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states.
-- **Taken from Linear:** filters as chips; since Epic 12, its Light and Classic Dark themes, Inter with its alternate glyphs, the sidebar on the base background with the page in one inset panel and a title bar, borders instead of shadows, 36px rows, and an indigo primary button.
-- **Departure from Sure:** expenses are not red, the surfaces and type are Linear's rather than Sure's, and there is no AI assistant surface.
+- **Taken from Sure:** the accounts column with balances; the transaction drawer; the net worth chart as the dashboard's centre; since Epic 12, tinted icons for categories and account types, category pills, the outflows donut, the balance sheet weight bar, the greeting and its empty states; since Epic 14, the shell (rail, accounts column, top bar with breadcrumbs, bottom navigation on small screens), the page header above the content, Tailwind's default type scale, Sure's control, dialog and drawer sizes, and the inset groups around rows.
+- **Taken from Linear:** filters as chips; since Epic 12, its Light and Classic Dark themes, Inter with its alternate glyphs, borders instead of shadows, and an indigo primary button. Epic 14 drops Linear's sidebar, inset panel, title bar, 13px text and 36px rows: the interface read too small.
+- **Departure from Sure:** expenses are not red; colours, font and lines are Linear's; transaction rows are 56px instead of 68px; the accounts column neither resizes nor shows sparklines; there is no AI assistant surface.
 - **Rejected:** onboarding tours and celebratory animations; infinite scroll; showing an amount in red to scold spending; fetched merchant logos, which would send merchant names to a third party.
+- **Considered for Epic 14 and set aside:** one Linear-like sidebar at Sure's proportions (frame B of the Epic 14 mockup), and Geist, Sure's font.
 - **Considered for Epic 12 and set aside:** Sure's own skin (grey page, white shadowed cards, black primary button), first chosen then replaced by Linear's; a ledger direction with an ink accent and a warm home direction with a terracotta accent; two Evidence-inspired variants, one with Evidence's figures, charts and tables in cards, one turning the dashboard into a monthly report; Linear's default near-black Dark, replaced by Classic Dark. Their mocks stay in `.working/`.
 - **Later candidate:** Sure's privacy mode, which blurs amounts on screen.
 
