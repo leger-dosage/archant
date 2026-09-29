@@ -285,6 +285,7 @@ describe("completeAuthorization", () => {
 					cashAccountType: "CARD",
 				},
 			],
+			dropped: { count: 0, fields: [] },
 		});
 		// Neither the holder's name nor the full IBAN goes further.
 		expect(JSON.stringify(session)).not.toContain(FIXTURE_IBAN_HEAD);
@@ -308,7 +309,7 @@ describe("completeAuthorization", () => {
 		});
 	});
 
-	it("drops an account it cannot read and keeps the others", async () => {
+	it("keeps an account whose currency it cannot read, with none, and drops one without a uid", async () => {
 		mockProvider({
 			sessions: () =>
 				HttpResponse.json({
@@ -318,13 +319,75 @@ describe("completeAuthorization", () => {
 						{ uid: "u1", currency: "XXX", name: "Compte en devise inconnue" },
 						{ currency: "EUR", name: "Compte sans uid" },
 						{ uid: "u2", currency: "EUR", name: "Compte lisible" },
+						{ uid: "u3", name: "Compte sans devise" },
+						{ uid: "u4", currency: null, name: "Devise nulle" },
+						{ uid: "u5", currency: 42, name: "Devise nombre" },
+						{ uid: "u6", currency: "ZZZ", name: "Devise inconnue" },
 					],
 				}),
 		});
 
 		const session = await connector.completeAuthorization("the-code");
 
-		expect(session.accounts).toMatchObject([{ uid: "u2", name: "Compte lisible" }]);
+		expect(session.accounts).toMatchObject([
+			{ uid: "u1", name: "Compte en devise inconnue", currency: null },
+			{ uid: "u2", name: "Compte lisible", currency: "EUR" },
+			{ uid: "u3", currency: null },
+			{ uid: "u4", currency: null },
+			{ uid: "u5", currency: null },
+			{ uid: "u6", currency: null },
+		]);
+		expect(session.dropped).toEqual({ count: 1, fields: ["uid"] });
+		expect(JSON.stringify(session.dropped)).not.toContain("Compte sans uid");
+	});
+
+	it("replays a session whose accounts all carry XXX, keeping every one", async () => {
+		mockProvider({ sessions: () => HttpResponse.json(fixtures.sessionNoCurrency) });
+
+		const session = await connector.completeAuthorization("the-code");
+
+		expect(session.accounts).toEqual([
+			{
+				uid: "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+				identificationHash: "anonymised-hash-boursorama-checking",
+				name: "BoursoBank Compte",
+				ibanLast4: "5678",
+				currency: null,
+				cashAccountType: "CACC",
+			},
+			{
+				uid: "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+				identificationHash: "anonymised-hash-boursorama-savings",
+				name: "Livret Bourso+",
+				ibanLast4: "5432",
+				currency: null,
+				cashAccountType: "SVGS",
+			},
+		]);
+		expect(session.dropped).toEqual({ count: 0, fields: [] });
+	});
+
+	it("reports the failing field paths of every dropped account, never a value", async () => {
+		mockProvider({
+			sessions: () =>
+				HttpResponse.json({
+					session_id: "s",
+					access: { valid_until: "2026-12-20T10:00:00Z" },
+					accounts: [
+						"FR7630001007941234567890185",
+						null,
+						{ uid: "", name: "Uid vide" },
+						{ name: "Sans uid" },
+						{ uid: "u1", currency: "EUR" },
+					],
+				}),
+		});
+
+		const session = await connector.completeAuthorization("the-code");
+
+		expect(session.accounts).toMatchObject([{ uid: "u1" }]);
+		expect(session.dropped).toEqual({ count: 4, fields: ["(account)", "uid"] });
+		expect(JSON.stringify(session.dropped)).not.toContain("FR76");
 	});
 
 	it("refuses a consent end that is a bare date", async () => {
@@ -407,8 +470,11 @@ describe("toBankAccount", () => {
 		expect(account({ details: "x".repeat(100) }).name).toBe("x".repeat(100));
 	});
 
-	it("refuses an unknown currency", () => {
-		expect(sessionAccountSchema.safeParse({ uid: "u1", currency: "XXX" }).success).toBe(false);
+	it("reads an unknown currency as none", () => {
+		expect(account({ currency: "XXX" }).currency).toBeNull();
+		expect(account({ currency: undefined }).currency).toBeNull();
+		expect(account({ currency: "usd" }).currency).toBeNull();
+		expect(account({ currency: "USD" }).currency).toBe("USD");
 	});
 });
 

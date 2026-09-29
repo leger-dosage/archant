@@ -7,7 +7,7 @@ import type {
 	BankStatement,
 	Institution,
 } from "../bank-connector.ts";
-import type { balanceSchema, sessionAccountSchema } from "./schemas.ts";
+import type { balanceSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
 import type { z } from "zod";
 
@@ -25,6 +25,7 @@ import {
 	balancesResponseSchema,
 	errorResponseSchema,
 	revokeResponseSchema,
+	sessionAccountSchema,
 	sessionResponseSchema,
 	transactionSchema,
 	transactionsPageSchema,
@@ -522,10 +523,29 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				sessionResponseSchema,
 			);
 
+			const accounts: BankAccountRef[] = [];
+			const fields = new Set<string>();
+			let dropped = 0;
+
+			for (const raw of session.accounts) {
+				const parsed = sessionAccountSchema.safeParse(raw);
+
+				if (parsed.success) {
+					accounts.push(toBankAccount(parsed.data));
+				} else {
+					dropped += 1;
+
+					for (const issue of parsed.error.issues) {
+						fields.add(issue.path.length === 0 ? "(account)" : issue.path.map(String).join("."));
+					}
+				}
+			}
+
 			return {
 				sessionId: session.session_id,
 				consentExpiresAt: session.access.valid_until,
-				accounts: session.accounts.map(toBankAccount),
+				accounts,
+				dropped: { count: dropped, fields: [...fields].toSorted() },
 			};
 		},
 

@@ -38,6 +38,15 @@ export const BALANCELESS_BANK = "Banque Sans Solde";
  */
 export const DATED_BANK = "Banque Datée";
 
+/**
+ * The bank that gives every account the currency `XXX`, ISO 4217's « no
+ * currency », as Boursorama did on 2026-09-29.
+ */
+export const NO_CURRENCY_BANK = "Banque Sans Devise";
+
+/** The bank whose accounts all come without a `uid`: none of them can be read. */
+export const UNREADABLE_BANK = "Banque Illisible";
+
 /** The balance `DATED_BANK` gives first, dated yesterday. */
 const DATED_FIRST_BALANCE = "1200.00";
 
@@ -48,6 +57,8 @@ export const FAKE_BANKS = [
 	"Néobanque Test",
 	BALANCELESS_BANK,
 	DATED_BANK,
+	NO_CURRENCY_BANK,
+	UNREADABLE_BANK,
 ] as const;
 
 /**
@@ -354,26 +365,32 @@ export async function startFakeEnableBanking(options: {
 				const sessionId = randomUUID();
 				sessions.add(sessionId);
 
+				const currency = attempt.bank === NO_CURRENCY_BANK ? "XXX" : "EUR";
+				const accounts = [
+					{
+						uid: checkingUid,
+						identification_hash: "fake-hash-checking",
+						account_id: { iban: `FR76300010079412345678${FAKE_ACCOUNTS.checking.ibanLast4}` },
+						name: "M. Démo",
+						product: FAKE_ACCOUNTS.checking.name,
+						currency,
+						cash_account_type: "CACC",
+					},
+					{
+						uid: cardUid,
+						identification_hash: "fake-hash-card",
+						name: FAKE_ACCOUNTS.card.name,
+						currency,
+						cash_account_type: "CARD",
+					},
+				];
+
 				json(response, 200, {
 					session_id: sessionId,
-					accounts: [
-						{
-							uid: checkingUid,
-							identification_hash: "fake-hash-checking",
-							account_id: { iban: `FR76300010079412345678${FAKE_ACCOUNTS.checking.ibanLast4}` },
-							name: "M. Démo",
-							product: FAKE_ACCOUNTS.checking.name,
-							currency: "EUR",
-							cash_account_type: "CACC",
-						},
-						{
-							uid: cardUid,
-							identification_hash: "fake-hash-card",
-							name: FAKE_ACCOUNTS.card.name,
-							currency: "EUR",
-							cash_account_type: "CARD",
-						},
-					],
+					accounts:
+						attempt.bank === UNREADABLE_BANK
+							? accounts.map(({ uid: _uid, ...account }) => account)
+							: accounts,
 					access: { valid_until: attempt.validUntil },
 				});
 				return;

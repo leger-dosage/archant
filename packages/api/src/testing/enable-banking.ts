@@ -30,6 +30,8 @@ export const fixtures = {
 	aspsps: await load("aspsps-fr.json"),
 	auth: await load("auth.json"),
 	session: await load("session.json"),
+	// Shaped like the Boursorama session of 2026-09-29: every account `XXX`.
+	sessionNoCurrency: await load("session-no-currency.json"),
 	balances: await load("balances.json"),
 	transactionsPage1: await load("transactions-page-1.json"),
 	transactionsPage2: await load("transactions-page-2.json"),

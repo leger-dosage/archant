@@ -12,6 +12,8 @@ import {
 	FAKE_ACCOUNTS,
 	FAKE_BANKS,
 	FAKE_LINES,
+	NO_CURRENCY_BANK,
+	UNREADABLE_BANK,
 } from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 import {
@@ -442,6 +444,31 @@ test("a new connection shows each bank account with its masked IBAN, its currenc
 	await expect(page.getByRole("option", { name: "Ignorer" })).toBeVisible();
 	await expect(page.getByRole("option", { name: "Nouveau : Prêt immobilier" })).toBeVisible();
 	await page.keyboard.press("Escape");
+});
+
+test("a bank that gives its accounts no currency has them listed in EUR", async ({ page }) => {
+	await connect(page, NO_CURRENCY_BANK);
+
+	const rows = bankAccountRows(page).getByRole("listitem");
+	await expect(rows).toHaveCount(2);
+	const checking = rows.filter({ hasText: FAKE_ACCOUNTS.checking.name });
+	const card = rows.filter({ hasText: FAKE_ACCOUNTS.card.name });
+	await expect(checking).toContainText("EUR");
+	await expect(checking).not.toContainText("XXX");
+	await expect(card).toContainText("EUR");
+	await expect(card).not.toContainText("XXX");
+});
+
+test("a bank whose accounts cannot be read says so and tells what to do", async ({ page }) => {
+	await connect(page, UNREADABLE_BANK);
+
+	await expect(bankAccountRows(page)).toBeHidden();
+	await expect(
+		page.getByText(
+			"Aucun compte lisible n'est arrivé de la banque. Renouvelez le consentement en choisissant les comptes à partager. Si la liste reste vide, consultez les journaux du serveur.",
+		),
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Renouveler le consentement" })).toBeVisible();
 });
 
 test("creating an account shows the bank balance in the sidebar, and a skipped row stays selectable", async ({

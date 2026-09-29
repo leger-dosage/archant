@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
-import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { DEFAULT_CURRENCY, isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import type { BankConnectionStatus } from "@archant/data/schema/bank-connections";
@@ -355,7 +355,7 @@ export async function completeConnection(
 		throw error;
 	}
 
-	const row = await deps.db.transaction(async (tx) => {
+	const result = await deps.db.transaction(async (tx) => {
 		const updatedAt = Date.now();
 		const [updated] = await tx
 			.update(bankConnections)
@@ -373,6 +373,34 @@ export async function completeConnection(
 			throw invalidAuthorization();
 		}
 
+		// Sure's `upsert_enable_banking_snapshot!`: an account the bank gave no
+		// usable currency keeps the one its stored row already has, which a
+		// linked row shares with its Archant account, else `EUR`.
+		// A hash the session lists twice is one row, so it counts once.
+		const unknown = [
+			...new Set(
+				session.accounts
+					.filter((account) => account.currency === null)
+					.map((account) => account.identificationHash),
+			),
+		];
+		const stored =
+			unknown.length === 0
+				? []
+				: await tx
+						.select({
+							identificationHash: bankAccounts.identificationHash,
+							currency: bankAccounts.currency,
+						})
+						.from(bankAccounts)
+						.where(
+							and(
+								eq(bankAccounts.bankConnectionId, updated.id),
+								inArray(bankAccounts.identificationHash, unknown),
+							),
+						);
+		const storedCurrency = new Map(stored.map((row) => [row.identificationHash, row.currency]));
+
 		// Sure's `import_accounts_from_session`: the provider lists a
 		// session's accounts only here, so they are kept with it.
 		if (session.accounts.length > 0) {
@@ -386,7 +414,10 @@ export async function completeConnection(
 						providerUid: account.uid,
 						name: account.name,
 						ibanLast4: account.ibanLast4,
-						currency: account.currency,
+						currency:
+							account.currency ??
+							storedCurrency.get(account.identificationHash) ??
+							DEFAULT_CURRENCY,
 						cashAccountType: account.cashAccountType,
 						createdAt: updatedAt,
 						updatedAt,
@@ -421,8 +452,9 @@ export async function completeConnection(
 				),
 			);
 
-		return updated;
+		return { updated, defaulted: unknown.length };
 	});
+	const row = result.updated;
 
 	deps.logger.info(
 		{
@@ -432,6 +464,21 @@ export async function completeConnection(
 		},
 		"bank connected",
 	);
+
+	// Counts only: a uid, a name or an IBAN would tie the line to an account.
+	if (result.defaulted > 0) {
+		deps.logger.warn(
+			{ connectionId: row.id, accounts: result.defaulted },
+			"bank accounts without a usable currency",
+		);
+	}
+
+	if (session.dropped.count > 0) {
+		deps.logger.warn(
+			{ connectionId: row.id, dropped: session.dropped.count, fields: session.dropped.fields },
+			"bank accounts the provider sent unreadable",
+		);
+	}
 
 	return toRecord(row, Date.now());
 }

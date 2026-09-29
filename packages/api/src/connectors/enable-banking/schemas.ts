@@ -53,7 +53,9 @@ const currency = z.custom<CurrencyCode>(
  * only to be cut to its last four characters by the client; `account_id`'s
  * other identifiers and the servicer are dropped. `name`, often the
  * holder's name, is kept as the last name choice before the IBAN, as Sure
- * does.
+ * does. A currency the client cannot read, such as Boursorama's `XXX`
+ * (ISO 4217's « no currency »), is `null` rather than a dropped account: the
+ * service, which sees the stored rows, picks one.
  */
 export const sessionAccountSchema = z.object({
 	uid: z.string().min(1),
@@ -66,7 +68,9 @@ export const sessionAccountSchema = z.object({
 	details: label,
 	product: label,
 	name: label,
-	currency,
+	// Nullable rather than nullish: `catch` turns an absent currency into
+	// `null` too, so the port has one empty value.
+	currency: currency.nullable().catch(null),
 	cash_account_type: z.string().trim().min(1).max(10).nullish().catch(null),
 });
 
@@ -75,12 +79,10 @@ export const sessionResponseSchema = z.object({
 	access: z.object({
 		valid_until: z.iso.datetime({ offset: true }).transform((value) => Date.parse(value)),
 	}),
-	// An account the schema cannot read is dropped, not the session: the
+	// Accounts stay unknown here and are parsed one by one by the client, so
+	// an unreadable one is dropped alone, and said so, never the session: the
 	// callback's code is single use, so failing here would lose every account.
-	accounts: z
-		.array(sessionAccountSchema.nullable().catch(null))
-		.default([])
-		.transform((accounts) => accounts.filter((account) => account !== null)),
+	accounts: z.array(z.unknown()).default([]),
 });
 
 /**

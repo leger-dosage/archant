@@ -540,7 +540,168 @@ describe("completeConnection and the session's accounts", () => {
 
 		await expect(listBankAccounts(deps(), connection.id)).resolves.toEqual([]);
 	});
+
+	it("stores in EUR every account of a session that gives XXX, and says how many", async () => {
+		const connection = await connected(() => HttpResponse.json(fixtures.sessionNoCurrency));
+
+		await expect(
+			temp.db
+				.select({ name: bankAccounts.name, currency: bankAccounts.currency })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, connection.id))
+				.orderBy(bankAccounts.name),
+		).resolves.toEqual([
+			{ name: "BoursoBank Compte", currency: "EUR" },
+			{ name: "Livret Bourso+", currency: "EUR" },
+		]);
+		const warning = logLines.find((line) => line.includes("without a usable currency"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({
+			level: 40,
+			connectionId: connection.id,
+			accounts: 2,
+		});
+		expectNoAccountInLogs();
+	});
+
+	it("stores in EUR an account whose currency is missing, null, a number or unknown", async () => {
+		const connection = await connected(() =>
+			HttpResponse.json({
+				session_id: "s",
+				access: { valid_until: "2026-12-20T10:00:00Z" },
+				accounts: [
+					{ uid: "u1", identification_hash: "h1", name: "Absente" },
+					{ uid: "u2", identification_hash: "h2", name: "Nulle", currency: null },
+					{ uid: "u3", identification_hash: "h3", name: "Nombre", currency: 42 },
+					{ uid: "u4", identification_hash: "h4", name: "Inconnue", currency: "ZZZ" },
+					{ uid: "u5", identification_hash: "h5", name: "Lisible", currency: "USD" },
+				],
+			}),
+		);
+
+		await expect(
+			temp.db
+				.select({ hash: bankAccounts.identificationHash, currency: bankAccounts.currency })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, connection.id))
+				.orderBy(bankAccounts.identificationHash),
+		).resolves.toEqual([
+			{ hash: "h1", currency: "EUR" },
+			{ hash: "h2", currency: "EUR" },
+			{ hash: "h3", currency: "EUR" },
+			{ hash: "h4", currency: "EUR" },
+			{ hash: "h5", currency: "USD" },
+		]);
+		const warning = logLines.find((line) => line.includes("without a usable currency"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({
+			level: 40,
+			connectionId: connection.id,
+			accounts: 4,
+		});
+	});
+
+	it("keeps the readable accounts and logs the count and fields of the dropped ones", async () => {
+		const connection = await connected(() =>
+			HttpResponse.json({
+				session_id: "s",
+				access: { valid_until: "2026-12-20T10:00:00Z" },
+				accounts: [
+					{
+						currency: "EUR",
+						name: "Compte sans uid",
+						account_id: { iban: `${FIXTURE_IBAN_HEAD}0185` },
+					},
+					{ uid: "u1", identification_hash: "h1", name: "Compte lisible", currency: "EUR" },
+				],
+			}),
+		);
+
+		await expect(
+			temp.db
+				.select({ name: bankAccounts.name })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, connection.id)),
+		).resolves.toEqual([{ name: "Compte lisible" }]);
+		const warning = logLines.find((line) => line.includes("unreadable"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({
+			level: 40,
+			connectionId: connection.id,
+			dropped: 1,
+			fields: ["uid"],
+		});
+		expect(logLines.join("")).not.toContain("without a usable currency");
+		expect(logLines.join("")).not.toContain("Compte sans uid");
+		expect(logLines.join("")).not.toContain("Compte lisible");
+		expect(logLines.join("")).not.toContain(FIXTURE_IBAN_HEAD);
+		expect(logLines.join("")).not.toContain("ibanLast4");
+	});
+
+	it("opens a connection whose accounts are all unreadable, with none", async () => {
+		const connection = await connected(() =>
+			HttpResponse.json({
+				session_id: "s",
+				access: { valid_until: "2026-12-20T10:00:00Z" },
+				accounts: [{ currency: "EUR" }, { currency: "EUR", name: "Autre" }],
+			}),
+		);
+
+		expect(connection.status).toBe("active");
+		const warning = logLines.find((line) => line.includes("unreadable"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({
+			level: 40,
+			connectionId: connection.id,
+			dropped: 2,
+			fields: ["uid"],
+		});
+		await expect(listBankAccounts(deps(), connection.id)).resolves.toEqual([]);
+	});
+
+	it("never takes a currency from another connection's row of the same hash", async () => {
+		const fixture = z
+			.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.session);
+		const [checking] = fixture.accounts;
+		await connected(() =>
+			HttpResponse.json({ ...fixture, accounts: [{ ...checking, currency: "USD" }] }),
+		);
+
+		const second = await connected(() =>
+			HttpResponse.json({ ...fixture, accounts: [{ ...checking, currency: "XXX" }] }),
+		);
+
+		await expect(
+			temp.db
+				.select({ currency: bankAccounts.currency })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, second.id)),
+		).resolves.toEqual([{ currency: "EUR" }]);
+	});
+
+	it("logs nothing more for a session whose accounts are all readable", async () => {
+		await connected();
+
+		expect(logLines.join("")).not.toContain("without a usable currency");
+		expect(logLines.join("")).not.toContain("unreadable");
+	});
 });
+
+/** The IBAN, the names and the uids of the XXX session: no log line may carry any of them. */
+function expectNoAccountInLogs() {
+	const logs = logLines.join("");
+
+	for (const fragment of [
+		"b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+		"c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+		"anonymised-hash-boursorama",
+		"BoursoBank Compte",
+		"Livret Bourso+",
+		"Jean Exemple",
+		"FR764061880265000401",
+		"ibanLast4",
+	]) {
+		expect(logs).not.toContain(fragment);
+	}
+}
 
 const eur: NewAccountInput = {
 	name: "Compte joint",
@@ -1131,6 +1292,68 @@ describe("renewConnection", () => {
 		);
 		expect(savings?.account).toBeNull();
 		expect(logLines.join("")).not.toContain("renewed-session");
+	});
+
+	it("keeps a stored account's currency when the renewal gives XXX, and EUR for a new one", async () => {
+		const fixture = z
+			.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.session);
+		const [checking] = fixture.accounts;
+		const connection = await connected(() =>
+			HttpResponse.json({ ...fixture, accounts: [{ ...checking, currency: "USD" }] }),
+		);
+		const [stored] = await listBankAccounts(deps(), connection.id);
+		mockProvider();
+		const [linked] = await linkBankAccounts(deps(), connection.id, {
+			links: [
+				{
+					bankAccountId: stored?.id ?? "",
+					action: "create",
+					type: "depository",
+					subtype: "checking",
+				},
+			],
+		});
+		vi.setSystemTime(NOW + DAY);
+		const { state } = await renew(connection.id, () =>
+			HttpResponse.json({
+				...fixture,
+				session_id: "renewed-session",
+				accounts: [
+					{ ...checking, uid: "renewed-checking-uid", currency: "XXX" },
+					{
+						uid: "savings-uid",
+						identification_hash: "anonymised-hash-savings",
+						product: "Livret A",
+						currency: "XXX",
+					},
+				],
+			}),
+		);
+
+		await completeConnection(deps(), { code: "new-code", state });
+
+		await expect(
+			temp.db
+				.select({ hash: bankAccounts.identificationHash, currency: bankAccounts.currency })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, connection.id))
+				.orderBy(bankAccounts.identificationHash),
+		).resolves.toEqual([
+			{ hash: "anonymised-hash-checking", currency: "USD" },
+			{ hash: "anonymised-hash-savings", currency: "EUR" },
+		]);
+		await expect(
+			temp.db
+				.select({ currency: accounts.currency, bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(eq(accounts.id, linked?.account?.id ?? "")),
+		).resolves.toEqual([{ currency: "USD", bankAccountId: stored?.id }]);
+		const warning = logLines.find((line) => line.includes("without a usable currency"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({ connectionId: connection.id, accounts: 2 });
+		expect(logLines.join("")).not.toContain("renewed-checking-uid");
+		expect(logLines.join("")).not.toContain("Livret A");
 	});
 
 	it("marks a bank account the renewal leaves out unlisted, keeping its link, until one lists it again", async () => {

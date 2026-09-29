@@ -34,7 +34,8 @@ export type BankAccountRef = {
 	name: string;
 	/** The last four characters of the IBAN; the rest never leaves the connector. */
 	ibanLast4: string | null;
-	currency: CurrencyCode;
+	/** `null` when the bank gave none usable, such as `XXX`: the service picks one. */
+	currency: CurrencyCode | null;
 	/** ISO 20022 cash account type, such as `CACC`, upper-cased. */
 	cashAccountType: string | null;
 };
@@ -46,6 +47,11 @@ export type BankSession = {
 	consentExpiresAt: number;
 	/** The accounts the user shared, which the provider lists only here. */
 	accounts: BankAccountRef[];
+	/**
+	 * The accounts left out because they could not be read, and the distinct
+	 * paths of their failing fields, such as `uid`: never a value.
+	 */
+	dropped: { count: number; fields: string[] };
 };
 
 /**
