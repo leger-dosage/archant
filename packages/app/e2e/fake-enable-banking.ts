@@ -47,6 +47,19 @@ export const NO_CURRENCY_BANK = "Banque Sans Devise";
 /** The bank whose accounts all come without a `uid`: none of them can be read. */
 export const UNREADABLE_BANK = "Banque Illisible";
 
+/**
+ * The bank whose transactions answer after about two seconds, long enough
+ * for the interface to show a sync running, and which books `SLOW_LINE`
+ * from its second read of an account on.
+ */
+export const SLOW_BANK = "Banque Lente";
+
+/** How long `SLOW_BANK` takes to answer the first page of a statement. */
+const SLOW_MS = 2000;
+
+/** The line `SLOW_BANK` books after its first read: a sync that ran brings it. */
+export const SLOW_LINE = { label: "Virement du matin Lente", amount: "150.00" } as const;
+
 /** The balance `DATED_BANK` gives first, dated yesterday. */
 const DATED_FIRST_BALANCE = "1200.00";
 
@@ -59,6 +72,7 @@ export const FAKE_BANKS = [
 	DATED_BANK,
 	NO_CURRENCY_BANK,
 	UNREADABLE_BANK,
+	SLOW_BANK,
 ] as const;
 
 /**
@@ -99,13 +113,28 @@ const unsigned = (value: string) => ({ currency: "EUR", amount: value.replace("-
 
 const direction = (value: string) => (value.startsWith("-") ? "DBIT" : "CRDT");
 
-/** One page of `uid`'s statement: the first without a key, the second on `page-2`. */
-function transactionsPage(uid: string, continuationKey: string | null) {
+/**
+ * One page of `uid`'s statement: the first without a key, the second on
+ * `page-2`. `withSlowLine` adds `SLOW_LINE`, booked today, to the second.
+ */
+function transactionsPage(uid: string, continuationKey: string | null, withSlowLine = false) {
 	const { groceries, salary, subscription, pending } = FAKE_LINES;
 
 	if (continuationKey === "page-2") {
 		return {
 			transactions: [
+				...(withSlowLine
+					? [
+							{
+								entry_reference: `${uid}-5`,
+								transaction_amount: unsigned(SLOW_LINE.amount),
+								debtor: { name: SLOW_LINE.label },
+								credit_debit_indicator: direction(SLOW_LINE.amount),
+								status: "BOOK",
+								booking_date: daysAgo(0),
+							},
+						]
+					: []),
 				{
 					entry_reference: `${uid}-3`,
 					transaction_amount: unsigned(subscription.amount),
@@ -243,6 +272,8 @@ export async function startFakeEnableBanking(options: {
 	const balanceRead = new Set<string>();
 	// The current account of each `DATED_BANK` session, with the number of times its balance was read.
 	const datedReads = new Map<string, number>();
+	// The accounts of each `SLOW_BANK` session, with the number of statements read.
+	const slowReads = new Map<string, number>();
 	// Every session opened and not revoked yet.
 	const sessions = new Set<string>();
 	let origin = "";
@@ -362,6 +393,11 @@ export async function startFakeEnableBanking(options: {
 					datedReads.set(checkingUid, 0);
 				}
 
+				if (attempt.bank === SLOW_BANK) {
+					slowReads.set(checkingUid, 0);
+					slowReads.set(cardUid, 0);
+				}
+
 				const sessionId = randomUUID();
 				sessions.add(sessionId);
 
@@ -468,7 +504,19 @@ export async function startFakeEnableBanking(options: {
 					return;
 				}
 
-				json(response, 200, transactionsPage(uid, url.searchParams.get("continuation_key")));
+				const continuationKey = url.searchParams.get("continuation_key");
+				const slowRead = slowReads.get(uid);
+
+				if (slowRead !== undefined && continuationKey === null) {
+					await new Promise((resolve) => setTimeout(resolve, SLOW_MS));
+				}
+
+				// A statement is counted once its last page is served.
+				if (slowRead !== undefined && continuationKey === "page-2") {
+					slowReads.set(uid, slowRead + 1);
+				}
+
+				json(response, 200, transactionsPage(uid, continuationKey, (slowRead ?? 0) > 0));
 				return;
 			}
 

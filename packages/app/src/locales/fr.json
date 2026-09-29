@@ -1058,6 +1058,7 @@
 			"never": "Jamais synchronisée",
 			"lastError": "La dernière synchronisation a échoué : {{error}}",
 			"submit": "Synchroniser",
+			"running": "Synchronisation en cours",
 			"done": "Synchronisation terminée.",
 			"failed": "Synchronisation terminée avec une erreur.",
 			"balanceUnavailable": "Opérations à jour, mais la banque n'a pas donné le solde : le solde affiché reste celui de la synchronisation précédente.",

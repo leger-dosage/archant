@@ -4,14 +4,14 @@ import type { ParsedStatement } from "../domain/statement.ts";
 import type { ErrorCode } from "../lib/errors.ts";
 import type { BankConnectionDeps } from "./bank-connections.ts";
 
-import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, or } from "drizzle-orm";
 
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
-import { addDays, daysBetween, minDate, today } from "../domain/dates.ts";
+import { addDays, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
@@ -27,8 +27,11 @@ export const FIRST_WINDOW_DAYS = 90;
 /** Each window starts this far before the last sync, for lines a bank books late. */
 export const OVERLAP_DAYS = 7;
 
-/** Who asked: the connection's button refuses what the cron quietly skips. */
-export type SyncTrigger = "button" | "cron";
+/**
+ * Who asked: the connection's button refuses what the cron and the first
+ * visit of the day quietly skip.
+ */
+export type SyncTrigger = "button" | "cron" | "auto";
 
 export type SyncResult = "synced" | "failed" | "skipped" | "consent_expired";
 
@@ -77,7 +80,8 @@ function toParsedStatement(
  * Takes the lease in one statement, so two runs cannot both hold it: free,
  * or older than ten minutes, and the connection not synced within the hour
  * unless a consent was renewed since its last sync (AD-18), so the renewal
- * can be checked at once. Taking the lease spends that exception.
+ * can be checked at once. Taking the lease spends that exception, and counts
+ * as the day's attempt.
  */
 async function takeLease(deps: BankConnectionDeps, connectionId: string, now: number) {
 	const [taken] = await deps.db
@@ -85,7 +89,7 @@ async function takeLease(deps: BankConnectionDeps, connectionId: string, now: nu
 		// The renewal's exception is spent by the run it lets through, whatever
 		// that run's outcome: a sync that keeps failing must not skip the hour
 		// on every press.
-		.set({ syncStartedAt: now, authorizedAt: null })
+		.set({ syncStartedAt: now, syncAttemptedAt: now, authorizedAt: null })
 		.where(
 			and(
 				eq(bankConnections.id, connectionId),
@@ -294,6 +298,34 @@ async function runSync(
 
 type Connection = { id: string; consentExpiresAt: number | null; syncStartedAt: number | null };
 
+/** The run of a connection whose lease was taken at `startedAt`, released here. */
+async function runLeased(
+	deps: BankConnectionDeps,
+	connector: BankConnector,
+	connectionId: string,
+	startedAt: number,
+	trigger: SyncTrigger,
+): Promise<SyncResult> {
+	try {
+		const outcome = await runSync(deps, connector, connectionId, startedAt);
+
+		deps.logger.info(
+			{ connectionId, trigger, ...outcome, durationMs: Date.now() - startedAt },
+			"bank connection synced",
+		);
+
+		return outcome.failed === 0 ? "synced" : "failed";
+	} finally {
+		// Only this run's lease: a run that outlived it may have lost it to another.
+		await deps.db
+			.update(bankConnections)
+			.set({ syncStartedAt: null })
+			.where(
+				and(eq(bankConnections.id, connectionId), eq(bankConnections.syncStartedAt, startedAt)),
+			);
+	}
+}
+
 /**
  * One connection's sync, lease taken and released here. The button refuses a
  * held lease with `SYNC_IN_PROGRESS` and a sync within the hour with
@@ -343,24 +375,7 @@ async function syncOne(
 		return "skipped";
 	}
 
-	try {
-		const outcome = await runSync(deps, connector, connection.id, startedAt);
-
-		deps.logger.info(
-			{ connectionId: connection.id, trigger, ...outcome, durationMs: Date.now() - startedAt },
-			"bank connection synced",
-		);
-
-		return outcome.failed === 0 ? "synced" : "failed";
-	} finally {
-		// Only this run's lease: a run that outlived it may have lost it to another.
-		await deps.db
-			.update(bankConnections)
-			.set({ syncStartedAt: null })
-			.where(
-				and(eq(bankConnections.id, connection.id), eq(bankConnections.syncStartedAt, startedAt)),
-			);
-	}
+	return runLeased(deps, connector, connection.id, startedAt, trigger);
 }
 
 const connectionColumns = {
@@ -432,4 +447,86 @@ export async function syncAll(
 	}, Promise.resolve());
 
 	return results;
+}
+
+/** The first visit's leases, and the run that syncs them once the request has answered. */
+export type DailySync = {
+	/** The connections whose lease this visit took, oldest first. */
+	leased: string[];
+	/** Syncs them one after another; never rejects, each failure is logged. */
+	run: () => Promise<void>;
+};
+
+const NOTHING_TO_SYNC: DailySync = { leased: [], run: async () => {} };
+
+/**
+ * Sure's `AutoSync`: the first authenticated request of the day, in the
+ * app's zone, syncs each active connection with an unexpired consent and no
+ * attempt since that day's midnight. Only the selection and the leases are
+ * awaited, local writes; the bank is read by `run`, which the caller starts
+ * once it has answered. A lease refused, held or within the hour, is skipped
+ * without a word, as the cron skips it: a request comes on every page, and
+ * the next one after the hour takes it. Nothing is selected while the bank
+ * connector is unconfigured.
+ */
+export async function startDailySync(deps: BankConnectionDeps): Promise<DailySync> {
+	// No key, no connector: every request of an install without a bank ends here.
+	if (deps.encryptionKey === null) {
+		return NOTHING_TO_SYNC;
+	}
+
+	const now = Date.now();
+	const due = await deps.db
+		.select({ id: bankConnections.id })
+		.from(bankConnections)
+		.where(
+			and(
+				eq(bankConnections.status, "active"),
+				or(isNull(bankConnections.consentExpiresAt), gt(bankConnections.consentExpiresAt, now)),
+				or(
+					isNull(bankConnections.syncAttemptedAt),
+					lt(bankConnections.syncAttemptedAt, startOfDay(deps.timeZone, now)),
+				),
+			),
+		)
+		.orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
+
+	if (due.length === 0) {
+		return NOTHING_TO_SYNC;
+	}
+
+	let connector: BankConnector;
+
+	try {
+		({ connector } = await resolveBankConnector(deps));
+	} catch (error) {
+		if (error instanceof AppError && error.code === "BANK_CONNECTOR_UNAVAILABLE") {
+			return NOTHING_TO_SYNC;
+		}
+
+		throw error;
+	}
+
+	// In turn: each `takeLease` is one statement, so of two requests racing
+	// here only one holds any given connection.
+	const leased = await due.reduce<Promise<string[]>>(async (previous, { id }) => {
+		const taken = await previous;
+
+		return (await takeLease(deps, id, now)) ? [...taken, id] : taken;
+	}, Promise.resolve([]));
+
+	return {
+		leased,
+		run: () =>
+			// One after another, as `syncAll` runs them.
+			leased.reduce<Promise<void>>(async (previous, connectionId) => {
+				await previous;
+
+				try {
+					await runLeased(deps, connector, connectionId, now, "auto");
+				} catch (error) {
+					deps.logger.error({ connectionId, code: codeOf(error) }, "bank sync failed");
+				}
+			}, Promise.resolve()),
+	};
 }

@@ -80,7 +80,7 @@ export function transactionsPage(url: URL): Response {
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
-	overrides: Partial<Record<Endpoint, (url: URL) => Response>> = {},
+	overrides: Partial<Record<Endpoint, (url: URL) => Response | Promise<Response>>> = {},
 ): ProviderRequest[] {
 	const requests: ProviderRequest[] = [];
 	const answer =

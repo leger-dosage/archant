@@ -22,6 +22,48 @@ export function today(timeZone: string, now: Date = new Date()): IsoDate {
 	return [values.get("year"), values.get("month"), values.get("day")].join("-");
 }
 
+/** How far `timeZone`'s wall clock runs ahead of UTC at `instant`, in milliseconds. */
+function offsetAt(timeZone: string, instant: number): number {
+	const parts = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		hourCycle: "h23",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	}).formatToParts(new Date(instant));
+	const value = (type: Intl.DateTimeFormatPartTypes) =>
+		Number(parts.find((part) => part.type === type)?.value);
+	const wallClock = Date.UTC(
+		value("year"),
+		value("month") - 1,
+		value("day"),
+		value("hour"),
+		value("minute"),
+		value("second"),
+	);
+
+	return wallClock - (instant - (((instant % 1000) + 1000) % 1000));
+}
+
+/**
+ * Epoch milliseconds of the midnight that began today in `timeZone`. The
+ * offset is read twice, the second time at the first guess: a day that
+ * changes offset starts under the offset of its midnight, not of the moment
+ * asked about. A zone whose clocks skip midnight starts the day at the first
+ * instant that exists.
+ */
+export function startOfDay(timeZone: string, now: number): number {
+	const day = today(timeZone, new Date(now));
+	const midnightUtc = Date.parse(`${day}T00:00:00Z`);
+	const guess = midnightUtc - offsetAt(timeZone, midnightUtc);
+	const start = midnightUtc - offsetAt(timeZone, guess);
+
+	return today(timeZone, new Date(start)) === day ? start : guess;
+}
+
 export function addDays(date: IsoDate, days: number): IsoDate {
 	return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }

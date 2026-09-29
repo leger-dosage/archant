@@ -13,6 +13,8 @@ import {
 	FAKE_BANKS,
 	FAKE_LINES,
 	NO_CURRENCY_BANK,
+	SLOW_BANK,
+	SLOW_LINE,
 	UNREADABLE_BANK,
 } from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
@@ -785,10 +787,13 @@ async function expectRowBadge(page: Page, connectionId: string, status: string, 
 	await expect(badge).toHaveClass(/\btext-warning\b/u);
 }
 
-/** Moves a connection's consent end or last sync, as time passing would. */
+/**
+ * Moves a connection's consent end, last sync or last sync attempt, as time
+ * passing would: the e2e server's clock cannot be faked.
+ */
 async function age(
 	connectionId: string,
-	fields: { consentExpiresAt?: number; lastSyncedAt?: number | null },
+	fields: { consentExpiresAt?: number; lastSyncedAt?: number | null; syncAttemptedAt?: number },
 ) {
 	const db = await createDb(`file:${DATABASE_FILE}`);
 
@@ -797,6 +802,7 @@ async function age(
 			Object.entries({
 				consent_expires_at: fields.consentExpiresAt,
 				last_synced_at: fields.lastSyncedAt,
+				sync_attempted_at: fields.syncAttemptedAt,
 			}).flatMap(([column, value]) =>
 				value === undefined
 					? []
@@ -973,4 +979,84 @@ test("disconnecting keeps each account in the sidebar, with the same balance and
 
 	await page.goto(`/settings/banks/${connectionId}`);
 	await expect(page.getByRole("alert")).toContainText("Cette connexion n'existe pas.");
+});
+
+// Story 13.8: the first request of the day syncs every bank after answering.
+
+/**
+ * A `SLOW_BANK` connection whose current account is linked and synced once,
+ * with the id of that account.
+ */
+async function connectSlowBank(page: Page) {
+	const connectionId = await connect(page, SLOW_BANK);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+	return { connectionId, accountId: await linkedAccountId(page, FAKE_ACCOUNTS.checking.name) };
+}
+
+/** The next morning: the last attempt yesterday, the last sync hours ago. */
+const nextMorning = (connectionId: string) =>
+	age(connectionId, {
+		syncAttemptedAt: Date.now() - DAY_MS,
+		lastSyncedAt: Date.now() - 12 * 60 * 60_000,
+	});
+
+const syncRunning = (page: Page) =>
+	page.getByRole("status").filter({ hasText: "Synchronisation en cours" });
+
+test("the first page of the day shows the sync running, then the lines it brought", async ({
+	page,
+	request,
+}) => {
+	const { connectionId, accountId } = await connectSlowBank(page);
+
+	try {
+		await nextMorning(connectionId);
+		await page.goto(`/accounts/${accountId}`);
+
+		await expect(syncRunning(page)).toBeVisible();
+		await expect(transactionRow(page, SLOW_LINE.label)).toHaveCount(0);
+
+		await expect(syncRunning(page)).toBeHidden();
+		await expect(transactionRow(page, SLOW_LINE.label)).toContainText(euros(15_000));
+
+		// The day's attempt is spent: another page starts nothing.
+		await page.reload();
+		await expect(transactionRow(page, SLOW_LINE.label)).toBeVisible();
+		await expect(syncRunning(page)).toHaveCount(0);
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+test("a page left open since yesterday starts the sync when it comes back into view", async ({
+	page,
+	request,
+}) => {
+	const { connectionId, accountId } = await connectSlowBank(page);
+
+	try {
+		await nextMorning(connectionId);
+		// TanStack Query reads every query again when the tab becomes visible.
+		await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
+
+		const running = page.getByRole("button", { name: "Synchronisation en cours" });
+		await expect(running).toBeDisabled();
+		await expect(syncRunning(page)).toBeVisible();
+
+		await expect(page.getByRole("button", { name: "Synchroniser" })).toBeEnabled();
+		await expect(running).toHaveCount(0);
+		await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+		await page.goto(`/accounts/${accountId}`);
+		await expect(transactionRow(page, SLOW_LINE.label)).toBeVisible();
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
 });

@@ -53,6 +53,11 @@ export const bankConnections = sqliteTable(
 		// The sync lease: set while a run holds the connection, and treated as
 		// free after ten minutes so a crashed run never locks it for good.
 		syncStartedAt: integer("sync_started_at"),
+		// Epoch milliseconds of the latest run to take the lease, whatever its
+		// trigger or outcome: the first visit of the day syncs a connection
+		// only when no run started since that day's midnight, so a bank that
+		// failed this morning is not asked again on every page.
+		syncAttemptedAt: integer("sync_attempted_at"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

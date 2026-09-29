@@ -82,9 +82,11 @@ docker compose logs archant | grep 'Setup is open'
 
 Take the token from the last line, open `https://<machine>.<tailnet>.ts.net` from a device on the tailnet, and create the administrator at `/setup`. Then turn two-factor sign-in on in « Réglages » › « Sécurité ».
 
-## 7. Schedule the daily sync
+## 7. Schedule the daily sync, if the machine stays on
 
-[Scheduled synchronisation](deployment.md#scheduled-synchronisation) describes `POST /api/sync`. Call it from the host's cron on `http://127.0.0.1:8787`, not the `ts.net` address: the sync keeps running when Tailscale is down or logged out, and the secret never leaves the machine. `/api/sync` takes no session and no origin check, so plain loopback HTTP works.
+This step is optional: the first page you open each day syncs the banks, as [Scheduled synchronisation](deployment.md#scheduled-synchronisation) explains, so a machine that sleeps at night misses nothing. A cron only helps a machine that stays on, by syncing before you open Archant.
+
+The same section describes `POST /api/sync`. Call it from the host's cron on `http://127.0.0.1:8787`, not the `ts.net` address: the sync keeps running when Tailscale is down or logged out, and the secret never leaves the machine. `/api/sync` takes no session and no origin check, so plain loopback HTTP works.
 
 Keep the secret out of the crontab line, in a header file only you can read:
 
