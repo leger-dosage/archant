@@ -109,7 +109,7 @@ FR47: `GET /api/health` reports that the API and its database answer.
 
 FR48: The user picks a country and a bank from the Enable Banking list, is sent to the bank to consent, and comes back through a callback.
 FR49: The user chooses which bank accounts to link. Each one links to a new account or to an existing account, for instance one already fed by files.
-FR50: A sync fetches balances and transactions for every linked account since the last sync, with an overlap window. It runs from `POST /api/sync` and from a button in the interface.
+FR50: A sync fetches balances and transactions for every linked account since the last sync, with an overlap window. It runs from `POST /api/sync`, from a button in the interface, and on the first visit of the day.
 FR51: A pending transaction is stored as pending. When its booked version arrives, it updates the pending one in place without creating a duplicate, even if the label changed, or the amount when the bank keeps the same reference.
 FR52: A transaction that arrives both from a file and from Enable Banking ends up as one transaction.
 FR53: The interface warns when a consent expires within 14 days and lets the user renew it. After expiry, sync stops for that connection with a visible status, and no data is lost.
@@ -134,14 +134,14 @@ NFR5: Logs and error reports never contain an amount tied to an identity, an IBA
 NFR6: Sessions are handled by Better Auth with its defaults intact.
 NFR7: The API answers `{ "data": ... }` or `{ "error": { "code", "message" } }`. Codes are a closed union in `AppError`; an unexpected error returns a generic `INTERNAL_ERROR` 500 without stack trace or provider payload. Messages are in English.
 NFR8: An import or a sync is atomic per account: a failure writes nothing for that account.
-NFR9: The whole application runs as one process with no queue and no broker. A sync runs inside the request that triggers it.
+NFR9: The whole application runs as one process with no queue and no broker. A sync runs inside the request that triggers it, except the sync of the first visit of the day, which runs in the same process beside the request that started it.
 NFR10: With 50,000 transactions in SQLite, the first page of the transaction list answers in under 300 ms and a 5,000-line file imports in under 10 seconds on a small server.
 NFR11: No test reaches the network; an unmocked request fails the test and names the URL. Money paths (import, deduplication, balance computation, transfer matching, provider sync) are covered to the branch.
 NFR12: The interface is in French first. Every visible string goes through a translation layer so another language can be added without touching components.
 NFR13: The interface is usable with the keyboard alone and meets WCAG 2.2 AA contrast.
 NFR14: Dependencies stay few and popular; each new one is justified in its pull request.
 NFR15: A request cannot exhaust the server: every route has a body size limit, sign-in attempts are limited per address and overall with a count that survives a restart, and no parser runs in time exponential in its input.
-NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy.
+NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy. Outside a container, the server listens on loopback only unless told otherwise.
 
 ### Additional Requirements
 
@@ -152,7 +152,7 @@ NFR16: The default deployment exposes nothing it does not need: the container pu
 - Environment validated by a `validateEnv(runtimeEnv)` function built on `@t3-oss/env-core`; `.env.example` lists every variable and what degrades without it.
 - The interface calls the API through Hono's typed client (`hc<AppType>()`), with chained route mounts and the same Hono version in both packages.
 - Interface built with Vite, React, TanStack Router, TanStack Query, shadcn/ui and Tailwind CSS.
-- `POST /api/sync` is protected by a shared secret and meant to run once a day, triggered by a cron or a scheduled GitHub Action.
+- `POST /api/sync` is protected by a shared secret. It is optional: the first visit of the day syncs on its own, as in Sure, and the route serves a host that stays on, triggered by a cron or a scheduled GitHub Action.
 - GitHub Actions runs the verification gate on every pull request and exercises the container once it exists.
 - Enable Banking credentials (application id and private key) come from the environment.
 - The application copies the database before a migration (FR60). Other backups are taken by hand with the `VACUUM INTO` recipe of `docs/deployment.md`; scheduled and off-site backups are deferred until the owner wants them.
@@ -228,7 +228,7 @@ FR46: Epic 3 - Container image
 FR47: Epic 3 - Health endpoint
 FR48: Epic 10 - Bank consent flow
 FR49: Epic 10 - Link bank accounts
-FR50: Epic 10 - Sync from route and button
+FR50: Epic 10 - Sync from route and button; Epic 13 - Sync on the first visit of the day
 FR51: Epic 10 - Pending transactions
 FR52: Epic 10 - File and API deduplication
 FR53: Epic 10 - Consent expiry and renewal
@@ -240,7 +240,7 @@ FR58: Epic 13 - Two-factor sign-in
 FR59: Epic 13 - Versioned image and visible version
 FR60: Epic 13 - Copy before migration
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, and revises the additional requirement on backups.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`.
 
 ## Epic List
 
@@ -307,7 +307,7 @@ Archant stops looking austere: Sure's content (a greeting, colour through tinted
 ### Epic 13: Ready for real bank data
 
 The owner hosts Archant somewhere other than their laptop, connects a real bank through Enable Banking's production environment, and upgrades it without risking the data: the findings of the security audit of 2026-09-26 are fixed, releases ship as versioned images, the database is copied before every migration, and a guide takes the owner from nothing to Archant running at home, reachable only through Tailscale.
-**FRs covered:** FR57, FR58, FR59, FR60; NFR15, NFR16
+**FRs covered:** FR57, FR58, FR59, FR60; NFR15, NFR16; revises FR50, NFR9
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -2058,6 +2058,8 @@ On 2026-09-27 the owner chose the machine at home, reachable only through Tailsc
 
 Stories 13.1 to 13.4 can ship in any order; 13.6 needs 13.5's version number; 13.7 comes last, since it documents all of them.
 
+On 2026-09-29 the owner followed the guide on a Mac with Docker Desktop, a machine that sleeps. Three problems came out of it. First, a daily cron misses every run the machine sleeps through, and the owner wants the code to handle a host that sleeps rather than assume a server that never does. Sure already does: its `AutoSync` concern starts a sync on the first page of the day, and its scheduled sync is an option in the hosting settings. Second, the server listens on every interface, so `pnpm api start:dev` or a plain Node host exposes the sign-in page to the whole Wi-Fi. Third, the first run was harder than it should be: `docker compose up --wait` does not show the setup token, and an `ARCHANT_URL` left empty ended in a raw `INVALID_ORIGIN` code at sign-in. Stories 13.8 to 13.10 fix them, in any order.
+
 ### Story 13.1: The first administrator needs a setup token
 
 As the household's administrator,
@@ -2255,3 +2257,81 @@ So that I can run it on real data without guessing what I missed.
 **Given** the finished story
 **When** `pnpm lint:format` runs
 **Then** every page is formatted, every internal link resolves, and the `#connecting-a-bank` anchor still exists
+
+### Story 13.8: Sync on the first visit of the day
+
+As the household's administrator,
+I want Archant to sync my banks the first time I open it each day,
+So that my accounts are current even when the machine slept through the night.
+
+**Requirements:** FR50, NFR9
+
+**Acceptance Criteria:**
+
+**Given** a signed-in user, at least one active bank connection, and no sync attempt on it since the start of today in `APP_TIMEZONE`
+**When** any authenticated `/api` request arrives
+**Then** the server starts a sync of that connection without making the request wait, as Sure's `AutoSync` does, and a second request, from another tab or device, starts nothing more
+
+**Given** a sync attempt today that failed, a connection whose consent has ended, or a sync already running
+**When** a request arrives
+**Then** no sync starts automatically until the next day; « Synchroniser » still works under the existing one-hour spacing
+
+**Given** a sync started this way
+**When** the interface is open
+**Then** it shows that a sync is running, then refetches the accounts and transactions once it ends; a page left open since the day before starts the sync when it gets the focus back, since TanStack Query refetches on focus
+
+**Given** `POST /api/sync`
+**When** a host that stays on calls it
+**Then** it works as before; `docs/deployment.md` « Scheduled synchronisation » and step 7 of `docs/hosting.md` present it as optional, for a host that stays on
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test, with the clock and Enable Banking mocked
+
+### Story 13.9: The server listens on loopback unless told otherwise
+
+As the household's administrator,
+I want the server to listen on `127.0.0.1` unless I say otherwise,
+So that running Archant with Node on a laptop does not show my sign-in page to everyone on the same Wi-Fi.
+
+**Requirements:** NFR16
+
+**Acceptance Criteria:**
+
+**Given** no `HOST` variable
+**When** the server starts with `pnpm api start:dev` or `pnpm api start`
+**Then** it listens on `127.0.0.1` only, and the Vite proxy and `pnpm test:e2e` still reach it
+
+**Given** `HOST=0.0.0.0` or another address
+**When** the server starts
+**Then** it listens there; the `Dockerfile` sets `HOST=0.0.0.0`, so the container still answers on its published loopback port and the CI `image` job still passes
+
+**Given** `.env.example` and the « Variables » table of `docs/deployment.md`
+**When** a self-hoster reads them
+**Then** `HOST` is listed with its default and what it exposes when widened, and « A plain Node host » says to keep it on loopback behind the reverse proxy
+
+**Given** the finished story
+**When** `pnpm test` and the CI `image` job run
+**Then** a test proves the default bind address and the override
+
+### Story 13.10: A first run that says what to do
+
+As the household's administrator,
+I want the setup page and a wrong address to tell me exactly what to do,
+So that my first run does not end in a log search or a raw error code.
+
+**Requirements:** FR57, FR42
+
+**Acceptance Criteria:**
+
+**Given** `/setup`
+**When** it asks for the setup token
+**Then** its hint names where to read it: `docker compose logs archant` with the container, the terminal running the server otherwise; `docs/deployment.md` gives `docker compose logs archant | grep 'Setup is open'` right after the first `up`, since `--wait` shows no log
+
+**Given** a browser on an address other than `BETTER_AUTH_URL`, for instance the `ts.net` address while `ARCHANT_URL` is empty
+**When** sign-in, setup or an upload is refused for its origin
+**Then** the interface says in French that Archant is configured for another address and to set `ARCHANT_URL` to the one in the address bar, instead of `INVALID_ORIGIN` or a bare « Forbidden »; the server logs one `warn` line naming the received origin and the expected one
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test
