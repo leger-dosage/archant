@@ -16,6 +16,7 @@ import { z } from "zod";
 import { BANK_ACCOUNT_TARGETS } from "@archant/data/account-types";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import {
@@ -409,14 +410,9 @@ function BankConnectionPage() {
 	};
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-6">
-			<div className="flex flex-col gap-1">
-				<h2 className="type-display">{title}</h2>
-				<p className="text-sm text-muted-foreground">{t("banks.accounts.description")}</p>
-			</div>
-
+		<Page centred title={title} description={t("banks.accounts.description")}>
 			{connection !== undefined && (
-				<Section level={3} title={t("banks.sync.title")}>
+				<Section title={t("banks.sync.title")}>
 					<div className="flex flex-col gap-4 p-4">
 						<SyncStatus connection={connection} sync={sync} />
 						<ConnectionActions
@@ -429,7 +425,7 @@ function BankConnectionPage() {
 				</Section>
 			)}
 
-			<Section level={3} title={t("banks.accounts.list")}>
+			<Section title={t("banks.accounts.list")}>
 				{accounts.isPending && (
 					<div className="flex flex-col gap-2 p-4">
 						<Skeleton className="h-16 w-full" />
@@ -485,6 +481,6 @@ function BankConnectionPage() {
 						</form>
 					))}
 			</Section>
-		</div>
+		</Page>
 	);
 }

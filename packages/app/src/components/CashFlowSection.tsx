@@ -167,7 +167,7 @@ export function CashFlowSection({
 	return (
 		<section
 			aria-labelledby="cash-flow-heading"
-			className="flex min-w-0 flex-col rounded-lg border bg-section"
+			className="flex min-w-0 flex-col rounded-lg border bg-card"
 		>
 			<div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
 				<h2 id="cash-flow-heading" className="type-title">

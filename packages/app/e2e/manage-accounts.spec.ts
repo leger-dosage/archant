@@ -12,8 +12,10 @@ const pageGroupHeader = (page: Page, group: "Actifs" | "Passifs") =>
 const pageRow = (page: Page, name: string) =>
 	page.getByRole("main").getByRole("link", { name: new RegExp(name) });
 
-const sidebarRow = (page: Page, name: string) =>
-	page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: new RegExp(name) });
+const columnRow = (page: Page, name: string) =>
+	page
+		.getByRole("complementary", { name: "Liste des comptes" })
+		.getByRole("link", { name: new RegExp(name) });
 
 /** Opens the account's « … » menu beside its name. */
 async function openMenu(page: Page, name: string) {
@@ -58,7 +60,7 @@ async function openAccountFilter(page: Page) {
 	return menu;
 }
 
-test("a new name and subtype show in the header, the sidebar, /accounts and /transactions", async ({
+test("a new name and subtype show in the header, the accounts column, /accounts and /transactions", async ({
 	page,
 	api,
 }) => {
@@ -75,13 +77,13 @@ test("a new name and subtype show in the header, the sidebar, /accounts and /tra
 	await expect(page.getByText(`Compte « ${name} » enregistré.`)).toBeVisible();
 	await expect(dialog).toBeHidden();
 	await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-	await expect(sidebarRow(page, name)).toBeVisible();
+	await expect(columnRow(page, name)).toBeVisible();
 
 	await page.reload();
 	const header = page.getByRole("region", { name, exact: true });
 	await expect(header).toContainText("Épargne");
 	await expect(header).toContainText(euros(48_000));
-	await expect(sidebarRow(page, name)).toContainText(euros(48_000));
+	await expect(columnRow(page, name)).toContainText(euros(48_000));
 
 	await page.goto("/accounts");
 	await expect(pageRow(page, name)).toContainText("Épargne");
@@ -191,7 +193,7 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 	await page.keyboard.press("Escape");
 });
 
-test("a deactivated account leaves /accounts, the sidebar and the filter, and comes back when reactivated", async ({
+test("a deactivated account leaves /accounts, the accounts column and the filter, and comes back when reactivated", async ({
 	page,
 	api,
 }) => {
@@ -206,11 +208,14 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
 		"Inactif",
 	);
-	await expect(sidebarRow(page, account.name)).toHaveCount(0);
+	await expect(columnRow(page, account.name)).toHaveCount(0);
 
 	// Its balance of 99,00 leaves the Actifs total.
 	expect(await api.groupTotal("asset")).toBe(before - 9_900);
-	await page.getByRole("link", { name: "Comptes", exact: true }).click();
+	await page
+		.getByRole("navigation", { name: "Navigation principale" })
+		.getByRole("link", { name: "Comptes", exact: true })
+		.click();
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 9_900));
 	await expect(pageRow(page, account.name)).toHaveCount(0);
 
@@ -252,7 +257,7 @@ test("a deactivated account leaves /accounts, the sidebar and the filter, and co
 	await expect(page.getByRole("region", { name: account.name, exact: true })).not.toContainText(
 		"Inactif",
 	);
-	await expect(sidebarRow(page, account.name)).toBeVisible();
+	await expect(columnRow(page, account.name)).toBeVisible();
 
 	await page.goto("/accounts");
 	await expect(pageRow(page, account.name)).not.toContainText("Inactif");
@@ -317,7 +322,7 @@ test("an excluded account stays listed, muted with the eye-off icon, out of its 
 	await expect(row).toContainText(euros(25_000));
 	await expect(row).toContainText("Exclu des rapports");
 	await expect(row.getByText(euros(25_000))).toHaveClass(/text-muted-foreground/u);
-	await expect(sidebarRow(page, account.name)).toContainText("Exclu des rapports");
+	await expect(columnRow(page, account.name)).toContainText("Exclu des rapports");
 
 	await row.getByText("Exclu des rapports").locator("..").hover();
 	await expect(page.getByRole("tooltip")).toHaveText("Exclu des rapports");
@@ -371,7 +376,7 @@ test("deleting an account states its transactions, then removes it and them", as
 	await expect(page).toHaveURL(/\/accounts$/u);
 	await expect(pageRow(page, other.name)).toBeVisible();
 	await expect(pageRow(page, account.name)).toHaveCount(0);
-	await expect(sidebarRow(page, account.name)).toHaveCount(0);
+	await expect(columnRow(page, account.name)).toHaveCount(0);
 	await expect(page.getByRole("heading", { level: 2, name: "Actifs" })).toBeVisible();
 	expect(reads).toEqual([]);
 

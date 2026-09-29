@@ -2,7 +2,7 @@ import type { RuleData, RuleRunData } from "@/hooks/useRules";
 import type { SummaryNames } from "@/lib/rule-summary";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, FunnelIcon, ListFilterIcon } from "lucide-react";
+import { EllipsisIcon, ListFilterIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -348,7 +348,6 @@ function RulesPage() {
 
 	return (
 		<Page
-			icon={FunnelIcon}
 			title={t("rules.title")}
 			actions={
 				desktop ? (
@@ -384,10 +383,7 @@ function RulesPage() {
 			)}
 
 			{desktop && failed !== undefined && (
-				<div
-					role="alert"
-					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
-				>
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
 					<Button
 						variant="outline"

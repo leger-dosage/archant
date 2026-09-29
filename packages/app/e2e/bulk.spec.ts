@@ -256,7 +256,9 @@ test("Supprimer confirms with the count, focus on Annuler, and the balance follo
 	await expect(rowItem(page, labelOf(prefix, 1))).toHaveCount(0);
 	await expect(rowItem(page, labelOf(prefix, 3))).toBeVisible();
 	await expect(
-		page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: account.name }),
+		page
+			.getByRole("complementary", { name: "Liste des comptes" })
+			.getByRole("link", { name: account.name }),
 	).toContainText(euros(100_000 - 100));
 });
 

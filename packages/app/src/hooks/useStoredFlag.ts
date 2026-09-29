@@ -10,7 +10,7 @@ function read(key: string, fallback: boolean): boolean {
 	}
 }
 
-/** A boolean remembered across visits, such as a collapsed sidebar group. */
+/** A boolean remembered across visits, such as the folded accounts column. */
 export function useStoredFlag(key: string, fallback: boolean): [boolean, (value: boolean) => void] {
 	const [value, setValue] = useState(() => read(key, fallback));
 

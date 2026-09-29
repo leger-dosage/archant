@@ -42,7 +42,7 @@ test("changing the password keeps this session and refuses the old password", as
 	playwright,
 }) => {
 	await page.goto("/settings/security");
-	await expect(page.getByRole("heading", { level: 1, name: "Réglages" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Sécurité" })).toBeVisible();
 
 	await page.getByLabel("Mot de passe actuel").fill("pas le bon mot de passe");
 	await page.getByLabel("Nouveau mot de passe", { exact: true }).fill(NEW_PASSWORD);

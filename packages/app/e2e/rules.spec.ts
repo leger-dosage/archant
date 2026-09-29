@@ -55,10 +55,10 @@ async function visit(page: Page) {
 	await expect(page.getByRole("heading", { level: 1, name: "Règles" })).toBeVisible();
 }
 
-test("the sidebar opens Règles, empty at first", async ({ page }) => {
+test("the rail opens Règles, empty at first", async ({ page }) => {
 	await page.goto("/accounts");
 	await page
-		.locator('[data-sidebar="sidebar"]')
+		.getByRole("navigation", { name: "Navigation principale" })
 		.getByRole("link", { name: "Règles", exact: true })
 		.click();
 

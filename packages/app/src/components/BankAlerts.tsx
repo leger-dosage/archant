@@ -131,16 +131,13 @@ export function BankAlerts() {
 	return (
 		<>
 			{syncing && (
-				<p
-					role="status"
-					className="flex items-center gap-2 px-6 pt-4 text-sm text-muted-foreground"
-				>
+				<p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
 					<Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
 					{t("banks.sync.running")}
 				</p>
 			)}
 			{shown.length > 0 && (
-				<section aria-label={t("banks.alerts.label")} className="flex flex-col gap-2 px-6 pt-4">
+				<section aria-label={t("banks.alerts.label")} className="flex flex-col gap-2">
 					{shown.map(({ connection, alert }) => (
 						<AlertStrip
 							key={`${connection.id}.${alert}`}

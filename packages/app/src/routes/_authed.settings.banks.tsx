@@ -24,6 +24,7 @@ import type { BankCountry } from "@archant/data/bank-countries";
 import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
 
 import { EmptyState } from "@/components/EmptyState";
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -117,7 +118,7 @@ function Unavailable({ missing }: { missing: string[] }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 			<p className="font-medium">{t("banks.unavailable.title")}</p>
 			<p className="text-sm text-muted-foreground">{t("banks.unavailable.description")}</p>
 			<ul className="flex flex-col gap-1">
@@ -232,7 +233,7 @@ function CredentialsForm({ setup }: { setup: BankSetupData }) {
 	};
 
 	return (
-		<Section id="bank-credentials-title" level={3} title={t("banks.credentials.title")}>
+		<Section id="bank-credentials-title" title={t("banks.credentials.title")}>
 			<div className="flex flex-col gap-4 p-4">
 				<p className="text-sm text-muted-foreground">{t("banks.credentials.description")}</p>
 
@@ -345,7 +346,7 @@ function EnvironmentCredentials({
 	const { t } = useTranslation();
 
 	return (
-		<Section id="bank-credentials-title" level={3} title={t("banks.credentials.title")}>
+		<Section id="bank-credentials-title" title={t("banks.credentials.title")}>
 			<div className="flex flex-col gap-1 p-4">
 				<p className="text-sm">{t("banks.credentials.environment")}</p>
 				{applicationId !== null && (
@@ -557,7 +558,7 @@ function BankPickerDialog({
 			}}
 		>
 			<DialogContent
-				className="max-h-[90vh] overflow-y-auto sm:max-w-md"
+				className="max-h-[90vh] overflow-y-auto"
 				onCloseAutoFocus={(event) => {
 					// Radix returns the focus to its trigger only, and there is none.
 					event.preventDefault();
@@ -590,7 +591,7 @@ function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => 
 	const list: BankConnectionData[] = connections.data ?? [];
 
 	return (
-		<Section id="bank-connections-title" level={3} title={t("banks.connections")}>
+		<Section id="bank-connections-title" title={t("banks.connections")}>
 			{connections.isPending && (
 				<div className="p-4">
 					<Skeleton className="h-14 w-full" />
@@ -604,7 +605,6 @@ function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => 
 			{connections.data !== undefined &&
 				(list.length === 0 ? (
 					<EmptyState
-						level={4}
 						icon={{ kind: "transfer", icon: LandmarkIcon }}
 						title={t("banks.noConnections.title")}
 						description={t("banks.noConnections.description")}
@@ -691,19 +691,11 @@ function BanksPage() {
 	};
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-4">
-			<div className="flex flex-col gap-1">
-				<h2 className="type-display">{t("banks.title")}</h2>
-				<p className="text-sm text-muted-foreground">{t("banks.description")}</p>
-			</div>
-
+		<Page centred title={t("banks.title")} description={t("banks.description")} className="gap-4">
 			{setup.isPending && <Skeleton className="h-24 w-full" />}
 
 			{setup.isError && (
-				<div
-					role="alert"
-					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
-				>
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(setup.error)}`)}</p>
 					<Button variant="outline" onClick={() => void setup.refetch()}>
 						{t("common.retry")}
@@ -719,7 +711,7 @@ function BanksPage() {
 				) : (
 					<>
 						<Connections onChooseBank={openPicker} />
-						<Section level={3} title={t("banks.picker")}>
+						<Section title={t("banks.picker")}>
 							<ConnectBank
 								country={country}
 								onCountryChange={setCountry}
@@ -743,7 +735,7 @@ function BanksPage() {
 						)}
 					</>
 				))}
-		</div>
+		</Page>
 	);
 }
 

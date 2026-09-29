@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { Page } from "@/components/Page";
 import { useCompleteBankConnection } from "@/hooks/useBankConnections";
 import { errorMessage } from "@/lib/error-toast";
 
@@ -27,7 +28,7 @@ function Failure({ message }: { message: string }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 			<p>{message}</p>
 			<Link
 				to="/settings/banks"
@@ -88,9 +89,7 @@ function BankReturnPage() {
 	}, [code, state, refused, mutate, navigate, t]);
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-6">
-			<h2 className="type-display">{t("banks.return.title")}</h2>
-
+		<Page centred title={t("banks.return.title")}>
 			{refused && <Failure message={t("banks.return.refused")} />}
 
 			{incomplete && <Failure message={t("errors.BANK_AUTHORIZATION_INVALID")} />}
@@ -103,6 +102,6 @@ function BankReturnPage() {
 					{t("banks.return.pending")}
 				</p>
 			)}
-		</div>
+		</Page>
 	);
 }

@@ -138,7 +138,8 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 		<div
 			role="toolbar"
 			aria-label={t("operations.bulk.toolbar")}
-			className="sticky bottom-4 z-10 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-foreground px-4 py-2 text-background shadow-lg"
+			// Above the bottom navigation of narrow screens.
+			className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 lg:bottom-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-foreground px-4 py-2 text-background shadow-lg"
 		>
 			<div className="flex items-center gap-2">
 				<Checkbox

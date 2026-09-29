@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LayoutDashboardIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -33,27 +33,6 @@ export const Route = createFileRoute("/_authed/")({
 	component: DashboardPage,
 });
 
-/**
- * « Bonjour Camille » and one sentence. A paragraph, not a heading: the title
- * bar's « Tableau de bord » stays the page's only `h1`, so a screen reader
- * landing here learns where it is, not who it is.
- */
-function Greeting({ hasAccounts }: { hasAccounts: boolean }) {
-	const { t } = useTranslation();
-	const name = Route.useRouteContext({ select: (context) => context.session.user.name.trim() });
-
-	return (
-		<div className="flex flex-col gap-0.5">
-			<p className="type-display">
-				{name === "" ? t("dashboard.greeting") : t("dashboard.greetingWithName", { name })}
-			</p>
-			<p className="text-muted-foreground">
-				{t(hasAccounts ? "dashboard.intro" : "dashboard.introEmpty")}
-			</p>
-		</div>
-	);
-}
-
 function DashboardPage() {
 	const { t } = useTranslation();
 	const accounts = useAccounts();
@@ -62,6 +41,7 @@ function DashboardPage() {
 	const navigate = Route.useNavigate();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
+	const name = Route.useRouteContext({ select: (context) => context.session.user.name.trim() });
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("dashboard.title"), app: t("app.name") });
@@ -86,9 +66,16 @@ function DashboardPage() {
 		});
 
 	return (
+		// Sure's dashboard greets in its `h1`; the breadcrumb « Accueil » already
+		// says where the page is.
 		<Page
-			icon={LayoutDashboardIcon}
-			title={t("dashboard.title")}
+			title={name === "" ? t("dashboard.greeting") : t("dashboard.greetingWithName", { name })}
+			// Until the accounts arrive, no sentence rather than the wrong one.
+			description={
+				accounts.data === undefined
+					? undefined
+					: t(hasAccounts ? "dashboard.intro" : "dashboard.introEmpty")
+			}
 			className="gap-4"
 			// Sure's dashboard has this one action; importing and adding a
 			// transaction need an account, and live on its page.
@@ -114,7 +101,6 @@ function DashboardPage() {
 
 			{accounts.data !== undefined && (
 				<>
-					<Greeting hasAccounts={hasAccounts} />
 					{hasAccounts ? (
 						<>
 							<NetWorthSection period={period} onPeriodChange={changePeriod} />

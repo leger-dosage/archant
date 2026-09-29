@@ -4,7 +4,7 @@ import { useResolvedTheme } from "@/lib/theme";
 import { resolveTint } from "@/lib/tint";
 import { cn } from "@/lib/utils";
 
-// Important sizes: a sidebar entry's `[&_svg]:size-4` would otherwise stretch
+// Important sizes: a button's `[&_svg]:size-4` would otherwise stretch
 // the icon to its tile.
 const SIZES = {
 	sm: { box: "size-5", icon: "size-3!", letter: "text-[11px]" },

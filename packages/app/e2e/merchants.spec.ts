@@ -46,7 +46,7 @@ test("renaming a merchant renames it on its rows", async ({ page, api }) => {
 	await linked(api, label, merchant.id);
 
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 2, name: "Marchands" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Marchands" })).toBeVisible();
 	await expect(merchantRow(page, merchant.name)).toContainText("1 opération");
 	await openAction(page, merchant.name, "Renommer");
 	const dialog = page.getByRole("dialog");

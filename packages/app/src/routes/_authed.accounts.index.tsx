@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { WalletIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -39,7 +38,6 @@ function AccountsPage() {
 
 	return (
 		<Page
-			icon={WalletIcon}
 			title={t("accounts.title")}
 			actions={
 				hasAccounts ? (

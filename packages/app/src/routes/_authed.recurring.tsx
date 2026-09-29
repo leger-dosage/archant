@@ -2,7 +2,7 @@ import type { Status } from "@/components/StatusBadge";
 import type { RecurringData, RecurringMove } from "@/hooks/useRecurring";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { CalendarIcon, EllipsisIcon, RepeatIcon } from "lucide-react";
+import { EllipsisIcon, RepeatIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -129,7 +129,6 @@ function RecurringPage() {
 
 	return (
 		<Page
-			icon={CalendarIcon}
 			title={t("recurring.title")}
 			actions={
 				// An empty list offers its own, the one way forward.
@@ -151,10 +150,7 @@ function RecurringPage() {
 			)}
 
 			{recurring.isError && (
-				<div
-					role="alert"
-					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
-				>
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(recurring.error)}`)}</p>
 					<Button variant="outline" onClick={() => void recurring.refetch()}>
 						{t("common.retry")}

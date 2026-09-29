@@ -1,11 +1,14 @@
-import type { LucideIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 
-import { isValidElement } from "react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { PanelLeftIcon } from "lucide-react";
+import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ACCOUNTS_COLUMN_ID, useShell } from "@/components/AppShell";
 import { BankAlerts } from "@/components/BankAlerts";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SETTINGS_SECTIONS } from "@/components/SettingsNav";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -14,52 +17,163 @@ export const PAGE_TITLE_ID = "page-title";
 
 type PageProps = {
 	/**
-	 * The page's lucide icon, as in the sidebar, or an icon already rendered,
-	 * such as an account's tinted type icon.
+	 * An icon beside the title, such as an account's tinted type icon. The
+	 * other pages have none: the rail already shows their icon.
 	 */
-	icon: LucideIcon | ReactElement;
+	icon?: ReactElement;
 	/** The page's single `h1`. */
 	title: ReactNode;
-	/** The page's actions, on the right of the title bar. */
+	/** One muted sentence under the title. */
+	description?: ReactNode;
+	/** The page's actions, on the right of the title. */
 	actions?: ReactNode;
+	/**
+	 * The header, the bank alerts and the content in one centred column, at
+	 * most 896 px wide, as Sure lays out its settings sections.
+	 */
+	centred?: boolean;
 	/** The content's own layout, when the default column does not fit. */
 	className?: string;
 	children: ReactNode;
 };
 
-function PageIcon({ icon: Icon }: { icon: LucideIcon }) {
-	return <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />;
+type Crumb = { label: ReactNode; to?: "/" | "/accounts" | "/settings" };
+
+/**
+ * The page and its parents, from the URL alone so that no page has to pass
+ * them: « Accueil / Opérations », « Comptes / Compte joint », « Réglages /
+ * Catégories ».
+ */
+function useCrumbs(title: ReactNode): Crumb[] {
+	const { t } = useTranslation();
+	const pathname = useRouterState({ select: (router) => router.location.pathname });
+
+	if (pathname === "/") {
+		return [{ label: t("nav.dashboard") }];
+	}
+
+	if (pathname.startsWith("/accounts/") && pathname !== "/accounts/") {
+		return [{ label: t("nav.accounts"), to: "/accounts" }, { label: title }];
+	}
+
+	if (pathname.startsWith("/settings")) {
+		const section = SETTINGS_SECTIONS.find(({ to }) => pathname.startsWith(to));
+
+		return [
+			{ label: t("nav.settings"), to: "/settings" },
+			...(section === undefined ? [] : [{ label: t(section.label) }]),
+		];
+	}
+
+	return [{ label: t("nav.dashboard"), to: "/" }, { label: title }];
+}
+
+function Breadcrumbs({ title }: { title: ReactNode }) {
+	const { t } = useTranslation();
+	const crumbs = useCrumbs(title);
+
+	// Not a list: inside the page's `main`, its list items are its rows.
+	return (
+		<nav aria-label={t("nav.breadcrumbs")} className="flex min-w-0 items-center gap-2 font-medium">
+			{crumbs.map((crumb, index) => (
+				<Fragment key={index}>
+					{index > 0 && (
+						<span aria-hidden="true" className="text-muted-foreground">
+							/
+						</span>
+					)}
+					{crumb.to === undefined || index === crumbs.length - 1 ? (
+						<span aria-current="page" className="min-w-0 truncate text-foreground">
+							{crumb.label}
+						</span>
+					) : (
+						<Link
+							to={crumb.to}
+							className="shrink-0 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{crumb.label}
+						</Link>
+					)}
+				</Fragment>
+			))}
+		</nav>
+	);
+}
+
+/** Folds the accounts column; remembered on the device. */
+function FoldButton() {
+	const { t } = useTranslation();
+	const shell = useShell();
+
+	if (shell === null || !shell.hasAccountsColumn) {
+		return null;
+	}
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					variant="ghost"
+					size="icon"
+					aria-label={t("nav.toggleAccounts")}
+					aria-expanded={shell.columnOpen}
+					aria-controls={shell.columnOpen ? ACCOUNTS_COLUMN_ID : undefined}
+					onClick={() => shell.setColumnOpen(!shell.columnOpen)}
+				>
+					<PanelLeftIcon />
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent side="bottom">{t("nav.toggleAccounts")}</TooltipContent>
+		</Tooltip>
+	);
 }
 
 /**
- * Every signed-in page's frame inside the inset panel: the title bar, the
- * bank alerts, then the content. The title is the page's `h1`, so a screen
- * reader still lands on one heading per page.
+ * Every signed-in page, Sure's way: a sticky top bar with the fold button
+ * and the breadcrumbs, then the page header (the `h1`, a sentence, the
+ * actions), the bank alerts and the content, full width or in a centred
+ * column. Below 1024 px the shell's own top bar replaces this one.
  */
-export function Page({ icon, title, actions, className, children }: PageProps) {
-	const { t } = useTranslation();
-
+export function Page({
+	icon,
+	title,
+	description,
+	actions,
+	centred = false,
+	className,
+	children,
+}: PageProps) {
 	return (
 		<>
-			{/* 44 px when everything fits; on a narrow screen the actions wrap below. */}
-			<header className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-line py-1.5 pr-3 pl-2">
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<SidebarTrigger />
-					</TooltipTrigger>
-					<TooltipContent side="bottom">{t("nav.toggleSidebar")}</TooltipContent>
-				</Tooltip>
-				{isValidElement(icon) ? icon : <PageIcon icon={icon} />}
-				<h1 id={PAGE_TITLE_ID} className="min-w-24 flex-1 truncate text-sm font-medium">
-					{title}
-				</h1>
-				{actions !== undefined && (
-					<div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
-				)}
-			</header>
-			<BankAlerts />
-			<div className={cn("flex w-full max-w-[1200px] flex-col gap-6 px-7 py-6", className)}>
-				{children}
+			<div
+				data-slot="top-bar"
+				className="sticky top-0 z-20 hidden h-[69px] shrink-0 items-center gap-2 border-b border-line bg-background px-3 lg:flex lg:px-10"
+			>
+				<FoldButton />
+				<Breadcrumbs title={title} />
+			</div>
+			<div className="flex flex-col px-3 py-6 lg:px-10">
+				{/* The padding stays outside the column: 896 px is the content's width. */}
+				<div className={cn("flex w-full min-w-0 flex-col gap-6", centred && "mx-auto max-w-4xl")}>
+					{/* On a narrow screen the actions wrap below the title. */}
+					<header data-slot="page-header" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+						{icon}
+						<h1
+							id={PAGE_TITLE_ID}
+							className="min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]"
+						>
+							{title}
+						</h1>
+						{actions !== undefined && (
+							<div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
+						)}
+						{description !== undefined && (
+							<p className="order-last basis-full text-muted-foreground">{description}</p>
+						)}
+					</header>
+					<BankAlerts />
+					<div className={cn("flex w-full flex-col gap-6", className)}>{children}</div>
+				</div>
 			</div>
 		</>
 	);

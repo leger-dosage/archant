@@ -219,7 +219,7 @@ function StatementBalanceNote({
 		});
 	}
 
-	return <p className="rounded-md border bg-section p-3">{text}</p>;
+	return <p className="rounded-md border bg-card p-3">{text}</p>;
 }
 
 type PreviewProps = {
@@ -272,14 +272,14 @@ function Preview({
 			{stale && (
 				<p
 					role="alert"
-					className="rounded-md border border-destructive/50 bg-section p-3 text-destructive"
+					className="rounded-md border border-destructive/50 bg-card p-3 text-destructive"
 				>
 					{t("errors.IMPORT_PREVIEW_STALE")}
 				</p>
 			)}
 
 			{preview.opening !== null && (
-				<p className="rounded-md border bg-section p-3">
+				<p className="rounded-md border bg-card p-3">
 					{t("imports.openingMoved", {
 						date: formatTableDate(preview.opening.date),
 						amount: formatMoney({ amount: preview.opening.balance, currency }),
@@ -724,7 +724,7 @@ export function ImportDialog({ account, open, onOpenChange }: ImportDialogProps)
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className={cn(desktop && "sm:max-w-3xl")}>
+			<DialogContent className={cn(desktop && "sm:max-w-[700px]")}>
 				<DialogHeader>
 					<DialogTitle>{t("imports.title")}</DialogTitle>
 					<DialogDescription>

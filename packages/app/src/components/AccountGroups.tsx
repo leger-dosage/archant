@@ -40,9 +40,9 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 						<section
 							key={group.classification}
 							aria-labelledby={headingId}
-							className="flex flex-col overflow-hidden rounded-lg border bg-section"
+							className="flex flex-col overflow-hidden rounded-lg border bg-card"
 						>
-							{/* The heading's parent holds the total, as the sidebar's group does. */}
+							{/* The heading's parent holds the total, as the accounts column's group does. */}
 							<div className="flex items-center justify-between gap-4 border-b border-line px-4 py-2.5">
 								<h2 id={headingId} className="type-title">
 									{t(`accounts.groups.${group.classification}`)}
@@ -94,7 +94,7 @@ export function AccountGroupsSkeleton() {
 	return (
 		// A group's section, so the page does not jump when the accounts land.
 		<div
-			className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-section"
+			className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card"
 			aria-hidden="true"
 		>
 			<div className="px-4 py-2.5">

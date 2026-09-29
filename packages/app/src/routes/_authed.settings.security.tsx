@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,11 +138,11 @@ function SecurityPage() {
 	}, [t]);
 
 	return (
-		<div className="flex flex-col gap-6">
+		<Page centred title={t("security.title")}>
 			<ProfileSection />
 			<PasswordSection />
 			<TwoFactorSection />
-		</div>
+		</Page>
 	);
 }
 
@@ -199,7 +200,7 @@ function PasswordSection() {
 	};
 
 	return (
-		<Section title={t("security.title")} className="max-w-md">
+		<Section title={t("security.passwordTitle")} className="max-w-md">
 			<div className="flex flex-col gap-4 p-4">
 				<p className="text-sm text-muted-foreground">{t("security.description")}</p>
 				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>

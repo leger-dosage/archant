@@ -24,13 +24,13 @@ export function EmptyState({
 	title: ReactNode;
 	description: ReactNode;
 	action: ReactNode;
-	level?: 2 | 3 | 4;
+	level?: 2 | 3;
 	/** A region of its own, named by its heading, where no section names it. */
 	labelled?: boolean;
 	className?: string;
 }) {
 	const headingId = useId();
-	const Heading = level === 2 ? "h2" : level === 3 ? "h3" : "h4";
+	const Heading = level === 2 ? "h2" : "h3";
 	const Wrapper = labelled ? "section" : "div";
 
 	return (

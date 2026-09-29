@@ -4,7 +4,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Refreshes everything a write on one account can change. Its balance, name
- * and flags show on its page, the accounts page, the sidebar and every
+ * and flags show on its page, the accounts page, the accounts column and every
  * transaction list, and its detail holds the chart and the Soldes table:
  * every write refreshes them all.
  */

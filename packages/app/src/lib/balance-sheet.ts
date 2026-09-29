@@ -4,8 +4,12 @@ import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-/** The order of the weight bar and its legend: Sure's, assets then liabilities. */
-const TYPE_ORDER: readonly AccountType[] = [
+/**
+ * Sure's order of account types, assets then liabilities, each class in the
+ * order of `ACCOUNT_TYPES`: the weight bar, its legend and the accounts
+ * column's groups.
+ */
+export const TYPE_ORDER: readonly AccountType[] = [
 	"depository",
 	"investment",
 	"property",
@@ -13,6 +17,14 @@ const TYPE_ORDER: readonly AccountType[] = [
 	"credit_card",
 	"loan",
 ];
+
+/**
+ * Whether an account counts in its class's total, as the API's does: active,
+ * included in reports, and held in the reporting currency.
+ */
+export function countsInReports(account: AccountSummaryData, reportingCurrency: string): boolean {
+	return account.active && !account.excludedFromReports && account.currency === reportingCurrency;
+}
 
 export type BalanceSheetType = {
 	type: AccountType;
@@ -32,7 +44,7 @@ export type BalanceSheetGroup = {
 };
 
 /**
- * The balance sheet by account type, from `/accounts` alone: the sidebar
+ * The balance sheet by account type, from `/accounts` alone: the accounts column
  * reads the same query, so no second endpoint has to agree with it. A type's
  * share counts the accounts the API's total counts (active, included in
  * reports, in the reporting currency), so the shares add up to that total. A
@@ -41,11 +53,8 @@ export type BalanceSheetGroup = {
  */
 export function balanceSheet(list: AccountListData): BalanceSheetGroup[] {
 	return list.groups.map((group) => {
-		const counted = group.accounts.filter(
-			(account) =>
-				account.active &&
-				!account.excludedFromReports &&
-				account.currency === list.reportingCurrency,
+		const counted = group.accounts.filter((account) =>
+			countsInReports(account, list.reportingCurrency),
 		);
 		const types =
 			group.total <= 0

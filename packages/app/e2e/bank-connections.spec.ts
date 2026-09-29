@@ -64,7 +64,7 @@ const longDate = new Intl.DateTimeFormat("fr-FR", {
 
 async function visit(page: Page) {
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 2, name: "Banques" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Banques" })).toBeVisible();
 }
 
 const REDIRECT_URL = `${WEB_URL}/settings/banks/callback`;
@@ -260,7 +260,7 @@ test("Banques connectées comes first, and no bank is listed or asked for before
 	await visit(page);
 	await expect(chooseBank(page)).toBeVisible();
 
-	await expect(page.getByRole("heading", { level: 3 })).toHaveText([
+	await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText([
 		"Banques connectées",
 		"Connecter une banque",
 		"Application Enable Banking",
@@ -417,7 +417,7 @@ async function connect(page: Page, bank = "Banque Démo"): Promise<string> {
 	// return page, which posts the code and lands on the connection's page.
 	await expect(toast(page, `${bank} est connectée.`)).toBeVisible();
 	await expect(page).toHaveURL(CONNECTION_URL);
-	await expect(page.getByRole("heading", { level: 2, name: bank })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: bank })).toBeVisible();
 
 	return CONNECTION_URL.exec(page.url())?.[1] ?? "";
 }
@@ -434,9 +434,24 @@ async function choose(page: Page, name: string, option: string) {
 
 const validate = (page: Page) => page.getByRole("button", { name: "Valider" });
 
-/** The sidebar's link to an account, which carries its balance. */
-const sidebarAccount = (page: Page, accountId: string) =>
-	page.locator(`[data-sidebar="menu-button"][href="/accounts/${accountId}"]`);
+/** The accounts column's link to an account, which carries its balance. */
+const columnAccount = (page: Page, accountId: string) =>
+	page
+		.getByRole("complementary", { name: "Liste des comptes" })
+		.locator(`a[href="/accounts/${accountId}"]`);
+
+/**
+ * Leaves a settings page for Opérations through the rail, without a reload:
+ * settings put their navigation where the accounts column sits, and the
+ * column must show what the page's cache already holds.
+ */
+async function toTransactions(page: Page) {
+	await page
+		.getByRole("navigation", { name: "Navigation principale" })
+		.getByRole("link", { name: "Opérations", exact: true })
+		.click();
+	await expect(page).toHaveURL(/\/transactions$/u);
+}
 
 /** The id of the account a bank account's row links to. */
 async function linkedAccountId(page: Page, name: string): Promise<string> {
@@ -636,7 +651,7 @@ test("a bank whose accounts cannot be read says so and tells what to do", async 
 	await expect(page.getByRole("button", { name: "Renouveler le consentement" })).toBeVisible();
 });
 
-test("creating an account shows the bank balance in the sidebar, and a skipped row stays selectable", async ({
+test("creating an account shows the bank balance in the accounts column, and a skipped row stays selectable", async ({
 	page,
 }) => {
 	await connect(page);
@@ -646,9 +661,11 @@ test("creating an account shows the bank balance in the sidebar, and a skipped r
 
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
-	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+	await toTransactions(page);
+	await expect(columnAccount(page, accountId)).toContainText("1 234,56 €");
 
 	// Skipped: nothing written, still offered, after a reload too.
+	await page.goBack();
 	await page.reload();
 	await expect(choice(page, FAKE_ACCOUNTS.card.name)).toBeVisible();
 	await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toBeHidden();
@@ -656,9 +673,10 @@ test("creating an account shows the bank balance in the sidebar, and a skipped r
 	await validate(page).click();
 
 	const cardId = await linkedAccountId(page, FAKE_ACCOUNTS.card.name);
-	// The bank prints -300,00; the card owes 300,00.
-	await expect(sidebarAccount(page, cardId)).toContainText("300,00 €");
 	await expect(validate(page)).toBeHidden();
+	// The bank prints -300,00; the card owes 300,00.
+	await toTransactions(page);
+	await expect(columnAccount(page, cardId)).toContainText("300,00 €");
 });
 
 test("a linked account's menu offers no deletion, only its connection's page", async ({ page }) => {
@@ -691,7 +709,8 @@ test("a linked account's menu offers no deletion, only its connection's page", a
 		.getByRole("button", { name: "Déconnecter" })
 		.click();
 	await expect(toast(page, "La connexion à Banque Démo est supprimée.")).toBeVisible();
-	await sidebarAccount(page, accountId).click();
+	await toTransactions(page);
+	await columnAccount(page, accountId).click();
 	await expect(page).toHaveURL(new RegExp(`/accounts/${accountId}$`, "u"));
 	await page
 		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
@@ -721,7 +740,8 @@ test("linking an account fed by hand keeps its transactions and ends on the bank
 		"href",
 		`/accounts/${account.id}`,
 	);
-	await expect(sidebarAccount(page, account.id)).toContainText("1 234,56 €");
+	await toTransactions(page);
+	await expect(columnAccount(page, account.id)).toContainText("1 234,56 €");
 
 	await page.goto(`/accounts/${account.id}`);
 	await expect(page.getByText(label)).toBeVisible();
@@ -760,7 +780,8 @@ test("linking an account syncs the bank's lines, once, and the pages show the la
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 	// The bank's booked 1 234,56 €: the pending 3,20 € counts in no balance.
-	await expect(sidebarAccount(page, accountId)).toContainText("1 234,56 €");
+	await toTransactions(page);
+	await expect(columnAccount(page, accountId)).toContainText("1 234,56 €");
 
 	await page.goto(`/accounts/${accountId}`);
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toContainText(euros(-4290));
@@ -873,18 +894,20 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	await validate(page).click();
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
-	// Yesterday's 1 200,00 €: no booked line since.
-	await expect(sidebarAccount(page, accountId)).toContainText(euros(120_000));
 	// The sync the link starts, done: aged while it runs, the connection
 	// would end it synced « à l'instant » and refuse the one below.
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+	// Yesterday's 1 200,00 €: no booked line since.
+	await toTransactions(page);
+	await expect(columnAccount(page, accountId)).toContainText(euros(120_000));
 
 	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
 	await page.goto(`/settings/banks/${connectionId}`);
 	await page.getByRole("button", { name: "Synchroniser" }).click();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 
-	await expect(sidebarAccount(page, accountId)).toContainText(euros(123_456));
+	await toTransactions(page);
+	await expect(columnAccount(page, accountId)).toContainText(euros(123_456));
 	await page.goto(`/accounts/${accountId}?tab=snapshots`);
 	const yesterday = daysAgo(1);
 	const rows = page.getByRole("row", { name: new RegExp(`^${formatTableDate(yesterday)} `, "u") });
@@ -1104,7 +1127,7 @@ test("a sync stopped for more than 48 hours leads to its connection", async ({ p
 		await banners(page).getByRole("link", { name: "Voir la connexion" }).click();
 
 		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
-		await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+		await expect(page.getByRole("heading", { level: 1, name: "Banque Démo" })).toBeVisible();
 		await expectRowBadge(page, connectionId, "syncStale", "Synchronisation en retard");
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {
@@ -1113,13 +1136,15 @@ test("a sync stopped for more than 48 hours leads to its connection", async ({ p
 	}
 });
 
-test("disconnecting keeps each account in the sidebar, with the same balance and transactions", async ({
+test("disconnecting keeps each account in the accounts column, with the same balance and transactions", async ({
 	page,
 }) => {
 	const { connectionId, checkingId, cardId } = await connectAndLink(page);
-	await expect(sidebarAccount(page, checkingId)).toContainText("1 234,56 €");
+	await toTransactions(page);
+	await expect(columnAccount(page, checkingId)).toContainText("1 234,56 €");
 	// The bank's 300,00 € owed, the pending 3,20 € left out.
-	await expect(sidebarAccount(page, cardId)).toContainText("300,00 €");
+	await expect(columnAccount(page, cardId)).toContainText("300,00 €");
+	await page.goBack();
 
 	await page.getByRole("button", { name: "Déconnecter" }).click();
 	const dialog = page.getByRole("alertdialog", { name: "Déconnecter Banque Démo ?" });
@@ -1132,8 +1157,9 @@ test("disconnecting keeps each account in the sidebar, with the same balance and
 	await expect(toast(page, "La connexion à Banque Démo est supprimée.")).toBeVisible();
 	await expect(page).toHaveURL(/\/settings\/banks$/u);
 	await expect(page.locator(`[href="/settings/banks/${connectionId}"]`)).toHaveCount(0);
-	await expect(sidebarAccount(page, checkingId)).toContainText("1 234,56 €");
-	await expect(sidebarAccount(page, cardId)).toContainText("300,00 €");
+	await toTransactions(page);
+	await expect(columnAccount(page, checkingId)).toContainText("1 234,56 €");
+	await expect(columnAccount(page, cardId)).toContainText("300,00 €");
 
 	await page.goto(`/accounts/${checkingId}`);
 	await expect(page.getByRole("main")).toContainText("1 234,56 €");

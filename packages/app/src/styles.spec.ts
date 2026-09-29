@@ -28,13 +28,14 @@ const light = tokensOf(":root");
 const dark = new Map([...light, ...tokensOf(".dark")]);
 
 const TEXT = ["foreground", "foreground-secondary", "muted-foreground"];
-const TEXT_SURFACES = ["sidebar", "background", "section", "accent", "selection", "sidebar-accent"];
+const TEXT_SURFACES = ["background", "card", "inset", "accent", "selection", "sidebar-accent"];
 const ACCENT_TEXT = ["link", "money-income", "destructive"];
-const ACCENT_SURFACES = ["background", "section", "accent", "selection"];
+const ACCENT_SURFACES = ["background", "card", "inset", "accent", "selection"];
 
-// DESIGN.md's surfaces under shadcn's names: `sidebar` is its base
-// `background`, `background` its `panel`, `accent` its `hover`,
-// `sidebar-accent` its `active`, under a muted balance on the active row.
+// DESIGN.md's surfaces under shadcn's names: `background` is its
+// `background`, `card` its `container`, `inset` its `inset`, `accent` its
+// `hover`, `sidebar-accent` its `active`, under a muted balance on the
+// active row.
 const pairs: [string, string][] = [
 	...TEXT.flatMap((text) => TEXT_SURFACES.map((surface): [string, string] => [text, surface])),
 	...ACCENT_TEXT.flatMap((text) =>
@@ -43,7 +44,7 @@ const pairs: [string, string][] = [
 	// The primary button, and the import dialog's current step number.
 	["primary-foreground", "primary"],
 	// A status badge's text on its own background, on any row, and the import
-	// preview's tab counters: the badge is opaque, so the section under it
+	// preview's tab counters: the badge is opaque, so the surface under it
 	// does not change the pair.
 	["foreground-secondary", "badge"],
 ];
@@ -67,12 +68,23 @@ it("keeps the muted amount the muted text colour", () => {
 	expect(dark.get("money-muted")).toBe(dark.get("muted-foreground"));
 });
 
-describe("the panel", () => {
-	it("is DESIGN.md's panel in both modes", () => {
-		expect(light.get("background")).toBe("#ffffff");
-		expect(dark.get("background")).toBe("#1f2023");
-		expect(light.get("card")).toBe(light.get("background"));
-		expect(dark.get("card")).toBe(dark.get("background"));
+describe("the surfaces", () => {
+	it("are DESIGN.md's background, container and inset in both modes", () => {
+		expect([light.get("background"), light.get("card"), light.get("inset")]).toEqual([
+			"#f8f8f8",
+			"#ffffff",
+			"#f2f2f3",
+		]);
+		expect([dark.get("background"), dark.get("card"), dark.get("inset")]).toEqual([
+			"#1a1b1e",
+			"#1f2023",
+			"#252629",
+		]);
+	});
+
+	it("put the rail and the accounts column on the page's background", () => {
+		expect(light.get("sidebar")).toBe(light.get("background"));
+		expect(dark.get("sidebar")).toBe(dark.get("background"));
 	});
 });
 
@@ -92,12 +104,12 @@ function over(color: string, share: number, surface: string): string {
 
 // A warning badge, « Doublon possible » or a connection's consent and sync
 // alerts: the warning text on its own tint, `bg-warning/6` light and `/17`
-// dark, over every surface a row or a section takes.
+// dark, over every surface a row or a card takes.
 describe.each([
 	["light", light, 0.06],
 	["dark", dark, 0.17],
 ])("the %s warning badge", (_, tokens, share) => {
-	it.each(["background", "section", "accent", "hover", "selection"])(
+	it.each(["background", "card", "inset", "accent", "hover", "selection"])(
 		"meets WCAG AA on %s",
 		(surface) => {
 			const warning = tokens.get("warning") ?? "";
@@ -108,13 +120,13 @@ describe.each([
 	);
 });
 
-// BankAlerts' strip over the panel and the credentials notice inside its
-// section: the warning text on `bg-warning/10`, in both modes.
+// BankAlerts' strip over the page and the credentials notice inside its
+// card: the warning text on `bg-warning/10`, in both modes.
 describe.each([
 	["light", light],
 	["dark", dark],
 ])("the %s warning notice", (_, tokens) => {
-	it.each(["background", "section"])("meets WCAG AA on %s", (surface) => {
+	it.each(["background", "card"])("meets WCAG AA on %s", (surface) => {
 		const warning = tokens.get("warning") ?? "";
 		const fill = over(warning, 0.1, tokens.get(surface) ?? "");
 

@@ -8,9 +8,12 @@ import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 const pageGroupHeader = (page: Page, group: "Actifs" | "Passifs") =>
 	page.getByRole("heading", { level: 2, name: group }).locator("..");
 
-/** The sidebar's group toggle, which carries the group's total. */
-const sidebarGroup = (page: Page, group: "Actifs" | "Passifs") =>
-	page.getByRole("button", { name: new RegExp(`^${group}`) });
+/** The accounts column, beside every page but settings. */
+const column = (page: Page) => page.getByRole("complementary", { name: "Liste des comptes" });
+
+/** The page's own « Ajouter un compte »: the accounts column holds another. */
+const addAccount = (page: Page) =>
+	page.getByRole("main").getByRole("button", { name: "Ajouter un compte" });
 
 test("an empty household sees the empty state and a button to add an account", async ({ page }) => {
 	// The shared database already holds other tests' accounts; the empty state
@@ -33,10 +36,10 @@ test("an empty household sees the empty state and a button to add an account", a
 
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 	await expect(page.getByText("Aucun compte pour l'instant.")).toBeVisible();
-	await expect(page.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(addAccount(page)).toBeVisible();
 });
 
-test("an account created through the form is listed under its group, in the sidebar too", async ({
+test("an account created through the form is listed under its group, in the accounts column too", async ({
 	page,
 	api,
 }) => {
@@ -44,7 +47,7 @@ test("an account created through the form is listed under its group, in the side
 	const before = await api.groupTotal("asset");
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
@@ -62,13 +65,13 @@ test("an account created through the form is listed under its group, in the side
 	await expect(row).toContainText("1 234,56 €");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before + 123_456));
 
-	// The sidebar has no landmark of its own: its link is the one outside the page's main.
-	const links = page.getByRole("link", { name: new RegExp(name) });
-	await expect(links).toHaveCount(2);
+	await expect(page.getByRole("link", { name: new RegExp(name) })).toHaveCount(2);
 	await expect(page.getByRole("main").getByRole("link", { name: new RegExp(name) })).toHaveCount(1);
-	await expect(links.nth(0)).toContainText("1 234,56 €");
-	await expect(links.nth(1)).toContainText("1 234,56 €");
-	await expect(sidebarGroup(page, "Actifs")).toContainText(euros(before + 123_456));
+	const inColumn = column(page)
+		.getByRole("group", { name: "Comptes bancaires" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(inColumn).toContainText("Compte courant");
+	await expect(inColumn).toContainText("1 234,56 €");
 });
 
 // Story 11.1: the opening balance is an end-of-day balance, so an opening
@@ -82,7 +85,7 @@ test("an account created with the form's default opening date accepts a transact
 	const twoYearsAgo = `${Number(year) - 2}-${month}-${month === "02" && day === "29" ? "28" : day}`;
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByLabel("Solde initial").fill("1 000,00");
@@ -142,8 +145,8 @@ test("a depository account is listed under assets and a credit card under liabil
 });
 
 // Story 12.3: sections with the accounts' type icons, and the type icon in an
-// account's title bar.
-test("each group is a section whose accounts carry their type icon, as the account's title bar does", async ({
+// account's page header.
+test("each group is a section whose accounts carry their type icon, as the account's page header does", async ({
 	page,
 	api,
 }) => {
@@ -154,8 +157,8 @@ test("each group is a section whose accounts carry their type icon, as the accou
 
 	const assets = page.getByRole("region", { name: "Actifs" });
 	const liabilities = page.getByRole("region", { name: "Passifs" });
-	await expect(assets).toHaveClass(/bg-section/u);
-	await expect(liabilities).toHaveClass(/bg-section/u);
+	await expect(assets).toHaveClass(/bg-card/u);
+	await expect(liabilities).toHaveClass(/bg-card/u);
 	await expect(
 		assets
 			.getByRole("link", { name: new RegExp(savings.name) })
@@ -169,10 +172,10 @@ test("each group is a section whose accounts carry their type icon, as the accou
 
 	await liabilities.getByRole("link", { name: new RegExp(card.name) }).click();
 
-	const titleBar = page.getByRole("heading", { level: 1, name: card.name }).locator("..");
-	await expect(titleBar.locator('[data-slot="tinted-icon"] svg.lucide-credit-card')).toBeVisible();
+	const header = page.getByRole("heading", { level: 1, name: card.name }).locator("..");
+	await expect(header.locator('[data-slot="tinted-icon"] svg.lucide-credit-card')).toBeVisible();
 	await expect(
-		titleBar.getByRole("button", { name: `Actions du compte ${card.name}` }),
+		header.getByRole("button", { name: `Actions du compte ${card.name}` }),
 	).toBeVisible();
 });
 
@@ -184,7 +187,7 @@ test("a mortgage created through the form is listed under « Passifs », its pag
 	const name = uniqueName("Prêt immobilier");
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
@@ -248,7 +251,7 @@ test("a loan's new rate in the edit dialog shows in its header", async ({ page, 
 
 // Story 7.2: investment accounts.
 
-test("a PEA created through the form is listed under « Actifs » with its value and caption, and in the sidebar", async ({
+test("a PEA created through the form is listed under « Actifs » with its value and caption, and in the accounts column", async ({
 	page,
 	api,
 }) => {
@@ -257,7 +260,7 @@ test("a PEA created through the form is listed under « Actifs » with its value
 	const before = await api.groupTotal("asset");
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
@@ -277,18 +280,16 @@ test("a PEA created through the form is listed under « Actifs » with its value
 	).toHaveCount(0);
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before + 2_500_000));
 
-	// The toggle's parent is the sidebar group, which holds its account links.
 	await expect(
-		sidebarGroup(page, "Actifs")
-			.locator("..")
+		column(page)
+			.getByRole("group", { name: "Investissement" })
 			.getByRole("link", { name: new RegExp(name) }),
 	).toContainText(euros(2_500_000));
-	await expect(sidebarGroup(page, "Actifs")).toContainText(euros(before + 2_500_000));
 });
 
 // Story 7.3: property and vehicle accounts.
 
-test("a home created through the form with its estimated value is listed under « Actifs » with its caption, and in the sidebar", async ({
+test("a home created through the form with its estimated value is listed under « Actifs » with its caption, and in the accounts column", async ({
 	page,
 	api,
 }) => {
@@ -297,7 +298,7 @@ test("a home created through the form with its estimated value is listed under �
 	const before = await api.groupTotal("asset");
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await expect(dialog.getByLabel("Valeur estimée")).toHaveCount(0);
@@ -320,8 +321,8 @@ test("a home created through the form with its estimated value is listed under �
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before + 32_000_000));
 
 	await expect(
-		sidebarGroup(page, "Actifs")
-			.locator("..")
+		column(page)
+			.getByRole("group", { name: "Bien immobilier" })
 			.getByRole("link", { name: new RegExp(name) }),
 	).toContainText(euros(32_000_000));
 });
@@ -332,7 +333,7 @@ test("a vehicle created through the form with its estimated value is listed unde
 	const name = uniqueName("Voiture");
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
@@ -353,7 +354,7 @@ test("a vehicle created through the form with its estimated value is listed unde
 
 test("invalid fields show their message next to the field", async ({ page }) => {
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Solde initial").fill("douze");
@@ -387,7 +388,7 @@ test("a field error from the API is shown next to its field", async ({ page }) =
 	});
 
 	await page.goto("/accounts");
-	await page.getByRole("button", { name: "Ajouter un compte" }).click();
+	await addAccount(page).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(uniqueName("Refusé"));
@@ -406,14 +407,22 @@ test("the theme switches between light and dark and is remembered", async ({ pag
 
 	await expect(root).not.toHaveClass(/dark/u);
 
-	await page.getByRole("button", { name: "Thème : Système" }).click();
+	await page.getByRole("button", { name: "admin@archant.test" }).click();
+	await expect(page.getByRole("menuitemradio", { name: "Système" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
 	await page.getByRole("menuitemradio", { name: "Sombre" }).click();
 	await expect(root).toHaveClass(/dark/u);
 
 	await page.reload();
 	await expect(root).toHaveClass(/dark/u);
 
-	await page.getByRole("button", { name: "Thème : Sombre" }).click();
+	await page.getByRole("button", { name: "admin@archant.test" }).click();
+	await expect(page.getByRole("menuitemradio", { name: "Sombre" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
 	await page.getByRole("menuitemradio", { name: "Clair" }).click();
 	await expect(root).not.toHaveClass(/dark/u);
 });

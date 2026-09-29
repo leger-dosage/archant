@@ -155,7 +155,7 @@ export function useBankAccounts(connectionId: string) {
 /**
  * Creates or links the chosen bank accounts. The answer is the new list;
  * every account query goes stale, since a new account or a new balance
- * shows in the sidebar.
+ * shows in the accounts column.
  */
 export function useLinkBankAccounts(connectionId: string) {
 	const queryClient = useQueryClient();

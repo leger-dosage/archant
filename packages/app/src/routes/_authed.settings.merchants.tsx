@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { MerchantDialog } from "@/components/MerchantDialog";
 import { MergeMerchantDialog } from "@/components/MergeMerchantDialog";
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
@@ -123,14 +124,13 @@ function MerchantsPage() {
 		});
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-4">
-			<div className="flex flex-col gap-1">
-				<h2 className="type-display">{t("merchants.title")}</h2>
-				<p className="text-sm text-muted-foreground">{t("merchants.description")}</p>
-			</div>
-
+		<Page
+			centred
+			title={t("merchants.title")}
+			description={t("merchants.description")}
+			className="gap-4"
+		>
 			<Section
-				level={3}
 				title={t("merchants.list")}
 				action={
 					// An empty list offers its own, the one way forward.
@@ -160,7 +160,6 @@ function MerchantsPage() {
 				{merchants.data !== undefined &&
 					(list.length === 0 ? (
 						<EmptyState
-							level={4}
 							icon={{ kind: "transfer", icon: StoreIcon }}
 							title={t("merchants.empty.title")}
 							description={t("merchants.empty.description")}
@@ -209,6 +208,6 @@ function MerchantsPage() {
 					onConfirm={() => remove(merchant)}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

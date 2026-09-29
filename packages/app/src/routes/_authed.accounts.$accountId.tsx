@@ -303,7 +303,7 @@ function AccountPage() {
 
 	if (notFound) {
 		return (
-			<Page icon={WalletIcon} title={t("accountDetail.notFound")} className="items-start gap-3">
+			<Page title={t("accountDetail.notFound")} className="items-start gap-3">
 				<Button asChild variant="outline">
 					<Link to="/accounts">{t("accountDetail.backToAccounts")}</Link>
 				</Button>
@@ -374,7 +374,7 @@ function AccountPage() {
 			)}
 
 			{account.data !== undefined && (
-				// Named by the title bar's `h1`: the account's name.
+				// Named by the page header's `h1`: the account's name.
 				<section aria-labelledby={PAGE_TITLE_ID} className="flex flex-col gap-1">
 					<p className="flex items-center gap-2 text-sm text-muted-foreground">
 						{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}

@@ -860,7 +860,10 @@ export function RuleDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+			<DialogContent
+				showCloseButton={false}
+				className="max-h-[90vh] overflow-y-auto sm:max-w-[700px]"
+			>
 				<DialogHeader>
 					<DialogTitle>
 						{t(rule === undefined ? "rules.form.addTitle" : "rules.form.editTitle")}
