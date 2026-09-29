@@ -172,3 +172,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-7-hosting-at-home-behind-tailscale.md`
   summary: `docs/hosting.md` asks for `docker login ghcr.io` because the `ghcr.io/leger-dosage/archant` package is still private; making it public removes that step and fixes the anonymous pull `docs/deployment.md` describes.
   evidence: `docker manifest inspect ghcr.io/leger-dosage/archant:latest` answered `unauthorized` on 2026-09-27 during Story 13.7's review.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-13-12-a-bank-that-sends-no-account-currency.md`
+  summary: A renewal whose session drops an account as unreadable marks its stored row unlisted, so a linked account stops syncing.
+  evidence: `completeConnection` unlists every stored hash missing from `session.accounts`; a dropped account is missing too. Pre-existing since Epic 10; Story 13.12 only logs the drop.

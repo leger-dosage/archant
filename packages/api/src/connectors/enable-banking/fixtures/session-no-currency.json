@@ -1,0 +1,28 @@
+{
+	"session_id": "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+	"accounts": [
+		{
+			"uid": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+			"identification_hash": "anonymised-hash-boursorama-checking",
+			"account_id": { "iban": "FR7640618802650004012345678" },
+			"name": "M. Jean Exemple",
+			"details": null,
+			"product": "BoursoBank Compte",
+			"currency": "XXX",
+			"cash_account_type": "CACC",
+			"usage": "PRIV"
+		},
+		{
+			"uid": "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+			"identification_hash": "anonymised-hash-boursorama-savings",
+			"account_id": { "iban": "FR7640618802650004098765432" },
+			"name": "M. Jean Exemple",
+			"product": "Livret Bourso+",
+			"currency": "XXX",
+			"cash_account_type": "SVGS"
+		}
+	],
+	"aspsp": { "name": "Boursorama", "country": "FR" },
+	"psu_type": "personal",
+	"access": { "valid_until": "2026-12-20T10:00:00.000000+00:00" }
+}

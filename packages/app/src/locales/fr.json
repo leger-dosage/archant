@@ -1074,7 +1074,7 @@
 		"accounts": {
 			"description": "Choisissez ce que devient chaque compte de la banque : un nouveau compte, un compte existant dont la banque reprend le solde, ou rien.",
 			"list": "Comptes de la banque",
-			"empty": "La banque n'a partagé aucun compte.",
+			"empty": "Aucun compte lisible n'est arrivé de la banque. Renouvelez le consentement en choisissant les comptes à partager. Si la liste reste vide, consultez les journaux du serveur.",
 			"notFound": "Cette connexion n'existe pas.",
 			"choice": "Que faire de {{name}}",
 			"skip": "Ignorer",
