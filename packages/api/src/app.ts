@@ -25,6 +25,7 @@ import { importsRoutes } from "./routes/imports.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
+import { sameOrigin } from "./routes/middleware/same-origin.ts";
 import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
 import { rulesRoutes } from "./routes/rules.ts";
@@ -41,7 +42,7 @@ export type AppDeps = ServiceDeps &
 	BankConnectionDeps & {
 		logger: Logger;
 		auth: Auth;
-		/** `BETTER_AUTH_URL`'s origin: the only one a form post is accepted from. */
+		/** `BETTER_AUTH_URL`'s origin: the only one a write is accepted from. */
 		trustedOrigin: string;
 		/** `TRUSTED_PROXIES`, also given to Better Auth. */
 		trustedProxies: string[];
@@ -216,6 +217,9 @@ export function createApp(deps: AppDeps) {
 				bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }),
 			),
 		)
+		// Before `csrf()` and Better Auth, so a browser on another address than
+		// `BETTER_AUTH_URL` gets one code that says what to fix, setup included.
+		.use("/api/*", sameOrigin(deps))
 		// A form post needs no preflight, so a foreign page could submit an
 		// upload with the session cookie attached. JSON requests are left to the
 		// browser's CORS preflight, which this API never answers.
@@ -250,7 +254,7 @@ export function createApp(deps: AppDeps) {
 			return c.json(error.toJSON(), error.status);
 		}
 
-		// `csrf()` refused a form post from another origin.
+		// `csrf()` refused a form post with no origin; `sameOrigin` refuses any other.
 		if (error instanceof HTTPException && error.status === 403) {
 			return c.json(
 				new AppError("FORBIDDEN", "Cross-origin form posts are refused.").toJSON(),

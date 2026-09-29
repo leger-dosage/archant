@@ -9,8 +9,14 @@ export const ERROR_STATUSES = {
 	VALIDATION_ERROR: 400,
 	/** No valid session on a guarded route. */
 	UNAUTHORIZED: 401,
-	/** Setup once a user exists, or a form post from a foreign origin. */
+	/** Setup once a user exists, or a form post with no origin. */
 	FORBIDDEN: 403,
+	/**
+	 * A write from an origin other than `BETTER_AUTH_URL`'s, `/api/auth/*`
+	 * included: `ARCHANT_URL` names another address than the browser's. Nothing
+	 * is written, and neither origin is returned.
+	 */
+	ORIGIN_MISMATCH: 403,
 	/** Setup with a token other than the one the server logged at start. Nothing is written. */
 	SETUP_TOKEN_INVALID: 403,
 	/**

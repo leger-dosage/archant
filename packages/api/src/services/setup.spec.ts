@@ -227,6 +227,18 @@ describe("POST /api/setup", () => {
 		await expect(response.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
 	});
 
+	it("refuses a setup from another origin with ORIGIN_MISMATCH, and writes nothing", async () => {
+		const { app, db } = await freshApp();
+
+		const response = await postSetup(app, ADMIN, { origin: "http://127.0.0.1:5173" });
+
+		expect(response.status).toBe(403);
+		await expect(response.json()).resolves.toMatchObject({ error: { code: "ORIGIN_MISMATCH" } });
+		await expect(usersOf(db)).resolves.toEqual([]);
+		await expect(setupRowsOf(db)).resolves.toEqual([]);
+		expect((await app.request("/api/setup")).status).toBe(200);
+	});
+
 	it("answers FORBIDDEN once a user exists, and writes nothing", async () => {
 		const { app, db } = await freshApp();
 		await postSetup(app, ADMIN);

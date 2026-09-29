@@ -28,11 +28,19 @@ export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
 ```
 
-Open http://localhost:8787. The first visit leads to `/setup`, which creates the administrator. It asks for a setup token, which only someone with access to the server can read: while the database has no user, the server prints a new one at every start, in the `msg` of a JSON `warn` line that `docker compose logs archant` shows:
+Open http://localhost:8787. The first visit leads to `/setup`, which creates the administrator. It asks for a setup token, which only someone with access to the server can read: while the database has no user, the server prints a new one at every start, in the `msg` of a JSON `warn` line. `up --detach --wait` prints no log, so read it from the container's:
+
+```bash
+docker compose logs archant | grep 'Setup is open'
+```
 
 ```text
 Setup is open. Open /setup and enter the setup token <token>. A new one is printed at every start.
 ```
+
+Take the token from the last line: each start replaces the previous token.
+
+Open Archant at the address `ARCHANT_URL` names, `http://localhost:8787` when it is empty. From any other address, setup and sign-in are refused, and the page says to set `ARCHANT_URL` to the address in the browser's address bar, then restart.
 
 Without it, whoever reached `/setup` first would own the instance; a new domain's certificate is public within minutes. Once the administrator exists, no token is printed and setup refuses every request.
 
@@ -57,18 +65,18 @@ Run exactly one container per database file. SQLite takes one writer, and two se
 
 Compose reads them from the shell, or from a `.env` file next to `docker-compose.yml`, for interpolation only. It never passes that file to the container: the development `DATABASE_URL` and `BETTER_AUTH_URL` it holds would break it.
 
-| Variable                        | Required | What it does                                                                                                                                       |
-| ------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`            | yes      | Signs session cookies, at least 32 characters. Compose refuses to start without it.                                                                |
-| `ARCHANT_URL`                   | no       | The address the browser uses, passed to the server as `BETTER_AUTH_URL`. Defaults to `http://localhost:8787`. A sign-in from any other is refused. |
-| `TRUSTED_PROXIES`               | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                |
-| `APP_TIMEZONE`                  | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                             |
-| `LOG_LEVEL`                     | no       | pino level. Defaults to `info`. Above `warn`, the first start does not print the setup token.                                                      |
-| `ENCRYPTION_KEY`                | no       | Encrypts bank session ids and the Enable Banking key at rest, base64 of 32 bytes. See [Connecting a bank](#connecting-a-bank).                     |
-| `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                     |
-| `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                       |
-| `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
-| `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                   |
+| Variable                        | Required | What it does                                                                                                                                                              |
+| ------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`            | yes      | Signs session cookies, at least 32 characters. Compose refuses to start without it.                                                                                       |
+| `ARCHANT_URL`                   | no       | The address the browser uses, passed to the server as `BETTER_AUTH_URL`. Defaults to `http://localhost:8787`. Setup, sign-in and every change from any other are refused. |
+| `TRUSTED_PROXIES`               | no       | The reverse proxies whose `X-Forwarded-For` is believed. See below.                                                                                                       |
+| `APP_TIMEZONE`                  | no       | Decides which day is "today" for balances. Defaults to `Europe/Paris`.                                                                                                    |
+| `LOG_LEVEL`                     | no       | pino level. Defaults to `info`. Above `warn`, the first start does not print the setup token.                                                                             |
+| `ENCRYPTION_KEY`                | no       | Encrypts bank session ids and the Enable Banking key at rest, base64 of 32 bytes. See [Connecting a bank](#connecting-a-bank).                                            |
+| `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                                            |
+| `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                                              |
+| `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                                                |
+| `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                                          |
 
 The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, port 8787, `HOST=0.0.0.0`, and `APP_VERSION`, the exact release it was built from, which « Réglages » shows; a local build leaves it empty. Outside a container the server listens on `127.0.0.1` only; the image makes it listen on every interface of the container, because a published port reaches the container through its network interface, never its loopback. That exposes nothing more: who reaches the server is decided by the published port, `127.0.0.1` only unless you open it. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
 
@@ -186,7 +194,7 @@ In the [control panel](https://enablebanking.com/cp/applications), register a ne
 
   Register every one you use. The bank sends the browser back there; any other URL makes Enable Banking refuse the connection. Archant checks the list when the credentials are saved, and names the exact URL to register when it is missing.
 
-  Behind Tailscale, the bank sends your browser back to the `ts.net` address, which resolves only on the tailnet, while every call to Enable Banking leaves the server outbound, so Archant needs no port open on the internet. No one has confirmed yet that Enable Banking accepts a `ts.net` redirect URL. Register it on a sandbox application first: if the panel refuses it, no documented path connects a bank to an instance reachable only through Tailscale.
+  Behind Tailscale, the bank sends your browser back to the `ts.net` address, which resolves only on the tailnet, while every call to Enable Banking leaves the server outbound, so Archant needs no port open on the internet. Enable Banking accepts a `ts.net` redirect URL for a production application, checked on 2026-09-29.
 
 - Key: keep the default, which generates the key pair in the browser. Registering downloads the private key as `<application id>.pem`; keep that file. To bring your own key instead, generate it and upload the certificate:
 

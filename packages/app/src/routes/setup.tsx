@@ -3,7 +3,7 @@ import type { FieldError } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -73,12 +73,17 @@ function SetupPage() {
 		defaultValues: { token: "", name: "", email: "", password: "", confirmPassword: "" },
 	});
 	const { errors, isSubmitting } = form.formState;
+	// Shown under the button rather than as a toast: the fix is an edit of
+	// `ARCHANT_URL` and a restart, longer than a toast stays on screen.
+	const [originMismatch, setOriginMismatch] = useState(false);
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("setup.title"), app: t("app.name") });
 	}, [t]);
 
 	const submit = form.handleSubmit(async ({ token, name, email, password }) => {
+		setOriginMismatch(false);
+
 		try {
 			await unwrap(api.setup.$post({ json: { token, name, email, password } }));
 		} catch (error) {
@@ -87,6 +92,11 @@ function SetupPage() {
 			// Someone finished setup first: the account to sign in to exists.
 			if (apiError.code === "FORBIDDEN") {
 				await navigate({ to: "/sign-in" });
+				return;
+			}
+
+			if (apiError.code === "ORIGIN_MISMATCH") {
+				setOriginMismatch(true);
 				return;
 			}
 
@@ -211,6 +221,11 @@ function SetupPage() {
 				<Button type="submit" disabled={isSubmitting}>
 					{t("setup.submit")}
 				</Button>
+				{originMismatch && (
+					<p role="alert" className="text-sm text-destructive">
+						{t("errors.ORIGIN_MISMATCH")}
+					</p>
+				)}
 			</form>
 		</OutsideShell>
 	);

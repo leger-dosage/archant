@@ -160,7 +160,7 @@ describe("Better Auth's endpoints", () => {
 });
 
 describe("cross-site form posts", () => {
-	it("refuses an upload from a foreign origin, and writes nothing", async () => {
+	it("refuses an upload from a foreign origin with ORIGIN_MISMATCH, and writes nothing", async () => {
 		const created = await signedIn().request("/api/accounts", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -184,7 +184,7 @@ describe("cross-site form posts", () => {
 		});
 
 		expect(response.status).toBe(403);
-		await expect(response.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
+		await expect(response.json()).resolves.toMatchObject({ error: { code: "ORIGIN_MISMATCH" } });
 		await expect(temp.db.all(sql`select id from imports`)).resolves.toEqual([]);
 	});
 });
