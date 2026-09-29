@@ -490,14 +490,20 @@ test("banks: the banner and the locked notice are Sure's alerts, the badge 22 px
  */
 function scanFloor(): string[] {
 	const rail = document.querySelector('nav[aria-label="Navigation principale"]');
-	const checks: { element: Element | undefined; kind: "text" | "heading" | "row" | "control" }[] =
-		[];
+	const checks: {
+		element: Element | undefined;
+		kind: "text" | "rail" | "heading" | "row" | "control";
+	}[] = [];
 
 	const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
 	for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
 		if ((node.textContent ?? "").trim() !== "" && node.parentElement !== null) {
-			if (!(rail?.contains(node.parentElement) ?? false)) {
+			const inRail = rail?.contains(node.parentElement) ?? false;
+			// The rail's labels are the one text at 11 px, under each destination.
+			if (!inRail) {
 				checks.push({ element: node.parentElement, kind: "text" });
+			} else if (node.parentElement.closest("a") !== null) {
+				checks.push({ element: node.parentElement, kind: "rail" });
 			}
 		}
 	}
@@ -558,8 +564,12 @@ function scanFloor(): string[] {
 		const size = Number.parseFloat(style.fontSize);
 		const name = `${element.tagName.toLowerCase()} « ${(element.textContent ?? "").trim().slice(0, 40)} »`;
 
-		if (kind === "text" && size < 12) {
+		// 12 px is for captions and uppercase headers, 14 px and up for the rest:
+		// a size between them, such as shadcn's 12.8 px, is neither.
+		if (kind === "text" && (size < 12 || (size > 12 && size < 14))) {
 			found.push(`text at ${size} px: ${name}`);
+		} else if (kind === "rail" && size !== 11) {
+			found.push(`rail label at ${size} px: ${name}`);
 		} else if (kind === "heading" && style.textTransform !== "uppercase" && size < 14) {
 			found.push(`heading at ${size} px: ${name}`);
 		} else if (kind === "row" && size < 14) {

@@ -615,7 +615,7 @@ function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => 
 					(list.length === 0 ? (
 						// The group's block is the card already.
 						<EmptyState
-							className="rounded-none border-0"
+							flush
 							icon={{ kind: "transfer", icon: LandmarkIcon }}
 							title={t("banks.noConnections.title")}
 							description={t("banks.noConnections.description")}

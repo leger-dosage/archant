@@ -9,8 +9,8 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
-import { InsetGroup } from "@/components/InsetGroup";
-import { GROUP_TABLE_INSET, ListCard } from "@/components/ListCard";
+import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
 import { StatusBadge } from "@/components/StatusBadge";

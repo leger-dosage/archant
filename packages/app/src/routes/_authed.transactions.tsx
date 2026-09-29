@@ -268,22 +268,19 @@ function OperationsPage() {
 				)}
 
 				{data !== undefined && data.total === 0 && !filtered && (
-					// Inside the list's card, so the note drops its own frame.
-					<EmptyNote className="rounded-none border-0 py-6 text-center">
+					// Inside the list's card, which frames it already.
+					<EmptyNote flush className="py-6 text-center">
 						{t("operations.empty")}
 					</EmptyNote>
 				)}
 
 				{data !== undefined && data.total === 0 && filtered && (
-					<div
-						data-slot="empty-note"
-						className="flex flex-col items-center gap-3 py-6 text-center text-muted-foreground"
-					>
+					<EmptyNote flush className="flex flex-col items-center gap-3 py-6 text-center">
 						<p>{t("operations.noMatch")}</p>
 						<Button variant="outline" onClick={clear}>
 							{t("operations.clearFilters")}
 						</Button>
-					</div>
+					</EmptyNote>
 				)}
 
 				{data !== undefined && data.total > 0 && (

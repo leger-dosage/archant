@@ -4,6 +4,10 @@ import { useId } from "react";
 
 import { cn } from "@/lib/utils";
 
+// A table's edge cells line up with the 16 px padding of its inset group's header.
+export const GROUP_TABLE_INSET =
+	"[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4";
+
 /**
  * DESIGN.md's inset group: a grey tray whose uppercase header holds the
  * group's heading on the left and its total on the right, above a white

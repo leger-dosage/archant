@@ -89,6 +89,15 @@ context:
 | 14 | verification | Empty states inside a group untested for their missing frame | low | two callers | patch |
 | 15 | verification | The runs' count is the total over all pages | low | `count` doc says rows the group holds; the reconciled prop documents a count | patch, after the rebase |
 | 16 | verification | Filter chip may be 30 px, not 28 | false | the floor is a minimum; 30 px passes | reject |
+| 17 | standards review | Three callers strip the empty state's frame by class; a hand-written `div` borrows `EmptyNote`'s slot | medium | `rounded-none border-0` in banks, categories and /transactions | patch: `flush` on `EmptyState` and `EmptyNote` |
+| 18 | standards review | `GROUP_TABLE_INSET` lives with the card, not the group it aligns to | low | its comment names the inset group's header | patch |
+| 19 | standards review | Group tables repeat their head and row classes | low | nine `TableHead`s in two routes; a variant would add a component for two callers | reject |
+| 20 | standards review | Error card classes copied in merchants and tags | low | two lines, rare state | reject |
+| 21 | standards review | Some e2e locators climb the DOM | low | measuring styles needs the node; the parent climbs existed before | reject |
+| 22 | spec review | The sweep lets 12.8 or 13 px body text pass | medium | it flagged only text under 12 px | patch: any size between 12 and 14 px fails |
+| 23 | spec review | The rules phone notice's card and the rail labels' 11 px untested | low | text-only assertions | patch |
+| 24 | spec review | Pagination's styles and the connection form's extent change behaviour | false | styles the links always meant to have; the form's extent changes nothing the user does | reject |
+| 25 | spec review | `BalanceChart` and /transactions show their sentence without a card | low | both sit inside a card already; a card inside it was finding 4 | reject |
 
 ## Verification
 

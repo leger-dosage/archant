@@ -106,7 +106,7 @@ function CategoryGroup({
 			{branches.length === 0 ? (
 				// The group's block is the card already.
 				<EmptyState
-					className="rounded-none border-0"
+					flush
 					icon={{ kind: "transfer", icon: ShapesIcon }}
 					title={t(`categories.groupEmpty.${kind}`)}
 					description={t("categories.groupEmpty.description")}
