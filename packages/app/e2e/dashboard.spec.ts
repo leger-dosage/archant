@@ -276,8 +276,11 @@ test("« 3 M » keeps the period in the URL, and the summary and table follow it
 	);
 	await expect(headline(page)).toContainText(`${amount} (${percent}) sur 3 mois`);
 
-	await card(page).getByRole("button", { name: "Voir le tableau" }).click();
+	const showTable = card(page).getByRole("button", { name: "Voir le tableau" });
+	await showTable.click();
 	const table = card(page).getByRole("table");
+	const tableId = await showTable.getAttribute("aria-controls");
+	await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "208px");
 	await expect(table.getByRole("columnheader")).toHaveText(["Date", "Patrimoine net"]);
 	await expect(table.getByRole("row")).toHaveCount(expected.points.length + 1);
 	await expect(table.getByRole("row").nth(1)).toContainText(formatTableDate(daysAgo(0)));
@@ -632,11 +635,18 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 
 	await page.goto("/");
 
-	await expect(pageHeader(page).getByRole("heading", { level: 1 })).toHaveCSS("font-size", "30px");
+	const greeting = pageHeader(page).getByRole("heading", { level: 1 });
+	await expect(greeting).toHaveCSS("font-size", "30px");
+	const title = card(page).getByRole("heading", { level: 2, name: "Patrimoine net" });
+	await expect(title).toHaveCSS("font-size", "16px");
+	await expect(title).toHaveCSS("font-weight", "510");
 	const cards = [card(page), flows(page, current), bilan(page)];
 	await Promise.all(cards.map((region) => expect(region).toHaveCSS("border-radius", "12px")));
 
 	const [netWorth, flow, sheet] = await Promise.all(cards.map((region) => region.boundingBox()));
+	expect(netWorth).not.toBeNull();
+	expect(flow).not.toBeNull();
+	expect(sheet).not.toBeNull();
 	expect(flow?.x).toBe(netWorth?.x);
 	expect(sheet?.x).toBe(netWorth?.x);
 	expect(flow?.width).toBe(netWorth?.width);
@@ -652,7 +662,27 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 				flows(page, current).boundingBox(),
 			]);
 
-			return (beside?.x ?? 0) > (wide?.x ?? 0) + (wide?.width ?? 0) && beside?.y === wide?.y;
+			return (
+				wide !== null && beside !== null && beside.x > wide.x + wide.width && beside.y === wide.y
+			);
 		})
 		.toBe(true);
+
+	// The balance sheet climbs under the net worth, beside the month's flow.
+	const [top, climbed] = await Promise.all([card(page).boundingBox(), bilan(page).boundingBox()]);
+	expect(climbed?.x).toBe(top?.x);
+	expect(climbed?.y).toBe((top?.y ?? 0) + (top?.height ?? 0) + 24);
+
+	// In a half-width card, the month's three figures stack rather than overflow.
+	const cells = await Promise.all(
+		(["Revenus", "Dépenses", "Épargne du mois"] as const).map((label) =>
+			cell(page, current, label).boundingBox(),
+		),
+	);
+	expect(cells.every((box) => box !== null)).toBe(true);
+	expect(new Set(cells.map((box) => box?.x)).size).toBe(1);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+
+	await expect(greeting).toHaveCSS("font-size", "24px");
 });

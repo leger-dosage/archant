@@ -142,10 +142,12 @@ export function CashFlowSection({
 	month,
 	current,
 	onMonthChange,
+	className,
 }: {
 	month: string;
 	current: string;
 	onMonthChange: (month: string) => void;
+	className?: string;
 }) {
 	const { t } = useTranslation();
 	const [side, setSide] = useState<Side>("expense");
@@ -159,6 +161,7 @@ export function CashFlowSection({
 	return (
 		<Section
 			id="cash-flow-heading"
+			{...(className === undefined ? {} : { className })}
 			title={t("dashboard.cashFlow.title", { ofMonth: ofMonth(month) })}
 			action={
 				<div className="flex items-center gap-2">

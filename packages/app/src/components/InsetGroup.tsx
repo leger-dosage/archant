@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
  * DESIGN.md's inset group: a grey tray whose uppercase header holds the
  * group's heading on the left and its total on the right, above a white
  * bordered block of rows. The caller's list separates its rows with `line`.
- * The `section` is named by its heading, so it reads as a region.
+ * The `section` is named by its heading, so it reads as a region, and the
+ * header is the heading's parent, so the heading's parent holds the total.
  */
 export function InsetGroup({
 	title,
@@ -20,7 +21,10 @@ export function InsetGroup({
 	children,
 }: {
 	title: ReactNode;
-	/** Under a card's `h2`, a group is an `h3`; directly under the page's `h1`, an `h2`. */
+	/**
+	 * Directly under the page's `h1`, an `h2`; under a card's `h2`, an `h3`;
+	 * under a card's `h3`, such as a balance sheet class, an `h4`.
+	 */
 	level: 2 | 3 | 4;
 	/** The group's total, beside its heading, in the header's own colour. */
 	total?: ReactNode;

@@ -106,7 +106,15 @@ function DashboardPage() {
 						// 1440 px screen leaves about 950 px, too narrow for two cards.
 						<div className="grid grid-cols-1 gap-6 2xl:grid-cols-2 2xl:items-start">
 							<NetWorthSection period={period} onPeriodChange={changePeriod} />
-							<CashFlowSection month={month} current={currentMonth} onMonthChange={changeMonth} />
+							{/* From 1536 px the month's flow spans two rows, so the balance sheet
+							    climbs under the net worth, as Sure's masonry does, rather than
+							    waiting below the taller of the first two cards. */}
+							<CashFlowSection
+								month={month}
+								current={currentMonth}
+								onMonthChange={changeMonth}
+								className="2xl:row-span-2"
+							/>
 							<BalanceSheetSection list={accounts.data} />
 						</div>
 					) : (

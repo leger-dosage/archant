@@ -2,7 +2,7 @@
 title: 'Story 14.2: The dashboard and the accounts pages'
 type: 'feature'
 created: '2026-09-29'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'f744495232316bcdc8dd11cc9698160649d30f7b'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -72,10 +72,33 @@ context:
 - The balance sheet's inset group is headed « Comptes » with no total: the class total already sits above it in `section-title`, as Sure's tray carries column labels only. The month's flow tray is headed « Dépenses par catégorie » or « Revenus par catégorie », the name its list already had.
 - `BalanceChart` takes `height` as 208 or 256, mapped to literal `h-52` and `h-64` classes so Tailwind still sees them.
 - The dashboard's « Ajouter un compte » moves from `sm` to the default 36 px button, as DESIGN.md's page header asks.
+- Visual QA at 1600 px found the balance sheet waiting below the taller of the first two cards, leaving a gap under the net worth. From 1536 px the month's flow spans two grid rows, so the balance sheet climbs under the net worth as Sure's masonry (`dashboard_two_column?`) does, without its script.
+- The summary strip switches to columns on its own width (`@xl`, 576 px), not the viewport's: in the half-width dashboard card from 1536 px its figures stack, where three nowrap 20 px amounts overflowed.
 
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Layer | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|---|
+| 1 | blind, edge | Summary strip overflows in the half-width flow card from 1536 px | medium | columns switch on the viewport's `sm`; `Money` is `whitespace-nowrap`; a 510 px card leaves ~140 px per 20 px figure | patch |
+| 2 | blind | Two regions named « Comptes » in the balance sheet, lists named alike | low | real, but only a screen reader's landmark list shows it and the fix adds a rendering variant to `InsetGroup` | reject |
+| 3 | blind | `level` doc omits 4 | low | the balance sheet passes 4 | patch |
+| 4 | blind | Header-holds-total invariant documented only in `AccountGroups` | low | `accounts.spec.ts:9` relies on it; the markup moved to `InsetGroup` | patch |
+| 5 | blind | Spec `in-review` while sprint says `in-progress`; 14.1 set done | false | step 5 moves the story's status; 14.1 is merged in main | reject |
+| 6 | blind | No `section-title` utility | false | `text-lg font-medium` is DESIGN's 18 px, 510, 1.55 exactly | reject |
+| 7 | blind | `type-display` comment names a missing token, weight 590 | low | Story 14.4 removes `type-display` | reject |
+| 8 | blind | Account subtype 14 px on the accounts page, 12 px elsewhere | low | DESIGN.md sets subtypes as captions | patch |
+| 9 | blind | `md` icon at 28 px unverified in transaction rows | low | Story 14.3 rebuilds the rows; `transaction-rows.spec.ts` still passes at 36 px | reject |
+| 10 | blind | Greeting at 24 px below 1024 px untested | low | one assertion | patch |
+| 11 | blind | Flow skeleton does not mirror the strip | low | cosmetic jump, pre-existing | reject |
+| 12 | blind | `BalanceChart` height optional | low | one default caller; developer-only | reject |
+| 13 | edge | Duplicate React key on equal labels | low | every caller passes distinct labels | reject |
+| 14 | edge | Null bounding boxes pass the order test | low | `undefined === undefined` | patch |
+| 15 | verification | Card title size untested | medium | no assertion reads a `Section` heading's size | patch |
+| 16 | verification | Excluded-currency note on /accounts untested | medium | only the column's `title` is tested (`shell.spec.ts:156`) | patch |
+| 17 | verification | Dashboard table height untested | low | one assertion after « Voir le tableau » | patch |
+| 18 | visual QA | At 1600 px the balance sheet leaves a gap under the net worth | medium | row 2 starts below the month's flow, the taller card of row 1 | patch |
 
 ## Verification
 

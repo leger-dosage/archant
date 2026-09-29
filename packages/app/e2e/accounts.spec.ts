@@ -144,6 +144,57 @@ test("a depository account is listed under assets and a credit card under liabil
 	await expect(pageGroupHeader(page, "Passifs")).toContainText(euros(liabilityTotal));
 });
 
+// Story 14.2: the note under « Actifs » sits in its tray, between the header and the rows.
+test("a group with an account in another currency says so in its tray", async ({ page }) => {
+	await page.route("**/api/accounts", (route) =>
+		route.fulfill({
+			json: {
+				data: {
+					reportingCurrency: "EUR",
+					groups: [
+						{
+							classification: "asset",
+							total: 100_000,
+							excludedCount: 1,
+							accounts: [
+								{
+									id: "a1",
+									name: "Compte joint",
+									type: "depository",
+									subtype: "checking",
+									currency: "EUR",
+									balance: 100_000,
+									active: true,
+									excludedFromReports: false,
+								},
+								{
+									id: "a2",
+									name: "Compte USD",
+									type: "depository",
+									subtype: "checking",
+									currency: "USD",
+									balance: 50_000,
+									active: true,
+									excludedFromReports: false,
+								},
+							],
+						},
+						{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },
+					],
+				},
+			},
+		}),
+	);
+
+	await page.goto("/accounts");
+
+	await expect(
+		page
+			.getByRole("region", { name: "Actifs" })
+			.getByText("1 compte dans une autre devise n'est pas compté dans le total."),
+	).toBeVisible();
+});
+
 // Story 12.3: sections with the accounts' type icons, and the type icon in an
 // account's page header.
 test("each group is a section whose accounts carry their type icon, as the account's page header does", async ({

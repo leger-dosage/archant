@@ -65,7 +65,7 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 														<Badge variant="outline">{t("accounts.inactive")}</Badge>
 													)}
 												</p>
-												<p className="text-muted-foreground">
+												<p className="text-xs text-muted-foreground">
 													{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
 												</p>
 											</div>
