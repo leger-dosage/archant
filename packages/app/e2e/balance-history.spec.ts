@@ -115,4 +115,13 @@ test("the balance sits in no card at 30 px, above the chart's 256 px card", asyn
 	await expect(chartCard).toHaveCSS("background-color", rgb("#ffffff"));
 	await expect(chartCard.getByRole("radiogroup", { name: "Période" })).toBeVisible();
 	await expect(chartCard.locator('[data-slot="chart"]')).toHaveCSS("height", "256px");
+
+	// Its tabs sit on the grey track, the current one on white.
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+	await expect(tabs.getByRole("tab", { selected: true })).toHaveCSS(
+		"background-color",
+		rgb("#ffffff"),
+	);
 });

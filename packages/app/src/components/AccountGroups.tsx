@@ -38,7 +38,6 @@ export function AccountGroups({ list, showInactive }: AccountGroupsProps) {
 					const headingId = `account-group-${group.classification}`;
 
 					return (
-						// The heading's parent holds the total, as the accounts column's group does.
 						<InsetGroup
 							key={group.classification}
 							id={headingId}
