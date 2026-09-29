@@ -63,7 +63,7 @@ async function addMonthly(api: Api, accountId: string, label: string, amount: st
 }
 
 async function detect(page: Page) {
-	// An empty list offers « Détecter les récurrences » in place of the title bar's.
+	// An empty list offers « Détecter les récurrences » in place of the page header's.
 	await page.getByRole("button", { name: /^Détecter( les récurrences)?$/u }).click();
 	await expect(toast(page, /récurrences? détectées?/u).first()).toBeVisible();
 }
@@ -259,11 +259,11 @@ test("the sheet names a transaction's detected series and links to it, and offer
 	await expect(other).not.toContainText("fait partie de la récurrence");
 });
 
-test("the sidebar opens Récurrences", async ({ page }) => {
+test("the rail's « Récurrent » opens Récurrences", async ({ page }) => {
 	await page.goto("/accounts");
 	await page
-		.locator('[data-sidebar="sidebar"]')
-		.getByRole("link", { name: "Récurrences", exact: true })
+		.getByRole("navigation", { name: "Navigation principale" })
+		.getByRole("link", { name: "Récurrent", exact: true })
 		.click();
 	await expect(page).toHaveURL(/\/recurring$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();

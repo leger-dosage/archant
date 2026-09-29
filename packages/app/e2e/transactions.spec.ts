@@ -164,9 +164,15 @@ test("a card purchase of -30,00 raises the outstanding balance by 30,00 €", as
 
 	await expect(sheet).toBeHidden();
 	await expect(header(page, card.name)).toContainText(euros(53_000));
-	await expect(page.getByRole("button", { name: /^Passifs/u })).toContainText(
-		euros(liabilities + 3000),
-	);
+	await expect(
+		page
+			.getByRole("complementary", { name: "Liste des comptes" })
+			.getByRole("link", { name: new RegExp(card.name, "u") }),
+	).toContainText(euros(53_000));
+	await page.goto("/accounts");
+	await expect(
+		page.getByRole("heading", { level: 2, name: "Passifs" }).locator(".."),
+	).toContainText(euros(liabilities + 3000));
 });
 
 test("the list pages at 50 transactions", async ({ page, api }) => {

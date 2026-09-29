@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind } from "@/lib/transaction-filters";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { ReceiptIcon, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -181,7 +181,7 @@ function OperationsPage() {
 	const clear = () => void navigate({ search: {} });
 
 	return (
-		<Page icon={ReceiptIcon} title={t("operations.title")} className="gap-4">
+		<Page title={t("operations.title")} className="gap-4">
 			<div className="flex flex-wrap items-center gap-2">
 				<SearchField q={search.q} />
 				<TransactionFilters

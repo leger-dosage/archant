@@ -24,8 +24,8 @@ const headline = (page: Page) => card(page).getByRole("group", { name: "Patrimoi
 const total = (page: Page, label: "Actifs" | "Passifs") =>
 	card(page).getByRole("group", { name: label, exact: true });
 
-/** The 44 px bar that holds the page's `h1` and its actions. */
-const titleBar = (page: Page) =>
+/** The page header that holds the page's `h1` and its actions. */
+const pageHeader = (page: Page) =>
 	page.getByRole("heading", { level: 1, name: "Tableau de bord" }).locator("..");
 
 /** `/api/accounts` answered with `groups`, as the API shapes them. */
@@ -35,7 +35,7 @@ async function mockAccounts(page: Page, groups: unknown[]) {
 	);
 }
 
-// Story 12.2: the greeting, the title bar action and the balance sheet.
+// Story 12.2: the greeting, the page header's action and the balance sheet.
 
 test("the dashboard greets the administrator by first name, above one sentence", async ({
 	page,
@@ -47,7 +47,7 @@ test("the dashboard greets the administrator by first name, above one sentence",
 
 	await expect(page.getByText(`Bonjour ${ADMIN_FIRST_NAME}`, { exact: true })).toBeVisible();
 	await expect(page.getByText("Voici où en sont les finances du foyer.")).toBeVisible();
-	// A paragraph: the title bar's « Tableau de bord » stays the one `h1`.
+	// A paragraph: the page header's « Tableau de bord » stays the one `h1`.
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 	await expect(page.getByRole("heading", { name: /^Bonjour/u })).toHaveCount(0);
 });
@@ -70,11 +70,11 @@ test("without a first name, the greeting is « Bonjour » alone", async ({ page,
 	await expect(page.getByText(/^Bonjour /u)).toHaveCount(0);
 });
 
-test("« Ajouter un compte » in the title bar opens the account dialog", async ({ page, api }) => {
+test("« Ajouter un compte » in the page header opens the account dialog", async ({ page, api }) => {
 	await api.openAccount();
 
 	await page.goto("/");
-	await titleBar(page).getByRole("button", { name: "Ajouter un compte" }).click();
+	await pageHeader(page).getByRole("button", { name: "Ajouter un compte" }).click();
 
 	await expect(page.getByRole("dialog", { name: "Ajouter un compte" })).toBeVisible();
 });
@@ -331,8 +331,10 @@ test("a household without accounts sees the empty state", async ({ page }) => {
 	await expect(
 		empty.getByText("Connectez une banque ou importez un relevé pour voir votre patrimoine ici."),
 	).toBeVisible();
-	// The section's button is the only way forward: the title bar has none.
-	await expect(page.getByRole("button", { name: "Ajouter un compte" })).toHaveCount(1);
+	// The section's button is the page's only way forward: the header has none.
+	await expect(
+		page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }),
+	).toHaveCount(1);
 	await expect(card(page)).toHaveCount(0);
 	await expect(bilan(page)).toHaveCount(0);
 

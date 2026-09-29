@@ -117,7 +117,7 @@ function Unavailable({ missing }: { missing: string[] }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 			<p className="font-medium">{t("banks.unavailable.title")}</p>
 			<p className="text-sm text-muted-foreground">{t("banks.unavailable.description")}</p>
 			<ul className="flex flex-col gap-1">
@@ -557,7 +557,7 @@ function BankPickerDialog({
 			}}
 		>
 			<DialogContent
-				className="max-h-[90vh] overflow-y-auto sm:max-w-md"
+				className="max-h-[90vh] overflow-y-auto"
 				onCloseAutoFocus={(event) => {
 					// Radix returns the focus to its trigger only, and there is none.
 					event.preventDefault();
@@ -700,10 +700,7 @@ function BanksPage() {
 			{setup.isPending && <Skeleton className="h-24 w-full" />}
 
 			{setup.isError && (
-				<div
-					role="alert"
-					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
-				>
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(setup.error)}`)}</p>
 					<Button variant="outline" onClick={() => void setup.refetch()}>
 						{t("common.retry")}

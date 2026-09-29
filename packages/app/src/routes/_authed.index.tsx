@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LayoutDashboardIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -34,8 +34,8 @@ export const Route = createFileRoute("/_authed/")({
 });
 
 /**
- * « Bonjour Camille » and one sentence. A paragraph, not a heading: the title
- * bar's « Tableau de bord » stays the page's only `h1`, so a screen reader
+ * « Bonjour Camille » and one sentence. A paragraph, not a heading: the page
+ * header's « Tableau de bord » stays the page's only `h1`, so a screen reader
  * landing here learns where it is, not who it is.
  */
 function Greeting({ hasAccounts }: { hasAccounts: boolean }) {
@@ -87,7 +87,6 @@ function DashboardPage() {
 
 	return (
 		<Page
-			icon={LayoutDashboardIcon}
 			title={t("dashboard.title")}
 			className="gap-4"
 			// Sure's dashboard has this one action; importing and adding a

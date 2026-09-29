@@ -23,7 +23,7 @@ async function expectOutsideShell(page: Page, heading: string, mode: keyof typeo
 	const box = page.locator('[data-slot="outside-shell-box"]');
 	await expect(box).toHaveCSS("background-color", rgb(MODES[mode].panel));
 	await expect(box).toHaveCSS("border-top-width", "1px");
-	await expect(box).toHaveCSS("border-radius", "10px");
+	await expect(box).toHaveCSS("border-radius", "12px");
 	await expect(box).toHaveCSS("box-shadow", "none");
 	await expect(box.getByRole("heading", { level: 1, name: heading })).toBeVisible();
 }

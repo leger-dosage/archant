@@ -9,12 +9,21 @@ import {
 } from "lucide-react";
 import { Toaster as Sonner } from "sonner";
 
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useResolvedTheme } from "@/lib/theme";
 
 // Adapted from shadcn: the theme comes from Archant's own store rather than
 // next-themes, which targets Next.js and would be a second source of truth.
 const Toaster = ({ ...props }: ToasterProps) => {
 	const theme = useResolvedTheme();
+	const isWide = useMediaQuery("(min-width: 1024px)");
+	// Below 1024 px the shell's bottom navigation covers the foot of the screen.
+	const clearNavigation = isWide
+		? {}
+		: {
+				offset: { bottom: "calc(5rem + env(safe-area-inset-bottom))" },
+				mobileOffset: { bottom: "calc(5rem + env(safe-area-inset-bottom))" },
+			};
 
 	return (
 		<Sonner
@@ -38,6 +47,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
 					toast: "cn-toast",
 				},
 			}}
+			{...clearNavigation}
 			{...props}
 		/>
 	);

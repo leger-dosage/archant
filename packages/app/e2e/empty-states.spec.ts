@@ -33,7 +33,7 @@ test("recurring: « Détecter les récurrences » runs the detection", async ({ 
 		empty.getByText("Lancez la détection ou ajoutez-en une depuis une opération."),
 	).toBeVisible();
 	await expect(empty.locator("svg.lucide-repeat")).toBeVisible();
-	// The title bar's « Détecter » steps aside for it.
+	// The page header's « Détecter » steps aside for it.
 	await expect(page.getByRole("button", { name: /^Détecter/u })).toHaveCount(1);
 
 	const detection = page.waitForResponse(

@@ -12,8 +12,6 @@ const rows = (page: Page) => page.getByRole("main").locator("button[data-transac
 
 const sheet = (page: Page) => page.getByRole("dialog", { name: "Modifier l'opération" });
 
-const sidebar = (page: Page) => page.locator('[data-sidebar="sidebar"]');
-
 /** Opens a page and waits for its heading. */
 async function visit(page: Page, url: string) {
 	await page.goto(url);
@@ -43,8 +41,9 @@ async function tabUntilRow(page: Page, reached: string[] = []): Promise<string[]
 			return "row";
 		}
 
-		return active?.tagName === "A" && active.closest('[data-sidebar="sidebar"]') !== null
-			? "sidebar"
+		return active?.tagName === "A" &&
+			active.closest('nav[aria-label="Navigation principale"]') !== null
+			? "rail"
 			: "other";
 	});
 
@@ -73,20 +72,22 @@ test("the former shortcuts open nothing, go nowhere and move no focus", async ({
 	await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("the title bar holds the sidebar trigger and the page's own actions only", async ({
+test("the top bar holds the fold button, and the page header the page's own actions only", async ({
 	page,
 	api,
 }) => {
-	// « Ajouter un compte » sits in the title bar once an account exists.
+	// « Ajouter un compte » sits in the page header once an account exists.
 	await api.openAccount();
 	await visit(page, "/accounts");
 
-	const header = page.locator("header");
 	await expect(
-		header.getByRole("button", { name: "Réduire ou déplier la barre latérale" }),
+		page
+			.locator('[data-slot="top-bar"]')
+			.getByRole("button", { name: "Replier ou déplier la liste des comptes" }),
 	).toBeVisible();
+	const header = page.locator('[data-slot="page-header"]');
 	await expect(header.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
-	await expect(header.getByRole("button")).toHaveCount(2);
+	await expect(header.getByRole("button")).toHaveCount(1);
 	await expect(page.getByRole("button", { name: "Rechercher", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Commandes", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Raccourcis clavier", exact: true })).toHaveCount(
@@ -94,39 +95,25 @@ test("the title bar holds the sidebar trigger and the page's own actions only", 
 	);
 });
 
-test("a collapsed sidebar's tooltip names the page, with no key", async ({ page }) => {
-	await visit(page, "/accounts");
-	await page
-		.locator("header")
-		.getByRole("button", { name: "Réduire ou déplier la barre latérale" })
-		.click();
-	await expect(page.locator('[data-slot="sidebar"][data-state="collapsed"]')).toHaveCount(1);
-	await page.mouse.move(0, 0, { steps: 5 });
-
-	await sidebar(page).getByRole("link", { name: "Comptes", exact: true }).hover();
-
-	// By name: the trigger's own tooltip can still be fading out, as it did on CI.
-	// The exact text still proves the tooltip names no key.
-	await expect(page.getByRole("tooltip", { name: "Comptes" })).toHaveText("Comptes");
-});
-
-test("Tab reaches the sidebar links, then a row, and Enter opens its sheet", async ({
+test("Tab reaches the rail's links, then a row, and Enter opens its sheet", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Tabulation");
 	await threeRows(api, prefix);
-	// Icons only, so the sidebar leaves out the account list, which grows with
-	// every test of the run sharing this database.
-	await page.setViewportSize({ width: 900, height: 900 });
 
+	// Folded, so the accounts column, which grows with every test of the run
+	// sharing this database, does not hold the focus past the bound. The fold
+	// is remembered, and the reload starts the focus from the top.
+	await visit(page, "/transactions");
+	await page.getByRole("button", { name: "Replier ou déplier la liste des comptes" }).click();
 	await visit(page, `/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rows(page)).toHaveCount(3);
 
 	const reached = await tabUntilRow(page);
 
-	expect(reached.indexOf("sidebar")).toBeGreaterThanOrEqual(0);
-	expect(reached.indexOf("sidebar")).toBeLessThan(reached.indexOf("row"));
+	expect(reached.indexOf("rail")).toBeGreaterThanOrEqual(0);
+	expect(reached.indexOf("rail")).toBeLessThan(reached.indexOf("row"));
 	await expect(rows(page).first()).toBeFocused();
 
 	await page.keyboard.press("Enter");

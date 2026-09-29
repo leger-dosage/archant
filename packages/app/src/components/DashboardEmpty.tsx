@@ -14,7 +14,7 @@ export function DashboardEmpty({ onAddAccount }: { onAddAccount: () => void }) {
 		<EmptyState
 			labelled
 			level={2}
-			className="rounded-lg border bg-section"
+			className="rounded-lg border bg-card"
 			icon={{ kind: "transfer", icon: LandmarkIcon }}
 			title={t("dashboard.empty.title")}
 			description={t("dashboard.empty.description")}

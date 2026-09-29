@@ -81,7 +81,7 @@ export function NetWorthSection({
 	return (
 		<section
 			aria-labelledby="net-worth-heading"
-			className="flex flex-col rounded-lg border bg-section"
+			className="flex flex-col rounded-lg border bg-card"
 		>
 			<div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2.5">
 				<h2 id="net-worth-heading" className="type-title">

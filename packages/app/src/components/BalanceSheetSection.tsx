@@ -93,7 +93,7 @@ function Group({ group, currency }: { group: BalanceSheetGroup; currency: string
 /**
  * « Bilan »: assets then liabilities, each with its total, a weight bar by
  * account type and its legend, then the group's active accounts. Computed from
- * `/accounts`, the query the sidebar reads (lib/balance-sheet.ts).
+ * `/accounts`, the query the accounts column reads (lib/balance-sheet.ts).
  */
 export function BalanceSheetSection({ list }: { list: AccountListData }) {
 	const { t } = useTranslation();
@@ -102,7 +102,7 @@ export function BalanceSheetSection({ list }: { list: AccountListData }) {
 	return (
 		<section
 			aria-labelledby="balance-sheet-heading"
-			className="flex min-w-0 flex-col rounded-lg border bg-section"
+			className="flex min-w-0 flex-col rounded-lg border bg-card"
 		>
 			<div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
 				<h2 id="balance-sheet-heading" className="type-title">

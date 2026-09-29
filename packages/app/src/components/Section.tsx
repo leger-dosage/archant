@@ -38,7 +38,7 @@ export function Section({
 		<section
 			aria-labelledby={headingId}
 			data-slot="section"
-			className={cn("flex min-w-0 flex-col rounded-lg border bg-section", className)}
+			className={cn("flex min-w-0 flex-col rounded-lg border bg-card", className)}
 		>
 			<div className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-2">
 				<Heading id={headingId} className="type-title">

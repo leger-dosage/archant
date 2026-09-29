@@ -4,6 +4,10 @@ import { ADMIN_STATE, TIME_ZONE, WEB_URL } from "./e2e/settings.ts";
 
 const CI = Boolean(process.env["CI"]);
 
+// DESIGN.md's reference screen: the rail and the accounts column leave the
+// page about 950 px, as Chrome's default 1280 px would not.
+const DESKTOP = { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } };
+
 export default defineConfig({
 	testDir: "./e2e",
 	// A forgotten `test.only` would otherwise turn the pipeline green having run
@@ -24,13 +28,13 @@ export default defineConfig({
 		// The only moment the database has no user: it creates the administrator
 		// through `/setup` and saves the session. Signing in per test instead
 		// would hit Better Auth's limit of three sign-ins per ten seconds.
-		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: { ...devices["Desktop Chrome"] } },
+		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: DESKTOP },
 		{
 			name: "chromium",
 			// Everything but the password change and two-factor, which the
 			// projects below run once nothing needs a session any more.
 			testIgnore: [/password\.spec\.ts$/u, /two-factor\.spec\.ts$/u],
-			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
+			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
 		// Last, because changing the password revokes every session of the single
@@ -41,7 +45,7 @@ export default defineConfig({
 		{
 			name: "password",
 			testMatch: /password\.spec\.ts$/u,
-			use: { ...devices["Desktop Chrome"], storageState: ADMIN_STATE },
+			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["chromium"],
 		},
 		// Last of all, signed in with the password the project above sets: the
@@ -52,7 +56,7 @@ export default defineConfig({
 		{
 			name: "two-factor",
 			testMatch: /two-factor\.spec\.ts$/u,
-			use: { ...devices["Desktop Chrome"], storageState: { cookies: [], origins: [] } },
+			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
 			dependencies: ["password"],
 		},
 	],

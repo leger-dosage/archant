@@ -200,7 +200,7 @@ export function TransactionList({
 						{/* Not a list item: the list holds the rows alone. */}
 						<div
 							data-slot="day-header"
-							className="flex min-h-9 items-center gap-2 border-b border-line bg-section px-2"
+							className="flex min-h-9 items-center gap-2 border-b border-line bg-inset px-2"
 						>
 							<h3 id={headingId} className="font-medium">
 								<DayTitle date={day.date} />
@@ -411,7 +411,7 @@ export function TransactionListSkeleton() {
 	return (
 		// The list's own shape, so the page does not jump when the rows land.
 		<div className="flex flex-col border-t border-line" aria-hidden="true">
-			<div className="flex h-9 items-center border-b border-line bg-section px-2">
+			<div className="flex h-9 items-center border-b border-line bg-inset px-2">
 				<Skeleton className="h-4 w-32" />
 			</div>
 			{[0, 1, 2].map((index) => (

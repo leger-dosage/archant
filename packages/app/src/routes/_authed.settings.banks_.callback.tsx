@@ -27,7 +27,7 @@ function Failure({ message }: { message: string }) {
 	const { t } = useTranslation();
 
 	return (
-		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4">
+		<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 			<p>{message}</p>
 			<Link
 				to="/settings/banks"

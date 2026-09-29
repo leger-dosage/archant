@@ -16,7 +16,7 @@ async function expectApiDownPage(page: Page) {
 	await expect(page.getByText("pnpm api start:dev")).toBeVisible();
 	await expect(page.getByText("la variable PORT de .env")).toBeVisible();
 	await expect(page.getByText("NETWORK_ERROR", { exact: true })).toHaveCount(0);
-	// Without the sidebar: its links would lead to pages that fail the same way.
+	// Without the shell: its links would lead to pages that fail the same way.
 	await expect(page.getByRole("link", { name: "Comptes" })).toHaveCount(0);
 }
 

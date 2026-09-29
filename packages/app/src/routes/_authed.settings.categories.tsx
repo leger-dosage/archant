@@ -182,10 +182,7 @@ function CategoriesPage() {
 			)}
 
 			{categories.isError && (
-				<div
-					role="alert"
-					className="flex flex-col items-start gap-3 rounded-lg border bg-section p-4"
-				>
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(categories.error)}`)}</p>
 					<Button variant="outline" onClick={() => void categories.refetch()}>
 						{t("common.retry")}

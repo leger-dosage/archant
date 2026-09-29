@@ -42,7 +42,7 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 
 	await expect(page).toHaveURL(/\/setup$/u);
 	await expect(page.getByText("Créer le compte administrateur")).toBeVisible();
-	// No sidebar before a user exists.
+	// No shell before a user exists.
 	await expect(page.getByRole("link", { name: "Opérations" })).toHaveCount(0);
 
 	// Story 12.2: the optional first name, refused past 60 characters.
