@@ -2058,7 +2058,7 @@ On 2026-09-27 the owner chose the machine at home, reachable only through Tailsc
 
 Stories 13.1 to 13.4 can ship in any order; 13.6 needs 13.5's version number; 13.7 comes last, since it documents all of them.
 
-On 2026-09-29 the owner followed the guide on a Mac with Docker Desktop, a machine that sleeps. Three problems came out of it. First, a daily cron misses every run the machine sleeps through, and the owner wants the code to handle a host that sleeps rather than assume a server that never does. Sure already does: its `AutoSync` concern starts a sync on the first page of the day, and its scheduled sync is an option in the hosting settings. Second, the server listens on every interface, so `pnpm api start:dev` or a plain Node host exposes the sign-in page to the whole Wi-Fi. Third, the first run was harder than it should be: `docker compose up --wait` does not show the setup token, and an `ARCHANT_URL` left empty ended in a raw `INVALID_ORIGIN` code at sign-in. Stories 13.8 to 13.10 fix them, in any order.
+On 2026-09-29 the owner followed the guide on a Mac with Docker Desktop, a machine that sleeps. Three problems came out of it. First, a daily cron misses every run the machine sleeps through, and the owner wants the code to handle a host that sleeps rather than assume a server that never does. Sure already does: its `AutoSync` concern starts a sync on the first page of the day, and its scheduled sync is an option in the hosting settings. Second, the server listens on every interface, so `pnpm api start:dev` or a plain Node host exposes the sign-in page to the whole Wi-Fi. Third, the first run was harder than it should be: `docker compose up --wait` does not show the setup token, and an `ARCHANT_URL` left empty ended in a raw `INVALID_ORIGIN` code at sign-in. Stories 13.8 to 13.10 fix them, in any order. The same day the owner registered the `ts.net` redirect URL on a production application and Enable Banking accepted it, so the guide can state it. Choosing a bank showed a fourth problem: « Banques disponibles » lists every bank of the country on the page itself, above « Banques connectées », where Sure opens a dialog with a search field focused and a list that scrolls inside it. Story 13.11 follows Sure.
 
 ### Story 13.1: The first administrator needs a setup token
 
@@ -2332,6 +2332,36 @@ So that my first run does not end in a log search or a raw error code.
 **When** sign-in, setup or an upload is refused for its origin
 **Then** the interface says in French that Archant is configured for another address and to set `ARCHANT_URL` to the one in the address bar, instead of `INVALID_ORIGIN` or a bare « Forbidden »; the server logs one `warn` line naming the received origin and the expected one
 
+**Given** `docs/hosting.md` and « Connecting a bank » in `docs/deployment.md`
+**When** they reach the `ts.net` redirect URL
+**Then** they state that Enable Banking accepts it for a production application, as the owner checked on 2026-09-29, instead of saying no one has confirmed it; step 5 of `docs/hosting.md` says that an empty `ARCHANT_URL` refuses every sign-in from the `ts.net` address
+
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test
+
+### Story 13.11: Pick a bank in a dialog, as in Sure
+
+As the household's administrator,
+I want to pick my bank in a dialog with a search field,
+So that I find it without scrolling past every bank of the country, and my connected banks stay at the top of the page.
+
+**Requirements:** FR48
+
+**Acceptance Criteria:**
+
+**Given** « Réglages » › « Banques » with a country chosen
+**When** the page loads
+**Then** « Banques connectées » comes first, and a button opens the bank picker instead of the list sitting on the page, as Sure's `enable_banking_items/select_bank` opens in a dialog
+
+**Given** the picker
+**When** it opens
+**Then** « Rechercher une banque » has the focus, the list scrolls inside the dialog at a bounded height, each bank shows its name and its BIC, an empty search says no bank matches, and Escape or « Annuler » closes it with nothing started
+
+**Given** a bank chosen in the picker
+**When** the user confirms
+**Then** the consent flow starts exactly as before
+
+**Given** the finished story
+**When** `pnpm test:e2e` runs
+**Then** every acceptance criterion above has an automated test, keyboard only included
