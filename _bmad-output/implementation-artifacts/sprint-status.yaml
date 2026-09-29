@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-29-2026 18:15
+last_updated: 09-29-2026 19:27
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -137,6 +137,6 @@ development_status:
   13-8-sync-on-the-first-visit-of-the-day: review
   13-9-the-server-listens-on-loopback-unless-told-otherwise: review
   13-10-a-first-run-that-says-what-to-do: review
-  13-11-pick-a-bank-in-a-dialog-as-in-sure: backlog
+  13-11-pick-a-bank-in-a-dialog-as-in-sure: review
   13-12-a-bank-that-sends-no-account-currency: review
   epic-13-retrospective: optional

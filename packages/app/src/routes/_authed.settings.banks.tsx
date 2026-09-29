@@ -27,6 +27,15 @@ import { EmptyState } from "@/components/EmptyState";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
@@ -404,33 +413,25 @@ function InstitutionButton({
 	);
 }
 
-function Institutions({ country }: { country: BankCountry }) {
+function Institutions({
+	country,
+	picked,
+	onPick,
+}: {
+	country: BankCountry;
+	picked: string | null;
+	onPick: (institution: InstitutionData) => void;
+}) {
 	const { t } = useTranslation();
 	const searchId = useId();
+	// Mounted only while the dialog is open, so a page load asks nothing.
 	const institutions = useInstitutions(country, true);
-	const start = useStartBankConnection();
 	const [query, setQuery] = useState("");
-	// Kept once the provider answers: the browser is leaving for the bank.
-	const [picked, setPicked] = useState<string | null>(null);
 	const list = institutions.data ?? [];
 	const shown = useMemo(() => list.filter((item) => matches(item, query)), [list, query]);
 
-	const pick = (institution: InstitutionData) => {
-		setPicked(institution.name);
-		start.mutate(
-			{ country, institution: institution.name },
-			{
-				onSuccess: ({ url }) => window.location.assign(url),
-				onError: (error) => {
-					setPicked(null);
-					showFailureToast(error);
-				},
-			},
-		);
-	};
-
 	return (
-		<div className="flex flex-col gap-3">
+		<div className="flex min-w-0 flex-col gap-3">
 			<div className="flex flex-col gap-1.5">
 				<Label htmlFor={searchId}>{t("banks.search")}</Label>
 				<InputGroup>
@@ -441,6 +442,7 @@ function Institutions({ country }: { country: BankCountry }) {
 						id={searchId}
 						type="search"
 						value={query}
+						autoFocus
 						placeholder={t("banks.searchPlaceholder")}
 						onChange={(event) => setQuery(event.target.value)}
 					/>
@@ -470,14 +472,20 @@ function Institutions({ country }: { country: BankCountry }) {
 				) : shown.length === 0 ? (
 					<p className="text-sm text-muted-foreground">{t("banks.noResults")}</p>
 				) : (
-					<ul aria-label={t("banks.institutions")} className="flex flex-col gap-2">
+					// Sure's `max-h-80 overflow-y-auto`: a country lists hundreds of
+					// banks, and the dialog must stay within the screen. The padding
+					// keeps a focused row's ring inside the scrolled box.
+					<ul
+						aria-label={t("banks.institutions")}
+						className="-mx-1 flex max-h-80 flex-col gap-2 overflow-y-auto p-1"
+					>
 						{shown.map((institution) => (
 							<li key={institution.name}>
 								<InstitutionButton
 									institution={institution}
 									pending={picked === institution.name}
 									disabled={picked !== null}
-									onPick={() => pick(institution)}
+									onPick={() => onPick(institution)}
 								/>
 							</li>
 						))}
@@ -487,8 +495,96 @@ function Institutions({ country }: { country: BankCountry }) {
 	);
 }
 
-/** `onChooseBank` sends the user to the picker above, the one way to add a bank. */
-function Connections({ onChooseBank }: { onChooseBank: () => void }) {
+/**
+ * Sure's `select_bank` modal: a click on a bank starts its consent at once,
+ * with no confirm step. Its content unmounts on close, so every opening
+ * starts with an empty search.
+ */
+function BankPickerDialog({
+	country,
+	open,
+	onOpenChange,
+	opener,
+}: {
+	country: BankCountry;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	/** Focused again on close: two buttons open the picker, and neither is a `DialogTrigger`. */
+	opener: RefObject<HTMLElement | null>;
+}) {
+	const { t } = useTranslation();
+	const start = useStartBankConnection();
+	// Kept once the provider answers: the browser is leaving for the bank.
+	const [picked, setPicked] = useState<string | null>(null);
+
+	useEffect(() => {
+		// Back from the bank's site can restore this page from the back/forward
+		// cache, with a bank still picked: every row, « Annuler » and closing
+		// would stay refused.
+		const restored = (event: PageTransitionEvent) => {
+			if (event.persisted) {
+				setPicked(null);
+			}
+		};
+
+		window.addEventListener("pageshow", restored);
+		return () => window.removeEventListener("pageshow", restored);
+	}, []);
+
+	const pick = (institution: InstitutionData) => {
+		setPicked(institution.name);
+		start.mutate(
+			{ country, institution: institution.name },
+			{
+				onSuccess: ({ url }) => window.location.assign(url),
+				onError: (error) => {
+					setPicked(null);
+					showFailureToast(error);
+				},
+			},
+		);
+	};
+
+	return (
+		<Dialog
+			open={open}
+			onOpenChange={(next) => {
+				// A chosen bank's request is under way and the browser is about to
+				// leave for the bank: closing now would hide that, not cancel it.
+				if (next || picked === null) {
+					onOpenChange(next);
+				}
+			}}
+		>
+			<DialogContent
+				className="max-h-[90vh] overflow-y-auto sm:max-w-md"
+				onCloseAutoFocus={(event) => {
+					// Radix returns the focus to its trigger only, and there is none.
+					event.preventDefault();
+					opener.current?.focus();
+				}}
+			>
+				<DialogHeader>
+					<DialogTitle>{t("banks.chooseBank")}</DialogTitle>
+					<DialogDescription>
+						{t("banks.pickerDescription", { country: countryName(country) })}
+					</DialogDescription>
+				</DialogHeader>
+				<Institutions country={country} picked={picked} onPick={pick} />
+				<DialogFooter>
+					<DialogClose asChild>
+						<Button type="button" variant="outline" disabled={picked !== null}>
+							{t("common.cancel")}
+						</Button>
+					</DialogClose>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** `onChooseBank` opens the bank picker, the one way to add a bank. */
+function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => void }) {
 	const { t } = useTranslation();
 	const connections = useBankConnections(true);
 	const list: BankConnectionData[] = connections.data ?? [];
@@ -512,7 +608,11 @@ function Connections({ onChooseBank }: { onChooseBank: () => void }) {
 						icon={{ kind: "transfer", icon: LandmarkIcon }}
 						title={t("banks.noConnections.title")}
 						description={t("banks.noConnections.description")}
-						action={<Button onClick={onChooseBank}>{t("banks.noConnections.action")}</Button>}
+						action={
+							<Button onClick={(event) => onChooseBank(event.currentTarget)}>
+								{t("banks.noConnections.action")}
+							</Button>
+						}
 					/>
 				) : (
 					<ul aria-label={t("banks.connections")} className="divide-y divide-line">
@@ -563,8 +663,9 @@ function Connections({ onChooseBank }: { onChooseBank: () => void }) {
 }
 
 /**
- * Sure's `select_bank`: a country, then a bank, then off to the bank's
- * consent page. The bank sends the browser back to `/settings/banks/callback`.
+ * Sure's `select_bank`: the connected banks first, then a country and a
+ * button opening the bank picker, then off to the bank's consent page. The
+ * bank sends the browser back to `/settings/banks/callback`.
  * Until Enable Banking is set up, Sure's panel stands in its place.
  */
 function BanksPage() {
@@ -576,7 +677,18 @@ function BanksPage() {
 	}, [t]);
 
 	const data = setup.data;
-	const pickerRef = useRef<HTMLButtonElement>(null);
+	// Here rather than in `ConnectBank`, since the empty « Banques connectées »
+	// opens the same picker for the same country.
+	const [country, setCountry] = useState<BankCountry>(DEFAULT_BANK_COUNTRY);
+	const [pickerOpen, setPickerOpen] = useState(false);
+	const opener = useRef<HTMLElement | null>(null);
+
+	// The clicked button, not `document.activeElement`: Safari does not focus
+	// a button on click.
+	const openPicker = (button: HTMLElement) => {
+		opener.current = button;
+		setPickerOpen(true);
+	};
 
 	return (
 		<div className="flex max-w-2xl flex-col gap-4">
@@ -606,12 +718,20 @@ function BanksPage() {
 					<CredentialsForm setup={data} />
 				) : (
 					<>
+						<Connections onChooseBank={openPicker} />
 						<Section level={3} title={t("banks.picker")}>
-							<div className="flex flex-col gap-3 p-4">
-								<ConnectBank countryRef={pickerRef} />
-							</div>
+							<ConnectBank
+								country={country}
+								onCountryChange={setCountry}
+								onChooseBank={openPicker}
+							/>
 						</Section>
-						<Connections onChooseBank={() => pickerRef.current?.focus()} />
+						<BankPickerDialog
+							country={country}
+							open={pickerOpen}
+							onOpenChange={setPickerOpen}
+							opener={opener}
+						/>
 						{data.source === "environment" ? (
 							<EnvironmentCredentials
 								applicationId={data.applicationId}
@@ -627,13 +747,21 @@ function BanksPage() {
 	);
 }
 
-function ConnectBank({ countryRef }: { countryRef: RefObject<HTMLButtonElement | null> }) {
+function ConnectBank({
+	country,
+	onCountryChange,
+	onChooseBank,
+}: {
+	country: BankCountry;
+	onCountryChange: (country: BankCountry) => void;
+	onChooseBank: (opener: HTMLElement) => void;
+}) {
 	const { t } = useTranslation();
 	const countryId = useId();
-	const [country, setCountry] = useState<BankCountry>(DEFAULT_BANK_COUNTRY);
 
+	// The country stays on the page, as Sure asks it before opening its picker.
 	return (
-		<>
+		<div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
 			<div className="flex flex-col gap-1.5">
 				<Label htmlFor={countryId}>{t("banks.country")}</Label>
 				<Select
@@ -642,11 +770,11 @@ function ConnectBank({ countryRef }: { countryRef: RefObject<HTMLButtonElement |
 						const next = COUNTRIES.find((code) => code === value);
 
 						if (next !== undefined) {
-							setCountry(next);
+							onCountryChange(next);
 						}
 					}}
 				>
-					<SelectTrigger ref={countryRef} id={countryId} className="w-full sm:w-64">
+					<SelectTrigger id={countryId} className="w-full sm:w-64">
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>
@@ -658,8 +786,9 @@ function ConnectBank({ countryRef }: { countryRef: RefObject<HTMLButtonElement |
 					</SelectContent>
 				</Select>
 			</div>
-			{/* Keyed, so a new country starts with an empty search. */}
-			<Institutions key={country} country={country} />
-		</>
+			<Button type="button" onClick={(event) => onChooseBank(event.currentTarget)}>
+				{t("banks.chooseBank")}
+			</Button>
+		</div>
 	);
 }

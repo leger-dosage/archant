@@ -61,7 +61,9 @@ test("rules: « Ajouter une règle » opens the form, the only one on the page",
 	await expect(page.getByRole("dialog", { name: "Ajouter une règle" })).toBeVisible();
 });
 
-test("banks: « Choisir une banque » moves the focus to the picker above", async ({ page }) => {
+test("banks: « Choisir une banque » opens the bank picker, its search focused", async ({
+	page,
+}) => {
 	await emptyList(page, "/api/bank-connections");
 	await page.goto("/settings/banks");
 
@@ -70,7 +72,9 @@ test("banks: « Choisir une banque » moves the focus to the picker above", asyn
 	await expect(empty.locator("svg.lucide-landmark")).toBeVisible();
 
 	await empty.getByRole("button", { name: "Choisir une banque" }).click();
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeFocused();
+	const picker = page.getByRole("dialog", { name: "Choisir une banque" });
+	await expect(picker).toContainText("Pays : France.");
+	await expect(picker.getByLabel("Rechercher une banque")).toBeFocused();
 });
 
 /** An empty kind's state, then its button, which opens the form on `kind`. */

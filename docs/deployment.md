@@ -232,7 +232,7 @@ export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pe
 ### 4. Connect a bank
 
 1. Open « Réglages » › « Banques », at `/settings/banks`.
-2. Pick the « Pays », then the bank under « Banques disponibles ». « Rechercher une banque » filters by name or BIC.
+2. Pick the « Pays », press « Choisir une banque », then choose the bank in the dialog, where « Rechercher une banque » filters by name or BIC.
 3. Give your consent on the bank's site, or on the sandbox bank's page. The browser comes back to « Connexion à votre banque », then to the connection's page.
 4. For each account under « Comptes de la banque », choose « Nouveau : … » to create an Archant account, an existing account under « Associer à » to let the bank take over its balance, or « Ignorer ». Press « Valider »: the linked accounts sync at once.
 
