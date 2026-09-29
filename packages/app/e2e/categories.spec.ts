@@ -74,7 +74,7 @@ test("a fresh instance lists the defaults under Revenus and Dépenses, each with
 	page,
 }) => {
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 2, name: "Catégories" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Catégories" })).toBeVisible();
 
 	const income = group(page, "Revenus");
 	await expect(row(income, "Revenus")).toBeVisible();

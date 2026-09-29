@@ -26,7 +26,7 @@ const total = (page: Page, label: "Actifs" | "Passifs") =>
 
 /** The page header that holds the page's `h1` and its actions. */
 const pageHeader = (page: Page) =>
-	page.getByRole("heading", { level: 1, name: "Tableau de bord" }).locator("..");
+	page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }).locator("..");
 
 /** `/api/accounts` answered with `groups`, as the API shapes them. */
 async function mockAccounts(page: Page, groups: unknown[]) {
@@ -45,11 +45,12 @@ test("the dashboard greets the administrator by first name, above one sentence",
 
 	await page.goto("/");
 
-	await expect(page.getByText(`Bonjour ${ADMIN_FIRST_NAME}`, { exact: true })).toBeVisible();
-	await expect(page.getByText("Voici où en sont les finances du foyer.")).toBeVisible();
-	// A paragraph: the page header's « Tableau de bord » stays the one `h1`.
+	// As in Sure, the greeting is the page's one `h1`, its sentence under it;
+	// the breadcrumb « Accueil » says where the page is.
+	await expect(pageHeader(page).getByText("Voici où en sont les finances du foyer.")).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
-	await expect(page.getByRole("heading", { name: /^Bonjour/u })).toHaveCount(0);
+	await expect(page.getByRole("heading", { name: "Tableau de bord" })).toHaveCount(0);
+	await expect(page.getByRole("navigation", { name: "Fil d'Ariane" })).toHaveText("Accueil");
 });
 
 test("without a first name, the greeting is « Bonjour » alone", async ({ page, api }) => {
@@ -66,7 +67,7 @@ test("without a first name, the greeting is « Bonjour » alone", async ({ page,
 
 	await page.goto("/");
 
-	await expect(page.getByText("Bonjour", { exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Bonjour", exact: true })).toBeVisible();
 	await expect(page.getByText(/^Bonjour /u)).toHaveCount(0);
 });
 
@@ -231,7 +232,7 @@ test("a checking account and a card move net worth, assets and liabilities", asy
 
 	await page.goto("/");
 
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+	await expect(pageHeader(page)).toBeVisible();
 	await expect(headline(page)).toContainText(euros(before.netWorth + 70_000));
 	await expect(total(page, "Actifs")).toContainText(euros(before.assets + 100_000));
 	await expect(total(page, "Passifs")).toContainText(euros(before.liabilities + 30_000));
@@ -279,7 +280,7 @@ test("an unknown period in the URL falls back to one month, the default absent f
 
 	await page.goto("/?period=decennie");
 
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+	await expect(pageHeader(page)).toBeVisible();
 	const periods = card(page).getByRole("radiogroup", { name: "Période" });
 	await expect(periods.getByRole("radio", { name: "1 M" })).toBeChecked();
 
@@ -323,9 +324,9 @@ test("a household without accounts sees the empty state", async ({ page }) => {
 
 	await page.goto("/");
 
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
-	await expect(page.getByText(`Bonjour ${ADMIN_FIRST_NAME}`, { exact: true })).toBeVisible();
-	await expect(page.getByText("Archant est prêt. Il ne manque que vos comptes.")).toBeVisible();
+	await expect(
+		pageHeader(page).getByText("Archant est prêt. Il ne manque que vos comptes."),
+	).toBeVisible();
 	const empty = page.getByRole("region", { name: "Aucun compte pour l'instant" });
 	await expect(empty.locator('[data-slot="tinted-icon"] svg.lucide-landmark')).toBeVisible();
 	await expect(

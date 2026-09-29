@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { adjustToContrast } from "../src/lib/contrast.ts";
 import { daysAgo, expect, rgb, test } from "./fixtures.ts";
+import { ADMIN_FIRST_NAME } from "./settings.ts";
 
 // Story 12.1: the brand foundation, Linear's skin over Sure's content.
 
@@ -106,16 +107,20 @@ test("the page header holds its h1 and its actions", async ({ page, api }) => {
 	await expect(header.getByRole("button", { name: "Détecter" })).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 
+	// A settings section is its own page: its name is the `h1`, as in Sure.
 	await page.goto("/settings/security");
-	await expect(pageHeader(page, "Réglages")).toBeVisible();
-	await expect(page.getByRole("heading", { level: 2, name: "Sécurité" })).toBeVisible();
+	await expect(pageHeader(page, "Sécurité")).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+	await expect(page.getByRole("heading", { level: 2, name: "Mot de passe" })).toBeVisible();
 });
 
 test("Inter sets the text at 14 px, and the page sits on the base background with 1px lines", async ({
 	page,
 }) => {
 	await page.goto("/");
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+	await expect(
+		page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }),
+	).toBeVisible();
 
 	const font = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
 	expect(font.replaceAll('"', "")).toMatch(/^Inter Variable/u);

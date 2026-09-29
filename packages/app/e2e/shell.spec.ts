@@ -268,6 +268,31 @@ test("settings put their navigation in place of the accounts column", async ({ p
 	await expect(breadcrumbs(page)).toHaveText("Réglages/Étiquettes");
 });
 
+test("a settings section's title and actions top its content, in one 896 px column", async ({
+	page,
+}) => {
+	await page.setViewportSize({ width: 1920, height: 1080 });
+	await page.goto("/settings/categories");
+
+	const title = page.getByRole("heading", { level: 1, name: "Catégories" });
+	await expect(title).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+	const header = title.locator("..");
+	await expect(header.getByRole("button", { name: "Ajouter une catégorie" })).toBeVisible();
+	const section = page.getByRole("region", { name: "Dépenses", exact: true });
+
+	const headerBox = await header.boundingBox();
+	const sectionBox = await section.boundingBox();
+	const main = await page.getByRole("main").boundingBox();
+	expect(headerBox?.width).toBe(896);
+	expect(sectionBox?.x).toBe(headerBox?.x);
+	expect(sectionBox?.width).toBe(896);
+	// Centred in the main area, as Sure's `max-w-4xl mx-auto`.
+	const left = (headerBox?.x ?? 0) - (main?.x ?? 0);
+	const right = (main?.x ?? 0) + (main?.width ?? 0) - (headerBox?.x ?? 0) - 896;
+	expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
+});
+
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 

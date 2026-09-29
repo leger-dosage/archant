@@ -12,6 +12,7 @@ import { CategoryDialog } from "@/components/CategoryDialog";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { MergeCategoryDialog } from "@/components/MergeCategoryDialog";
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
@@ -98,10 +99,9 @@ function CategoryGroup({
 	const branches = categoryTree(categories).filter(({ parent }) => parent.kind === kind);
 
 	return (
-		<Section id={headingId} level={3} title={t(`categories.groups.${kind}`)}>
+		<Section id={headingId} title={t(`categories.groups.${kind}`)}>
 			{branches.length === 0 ? (
 				<EmptyState
-					level={4}
 					icon={{ kind: "transfer", icon: ShapesIcon }}
 					title={t(`categories.groupEmpty.${kind}`)}
 					description={t("categories.groupEmpty.description")}
@@ -164,15 +164,13 @@ function CategoriesPage() {
 	};
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-4">
-			<div className="flex items-start justify-between gap-4">
-				<div className="flex flex-col gap-1">
-					<h2 className="type-display">{t("categories.title")}</h2>
-					<p className="text-sm text-muted-foreground">{t("categories.description")}</p>
-				</div>
-				<Button onClick={() => show({ action: "create" })}>{t("categories.add")}</Button>
-			</div>
-
+		<Page
+			centred
+			title={t("categories.title")}
+			description={t("categories.description")}
+			actions={<Button onClick={() => show({ action: "create" })}>{t("categories.add")}</Button>}
+			className="gap-4"
+		>
 			{categories.isPending && (
 				<div className="flex flex-col gap-2">
 					<Skeleton className="h-5 w-24" />
@@ -226,6 +224,6 @@ function CategoriesPage() {
 					categories={list}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

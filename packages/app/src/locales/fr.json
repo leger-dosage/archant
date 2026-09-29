@@ -1130,6 +1130,7 @@
 	},
 	"security": {
 		"title": "Sécurité",
+		"passwordTitle": "Mot de passe",
 		"description": "Le mot de passe du compte administrateur. Le modifier ferme les sessions ouvertes sur les autres appareils.",
 		"currentPassword": "Mot de passe actuel",
 		"newPassword": "Nouveau mot de passe",

@@ -11,13 +11,12 @@ export const SECTION_TABLE_INSET =
 /**
  * DESIGN.md's section: a bordered block on the section colour, a header row
  * with its heading and an optional action, a line, then the content. The
- * `section` is named by its heading, so it reads as a region. Level 3 where
- * it nests under a page's own `h2`, as in « Réglages ».
+ * `section` is named by its heading, so it reads as a region, one level
+ * under the page's `h1`.
  */
 export function Section({
 	title,
 	id,
-	level = 2,
 	action,
 	className,
 	children,
@@ -25,14 +24,12 @@ export function Section({
 	title: ReactNode;
 	/** The heading's id, for a table or a list inside that takes its name. */
 	id?: string;
-	level?: 2 | 3;
 	action?: ReactNode;
 	className?: string;
 	children: ReactNode;
 }) {
 	const generatedId = useId();
 	const headingId = id ?? generatedId;
-	const Heading = level === 2 ? "h2" : "h3";
 
 	return (
 		<section
@@ -41,9 +38,9 @@ export function Section({
 			className={cn("flex min-w-0 flex-col rounded-lg border bg-card", className)}
 		>
 			<div className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-2">
-				<Heading id={headingId} className="type-title">
+				<h2 id={headingId} className="type-title">
 					{title}
-				</Heading>
+				</h2>
 				{action}
 			</div>
 			{children}

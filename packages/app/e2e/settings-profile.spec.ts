@@ -42,7 +42,7 @@ test("a first name is set, cleared and refused in « Sécurité », and the gree
 	await expect(page.getByText("Prénom enregistré.")).toBeVisible();
 	// No reload: the rail's link keeps this page's session in memory.
 	await page.getByRole("link", { name: "Accueil", exact: true }).click();
-	await expect(page.getByText("Bonjour Dominique", { exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Bonjour Dominique" })).toBeVisible();
 
 	await page.goto("/settings/security");
 	await expect(field).toHaveValue("Dominique");
@@ -50,6 +50,6 @@ test("a first name is set, cleared and refused in « Sécurité », and the gree
 	await save.click();
 	await expect(page.getByText("Prénom enregistré.").last()).toBeVisible();
 	await page.getByRole("link", { name: "Accueil", exact: true }).click();
-	await expect(page.getByText("Bonjour", { exact: true })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Bonjour", exact: true })).toBeVisible();
 	await expect(page.getByText(/^Bonjour /u)).toHaveCount(0);
 });

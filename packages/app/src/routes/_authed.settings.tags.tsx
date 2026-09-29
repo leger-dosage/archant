@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { TagDialog } from "@/components/TagDialog";
 import { Button } from "@/components/ui/button";
@@ -107,14 +108,8 @@ function TagsPage() {
 		});
 
 	return (
-		<div className="flex max-w-2xl flex-col gap-4">
-			<div className="flex flex-col gap-1">
-				<h2 className="type-display">{t("tags.title")}</h2>
-				<p className="text-sm text-muted-foreground">{t("tags.description")}</p>
-			</div>
-
+		<Page centred title={t("tags.title")} description={t("tags.description")} className="gap-4">
 			<Section
-				level={3}
 				title={t("tags.list")}
 				action={
 					// An empty list offers its own, the one way forward.
@@ -144,7 +139,6 @@ function TagsPage() {
 				{tags.data !== undefined &&
 					(list.length === 0 ? (
 						<EmptyState
-							level={4}
 							icon={{ kind: "transfer", icon: TagIcon }}
 							title={t("tags.empty.title")}
 							description={t("tags.empty.description")}
@@ -180,6 +174,6 @@ function TagsPage() {
 					onConfirm={() => remove(tag)}
 				/>
 			)}
-		</div>
+		</Page>
 	);
 }

@@ -27,6 +27,11 @@ type PageProps = {
 	description?: ReactNode;
 	/** The page's actions, on the right of the title. */
 	actions?: ReactNode;
+	/**
+	 * The header, the bank alerts and the content in one centred column, at
+	 * most 896 px wide, as Sure lays out its settings sections.
+	 */
+	centred?: boolean;
 	/** The content's own layout, when the default column does not fit. */
 	className?: string;
 	children: ReactNode;
@@ -126,10 +131,18 @@ function FoldButton() {
 /**
  * Every signed-in page, Sure's way: a sticky top bar with the fold button
  * and the breadcrumbs, then the page header (the `h1`, a sentence, the
- * actions), the bank alerts and the content, full width. Below 1024 px the
- * shell's own top bar replaces this one.
+ * actions), the bank alerts and the content, full width or in a centred
+ * column. Below 1024 px the shell's own top bar replaces this one.
  */
-export function Page({ icon, title, description, actions, className, children }: PageProps) {
+export function Page({
+	icon,
+	title,
+	description,
+	actions,
+	centred = false,
+	className,
+	children,
+}: PageProps) {
 	return (
 		<>
 			<div
@@ -139,25 +152,28 @@ export function Page({ icon, title, description, actions, className, children }:
 				<FoldButton />
 				<Breadcrumbs title={title} />
 			</div>
-			<div className="flex flex-col gap-6 px-3 py-6 lg:px-10">
-				{/* On a narrow screen the actions wrap below the title. */}
-				<header data-slot="page-header" className="flex flex-wrap items-center gap-x-3 gap-y-2">
-					{icon}
-					<h1
-						id={PAGE_TITLE_ID}
-						className="min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]"
-					>
-						{title}
-					</h1>
-					{actions !== undefined && (
-						<div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
-					)}
-					{description !== undefined && (
-						<p className="order-last basis-full text-muted-foreground">{description}</p>
-					)}
-				</header>
-				<BankAlerts />
-				<div className={cn("flex w-full flex-col gap-6", className)}>{children}</div>
+			<div className="flex flex-col px-3 py-6 lg:px-10">
+				{/* The padding stays outside the column: 896 px is the content's width. */}
+				<div className={cn("flex w-full min-w-0 flex-col gap-6", centred && "mx-auto max-w-4xl")}>
+					{/* On a narrow screen the actions wrap below the title. */}
+					<header data-slot="page-header" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+						{icon}
+						<h1
+							id={PAGE_TITLE_ID}
+							className="min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]"
+						>
+							{title}
+						</h1>
+						{actions !== undefined && (
+							<div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
+						)}
+						{description !== undefined && (
+							<p className="order-last basis-full text-muted-foreground">{description}</p>
+						)}
+					</header>
+					<BankAlerts />
+					<div className={cn("flex w-full flex-col gap-6", className)}>{children}</div>
+				</div>
 			</div>
 		</>
 	);

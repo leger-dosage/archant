@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures.ts";
+import { ADMIN_FIRST_NAME } from "./settings.ts";
 
 // Story 11.9: a first start that says what is wrong. The API is made to fail
 // from the browser's side, the one place a test can take it away without
@@ -32,7 +33,9 @@ test("an API that does not answer shows how to start it, then the page once it i
 	await page.unroute("**/api/**");
 	await page.getByRole("button", { name: "Réessayer" }).click();
 
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+	await expect(
+		page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }),
+	).toBeVisible();
 	await expect(apiDownHeading(page)).toHaveCount(0);
 });
 

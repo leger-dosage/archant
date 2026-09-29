@@ -72,8 +72,9 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	await page.getByRole("button", { name: "Créer le compte" }).click();
 
 	await expect(page).toHaveURL(`${WEB_URL}/`);
-	await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
-	await expect(page.getByText(`Bonjour ${ADMIN_FIRST_NAME}`, { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }),
+	).toBeVisible();
 
 	await page.context().storageState({ path: ADMIN_STATE });
 

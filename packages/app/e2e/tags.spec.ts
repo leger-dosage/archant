@@ -42,7 +42,7 @@ test("renaming a tag renames it on its rows", async ({ page, api }) => {
 	await tagged(api, label, tag.id);
 
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 2, name: "Étiquettes" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Étiquettes" })).toBeVisible();
 	await expect(tagRow(page, tag.name)).toContainText("1 opération");
 	await openAction(page, tag.name, "Renommer");
 	const dialog = page.getByRole("dialog");

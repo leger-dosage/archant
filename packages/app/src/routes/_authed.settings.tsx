@@ -1,7 +1,4 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-
-import { Page } from "@/components/Page";
 
 export const Route = createFileRoute("/_authed/settings")({
 	component: SettingsLayout,
@@ -9,16 +6,9 @@ export const Route = createFileRoute("/_authed/settings")({
 
 /**
  * The settings sections. Their navigation sits in the shell's column
- * (`SettingsNav`), and the section is centred, at most 896 px wide, as in Sure.
+ * (`SettingsNav`); each section draws its own centred `Page`, so its `h1` and
+ * its actions top the same 896 px column as its content, as in Sure.
  */
 function SettingsLayout() {
-	const { t } = useTranslation();
-
-	return (
-		<Page title={t("settings.title")}>
-			<div className="mx-auto w-full max-w-4xl min-w-0">
-				<Outlet />
-			</div>
-		</Page>
-	);
+	return <Outlet />;
 }

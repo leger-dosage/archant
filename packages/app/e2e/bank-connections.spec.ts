@@ -64,7 +64,7 @@ const longDate = new Intl.DateTimeFormat("fr-FR", {
 
 async function visit(page: Page) {
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 2, name: "Banques" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Banques" })).toBeVisible();
 }
 
 const REDIRECT_URL = `${WEB_URL}/settings/banks/callback`;
@@ -260,7 +260,7 @@ test("Banques connectées comes first, and no bank is listed or asked for before
 	await visit(page);
 	await expect(chooseBank(page)).toBeVisible();
 
-	await expect(page.getByRole("heading", { level: 3 })).toHaveText([
+	await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText([
 		"Banques connectées",
 		"Connecter une banque",
 		"Application Enable Banking",
@@ -417,7 +417,7 @@ async function connect(page: Page, bank = "Banque Démo"): Promise<string> {
 	// return page, which posts the code and lands on the connection's page.
 	await expect(toast(page, `${bank} est connectée.`)).toBeVisible();
 	await expect(page).toHaveURL(CONNECTION_URL);
-	await expect(page.getByRole("heading", { level: 2, name: bank })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: bank })).toBeVisible();
 
 	return CONNECTION_URL.exec(page.url())?.[1] ?? "";
 }
@@ -1127,7 +1127,7 @@ test("a sync stopped for more than 48 hours leads to its connection", async ({ p
 		await banners(page).getByRole("link", { name: "Voir la connexion" }).click();
 
 		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
-		await expect(page.getByRole("heading", { level: 2, name: "Banque Démo" })).toBeVisible();
+		await expect(page.getByRole("heading", { level: 1, name: "Banque Démo" })).toBeVisible();
 		await expectRowBadge(page, connectionId, "syncStale", "Synchronisation en retard");
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {

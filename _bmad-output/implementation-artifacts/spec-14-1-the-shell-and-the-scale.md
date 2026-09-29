@@ -81,6 +81,7 @@ context:
 - Breadcrumbs are a row of links, not a list: a list inside `main` inflated the `listitem` counts many tests make.
 - Playwright projects run at 1440 by 900, DESIGN.md's reference screen; at 1280 a row's centre fell on the category pill.
 - Badge `rounded-md`: without the radius override `rounded-4xl` made it a pill. The bank picker dialog takes the default 550 px. `BankAlerts` lost its own padding, which `Page` now gives. Below 1024 px toasts, `BulkBar` and `main` clear the bottom navigation and the safe area.
+- Visual QA after review: the new header gave the dashboard two titles and left settings' title outside their centred column. As in Sure's `pages/dashboard.html.erb` and `layouts/settings.html.erb`, the greeting is the dashboard's `h1` with its sentence as description, and each settings section renders its own `Page` with the `centred` option (header, alerts and content in one 896 px column); section headings moved one level up, and the security page's password section is titled « Mot de passe ». This takes the greeting of Story 14.2 and the settings headers of Story 14.4 ahead of them.
 - Left to Stories 14.2 to 14.4: `amount-hero`, `type-display`, `type-title` and `TintedIcon` sizes; page contents; transaction rows still 36 px.
 
 ## Spec Change Log
