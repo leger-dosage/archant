@@ -24,6 +24,7 @@ import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
+import { dailySync } from "./routes/middleware/daily-sync.ts";
 import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
 import { rulesRoutes } from "./routes/rules.ts";
@@ -190,9 +191,9 @@ function serveInterface(app: Hono, root: string) {
  * The assembly point: the API under `/api`, the built interface under `/`
  * when there is one, and the error envelope for all of it. Order matters: the
  * origin check and Better Auth's handler come before the session guard, which
- * comes before every route it protects; `/api` has its own JSON 404 before the
- * interface's fallback, which would otherwise answer an unknown API route with
- * the page.
+ * comes before the first-visit sync and every route it protects; `/api` has
+ * its own JSON 404 before the interface's fallback, which would otherwise
+ * answer an unknown API route with the page.
  */
 export function createApp(deps: AppDeps) {
 	const app = new Hono()
@@ -234,6 +235,7 @@ export function createApp(deps: AppDeps) {
 			),
 		)
 		.use("/api/*", requireSession(deps.auth))
+		.use("/api/*", dailySync(deps))
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);
 

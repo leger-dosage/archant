@@ -35,7 +35,7 @@ import { encrypt } from "./crypto.ts";
 import { balanceOn, createAccount, deleteTransaction, linkBankAccount } from "./ledger.ts";
 import * as recurringService from "./recurring.ts";
 import { getNetWorth } from "./reports.ts";
-import { syncAll, syncConnection, windowStart } from "./sync.ts";
+import { startDailySync, syncAll, syncConnection, windowStart } from "./sync.ts";
 
 // A spy that builds the real connector, so one test can make a single call
 // throw something no provider answer produces.
@@ -1214,5 +1214,252 @@ describe("syncAll", () => {
 		await expect(syncAll({ ...deps(), encryptionKey: null })).rejects.toMatchObject({
 			code: "BANK_CONNECTOR_UNAVAILABLE",
 		});
+	});
+});
+
+/** Enable Banking holding every transactions answer until `release` is called. */
+function heldProvider() {
+	const gate: { open?: () => void } = {};
+	const held = new Promise<void>((resolve) => {
+		gate.open = resolve;
+	});
+	const requests = mockProvider({
+		transactions: async (url) => {
+			await held;
+
+			return transactionsPage(url);
+		},
+	});
+
+	return { requests, release: () => gate.open?.() };
+}
+
+describe("startDailySync", () => {
+	const HOUR = 60 * MINUTE;
+
+	/** A linked connection whose last run, yesterday, synced 20 hours ago. */
+	async function dueConnection(fields: Partial<typeof bankConnections.$inferInsert> = {}) {
+		const connectionId = await newConnection({
+			lastSyncedAt: Date.now() - 20 * HOUR,
+			syncAttemptedAt: Date.now() - 20 * HOUR,
+			...fields,
+		});
+		const linked = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		return { connectionId, ...linked };
+	}
+
+	it("takes the lease before it resolves, and reads the bank only in the run", async () => {
+		const { requests, release } = heldProvider();
+		const { connectionId, accountId, bankAccountId } = await dueConnection();
+
+		const daily = await startDailySync(deps());
+
+		expect(daily.leased).toEqual([connectionId]);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncStartedAt: NOW,
+			syncAttemptedAt: NOW,
+		});
+		expect(requests).toEqual([]);
+
+		const running = daily.run();
+		await vi.waitFor(
+			() => {
+				expect(transactionRequests(requests, FIXTURE_CHECKING_UID)).toHaveLength(1);
+			},
+			{ timeout: 10_000 },
+		);
+		// The bank has not answered: the lease is still held.
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: NOW });
+		release();
+		await running;
+
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncStartedAt: null,
+			syncAttemptedAt: NOW,
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+	});
+
+	it("syncs a connection once when two requests race for it", async () => {
+		const requests = mockProvider();
+		const { connectionId, accountId } = await dueConnection();
+
+		const [first, second] = await Promise.all([startDailySync(deps()), startDailySync(deps())]);
+		await Promise.all([first.run(), second.run()]);
+
+		expect([...first.leased, ...second.leased]).toEqual([connectionId]);
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID)).toHaveLength(2);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+
+		const third = await startDailySync(deps());
+		expect(third.leased).toEqual([]);
+	});
+
+	it("starts nothing after a failed attempt today, while the button still syncs", async () => {
+		const requests = mockProvider();
+		// 08:00 in Paris, today.
+		const { connectionId } = await dueConnection({
+			syncAttemptedAt: Date.parse("2026-09-24T06:00:00Z"),
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+
+		const daily = await startDailySync(deps());
+		await daily.run();
+
+		expect(daily.leased).toEqual([]);
+		expect(requests).toEqual([]);
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+	});
+
+	it("skips a connection the cron synced late last night, then takes it past the hour", async () => {
+		mockProvider();
+		// 23:30 in Paris, the day before the visit.
+		const lateCron = Date.parse("2026-09-24T21:30:00Z");
+		const { connectionId } = await dueConnection({
+			lastSyncedAt: lateCron,
+			syncAttemptedAt: lateCron,
+		});
+		// 00:10 in Paris.
+		vi.setSystemTime(Date.parse("2026-09-24T22:10:00Z"));
+		const syncDeps = deps();
+
+		const early = await startDailySync(syncDeps);
+
+		expect(early.leased).toEqual([]);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncStartedAt: null,
+			syncAttemptedAt: lateCron,
+		});
+		// Silent, like the cron: every page would otherwise log it.
+		expect(logLines).toEqual([]);
+
+		// 00:31 in Paris.
+		vi.setSystemTime(Date.parse("2026-09-24T22:31:00Z"));
+		const later = await startDailySync(syncDeps);
+		await later.run();
+
+		expect(later.leased).toEqual([connectionId]);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			lastSyncedAt: Date.parse("2026-09-24T22:31:00Z"),
+		});
+	});
+
+	it("starts nothing for an ended consent, a pending connection or a held lease", async () => {
+		const requests = mockProvider();
+		await dueConnection({ consentExpiresAt: NOW - 1 });
+		await newConnection({ status: "pending", syncAttemptedAt: null });
+		await dueConnection({ syncStartedAt: NOW - 2 * MINUTE });
+
+		const daily = await startDailySync(deps());
+		await daily.run();
+
+		expect(daily.leased).toEqual([]);
+		expect(requests).toEqual([]);
+	});
+
+	it("counts the day in the app's zone: 23:50 and 00:05 in Paris are two days", async () => {
+		mockProvider();
+		// 23:50 in Paris on the 24th, a failed attempt; both instants fall on
+		// the 24th in UTC.
+		const { connectionId } = await dueConnection({
+			syncAttemptedAt: Date.parse("2026-09-24T21:50:00Z"),
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		const visit = Date.parse("2026-09-24T22:05:00Z");
+		vi.setSystemTime(visit);
+
+		const daily = await startDailySync(deps());
+		await daily.run();
+
+		expect(daily.leased).toEqual([connectionId]);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncAttemptedAt: visit,
+			lastSyncedAt: visit,
+			lastError: null,
+		});
+		const utc = await startDailySync({ ...deps(), timeZone: "UTC" });
+		expect(utc.leased).toEqual([]);
+	});
+
+	it("logs a run that throws with its connection and code, releases the lease and never rejects", async () => {
+		mockProvider();
+		const { connectionId } = await dueConnection();
+		// The lease, then the bank account's window, then the connection's
+		// state: that third write fails.
+		const failing = failingThirdUpdate();
+
+		const daily = await startDailySync(failing);
+
+		await expect(daily.run()).resolves.toBeUndefined();
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncStartedAt: null,
+			syncAttemptedAt: NOW,
+		});
+		expect(logged()).toContainEqual(
+			expect.objectContaining({
+				msg: "bank sync failed",
+				connectionId,
+				code: "INTERNAL_ERROR",
+			}),
+		);
+	});
+
+	it("syncs the due connections one after another, oldest first, logged as automatic", async () => {
+		const requests = mockProvider();
+		const first = await dueConnection({ createdAt: NOW - 2 });
+		const secondId = await newConnection({ createdAt: NOW - 1, syncAttemptedAt: null });
+		await linkedAccount(secondId, FIXTURE_CARD_UID);
+		const syncDeps = deps();
+
+		const daily = await startDailySync(syncDeps);
+		await daily.run();
+
+		expect(daily.leased).toEqual([first.connectionId, secondId]);
+		expect(
+			requests
+				.filter(({ path }) => path.endsWith("/transactions"))
+				.map(({ path }) => path.split("/")[2]),
+		).toEqual([FIXTURE_CHECKING_UID, FIXTURE_CHECKING_UID, FIXTURE_CARD_UID, FIXTURE_CARD_UID]);
+		expect(logged().filter(({ msg }) => msg === "bank connection synced")).toEqual([
+			expect.objectContaining({ connectionId: first.connectionId, trigger: "auto" }),
+			expect.objectContaining({ connectionId: secondId, trigger: "auto" }),
+		]);
+		expectNoSecretLogged();
+	});
+
+	it("counts a run of the button or the cron as the day's attempt, failed or not", async () => {
+		failingOn(FIXTURE_CHECKING_UID);
+		const button = await dueConnection({ createdAt: NOW - 2 });
+		const cron = await newConnection({ createdAt: NOW - 1, syncAttemptedAt: null });
+		await linkedAccount(cron, FIXTURE_CARD_UID);
+
+		await expect(syncConnection(deps(), button.connectionId)).resolves.toMatchObject({
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+		await expect(syncAll(deps())).resolves.toContainEqual({ id: cron, result: "synced" });
+
+		await expect(connectionRow(button.connectionId)).resolves.toMatchObject({
+			syncAttemptedAt: NOW,
+		});
+		await expect(connectionRow(cron)).resolves.toMatchObject({ syncAttemptedAt: NOW });
+		await expect(startDailySync(deps())).resolves.toMatchObject({ leased: [] });
+	});
+
+	it("reads nothing and takes no lease while the bank is unconfigured", async () => {
+		const { connectionId } = await dueConnection();
+		const before = await connectionRow(connectionId);
+
+		const withoutKey = await startDailySync({ ...deps(), encryptionKey: null });
+		const withoutCredentials = await startDailySync({ ...deps(), bankCredentials: null });
+
+		expect([...withoutKey.leased, ...withoutCredentials.leased]).toEqual([]);
+		await expect(connectionRow(connectionId)).resolves.toEqual(before);
 	});
 });

@@ -104,6 +104,8 @@ function AlertStrip({
  * One warning strip per bank connection that needs the user, above every
  * page: a consent about to end, one that ended, a sync that stopped. The
  * server decides which; closing one hides it until the browser session ends.
+ * Above them, a line while a sync runs, since the first visit of the day
+ * starts one that no button shows.
  */
 export function BankAlerts() {
 	const { t } = useTranslation();
@@ -120,25 +122,40 @@ export function BankAlerts() {
 		return closed.has(key) || isDismissed(key) ? [] : [{ connection, alert: connection.alert }];
 	});
 
-	if (shown.length === 0) {
+	const syncing = connections.data?.some((connection) => connection.syncing) ?? false;
+
+	if (shown.length === 0 && !syncing) {
 		return null;
 	}
 
 	return (
-		<section aria-label={t("banks.alerts.label")} className="flex flex-col gap-2 px-6 pt-4">
-			{shown.map(({ connection, alert }) => (
-				<AlertStrip
-					key={`${connection.id}.${alert}`}
-					connection={connection}
-					alert={alert}
-					onDismiss={() => {
-						const key = storageKey(connection, alert);
+		<>
+			{syncing && (
+				<p
+					role="status"
+					className="flex items-center gap-2 px-6 pt-4 text-sm text-muted-foreground"
+				>
+					<Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden />
+					{t("banks.sync.running")}
+				</p>
+			)}
+			{shown.length > 0 && (
+				<section aria-label={t("banks.alerts.label")} className="flex flex-col gap-2 px-6 pt-4">
+					{shown.map(({ connection, alert }) => (
+						<AlertStrip
+							key={`${connection.id}.${alert}`}
+							connection={connection}
+							alert={alert}
+							onDismiss={() => {
+								const key = storageKey(connection, alert);
 
-						remember(key);
-						setClosed((current) => new Set([...current, key]));
-					}}
-				/>
-			))}
-		</section>
+								remember(key);
+								setClosed((current) => new Set([...current, key]));
+							}}
+						/>
+					))}
+				</section>
+			)}
+		</>
 	);
 }

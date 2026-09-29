@@ -7,6 +7,7 @@ import {
 	maxDate,
 	minDate,
 	monthRange,
+	startOfDay,
 	today,
 	withDay,
 } from "./dates.ts";
@@ -22,6 +23,46 @@ describe("today", () => {
 
 	it("defaults to now", () => {
 		expect(today("UTC")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+	});
+});
+
+describe("startOfDay", () => {
+	it("is today's midnight in the zone, not UTC's", () => {
+		// 00:05 in Paris on the 29th is still the 28th in UTC.
+		expect(startOfDay("Europe/Paris", Date.parse("2026-09-28T22:05:00Z"))).toBe(
+			Date.parse("2026-09-28T22:00:00Z"),
+		);
+		expect(startOfDay("Europe/Paris", Date.parse("2026-09-28T21:55:00Z"))).toBe(
+			Date.parse("2026-09-27T22:00:00Z"),
+		);
+		expect(startOfDay("UTC", Date.parse("2026-09-28T21:55:00Z"))).toBe(
+			Date.parse("2026-09-28T00:00:00Z"),
+		);
+	});
+
+	it("keeps the offset of the midnight across a daylight-saving change", () => {
+		// Paris leaves summer time at 03:00 on 25 October 2026: that day began
+		// at +02:00, the next one at +01:00.
+		expect(startOfDay("Europe/Paris", Date.parse("2026-10-25T12:00:00Z"))).toBe(
+			Date.parse("2026-10-24T22:00:00Z"),
+		);
+		expect(startOfDay("Europe/Paris", Date.parse("2026-10-26T12:00:00Z"))).toBe(
+			Date.parse("2026-10-25T23:00:00Z"),
+		);
+		// And enters it at 02:00 on 29 March.
+		expect(startOfDay("Europe/Paris", Date.parse("2026-03-29T12:00:00Z"))).toBe(
+			Date.parse("2026-03-28T23:00:00Z"),
+		);
+		expect(startOfDay("Europe/Paris", Date.parse("2026-03-30T12:00:00Z"))).toBe(
+			Date.parse("2026-03-29T22:00:00Z"),
+		);
+	});
+
+	it("starts a day whose clocks skip midnight at its first instant", () => {
+		// Santiago jumps from 00:00 to 01:00 on 6 September 2026.
+		expect(startOfDay("America/Santiago", Date.parse("2026-09-06T12:00:00Z"))).toBe(
+			Date.parse("2026-09-06T04:00:00Z"),
+		);
 	});
 });
 

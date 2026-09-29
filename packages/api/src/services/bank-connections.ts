@@ -68,6 +68,11 @@ export type BankConnectionRecord = {
 	lastSyncedAt: number | null;
 	/** The error code of the latest failed run, `null` once a run succeeds. */
 	lastError: string | null;
+	/**
+	 * A run holds the lease: the interface shows it and polls until it ends,
+	 * since the first visit of the day syncs after its request has answered.
+	 */
+	syncing: boolean;
 	/** The banner the connection shows, `null` for none. */
 	alert: ConnectionAlert | null;
 	createdAt: number;
@@ -132,6 +137,7 @@ function toRecord(row: typeof bankConnections.$inferSelect, now: number): BankCo
 		consentExpiresAt: row.consentExpiresAt,
 		lastSyncedAt: row.lastSyncedAt,
 		lastError: row.lastError,
+		syncing: row.syncStartedAt !== null && row.syncStartedAt >= now - LEASE_MS,
 		alert: connectionAlert(row, now),
 		createdAt: row.createdAt,
 	};

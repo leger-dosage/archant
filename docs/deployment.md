@@ -232,7 +232,9 @@ Archant asks each bank for 90 days of consent, or less when the bank allows less
 
 ## Scheduled synchronisation
 
-`POST /api/sync` syncs every active bank connection, with `Authorization: Bearer <SYNC_SECRET>`. How it gets called is a per-platform detail: a system cron or a timer on the host, a scheduled GitHub Action calling the route, or whatever the host provides. Without the header, with a wrong secret, or while `SYNC_SECRET` is unset, it answers `401` and reads nothing; with the right secret but no Enable Banking configuration, `503`. Each connection page also has a « Synchroniser » button, which works without the secret and obeys the same one-hour spacing: pressed within an hour of the last sync, the one that follows linking included, it answers « Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard. »
+Banks sync on their own on the first visit of the day. The first signed-in request after midnight, in `APP_TIMEZONE`, syncs each active connection whose consent has not ended and that no sync has started since that midnight, whatever started it and however it ended. The page answers at once; the sync runs beside it in the server, and the interface shows « Synchronisation en cours » until it ends, then shows the new lines. A tab left open since the day before starts it when it comes back into view. A sync that failed this morning is not retried by the next visit, only by « Synchroniser » or the next day; a connection synced within the hour waits for a request after that hour. There is nothing to set up and nothing to turn off.
+
+A cron is optional, for a host that stays on and should sync before anyone opens Archant. `POST /api/sync` syncs every active bank connection, with `Authorization: Bearer <SYNC_SECRET>`. How it gets called is a per-platform detail: a system cron or a timer on the host, a scheduled GitHub Action calling the route, or whatever the host provides. Without the header, with a wrong secret, or while `SYNC_SECRET` is unset, it answers `401` and reads nothing; with the right secret but no Enable Banking configuration, `503`. Each connection page also has a « Synchroniser » button, which works without the secret and obeys the same one-hour spacing: pressed within an hour of the last sync, the one that follows linking included, it answers « Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard. »
 
 ```bash
 # crontab -e on the host, every morning at 6:
@@ -247,7 +249,7 @@ The answer names each connection and what happened to it:
 
 `synced` means every linked account synced. `failed` means at least one did not: the others are committed, the connection page shows the error, and the next run retries the failed account from where it last succeeded. `skipped` means a sync ran less than an hour ago or one is still running. `consent_expired` means the consent has ended and nothing was read until it is renewed.
 
-Once a day is enough: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads three months back; each later one reads from seven days before its last success, so a line the bank books late still arrives, once.
+Once a day is enough, whether from the first visit or the cron: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads three months back; each later one reads from seven days before its last success, so a line the bank books late still arrives, once.
 
 ## Passwords
 

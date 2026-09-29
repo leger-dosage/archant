@@ -95,8 +95,9 @@ const syncTime = new Intl.DateTimeFormat("fr-FR", {
 
 /**
  * The connection's last successful sync and latest error, with its
- * « Synchroniser » button. A click while a sync runs is refused as the server
- * would refuse it, without asking again.
+ * « Synchroniser » button. A click while this page's sync runs is refused as
+ * the server would refuse it, without asking again; while another run holds
+ * the connection, such as the first visit of the day, the button says so.
  */
 function SyncStatus({
 	connection,
@@ -106,7 +107,7 @@ function SyncStatus({
 	sync: ReturnType<typeof useSyncBankConnection>;
 }) {
 	const { t } = useTranslation();
-	const { lastSyncedAt, lastError } = connection;
+	const { lastSyncedAt, lastError, syncing } = connection;
 
 	const start = () => {
 		if (sync.isPending) {
@@ -154,19 +155,26 @@ function SyncStatus({
 					</p>
 				)}
 			</div>
-			<Button
-				variant="outline"
-				onClick={start}
-				aria-disabled={sync.isPending}
-				aria-busy={sync.isPending}
-			>
-				{sync.isPending ? (
+			{syncing && !sync.isPending ? (
+				<Button variant="outline" disabled aria-busy>
 					<Loader2Icon className="animate-spin" aria-hidden />
-				) : (
-					<RefreshCwIcon aria-hidden />
-				)}
-				{t("banks.sync.submit")}
-			</Button>
+					{t("banks.sync.running")}
+				</Button>
+			) : (
+				<Button
+					variant="outline"
+					onClick={start}
+					aria-disabled={sync.isPending}
+					aria-busy={sync.isPending}
+				>
+					{sync.isPending ? (
+						<Loader2Icon className="animate-spin" aria-hidden />
+					) : (
+						<RefreshCwIcon aria-hidden />
+					)}
+					{t("banks.sync.submit")}
+				</Button>
+			)}
 		</div>
 	);
 }

@@ -108,7 +108,7 @@ The reference target is a container serving the built interface and the API on t
 
 Releases come from tags. A `vX.Y.Z` tag runs `.github/workflows/release.yml`: the whole of `ci.yml` as its gate, then a `linux/amd64` and `linux/arm64` image pushed to `ghcr.io/leger-dosage/archant` as `X.Y.Z`, `X.Y` and `latest`, then a GitHub Release with generated notes. Run by hand, it is a dry run that pushes nothing. The version is the tag: `package.json` stays `0.0.0`, and the image carries the tag without its `v` as `APP_VERSION`, which `GET /api/version` returns to signed-in users for « Réglages » and `GET /api/health` never does. `docker-compose.yml` runs `ghcr.io/leger-dosage/archant:${ARCHANT_VERSION:-latest}` and keeps `build: .`, so `up --build` runs a checkout.
 
-Scheduled synchronisation is a protected `POST /api/sync` route. Every platform triggers it its own way, a system cron or a scheduled GitHub Action, and the route does not care which.
+The first signed-in request of the day, in `APP_TIMEZONE`, syncs each active bank connection that no sync has started since midnight, beside the request and after it answers: a host that sleeps misses nothing. Scheduled synchronisation is optional, for a host that stays on: a protected `POST /api/sync` route. Every platform triggers it its own way, a system cron or a scheduled GitHub Action, and the route does not care which.
 
 ## Planning with BMAD
 

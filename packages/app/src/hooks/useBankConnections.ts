@@ -1,6 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type { InferRequestType, InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 
 import type { BankCountry } from "@archant/data/bank-countries";
 
@@ -66,12 +68,51 @@ export function useInstitutions(country: BankCountry, enabled: boolean) {
 	});
 }
 
+/** How often the list is read again while a sync runs. */
+const SYNC_POLL_MS = 2000;
+
+const isSyncing = (connections: BankConnectionData[] | undefined) =>
+	connections?.some((connection) => connection.syncing) ?? false;
+
+/**
+ * What a sync changes: the connections' state, every account and
+ * transaction list, and the recurring patterns, which the sync detects once
+ * its lines are in.
+ */
+function invalidateSynced(queryClient: QueryClient) {
+	return Promise.all([
+		queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+		queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+		queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+		queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+	]);
+}
+
+/**
+ * The connections. The first visit of the day syncs after the server has
+ * answered, so while one says it syncs the list is read every two seconds,
+ * and once none does, what the sync changed is read again.
+ */
 export function useBankConnections(enabled: boolean) {
-	return useQuery({
+	const queryClient = useQueryClient();
+	const query = useQuery({
 		queryKey: queryKeys.bankConnections.list,
 		queryFn: async () => (await unwrap(bank.$get())).data,
 		enabled,
+		refetchInterval: (current) => (isSyncing(current.state.data) ? SYNC_POLL_MS : false),
 	});
+	const syncing = isSyncing(query.data);
+	const wasSyncing = useRef(syncing);
+
+	useEffect(() => {
+		if (wasSyncing.current && !syncing) {
+			void invalidateSynced(queryClient);
+		}
+
+		wasSyncing.current = syncing;
+	}, [syncing, queryClient]);
+
+	return query;
 }
 
 /** Starts an authorisation; the caller sends the browser to the returned URL. */
@@ -184,13 +225,7 @@ export function useSyncBankConnection(connectionId: string) {
 					connection.id === connectionId ? { ...connection, ...status } : connection,
 				),
 			);
-			await Promise.all([
-				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
-				// The sync runs recurring detection once its lines are in.
-				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
-			]);
+			await invalidateSynced(queryClient);
 		},
 	});
 }

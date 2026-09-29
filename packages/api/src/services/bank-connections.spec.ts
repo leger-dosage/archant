@@ -465,6 +465,29 @@ describe("listConnections", () => {
 			{ id: "c2", alert: "sync_stale" },
 		]);
 	});
+
+	it("says a connection syncs while its lease is held, and not once the lease has expired", async () => {
+		const insert = (id: string, syncStartedAt: number) =>
+			temp.db.insert(bankConnections).values({
+				id,
+				connector: "enable-banking",
+				institutionName: id,
+				country: "FR",
+				status: "active",
+				syncStartedAt,
+				createdAt: NOW,
+				updatedAt: NOW,
+			});
+		await insert("held", NOW - 2 * MINUTE);
+		await insert("expired", NOW - 11 * MINUTE);
+
+		const list = await listConnections(deps());
+
+		expect(Object.fromEntries(list.map(({ id, syncing }) => [id, syncing]))).toEqual({
+			held: true,
+			expired: false,
+		});
+	});
 });
 
 /** A connection through the whole flow, with the session fixture's two accounts. */
