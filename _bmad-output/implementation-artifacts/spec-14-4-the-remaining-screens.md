@@ -2,7 +2,7 @@
 title: 'Story 14.4: The remaining screens'
 type: 'feature'
 created: '2026-09-29'
-status: 'in-review'
+status: 'done'
 baseline_commit: '0787fdc52125f702e8ad22d56084a9eb11c1a5e3'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -48,16 +48,24 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/app/src/components/ui/*`, `StatusBadge.tsx`, `BankAlerts.tsx`, `EmptyState.tsx` -- floor, badges, banners, empty state card.
-- [ ] `packages/app/src/routes/_authed.recurring.tsx`, `_authed.rules.tsx` -- header description, card and inset groups.
-- [ ] `packages/app/src/routes/_authed.settings.*.tsx` -- lists as inset groups, forms full width, add buttons in the header.
-- [ ] Remaining empty boxes, `OutsideShell`, `RootError`, sign-in, setup, `styles.css` (`type-display`).
-- [ ] `packages/app/e2e/*` -- per screen at 1440 px: lists inside a card on `inset` trays with uppercase headers and rows at least 56 px; dialog widths; empty states as cards with a 36 px icon and one primary button; banners and badges; a sweep over every signed-in screen and the three outside pages asserting no visible text under 12 px except the rail's labels, headings and row labels at 14 px or more, and no visible button, input, select trigger or tab under 28 px high.
+- [x] `packages/app/src/components/ui/*`, `StatusBadge.tsx`, `BankAlerts.tsx`, `EmptyState.tsx` -- floor, badges, banners, empty state card.
+- [x] `packages/app/src/routes/_authed.recurring.tsx`, `_authed.rules.tsx` -- header description, card and inset groups.
+- [x] `packages/app/src/routes/_authed.settings.*.tsx` -- lists as inset groups, forms full width, add buttons in the header.
+- [x] Remaining empty boxes, `OutsideShell`, `RootError`, sign-in, setup, `styles.css` (`type-display`).
+- [x] `packages/app/e2e/*` -- per screen at 1440 px: lists inside a card on `inset` trays with uppercase headers and rows at least 56 px; dialog widths; empty states as cards with a 36 px icon and one primary button; banners and badges; a sweep over every signed-in screen and the three outside pages asserting no visible text under 12 px except the rail's labels, headings and row labels at 14 px or more, and no visible button, input, select trigger or tab under 28 px high.
 
 **Acceptance Criteria:**
 - Given any existing end-to-end test, when the gate runs, then it passes with its assertions kept or made stricter.
 
 ## Implementation Notes
+
+- `components/ListCard.tsx` holds `ListCard`, the card around a list's inset groups, and `GROUP_TABLE_INSET` (formerly `Section`'s `SECTION_TABLE_INSET`), for tables inside a group.
+- `InsetGroup` takes one `count`, shown after the heading and outside it so the region keeps its name, with an optional `countLabel` for assistive technology. Story 14.3's day groups (« 8 opérations ») and this story's lists share it; for the rule runs it counts every run, not the page shown.
+- `@utility overline` replaces the five copies of the uppercase header classes; it sets no colour, so `cn` can resolve `text-muted-foreground` against a component's own, as `TableHead`'s. `@utility page-title` replaces `type-display` and the page header's classes.
+- `EmptyState` is a card; inside an inset group's white block (banks, categories) it drops its frame, and two regions kept their `h2` for the tests that read them. `EmptyNote` is the card for a sentence without an action. An account's empty Opérations tab shows the empty state alone, without the list card; /transactions says it is empty inside its list card, without a frame.
+- `Pagination`'s « Précédent » and « Suivant » never had their button styles: `Button asChild` handed its classes to `PageLink`, which dropped them. It now forwards them; the 14 px check on `sm` buttons found it.
+- Field hints and errors, subtypes, dates, axis labels and badges stay captions at 12 px; the IBAN is `code`, 12 px Geist Mono. The bulk bar's « Tout sélectionner » link stays 12 px, a caption-sized link.
+- `proportions.spec.ts` sweeps every signed-in screen, an account's three tabs, the creation, import and bank picker dialogs and a bank's page for text under 12 px and controls under 28 px, after dialogs finish opening: a dialog still zooming in measured its close button at 27 px.
 
 ## Spec Change Log
 
