@@ -17,6 +17,12 @@ export const DATABASE_FILE = join(tmpdir(), `archant-e2e-${PORT}`, "e2e.db");
 /** The origin the browser uses, and so `BETTER_AUTH_URL` for the suite's API. */
 export const WEB_URL = `http://localhost:${PORT}`;
 
+/**
+ * The same server under another address, as a browser on a `ts.net` name sees
+ * it while `ARCHANT_URL` is left empty: a foreign origin to `BETTER_AUTH_URL`.
+ */
+export const FOREIGN_WEB_URL = `http://127.0.0.1:${PORT}`;
+
 // The browser and the API agree on which day is today, whatever the zone of
 // the machine running the suite.
 export const TIME_ZONE = "Europe/Paris";

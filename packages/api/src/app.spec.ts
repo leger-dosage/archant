@@ -7342,7 +7342,7 @@ describe("/api/bank-connections", () => {
 		]);
 
 		expect(responses.map((response) => response.status)).toEqual([401, 401, 403, 403]);
-		expect(errorBody.parse(await responses[3]?.json()).error.code).toBe("FORBIDDEN");
+		expect(errorBody.parse(await responses[3]?.json()).error.code).toBe("ORIGIN_MISMATCH");
 	});
 
 	it("lists a connection's bank accounts, then creates one from the bank", async () => {

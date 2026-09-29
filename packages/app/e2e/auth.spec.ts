@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { apiHelpers, expect, test } from "./fixtures.ts";
-import { ADMIN, ADMIN_STATE, WEB_URL } from "./settings.ts";
+import { ADMIN, ADMIN_STATE, FOREIGN_WEB_URL, WEB_URL } from "./settings.ts";
 
 // Story 3.1: sign-in. Every test here starts signed out; the administrator
 // exists already, created by the setup project.
@@ -27,14 +27,28 @@ test("the API refuses a call without a session", async ({ request }) => {
 	expect(await response.json()).toMatchObject({ error: { code: "UNAUTHORIZED" } });
 });
 
-test("Better Auth refuses a sign-in from another origin", async ({ request }) => {
+test("a sign-in from another origin is refused before Better Auth", async ({ request }) => {
 	const response = await request.post("/api/auth/sign-in/email", {
 		headers: { origin: "https://attacker.example" },
 		data: ADMIN,
 	});
 
 	expect(response.status()).toBe(403);
+	expect(await response.json()).toMatchObject({ error: { code: "ORIGIN_MISMATCH" } });
 	expect(response.headers()["set-cookie"]).toBeUndefined();
+});
+
+// Story 13.10: a browser on an address `ARCHANT_URL` does not name, as on a
+// first run behind Tailscale, is told what to change.
+test("a sign-in from another address says to set ARCHANT_URL", async ({ page }) => {
+	await page.goto(`${FOREIGN_WEB_URL}/sign-in`);
+
+	await signIn(page, ADMIN.password);
+
+	await expect(page.getByRole("alert")).toHaveText(
+		"Archant est configuré pour une autre adresse. Donnez à ARCHANT_URL l'adresse affichée dans la barre d'adresse, puis redémarrez Archant.",
+	);
+	await expect(page).toHaveURL(`${FOREIGN_WEB_URL}/sign-in`);
 });
 
 test("a wrong password shows an error and stays on the page", async ({ page }) => {

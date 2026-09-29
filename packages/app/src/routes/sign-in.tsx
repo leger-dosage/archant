@@ -42,7 +42,14 @@ const codeSchema = z.object({ code: z.string().trim().min(1) });
 
 type CodeValues = z.input<typeof codeSchema>;
 
-type FormFailure = "invalidCredentials" | "tooManyAttempts" | "challengeExpired";
+type FormFailure = "invalidCredentials" | "tooManyAttempts" | "challengeExpired" | "originMismatch";
+
+/**
+ * Archant's own refusal of an origin other than `BETTER_AUTH_URL`'s, ahead of
+ * Better Auth. Its client spreads the JSON body into `error`, so the envelope's
+ * code sits at `error.error.code`.
+ */
+const originMismatch = z.object({ error: z.object({ code: z.literal("ORIGIN_MISMATCH") }) });
 
 /** A TOTP code; anything else typed in the field is taken for a backup code. */
 const TOTP_CODE = /^\d{6}$/u;
@@ -122,9 +129,12 @@ function SignInPage() {
 			setFailure("invalidCredentials");
 		} else if (error.status === 429) {
 			setFailure("tooManyAttempts");
+		} else if (originMismatch.safeParse(error).success) {
+			// Inline, not a toast: the fix is an edit and a restart, longer than
+			// a toast stays on screen.
+			setFailure("originMismatch");
 		} else {
-			// A 403 is Better Auth refusing the origin: `BETTER_AUTH_URL` does not
-			// match the address in the browser, not a wrong password.
+			// A 403 here is Better Auth refusing a missing or `null` origin.
 			showErrorToast(error.status === 403 ? "FORBIDDEN" : "INTERNAL_ERROR");
 		}
 	});
@@ -178,7 +188,7 @@ function SignInPage() {
 				</Button>
 				{failure !== null && (
 					<p role="alert" className="text-sm text-destructive">
-						{t(`signIn.${failure}`)}
+						{failure === "originMismatch" ? t("errors.ORIGIN_MISMATCH") : t(`signIn.${failure}`)}
 					</p>
 				)}
 			</form>

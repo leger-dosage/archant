@@ -57,7 +57,7 @@ docker compose up --detach --wait
 
 `umask 077` makes `.env` readable by you alone. Pin the release with `ARCHANT_VERSION` in the same file, as [Upgrading](deployment.md#upgrading) explains. The [Variables](deployment.md#variables) table lists the rest.
 
-`ARCHANT_URL` must be the `ts.net` address exactly: the server refuses a sign-in from any other, so every device, the machine included, opens Archant there.
+`ARCHANT_URL` must be the `ts.net` address exactly: the server refuses a sign-in from any other, so every device, the machine included, opens Archant there. Left empty, it means `http://localhost:8787`, so setup and every sign-in from the `ts.net` address are refused; the page then says to set `ARCHANT_URL` to the address in the address bar and restart.
 
 Keep the port on `127.0.0.1`, as `docker-compose.yml` publishes it, and add no `compose.override.yml`. Only `tailscale serve` then reaches the container, from the host. The [loopback port](deployment.md#docker--the-reference-target) explains why.
 
@@ -105,7 +105,7 @@ Then, in `crontab -e`, every morning at 6:
 
 ## 8. Connect a bank
 
-Follow [Connecting a bank](deployment.md#connecting-a-bank). `ENCRYPTION_KEY` is already in `.env`, so skip its step 2. For your real accounts, register a production application with the redirect URL `https://<machine>.<tailnet>.ts.net/settings/banks/callback`, after checking on a sandbox application that Enable Banking accepts a `ts.net` address, as that section says.
+Follow [Connecting a bank](deployment.md#connecting-a-bank). `ENCRYPTION_KEY` is already in `.env`, so skip its step 2. For your real accounts, register a production application with the redirect URL `https://<machine>.<tailnet>.ts.net/settings/banks/callback`. Enable Banking accepts a `ts.net` address for a production application.
 
 ## Backups
 

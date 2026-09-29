@@ -12,7 +12,7 @@ import type { CategoryKind } from "@archant/data/schema/categories";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
-import { TIME_ZONE, WEB_URL } from "./settings.ts";
+import { PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 export { expect };
 
@@ -502,14 +502,15 @@ export const test = base.extend<{
 			const outside: string[] = [];
 
 			await context.route(
-				(url) => url.hostname !== "localhost",
+				// `127.0.0.1` on the suite's port is its own server under a foreign origin.
+				(url) => url.hostname !== "localhost" && url.host !== `127.0.0.1:${PORT}`,
 				async (route) => {
 					outside.push(route.request().url());
 					await route.abort("blockedbyclient");
 				},
 			);
 			await use();
-			expect(outside, `Requests outside localhost: ${outside.join(", ")}`).toEqual([]);
+			expect(outside, `Requests outside loopback: ${outside.join(", ")}`).toEqual([]);
 		},
 		{ auto: true },
 	],
