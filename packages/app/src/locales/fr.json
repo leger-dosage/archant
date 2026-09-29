@@ -1010,6 +1010,8 @@
 		"title": "Banques",
 		"description": "Connectez une banque pour qu'Archant lise vos comptes à votre place. Vous donnez votre accord sur le site de la banque, qui peut le retirer à tout moment ; Archant ne voit jamais vos identifiants.",
 		"picker": "Connecter une banque",
+		"chooseBank": "Choisir une banque",
+		"pickerDescription": "Pays : {{country}}. Vous donnerez votre accord sur le site de la banque.",
 		"unavailable": {
 			"title": "La connexion bancaire n'est pas configurée",
 			"description": "Définissez cette variable d'environnement sur le serveur, puis redémarrez-le :",
@@ -1048,7 +1050,7 @@
 		"connections": "Banques connectées",
 		"noConnections": {
 			"title": "Aucune banque connectée pour l'instant",
-			"description": "Choisissez votre banque ci-dessus : ses comptes arriveront ici une fois votre accord donné.",
+			"description": "Choisissez votre banque : ses comptes arriveront ici une fois votre accord donné.",
 			"action": "Choisir une banque"
 		},
 		"consentUntil": "Consentement valable jusqu'au {{date}}",

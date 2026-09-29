@@ -35,7 +35,22 @@ import {
 
 const PAGE = "/settings/banks";
 
-const banks = (page: Page) => page.getByRole("list", { name: "Banques disponibles" });
+const CONNECTION_URL = /\/settings\/banks\/([0-9a-f-]{36})$/u;
+
+/** Story 13.11: the banks of a country live in Sure's picker dialog. */
+const picker = (page: Page) => page.getByRole("dialog", { name: "Choisir une banque" });
+
+const banks = (page: Page) => picker(page).getByRole("list", { name: "Banques disponibles" });
+
+const chooseBank = (page: Page) =>
+	page
+		.getByRole("region", { name: "Connecter une banque" })
+		.getByRole("button", { name: "Choisir une banque" });
+
+async function openPicker(page: Page) {
+	await chooseBank(page).click();
+	await expect(picker(page)).toBeVisible();
+}
 
 const toast = (page: Page, text: string | RegExp) =>
 	page.locator("[data-sonner-toast]").filter({ hasText: text });
@@ -172,7 +187,9 @@ test("the right key is saved encrypted, and the page moves on to the country", a
 
 	await expect(toast(page, "Identifiants Enable Banking enregistrés.")).toBeVisible();
 	await expect(page.getByRole("combobox", { name: "Pays" })).toHaveText("France");
+	await openPicker(page);
 	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeVisible();
+	await page.keyboard.press("Escape");
 	// Saved from the interface, it stays editable below the banks.
 	await expect(applicationIdField(page)).toHaveValue(BANK_APPLICATION_ID);
 
@@ -230,29 +247,107 @@ test("credentials the server sets are shown, never offered for editing", async (
 	await expect(page.getByRole("combobox", { name: "Pays" })).toBeVisible();
 });
 
-test("France is selected and its banks are listed, filtered by the search", async ({ page }) => {
-	await visit(page);
+test("Banques connectées comes first, and no bank is listed or asked for before the picker opens", async ({
+	page,
+}) => {
+	const lists: string[] = [];
+	page.on("request", (request) => {
+		if (request.url().includes("/api/bank-connections/institutions")) {
+			lists.push(request.url());
+		}
+	});
 
+	await visit(page);
+	await expect(chooseBank(page)).toBeVisible();
+
+	await expect(page.getByRole("heading", { level: 3 })).toHaveText([
+		"Banques connectées",
+		"Connecter une banque",
+		"Application Enable Banking",
+	]);
+	await expect(page.getByRole("list", { name: "Banques disponibles" })).toHaveCount(0);
+	expect(lists).toEqual([]);
+
+	await openPicker(page);
+	await expect(banks(page)).toBeVisible();
+	expect(lists).toHaveLength(1);
+});
+
+test("the picker lists France's banks with name and BIC, focuses the search, scrolls inside, and filters", async ({
+	page,
+}) => {
+	await visit(page);
 	await expect(page.getByRole("combobox", { name: "Pays" })).toHaveText("France");
+	await openPicker(page);
+
+	const dialog = picker(page);
+	await expect(dialog).toContainText("Pays : France.");
+	await expect(dialog.getByLabel("Rechercher une banque")).toBeFocused();
 	await Promise.all(
 		FAKE_BANKS.map((name) =>
-			expect(banks(page).getByRole("button", { name: `Connecter ${name}` })).toBeVisible(),
+			expect(banks(page).getByRole("button", { name: `Connecter ${name}` })).toBeAttached(),
 		),
 	);
 	await expect(banks(page).getByRole("button")).toHaveCount(FAKE_BANKS.length);
+	// The fake gives the first bank a BIC, as a real one does.
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toContainText(
+		"BIC : DEMOFRPP",
+	);
+
+	// Eight banks overflow the bounded list, which scrolls inside a dialog
+	// that stays on screen.
+	const overflows = await banks(page).evaluate(
+		(list) => list.scrollHeight > list.clientHeight && getComputedStyle(list).overflowY === "auto",
+	);
+	expect(overflows).toBe(true);
+	const box = await dialog.boundingBox();
+	const bottom = await page.evaluate(() => window.innerHeight);
+	expect(box?.y).toBeGreaterThanOrEqual(0);
+	expect((box?.y ?? 0) + (box?.height ?? Infinity)).toBeLessThanOrEqual(bottom);
 
 	// Accents and case ignored, as the user types.
-	await page.getByLabel("Rechercher une banque").fill("neobanque");
+	await dialog.getByLabel("Rechercher une banque").fill("neobanque");
 	await expect(banks(page).getByRole("button")).toHaveCount(1);
 	await expect(banks(page).getByRole("button", { name: "Connecter Néobanque Test" })).toBeVisible();
 
 	// The BIC matches too.
-	await page.getByLabel("Rechercher une banque").fill("demofrpp");
+	await dialog.getByLabel("Rechercher une banque").fill("demofrpp");
 	await expect(banks(page).getByRole("button")).toHaveCount(1);
 	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeVisible();
 
-	await page.getByLabel("Rechercher une banque").fill("introuvable");
-	await expect(page.getByText("Aucune banque ne correspond à cette recherche.")).toBeVisible();
+	await dialog.getByLabel("Rechercher une banque").fill("introuvable");
+	await expect(dialog.getByText("Aucune banque ne correspond à cette recherche.")).toBeVisible();
+});
+
+test("Escape, « Annuler » and the close button close the picker with nothing started, and it reopens empty", async ({
+	page,
+}) => {
+	const starts: string[] = [];
+	page.on("request", (request) => {
+		if (request.method() === "POST" && request.url().includes("/api/bank-connections")) {
+			starts.push(request.url());
+		}
+	});
+
+	await visit(page);
+	await openPicker(page);
+	await picker(page).getByLabel("Rechercher une banque").fill("demo");
+	await page.keyboard.press("Escape");
+	await expect(picker(page)).toBeHidden();
+	// The focus goes back to the button that opened it.
+	await expect(chooseBank(page)).toBeFocused();
+
+	await openPicker(page);
+	await expect(picker(page).getByLabel("Rechercher une banque")).toHaveValue("");
+	await expect(banks(page).getByRole("button")).toHaveCount(FAKE_BANKS.length);
+	await picker(page).getByRole("button", { name: "Annuler" }).click();
+	await expect(picker(page)).toBeHidden();
+
+	await openPicker(page);
+	await picker(page).getByRole("button", { name: "Fermer" }).click();
+	await expect(picker(page)).toBeHidden();
+
+	expect(starts).toEqual([]);
 });
 
 test("another country lists its own banks", async ({ page }) => {
@@ -260,16 +355,60 @@ test("another country lists its own banks", async ({ page }) => {
 
 	await page.getByRole("combobox", { name: "Pays" }).click();
 	await page.getByRole("option", { name: "Belgique" }).click();
+	await openPicker(page);
 
+	await expect(picker(page)).toContainText("Pays : Belgique.");
 	await expect(banks(page).getByRole("button", { name: "Connecter Banque BE" })).toBeVisible();
 	await expect(banks(page).getByRole("button")).toHaveCount(1);
 });
 
-const CONNECTION_URL = /\/settings\/banks\/([0-9a-f-]{36})$/u;
+test("a provider that cannot list banks says so inside the picker, with « Réessayer »", async ({
+	page,
+}) => {
+	await page.route(
+		(url) => url.pathname.endsWith("/api/bank-connections/institutions"),
+		(route) =>
+			route.fulfill({
+				status: 502,
+				json: { error: { code: "BANK_PROVIDER_ERROR", message: "x" } },
+			}),
+	);
+
+	await visit(page);
+	await openPicker(page);
+
+	const alert = picker(page).getByRole("alert");
+	// Three retries with backoff come first.
+	await expect(alert).toContainText("Enable Banking n'a pas répondu correctement.", {
+		timeout: 15_000,
+	});
+	await expect(alert.getByRole("button", { name: "Réessayer" })).toBeVisible();
+});
+
+test("the keyboard alone opens the picker, searches and starts the consent", async ({ page }) => {
+	await visit(page);
+
+	await page.getByRole("combobox", { name: "Pays" }).focus();
+	await page.keyboard.press("Tab");
+	await expect(chooseBank(page)).toBeFocused();
+	await page.keyboard.press("Enter");
+	await expect(picker(page)).toBeVisible();
+	await expect(picker(page).getByLabel("Rechercher une banque")).toBeFocused();
+
+	await page.keyboard.type("demo");
+	await expect(banks(page).getByRole("button")).toHaveCount(1);
+	await page.keyboard.press("Tab");
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeFocused();
+	await page.keyboard.press("Enter");
+
+	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
+	await expect(page).toHaveURL(CONNECTION_URL);
+});
 
 /** Connects `bank`, Banque Démo by default, and returns once its page is open, with its id. */
 async function connect(page: Page, bank = "Banque Démo"): Promise<string> {
 	await visit(page);
+	await openPicker(page);
 	await banks(page)
 		.getByRole("button", { name: `Connecter ${bank}` })
 		.click();
@@ -360,22 +499,46 @@ test("a connected bank locks the credentials, with Sure's warning", async ({ pag
 	await expect(saveCredentials(page)).toBeDisabled();
 });
 
-test("a redirect URL the provider refuses is named in the toast", async ({ page }) => {
+test("a pending start ignores Escape, and a refusal names the redirect URL and leaves the picker open", async ({
+	page,
+}) => {
 	const url = "http://localhost:8788/settings/banks/callback";
-	await page.route("**/api/bank-connections", (route) =>
-		route.request().method() === "POST"
-			? route.fulfill({
-					status: 502,
-					json: { error: { code: "BANK_REDIRECT_NOT_ALLOWED", message: "x", params: { url } } },
-				})
-			: route.fallback(),
-	);
+	let answer: (() => void) | undefined;
+	const answered = new Promise<void>((resolve) => {
+		answer = resolve;
+	});
+	await page.route("**/api/bank-connections", async (route) => {
+		if (route.request().method() !== "POST") {
+			await route.fallback();
+			return;
+		}
+
+		await answered;
+		await route.fulfill({
+			status: 502,
+			json: { error: { code: "BANK_REDIRECT_NOT_ALLOWED", message: "x", params: { url } } },
+		});
+	});
 
 	await visit(page);
+	await openPicker(page);
 	await banks(page).getByRole("button", { name: "Connecter Banque Démo" }).click();
+
+	// The browser is about to leave for the bank: closing would hide that.
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeDisabled();
+	await page.keyboard.press("Escape");
+	// Not `toBeVisible()`, which a closing dialog still passes while it fades out.
+	await expect(picker(page)).toHaveAttribute("data-state", "open");
+	answer?.();
 
 	await expect(toast(page, url)).toBeVisible();
 	await expect(page).toHaveURL(/\/settings\/banks$/u);
+	// Another bank can be chosen at once.
+	await expect(picker(page)).toBeVisible();
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeEnabled();
+	await expect(
+		banks(page).getByRole("button", { name: "Connecter Caisse Régionale Exemple" }),
+	).toBeEnabled();
 });
 
 test("a server without ENCRYPTION_KEY names it and links to the guide", async ({ page }) => {
