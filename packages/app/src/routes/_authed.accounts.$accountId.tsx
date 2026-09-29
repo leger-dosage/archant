@@ -135,25 +135,28 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 		transactions.isPlaceholderData ? undefined : transactions.data,
 	);
 
+	// No rows, no list card: the empty state is a card of its own.
+	if (data !== undefined && data.total === 0) {
+		return (
+			<EmptyState
+				icon={{ kind: "transfer", icon: ReceiptTextIcon }}
+				title={t("transactions.empty.title")}
+				description={t("transactions.empty.description")}
+				action={
+					<Button onClick={onAdd} disabled={!canAdd}>
+						{t("transactions.add")}
+					</Button>
+				}
+			/>
+		);
+	}
+
 	return (
 		<TransactionListCard>
 			{transactions.isPending && <TransactionListSkeleton />}
 
 			{transactions.isError && (
 				<ListError error={transactions.error} onRetry={() => void transactions.refetch()} />
-			)}
-
-			{data !== undefined && data.total === 0 && (
-				<EmptyState
-					icon={{ kind: "transfer", icon: ReceiptTextIcon }}
-					title={t("transactions.empty.title")}
-					description={t("transactions.empty.description")}
-					action={
-						<Button onClick={onAdd} disabled={!canAdd}>
-							{t("transactions.add")}
-						</Button>
-					}
-				/>
 			)}
 
 			{data !== undefined && data.total > 0 && (

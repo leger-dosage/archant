@@ -89,9 +89,6 @@ type Applying = {
 	afterSave: boolean;
 };
 
-/** DESIGN.md's `overline`, for a column's head inside the group's block. */
-const COLUMN_HEAD = "text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase";
-
 // The API stores instants; the user reads the day it ran, in their zone.
 const dayOf = (epochMs: number) => formatShortDate(toIsoDate(new Date(epochMs)));
 
@@ -212,16 +209,16 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 						<Table aria-labelledby="rule-runs" className={GROUP_TABLE_INSET}>
 							<TableHeader>
 								<TableRow className="border-line hover:bg-transparent">
-									<TableHead scope="col" className={COLUMN_HEAD}>
+									<TableHead scope="col" className="overline text-muted-foreground">
 										{t("rules.runs.columns.date")}
 									</TableHead>
-									<TableHead scope="col" className={COLUMN_HEAD}>
+									<TableHead scope="col" className="overline text-muted-foreground">
 										{t("rules.runs.columns.rule")}
 									</TableHead>
-									<TableHead scope="col" className={`${COLUMN_HEAD} text-right`}>
+									<TableHead scope="col" className="overline text-right text-muted-foreground">
 										{t("rules.runs.columns.matched")}
 									</TableHead>
-									<TableHead scope="col" className={`${COLUMN_HEAD} text-right`}>
+									<TableHead scope="col" className="overline text-right text-muted-foreground">
 										{t("rules.runs.columns.changed")}
 									</TableHead>
 								</TableRow>

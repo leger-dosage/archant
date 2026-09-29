@@ -97,7 +97,7 @@ function AccountGroup({ group, currency }: { group: AccountTypeGroup; currency: 
 		// A group, not a region or a heading: the page's own regions and
 		// headings keep their names to themselves.
 		<div role="group" aria-labelledby={labelId} className="flex flex-col gap-0.5">
-			<div className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase">
+			<div className="flex items-center justify-between gap-2 px-3 py-1.5 overline text-muted-foreground">
 				<span id={labelId}>{t(`dashboard.balanceSheet.types.${group.type}`)}</span>
 				{/* The accounts page says it in full; the column has no room for it. */}
 				<span

@@ -237,6 +237,17 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* DESIGN.md `overline`: column heads and the headers of groups, uppercase as in
+   Sure. No colour: callers add `text-muted-foreground`, which `cn` can then
+   resolve against a component's own text colour, as `TableHead`'s. */
+@utility overline {
+	font-size: 12px;
+	font-weight: 510;
+	line-height: 1.33;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
 /* DESIGN.md `page-title`: a page's `h1`, in its header or atop a card outside the shell. */
 @utility page-title {
 	font-size: 24px;

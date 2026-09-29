@@ -55,7 +55,7 @@ export function InsetGroup({
 			data-slot="inset-group"
 			className={cn("flex min-w-0 flex-col rounded-xl bg-inset p-1", className)}
 		>
-			<div className="flex items-center justify-between gap-4 px-4 py-2 text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase">
+			<div className="flex items-center justify-between gap-4 px-4 py-2 overline text-muted-foreground">
 				{count === undefined ? (
 					<Heading id={headingId} className="min-w-0 truncate">
 						{title}

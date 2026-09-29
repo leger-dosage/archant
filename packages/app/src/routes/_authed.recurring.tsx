@@ -42,9 +42,6 @@ export const Route = createFileRoute("/_authed/recurring")({
 
 const nameOf = (item: RecurringData) => item.merchantName ?? item.label;
 
-/** DESIGN.md's `overline`, for a column's head inside the group's block. */
-const COLUMN_HEAD = "text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase";
-
 // `dismissed` never reaches the list, so it has no badge.
 const BADGES = {
 	detected: "recurringDetected",
@@ -180,19 +177,19 @@ function RecurringPage() {
 							<Table aria-label={t("recurring.title")} className={GROUP_TABLE_INSET}>
 								<TableHeader>
 									<TableRow className="border-line hover:bg-transparent">
-										<TableHead scope="col" className={COLUMN_HEAD}>
+										<TableHead scope="col" className="overline text-muted-foreground">
 											{t("recurring.columns.name")}
 										</TableHead>
-										<TableHead scope="col" className={COLUMN_HEAD}>
+										<TableHead scope="col" className="overline text-muted-foreground">
 											{t("recurring.columns.account")}
 										</TableHead>
-										<TableHead scope="col" className={`${COLUMN_HEAD} text-right`}>
+										<TableHead scope="col" className="overline text-right text-muted-foreground">
 											{t("recurring.columns.amount")}
 										</TableHead>
-										<TableHead scope="col" className={COLUMN_HEAD}>
+										<TableHead scope="col" className="overline text-muted-foreground">
 											{t("recurring.columns.next")}
 										</TableHead>
-										<TableHead scope="col" className={COLUMN_HEAD}>
+										<TableHead scope="col" className="overline text-muted-foreground">
 											{t("recurring.columns.status")}
 										</TableHead>
 										<TableHead scope="col">

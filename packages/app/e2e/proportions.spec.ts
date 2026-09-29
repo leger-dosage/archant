@@ -321,6 +321,34 @@ test("inside a group's white block, the empty states of banks and categories dro
 	await expectFlush(await expectListGroup(page, "Dépenses"), "Aucune catégorie de dépenses");
 });
 
+test("the transactions page says it is empty inside its list card, with no frame of its own", async ({
+	page,
+}) => {
+	const empty = {
+		data: {
+			items: [],
+			page: 1,
+			pageSize: 50,
+			total: 0,
+			sum: { amount: 0, income: 0, expense: 0, currency: "EUR", skippedCount: 0 },
+		},
+	};
+	await page.route("**/api/transactions?*", (route) => route.fulfill({ json: empty }));
+	const card = page.locator('[data-slot="list-card"]');
+
+	await page.goto("/transactions");
+	const note = card.locator('[data-slot="empty-note"]');
+	await expect(note).toHaveText("Aucune opération.");
+	await expect(note).toHaveCSS("border-top-width", "0px");
+
+	await page.goto("/transactions?q=introuvable");
+	const noMatch = card.locator('[data-slot="empty-note"]');
+	await expect(noMatch).toContainText("Aucune opération ne correspond à ces filtres.");
+	await expect(noMatch.getByRole("button", { name: "Effacer les filtres" })).toBeVisible();
+	await expect(noMatch).toHaveCSS("border-top-width", "0px");
+	await expect(page.locator(".border-dashed")).toHaveCount(0);
+});
+
 test("an account's empty tabs: a card with the way forward, or a card with its sentence", async ({
 	page,
 	api,

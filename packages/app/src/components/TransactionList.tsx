@@ -80,8 +80,6 @@ function columnsOf(showAccount: boolean) {
 		: "md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]";
 }
 
-const OVERLINE = "text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase";
-
 /**
  * The row's category pill, or « Sans catégorie ». A button of its own beside
  * the row's, never inside it, that opens the combobox in place.
@@ -222,7 +220,7 @@ export function TransactionList({
 			<div
 				aria-hidden="true"
 				data-slot="column-header"
-				className={cn("hidden rounded-xl bg-inset p-1 md:block", OVERLINE)}
+				className="hidden overline rounded-xl bg-inset p-1 text-muted-foreground md:block"
 			>
 				{/* The inner block's border, so the names line up with the cells. */}
 				<div className="flex items-center border border-transparent py-2">
