@@ -43,9 +43,11 @@ function portTaken(port: number): never {
 	process.exit(1);
 }
 
-// A server already on the loopback would receive Vite's proxied requests while
-// this one listens beside it (see `loopbackListener`). Checked before
-// migrating, so a conflict touches no database.
+// A server already on either loopback would receive Vite's proxied requests
+// while this one listens beside it (see `loopbackListener`). Both are probed
+// even when `HOST` is `127.0.0.1`: Vite proxies to `localhost`, which Node tries
+// as `::1` first, so a stranger there would still catch its requests. Checked
+// before migrating, so a conflict touches no database.
 if ((await loopbackListener(env.PORT)) !== null) {
 	portTaken(env.PORT);
 }
@@ -142,8 +144,8 @@ const app = createApp({
 // interface. No SIGTERM handler: Node dies on the signal at once, and SQLite
 // in WAL mode keeps every committed transaction, while waiting for keep-alive
 // sockets to close could outlast `docker compose stop`.
-const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-	logger.info({ port: info.port }, "Archant API listening");
+const server = serve({ fetch: app.fetch, port: env.PORT, hostname: env.HOST }, (info) => {
+	logger.info({ host: env.HOST, port: info.port }, "Archant API listening");
 });
 // Where the bind itself fails, as on Linux, this also catches a server that
 // took the port since the check above; on macOS SO_REUSEADDR binds beside it.
@@ -152,6 +154,6 @@ server.on("error", (error: NodeJS.ErrnoException) => {
 		portTaken(env.PORT);
 	}
 
-	logger.fatal({ port: env.PORT, code: error.code }, "The API server failed");
+	logger.fatal({ host: env.HOST, port: env.PORT, code: error.code }, "The API server failed");
 	process.exit(1);
 });

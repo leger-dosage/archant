@@ -70,7 +70,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                         |
 | `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                   |
 
-The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, port 8787, and `APP_VERSION`, the exact release it was built from, which « Réglages » shows; a local build leaves it empty. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
+The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, port 8787, `HOST=0.0.0.0`, and `APP_VERSION`, the exact release it was built from, which « Réglages » shows; a local build leaves it empty. Outside a container the server listens on `127.0.0.1` only; the image makes it listen on every interface of the container, because a published port reaches the container through its network interface, never its loopback. That exposes nothing more: who reaches the server is decided by the published port, `127.0.0.1` only unless you open it. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
 
 ### Behind a reverse proxy
 
@@ -122,6 +122,8 @@ docker compose up --detach --wait
 This is the restore described in [Backups](#backups), from the volume rather than from the host. Whatever was written after the upgrade is lost.
 
 The port is published on `127.0.0.1` only since the container was locked down: an install reached from another device loses that access at the upgrade until it adds the home-network `compose.override.yml` described [above](#docker--the-reference-target).
+
+Outside a container, the server now listens on `127.0.0.1` only, unless `HOST` says otherwise: a reverse proxy on another machine, or a device reaching the port directly, loses access at the upgrade. See [Other targets](#other-targets).
 
 From a checkout, `git pull` then `docker compose up --build --detach --wait` builds and runs the new code, with the same copy, named `-dev`. Without Docker, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev`: the copy lands in `backups/` beside `local.db`, which git ignores. `pnpm data migrate:local` migrates without a copy.
 
@@ -275,7 +277,7 @@ The authenticator secret and the backup codes are stored encrypted with `BETTER_
 
 None of these will have a file in this repository, by design: adding one must never fork the application code.
 
-- **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm app build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/app/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front.
+- **A plain Node host.** Run `pnpm install --frozen-lockfile`, build the interface with `pnpm app build`, then start `packages/api/src/index.ts` with `WEB_DIST` set to the absolute path of `packages/app/dist` and an absolute `DATABASE_URL`. Put a reverse proxy in front, on the same machine: the server listens on `127.0.0.1` unless `HOST` names another address, and `HOST=0.0.0.0` would let anyone on the network reach sign-in and `/setup` around the proxy.
 - **Turso.** Point the database URL at the `libsql://` address and provide its token. The driver is the same one as for a local file. The free plan allows 5 GB and 500 million rows read a month.
 - **Render, Fly and the like.** The container, deployed as is. A Render free web service spins down after 15 minutes of inactivity, which delays the first request after a quiet night.
 - **Cloudflare Workers with D1.** Does not fit the free plan. A request gets 10 ms of CPU and 50 subrequests, and each D1 query counts as one. D1 has no interactive transaction, where the API opens 46. Past 100,000 rows written in a day, every query is refused for the rest of the day. [ADR 0002](adr/0002-container-reference-target.md) had already set it aside for the cost of a second entrypoint; these limits settle it.
