@@ -713,10 +713,11 @@ test("a category created from the action's picker lands at the top of Dépenses"
 
 	await page.goto("/settings/categories");
 	const expenses = page.getByRole("region", { name: "Dépenses", exact: true });
-	// A top-level row sits in the group's own list, not in a parent's nested one.
+	// A top-level row sits in the group's own list, inside its white block, not
+	// in a parent's nested one.
 	await expect(
 		expenses
-			.locator(":scope > ul > li > div")
+			.locator(":scope > div > ul > li > div")
 			.getByRole("button", { name: `Actions pour ${name}`, exact: true }),
 	).toBeVisible();
 });

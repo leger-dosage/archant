@@ -90,7 +90,9 @@ test.describe("OFX files 1.x and 2.x", () => {
 			).toBeVisible();
 			const counter = tab(page, "À créer", 3).locator("span").last();
 			await expect(counter).toHaveText("3");
-			await expect(counter).toHaveCSS("height", "20px");
+			// Story 14.4: DESIGN.md's 22 px badge, on a 6 px radius.
+			await expect(counter).toHaveCSS("height", "22px");
+			await expect(counter).toHaveCSS("border-radius", "6px");
 			await expect(counter).toHaveCSS("background-color", rgb("#f4f2f4"));
 			await expect(tab(page, "Déjà présentes", 0)).toBeVisible();
 			await expect(tab(page, "Rapprochées", 0)).toBeVisible();
@@ -110,7 +112,9 @@ test.describe("OFX files 1.x and 2.x", () => {
 			await dialog(page).getByRole("button", { name: "Annuler" }).click();
 			await expect(dialog(page)).toBeHidden();
 			await expect(header(page, account.name)).toContainText(euros(100_000));
-			await expect(page.getByText("Aucune opération.")).toBeVisible();
+			await expect(
+				page.getByRole("heading", { name: "Aucune opération pour l'instant" }),
+			).toBeVisible();
 		});
 	}
 });

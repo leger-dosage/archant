@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { WalletIcon } from "lucide-react";
+import { ReceiptTextIcon, WalletIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
 import { BalanceChart, PeriodToggle } from "@/components/BalanceChart";
+import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { LoanSummary } from "@/components/LoanSummary";
@@ -143,12 +144,16 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 			)}
 
 			{data !== undefined && data.total === 0 && (
-				<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("transactions.empty")}</p>
-					<Button onClick={onAdd} disabled={!canAdd}>
-						{t("transactions.add")}
-					</Button>
-				</div>
+				<EmptyState
+					icon={{ kind: "transfer", icon: ReceiptTextIcon }}
+					title={t("transactions.empty.title")}
+					description={t("transactions.empty.description")}
+					action={
+						<Button onClick={onAdd} disabled={!canAdd}>
+							{t("transactions.add")}
+						</Button>
+					}
+				/>
 			)}
 
 			{data !== undefined && data.total > 0 && (
@@ -202,11 +207,7 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 				<ListError error={snapshots.error} onRetry={() => void snapshots.refetch()} />
 			)}
 
-			{data !== undefined && data.total === 0 && (
-				<div className="rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("snapshots.empty")}</p>
-				</div>
-			)}
+			{data !== undefined && data.total === 0 && <EmptyNote>{t("snapshots.empty")}</EmptyNote>}
 
 			{data !== undefined && data.total > 0 && <SnapshotList items={data.items} onOpen={onOpen} />}
 
@@ -244,9 +245,7 @@ function ImportsPanel({ accountId, page }: { accountId: string; page: number }) 
 			)}
 
 			{data !== undefined && data.total === 0 && (
-				<div className="rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("imports.history.empty")}</p>
-				</div>
+				<EmptyNote>{t("imports.history.empty")}</EmptyNote>
 			)}
 
 			{data !== undefined && data.total > 0 && (

@@ -106,7 +106,10 @@
 	"accounts": {
 		"title": "Comptes",
 		"add": "Ajouter un compte",
-		"empty": "Aucun compte pour l'instant.",
+		"empty": {
+			"title": "Aucun compte pour l'instant",
+			"description": "Ajoutez un compte à la main ou connectez une banque pour suivre vos soldes."
+		},
 		"groups": {
 			"asset": "Actifs",
 			"liability": "Passifs"
@@ -232,7 +235,10 @@
 	},
 	"transactions": {
 		"add": "Ajouter une opération",
-		"empty": "Aucune opération.",
+		"empty": {
+			"title": "Aucune opération pour l'instant",
+			"description": "Ajoutez-en une à la main ou importez un relevé."
+		},
 		"days": {
 			"today": "Aujourd'hui",
 			"yesterday": "Hier",

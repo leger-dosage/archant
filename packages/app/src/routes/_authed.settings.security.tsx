@@ -106,7 +106,7 @@ function ProfileSection() {
 	});
 
 	return (
-		<Section title={t("profile.title")} className="max-w-md">
+		<Section title={t("profile.title")}>
 			<div className="flex flex-col gap-4 p-4">
 				<p className="text-sm text-muted-foreground">{t("profile.description")}</p>
 				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
@@ -121,7 +121,7 @@ function ProfileSection() {
 						/>
 						<FieldMessage id="name-error" error={errors.name} />
 					</div>
-					<Button type="submit" disabled={isSubmitting}>
+					<Button type="submit" className="self-start" disabled={isSubmitting}>
 						{t("profile.submit")}
 					</Button>
 				</form>
@@ -200,7 +200,7 @@ function PasswordSection() {
 	};
 
 	return (
-		<Section title={t("security.passwordTitle")} className="max-w-md">
+		<Section title={t("security.passwordTitle")}>
 			<div className="flex flex-col gap-4 p-4">
 				<p className="text-sm text-muted-foreground">{t("security.description")}</p>
 				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
@@ -243,7 +243,7 @@ function PasswordSection() {
 						/>
 						<FieldMessage id="confirmPassword-error" error={errors.confirmPassword} />
 					</div>
-					<Button type="submit" disabled={isSubmitting}>
+					<Button type="submit" className="self-start" disabled={isSubmitting}>
 						{t("security.submit")}
 					</Button>
 				</form>
@@ -359,7 +359,7 @@ function TwoFactorSection() {
 	const isSubmitting = passwordForm.formState.isSubmitting;
 
 	return (
-		<Section title={t("twoFactor.title")} className="max-w-md">
+		<Section title={t("twoFactor.title")}>
 			<div className="flex flex-col gap-4 p-4">
 				{step.kind === "scanning" ? (
 					<ScanStep
@@ -411,6 +411,7 @@ function TwoFactorSection() {
 								<>
 									<Button
 										type="button"
+										className="self-start"
 										disabled={isSubmitting}
 										aria-describedby="regenerate-hint"
 										onClick={(event) => void regenerate(event)}
@@ -423,6 +424,7 @@ function TwoFactorSection() {
 									<Button
 										type="button"
 										variant="outline"
+										className="self-start"
 										disabled={isSubmitting}
 										onClick={(event) => void disable(event)}
 									>
@@ -430,7 +432,7 @@ function TwoFactorSection() {
 									</Button>
 								</>
 							) : (
-								<Button type="submit" disabled={isSubmitting}>
+								<Button type="submit" className="self-start" disabled={isSubmitting}>
 									{t("twoFactor.enable")}
 								</Button>
 							)}
@@ -544,7 +546,7 @@ function BackupCodes({ codes, onDone }: { codes: string[]; onDone: () => void })
 					<li key={code}>{code}</li>
 				))}
 			</ul>
-			<Button type="button" onClick={onDone}>
+			<Button type="button" className="self-start" onClick={onDone}>
 				{t("twoFactor.backupCodesDone")}
 			</Button>
 		</>

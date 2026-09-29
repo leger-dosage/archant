@@ -8,8 +8,9 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
-import { Section } from "@/components/Section";
 import { TagDialog } from "@/components/TagDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,9 +41,9 @@ function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) =>
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex min-h-11 items-center gap-3 px-4 py-1">
-			<span className="min-w-0 flex-1 truncate">{tag.name}</span>
-			<span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
+			<span className="min-w-0 flex-1 truncate font-medium">{tag.name}</span>
+			<span className="shrink-0 text-muted-foreground tabular-nums">
 				{t("tags.transactions", { count: tag.transactionCount })}
 			</span>
 			<DropdownMenu>
@@ -108,52 +109,56 @@ function TagsPage() {
 		});
 
 	return (
-		<Page centred title={t("tags.title")} description={t("tags.description")} className="gap-4">
-			<Section
-				title={t("tags.list")}
-				action={
-					// An empty list offers its own, the one way forward.
-					tags.data !== undefined && list.length === 0 ? undefined : (
-						<Button size="sm" onClick={() => show({ action: "create" })}>
-							{t("tags.add")}
-						</Button>
-					)
-				}
-			>
-				{tags.isPending && (
-					<div className="flex flex-col gap-2 p-4">
-						<Skeleton className="h-11 w-full" />
-						<Skeleton className="h-11 w-full" />
-					</div>
-				)}
+		<Page
+			centred
+			title={t("tags.title")}
+			description={t("tags.description")}
+			actions={
+				// An empty list offers its own, the one way forward.
+				tags.data !== undefined && list.length === 0 ? undefined : (
+					<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>
+				)
+			}
+			className="gap-4"
+		>
+			{tags.isPending && (
+				<div className="flex flex-col gap-2">
+					<Skeleton className="h-14 w-full" />
+					<Skeleton className="h-14 w-full" />
+				</div>
+			)}
 
-				{tags.isError && (
-					<div role="alert" className="flex flex-col items-start gap-3 p-4">
-						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(tags.error)}`)}</p>
-						<Button variant="outline" onClick={() => void tags.refetch()}>
-							{t("common.retry")}
-						</Button>
-					</div>
-				)}
+			{tags.isError && (
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-xl border bg-card p-4">
+					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(tags.error)}`)}</p>
+					<Button variant="outline" onClick={() => void tags.refetch()}>
+						{t("common.retry")}
+					</Button>
+				</div>
+			)}
 
-				{tags.data !== undefined &&
-					(list.length === 0 ? (
-						<EmptyState
-							icon={{ kind: "transfer", icon: TagIcon }}
-							title={t("tags.empty.title")}
-							description={t("tags.empty.description")}
-							action={<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>}
-						/>
-					) : (
-						<ul aria-label={t("tags.title")} className="divide-y divide-line">
-							{list.map((item) => (
-								<li key={item.id}>
-									<TagRow tag={item} onAction={(action) => show({ action, id: item.id })} />
-								</li>
-							))}
-						</ul>
-					))}
-			</Section>
+			{tags.data !== undefined &&
+				(list.length === 0 ? (
+					<EmptyState
+						level={2}
+						icon={{ kind: "transfer", icon: TagIcon }}
+						title={t("tags.empty.title")}
+						description={t("tags.empty.description")}
+						action={<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>}
+					/>
+				) : (
+					<ListCard>
+						<InsetGroup level={2} title={t("tags.list")} count={list.length}>
+							<ul aria-label={t("tags.title")} className="divide-y divide-line">
+								{list.map((item) => (
+									<li key={item.id}>
+										<TagRow tag={item} onAction={(action) => show({ action, id: item.id })} />
+									</li>
+								))}
+							</ul>
+						</InsetGroup>
+					</ListCard>
+				))}
 
 			{(opened?.action === "create" || (opened?.action === "rename" && tag !== undefined)) && (
 				<TagDialog open={open} onOpenChange={setOpen} tag={tag} />

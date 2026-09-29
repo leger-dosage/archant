@@ -7,9 +7,10 @@ import { TintedIcon } from "@/components/TintedIcon";
 import { cn } from "@/lib/utils";
 
 /**
- * DESIGN.md's empty state, inside a section: a large tinted icon, a heading,
- * one sentence and the one action that fills the list. Secondary lists keep
- * a sentence alone, as in Sure.
+ * DESIGN.md's empty state, a card of its own as Sure's `DS::EmptyState` sits
+ * in one: a large tinted icon, a heading, one sentence and the one action
+ * that fills the list. Callers put it where the list would be; inside an
+ * inset group's white block, which is a card already, it drops its own frame.
  */
 export function EmptyState({
 	icon,
@@ -37,7 +38,10 @@ export function EmptyState({
 		<Wrapper
 			data-slot="empty-state"
 			{...(labelled ? { "aria-labelledby": headingId } : {})}
-			className={cn("flex flex-col items-center gap-3 px-6 py-10 text-center", className)}
+			className={cn(
+				"flex flex-col items-center gap-3 rounded-xl border bg-card px-6 py-10 text-center",
+				className,
+			)}
 		>
 			<TintedIcon subject={icon} size="lg" />
 			<Heading id={headingId} className="card-title">
@@ -46,5 +50,20 @@ export function EmptyState({
 			<p className="max-w-sm text-muted-foreground">{description}</p>
 			{action}
 		</Wrapper>
+	);
+}
+
+/**
+ * A list with nothing to offer but a sentence, as Sure's secondary lists:
+ * the card without its icon, heading or button.
+ */
+export function EmptyNote({ className, children }: { className?: string; children: ReactNode }) {
+	return (
+		<p
+			data-slot="empty-note"
+			className={cn("rounded-xl border bg-card p-4 text-muted-foreground", className)}
+		>
+			{children}
+		</p>
 	);
 }

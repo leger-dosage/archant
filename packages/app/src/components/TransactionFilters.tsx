@@ -603,10 +603,11 @@ export function TransactionFilters({
 			</Popover>
 
 			{chips.map((chip) => (
-				<Badge key={chip.kind} variant="outline" className="h-7 gap-0.5 pr-0.5 pl-0">
+				// As tall as its 28 px remove button, the floor for a control.
+				<Badge key={chip.kind} variant="outline" className="h-auto gap-0.5 py-0 pr-0 pl-0">
 					<button
 						type="button"
-						className="h-full rounded-l-4xl pr-1 pl-2.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+						className="self-stretch rounded-l-4xl pr-1 pl-2.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
 						onClick={() => edit(chip.kind)}
 					>
 						{chip.label}
@@ -614,7 +615,7 @@ export function TransactionFilters({
 					<button
 						type="button"
 						aria-label={t("operations.removeFilter", { label: chip.label })}
-						className="grid size-6 place-items-center rounded-full text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+						className="grid size-7 place-items-center rounded-full text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
 						onClick={() => onRemove(chip.kind)}
 					>
 						<XIcon aria-hidden="true" />

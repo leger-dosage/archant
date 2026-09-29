@@ -35,7 +35,11 @@ test("an empty household sees the empty state and a button to add an account", a
 	await page.goto("/accounts");
 
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
-	await expect(page.getByText("Aucun compte pour l'instant.")).toBeVisible();
+	// Story 14.4: DESIGN.md's empty state, a card of its own.
+	const empty = page.locator('[data-slot="empty-state"]');
+	await expect(empty.getByRole("heading", { name: "Aucun compte pour l'instant" })).toBeVisible();
+	await expect(empty.locator('[data-slot="tinted-icon"] svg.lucide-landmark')).toBeVisible();
+	await expect(empty.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
 	await expect(addAccount(page)).toBeVisible();
 });
 

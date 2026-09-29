@@ -49,7 +49,7 @@ const STATUSES = {
 
 export type Status = keyof typeof STATUSES;
 
-/** DESIGN.md's badge: 20 px, a 5 px radius, a 12 px icon and the status's name. */
+/** DESIGN.md's badge: 22 px, a 6 px radius, a 12 px icon and the status's name. */
 export function StatusBadge({
 	status,
 	iconBelowMd = false,
@@ -71,7 +71,7 @@ export function StatusBadge({
 			data-slot="status-badge"
 			data-status={status}
 			className={cn(
-				"inline-flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-xs whitespace-nowrap",
+				"inline-flex h-5.5 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs whitespace-nowrap",
 				// 6 % rather than the tints' 10 % in light mode: at 10 %, the warning
 				// text falls to 4.4:1 on a hovered or selected row.
 				warning

@@ -8,10 +8,11 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { MerchantDialog } from "@/components/MerchantDialog";
 import { MergeMerchantDialog } from "@/components/MergeMerchantDialog";
 import { Page } from "@/components/Page";
-import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,10 +49,10 @@ function MerchantRow({
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex min-h-11 items-center gap-3 px-4 py-1">
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
 			<TintedIcon subject={{ kind: "merchant", name: merchant.name }} />
-			<span className="min-w-0 flex-1 truncate">{merchant.name}</span>
-			<span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+			<span className="min-w-0 flex-1 truncate font-medium">{merchant.name}</span>
+			<span className="shrink-0 text-muted-foreground tabular-nums">
 				{t("merchants.transactions", { count: merchant.transactionCount })}
 			</span>
 			<DropdownMenu>
@@ -128,58 +129,57 @@ function MerchantsPage() {
 			centred
 			title={t("merchants.title")}
 			description={t("merchants.description")}
+			actions={
+				// An empty list offers its own, the one way forward.
+				merchants.data !== undefined && list.length === 0 ? undefined : (
+					<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+				)
+			}
 			className="gap-4"
 		>
-			<Section
-				title={t("merchants.list")}
-				action={
-					// An empty list offers its own, the one way forward.
-					merchants.data !== undefined && list.length === 0 ? undefined : (
-						<Button size="sm" onClick={() => show({ action: "create" })}>
-							{t("merchants.add")}
-						</Button>
-					)
-				}
-			>
-				{merchants.isPending && (
-					<div className="flex flex-col gap-2 p-4">
-						<Skeleton className="h-11 w-full" />
-						<Skeleton className="h-11 w-full" />
-					</div>
-				)}
+			{merchants.isPending && (
+				<div className="flex flex-col gap-2">
+					<Skeleton className="h-14 w-full" />
+					<Skeleton className="h-14 w-full" />
+				</div>
+			)}
 
-				{merchants.isError && (
-					<div role="alert" className="flex flex-col items-start gap-3 p-4">
-						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(merchants.error)}`)}</p>
-						<Button variant="outline" onClick={() => void merchants.refetch()}>
-							{t("common.retry")}
-						</Button>
-					</div>
-				)}
+			{merchants.isError && (
+				<div role="alert" className="flex flex-col items-start gap-3 rounded-xl border bg-card p-4">
+					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(merchants.error)}`)}</p>
+					<Button variant="outline" onClick={() => void merchants.refetch()}>
+						{t("common.retry")}
+					</Button>
+				</div>
+			)}
 
-				{merchants.data !== undefined &&
-					(list.length === 0 ? (
-						<EmptyState
-							icon={{ kind: "transfer", icon: StoreIcon }}
-							title={t("merchants.empty.title")}
-							description={t("merchants.empty.description")}
-							action={
-								<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
-							}
-						/>
-					) : (
-						<ul aria-label={t("merchants.title")} className="divide-y divide-line">
-							{list.map((item) => (
-								<li key={item.id}>
-									<MerchantRow
-										merchant={item}
-										onAction={(action) => show({ action, id: item.id })}
-									/>
-								</li>
-							))}
-						</ul>
-					))}
-			</Section>
+			{merchants.data !== undefined &&
+				(list.length === 0 ? (
+					<EmptyState
+						level={2}
+						icon={{ kind: "transfer", icon: StoreIcon }}
+						title={t("merchants.empty.title")}
+						description={t("merchants.empty.description")}
+						action={
+							<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+						}
+					/>
+				) : (
+					<ListCard>
+						<InsetGroup level={2} title={t("merchants.list")} count={list.length}>
+							<ul aria-label={t("merchants.title")} className="divide-y divide-line">
+								{list.map((item) => (
+									<li key={item.id}>
+										<MerchantRow
+											merchant={item}
+											onAction={(action) => show({ action, id: item.id })}
+										/>
+									</li>
+								))}
+							</ul>
+						</InsetGroup>
+					</ListCard>
+				))}
 
 			{(opened?.action === "create" || (opened?.action === "rename" && merchant !== undefined)) && (
 				<MerchantDialog open={open} onOpenChange={setOpen} merchant={merchant} />

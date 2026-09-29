@@ -9,12 +9,11 @@ export function DashboardEmpty({ onAddAccount }: { onAddAccount: () => void }) {
 	const { t } = useTranslation();
 
 	return (
-		// No section around it: the dashboard has nothing else to show, so the
-		// empty state is its own bordered region.
+		// The dashboard has nothing else to show: the empty state's card is its
+		// own region.
 		<EmptyState
 			labelled
 			level={2}
-			className="rounded-xl border bg-card"
 			icon={{ kind: "transfer", icon: LandmarkIcon }}
 			title={t("dashboard.empty.title")}
 			description={t("dashboard.empty.description")}

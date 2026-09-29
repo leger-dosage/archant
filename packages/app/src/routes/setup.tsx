@@ -140,7 +140,7 @@ function SetupPage() {
 	return (
 		<OutsideShell className="flex flex-col gap-6">
 			<div className="flex flex-col gap-1.5">
-				<h1 className="type-display">{t("setup.title")}</h1>
+				<h1 className="page-title">{t("setup.title")}</h1>
 				<p className="text-sm text-muted-foreground">{t("setup.description")}</p>
 			</div>
 			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>

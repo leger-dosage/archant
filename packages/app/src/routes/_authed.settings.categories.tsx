@@ -11,9 +11,10 @@ import { CATEGORY_KINDS } from "@archant/data/schema/categories";
 import { CategoryDialog } from "@/components/CategoryDialog";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { MergeCategoryDialog } from "@/components/MergeCategoryDialog";
 import { Page } from "@/components/Page";
-import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,10 +51,10 @@ function CategoryRow({
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex min-h-11 items-center gap-3 px-4 py-1">
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
 			<TintedIcon subject={{ kind: "category", color: category.color, icon: category.icon }} />
-			<span className="min-w-0 flex-1 truncate">{category.name}</span>
-			<span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+			<span className="min-w-0 flex-1 truncate font-medium">{category.name}</span>
+			<span className="shrink-0 text-muted-foreground tabular-nums">
 				{t("categories.transactions", { count: category.transactionCount })}
 			</span>
 			<DropdownMenu>
@@ -98,10 +99,14 @@ function CategoryGroup({
 	const headingId = `categories-${kind}`;
 	const branches = categoryTree(categories).filter(({ parent }) => parent.kind === kind);
 
+	const count = categories.filter((category) => category.kind === kind).length;
+
 	return (
-		<Section id={headingId} title={t(`categories.groups.${kind}`)}>
+		<InsetGroup id={headingId} level={2} title={t(`categories.groups.${kind}`)} count={count}>
 			{branches.length === 0 ? (
+				// The group's block is the card already.
 				<EmptyState
+					className="rounded-none border-0"
 					icon={{ kind: "transfer", icon: ShapesIcon }}
 					title={t(`categories.groupEmpty.${kind}`)}
 					description={t("categories.groupEmpty.description")}
@@ -114,7 +119,7 @@ function CategoryGroup({
 							<li key={parent.id}>
 								<CategoryRow category={parent} onAction={(action) => onAction(action, parent)} />
 								{children.length > 0 && (
-									<ul className="pl-6">
+									<ul className="divide-y divide-line border-t border-line pl-6">
 										{children.map((child) => (
 											<li key={child.id}>
 												<CategoryRow
@@ -130,7 +135,7 @@ function CategoryGroup({
 					})}
 				</ul>
 			)}
-		</Section>
+		</InsetGroup>
 	);
 }
 
@@ -174,8 +179,8 @@ function CategoriesPage() {
 			{categories.isPending && (
 				<div className="flex flex-col gap-2">
 					<Skeleton className="h-5 w-24" />
-					<Skeleton className="h-11 w-full" />
-					<Skeleton className="h-11 w-full" />
+					<Skeleton className="h-14 w-full" />
+					<Skeleton className="h-14 w-full" />
 				</div>
 			)}
 
@@ -188,16 +193,19 @@ function CategoriesPage() {
 				</div>
 			)}
 
-			{categories.data !== undefined &&
-				CATEGORY_KINDS.map((kind) => (
-					<CategoryGroup
-						key={kind}
-						kind={kind}
-						categories={list}
-						onAction={(action, target) => show({ action, id: target.id })}
-						onAdd={() => show({ action: "create", kind })}
-					/>
-				))}
+			{categories.data !== undefined && (
+				<ListCard>
+					{CATEGORY_KINDS.map((kind) => (
+						<CategoryGroup
+							key={kind}
+							kind={kind}
+							categories={list}
+							onAction={(action, target) => show({ action, id: target.id })}
+							onAdd={() => show({ action: "create", kind })}
+						/>
+					))}
+				</ListCard>
+			)}
 
 			{(opened?.action === "create" || (opened?.action === "edit" && category !== undefined)) && (
 				<CategoryDialog

@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { LandmarkIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 import { AccountGroups, AccountGroupsSkeleton } from "@/components/AccountGroups";
 import { CreateAccountDialog } from "@/components/CreateAccountDialog";
+import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -77,10 +79,13 @@ function AccountsPage() {
 			)}
 
 			{accounts.data !== undefined && !hasAccounts && (
-				<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
-					<p className="text-muted-foreground">{t("accounts.empty")}</p>
-					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
-				</div>
+				<EmptyState
+					level={2}
+					icon={{ kind: "transfer", icon: LandmarkIcon }}
+					title={t("accounts.empty.title")}
+					description={t("accounts.empty.description")}
+					action={<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>}
+				/>
 			)}
 			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 		</Page>

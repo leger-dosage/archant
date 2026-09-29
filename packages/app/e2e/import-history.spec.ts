@@ -116,7 +116,11 @@ test("reverting an import removes its transactions, puts the balance back and ma
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 
 	await page.getByRole("tab", { name: "Opérations" }).click();
-	await expect(page.getByText("Aucune opération.")).toBeVisible();
+	await expect(
+		page
+			.getByRole("tabpanel", { name: "Opérations" })
+			.getByRole("heading", { name: "Aucune opération pour l'instant" }),
+	).toBeVisible();
 });
 
 test("a reverted file imported again lists its lines under À créer", async ({ page, api }) => {

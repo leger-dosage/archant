@@ -250,14 +250,8 @@ export function TransactionList({
 					id={`day-${day.date}`}
 					level={headingLevel}
 					title={<DayTitle date={day.date} />}
-					detail={
-						<span className="shrink-0">
-							<span aria-hidden="true">· {day.items.length}</span>
-							<span className="sr-only">
-								{t("transactions.days.count", { count: day.items.length })}
-							</span>
-						</span>
-					}
+					count={day.items.length}
+					countLabel={t("transactions.days.count", { count: day.items.length })}
 					total={
 						<span className="flex flex-wrap justify-end gap-x-3">
 							{day.subtotals.map((subtotal) => (

@@ -1,5 +1,5 @@
 import type { PageParam, RulesPageParam } from "@/lib/page-search";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -21,11 +21,16 @@ type PaginationProps = {
 	label: string;
 };
 
+/**
+ * The link a `Button asChild` renders: the button's class and data attributes
+ * arrive as `props`, and must reach the anchor or it shows unstyled.
+ */
 function PageLink({
 	target,
 	page,
 	children,
-}: {
+	...props
+}: Omit<ComponentProps<"a">, "href" | "target"> & {
 	target: PageTarget;
 	page: number;
 	children: ReactNode;
@@ -33,6 +38,7 @@ function PageLink({
 	if (target.to === "/transactions") {
 		return (
 			<Link
+				{...props}
 				to="/transactions"
 				search={(previous) => ({ ...previous, ...pageSearch("page", page) })}
 			>
@@ -43,7 +49,11 @@ function PageLink({
 
 	if (target.to === "/rules") {
 		return (
-			<Link to="/rules" search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}>
+			<Link
+				{...props}
+				to="/rules"
+				search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}
+			>
 				{children}
 			</Link>
 		);
@@ -51,6 +61,7 @@ function PageLink({
 
 	return (
 		<Link
+			{...props}
 			to="/accounts/$accountId"
 			params={{ accountId: target.accountId }}
 			search={(previous) => ({ ...previous, ...pageSearch(target.param, page) })}
@@ -75,9 +86,7 @@ export function Pagination({ target, page, pageCount, label }: PaginationProps) 
 					<span>{t("pagination.previous")}</span>
 				)}
 			</Button>
-			<p className="text-xs text-muted-foreground">
-				{t("pagination.status", { page, pages: pageCount })}
-			</p>
+			<p className="text-muted-foreground">{t("pagination.status", { page, pages: pageCount })}</p>
 			<Button variant="outline" size="sm" disabled={page >= pageCount} asChild={page < pageCount}>
 				{page < pageCount ? (
 					<PageLink target={target} page={page + 1}>

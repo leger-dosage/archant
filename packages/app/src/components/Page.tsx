@@ -163,10 +163,7 @@ export function Page({
 						{icon}
 						<h1
 							id={PAGE_TITLE_ID}
-							className={cn(
-								"min-w-24 flex-1 truncate text-2xl font-medium tracking-[-0.01em]",
-								greeting && "lg:text-3xl",
-							)}
+							className={cn("min-w-24 flex-1 truncate page-title", greeting && "lg:text-3xl")}
 						>
 							{title}
 						</h1>
