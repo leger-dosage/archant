@@ -98,6 +98,10 @@ jobs:
       - run: docker compose up --detach --wait --pull never
       - name: The image carries the version it was built with
         run: test "$(docker compose exec -T archant printenv APP_VERSION)" = "0.0.0"
+      # The server's default is loopback, which the published port cannot
+      # reach; the health and interface steps below prove it answers.
+      - name: The image listens on every interface of the container
+        run: test "$(docker compose exec -T archant printenv HOST)" = "0.0.0.0"
       - name: Health answers ok
         run: |
           body="$(curl --silent --show-error --fail http://localhost:8787/api/health)"

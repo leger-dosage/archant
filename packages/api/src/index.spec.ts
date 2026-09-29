@@ -16,6 +16,7 @@ import { pendingMigrations } from "@archant/data/migrate";
 import { migrateAllButLast } from "@archant/data/testing/migrations";
 
 import { server } from "../vitest.setup.ts";
+import { accepts } from "./lib/port.ts";
 
 const entrypoint = fileURLToPath(new URL("./index.ts", import.meta.url));
 
@@ -71,6 +72,16 @@ async function outcome(child: ChildProcess): Promise<{ code: number | null; line
 
 	return { code, lines: output.split("\n").filter((line) => line !== "") };
 }
+
+const listeningLine = z.object({ host: z.string(), port: z.number(), msg: z.string() });
+
+const bindFatalLine = z.object({
+	level: z.number(),
+	host: z.string(),
+	port: z.number(),
+	code: z.string(),
+	msg: z.string(),
+});
 
 const SYNC_SECRET = "archant-index-sync-secret-of-32-characters";
 
@@ -168,6 +179,17 @@ describe("the server entrypoint", () => {
 
 	it("gives no plain-HTTP warning on a loopback origin", () => {
 		expect(logLines.filter((line) => line.includes("travel unencrypted"))).toEqual([]);
+	});
+
+	it("listens on 127.0.0.1 only when HOST is unset", async () => {
+		const line = logLines.find((entry) => entry.includes("Archant API listening"));
+
+		expect(listeningLine.parse(JSON.parse(line ?? "{}"))).toMatchObject({
+			host: "127.0.0.1",
+			port,
+		});
+		await expect(accepts("127.0.0.1", port)).resolves.toBe(true);
+		await expect(accepts("::1", port)).resolves.toBe(false);
 	});
 
 	it("exits within one second of SIGTERM", async () => {
@@ -304,6 +326,77 @@ describe("the server entrypoint, on a port another server holds", () => {
 		},
 		30_000,
 	);
+});
+
+describe("the server entrypoint, with HOST set", () => {
+	it("listens on ::1 only when HOST is ::1", async () => {
+		const hostPort = await freePort();
+		const started = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${join(directory, "host.db")}`,
+				PORT: String(hostPort),
+				HOST: "::1",
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: `http://localhost:${hostPort}`,
+			},
+		});
+
+		try {
+			const line = (await listening(started)).find((entry) =>
+				entry.includes("Archant API listening"),
+			);
+
+			expect(listeningLine.parse(JSON.parse(line ?? "{}"))).toMatchObject({
+				host: "::1",
+				port: hostPort,
+			});
+			await expect(accepts("::1", hostPort)).resolves.toBe(true);
+			await expect(accepts("127.0.0.1", hostPort)).resolves.toBe(false);
+		} finally {
+			if (started.exitCode === null && started.signalCode === null) {
+				started.kill("SIGKILL");
+				await once(started, "exit");
+			}
+		}
+	}, 30_000);
+
+	it("stops with the host and the code when HOST is not an address of this machine", async () => {
+		const hostPort = await freePort();
+		// TEST-NET-1 (RFC 5737): documentation only, never assigned to a machine.
+		const refused = spawn(process.execPath, [entrypoint], {
+			stdio: ["ignore", "pipe", "inherit"],
+			env: {
+				DATABASE_URL: `file:${join(directory, "unavailable.db")}`,
+				PORT: String(hostPort),
+				HOST: "192.0.2.1",
+				LOG_LEVEL: "info",
+				BETTER_AUTH_SECRET: "archant-index-secret-of-at-least-32-characters",
+				BETTER_AUTH_URL: `http://localhost:${hostPort}`,
+			},
+		});
+
+		try {
+			const { code, lines } = await outcome(refused);
+
+			expect(code).toBe(1);
+			const fatal = lines
+				.map((entry) => bindFatalLine.safeParse(JSON.parse(entry)))
+				.find((entry) => entry.success && entry.data.level === 60);
+			expect(fatal?.data).toMatchObject({
+				host: "192.0.2.1",
+				port: hostPort,
+				code: "EADDRNOTAVAIL",
+			});
+			expect(lines.join("\n")).not.toContain("Archant API listening");
+		} finally {
+			if (refused.exitCode === null && refused.signalCode === null) {
+				refused.kill("SIGKILL");
+				await once(refused, "exit");
+			}
+		}
+	}, 30_000);
 });
 
 async function pendingAfter(file: string): Promise<"new" | "none" | number> {

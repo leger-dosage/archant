@@ -44,6 +44,10 @@ COPY packages/api/src packages/api/src
 COPY --from=builder /app/packages/app/dist packages/app/dist
 
 ENV PORT=8787
+# Every interface of the container, not the server's loopback default: a
+# published port reaches the container through its network interface, never
+# its loopback. docker-compose.yml publishing on 127.0.0.1 keeps it private.
+ENV HOST=0.0.0.0
 ENV DATABASE_URL=file:/data/archant.db
 # The API serves the built interface from the same origin, so a browser needs
 # no second port and no CORS exception.

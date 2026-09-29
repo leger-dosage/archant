@@ -55,6 +55,10 @@ const api = spawn(process.execPath, [entrypoint], {
 		// A token exported in the shell for Turso must not reach a local file.
 		DATABASE_AUTH_TOKEN: "",
 		PORT: String(PORT),
+		// The loopback default, which Playwright's probe and the browser reach
+		// through `localhost`: some shells, tcsh among them, export HOST as the
+		// machine's name, which would stop the server at startup.
+		HOST: "",
 		APP_TIMEZONE: TIME_ZONE,
 		LOG_LEVEL: "warn",
 		// Sessions die with the run's database, so a fixed secret costs nothing.

@@ -50,6 +50,13 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 			// Also read by packages/app/vite.config.ts as its proxy target: one
 			// variable names the API's port in both processes, so they cannot drift.
 			PORT: z.coerce.number().int().min(1).max(65_535).default(8787),
+			// Loopback by default: bound to every interface, a laptop's sign-in
+			// and `/setup` answered anyone on the same Wi-Fi. The image sets
+			// `0.0.0.0`, because a published port reaches the container through its
+			// network interface, never its loopback. An address, never a name:
+			// Node binds only the first address a name resolves to, `::1` for
+			// `localhost` on macOS, and a typo would pass for a bind failure.
+			HOST: z.union([z.ipv4(), z.ipv6()]).default("127.0.0.1"),
 			// Signs session cookies. Rotating it signs every user out.
 			BETTER_AUTH_SECRET: z.string().min(32),
 			// The origin the browser uses, not the API's own port: Better Auth

@@ -30,6 +30,7 @@ describe("validateEnv", () => {
 		expect(env.APP_TIMEZONE).toBe("Europe/Paris");
 		expect(env.LOG_LEVEL).toBe("info");
 		expect(env.PORT).toBe(8787);
+		expect(env.HOST).toBe("127.0.0.1");
 		expect(env.BETTER_AUTH_URL).toBe("http://localhost:5173");
 		expect(env.TRUSTED_PROXIES).toEqual([]);
 		expect(env.WEB_DIST).toBeUndefined();
@@ -50,6 +51,20 @@ describe("validateEnv", () => {
 	it("reads the port as a number and names one out of range", () => {
 		expect(validateEnv({ ...required, PORT: "8788" }).PORT).toBe(8788);
 		expect(() => validateEnv({ ...required, PORT: "70000" })).toThrow(/PORT/);
+	});
+
+	it.each(["0.0.0.0", "::", "::1", "127.0.0.1"])("listens on the address %j", (host) => {
+		expect(validateEnv({ ...required, HOST: host }).HOST).toBe(host);
+	});
+
+	it("takes an empty HOST for the loopback default", () => {
+		expect(validateEnv({ ...required, HOST: "" }).HOST).toBe("127.0.0.1");
+	});
+
+	it.each(["localhost", "example.org", "127.0.0.1:8787"])("names the host %j", (host) => {
+		expect(() => validateEnv({ ...required, HOST: host })).toThrow(
+			"Invalid environment variables: HOST",
+		);
 	});
 
 	it("names a time zone Intl does not know", () => {
