@@ -20,7 +20,7 @@ export function OutsideShell({ className, children }: { className?: string; chil
 			<div className="flex flex-col items-center gap-2">
 				{/* The mark carries the name, so the word beside it is not read twice. */}
 				<ArchLogo label={t("app.name")} className="size-8" />
-				<span aria-hidden="true" className="type-title">
+				<span aria-hidden="true" className="card-title">
 					{t("app.name")}
 				</span>
 			</div>

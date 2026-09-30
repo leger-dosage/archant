@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, rgb, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 1.1: create an account and see it listed.
 
@@ -144,6 +144,57 @@ test("a depository account is listed under assets and a credit card under liabil
 	await expect(pageGroupHeader(page, "Passifs")).toContainText(euros(liabilityTotal));
 });
 
+// Story 14.2: the note under « Actifs » sits in its tray, between the header and the rows.
+test("a group with an account in another currency says so in its tray", async ({ page }) => {
+	await page.route("**/api/accounts", (route) =>
+		route.fulfill({
+			json: {
+				data: {
+					reportingCurrency: "EUR",
+					groups: [
+						{
+							classification: "asset",
+							total: 100_000,
+							excludedCount: 1,
+							accounts: [
+								{
+									id: "a1",
+									name: "Compte joint",
+									type: "depository",
+									subtype: "checking",
+									currency: "EUR",
+									balance: 100_000,
+									active: true,
+									excludedFromReports: false,
+								},
+								{
+									id: "a2",
+									name: "Compte USD",
+									type: "depository",
+									subtype: "checking",
+									currency: "USD",
+									balance: 50_000,
+									active: true,
+									excludedFromReports: false,
+								},
+							],
+						},
+						{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },
+					],
+				},
+			},
+		}),
+	);
+
+	await page.goto("/accounts");
+
+	await expect(
+		page
+			.getByRole("region", { name: "Actifs" })
+			.getByText("1 compte dans une autre devise n'est pas compté dans le total."),
+	).toBeVisible();
+});
+
 // Story 12.3: sections with the accounts' type icons, and the type icon in an
 // account's page header.
 test("each group is a section whose accounts carry their type icon, as the account's page header does", async ({
@@ -157,8 +208,19 @@ test("each group is a section whose accounts carry their type icon, as the accou
 
 	const assets = page.getByRole("region", { name: "Actifs" });
 	const liabilities = page.getByRole("region", { name: "Passifs" });
-	await expect(assets).toHaveClass(/bg-card/u);
-	await expect(liabilities).toHaveClass(/bg-card/u);
+	// Story 14.2: each group is a grey tray under an uppercase header.
+	await expect(assets).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(liabilities).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(assets).toHaveCSS("border-radius", "12px");
+	await expect(assets.getByRole("heading", { level: 2, name: "Actifs" })).toHaveCSS(
+		"text-transform",
+		"uppercase",
+	);
+	await expect(
+		assets
+			.getByRole("link", { name: new RegExp(savings.name) })
+			.locator('[data-slot="tinted-icon"]'),
+	).toHaveCSS("width", "36px");
 	await expect(
 		assets
 			.getByRole("link", { name: new RegExp(savings.name) })
@@ -174,6 +236,7 @@ test("each group is a section whose accounts carry their type icon, as the accou
 
 	const header = page.getByRole("heading", { level: 1, name: card.name }).locator("..");
 	await expect(header.locator('[data-slot="tinted-icon"] svg.lucide-credit-card')).toBeVisible();
+	await expect(header.locator('[data-slot="tinted-icon"]')).toHaveCSS("width", "36px");
 	await expect(
 		header.getByRole("button", { name: `Actions du compte ${card.name}` }),
 	).toBeVisible();

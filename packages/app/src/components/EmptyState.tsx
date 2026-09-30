@@ -40,7 +40,7 @@ export function EmptyState({
 			className={cn("flex flex-col items-center gap-3 px-6 py-10 text-center", className)}
 		>
 			<TintedIcon subject={icon} size="lg" />
-			<Heading id={headingId} className="type-title">
+			<Heading id={headingId} className="card-title">
 				{title}
 			</Heading>
 			<p className="max-w-sm text-muted-foreground">{description}</p>

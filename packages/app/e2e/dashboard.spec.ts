@@ -99,6 +99,8 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 	await expect(arrow).toBeVisible();
 	await expect(arrow).toHaveCSS("color", rgb(rising ? "#27a644" : "#eb5757"));
 	await expect(headline(page).locator(".amount-hero")).toHaveCSS("color", rgb("#282a30"));
+	await expect(headline(page).locator(".amount-hero")).toHaveCSS("font-size", "30px");
+	await expect(card(page).locator('[data-slot="chart"]')).toHaveCSS("height", "208px");
 	await expect(total(page, "Actifs")).toBeVisible();
 	await expect(total(page, "Passifs")).toBeVisible();
 	// Abbreviated labels, « 275 k€ », never an amount to the cent.
@@ -184,6 +186,16 @@ test("« Bilan » splits each group by account type, and lists its active accoun
 	await expect(accountRows.nth(2)).toContainText("Compte USD");
 	await expect(assets).not.toContainText("Ancien livret");
 	await expect(assets.locator("[data-type]")).toHaveCount(2);
+	await expect(assets.locator("[data-type]").first()).toHaveCSS("height", "6px");
+	// The accounts sit in a grey tray under an uppercase header, each with a 28 px type icon.
+	const tray = assets.getByRole("region", { name: "Comptes" });
+	await expect(tray).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(tray).toHaveCSS("border-radius", "12px");
+	await expect(tray.getByRole("heading", { name: "Comptes" })).toHaveCSS(
+		"text-transform",
+		"uppercase",
+	);
+	await expect(accountRows.nth(0).locator('[data-slot="tinted-icon"]')).toHaveCSS("width", "28px");
 
 	const liabilities = sheetGroup(page, "Passifs");
 	await expect(
@@ -264,8 +276,11 @@ test("« 3 M » keeps the period in the URL, and the summary and table follow it
 	);
 	await expect(headline(page)).toContainText(`${amount} (${percent}) sur 3 mois`);
 
-	await card(page).getByRole("button", { name: "Voir le tableau" }).click();
+	const showTable = card(page).getByRole("button", { name: "Voir le tableau" });
+	await showTable.click();
 	const table = card(page).getByRole("table");
+	const tableId = await showTable.getAttribute("aria-controls");
+	await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "208px");
 	await expect(table.getByRole("columnheader")).toHaveText(["Date", "Patrimoine net"]);
 	await expect(table.getByRole("row")).toHaveCount(expected.points.length + 1);
 	await expect(table.getByRole("row").nth(1)).toContainText(formatTableDate(daysAgo(0)));
@@ -418,6 +433,10 @@ test("« Revenus » and « Dépenses » count only the month's counted rows", as
 	await expect(cell(page, "2024-03", "Dépenses")).toContainText(euros(-4_000));
 	await expect(cell(page, "2024-03", "Épargne du mois")).toContainText(euros(16_000));
 	await expect(cell(page, "2024-03", "Épargne du mois")).not.toContainText("+");
+	await expect(cell(page, "2024-03", "Revenus").locator(".amount-summary")).toHaveCSS(
+		"font-size",
+		"20px",
+	);
 
 	// « Dépenses » first, then « Revenus » swaps the rows and the donut.
 	const sides = flows(page, "2024-03").getByRole("radiogroup", { name: "Répartition affichée" });
@@ -425,6 +444,12 @@ test("« Revenus » and « Dépenses » count only the month's counted rows", as
 	await expect(sides.getByRole("radio", { name: "Dépenses" })).toBeChecked();
 	await expect(rowsOf(page, "2024-03", "Dépenses")).toHaveCount(1);
 	await expect(rowsOf(page, "2024-03", "Dépenses")).toContainText(groceries.name);
+	const categories = flows(page, "2024-03").getByRole("region", { name: "Dépenses par catégorie" });
+	await expect(categories).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(categories.getByRole("heading", { name: "Dépenses par catégorie" })).toHaveCSS(
+		"text-transform",
+		"uppercase",
+	);
 	// `createCategory` gives the icon `tag`: the row shows it, not the uncategorised one.
 	await expect(
 		rowsOf(page, "2024-03", "Dépenses").locator('[data-slot="tinted-icon"] svg.lucide-tag'),
@@ -595,4 +620,69 @@ test("« Mois précédent » moves the month in the URL and the heading", async 
 
 	await page.goto("/?month=2024-01");
 	await expect(flows(page, "2024-01").getByText("Aucune opération ce mois-ci.")).toBeVisible();
+});
+
+// Story 14.2: Sure's proportions. The dashboard's cards stack in one column
+// until 1536 px: beside the rail and the accounts column, a 1440 px screen
+// leaves about 950 px, too narrow for two.
+
+test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at 1600 px", async ({
+	page,
+	api,
+}) => {
+	await api.openAccount();
+	const current = daysAgo(0).slice(0, 7);
+
+	await page.goto("/");
+
+	const greeting = pageHeader(page).getByRole("heading", { level: 1 });
+	await expect(greeting).toHaveCSS("font-size", "30px");
+	const title = card(page).getByRole("heading", { level: 2, name: "Patrimoine net" });
+	await expect(title).toHaveCSS("font-size", "16px");
+	await expect(title).toHaveCSS("font-weight", "510");
+	const cards = [card(page), flows(page, current), bilan(page)];
+	await Promise.all(cards.map((region) => expect(region).toHaveCSS("border-radius", "12px")));
+
+	const [netWorth, flow, sheet] = await Promise.all(cards.map((region) => region.boundingBox()));
+	expect(netWorth).not.toBeNull();
+	expect(flow).not.toBeNull();
+	expect(sheet).not.toBeNull();
+	expect(flow?.x).toBe(netWorth?.x);
+	expect(sheet?.x).toBe(netWorth?.x);
+	expect(flow?.width).toBe(netWorth?.width);
+	expect(flow?.y).toBeGreaterThan((netWorth?.y ?? 0) + (netWorth?.height ?? 0));
+	expect(sheet?.y).toBeGreaterThan((flow?.y ?? 0) + (flow?.height ?? 0));
+
+	await page.setViewportSize({ width: 1600, height: 900 });
+
+	await expect
+		.poll(async () => {
+			const [wide, beside] = await Promise.all([
+				card(page).boundingBox(),
+				flows(page, current).boundingBox(),
+			]);
+
+			return (
+				wide !== null && beside !== null && beside.x > wide.x + wide.width && beside.y === wide.y
+			);
+		})
+		.toBe(true);
+
+	// The balance sheet climbs under the net worth, beside the month's flow.
+	const [top, climbed] = await Promise.all([card(page).boundingBox(), bilan(page).boundingBox()]);
+	expect(climbed?.x).toBe(top?.x);
+	expect(climbed?.y).toBe((top?.y ?? 0) + (top?.height ?? 0) + 24);
+
+	// In a half-width card, the month's three figures stack rather than overflow.
+	const cells = await Promise.all(
+		(["Revenus", "Dépenses", "Épargne du mois"] as const).map((label) =>
+			cell(page, current, label).boundingBox(),
+		),
+	);
+	expect(cells.every((box) => box !== null)).toBe(true);
+	expect(new Set(cells.map((box) => box?.x)).size).toBe(1);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+
+	await expect(greeting).toHaveCSS("font-size", "24px");
 });

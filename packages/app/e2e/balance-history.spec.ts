@@ -1,5 +1,5 @@
 import { formatTableDate } from "../src/lib/balance-change.ts";
-import { daysAgo, euros, expect, test } from "./fixtures.ts";
+import { daysAgo, euros, expect, rgb, test } from "./fixtures.ts";
 
 // Story 1.3: daily balance history.
 
@@ -91,4 +91,37 @@ test("the period is kept across the pages of the transactions", async ({ page, a
 	await pages.getByRole("link", { name: "Précédent" }).click();
 	await expect(pages).toContainText("Page 1 sur 2");
 	await expect(page).toHaveURL(/[?&]period=3M(&|$)/u);
+});
+
+// Story 14.2: as Sure's account page, the balance above a card that holds the chart.
+test("the balance sits in no card at 30 px, above the chart's 256 px card", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(60) });
+
+	await page.goto(`/accounts/${account.id}`);
+
+	const balance = page
+		.getByRole("region", { name: account.name, exact: true })
+		.locator(".amount-hero");
+	await expect(balance).toHaveText(euros(100_000));
+	await expect(balance).toHaveCSS("font-size", "30px");
+	await expect(page.locator('[data-slot="section"] .amount-hero')).toHaveCount(0);
+
+	const chartCard = page.getByRole("region", { name: "Historique du solde" });
+	await expect(chartCard).toHaveAttribute("data-slot", "section");
+	await expect(chartCard).toHaveCSS("border-radius", "12px");
+	await expect(chartCard).toHaveCSS("background-color", rgb("#ffffff"));
+	await expect(chartCard.getByRole("radiogroup", { name: "Période" })).toBeVisible();
+	await expect(chartCard.locator('[data-slot="chart"]')).toHaveCSS("height", "256px");
+
+	// Its tabs sit on the grey track, the current one on white.
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+	await expect(tabs.getByRole("tab", { selected: true })).toHaveCSS(
+		"background-color",
+		rgb("#ffffff"),
+	);
 });

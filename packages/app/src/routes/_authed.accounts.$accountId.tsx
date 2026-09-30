@@ -21,6 +21,7 @@ import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
+import { Section } from "@/components/Section";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -335,12 +336,12 @@ function AccountPage() {
 		<Page
 			icon={
 				account.data === undefined ? (
-					// The `md` tinted icon's box, so the title does not move once it loads.
-					<span className="grid size-[22px] shrink-0 place-items-center">
+					// The `lg` tinted icon's box, so the title does not move once it loads.
+					<span className="grid size-9 shrink-0 place-items-center">
 						<WalletIcon aria-hidden="true" className="size-4 text-muted-foreground" />
 					</span>
 				) : (
-					<TintedIcon subject={{ kind: "account", type: account.data.type }} />
+					<TintedIcon size="lg" subject={{ kind: "account", type: account.data.type }} />
 				)
 			}
 			title={account.data?.name ?? t("accountDetail.title")}
@@ -391,19 +392,19 @@ function AccountPage() {
 				</section>
 			)}
 
-			<section aria-labelledby="balance-heading" className="flex flex-col gap-3">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<h2 id="balance-heading" className="text-lg font-semibold">
-						{t("balances.title")}
-					</h2>
-					<PeriodToggle period={period} onPeriodChange={changePeriod} />
+			<Section
+				id="balance-heading"
+				title={t("balances.title")}
+				action={<PeriodToggle period={period} onPeriodChange={changePeriod} />}
+			>
+				<div className="flex flex-col gap-4 p-4">
+					<BalanceChart
+						history={balanceHistory}
+						summaryKey="balances.summary"
+						valueLabel={t("balances.balance")}
+					/>
 				</div>
-				<BalanceChart
-					history={balanceHistory}
-					summaryKey="balances.summary"
-					valueLabel={t("balances.balance")}
-				/>
-			</section>
+			</Section>
 
 			<Tabs value={tab} onValueChange={changeTab} className="gap-3">
 				<TabsList aria-label={t("accountDetail.tabs.label")}>

@@ -4,12 +4,12 @@ import { useResolvedTheme } from "@/lib/theme";
 import { resolveTint } from "@/lib/tint";
 import { cn } from "@/lib/utils";
 
-// Important sizes: a button's `[&_svg]:size-4` would otherwise stretch
-// the icon to its tile.
+// DESIGN.md's 20, 28 and 36 px, each with its own radius. Important sizes: a
+// button's `[&_svg]:size-4` would otherwise stretch the icon to its tile.
 const SIZES = {
-	sm: { box: "size-5", icon: "size-3!", letter: "text-[11px]" },
-	md: { box: "size-[22px]", icon: "size-[13px]!", letter: "text-[11px]" },
-	lg: { box: "size-8", icon: "size-4!", letter: "text-sm" },
+	sm: { box: "size-5 rounded-md", icon: "size-3!", letter: "text-xs" },
+	md: { box: "size-7 rounded-lg", icon: "size-4!", letter: "text-xs" },
+	lg: { box: "size-9 rounded-[10px]", icon: "size-5!", letter: "text-sm" },
 } as const;
 
 type TintedIconSize = keyof typeof SIZES;
@@ -36,7 +36,7 @@ export function TintedIcon({
 		<span
 			aria-hidden="true"
 			data-slot="tinted-icon"
-			className={cn("grid shrink-0 place-items-center rounded-md", sizes.box, className)}
+			className={cn("grid shrink-0 place-items-center", sizes.box, className)}
 			style={{ backgroundColor: tint.fill, color: tint.icon }}
 		>
 			{"icon" in tint.glyph ? (
