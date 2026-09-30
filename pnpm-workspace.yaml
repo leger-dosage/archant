@@ -9,12 +9,12 @@ packages:
 catalog:
   "@t3-oss/env-core": ^0.13.11
   "@types/node": ^24.13.6
-  better-auth: 1.7.6
+  better-auth: ^1.7.6
   drizzle-orm: ^0.45.2
   hono: ^4.13.9
-  react: 19.3.0
-  react-dom: 19.3.0
-  typescript: ~7.0.2
+  react: ^19.3.0
+  react-dom: ^19.3.0
+  typescript: ^7.0.2
   vitest: ^5.0.1
   zod: ^4.6.5
 

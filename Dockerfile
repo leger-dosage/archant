@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 
 # Node runs the server straight from its TypeScript source through type
 # stripping, so only the interface has a build step, and the image carries no
@@ -6,7 +6,7 @@
 # The interface is plain JavaScript, the same bundle for every platform, so it
 # builds on the machine running the build. Under emulation, as for the arm64
 # release image, it would take several times as long for the same files.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
 WORKDIR /app
 RUN corepack enable
 
@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm app build
 
-FROM node:24-alpine AS runner
+FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable

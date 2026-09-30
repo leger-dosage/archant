@@ -135,6 +135,26 @@ Outside a container, the server now listens on `127.0.0.1` only, unless `HOST` s
 
 From a checkout, `git pull` then `docker compose up --build --detach --wait` builds and runs the new code, with the same copy, named `-dev`. Without Docker, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev`: the copy lands in `backups/` beside `local.db`, which git ignores. `pnpm data migrate:local` migrates without a copy.
 
+### Verifying an image
+
+Every release image from `0.2.1` on carries a build provenance attestation: a statement, signed during the release workflow, that this repository's `.github/workflows/release.yml` built this exact digest from this tag. Before running a new release, check it:
+
+```bash
+gh attestation verify oci://ghcr.io/leger-dosage/archant:1.3.0 --repo leger-dosage/archant \
+  --signer-workflow leger-dosage/archant/.github/workflows/release.yml
+```
+
+The command needs the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login`, any account will do, even though the image itself pulls anonymously. It fails if the image was built anywhere else, by another workflow of the repository included, or changed after it was built. Releases before `0.2.1` carry no attestation, and were published before releases became immutable.
+
+The image also carries its software bill of materials, the list of every package inside it, and its build provenance, both readable from the registry:
+
+```bash
+docker buildx imagetools inspect ghcr.io/leger-dosage/archant:1.3.0 --format '{{json .SBOM}}'
+docker buildx imagetools inspect ghcr.io/leger-dosage/archant:1.3.0 --format '{{json .Provenance}}'
+```
+
+GitHub Releases are immutable: once published, a release's tag cannot move to another commit, nor be deleted while the release exists.
+
 ## Backups
 
 No free tier backs up your data for you, and this file holds your bank history. Schedule a copy to storage off the machine, and restore it once to check it works.

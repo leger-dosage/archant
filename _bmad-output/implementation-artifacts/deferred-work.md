@@ -179,3 +179,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-report-a-vulnerability-privately-protect-the-default-branch.md`
   summary: Check in CI that the job names of `ci.yml` match the required status checks of the ruleset « main: pull request and CI ».
   evidence: The ruleset lists contexts by name; an added job is silently not required, and only `AGENTS.md` and a comment in `ci.yml` say so. A step reading `repos/leger-dosage/archant/rulesets` fits Story 15.2 or 15.7, which edit the workflows.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-2-a-pinned-updated-and-attested-supply-chain.md`
+  summary: Pin by digest the images the release job pulls through action inputs: `tonistiigi/binfmt` (setup-qemu-action `image`), `moby/buildkit` (setup-buildx-action `driver-opts`) and the BuildKit SBOM scanner.
+  evidence: They run in the job holding `packages: write` under movable tags; Dependabot does not update action inputs, so a pin needs its own update path.

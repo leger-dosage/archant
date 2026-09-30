@@ -33,11 +33,11 @@ jobs:
       matrix:
         command: [lint:code, lint:format, typecheck, test]
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm ${{ matrix.command }}
@@ -49,11 +49,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # Playwright starts the API and the built interface itself, so nothing
@@ -62,7 +62,7 @@ jobs:
       - run: pnpm test:e2e
       # `vite build` regenerates the tracked routeTree.gen.ts; it must not change.
       - run: git diff --exit-code
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: failure()
         with:
           name: playwright-report
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # Every `docker compose` command interpolates the file, and the secret is
       # required there, so it is generated once for the whole job.
       - name: Generate a session secret
@@ -205,7 +205,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker://rhysd/actionlint:1.7.11
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # A tag or a base image tag can be moved to other code after review; a
+      # commit SHA or a digest cannot. The job that pushes the image holds
+      # `packages: write`, so every action and base image is pinned (AGENTS.md).
+      - name: Every action, base image and pnpm is pinned by content
+        run: |
+          status=0
+          if grep --recursive --include='*.yml' --include='*.yaml' --line-number --extended-regexp '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows \
+            | grep --invert-match --extended-regexp 'uses:[[:space:]]+(\./|docker://[^@[:space:]]+@sha256:[0-9a-f]{64}([[:space:]]|$)|[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]+v[0-9])'; then
+            status=1
+          fi
+          # Docker reads instructions and the syntax directive in any case.
+          if grep --with-filename --line-number --ignore-case --extended-regexp '^(FROM[[:space:]]|#[[:space:]]*syntax[[:space:]]*=)' Dockerfile \
+            | grep --invert-match --extended-regexp '@sha256:[0-9a-f]{64}([[:space:]]|$)'; then
+            status=1
+          fi
+          if ! grep --quiet --extended-regexp '"packageManager":[[:space:]]*"pnpm@[^"+]+\+sha512\.[0-9a-f]{128}"' package.json; then
+            echo "package.json: packageManager carries no +sha512. hash"
+            status=1
+          fi
+          exit "$status"
+      - uses: docker://rhysd/actionlint:1.7.11@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
         with:
           args: -color

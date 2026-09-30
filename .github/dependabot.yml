@@ -1,0 +1,39 @@
+# As Sure's: weekly, ten open pull requests at most per ecosystem. Every pin
+# in the workflows and the Dockerfile is a SHA or a digest (AGENTS.md), so
+# this is what keeps them current.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    # Each pull request runs the whole end-to-end suite: one for the week's
+    # minor and patch bumps rather than one per package. A major stays alone,
+    # since it is the one that breaks something.
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+        # TypeScript breaks the build in minor releases: its bump stays alone.
+        exclude-patterns: [typescript]
+    ignore:
+      # `patchedDependencies` in pnpm-workspace.yaml names `ofx-js@1.1.1`, so
+      # any other version fails the install until the patch is rewritten for
+      # it. Bumping ofx-js is a manual change, patch included.
+      - dependency-name: ofx-js
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    ignore:
+      # A Node major is a manual change: `.node-version`, `engines.node` and
+      # both `FROM` lines move together, which a bump of the digest alone
+      # would not do.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
