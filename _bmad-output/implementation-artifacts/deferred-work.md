@@ -182,3 +182,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-2-a-pinned-updated-and-attested-supply-chain.md`
   summary: Pin by digest the images the release job pulls through action inputs: `tonistiigi/binfmt` (setup-qemu-action `image`), `moby/buildkit` (setup-buildx-action `driver-opts`) and the BuildKit SBOM scanner.
   evidence: They run in the job holding `packages: write` under movable tags; Dependabot does not update action inputs, so a pin needs its own update path.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-2-a-pinned-updated-and-attested-supply-chain.md`
+  summary: Keep `docker://rhysd/actionlint` current: Dependabot does not update a `docker://` action.
+  evidence: The first `github_actions` run (36776315577) opened no pull request for `rhysd/actionlint:1.7.11` while `v1.7.12` is released. Replacing the step with a SHA-pinned action, or a `docker` ecosystem entry that reads it, would let Dependabot see it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-2-a-pinned-updated-and-attested-supply-chain.md`
+  summary: Ignore `@types/node` majors in `.github/dependabot.yml`, so the types follow the Node major of `.node-version`.
+  evidence: Dependabot's first npm run opened #104, `@types/node` 24.13.6 to 26.6.3, types for a Node the image and CI do not run.
