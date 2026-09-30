@@ -209,15 +209,20 @@ jobs:
       # A tag or a base image tag can be moved to other code after review; a
       # commit SHA or a digest cannot. The job that pushes the image holds
       # `packages: write`, so every action and base image is pinned (AGENTS.md).
-      - name: Every action and base image is pinned by digest
+      - name: Every action, base image and pnpm is pinned by content
         run: |
           status=0
-          if grep --line-number --extended-regexp '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows/*.yml \
-            | grep --invert-match --extended-regexp 'uses:[[:space:]]+(\./|[^@[:space:]]+@[0-9a-f]{40}([[:space:]]|$)|docker://[^@[:space:]]+@sha256:[0-9a-f]{64}([[:space:]]|$))'; then
+          if grep --recursive --include='*.yml' --include='*.yaml' --line-number --extended-regexp '^[[:space:]]*(-[[:space:]]+)?uses:' .github/workflows \
+            | grep --invert-match --extended-regexp 'uses:[[:space:]]+(\./|docker://[^@[:space:]]+@sha256:[0-9a-f]{64}([[:space:]]|$)|[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]+v[0-9])'; then
             status=1
           fi
-          if grep --with-filename --line-number --extended-regexp '^FROM[[:space:]]' Dockerfile \
+          # Docker reads instructions and the syntax directive in any case.
+          if grep --with-filename --line-number --ignore-case --extended-regexp '^(FROM[[:space:]]|#[[:space:]]*syntax[[:space:]]*=)' Dockerfile \
             | grep --invert-match --extended-regexp '@sha256:[0-9a-f]{64}([[:space:]]|$)'; then
+            status=1
+          fi
+          if ! grep --quiet --extended-regexp '"packageManager":[[:space:]]*"pnpm@[^"+]+\+sha512\.[0-9a-f]{128}"' package.json; then
+            echo "package.json: packageManager carries no +sha512. hash"
             status=1
           fi
           exit "$status"

@@ -111,7 +111,28 @@ Pins, resolved on 2026-09-30 as the commit each major tag in use pointed at, so 
 
 `attest-build-provenance` v4 creates an artifact storage record by default when it pushes to the registry, which needs `artifact-metadata: write`. The Boundaries allow `id-token` and `attestations` only, so the step sets `create-storage-record: false`; the attestation itself is unaffected.
 
-The Dockerfile's `# syntax=docker/dockerfile:1` frontend line is still a tag. The Boundaries and the pin check cover `FROM` lines only; left as is.
+After review, the Dockerfile's `# syntax=` frontend is pinned too, `docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32` (index digest); `docker buildx build --check .` loads it with no warning.
+
+Review fixes to the pin check: it scans `*.yml` and `*.yaml` under `.github/workflows`, reads `FROM` and `# syntax=` in any case, requires `# vX.Y.Z` after a SHA, and fails on a `packageManager` without `+sha512.`; the step is renamed « Every action, base image and pnpm is pinned by content ». Dependabot now keeps TypeScript out of the npm group and proposes no Node major; `docs/deployment.md` adds `--signer-workflow` and says attestations and immutable releases start with `0.2.1`; `AGENTS.md` names what is pinned and where the Node major lives.
+
+Probe after the fixes: the step's `run:` script extracted to `/tmp/pincheck.sh`, run in a temporary copy of `.github`, `Dockerfile` and `package.json` with one fixture each (macOS grep):
+
+```
+$ probe '.github/workflows/extra.yaml with `- uses: a/b@v1`'
+exit 1   .github/workflows/extra.yaml:6:      - uses: a/b@v1
+$ probe 'sed "s| # v5.1.0||" .github/workflows/ci.yml'
+exit 1   .github/workflows/ci.yml:36/52/79/208:      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+$ probe 'printf "from node:24\n" >> Dockerfile'
+exit 1   Dockerfile:76:from node:24
+$ probe 'packageManager "pnpm@10.34.5"'
+exit 1   package.json: packageManager carries no +sha512. hash
+$ probe '# syntax=docker/dockerfile:1 without digest'
+exit 1   Dockerfile:1:# syntax=docker/dockerfile:1
+$ probe 'real files'
+exit 0
+```
+
+Under GNU grep 3.11 (`ubuntu:24.04`, as on the runner): real files exit 0; the missing comment plus `FROM node:24` exit 1, naming the five lines. `actionlint` 1.7.11: no finding.
 
 Pin check run locally against the files before the pins: it listed the 17 `uses:` lines and both `FROM` lines and exited 1; after the pins it exits 0.
 

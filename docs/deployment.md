@@ -137,13 +137,14 @@ From a checkout, `git pull` then `docker compose up --build --detach --wait` bui
 
 ### Verifying an image
 
-Every release image carries a build provenance attestation: a statement, signed during the release workflow, that this repository's `.github/workflows/release.yml` built this exact digest from this tag. Before running a new release, check it:
+Every release image from `0.2.1` on carries a build provenance attestation: a statement, signed during the release workflow, that this repository's `.github/workflows/release.yml` built this exact digest from this tag. Before running a new release, check it:
 
 ```bash
-gh attestation verify oci://ghcr.io/leger-dosage/archant:1.3.0 --repo leger-dosage/archant
+gh attestation verify oci://ghcr.io/leger-dosage/archant:1.3.0 --repo leger-dosage/archant \
+  --signer-workflow leger-dosage/archant/.github/workflows/release.yml
 ```
 
-The command needs the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login`, any account will do, even though the image itself pulls anonymously. It fails if the image was built anywhere else, or changed after it was built.
+The command needs the [GitHub CLI](https://cli.github.com/) signed in with `gh auth login`, any account will do, even though the image itself pulls anonymously. It fails if the image was built anywhere else, by another workflow of the repository included, or changed after it was built. Releases before `0.2.1` carry no attestation, and were published before releases became immutable.
 
 The image also carries its software bill of materials, the list of every package inside it, and its build provenance, both readable from the registry:
 
@@ -152,7 +153,7 @@ docker buildx imagetools inspect ghcr.io/leger-dosage/archant:1.3.0 --format '{{
 docker buildx imagetools inspect ghcr.io/leger-dosage/archant:1.3.0 --format '{{json .Provenance}}'
 ```
 
-GitHub Releases are immutable: once published, a release's tag and notes cannot change.
+GitHub Releases are immutable: once published, a release's tag cannot move to another commit, nor be deleted while the release exists.
 
 ## Backups
 
