@@ -90,6 +90,8 @@ This application holds bank transactions. The bar is higher than the usual side 
 - Logs and error reports must never contain an amount tied to an identity, an IBAN, or an access token.
 - Dependencies stay few and popular. A new dependency needs a reason in the pull request description.
 
+A vulnerability is reported privately, as `SECURITY.md` says. Three repository rulesets guard what self-hosters pull. « main: pull request and CI » requires a pull request and every job of `ci.yml`; only an organisation administrator, the owner, bypasses it, so planning and tracking commits can reach `main` directly. « main: no rewrite » refuses a force push or a deletion of `main`, and « release tags » refuses moving or deleting a `v*` tag; neither has a bypass. The required checks are the job names of `ci.yml` (`lint:code`, `lint:format`, `typecheck`, `test`, `test:e2e`, `image`, `actionlint`): a pull request that renames or adds a job updates « main: pull request and CI » too, or every later pull request waits for a check that never reports. Secret scanning with push protection, Dependabot security updates and CodeQL's default setup run on the repository.
+
 ## Testing
 
 Vitest for unit and integration tests, Playwright for end-to-end. Coverage is expected to be high but stays pragmatic: the money paths (import, deduplication, balance computation, currency conversion, provider sync) are covered to the branch; wiring and presentational components are not padded with tests that assert nothing.
