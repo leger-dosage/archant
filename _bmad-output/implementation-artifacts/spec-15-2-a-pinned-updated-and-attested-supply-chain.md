@@ -2,7 +2,7 @@
 title: 'Story 15.2: A pinned, updated and attested supply chain'
 type: 'chore'
 created: '2026-09-30'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '68426a9d5f614201b9dde60b1e6f72d68ca050db'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -63,13 +63,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `.github/workflows/ci.yml` -- first the pin-check step, run locally against the current files to see it fail; then pin every action and `setup-node` from `.node-version`.
-- [ ] `.github/workflows/release.yml` -- pin, SBOM, provenance, attestation, permissions.
-- [ ] `Dockerfile`, `package.json`, `.node-version`, `.npmrc`, package manifests, catalog, `pnpm-lock.yaml` -- pins, engines and carets.
-- [ ] `.github/dependabot.yml` -- as in Boundaries, with a why-comment on the `ofx-js` ignore.
-- [ ] `docs/deployment.md`, `AGENTS.md` -- as in Boundaries.
-- [ ] Open the pull request, then `gh workflow run release.yml --ref <branch>`; paste the run id and result.
-- [ ] `gh api -X PUT repos/leger-dosage/archant/immutable-releases`, read back.
+- [x] `.github/workflows/ci.yml` -- first the pin-check step, run locally against the current files to see it fail; then pin every action and `setup-node` from `.node-version`.
+- [x] `.github/workflows/release.yml` -- pin, SBOM, provenance, attestation, permissions.
+- [x] `Dockerfile`, `package.json`, `.node-version`, `.npmrc`, package manifests, catalog, `pnpm-lock.yaml` -- pins, engines and carets.
+- [x] `.github/dependabot.yml` -- as in Boundaries, with a why-comment on the `ofx-js` ignore.
+- [x] `docs/deployment.md`, `AGENTS.md` -- as in Boundaries.
+- [x] Open the pull request, then `gh workflow run release.yml --ref <branch>`; paste the run id and result.
+- [x] `gh api -X PUT repos/leger-dosage/archant/immutable-releases`, read back.
 - [ ] After merge and the owner's `v0.2.1` tag: `gh attestation verify`, `docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1 --format '{{json .SBOM}}'`, and `gh release view v0.2.1 --json isImmutable`; paste the outputs.
 
 **Acceptance Criteria:**
@@ -91,6 +91,57 @@ Dependabot may not update a `docker://` reference inside a workflow. If its firs
 - `docker compose build --build-arg APP_VERSION=0.0.0` -- builds from the digest.
 
 ## Implementation Notes
+
+Pins, resolved on 2026-09-30 as the commit each major tag in use pointed at, so no action moves version:
+
+| Action | Version | SHA |
+|---|---|---|
+| `actions/checkout` | v5.1.0 | `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09` |
+| `pnpm/action-setup` | v4.3.0 | `b906affcce14559ad1aafd4ab0e942779e9f58b1` |
+| `actions/setup-node` | v5.0.0 | `a0853c24544627f65ddf259abe73b1d18a591444` |
+| `actions/upload-artifact` | v5.0.0 | `330a01c490aca151604b8cf639adc76d48f6c5d4` |
+| `docker/setup-qemu-action` | v3.7.0 | `c7c53464625b32c7a7e944ae62b3e17d2b600130` |
+| `docker/setup-buildx-action` | v3.12.0 | `8d2750c68a42422c14e847fe6c8ac0403b4cbd6f` |
+| `docker/login-action` | v3.7.0 | `c94ce9fb468520275223c153574b00df6fe4bcc9` |
+| `docker/metadata-action` | v5.10.0 | `c299e40c65443455700f0fdfc63efafe5b349051` |
+| `docker/build-push-action` | v6.19.2 | `10e90e3645eae34f1e60eeb005ba3a3d33f178e8` |
+| `actions/attest-build-provenance` | v4.2.2 (new, latest) | `4d101475d8b20a2381f78447822ac1eab6504dd8` |
+
+`pnpm/action-setup@v4` pointed at v4.3.0, not the newer v4.4.0, so v4.3.0 is pinned. `rhysd/actionlint:1.7.11` index `sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f`; `node:24-alpine` index `sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1`; pnpm 10.34.5 `dist.integrity` converted to hex.
+
+`attest-build-provenance` v4 creates an artifact storage record by default when it pushes to the registry, which needs `artifact-metadata: write`. The Boundaries allow `id-token` and `attestations` only, so the step sets `create-storage-record: false`; the attestation itself is unaffected.
+
+The Dockerfile's `# syntax=docker/dockerfile:1` frontend line is still a tag. The Boundaries and the pin check cover `FROM` lines only; left as is.
+
+Pin check run locally against the files before the pins: it listed the 17 `uses:` lines and both `FROM` lines and exited 1; after the pins it exits 0.
+
+Old Node: `pnpm install --frozen-lockfile` in `node:22-alpine` with the manifests:
+
+```
+Your Node version is incompatible with "/w".
+
+Expected version: >=24
+Got: v22.23.3
+
+This is happening because the package's manifest has an engines.node field specified.
+```
+
+`pnpm install` changed only the eight specifiers in `pnpm-lock.yaml`; no resolved version moved.
+
+Local verification: the full gate, `pnpm test:e2e` included (312 passed), green with no tracked change; `actionlint` 1.7.11 no finding; `docker compose build --build-arg APP_VERSION=0.0.0` loaded `node:24-alpine@sha256:ebfe2f…ec1c1`.
+
+Pull request: https://github.com/leger-dosage/archant/pull/93. All seven required checks pass, `image` building from the pinned base.
+
+Dry run: `gh workflow run release.yml --ref t3code/spec-story-15-2`, run `36723525775` (https://github.com/leger-dosage/archant/actions/runs/36723525775): success. `gate` and `publish` passed, the final build ran with `--attest type=provenance,mode=max` and `--attest type=sbom`, nothing was pushed, the attestation step and `release` were skipped.
+
+Immutable releases, `gh api -X PUT repos/leger-dosage/archant/immutable-releases` answered `204 No Content`; read back a few seconds later (the first read still said `false`):
+
+```
+$ gh api repos/leger-dosage/archant/immutable-releases
+{"enabled":true,"enforced_by_owner":false}
+```
+
+Pending, after merge: the owner's `v0.2.1` tag, then `gh attestation verify`, the SBOM inspect, `gh release view v0.2.1 --json isImmutable`, and the first Dependabot runs (`gh run list --event dynamic`), including whether Dependabot updates the `docker://` actionlint reference.
 
 ## Spec Change Log
 

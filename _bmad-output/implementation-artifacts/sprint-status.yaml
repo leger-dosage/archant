@@ -150,7 +150,7 @@ development_status:
 
   epic-15: in-progress
   15-1-report-a-vulnerability-privately-protect-the-default-branch: in-progress
-  15-2-a-pinned-updated-and-attested-supply-chain: in-progress
+  15-2-a-pinned-updated-and-attested-supply-chain: review
   15-3-welcome-a-contributor-and-a-self-hoster: backlog
   15-4-a-sign-in-that-cannot-be-held-hostage: backlog
   15-5-fast-at-ten-years-of-history: backlog
