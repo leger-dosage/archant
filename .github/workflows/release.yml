@@ -26,14 +26,18 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # The build provenance attestation: an OIDC token to sign it, and the
+      # right to record it on GitHub.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # arm64 for a Raspberry Pi or an Apple silicon machine at home. Only the
       # runner stage's production install runs emulated: the Dockerfile builds
       # the interface on the runner's own platform.
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         if: github.event_name == 'push'
         with:
           registry: ghcr.io
@@ -43,7 +47,7 @@ jobs:
       # its fixes, or takes whatever is newest. The OCI labels, license
       # included, are read from the repository.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/leger-dosage/archant
           flavor: latest=false
@@ -58,7 +62,7 @@ jobs:
       # version no release will ever carry rather than the branch name, which
       # the server would refuse.
       - name: Build the arm64 image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/arm64
@@ -88,7 +92,11 @@ jobs:
           echo "last body: $body"
           docker logs arm64-probe
           exit 1
-      - uses: docker/build-push-action@v6
+      # The SBOM and the maximal provenance travel inside the image index, so a
+      # self-hoster reads what the image holds and how it was built from the
+      # registry alone.
+      - id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -98,6 +106,20 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
+      # A signed statement, kept on GitHub and pushed beside the image, that
+      # this workflow at this tag built this digest: `gh attestation verify`
+      # checks it (docs/deployment.md). A dry run pushed nothing to attest.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: github.event_name == 'push'
+        with:
+          subject-name: ghcr.io/leger-dosage/archant
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          # A storage record would need `artifact-metadata: write` on top; the
+          # attestation alone is what `gh attestation verify` reads.
+          create-storage-record: false
 
   release:
     needs: publish

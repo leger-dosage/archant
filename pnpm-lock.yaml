@@ -13,7 +13,7 @@ catalogs:
       specifier: ^24.13.6
       version: 24.13.6
     better-auth:
-      specifier: 1.7.6
+      specifier: ^1.7.6
       version: 1.7.6
     drizzle-orm:
       specifier: ^0.45.2
@@ -22,13 +22,13 @@ catalogs:
       specifier: ^4.13.9
       version: 4.13.9
     react:
-      specifier: 19.3.0
+      specifier: ^19.3.0
       version: 19.3.0
     react-dom:
-      specifier: 19.3.0
+      specifier: ^19.3.0
       version: 19.3.0
     typescript:
-      specifier: ~7.0.2
+      specifier: ^7.0.2
       version: 7.0.2
     vitest:
       specifier: ^5.0.1
@@ -61,7 +61,7 @@ importers:
         specifier: ^7.0.2003
         version: 7.0.2003
       typescript:
-        specifier: ~7.0.2
+        specifier: ^7.0.2
         version: 7.0.2
 
   packages/api:
@@ -94,7 +94,7 @@ importers:
         specifier: 1.1.1
         version: 1.1.1(patch_hash=78d86cc61425e2a51752a271531d2d75e52e76c634a38ff6af9c5eb582f7b806)
       papaparse:
-        specifier: 5.7.0
+        specifier: ^5.7.0
         version: 5.7.0
       pino:
         specifier: ^10.3.1
@@ -167,7 +167,7 @@ importers:
         specifier: ^1.48.0
         version: 1.48.0(react@19.3.0)
       qrcode.react:
-        specifier: 4.2.0
+        specifier: ^4.2.0
         version: 4.2.0(react@19.3.0)
       radix-ui:
         specifier: ^1.6.7
@@ -191,7 +191,7 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0
       recharts:
-        specifier: 3.10.1
+        specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@19.3.0)(react@19.3.0)(redux@5.0.1)
       sonner:
         specifier: ^2.0.8
