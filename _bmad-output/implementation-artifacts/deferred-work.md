@@ -176,3 +176,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-13-12-a-bank-that-sends-no-account-currency.md`
   summary: A renewal whose session drops an account as unreadable marks its stored row unlisted, so a linked account stops syncing.
   evidence: `completeConnection` unlists every stored hash missing from `session.accounts`; a dropped account is missing too. Pre-existing since Epic 10; Story 13.12 only logs the drop.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-1-report-a-vulnerability-privately-protect-the-default-branch.md`
+  summary: Check in CI that the job names of `ci.yml` match the required status checks of the ruleset « main: pull request and CI ».
+  evidence: The ruleset lists contexts by name; an added job is silently not required, and only `AGENTS.md` and a comment in `ci.yml` say so. A step reading `repos/leger-dosage/archant/rulesets` fits Story 15.2 or 15.7, which edit the workflows.
