@@ -2,7 +2,7 @@
 title: 'Story 15.2: A pinned, updated and attested supply chain'
 type: 'chore'
 created: '2026-09-30'
-status: 'in-review'
+status: 'done'
 baseline_commit: '68426a9d5f614201b9dde60b1e6f72d68ca050db'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -70,7 +70,7 @@ context:
 - [x] `docs/deployment.md`, `AGENTS.md` -- as in Boundaries.
 - [x] Open the pull request, then `gh workflow run release.yml --ref <branch>`; paste the run id and result.
 - [x] `gh api -X PUT repos/leger-dosage/archant/immutable-releases`, read back.
-- [ ] After merge and the owner's `v0.2.1` tag: `gh attestation verify`, `docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1 --format '{{json .SBOM}}'`, and `gh release view v0.2.1 --json isImmutable`; paste the outputs.
+- [x] After merge and the owner's `v0.2.1` tag: `gh attestation verify`, `docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1 --format '{{json .SBOM}}'`, and `gh release view v0.2.1 --json isImmutable`; paste the outputs.
 
 **Acceptance Criteria:**
 - Given the pull request, when CI runs, then all seven required checks pass, the `image` job building from the pinned base.
@@ -162,7 +162,33 @@ $ gh api repos/leger-dosage/archant/immutable-releases
 {"enabled":true,"enforced_by_owner":false}
 ```
 
-Pending, after merge: the owner's `v0.2.1` tag, then `gh attestation verify`, the SBOM inspect, `gh release view v0.2.1 --json isImmutable`, and the first Dependabot runs (`gh run list --event dynamic`), including whether Dependabot updates the `docker://` actionlint reference.
+After merge: pull request #93 was squash-merged as `410006f` on 2026-09-30, at the owner's request; `v0.2.1` was pushed on it and release run 36776316789 succeeded. Read-back:
+
+```text
+$ gh attestation verify oci://ghcr.io/leger-dosage/archant:0.2.1 --repo leger-dosage/archant --signer-workflow leger-dosage/archant/.github/workflows/release.yml
+exit 0
+$ gh attestation verify ... --format json | jq '.[] | {digest, signer, ref}'
+{"digest":{"sha256":"9808dd4899edb68509de51ebfeb5a64389316ea6958124632bf18c1adae3a1d8"},"signer":"https://github.com/leger-dosage/archant/.github/workflows/release.yml@refs/tags/v0.2.1","ref":"refs/tags/v0.2.1"}
+$ gh attestation verify ... --signer-workflow leger-dosage/archant/.github/workflows/ci.yml
+exit 1
+$ docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:9808dd4899edb68509de51ebfeb5a64389316ea6958124632bf18c1adae3a1d8
+$ docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1 --format '{{json .SBOM}}' | jq '{platforms: keys, packages: (.["linux/amd64"].SPDX.packages | length)}'
+{"platforms":["linux/amd64","linux/arm64"],"packages":334}
+$ docker buildx imagetools inspect ghcr.io/leger-dosage/archant:0.2.1 --format '{{json .Provenance}}' | jq '.["linux/amd64"].SLSA | keys'
+["buildDefinition","runDetails"]
+$ gh release view v0.2.1 --json tagName,isImmutable
+{"isImmutable":true,"tagName":"v0.2.1"}
+$ gh run list --event dynamic   # Dependabot Updates, first runs after merge
+completed success docker in /. - Update #1600865358          36776319053
+completed success npm_and_yarn in /. - Update #1600865325    36776317442
+completed success github_actions in /. - Update #1600865347  36776315577
+```
+
+Dependabot opened pull requests #94 to #104: nine action majors, one `minor-and-patch` group of six npm updates, and `@types/node` 24 to 26. No pull request for `ofx-js` or `typescript`, and none for `node:24-alpine`, whose digest was current. None for `docker://rhysd/actionlint:1.7.11` although `v1.7.12` is out: Dependabot does not update a `docker://` action, recorded in `deferred-work.md`. `@types/node` 26 describes a Node the project does not run; its major should follow `.node-version`, also recorded there.
+
+`v0.2.1` is a lightweight tag where `v0.2.0` is annotated; « release tags » forbids replacing it, and the release workflow reads either.
 
 ## Spec Change Log
 
