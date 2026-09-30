@@ -42,7 +42,7 @@
 	"devDependencies": {
 		"@types/node": "catalog:",
 		"@types/papaparse": "^5.5.2",
-		"@vitest/coverage-v8": "^5.0.1",
+		"@vitest/coverage-v8": "^5.0.2",
 		"msw": "^2.15.0",
 		"typescript": "catalog:",
 		"vitest": "catalog:"

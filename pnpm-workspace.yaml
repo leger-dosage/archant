@@ -15,7 +15,7 @@ catalog:
   react: ^19.3.0
   react-dom: ^19.3.0
   typescript: ^7.0.2
-  vitest: ^5.0.1
+  vitest: ^5.0.2
   zod: ^4.6.5
 
 # esbuild ships a platform binary through its install script. Without this
