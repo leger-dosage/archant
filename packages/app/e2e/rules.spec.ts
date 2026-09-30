@@ -261,7 +261,11 @@ test("a narrow screen says the page needs a computer", async ({ page }) => {
 	await page.setViewportSize({ width: 375, height: 800 });
 	await page.goto(PAGE);
 
-	await expect(page.getByText("Disponible sur ordinateur")).toBeVisible();
+	// Story 14.4: a card holding its sentence, as DESIGN.md's empty note.
+	const note = page.locator('[data-slot="empty-note"]', { hasText: "Disponible sur ordinateur" });
+	await expect(note).toBeVisible();
+	await expect(note).toHaveCSS("border-radius", "12px");
+	await expect(note).toHaveCSS("border-top-style", "solid");
 	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toHaveCount(0);
 });
 
@@ -713,10 +717,11 @@ test("a category created from the action's picker lands at the top of Dépenses"
 
 	await page.goto("/settings/categories");
 	const expenses = page.getByRole("region", { name: "Dépenses", exact: true });
-	// A top-level row sits in the group's own list, not in a parent's nested one.
+	// A top-level row sits in the group's own list, inside its white block, not
+	// in a parent's nested one.
 	await expect(
 		expenses
-			.locator(":scope > ul > li > div")
+			.locator(":scope > div > ul > li > div")
 			.getByRole("button", { name: `Actions pour ${name}`, exact: true }),
 	).toBeVisible();
 });

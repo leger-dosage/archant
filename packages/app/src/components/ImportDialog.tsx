@@ -297,7 +297,7 @@ function Preview({
 					{IMPORT_GROUPS.map((group) => (
 						<TabsTrigger key={group} value={group}>
 							{t(`imports.groups.${group}`)}{" "}
-							<span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm bg-badge px-1 text-xs text-foreground-secondary tabular-nums">
+							<span className="inline-flex h-5.5 min-w-5.5 items-center justify-center rounded-md bg-badge px-1.5 text-xs text-foreground-secondary tabular-nums">
 								{counts[group]}
 							</span>
 						</TabsTrigger>

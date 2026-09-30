@@ -3,9 +3,11 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./fixtures.ts";
 
 // Story 12.4: a page-level list with nothing in it shows DESIGN.md's empty
-// state inside its section: a tinted icon, a heading, a sentence and the one
-// button that fills it. The shared database already holds other tests' rows,
-// so each list is emptied as the API would answer it.
+// state: a tinted icon, a heading, a sentence and the one button that fills
+// it. Since Story 14.4 it is a card in the list's place, or, where the list
+// has several groups, inside its group's white block. The shared database
+// already holds other tests' rows, so each list is emptied as the API would
+// answer it.
 
 /** Answers `GET` on exactly `path` with an empty list; everything else reaches the server. */
 async function emptyList(page: Page, path: string) {

@@ -9,9 +9,10 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
-import { SECTION_TABLE_INSET, Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,7 @@ function RecurringPage() {
 	return (
 		<Page
 			title={t("recurring.title")}
+			description={t("recurring.description")}
 			actions={
 				// An empty list offers its own, the one way forward.
 				recurring.data !== undefined && list.length === 0 ? undefined : (
@@ -139,13 +141,11 @@ function RecurringPage() {
 				)
 			}
 		>
-			<p className="max-w-2xl text-sm text-muted-foreground">{t("recurring.description")}</p>
-
 			{recurring.isPending && (
 				<div className="flex flex-col gap-2">
-					<Skeleton className="h-9 w-full" />
-					<Skeleton className="h-9 w-full" />
-					<Skeleton className="h-9 w-full" />
+					<Skeleton className="h-14 w-full" />
+					<Skeleton className="h-14 w-full" />
+					<Skeleton className="h-14 w-full" />
 				</div>
 			)}
 
@@ -158,85 +158,101 @@ function RecurringPage() {
 				</div>
 			)}
 
-			{recurring.data !== undefined && (
-				<Section title={t("recurring.list")}>
-					{list.length === 0 ? (
-						<EmptyState
-							icon={{ kind: "transfer", icon: RepeatIcon }}
-							title={t("recurring.empty.title")}
-							description={t("recurring.empty.description")}
-							action={
-								<Button disabled={detect.isPending} onClick={runDetection}>
-									{t("recurring.empty.action")}
-								</Button>
-							}
-						/>
-					) : (
-						<Table aria-label={t("recurring.title")} className={SECTION_TABLE_INSET}>
-							<TableHeader>
-								<TableRow>
-									<TableHead scope="col">{t("recurring.columns.name")}</TableHead>
-									<TableHead scope="col">{t("recurring.columns.account")}</TableHead>
-									<TableHead scope="col" className="text-right">
-										{t("recurring.columns.amount")}
-									</TableHead>
-									<TableHead scope="col">{t("recurring.columns.next")}</TableHead>
-									<TableHead scope="col">{t("recurring.columns.status")}</TableHead>
-									<TableHead scope="col">
-										<span className="sr-only">{t("recurring.columns.actions")}</span>
-									</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{list.map((item) => (
-									<TableRow key={item.id} className="h-9">
-										<TableCell className="max-w-72">
-											<span className="flex min-w-0 items-center gap-2">
-												<TintedIcon subject={{ kind: "merchant", name: nameOf(item) }} size="sm" />
-												<span className="truncate">{nameOf(item)}</span>
-											</span>
-										</TableCell>
-										<TableCell className="max-w-56">
-											<span className="flex min-w-0 items-center gap-2">
-												<TintedIcon
-													subject={{ kind: "account", type: item.accountType }}
-													size="sm"
-												/>
-												<span className="truncate">{item.accountName}</span>
-											</span>
-										</TableCell>
-										<TableCell className="text-right">
-											<Money amount={item.amount} currency={item.currency} signed />
-										</TableCell>
-										<TableCell className="whitespace-nowrap">
-											{formatTableDate(item.nextExpectedDate)}
-										</TableCell>
-										<TableCell>
-											<span className="flex items-center gap-1.5">
-												{item.status !== "dismissed" && (
-													<StatusBadge status={BADGES[item.status]} />
-												)}
-												{item.manual && <StatusBadge status="recurringManual" />}
-											</span>
-										</TableCell>
-										<TableCell className="w-10 text-right">
-											<RecurringActions
-												item={item}
-												disabled={setStatus.isPending}
-												onSet={(status) => move(item, status)}
-												onDismiss={() => {
-													setDismissing(item);
-													setDismissOpen(true);
-												}}
-											/>
-										</TableCell>
+			{recurring.data !== undefined &&
+				(list.length === 0 ? (
+					<EmptyState
+						level={2}
+						icon={{ kind: "transfer", icon: RepeatIcon }}
+						title={t("recurring.empty.title")}
+						description={t("recurring.empty.description")}
+						action={
+							<Button disabled={detect.isPending} onClick={runDetection}>
+								{t("recurring.empty.action")}
+							</Button>
+						}
+					/>
+				) : (
+					<ListCard>
+						<InsetGroup level={2} title={t("recurring.list")} count={list.length}>
+							<Table aria-label={t("recurring.title")} className={GROUP_TABLE_INSET}>
+								<TableHeader>
+									<TableRow className="border-line hover:bg-transparent">
+										<TableHead scope="col" className="type-overline text-muted-foreground">
+											{t("recurring.columns.name")}
+										</TableHead>
+										<TableHead scope="col" className="type-overline text-muted-foreground">
+											{t("recurring.columns.account")}
+										</TableHead>
+										<TableHead
+											scope="col"
+											className="type-overline text-right text-muted-foreground"
+										>
+											{t("recurring.columns.amount")}
+										</TableHead>
+										<TableHead scope="col" className="type-overline text-muted-foreground">
+											{t("recurring.columns.next")}
+										</TableHead>
+										<TableHead scope="col" className="type-overline text-muted-foreground">
+											{t("recurring.columns.status")}
+										</TableHead>
+										<TableHead scope="col">
+											<span className="sr-only">{t("recurring.columns.actions")}</span>
+										</TableHead>
 									</TableRow>
-								))}
-							</TableBody>
-						</Table>
-					)}
-				</Section>
-			)}
+								</TableHeader>
+								<TableBody>
+									{list.map((item) => (
+										<TableRow key={item.id} className="h-14 border-line hover:bg-hover">
+											<TableCell className="max-w-72">
+												<span className="flex min-w-0 items-center gap-3">
+													<TintedIcon
+														subject={{ kind: "merchant", name: nameOf(item) }}
+														size="md"
+													/>
+													<span className="truncate font-medium">{nameOf(item)}</span>
+												</span>
+											</TableCell>
+											<TableCell className="max-w-56">
+												<span className="flex min-w-0 items-center gap-2">
+													<TintedIcon
+														subject={{ kind: "account", type: item.accountType }}
+														size="sm"
+													/>
+													<span className="truncate">{item.accountName}</span>
+												</span>
+											</TableCell>
+											<TableCell className="text-right">
+												<Money amount={item.amount} currency={item.currency} signed />
+											</TableCell>
+											<TableCell className="whitespace-nowrap">
+												{formatTableDate(item.nextExpectedDate)}
+											</TableCell>
+											<TableCell>
+												<span className="flex items-center gap-1.5">
+													{item.status !== "dismissed" && (
+														<StatusBadge status={BADGES[item.status]} />
+													)}
+													{item.manual && <StatusBadge status="recurringManual" />}
+												</span>
+											</TableCell>
+											<TableCell className="w-10 text-right">
+												<RecurringActions
+													item={item}
+													disabled={setStatus.isPending}
+													onSet={(status) => move(item, status)}
+													onDismiss={() => {
+														setDismissing(item);
+														setDismissOpen(true);
+													}}
+												/>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</InsetGroup>
+					</ListCard>
+				))}
 
 			{dismissing !== null && (
 				<ConfirmDialog

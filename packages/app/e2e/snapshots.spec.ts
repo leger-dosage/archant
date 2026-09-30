@@ -139,7 +139,9 @@ test("a home's new estimated value sets its balance and history, with no transac
 	await expect(header(page, account.name)).toContainText(euros(33_500_000));
 
 	await page.getByRole("tab", { name: "Opérations" }).click();
-	await expect(page.getByText("Aucune opération.")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Aucune opération pour l'instant" }),
+	).toBeVisible();
 	await page.getByRole("button", { name: "Voir le tableau" }).click();
 	const table = page.getByRole("table");
 	await expect(table.getByRole("row").nth(1)).toContainText(euros(33_500_000));

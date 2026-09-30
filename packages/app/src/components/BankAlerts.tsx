@@ -67,7 +67,8 @@ function AlertStrip({
 	};
 
 	return (
-		<div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+		// Sure's `DS::Alert`: a bordered strip, a 16 px icon and the sentence at 14 px.
+		<div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
 			<TriangleAlertIcon className="size-4 shrink-0" aria-hidden />
 			<p className="min-w-0 flex-1">{t(`banks.alerts.${alert}`, { bank, date })}</p>
 			{alert === "sync_stale" ? (

@@ -26,7 +26,9 @@ test("a transaction is added, edited and deleted, and the balance follows each",
 
 	await page.goto(`/accounts/${account.id}`);
 	await expect(header(page, account.name)).toContainText(euros(100_000));
-	await expect(page.getByText("Aucune opération.")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Aucune opération pour l'instant" }),
+	).toBeVisible();
 
 	const sheet = await openNewSheet(page);
 	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(2)));

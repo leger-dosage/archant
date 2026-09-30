@@ -11,11 +11,12 @@ import { z } from "zod";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { EmptyState } from "@/components/EmptyState";
+import { EmptyNote, EmptyState } from "@/components/EmptyState";
+import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { RuleDialog } from "@/components/RuleDialog";
-import { SECTION_TABLE_INSET, Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -112,12 +113,10 @@ function RuleRow({
 	const title = rule.name ?? summary;
 
 	return (
-		<div className="flex min-h-14 items-center gap-3 px-4 py-2">
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
 			<div className="flex min-w-0 flex-1 flex-col">
-				<span className="truncate">{title}</span>
-				{rule.name !== null && (
-					<span className="truncate text-sm text-muted-foreground">{summary}</span>
-				)}
+				<span className="truncate font-medium">{title}</span>
+				{rule.name !== null && <span className="truncate text-muted-foreground">{summary}</span>}
 			</div>
 			<Switch
 				checked={rule.enabled}
@@ -178,55 +177,66 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 	const labelOf = (run: RuleRunData) => run.rule.name ?? ruleSummary(run.rule, names, t);
 
 	return (
-		<div className="flex max-w-3xl flex-col gap-3">
-			<Section id="rule-runs" title={t("rules.runs.title")}>
-				{runs.isPending && (
-					<div className="p-4">
-						<Skeleton className="h-9 w-full" />
-					</div>
-				)}
+		<div className="flex flex-col gap-3">
+			<ListCard>
+				<InsetGroup
+					level={2}
+					id="rule-runs"
+					title={t("rules.runs.title")}
+					{...(data === undefined ? {} : { count: data.total })}
+				>
+					{runs.isPending && (
+						<div className="p-4">
+							<Skeleton className="h-14 w-full" />
+						</div>
+					)}
 
-				{runs.isError && (
-					<div role="alert" className="flex flex-col items-start gap-3 p-4">
-						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(runs.error)}`)}</p>
-						<Button variant="outline" onClick={() => void runs.refetch()}>
-							{t("common.retry")}
-						</Button>
-					</div>
-				)}
+					{runs.isError && (
+						<div role="alert" className="flex flex-col items-start gap-3 p-4">
+							<p className="text-muted-foreground">{t(`errors.${errorCodeOf(runs.error)}`)}</p>
+							<Button variant="outline" onClick={() => void runs.refetch()}>
+								{t("common.retry")}
+							</Button>
+						</div>
+					)}
 
-				{/* A secondary list: a sentence, no action, as in Sure. */}
-				{data !== undefined && data.total === 0 && (
-					<p className="px-4 py-3 text-sm text-muted-foreground">{t("rules.runs.empty")}</p>
-				)}
+					{/* A secondary list: a sentence, no action, as in Sure. */}
+					{data !== undefined && data.total === 0 && (
+						<p className="px-4 py-4 text-muted-foreground">{t("rules.runs.empty")}</p>
+					)}
 
-				{data !== undefined && data.total > 0 && (
-					<Table aria-labelledby="rule-runs" className={SECTION_TABLE_INSET}>
-						<TableHeader>
-							<TableRow>
-								<TableHead scope="col">{t("rules.runs.columns.date")}</TableHead>
-								<TableHead scope="col">{t("rules.runs.columns.rule")}</TableHead>
-								<TableHead scope="col" className="text-right">
-									{t("rules.runs.columns.matched")}
-								</TableHead>
-								<TableHead scope="col" className="text-right">
-									{t("rules.runs.columns.changed")}
-								</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{data.items.map((run) => (
-								<TableRow key={run.id} className="h-9">
-									<TableCell className="whitespace-nowrap">{dayOf(run.executedAt)}</TableCell>
-									<TableCell className="max-w-96 truncate">{labelOf(run)}</TableCell>
-									<TableCell className="text-right tabular-nums">{run.matchedCount}</TableCell>
-									<TableCell className="text-right tabular-nums">{run.changedCount}</TableCell>
+					{data !== undefined && data.total > 0 && (
+						<Table aria-labelledby="rule-runs" className={GROUP_TABLE_INSET}>
+							<TableHeader>
+								<TableRow className="border-line hover:bg-transparent">
+									<TableHead scope="col" className="type-overline text-muted-foreground">
+										{t("rules.runs.columns.date")}
+									</TableHead>
+									<TableHead scope="col" className="type-overline text-muted-foreground">
+										{t("rules.runs.columns.rule")}
+									</TableHead>
+									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
+										{t("rules.runs.columns.matched")}
+									</TableHead>
+									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
+										{t("rules.runs.columns.changed")}
+									</TableHead>
 								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				)}
-			</Section>
+							</TableHeader>
+							<TableBody>
+								{data.items.map((run) => (
+									<TableRow key={run.id} className="h-14 border-line hover:bg-hover">
+										<TableCell className="whitespace-nowrap">{dayOf(run.executedAt)}</TableCell>
+										<TableCell className="max-w-96 truncate">{labelOf(run)}</TableCell>
+										<TableCell className="text-right tabular-nums">{run.matchedCount}</TableCell>
+										<TableCell className="text-right tabular-nums">{run.changedCount}</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
+				</InsetGroup>
+			</ListCard>
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
@@ -349,6 +359,7 @@ function RulesPage() {
 	return (
 		<Page
 			title={t("rules.title")}
+			description={t("rules.description")}
 			actions={
 				desktop ? (
 					<>
@@ -367,16 +378,10 @@ function RulesPage() {
 				) : undefined
 			}
 		>
-			<p className="max-w-2xl text-sm text-muted-foreground">{t("rules.description")}</p>
-
-			{!desktop && (
-				<p className="rounded-lg border border-dashed p-8 text-muted-foreground">
-					{t("rules.mobile")}
-				</p>
-			)}
+			{!desktop && <EmptyNote>{t("rules.mobile")}</EmptyNote>}
 
 			{desktop && !ready && failed === undefined && (
-				<div className="flex max-w-3xl flex-col gap-2">
+				<div className="flex flex-col gap-2">
 					<Skeleton className="h-14 w-full" />
 					<Skeleton className="h-14 w-full" />
 				</div>
@@ -402,33 +407,32 @@ function RulesPage() {
 				ready &&
 				failed === undefined &&
 				(list.length === 0 ? (
-					<Section title={t("rules.list")} className="max-w-3xl">
-						<EmptyState
-							icon={{ kind: "transfer", icon: ListFilterIcon }}
-							title={t("rules.empty.title")}
-							description={t("rules.empty.description")}
-							action={
-								<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
-							}
-						/>
-					</Section>
+					<EmptyState
+						level={2}
+						icon={{ kind: "transfer", icon: ListFilterIcon }}
+						title={t("rules.empty.title")}
+						description={t("rules.empty.description")}
+						action={<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>}
+					/>
 				) : (
-					<Section title={t("rules.list")} className="max-w-3xl">
-						<ul aria-label={t("rules.title")} className="divide-y divide-line">
-							{list.map((item) => (
-								<li key={item.id}>
-									<RuleRow
-										rule={item}
-										summary={summaryOf(item)}
-										onEdit={() => openDialog({ action: "edit", id: item.id })}
-										onApply={() => void askToApply(item)}
-										applyDisabled={previewing}
-										onDelete={() => openDialog({ action: "delete", id: item.id })}
-									/>
-								</li>
-							))}
-						</ul>
-					</Section>
+					<ListCard>
+						<InsetGroup level={2} title={t("rules.list")} count={list.length}>
+							<ul aria-label={t("rules.title")} className="divide-y divide-line">
+								{list.map((item) => (
+									<li key={item.id}>
+										<RuleRow
+											rule={item}
+											summary={summaryOf(item)}
+											onEdit={() => openDialog({ action: "edit", id: item.id })}
+											onApply={() => void askToApply(item)}
+											applyDisabled={previewing}
+											onDelete={() => openDialog({ action: "delete", id: item.id })}
+										/>
+									</li>
+								))}
+							</ul>
+						</InsetGroup>
+					</ListCard>
 				))}
 
 			{desktop && ready && (opened?.action === "add" || opened?.action === "edit") && (

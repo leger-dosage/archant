@@ -314,9 +314,8 @@ export function BalanceChart({ history, summaryKey, valueLabel, height = 256 }: 
 			)}
 
 			{data !== undefined && data.points.length === 0 && (
-				<p className="rounded-lg border border-dashed p-8 text-muted-foreground">
-					{t("balances.empty")}
-				</p>
+				// The chart's card frames it already.
+				<p className="py-8 text-muted-foreground">{t("balances.empty")}</p>
 			)}
 
 			{data !== undefined && data.points.length > 0 && (

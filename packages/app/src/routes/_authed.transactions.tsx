@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { BulkBar } from "@/components/BulkBar";
+import { EmptyNote } from "@/components/EmptyState";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
@@ -267,18 +268,19 @@ function OperationsPage() {
 				)}
 
 				{data !== undefined && data.total === 0 && !filtered && (
-					<div className="rounded-lg border border-dashed p-8">
-						<p className="text-muted-foreground">{t("operations.empty")}</p>
-					</div>
+					// Inside the list's card, which frames it already.
+					<EmptyNote flush className="py-6 text-center">
+						{t("operations.empty")}
+					</EmptyNote>
 				)}
 
 				{data !== undefined && data.total === 0 && filtered && (
-					<div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-8">
-						<p className="text-muted-foreground">{t("operations.noMatch")}</p>
+					<EmptyNote flush className="flex flex-col items-center gap-3 py-6 text-center">
+						<p>{t("operations.noMatch")}</p>
 						<Button variant="outline" onClick={clear}>
 							{t("operations.clearFilters")}
 						</Button>
-					</div>
+					</EmptyNote>
 				)}
 
 				{data !== undefined && data.total > 0 && (

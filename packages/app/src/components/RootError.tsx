@@ -27,7 +27,7 @@ export function RootError({ error, reset }: ErrorComponentProps) {
 
 	return (
 		<OutsideShell className="flex max-w-md flex-col gap-4">
-			<h1 className="type-display">
+			<h1 className="page-title">
 				{apiDown ? t("startError.apiDownTitle") : t("startError.title")}
 			</h1>
 			<p className="text-sm text-muted-foreground">

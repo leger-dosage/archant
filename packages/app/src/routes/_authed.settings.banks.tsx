@@ -24,6 +24,8 @@ import type { BankCountry } from "@archant/data/bank-countries";
 import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
 
 import { EmptyState } from "@/components/EmptyState";
+import { InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -264,9 +266,10 @@ function CredentialsForm({ setup }: { setup: BankSetupData }) {
 				</ol>
 
 				{locked && (
+					// Sure's `DS::Alert`, as the bank alerts above the page.
 					<div
 						role="status"
-						className="flex gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
+						className="flex gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
 					>
 						<LockIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
 						<div className="flex flex-col gap-1">
@@ -591,74 +594,86 @@ function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => 
 	const list: BankConnectionData[] = connections.data ?? [];
 
 	return (
-		<Section id="bank-connections-title" title={t("banks.connections")}>
-			{connections.isPending && (
-				<div className="p-4">
-					<Skeleton className="h-14 w-full" />
-				</div>
-			)}
-			{connections.isError && (
-				<p role="alert" className="p-4 text-sm text-muted-foreground">
-					{t(`errors.${errorCodeOf(connections.error)}`)}
-				</p>
-			)}
-			{connections.data !== undefined &&
-				(list.length === 0 ? (
-					<EmptyState
-						icon={{ kind: "transfer", icon: LandmarkIcon }}
-						title={t("banks.noConnections.title")}
-						description={t("banks.noConnections.description")}
-						action={
-							<Button onClick={(event) => onChooseBank(event.currentTarget)}>
-								{t("banks.noConnections.action")}
-							</Button>
-						}
-					/>
-				) : (
-					<ul aria-label={t("banks.connections")} className="divide-y divide-line">
-						{list.map((connection) => (
-							<li key={connection.id}>
-								<Link
-									to="/settings/banks/$connectionId"
-									params={{ connectionId: connection.id }}
-									aria-label={t("banks.manage", { name: connection.institutionName })}
-									className="flex items-center gap-4 px-4 py-3 transition-colors outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50"
-								>
-									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-										<span className="flex flex-wrap items-center gap-2">
-											<span className="font-medium">{connection.institutionName}</span>
-											{connection.alert !== null && (
-												<StatusBadge status={ALERT_BADGES[connection.alert]} />
-											)}
-										</span>
-										<span className="text-sm text-muted-foreground">
-											{countryName(connection.country)}
-											{/* An ended consent has no date left to show: its badge says it. */}
-											{connection.alert !== "consent_expired" &&
-												connection.consentExpiresAt !== null && (
-													<>
-														{" · "}
-														{t("banks.consentUntil", {
-															date: consentDate.format(new Date(connection.consentExpiresAt)),
-														})}
-													</>
+		<ListCard>
+			<InsetGroup
+				id="bank-connections-title"
+				level={2}
+				title={t("banks.connections")}
+				{...(connections.data === undefined ? {} : { count: list.length })}
+			>
+				{connections.isPending && (
+					<div className="p-4">
+						<Skeleton className="h-14 w-full" />
+					</div>
+				)}
+				{connections.isError && (
+					<p role="alert" className="p-4 text-muted-foreground">
+						{t(`errors.${errorCodeOf(connections.error)}`)}
+					</p>
+				)}
+				{connections.data !== undefined &&
+					(list.length === 0 ? (
+						// The group's block is the card already.
+						<EmptyState
+							flush
+							icon={{ kind: "transfer", icon: LandmarkIcon }}
+							title={t("banks.noConnections.title")}
+							description={t("banks.noConnections.description")}
+							action={
+								<Button onClick={(event) => onChooseBank(event.currentTarget)}>
+									{t("banks.noConnections.action")}
+								</Button>
+							}
+						/>
+					) : (
+						<ul aria-label={t("banks.connections")} className="divide-y divide-line">
+							{list.map((connection) => (
+								<li key={connection.id}>
+									<Link
+										to="/settings/banks/$connectionId"
+										params={{ connectionId: connection.id }}
+										aria-label={t("banks.manage", { name: connection.institutionName })}
+										className="flex min-h-14 items-center gap-4 px-4 py-3 transition-colors outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+									>
+										<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+											<span className="flex flex-wrap items-center gap-2">
+												<span className="font-medium">{connection.institutionName}</span>
+												{connection.alert !== null && (
+													<StatusBadge status={ALERT_BADGES[connection.alert]} />
 												)}
+											</span>
+											<span className="text-muted-foreground">
+												{countryName(connection.country)}
+												{/* An ended consent has no date left to show: its badge says it. */}
+												{connection.alert !== "consent_expired" &&
+													connection.consentExpiresAt !== null && (
+														<>
+															{" · "}
+															{t("banks.consentUntil", {
+																date: consentDate.format(new Date(connection.consentExpiresAt)),
+															})}
+														</>
+													)}
+											</span>
+											<span className="text-muted-foreground">
+												{connection.lastSyncedAt === null
+													? t("banks.sync.never")
+													: t("banks.sync.last", {
+															when: syncTime.format(new Date(connection.lastSyncedAt)),
+														})}
+											</span>
 										</span>
-										<span className="text-sm text-muted-foreground">
-											{connection.lastSyncedAt === null
-												? t("banks.sync.never")
-												: t("banks.sync.last", {
-														when: syncTime.format(new Date(connection.lastSyncedAt)),
-													})}
-										</span>
-									</span>
-									<ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-								</Link>
-							</li>
-						))}
-					</ul>
-				))}
-		</Section>
+										<ChevronRightIcon
+											className="size-5 shrink-0 text-muted-foreground"
+											aria-hidden
+										/>
+									</Link>
+								</li>
+							))}
+						</ul>
+					))}
+			</InsetGroup>
+		</ListCard>
 	);
 }
 

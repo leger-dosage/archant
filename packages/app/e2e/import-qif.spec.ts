@@ -153,7 +153,9 @@ test("an investment QIF is refused, naming its type, and nothing is stored", asy
 	);
 	await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Fichier/u);
 	await dialog(page).getByRole("button", { name: "Annuler" }).click();
-	await expect(page.getByText("Aucune opération.")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Aucune opération pour l'instant" }),
+	).toBeVisible();
 });
 
 test("an imported record's sheet shows its number", async ({ page, api }) => {

@@ -279,7 +279,10 @@ test("a settings section's title and actions top its content, in one 896 px colu
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 	const header = title.locator("..");
 	await expect(header.getByRole("button", { name: "Ajouter une catégorie" })).toBeVisible();
-	const section = page.getByRole("region", { name: "Dépenses", exact: true });
+	// Story 14.4: the categories sit in one card, their groups inside it.
+	const section = page
+		.locator('[data-slot="list-card"]')
+		.filter({ has: page.getByRole("region", { name: "Dépenses", exact: true }) });
 
 	const headerBox = await header.boundingBox();
 	const sectionBox = await section.boundingBox();

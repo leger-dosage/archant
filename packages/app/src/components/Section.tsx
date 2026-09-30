@@ -4,10 +4,6 @@ import { useId } from "react";
 
 import { cn } from "@/lib/utils";
 
-// A table's edge cells line up with the section header's 16 px padding.
-export const SECTION_TABLE_INSET =
-	"[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4";
-
 /**
  * DESIGN.md's card: a bordered block on the container colour, a header row
  * with its heading and an optional action, a line, then the content. The

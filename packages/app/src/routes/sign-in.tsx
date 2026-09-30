@@ -157,7 +157,7 @@ function SignInPage() {
 
 	return (
 		<OutsideShell className="flex flex-col gap-6">
-			<h1 className="type-display">{t("signIn.title")}</h1>
+			<h1 className="page-title">{t("signIn.title")}</h1>
 			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="email">{t("signIn.email")}</Label>
@@ -242,7 +242,7 @@ function CodeStep({
 
 	return (
 		<OutsideShell className="flex flex-col gap-6">
-			<h1 className="type-display">{t("signIn.title")}</h1>
+			<h1 className="page-title">{t("signIn.title")}</h1>
 			<p className="text-sm text-muted-foreground">{t("signIn.codeDescription")}</p>
 			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
 				<div className="flex flex-col gap-1.5">

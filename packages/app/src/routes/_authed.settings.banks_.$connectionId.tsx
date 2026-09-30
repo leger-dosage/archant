@@ -16,6 +16,8 @@ import { z } from "zod";
 import { BANK_ACCOUNT_TARGETS } from "@archant/data/account-types";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { InsetGroup } from "@/components/InsetGroup";
+import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
@@ -251,12 +253,13 @@ function BankAccountRow({
 	const kindLabel = (kind: AccountKindId) => t(`accounts.subtypes.${kind}`);
 
 	return (
-		<li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
+		<li className="flex min-h-14 flex-col gap-3 px-4 py-2 hover:bg-hover sm:flex-row sm:items-center">
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<span className="truncate font-medium">{row.name}</span>
-				<span className="flex items-center gap-2 text-sm text-muted-foreground">
+				<span className="flex items-center gap-2 text-muted-foreground">
+					{/* DESIGN.md's `code`: 12 px Geist Mono, as every IBAN mask. */}
 					{row.ibanLast4 !== null && (
-						<code className="font-mono text-[13px]">•••• {row.ibanLast4}</code>
+						<code className="font-mono text-xs">•••• {row.ibanLast4}</code>
 					)}
 					<span>{row.currency}</span>
 				</span>
@@ -425,62 +428,68 @@ function BankConnectionPage() {
 				</Section>
 			)}
 
-			<Section title={t("banks.accounts.list")}>
-				{accounts.isPending && (
-					<div className="flex flex-col gap-2 p-4">
-						<Skeleton className="h-16 w-full" />
-						<Skeleton className="h-16 w-full" />
-					</div>
-				)}
+			<form
+				noValidate
+				onSubmit={(event) => {
+					event.preventDefault();
+					submit();
+				}}
+			>
+				<ListCard>
+					<InsetGroup
+						level={2}
+						title={t("banks.accounts.list")}
+						{...(accounts.data === undefined ? {} : { count: rows.length })}
+					>
+						{accounts.isPending && (
+							<div className="flex flex-col gap-2 p-4">
+								<Skeleton className="h-14 w-full" />
+								<Skeleton className="h-14 w-full" />
+							</div>
+						)}
 
-				{accounts.isError && (
-					<div role="alert" className="flex flex-col items-start gap-3 p-4">
-						<p className="text-muted-foreground">
-							{errorCodeOf(accounts.error) === "NOT_FOUND"
-								? t("banks.accounts.notFound")
-								: t(`errors.${errorCodeOf(accounts.error)}`)}
-						</p>
-						<Link to="/settings/banks" className="text-sm font-medium underline underline-offset-4">
-							{t("banks.return.back")}
-						</Link>
-					</div>
-				)}
+						{accounts.isError && (
+							<div role="alert" className="flex flex-col items-start gap-3 p-4">
+								<p className="text-muted-foreground">
+									{errorCodeOf(accounts.error) === "NOT_FOUND"
+										? t("banks.accounts.notFound")
+										: t(`errors.${errorCodeOf(accounts.error)}`)}
+								</p>
+								<Link to="/settings/banks" className="font-medium underline underline-offset-4">
+									{t("banks.return.back")}
+								</Link>
+							</div>
+						)}
 
-				{accounts.data !== undefined &&
-					(rows.length === 0 ? (
-						<p className="px-4 py-3 text-sm text-muted-foreground">{t("banks.accounts.empty")}</p>
-					) : (
-						<form
-							className="flex flex-col items-start gap-4"
-							onSubmit={(event) => {
-								event.preventDefault();
-								submit();
-							}}
+						{accounts.data !== undefined &&
+							(rows.length === 0 ? (
+								<p className="p-4 text-muted-foreground">{t("banks.accounts.empty")}</p>
+							) : (
+								<ul aria-label={t("banks.accounts.list")} className="divide-y divide-line">
+									{rows.map((row) => (
+										<BankAccountRow
+											key={row.id}
+											row={row}
+											choice={choiceOf(row)}
+											onChoose={(choice) =>
+												setChoices((current) => ({ ...current, [row.id]: choice }))
+											}
+										/>
+									))}
+								</ul>
+							))}
+					</InsetGroup>
+					{rows.some((row) => row.account === null) && (
+						<Button
+							type="submit"
+							className="self-start"
+							disabled={link.isPending || links.length === 0}
 						>
-							<ul aria-label={t("banks.accounts.list")} className="w-full divide-y divide-line">
-								{rows.map((row) => (
-									<BankAccountRow
-										key={row.id}
-										row={row}
-										choice={choiceOf(row)}
-										onChoose={(choice) =>
-											setChoices((current) => ({ ...current, [row.id]: choice }))
-										}
-									/>
-								))}
-							</ul>
-							{rows.some((row) => row.account === null) && (
-								<Button
-									type="submit"
-									className="mx-4 mb-4"
-									disabled={link.isPending || links.length === 0}
-								>
-									{t("banks.accounts.submit")}
-								</Button>
-							)}
-						</form>
-					))}
-			</Section>
+							{t("banks.accounts.submit")}
+						</Button>
+					)}
+				</ListCard>
+			</form>
 		</Page>
 	);
 }
