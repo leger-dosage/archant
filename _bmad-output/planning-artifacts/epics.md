@@ -2571,7 +2571,13 @@ The security audit found no critical or high issue and `pnpm audit --prod` no kn
 
 Where Sure settles a question, the story follows it: Dependabot for npm, GitHub Actions and Docker, as Sure's `.github/dependabot.yml`; a `SECURITY.md`, a `CONTRIBUTING.md` and issue templates, as Sure has them. Where GitHub or OWASP settles it, the story follows them: GitHub's community profile and immutable releases, OpenSSF Scorecard's checks, OWASP's device cookies against account lockout.
 
-Repository settings (private vulnerability reporting, secret scanning and push protection, Dependabot security updates, CodeQL, rulesets, immutable releases, the description and topics) are changed through the GitHub API only once the owner has approved the exact list, and the story records that approval. Two decisions stay open until the owner answers them: whether the `ghcr.io/leger-dosage/archant` package goes public, which the owner deferred in #76 (OSS-1), and how strict the ruleset on `main` is, which decides whether planning commits can still be pushed straight to `main` (OSS-3).
+Repository settings (private vulnerability reporting, secret scanning and push protection, Dependabot security updates, CodeQL, rulesets, immutable releases, the description and topics) are changed through the GitHub API; the owner approved that exact list on 2026-09-30. The same day the owner settled the five open questions of the audit:
+
+- the `ghcr.io/leger-dosage/archant` package goes public (OSS-1), reversing the deferral of #76; GitHub's API cannot change a package's visibility, so the owner flips it in the package settings and Story 15.3's documents assume an anonymous pull;
+- the ruleset on `main` requires a pull request and every CI job, with a bypass for the owner alone, so planning and tracking commits can still reach `main` directly (OSS-3);
+- one copy of the vendored agent skills stays, the other and `_bmad/config.user.toml` leave the repository (STR-5), in Story 15.7;
+- the repository settings listed above are applied by the stories that need them;
+- the `ofx-js` fix goes to its maintainer if the project is maintained and likely to take it, else it stays local and documented (DEP-3); `ofx-js` merged an outside contributor's pull request in May 2026 but has private vulnerability reporting off, so the fix goes as a public pull request framed as linear-time parsing of large files, the flaw being a slowdown a hostile file causes on a server that parses it.
 
 Left out on purpose:
 
@@ -2581,8 +2587,7 @@ Left out on purpose:
 - keyset pagination (PERF-11): page 1,000 still answers in 107 ms;
 - associated data and a rotation command for the encrypted tokens (SEC-6), which only an attacker with write access to the database could exploit;
 - one server and database per Playwright worker (STR-8), a large change for a 9.5-minute job;
-- sending the `ofx-js` ReDoS patch to its maintainer (DEP-3), an outward-facing act the owner takes;
-- the vendored agent skills (STR-5) and the package's visibility (OSS-1), until the owner decides.
+- sending the `ofx-js` fix upstream (DEP-3), done outside the stories; the local patch leaves in whichever story follows the release that includes it.
 
 Stories 15.1 to 15.3 come first: they are small and they are what a stranger sees. Stories 15.4 and 15.5 fix what the audits measured. Story 15.6 splits the ledger after 15.5, whose query changes touch it, and Story 15.7 comes last, since its clean-ups would collide with the split.
 
@@ -2600,13 +2605,13 @@ So that a fix ships before the flaw is public, and no one can push an image to e
 **When** this story ships
 **Then** `SECURITY.md` names the supported versions (the latest minor release), asks for reports through GitHub's private vulnerability reporting and never in a public issue, states the response time, and says what a report should hold without real bank data
 
-**Given** the owner's approval of the exact list of settings, recorded in the story's spec
-**When** the story applies it through the GitHub API
+**Given** the owner's approval of 2026-09-30
+**When** the story applies the settings through the GitHub API
 **Then** private vulnerability reporting, secret scanning with push protection, Dependabot security updates and CodeQL's default setup for JavaScript, TypeScript and Actions are on, and `gh api` reads each one back as enabled
 
 **Given** the ruleset on `main`
 **When** a commit reaches `main`
-**Then** it passed every job of `ci.yml`, force pushes and deletion are refused, and a pull request is required unless the owner's answer to the open question allows a bypass for them
+**Then** it passed every job of `ci.yml`, force pushes and deletion are refused, and a pull request is required from everyone but the owner, whose bypass lets planning and tracking commits reach `main` directly
 
 **Given** a tag matching `v*`
 **When** anyone tries to move or delete it
@@ -2648,7 +2653,7 @@ So that a compromised action, base image or package manager cannot slip into the
 
 **Given** a `vX.Y.Z` tag
 **When** `release.yml` publishes the image
-**Then** it attaches an SBOM and maximal provenance to both platforms, records a build provenance attestation with `actions/attest-build-provenance`, and `docs/deployment.md` shows the `gh attestation verify` command a self-hoster runs; with the owner's approval, releases are immutable
+**Then** it attaches an SBOM and maximal provenance to both platforms, records a build provenance attestation with `actions/attest-build-provenance`, and `docs/deployment.md` shows the `gh attestation verify` command a self-hoster runs; releases are immutable, as the owner approved
 
 **Given** the finished story
 **When** CI runs
@@ -2684,7 +2689,7 @@ So that I can use it and contribute to it on my own.
 **When** a contributor looks it up
 **Then** it resolves in `docs/architecture.md`, the architecture spine moved from `_bmad-output/`, linked from `AGENTS.md` and `docs/index.md`, with every reference in the code still valid
 
-**Given** the owner's approval
+**Given** the owner's approval of 2026-09-30
 **When** the story applies it through the GitHub API
 **Then** the repository has a one-sentence description and topics such as `self-hosted`, `personal-finance`, `psd2`, `sqlite` and `hono`
 
@@ -2835,6 +2840,10 @@ So that I have less code to read and one place to fix each bug.
 **Given** month arithmetic
 **When** the interface or the API adds months
 **Then** both use one pure helper in `@archant/data`
+
+**Given** the vendored agent skills
+**When** this story ships
+**Then** one of the identical copies under `.claude/skills` and `.agents/skills` remains, the tools that read the other find the skills they need, and `_bmad/config.user.toml` leaves the repository and is ignored
 
 **Given** the lint and dead-code tooling
 **When** the gate runs
