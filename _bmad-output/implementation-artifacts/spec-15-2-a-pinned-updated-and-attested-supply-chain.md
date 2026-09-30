@@ -167,3 +167,23 @@ Pending, after merge: the owner's `v0.2.1` tag, then `gh attestation verify`, th
 ## Spec Change Log
 
 ## Review Triage Log
+
+| Finding | Verdict | Evidence | Route |
+|---|---|---|---|
+| `gh attestation verify --repo` accepts an attestation from any workflow of the repository; the docs claim `release.yml` (blind) | medium | `--repo` checks the source repository only; `--signer-workflow` pins the workflow. | patch |
+| Verified tag can move between `verify` and `pull`; ghcr tags stay movable (blind) | low | Real, but needs a tag push to ghcr between two commands by the owner; the fix is a new pull-by-digest recipe. | rejected |
+| Images pulled by `setup-qemu-action`, `setup-buildx-action` and the SBOM scanner stay tags (blind, edge) | medium | Their inputs take a tag Dependabot cannot update; pinning them is new surface. `AGENTS.md` overclaimed. | patch (wording) + defer (pinning) |
+| `# syntax=docker/dockerfile:1` pulled by tag (blind, edge) | medium | The intent pins every image; the frontend runs in the job holding `packages: write`. | patch |
+| `AGENTS.md` says the `actionlint` job refuses anything else, but the check skipped `packageManager`, the version comment, `.yaml` files and lowercase `from` (blind, edge, verification) | medium | Reproduced by the verification layer with fixtures. | patch: check widened, probe pasted |
+| Inline `{uses: ...}` and quoted `uses:` values escape or trip the check (edge, verification) | low | Neither form is used in the repository or in GitHub's examples; handling them adds parsing. | rejected |
+| A later `FROM <stage>` would fail the check (edge, verification) | low | No such stage exists; the failure is loud and the fix is obvious when it appears. | rejected |
+| TypeScript at `^` joins the grouped minor bump though its minors break types (blind) | medium | A 7.1 would turn the whole weekly group red. The frozen intent keeps the caret. | patch: excluded from the group |
+| `ignore: ofx-js` hides a vulnerability (blind, edge) | false | Dependabot alerts are on (Story 15.1) and fire regardless of `ignore`; a security bump would fail the install on the patch anyway. | rejected |
+| Dependabot would propose a Node major for the base image (blind, edge) | medium | `node:24-alpine` follows version tags; CI reads `.node-version`, so image and CI would diverge. | patch: majors ignored |
+| « Node is declared once » is false (blind, verification) | low | Node's major also sits in `engines.node` and both `FROM`s. Direct correction. | patch |
+| `react`/`react-dom` could drift apart under `^` (blind) | low | One lockfile resolves both; the grouped bump moves them together. | rejected |
+| The Dependabot criterion and the `ofx-js` matrix row have no execution task (blind) | low | Fix edits this spec; both are in the pending notes. | rejected |
+| Step name says « by digest » for SHA pins (blind) | low | Direct correction. | patch |
+| `engine-strict` also applies to dependencies' `engines` (edge) | low | A failing bump is the intended signal; no current dependency excludes Node 24 (install passes). | rejected |
+| Docs imply every release is attested and immutable; `0.2.0` is neither (edge) | low | Direct correction. | patch |
+| Attestation step and `steps.push.outputs.digest` never ran (verification) | medium | A dry run skips them by design; the `v0.2.1` task proves them before `done`. | already planned |
