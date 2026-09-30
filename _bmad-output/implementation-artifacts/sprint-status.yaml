@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-30-2026 00:09
+last_updated: 09-30-2026 08:21
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -141,9 +141,9 @@ development_status:
   13-12-a-bank-that-sends-no-account-currency: done
   epic-13-retrospective: optional
 
-  epic-14: in-progress
+  epic-14: done
   14-1-the-shell-and-the-scale: done
-  14-2-the-dashboard-and-the-accounts-pages: review
-  14-3-the-transactions-list-and-the-drawer: review
-  14-4-the-remaining-screens: review
+  14-2-the-dashboard-and-the-accounts-pages: done
+  14-3-the-transactions-list-and-the-drawer: done
+  14-4-the-remaining-screens: done
   epic-14-retrospective: optional
