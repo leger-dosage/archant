@@ -28,7 +28,7 @@ The interface is in French, through [i18next](https://www.i18next.com/). Every v
 
 ## Check it
 
-GitHub Actions runs these on every pull request, and a pull request merges only when they pass. Run them locally first:
+GitHub Actions checks every pull request with the same commands, `pnpm format` aside, plus a container build and a workflow lint, and a pull request merges only when every check passes. Run them locally first:
 
 ```bash
 pnpm install --frozen-lockfile
