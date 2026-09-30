@@ -18,6 +18,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The ruleset « main: pull request and CI » requires every job below by its
+# name: renaming or adding one means updating that ruleset (AGENTS.md).
 jobs:
   # One job per gate command: a red pipeline names the failing gate without
   # anyone opening the logs.

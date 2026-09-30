@@ -4,12 +4,12 @@ Archant holds a household's bank transactions. A flaw in it can expose them, so 
 
 ## Supported versions
 
-Only the latest minor release receives security fixes. Upgrade to it before reporting, if you can.
+Only the [latest minor release](https://github.com/leger-dosage/archant/releases/latest) receives security fixes. Upgrade to it before reporting, if you can.
 
-| Version | Supported |
-| ------- | --------- |
-| 0.2.x   | yes       |
-| < 0.2   | no        |
+| Version              | Supported |
+| -------------------- | --------- |
+| Latest minor release | yes       |
+| Older minor releases | no        |
 
 ## Reporting a vulnerability
 
@@ -17,7 +17,7 @@ Report it through GitHub's private vulnerability reporting: [open a draft adviso
 
 A useful report holds:
 
-- the version shown in « Réglages », or the image tag you run;
+- the version shown in « Réglages », the image tag you run, or the commit (`git rev-parse HEAD`) of a checkout;
 - the deployment target: the container, a reverse proxy in front of it, or a checkout run with `pnpm`;
 - the steps that reproduce the flaw;
 - what an attacker gains, and what they need first.
