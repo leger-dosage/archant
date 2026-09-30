@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 09-30-2026 08:21
+last_updated: 09-30-2026 10:35
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -147,3 +147,13 @@ development_status:
   14-3-the-transactions-list-and-the-drawer: done
   14-4-the-remaining-screens: done
   epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-report-a-vulnerability-privately-protect-the-default-branch: backlog
+  15-2-a-pinned-updated-and-attested-supply-chain: backlog
+  15-3-welcome-a-contributor-and-a-self-hoster: backlog
+  15-4-a-sign-in-that-cannot-be-held-hostage: backlog
+  15-5-fast-at-ten-years-of-history: backlog
+  15-6-the-ledger-in-modules: backlog
+  15-7-fewer-home-made-parts: backlog
+  epic-15-retrospective: optional

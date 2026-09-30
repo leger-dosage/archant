@@ -14,6 +14,7 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/DESIGN.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/EXPERIENCE.md
+  - _bmad-output/planning-artifacts/audit-2026-09-30.md
 ---
 
 # archant - Epic Breakdown
@@ -142,6 +143,8 @@ NFR13: The interface is usable with the keyboard alone and meets WCAG 2.2 AA con
 NFR14: Dependencies stay few and popular; each new one is justified in its pull request.
 NFR15: A request cannot exhaust the server: every route has a body size limit, sign-in attempts are limited per address and overall with a count that survives a restart, and no parser runs in time exponential in its input.
 NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy. Outside a container, the server listens on loopback only unless told otherwise.
+NFR17: The build, its dependencies and its published images are pinned, kept current by a bot, and attested: actions by commit SHA, base images by digest, the package manager by hash, and every release image with an SBOM and a build provenance attestation.
+NFR18: A vulnerability can be reported privately, GitHub's secret scanning and code scanning run on the repository, and the default branch and release tags are protected by rulesets.
 
 ### Additional Requirements
 
@@ -240,7 +243,7 @@ FR58: Epic 13 - Two-factor sign-in
 FR59: Epic 13 - Versioned image and visible version
 FR60: Epic 13 - Copy before migration
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10.
 
 ## Epic List
 
@@ -313,6 +316,11 @@ The owner hosts Archant somewhere other than their laptop, connects a real bank 
 
 The interface stops reading small: Sure's shell, pages, type scale and control sizes, with Linear kept as a light layer of colours, Inter and lines, as `DESIGN.md` now specifies.
 **FRs covered:** none new; revises UX-DR1, UX-DR3, UX-DR11
+
+### Epic 15: A healthy open-source project
+
+A stranger can trust, install and contribute to Archant, and the owner's instance stays fast and hard to lock: a private way to report a vulnerability, a protected default branch, a pinned and attested supply chain, documents for contributors and self-hosters, the sign-in lockout of the audit of 2026-09-30 fixed, SQLite given the statistics and indexes a decade of history needs, and the ledger split into modules a contributor can read.
+**FRs covered:** none new; NFR17, NFR18; revises NFR10
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -2554,3 +2562,293 @@ So that no page keeps the small sizes of before.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 15: A healthy open-source project
+
+On 2026-09-30 Epic 14 shipped as v0.2.0 and the owner ran it against a real bank through Enable Banking. Asked what should come next, they chose to check the project's health before adding features: open-source standards, security and performance, a clean structure, and popular maintained libraries rather than reinvented ones. Five read-only audits ran in parallel the same day on `main` at `82ceb39`; [audit-2026-09-30.md](audit-2026-09-30.md) records every finding with its evidence and the story that takes it.
+
+The security audit found no critical or high issue and `pnpm audit --prod` no known vulnerability. One medium issue was reproduced: the global sign-in ceiling of Story 13.2 refuses the right password too, so twenty wrong attempts every ten minutes from anyone who can reach the sign-in page keep the owner out (SEC-1). The performance audit, with 100,000 transactions over ten years, found that SQLite never receives statistics: without them the transfer-candidate query scans every transaction, which makes the transactions page take 217 ms instead of 129, an account's page 146 ms instead of 16, and a 24,000-line OFX import 7.6 seconds instead of 2.5 (PERF-1). The structure audit found `services/ledger.ts` at 4,787 lines, 45 exports and 17 importers: every money story edits it, so stacked pull requests collide there (STR-1). The dependencies are few, current within a patch and compatible with AGPL-3.0; `lib/client-address.ts` rewrites what Better Auth 1.7.6 already exports (DEP-1). GitHub's community profile scores 50 %: no security policy, no protection on `main` or on release tags, secret scanning, CodeQL and Dependabot security updates off, actions pinned by tag in the job that publishes the image.
+
+Where Sure settles a question, the story follows it: Dependabot for npm, GitHub Actions and Docker, as Sure's `.github/dependabot.yml`; a `SECURITY.md`, a `CONTRIBUTING.md` and issue templates, as Sure has them. Where GitHub or OWASP settles it, the story follows them: GitHub's community profile and immutable releases, OpenSSF Scorecard's checks, OWASP's device cookies against account lockout.
+
+Repository settings (private vulnerability reporting, secret scanning and push protection, Dependabot security updates, CodeQL, rulesets, immutable releases, the description and topics) are changed through the GitHub API; the owner approved that exact list on 2026-09-30. The same day the owner settled the five open questions of the audit:
+
+- the `ghcr.io/leger-dosage/archant` package goes public (OSS-1), reversing the deferral of #76; GitHub's API cannot change a package's visibility, so the owner flips it in the package settings and Story 15.3's documents assume an anonymous pull;
+- the ruleset on `main` requires a pull request and every CI job, with a bypass for the owner alone, so planning and tracking commits can still reach `main` directly (OSS-3);
+- one copy of the vendored agent skills stays, the other and `_bmad/config.user.toml` leave the repository (STR-5), in Story 15.7;
+- the repository settings listed above are applied by the stories that need them;
+- the `ofx-js` fix goes to its maintainer if the project is maintained and likely to take it, else it stays local and documented (DEP-3); `ofx-js` merged an outside contributor's pull request in May 2026 but has private vulnerability reporting off, so the fix goes as a public pull request framed as linear-time parsing of large files, the flaw being a slowdown a hostile file causes on a server that parses it.
+
+Left out on purpose:
+
+- moving long SQL work to a worker thread (PERF-2), until Story 15.5's fixes are measured;
+- translating rule conditions to SQL (PERF-5), an action the user starts and rarely;
+- a trimmed import preview (PERF-7), worth it only for imports of tens of thousands of lines;
+- keyset pagination (PERF-11): page 1,000 still answers in 107 ms;
+- associated data and a rotation command for the encrypted tokens (SEC-6), which only an attacker with write access to the database could exploit;
+- one server and database per Playwright worker (STR-8), a large change for a 9.5-minute job;
+- sending the `ofx-js` fix upstream (DEP-3), done outside the stories on 2026-09-30 as bradenmacdonald/ofx-js#14; the local patch leaves in whichever story follows the release that includes it.
+
+Stories 15.1 to 15.3 come first: they are small and they are what a stranger sees. Stories 15.4 and 15.5 fix what the audits measured. Story 15.6 splits the ledger after 15.5, whose query changes touch it, and Story 15.7 comes last, since its clean-ups would collide with the split.
+
+### Story 15.1: Report a vulnerability privately, protect the default branch
+
+As a person who finds a vulnerability in Archant,
+I want a private way to report it and a repository that cannot be changed behind the owner's back,
+So that a fix ships before the flaw is public, and no one can push an image to every self-hoster without review.
+
+**Requirements:** NFR18
+
+**Acceptance Criteria:**
+
+**Given** the repository's root
+**When** this story ships
+**Then** `SECURITY.md` names the supported versions (the latest minor release), asks for reports through GitHub's private vulnerability reporting and never in a public issue, states the response time, and says what a report should hold without real bank data
+
+**Given** the owner's approval of 2026-09-30
+**When** the story applies the settings through the GitHub API
+**Then** private vulnerability reporting, secret scanning with push protection, Dependabot security updates and CodeQL's default setup for JavaScript, TypeScript and Actions are on, and `gh api` reads each one back as enabled
+
+**Given** the ruleset on `main`
+**When** a commit reaches `main`
+**Then** it passed every job of `ci.yml`, force pushes and deletion are refused, and a pull request is required from everyone but the owner, whose bypass lets planning and tracking commits reach `main` directly
+
+**Given** a tag matching `v*`
+**When** anyone tries to move or delete it
+**Then** the ruleset refuses it
+
+**Given** the finished story
+**When** it is verified
+**Then** `SECURITY.md` passes `pnpm lint:format`, and the spec records the `gh api` read-back of every setting and a refused force push to `main` on a throwaway branch protected by the same ruleset
+
+### Story 15.2: A pinned, updated and attested supply chain
+
+As a self-hoster pulling `ghcr.io/leger-dosage/archant`,
+I want every piece of the build pinned, kept current by a bot and the image attested,
+So that a compromised action, base image or package manager cannot slip into the image I run, and I can check where the image came from.
+
+**Requirements:** NFR14, NFR17
+
+**Acceptance Criteria:**
+
+**Given** `.github/dependabot.yml`
+**When** Dependabot runs
+**Then** it proposes npm updates weekly in one grouped pull request for minor and patch versions and one per major, and GitHub Actions and Docker base image updates weekly, as Sure's configuration does
+
+**Given** `ci.yml` and `release.yml`
+**When** they reference an action
+**Then** it is pinned by commit SHA with its version in a comment, including `rhysd/actionlint`'s image
+
+**Given** the `Dockerfile`
+**When** it names `node:24-alpine`
+**Then** the image is pinned by digest, and `package.json`'s `packageManager` carries pnpm's hash
+
+**Given** the root `package.json`
+**When** a contributor installs with an older Node
+**Then** `engines.node` (`>=24`) and a `.node-version` file say which Node the project needs
+
+**Given** the dependency ranges
+**When** this story ships
+**Then** every dependency uses a caret range except `ofx-js`, exact because of its local patch, and `AGENTS.md` states the rule
+
+**Given** a `vX.Y.Z` tag
+**When** `release.yml` publishes the image
+**Then** it attaches an SBOM and maximal provenance to both platforms, records a build provenance attestation with `actions/attest-build-provenance`, and `docs/deployment.md` shows the `gh attestation verify` command a self-hoster runs; releases are immutable, as the owner approved
+
+**Given** the finished story
+**When** CI runs
+**Then** `actionlint` passes on the pinned workflows, the `image` job builds from the pinned base, a manual dry run of `release.yml` succeeds, and the spec records `gh attestation verify` against the next published image
+
+### Story 15.3: Welcome a contributor and a self-hoster
+
+As a stranger who finds Archant on GitHub,
+I want to understand what it does, run it, report a problem and propose a change without reading an agent guide,
+So that I can use it and contribute to it on my own.
+
+**Requirements:** NFR12, NFR18
+
+**Acceptance Criteria:**
+
+**Given** the repository's root and `.github/`
+**When** this story ships
+**Then** it holds a `CONTRIBUTING.md` written for people (setup, the gate's commands, one pull request per change, no real bank data in issues, translations welcome through i18next, `AGENTS.md` for depth), a `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), a `SUPPORT.md`, issue forms for a bug (the version from « Réglages », the deployment target, logs without amounts or IBANs) and a feature request, and a pull request template that asks the reason for any new dependency
+
+**Given** the README
+**When** a stranger reads its first screen
+**Then** it states that the interface is French-only and the reporting currency EUR, shows screenshots and badges for CI, licence and latest release, clones over HTTPS, links `docs/sure-parity.md` from its feature list, and says what `_bmad-output/` holds
+
+**Given** a release
+**When** its notes are generated
+**Then** `.github/release.yml` groups pull requests by label and leaves out those labelled `planning`, and `docs/deployment.md` states the versioning policy (semantic versioning; in 0.x a minor release may break), the deprecation policy (announced one minor release ahead) and that breaking changes are listed under « Before upgrading » in the notes
+
+**Given** `docs/`
+**When** a self-hoster looks for help
+**Then** `docs/troubleshooting.md` covers an image pull refused with 401, a mismatched `ARCHANT_URL`, a lost setup token, an expired bank consent and a disk full during migration, and `docs/security-model.md` says what is encrypted and with which key, what leaves for Enable Banking, that there is no telemetry, what the logs hold, and that every process on the host is trusted when `TRUSTED_PROXIES` names the Docker gateway
+
+**Given** a reference such as « AD-2 » in the code or in a lint message
+**When** a contributor looks it up
+**Then** it resolves in `docs/architecture.md`, the architecture spine moved from `_bmad-output/`, linked from `AGENTS.md` and `docs/index.md`, with every reference in the code still valid
+
+**Given** the owner's approval of 2026-09-30
+**When** the story applies it through the GitHub API
+**Then** the repository has a one-sentence description and topics such as `self-hosted`, `personal-finance`, `psd2`, `sqlite` and `hono`
+
+**Given** the finished story
+**When** CI runs
+**Then** `pnpm lint:format` passes on every new file, a Vitest spec checks that every « AD-n » cited under `packages/` and in `.oxlintrc.json` has a heading in `docs/architecture.md`, and GitHub's community profile reads 100 %
+
+### Story 15.4: A sign-in that cannot be held hostage
+
+As the household's administrator,
+I want my own device to sign in even while someone hammers the sign-in page,
+So that a stranger cannot lock me out of my finances, and the smaller findings of the audit are closed.
+
+**Requirements:** NFR15, NFR16
+
+**Acceptance Criteria:**
+
+**Given** a browser that signed in successfully before
+**When** the global ceiling of failed sign-ins is reached and it signs in with the right password
+**Then** it is let through, because a device cookie set at its last successful sign-in, signed with an HMAC of the server secret and naming the user, exempts it from the global ceiling as OWASP's device cookies do; the per-address limit and Better Auth's own still apply to it, and a device that failed too often loses the exemption for the window
+
+**Given** a device cookie that is missing, forged, expired or for another user
+**When** the ceiling is reached
+**Then** the sign-in is refused with `TOO_MANY_REQUESTS` as today
+
+**Given** any page the server serves
+**When** it answers
+**Then** its Content-Security-Policy also sets `default-src 'self'`, `img-src` limited to `'self'`, `data:` and the host of the bank logos, `form-action 'self'` and `frame-src 'none'`, and the interface, the bank picker's logos and the charts still render
+
+**Given** a database or a backup created by the server outside a container
+**When** it is written
+**Then** the file is readable by its owner only (`0600`) and `backups/` is `0700`
+
+**Given** `ENABLE_BANKING_API_URL`
+**When** it uses `http://` on anything but a loopback address
+**Then** the server refuses to start and names the variable
+
+**Given** a CSV file whose first line splits into more columns than a statement can hold
+**When** it is previewed
+**Then** the import is refused with `INVALID_IMPORT_FILE` rather than a preview of millions of columns
+
+**Given** Enable Banking's documentation of `identification_hash`
+**When** the story reads it
+**Then** the spec records what the hash is; if it is an unsalted hash of the IBAN, the stored value becomes an HMAC keyed by `ENCRYPTION_KEY`, with a migration that rewrites existing rows and keeps linked accounts matched
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Vitest for the ceiling, the cookie, the headers, the file modes, the environment and the CSV cap, Playwright for a sign-in that succeeds after the ceiling is reached on a known device
+
+### Story 15.5: Fast at ten years of history
+
+As the household's administrator with a decade of transactions,
+I want every page and import to stay quick,
+So that Archant still feels immediate as my history grows.
+
+**Requirements:** NFR9, NFR10
+
+**Acceptance Criteria:**
+
+**Given** a database after its migrations, and after an import of more than 1,000 lines
+**When** the server runs them
+**Then** it runs `PRAGMA analysis_limit=1000` and `ANALYZE`, and the transfer-candidate query's plan no longer scans `entries_kind_amount_date`
+
+**Given** the list's count, signed sum, income and expense
+**When** a page is fetched
+**Then** they come from a query whose key leaves out the page, computed with a covering index on `entries(kind, currency, amount, id)` and the transfer side found once by joins rather than two correlated subqueries per row, with the same values as today
+
+**Given** the direction filter « Dépenses »
+**When** the list is fetched
+**Then** its plan reads the date index and sorts nothing in a temporary B-tree, as `EXPLAIN QUERY PLAN` shows
+
+**Given** a response of the API or an asset of the interface
+**When** the browser accepts gzip or Brotli
+**Then** it is compressed
+
+**Given** the dashboard and an account's page
+**When** the interface loads
+**Then** Recharts and the account creation dialog's date picker load only when shown, and React Query keeps data fresh for 30 seconds before a window focus refetches it
+
+**Given** SQLite's connection settings
+**When** libSQL opens a connection
+**Then** `cache_size` is 64 MB and `synchronous` is `NORMAL` under WAL on every connection of the pool, or the spec records why libSQL cannot apply them
+
+**Given** NFR10's volume
+**When** it is revised
+**Then** it reads: with 100,000 transactions, the first page of the transaction list and an account's page answer in under 150 ms, and a 24,000-line OFX file is confirmed in under 3 seconds on a small server
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** a Vitest spec seeds 100,000 transactions in a temporary database and checks NFR10's targets with a margin for CI, another asserts the query plans above with `EXPLAIN QUERY PLAN`, and the existing sum and list tests pass unchanged
+
+### Story 15.6: The ledger in modules
+
+As a contributor changing how money moves,
+I want the ledger split into modules by domain,
+So that I can find, review and change one part without reading 4,787 lines, and two stories no longer collide in one file.
+
+**Requirements:** NFR11
+
+**Acceptance Criteria:**
+
+**Given** `services/ledger.ts` and `services/rules.ts`, which import each other
+**When** this story ships
+**Then** the rules they share are read through a new `services/rule-reader.ts`, and madge finds no cycle under `packages/api/src`
+
+**Given** `services/ledger.ts`
+**When** this story ships
+**Then** it is replaced by modules under `services/ledger/` (shared helpers, balances, accounts, bank link, entry keys, pending, ingest, rule plans, patch, edits, import revert, transfers, duplicates, filter, queries, snapshots), with no module re-exporting another, every importer importing the module it needs, and no behaviour change
+
+**Given** the lint rule that lets only the ledger write entries (AD-2) and the 100 % branch threshold on the ledger
+**When** the ledger moves
+**Then** both follow it to `services/ledger/**`
+
+**Given** `ledger.spec.ts` and `app.spec.ts`
+**When** this story ships
+**Then** the ledger's tests sit beside the modules they cover, and `app.spec.ts` becomes one spec per route file beside it, sharing a harness in `src/testing/`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** they pass with the same number of tests and the same assertions as before the split, only import paths changed, and the ledger's modules keep 100 % branch coverage
+
+### Story 15.7: Fewer home-made parts
+
+As a contributor,
+I want Archant to rely on its libraries where they already do the job, and on one copy of each helper,
+So that I have less code to read and one place to fix each bug.
+
+**Requirements:** NFR11, NFR14
+
+**Acceptance Criteria:**
+
+**Given** the client address the setup limit keys on
+**When** this story ships
+**Then** it comes from `getIP` of `better-auth/api` with the same trusted proxies, `lib/client-address.ts` keeps only what Better Auth does not do, and the same addresses map to the same keys
+
+**Given** `pnpm api reset-password`
+**When** it prompts for the password
+**Then** it reads lines through `readline`'s async iterator, still masks the input and still handles two lines arriving together
+
+**Given** the interface's code
+**When** this story ships
+**Then** one `FieldMessage` component replaces its nine copies; `TransactionSheet.tsx`, `RuleDialog.tsx` and `_authed.settings.banks.tsx` are split into components each under 400 lines; the constants the interface needs no longer come from Drizzle schema files, so no Drizzle code reaches the browser bundle; authentication calls go through `hooks/useAuthActions.ts`
+
+**Given** the API's routes
+**When** they validate a request
+**Then** they call one `validated()` helper instead of repeating `throw validationError(...)`
+
+**Given** month arithmetic
+**When** the interface or the API adds months
+**Then** both use one pure helper in `@archant/data`
+
+**Given** the vendored agent skills
+**When** this story ships
+**Then** one of the identical copies under `.claude/skills` and `.agents/skills` remains, the tools that read the other find the skills they need, and `_bmad/config.user.toml` leaves the repository and is ignored
+
+**Given** the lint and dead-code tooling
+**When** the gate runs
+**Then** `@shadcn/lint`'s rules are enabled or the plugin is removed, the unused `ui/card.tsx`, `ui/separator.tsx` and unused exports are gone, knip runs in the gate with Playwright's entry points and `components/ui` excluded, and `packages/data` holds `money.ts` to 100 % branch coverage
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** they pass, a Vitest spec checks that the Better Auth address keys match the former ones for IPv4, IPv6 and trusted proxies, and a build check fails if a Drizzle module lands in the interface's bundle
