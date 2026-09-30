@@ -2587,7 +2587,7 @@ Left out on purpose:
 - keyset pagination (PERF-11): page 1,000 still answers in 107 ms;
 - associated data and a rotation command for the encrypted tokens (SEC-6), which only an attacker with write access to the database could exploit;
 - one server and database per Playwright worker (STR-8), a large change for a 9.5-minute job;
-- sending the `ofx-js` fix upstream (DEP-3), done outside the stories; the local patch leaves in whichever story follows the release that includes it.
+- sending the `ofx-js` fix upstream (DEP-3), done outside the stories on 2026-09-30 as bradenmacdonald/ofx-js#14; the local patch leaves in whichever story follows the release that includes it.
 
 Stories 15.1 to 15.3 come first: they are small and they are what a stranger sees. Stories 15.4 and 15.5 fix what the audits measured. Story 15.6 splits the ledger after 15.5, whose query changes touch it, and Story 15.7 comes last, since its clean-ups would collide with the split.
 
