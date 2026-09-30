@@ -40,7 +40,7 @@ sudo tailscale serve --bg 8787
 
 ## 5. Configure and start Archant
 
-In a directory named `archant`, fetch `docker-compose.yml` as in [Docker — the reference target](deployment.md#docker--the-reference-target), then write the `.env` Compose reads beside it. Run this block once: running it again replaces the secrets, which signs out every session and leaves every bank to connect again. While the `ghcr.io/leger-dosage/archant` package is private, run `docker login ghcr.io` first, with a GitHub token that has `read:packages`, or the pull is refused:
+In a directory named `archant`, fetch `docker-compose.yml` as in [Docker — the reference target](deployment.md#docker--the-reference-target), then write the `.env` Compose reads beside it. Run this block once: running it again replaces the secrets, which signs out every session and leaves every bank to connect again:
 
 ```bash
 mkdir archant && cd archant
@@ -61,7 +61,7 @@ docker compose up --detach --wait
 
 Keep the port on `127.0.0.1`, as `docker-compose.yml` publishes it, and add no `compose.override.yml`. Only `tailscale serve` then reaches the container, from the host. The [loopback port](deployment.md#docker--the-reference-target) explains why.
 
-`tailscale serve` is a reverse proxy on the host, so set `TRUSTED_PROXIES` as [Behind a reverse proxy](deployment.md#behind-a-reverse-proxy) says. Without it, every device shares one sign-in limit. Print the Docker network's gateway, add it to `.env`, and restart:
+`tailscale serve` is a reverse proxy on the host, so set `TRUSTED_PROXIES` as [Behind a reverse proxy](deployment.md#behind-a-reverse-proxy) says. Without it, every device shares one sign-in limit. With it, every process on the host can choose the address the limit counts, so the host is trusted, as the [security model](security-model.md#trusted-proxies) explains. Print the Docker network's gateway, add it to `.env`, and restart:
 
 ```bash
 echo "TRUSTED_PROXIES=$(docker network inspect archant_default --format '{{(index .IPAM.Config 0).Gateway}}')" >> .env

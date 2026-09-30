@@ -6,7 +6,7 @@ updated: '2026-09-29'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
-  - ../../architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md
+  - ../../../../docs/architecture.md
 colors:
   # Unlisted shadcn tokens (popover, input, secondary, destructive-foreground...) inherit the neutral base.
   # Light is Linear Light, read from linear.app's stylesheets. Dark is derived in LCH from the inputs

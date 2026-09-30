@@ -1,0 +1,22 @@
+# Generated release notes: planning and tracking pull requests are left out,
+# and anything that breaks an upgrade comes first, where a self-hoster reads.
+changelog:
+  exclude:
+    labels:
+      - planning
+  categories:
+    - title: Before upgrading
+      labels:
+        - breaking-change
+    - title: Features
+      labels:
+        - enhancement
+    - title: Fixes
+      labels:
+        - bug
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Other changes
+      labels:
+        - "*"

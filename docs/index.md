@@ -2,14 +2,17 @@
 
 Long-lived project knowledge. Planning and implementation artifacts live in `_bmad-output/`, not here.
 
-| Document                                   | What it covers                                                                           |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [project-overview.md](project-overview.md) | What Archant is, which Sure features are in scope, and why                               |
-| [tech-stack.md](tech-stack.md)             | Every dependency, its role, and its current version                                      |
-| [sure-parity.md](sure-parity.md)           | Each Sure feature area, what Archant does instead, and why                               |
-| [deployment.md](deployment.md)             | Docker, upgrades, backups, Enable Banking, scheduled sync, password reset, other targets |
-| [hosting.md](hosting.md)                   | The home setup end to end: a machine behind Tailscale, backups, secrets, a VPS fallback  |
-| [adr/](adr/)                               | Architecture decision records                                                            |
+| Document                                   | What it covers                                                                                       |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| [project-overview.md](project-overview.md) | What Archant is, which Sure features are in scope, and why                                           |
+| [tech-stack.md](tech-stack.md)             | Every dependency, its role, and its current version                                                  |
+| [sure-parity.md](sure-parity.md)           | Each Sure feature area, what Archant does instead, and why                                           |
+| [deployment.md](deployment.md)             | Docker, upgrades, backups, Enable Banking, scheduled sync, password reset, other targets             |
+| [hosting.md](hosting.md)                   | The home setup end to end: a machine behind Tailscale, backups, secrets, a VPS fallback              |
+| [troubleshooting.md](troubleshooting.md)   | One section per symptom a self-hoster meets, with the exact message and the fix                      |
+| [security-model.md](security-model.md)     | What is encrypted and with which secret, what leaves the server, what the logs hold, what is trusted |
+| [architecture.md](architecture.md)         | The architecture spine: the AD-n decisions that code comments and lint rules cite                    |
+| [adr/](adr/)                               | Architecture decision records                                                                        |
 
 ## Decision records
 

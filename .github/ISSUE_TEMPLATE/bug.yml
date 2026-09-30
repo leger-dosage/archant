@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in Archant does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/troubleshooting.md](https://github.com/leger-dosage/archant/blob/main/docs/troubleshooting.md) first. A security flaw is never reported here: follow [SECURITY.md](https://github.com/leger-dosage/archant/blob/main/SECURITY.md).
+
+        Never paste real bank data. Use made-up amounts, labels and IBANs in the steps, the logs and any screenshot.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: « Version x.y.z » at the bottom of « Réglages », the image tag you run, or the output of `git rev-parse HEAD` for a checkout.
+      placeholder: 0.2.1
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: How you run Archant
+      options:
+        - Published image (ghcr.io/leger-dosage/archant)
+        - Image built from a checkout (docker compose up --build)
+        - Checkout run with pnpm
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, one step per line, from a page you name.
+      placeholder: |
+        1. Open « Transactions »
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+      description: What you expected, then what happened instead, with the exact message shown.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server logs
+      description: The relevant lines of `docker compose logs archant`, or of the `pnpm api start:dev` terminal. Remove every amount, transaction label, IBAN or account number, access or refresh token, and cookie before pasting.
+      render: text
+  - type: checkboxes
+    id: no-bank-data
+    attributes:
+      label: No real bank data
+      options:
+        - label: This report, its logs and its screenshots hold no real amount, label, IBAN, token or cookie.
+          required: true

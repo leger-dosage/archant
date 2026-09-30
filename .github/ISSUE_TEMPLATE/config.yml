@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/leger-dosage/archant/security/advisories/new
+    about: Never in a public issue. See SECURITY.md.
+  - name: Troubleshooting
+    url: https://github.com/leger-dosage/archant/blob/main/docs/troubleshooting.md
+    about: Known problems, with the exact message and the fix.

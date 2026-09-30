@@ -11,7 +11,7 @@ inputDocuments:
   - _bmad-output/implementation-artifacts/scaffolding-lessons.md
   - _bmad-output/implementation-artifacts/deferred-work.md
   - docs/sure-parity.md
-  - _bmad-output/planning-artifacts/architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md
+  - docs/architecture.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/DESIGN.md
   - _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/EXPERIENCE.md
   - _bmad-output/planning-artifacts/audit-2026-09-30.md
@@ -161,7 +161,7 @@ NFR18: A vulnerability can be reported privately, GitHub's secret scanning and c
 - The application copies the database before a migration (FR60). Other backups are taken by hand with the `VACUUM INTO` recipe of `docs/deployment.md`; scheduled and off-site backups are deferred until the owner wants them.
 - Amounts are signed from the account's point of view: negative means money leaving the account. A liability's balance is displayed as a positive outstanding amount. The architecture fixes the storage convention.
 - Every story ships automated tests for its acceptance criteria: Playwright end-to-end tests for what the interface shows, Vitest for domain, services and routes. A story is not done while one of its criteria is only checked by hand. Story 1.7 creates the Playwright harness and covers Stories 1.1 to 1.4; every story after it adds its own tests.
-- The architecture spine, `architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md`, binds every story; its `AD-n` rules win over any wording here.
+- The architecture spine, `docs/architecture.md`, binds every story; its `AD-n` rules win over any wording here.
 - Ordering constraints outside this document: `bmad-architecture` settles the connector interface and the data model before Story 2.1, and `bmad-ux` produces `DESIGN.md` and `EXPERIENCE.md` before Story 1.1, the first interface story.
 
 ### UX Design Requirements
