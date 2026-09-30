@@ -1,6 +1,7 @@
 import type { CategoryData } from "@/hooks/useCategories";
 import type { Selection } from "@/hooks/useSelection";
 import type { TransactionData } from "@/hooks/useTransactions";
+import type { ReactNode } from "react";
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryPill, TransferPill } from "@/components/CategoryPill";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
+import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -20,6 +22,7 @@ import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
+import { formatShortDate } from "@/lib/balance-change";
 import { dayHeading } from "@/lib/dates";
 import { rowSubject } from "@/lib/tint";
 import { groupByDay } from "@/lib/transaction-days";
@@ -33,6 +36,8 @@ type TransactionListProps = {
 	showAccount?: boolean;
 	/** Ticks rows for a bulk action; without it, rows have no checkbox. */
 	selection?: Selection;
+	/** The day headings' level: `h2` directly under the page's `h1`, `h3` under a card's `h2`. */
+	headingLevel?: 2 | 3;
 };
 
 function DayTitle({ date }: { date: string }) {
@@ -55,9 +60,27 @@ type CategoryChipProps = {
 	onPick: (categoryId: string | null) => void;
 };
 
-// From 768 px, over the row button's empty cell, so the pill sits in its column.
+// Over the row button, never inside it: beside the date below 768 px, under
+// the amount's column too, and in the category column from 768 px, where the
+// button leaves that cell empty.
 const CATEGORY_SLOT =
-	"ml-2 flex min-h-7 max-w-full min-w-0 items-center self-start md:col-start-2 md:row-start-1 md:ml-0 md:self-center md:justify-self-start";
+	"relative z-10 col-start-3 col-end-5 row-start-2 -my-0.5 flex min-h-7 max-w-full min-w-0 items-center self-start justify-self-start md:col-end-4 md:row-start-1 md:self-center";
+
+/**
+ * The columns from 768 px: the icon, the label, the category, the account
+ * from 1024 px when shown, the amount. The label takes as much as the
+ * columns on its right together, so the row button's centre, where a pointer
+ * or a test aims, lies on the label rather than under the category pill. The
+ * icon's column holds the row button's 12 px padding too: a subgrid's
+ * padding is its edge items' margin.
+ */
+function columnsOf(showAccount: boolean) {
+	return showAccount
+		? "md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[3rem_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
+		: "md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]";
+}
+
+const OVERLINE = "text-xs font-medium tracking-[0.02em] text-muted-foreground uppercase";
 
 /**
  * The row's category pill, or « Sans catégorie ». A button of its own beside
@@ -81,15 +104,17 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 							}
 							className={cn(
 								CATEGORY_SLOT,
-								"rounded-full outline-none hover:ring-1 hover:ring-border-strong focus-visible:ring-2 focus-visible:ring-ring md:relative md:z-10",
+								// A 28 px target around the 24 px pill; the ring hugs the pill.
+								"group outline-none md:relative md:z-10",
 							)}
 						>
 							{name === null ? (
-								<Skeleton className="h-5 w-24 rounded-full" />
+								<Skeleton className="h-6 w-24 rounded-full" />
 							) : (
 								<CategoryPill
 									category={color === null || icon === null ? null : { name, color, icon }}
 									fallback={name}
+									className="group-hover:ring-1 group-hover:ring-border-strong group-focus-visible:ring-2 group-focus-visible:ring-ring"
 								/>
 							)}
 						</button>
@@ -148,7 +173,7 @@ function RowCheckbox({
 					checked={checked}
 					// Beside the row button, as the category chip is, never inside it.
 					// A 24 px target, as WCAG 2.2 asks, rather than the 16 px box.
-					className="mt-2.5 ml-1 shrink-0 after:-inset-1 md:mt-0 md:self-center"
+					className="ml-3 shrink-0 after:-inset-1"
 					onClick={(event) => {
 						// The parent decides: a Shift+click ticks a range, not this box alone.
 						event.preventDefault();
@@ -175,6 +200,7 @@ export function TransactionList({
 	onOpen,
 	showAccount = false,
 	selection,
+	headingLevel = 3,
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
@@ -188,221 +214,263 @@ export function TransactionList({
 	const tagNames = new Map((tags.data ?? []).map((tag) => [tag.id, tag.name]));
 	// The row whose category combobox is open, so a pick closes it.
 	const [picking, setPicking] = useState<string | null>(null);
+	const columns = columnsOf(showAccount);
 
 	return (
-		// Headers and rows share their lines, as one table: no gap between days.
-		<div className="flex flex-col border-t border-line">
-			{groupByDay(items).map((day) => {
-				const headingId = `day-${day.date}`;
-
-				return (
-					<section key={day.date} aria-labelledby={headingId}>
-						{/* Not a list item: the list holds the rows alone. */}
-						<div
-							data-slot="day-header"
-							className="flex min-h-9 items-center gap-2 border-b border-line bg-inset px-2"
-						>
-							<h3 id={headingId} className="font-medium">
-								<DayTitle date={day.date} />
-							</h3>
-							<span className="text-muted-foreground">
-								<span aria-hidden="true">{day.items.length}</span>
-								<span className="sr-only">
-									{t("transactions.days.count", { count: day.items.length })}
-								</span>
+		<div className="flex flex-col gap-4">
+			{/* Each row names its own cells: the header only guides the eye. */}
+			<div
+				aria-hidden="true"
+				data-slot="column-header"
+				className={cn("hidden rounded-xl bg-inset p-1 md:block", OVERLINE)}
+			>
+				{/* The inner block's border, so the names line up with the cells. */}
+				<div className="flex items-center border border-transparent py-2">
+					{selection !== undefined && <span className="ml-3 size-4 shrink-0" />}
+					{/* The edge cells take the row button's padding, so both grids share their tracks. */}
+					<div className={cn("grid min-w-0 flex-1 gap-x-3", columns)}>
+						<span className="col-start-1 col-end-3 truncate pl-3">
+							{t("transactions.columns.label")}
+						</span>
+						<span className="col-start-3 truncate">{t("transactions.columns.category")}</span>
+						{showAccount && (
+							<span className="hidden truncate lg:col-start-4 lg:block">
+								{t("transactions.columns.account")}
 							</span>
-							<span className="ml-auto flex flex-wrap justify-end gap-x-3 text-foreground-secondary">
-								{day.subtotals.map((subtotal) => (
-									<Money
-										key={subtotal.currency}
-										amount={subtotal.amount}
-										currency={subtotal.currency}
-										plusSign
-									/>
-								))}
+						)}
+						<span className="col-[-2/-1] truncate pr-3 text-right">
+							{t("transactions.columns.amount")}
+						</span>
+					</div>
+				</div>
+			</div>
+			{groupByDay(items).map((day) => (
+				<InsetGroup
+					key={day.date}
+					id={`day-${day.date}`}
+					level={headingLevel}
+					title={<DayTitle date={day.date} />}
+					detail={
+						<span className="shrink-0">
+							<span aria-hidden="true">· {day.items.length}</span>
+							<span className="sr-only">
+								{t("transactions.days.count", { count: day.items.length })}
 							</span>
-						</div>
-						<ul>
-							{day.items.map((item) => {
-								const caption = transferCaption(item);
-								const categoryShown = showsCategory(item.amount, item.transfer);
-								const merchantName =
-									item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
-								// A transfer side names the other account where a purchase names its
-								// merchant. A spent outflow shows its category, so its kind joins the
-								// caption, as Sure's « Loan payment • A → B ».
-								const subtitle =
-									caption === null
-										? merchantName
-										: categoryShown && item.transfer !== null
-											? t("transactions.transfer.spentCaption", {
-													kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
-													caption: t(caption.key, { account: caption.account }),
-												})
-											: t(caption.key, { account: caption.account });
-								const category =
-									item.categoryId === null ? undefined : categoryOf.get(item.categoryId);
-								const rowTags = item.tagIds
-									.flatMap((id) => {
-										const name = tagNames.get(id);
+						</span>
+					}
+					total={
+						<span className="flex flex-wrap justify-end gap-x-3">
+							{day.subtotals.map((subtotal) => (
+								<Money
+									key={subtotal.currency}
+									amount={subtotal.amount}
+									currency={subtotal.currency}
+									plusSign
+								/>
+							))}
+						</span>
+					}
+				>
+					<ul>
+						{day.items.map((item) => {
+							const caption = transferCaption(item);
+							const categoryShown = showsCategory(item.amount, item.transfer);
+							const merchantName =
+								item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
+							// A transfer side names the other account where a purchase names its
+							// merchant. A spent outflow shows its category, so its kind joins the
+							// caption, as Sure's « Loan payment • A → B ».
+							const subtitle =
+								caption === null
+									? merchantName
+									: categoryShown && item.transfer !== null
+										? t("transactions.transfer.spentCaption", {
+												kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
+												caption: t(caption.key, { account: caption.account }),
+											})
+										: t(caption.key, { account: caption.account });
+							const category =
+								item.categoryId === null ? undefined : categoryOf.get(item.categoryId);
+							const rowTags = item.tagIds
+								.flatMap((id) => {
+									const name = tagNames.get(id);
 
-										return name === undefined ? [] : [name];
-									})
-									.toSorted((a, b) => byName.compare(a, b));
-								const selected = selection?.isSelected(item.id) === true;
+									return name === undefined ? [] : [name];
+								})
+								.toSorted((a, b) => byName.compare(a, b));
+							const selected = selection?.isSelected(item.id) === true;
 
-								return (
-									<li
-										key={item.id}
-										data-selected={selected || undefined}
+							return (
+								<li
+									key={item.id}
+									data-selected={selected || undefined}
+									className={cn(
+										"relative flex items-center border-b border-line last:border-b-0 hover:bg-hover has-[[data-transaction-id]:focus-visible]:bg-hover md:h-14",
+										selected &&
+											"bg-selection before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent-brand hover:bg-selection has-[[data-transaction-id]:focus-visible]:bg-selection",
+									)}
+								>
+									{selection !== undefined && (
+										<RowCheckbox
+											label={item.label}
+											checked={selected}
+											onToggle={(range) =>
+												range ? selection.extendTo(item.id) : selection.toggle(item.id)
+											}
+										/>
+									)}
+									{/*
+									 * Below 768 px two lines: the label and the amount, then the
+									 * date and the category. From 768 px one line of columns. The
+									 * row button spans every cell; the category button sits over
+									 * the cell the row button leaves empty.
+									 */}
+									<div
 										className={cn(
-											"relative flex border-b border-line hover:bg-hover has-[[data-transaction-id]:focus-visible]:bg-hover md:h-9 md:items-center",
-											selected &&
-												"bg-selection before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent-brand hover:bg-selection has-[[data-transaction-id]:focus-visible]:bg-selection",
+											"grid min-w-0 flex-1 grid-cols-[3rem_auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1 md:h-full md:grid-rows-1 md:gap-y-0",
+											columns,
 										)}
 									>
-										{selection !== undefined && (
-											<RowCheckbox
-												label={item.label}
-												checked={selected}
-												onToggle={(range) =>
-													range ? selection.extendTo(item.id) : selection.toggle(item.id)
-												}
-											/>
-										)}
-										{/*
-										 * Two lines below 768 px: label, caption and amount, then the
-										 * category. From 768 px one line of columns: the row button spans
-										 * them all, and the category button sits over its empty cell.
-										 */}
-										<div
-											className={cn(
-												"flex min-w-0 flex-1 flex-col pb-1 md:grid md:h-full md:items-center md:gap-x-3 md:pb-0",
-												// The label's column stays wider than the other three together
-												// at 1280 px, so the row button's centre, where a pointer or a
-												// test aims, lies on the label rather than under the pill.
-												showAccount
-													? "md:grid-cols-[minmax(0,1fr)_9rem_9rem_7.5rem]"
-													: "md:grid-cols-[minmax(0,1fr)_9rem_7.5rem]",
-											)}
+										<button
+											type="button"
+											// Lets the sheet give focus back to this row after an edit
+											// moved it under another day, which remounts it.
+											data-transaction-id={item.id}
+											onClick={() => onOpen(item)}
+											className="col-span-full row-start-1 row-end-3 grid grid-cols-subgrid grid-rows-subgrid items-center rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:row-end-2 md:py-0"
 										>
-											<button
-												type="button"
-												// Lets the sheet give focus back to this row after an edit
-												// moved it under another day, which remounts it.
-												data-transaction-id={item.id}
-												onClick={() => onOpen(item)}
-												className="flex min-h-9 w-full min-w-0 items-center justify-between gap-4 rounded-md px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring md:col-span-full md:row-start-1 md:grid md:h-full md:min-h-0 md:grid-cols-subgrid md:gap-x-3"
-											>
-												<span className="flex min-w-0 flex-1 items-center gap-2">
-													<TintedIcon
-														subject={rowSubject(
-															item,
-															category === undefined ? null : category,
-															merchantName ?? null,
-														)}
-														className="max-md:self-start max-md:mt-2"
-													/>
-													<span className="flex min-w-0 flex-1 flex-col md:flex-row md:items-center md:gap-2">
-														{/* Below 768 px the badges wrap under the label rather than squeeze it. */}
-														<span className="flex min-w-0 items-center gap-1.5 max-md:flex-wrap">
-															<span className="truncate font-medium" title={item.label}>
-																{item.label}
-															</span>
-															{item.pending && <StatusBadge status="pending" />}
-															{/* The sheet's own condition: a side it shows no category for has no series. */}
-															{item.recurring && categoryShown && (
-																<StatusBadge status="recurring" />
-															)}
-															{item.transfer !== null && <StatusBadge status="transfer" />}
-															{item.transfer === null && item.transferSuggested && (
-																<StatusBadge status="transferSuggested" />
-															)}
-															{item.possibleDuplicate && <StatusBadge status="duplicate" />}
-														</span>
-														{(subtitle !== undefined || rowTags.length > 0) && (
-															// The caption gives way before the label on one line.
-															<span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground md:shrink-[4]">
-																{subtitle !== undefined && (
-																	<span className="truncate">{subtitle}</span>
-																)}
-																{rowTags.slice(0, SHOWN_TAGS).map((name) => (
-																	<Badge
-																		key={name}
-																		variant="outline"
-																		className="max-w-32 font-normal text-muted-foreground"
-																	>
-																		<span className="truncate">{name}</span>
-																	</Badge>
-																))}
-																{rowTags.length > SHOWN_TAGS && (
-																	<Badge
-																		variant="outline"
-																		className="font-normal text-muted-foreground"
-																	>
-																		{t("transactions.tags.more", {
-																			count: rowTags.length - SHOWN_TAGS,
-																		})}
-																	</Badge>
-																)}
-															</span>
-														)}
+											<TintedIcon
+												size="lg"
+												subject={rowSubject(
+													item,
+													category === undefined ? null : category,
+													merchantName ?? null,
+												)}
+												className="col-start-1 row-start-1 row-end-3 md:row-end-2"
+											/>
+											<span className="col-start-2 col-end-4 row-start-1 flex min-w-0 flex-col md:col-end-3">
+												<span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+													<span className="truncate font-medium" title={item.label}>
+														{item.label}
 													</span>
-												</span>
-												{/* Left empty: the category button stays outside this one, keeping its own name, and sits over it. */}
-												<span aria-hidden="true" className="hidden md:block" />
-												{showAccount && (
-													<span
-														data-slot="row-account"
-														className="flex w-40 min-w-0 shrink-0 items-center gap-1.5 text-xs text-foreground-secondary max-md:w-24 md:w-auto"
-														title={item.accountName}
-													>
-														<TintedIcon
-															size="sm"
-															subject={{ kind: "account", type: item.accountType }}
+													{item.pending && (
+														<StatusBadge status="pending" iconBelowMd className="shrink-0" />
+													)}
+													{/* The sheet's own condition: a side it shows no category for has no series. */}
+													{item.recurring && categoryShown && (
+														<StatusBadge status="recurring" iconBelowMd className="shrink-0" />
+													)}
+													{item.transfer !== null && (
+														<StatusBadge status="transfer" iconBelowMd className="shrink-0" />
+													)}
+													{item.transfer === null && item.transferSuggested && (
+														<StatusBadge
+															status="transferSuggested"
+															iconBelowMd
+															className="shrink-0"
 														/>
-														<span className="truncate">{item.accountName}</span>
+													)}
+													{item.possibleDuplicate && (
+														<StatusBadge status="duplicate" iconBelowMd className="shrink-0" />
+													)}
+												</span>
+												{(subtitle !== undefined || rowTags.length > 0) && (
+													<span className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground md:flex">
+														{subtitle !== undefined && <span className="truncate">{subtitle}</span>}
+														{rowTags.slice(0, SHOWN_TAGS).map((name) => (
+															<Badge
+																key={name}
+																variant="outline"
+																className="max-w-32 font-normal text-muted-foreground"
+															>
+																<span className="truncate">{name}</span>
+															</Badge>
+														))}
+														{rowTags.length > SHOWN_TAGS && (
+															<Badge
+																variant="outline"
+																className="font-normal text-muted-foreground"
+															>
+																{t("transactions.tags.more", {
+																	count: rowTags.length - SHOWN_TAGS,
+																})}
+															</Badge>
+														)}
 													</span>
 												)}
-												<span className="flex shrink-0 items-center justify-end gap-1.5">
-													{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
-													{/* Named in words by its badge, never by colour alone. */}
-													<Money
-														amount={item.amount}
-														currency={item.currency}
-														signed
-														muted={item.excluded || item.pending}
+											</span>
+											{/* The day's group already names it from 768 px. */}
+											<span className="col-start-2 row-start-2 flex h-6 items-center self-start text-xs whitespace-nowrap text-muted-foreground md:hidden">
+												{formatShortDate(item.date)}
+											</span>
+											{/* Left empty: the category button stays outside this one, keeping its own name, and sits over it. */}
+											<span
+												aria-hidden="true"
+												className="hidden md:col-start-3 md:row-start-1 md:block"
+											/>
+											{showAccount && (
+												<span
+													data-slot="row-account"
+													className="hidden min-w-0 items-center gap-1.5 text-foreground-secondary lg:col-start-4 lg:row-start-1 lg:flex"
+													title={item.accountName}
+												>
+													<TintedIcon
+														size="sm"
+														subject={{ kind: "account", type: item.accountType }}
 													/>
+													<span className="truncate">{item.accountName}</span>
 												</span>
-											</button>
-											{item.transfer !== null && !categoryShown ? (
-												<TransferChip kind={item.transfer.kind} />
-											) : (
-												<CategoryChip
-													transaction={item}
-													categories={categories.data}
-													open={picking === item.id}
-													onOpenChange={(open) => setPicking(open ? item.id : null)}
-													onPick={(categoryId) => {
-														setPicking(null);
-														if (categoryId !== item.categoryId) {
-															setCategory.mutate({
-																id: item.id,
-																value: categoryId,
-																previous: item.categoryId,
-															});
-														}
-													}}
-												/>
 											)}
-										</div>
-									</li>
-								);
-							})}
-						</ul>
-					</section>
-				);
-			})}
+											<span className="col-[-2/-1] row-start-1 flex items-center justify-end gap-1.5">
+												{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
+												{/* Named in words by its badge, never by colour alone. */}
+												<Money
+													amount={item.amount}
+													currency={item.currency}
+													signed
+													muted={item.excluded || item.pending}
+												/>
+											</span>
+										</button>
+										{item.transfer !== null && !categoryShown ? (
+											<TransferChip kind={item.transfer.kind} />
+										) : (
+											<CategoryChip
+												transaction={item}
+												categories={categories.data}
+												open={picking === item.id}
+												onOpenChange={(open) => setPicking(open ? item.id : null)}
+												onPick={(categoryId) => {
+													setPicking(null);
+													if (categoryId !== item.categoryId) {
+														setCategory.mutate({
+															id: item.id,
+															value: categoryId,
+															previous: item.categoryId,
+														});
+													}
+												}}
+											/>
+										)}
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				</InsetGroup>
+			))}
+		</div>
+	);
+}
+
+/** DESIGN.md's list card: the search, the filters and the list share it. */
+export function TransactionListCard({ children }: { children: ReactNode }) {
+	return (
+		<div
+			data-slot="list-card"
+			className="flex min-w-0 flex-col gap-4 rounded-xl border bg-card px-3 py-4 lg:p-4"
+		>
+			{children}
 		</div>
 	);
 }
@@ -410,15 +478,24 @@ export function TransactionList({
 export function TransactionListSkeleton() {
 	return (
 		// The list's own shape, so the page does not jump when the rows land.
-		<div className="flex flex-col border-t border-line" aria-hidden="true">
-			<div className="flex h-9 items-center border-b border-line bg-inset px-2">
-				<Skeleton className="h-4 w-32" />
-			</div>
-			{[0, 1, 2].map((index) => (
-				<div key={index} className="flex h-9 items-center border-b border-line px-2">
-					<Skeleton className="h-5 w-full" />
+		<div className="flex flex-col gap-4" aria-hidden="true">
+			<div className="hidden h-[42px] rounded-xl bg-inset md:block" />
+			<div className="flex flex-col rounded-xl bg-inset p-1">
+				<div className="px-4 py-2">
+					<Skeleton className="h-4 w-32" />
 				</div>
-			))}
+				<div className="overflow-hidden rounded-lg border bg-card">
+					{[0, 1, 2].map((index) => (
+						<div
+							key={index}
+							className="flex h-14 items-center gap-3 border-b border-line px-3 last:border-b-0"
+						>
+							<Skeleton className="size-9 shrink-0 rounded-[10px]" />
+							<Skeleton className="h-4 w-full" />
+						</div>
+					))}
+				</div>
+			</div>
 		</div>
 	);
 }

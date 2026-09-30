@@ -49,7 +49,7 @@ async function tick(page: Page, labels: string[]) {
 	}, Promise.resolve());
 }
 
-test("ticking two rows shows « 2 sélectionnées »", async ({ page, api }) => {
+test("ticking two rows shows « 2 sélectionnées », over 36 px buttons", async ({ page, api }) => {
 	const prefix = uniqueName("Tri");
 	await withRows(api, prefix);
 
@@ -58,6 +58,19 @@ test("ticking two rows shows « 2 sélectionnées »", async ({ page, api }) => 
 
 	await expect(bar(page)).toContainText("2 sélectionnées");
 	await expect(checkbox(page, labelOf(prefix, 2))).not.toBeChecked();
+	await Promise.all(
+		["Catégorie", "Marchand", "Étiquettes", "Exclure", "Supprimer"].flatMap((name) => {
+			const button = bar(page).getByRole("button", { name, exact: true });
+
+			return [
+				expect(button).toHaveCSS("height", "36px"),
+				expect(button).toHaveCSS("font-size", "14px"),
+			];
+		}),
+	);
+	await expect(
+		bar(page).getByRole("button", { name: "Tout sélectionner (3 résultats)" }),
+	).toHaveCSS("font-size", "14px");
 });
 
 test("Esc closing the bar's category list keeps the selection", async ({ page, api }) => {
@@ -203,7 +216,9 @@ test("« Tout sélectionner » categorises the 60 uncategorised rows of two page
 	await withRows(api, prefix, 60);
 
 	await visitOperations(page, prefix, "&category=none");
-	await expect(page.getByText("60 résultats")).toBeVisible();
+	await expect(
+		page.getByRole("group", { name: "Opérations", exact: true }).locator(".amount-summary"),
+	).toHaveText("60");
 
 	// Another page is another selection.
 	await checkbox(page, labelOf(prefix, 1)).click();

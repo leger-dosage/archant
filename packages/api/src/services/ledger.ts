@@ -4234,9 +4234,12 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
  */
 const isTransferSide = sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`;
 
-const DIRECTION_CONDITIONS: Record<Direction, SQL | undefined> = {
-	income: and(not(isTransferSide), gt(entries.amount, 0)),
-	expense: and(not(isTransferSide), lte(entries.amount, 0)),
+/** Drizzle's `and` of two conditions, typed as never empty, so a sum can pick rows by it. */
+const both = (left: SQL, right: SQL): SQL => sql`(${left} and ${right})`;
+
+const DIRECTION_CONDITIONS: Record<Direction, SQL> = {
+	income: both(not(isTransferSide), gt(entries.amount, 0)),
+	expense: both(not(isTransferSide), lte(entries.amount, 0)),
 	transfer: isTransferSide,
 };
 
@@ -4352,16 +4355,25 @@ export async function listTransactions(
 	};
 }
 
+/** The sum of the amounts of the rows `condition` holds for, `0` when none does. */
+function sumWhere(condition: SQL) {
+	return sum(sql`case when ${condition} then ${entries.amount} else 0 end`).mapWith(Number);
+}
+
 /**
- * The signed sum and the count of the transactions matching `filter`, one row
- * per currency. Excluded transactions count: the sum describes the rows the
- * list shows, not a report. Joins `transactions` only for the text search and
- * the category and merchant filters, as the count does.
+ * The signed sum, the income and expense sums and the count of the
+ * transactions matching `filter`, one row per currency. Excluded transactions
+ * count: the sums describe the rows the list shows, not a report. Income and
+ * expenses are the direction filter's, so a transfer side counts in neither,
+ * as in Sure's `Transaction::Search#totals`. Joins `transactions` only for the
+ * text search and the category and merchant filters, as the count does.
  */
 export async function sumTransactions(
 	deps: ServiceDeps,
 	filter: TransactionFilter,
-): Promise<{ currency: string; amount: MinorUnits; count: number }[]> {
+): Promise<
+	{ currency: string; amount: MinorUnits; income: MinorUnits; expense: MinorUnits; count: number }[]
+> {
 	const where = filterCondition(filter);
 
 	if (where === null) {
@@ -4371,6 +4383,8 @@ export async function sumTransactions(
 	const columns = {
 		currency: entries.currency,
 		amount: sum(entries.amount).mapWith(Number),
+		income: sumWhere(DIRECTION_CONDITIONS.income),
+		expense: sumWhere(DIRECTION_CONDITIONS.expense),
 		count: count(),
 	};
 	const rows = !needsTransactionColumns(filter)
@@ -4388,7 +4402,11 @@ export async function sumTransactions(
 				.groupBy(entries.currency)
 				.orderBy(entries.currency);
 
-	return rows.map(toRecord);
+	return rows.map((row) => ({
+		...toRecord(row),
+		income: toMinorUnits(row.income),
+		expense: toMinorUnits(row.expense),
+	}));
 }
 
 /**

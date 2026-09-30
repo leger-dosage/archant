@@ -25,7 +25,11 @@ import { Section } from "@/components/Section";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TintedIcon } from "@/components/TintedIcon";
-import { TransactionList, TransactionListSkeleton } from "@/components/TransactionList";
+import {
+	TransactionList,
+	TransactionListCard,
+	TransactionListSkeleton,
+} from "@/components/TransactionList";
 import { TransactionSheet } from "@/components/TransactionSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -131,7 +135,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 	);
 
 	return (
-		<div className="flex flex-col gap-3">
+		<TransactionListCard>
 			{transactions.isPending && <TransactionListSkeleton />}
 
 			{transactions.isError && (
@@ -159,7 +163,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 					label={t("transactions.paginationLabel")}
 				/>
 			)}
-		</div>
+		</TransactionListCard>
 	);
 }
 

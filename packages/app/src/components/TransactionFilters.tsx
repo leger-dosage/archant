@@ -553,7 +553,8 @@ export function TransactionFilters({
 				}}
 			>
 				<PopoverTrigger asChild>
-					<Button variant="outline" size="sm">
+					{/* The search field's 36 px, as Sure's filter button beside it. */}
+					<Button variant="outline">
 						<ListFilterIcon />
 						{t("operations.filter")}
 					</Button>

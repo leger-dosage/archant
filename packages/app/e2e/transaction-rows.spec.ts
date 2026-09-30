@@ -37,13 +37,17 @@ function uniqueAmount(): string {
 	return `${randomInt(100, 900)},${String(randomInt(100)).padStart(2, "0")}`;
 }
 
+/** The vertical middle of a box, to tell which line it sits on. */
+const middle = (box: { y: number; height: number } | null) =>
+	(box?.y ?? 0) + (box?.height ?? 0) / 2;
+
 async function visitOperations(page: Page, q: string) {
 	await page.goto(`/transactions?q=${encodeURIComponent(q)}`);
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	await expect(rowItem(page, q).first()).toBeVisible();
 }
 
-test("each row shows its icon, pill, account, badges and amount on one 36 px line, under its day's count and subtotal", async ({
+test("each row shows its icon, pill, account, badges and amount on one 56 px line, in its day's tray under the column header", async ({
 	page,
 	api,
 }) => {
@@ -102,16 +106,72 @@ test("each row shows its icon, pill, account, badges and amount on one 36 px lin
 
 	await visitOperations(page, prefix);
 
-	// The day header: its day, « 8 » read « 8 opérations », and the signed sum
-	// of its rows, transfers included.
-	const dayHeader = page.getByRole("main").getByRole("heading", { level: 3 }).locator("..");
-	await expect(dayHeader).toHaveCount(1);
+	// The column header: uppercase names on the grey tray, over the rows' cells.
+	const columns = page.getByRole("main").locator('[data-slot="column-header"]');
+
+	// The 36 px search field opens the list card, above the column header.
+	const card = page.getByRole("main").locator('[data-slot="list-card"]');
+	const searchBox = card.getByRole("searchbox", { name: "Rechercher" });
+	await expect(searchBox).toHaveCSS("height", "36px");
+	const [cardBox, searchBoxBox, columnsBox] = await Promise.all([
+		card.boundingBox(),
+		searchBox.boundingBox(),
+		columns.boundingBox(),
+	]);
+	// The card's 1 px border and 16 px padding.
+	expect(searchBoxBox?.y).toBeCloseTo((cardBox?.y ?? 0) + 17, 0);
+	expect((searchBoxBox?.y ?? 0) + (searchBoxBox?.height ?? 0)).toBeLessThan(columnsBox?.y ?? 0);
+	await expect(columns).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(columns).toHaveCSS("border-radius", "12px");
+	await expect(columns).toHaveCSS("text-transform", "uppercase");
+	await expect(columns).toHaveCSS("font-size", "12px");
+	await expect(columns.locator("span").filter({ hasText: /./u })).toHaveText([
+		"Opération",
+		"Catégorie",
+		"Compte",
+		"Montant",
+	]);
+
+	// The day's tray: its day, « · 8 » read « 8 opérations », and the signed sum
+	// of its rows, transfers included, over a white block of the rows.
+	const day = page.getByRole("main").locator('[data-slot="inset-group"]');
+	await expect(day).toHaveCount(1);
+	await expect(day).toHaveCSS("background-color", rgb("#f2f2f3"));
+	await expect(day).toHaveCSS("border-radius", "12px");
+	// Directly under the page's `h1`, a day is an `h2`.
+	const dayHeading = day.getByRole("heading", { level: 2 });
+	await expect(dayHeading).toHaveCSS("text-transform", "uppercase");
+	const dayHeader = dayHeading.locator("../..");
 	await expect(dayHeader).toContainText("8 opérations");
 	await expect(dayHeader).toContainText(euros(-(1234 + 500 + 100 + 999)));
+	const block = day.locator("ul").locator("..");
+	await expect(block).toHaveCSS("background-color", rgb("#ffffff"));
+	await expect(block).toHaveCSS("overflow", "hidden");
+	await expect(block.getByRole("listitem")).toHaveCount(8);
 	await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(8);
 
 	const box = await rowItem(page, label.food).boundingBox();
-	expect(box?.height).toBe(36);
+	expect(box?.height).toBe(56);
+	await expect(rowIcon(page, label.food)).toHaveCSS("width", "36px");
+	await expect(rowIcon(page, label.food)).toHaveCSS("height", "36px");
+	await expect(pill(page, label.food)).toHaveCSS("height", "24px");
+	await expect(pill(page, label.food).locator("svg")).toHaveCSS("width", "12px");
+
+	// Each name sits over its cells: the category's start, the amount's end.
+	const [categoryName, amountNameEnd, pillBox, amountBox] = await Promise.all([
+		columns.getByText("Catégorie").boundingBox(),
+		columns
+			.getByText("Montant")
+			.evaluate(
+				(element) =>
+					element.getBoundingClientRect().right -
+					Number.parseFloat(getComputedStyle(element).paddingRight),
+			),
+		pill(page, label.food).boundingBox(),
+		rowButton(page, label.food).getByText(euros(-1234)).boundingBox(),
+	]);
+	expect(pillBox?.x).toBeCloseTo(categoryName?.x ?? 0, 0);
+	expect((amountBox?.x ?? 0) + (amountBox?.width ?? 0)).toBeCloseTo(amountNameEnd, 0);
 
 	await expect(rowIcon(page, label.food).locator("svg.lucide-utensils")).toBeVisible();
 	await expect(pill(page, label.food)).toHaveText(food.name);
@@ -152,6 +212,11 @@ test("each row shows its icon, pill, account, badges and amount on one 36 px lin
 	await expect(accountIcon(page, label.food).locator("svg.lucide-landmark")).toBeVisible();
 	await expect(accountIcon(page, label.repayment).locator("svg.lucide-hand-coins")).toBeVisible();
 
+	// A hovered row takes the hover colour.
+	await expect(rowItem(page, label.bare)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+	await rowButton(page, label.bare).hover();
+	await expect(rowItem(page, label.bare)).toHaveCSS("background-color", rgb("#f4f4f4"));
+
 	// A ticked row: the selection colour and the accent bar on its left edge.
 	await rowItem(page, label.food)
 		.getByRole("checkbox", { name: `Sélectionner « ${label.food} »` })
@@ -163,6 +228,96 @@ test("each row shows its icon, pill, account, badges and amount on one 36 px lin
 		return { color: style.backgroundColor, width: style.width };
 	});
 	expect(bar).toEqual({ color: rgb("#7170ff"), width: "2px" });
+
+	// Below 1024 px the account column goes, its header name with it.
+	await page.setViewportSize({ width: 900, height: 900 });
+
+	await expect(rowButton(page, label.food).locator('[data-slot="row-account"]')).toBeHidden();
+	await expect(columns.getByText("Compte", { exact: true })).toBeHidden();
+	await expect(columns.getByText("Catégorie")).toBeVisible();
+	expect((await rowItem(page, label.food).boundingBox())?.height).toBe(56);
+});
+
+test("below 768 px a row takes two lines: the label and the amount, then the date and the category", async ({
+	page,
+	api,
+}) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const prefix = uniqueName("Mobile");
+	const date = daysAgo(3);
+	const account = await api.openAccount();
+	const food = await api.createCategory({ name: uniqueName("Marché"), icon: "utensils" });
+	const id = await api.addTransaction(account.id, {
+		date,
+		label: `${prefix} courses`,
+		amount: "-23,45",
+	});
+	await api.categorise([id], food.id);
+
+	await visitOperations(page, prefix);
+
+	const label = `${prefix} courses`;
+	const shortDate = new Intl.DateTimeFormat("fr-FR", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	}).format(new Date(`${date}T00:00:00Z`));
+	await expect(page.getByRole("main").locator('[data-slot="column-header"]')).toBeHidden();
+	const [labelBox, amountBox, dateBox, pillBox] = await Promise.all([
+		rowButton(page, label).getByText(label).boundingBox(),
+		rowButton(page, label).getByText(euros(-2345)).boundingBox(),
+		rowButton(page, label).getByText(shortDate).boundingBox(),
+		pill(page, label).boundingBox(),
+	]);
+
+	expect(middle(amountBox)).toBeCloseTo(middle(labelBox), 0);
+	expect(middle(pillBox)).toBeCloseTo(middle(dateBox), 0);
+	expect(dateBox?.y).toBeGreaterThanOrEqual((labelBox?.y ?? 0) + (labelBox?.height ?? 0));
+	expect(pillBox?.x).toBeGreaterThan((dateBox?.x ?? 0) + (dateBox?.width ?? 0));
+	// Room for the name under the amount's column too.
+	await expect
+		.poll(() =>
+			pill(page, label)
+				.getByText(food.name)
+				.evaluate((element) => element.scrollWidth <= element.clientWidth),
+		)
+		.toBe(true);
+	expect(amountBox?.x).toBeGreaterThan((labelBox?.x ?? 0) + (labelBox?.width ?? 0));
+	await expect(pill(page, label)).toHaveText(food.name);
+	await expect(rowButton(page, label).locator('[data-slot="row-account"]')).toBeHidden();
+});
+
+test("the sheet is a 550 px drawer 12 px off the viewport's edges, and the whole screen below 768 px", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Tiroir");
+	const account = await api.openAccount();
+	await api.addTransaction(account.id, { date: daysAgo(1), label: prefix, amount: "-4,00" });
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+
+	await visitOperations(page, prefix);
+	await rowButton(page, prefix).click();
+
+	await expect(sheet).toBeVisible();
+	await expect(sheet).toHaveCSS("border-radius", "12px");
+	await expect(sheet).toHaveCSS("border-top-width", "1px");
+	// Waits for the slide in to end.
+	await expect.poll(async () => (await sheet.boundingBox())?.x).toBe(1440 - 12 - 550);
+	expect(await sheet.boundingBox()).toEqual({ x: 878, y: 12, width: 550, height: 900 - 24 });
+
+	await page.keyboard.press("Escape");
+	await expect(sheet).toBeHidden();
+	await expect(rowButton(page, prefix)).toBeFocused();
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.keyboard.press("Enter");
+
+	await expect(sheet).toBeVisible();
+	await expect(sheet).toHaveCSS("border-radius", "0px");
+	await expect.poll(async () => (await sheet.boundingBox())?.x).toBe(0);
+	expect(await sheet.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
 });
 
 test("pending, possible duplicate and possible transfer rows each carry their badge", async ({
@@ -175,6 +330,7 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 		pending: `${prefix} en attente`,
 		duplicate: `${prefix} doublon`,
 		suggested: `${prefix} virement`,
+		both: `${prefix} attente et doublon`,
 	};
 	await Promise.all(
 		Object.values(label).map((text) =>
@@ -190,8 +346,8 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 			const body = listBody.parse(await response.json());
 			const items = body.data.items.map((item) => ({
 				...item,
-				pending: item.label === label.pending,
-				possibleDuplicate: item.label === label.duplicate,
+				pending: item.label === label.pending || item.label === label.both,
+				possibleDuplicate: item.label === label.duplicate || item.label === label.both,
 				transferSuggested: item.label === label.suggested,
 			}));
 
@@ -215,5 +371,27 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 	);
 	await expect(rowButton(page, label.pending).getByText(euros(-300))).toHaveClass(
 		/text-muted-foreground/u,
+	);
+	await expect(badges(page, label.both)).toHaveText(["En attente", "Doublon possible"]);
+
+	// Below 768 px a badge is its icon alone, its name kept for screen readers,
+	// so two badges leave the label room on one line.
+	await page.setViewportSize({ width: 390, height: 844 });
+
+	const both = rowButton(page, label.both);
+	const text = both.getByText(label.both, { exact: true });
+	await expect(text).toBeVisible();
+	expect((await text.boundingBox())?.width).toBeGreaterThan(80);
+	await expect(badges(page, label.both).locator("svg.lucide-clock")).toBeVisible();
+	await expect(badges(page, label.both).locator("svg.lucide-triangle-alert")).toBeVisible();
+	await expect(badges(page, label.both)).toHaveText(["En attente", "Doublon possible"]);
+	await Promise.all(
+		(await badges(page, label.both).all()).map(async (badge) =>
+			expect((await badge.boundingBox())?.width).toBeLessThanOrEqual(24),
+		),
+	);
+	expect(middle(await text.boundingBox())).toBeCloseTo(
+		middle(await both.getByText(euros(-300)).boundingBox()),
+		0,
 	);
 });

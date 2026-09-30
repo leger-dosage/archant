@@ -79,6 +79,20 @@ test("the newest transaction is listed first", async ({ page, api }) => {
 		/Moyenne/u,
 		/Ancienne/u,
 	]);
+	// The account's page has the transactions page's list card, column header
+	// and day trays, without the account column: every row is this account's.
+	// Under the chart card's `h2`, a day is an `h3`.
+	const card = page.getByRole("main").locator('[data-slot="list-card"]');
+	await expect(card).toHaveCSS("border-radius", "12px");
+	await expect(card.locator('[data-slot="column-header"]')).toHaveText(
+		/^Opération\s*Catégorie\s*Montant$/u,
+	);
+	await expect(card.locator('[data-slot="inset-group"]')).toHaveCount(3);
+	await expect(card.getByRole("heading", { level: 3 })).toHaveCount(3);
+	await expect(card.locator('[data-slot="row-account"]')).toHaveCount(0);
+	expect((await page.getByRole("main").getByRole("listitem").first().boundingBox())?.height).toBe(
+		56,
+	);
 });
 
 test("Esc asks before discarding unsaved changes, and closes at once without any", async ({
