@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { SHARED_CLIENT_KEY, clientKey, forwardedFor, withForwardedFor } from "./client-address.ts";
 
@@ -51,7 +51,28 @@ describe("withForwardedFor", () => {
 	});
 });
 
+// Better Auth's `getIP` answers 127.0.0.1 instead of nothing under test or in
+// development, so the tables that expect the shared bucket run as in
+// production, on a module graph rebuilt after the environment changes.
+async function loadProductionClientKey(): Promise<typeof clientKey> {
+	vi.stubEnv("NODE_ENV", "production");
+	vi.stubEnv("TEST", "false");
+	vi.resetModules();
+
+	return (await import("./client-address.ts")).clientKey;
+}
+
 describe("clientKey", () => {
+	let productionClientKey: typeof clientKey;
+
+	beforeAll(async () => {
+		productionClientKey = await loadProductionClientKey();
+	});
+
+	afterAll(() => {
+		vi.unstubAllEnvs();
+	});
+
 	const proxies = ["127.0.0.1", "::1", "10.0.0.0/8"];
 
 	it.each([
@@ -92,6 +113,37 @@ describe("clientKey", () => {
 			"2001:0db8:0000:0000:0000:0000:0000:0000",
 		],
 	] as const)("%s", (_name, forwarded, trusted, expected) => {
+		expect(productionClientKey(forwarded, trusted)).toBe(expected);
+	});
+});
+
+describe("clientKey matrix", () => {
+	it.each([
+		["IPv4, no proxies", "203.0.113.7", [], "203.0.113.7"],
+		["IPv6", "2001:db8:1:2:3:4:5:6", [], "2001:0db8:0001:0002:0000:0000:0000:0000"],
+		["IPv4-mapped", "::ffff:203.0.113.7", [], "203.0.113.7"],
+		["trusted proxy chain", "198.51.100.1, 10.0.0.2", ["10.0.0.0/8"], "198.51.100.1"],
+	] as const)("%s", (_name, forwarded, trusted, expected) => {
 		expect(clientKey(forwarded, trusted)).toBe(expected);
+	});
+
+	describe("in production", () => {
+		let productionClientKey: typeof clientKey;
+
+		beforeAll(async () => {
+			productionClientKey = await loadProductionClientKey();
+		});
+
+		afterAll(() => {
+			vi.unstubAllEnvs();
+		});
+
+		it.each([
+			["two values, no proxies", "1.1.1.1, 2.2.2.2"],
+			["garbage", "nope"],
+			["missing header", null],
+		] as const)("%s shares one bucket", (_name, forwarded) => {
+			expect(productionClientKey(forwarded, [])).toBe(SHARED_CLIENT_KEY);
+		});
 	});
 });

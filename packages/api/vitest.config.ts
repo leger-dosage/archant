@@ -8,6 +8,10 @@ const VOLUME = "src/services/history-volume.spec.ts";
 export default defineConfig({
 	test: {
 		setupFiles: ["./vitest.setup.ts"],
+		// Better Auth reads NODE_ENV once, when its module loads. Inlined, it
+		// loads again after `vi.resetModules()`, so `client-address.spec.ts` can
+		// key addresses as production does; left to Node, it never reloads.
+		server: { deps: { inline: ["better-auth", "@better-auth/core"] } },
 		projects: [
 			{ extends: true, test: { name: "unit", exclude: [...configDefaults.exclude, VOLUME] } },
 			{ extends: true, test: { name: "volume", include: [VOLUME] } },
