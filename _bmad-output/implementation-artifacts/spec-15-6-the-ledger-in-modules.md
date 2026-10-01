@@ -104,6 +104,7 @@ Four commits let a reviewer read the move as moves: `git diff --color-moved=dimm
 - ESM forbids assigning an imported binding, so the harnesses hold `temp`, `template`, `logLines` and `own` as live bindings that only they assign. Helpers that assign them (`ownClient`, `bankApp`, `netWorthOf`, `cashFlowOf`, `ownCategory`) sit in `testing/app.ts` even though one file uses each. Inside test bodies, 13 `own = await freshDatabase();` become `const own = await ownDatabase();`, `await ownDatabase();` when the local was not read, or `const database = await ownDatabase();` where the file also reads the shared `own` (no-shadow), and one `logLines = [];` becomes `clearLogLines();`.
 - `consistent-function-scoping` fired on two local arrows once `request` became an import, so `page` (rules) and `dates` (imports) moved to module scope above their describe.
 - Fixture URLs built from `import.meta.url` gained a `../`, since their files now sit one directory deeper.
+- `AGENTS.md` « Testing » gains one sentence naming `useSignedInApp()` and `useLedgerDatabase()`, outside the listed boundary: the file's own rule is that a convention change edits it in place.
 - `madge --circular`: « No circular dependency found! », 250 files.
 
 ## Spec Change Log
