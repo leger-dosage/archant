@@ -40,7 +40,7 @@ pnpm test
 pnpm test:e2e
 ```
 
-`pnpm lint:code` runs oxlint, then [knip](https://knip.dev/), which fails on a file, an export or a dependency nothing uses: delete it rather than ignore it.
+`pnpm lint:code` runs oxlint, then [knip](https://knip.dev/), which fails on a file, an export or a dependency nothing uses, except the exports of the modules a package publishes in its `package.json` `exports`: delete it rather than ignore it.
 
 `pnpm test` ends with a second Vitest pass in the API, `volume`: it seeds 100,000 transactions and checks the performance target and the query plans, alone and without coverage so that the other tests' load does not skew the timings. Run it on its own with `pnpm --filter @archant/api exec vitest run --project volume`.
 

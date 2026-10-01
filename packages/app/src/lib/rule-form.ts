@@ -2,6 +2,7 @@ import type { CategoryData } from "@/hooks/useCategories";
 import type { MerchantData } from "@/hooks/useMerchants";
 import type { RuleData } from "@/hooks/useRules";
 import type { TagData } from "@/hooks/useTags";
+import type { ShownError } from "@/lib/form-errors";
 import type { FieldErrors, Path } from "react-hook-form";
 
 import { get } from "react-hook-form";
@@ -116,8 +117,6 @@ export function fieldNames(values: FormValues): Path<FormValues>[] {
 
 	return names;
 }
-
-type ShownError = { type: string; message?: string };
 
 function isShownError(value: unknown): value is ShownError {
 	return (

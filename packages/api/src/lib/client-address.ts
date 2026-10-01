@@ -51,7 +51,8 @@ export const SHARED_CLIENT_KEY = "no-trusted-ip";
 /**
  * The client address Better Auth's `getIP` picks from the `x-forwarded-for`
  * that `forwardedFor` rebuilds, for a limit of our own keyed like its
- * sign-in limit. Anything unreadable falls back to the shared bucket.
+ * sign-in limit. Anything unreadable falls back to the shared bucket, except
+ * under `NODE_ENV` test or development, where `getIP` answers `127.0.0.1`.
  */
 export function clientKey(forwarded: string | null, trustedProxies: readonly string[]): string {
 	return (

@@ -56,7 +56,7 @@ Three packages, and no fourth: a new feature finds its place in one of them, so 
 - **File names are kebab-case** (`lib/exchange-rate.ts`, `routes/transactions.ts`). React components are PascalCase (`TransactionRow.tsx`), hooks are camelCase (`useAccounts.ts`).
 - **URLs are English** (`/settings/banks`, never `/reglages/banques`), as in Sure. Only visible text is translated; a URL must read the same in every locale, and a self-hoster registers some of them with a provider.
 - **No barrel files.** Direct imports only. The single `index.ts` allowed is a runtime entrypoint.
-- **Nothing unused.** `pnpm lint:code` runs knip after oxlint: a file, an export or a dependency nothing imports fails it. Delete it; `knip.json` ignores only shadcn's `components/ui/**` and names the Playwright entries.
+- **Nothing unused.** `pnpm lint:code` runs knip after oxlint: a file, an export or a dependency nothing imports fails it, except the exports of the modules a package publishes in its `exports`, every `@archant/data` module among them. Delete it; `knip.json` ignores only shadcn's `components/ui/**` and names the Playwright entries.
 - **Tests are co-located** and named `*.spec.ts(x)`: `exchange-rate.ts` sits next to `exchange-rate.spec.ts`.
 - **Why-comments.** Comment the reason, never the mechanism. A non-obvious configuration line carries the incident that produced it. This is the strongest stylistic signature of these repositories.
 - **Comments and documentation are in English**, including commit messages.
