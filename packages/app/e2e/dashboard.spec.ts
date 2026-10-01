@@ -3,13 +3,14 @@ import type { Page } from "@playwright/test";
 import { z } from "zod";
 
 import { toMinorUnits } from "@archant/data/money";
+import { shiftMonth } from "@archant/data/months";
 
 import {
 	formatSignedMoney,
 	formatSignedPercent,
 	formatTableDate,
 } from "../src/lib/balance-change.ts";
-import { addMonthsTo, ofMonth } from "../src/lib/dates.ts";
+import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 import { ADMIN_FIRST_NAME } from "./settings.ts";
 
@@ -594,7 +595,7 @@ test("a category line opens its rows of the month in « Opérations »", async (
 test("« Mois précédent » moves the month in the URL and the heading", async ({ page, api }) => {
 	await api.openAccount();
 	const current = daysAgo(0).slice(0, 7);
-	const previous = addMonthsTo(current, -1);
+	const previous = shiftMonth(current, -1);
 	await page.goto("/");
 
 	const thisMonth = flows(page, current);
@@ -606,9 +607,9 @@ test("« Mois précédent » moves the month in the URL and the heading", async 
 	const moved = flows(page, previous);
 	await expect(moved.getByRole("heading", { name: heading(previous) })).toBeVisible();
 	await moved.getByRole("button", { name: "Mois précédent" }).click();
-	await expect(page).toHaveURL(new RegExp(`[?&]month=${addMonthsTo(previous, -1)}(&|$)`, "u"));
+	await expect(page).toHaveURL(new RegExp(`[?&]month=${shiftMonth(previous, -1)}(&|$)`, "u"));
 
-	const earlier = flows(page, addMonthsTo(previous, -1));
+	const earlier = flows(page, shiftMonth(previous, -1));
 	await earlier.getByRole("button", { name: "Mois suivant" }).click();
 	await expect(page).toHaveURL(new RegExp(`[?&]month=${previous}(&|$)`, "u"));
 	await moved.getByRole("button", { name: "Mois suivant" }).click();

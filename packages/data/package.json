@@ -12,6 +12,7 @@
 		"./csv-mapping": "./csv-mapping.ts",
 		"./migrate": "./migrate.ts",
 		"./money": "./money.ts",
+		"./months": "./months.ts",
 		"./qif-options": "./qif-options.ts",
 		"./rules": "./rules.ts",
 		"./schema/accounts": "./schema/accounts.ts",

@@ -104,14 +104,6 @@ export function toIsoMonth(now: Date = new Date()): string {
 	return toIsoDate(now).slice(0, 7);
 }
 
-/** The month `months` later, or earlier when negative, across years. */
-export function addMonthsTo(month: string, months: number): string {
-	const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + months;
-	const year = Math.floor(index / 12);
-
-	return `${String(year).padStart(4, "0")}-${pad(index - year * 12 + 1)}`;
-}
-
 const monthYear = new Intl.DateTimeFormat("fr-FR", {
 	month: "long",
 	year: "numeric",

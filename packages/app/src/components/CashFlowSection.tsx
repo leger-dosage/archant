@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { UNCATEGORISED } from "@archant/api/schemas/transactions";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { shiftMonth } from "@archant/data/months";
 
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
@@ -18,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCashFlow } from "@/hooks/useCashFlow";
 import { errorCodeOf } from "@/lib/api";
-import { addMonthsTo, ofMonth } from "@/lib/dates";
+import { ofMonth } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
 type Side = "expense" | "income";
@@ -177,7 +178,7 @@ export function CashFlowSection({
 							variant="outline"
 							size="icon-sm"
 							aria-label={t("dashboard.cashFlow.previous")}
-							onClick={() => onMonthChange(addMonthsTo(month, -1))}
+							onClick={() => onMonthChange(shiftMonth(month, -1))}
 						>
 							<ChevronLeftIcon />
 						</Button>
@@ -186,7 +187,7 @@ export function CashFlowSection({
 							size="icon-sm"
 							aria-label={t("dashboard.cashFlow.next")}
 							disabled={month >= current}
-							onClick={() => onMonthChange(addMonthsTo(month, 1))}
+							onClick={() => onMonthChange(shiftMonth(month, 1))}
 						>
 							<ChevronRightIcon />
 						</Button>
