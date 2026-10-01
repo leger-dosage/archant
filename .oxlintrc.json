@@ -284,9 +284,10 @@
 			}
 		},
 		{
-			// The volume spec seeds 100,000 rows directly, as the ledger's own spec
-			// does: through the ledger, ten years of balances per row would take
-			// longer than any test may.
+			// The ledger's modules are the writer AD-2 names. The volume spec seeds
+			// 100,000 rows directly, as the ledger's specs and their helpers do:
+			// through the ledger, ten years of balances per row would take longer
+			// than any test may.
 			"files": [
 				"packages/api/src/services/ledger/**",
 				"packages/api/src/testing/ledger.ts",

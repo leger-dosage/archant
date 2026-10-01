@@ -34,6 +34,7 @@ import { resolveBankConnector } from "./bank-credentials.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { linkBankAccount, unlinkBankAccount } from "./ledger/bank-link.ts";
+
 /** The value an upsert tried to insert into `column`, named from the schema. */
 const excluded = (column: AnyColumn) => sql`excluded.${sql.identifier(column.name)}`;
 

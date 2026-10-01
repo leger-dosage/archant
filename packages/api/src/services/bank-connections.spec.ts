@@ -48,6 +48,7 @@ import { decrypt, encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import { ingest } from "./ledger/ingest.ts";
+
 // A spy that builds the real connector, so one test can make a single call
 // throw something no provider answer produces.
 vi.mock("../connectors/registry.ts", async (importOriginal) => {

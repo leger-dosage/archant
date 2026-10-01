@@ -14,6 +14,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { AppError } from "../../lib/errors.ts";
+
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
 export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
 

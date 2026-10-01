@@ -126,10 +126,10 @@ const both = (left: SQL, right: SQL): SQL => sql`(${left} and ${right})`;
 
 /**
  * The SQL twin of `direction` in `domain/cash-flow.ts`, built from the same
- * `EXPENSE_TRANSFER_KINDS`; the ledger's parity test keeps the two in step. It
- * lives here because only the ledger reads the money tables. `is` says
- * whether a row is a transfer side; `directions` are the filter's conditions
- * built on it.
+ * `EXPENSE_TRANSFER_KINDS`; the parity test in `filter.spec.ts` keeps the two
+ * in step. It lives here because only the ledger reads the money tables. `is`
+ * says whether a row is a transfer side; `directions` are the filter's
+ * conditions built on it.
  */
 type TransferSideSql = { is: SQL; directions: Record<Direction, SQL> };
 

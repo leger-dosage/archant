@@ -30,6 +30,7 @@ import { ingest } from "../services/ledger/ingest.ts";
 import { recordSnapshot } from "../services/ledger/snapshots.ts";
 import { matchTransfer, unmatchTransfer } from "../services/ledger/transfers.ts";
 import { createTempDatabase } from "./temp-database.ts";
+
 // A live binding: `useLedgerDatabase` assigns it before the file's first test.
 export let temp: TempDatabase;
 export const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
