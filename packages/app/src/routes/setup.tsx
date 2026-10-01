@@ -13,8 +13,9 @@ import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuthActions } from "@/hooks/useAuthActions";
 import { ApiError, api, unwrap } from "@/lib/api";
-import { authClient, isSetupOpen, sessionQuery } from "@/lib/auth-client";
+import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
@@ -51,6 +52,7 @@ export const Route = createFileRoute("/setup")({
 
 function SetupPage() {
 	const { t } = useTranslation();
+	const { signIn } = useAuthActions();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const form = useForm<SetupFormValues>({
@@ -103,7 +105,7 @@ function SetupPage() {
 			return;
 		}
 
-		const { error } = await authClient.signIn.email({ email, password });
+		const { error } = await signIn({ email, password });
 
 		if (error !== null) {
 			await navigate({ to: "/sign-in" });
