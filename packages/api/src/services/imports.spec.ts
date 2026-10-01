@@ -7,7 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { STATISTICS_REFRESH_LINES, confirmImport, createImport } from "./imports.ts";
-import { createAccount } from "./ledger.ts";
+import { createAccount } from "./ledger/accounts.ts";
 
 let temp: TempDatabase;
 let logLines: string[];

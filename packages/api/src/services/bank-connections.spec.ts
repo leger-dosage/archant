@@ -1,6 +1,6 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { BankConnectionDeps } from "./bank-connections.ts";
-import type { NewAccountInput } from "./ledger.ts";
+import type { NewAccountInput } from "./ledger/accounts.ts";
 
 import { eq, inArray, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
@@ -45,8 +45,9 @@ import {
 	startConnection,
 } from "./bank-connections.ts";
 import { decrypt, encrypt } from "./crypto.ts";
-import { balanceOn, createAccount, ingest } from "./ledger.ts";
-
+import { createAccount } from "./ledger/accounts.ts";
+import { balanceOn } from "./ledger/balances.ts";
+import { ingest } from "./ledger/ingest.ts";
 // A spy that builds the real connector, so one test can make a single call
 // throw something no provider answer produces.
 vi.mock("../connectors/registry.ts", async (importOriginal) => {

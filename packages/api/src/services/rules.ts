@@ -21,7 +21,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
-import { applyRulePlanToHistory, ruleCandidates } from "./ledger.ts";
+import { applyRulePlanToHistory, ruleCandidates } from "./ledger/rule-plans.ts";
 import {
 	CONDITION_REFERENCES,
 	existing,

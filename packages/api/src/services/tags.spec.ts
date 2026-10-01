@@ -7,7 +7,9 @@ import { toMinorUnits } from "@archant/data/money";
 import { tags } from "@archant/data/schema/tags";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
-import { createAccount, ingest, updateTransaction } from "./ledger.ts";
+import { createAccount } from "./ledger/accounts.ts";
+import { updateTransaction } from "./ledger/edits.ts";
+import { ingest } from "./ledger/ingest.ts";
 import { createTag, deleteTag, listTags, renameTag } from "./tags.ts";
 
 let temp: TempDatabase;

@@ -9,7 +9,7 @@ import { categories } from "@archant/data/schema/categories";
 import type { Category } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
-import { countByCategory, recategorise } from "./ledger.ts";
+import { countByCategory, recategorise } from "./ledger/edits.ts";
 
 export type CategorySummary = {
 	id: string;

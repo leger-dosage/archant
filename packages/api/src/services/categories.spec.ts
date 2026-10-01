@@ -16,7 +16,9 @@ import {
 	updateCategory,
 	withChildren,
 } from "./categories.ts";
-import { createAccount, ingest, updateTransaction } from "./ledger.ts";
+import { createAccount } from "./ledger/accounts.ts";
+import { updateTransaction } from "./ledger/edits.ts";
+import { ingest } from "./ledger/ingest.ts";
 import { seedDefaults } from "./seed.ts";
 
 let temp: TempDatabase;

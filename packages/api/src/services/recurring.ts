@@ -25,7 +25,8 @@ import {
 	seriesKeyOf,
 } from "../domain/recurring.ts";
 import { AppError } from "../lib/errors.ts";
-import { findTransaction, ruleCandidates } from "./ledger.ts";
+import { findTransaction } from "./ledger/queries.ts";
+import { ruleCandidates } from "./ledger/rule-plans.ts";
 
 export type DetectionResult = { detected: number };
 

@@ -13,13 +13,10 @@ import type {
 	TransactionTotalsRequest,
 } from "../schemas/transactions.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type {
-	BulkSelection,
-	DuplicateCandidate,
-	TransactionFilter,
-	TransactionListRecord,
-	TransactionRecord,
-} from "./ledger.ts";
+import type { DuplicateCandidate } from "./ledger/duplicates.ts";
+import type { BulkSelection } from "./ledger/edits.ts";
+import type { TransactionFilter } from "./ledger/filter.ts";
+import type { EntryOrigin, TransactionListRecord, TransactionRecord } from "./ledger/queries.ts";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
@@ -38,7 +35,25 @@ import {
 } from "../schemas/transactions.ts";
 import { getAccount } from "./accounts.ts";
 import { withChildren } from "./categories.ts";
-import * as ledger from "./ledger.ts";
+import {
+	dismissDuplicate as dismissLedgerDuplicate,
+	duplicateCandidates,
+	mergeDuplicate as mergeLedgerDuplicate,
+} from "./ledger/duplicates.ts";
+import {
+	bulkDeleteTransactions as bulkDeleteLedgerTransactions,
+	bulkUpdateTransactions as bulkUpdateLedgerTransactions,
+	deleteTransaction as deleteLedgerTransaction,
+	updateTransaction as updateLedgerTransaction,
+} from "./ledger/edits.ts";
+import { ingest } from "./ledger/ingest.ts";
+import {
+	entryOrigins,
+	findTransaction,
+	listTransactionPage,
+	listTransactions,
+	sumTransactions,
+} from "./ledger/queries.ts";
 import { recurringEntryIds } from "./recurring.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -89,7 +104,7 @@ export type TransactionTotals = {
 	};
 };
 
-function sourceOf(origin: ledger.EntryOrigin | undefined, timeZone: string): TransactionSource {
+function sourceOf(origin: EntryOrigin | undefined, timeZone: string): TransactionSource {
 	if (origin === undefined) {
 		return { kind: "manual" };
 	}
@@ -111,7 +126,7 @@ async function withSources<Row extends TransactionRecord>(
 	deps: ServiceDeps,
 	records: readonly Row[],
 ): Promise<(Row & { source: TransactionSource })[]> {
-	const origins = await ledger.entryOrigins(
+	const origins = await entryOrigins(
 		deps,
 		records.map((record) => record.id),
 	);
@@ -168,7 +183,7 @@ async function currencyOf(deps: ServiceDeps, accountId: string): Promise<Currenc
 }
 
 async function found(deps: ServiceDeps, id: string): Promise<TransactionItem> {
-	const record = await ledger.findTransaction(deps, id);
+	const record = await findTransaction(deps, id);
 
 	if (record === null) {
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
@@ -190,7 +205,7 @@ export async function listAccountTransactions(
 	page: { page: number; pageSize: number },
 ): Promise<TransactionPage> {
 	await getAccount(deps, accountId);
-	const { items, total } = await ledger.listTransactions(deps, { accountIds: [accountId] }, page);
+	const { items, total } = await listTransactions(deps, { accountIds: [accountId] }, page);
 
 	return {
 		items: await listItemsOf(deps, items),
@@ -270,7 +285,7 @@ export async function listAllTransactions(
 ): Promise<FilteredTransactionPage> {
 	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
-	const items = await ledger.listTransactionPage(deps, filter, page);
+	const items = await listTransactionPage(deps, filter, page);
 
 	return { items: await listItemsOf(deps, items), ...page };
 }
@@ -281,7 +296,7 @@ export async function transactionTotals(
 	query: TransactionTotalsRequest,
 ): Promise<TransactionTotals> {
 	const currency = getReportingCurrency();
-	const sums = await ledger.sumTransactions(deps, await filterOf(deps, query));
+	const sums = await sumTransactions(deps, await filterOf(deps, query));
 	const counted = sums.find((row) => row.currency === currency);
 
 	return {
@@ -311,7 +326,7 @@ export async function createTransaction(
 		throw validationError(parsed.error);
 	}
 
-	const result = await ledger.ingest(
+	const result = await ingest(
 		deps,
 		accountId,
 		{
@@ -352,7 +367,7 @@ export async function updateTransaction(
 		throw validationError(parsed.error);
 	}
 
-	const result = await ledger.updateTransaction(deps, id, parsed.data, { origin: "user" });
+	const result = await updateLedgerTransaction(deps, id, parsed.data, { origin: "user" });
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);
@@ -363,7 +378,7 @@ export async function updateTransaction(
 
 /** Deletes a transaction for good. */
 export async function deleteTransaction(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	await ledger.deleteTransaction(deps, id, { origin: "user" });
+	await deleteLedgerTransaction(deps, id, { origin: "user" });
 
 	return { id };
 }
@@ -373,7 +388,7 @@ export async function listDuplicateCandidates(
 	deps: ServiceDeps,
 	id: string,
 ): Promise<DuplicateCandidate[]> {
-	return ledger.duplicateCandidates(deps, id);
+	return duplicateCandidates(deps, id);
 }
 
 /**
@@ -385,14 +400,14 @@ export async function mergeDuplicate(
 	id: string,
 	body: MergeDuplicateRequest,
 ): Promise<TransactionItem> {
-	await ledger.mergeDuplicate(deps, id, body.into);
+	await mergeLedgerDuplicate(deps, id, body.into);
 
 	return found(deps, body.into);
 }
 
 /** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
 export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
-	await ledger.dismissDuplicate(deps, id);
+	await dismissLedgerDuplicate(deps, id);
 
 	return found(deps, id);
 }
@@ -412,7 +427,7 @@ export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
 	body: BulkUpdateRequest,
 ): Promise<{ updated: number }> {
-	const updated = await ledger.bulkUpdateTransactions(
+	const updated = await bulkUpdateLedgerTransactions(
 		deps,
 		await selectionOf(deps, body.selection),
 		body.patch,
@@ -427,7 +442,7 @@ export async function bulkDeleteTransactions(
 	deps: ServiceDeps,
 	body: BulkDeleteRequest,
 ): Promise<{ deleted: number }> {
-	const deleted = await ledger.bulkDeleteTransactions(
+	const deleted = await bulkDeleteLedgerTransactions(
 		deps,
 		await selectionOf(deps, body.selection),
 		{ origin: "user" },

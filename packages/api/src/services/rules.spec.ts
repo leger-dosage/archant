@@ -12,7 +12,10 @@ import { ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import { tags } from "@archant/data/schema/tags";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
-import { createAccount, ingest, ruleCandidates, updateTransaction } from "./ledger.ts";
+import { createAccount } from "./ledger/accounts.ts";
+import { updateTransaction } from "./ledger/edits.ts";
+import { ingest } from "./ledger/ingest.ts";
+import { ruleCandidates } from "./ledger/rule-plans.ts";
 import { loadEnabledRules } from "./rule-reader.ts";
 import {
 	applyRules,

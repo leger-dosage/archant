@@ -15,7 +15,8 @@ import { addDays, daysBetween, minDate, startOfDay, today } from "../domain/date
 import { AppError } from "../lib/errors.ts";
 import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
-import { ingest, oldestPendingDate } from "./ledger.ts";
+import { ingest } from "./ledger/ingest.ts";
+import { oldestPendingDate } from "./ledger/snapshots.ts";
 import { detectRecurring } from "./recurring.ts";
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */

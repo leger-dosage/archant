@@ -66,35 +66,35 @@
 						"paths": [
 							{
 								"name": "@archant/data/schema/entries",
-								"message": "Only services/ledger.ts writes entries (AD-2)."
+								"message": "Only services/ledger/ writes entries (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/balances",
-								"message": "Only services/ledger.ts writes balances; read them through balanceOn (AD-2, AD-8)."
+								"message": "Only services/ledger/ writes balances; read them through balanceOn (AD-2, AD-8)."
 							},
 							{
 								"name": "@archant/data/schema/transactions",
-								"message": "Only services/ledger.ts writes transactions (AD-2)."
+								"message": "Only services/ledger/ writes transactions (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/transfers",
-								"message": "Only services/ledger.ts writes transfers (AD-2)."
+								"message": "Only services/ledger/ writes transfers (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/rejected-transfers",
-								"message": "Only services/ledger.ts writes rejected transfers (AD-2)."
+								"message": "Only services/ledger/ writes rejected transfers (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/entry-keys",
-								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
+								"message": "Only services/ledger/ writes entry keys (AD-2, AD-7)."
 							},
 							{
 								"name": "@archant/data/schema/taggings",
-								"message": "Only services/ledger.ts links tags to transactions (AD-2)."
+								"message": "Only services/ledger/ links tags to transactions (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/imports",
-								"message": "Only services/ledger.ts confirms imports (AD-2, AD-4).",
+								"message": "Only services/ledger/ confirms imports (AD-2, AD-4).",
 								"allowTypeImports": true
 							}
 						]
@@ -252,31 +252,31 @@
 						"paths": [
 							{
 								"name": "@archant/data/schema/entries",
-								"message": "Only services/ledger.ts writes entries (AD-2)."
+								"message": "Only services/ledger/ writes entries (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/balances",
-								"message": "Only services/ledger.ts writes balances; read them through balanceOn (AD-2, AD-8)."
+								"message": "Only services/ledger/ writes balances; read them through balanceOn (AD-2, AD-8)."
 							},
 							{
 								"name": "@archant/data/schema/transactions",
-								"message": "Only services/ledger.ts writes transactions (AD-2)."
+								"message": "Only services/ledger/ writes transactions (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/transfers",
-								"message": "Only services/ledger.ts writes transfers (AD-2)."
+								"message": "Only services/ledger/ writes transfers (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/rejected-transfers",
-								"message": "Only services/ledger.ts writes rejected transfers (AD-2)."
+								"message": "Only services/ledger/ writes rejected transfers (AD-2)."
 							},
 							{
 								"name": "@archant/data/schema/entry-keys",
-								"message": "Only services/ledger.ts writes entry keys (AD-2, AD-7)."
+								"message": "Only services/ledger/ writes entry keys (AD-2, AD-7)."
 							},
 							{
 								"name": "@archant/data/schema/taggings",
-								"message": "Only services/ledger.ts links tags to transactions (AD-2)."
+								"message": "Only services/ledger/ links tags to transactions (AD-2)."
 							}
 						]
 					}
@@ -288,7 +288,7 @@
 			// does: through the ledger, ten years of balances per row would take
 			// longer than any test may.
 			"files": [
-				"packages/api/src/services/ledger.ts",
+				"packages/api/src/services/ledger/**",
 				"packages/api/src/services/ledger.spec.ts",
 				"packages/api/src/services/history-volume.spec.ts"
 			],

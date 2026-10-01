@@ -3,7 +3,8 @@ import type { ParsedStatement } from "../domain/statement.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ImportPreviewInput } from "../schemas/imports.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { IngestGroups, IngestResult, Removable, StatementBalanceOutcome } from "./ledger.ts";
+import type { Removable } from "./ledger/import-revert.ts";
+import type { IngestGroups, IngestResult, StatementBalanceOutcome } from "./ledger/ingest.ts";
 
 import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 
@@ -35,7 +36,8 @@ import { detectFileSource, fileSource } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { getAccount } from "./accounts.ts";
-import * as ledger from "./ledger.ts";
+import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
+import { countsOf, ingest } from "./ledger/ingest.ts";
 import { detectRecurring } from "./recurring.ts";
 
 /**
@@ -252,7 +254,7 @@ async function runPreview(
 	statement: ParsedStatement,
 	options: ImportOptions,
 ): Promise<ImportPreview> {
-	const result: IngestResult = await ledger.ingest(
+	const result: IngestResult = await ingest(
 		deps,
 		row.accountId,
 		statement,
@@ -265,10 +267,7 @@ async function runPreview(
 		.set({ options, previewDigest: result.digest })
 		// A confirm that finished meanwhile keeps its row as it wrote it.
 		.where(and(eq(imports.id, row.id), eq(imports.status, "previewed")));
-	deps.logger.info(
-		{ importId: row.id, counts: ledger.countsOf(result.groups) },
-		"import previewed",
-	);
+	deps.logger.info({ importId: row.id, counts: countsOf(result.groups) }, "import previewed");
 
 	return {
 		id: row.id,
@@ -398,7 +397,7 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 				// one that is a savepoint, so the mapping below commits with the
 				// lines or not at all.
 				const inner: ServiceDeps = { ...deps, db: tx };
-				const ingested = await ledger.ingest(
+				const ingested = await ingest(
 					inner,
 					row.accountId,
 					statement,
@@ -422,7 +421,7 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 			},
 			{ behavior: "immediate" },
 		);
-		const counts = ledger.countsOf(result.groups);
+		const counts = countsOf(result.groups);
 
 		if (counts.created > STATISTICS_REFRESH_LINES) {
 			await refreshAfterImport(deps, id);
@@ -498,7 +497,7 @@ export async function listImports(
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
 	const totals = await deps.db.select({ total: count() }).from(imports).where(where).get();
-	const removable = await ledger.removableOf(
+	const removable = await removableOf(
 		deps,
 		rows.filter((row) => row.status === "confirmed").map((row) => row.id),
 	);
@@ -535,7 +534,7 @@ export async function revertImport(deps: ImportDeps, id: string): Promise<Revert
 	const started = performance.now();
 
 	try {
-		const { removed } = await ledger.revertImport(deps, id, { origin: "user" });
+		const { removed } = await revertLedgerImport(deps, id, { origin: "user" });
 		// The revert's own time: detection after it logs its own failure.
 		const durationMs = Math.round(performance.now() - started);
 
