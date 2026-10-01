@@ -130,6 +130,7 @@ const app = createApp({
 	logger,
 	auth,
 	trustedOrigin: env.BETTER_AUTH_URL,
+	authSecret: env.BETTER_AUTH_SECRET,
 	trustedProxies: env.TRUSTED_PROXIES,
 	clientAddress: (c) => getConnInfo(c).remote.address,
 	webDist: env.WEB_DIST,

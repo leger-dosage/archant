@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CsvMapping } from "@archant/data/schema/imports";
 
+import { MAX_CSV_COLUMNS } from "../../schemas/imports.ts";
 import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { MAX_FILE_BYTES } from "../file-source.ts";
 import { detectFileSource, fileSource } from "../registry.ts";
@@ -378,6 +379,9 @@ describe("amountOf", () => {
 	});
 });
 
+/** A record of `fields` fields. */
+const line = (fields: number) => Array.from({ length: fields }, () => "x").join(";");
+
 describe("the Colonnes step helpers", () => {
 	it("guesses the delimiter among the three, and falls back to a semicolon", () => {
 		expect(guessDelimiter(utf8("a;b;c\n1;2;3"))).toBe(";");
@@ -405,6 +409,16 @@ describe("the Colonnes step helpers", () => {
 			sample: [],
 			width: 0,
 		});
+	});
+
+	it("refuses a file wider than a mapping can name, and reads one exactly as wide", () => {
+		expect(
+			csvLayout(utf8(`${line(MAX_CSV_COLUMNS)}\n1;2`), { delimiter: ";", skipRows: 0 }).width,
+		).toBe(MAX_CSV_COLUMNS);
+		// Skipped rows count too: the sample shows them.
+		expect(() =>
+			csvLayout(utf8(`${line(MAX_CSV_COLUMNS + 1)}\n1;2`), { delimiter: ";", skipRows: 1 }),
+		).toThrow(expect.objectContaining({ code: "INVALID_IMPORT_FILE" }));
 	});
 
 	it("tells whether a mapping's columns all exist, and fits one to a width", () => {

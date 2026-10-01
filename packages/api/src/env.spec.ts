@@ -121,6 +121,31 @@ describe("validateEnv", () => {
 	});
 
 	it.each([
+		"https://api.enablebanking.com",
+		"http://localhost:9999",
+		"http://127.0.0.1:9999",
+		"http://127.4.5.6",
+		"http://[::1]:9999",
+	])("accepts the provider URL %s", (url) => {
+		expect(validateEnv({ ...required, ENABLE_BANKING_API_URL: url }).ENABLE_BANKING_API_URL).toBe(
+			url,
+		);
+	});
+
+	it.each([
+		"http://example.com",
+		"http://10.0.0.1",
+		"http://localhost.example.com",
+		"http://128.0.0.1",
+		"ftp://localhost",
+		"not a url",
+	])("refuses the provider URL %s, naming the variable", (url) => {
+		expect(() => validateEnv({ ...required, ENABLE_BANKING_API_URL: url })).toThrow(
+			"Invalid environment variables: ENABLE_BANKING_API_URL",
+		);
+	});
+
+	it.each([
 		["not base64 of a PEM", Buffer.from("hello").toString("base64")],
 		["a raw PEM", "-----BEGIN PRIVATE KEY-----"],
 		[

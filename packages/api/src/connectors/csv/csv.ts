@@ -15,7 +15,7 @@ import type { CsvMapping } from "@archant/data/schema/imports";
 
 import { providerDate } from "../../domain/provider-date.ts";
 import { AppError } from "../../lib/errors.ts";
-import { MAX_CSV_SKIP_ROWS } from "../../schemas/imports.ts";
+import { MAX_CSV_COLUMNS, MAX_CSV_SKIP_ROWS } from "../../schemas/imports.ts";
 import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { decodeText } from "../decode.ts";
 import { MAX_FILE_BYTES } from "../file-source.ts";
@@ -109,6 +109,12 @@ export function guessDelimiter(bytes: Uint8Array): CsvDelimiter {
 	);
 }
 
+/** The most fields a record holds. */
+function widest(records: readonly string[][]): number {
+	// A reduce, not a spread: a 5 MB file holds more records than a call's arguments.
+	return records.reduce((width, record) => Math.max(width, record.length), 0);
+}
+
 /**
  * What the Colonnes step needs: the file's first records as they are, split
  * with `delimiter`, and the widest record after `skipRows`. The interface
@@ -120,12 +126,15 @@ export function csvLayout(
 ): { sample: string[][]; width: number } {
 	const records = recordsOf(text(bytes), settings.delimiter);
 
+	// No mapping could name more columns, and one line of 5 MB of delimiters
+	// would otherwise reach the interface as millions of them.
+	if (widest(records) > MAX_CSV_COLUMNS) {
+		throw invalidFile();
+	}
+
 	return {
 		sample: records.slice(0, SAMPLE_RECORDS),
-		// A reduce, not a spread: a 5 MB file holds more records than a call's arguments.
-		width: records
-			.slice(settings.skipRows)
-			.reduce((widest, record) => Math.max(widest, record.length), 0),
+		width: widest(records.slice(settings.skipRows)),
 	};
 }
 

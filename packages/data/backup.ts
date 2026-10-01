@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import { existsSync } from "node:fs";
-import { mkdir, readdir, rename, rm } from "node:fs/promises";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { closeSync, existsSync, openSync } from "node:fs";
+import { chmod, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 
-import { createDb } from "./client.ts";
+import { createDb, databasePath } from "./client.ts";
 import { pendingMigrations } from "./migrate.ts";
 
 /** Copies kept in `backups/`: a crash loop or a string of upgrades never fills the disk. */
@@ -44,17 +44,6 @@ export function errorCode(error: unknown): string {
 	}
 
 	return "UNKNOWN";
-}
-
-/**
- * The file a `file:` URL names, parsed as `@libsql/core`'s `parseUri` parses
- * it: an optional `//host`, a percent-decoded path, no query or fragment. A
- * relative path resolves against the working directory, as SQLite opens it.
- */
-function databasePath(url: string): string {
-	const path = /^file:(?:\/\/[^/?#]*)?(?<path>[^?#]*)/u.exec(url)?.groups?.["path"] ?? "";
-
-	return resolve(decodeURIComponent(path));
 }
 
 /** `20260927T083000Z`: sorting names by text sorts them by time. */
@@ -162,11 +151,21 @@ export async function copyBeforeMigrating({
 		}
 
 		try {
-			await mkdir(directory, { recursive: true });
-			// `VACUUM INTO` refuses an existing file, which only a killed copy
-			// started within the same second leaves under this name; older ones go
-			// with pruning.
+			// Each copy holds every transaction: the directory and the copies are
+			// the owner's alone, whatever the umask. A directory made before this
+			// rule loses its group and other bits; the owner's are left as set.
+			await mkdir(directory, { recursive: true, mode: 0o700 });
+			// Best effort: a directory another user owns, such as a bind mount or
+			// one an earlier run as root made, refuses `chmod` while still
+			// accepting the copy, and a refused copy would refuse the upgrade.
+			await chmod(directory, (await stat(directory)).mode & 0o700).catch(() => undefined);
+			// `VACUUM INTO` refuses a file that is not empty, which only a killed
+			// copy started within the same second leaves under this name; older
+			// ones go with pruning.
 			await rm(partial, { force: true });
+			// Created empty, the owner's alone, before `VACUUM INTO` fills it:
+			// created by SQLite, it would be readable by everyone while written.
+			closeSync(openSync(partial, "wx", 0o600));
 			// No Drizzle builder writes `VACUUM INTO`; the path is bound, never
 			// interpolated into the statement.
 			await db.run(sql`VACUUM INTO ${partial}`);

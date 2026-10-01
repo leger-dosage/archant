@@ -445,8 +445,9 @@ function TwoFactorSection() {
 }
 
 /**
- * The QR code and the secret it carries, then the first code. An inline SVG:
- * the Content-Security-Policy sets no `img-src`, which a data URL would need.
+ * The QR code and the secret it carries, then the first code. An inline SVG,
+ * drawn in the page: it scales without blur, and the secret never becomes an
+ * image URL.
  */
 function ScanStep({
 	totpURI,

@@ -3,12 +3,41 @@ import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
+import { closeSync, openSync } from "node:fs";
+import { resolve } from "node:path";
 
 export type Database = LibSQLDatabase & { $client: Client };
 
 // Long enough to outwait another `behavior: "immediate"` ledger transaction,
 // short enough that a stuck writer surfaces as an error rather than a hang.
 const BUSY_TIMEOUT_MS = 5000;
+
+/**
+ * The file a `file:` URL names, parsed as `@libsql/core`'s `parseUri` parses
+ * it: an optional `//host`, a percent-decoded path, no query or fragment. A
+ * relative path resolves against the working directory, as SQLite opens it.
+ */
+export function databasePath(url: string): string {
+	const path = /^file:(?:\/\/[^/?#]*)?(?<path>[^?#]*)/u.exec(url)?.groups?.["path"] ?? "";
+
+	return resolve(decodeURIComponent(path));
+}
+
+/**
+ * Creates a missing database file empty, readable by its owner only. SQLite
+ * gives its `-wal` and `-shm` files the database's own mode, and would
+ * otherwise create all three readable by every local user. `wx` leaves a file
+ * that exists, and its mode, alone.
+ */
+function createPrivately(path: string): void {
+	try {
+		closeSync(openSync(path, "wx", 0o600));
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+			throw error;
+		}
+	}
+}
 
 /**
  * The only place in the codebase that picks a driver and tunes the connection.
@@ -18,6 +47,11 @@ const BUSY_TIMEOUT_MS = 5000;
  */
 export async function createDb(url: string, authToken?: string): Promise<Database> {
 	const isFile = url.startsWith("file:");
+
+	if (isFile && !url.includes(":memory:")) {
+		createPrivately(databasePath(url));
+	}
+
 	// `exactOptionalPropertyTypes` rejects an explicit `undefined`, which is
 	// exactly the local-file case, so absent keys are omitted rather than set.
 	const client = createClient({

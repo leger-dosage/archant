@@ -41,6 +41,14 @@ Connecting a bank, or saving the Enable Banking credentials, shows:
 
 The API answered `BANK_REDIRECT_NOT_ALLOWED`. The bank sends the browser back to Archant's address followed by `/settings/banks/callback`, and Enable Banking only allows the redirect URLs registered on the application. Add the exact URL the message names to the application's redirect URLs in the [Enable Banking control panel](https://enablebanking.com/cp/applications), then try again. If the URL it names is not the one in your address bar, fix `ARCHANT_URL` first, as in the section above. [Register the application](deployment.md#1-register-the-application) lists the URL for each setup.
 
+## « Trop de tentatives » at sign-in
+
+Sign-in refuses the right password and shows:
+
+> Trop de tentatives. Réessayez un peu plus tard.
+
+Either this address tried more than three times in ten seconds, or 20 sign-ins failed across all addresses in the last ten minutes: the server then refuses every sign-in before reading the password, so that someone with many addresses cannot guess in parallel. Wait up to ten minutes, then sign in again. A browser that has signed in before carries a device cookie that this limit lets through, as long as it has not failed five times itself: sign in from it instead. [docs/security-model.md](security-model.md#sign-in-limits) explains the limits.
+
 ## The setup token is lost
 
 `/setup` asks for a setup token, and the log line that printed it is gone, or the page says:

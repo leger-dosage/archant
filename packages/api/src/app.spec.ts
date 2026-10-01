@@ -2114,7 +2114,7 @@ describe("serving the interface", () => {
 			expect(response.headers.get("x-frame-options")).toBe("DENY");
 			expect(response.headers.get("x-content-type-options")).toBe("nosniff");
 			expect(response.headers.get("content-security-policy")).toBe(
-				"script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+				"default-src 'self'; script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://enablebanking.com https://api.enablebanking.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'",
 			);
 		},
 	);
@@ -3553,6 +3553,20 @@ describe("CSV imports", () => {
 			sql`select count(*) as count from imports where account_id = ${account.id}`,
 		);
 		expect(row?.count).toBe(0);
+	});
+
+	it("refuses a CSV whose first line holds more fields than a mapping can name", async () => {
+		const account = await openAccount();
+		const wide = Array.from({ length: 101 }, (_, index) => `c${index}`).join(";");
+
+		const { status, body } = await upload(
+			account.id,
+			new TextEncoder().encode(`${wide}\n03/09/2026;CAFE;-4,20\n`),
+			"releve.csv",
+		);
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
 	});
 
 	it("saves no mapping when confirm finds the account changed", async () => {
