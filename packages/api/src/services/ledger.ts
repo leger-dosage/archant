@@ -103,7 +103,7 @@ import {
 } from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
-import { loadEnabledRules } from "./rules.ts";
+import { loadEnabledRules } from "./rule-reader.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */

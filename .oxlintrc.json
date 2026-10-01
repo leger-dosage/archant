@@ -22,6 +22,9 @@
 		"eslint/curly": ["error", "all"],
 		// Stylesheets and font faces are imported for their side effect by design.
 		"import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+		// The ledger and the rules once imported each other, so neither could be
+		// read or loaded without the other; a cycle now fails the gate.
+		"import/no-cycle": "error",
 		"eslint/eqeqeq": ["error", "always"],
 		"eslint/no-console": ["error", { "allow": ["warn", "error"] }],
 		"eslint/no-unused-vars": [

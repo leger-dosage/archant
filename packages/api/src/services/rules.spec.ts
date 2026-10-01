@@ -13,13 +13,13 @@ import { tags } from "@archant/data/schema/tags";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount, ingest, ruleCandidates, updateTransaction } from "./ledger.ts";
+import { loadEnabledRules } from "./rule-reader.ts";
 import {
 	applyRules,
 	createRule,
 	deleteRule,
 	listRuleRuns,
 	listRules,
-	loadEnabledRules,
 	previewRules,
 	setRuleEnabled,
 	updateRule,
