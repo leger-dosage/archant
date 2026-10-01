@@ -2,7 +2,7 @@
 title: 'Story 15.3: Welcome a contributor and a self-hoster'
 type: 'chore'
 created: '2026-09-30'
-status: 'in-review'
+status: 'done'
 baseline_commit: '2624c93548700f61281774e6b7aad3ec39ae035c'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -69,7 +69,7 @@ context:
 - [x] `docs/troubleshooting.md`, `docs/security-model.md`, `docs/index.md`, `docs/hosting.md`, `docs/deployment.md` -- as in Boundaries.
 - [x] `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, `.github/ISSUE_TEMPLATE/*`, `.github/pull_request_template.md`, `.github/release.yml` -- as in Boundaries.
 - [x] `docs/images/*.png`, `README.md`, `AGENTS.md` -- as in Boundaries.
-- [ ] GitHub -- description, topics, labels; read back; after merge, `gh api repos/leger-dosage/archant/community/profile --jq .health_percentage` and paste it.
+- [x] GitHub -- description, topics, labels; read back; after merge, `gh api repos/leger-dosage/archant/community/profile --jq .health_percentage` and paste it.
 
 **Acceptance Criteria:**
 - Given the merged story, when the community profile is read, then `health_percentage` is 100.
@@ -99,7 +99,14 @@ The epic places `img-src` for bank logos in the Content-Security-Policy work; to
   - `gh label list --search breaking` → `breaking-change`, `B60205`, « An upgrade needs an action; listed under Before upgrading »
   - `has_discussions` is `false`, as `SUPPORT.md` says.
 - Review: patches 1, 2, 4, 5, 6 and 17 of the triage log applied; the full gate then passed on the final tree (unit 143, 1,983 and 311 tests; end-to-end 312 in 4.0 min) with no tracked change. The story stays `in-review` until the profile read-back below, as 15.2 did for its attestation.
-- Left for after merge: `gh api repos/leger-dosage/archant/community/profile --jq .health_percentage`.
+- After the merge of #107 (`494964c`), on 2026-10-01:
+
+  ```
+  $ gh api repos/leger-dosage/archant/community/profile --jq '{health_percentage, files: (.files|map_values(. != null)), description: (.description != null)}'
+  {"description":true,"files":{"code_of_conduct":true,"code_of_conduct_file":true,"contributing":true,"issue_template":false,"license":true,"pull_request_template":true,"readme":true},"health_percentage":100}
+  ```
+
+  `issue_template` reads `false` with the YAML issue forms on `main`, and the score is 100 all the same.
 
 ## Spec Change Log
 
