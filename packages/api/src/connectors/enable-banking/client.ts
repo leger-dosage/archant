@@ -318,6 +318,20 @@ function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): Ban
 	};
 }
 
+/**
+ * The URL without its trailing slashes. A loop rather than `/\/+$/`, whose
+ * backtracking is quadratic on a long run of slashes, as CodeQL flagged.
+ */
+function withoutTrailingSlashes(url: string): string {
+	let end = url.length;
+
+	while (url[end - 1] === "/") {
+		end -= 1;
+	}
+
+	return url.slice(0, end);
+}
+
 type Call = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
 
 async function call<Schema extends z.ZodType>(
@@ -332,7 +346,7 @@ async function call<Schema extends z.ZodType>(
 	let response: Response;
 
 	try {
-		response = await fetch(`${config.apiUrl.replace(/\/+$/u, "")}${path}`, {
+		response = await fetch(`${withoutTrailingSlashes(config.apiUrl)}${path}`, {
 			method,
 			headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
 			...(body === undefined ? {} : { body: JSON.stringify(body) }),
