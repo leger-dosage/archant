@@ -49,7 +49,14 @@
 		"typescript/no-explicit-any": "error",
 		"typescript/no-unsafe-assignment": "error",
 		"typescript/no-unsafe-argument": "error",
-		"typescript/no-unsafe-return": "error"
+		"typescript/no-unsafe-return": "error",
+
+		// The design-system rules with no violation outside shadcn's own files:
+		// a colour comes from the theme, and a class Tailwind cannot generate is
+		// a typo. The rest of @shadcn/lint waits for a policy on the existing
+		// components (docs/tech-stack.md).
+		"shadcn/no-raw-colors": "error",
+		"shadcn/no-unknown-classes": "error"
 	},
 	// AD-1 and AD-2 of the architecture spine, enforced rather than remembered.
 	// Later overrides replace the rule for the files they match, so the order
@@ -295,6 +302,15 @@
 			],
 			"rules": {
 				"eslint/no-restricted-imports": "off"
+			}
+		},
+		{
+			// shadcn's generated components define the design system the rules
+			// enforce, and stay as the CLI writes them.
+			"files": ["packages/app/src/components/ui/**"],
+			"rules": {
+				"shadcn/no-raw-colors": "off",
+				"shadcn/no-unknown-classes": "off"
 			}
 		}
 	],
