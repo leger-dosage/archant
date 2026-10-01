@@ -289,7 +289,7 @@
 			// longer than any test may.
 			"files": [
 				"packages/api/src/services/ledger/**",
-				"packages/api/src/services/ledger.spec.ts",
+				"packages/api/src/testing/ledger.ts",
 				"packages/api/src/services/history-volume.spec.ts"
 			],
 			"rules": {
