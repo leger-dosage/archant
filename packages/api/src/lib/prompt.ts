@@ -30,14 +30,14 @@ export function checkNewPassword(
 
 type Session = {
 	close: () => void;
-	nextLine: () => Promise<string>;
+	lines: AsyncIterator<string>;
 };
 
 /**
  * One readline interface per input, kept for the whole run. A fresh interface
  * per question would lose whatever arrived in the same chunk as the answer:
  * two lines written at once give the first question its answer and drop the
- * second on the floor.
+ * second on the floor. The interface's iterator queues them instead.
  */
 const sessions = new WeakMap<Readable, Session>();
 
@@ -58,48 +58,12 @@ function sessionFor(input: Readable): Session {
 	});
 	// `terminal: true` keeps readline's line editing, backspace included.
 	const readline = createInterface({ input, output: sink, terminal: true });
-	const read: string[] = [];
-	const waiting: ((line: string) => void)[] = [];
-	let closed = false;
-
-	readline.on("line", (line: string) => {
-		const next = waiting.shift();
-
-		if (next === undefined) {
-			read.push(line);
-		} else {
-			next(line);
-		}
-	});
-
-	// Ctrl-D, or an input that ended: every question still waiting gets an empty
-	// answer, which the checks refuse, rather than a command stopped dead.
-	readline.on("close", () => {
-		closed = true;
-
-		for (const next of waiting.splice(0)) {
-			next("");
-		}
-	});
-
 	const session: Session = {
 		close: () => {
 			sessions.delete(input);
 			readline.close();
 		},
-		nextLine: async () => {
-			const line = read.shift();
-
-			if (line !== undefined) {
-				return line;
-			}
-
-			if (closed) {
-				return "";
-			}
-
-			return new Promise<string>((resolve) => waiting.push(resolve));
-		},
+		lines: readline[Symbol.asyncIterator](),
 	};
 	sessions.set(input, session);
 
@@ -114,7 +78,10 @@ export async function promptSecret(
 ): Promise<string> {
 	const session = sessionFor(input);
 	output.write(question);
-	const answer = await session.nextLine();
+	const line = await session.lines.next();
+	// Ctrl-D, or an input that ended, answers nothing, which the checks refuse,
+	// rather than a command stopped dead.
+	const answer = line.done === true ? "" : line.value;
 	// The newline the terminal would have echoed on Enter.
 	output.write("\n");
 
