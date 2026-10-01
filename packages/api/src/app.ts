@@ -10,12 +10,15 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { except } from "hono/combine";
+import { compress } from "hono/compress";
 import { getCookie, setCookie } from "hono/cookie";
 import { csrf } from "hono/csrf";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
+
+import type { Database } from "@archant/data/client";
 
 import { withForwardedFor } from "./lib/client-address.ts";
 import { contentSecurityPolicy } from "./lib/content-security-policy.ts";
@@ -54,6 +57,8 @@ import {
 
 export type AppDeps = ServiceDeps &
 	BankConnectionDeps & {
+		/** `$client` too, for the statistics a large import refreshes. */
+		db: Pick<Database, "$client">;
 		logger: Logger;
 		auth: Auth;
 		/** `BETTER_AUTH_URL`'s origin: the only one a write is accepted from. */
@@ -298,6 +303,14 @@ function serveInterface(app: Hono, root: string) {
  */
 export function createApp(deps: AppDeps) {
 	const app = new Hono()
+		// Outermost, so it sees each response as finished, assets included: a
+		// page of transactions or the interface's bundle shrinks several times
+		// over a home connection. Gzip only, which every browser accepts; under
+		// 1 KB the header costs more than it saves. Never on Better Auth's
+		// answers: one can carry a session token beside text the request sent,
+		// and compressing both lets an observer guess the token from the
+		// length (BREACH).
+		.use("*", except("/api/auth/*", compress({ encoding: "gzip", threshold: 1024 })))
 		// Every response, pages and API alike: without `X-Frame-Options` a
 		// third-party site could frame the sign-in page and steer a click, and
 		// `nosniff` stops a browser from running a file under a type it guessed.

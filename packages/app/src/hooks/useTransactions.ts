@@ -16,18 +16,13 @@ import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, errorCodeOf, unwrap } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
-import { toApiQuery } from "@/lib/transaction-filters";
+import { toApiQuery, toTotalsQuery } from "@/lib/transaction-filters";
 
 export type TransactionPageData = InferResponseType<
 	(typeof api.accounts)[":id"]["transactions"]["$get"],
 	200
 >["data"];
 export type TransactionData = TransactionPageData["items"][number];
-
-export type FilteredTransactionPageData = InferResponseType<
-	(typeof api.transactions)["$get"],
-	200
->["data"];
 
 export function useAccountTransactions(accountId: string, page: number) {
 	return useQuery({
@@ -48,7 +43,7 @@ export function useAccountTransactions(accountId: string, page: number) {
 	});
 }
 
-/** A page of every account's transactions under `filters`, with its count and total. */
+/** A page of every account's transactions under `filters`; `useTransactionTotals` counts them. */
 export function useTransactions(filters: TransactionFilters, page: number) {
 	return useQuery({
 		queryKey: queryKeys.transactions.list(filters, page),
@@ -57,6 +52,20 @@ export function useTransactions(filters: TransactionFilters, page: number) {
 		// The rows stay on screen while the next page or filter loads; the
 		// sheet reads the account from each row, so no row can be edited
 		// against the wrong account.
+		placeholderData: (previous) => previous,
+	});
+}
+
+/**
+ * The count and the sums of every transaction under `filters`, whatever the
+ * page: the server sums every matching row, which a page change must not rerun.
+ */
+export function useTransactionTotals(filters: TransactionFilters) {
+	return useQuery({
+		queryKey: queryKeys.transactions.totals(filters),
+		queryFn: async () =>
+			(await unwrap(api.transactions.totals.$get({ query: toTotalsQuery(filters) }))).data,
+		// The previous figures stay while a new filter's load, as the rows do.
 		placeholderData: (previous) => previous,
 	});
 }

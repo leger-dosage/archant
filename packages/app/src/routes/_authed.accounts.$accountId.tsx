@@ -14,14 +14,15 @@ import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
-import { BalanceChart, PeriodToggle } from "@/components/BalanceChart";
 import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
+import { LazyBalanceChart } from "@/components/LazyBalanceChart";
 import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
+import { PeriodToggle } from "@/components/PeriodToggle";
 import { Section } from "@/components/Section";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
@@ -404,7 +405,7 @@ function AccountPage() {
 				action={<PeriodToggle period={period} onPeriodChange={changePeriod} />}
 			>
 				<div className="flex flex-col gap-4 p-4">
-					<BalanceChart
+					<LazyBalanceChart
 						history={balanceHistory}
 						summaryKey="balances.summary"
 						valueLabel={t("balances.balance")}

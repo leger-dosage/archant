@@ -32,7 +32,7 @@ import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
-import { useTransactions } from "@/hooks/useTransactions";
+import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import {
 	filtersOf,
@@ -142,12 +142,24 @@ function OperationsPage() {
 	const filters = useMemo(() => filtersOf(search), [search]);
 	const filtered = hasFilters(filters);
 	const transactions = useTransactions(filters, page);
+	const totals = useTransactionTotals(filters);
 	const accounts = useAccounts();
 	const categories = useCategories();
 	const merchants = useMerchants();
 	const tags = useTags();
 	const data = transactions.data;
-	const pageCount = pageCountOf(data);
+	const figures = totals.data;
+	// The previous filter's figures may stay in the strip while the new ones
+	// load, but never decide the page count, the selection or the empty state.
+	const settled = totals.isPlaceholderData ? undefined : totals.data;
+	// The page failing comes first; the totals failing alone must not leave
+	// the card without a page count or an empty state, and say nothing.
+	const failed = transactions.isError ? transactions : totals.isError ? totals : null;
+	const pageCount = pageCountOf(
+		data === undefined || settled === undefined
+			? undefined
+			: { total: settled.total, pageSize: data.pageSize },
+	);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	// The rows shown belong to the filters and page asked for only once loaded;
 	// a placeholder page must not be ticked under the new filters.
@@ -181,7 +193,13 @@ function OperationsPage() {
 		[navigate],
 	);
 
-	useClampPage(page, transactions.isPlaceholderData ? undefined : data, goToPage);
+	useClampPage(
+		page,
+		data === undefined || settled === undefined || transactions.isPlaceholderData
+			? undefined
+			: { total: settled.total, pageSize: data.pageSize },
+		goToPage,
+	);
 
 	const change = (next: FilterChange) =>
 		void navigate({ search: (previous) => ({ ...previous, ...next, page: undefined }) });
@@ -192,7 +210,7 @@ function OperationsPage() {
 	return (
 		<Page title={t("operations.title")}>
 			{/* The strip's own shape, so the list card does not jump when the figures land. */}
-			{transactions.isPending && (
+			{totals.isPending && (
 				<div aria-hidden="true">
 					<SummaryStrip
 						className="rounded-xl border bg-card"
@@ -203,30 +221,37 @@ function OperationsPage() {
 					/>
 				</div>
 			)}
-			{data !== undefined && (
+			{figures !== undefined && (
 				<div className="flex flex-col gap-2">
 					{/* Sure's summary: the count, then the income and the expenses of every matching row. */}
 					<div aria-live="polite">
 						<SummaryStrip
 							className="rounded-xl border bg-card"
 							cells={[
-								{ label: t("operations.summary.count"), value: countFormat.format(data.total) },
+								{ label: t("operations.summary.count"), value: countFormat.format(figures.total) },
 								{
 									label: t("operations.summary.income"),
 									value: (
-										<Money amount={data.sum.income} currency={data.sum.currency} signed plusSign />
+										<Money
+											amount={figures.sum.income}
+											currency={figures.sum.currency}
+											signed
+											plusSign
+										/>
 									),
 								},
 								{
 									label: t("operations.summary.expense"),
-									value: <Money amount={data.sum.expense} currency={data.sum.currency} signed />,
+									value: (
+										<Money amount={figures.sum.expense} currency={figures.sum.currency} signed />
+									),
 								},
 							]}
 						/>
 					</div>
-					{data.sum.skippedCount > 0 && (
+					{figures.sum.skippedCount > 0 && (
 						<p className="text-xs text-muted-foreground">
-							{t("operations.skipped", { count: data.sum.skippedCount })}
+							{t("operations.skipped", { count: figures.sum.skippedCount })}
 						</p>
 					)}
 				</div>
@@ -248,13 +273,11 @@ function OperationsPage() {
 
 				{transactions.isPending && <TransactionListSkeleton />}
 
-				{transactions.isError && (
+				{failed !== null && (
 					<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
-						<p className="text-muted-foreground">
-							{t(`errors.${errorCodeOf(transactions.error)}`)}
-						</p>
+						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
 						<div className="flex gap-2">
-							<Button variant="outline" onClick={() => void transactions.refetch()}>
+							<Button variant="outline" onClick={() => void failed.refetch()}>
 								{t("common.retry")}
 							</Button>
 							{/* A filter the API refuses fails every retry; this is the way out. */}
@@ -267,14 +290,14 @@ function OperationsPage() {
 					</div>
 				)}
 
-				{data !== undefined && data.total === 0 && !filtered && (
+				{data !== undefined && data.items.length === 0 && settled?.total === 0 && !filtered && (
 					// Inside the list's card, which frames it already.
 					<EmptyNote flush className="py-6 text-center">
 						{t("operations.empty")}
 					</EmptyNote>
 				)}
 
-				{data !== undefined && data.total === 0 && filtered && (
+				{data !== undefined && data.items.length === 0 && settled?.total === 0 && filtered && (
 					<EmptyNote flush className="flex flex-col items-center gap-3 py-6 text-center">
 						<p>{t("operations.noMatch")}</p>
 						<Button variant="outline" onClick={clear}>
@@ -283,7 +306,7 @@ function OperationsPage() {
 					</EmptyNote>
 				)}
 
-				{data !== undefined && data.total > 0 && (
+				{data !== undefined && data.items.length > 0 && (
 					<TransactionList
 						items={data.items}
 						showAccount
@@ -305,11 +328,11 @@ function OperationsPage() {
 				)}
 			</TransactionListCard>
 
-			{data !== undefined && selection.target !== null && (
+			{settled !== undefined && selection.target !== null && (
 				<BulkBar
 					selection={selection}
 					target={selection.target}
-					total={data.total}
+					total={settled.total}
 					filters={filters}
 				/>
 			)}

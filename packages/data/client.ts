@@ -75,3 +75,15 @@ export async function createDb(url: string, authToken?: string): Promise<Databas
 
 	return drizzle(client);
 }
+
+/**
+ * Gives SQLite's planner the statistics it otherwise never has. Without them,
+ * at 100,000 transactions it picked an index over the primary key for every
+ * transfer candidate. `analysis_limit` bounds the work to a sample per index,
+ * so a decade of history analyses in milliseconds. One `executeMultiple`
+ * because the PRAGMA lasts one connection, and the pool would otherwise be
+ * free to run `ANALYZE` on another.
+ */
+export async function refreshStatistics(db: Pick<Database, "$client">): Promise<void> {
+	await db.$client.executeMultiple("PRAGMA analysis_limit=1000; ANALYZE;");
+}

@@ -6,6 +6,7 @@ import {
 	hasFilters,
 	operationsSearchSchema,
 	toApiQuery,
+	toTotalsQuery,
 	withoutFilter,
 } from "./transaction-filters";
 
@@ -182,6 +183,16 @@ describe("withoutFilter", () => {
 			account: ["a"],
 		});
 		expect(withoutFilter(search, "q")).toMatchObject({ q: undefined, account: ["a"] });
+	});
+});
+
+describe("toTotalsQuery", () => {
+	it("sends the filters that are set, and no page", () => {
+		expect(toTotalsQuery({})).toEqual({});
+		expect(toTotalsQuery({ q: "carre", direction: ["expense"] })).toEqual({
+			q: "carre",
+			direction: ["expense"],
+		});
 	});
 });
 

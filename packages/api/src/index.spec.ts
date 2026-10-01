@@ -140,6 +140,25 @@ describe("the server entrypoint", () => {
 		);
 	});
 
+	it("refreshes the planner's statistics after migrating, before it listens", async () => {
+		const migrated = logLines.findIndex((line) => line.includes("migrations applied"));
+		const refreshed = logLines.findIndex((line) => line.includes("statistics refreshed"));
+		const listened = logLines.findIndex((line) => line.includes("Archant API listening"));
+
+		expect(refreshed).toBeGreaterThan(migrated);
+		expect(refreshed).toBeLessThan(listened);
+		const db = await createDb(`file:${join(directory, "fresh.db")}`);
+		try {
+			const table = await db.$client.execute(
+				"select name from sqlite_master where name = 'sqlite_stat1'",
+			);
+
+			expect(table.rows).toHaveLength(1);
+		} finally {
+			db.$client.close();
+		}
+	});
+
 	it("hands SYNC_SECRET to the scheduled sync route", async () => {
 		server.use(http.post(`http://127.0.0.1:${port}/*`, () => passthrough()));
 		const sync = (headers: Record<string, string>) =>

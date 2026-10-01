@@ -10,6 +10,7 @@ import type {
 	TransactionFilterRequest,
 	TransactionInput,
 	TransactionPatchInput,
+	TransactionTotalsRequest,
 } from "../schemas/transactions.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type {
@@ -67,7 +68,12 @@ export type TransactionPage = {
 	total: number;
 };
 
-export type FilteredTransactionPage = TransactionPage & {
+/** A page of the cross-account list; its count and sums come from `transactionTotals`. */
+export type FilteredTransactionPage = Omit<TransactionPage, "total">;
+
+export type TransactionTotals = {
+	/** Every matching row, whatever its currency. */
+	total: number;
 	/**
 	 * The signed sum of every matching row in the reporting currency, excluded
 	 * ones included, and its income and expense parts, a transfer side in
@@ -255,23 +261,31 @@ async function filterOf(deps: ServiceDeps, query: BulkFilterRequest): Promise<Tr
 
 /**
  * A page of every account's transactions matching the filter, most recent
- * first, with the count and the signed total of all the matching rows.
+ * first. No count and no sum: they do not change from one page to the next,
+ * so `transactionTotals` answers them once per filter.
  */
 export async function listAllTransactions(
 	deps: ServiceDeps,
 	query: TransactionFilterRequest,
 ): Promise<FilteredTransactionPage> {
-	const currency = getReportingCurrency();
 	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
-	const { items, total } = await ledger.listTransactions(deps, filter, page);
-	const sums = await ledger.sumTransactions(deps, filter);
+	const items = await ledger.listTransactionPage(deps, filter, page);
+
+	return { items: await listItemsOf(deps, items), ...page };
+}
+
+/** The count and the signed total of every transaction matching the filter. */
+export async function transactionTotals(
+	deps: ServiceDeps,
+	query: TransactionTotalsRequest,
+): Promise<TransactionTotals> {
+	const currency = getReportingCurrency();
+	const sums = await ledger.sumTransactions(deps, await filterOf(deps, query));
 	const counted = sums.find((row) => row.currency === currency);
 
 	return {
-		items: await listItemsOf(deps, items),
-		...page,
-		total,
+		total: sums.reduce((total, row) => total + row.count, 0),
 		sum: {
 			amount: counted?.amount ?? toMinorUnits(0),
 			income: counted?.income ?? toMinorUnits(0),

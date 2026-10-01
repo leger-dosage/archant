@@ -42,6 +42,10 @@ function signInAgain(error: unknown): boolean {
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
+			// Coming back to the window refetched every query on the page at
+			// once. Thirty seconds is shorter than a bank sync, and every write
+			// invalidates what it changed anyway.
+			staleTime: 30_000,
 			// Retrying a lost session only delays the sign-in page by the backoff,
 			// seven seconds with the default three retries.
 			retry: (failureCount, error) => errorCodeOf(error) !== "UNAUTHORIZED" && failureCount < 3,

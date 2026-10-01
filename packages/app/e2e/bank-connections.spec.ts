@@ -1231,7 +1231,11 @@ test("a page left open since yesterday starts the sync when it comes back into v
 
 	try {
 		await nextMorning(connectionId);
-		// TanStack Query reads every query again when the tab becomes visible.
+		// TanStack Query reads again every query older than its 30 s `staleTime`
+		// when the tab becomes visible. A page left open overnight holds data a
+		// night old; the browser's clock moves past `staleTime` to stand for it,
+		// short of the minute that « à l'instant » covers.
+		await page.clock.setFixedTime(Date.now() + 31_000);
 		await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));
 
 		const running = page.getByRole("button", { name: "Synchronisation en cours" });

@@ -1,15 +1,13 @@
 import type { ChartConfig } from "@/components/ui/chart";
 import type { BalanceHistoryData } from "@/hooks/useBalanceHistory";
+import type { ChartHeight } from "@/lib/chart-heights";
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { TFunction } from "i18next";
 import type { TooltipContentProps } from "recharts";
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
-import type { BalancePeriod } from "@archant/api/schemas/balances";
-import { BALANCE_PERIODS } from "@archant/api/schemas/balances";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
@@ -24,17 +22,16 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorCodeOf } from "@/lib/api";
 import {
+	changeText,
 	formatCompactMoney,
-	formatSignedMoney,
-	formatSignedPercent,
 	formatTableDate,
 	formatTick,
 	formatTooltipDate,
 } from "@/lib/balance-change";
 import { axisTicks } from "@/lib/chart-axis";
+import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 
 /**
  * What the chart draws: an account's balance history or the household's net
@@ -47,37 +44,9 @@ type Point = ChartHistory["points"][number];
 /** The sentence above the chart, which names what the line is. */
 type SummaryKey = "balances.summary" | "dashboard.summary";
 
-/**
- * The chart's height, and its table's: 208 px on the dashboard and 256 px on
- * an account's page, as Sure's `h-52` and `h-64`.
- */
-const CHART_HEIGHTS = { 208: "h-52", 256: "h-64" } as const;
-
-type ChartHeight = keyof typeof CHART_HEIGHTS;
-
 // Past about six months the axis spans a year boundary or its own day, so
 // ticks name the month and year instead of the day.
 const LONG_RANGE_POINTS = 200;
-
-function isPeriod(value: string): value is BalancePeriod {
-	return BALANCE_PERIODS.some((period) => period === value);
-}
-
-/** `+12,40 € (+1,0 %)`, or the amount alone when the period starts at zero. */
-export function changeText(
-	t: TFunction,
-	change: NonNullable<ChartHistory["change"]>,
-	currency: string,
-): string {
-	const amount = formatSignedMoney(change.amount, currency);
-
-	return change.percent === null
-		? amount
-		: t("balances.changeWithPercent", {
-				amount,
-				percent: formatSignedPercent(change.percent),
-			});
-}
 
 function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: SummaryKey }) {
 	const { t } = useTranslation();
@@ -243,42 +212,7 @@ function DataTable({
 	);
 }
 
-/** The « 1 M, 3 M, 6 M, 1 A, Tout » segmented control. */
-export function PeriodToggle({
-	period,
-	onPeriodChange,
-}: {
-	period: BalancePeriod;
-	onPeriodChange: (period: BalancePeriod) => void;
-}) {
-	const { t } = useTranslation();
-
-	return (
-		<ToggleGroup
-			type="single"
-			variant="outline"
-			size="sm"
-			spacing={0}
-			aria-label={t("balances.period")}
-			value={period}
-			// Radix reports an empty value when the pressed item is pressed
-			// again; a period is always selected.
-			onValueChange={(value) => {
-				if (isPeriod(value)) {
-					onPeriodChange(value);
-				}
-			}}
-		>
-			{BALANCE_PERIODS.map((option) => (
-				<ToggleGroupItem key={option} value={option}>
-					{t(`balances.periods.${option}`)}
-				</ToggleGroupItem>
-			))}
-		</ToggleGroup>
-	);
-}
-
-type BalanceChartProps = {
+export type BalanceChartProps = {
 	history: UseQueryResult<ChartHistory>;
 	summaryKey: SummaryKey;
 	/** The table's column header, such as « Solde ». */
@@ -292,7 +226,12 @@ type BalanceChartProps = {
  * as a table on demand (EXPERIENCE.md, accessibility floor). The caller owns
  * the query and the period control, so an account and the net worth share it.
  */
-export function BalanceChart({ history, summaryKey, valueLabel, height = 256 }: BalanceChartProps) {
+export function BalanceChart({
+	history,
+	summaryKey,
+	valueLabel,
+	height = DEFAULT_CHART_HEIGHT,
+}: BalanceChartProps) {
 	const { t } = useTranslation();
 	const [showTable, setShowTable] = useState(false);
 	const tableId = useId();

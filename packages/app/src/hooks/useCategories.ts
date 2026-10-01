@@ -71,7 +71,13 @@ export function useUpdateCategory() {
 	return useMutation({
 		mutationFn: async ({ id, patch }: { id: string; patch: UpdateCategoryInput }) =>
 			(await unwrap(api.categories[":id"].$patch({ param: { id }, json: patch }))).data,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+		// The dashboard's cash flow names and colours its lines by category; past
+		// `staleTime` alone, it would show the old ones for thirty seconds.
+		onSuccess: () =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			]),
 	});
 }
 

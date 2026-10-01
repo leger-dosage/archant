@@ -140,8 +140,12 @@ export function withoutFilter(search: OperationsSearch, kind: FilterKind | "q"):
 
 /** The query of `GET /api/transactions`, absent params left out. */
 export function toApiQuery(filters: TransactionFilters, page: number) {
+	return { page: String(page), ...toTotalsQuery(filters) };
+}
+
+/** The query of `GET /api/transactions/totals`: the list's, without its page. */
+export function toTotalsQuery(filters: TransactionFilters) {
 	return {
-		page: String(page),
 		...(filters.account === undefined ? {} : { account: filters.account }),
 		...(filters.category === undefined ? {} : { category: filters.category }),
 		...(filters.merchant === undefined ? {} : { merchant: filters.merchant }),

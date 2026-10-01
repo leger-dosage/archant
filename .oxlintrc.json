@@ -281,7 +281,14 @@
 			}
 		},
 		{
-			"files": ["packages/api/src/services/ledger.ts", "packages/api/src/services/ledger.spec.ts"],
+			// The volume spec seeds 100,000 rows directly, as the ledger's own spec
+			// does: through the ledger, ten years of balances per row would take
+			// longer than any test may.
+			"files": [
+				"packages/api/src/services/ledger.ts",
+				"packages/api/src/services/ledger.spec.ts",
+				"packages/api/src/services/history-volume.spec.ts"
+			],
 			"rules": {
 				"eslint/no-restricted-imports": "off"
 			}

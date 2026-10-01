@@ -10,8 +10,8 @@ import { monthSchema } from "@archant/api/schemas/reports";
 
 import { BalanceSheetSection } from "@/components/BalanceSheetSection";
 import { CashFlowSection } from "@/components/CashFlowSection";
-import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { DashboardEmpty } from "@/components/DashboardEmpty";
+import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { NetWorthSection } from "@/components/NetWorthSection";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
@@ -122,7 +122,7 @@ function DashboardPage() {
 					)}
 				</>
 			)}
-			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 		</Page>
 	);
 }

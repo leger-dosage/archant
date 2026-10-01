@@ -191,3 +191,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-4-a-sign-in-that-cannot-be-held-hostage.md`
   summary: Renew the `archant.device` cookie from a live session, so a browser kept signed in for months still holds a valid one when it next has to sign in.
   evidence: The cookie is set only when a sign-in creates a session; a session from before the upgrade, or one kept alive past 365 days, leaves the browser without an exemption at its next sign-in.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-5-fast-at-ten-years-of-history.md`
+  summary: A lazy chunk that no longer exists after an upgrade drops the whole page to `RootError` instead of reloading or failing only the chart or dialog.
+  evidence: No `vite:preloadError` handler and no error boundary around `LazyBalanceChart`, `CashFlowChart` or `LazyCreateAccountDialog`; route chunks have failed the same way since `autoCodeSplitting`, so a stale tab after an image upgrade already meets it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-5-fast-at-ten-years-of-history.md`
+  summary: Test that a refused `ANALYZE` at startup logs a code-only warning and the server still listens.
+  evidence: `index.spec.ts` starts against a local file where `ANALYZE` always succeeds; the catch in `index.ts` is untested there, though `imports.spec.ts` tests the same catch on the import path.

@@ -2,9 +2,8 @@ import type { CashFlowData, CashFlowLine } from "@/hooks/useCashFlow";
 
 import { Link } from "@tanstack/react-router";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pie, PieChart } from "recharts";
 
 import { UNCATEGORISED } from "@archant/api/schemas/transactions";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
@@ -31,6 +30,12 @@ const isSide = (value: string): value is Side => SIDES.some((side) => side === v
 const shareFormat = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
 
 const DONUT_SIZE = 128;
+
+// Recharts weighs more than the rest of the dashboard: the ring arrives after
+// the figures, in a box of its own size.
+const CashFlowChart = lazy(async () => ({
+	default: (await import("@/components/CashFlowChart")).CashFlowChart,
+}));
 
 /** The side's usual sign: a line against it, a net refund, draws no segment. */
 const alongSide = (line: CashFlowLine, side: Side) =>
@@ -104,24 +109,9 @@ function Donut({ side, data, lines }: { side: Side; data: CashFlowData; lines: C
 			className="relative shrink-0 self-center"
 			style={{ width: DONUT_SIZE, height: DONUT_SIZE }}
 		>
-			<PieChart
-				width={DONUT_SIZE}
-				height={DONUT_SIZE}
-				margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-			>
-				<Pie
-					data={segments}
-					dataKey="value"
-					nameKey="key"
-					innerRadius={DONUT_SIZE / 2 - 6}
-					outerRadius={DONUT_SIZE / 2 - 1}
-					startAngle={90}
-					endAngle={-270}
-					stroke="none"
-					rootTabIndex={-1}
-					isAnimationActive={false}
-				/>
-			</PieChart>
+			<Suspense fallback={<div style={{ width: DONUT_SIZE, height: DONUT_SIZE }} />}>
+				<CashFlowChart segments={segments} size={DONUT_SIZE} />
+			</Suspense>
 			<div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
 				<span className="text-xs text-muted-foreground">
 					{t(side === "expense" ? "dashboard.cashFlow.expenses" : "dashboard.cashFlow.income")}

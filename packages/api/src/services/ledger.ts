@@ -2643,14 +2643,14 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 			.select({
 				id: entries.id,
 				...editableColumns,
-				categoryHidden: isTransferSide.mapWith(Boolean),
+				categoryHidden: correlatedTransferSide.is.mapWith(Boolean),
 			})
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
 			.where(and(eq(entries.kind, "transaction"), where));
 
 	if ("filter" in selection) {
-		const where = filterCondition(selection.filter);
+		const where = filterCondition(selection.filter, correlatedTransferSide);
 
 		return where === null ? [] : query(where);
 	}
@@ -3216,7 +3216,7 @@ export async function revertImport(
  * transfer's other side, on another account, stays as a standard
  * transaction, as Sure's `cleanup_transfers` leaves it. Every delete selects
  * by `account_id` through a subquery, never a list of ids, so a history of
- * 50,000 transactions binds one parameter, not 50,000.
+ * 100,000 transactions binds one parameter, not 100,000.
  */
 export async function deleteAccount(
 	deps: ServiceDeps,
@@ -3370,7 +3370,12 @@ const WINDOW_AFTER = `+${TRANSFER_WINDOW_DAYS} days`;
  */
 function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
 	return and(
-		eq(source.kind, "transaction"),
+		// `+` keeps SQLite from reading the sources through an index on `kind`.
+		// Sampled by `analysis_limit`, `kind` looks as selective as a key, and at
+		// 100,000 transactions the planner scanned every transaction for each
+		// chunk of 500 sources instead of looking each up by its id: a
+		// 24,000-line import took 17 s instead of 2.
+		eq(sql`+${source.kind}`, "transaction"),
 		eq(candidate.kind, "transaction"),
 		ne(source.amount, 0),
 		eq(candidate.amount, sql`-${source.amount}`),
@@ -3442,6 +3447,10 @@ function candidatePairQuery(
 	sourceIds: readonly string[],
 	counterpartId: string | undefined,
 ) {
+	// Cross joins, conditions in `where`: SQLite keeps a cross join's tables in
+	// the order written, so each source is looked up once by its id. As inner
+	// joins, the planner looped over the few accounts first and looked every
+	// source up once per account, ten times the work of an import.
 	return db
 		.select({
 			source: {
@@ -3465,14 +3474,19 @@ function candidatePairQuery(
 			},
 		})
 		.from(sourceEntry)
-		.innerJoin(sourceAccount, eq(sourceAccount.id, sourceEntry.accountId))
-		.innerJoin(sourceTransaction, eq(sourceTransaction.entryId, sourceEntry.id))
-		.innerJoin(entries, candidateOf(sourceEntry, entries))
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.crossJoin(sourceAccount)
+		.crossJoin(sourceTransaction)
+		.crossJoin(entries)
+		.crossJoin(transactions)
+		.crossJoin(accounts)
 		.where(
 			and(
 				inArray(sourceEntry.id, [...sourceIds]),
+				eq(sourceAccount.id, sourceEntry.accountId),
+				eq(sourceTransaction.entryId, sourceEntry.id),
+				candidateOf(sourceEntry, entries),
+				eq(transactions.entryId, entries.id),
+				eq(accounts.id, entries.accountId),
 				matchableSide(sourceTransaction, sourceAccount),
 				matchableSide(transactions, accounts),
 				counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
@@ -4181,7 +4195,10 @@ function needsTransactionColumns(filter: TransactionFilter): boolean {
 	);
 }
 
-function categoryCondition(filter: TransactionFilter): SQL | undefined | null {
+function categoryCondition(
+	filter: TransactionFilter,
+	sides: TransferSideSql,
+): SQL | undefined | null {
 	const { categoryIds, uncategorised = false } = filter;
 
 	if (categoryIds === undefined && !uncategorised) {
@@ -4201,7 +4218,7 @@ function categoryCondition(filter: TransactionFilter): SQL | undefined | null {
 		// outflows of `EXPENSE_TRANSFER_KINDS`, loan payments and investment
 		// contributions, are the exception: the dashboard counts them as
 		// uncategorised expenses, so its drill-down must list them.
-		uncategorised ? and(isNull(transactions.categoryId), not(isTransferSide)) : undefined,
+		uncategorised ? and(isNull(transactions.categoryId), not(sides.is)) : undefined,
 	);
 }
 
@@ -4220,36 +4237,68 @@ function absoluteAmountIn(range: AmountRange): SQL | undefined {
 	return max === null ? undefined : between(entries.amount, -max, max);
 }
 
-// `LIKE` rather than FTS5 until the 300 ms target of Story 1.5 fails. Drizzle's
+// `LIKE` rather than FTS5 until NFR10's 150 ms target fails. Drizzle's
 // `like` has no `escape` clause, and without one `50%` would find `Remise 500`.
 function contains(column: typeof transactions.label | typeof transactions.notes, q: string): SQL {
 	return sql`${column} like ${`%${escapeLike(q)}%`} escape ${LIKE_ESCAPE}`;
 }
 
-/**
- * The SQL twin of `direction` in `domain/cash-flow.ts`, built from the same
- * `EXPENSE_TRANSFER_KINDS`; the ledger's parity test keeps the two in step. It
- * lives here because only the ledger reads the money tables. `exists` rather
- * than a join, so the count and the sum need no join either.
- */
-const isTransferSide = sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`;
-
 /** Drizzle's `and` of two conditions, typed as never empty, so a sum can pick rows by it. */
 const both = (left: SQL, right: SQL): SQL => sql`(${left} and ${right})`;
 
-const DIRECTION_CONDITIONS: Record<Direction, SQL> = {
-	income: both(not(isTransferSide), gt(entries.amount, 0)),
-	expense: both(not(isTransferSide), lte(entries.amount, 0)),
-	transfer: isTransferSide,
-};
+/**
+ * The SQL twin of `direction` in `domain/cash-flow.ts`, built from the same
+ * `EXPENSE_TRANSFER_KINDS`; the ledger's parity test keeps the two in step. It
+ * lives here because only the ledger reads the money tables. `is` says
+ * whether a row is a transfer side; `directions` are the filter's conditions
+ * built on it.
+ */
+type TransferSideSql = { is: SQL; directions: Record<Direction, SQL> };
+
+function transferSideOf(is: SQL): TransferSideSql {
+	// `+` keeps SQLite off `entries_kind_amount_date` for a sign: « Dépenses »
+	// matches most rows, and read by amount they had to be sorted by date in
+	// full, 65 ms at 100,000 rows, where the date index stops at the page.
+	const amount = sql`+${entries.amount}`;
+
+	return {
+		is,
+		directions: {
+			income: both(not(is), gt(amount, 0)),
+			expense: both(not(is), lte(amount, 0)),
+			transfer: is,
+		},
+	};
+}
+
+/**
+ * For a query that joins no `transfers`: the bulk selection and the cash flow.
+ * A correlated subquery per row, which the list, its count and its sum cannot
+ * afford at 100,000 rows.
+ */
+const correlatedTransferSide = transferSideOf(
+	sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
+);
+
+/**
+ * For a query that left-joins `asOutflow` and `asInflow` on the row's id: the
+ * list, its count and its sum. Each join is on a unique index, so no row
+ * doubles, and SQLite drops either join when nothing reads it.
+ */
+const joinedTransferSide = transferSideOf(
+	sql`(${asInflow.id} is not null or (${asOutflow.id} is not null and ${notInArray(asOutflow.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
+);
 
 /**
  * The where clause of a filter, `null` when it can match nothing at all, so
  * the caller skips the query rather than asking SQLite for an empty `or`.
  */
-function filterCondition(filter: TransactionFilter): SQL | undefined | null {
+function filterCondition(
+	filter: TransactionFilter,
+	sides: TransferSideSql,
+): SQL | undefined | null {
 	const { accountIds, amounts, q, merchantIds, tagIds, direction } = filter;
-	const category = categoryCondition(filter);
+	const category = categoryCondition(filter, sides);
 
 	if (
 		accountIds?.length === 0 ||
@@ -4262,9 +4311,17 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 		return null;
 	}
 
+	// `+` picks the index that gives the list's order. Sampled by
+	// `analysis_limit`, `kind` and `account_id` look equally selective, and the
+	// planner then sorted a whole account, or every account, before the page.
+	// One account reads its own date index; several read the kind's.
+	const oneAccount = accountIds?.length === 1;
+	const kind = oneAccount ? sql`+${entries.kind}` : sql`${entries.kind}`;
+	const accountId = oneAccount ? sql`${entries.accountId}` : sql`+${entries.accountId}`;
+
 	return and(
-		eq(entries.kind, "transaction"),
-		accountIds === undefined ? undefined : inArray(entries.accountId, [...accountIds]),
+		eq(kind, "transaction"),
+		accountIds === undefined ? undefined : inArray(accountId, [...accountIds]),
 		filter.from === undefined ? undefined : gte(entries.date, filter.from),
 		filter.to === undefined ? undefined : lte(entries.date, filter.to),
 		amounts === undefined
@@ -4286,25 +4343,24 @@ function filterCondition(filter: TransactionFilter): SQL | undefined | null {
 			: sql`exists (select 1 from ${taggings} where ${taggings.transactionId} = ${entries.id} and ${inArray(taggings.tagId, [...tagIds])})`,
 		direction === undefined
 			? undefined
-			: or(...[...new Set(direction)].map((value) => DIRECTION_CONDITIONS[value])),
+			: or(...[...new Set(direction)].map((value) => sides.directions[value])),
 	);
 }
 
 /**
  * A page of transactions matching `filter`, most recent first (AD-15), each
- * with its account's name. The count joins `transactions` only when the text
- * search or the category or merchant filter needs its columns, so the unfiltered count
- * reads one index.
+ * with its account's name, and no count: the cross-account list asks for its
+ * totals apart, once per filter rather than once per page.
  */
-export async function listTransactions(
+export async function listTransactionPage(
 	deps: ServiceDeps,
 	filter: TransactionFilter,
 	page: { page: number; pageSize: number },
-): Promise<{ items: TransactionListRecord[]; total: number }> {
-	const where = filterCondition(filter);
+): Promise<TransactionListRecord[]> {
+	const where = filterCondition(filter, joinedTransferSide);
 
 	if (where === null) {
-		return { items: [], total: 0 };
+		return [];
 	}
 
 	const rows = await deps.db
@@ -4331,13 +4387,6 @@ export async function listTransactions(
 		)
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
-	const totals = !needsTransactionColumns(filter)
-		? await deps.db.select({ total: count() }).from(entries).where(where)
-		: await deps.db
-				.select({ total: count() })
-				.from(entries)
-				.innerJoin(transactions, eq(transactions.entryId, entries.id))
-				.where(where);
 
 	const tagsOf = await tagIdsByEntry(
 		deps.db,
@@ -4345,14 +4394,49 @@ export async function listTransactions(
 	);
 	const suggested = await suggestedAmong(deps.db, unmatchedIds(rows));
 
-	return {
-		items: rows.map((row) => ({
-			...withTransferLink(toRecord(row)),
-			tagIds: tagsOf.get(row.id) ?? [],
-			transferSuggested: suggested.has(row.id),
-		})),
-		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
-	};
+	return rows.map((row) => ({
+		...withTransferLink(toRecord(row)),
+		tagIds: tagsOf.get(row.id) ?? [],
+		transferSuggested: suggested.has(row.id),
+	}));
+}
+
+/**
+ * How many transactions match `filter`. Joins `transactions` only when the
+ * text search or the category or merchant filter needs its columns, so the
+ * unfiltered count reads one index.
+ */
+async function countTransactions(deps: ServiceDeps, filter: TransactionFilter): Promise<number> {
+	const where = filterCondition(filter, joinedTransferSide);
+
+	if (where === null) {
+		return 0;
+	}
+
+	const query = deps.db
+		.select({ total: count() })
+		.from(entries)
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.$dynamic();
+	const rows = await (
+		needsTransactionColumns(filter)
+			? query.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			: query
+	).where(where);
+
+	return rows.reduce((total, row) => total + row.total, 0);
+}
+
+/** A page of transactions matching `filter`, as `listTransactionPage`, with their count. */
+export async function listTransactions(
+	deps: ServiceDeps,
+	filter: TransactionFilter,
+	page: { page: number; pageSize: number },
+): Promise<{ items: TransactionListRecord[]; total: number }> {
+	const items = await listTransactionPage(deps, filter, page);
+
+	return { items, total: await countTransactions(deps, filter) };
 }
 
 /** The sum of the amounts of the rows `condition` holds for, `0` when none does. */
@@ -4374,33 +4458,32 @@ export async function sumTransactions(
 ): Promise<
 	{ currency: string; amount: MinorUnits; income: MinorUnits; expense: MinorUnits; count: number }[]
 > {
-	const where = filterCondition(filter);
+	const where = filterCondition(filter, joinedTransferSide);
 
 	if (where === null) {
 		return [];
 	}
 
-	const columns = {
-		currency: entries.currency,
-		amount: sum(entries.amount).mapWith(Number),
-		income: sumWhere(DIRECTION_CONDITIONS.income),
-		expense: sumWhere(DIRECTION_CONDITIONS.expense),
-		count: count(),
-	};
-	const rows = !needsTransactionColumns(filter)
-		? await deps.db
-				.select(columns)
-				.from(entries)
-				.where(where)
-				.groupBy(entries.currency)
-				.orderBy(entries.currency)
-		: await deps.db
-				.select(columns)
-				.from(entries)
-				.innerJoin(transactions, eq(transactions.entryId, entries.id))
-				.where(where)
-				.groupBy(entries.currency)
-				.orderBy(entries.currency);
+	const query = deps.db
+		.select({
+			currency: entries.currency,
+			amount: sum(entries.amount).mapWith(Number),
+			income: sumWhere(joinedTransferSide.directions.income),
+			expense: sumWhere(joinedTransferSide.directions.expense),
+			count: count(),
+		})
+		.from(entries)
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.$dynamic();
+	const rows = await (
+		needsTransactionColumns(filter)
+			? query.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			: query
+	)
+		.where(where)
+		.groupBy(entries.currency)
+		.orderBy(entries.currency);
 
 	return rows.map((row) => ({
 		...toRecord(row),
@@ -4421,7 +4504,10 @@ export async function cashFlowByCategory(
 	deps: ServiceDeps,
 	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
 ): Promise<CashFlowRow[]> {
-	const where = filterCondition({ ...range, direction: ["income", "expense"] });
+	const where = filterCondition(
+		{ ...range, direction: ["income", "expense"] },
+		correlatedTransferSide,
+	);
 
 	if (where === null) {
 		return [];

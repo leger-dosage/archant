@@ -1,0 +1,358 @@
+import type { TempDatabase } from "../testing/temp-database.ts";
+
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+
+import { refreshStatistics } from "@archant/data/client";
+import { toMinorUnits } from "@archant/data/money";
+import { entries } from "@archant/data/schema/entries";
+import { transactions } from "@archant/data/schema/transactions";
+import { transfers } from "@archant/data/schema/transfers";
+
+import { createLogger } from "../lib/logger.ts";
+import { createTempDatabase } from "../testing/temp-database.ts";
+import { confirmImport, createImport, previewImport } from "./imports.ts";
+import { createAccount } from "./ledger.ts";
+import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
+import { listTransferCandidates } from "./transfers.ts";
+
+// NFR10, on a decade of a household's history. CI runners are slower and
+// noisier than the small server the target names, so they get twice the time.
+const MARGIN = process.env["CI"] === undefined ? 1 : 2;
+const PAGE_MS = 150 * MARGIN;
+const IMPORT_MS = 3000 * MARGIN;
+
+const ROWS = 100_000;
+const DAYS = 3650;
+const OFX_LINES = 24_000;
+const FIRST_DAY = Date.UTC(2016, 0, 2);
+
+let temp: TempDatabase;
+let jointId = "";
+let savingsId = "";
+let cardId = "";
+let suggestedId = "";
+
+const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
+const importDeps = () => ({ ...deps(), logger: createLogger("silent") });
+
+function chunksOf<Row>(rows: readonly Row[], size: number): Row[][] {
+	return Array.from({ length: Math.ceil(rows.length / size) }, (_, index) =>
+		rows.slice(index * size, (index + 1) * size),
+	);
+}
+
+const dayOf = (offset: number) =>
+	new Date(FIRST_DAY + offset * 86_400_000).toISOString().slice(0, 10);
+
+const listQuery = { page: 1, pageSize: 50 } as const;
+const expenses = { direction: ["expense" as const] };
+
+async function openAccount(name: string, subtype: "checking" | "savings") {
+	const account = await createAccount(
+		deps(),
+		{
+			name,
+			type: "depository",
+			subtype,
+			currency: "EUR",
+			openingBalance: toMinorUnits(0),
+			openingDate: "2016-01-01",
+		},
+		{ origin: "user" },
+	);
+
+	return account.id;
+}
+
+type SeedRow = {
+	id: string;
+	accountId: string;
+	date: string;
+	amount: number;
+	pending: boolean;
+};
+
+/**
+ * Ten years of a household on three accounts, about 27 rows a day: mostly
+ * spending on the joint account and the card, a credit every 97 rows, and
+ * every 400 rows a move to the savings account recorded as a transfer. Every
+ * 50th row has its exact opposite on the card a day later, unlinked, so the
+ * list pays for the suggestion's search as it would on an imported history.
+ */
+function seedRows(): { rows: SeedRow[]; pairs: [string, string][] } {
+	const rows: SeedRow[] = [];
+	const pairs: [string, string][] = [];
+
+	while (rows.length < ROWS) {
+		const index = rows.length;
+		const offset = Math.floor((index * DAYS) / ROWS);
+		const date = dayOf(offset);
+		const id = crypto.randomUUID();
+
+		if (index % 400 === 0) {
+			const inflow = crypto.randomUUID();
+			rows.push(
+				{ id, accountId: jointId, date, amount: -50_000, pending: false },
+				{ id: inflow, accountId: savingsId, date, amount: 50_000, pending: false },
+			);
+			pairs.push([id, inflow]);
+		} else if (index % 50 === 1) {
+			const magnitude = 1000 + (index % 7919);
+			rows.push(
+				{ id, accountId: jointId, date, amount: -magnitude, pending: false },
+				{
+					id: crypto.randomUUID(),
+					accountId: cardId,
+					date: dayOf(Math.min(offset + 1, DAYS - 1)),
+					amount: magnitude,
+					pending: false,
+				},
+			);
+		} else {
+			rows.push({
+				id,
+				accountId: index % 3 === 0 ? cardId : jointId,
+				date,
+				amount: index % 97 === 0 ? 250_000 : -(100 + (index % 9973)),
+				// The last days hold a few lines the bank has not booked yet.
+				pending: offset > DAYS - 4 && index % 5 === 0,
+			});
+		}
+	}
+
+	return { rows: rows.slice(0, ROWS), pairs };
+}
+
+async function seed() {
+	jointId = await openAccount("Compte joint", "checking");
+	savingsId = await openAccount("Livret A", "savings");
+	cardId = await openAccount("Carte", "checking");
+	const { rows, pairs } = seedRows();
+	const now = Date.UTC(2026, 0, 1);
+	const kept = new Set(rows.map((row) => row.id));
+	suggestedId = rows.find((row, index) => index % 50 === 1 && row.amount < 0)?.id ?? "";
+
+	// Seeded directly: the ledger would recompute ten years of balances per row,
+	// and only the read paths are being measured. In sequence, so each chunk's
+	// transaction rows find their entries.
+	await chunksOf(rows, 2000).reduce(async (previous, chunk, number) => {
+		await previous;
+		const start = number * 2000;
+		await temp.db.insert(entries).values(
+			chunk.map((row, index) => ({
+				id: row.id,
+				accountId: row.accountId,
+				kind: "transaction" as const,
+				date: row.date,
+				amount: row.amount,
+				currency: "EUR",
+				createdAt: now + start + index,
+				updatedAt: now + start + index,
+			})),
+		);
+		await temp.db.insert(transactions).values(
+			chunk.map((row, index) => ({
+				entryId: row.id,
+				label: `CB MAGASIN ${(start + index) % 300}`,
+				pending: row.pending,
+			})),
+		);
+	}, Promise.resolve());
+
+	const linked = pairs.filter(([outflow, inflow]) => kept.has(outflow) && kept.has(inflow));
+
+	await chunksOf(linked, 500).reduce(async (previous, chunk) => {
+		await previous;
+		await temp.db.insert(transfers).values(
+			chunk.map(([outflow, inflow]) => ({
+				id: crypto.randomUUID(),
+				outflowTransactionId: outflow,
+				inflowTransactionId: inflow,
+				kind: "internal_move" as const,
+				createdAt: now,
+			})),
+		);
+	}, Promise.resolve());
+
+	await refreshStatistics(temp.db);
+}
+
+/** A statement Drizzle sent to libSQL: its text and its positional arguments. */
+const capturedSchema = z.object({
+	sql: z.string(),
+	args: z.array(z.union([z.string(), z.number(), z.bigint(), z.boolean(), z.null()])),
+});
+
+type Captured = z.infer<typeof capturedSchema>;
+
+/** Every statement `run` sent through the client, outside a transaction. */
+async function statementsOf(run: () => Promise<unknown>): Promise<Captured[]> {
+	const spy = vi.spyOn(temp.db.$client, "execute");
+
+	try {
+		await run();
+
+		return spy.mock.calls.map(([statement]) => capturedSchema.parse(statement));
+	} finally {
+		spy.mockRestore();
+	}
+}
+
+/** `EXPLAIN QUERY PLAN` of `statement`, one detail per line. */
+async function planOf(statement: Captured): Promise<string> {
+	const result = await temp.db.$client.execute({
+		sql: `EXPLAIN QUERY PLAN ${statement.sql}`,
+		args: statement.args,
+	});
+
+	return result.rows.map((row) => z.string().parse(row["detail"])).join("\n");
+}
+
+/**
+ * The index gives the order by date, and only the rows of one day are sorted
+ * by the rest. SQLite 3.45, which libSQL embeds, says « right part »; newer
+ * releases say « last 3 terms ». A sort of the whole result says neither.
+ */
+const WITHIN_A_DAY = /USE TEMP B-TREE FOR (?:RIGHT PART|LAST 3 TERMS) OF ORDER BY/u;
+
+function only(statements: Captured[], pattern: RegExp): Captured {
+	const found = statements.filter((statement) => pattern.test(statement.sql));
+
+	expect(found).toHaveLength(1);
+	const [statement] = found;
+
+	if (statement === undefined) {
+		throw new Error(`No statement matches ${pattern.source}.`);
+	}
+
+	return statement;
+}
+
+/** The milliseconds `run` takes, after one warm-up run as a running server has had. */
+async function timed(run: () => Promise<unknown>): Promise<number> {
+	await run();
+	const started = performance.now();
+	await run();
+
+	return performance.now() - started;
+}
+
+beforeAll(async () => {
+	temp = await createTempDatabase();
+	await seed();
+}, 120_000);
+
+afterAll(async () => {
+	await temp.dispose();
+});
+
+describe("NFR10 at 100,000 transactions", () => {
+	it("answers the first page of the transaction list and its totals in under 150 ms", async () => {
+		const page = await listAllTransactions(deps(), listQuery);
+		const totals = await transactionTotals(deps(), {});
+
+		expect(page.items).toHaveLength(50);
+		expect(totals.total).toBe(ROWS);
+		await expect(
+			timed(async () =>
+				Promise.all([listAllTransactions(deps(), listQuery), transactionTotals(deps(), {})]),
+			),
+		).resolves.toBeLessThan(PAGE_MS);
+	});
+
+	it("answers the first page of « Dépenses » and its totals in under 150 ms", async () => {
+		await expect(
+			timed(async () =>
+				Promise.all([
+					listAllTransactions(deps(), { ...listQuery, ...expenses }),
+					transactionTotals(deps(), expenses),
+				]),
+			),
+		).resolves.toBeLessThan(PAGE_MS);
+	});
+
+	it("answers the first page of an account in under 150 ms", async () => {
+		const page = await listAccountTransactions(deps(), jointId, listQuery);
+
+		expect(page.items).toHaveLength(50);
+		await expect(
+			timed(async () => listAccountTransactions(deps(), jointId, listQuery)),
+		).resolves.toBeLessThan(PAGE_MS);
+	});
+
+	it("confirms a 24,000-line OFX file in under 3 seconds", async () => {
+		const accountId = await openAccount("Compte courant", "checking");
+		const lines = Array.from({ length: OFX_LINES }, (_, index) => {
+			const date = dayOf(Math.floor((index * DAYS) / OFX_LINES)).replaceAll("-", "");
+			const cents = 100 + (index % 9973);
+
+			return `<STMTTRN><DTPOSTED>${date}<TRNAMT>-${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}<FITID>F${index}<NAME>PRLV ${index % 300}</STMTTRN>`;
+		});
+		const bytes = new TextEncoder().encode(
+			`<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR<BANKTRANLIST>\n${lines.join("\n")}\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`,
+		);
+		const created = await createImport(importDeps(), accountId, { name: "releve.ofx", bytes });
+		await previewImport(importDeps(), created.id, { moveOpeningDate: null });
+
+		const started = performance.now();
+		const confirmed = await confirmImport(importDeps(), created.id);
+		const elapsed = performance.now() - started;
+
+		expect(confirmed.counts.created).toBe(OFX_LINES);
+		expect(elapsed).toBeLessThan(IMPORT_MS);
+	}, 60_000);
+});
+
+describe("query plans at 100,000 transactions", () => {
+	it("finds a transfer candidate by the source's key and the amount index", async () => {
+		const statements = await statementsOf(async () => listTransferCandidates(deps(), suggestedId));
+		const plan = await planOf(only(statements, /"source_entry"/u));
+
+		expect(plan).toMatch(/SEARCH source_entry USING INDEX sqlite_autoindex_entries_1 \(id=\?\)/u);
+		expect(plan).toMatch(
+			/SEARCH entries USING INDEX entries_kind_amount_date \(kind=\? AND amount=\? AND date>\? AND date<\?\)/u,
+		);
+		expect(plan).not.toMatch(/entries_kind_amount_date \(kind=\?\)/u);
+		expect(plan).not.toMatch(/SCAN source_account/u);
+	});
+
+	it.each([
+		["every transaction", {}],
+		["« Dépenses »", expenses],
+	])("sums %s from the covering index, with no correlated subquery", async (_name, filter) => {
+		const statements = await statementsOf(async () => transactionTotals(deps(), filter));
+		const plan = await planOf(only(statements, /group by/u));
+
+		expect(plan).toMatch(/USING COVERING INDEX entries_kind_currency_amount/u);
+		expect(plan).not.toMatch(/CORRELATED/u);
+	});
+
+	it.each([
+		["every transaction", () => ({})],
+		["« Dépenses »", () => expenses],
+		["two accounts", () => ({ account: [jointId, cardId] })],
+	])("lists %s from the date index, sorting only within a day", async (_name, filterOf) => {
+		const statements = await statementsOf(async () =>
+			listAllTransactions(deps(), { ...listQuery, ...filterOf() }),
+		);
+		const plan = await planOf(
+			only(statements, /order by "entries"."date" desc, "transactions"."pending" desc/u),
+		);
+
+		expect(plan).toMatch(/SEARCH entries USING INDEX entries_kind_date \(kind=\?\)/u);
+		expect(plan).toMatch(WITHIN_A_DAY);
+	});
+
+	it("lists one account from its date index, sorting only within a day", async () => {
+		const statements = await statementsOf(async () =>
+			listAccountTransactions(deps(), jointId, listQuery),
+		);
+		const plan = await planOf(
+			only(statements, /order by "entries"."date" desc, "transactions"."pending" desc/u),
+		);
+
+		expect(plan).toMatch(/SEARCH entries USING INDEX entries_account_date \(account_id=\?\)/u);
+		expect(plan).toMatch(WITHIN_A_DAY);
+	});
+});

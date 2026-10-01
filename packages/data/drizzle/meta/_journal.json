@@ -253,6 +253,13 @@
       "when": 1790691304993,
       "tag": "0035_add_sync_attempted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1790863726440,
+      "tag": "0036_add_entries_kind_currency_amount",
+      "breakpoints": true
     }
   ]
 }
