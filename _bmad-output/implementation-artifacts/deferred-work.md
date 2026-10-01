@@ -197,3 +197,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-5-fast-at-ten-years-of-history.md`
   summary: Test that a refused `ANALYZE` at startup logs a code-only warning and the server still listens.
   evidence: `index.spec.ts` starts against a local file where `ANALYZE` always succeeds; the catch in `index.ts` is untested there, though `imports.spec.ts` tests the same catch on the import path.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-7-fewer-home-made-parts.md`
+  summary: Test that `noDrizzleInBundle` in `packages/app/vite.config.ts` refuses a bundle holding a `drizzle-orm` module and passes one without.
+  evidence: The refusal was checked once by hand during Story 15.7; `test:e2e` and `image` only ever build a clean bundle, so a typo in the guard would go unnoticed.
