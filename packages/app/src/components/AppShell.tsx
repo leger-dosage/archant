@@ -18,7 +18,7 @@ import { useTranslation } from "react-i18next";
 
 import { AccountBalance } from "@/components/AccountBalance";
 import { ArchLogo } from "@/components/ArchLogo";
-import { CreateAccountDialog } from "@/components/CreateAccountDialog";
+import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { Money } from "@/components/Money";
 import { SettingsNav } from "@/components/SettingsNav";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -215,7 +215,7 @@ function AccountsColumn({ id }: { id?: string }) {
 				{t("accounts.add")}
 			</Button>
 			<AccountList />
-			<CreateAccountDialog open={creating} onOpenChange={setCreating} />
+			<LazyCreateAccountDialog open={creating} onOpenChange={setCreating} />
 		</aside>
 	);
 }

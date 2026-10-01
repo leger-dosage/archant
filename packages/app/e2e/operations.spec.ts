@@ -368,6 +368,47 @@ test("the list pages at 50 transactions, and a reload keeps the page", async ({ 
 	await expect(searchBox(page)).toHaveValue(prefix);
 });
 
+// Story 15.5: the totals do not change from one page to the next, so turning
+// a page reads them from the cache; a new filter asks for both.
+test("page 2 asks for the rows alone, a new filter for the rows and the totals", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingDate: daysAgo(60) });
+	const prefix = uniqueName("Totaux");
+	await api.addDailyTransactions(account.id, 51, prefix);
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
+	const pages = page.getByRole("navigation", { name: "Pages des opérations" });
+	await expect(pages).toContainText("Page 1 sur 2");
+	const sent: string[] = [];
+	page.on("request", (request) => {
+		const { pathname } = new URL(request.url());
+		if (pathname.startsWith("/api/transactions")) {
+			sent.push(pathname);
+		}
+	});
+
+	await pages.getByRole("link", { name: "Suivant" }).click();
+
+	await expect(rows(page)).toHaveText([new RegExp(`${prefix} 51`, "u")]);
+	expect(sent).toContain("/api/transactions");
+	expect(sent).not.toContain("/api/transactions/totals");
+	sent.length = 0;
+
+	await page.getByRole("button", { name: "Filtrer" }).click();
+	const menu = page.getByRole("dialog");
+	await menu.getByRole("button", { name: "Sens", exact: true }).click();
+	await menu.getByRole("checkbox", { name: "Dépenses" }).check();
+	const totals = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === "/api/transactions/totals",
+	);
+	await menu.getByRole("button", { name: "Appliquer" }).click();
+
+	await totals;
+	await expect(page.getByRole("button", { name: "Retirer le filtre Dépenses" })).toBeVisible();
+	expect(sent).toContain("/api/transactions");
+});
+
 test("a page past the last one goes back to the last page", async ({ page, api }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(60) });
 	const prefix = uniqueName("Au-delà");

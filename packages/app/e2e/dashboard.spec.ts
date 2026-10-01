@@ -686,3 +686,39 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 
 	await expect(greeting).toHaveCSS("font-size", "24px");
 });
+
+// Story 15.5: queries stay fresh for 30 s, so the dashboard no longer refetches
+// on mount; a category's edit must invalidate the cash flow itself. This
+// month, since « Accueil » leads to it and a link keeps the cache a reload drops.
+test("a category renamed in « Réglages » is renamed in the dashboard's cash flow", async ({
+	page,
+	api,
+}) => {
+	const today = daysAgo(0);
+	const month = today.slice(0, 7);
+	const account = await api.openAccount({ openingDate: daysAgo(40) });
+	const category = await api.createCategory({ name: uniqueName("Jardin") });
+	const renamed = uniqueName("Potager");
+	const id = await api.addTransaction(account.id, {
+		date: today,
+		label: "Graines",
+		amount: "-7,00",
+	});
+	await api.categorise([id], category.id);
+
+	await page.goto("/");
+	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: category.name })).toBeVisible();
+
+	await page.getByRole("link", { name: "Réglages", exact: true }).first().click();
+	await page.getByRole("link", { name: "Catégories" }).first().click();
+	await page.getByRole("button", { name: `Actions pour ${category.name}`, exact: true }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier la catégorie" });
+	await edit.getByLabel("Nom").fill(renamed);
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(page.getByText(`Catégorie « ${renamed} » enregistrée.`)).toBeVisible();
+	await page.getByRole("link", { name: "Accueil", exact: true }).first().click();
+
+	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: renamed })).toBeVisible();
+	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: category.name })).toHaveCount(0);
+});

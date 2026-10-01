@@ -3,7 +3,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import { randomBytes } from "node:crypto";
 
 import { BackupError, copyBeforeMigrating, errorCode } from "@archant/data/backup";
-import { createDb } from "@archant/data/client";
+import { createDb, refreshStatistics } from "@archant/data/client";
 import { runMigrations } from "@archant/data/migrate";
 
 import { createApp } from "./app.ts";
@@ -97,6 +97,15 @@ try {
 await runMigrations(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN);
 logger.info("migrations applied");
 const db = await createDb(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN);
+// Without statistics SQLite plans blind, and at a decade of history it picked
+// the wrong index for every transfer candidate. Best-effort: Turso may refuse
+// `ANALYZE`, and a slower plan is no reason not to start.
+try {
+	await refreshStatistics(db);
+	logger.info("statistics refreshed");
+} catch (error) {
+	logger.warn({ code: errorCode(error) }, "statistics refresh failed");
+}
 // Once per instance, not once per start: a default the user deleted stays deleted.
 const seeded = await seedDefaults({ db });
 if (seeded > 0) {

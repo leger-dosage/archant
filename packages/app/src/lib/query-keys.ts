@@ -55,8 +55,9 @@ export const queryKeys = {
 	},
 	/**
 	 * Every recurring pattern, one query: a household has a few dozen. Not
-	 * invalidated by transaction writes: the page refetches on mount, which
-	 * covers a detection run by a confirmed import.
+	 * invalidated by transaction writes: a confirmed or reverted import, which
+	 * runs the detection, invalidates it, and once stale the page refetches it
+	 * on mount.
 	 */
 	recurring: {
 		all: ["recurring"] as const,
@@ -88,6 +89,11 @@ export const queryKeys = {
 		/** A page of the cross-account list under its filters. */
 		list: (filters: TransactionFilters, page: number) =>
 			["transactions", "list", filters, page] as const,
+		/**
+		 * The count and the sums of the cross-account list under its filters.
+		 * No page, so turning one reads them from the cache.
+		 */
+		totals: (filters: TransactionFilters) => ["transactions", "totals", filters] as const,
 		/** Prefixes every page of one account's list. */
 		ofAccount: (accountId: string) => ["transactions", "account", accountId] as const,
 		byAccount: (accountId: string, page: number) =>
@@ -104,9 +110,8 @@ export const queryKeys = {
 		/**
 		 * The dashboard's income and expenses of a month. Under `all`: every
 		 * transaction, category-assignment, transfer and account-flag write
-		 * already invalidates it. A category's own edit invalidates
-		 * `categories.all` only, but happens on another page, and the dashboard
-		 * refetches on mount.
+		 * already invalidates it, and so does a category's own edit, which
+		 * renames or recolours a line.
 		 */
 		cashFlow: (month: string) => ["transactions", "cash-flow", month] as const,
 	},

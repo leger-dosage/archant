@@ -74,6 +74,15 @@ const errorBody = z.object({
 	}),
 });
 
+/** The body of a gzipped response, as a browser decodes it. */
+async function gunzipped(response: Response): Promise<string> {
+	if (response.body === null) {
+		throw new Error("The response has no body.");
+	}
+
+	return new Response(response.body.pipeThrough(new DecompressionStream("gzip"))).text();
+}
+
 // Raw requests, for bodies the typed client would refuse to compile.
 async function postRaw(body: unknown) {
 	const response = await buildApp().request("/api/accounts", {
@@ -1190,10 +1199,15 @@ const listItem = z.object({
 });
 
 const listBody = z.object({
-	data: z.object({
+	data: z.strictObject({
 		items: z.array(listItem),
 		page: z.number(),
 		pageSize: z.number(),
+	}),
+});
+
+const totalsBody = z.object({
+	data: z.strictObject({
 		total: z.number(),
 		sum: z.object({
 			amount: z.number(),
@@ -1213,12 +1227,24 @@ async function listOwn(query: string) {
 	return { status: response.status, body };
 }
 
+async function totalsOwn(query: string) {
+	const response = await buildApp(own?.db).request(`/api/transactions/totals${query}`);
+	const body = z.unknown().parse(await response.json());
+
+	return { status: response.status, body };
+}
+
+/**
+ * A page and the totals of the same filter, as the interface asks for them:
+ * `/totals` ignores `page` and `pageSize`, so the query goes to both as it is.
+ */
 async function listed(query: string) {
-	const { status, body } = await listOwn(query);
+	const [list, totals] = await Promise.all([listOwn(query), totalsOwn(query)]);
 
-	expect(status, JSON.stringify(body)).toBe(200);
+	expect(list.status, JSON.stringify(list.body)).toBe(200);
+	expect(totals.status, JSON.stringify(totals.body)).toBe(200);
 
-	return listBody.parse(body).data;
+	return { ...listBody.parse(list.body).data, ...totalsBody.parse(totals.body).data };
 }
 
 async function openOwn(overrides: Partial<CreateAccountInput> = {}) {
@@ -1553,16 +1579,18 @@ describe("GET /api/transactions", () => {
 		["?amountMax=-5", "amountMax", "invalid_amount"],
 		["?amountMin=60&amountMax=50", "amountMax", "below_min"],
 		["?from=10/09/2026", "from", "invalid_format"],
-	])("refuses %s", async (query, path, code) => {
+	])("refuses %s, on the page and on the totals alike", async (query, path, code) => {
 		own = await freshDatabase();
 
-		const { status, body } = await listOwn(query);
+		const answers = await Promise.all([listOwn(query), totalsOwn(query)]);
 
-		expect(status).toBe(400);
-		expect(errorBody.parse(body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path, code }],
-		});
+		for (const { status, body } of answers) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path, code }],
+			});
+		}
 	});
 
 	it("types its query for the interface's client", async () => {
@@ -1575,6 +1603,83 @@ describe("GET /api/transactions", () => {
 
 		expect(response.status).toBe(200);
 		expect((await response.json()).data.items[0]?.accountName).toBe("Compte joint");
+	});
+});
+
+describe("compressed API answers", () => {
+	it("gzips a page of transactions for a client that accepts it, and only then", async () => {
+		const account = await openOwn();
+		await Array.from({ length: 20 }, (_, index) => index).reduce(async (previous, index) => {
+			await previous;
+			await postOwn(account.id, { ...expense, label: `Courses ${index}` });
+		}, Promise.resolve());
+		const app = buildApp(own?.db);
+
+		const gzipped = await app.request("/api/transactions", {
+			headers: { "accept-encoding": "gzip" },
+		});
+		const plain = await app.request("/api/transactions");
+
+		expect(gzipped.headers.get("content-encoding")).toBe("gzip");
+		expect(gzipped.headers.get("vary")).toContain("Accept-Encoding");
+		const body = listBody.parse(JSON.parse(await gunzipped(gzipped)));
+		expect(body.data.items).toHaveLength(20);
+		expect(plain.headers.get("content-encoding")).toBeNull();
+		expect(listBody.parse(await plain.json()).data.items).toHaveLength(20);
+	});
+});
+
+describe("uncompressed auth answers", () => {
+	it("never gzips Better Auth's answers, which can carry a session token", async () => {
+		const response = await buildApp().request("/api/auth/get-session", {
+			headers: { "accept-encoding": "gzip" },
+		});
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-encoding")).toBeNull();
+		expect(
+			z.object({ session: z.object({ token: z.string() }) }).parse(await response.json()),
+		).toBeDefined();
+	});
+});
+
+describe("GET /api/transactions/totals", () => {
+	it("counts and sums every matching row, whatever the page", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, { ...expense, date: "2026-09-03", amount: "-10,00" });
+		await postOwn(account.id, { ...expense, date: "2026-09-02", amount: "25,00" });
+
+		const first = await totalsOwn("?pageSize=1");
+		const second = await totalsOwn("?page=2&pageSize=1");
+
+		expect(first).toEqual(second);
+		expect(totalsBody.parse(first.body).data).toEqual({
+			total: 2,
+			sum: { amount: 1500, income: 2500, expense: -1000, currency: "EUR", skippedCount: 0 },
+		});
+	});
+
+	it("answers zero for a filter that matches nothing", async () => {
+		await openOwn();
+
+		const { body } = await totalsOwn("?merchant=nope");
+
+		expect(totalsBody.parse(body).data).toEqual({
+			total: 0,
+			sum: { amount: 0, income: 0, expense: 0, currency: "EUR", skippedCount: 0 },
+		});
+	});
+
+	it("types its query for the interface's client", async () => {
+		const account = await openOwn();
+		await postOwn(account.id, expense);
+
+		const response = await testClient(buildApp(own?.db)).api.transactions.totals.$get({
+			query: { account: [account.id], direction: ["expense"] },
+		});
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data.total).toBe(1);
 	});
 });
 
@@ -2076,12 +2181,14 @@ describe("serving the interface", () => {
 	let webDist: string;
 	const page = "<!doctype html><title>Archant</title>";
 	const script = "console.log('archant');";
+	const bigScript = `${script}\n`.repeat(200);
 
 	beforeAll(async () => {
 		webDist = await mkdtemp(join(tmpdir(), "archant-web-"));
 		await mkdir(join(webDist, "assets"));
 		await writeFile(join(webDist, "index.html"), page);
 		await writeFile(join(webDist, "assets", "index-abc.js"), script);
+		await writeFile(join(webDist, "assets", "index-big.js"), bigScript);
 	});
 
 	afterAll(async () => {
@@ -2125,6 +2232,29 @@ describe("serving the interface", () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toContain("javascript");
 		expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+		await expect(response.text()).resolves.toBe(script);
+	});
+
+	it("gzips a hashed asset for a browser that accepts it, and only then", async () => {
+		const gzipped = await serving().request("/assets/index-big.js", {
+			headers: { "accept-encoding": "gzip, deflate, br" },
+		});
+		const plain = await serving().request("/assets/index-big.js");
+
+		expect(gzipped.headers.get("content-encoding")).toBe("gzip");
+		expect(gzipped.headers.get("vary")).toContain("Accept-Encoding");
+		expect(gzipped.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+		await expect(gunzipped(gzipped)).resolves.toBe(bigScript);
+		expect(plain.headers.get("content-encoding")).toBeNull();
+		await expect(plain.text()).resolves.toBe(bigScript);
+	});
+
+	it("leaves a file under 1 KB as it is", async () => {
+		const response = await serving().request("/assets/index-abc.js", {
+			headers: { "accept-encoding": "gzip" },
+		});
+
+		expect(response.headers.get("content-encoding")).toBeNull();
 		await expect(response.text()).resolves.toBe(script);
 	});
 

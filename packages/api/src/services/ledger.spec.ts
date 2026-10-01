@@ -2680,112 +2680,6 @@ describe("sumTransactions", () => {
 	});
 });
 
-describe("the first page of 50,000 transactions", () => {
-	let big: TempDatabase;
-	let bigAccountId = "";
-
-	beforeAll(async () => {
-		big = await createTempDatabase();
-		const now = Date.UTC(2026, 8, 21);
-		const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
-		setToday("2026-09-21T10:00:00Z");
-		const joint = await createAccount(
-			bigDeps,
-			{ ...checking, openingDate: "2016-01-01" },
-			{ origin: "user" },
-		);
-		const card = await createAccount(
-			bigDeps,
-			{ ...checking, name: "Carte", openingDate: "2016-01-01" },
-			{ origin: "user" },
-		);
-		vi.useRealTimers();
-		const accountIds = [joint.id, card.id];
-		// Each odd row is the other side of the even row before it, on the other
-		// account a day later: every row has a candidate, so the page pays for the
-		// suggestion's search.
-		const rows = Array.from({ length: 50_000 }, (_, index) => {
-			const pair = Math.floor(index / 2);
-			const magnitude = (pair % 9000) + 1;
-
-			return {
-				id: crypto.randomUUID(),
-				accountId: accountIds[index % 2] ?? "",
-				// Spread over ten years, a few a day, as a household's history would be.
-				date: new Date(Date.UTC(2016, 0, 2) + ((pair % 3650) + (index % 2)) * 86_400_000)
-					.toISOString()
-					.slice(0, 10),
-				amount: index % 2 === 0 ? -magnitude : magnitude,
-				index,
-			};
-		});
-		bigAccountId = joint.id;
-
-		const chunks = Array.from({ length: rows.length / 2000 }, (_, index) =>
-			rows.slice(index * 2000, (index + 1) * 2000),
-		);
-
-		// Seeded directly: the ledger would recompute ten years of balances per row,
-		// and only the list's read path is being measured. In sequence, so the
-		// transaction rows always find their entries.
-		await chunks.reduce(async (previous, chunk) => {
-			await previous;
-			await big.db.insert(entries).values(
-				chunk.map((row) => ({
-					id: row.id,
-					accountId: row.accountId,
-					kind: "transaction" as const,
-					date: row.date,
-					amount: row.amount,
-					currency: "EUR",
-					createdAt: now + row.index,
-					updatedAt: now + row.index,
-				})),
-			);
-			await big.db
-				.insert(transactions)
-				.values(
-					chunk.map((row) => ({ entryId: row.id, label: `Opération ${row.index}`, notes: null })),
-				);
-		}, Promise.resolve());
-	}, 60_000);
-
-	afterAll(async () => {
-		await big.dispose();
-	});
-
-	it("answers the list, the count and the sum in under 300 ms", async () => {
-		const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
-		// One warm-up read, as a running server has had: the first query pays
-		// for opening the file.
-		await listTransactions(bigDeps, {}, firstPage);
-		await sumTransactions(bigDeps, {});
-
-		const started = performance.now();
-		const page = await listTransactions(bigDeps, {}, firstPage);
-		await sumTransactions(bigDeps, {});
-		const elapsed = performance.now() - started;
-
-		expect(page.total).toBe(50_000);
-		expect(page.items).toHaveLength(50);
-		expect(elapsed).toBeLessThan(300);
-	});
-
-	it("answers the first page of one account in under 300 ms", async () => {
-		const bigDeps = { db: big.db, timeZone: "Europe/Paris" };
-		const filter = { accountIds: [bigAccountId] };
-		await listTransactions(bigDeps, filter, firstPage);
-
-		const started = performance.now();
-		const page = await listTransactions(bigDeps, filter, firstPage);
-		const elapsed = performance.now() - started;
-
-		expect(page.total).toBe(25_000);
-		expect(page.items).toHaveLength(50);
-		expect(elapsed).toBeLessThan(300);
-	});
-});
-
 describe("balancesBetween", () => {
 	it("returns each day of the range, both ends included, oldest first", async () => {
 		const account = await openChecking();
@@ -3291,7 +3185,7 @@ describe("deleteAccount", () => {
 				ids.slice(index * 2000, (index + 1) * 2000),
 			);
 
-			// Seeded directly, as the 50,000-row list test does: only the delete is under test.
+			// Seeded directly, as `history-volume.spec.ts` does: only the delete is under test.
 			await chunks.reduce(async (previous, chunk) => {
 				await previous;
 				await big.db.insert(entries).values(
@@ -3862,7 +3756,7 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 					.slice(0, 10),
 				index,
 			}));
-			// Seeded directly, in sequence, for the same reason as the 50,000-row list.
+			// Seeded directly, in sequence, for the same reason as `history-volume.spec.ts`.
 			await Array.from({ length: 5 }, (_, index) =>
 				rows.slice(index * 1000, (index + 1) * 1000),
 			).reduce(async (previous, chunk) => {

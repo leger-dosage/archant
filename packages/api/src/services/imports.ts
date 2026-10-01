@@ -7,6 +7,9 @@ import type { IngestGroups, IngestResult, Removable, StatementBalanceOutcome } f
 
 import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 
+import { errorCode } from "@archant/data/backup";
+import type { Database } from "@archant/data/client";
+import { refreshStatistics } from "@archant/data/client";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 import type { QifDateOrder } from "@archant/data/qif-options";
@@ -35,7 +38,17 @@ import { getAccount } from "./accounts.ts";
 import * as ledger from "./ledger.ts";
 import { detectRecurring } from "./recurring.ts";
 
-export type ImportDeps = ServiceDeps & { logger: Logger };
+/**
+ * `$client` too: a large import refreshes SQLite's statistics, which only the
+ * client can do, after its transaction commits.
+ */
+export type ImportDeps = ServiceDeps & { logger: Logger; db: Pick<Database, "$client"> };
+
+/**
+ * Past this many created lines an import changes the table enough for the
+ * planner's statistics to mislead it; below, `ANALYZE` costs more than it buys.
+ */
+export const STATISTICS_REFRESH_LINES = 1000;
 
 /** How long an unconfirmed preview keeps its file before the purge at start. */
 export const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
@@ -411,6 +424,9 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 		);
 		const counts = ledger.countsOf(result.groups);
 
+		if (counts.created > STATISTICS_REFRESH_LINES) {
+			await refreshAfterImport(deps, id);
+		}
 		await detectAfterImport(deps, id);
 		deps.logger.info({ importId: id, counts }, "import confirmed");
 
@@ -421,6 +437,18 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 		}
 
 		throw error;
+	}
+}
+
+/**
+ * Statistics once a large confirm is committed. Best-effort, as Turso may
+ * refuse `ANALYZE`: a failure is logged, code only, and the import stands.
+ */
+async function refreshAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+	try {
+		await refreshStatistics(deps.db);
+	} catch (error) {
+		deps.logger.warn({ importId, code: errorCode(error) }, "statistics refresh failed");
 	}
 }
 

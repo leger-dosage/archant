@@ -325,7 +325,7 @@ packages/
 - **Rules data model.** Follows Sure's, as Epic 8 describes; its tables are settled by Story 8.1. Fixed now: rules run at step 5 of AD-4, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the step-6 matcher reads; it never creates a transfer itself.
 - **Currency conversion.** No exchange rates until a non-euro account exists; AD-6 keeps the door open.
 - **Roles beyond `admin`, and invitations.** `requireRole` and the `admin` plugin exist; a `viewer` role needs new checks only.
-- **Full-text search.** `LIKE` on label and notes until Story 1.5's 300 ms target fails. SQLite FTS5 then arrives through one migration and one query helper in `services/`, the only place raw SQL is then allowed.
+- **Full-text search.** `LIKE` on label and notes until NFR10's target fails: the first page of the list in under 150 ms at 100,000 transactions. SQLite FTS5 then arrives through one migration and one query helper in `services/`, the only place raw SQL is then allowed.
 - **Accessibility (NFR13).** Settled in `DESIGN.md` and `EXPERIENCE.md` by `bmad-ux`.
 - **Backups.** Documented in `docs/deployment.md` with `VACUUM INTO`, not run by the application.
 - **Monitoring and metrics.** Pino JSON on stdout only.

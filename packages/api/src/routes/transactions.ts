@@ -10,6 +10,7 @@ import {
 	mergeDuplicateBodySchema,
 	transactionFilterSchema,
 	transactionPatchBodySchema,
+	transactionTotalsSchema,
 } from "../schemas/transactions.ts";
 import {
 	bulkDeleteTransactions,
@@ -19,6 +20,7 @@ import {
 	listAllTransactions,
 	listDuplicateCandidates,
 	mergeDuplicate,
+	transactionTotals,
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
@@ -34,6 +36,17 @@ export function transactionsRoutes(deps: ServiceDeps) {
 					}
 				}),
 				async (c) => c.json({ data: await listAllTransactions(deps, c.req.valid("query")) }, 200),
+			)
+			// Before `/:id`. Apart from the page, so turning a page reruns
+			// neither the count nor the sums.
+			.get(
+				"/totals",
+				zValidator("query", transactionTotalsSchema, (result) => {
+					if (!result.success) {
+						throw validationError(result.error);
+					}
+				}),
+				async (c) => c.json({ data: await transactionTotals(deps, c.req.valid("query")) }, 200),
 			)
 			// Before `/:id`, and POST rather than PATCH or DELETE: a body with a
 			// filter is not a resource path, and a DELETE body is often dropped.

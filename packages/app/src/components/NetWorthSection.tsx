@@ -5,11 +5,13 @@ import { useTranslation } from "react-i18next";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 
-import { BalanceChart, PeriodToggle, changeText } from "@/components/BalanceChart";
+import { LazyBalanceChart } from "@/components/LazyBalanceChart";
 import { Money } from "@/components/Money";
+import { PeriodToggle } from "@/components/PeriodToggle";
 import { Section } from "@/components/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNetWorth } from "@/hooks/useNetWorth";
+import { changeText } from "@/lib/balance-change";
 
 const listFormat = new Intl.ListFormat("fr");
 
@@ -107,7 +109,7 @@ export function NetWorthSection({
 						</dl>
 					)}
 				</div>
-				<BalanceChart
+				<LazyBalanceChart
 					history={netWorth}
 					summaryKey="dashboard.summary"
 					valueLabel={t("dashboard.netWorth")}

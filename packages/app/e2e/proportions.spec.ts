@@ -326,16 +326,15 @@ test("inside a group's white block, the empty states of banks and categories dro
 test("the transactions page says it is empty inside its list card, with no frame of its own", async ({
 	page,
 }) => {
-	const empty = {
+	const empty = { data: { items: [], page: 1, pageSize: 50 } };
+	const none = {
 		data: {
-			items: [],
-			page: 1,
-			pageSize: 50,
 			total: 0,
 			sum: { amount: 0, income: 0, expense: 0, currency: "EUR", skippedCount: 0 },
 		},
 	};
 	await page.route("**/api/transactions?*", (route) => route.fulfill({ json: empty }));
+	await page.route("**/api/transactions/totals*", (route) => route.fulfill({ json: none }));
 	const card = page.locator('[data-slot="list-card"]');
 
 	await page.goto("/transactions");

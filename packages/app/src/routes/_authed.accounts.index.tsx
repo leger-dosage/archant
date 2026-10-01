@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
 import { AccountGroups, AccountGroupsSkeleton } from "@/components/AccountGroups";
-import { CreateAccountDialog } from "@/components/CreateAccountDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -87,7 +87,7 @@ function AccountsPage() {
 					action={<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>}
 				/>
 			)}
-			<CreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 		</Page>
 	);
 }

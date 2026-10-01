@@ -136,7 +136,7 @@ NFR6: Sessions are handled by Better Auth with its defaults intact.
 NFR7: The API answers `{ "data": ... }` or `{ "error": { "code", "message" } }`. Codes are a closed union in `AppError`; an unexpected error returns a generic `INTERNAL_ERROR` 500 without stack trace or provider payload. Messages are in English.
 NFR8: An import or a sync is atomic per account: a failure writes nothing for that account.
 NFR9: The whole application runs as one process with no queue and no broker. A sync runs inside the request that triggers it, except the sync of the first visit of the day, which runs in the same process beside the request that started it.
-NFR10: With 50,000 transactions in SQLite, the first page of the transaction list answers in under 300 ms and a 5,000-line file imports in under 10 seconds on a small server.
+NFR10: With 100,000 transactions, the first page of the transaction list and an account's page answer in under 150 ms, and a 24,000-line OFX file is confirmed in under 3 seconds on a small server.
 NFR11: No test reaches the network; an unmocked request fails the test and names the URL. Money paths (import, deduplication, balance computation, transfer matching, provider sync) are covered to the branch.
 NFR12: The interface is in French first. Every visible string goes through a translation layer so another language can be added without touching components.
 NFR13: The interface is usable with the keyboard alone and meets WCAG 2.2 AA contrast.
@@ -473,9 +473,9 @@ So that I can find any operation quickly.
 **When** I mark it as excluded from reports
 **Then** it stays in the list with a visual marker and keeps affecting its account balance
 
-**Given** 50,000 transactions in a local SQLite file
+**Given** 100,000 transactions in a local SQLite file
 **When** the first page loads with no filter
-**Then** the API answers in under 300 ms
+**Then** the API answers in under 150 ms (NFR10, revised by Story 15.5)
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
@@ -2759,11 +2759,11 @@ So that Archant still feels immediate as my history grows.
 
 **Given** the direction filter « Dépenses »
 **When** the list is fetched
-**Then** its plan reads the date index and sorts nothing in a temporary B-tree, as `EXPLAIN QUERY PLAN` shows
+**Then** its plan reads the date index and sorts only within a day, as `EXPLAIN QUERY PLAN` shows: `transactions.pending` sits between the date and the creation in the order, so no index can give the whole of it
 
 **Given** a response of the API or an asset of the interface
-**When** the browser accepts gzip or Brotli
-**Then** it is compressed
+**When** the browser accepts gzip
+**Then** it is compressed with gzip through `hono/compress`, except Better Auth's routes, whose answers can carry a session token beside reflected input
 
 **Given** the dashboard and an account's page
 **When** the interface loads
@@ -2771,7 +2771,7 @@ So that Archant still feels immediate as my history grows.
 
 **Given** SQLite's connection settings
 **When** libSQL opens a connection
-**Then** `cache_size` is 64 MB and `synchronous` is `NORMAL` under WAL on every connection of the pool, or the spec records why libSQL cannot apply them
+**Then** `cache_size` and `synchronous` are left at their defaults: both last one connection, libSQL's pool opens connections lazily with no hook, and `concurrency: 1` would refuse queries while a transaction holds the connection, as the spec's Design Notes record
 
 **Given** NFR10's volume
 **When** it is revised

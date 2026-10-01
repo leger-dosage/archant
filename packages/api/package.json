@@ -23,7 +23,7 @@
 		"start": "node src/index.ts",
 		"reset-password": "node --env-file-if-exists=../../.env src/cli/reset-password.ts",
 		"typecheck": "tsc -p tsconfig.json",
-		"test": "vitest run --coverage"
+		"test": "vitest run --coverage --project unit && vitest run --project volume"
 	},
 	"dependencies": {
 		"@archant/data": "workspace:*",

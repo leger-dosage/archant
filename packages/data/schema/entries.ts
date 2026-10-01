@@ -63,13 +63,21 @@ export const entries = sqliteTable(
 			.where(sql`${table.valuationKind} = 'reconciliation'`),
 		index("entries_account_date").on(table.accountId, table.date),
 		index("entries_import").on(table.importId),
-		// The cross-account list orders every transaction by these columns; with
-		// them in one index its first page reads 50 rows instead of sorting all.
+		// The list orders transactions by these columns, `pending` between the
+		// date and the creation, so no index gives the whole order. Read through
+		// this one, the first page sorts one day at a time and stops at the page:
+		// 4 ms at 100,000 transactions, against 65 ms to sort them all.
 		index("entries_kind_date").on(table.kind, table.date, table.createdAt, table.id),
 		// A transfer candidate has the exact opposite amount within a few days.
 		// Without this index, each new line of an import scanned every
 		// transaction of that window: 5,000 lines took 5 s on a laptop and up
-		// to 20 s on a CI runner, against a third of a second with it.
+		// to 20 s on a CI runner, against a third of a second with it. NFR10
+		// holds a 24,000-line OFX file under 3 s at 100,000 transactions.
 		index("entries_kind_amount_date").on(table.kind, table.amount, table.date),
+		// The list's totals group every transaction by currency and add up its
+		// amounts. Covering, so the sum reads this index alone and never the
+		// table: with 100,000 transactions the first page and its totals answer
+		// in under 150 ms.
+		index("entries_kind_currency_amount").on(table.kind, table.currency, table.amount, table.id),
 	],
 );

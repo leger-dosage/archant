@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDb } from "./client.ts";
+import { createDb, refreshStatistics } from "./client.ts";
 
 let directory: string;
 
@@ -75,5 +75,21 @@ describe("createDb", () => {
 		db.$client.close();
 
 		expect((await stat(path)).mode & 0o777).toBe(0o640);
+	});
+});
+
+describe("refreshStatistics", () => {
+	it("leaves statistics the planner can read", async () => {
+		const db = await createDb(`file:${join(directory, "statistics.db")}`);
+		await db.run(sql`create table t (id integer primary key, kind text)`);
+		await db.run(sql`create index t_kind on t (kind)`);
+		await db.run(sql`insert into t (kind) values ('a'), ('b'), ('a')`);
+
+		await refreshStatistics(db);
+
+		const rows = await db.all<{ idx: string }>(sql`select idx from sqlite_stat1`);
+
+		expect(rows.map((row) => row.idx)).toContain("t_kind");
+		db.$client.close();
 	});
 });

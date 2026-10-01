@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+
 import type { MinorUnits } from "@archant/data/money";
 import { formatMoney, isCurrencyCode, minorUnitsOf } from "@archant/data/money";
 
@@ -6,6 +8,22 @@ export function formatSignedMoney(amount: MinorUnits, currency: string): string 
 	const formatted = formatMoney({ amount, currency });
 
 	return amount > 0 ? `+${formatted}` : formatted;
+}
+
+/** `+12,40 € (+1,0 %)`, or the amount alone when the period starts at zero. */
+export function changeText(
+	t: TFunction,
+	change: { amount: MinorUnits; percent: number | null },
+	currency: string,
+): string {
+	const amount = formatSignedMoney(change.amount, currency);
+
+	return change.percent === null
+		? amount
+		: t("balances.changeWithPercent", {
+				amount,
+				percent: formatSignedPercent(change.percent),
+			});
 }
 
 function isDecimalString(value: string): value is `${number}` {

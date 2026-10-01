@@ -288,6 +288,15 @@ export const transactionFilterSchema = pageQuerySchema
 	.transform(parseBounds);
 
 /**
+ * The query of `GET /api/transactions/totals`: the list's, without its page,
+ * since the count and the sums are the same on every page.
+ */
+export const transactionTotalsSchema = z
+	.object(filterFields)
+	.superRefine(checkFilter)
+	.transform(parseBounds);
+
+/**
  * The list's filter without its page, as a bulk action sends it for « Tout
  * sélectionner ». The same shape as the query, so the interface sends its
  * search params as they are. Strict: a key renamed on one side only would
@@ -300,6 +309,7 @@ export const bulkFilterSchema = z
 
 export type TransactionFilterQuery = z.input<typeof transactionFilterSchema>;
 export type TransactionFilterRequest = z.output<typeof transactionFilterSchema>;
+export type TransactionTotalsRequest = z.output<typeof transactionTotalsSchema>;
 export type BulkFilterRequest = z.output<typeof bulkFilterSchema>;
 
 /**
