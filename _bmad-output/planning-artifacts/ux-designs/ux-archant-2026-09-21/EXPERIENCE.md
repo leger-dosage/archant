@@ -5,7 +5,7 @@ updated: '2026-09-29'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
-  - ../../architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md
+  - ../../../../docs/architecture.md
 ---
 
 # Archant — Experience Spine

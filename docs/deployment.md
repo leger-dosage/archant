@@ -22,7 +22,7 @@ docker compose up --detach --wait
 From a checkout, `--build` builds the image from the source instead, and tags it with the same name. The interface then shows « Version de développement »:
 
 ```bash
-git clone git@github.com:leger-dosage/archant.git
+git clone https://github.com/leger-dosage/archant.git
 cd archant
 export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 docker compose up --build --detach --wait
@@ -134,6 +134,14 @@ The port is published on `127.0.0.1` only since the container was locked down: a
 Outside a container, the server now listens on `127.0.0.1` only, unless `HOST` says otherwise: a reverse proxy on another machine, or a device reaching the port directly, loses access at the upgrade. See [Other targets](#other-targets).
 
 From a checkout, `git pull` then `docker compose up --build --detach --wait` builds and runs the new code, with the same copy, named `-dev`. Without Docker, `git pull`, `pnpm install --frozen-lockfile`, then restart `pnpm api start:dev`: the copy lands in `backups/` beside `local.db`, which git ignores. `pnpm data migrate:local` migrates without a copy.
+
+### Versions
+
+Archant follows [semantic versioning](https://semver.org/). While the version starts with `0.`, a minor release, `0.3.0` after `0.2.1`, may break an upgrade; a patch release, `0.2.2`, never does. From `1.0.0` on, only a major release may.
+
+A deprecation, such as a variable renamed or a behaviour about to change, is announced in the release notes one minor release before the release that removes it, so that pinning `ARCHANT_VERSION` to a minor release, `0.2`, never brings it by surprise. Left unset, it is `latest`, and a pull may cross a breaking minor release.
+
+Each release's notes on the [releases page](https://github.com/leger-dosage/archant/releases) list what breaks under « Before upgrading », with what to do. Read that section for every release between the one you run and the one you move to, before changing `ARCHANT_VERSION`.
 
 ### Verifying an image
 

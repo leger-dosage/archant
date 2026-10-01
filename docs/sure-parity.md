@@ -18,7 +18,7 @@ Reasons cite where the decision lives:
 
 - "Inventory" is `_bmad-output/planning-artifacts/feature-inventory.md`, the scope decisions of 2026-09-21.
 - "Epics" is `_bmad-output/planning-artifacts/epics.md`, whose Epic 8 lists the rule departures.
-- "AD-n" is a decision of the architecture spine, `_bmad-output/planning-artifacts/architecture/architecture-archant-2026-09-21/ARCHITECTURE-SPINE.md`.
+- "AD-n" is a decision of the architecture spine, [docs/architecture.md](architecture.md).
 - "Spec x.y" is the story spec `_bmad-output/implementation-artifacts/spec-x-y-*.md`; each one records its departures in its Design Notes, its "Never" list or its review triage.
 - "Overview" is [project-overview.md](project-overview.md).
 

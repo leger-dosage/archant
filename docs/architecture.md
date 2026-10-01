@@ -1,23 +1,23 @@
 ---
-name: 'Archant'
+name: "Archant"
 type: architecture-spine
 purpose: build-substrate
 altitude: initiative
-paradigm: 'modular monolith, ports and adapters'
-scope: 'Archant, the ten epics of epics.md'
+paradigm: "modular monolith, ports and adapters"
+scope: "Archant, the ten epics of epics.md"
 status: final
-created: '2026-09-21'
-updated: '2026-09-21'
+created: "2026-09-21"
+updated: "2026-09-21"
 binds: [FR1-FR56, NFR1-NFR12, NFR14]
 sources:
-  - ../../feature-inventory.md
-  - ../../epics.md
-  - ../../../../AGENTS.md
-  - ../../../../docs/tech-stack.md
-  - ../../../../docs/adr/0001-technology-stack.md
-  - ../../../../docs/adr/0002-container-reference-target.md
-  - ../../../../docs/deployment.md
-  - ../../../implementation-artifacts/scaffolding-lessons.md
+  - ../_bmad-output/planning-artifacts/feature-inventory.md
+  - ../_bmad-output/planning-artifacts/epics.md
+  - ../AGENTS.md
+  - tech-stack.md
+  - adr/0001-technology-stack.md
+  - adr/0002-container-reference-target.md
+  - deployment.md
+  - ../_bmad-output/implementation-artifacts/scaffolding-lessons.md
 companions: []
 ---
 
@@ -195,48 +195,48 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 ## Consistency Conventions
 
-| Concern | Convention |
-| --- | --- |
-| Identifiers | Text UUID v4 from `crypto.randomUUID()`. |
-| Dates | Calendar dates are `YYYY-MM-DD` text. Timestamps are integer epoch milliseconds, UTC. A date from a provider is its literal date part, never converted through a time zone, extracted by `domain/provider-date.ts`. "Today" is computed with `Intl.DateTimeFormat` in `APP_TIMEZONE`, default `Europe/Paris`. |
-| Database | Plural snake_case tables, snake_case columns mapped to camelCase. Enumerations are `text` columns with a check constraint, built from a `const` array in `@archant/data` that is also the TypeScript union. The client sets `PRAGMA foreign_keys = ON`, `journal_mode = WAL` and a `busy_timeout` once, where it is created. |
-| Package exports | `@archant/data` exposes subpaths through its `exports` map (`@archant/data/money`), never an index. |
-| File naming | As in `AGENTS.md`: kebab-case files, PascalCase components, camelCase hooks, co-located `*.spec.ts(x)`, no barrels. |
-| Connector ids | kebab-case: `ofx`, `csv`, `qif`, `enable-banking`. The same string is `entry_keys.source` and `imports.source`. |
-| File decoding | Bytes are decoded with `TextDecoder` in strict UTF-8, falling back to `windows-1252`; OFX honours its `CHARSET` header. Parsers receive strings. |
-| Errors | Services throw `AppError(code, message)`. Rejected lines carry a `RejectionCode`, not free text. |
-| Configuration | `validateEnv(runtimeEnv)` in `packages/api/src/env.ts`. Variables, all in `.env.example`: `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUSTED_PROXIES`, `ENCRYPTION_KEY`, `SYNC_SECRET`, `APP_TIMEZONE`, `LOG_LEVEL`, `ENABLE_BANKING_APPLICATION_ID`, `ENABLE_BANKING_PRIVATE_KEY`, `ENABLE_BANKING_API_URL`. Bank connection needs `ENCRYPTION_KEY`, then Enable Banking credentials saved from « Réglages › Banques » or, overriding them, the two `ENABLE_BANKING_*` variables, set together or not at all. Without them the bank routes answer 503; the app still starts. |
-| Toolchain | `_bmad-output/implementation-artifacts/scaffolding-lessons.md` is binding: `.ts` import extensions, recursive `**/*.ts` includes, `onlyBuiltDependencies: [esbuild]`, `file:../../local.db` locally, migrations through `drizzle-orm/libsql/migrator`. `skipLibCheck: true`, since Drizzle and Better Auth ship type errors in their own declarations. |
-| Interface to API | The client calls the relative base `/api`. In development, Vite proxies `/api` to port 8787, so there is no CORS and no build-time API URL. |
-| Interface state | Server state only through TanStack Query, keys from one `queryKeys` object per resource. List filters live in URL search params validated by TanStack Router. |
-| Interface text | i18next, French as the only locale, keys by page (`accounts.form.name`). No literal visible string in a component. |
-| Components | shadcn/ui copied into `packages/app/src/components/ui/`, domain components in `components/`. Money is rendered by one `<Money>` component calling `formatMoney`. Visual decisions come from `DESIGN.md` and `EXPERIENCE.md` produced by `bmad-ux`. |
+| Concern          | Convention                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identifiers      | Text UUID v4 from `crypto.randomUUID()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Dates            | Calendar dates are `YYYY-MM-DD` text. Timestamps are integer epoch milliseconds, UTC. A date from a provider is its literal date part, never converted through a time zone, extracted by `domain/provider-date.ts`. "Today" is computed with `Intl.DateTimeFormat` in `APP_TIMEZONE`, default `Europe/Paris`.                                                                                                                                                                                                                                                                                                       |
+| Database         | Plural snake_case tables, snake_case columns mapped to camelCase. Enumerations are `text` columns with a check constraint, built from a `const` array in `@archant/data` that is also the TypeScript union. The client sets `PRAGMA foreign_keys = ON`, `journal_mode = WAL` and a `busy_timeout` once, where it is created.                                                                                                                                                                                                                                                                                        |
+| Package exports  | `@archant/data` exposes subpaths through its `exports` map (`@archant/data/money`), never an index.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| File naming      | As in `AGENTS.md`: kebab-case files, PascalCase components, camelCase hooks, co-located `*.spec.ts(x)`, no barrels.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Connector ids    | kebab-case: `ofx`, `csv`, `qif`, `enable-banking`. The same string is `entry_keys.source` and `imports.source`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| File decoding    | Bytes are decoded with `TextDecoder` in strict UTF-8, falling back to `windows-1252`; OFX honours its `CHARSET` header. Parsers receive strings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Errors           | Services throw `AppError(code, message)`. Rejected lines carry a `RejectionCode`, not free text.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Configuration    | `validateEnv(runtimeEnv)` in `packages/api/src/env.ts`. Variables, all in `.env.example`: `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `TRUSTED_PROXIES`, `ENCRYPTION_KEY`, `SYNC_SECRET`, `APP_TIMEZONE`, `LOG_LEVEL`, `ENABLE_BANKING_APPLICATION_ID`, `ENABLE_BANKING_PRIVATE_KEY`, `ENABLE_BANKING_API_URL`. Bank connection needs `ENCRYPTION_KEY`, then Enable Banking credentials saved from « Réglages › Banques » or, overriding them, the two `ENABLE_BANKING_*` variables, set together or not at all. Without them the bank routes answer 503; the app still starts. |
+| Toolchain        | `_bmad-output/implementation-artifacts/scaffolding-lessons.md` is binding: `.ts` import extensions, recursive `**/*.ts` includes, `onlyBuiltDependencies: [esbuild]`, `file:../../local.db` locally, migrations through `drizzle-orm/libsql/migrator`. `skipLibCheck: true`, since Drizzle and Better Auth ship type errors in their own declarations.                                                                                                                                                                                                                                                              |
+| Interface to API | The client calls the relative base `/api`. In development, Vite proxies `/api` to port 8787, so there is no CORS and no build-time API URL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Interface state  | Server state only through TanStack Query, keys from one `queryKeys` object per resource. List filters live in URL search params validated by TanStack Router.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Interface text   | i18next, French as the only locale, keys by page (`accounts.form.name`). No literal visible string in a component.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Components       | shadcn/ui copied into `packages/app/src/components/ui/`, domain components in `components/`. Money is rendered by one `<Money>` component calling `formatMoney`. Visual decisions come from `DESIGN.md` and `EXPERIENCE.md` produced by `bmad-ux`.                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## Stack
 
 Versions verified on npm on 2026-09-21. Packages already listed in `docs/tech-stack.md` keep their row there.
 
-| Name | Version |
-| --- | --- |
-| Node.js | 24.21 |
-| @hono/node-server | 2.1.1 |
-| better-auth (with `admin` plugin, `auth` CLI) | 1.7.5 |
-| papaparse, @types/papaparse | 5.7.0 |
-| ofx-js | 1.1.1 |
-| jose | 6.2.12 |
-| pino | 10.3.1 |
-| msw | 2.15.0 |
-| tailwindcss, @tailwindcss/vite | 4.3.3 |
-| @vitejs/plugin-react | 6.1.1 |
-| shadcn (CLI) | 4.21.0 |
-| lucide-react | 1.47.0 |
-| recharts (with `react-is`) | 3.10.1 |
-| @tanstack/react-table | 9.2.4 |
-| @tanstack/router-plugin | 1.168.40 |
-| react-hook-form | 7.88.0 |
-| @hookform/resolvers | 5.9.1 |
-| i18next | 26.4.2 |
-| react-i18next | 17.0.14 |
+| Name                                          | Version  |
+| --------------------------------------------- | -------- |
+| Node.js                                       | 24.21    |
+| @hono/node-server                             | 2.1.1    |
+| better-auth (with `admin` plugin, `auth` CLI) | 1.7.5    |
+| papaparse, @types/papaparse                   | 5.7.0    |
+| ofx-js                                        | 1.1.1    |
+| jose                                          | 6.2.12   |
+| pino                                          | 10.3.1   |
+| msw                                           | 2.15.0   |
+| tailwindcss, @tailwindcss/vite                | 4.3.3    |
+| @vitejs/plugin-react                          | 6.1.1    |
+| shadcn (CLI)                                  | 4.21.0   |
+| lucide-react                                  | 1.47.0   |
+| recharts (with `react-is`)                    | 3.10.1   |
+| @tanstack/react-table                         | 9.2.4    |
+| @tanstack/router-plugin                       | 1.168.40 |
+| react-hook-form                               | 7.88.0   |
+| @hookform/resolvers                           | 5.9.1    |
+| i18next                                       | 26.4.2   |
+| react-i18next                                 | 17.0.14  |
 
 `ofx-js` is wrapped: files over 5 MB are refused before parsing, because its SGML conversion slows down exponentially on long tag names, and a pre-pass closes empty leaf tags such as `<MEMO>`, which otherwise make it reject the whole file. Its string output is parsed by Zod, and `TRNAMT` accepts a decimal comma. The QIF parser is written in the repository: no maintained package exists. Money uses no library: amounts are integers and `Intl.NumberFormat` formats them. Date arithmetic on `YYYY-MM-DD` strings uses small helpers in `domain/`, not a date library.
 
@@ -308,17 +308,17 @@ packages/
 
 ## Capability → Architecture Map
 
-| Area | Lives in | Governed by |
-| --- | --- | --- |
-| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger.ts`, `domain/balances/`, `data/account-types.ts` | AD-2, AD-5, AD-6, AD-8 |
-| File import (Epic 2) | `connectors/{ofx,csv,qif}/`, `services/imports.ts` | AD-3, AD-4, AD-7, AD-17 |
-| Access and deployment (Epic 3) | `routes/middleware/auth.ts`, `services/setup.ts`, `cli/`, `index.ts`, `Dockerfile` | AD-12, AD-13, AD-15 |
-| Classification (Epic 4) | `services/classification.ts`, through the ledger | AD-2, AD-10, AD-12 |
-| Transfers (Epic 5) | `domain/transfer-matching.ts`, ledger | AD-4, AD-9, AD-11 |
-| Dashboard (Epic 6) | `services/reports.ts`, `domain/cash-flow.ts` | AD-6, AD-8, AD-9 |
-| Rules (Epic 8) | `domain/rules/`, step 5 of the pipeline | AD-4, AD-10 |
-| Recurring (Epic 9) | `domain/recurring.ts`, after commit | AD-1, AD-4, AD-17 |
-| Enable Banking (Epic 10) | `connectors/enable-banking/`, `services/sync.ts` | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
+| Area                                       | Lives in                                                                           | Governed by                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------- |
+| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger.ts`, `domain/balances/`, `data/account-types.ts`                  | AD-2, AD-5, AD-6, AD-8                       |
+| File import (Epic 2)                       | `connectors/{ofx,csv,qif}/`, `services/imports.ts`                                 | AD-3, AD-4, AD-7, AD-17                      |
+| Access and deployment (Epic 3)             | `routes/middleware/auth.ts`, `services/setup.ts`, `cli/`, `index.ts`, `Dockerfile` | AD-12, AD-13, AD-15                          |
+| Classification (Epic 4)                    | `services/classification.ts`, through the ledger                                   | AD-2, AD-10, AD-12                           |
+| Transfers (Epic 5)                         | `domain/transfer-matching.ts`, ledger                                              | AD-4, AD-9, AD-11                            |
+| Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                       | AD-6, AD-8, AD-9                             |
+| Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                            | AD-4, AD-10                                  |
+| Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                | AD-1, AD-4, AD-17                            |
+| Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                   | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
 
 ## Deferred
 

@@ -1,0 +1,27 @@
+name: Feature request
+description: Something Archant should do that it does not.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Archant re-implements, one at a time, the features of [Sure](https://github.com/we-promise/sure) that matter for one household. [docs/sure-parity.md](https://github.com/leger-dosage/archant/blob/main/docs/sure-parity.md) lists what it has and what it left out on purpose.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: sure
+    attributes:
+      label: How Sure handles it
+      description: Where the feature lives in Sure, and how it behaves there. Say so if Sure has no such feature.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Alternatives you considered, or a made-up example. No real bank data.

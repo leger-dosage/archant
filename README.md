@@ -1,8 +1,23 @@
 # Archant
 
-Self-hosted personal finance for one household. Your bank data lands in your own database and stays there.
+[![CI](https://github.com/leger-dosage/archant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leger-dosage/archant/actions/workflows/ci.yml?query=branch%3Amain)
+[![License: AGPL v3](https://img.shields.io/github/license/leger-dosage/archant)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/leger-dosage/archant)](https://github.com/leger-dosage/archant/releases/latest)
 
-Archant re-implements the parts of [Sure](https://github.com/we-promise/sure) that a single household actually uses, on a stack light enough to run on a free tier or on a single small server.
+Self-hosted personal finance for one household. Your bank syncs through Enable Banking (PSD2), and your data lands in your own SQLite database and stays there.
+
+Archant re-implements the parts of [Sure](https://github.com/we-promise/sure) that a single household actually uses, on a stack light enough to run on a single small server or a machine at home.
+
+Know its limits before you install it:
+
+- The interface is in French only.
+- Totals and reports are in euros, the one reporting currency. An account in another currency keeps its own balance but stays out of the totals, with no exchange rates.
+- One household, one administrator account: there is no sign-up and no sharing between users.
+- Bank synchronisation goes through [Enable Banking](https://enablebanking.com) only, which covers European banks and needs an application registered with it. File import works without it.
+
+![The dashboard: accounts in the sidebar, net worth over six months, and the month's income and expenses by category, all made-up data](docs/images/dashboard.png)
+
+![The transaction list across accounts, grouped by day, with categories and an internal transfer, all made-up data](docs/images/transactions.png)
 
 ## Tech stack
 
@@ -21,7 +36,7 @@ Why these, and what was rejected: [docs/adr/0001-technology-stack.md](docs/adr/0
 
 ## Features
 
-The interface is in French. Everything below works without a bank connection except the last line.
+Everything below works without a bank connection except the last line. [docs/sure-parity.md](docs/sure-parity.md) compares each area with Sure, and says what Archant does differently and why.
 
 - Accounts: checking, savings, credit card, loan, investment (PEA, assurance vie, compte-titres), property and vehicle, with a daily balance history and dated balance snapshots.
 - Transactions entered by hand, filtered across accounts, and edited in bulk.
@@ -42,8 +57,10 @@ packages/
   app/    Vite + React single-page app
   api/    Hono server, REST and scheduled sync
   data/   Drizzle schema and database client shared by both
-docs/     Project documentation and decision records
+docs/     Project documentation, architecture and decision records
 ```
+
+`_bmad-output/` holds the planning documents and one record per story: what was asked, what was decided and how it was reviewed.
 
 ## Prerequisites
 
@@ -52,7 +69,7 @@ Node.js 24+, pnpm 10+.
 ## Getting started
 
 ```bash
-git clone git@github.com:leger-dosage/archant.git
+git clone https://github.com/leger-dosage/archant.git
 cd archant
 pnpm install --frozen-lockfile
 cp .env.example .env
@@ -94,7 +111,7 @@ Open http://localhost:8787 and create the administrator. [docs/deployment.md](do
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) first: it holds the conventions and the verification gate that CI enforces.
+Read [CONTRIBUTING.md](CONTRIBUTING.md): how to report a bug, propose a feature, set up, and open a pull request. Something not working? See [docs/troubleshooting.md](docs/troubleshooting.md) and [SUPPORT.md](SUPPORT.md). What Archant encrypts and what leaves your server: [docs/security-model.md](docs/security-model.md).
 
 ## License
 
