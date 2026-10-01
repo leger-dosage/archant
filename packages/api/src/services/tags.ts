@@ -7,7 +7,7 @@ import { tags } from "@archant/data/schema/tags";
 import type { Tag } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
-import { countByTag, removeTag } from "./ledger.ts";
+import { countByTag, removeTag } from "./ledger/edits.ts";
 
 export type TagSummary = {
 	id: string;

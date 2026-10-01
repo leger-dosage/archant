@@ -12,7 +12,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { confirmImport, createImport, previewImport } from "./imports.ts";
-import { createAccount } from "./ledger.ts";
+import { createAccount } from "./ledger/accounts.ts";
 import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 

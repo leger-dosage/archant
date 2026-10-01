@@ -2,7 +2,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { SnapshotInput, SnapshotPatchInput } from "../schemas/snapshots.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { SnapshotRecord } from "./ledger.ts";
+import type { SnapshotRecord } from "./ledger/snapshots.ts";
 
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
@@ -11,7 +11,13 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createSnapshotSchema, updateSnapshotSchema } from "../schemas/snapshots.ts";
 import { getAccount } from "./accounts.ts";
-import * as ledger from "./ledger.ts";
+import {
+	deleteSnapshot as deleteLedgerSnapshot,
+	findSnapshot,
+	listSnapshots,
+	recordSnapshot,
+	updateSnapshot as updateLedgerSnapshot,
+} from "./ledger/snapshots.ts";
 
 export type SnapshotPage = {
 	items: SnapshotRecord[];
@@ -42,7 +48,7 @@ async function currencyOf(deps: ServiceDeps, accountId: string): Promise<Currenc
 }
 
 async function found(deps: ServiceDeps, id: string): Promise<SnapshotRecord> {
-	const record = await ledger.findSnapshot(deps, id);
+	const record = await findSnapshot(deps, id);
 
 	if (record === null) {
 		throw new AppError("NOT_FOUND", "No snapshot has this id.");
@@ -58,7 +64,7 @@ export async function listAccountSnapshots(
 	page: { page: number; pageSize: number },
 ): Promise<SnapshotPage> {
 	await getAccount(deps, accountId);
-	const { items, total } = await ledger.listSnapshots(deps, accountId, page);
+	const { items, total } = await listSnapshots(deps, accountId, page);
 
 	return { items, page: page.page, pageSize: page.pageSize, total };
 }
@@ -76,7 +82,7 @@ export async function createSnapshot(
 		throw validationError(parsed.error);
 	}
 
-	const result = await ledger.recordSnapshot(deps, accountId, parsed.data, { origin: "user" });
+	const result = await recordSnapshot(deps, accountId, parsed.data, { origin: "user" });
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);
@@ -99,7 +105,7 @@ export async function updateSnapshot(
 		throw validationError(parsed.error);
 	}
 
-	const result = await ledger.updateSnapshot(deps, id, parsed.data, { origin: "user" });
+	const result = await updateLedgerSnapshot(deps, id, parsed.data, { origin: "user" });
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);
@@ -110,7 +116,7 @@ export async function updateSnapshot(
 
 /** Deletes a snapshot for good. */
 export async function deleteSnapshot(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	await ledger.deleteSnapshot(deps, id, { origin: "user" });
+	await deleteLedgerSnapshot(deps, id, { origin: "user" });
 
 	return { id };
 }

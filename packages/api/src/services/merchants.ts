@@ -7,7 +7,7 @@ import { merchants } from "@archant/data/schema/merchants";
 import type { Merchant } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
-import { countByMerchant, moveMerchant } from "./ledger.ts";
+import { countByMerchant, moveMerchant } from "./ledger/edits.ts";
 
 export type MerchantSummary = {
 	id: string;

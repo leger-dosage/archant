@@ -7,7 +7,7 @@ import type { ServiceDeps } from "./deps.ts";
 import { balanceChange, periodRange } from "../domain/balances/history.ts";
 import { today } from "../domain/dates.ts";
 import { getAccount } from "./accounts.ts";
-import { balancesBetween } from "./ledger.ts";
+import { balancesBetween } from "./ledger/balances.ts";
 
 export const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
 	"1M": 1,

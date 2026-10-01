@@ -64,7 +64,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 1, 2, 4, 5, 7, 8, 10; FR3, FR6, FR7, FR17, FR19, FR22–FR26, FR31–FR33, FR50–FR52
 - **Prevents:** manual entry, file import, bank sync, bulk edit and transfer matching each writing money rows their own way.
-- **Rule:** Only `services/ledger.ts` writes to `entries`, `transactions`, `entry_keys`, `deleted_entry_keys`, `balances`, `transfers` and `rejected_transfers`, and only it deletes an account. Other services call ledger functions. Every ledger function takes an `origin` (`user`, `rule`, `provider`, `sync`, `maintenance`) and runs in one database transaction opened with `behavior: "immediate"`, which recomputes the affected balances before committing. Foreign keys that point at `entries` or `transactions` are `ON DELETE RESTRICT`, so a bypass fails instead of cascading. An oxlint override allows importing those seven tables only from `services/ledger.ts` and `domain/**` types.
+- **Rule:** Only the modules of `services/ledger/` write to `entries`, `transactions`, `entry_keys`, `deleted_entry_keys`, `balances`, `transfers` and `rejected_transfers`, and only they delete an account. Other services call ledger functions. Every ledger function takes an `origin` (`user`, `rule`, `provider`, `sync`, `maintenance`) and runs in one database transaction opened with `behavior: "immediate"`, which recomputes the affected balances before committing. Foreign keys that point at `entries` or `transactions` are `ON DELETE RESTRICT`, so a bypass fails instead of cascading. An oxlint override allows importing those seven tables only from `services/ledger/**`, `domain/**` types, and the test code that seeds rows directly (`testing/ledger.ts`, `services/history-volume.spec.ts`).
 
 ### AD-3 — Connector port
 
@@ -97,7 +97,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 1, 2, 5, 8, 9, 10; FR16, FR18, FR22, FR31, FR37, FR40, FR50
 - **Prevents:** rules seeing transfers before matching in one path and after in another, balances computed before rules exclude a transaction, and preview and confirm writing different sets.
-- **Rule:** `ledger.ingest(accountId, statement, { importId | connectionId | manual, dryRun })` runs per account, in one transaction, in this order:
+- **Rule:** `ingest(accountId, statement, { importId | connectionId | manual, dryRun })`, in `services/ledger/ingest.ts`, runs per account, in one transaction, in this order:
   1. Reject lines dated before the account's opening anchor with `BEFORE_OPENING_DATE`.
   2. Key matching, with key lookups batched per statement (AD-7).
   3. Pending reconciliation (AD-17).
@@ -179,13 +179,13 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** all; NFR11
 - **Prevents:** a test calling Enable Banking, an app swallowing msw's refusal, and branch coverage of money paths left to goodwill.
-- **Rule:** A Vitest setup file starts msw with `onUnhandledRequest` collecting unhandled requests and failing the test in `afterEach`, naming the URL. Provider tests use recorded, anonymised fixtures; file parsers use committed anonymised files from at least three French banks. Database tests use a migrated temporary SQLite file per test file. Coverage thresholds are 100% of branches on `domain/**`, `services/ledger.ts` and `connectors/**`. Playwright runs with `forbidOnly` in CI and without reusing a running server; end-to-end tests point `ENABLE_BANKING_API_URL` at a local fake server.
+- **Rule:** A Vitest setup file starts msw with `onUnhandledRequest` collecting unhandled requests and failing the test in `afterEach`, naming the URL. Provider tests use recorded, anonymised fixtures; file parsers use committed anonymised files from at least three French banks. Database tests use a migrated temporary SQLite file per test file. Coverage thresholds are 100% of branches on `domain/**`, `services/ledger/**` and `connectors/**`. Playwright runs with `forbidOnly` in CI and without reusing a running server; end-to-end tests point `ENABLE_BANKING_API_URL` at a local fake server.
 
 ### AD-17 — Entry identity is stable
 
 - **Binds:** Epics 2, 4, 5, 9, 10; FR51, FR52
 - **Prevents:** a pending-to-booked replacement or a duplicate merge changing an entry's id and orphaning its tags, transfer, recurring link and keys.
-- **Rule:** An entry's id never changes. `ledger.absorb(survivorId, source)` updates the survivor in place, skipping locked fields, moves every key, tagging, transfer and recurring link onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A booked line is looked up by its fingerprint, then its `ext:` key; a pending line by its `ext:` key only, since its fingerprint's occurrence index shifts once an identical line before it is booked. A pending line no key found is recognised within its group of identical pending lines (same date, amount and normalised label), among the connection's unclaimed pending entries holding a fingerprint of that group, ordered by the lowest index they hold, then age, then id. A group with at least as many lines as entries lost no line, so each line first takes the entry holding its own fingerprint, and a line left over is new; a shorter group lost the line booked first, so its lines, in statement order, take the last entries. An entry recognised this way keeps the fingerprint it holds and takes no other of its group, or a twin bought later would be taken for it. Indices are searched up to 100 (`MAX_IDENTICAL_LINES`). A line with an `ext:` key never takes a candidate holding one, since its reference would have found it; a line without one takes any candidate. A pending entry absent from syncs on two different days, in `APP_TIMEZONE`, is deleted; a line the sync refused still vouches for the entry its key names (`transactions.pending_missed_syncs` and `transactions.pending_missed_on`, beside `transactions.pending`: AD-8 keeps transaction-only columns on `transactions`). The user's "merge possible duplicate" action uses `absorb` too.
+- **Rule:** An entry's id never changes. `absorb(survivorId, source)`, in `services/ledger/pending.ts`, updates the survivor in place, skipping locked fields, moves every key, tagging, transfer and recurring link onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A booked line is looked up by its fingerprint, then its `ext:` key; a pending line by its `ext:` key only, since its fingerprint's occurrence index shifts once an identical line before it is booked. A pending line no key found is recognised within its group of identical pending lines (same date, amount and normalised label), among the connection's unclaimed pending entries holding a fingerprint of that group, ordered by the lowest index they hold, then age, then id. A group with at least as many lines as entries lost no line, so each line first takes the entry holding its own fingerprint, and a line left over is new; a shorter group lost the line booked first, so its lines, in statement order, take the last entries. An entry recognised this way keeps the fingerprint it holds and takes no other of its group, or a twin bought later would be taken for it. Indices are searched up to 100 (`MAX_IDENTICAL_LINES`). A line with an `ext:` key never takes a candidate holding one, since its reference would have found it; a line without one takes any candidate. A pending entry absent from syncs on two different days, in `APP_TIMEZONE`, is deleted; a line the sync refused still vouches for the entry its key names (`transactions.pending_missed_syncs` and `transactions.pending_missed_on`, beside `transactions.pending`: AD-8 keeps transaction-only columns on `transactions`). The user's "merge possible duplicate" action uses `absorb` too.
 
 ### AD-18 — Enable Banking specifics
 
@@ -294,7 +294,7 @@ packages/
     cli/               # reset-password and other scripts
     routes/            # Hono adapters, one file per resource; middleware/
     schemas/           # request schemas shared with the interface
-    services/          # ledger.ts, imports.ts, sync.ts, reports.ts, seed.ts, setup.ts, crypto.ts
+    services/          # ledger/, imports.ts, sync.ts, reports.ts, seed.ts, setup.ts, crypto.ts
     domain/            # balances/, keys, transfer-matching, cash-flow, recurring, statement, provider-date
     connectors/        # registry.ts, ofx/, csv/, qif/, enable-banking/
     lib/errors.ts
@@ -310,7 +310,7 @@ packages/
 
 | Area                                       | Lives in                                                                           | Governed by                                  |
 | ------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------- |
-| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger.ts`, `domain/balances/`, `data/account-types.ts`                  | AD-2, AD-5, AD-6, AD-8                       |
+| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger/`, `domain/balances/`, `data/account-types.ts`                    | AD-2, AD-5, AD-6, AD-8                       |
 | File import (Epic 2)                       | `connectors/{ofx,csv,qif}/`, `services/imports.ts`                                 | AD-3, AD-4, AD-7, AD-17                      |
 | Access and deployment (Epic 3)             | `routes/middleware/auth.ts`, `services/setup.ts`, `cli/`, `index.ts`, `Dockerfile` | AD-12, AD-13, AD-15                          |
 | Classification (Epic 4)                    | `services/classification.ts`, through the ledger                                   | AD-2, AD-10, AD-12                           |

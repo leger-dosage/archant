@@ -20,11 +20,12 @@ const expenseKinds: ReadonlySet<TransferKind> = new Set(EXPENSE_TRANSFER_KINDS);
 
 /**
  * Income, expense or transfer, the one rule the list's filter and the future
- * dashboard share; `ledger.ts` holds its SQL twin, tied by a parity test. A
- * side of a transfer is a transfer, except the outflow of a loan payment or an
- * investment contribution: that money is spent. The outflow is the negative
- * side, on assets and liabilities alike. Exclusion and account settings leave
- * the direction alone; they decide whether a row counts, not which way it goes.
+ * dashboard share; `services/ledger/filter.ts` holds its SQL twin, tied by a
+ * parity test. A side of a transfer is a transfer, except the outflow of a loan
+ * payment or an investment contribution: that money is spent. The outflow is
+ * the negative side, on assets and liabilities alike. Exclusion and account
+ * settings leave the direction alone; they decide whether a row counts, not
+ * which way it goes.
  */
 export function direction(tx: CashFlowTransaction): Direction {
 	const spentOutflow = tx.transfer !== null && tx.amount < 0 && expenseKinds.has(tx.transfer.kind);
@@ -43,8 +44,8 @@ export type CountedTransaction = CashFlowTransaction & { excluded: boolean; pend
  * Whether a transaction enters a cash-flow report: not excluded, not pending
  * (AD-9: its booked version counts once the bank settles it), and income or
  * expense by `direction`. Which accounts count is the caller's choice, the
- * reporting-currency set of `services/reports.ts`. `ledger.ts` holds its SQL
- * twin in `cashFlowByCategory`, tied by a parity test.
+ * reporting-currency set of `services/reports.ts`. `services/ledger/queries.ts`
+ * holds its SQL twin in `cashFlowByCategory`, tied by a parity test.
  */
 export function countsInCashFlow(tx: CountedTransaction): boolean {
 	return !tx.excluded && !tx.pending && direction(tx) !== "transfer";

@@ -19,7 +19,8 @@ import { cashFlowBreakdown } from "../domain/cash-flow.ts";
 import { monthRange, today } from "../domain/dates.ts";
 import { netWorthSeries } from "../domain/net-worth.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
-import { balancesBetween, cashFlowByCategory, openingDateOf } from "./ledger.ts";
+import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
+import { cashFlowByCategory } from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** An account left out of the totals because no rate converts its currency. */
