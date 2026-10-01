@@ -1,10 +1,10 @@
 /** How long before its end a consent starts warning: time to renew it without a gap. */
-export const EXPIRING_WITHIN_MS = 14 * 24 * 60 * 60 * 1000;
+const EXPIRING_WITHIN_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** How long without a successful sync before the connection warns it has stopped. */
-export const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 
-export const CONNECTION_ALERTS = ["consent_expired", "sync_stale", "consent_expiring"] as const;
+const CONNECTION_ALERTS = ["consent_expired", "sync_stale", "consent_expiring"] as const;
 
 export type ConnectionAlert = (typeof CONNECTION_ALERTS)[number];
 

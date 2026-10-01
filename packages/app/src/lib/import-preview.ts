@@ -56,7 +56,7 @@ export function isNothingNew(counts: ImportCounts, balance: BalanceStatus): bool
 }
 
 /** How many records the Colonnes step shows under its header. */
-export const CSV_TABLE_ROWS = 10;
+const CSV_TABLE_ROWS = 10;
 
 const isEmptyRecord = (record: readonly string[]) => record.every((cell) => cell.trim() === "");
 

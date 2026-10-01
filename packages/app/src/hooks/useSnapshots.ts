@@ -8,7 +8,7 @@ import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
-export type SnapshotPageData = InferResponseType<
+type SnapshotPageData = InferResponseType<
 	(typeof api.accounts)[":id"]["snapshots"]["$get"],
 	200
 >["data"];

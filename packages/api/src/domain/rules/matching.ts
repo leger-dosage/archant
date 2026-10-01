@@ -14,21 +14,21 @@ import { squishLabel } from "../normalize-label.ts";
  * `like` contains, case aside; `=` is the whole label, case included. Accents
  * count either way, as with Sure's `ILIKE`.
  */
-export type LabelCondition = {
+type LabelCondition = {
 	type: "transaction_name";
 	operator: RuleOperatorOf<"transaction_name">;
 	value: string;
 };
 
 /** Compared with the transaction's absolute amount, in the reporting currency only. */
-export type AmountCondition = {
+type AmountCondition = {
 	type: "transaction_amount";
 	operator: RuleOperatorOf<"transaction_amount">;
 	value: MinorUnits;
 };
 
 /** `accountId` is `null` once the account is deleted: the condition then matches nothing. */
-export type AccountCondition = {
+type AccountCondition = {
 	type: "transaction_account";
 	operator: RuleOperatorOf<"transaction_account">;
 	accountId: string | null;
@@ -42,14 +42,14 @@ export type AccountCondition = {
  */
 type ReferenceType = "transaction_merchant" | "transaction_category" | "transaction_tag";
 
-export type ReferenceCondition = {
+type ReferenceCondition = {
 	type: ReferenceType;
 	operator: RuleOperatorOf<ReferenceType>;
 	id: string | null;
 };
 
 /** Compared as the label is; `is_null` matches a row without notes. */
-export type NotesCondition =
+type NotesCondition =
 	| { type: "transaction_notes"; operator: "is_null" }
 	| {
 			type: "transaction_notes";
@@ -58,7 +58,7 @@ export type NotesCondition =
 	  };
 
 /** The row's `direction`, the rule the list's type filter uses. */
-export type TypeCondition = {
+type TypeCondition = {
 	type: "transaction_type";
 	operator: RuleOperatorOf<"transaction_type">;
 	value: Direction;
@@ -73,7 +73,7 @@ export type LeafCondition =
 	| TypeCondition;
 
 /** One level deep: `and` matches on all of its conditions, `or` on any. */
-export type GroupCondition = {
+type GroupCondition = {
 	type: "compound";
 	operator: RuleOperatorOf<"compound">;
 	conditions: LeafCondition[];
@@ -85,22 +85,22 @@ export type Condition = LeafCondition | GroupCondition;
  * An id is `null` once the row it named is deleted: the action then writes
  * nothing, as in Sure.
  */
-export type CategoryAction = { type: "set_transaction_category"; categoryId: string | null };
+type CategoryAction = { type: "set_transaction_category"; categoryId: string | null };
 
-export type MerchantAction = { type: "set_transaction_merchant"; merchantId: string | null };
+type MerchantAction = { type: "set_transaction_merchant"; merchantId: string | null };
 
 /** Adds one tag and keeps the others; Sure's `set_transaction_tags` adds several at once. */
-export type TagAction = { type: "set_transaction_tags"; tagId: string | null };
+type TagAction = { type: "set_transaction_tags"; tagId: string | null };
 
-export type RenameAction = { type: "set_transaction_name"; label: string };
+type RenameAction = { type: "set_transaction_name"; label: string };
 
-export type ExcludeAction = { type: "exclude_transaction" };
+type ExcludeAction = { type: "exclude_transaction" };
 
 /**
  * Records the account the other side of a transfer is expected in; the
  * transfer matcher reads it. It never creates an entry or a transfer.
  */
-export type TransferAction = { type: "set_as_transfer_or_payment"; accountId: string | null };
+type TransferAction = { type: "set_as_transfer_or_payment"; accountId: string | null };
 
 export type RuleAction =
 	| CategoryAction

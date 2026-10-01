@@ -34,7 +34,7 @@ import { applyFieldErrors } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["date", "balance"] as const;
 
-export type SnapshotAccount = { id: string; currency: CurrencyCode };
+type SnapshotAccount = { id: string; currency: CurrencyCode };
 
 function valuesOf(snapshot: SnapshotData | null): SnapshotFormInput {
 	return snapshot === null

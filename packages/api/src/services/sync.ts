@@ -20,19 +20,19 @@ import { oldestPendingDate } from "./ledger/snapshots.ts";
 import { detectRecurring } from "./recurring.ts";
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
-export const MIN_INTERVAL_MS = 60 * 60 * 1000;
+const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Sure's first window: three months of history for an account never synced. */
-export const FIRST_WINDOW_DAYS = 90;
+const FIRST_WINDOW_DAYS = 90;
 
 /** Each window starts this far before the last sync, for lines a bank books late. */
-export const OVERLAP_DAYS = 7;
+const OVERLAP_DAYS = 7;
 
 /**
  * Who asked: the connection's button refuses what the cron and the first
  * visit of the day quietly skip.
  */
-export type SyncTrigger = "button" | "cron" | "auto";
+type SyncTrigger = "button" | "cron" | "auto";
 
 export type SyncResult = "synced" | "failed" | "skipped" | "consent_expired";
 

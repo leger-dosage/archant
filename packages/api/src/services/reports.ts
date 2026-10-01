@@ -24,7 +24,7 @@ import { cashFlowByCategory } from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** An account left out of the totals because no rate converts its currency. */
-export type LeftOutAccount = { id: string; name: string; currency: string };
+type LeftOutAccount = { id: string; name: string; currency: string };
 
 export type NetWorth = {
 	period: BalancePeriod;

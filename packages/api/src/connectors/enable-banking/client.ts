@@ -99,7 +99,7 @@ export const MAX_PAGES = 100;
  * Sure's `EnableBankingItem::Importer`: the windows, in days before today,
  * asked for when a bank refuses the period with `WRONG_TRANSACTIONS_PERIOD`.
  */
-export const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
+const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
 
 /**
  * The starts to try after `since` is refused, in order: each fallback window

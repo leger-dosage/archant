@@ -36,7 +36,7 @@ export type RecurringPattern = {
 };
 
 // Sure's thresholds (`RecurringTransaction::Identifier`).
-export const LOOKBACK_MONTHS = 3;
+const LOOKBACK_MONTHS = 3;
 // Sure's `update_manual_recurring_transactions` looks six months back.
 export const MANUAL_LOOKBACK_MONTHS = 6;
 const MIN_OCCURRENCES = 3;
@@ -307,7 +307,7 @@ export function isKept(series: Pick<StoredSeries, "status" | "manual">): boolean
 }
 
 /** How far back a series' occurrences are read: six months for the user's, as Sure's manual pass. */
-export function lookbackOf(series: Pick<StoredSeries, "status" | "manual">): number {
+function lookbackOf(series: Pick<StoredSeries, "status" | "manual">): number {
 	return isKept(series) ? MANUAL_LOOKBACK_MONTHS : LOOKBACK_MONTHS;
 }
 

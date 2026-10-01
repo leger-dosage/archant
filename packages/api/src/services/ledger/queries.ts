@@ -77,7 +77,7 @@ export type TransactionRecord = {
  * A transaction's transfer as its row shows it. Which side it is follows from
  * its amount: the outflow is the negative one.
  */
-export type TransferLink = {
+type TransferLink = {
 	id: string;
 	kind: TransferKind;
 	counterpartAccountId: string;

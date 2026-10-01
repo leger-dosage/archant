@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"workspaces": {
+		".": {},
+		"packages/api": {},
+		"packages/app": {
+			"entry": ["e2e/**/*.ts"],
+			"ignore": ["src/components/ui/**"]
+		},
+		"packages/data": {}
+	}
+}

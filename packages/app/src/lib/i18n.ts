@@ -3,7 +3,7 @@ import { initReactI18next } from "react-i18next";
 
 import fr from "../locales/fr.json";
 
-export const resources = { fr: { translation: fr } } as const;
+const resources = { fr: { translation: fr } } as const;
 
 declare module "i18next" {
 	interface CustomTypeOptions {

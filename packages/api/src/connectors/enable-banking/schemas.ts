@@ -9,7 +9,7 @@ import { isCurrencyCode } from "@archant/data/money";
 
 const httpUrl = z.url({ protocol: /^https?$/u });
 
-export const aspspSchema = z.object({
+const aspspSchema = z.object({
 	name: z.string().min(1),
 	country: z.string().length(2),
 	// A missing or odd logo costs a picture, not the whole list.

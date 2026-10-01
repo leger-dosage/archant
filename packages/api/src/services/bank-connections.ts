@@ -39,10 +39,10 @@ import { linkBankAccount, unlinkBankAccount } from "./ledger/bank-link.ts";
 const excluded = (column: AnyColumn) => sql`excluded.${sql.identifier(column.name)}`;
 
 /** Where the bank sends the browser back: a page of the interface, not an API route. */
-export const REDIRECT_PATH = "/settings/banks/callback";
+const REDIRECT_PATH = "/settings/banks/callback";
 
 /** How long a `state` stays valid: time enough to sign in at the bank, no more. */
-export const AUTHORIZATION_TTL_MS = 30 * 60 * 1000;
+const AUTHORIZATION_TTL_MS = 30 * 60 * 1000;
 
 /** A run that crashed leaves its sync lease behind; after this long, it is free again. */
 export const LEASE_MS = 10 * 60 * 1000;
@@ -505,10 +505,10 @@ export async function listConnections(deps: BankConnectionDeps): Promise<BankCon
 }
 
 /** A way to feed a bank account into the ledger, as the page offers it. */
-export type BankAccountTargetRecord = { type: AccountType; subtype: AccountSubtype | null };
+type BankAccountTargetRecord = { type: AccountType; subtype: AccountSubtype | null };
 
 /** An existing account the bank account may feed. */
-export type LinkCandidateRecord = {
+type LinkCandidateRecord = {
 	id: string;
 	name: string;
 	type: AccountType;

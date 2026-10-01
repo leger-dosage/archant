@@ -20,7 +20,7 @@ const SOURCES: Record<FileSourceId, FileSource> = {
 };
 
 /** Every file source, in detection order. */
-export const FILE_SOURCES: readonly FileSource[] = Object.values(SOURCES);
+const FILE_SOURCES: readonly FileSource[] = Object.values(SOURCES);
 
 /** The source that reads this file, `null` when none does. */
 export function detectFileSource(bytes: Uint8Array, fileName: string): FileSource | null {

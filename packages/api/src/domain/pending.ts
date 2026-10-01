@@ -5,7 +5,7 @@ import type { MinorUnits } from "@archant/data/money";
 import { daysBetween } from "./dates.ts";
 
 /** How far apart a booked line and its pending entry may be dated and still meet (AD-17). */
-export const PENDING_WINDOW_DAYS = 5;
+const PENDING_WINDOW_DAYS = 5;
 
 /**
  * Successful syncs without its line, on different days, after which a

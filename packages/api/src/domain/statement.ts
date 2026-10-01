@@ -67,7 +67,7 @@ export type ParsedStatement = {
  * balance row, written under the write lock: a year typo such as 2062 would
  * otherwise write tens of thousands of rows in one transaction.
  */
-export const MAX_DAYS_AHEAD = 366;
+const MAX_DAYS_AHEAD = 366;
 
 export type LineContext = { openingDate: IsoDate; currency: string; today: IsoDate };
 

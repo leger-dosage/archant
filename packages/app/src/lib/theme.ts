@@ -27,7 +27,7 @@ function readChoice(): ThemeChoice {
 let choice: ThemeChoice = "system";
 const listeners = new Set<() => void>();
 
-export function isDark(current: ThemeChoice): boolean {
+function isDark(current: ThemeChoice): boolean {
 	return current === "dark" || (current === "system" && darkQuery().matches);
 }
 

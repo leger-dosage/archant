@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { pageSearch } from "@/lib/page-search";
 
 /** The list the pages belong to: one of an account page's, `/transactions`, or the runs on `/rules`. */
-export type PageTarget =
+type PageTarget =
 	| { to: "/accounts/$accountId"; accountId: string; param: PageParam }
 	| { to: "/transactions" }
 	| { to: "/rules"; param: RulesPageParam };

@@ -63,14 +63,14 @@ import { getReportingCurrency } from "./settings.ts";
  * keys, so a manual entry an import paired with shows that import, and an
  * entry a sync paired with shows the bank.
  */
-export type TransactionSource =
+type TransactionSource =
 	| { kind: "manual" }
 	| { kind: "import"; format: FileSourceId; date: IsoDate }
 	| { kind: "bank"; connector: BankConnectorId };
 
 export type TransactionItem = TransactionRecord & { source: TransactionSource };
 
-export type TransactionListItem = TransactionListRecord & {
+type TransactionListItem = TransactionListRecord & {
 	source: TransactionSource;
 	/** Held by a series that is not dismissed, as the sheet's « Récurrent » section reads it. */
 	recurring: boolean;

@@ -145,7 +145,7 @@ export type CreateTransactionRequest = z.output<ReturnType<typeof createTransact
 export type UpdateTransactionRequest = z.output<ReturnType<typeof updateTransactionSchema>>;
 
 export const DEFAULT_PAGE_SIZE = 50;
-export const MAX_PAGE_SIZE = 200;
+const MAX_PAGE_SIZE = 200;
 
 export const pageQuerySchema = z.object({
 	page: z.coerce.number().int().min(1).default(1),
@@ -193,8 +193,8 @@ export function compareAmountBounds(a: AmountBound, b: AmountBound): number {
 	return left === right ? 0 : left < right ? -1 : 1;
 }
 
-export const MAX_ACCOUNT_FILTER = 100;
-export const MAX_CATEGORY_FILTER = MAX_ACCOUNT_FILTER;
+const MAX_ACCOUNT_FILTER = 100;
+const MAX_CATEGORY_FILTER = MAX_ACCOUNT_FILTER;
 export const MAX_MERCHANT_FILTER = MAX_ACCOUNT_FILTER;
 export const MAX_TAG_FILTER = MAX_ACCOUNT_FILTER;
 

@@ -22,7 +22,7 @@ export const APPLICATION_ID_SETTING = "enable_banking_application_id";
 export const PRIVATE_KEY_SETTING = "enable_banking_private_key";
 
 /** What an Enable Banking request is signed with. */
-export type BankCredentials = { applicationId: string; privateKey: KeyObject };
+type BankCredentials = { applicationId: string; privateKey: KeyObject };
 
 /**
  * What resolving the connector needs. No connector here: it is built per
@@ -41,7 +41,7 @@ export type BankCredentialDeps = ServiceDeps & {
 	redirectUrl: string;
 };
 
-export type BankCredentialSource = "environment" | "interface";
+type BankCredentialSource = "environment" | "interface";
 
 /** What « Réglages › Banques » needs to know, never the key itself. */
 export type BankSetup = {
