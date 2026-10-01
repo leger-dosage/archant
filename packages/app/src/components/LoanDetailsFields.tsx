@@ -3,9 +3,9 @@ import type { FieldError, UseFormRegisterReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
 import { DateField } from "@/components/DateField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fieldErrorCode } from "@/lib/form-errors";
 
 type LoanDetailsFieldsProps = {
 	originalAmount: UseFormRegisterReturn;
@@ -15,20 +15,6 @@ type LoanDetailsFieldsProps = {
 		| { originalAmount?: FieldError; interestRate?: FieldError; endDate?: FieldError }
 		| undefined;
 };
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 /**
  * A loan's optional amount borrowed, rate and end date, as the create dialog

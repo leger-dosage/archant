@@ -30,6 +30,7 @@ import { RULE_ACTION_TYPES, RULE_OPERATORS_BY_TYPE, isValuelessAction } from "@a
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryPill } from "@/components/CategoryPill";
 import { DateField } from "@/components/DateField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { TagCombobox } from "@/components/TagCombobox";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,7 @@ import { useCreateRule, useUpdateRule } from "@/hooks/useRules";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 import { operatorKey } from "@/lib/rule-summary";
 
 type FormValues = RuleFormInput;
@@ -180,20 +181,6 @@ function errorAt(errors: FieldErrors<FormValues>, path: string): ShownError | un
 	}
 
 	return isShownError(found) ? found : undefined;
-}
-
-function FieldMessage({ id, error }: { id: string; error: ShownError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
 }
 
 const errorId = (path: string) => `rule-${path.replaceAll(".", "-")}-error`;

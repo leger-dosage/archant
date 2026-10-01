@@ -1,5 +1,3 @@
-import type { FieldError } from "react-hook-form";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
@@ -12,6 +10,7 @@ import { z } from "zod";
 
 import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
-import { fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_authed/settings/security")({
@@ -48,20 +46,6 @@ const changePasswordSchema = z
 type ChangePasswordValues = z.input<typeof changePasswordSchema>;
 
 const EMPTY = { currentPassword: "", newPassword: "", confirmPassword: "" };
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 /**
  * The first name the dashboard greets, Better Auth's `user.name`. Saved

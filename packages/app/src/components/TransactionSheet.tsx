@@ -19,6 +19,7 @@ import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { DuplicateDialog } from "@/components/DuplicateDialog";
+import { FieldMessage } from "@/components/FieldMessage";
 import { MerchantCombobox } from "@/components/MerchantCombobox";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TagCombobox } from "@/components/TagCombobox";
@@ -54,7 +55,7 @@ import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 import { showsCategory, transferCaption } from "@/lib/transfers";
 
 const FIELD_NAMES = [
@@ -82,20 +83,6 @@ function defaultDate(openingDate: string): string {
 	const today = toIsoDate();
 
 	return today > dayAfterOpening ? today : dayAfterOpening;
-}
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
 }
 
 function valuesOf(transaction: TransactionData | null, openingDate: string): TransactionFormInput {

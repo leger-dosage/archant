@@ -1,5 +1,3 @@
-import type { FieldError } from "react-hook-form";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
@@ -10,13 +8,13 @@ import { z } from "zod";
 
 import { setupSchema } from "@archant/api/schemas/setup";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
-import { fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -72,20 +70,6 @@ export const Route = createFileRoute("/sign-in")({
 	},
 	component: SignInPage,
 });
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 function SignInPage() {
 	const { t } = useTranslation();

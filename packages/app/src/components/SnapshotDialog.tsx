@@ -1,5 +1,4 @@
 import type { SnapshotData } from "@/hooks/useSnapshots";
-import type { FieldError } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useRef, useState } from "react";
@@ -13,6 +12,7 @@ import { formatMoney } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -30,25 +30,11 @@ import { ApiError } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["date", "balance"] as const;
 
 export type SnapshotAccount = { id: string; currency: CurrencyCode };
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 function valuesOf(snapshot: SnapshotData | null): SnapshotFormInput {
 	return snapshot === null
