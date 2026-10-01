@@ -150,7 +150,12 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 
 	// An old link to the removed tab falls back to Opérations.
 	await page.goto(`/accounts/${account.id}?tab=settings`);
-	await expect(page.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+	// Within the page: the accounts column has tabs of its own once its list loads.
+	await expect(page.getByRole("main").getByRole("tab")).toHaveText([
+		"Opérations",
+		"Soldes",
+		"Imports",
+	]);
 	await expect(page.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
 		"aria-selected",
 		"true",
