@@ -102,6 +102,20 @@ describe("formatMoney", () => {
 		expect(formatMoney({ amount: toMinorUnits(7), currency: "EUR" })).toBe(`0,07${NBSP}€`);
 	});
 
+	it("keeps two decimals for a code outside ISO 4217", () => {
+		expect(formatMoney({ amount: toMinorUnits(-1234), currency: "ABC" })).toBe(
+			`${MINUS}12,34${NBSP}ABC`,
+		);
+	});
+
+	it("refuses an amount that skipped toMinorUnits", () => {
+		const money = { amount: toMinorUnits(15), currency: "EUR" };
+		// What a value read past the brand would hold, such as a float from JSON.
+		Reflect.set(money, "amount", 1.5);
+
+		expect(() => formatMoney(money)).toThrow(RangeError);
+	});
+
 	it("honours another locale", () => {
 		expect(formatMoney({ amount: toMinorUnits(123456), currency: "EUR" }, "en-US")).toBe(
 			"€1,234.56",
