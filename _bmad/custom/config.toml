@@ -5,3 +5,12 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# The answers every contributor shares, so a fresh clone renders the
+# workflows without a personal _bmad/config.user.toml: render_skill.py halts
+# on a missing communication_language or user_skill_level.
+[core]
+communication_language = "French"
+
+[modules.bmm]
+user_skill_level = "intermediate"
