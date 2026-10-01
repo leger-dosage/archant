@@ -1,5 +1,5 @@
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/schema/categories";
+import type { CategoryKind } from "@archant/data/category-presets";
 
 export type DefaultCategory = {
 	name: string;

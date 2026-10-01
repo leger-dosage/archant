@@ -7,6 +7,14 @@
 export const CATEGORY_NAME_MAX_LENGTH = 60;
 
 /**
+ * Groups the display only (AD-9): a category total is the signed sum of its
+ * transactions, and nothing flips a sign on the kind.
+ */
+export const CATEGORY_KINDS = ["income", "expense"] as const;
+
+export type CategoryKind = (typeof CATEGORY_KINDS)[number];
+
+/**
  * DESIGN.md's ten swatches, Linear's register, the only colours the form
  * offers. Existing categories keep theirs: see `CATEGORY_COLOR_PATTERN`.
  */

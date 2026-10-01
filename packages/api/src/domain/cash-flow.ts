@@ -1,7 +1,7 @@
 import type { CategoryIcon } from "@archant/data/category-presets";
+import type { CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-import type { CategoryKind } from "@archant/data/schema/categories";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 

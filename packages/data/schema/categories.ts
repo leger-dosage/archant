@@ -1,18 +1,11 @@
-import type { CategoryIcon } from "../category-presets.ts";
+import type { CategoryIcon, CategoryKind } from "../category-presets.ts";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+import { CATEGORY_KINDS } from "../category-presets.ts";
 import { inList } from "./check.ts";
-
-/**
- * Groups the display only (AD-9): a category total is the signed sum of its
- * transactions, and nothing flips a sign on the kind.
- */
-export const CATEGORY_KINDS = ["income", "expense"] as const;
-
-export type CategoryKind = (typeof CATEGORY_KINDS)[number];
 
 /**
  * Who set a transaction's category (AD-10). `user` goes with a lock; a rule or

@@ -13,6 +13,7 @@
 		"./migrate": "./migrate.ts",
 		"./money": "./money.ts",
 		"./months": "./months.ts",
+		"./name-limits": "./name-limits.ts",
 		"./qif-options": "./qif-options.ts",
 		"./rules": "./rules.ts",
 		"./schema/accounts": "./schema/accounts.ts",

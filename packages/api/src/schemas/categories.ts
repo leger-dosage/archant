@@ -5,7 +5,7 @@ import {
 	CATEGORY_ICONS,
 	CATEGORY_NAME_MAX_LENGTH,
 } from "@archant/data/category-presets";
-import { CATEGORY_KINDS } from "@archant/data/schema/categories";
+import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 // One rule for creating and renaming, so a name the one accepts the other does too.
 // NFC: a pasted « Épargne » may arrive decomposed, and would otherwise sit

@@ -11,8 +11,8 @@ import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
 import type { CategoryColor } from "@archant/data/category-presets";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/schema/categories";
-import { CATEGORY_KINDS } from "@archant/data/schema/categories";
+import type { CategoryKind } from "@archant/data/category-presets";
+import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 import { ChoiceField } from "@/components/ChoiceField";
 import { TintedIcon } from "@/components/TintedIcon";

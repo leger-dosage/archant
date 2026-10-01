@@ -5,8 +5,8 @@ import { EllipsisIcon, ShapesIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CategoryKind } from "@archant/data/schema/categories";
-import { CATEGORY_KINDS } from "@archant/data/schema/categories";
+import type { CategoryKind } from "@archant/data/category-presets";
+import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 import { CategoryDialog } from "@/components/CategoryDialog";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";

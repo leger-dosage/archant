@@ -7,8 +7,8 @@ import { z } from "zod";
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
+import type { CategoryKind } from "@archant/data/category-presets";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
-import type { CategoryKind } from "@archant/data/schema/categories";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";

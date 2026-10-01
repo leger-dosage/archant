@@ -4,7 +4,7 @@ import type { ServiceDeps } from "./deps.ts";
 import { eq, inArray } from "drizzle-orm";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/schema/categories";
+import type { CategoryKind } from "@archant/data/category-presets";
 import { categories } from "@archant/data/schema/categories";
 import type { Category } from "@archant/data/types";
 
