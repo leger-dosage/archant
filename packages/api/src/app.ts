@@ -3,19 +3,22 @@ import type { Logger } from "./lib/logger.ts";
 import type { Auth } from "./services/auth.ts";
 import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
-import type { Context, MiddlewareHandler } from "hono";
+import type { Reservation, SignInCeilingOptions } from "./services/sign-in-failures.ts";
+import type { Context, MiddlewareHandler, Next } from "hono";
 
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { except } from "hono/combine";
+import { getCookie, setCookie } from "hono/cookie";
 import { csrf } from "hono/csrf";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
+import { z } from "zod";
 
 import { withForwardedFor } from "./lib/client-address.ts";
-import { CONTENT_SECURITY_POLICY } from "./lib/content-security-policy.ts";
+import { contentSecurityPolicy } from "./lib/content-security-policy.ts";
 import { AppError } from "./lib/errors.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
@@ -36,7 +39,18 @@ import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
 import { versionRoutes } from "./routes/version.ts";
-import { releaseAttempt, reserveAttempt } from "./services/sign-in-failures.ts";
+import {
+	DEVICE_COOKIE,
+	deviceCookieOptions,
+	knownDeviceNonce,
+	signDeviceCookie,
+} from "./services/device-cookie.ts";
+import {
+	SIGN_IN_CEILING,
+	deviceCeiling,
+	releaseAttempt,
+	reserveAttempt,
+} from "./services/sign-in-failures.ts";
 
 export type AppDeps = ServiceDeps &
 	BankConnectionDeps & {
@@ -44,6 +58,8 @@ export type AppDeps = ServiceDeps &
 		auth: Auth;
 		/** `BETTER_AUTH_URL`'s origin: the only one a write is accepted from. */
 		trustedOrigin: string;
+		/** `BETTER_AUTH_SECRET`, also given to Better Auth: signs the device cookie. */
+		authSecret: string;
 		/** `TRUSTED_PROXIES`, also given to Better Auth. */
 		trustedProxies: string[];
 		/**
@@ -78,39 +94,123 @@ const tooLarge = () => {
 	throw new AppError("PAYLOAD_TOO_LARGE", "The request body is larger than 64 KB.");
 };
 
+const tooManySignIns = () =>
+	new AppError("TOO_MANY_REQUESTS", "Too many failed sign-ins. Try again in a few minutes.");
+
+/**
+ * Lets the sign-in reach Better Auth, then gives the slot back unless it
+ * failed. Better Auth has answered by then, a session perhaps created: a
+ * failed write must not turn that answer into a 500. The slot then stays
+ * taken, which errs on the side of refusing.
+ */
+async function attempt(
+	c: Context,
+	next: Next,
+	deps: AppDeps,
+	reservation: Reservation,
+	options: SignInCeilingOptions,
+): Promise<void> {
+	await next();
+
+	if (c.res.status === 401) {
+		return;
+	}
+
+	try {
+		await releaseAttempt(deps, reservation, options);
+	} catch (error) {
+		deps.logger.error(
+			{ error: error instanceof Error ? error.name : "unknown" },
+			"sign-in ceiling: releasing a slot failed",
+		);
+	}
+}
+
+const signInBody = z.object({ email: z.string() });
+
+/**
+ * The nonce of the device cookie the request carries, when it is the device of
+ * the user it signs in as. The body is read from a clone: Better Auth reads the
+ * original. A body that is not JSON names no user, and gets no exemption.
+ */
+async function knownDevice(c: Context, deps: AppDeps): Promise<string | null> {
+	const cookie = getCookie(c, DEVICE_COOKIE);
+	const body = signInBody.safeParse(
+		await c.req.raw
+			.clone()
+			.json()
+			.catch(() => null),
+	);
+
+	if (cookie === undefined || !body.success) {
+		return null;
+	}
+
+	return knownDeviceNonce(deps, { secret: deps.authSecret, cookie, email: body.data.email });
+}
+
 /**
  * Refuses a sign-in, before Better Auth reads it, once too many failed across
  * every address: its own limit is per address, so a guesser with many
  * addresses would otherwise try in parallel. Failures only are counted: a
  * count of attempts would let one address spend the allowance alone and lock
  * the owner out, where a failure needs Better Auth to have let it through.
+ *
+ * A full ceiling would still lock the owner out, the right password included,
+ * so a browser that signed in before passes it on its device cookie, while
+ * that device has not failed too often itself (OWASP's device cookies).
  */
 function signInCeiling(deps: AppDeps) {
 	return createMiddleware(async (c, next) => {
 		const reservation = await reserveAttempt(deps);
 
-		if (reservation === null) {
-			throw new AppError(
-				"TOO_MANY_REQUESTS",
-				"Too many failed sign-ins. Try again in a few minutes.",
-			);
-		}
-
-		await next();
-
-		if (c.res.status === 401) {
+		if (reservation !== null) {
+			await attempt(c, next, deps, reservation, SIGN_IN_CEILING);
 			return;
 		}
 
-		// Better Auth has answered, a session perhaps created: a failed write
-		// here must not turn that answer into a 500. The slot then stays
-		// taken, which errs on the side of refusing.
-		try {
-			await releaseAttempt(deps, reservation);
-		} catch (error) {
-			deps.logger.error(
-				{ error: error instanceof Error ? error.name : "unknown" },
-				"sign-in ceiling: releasing a slot failed",
+		const nonce = await knownDevice(c, deps);
+		const device = nonce === null ? null : deviceCeiling(nonce);
+		const deviceReservation = device === null ? null : await reserveAttempt(deps, device);
+
+		if (device === null || deviceReservation === null) {
+			throw tooManySignIns();
+		}
+
+		await attempt(c, next, deps, deviceReservation, device);
+	});
+}
+
+// What Better Auth answers when a request created a session. The password step
+// of a two-factor sign-in answers `twoFactorRedirect` instead, having proved
+// the password only, and a backup code checked without a session has no token.
+const sessionCreated = z.object({ token: z.string().min(1), user: z.object({ id: z.string() }) });
+
+/**
+ * Sets a new device cookie whenever a sign-in creates a session, so the
+ * ceiling above knows this browser next time.
+ */
+function deviceCookie(deps: AppDeps) {
+	return createMiddleware(async (c, next) => {
+		await next();
+
+		if (c.res.status !== 200) {
+			return;
+		}
+
+		const body = sessionCreated.safeParse(
+			await c.res
+				.clone()
+				.json()
+				.catch(() => null),
+		);
+
+		if (body.success) {
+			setCookie(
+				c,
+				DEVICE_COOKIE,
+				signDeviceCookie(deps.authSecret, body.data.user.id),
+				deviceCookieOptions(deps.trustedOrigin),
 			);
 		}
 	});
@@ -206,7 +306,10 @@ export function createApp(deps: AppDeps) {
 		// too: a browser ignores it there, and splitting by path buys nothing.
 		.use(
 			"*",
-			secureHeaders({ contentSecurityPolicy: CONTENT_SECURITY_POLICY, xFrameOptions: "DENY" }),
+			secureHeaders({
+				contentSecurityPolicy: contentSecurityPolicy(deps.bankApiUrl),
+				xFrameOptions: "DENY",
+			}),
 		)
 		// Before anything reads a body: a declared length over the limit is
 		// refused unread, and a chunked body stops being read at the limit.
@@ -231,6 +334,15 @@ export function createApp(deps: AppDeps) {
 			except("/api/sync", csrf({ origin: new URL(deps.trustedOrigin).origin })),
 		)
 		.on("POST", "/api/auth/sign-in/email", signInCeiling(deps))
+		.on(
+			"POST",
+			[
+				"/api/auth/sign-in/email",
+				"/api/auth/two-factor/verify-totp",
+				"/api/auth/two-factor/verify-backup-code",
+			],
+			deviceCookie(deps),
+		)
 		// Better Auth answers in its own shape, outside the envelope and outside
 		// `AppType`; the interface calls it through `better-auth/react`.
 		.on(["GET", "POST"], "/api/auth/*", async (c) =>

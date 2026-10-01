@@ -2,6 +2,7 @@ import type { SignedInTemplate, TestApp } from "../testing/auth.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { Auth } from "./auth.ts";
 
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { rateLimits, signInFailures } from "@archant/data/schema/auth";
@@ -13,8 +14,11 @@ import {
 	buildTestApp,
 	createSignedInTemplate,
 	createTestAuth,
+	TEST_SECRET,
 } from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import * as deviceCookie from "./device-cookie.ts";
+import { DEVICE_COOKIE, signDeviceCookie, verifyDeviceCookie } from "./device-cookie.ts";
 import * as ceiling from "./sign-in-failures.ts";
 import { SIGN_IN_CEILING } from "./sign-in-failures.ts";
 
@@ -218,5 +222,275 @@ describe("the overall sign-in ceiling", () => {
 
 		expect(statuses).toEqual([401, 401, 401, 429]);
 		await expect(failures()).resolves.toMatchObject([{ count: 3 }]);
+	});
+});
+
+/** A sign-in from `address`, carrying `cookie` when given. */
+async function signInWith(
+	app: TestApp,
+	address: string,
+	credentials: { email: string; password: string },
+	cookie?: string,
+): Promise<Response> {
+	return app.request("/api/auth/sign-in/email", {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			origin: TEST_ORIGIN,
+			"x-forwarded-for": address,
+			...(cookie === undefined ? {} : { cookie }),
+		},
+		body: JSON.stringify(credentials),
+	});
+}
+
+/** The `Set-Cookie` line of the device cookie a response sets, if any. */
+function deviceLine(response: Response): string | undefined {
+	return response.headers.getSetCookie().find((line) => line.startsWith(`${DEVICE_COOKIE}=`));
+}
+
+/** The device cookie a response sets, as a `Cookie` header. */
+function deviceCookieOf(response: Response): string {
+	const line = deviceLine(response);
+
+	if (line === undefined) {
+		throw new Error(`No device cookie in ${response.status}`);
+	}
+
+	return line.split(";")[0] ?? "";
+}
+
+const nonceOf = (cookie: string) =>
+	verifyDeviceCookie(TEST_SECRET, cookie.slice(DEVICE_COOKIE.length + 1))?.nonce;
+
+/** A device that signed in once, before the ceiling filled. */
+async function knownDevice(app: TestApp): Promise<string> {
+	const response = await signInWith(app, "192.0.2.1", ADMIN);
+
+	expect(response.status).toBe(200);
+
+	return deviceCookieOf(response);
+}
+
+const deviceRow = async (cookie: string) =>
+	temp.db
+		.select()
+		.from(signInFailures)
+		.where(eq(signInFailures.id, `device:${nonceOf(cookie)}`));
+
+const globalCount = async () =>
+	(await temp.db.select().from(signInFailures).where(eq(signInFailures.id, "all")))[0]?.count;
+
+describe("the device cookie a sign-in sets", () => {
+	it("is set by a sign-in without two-factor: HttpOnly, SameSite=Strict, under /api/auth, for a year", async () => {
+		const { app } = startServer();
+
+		const response = await signInWith(app, "192.0.2.1", ADMIN);
+
+		expect(response.status).toBe(200);
+		const line = deviceLine(response) ?? "";
+		expect(line).toMatch(/; Max-Age=31536000(?:;|$)/u);
+		expect(line).toMatch(/; Path=\/api\/auth(?:;|$)/u);
+		expect(line).toMatch(/; HttpOnly(?:;|$)/u);
+		expect(line).toMatch(/; SameSite=Strict(?:;|$)/u);
+		// `BETTER_AUTH_URL` is plain HTTP in tests.
+		expect(line).not.toMatch(/; Secure(?:;|$)/u);
+		const device = verifyDeviceCookie(TEST_SECRET, deviceCookieOf(response).split("=")[1] ?? "");
+		expect(device).toMatchObject({ expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000 });
+	});
+
+	it("is not set by a failed sign-in", async () => {
+		const response = await signInWith(startServer().app, "192.0.2.1", WRONG);
+
+		expect(response.status).toBe(401);
+		expect(deviceLine(response)).toBeUndefined();
+	});
+});
+
+describe("a known device once the ceiling is full", () => {
+	it("signs in with the right password, and gets a new cookie", async () => {
+		const { app, auth } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+		const handler = vi.spyOn(auth, "handler");
+
+		const response = await signInWith(app, "203.0.113.50", ADMIN, cookie);
+
+		expect(response.status).toBe(200);
+		expect(handler).toHaveBeenCalledOnce();
+		const renewed = deviceCookieOf(response);
+		expect(nonceOf(renewed)).toEqual(expect.any(String));
+		expect(nonceOf(renewed)).not.toBe(nonceOf(cookie));
+		// No global slot taken, none given back, and no failure on the device.
+		expect(await globalCount()).toBe(20);
+		await expect(deviceRow(cookie)).resolves.toMatchObject([{ count: 0 }]);
+	});
+
+	it("signs in with the email typed in another case, as Better Auth matches it", async () => {
+		const { app } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+
+		const response = await signInWith(
+			app,
+			"203.0.113.50",
+			{ email: ADMIN.email.toUpperCase(), password: ADMIN.password },
+			cookie,
+		);
+
+		expect(response.status).toBe(200);
+	});
+
+	it("counts a wrong password as one failure on its nonce, never on the global row", async () => {
+		const { app } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+
+		expect((await signInWith(app, "203.0.113.50", WRONG, cookie)).status).toBe(401);
+		await expect(deviceRow(cookie)).resolves.toMatchObject([{ count: 1 }]);
+		expect(await globalCount()).toBe(20);
+	});
+
+	it("is refused the right password once it failed 5 times in the window", async () => {
+		const { app, auth } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+		const failed = await failFromDevice(app, cookie);
+		const handler = vi.spyOn(auth, "handler");
+
+		const response = await signInWith(app, "203.0.113.50", ADMIN, cookie);
+
+		expect(failed).toEqual([401, 401, 401, 401, 401]);
+		expect(response.status).toBe(429);
+		await expect(response.json()).resolves.toMatchObject({ error: { code: "TOO_MANY_REQUESTS" } });
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("leaves the other devices' allowance whole when one device spent its own", async () => {
+		const { app } = startServer();
+		const spent = await knownDevice(app);
+		const other = deviceCookieOf(await signInWith(app, "192.0.2.2", ADMIN));
+		await failFromMany(app, 20);
+		await failFromDevice(app, spent);
+
+		expect((await signInWith(app, "203.0.113.50", ADMIN, spent)).status).toBe(429);
+		expect((await signInWith(app, "203.0.113.51", ADMIN, other)).status).toBe(200);
+	});
+
+	it("is still held to Better Auth's three attempts per address", async () => {
+		const { app } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+
+		const statuses = [
+			(await signInWith(app, "203.0.113.50", WRONG, cookie)).status,
+			(await signInWith(app, "203.0.113.50", WRONG, cookie)).status,
+			(await signInWith(app, "203.0.113.50", WRONG, cookie)).status,
+			(await signInWith(app, "203.0.113.50", ADMIN, cookie)).status,
+		];
+
+		expect(statuses).toEqual([401, 401, 401, 429]);
+		// Better Auth's refusal is not a failure of the device either.
+		await expect(deviceRow(cookie)).resolves.toMatchObject([{ count: 3 }]);
+	});
+
+	it("starts the device's count again in the next window", async () => {
+		const { app } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+		await failFromDevice(app, cookie);
+
+		vi.setSystemTime(new Date("2026-09-27T10:10:00Z"));
+
+		expect((await signInWith(app, "203.0.113.50", ADMIN, cookie)).status).toBe(200);
+	});
+});
+
+/** A device cookie the server could have signed for `userId`, as a `Cookie` header. */
+const signed = (userId: string, now = Date.now()) =>
+	`${DEVICE_COOKIE}=${signDeviceCookie(TEST_SECRET, userId, now)}`;
+
+/** Five failures of one device, each from an address of its own. */
+async function failFromDevice(app: TestApp, cookie: string): Promise<number[]> {
+	return Promise.all(
+		[1, 2, 3, 4, 5].map(
+			async (index) => (await signInWith(app, `203.0.113.${index}`, WRONG, cookie)).status,
+		),
+	);
+}
+
+describe("anything but a known device once the ceiling is full", () => {
+	it.each([
+		["no cookie", async () => undefined],
+		[
+			"a forged cookie",
+			async (cookie: string) => `${cookie.slice(0, -2)}${cookie.endsWith("AA") ? "BB" : "AA"}`,
+		],
+		[
+			"an expired cookie",
+			async (cookie: string) => {
+				const device = verifyDeviceCookie(TEST_SECRET, cookie.split("=")[1] ?? "");
+
+				return signed(device?.userId ?? "", Date.now() - 366 * 24 * 60 * 60 * 1000);
+			},
+		],
+		["another user's cookie", async () => signed("another-user")],
+	])("is refused with %s, Better Auth not called", async (_, cookieFor) => {
+		const { app, auth } = startServer();
+		const cookie = await cookieFor(await knownDevice(app));
+		await failFromMany(app, 20);
+		const handler = vi.spyOn(auth, "handler");
+
+		const response = await signInWith(app, "203.0.113.50", ADMIN, cookie);
+
+		expect(response.status).toBe(429);
+		await expect(response.json()).resolves.toMatchObject({ error: { code: "TOO_MANY_REQUESTS" } });
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("is refused for an email no user has, even with a valid cookie", async () => {
+		const { app } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+
+		const response = await signInWith(
+			app,
+			"203.0.113.50",
+			{ email: "someone@example.test", password: ADMIN.password },
+			cookie,
+		);
+
+		expect(response.status).toBe(429);
+	});
+
+	it("is refused a body that is not JSON, even with a valid cookie", async () => {
+		const { app, auth } = startServer();
+		const cookie = await knownDevice(app);
+		await failFromMany(app, 20);
+		const handler = vi.spyOn(auth, "handler");
+
+		const response = await app.request("/api/auth/sign-in/email", {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				origin: TEST_ORIGIN,
+				"x-forwarded-for": "203.0.113.50",
+				cookie,
+			},
+			body: "email=admin",
+		});
+
+		expect(response.status).toBe(429);
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("does not read the cookie while the ceiling has room", async () => {
+		const { app } = startServer();
+		const known = vi.spyOn(deviceCookie, "knownDeviceNonce");
+
+		const response = await signInWith(app, "203.0.113.50", ADMIN, signed("another-user"));
+
+		expect(response.status).toBe(200);
+		expect(known).not.toHaveBeenCalled();
 	});
 });

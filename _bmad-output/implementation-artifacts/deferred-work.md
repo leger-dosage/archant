@@ -188,3 +188,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-2-a-pinned-updated-and-attested-supply-chain.md`
   summary: Ignore `@types/node` majors in `.github/dependabot.yml`, so the types follow the Node major of `.node-version`.
   evidence: Dependabot's first npm run opened #104, `@types/node` 24.13.6 to 26.6.3, types for a Node the image and CI do not run.
+- source_spec: `_bmad-output/implementation-artifacts/spec-15-4-a-sign-in-that-cannot-be-held-hostage.md`
+  summary: Renew the `archant.device` cookie from a live session, so a browser kept signed in for months still holds a valid one when it next has to sign in.
+  evidence: The cookie is set only when a sign-in creates a session; a session from before the upgrade, or one kept alive past 365 days, leaves the browser without an exemption at its next sign-in.

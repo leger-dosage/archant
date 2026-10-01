@@ -17,6 +17,7 @@ import {
 	createTestAuth,
 } from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { DEVICE_COOKIE } from "./device-cookie.ts";
 import { resetPassword } from "./password.ts";
 
 // Behind a trusted loopback proxy, so each request can name its own address:
@@ -266,6 +267,49 @@ describe("signing in with two-factor on", () => {
 		expect(jar.has("session_token")).toBe(false);
 		expect(jar.has("two_factor")).toBe(true);
 		expect(await isSignedIn(server.app, jar)).toBe(false);
+	});
+
+	it("sets the device cookie at the code, never at the password step, which proves the password only", async () => {
+		const server = startServer();
+		const { secret, backupCodes } = await enable(server);
+		const [backupCode = ""] = backupCodes;
+
+		const totpSignIn = await passwordStep(server.app);
+		expect(totpSignIn.body).toMatchObject({ twoFactorRedirect: true });
+		expect(totpSignIn.jar.has(DEVICE_COOKIE)).toBe(false);
+		await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: await totp(server.auth, secret) },
+			totpSignIn.jar,
+		);
+		expect(totpSignIn.jar.has(DEVICE_COOKIE)).toBe(true);
+
+		const backupSignIn = await passwordStep(server.app);
+		expect(backupSignIn.jar.has(DEVICE_COOKIE)).toBe(false);
+		await post(
+			server.app,
+			"/two-factor/verify-backup-code",
+			{ code: backupCode },
+			backupSignIn.jar,
+		);
+		expect(backupSignIn.jar.has(DEVICE_COOKIE)).toBe(true);
+	});
+
+	it("sets no device cookie for a wrong code", async () => {
+		const server = startServer();
+		const { secret } = await enable(server);
+		const { jar } = await passwordStep(server.app);
+
+		const refused = await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: wrong(await totp(server.auth, secret)) },
+			jar,
+		);
+
+		expect(refused.status).toBe(401);
+		expect(jar.has(DEVICE_COOKIE)).toBe(false);
 	});
 
 	it("signs in with a TOTP code, and not with a wrong one", async () => {

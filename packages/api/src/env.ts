@@ -15,6 +15,23 @@ function isTimeZone(value: string): boolean {
 	}
 }
 
+/** Whether `url` is HTTPS, or plain HTTP to this machine's own loopback. */
+function isHttpsOrLoopback(url: string): boolean {
+	if (!URL.canParse(url)) {
+		return false;
+	}
+
+	const { protocol, hostname } = new URL(url);
+
+	return (
+		protocol === "https:" ||
+		hostname === "localhost" ||
+		hostname === "[::1]" ||
+		// The URL parser writes every IPv4 form, `127.1` included, as four numbers.
+		/^127\.\d+\.\d+\.\d+$/u.test(hostname)
+	);
+}
+
 /** AES-256 wants exactly this many bytes of key. */
 export const ENCRYPTION_KEY_BYTES = 32;
 
@@ -138,8 +155,11 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.optional()
 				.transform((value) => value ?? null),
 			// Overridden only by the end-to-end suite, which points it at a fake.
+			// Plain HTTP only on loopback: each request carries a token signed with
+			// the application's key, and the answers hold the household's accounts.
 			ENABLE_BANKING_API_URL: z
 				.url({ protocol: /^https?$/u })
+				.refine(isHttpsOrLoopback)
 				.default("https://api.enablebanking.com"),
 		},
 		// One variable of the pair alone is a half-finished setup: the stored

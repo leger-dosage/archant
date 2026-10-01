@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-import { THEME_SCRIPT_HASH } from "./content-security-policy.ts";
+import { THEME_SCRIPT_HASH, contentSecurityPolicy } from "./content-security-policy.ts";
 
 describe("THEME_SCRIPT_HASH", () => {
 	it("matches the inline script of the interface's index.html", async () => {
@@ -18,5 +18,24 @@ describe("THEME_SCRIPT_HASH", () => {
 			actual,
 			`The theme script changed: set THEME_SCRIPT_HASH to "${actual}", and the header expected in packages/api/src/app.spec.ts and packages/app/e2e/serving.spec.ts.`,
 		).toBe(THEME_SCRIPT_HASH);
+	});
+});
+
+describe("contentSecurityPolicy", () => {
+	it("admits images from the bank logos' host and from the provider URL's origin", () => {
+		expect(contentSecurityPolicy("http://localhost:9999/v1").imgSrc).toEqual([
+			"'self'",
+			"data:",
+			"https://enablebanking.com",
+			"http://localhost:9999",
+		]);
+	});
+
+	it("falls back to the page's own origin, and never lets an inline script run", () => {
+		const policy = contentSecurityPolicy("https://api.enablebanking.com");
+
+		expect(policy.defaultSrc).toEqual(["'self'"]);
+		expect(policy.scriptSrc).not.toContain("'unsafe-inline'");
+		expect(policy).toMatchObject({ formAction: ["'self'"], frameSrc: ["'none'"] });
 	});
 });

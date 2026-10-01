@@ -37,8 +37,20 @@ test("the page carries the Content-Security-Policy, and the theme script still r
 
 	const response = await page.goto("/accounts");
 
-	expect(response?.headers()["content-security-policy"]).toBe(
-		"script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
-	);
+	expect(response?.headers()["content-security-policy"]?.split("; ")).toEqual([
+		"default-src 'self'",
+		"script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='",
+		"style-src 'self' 'unsafe-inline'",
+		// The fake Enable Banking's origin, on a port chosen at each run.
+		expect.stringMatching(
+			/^img-src 'self' data: https:\/\/enablebanking\.com http:\/\/localhost:\d+$/u,
+		),
+		"connect-src 'self'",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'self'",
+		"frame-src 'none'",
+		"frame-ancestors 'none'",
+	]);
 	await expect(page.locator("html")).toHaveClass(/\bdark\b/u);
 });

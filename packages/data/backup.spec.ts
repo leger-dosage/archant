@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -55,6 +55,33 @@ describe("copyBeforeMigrating", () => {
 		// The copy is taken before migrating, so migrating still has work to do.
 		await runMigrations(url);
 	});
+
+	// Windows has no POSIX modes to assert.
+	it.skipIf(process.platform === "win32")(
+		"keeps backups/ and each copy to their owner: 0700 and 0600",
+		async () => {
+			await upgradable();
+
+			const outcome = await copyBeforeMigrating({ url, version: "1.2.0", now: NOW });
+
+			const copied = "copied" in outcome ? outcome.copied : "";
+			expect((await stat(backups)).mode & 0o777).toBe(0o700);
+			expect((await stat(join(backups, copied))).mode & 0o777).toBe(0o600);
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"takes group and other access off a backups/ made before",
+		async () => {
+			await upgradable();
+			await mkdir(backups);
+			await chmod(backups, 0o755);
+
+			await copyBeforeMigrating({ url, version: "1.2.0", now: NOW });
+
+			expect((await stat(backups)).mode & 0o777).toBe(0o700);
+		},
+	);
 
 	it("names a development build's copy dev", async () => {
 		await upgradable();
@@ -242,7 +269,7 @@ describe("copyBeforeMigrating", () => {
 
 	// Root writes through any permission, so the refusal cannot be staged there.
 	it.skipIf(process.getuid?.() === 0)(
-		"throws when VACUUM INTO cannot write to backups/, leaving it empty",
+		"throws when the copy cannot be written to backups/, leaving it empty",
 		async () => {
 			await upgradable();
 			await mkdir(backups);
@@ -251,7 +278,8 @@ describe("copyBeforeMigrating", () => {
 			const copying = copyBeforeMigrating({ url, version: "1.2.0", now: NOW });
 
 			await expect(copying).rejects.toBeInstanceOf(BackupError);
-			await expect(copying.catch((error: BackupError) => error.code)).resolves.toMatch(/^SQLITE_/u);
+			// Refused when the empty copy is created, before `VACUUM INTO` runs.
+			await expect(copying.catch((error: BackupError) => error.code)).resolves.toBe("EACCES");
 			await expect(listBackups()).resolves.toEqual([]);
 		},
 	);

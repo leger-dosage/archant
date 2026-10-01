@@ -13,7 +13,7 @@ import { createTempDatabase } from "./temp-database.ts";
 /** The interface's origin in tests, as `BETTER_AUTH_URL` is in development. */
 export const TEST_ORIGIN = "http://localhost:5173";
 
-const TEST_SECRET = "archant-test-secret-of-at-least-32-characters";
+export const TEST_SECRET = "archant-test-secret-of-at-least-32-characters";
 
 export const ADMIN = { email: "admin@example.test", password: "correct horse battery" } as const;
 
@@ -63,6 +63,7 @@ export function buildTestApp(
 		logger,
 		auth: auth ?? createTestAuth(db, logger, trustedProxies),
 		trustedOrigin: TEST_ORIGIN,
+		authSecret: TEST_SECRET,
 		trustedProxies,
 		// In process there is no socket unless a spec names a peer.
 		clientAddress: () => network.peer,

@@ -7,12 +7,17 @@ import { createDb } from "@archant/data/client";
 import { signInFailures } from "@archant/data/schema/auth";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
-import { SIGN_IN_CEILING, releaseAttempt, reserveAttempt } from "./sign-in-failures.ts";
+import {
+	SIGN_IN_CEILING,
+	deviceCeiling,
+	releaseAttempt,
+	reserveAttempt,
+} from "./sign-in-failures.ts";
 
 let temp: TempDatabase;
 let time: number;
 
-const options: SignInCeilingOptions = { max: 3, windowMs: 60_000, now: () => time };
+const options: SignInCeilingOptions = { key: "all", max: 3, windowMs: 60_000, now: () => time };
 
 beforeEach(async () => {
 	temp = await createTempDatabase();
@@ -112,5 +117,64 @@ describe("the sign-in ceiling", () => {
 		} finally {
 			reopened.$client.close();
 		}
+	});
+});
+
+/** A device's options on the spec's clock and one-minute window. */
+const device = (nonce: string): SignInCeilingOptions => ({
+	...deviceCeiling(nonce),
+	windowMs: 60_000,
+	now: () => time,
+});
+
+describe("a device's own count", () => {
+	it("allows a device 5 failures per 10 minutes, in its own row", () => {
+		expect(deviceCeiling("n1")).toMatchObject({ key: "device:n1", max: 5, windowMs: 600_000 });
+	});
+
+	it("counts each device apart from the others and from every address together", async () => {
+		await reserve(1);
+		const reservations = await Promise.all(
+			Array.from({ length: 7 }, () => reserveAttempt(temp, device("n1"))),
+		);
+		await reserveAttempt(temp, device("n2"));
+
+		expect(reservations.filter((reservation) => reservation !== null)).toHaveLength(5);
+		await expect(stored()).resolves.toEqual(
+			expect.arrayContaining([
+				{ id: "all", count: 1, windowStartedAt: time },
+				{ id: "device:n1", count: 5, windowStartedAt: time },
+				{ id: "device:n2", count: 1, windowStartedAt: time },
+			]),
+		);
+	});
+
+	it("gives a slot back to the device's row only", async () => {
+		await reserve(1);
+		const reservation = await reserveAttempt(temp, device("n1"));
+
+		await releaseAttempt(temp, reservation ?? { windowStartedAt: time }, device("n1"));
+
+		await expect(stored()).resolves.toEqual(
+			expect.arrayContaining([
+				{ id: "all", count: 1, windowStartedAt: time },
+				{ id: "device:n1", count: 0, windowStartedAt: time },
+			]),
+		);
+	});
+
+	it("deletes the device rows of a window over when it writes another, and keeps `all`", async () => {
+		const opened = time;
+		await reserve(1);
+		await reserveAttempt(temp, device("old"));
+
+		time = opened + 30_000;
+		await reserveAttempt(temp, device("recent"));
+
+		time = opened + 60_000;
+		await reserveAttempt(temp, device("new"));
+
+		const ids = (await stored()).map((row) => row.id).toSorted();
+		expect(ids).toEqual(["all", "device:new", "device:recent"]);
 	});
 });

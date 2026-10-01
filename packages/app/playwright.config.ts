@@ -31,9 +31,10 @@ export default defineConfig({
 		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: DESKTOP },
 		{
 			name: "chromium",
-			// Everything but the password change and two-factor, which the
-			// projects below run once nothing needs a session any more.
-			testIgnore: [/password\.spec\.ts$/u, /two-factor\.spec\.ts$/u],
+			// Everything but the password change, two-factor and the sign-in
+			// ceiling, which the projects below run once nothing needs a session
+			// any more.
+			testIgnore: [/password\.spec\.ts$/u, /two-factor\.spec\.ts$/u, /sign-in-ceiling\.spec\.ts$/u],
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
@@ -48,7 +49,7 @@ export default defineConfig({
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["chromium"],
 		},
-		// Last of all, signed in with the password the project above sets: the
+		// After the password change, signed in with the password it sets: the
 		// saved session died with that change, and turning two-factor on
 		// replaces the session of the page anyway. Its tests run in order on
 		// one user's state, so a retry would start from what the failed
@@ -58,6 +59,16 @@ export default defineConfig({
 			testMatch: /two-factor\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
 			dependencies: ["password"],
+		},
+		// After everything: it fills the sign-in ceiling, which then refuses
+		// every browser without a device cookie for ten minutes. It turns
+		// two-factor on again, so a retry would meet a state it does not
+		// expect: no `retries`.
+		{
+			name: "ceiling",
+			testMatch: /sign-in-ceiling\.spec\.ts$/u,
+			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
+			dependencies: ["two-factor"],
 		},
 	],
 	// No `reuseExistingServer`: a stale server left on this port once made a
