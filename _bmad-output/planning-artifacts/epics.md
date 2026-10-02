@@ -2929,7 +2929,7 @@ MCP, the Model Context Protocol, lets an assistant call the tools a server decla
 Archant keeps Sure's shape, an endpoint inside the application and OAuth on its own users, and departs where Sure's weak points matter for bank data:
 
 - The protocol comes from the official TypeScript SDK, `@modelcontextprotocol/server` 2.x, in stateless Streamable HTTP, serving the 2026-07-28 specification and the 2025-11-25 one that current clients still speak. Sure hand-writes three methods and no streaming.
-- Better Auth is the authorisation server: `@better-auth/mcp` over `@better-auth/oauth-provider`, with `@better-auth/cimd` for Client ID Metadata Documents, which the specification now prefers, and dynamic client registration kept for Claude Code, VS Code, Cursor and `mcp-remote`. Better Auth 1.7 removed its former `mcp` and `oidcProvider` plugins; these packages need Better Auth 1.7.7, so Story 16.1 raises the catalog's range.
+- Better Auth is the authorisation server: `@better-auth/mcp` over `@better-auth/oauth-provider`, with `@better-auth/cimd` for Client ID Metadata Documents, which the specification now prefers, and dynamic client registration kept for Claude Code, VS Code and Cursor. Better Auth 1.7 removed its former `mcp` and `oidcProvider` plugins; these packages need Better Auth 1.7.7, so Story 16.1 raises the catalog's range.
 - Two scopes, `archant:read` and `archant:write`, where Sure has one. The consent page lets the owner grant read only. A tool the token's scopes do not allow is absent from `tools/list` and refused with `insufficient_scope` if called.
 - Tokens are bound to `/api/mcp` as their audience (RFC 8707), live minutes rather than a year, refresh for 30 days with rotation, and die when the owner disconnects the assistant. No static token: OAuth covers every client Archant targets.
 - Rule tools, which Sure lacks, with a preview that shows sample transactions and an apply step that names the count it expects, so a rule never runs on a history the owner has not seen counted.
@@ -2939,7 +2939,14 @@ Archant keeps Sure's shape, an endpoint inside the application and OAuth on its 
 
 Labels, notes and merchant names are written by whoever sends money, and an assistant reads them before it acts. That is the risk this epic is shaped around: no tool deletes a transaction, a category, a merchant or a tag, bulk writes name the count they expect, the server's instructions and each read tool's description say that these fields are bank data and never instructions, and the owner can grant read only.
 
-The owner's instance is reachable only through Tailscale. Claude Code, VS Code and Cursor on a machine of the tailnet connect to it directly. Claude Desktop, claude.ai and ChatGPT reach a server from their vendor's cloud, so they cannot; Claude Desktop connects through `mcp-remote`, run locally as a stdio bridge. The documentation says so and does not recommend opening the instance to the internet for them.
+Archant is open source, so the server is built from the MCP specification and the documented APIs of the SDK and of Better Auth, with no private workaround. Where Better Auth stops short, the gap is closed in one service and pinned by a test, so an upgrade that changes the behaviour fails the gate. Reading `@better-auth/mcp` and `@better-auth/oauth-provider` 1.7.7 on 2026-10-02 found two such gaps:
+
+- `requireMcpAuth` checks an access token against the JSON Web Key Set only: signature, issuer, audience and expiry, never the database. A token therefore outlives a disconnection until it expires.
+- Deleting a consent leaves the client's refresh tokens valid, since the refresh grant never reads consents, and deleting a client is refused for a client that registered itself, since it has no owner.
+
+So a disconnection deletes the consent and revokes the client's tokens itself, and `/api/mcp` checks, after `requireMcpAuth`, that the token's client still holds a consent: a disconnected assistant is refused at its next call, not ten minutes later. Opaque tokens checked in process were the other way; `requireMcpAuth` cannot read them, and introspecting them would need a confidential client calling the server's own endpoint.
+
+The owner's instance is reachable only through Tailscale. Claude Code, VS Code and Cursor on a machine of the tailnet connect to it directly. Claude Desktop, claude.ai and ChatGPT reach a server from their vendor's cloud, so they cannot; the owner chose on 2026-10-02 not to support them, Claude Desktop included, and the documentation says so without recommending to open the instance to the internet.
 
 Left out on purpose:
 
@@ -2992,11 +2999,15 @@ So that it acts with the access I grant and nothing more.
 
 **Given** an access token
 **When** it is issued
-**Then** it lives 10 minutes; the refresh token lives 30 days and rotates; Story 16.1's spec records whether `@better-auth/mcp` checks opaque tokens in process, in which case they are used and a disconnection takes effect at the next call
+**Then** it is a JWT that lives 10 minutes, the refresh token lives 30 days and rotates, and `requireMcpAuth` reads the key set from the server's loopback address rather than its public name, which a host behind Tailscale may not resolve for itself
+
+**Given** a token that passes `requireMcpAuth`
+**When** its client no longer holds the owner's consent
+**Then** the call is refused with `401` before any tool runs, so a disconnection takes effect at the next call
 
 **Given** « Réglages › Assistants IA » at `/settings/assistants`
 **When** the owner opens it
-**Then** it shows the address to give an assistant with a copy button and a link to `docs/deployment.md#connecting-an-assistant`, and lists each connected assistant with its name, its scopes, its connection date and its last call; « Déconnecter » asks for confirmation, then deletes its consent and its refresh tokens
+**Then** it shows the address to give an assistant with a copy button and a link to `docs/deployment.md#connecting-an-assistant`, and lists each connected assistant with its name, its scopes, its connection date and its last call; « Déconnecter » asks for confirmation, then, in one database transaction, deletes its consent and revokes its refresh and access tokens, since Better Auth's consent deletion leaves the refresh tokens valid
 
 **Given** any tool call
 **When** it ends
@@ -3004,11 +3015,11 @@ So that it acts with the access I grant and nothing more.
 
 **Given** `docs/`
 **When** a self-hoster connects an assistant
-**Then** `docs/deployment.md` « Connecting an assistant » gives the commands for Claude Code, VS Code, Cursor and Claude Desktop through `mcp-remote`, says that claude.ai and ChatGPT need a public HTTPS address, and states the scopes; `docs/hosting.md` covers the tailnet case; `docs/security-model.md` says what an assistant can read and write and that labels are text from third parties
+**Then** `docs/deployment.md` « Connecting an assistant » gives the commands for Claude Code, VS Code and Cursor, says that Claude Desktop, claude.ai and ChatGPT connect from their vendor's cloud and are not supported, and states the scopes; `docs/hosting.md` covers the tailnet case; `docs/security-model.md` says what an assistant can read and write and that labels are text from third parties
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
-**Then** Vitest covers the metadata, the `401` challenge, a wrong audience, an expired and a revoked token, scope filtering, the `Origin` check, each tool and the call record; Playwright drives a client through dynamic registration, sign-in with two-factor, consent with write unticked, a token exchange and a `tools/list` that lists read tools only, then a disconnection from « Assistants IA » after which the refresh token is refused
+**Then** Vitest covers the metadata, the `401` challenge, a wrong audience, an expired token, a token whose consent was deleted, a refresh after a disconnection, scope filtering, the `Origin` check, each tool and the call record; Playwright drives a client through dynamic registration, sign-in with two-factor, consent with write unticked, a token exchange and a `tools/list` that lists read tools only, then a disconnection from « Assistants IA » after which both the access token, before its expiry, and the refresh token are refused
 
 ### Story 16.2: Ask an assistant to write my rules
 
