@@ -7,8 +7,8 @@ paradigm: "modular monolith, ports and adapters"
 scope: "Archant, the ten epics of epics.md"
 status: final
 created: "2026-09-21"
-updated: "2026-09-21"
-binds: [FR1-FR56, NFR1-NFR12, NFR14]
+updated: "2026-10-02"
+binds: [FR1-FR56, FR61-FR65, NFR1-NFR12, NFR14, NFR19]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md
   - ../_bmad-output/planning-artifacts/epics.md
@@ -29,7 +29,7 @@ Modular monolith, ports and adapters. One Node process, three packages.
 
 - **Domain** (`packages/api/src/domain/`): pure functions and types. Balance calculation, deduplication keys, transfer matching, cash flow classification, recurring detection, statement types. No Hono, no Drizzle, no `fetch`.
 - **Services** (`packages/api/src/services/`): use cases. They open database transactions, call the domain and the connectors, and are the only code that touches the database.
-- **Adapters in** (`packages/api/src/routes/`): Hono routes. They parse input with Zod, call one service function, and shape the envelope.
+- **Adapters in** (`packages/api/src/routes/`, `packages/api/src/mcp/`): Hono routes and MCP tools. They parse input with Zod, call one service function, and shape the envelope or the tool result.
 - **Adapters out** (`packages/api/src/connectors/`): file parsers and bank connectors behind the connector port. Pure except for the bank connectors' HTTP calls.
 - **Interface** (`packages/app/`): a single-page app that talks to the API only through the typed client.
 - **Data** (`packages/data/`): Drizzle schema, derived types, and isomorphic constants and helpers such as money and account types.
@@ -44,6 +44,7 @@ graph LR
   app --> data["@archant/data"]
   api --> routes["api/routes"]
   routes --> services["api/services"]
+  mcp["api/mcp"] --> services
   services --> domain["api/domain"]
   services --> connectors["api/connectors"]
   connectors --> domain
@@ -161,7 +162,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 3, 10; FR42–FR45, NFR6
 - **Prevents:** a hand-rolled session check, the setup route staying open, a user promoting themselves, and the cron being refused by the session guard.
-- **Rule:** Better Auth with its Drizzle adapter (`usePlural: true`), email and password, public sign-up disabled, and its `admin` plugin. Its credentials table is renamed `auth_accounts` so it never collides with the domain's `accounts`. Its schema is generated once with the `auth` CLI into `packages/data/schema/auth.ts`, then maintained by hand; `role` is declared with `input: false` and carries a check constraint from `USER_ROLES` in `@archant/data`. `/api/setup` first claims the `setup_completed_at` settings row atomically, then creates the user with `auth.api.createUser`; if the claim fails it answers `403`. One middleware guards every `/api` route except `/api/health`, `/api/auth/*`, `/api/setup` and `/api/sync`. `/api/sync` accepts only `Authorization: Bearer <SYNC_SECRET>`, compared in constant time. The interface's sync button calls `POST /api/bank-connections/:id/sync` with the session; both call the same `services/sync.ts` function. Mutating routes use Hono's `csrf()` middleware. Authorisation reads `role` through one helper, `requireRole`. `/api/auth/*` is Better Auth's own handler, outside the envelope and outside `AppType`.
+- **Rule:** Better Auth with its Drizzle adapter (`usePlural: true`), email and password, public sign-up disabled, and its `admin` plugin. Its credentials table is renamed `auth_accounts` so it never collides with the domain's `accounts`. Its schema is generated once with the `auth` CLI into `packages/data/schema/auth.ts`, then maintained by hand; `role` is declared with `input: false` and carries a check constraint from `USER_ROLES` in `@archant/data`. `/api/setup` first claims the `setup_completed_at` settings row atomically, then creates the user with `auth.api.createUser`; if the claim fails it answers `403`. One middleware guards every `/api` route except `/api/health`, `/api/auth/*`, `/api/setup`, `/api/sync` and `/api/mcp`, which AD-19 guards with an OAuth token. `/api/sync` accepts only `Authorization: Bearer <SYNC_SECRET>`, compared in constant time. The interface's sync button calls `POST /api/bank-connections/:id/sync` with the session; both call the same `services/sync.ts` function. Mutating routes use Hono's `csrf()` middleware. Authorisation reads `role` through one helper, `requireRole`. `/api/auth/*` is Better Auth's own handler, outside the envelope and outside `AppType`.
 
 ### AD-14 — Secrets and logs
 
@@ -192,6 +193,12 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 - **Binds:** Epic 10; FR48–FR56
 - **Prevents:** the connector keying on an unstable id, double-counting pending amounts, and exceeding the bank's daily call quota.
 - **Rule:** `externalId` is `entry_reference`, never `transaction_id`; without it the fingerprint key applies. The sign comes from `credit_debit_indicator` (`DBIT` negative). Status `PDNG` is pending; `BOOK` is booked; any other status is dropped. The date is `booking_date`, else `value_date`, else `transaction_date`. The current anchor is the first available of `ITBD`, then `CLBD`: a booked balance, which pending entries leave as it is (AD-8). A sync fetches from the last successful sync minus 7 days; a bank refusing that period with `WRONG_TRANSACTIONS_PERIOD` is asked again for 89, then 60, then 30 days, and only pending entries dated from the accepted start can count a miss. A line listed twice with the same content is kept once, the booked copy first. A pending line whose booked version the same response lists, under the same `entry_reference` or the same Sure `compute_external_id` (`transaction_id`, else `entry_reference`, else the content), is dropped, as Sure's importer does. The lines are read first and the balance apart, after a complete read: a balance failure keeps the anchor, still ingests the lines, and leaves `BANK_BALANCE_UNAVAILABLE` as the connection's last error; a provider failure after the first page ingests the pages read, counts no pending miss and fails the account without moving its window. The consent asked for is the bank's maximum capped at 90 days, less 60 seconds. A connection holds a lease (`bank_connections.sync_started_at`, expiring after 10 minutes): a concurrent sync answers `409 SYNC_IN_PROGRESS`. Two syncs of one connection are at least one hour apart, except right after a consent renewal. The interface warns when the last successful sync is older than 48 hours. The first authenticated request of the day, in `APP_TIMEZONE`, starts a sync of each active connection with no attempt since the start of that day, as Sure's `AutoSync`, without awaiting it; a failed attempt waits for the next day or the button. `POST /api/sync` stays, optional, for a host that stays on. The JWT is signed RS256 with `jose`, from a key loaded through `crypto.createPrivateKey` so PKCS#1 and PKCS#8 both work.
+
+### AD-19 — Assistants through MCP
+
+- **Binds:** Epic 16; FR61–FR65, NFR19
+- **Prevents:** an assistant reaching data through a second code path, a token that outlives its grant or works elsewhere, a separate server process, and a prompt hidden in a bank label turning into an irreversible write.
+- **Rule:** `POST /api/mcp` serves MCP in stateless Streamable HTTP through `@modelcontextprotocol/server`, from the API's process; `GET` answers 405. It sits outside the envelope and outside `AppType`, like `/api/auth/*`. Better Auth is the authorisation server, through `@better-auth/mcp`, `@better-auth/oauth-provider`, `@better-auth/cimd` and `jwt`, and `requireMcpAuth` checks every request's token against the audience `${BETTER_AUTH_URL}/api/mcp` before any tool runs; a session cookie is never accepted there. Scopes are `archant:read` and `archant:write`; `tools/list` shows only the tools a token's scopes allow. Tools live in `packages/api/src/mcp/`, one file per resource, and follow AD-1 as routes do: parse the input with a Zod schema from `schemas/`, call exactly one service function with the same `deps`, never import `db` or Drizzle. Tool names are snake_case verbs, as Sure's. Amounts cross as decimal strings with their currency, references as ids. Every tool declares MCP annotations and an `outputSchema`; a tool that writes many rows takes the count a read returned and refuses to write when the count changed. No tool deletes a transaction, a category, a merchant or a tag. Writes keep their usual origins: a rule application `rule`, an edit `user`. `assistant_calls` records each call's client, tool, time, outcome and changed count, never arguments or results, and keeps 90 days.
 
 ## Consistency Conventions
 
@@ -319,6 +326,7 @@ packages/
 | Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                            | AD-4, AD-10                                  |
 | Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                | AD-1, AD-4, AD-17                            |
 | Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                   | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
+| Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                          | AD-1, AD-13, AD-14, AD-19                    |
 
 ## Deferred
 

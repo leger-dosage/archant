@@ -1,7 +1,7 @@
 ---
 name: Archant
 status: final
-updated: '2026-09-29'
+updated: '2026-10-02'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
@@ -32,7 +32,8 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | Transaction | Sheet over the current page | Row click, or `Enter` on a focused row | Edit every field | 1 |
 | Recurring | `/recurring` | Rail | Subscriptions and bills with the next date | 9 |
 | Rules | `/rules` | Rail | Rules list and editor | 8 |
-| Settings | `/settings/...` | Rail | Banques, Catégories, Marchands, Étiquettes, Sécurité | 3, 4, 10 |
+| Settings | `/settings/...` | Rail | Banques, Catégories, Marchands, Étiquettes, Sécurité, Assistants IA | 3, 4, 10, 16 |
+| Assistant consent | `/oauth/consent` | An assistant's sign-in, after `/sign-in` | Name the assistant and where it returns, grant read or read and write, or refuse | 16 |
 
 Until Epic 6 ships, `/` redirects to `/accounts`. Since Epic 14 the shell is Sure's: a rail of destinations, an accounts column that lists every active account grouped by type with balances, and a top bar with breadcrumbs. The accounts column shows on every signed-in page but settings, which put their own navigation column in its place. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
