@@ -420,6 +420,24 @@ describe("rules", () => {
 		]);
 	});
 
+	it("never rewrites the label of a line typed by hand", async () => {
+		const account = await openAccount();
+		await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "leclerc")],
+			actions: [{ actionType: "replace_in_transaction_name", value: "\\\\", replacement: " " }],
+		});
+
+		await postTransaction(account.id, {
+			...expense,
+			label: "LECLERC SANS CONTAC\\ANCENIS-SAINT\\ FR",
+			notes: "",
+		});
+
+		await expect(detailsOf(account.id)).resolves.toMatchObject([
+			{ label: "LECLERC SANS CONTAC\\ANCENIS-SAINT\\ FR" },
+		]);
+	});
+
 	it("pairs a line with the one candidate on the account « Virement avec » names", async () => {
 		const joint = await openAccount();
 		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
@@ -451,6 +469,12 @@ describe("rules", () => {
 			[],
 			[{ actionType: "exclude_transaction", value: "yes" }],
 			[{ path: "actions.0.value", code: "invalid_value" }],
+		],
+		[
+			"a pattern RE2 refuses",
+			[],
+			[{ actionType: "replace_in_transaction_name", value: "(a)\\1", replacement: "" }],
+			[{ path: "actions.0.value", code: "invalid_pattern" }],
 		],
 		[
 			"an unknown merchant, tag and account",

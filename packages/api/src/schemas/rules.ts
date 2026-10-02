@@ -19,6 +19,7 @@ import {
 } from "@archant/data/rules";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
+import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
 import { LABEL_MAX_LENGTH } from "./transactions.ts";
 
 /** Past this a rule is no longer read at a glance; Sure sets no limit. */
@@ -37,7 +38,13 @@ export const ruleBodySchema = z.object({
 	name: z.string().nullable().optional(),
 	effectiveDate: z.string().nullable().optional(),
 	conditions: z.array(conditionBody.extend({ conditions: z.array(conditionBody).optional() })),
-	actions: z.array(z.object({ actionType: z.string(), value: z.string().nullable().optional() })),
+	actions: z.array(
+		z.object({
+			actionType: z.string(),
+			value: z.string().nullable().optional(),
+			replacement: z.string().nullable().optional(),
+		}),
+	),
 });
 
 export const ruleEnabledSchema = z.object({ enabled: z.boolean() });
@@ -74,7 +81,11 @@ const fields = {
 		)
 		.max(MAX_RULE_CONDITIONS),
 	actions: z.array(
-		z.object({ actionType: z.enum(RULE_ACTION_TYPES), value: z.string().nullable().optional() }),
+		z.object({
+			actionType: z.enum(RULE_ACTION_TYPES),
+			value: z.string().nullable().optional(),
+			replacement: z.string().nullable().optional(),
+		}),
 	),
 };
 
@@ -137,6 +148,30 @@ function checkLeaf(
 	}
 }
 
+/**
+ * A replacement in the label: its pattern, which RE2 must read, and its
+ * replacement, which may be empty. Neither is trimmed.
+ */
+function checkReplacement(
+	action: { value?: string | null | undefined; replacement?: string | null | undefined },
+	path: (string | number)[],
+	context: z.core.$RefinementCtx,
+) {
+	const pattern = action.value ?? "";
+
+	if (pattern === "") {
+		issue(context, [...path, "value"], "too_small");
+	} else if (pattern.length > RULE_VALUE_MAX_LENGTH) {
+		issue(context, [...path, "value"], "too_big");
+	} else if (compileLabelPattern(pattern) === null) {
+		issue(context, [...path, "value"], "invalid_pattern");
+	}
+
+	if ((action.replacement ?? "").length > LABEL_MAX_LENGTH) {
+		issue(context, [...path, "replacement"], "too_big");
+	}
+}
+
 /** One stored value: the trimmed text, the amount in minor units, null for `is_null`. */
 function storedValue(leaf: Leaf, currency: CurrencyCode): string | null {
 	if (leaf.operator === "is_null") {
@@ -167,8 +202,11 @@ export type RuleRequest = {
 	name: string | null;
 	effectiveDate: string | null;
 	conditions: RuleConditionRequest[];
-	/** `value` is `null` for an exclusion. */
-	actions: { actionType: RuleActionType; value: string | null }[];
+	/**
+	 * `value` is `null` for an exclusion, and the pattern for a replacement in
+	 * the label, which alone has a `replacement`.
+	 */
+	actions: { actionType: RuleActionType; value: string | null; replacement: string | null }[];
 };
 
 /**
@@ -177,7 +215,9 @@ export type RuleRequest = {
  * in the reporting currency and stored in its minor units. Groups nest one
  * level deep, a rule needs one action at least, and no action type twice, as
  * in Sure. An exclusion takes no value; every other action needs one, a
- * rename its new label.
+ * rename its new label. A replacement in the label keeps its pattern and its
+ * replacement as typed, spaces included, since a pattern may be a single
+ * space; the pattern must be one RE2 accepts.
  */
 export function ruleSchema(currency: CurrencyCode) {
 	return z
@@ -219,6 +259,15 @@ export function ruleSchema(currency: CurrencyCode) {
 
 				const value = action.value?.trim() ?? "";
 				const path = ["actions", index, "value"];
+
+				if (action.actionType === "replace_in_transaction_name") {
+					checkReplacement(action, ["actions", index], context);
+					continue;
+				}
+
+				if (action.replacement !== undefined && action.replacement !== null) {
+					issue(context, ["actions", index, "replacement"], "invalid_value");
+				}
 
 				if (isValuelessAction(action.actionType)) {
 					if (action.value !== undefined && action.value !== null) {
@@ -263,10 +312,19 @@ export function ruleSchema(currency: CurrencyCode) {
 					value: storedValue(condition, currency),
 				};
 			}),
-			actions: rule.actions.map((action) => ({
-				actionType: action.actionType,
-				value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
-			})),
+			actions: rule.actions.map((action) =>
+				action.actionType === "replace_in_transaction_name"
+					? {
+							actionType: action.actionType,
+							value: action.value ?? "",
+							replacement: action.replacement ?? "",
+						}
+					: {
+							actionType: action.actionType,
+							value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
+							replacement: null,
+						},
+			),
 		}));
 }
 

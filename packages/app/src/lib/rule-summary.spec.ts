@@ -175,6 +175,23 @@ describe("ruleSummary with Story 8.2's conditions and actions", () => {
 		);
 	});
 
+	it.each([
+		["\\\\", " ", "Remplacer « \\\\ » par une espace"],
+		["^CARTE ", "", "Supprimer « ^CARTE  »"],
+		["CB", "carte", "Remplacer « CB » par « carte »"],
+	])("reads a replacement of %s by « %s » as « %s »", (pattern, replacement, text) => {
+		expect(
+			ruleSummary(
+				{
+					conditions: [],
+					actions: [{ actionType: "replace_in_transaction_name", value: pattern, replacement }],
+				},
+				names,
+				i18n.t,
+			),
+		).toBe(`Toutes les opérations, alors ${text}`);
+	});
+
 	it("says so when a merchant, a category or a tag of a condition was deleted", () => {
 		expect(summary([leaf("transaction_merchant", "=", "gone")])).toBe(
 			"Si Marchand est Marchand supprimé, alors Catégorie Courses",

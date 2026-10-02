@@ -1301,6 +1301,54 @@ So that a new rule cleans up my history too.
 
 Departures from Sure: Sure ignores the user's locks when a rule is applied by hand; Archant never does (FR38, AD-10). Sure's count includes locked and unchanged transactions; Archant counts what would change. Sure's « Appliquer tout » runs disabled rules too; Archant runs enabled ones only. Closing Sure's dialog leaves a new rule disabled; here it stays enabled. Only applications the user confirms are recorded: an import runs every enabled rule, and one row per rule per import would bury the runs the user asked for.
 
+### Story 8.4: Replace in the label
+
+As the household's administrator,
+I want a rule to rewrite part of a label,
+So that the noise my bank adds to every card line, a prefix, a suffix, a separator, disappears without one rule per shop.
+
+**Requirements:** FR36, FR37, FR38
+
+**Acceptance Criteria:**
+
+**Given** the rule form
+**When** I add the action « Remplacer dans le libellé »
+**Then** it shows « Rechercher », a pattern, and « Remplacer par », a text that may stay empty to delete what matched; a rule holds one such action, as every action type is held once
+
+**Given** a pattern
+**When** it is evaluated
+**Then** it is an RE2 expression read without regard to case and every occurrence is replaced; the replacement is literal text, so `$` and `\` mean nothing special; a label the action changes is trimmed and its runs of spaces collapsed; a label it does not change, or that would end up empty, is left as it is
+
+**Given** a pattern that is empty, longer than 200 characters, or that RE2 refuses, such as an unclosed parenthesis, a back reference or a lookahead
+**When** I save the rule
+**Then** it is refused and « Rechercher » shows why; a pattern that backtracks without limit in the browser's own engine, such as `(a+)+$`, is accepted and runs in linear time
+
+**Given** a rule with the action `\\` replaced by a space and no condition
+**When** a line labelled `LECLERC SANS CONTAC\ANCENIS-SAINT\ FR` is imported
+**Then** its label is `LECLERC SANS CONTAC ANCENIS-SAINT FR`, written with `origin: "rule"` and locking nothing
+
+**Given** a transaction whose label the user set
+**When** a rule matches it
+**Then** its label is left unchanged, as for a rename
+
+**Given** several rules in creation order
+**When** a line is created
+**Then** each sees the label the earlier ones wrote, so a rule that removes a prefix and a rule that removes a suffix combine
+
+**Given** existing transactions
+**When** I apply the rule from the dialog of Story 8.3
+**Then** it counts only the labels that would change and rewrites them
+
+**Given** the troubleshooting page
+**When** I read « Labels show backslashes or a card prefix »
+**Then** it quotes the two labels above and gives three rules to copy, for the backslashes, the `CARTE jj/mm/aa` prefix and the `CB*nnnn` suffix
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest, a pattern of catastrophic backtracking among them
+
+Departures from Sure: Sure has no action that transforms a label; its rename sets a fixed one, and its text operators take no pattern. A bank sends its own formats, so no cleanup is built in and none is shipped as a default rule: each household writes the rules its bank needs. Patterns run in RE2 through `re2js`, not in the built-in `RegExp`, because the text they read is partly chosen by whoever sends a transfer. Out of this story: a pattern operator on the label condition, capture references in the replacement, a pattern on notes or merchants, and rule import and export.
+
 ## Epic 9: Recurring transactions
 
 The user sees their subscriptions and regular bills, and when the next one is due.

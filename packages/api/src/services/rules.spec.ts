@@ -11,6 +11,7 @@ import { merchants } from "@archant/data/schema/merchants";
 import { ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import { tags } from "@archant/data/schema/tags";
 
+import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { updateTransaction } from "./ledger/edits.ts";
@@ -543,6 +544,38 @@ async function candidatesOf(ids: readonly string[]) {
 }
 
 describe("previewRules and applyRules", () => {
+	it("rewrite labels with a replacement, on rows already there and on a line imported after", async () => {
+		const [terminal = "", plain = ""] = await rowsOf(["BKSL\\ANCENIS\\ FR", "BKSL IKEA"]);
+		const rule = await createRule(deps(), {
+			conditions: [labelHas("bksl")],
+			actions: [{ actionType: "replace_in_transaction_name", value: "\\\\", replacement: " " }],
+		});
+
+		await expect(previewRules(deps(), rule.id)).resolves.toEqual({ changed: 1 });
+		await applyRules(deps(), rule.id);
+
+		const rows = await candidatesOf([terminal, plain]);
+
+		expect(rows.map((row) => row?.label)).toEqual(["BKSL ANCENIS FR", "BKSL IKEA"]);
+
+		// The run keeps the replacement, so a later edit of the rule does not rewrite it.
+		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
+			items: [
+				{
+					rule: {
+						actions: [
+							{ actionType: "replace_in_transaction_name", value: "\\\\", replacement: " " },
+						],
+					},
+				},
+			],
+		});
+
+		const [later = ""] = await rowsOf(["BKSL\\LILLE\\ FR"]);
+
+		expect((await candidatesOf([later]))[0]?.label).toBe("BKSL LILLE FR");
+	});
+
 	it("count and change only rows neither locked nor already there, and record one run", async () => {
 		const ids = await rowsOf(Array.from({ length: 6 }, (_, index) => `CB COMPTE1 ${index}`));
 		const [locked = "", already = "", , , , other = ""] = ids;
@@ -761,5 +794,114 @@ describe("listRuleRuns' order within one application", () => {
 		expect(runs.map((run) => run.ruleId)).toEqual((await listRules(deps())).map((rule) => rule.id));
 		expect(listed.items.map((run) => run.ruleId)).toEqual(runs.map((run) => run.ruleId));
 		expect(listed.items.map((run) => run.position)).toEqual([0, 1, 2, 3]);
+	});
+});
+
+// Story 8.4: replace in the label.
+const replacing = (value: string | null | undefined, replacement?: string | null) =>
+	({
+		conditions: [],
+		actions: [{ actionType: "replace_in_transaction_name", value, replacement }],
+	}) satisfies RuleInput;
+
+describe("a replacement in the label", () => {
+	it("stores the pattern and the replacement as typed, spaces included, and returns both", async () => {
+		const rule = await createRule(deps(), replacing("^CARTE \\d{2}/\\d{2}/\\d{2} ", " "));
+
+		expect(rule.actions).toEqual([
+			{
+				actionType: "replace_in_transaction_name",
+				value: "^CARTE \\d{2}/\\d{2}/\\d{2} ",
+				replacement: " ",
+			},
+		]);
+		await expect(listRules(deps())).resolves.toMatchObject([
+			{ id: rule.id, actions: rule.actions },
+		]);
+	});
+
+	it("takes an empty replacement, which removes what the pattern matched", async () => {
+		const rule = await createRule(deps(), replacing("CB\\*\\d{4}$", ""));
+		const noReplacement = await createRule(deps(), replacing("-"));
+
+		expect(rule.actions).toMatchObject([{ replacement: "" }]);
+		expect(noReplacement.actions).toMatchObject([{ replacement: "" }]);
+	});
+
+	it("reads the compiled pattern for the evaluator", async () => {
+		await createRule(deps(), replacing("\\\\", " "));
+
+		const [loaded] = await loadEnabledRules(temp.db);
+
+		expect(loaded?.actions).toEqual([
+			{
+				type: "replace_in_transaction_name",
+				pattern: compileLabelPattern("\\\\"),
+				replacement: " ",
+			},
+		]);
+	});
+
+	it.each([
+		["a missing pattern", replacing(undefined, " "), "actions.0.value", "too_small"],
+		["an empty pattern", replacing("", " "), "actions.0.value", "too_small"],
+		[
+			"a pattern over 200 characters",
+			replacing("x".repeat(201), " "),
+			"actions.0.value",
+			"too_big",
+		],
+		["an unclosed group", replacing("(", " "), "actions.0.value", "invalid_pattern"],
+		["a back reference", replacing("(a)\\1", " "), "actions.0.value", "invalid_pattern"],
+		["a lookahead", replacing("(?=a)", " "), "actions.0.value", "invalid_pattern"],
+		[
+			"a replacement over 200 characters",
+			replacing("a", "x".repeat(201)),
+			"actions.0.replacement",
+			"too_big",
+		],
+	])("refuses %s", async (_label, input, path, code) => {
+		await expect(createRule(deps(), input)).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path, code }],
+		});
+	});
+
+	it("holds one replacement per rule, as every action type", async () => {
+		await expect(
+			createRule(deps(), {
+				conditions: [],
+				actions: [
+					{ actionType: "replace_in_transaction_name", value: "a", replacement: "" },
+					{ actionType: "replace_in_transaction_name", value: "b", replacement: "" },
+				],
+			}),
+		).rejects.toMatchObject({ fields: [{ path: "actions.1", code: "duplicate_action" }] });
+	});
+
+	it("imports a line whose label would hold a backtracking engine at once", async () => {
+		await createRule(deps(), replacing("(a+)+$", "x"));
+		const started = performance.now();
+
+		const [id = ""] = await rowsOf([`${"a".repeat(199)}!`]);
+
+		expect((await candidatesOf([id]))[0]?.label).toBe(`${"a".repeat(199)}!`);
+		expect(performance.now() - started).toBeLessThan(1_000);
+	});
+
+	it("refuses a replacement on any other action", async () => {
+		await expect(
+			createRule(deps(), {
+				conditions: [],
+				actions: [{ actionType: "set_transaction_name", value: "Amazon", replacement: "x" }],
+			}),
+		).rejects.toMatchObject({ fields: [{ path: "actions.0.replacement", code: "invalid_value" }] });
+	});
+
+	it.each(["(", ""])("reads a stored pattern of %j as malformed", async (stored) => {
+		await createRule(deps(), replacing("a", " "));
+		await temp.db.run(sql`update rule_actions set value = ${stored}`);
+
+		await expect(loadEnabledRules(temp.db)).rejects.toThrow(/malformed/u);
 	});
 });

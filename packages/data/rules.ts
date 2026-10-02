@@ -60,6 +60,7 @@ export const RULE_ACTION_TYPES = [
 	"set_transaction_merchant",
 	"set_transaction_tags",
 	"set_transaction_name",
+	"replace_in_transaction_name",
 	"exclude_transaction",
 	"set_as_transfer_or_payment",
 ] as const;
@@ -106,7 +107,8 @@ export type RuleConditionSnapshot = {
 export type RuleSnapshot = {
 	name: string | null;
 	conditions: RuleConditionSnapshot[];
-	actions: { actionType: RuleActionType; value: string | null }[];
+	/** `replacement` only for a replacement in the label, whose `value` is the pattern. */
+	actions: { actionType: RuleActionType; value: string | null; replacement?: string | null }[];
 };
 
 /** Past this a rule's label condition is no longer a shop's name. */

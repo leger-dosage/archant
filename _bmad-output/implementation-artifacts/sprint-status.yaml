@@ -88,6 +88,7 @@ development_status:
   8-1-create-a-categorisation-rule: done
   8-2-more-rule-conditions-and-actions: done
   8-3-apply-rules-to-existing-transactions: done
+  8-4-replace-in-the-label: done
   epic-8-retrospective: optional
 
   epic-9: done
@@ -148,12 +149,12 @@ development_status:
   14-4-the-remaining-screens: done
   epic-14-retrospective: optional
 
-  epic-15: in-progress
-  15-1-report-a-vulnerability-privately-protect-the-default-branch: in-progress
+  epic-15: done
+  15-1-report-a-vulnerability-privately-protect-the-default-branch: done
   15-2-a-pinned-updated-and-attested-supply-chain: done
   15-3-welcome-a-contributor-and-a-self-hoster: done
-  15-4-a-sign-in-that-cannot-be-held-hostage: review
-  15-5-fast-at-ten-years-of-history: review
-  15-6-the-ledger-in-modules: review
-  15-7-fewer-home-made-parts: review
+  15-4-a-sign-in-that-cannot-be-held-hostage: done
+  15-5-fast-at-ten-years-of-history: done
+  15-6-the-ledger-in-modules: done
+  15-7-fewer-home-made-parts: done
   epic-15-retrospective: optional

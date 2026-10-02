@@ -1,5 +1,6 @@
 import type { Direction } from "../cash-flow.ts";
 import type { IsoDate } from "../dates.ts";
+import type { LabelPattern } from "./label-pattern.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -9,6 +10,7 @@ import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { direction } from "../cash-flow.ts";
 import { squishLabel } from "../normalize-label.ts";
+import { replaceInLabel } from "./label-pattern.ts";
 
 /**
  * `like` contains, case aside; `=` is the whole label, case included. Accents
@@ -94,6 +96,13 @@ type TagAction = { type: "set_transaction_tags"; tagId: string | null };
 
 type RenameAction = { type: "set_transaction_name"; label: string };
 
+/** The pattern is compiled once, when the rules are read, never per transaction. */
+type ReplaceAction = {
+	type: "replace_in_transaction_name";
+	pattern: LabelPattern;
+	replacement: string;
+};
+
 type ExcludeAction = { type: "exclude_transaction" };
 
 /**
@@ -107,6 +116,7 @@ export type RuleAction =
 	| MerchantAction
 	| TagAction
 	| RenameAction
+	| ReplaceAction
 	| ExcludeAction
 	| TransferAction;
 
@@ -299,6 +309,10 @@ function applyAction(
 				: { tagIds: [...row.tagIds, action.tagId] };
 		case "set_transaction_name":
 			return locked("label") ? {} : { label: action.label };
+		case "replace_in_transaction_name":
+			return locked("label")
+				? {}
+				: { label: replaceInLabel(action.pattern, action.replacement, row.label) };
 		case "exclude_transaction":
 			return locked("excluded") ? {} : { excluded: true };
 		default:

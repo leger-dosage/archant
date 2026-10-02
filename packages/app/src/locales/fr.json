@@ -905,6 +905,9 @@
 			"merchant": "Marchand {{name}}",
 			"tag": "Ajouter l'étiquette {{name}}",
 			"rename": "Renommer en « {{name}} »",
+			"replace": "Remplacer « {{pattern}} » par « {{replacement}} »",
+			"replaceBySpace": "Remplacer « {{pattern}} » par une espace",
+			"remove": "Supprimer « {{pattern}} »",
 			"exclude": "Exclure",
 			"transfer": "Virement avec {{name}}",
 			"deletedAccount": "Compte supprimé",
@@ -947,6 +950,7 @@
 			"set_transaction_merchant": "Marchand",
 			"set_transaction_tags": "Ajouter une étiquette",
 			"set_transaction_name": "Renommer",
+			"replace_in_transaction_name": "Remplacer dans le libellé",
 			"exclude_transaction": "Exclure",
 			"set_as_transfer_or_payment": "Virement avec un compte"
 		},
@@ -978,6 +982,10 @@
 			"tagPlaceholder": "Choisir une étiquette",
 			"typePlaceholder": "Choisir un type",
 			"excludeHint": "L'opération est exclue des rapports.",
+			"pattern": "Rechercher",
+			"replacement": "Remplacer par",
+			"replacementPlaceholder": "Laisser vide pour supprimer",
+			"patternHint": "Expression RE2, casse ignorée. Le texte de remplacement est pris tel quel. <guide>Exemples</guide>",
 			"action": "Action {{index}}",
 			"removeAction": "Retirer l'action {{index}}",
 			"addAction": "Ajouter une action",
@@ -1256,6 +1264,7 @@
 			"action_required": "Ajoutez au moins une action.",
 			"duplicate_action": "Cette action est déjà dans la règle.",
 			"nested_group": "Un groupe ne peut pas contenir un autre groupe.",
+			"invalid_pattern": "Expression non reconnue. Les références arrière et les assertions comme (?=…) ne sont pas permises.",
 			"invalid_private_key": "Ce fichier ne contient pas de clé privée RSA lisible.",
 			"invalid_two_factor_code": "Code incorrect. Vérifiez l'heure de votre téléphone, ou utilisez un code de secours encore inutilisé."
 		}

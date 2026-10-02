@@ -78,7 +78,10 @@ export const ruleConditions = sqliteTable(
  * Sure's `Rule::Action`. `value` is a category, merchant, tag or account id
  * without a foreign key, for the same reason as a condition's account: a
  * deleted one makes the action write nothing. It is the new label for a
- * rename, and null for an exclusion, which needs nothing more.
+ * rename, the pattern for a replacement in the label, and null for an
+ * exclusion, which needs nothing more. `replacement` is what a replacement
+ * puts where the pattern matched, empty to remove it, and null for every other
+ * type.
  */
 export const ruleActions = sqliteTable(
 	"rule_actions",
@@ -90,6 +93,7 @@ export const ruleActions = sqliteTable(
 		position: integer("position").notNull(),
 		actionType: text("action_type").$type<RuleActionType>().notNull(),
 		value: text("value"),
+		replacement: text("replacement"),
 	},
 	(table) => [
 		index("rule_actions_rule").on(table.ruleId),

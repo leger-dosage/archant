@@ -260,6 +260,13 @@
       "when": 1790863726440,
       "tag": "0036_add_entries_kind_currency_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1790932882748,
+      "tag": "0037_add_rule_action_replacement",
+      "breakpoints": true
     }
   ]
 }

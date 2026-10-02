@@ -17,6 +17,7 @@ import type {
 } from "@archant/data/types";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
+import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
 
 type Db = ServiceDeps["db"];
 
@@ -114,7 +115,7 @@ export async function existing(
 function malformed(): Error {
 	// The check constraints and the schema make this unreachable; a row edited
 	// by hand would otherwise be dropped, and the rule would match more.
-	return new Error("A stored rule condition is malformed.");
+	return new Error("A stored rule condition or action is malformed.");
 }
 
 /** The ids still in each table, so a deleted one resolves to `null`. */
@@ -188,6 +189,18 @@ function toAction(action: RuleActionRow, known: Known): RuleAction {
 			return { type: action.actionType, tagId: ifKnown("tag") };
 		case "set_transaction_name":
 			return { type: action.actionType, label: value };
+		case "replace_in_transaction_name": {
+			// Compiled once for every row of the load. An empty pattern compiles
+			// and would match between every character; it and one RE2 refuses
+			// could only have been written by hand.
+			const pattern = value === "" ? null : compileLabelPattern(value);
+
+			if (pattern === null) {
+				throw malformed();
+			}
+
+			return { type: action.actionType, pattern, replacement: action.replacement ?? "" };
+		}
 		case "exclude_transaction":
 			return { type: action.actionType };
 		default:
