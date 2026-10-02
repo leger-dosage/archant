@@ -6,6 +6,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
  */
 export const ERROR_STATUSES = {
 	NOT_FOUND: 404,
+	/** A disconnection of an assistant that holds no consent: never connected, or disconnected already. */
+	ASSISTANT_NOT_FOUND: 404,
 	VALIDATION_ERROR: 400,
 	/** No valid session on a guarded route. */
 	UNAUTHORIZED: 401,

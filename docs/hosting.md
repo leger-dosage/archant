@@ -107,6 +107,12 @@ Then, in `crontab -e`, every morning at 6:
 
 Follow [Connecting a bank](deployment.md#connecting-a-bank). `ENCRYPTION_KEY` is already in `.env`, so skip its step 2. For your real accounts, register a production application with the redirect URL `https://<machine>.<tailnet>.ts.net/settings/banks/callback`. Enable Banking accepts a `ts.net` address for a production application.
 
+## 9. Connect an assistant
+
+Claude Code, VS Code and Cursor on a device of the tailnet reach Archant directly: give them `https://<machine>.<tailnet>.ts.net/api/mcp`, as [Connecting an assistant](deployment.md#connecting-an-assistant) says. The browser they open for sign-in must be on the tailnet too, which it is on that device.
+
+Claude Desktop, claude.ai and ChatGPT call MCP servers from their vendor's cloud, which is not on your tailnet, so they cannot connect. Keep it that way: `tailscale funnel` would put Archant on the internet for them and for everyone else.
+
 ## Backups
 
 Nothing backs up this machine for you. Take a copy with the `VACUUM INTO` recipe in [Backups](deployment.md#backups), and from time to time copy the file to another device: a laptop, an external drive kept elsewhere.

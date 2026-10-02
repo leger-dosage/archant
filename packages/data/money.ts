@@ -263,13 +263,18 @@ export function parseAmount(text: string, currency: string): MinorUnits | null {
 	return toMinorUnits(sign === undefined ? magnitude : -magnitude);
 }
 
+/** How many decimals an amount in this code carries: two outside ISO 4217. */
+function decimalsOf(currency: string): number {
+	return isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;
+}
+
 /**
- * Renders an amount with `Intl.NumberFormat`, from an exact decimal string so
- * that no float division ever touches the value.
+ * The exact decimal string of an amount, such as `"-12.50"`, with as many
+ * decimals as its currency has: what crosses a boundary where a JSON number
+ * would round, and what `Intl.NumberFormat` formats without a float division.
  */
-export function formatMoney(money: Money, locale = "fr-FR"): string {
-	const currency = isCurrencyCode(money.currency) ? money.currency : undefined;
-	const decimals = currency === undefined ? 2 : minorUnitsOf(currency);
+export function toDecimalString(money: Money): `${number}` {
+	const decimals = decimalsOf(money.currency);
 	const negative = money.amount < 0;
 	const digits = String(Math.abs(money.amount)).padStart(decimals + 1, "0");
 	const decimal =
@@ -280,6 +285,17 @@ export function formatMoney(money: Money, locale = "fr-FR"): string {
 	if (!isDecimalString(exact)) {
 		throw new RangeError("Cannot format a non-integer amount.");
 	}
+
+	return exact;
+}
+
+/**
+ * Renders an amount with `Intl.NumberFormat`, from an exact decimal string so
+ * that no float division ever touches the value.
+ */
+export function formatMoney(money: Money, locale = "fr-FR"): string {
+	const decimals = decimalsOf(money.currency);
+	const exact = toDecimalString(money);
 
 	const formatted = new Intl.NumberFormat(locale, {
 		style: "currency",

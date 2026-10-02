@@ -7,6 +7,7 @@ import {
 	MAX_MINOR_UNITS,
 	minorUnitsOf,
 	parseAmount,
+	toDecimalString,
 	toMinorUnits,
 } from "./money.ts";
 
@@ -69,6 +70,26 @@ describe("parseAmount", () => {
 		["42", "XYZ"],
 	])("rejects %j in %s", (text, currency) => {
 		expect(parseAmount(text, currency)).toBeNull();
+	});
+});
+
+describe("toDecimalString", () => {
+	it.each([
+		[-1250, "EUR", "-12.50"],
+		[0, "EUR", "0.00"],
+		[7, "EUR", "0.07"],
+		[1234, "JPY", "1234"],
+		[-5, "KWD", "-0.005"],
+		[-1234, "ABC", "-12.34"],
+	])("writes %i %s as %j", (amount, currency, expected) => {
+		expect(toDecimalString({ amount: toMinorUnits(amount), currency })).toBe(expected);
+	});
+
+	it("refuses an amount that skipped toMinorUnits", () => {
+		const money = { amount: toMinorUnits(15), currency: "EUR" };
+		Reflect.set(money, "amount", 1.5);
+
+		expect(() => toDecimalString(money)).toThrow(RangeError);
 	});
 });
 

@@ -56,9 +56,11 @@ export default defineConfig(({ mode }) => {
 			port: 5173,
 			// Same origin in the browser, so no CORS and no API URL baked into the
 			// bundle; in production the API serves the built interface itself.
-			proxy: { "/api": apiTarget },
+			// `/.well-known` too: an assistant pointed at the dev server discovers
+			// its authorisation server there, outside `/api`.
+			proxy: { "/api": apiTarget, "/.well-known": apiTarget },
 		},
-		preview: { proxy: { "/api": apiTarget } },
+		preview: { proxy: { "/api": apiTarget, "/.well-known": apiTarget } },
 		test: {
 			environment: "node",
 			include: ["src/**/*.spec.{ts,tsx}"],

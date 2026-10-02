@@ -133,6 +133,9 @@ const auth = createAuth({
 	trustedProxies: env.TRUSTED_PROXIES,
 	logger,
 });
+// Its start writes to the database (`mcp()` seeds `/api/mcp` as a resource);
+// a failure there stops the server here rather than at the first sign-in.
+await auth.$context;
 const app = createApp({
 	db,
 	timeZone: env.APP_TIMEZONE,

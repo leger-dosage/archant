@@ -37,6 +37,8 @@ With a local SQLite file, the default, the server calls one host: Enable Banking
 | `GET /accounts/{uid}/transactions` | A sync                               | The account's Enable Banking id, the first date to read, and the page's continuation key                     |
 | `DELETE /sessions/{id}`            | A bank is disconnected               | The session id                                                                                               |
 
+When an assistant identifies itself with a Client ID Metadata Document, its `client_id` is an HTTPS address, and the server fetches that document, and again once its copy is an hour old, with `@better-auth/cimd`'s Node transport: the name is resolved once, every non-public address is refused, and no redirect is followed. The request carries nothing of yours. An assistant that registers itself instead sends its name and redirect address, and nothing is fetched.
+
 A `DATABASE_URL` naming a remote libSQL database, such as Turso, sends every query there: the whole database then lives with that provider, behind `DATABASE_AUTH_TOKEN`.
 
 Nothing Archant computes, no category, rule, note or other account, is sent. Every answer is parsed by a schema before it is used, and none is logged or kept whole.
@@ -44,6 +46,18 @@ Nothing Archant computes, no category, rule, note or other account, is sent. Eve
 The browser loads the bank logos of the bank list from the addresses Enable Banking returns for them, on `https://enablebanking.com` today, which therefore sees your address and that the list opened. Every other request of the interface goes to Archant's own origin. The Content-Security-Policy says so: scripts, styles, API calls and everything else from Archant's own origin alone, images from it, from `data:` URLs, from `https://enablebanking.com` and always from the origin of `ENABLE_BANKING_API_URL`, which is Enable Banking's API in production and the fake's in the end-to-end suite, no frame, and no form posted anywhere else. Styles may be inline, because the interface's libraries inject them at runtime; scripts never are, but for the theme script the policy names by its hash.
 
 `ENABLE_BANKING_API_URL` must be HTTPS. Plain HTTP is accepted for `localhost`, `127.0.0.0/8` and `[::1]` only, for a local fake such as the end-to-end suite's; any other `http://` address stops the server at startup, naming the variable.
+
+## Assistants
+
+An assistant connected through « Réglages » › « Assistants IA » acts as the owner, with the scopes the consent page granted. With `archant:read` it reads accounts and their balances, categories, merchants and tags; `archant:write` adds nothing yet. A tool calls the same service function as the interface, and the access token is checked on every call: signature, issuer, audience `/api/mcp`, expiry, then that the assistant still holds the owner's consent. A token issued for anything else, such as the interface's session, is refused there, and a session cookie alone is never accepted. A request whose `Origin` is not `BETTER_AUTH_URL`'s is refused, against DNS rebinding.
+
+Access tokens are JSON Web Tokens signed with a key pair the server generates and stores, its private half encrypted with `BETTER_AUTH_SECRET`. Refresh tokens are stored hashed. Disconnecting an assistant deletes its consent and every token it holds in one transaction. Rotating `BETTER_AUTH_SECRET` leaves that stored key unreadable: every token request then fails with a server error, and no assistant can connect or refresh. Delete the key so the server generates a new one at the next sign-in, then connect each assistant again. The image carries no `sqlite3`, so Node's built-in `node:sqlite` runs it, as for [backups](deployment.md#backups):
+
+```bash
+docker compose exec archant node -e "new (require('node:sqlite').DatabaseSync)('/data/archant.db').exec('DELETE FROM jwks')"
+```
+
+Labels, notes and merchant names are written by banks and by whoever sends money, and an assistant reads them before it acts. The server tells every assistant that they are data, never instructions, but an assistant may still follow a sentence hidden in a label. Grant read only unless you want the assistant to change things, and watch its last call on the settings page. Each call is recorded with the assistant, the tool, the time, its outcome and the rows it changed, never its arguments or its answer, and kept 90 days.
 
 ## Account identification hash
 

@@ -1,3 +1,4 @@
+import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { queryOptions } from "@tanstack/react-query";
 import { adminClient, twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
@@ -11,7 +12,10 @@ export const authClient = createAuthClient({
 	basePath: "/api/auth",
 	// No `onTwoFactorRedirect`: the sign-in page reads `twoFactorRedirect` in
 	// the answer and shows its second step itself, on the same page.
-	plugins: [adminClient(), twoFactorClient()],
+	// `oauthProviderClient` adds the signed OAuth query of the page's address
+	// to every call but a GET, so a sign-in an assistant started continues
+	// its authorisation, and the consent page names the request it answers.
+	plugins: [adminClient(), twoFactorClient(), oauthProviderClient()],
 });
 
 export type Session = typeof authClient.$Infer.Session;

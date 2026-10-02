@@ -6,7 +6,9 @@
 	"common": {
 		"close": "Fermer",
 		"retry": "Réessayer",
-		"cancel": "Annuler"
+		"cancel": "Annuler",
+		"copied": "Adresse copiée.",
+		"copyFailed": "La copie a échoué. Sélectionnez l'adresse et copiez-la vous-même."
 	},
 	"startError": {
 		"apiDownTitle": "L'API ne répond pas",
@@ -1032,10 +1034,54 @@
 			"categories": "Catégories",
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
+			"assistants": "Assistants IA",
 			"security": "Sécurité"
 		},
 		"version": "Version {{version}}",
 		"developmentVersion": "Version de développement"
+	},
+	"assistants": {
+		"title": "Assistants IA",
+		"description": "Laissez Claude Code, VS Code ou Cursor lire vos comptes et, si vous l'autorisez, classer vos opérations. Chaque assistant se connecte avec votre accord et se déconnecte d'un clic.",
+		"address": "Adresse à donner à l'assistant",
+		"addressHelp": "Ajoutez cette adresse comme serveur MCP dans votre assistant. Il ouvre votre navigateur pour que vous vous connectiez et choisissiez ce qu'il peut faire.",
+		"copy": "Copier l'adresse du serveur MCP",
+		"guide": "Voir le guide de connexion",
+		"list": "Assistants connectés",
+		"unnamed": "Assistant sans nom",
+		"readOnly": "Lecture seule",
+		"readWrite": "Lecture et écriture",
+		"connectedAt": "connecté le {{date}}",
+		"lastCallAt": "dernier appel le {{date}}",
+		"noCall": "aucun appel",
+		"disconnect": "Déconnecter",
+		"disconnectNamed": "Déconnecter {{name}}",
+		"disconnected": "{{name}} est déconnecté.",
+		"disconnectDialog": {
+			"title": "Déconnecter {{name}} ?",
+			"description": "Son prochain appel sera refusé. Pour le reconnecter, il faudra vous connecter de nouveau et donner votre accord."
+		},
+		"empty": {
+			"title": "Aucun assistant connecté",
+			"description": "Donnez l'adresse ci-dessus à votre assistant pour le connecter."
+		},
+		"unavailable": {
+			"title": "Les assistants demandent HTTPS",
+			"description": "L'adresse de ce serveur est en HTTP. Servez Archant en HTTPS, par exemple avec Tailscale, puis redémarrez-le."
+		}
+	},
+	"consent": {
+		"title": "Autoriser un assistant",
+		"unnamed": "Un assistant sans nom",
+		"unidentified": "Cet assistant n'a pas pu être identifié. Vous pouvez seulement refuser.",
+		"asking": "{{name}} demande l'accès à Archant.",
+		"returnsTo": "Il recevra votre réponse sur {{host}}.",
+		"scopes": "Il pourra :",
+		"read": "Lire vos comptes, vos opérations et vos règles",
+		"write": "Créer et modifier vos règles, classer vos opérations",
+		"revoke": "Vous pourrez le déconnecter à tout moment dans Réglages › Assistants IA.",
+		"allow": "Autoriser",
+		"deny": "Refuser"
 	},
 	"banks": {
 		"title": "Banques",
@@ -1056,8 +1102,6 @@
 			"step2": "Enregistrez cette adresse de retour dans l'application :",
 			"step3": "Saisissez ci-dessous l'identifiant de l'application et choisissez le fichier .pem téléchargé à sa création.",
 			"copy": "Copier l'adresse de retour",
-			"copied": "Adresse copiée.",
-			"copyFailed": "La copie a échoué. Sélectionnez l'adresse et copiez-la vous-même.",
 			"applicationId": "Identifiant de l'application",
 			"privateKey": "Clé privée (fichier .pem)",
 			"privateKeyHint": "Le serveur la garde chiffrée et ne l'affiche jamais.",
@@ -1208,6 +1252,7 @@
 	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
+		"ASSISTANT_NOT_FOUND": "Cet assistant est déjà déconnecté.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
 		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",

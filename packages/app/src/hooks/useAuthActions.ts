@@ -19,6 +19,12 @@ const AUTH_ACTIONS = {
 	// cookie; nothing here touches a session itself (AD-13).
 	changePassword: async (passwords: { currentPassword: string; newPassword: string }) =>
 		authClient.changePassword({ ...passwords, revokeOtherSessions: true }),
+	// The assistant asking, by the name it registered under.
+	assistantClient: async (clientId: string) =>
+		authClient.oauth2.publicClient({ query: { client_id: clientId } }),
+	// The answer to the request in the page's signed query, which
+	// `oauthProviderClient` attaches; `scope` lists what the owner granted.
+	consent: async (answer: { accept: boolean; scope?: string }) => authClient.oauth2.consent(answer),
 };
 
 export function useAuthActions(): typeof AUTH_ACTIONS {

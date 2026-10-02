@@ -221,6 +221,23 @@ describe("serving the interface", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("UNAUTHORIZED");
 	});
 
+	it("answers the discovery documents as JSON, ahead of the page", async () => {
+		const response = await serving().request("/.well-known/oauth-protected-resource/api/mcp");
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toContain("application/json");
+	});
+
+	it.each(["/.well-known/openid-configuration", "/.well-known/oauth-protected-resource"])(
+		"answers %s with the NOT_FOUND JSON, never the page a client would take for metadata",
+		async (path) => {
+			const response = await serving().request(path);
+
+			expect(response.status).toBe(404);
+			expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+		},
+	);
+
 	it("keeps API routes ahead of the page", async () => {
 		const response = await serving().request("/api/health");
 
@@ -320,7 +337,7 @@ describe("the body limit", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("VALIDATION_ERROR");
 	});
 
-	it.each(["/api/auth/sign-in/email", "/api/setup"])(
+	it.each(["/api/auth/sign-in/email", "/api/setup", "/api/mcp", "/api/auth/oauth2/token"])(
 		"refuses a body over 64 KB on %s",
 		async (path) => {
 			const response = await postBody(buildTestApp(temp.db), path, jsonOfSize(64 * 1024 + 1));
@@ -398,4 +415,47 @@ describe("the body limit", () => {
 			expect(body).toMatchObject({ error: { code: "INVALID_IMPORT_FILE" } });
 		},
 	);
+});
+
+describe("an assistant's requests through the middleware", () => {
+	it.each(["/api/auth/oauth2/token", "/api/auth/oauth2/revoke"])(
+		"lets a form post with no origin reach %s, which checks the client itself",
+		async (path) => {
+			const response = await buildTestApp(temp.db).request(path, {
+				method: "POST",
+				headers: { "content-type": "application/x-www-form-urlencoded" },
+				body: new URLSearchParams({
+					grant_type: "refresh_token",
+					token: "x",
+					refresh_token: "x",
+					client_id: "unknown",
+				}).toString(),
+			});
+
+			// Better Auth's own refusal, in OAuth's shape, never `csrf()`'s FORBIDDEN.
+			expect(response.status).not.toBe(403);
+			expect(await response.json()).toHaveProperty("error");
+		},
+	);
+
+	it("still refuses a form post with no origin anywhere else under /api/auth", async () => {
+		const response = await buildTestApp(temp.db).request("/api/auth/sign-in/email", {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: "email=admin",
+		});
+
+		expect(response.status).toBe(403);
+	});
+
+	it("lets /api/mcp past the session guard to its own token check", async () => {
+		const response = await buildTestApp(temp.db).request("/api/mcp", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "{}",
+		});
+
+		expect(response.status).toBe(401);
+		expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
+	});
 });

@@ -34,7 +34,12 @@ export default defineConfig({
 			// Everything but the password change, two-factor and the sign-in
 			// ceiling, which the projects below run once nothing needs a session
 			// any more.
-			testIgnore: [/password\.spec\.ts$/u, /two-factor\.spec\.ts$/u, /sign-in-ceiling\.spec\.ts$/u],
+			testIgnore: [
+				/password\.spec\.ts$/u,
+				/two-factor\.spec\.ts$/u,
+				/assistants\.spec\.ts$/u,
+				/sign-in-ceiling\.spec\.ts$/u,
+			],
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
@@ -53,10 +58,12 @@ export default defineConfig({
 		// saved session died with that change, and turning two-factor on
 		// replaces the session of the page anyway. Its tests run in order on
 		// one user's state, so a retry would start from what the failed
-		// attempt left: no `retries` here either.
+		// attempt left: no `retries` here either. `assistants.spec.ts` runs
+		// first, by file name: it turns two-factor on for an assistant's
+		// sign-in, then off again.
 		{
 			name: "two-factor",
-			testMatch: /two-factor\.spec\.ts$/u,
+			testMatch: /(assistants|two-factor)\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
 			dependencies: ["password"],
 		},

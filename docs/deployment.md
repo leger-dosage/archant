@@ -268,6 +268,42 @@ The connection's page, reached from « Banques connectées », shows the last sy
 
 Archant asks each bank for 90 days of consent, or less when the bank allows less. Before it ends, a warning offers « Renouveler ». Once it has ended, syncing stops and the warning offers « Reconnecter »; nothing is deleted, and the next sync picks up where the last one stopped.
 
+## Connecting an assistant
+
+An AI assistant on your own machine can read Archant through MCP, the Model Context Protocol, at `/api/mcp`. It signs in as you, with your password and your second factor, and acts only with what you allow on the consent page. There is no API key to create or paste.
+
+Assistants need `ARCHANT_URL` on HTTPS, or on `localhost` for development. On plain HTTP elsewhere the server starts without them: `/api/mcp` answers `404`, and « Réglages » › « Assistants IA » says HTTPS is required. [hosting.md](hosting.md#4-serve-archant-over-https) gets a certificate with Tailscale.
+
+« Réglages » › « Assistants IA », at `/settings/assistants`, shows the address to give, `https://archant.example.org/api/mcp`, with a button that copies it. Add it to the assistant:
+
+```bash
+# Claude Code
+claude mcp add --transport http archant https://archant.example.org/api/mcp
+```
+
+```jsonc
+// VS Code: .vscode/mcp.json in a workspace, or the user's mcp.json
+{ "servers": { "archant": { "type": "http", "url": "https://archant.example.org/api/mcp" } } }
+```
+
+```jsonc
+// Cursor: ~/.cursor/mcp.json
+{ "mcpServers": { "archant": { "url": "https://archant.example.org/api/mcp" } } }
+```
+
+The first call opens the browser on Archant's sign-in page, then the code step when two-factor is on, then the consent page. It names the assistant and the address it returns to, and asks for two scopes:
+
+- `archant:read`, « Lire vos comptes, vos opérations et vos règles », always granted when the assistant asks;
+- `archant:write`, « Créer et modifier vos règles, classer vos opérations », which you can untick to grant read only.
+
+The assistant then holds an access token valid ten minutes, bound to `/api/mcp`, and a refresh token valid 30 days, replaced at each use. It identifies itself either with a Client ID Metadata Document, which Archant fetches from the assistant's publisher, or by registering itself; Archant accepts both and nothing else.
+
+Today the assistant can call `get_accounts`, `get_categories`, `get_merchants` and `get_tags`, which read only. Amounts are decimal strings such as `"-12.50"` beside their currency. Each call is recorded with the assistant, the tool, the time and its outcome, never its arguments or its answer, and kept 90 days.
+
+The page lists each connected assistant with its access, the date you allowed it and its last call. « Déconnecter » takes effect at the assistant's next call: its access token is refused before its ten minutes are up, and its refresh token is deleted.
+
+Claude Desktop, claude.ai and ChatGPT reach an MCP server from their vendor's cloud, not from your machine, so they cannot reach an instance on a private network and are not supported. Do not open Archant to the internet for them.
+
 ## Scheduled synchronisation
 
 Banks sync on their own on the first visit of the day. The first signed-in request after midnight, in `APP_TIMEZONE`, syncs each active connection whose consent has not ended and that no sync has started since that midnight, whatever started it and however it ended. The page answers at once; the sync runs beside it in the server, and the interface shows « Synchronisation en cours » until it ends, then shows the new lines. A tab left open since the day before starts it when it comes back into view. A sync that failed this morning is not retried by the next visit, only by « Synchroniser » or the next day; a connection synced within the hour waits for a request after that hour. There is nothing to set up and nothing to turn off.

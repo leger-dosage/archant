@@ -19,9 +19,19 @@ import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
 
-const searchSchema = z.object({
+// Loose: when an assistant's authorisation sent the owner here, the address
+// also holds Better Auth's signed OAuth query, which must stay in it as it
+// came, since `oauthProviderClient` reads it from there on each step.
+const searchSchema = z.looseObject({
 	redirect: z.string().optional().catch(undefined),
 });
+
+/**
+ * Better Auth's answer to a sign-in that continues an assistant's
+ * authorisation: the address to follow, the consent page or the assistant's
+ * own, rather than this page's `redirect`.
+ */
+const oauthContinuation = z.object({ redirect: z.literal(true), url: z.string().min(1) });
 
 // Presence only: the length rules belong to setup and to Better Auth. A
 // password that no longer meets them must still reach the server and fail
@@ -92,8 +102,17 @@ function SignInPage() {
 		document.title = t("app.pageTitle", { page: t("signIn.title"), app: t("app.name") });
 	}, [t]);
 
-	const completeSignIn = async () => {
+	const completeSignIn = async (answer: unknown) => {
 		queryClient.removeQueries({ queryKey: queryKeys.session });
+		const continuation = oauthContinuation.safeParse(answer);
+
+		if (continuation.success) {
+			// A full load: the consent page reads its own signed query, and the
+			// assistant's address is no route of this interface.
+			window.location.href = continuation.data.url;
+			return;
+		}
+
 		await router.navigate({ href: safeRedirect(search.redirect) });
 	};
 
@@ -107,7 +126,7 @@ function SignInPage() {
 				return;
 			}
 
-			await completeSignIn();
+			await completeSignIn(data);
 			return;
 		}
 
@@ -190,7 +209,7 @@ function CodeStep({
 	onSignedIn,
 	onChallengeEnded,
 }: {
-	onSignedIn: () => Promise<void>;
+	onSignedIn: (answer: unknown) => Promise<void>;
 	onChallengeEnded: () => void;
 }) {
 	const { t } = useTranslation();
@@ -206,12 +225,12 @@ function CodeStep({
 		setTooMany(false);
 		// Apps show a TOTP code as « 123 456 »; a backup code keeps its dash.
 		const compact = code.replace(/\s+/gu, "");
-		const { error } = TOTP_CODE.test(compact)
+		const { data, error } = TOTP_CODE.test(compact)
 			? await verifyTotp(compact)
 			: await verifyBackupCode(compact);
 
 		if (error === null) {
-			await onSignedIn();
+			await onSignedIn(data);
 			return;
 		}
 
