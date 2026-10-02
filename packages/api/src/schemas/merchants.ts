@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/schema/merchants";
+import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
 // NFC: a pasted « Épicerie » may arrive decomposed, and would otherwise sit
 // beside the composed one as a second merchant of the same name.

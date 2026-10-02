@@ -1,5 +1,3 @@
-import type { FieldError } from "react-hook-form";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
@@ -10,13 +8,14 @@ import { z } from "zod";
 
 import { setupSchema } from "@archant/api/schemas/setup";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authClient, sessionQuery } from "@/lib/auth-client";
+import { useAuthActions } from "@/hooks/useAuthActions";
+import { sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
-import { fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -73,22 +72,9 @@ export const Route = createFileRoute("/sign-in")({
 	component: SignInPage,
 });
 
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
-
 function SignInPage() {
 	const { t } = useTranslation();
+	const { signIn } = useAuthActions();
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const search = Route.useSearch();
@@ -113,7 +99,7 @@ function SignInPage() {
 
 	const submit = form.handleSubmit(async ({ email, password }) => {
 		setFailure(null);
-		const { data, error } = await authClient.signIn.email({ email, password });
+		const { data, error } = await signIn({ email, password });
 
 		if (error === null) {
 			if ("twoFactorRedirect" in data && data.twoFactorRedirect) {
@@ -208,6 +194,7 @@ function CodeStep({
 	onChallengeEnded: () => void;
 }) {
 	const { t } = useTranslation();
+	const { verifyBackupCode, verifyTotp } = useAuthActions();
 	const [tooMany, setTooMany] = useState(false);
 	const form = useForm<CodeValues>({
 		resolver: zodResolver(codeSchema),
@@ -220,8 +207,8 @@ function CodeStep({
 		// Apps show a TOTP code as « 123 456 »; a backup code keeps its dash.
 		const compact = code.replace(/\s+/gu, "");
 		const { error } = TOTP_CODE.test(compact)
-			? await authClient.twoFactor.verifyTotp({ code: compact })
-			: await authClient.twoFactor.verifyBackupCode({ code: compact });
+			? await verifyTotp(compact)
+			: await verifyBackupCode(compact);
 
 		if (error === null) {
 			await onSignedIn();

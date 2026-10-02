@@ -1,5 +1,3 @@
-import type { FieldError } from "react-hook-form";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
@@ -10,14 +8,16 @@ import { z } from "zod";
 
 import { setupSchema } from "@archant/api/schemas/setup";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { OutsideShell } from "@/components/OutsideShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuthActions } from "@/hooks/useAuthActions";
 import { ApiError, api, unwrap } from "@/lib/api";
-import { authClient, isSetupOpen, sessionQuery } from "@/lib/auth-client";
+import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 
 // The API's schema plus the confirmation, which only the form needs. The API
@@ -50,22 +50,9 @@ export const Route = createFileRoute("/setup")({
 	component: SetupPage,
 });
 
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
-
 function SetupPage() {
 	const { t } = useTranslation();
+	const { signIn } = useAuthActions();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const form = useForm<SetupFormValues>({
@@ -118,7 +105,7 @@ function SetupPage() {
 			return;
 		}
 
-		const { error } = await authClient.signIn.email({ email, password });
+		const { error } = await signIn({ email, password });
 
 		if (error !== null) {
 			await navigate({ to: "/sign-in" });

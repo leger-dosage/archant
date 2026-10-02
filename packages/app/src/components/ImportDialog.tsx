@@ -62,7 +62,7 @@ const DESKTOP_QUERY = "(min-width: 768px)";
 // enough that the counts follow the choices.
 const LIVE_PREVIEW_DELAY_MS = 300;
 
-export type ImportAccount = { id: string; currency: CurrencyCode; openingDate: string };
+type ImportAccount = { id: string; currency: CurrencyCode; openingDate: string };
 
 type LineGroup = Exclude<ImportGroup, "rejected">;
 

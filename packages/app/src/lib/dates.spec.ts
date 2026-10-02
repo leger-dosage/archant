@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	addMonthsTo,
-	dayHeading,
-	frenchToIso,
-	isoToFrench,
-	ofMonth,
-	toIsoMonth,
-	yearsAgo,
-} from "./dates.ts";
+import { dayHeading, frenchToIso, isoToFrench, ofMonth, toIsoMonth, yearsAgo } from "./dates.ts";
 
 describe("frenchToIso", () => {
 	it("reads a typed French date, padded or not", () => {
@@ -66,15 +58,6 @@ describe("yearsAgo", () => {
 describe("toIsoMonth", () => {
 	it("is the month of the local date", () => {
 		expect(toIsoMonth(new Date(2026, 0, 31, 23, 59))).toBe("2026-01");
-	});
-});
-
-describe("addMonthsTo", () => {
-	it("moves by months across years in both directions", () => {
-		expect(addMonthsTo("2026-09", -1)).toBe("2026-08");
-		expect(addMonthsTo("2026-01", -1)).toBe("2025-12");
-		expect(addMonthsTo("2026-12", 1)).toBe("2027-01");
-		expect(addMonthsTo("2026-09", 0)).toBe("2026-09");
 	});
 });
 

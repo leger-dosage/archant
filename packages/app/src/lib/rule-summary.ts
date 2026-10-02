@@ -32,7 +32,7 @@ type OperatorKey = `rules.operators.${
  * « est égal à » on a text, a symbol on an amount, « est » on a choice,
  * « est vide » for `is_null`.
  */
-export const OPERATOR_KEYS = {
+const OPERATOR_KEYS = {
 	transaction_name: { like: "rules.operators.contains", "=": "rules.operators.equals" },
 	transaction_amount: {
 		">": "rules.operators.gt",

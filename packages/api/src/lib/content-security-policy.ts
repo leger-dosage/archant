@@ -13,7 +13,7 @@ type Policy = NonNullable<
 >;
 
 /** Where Enable Banking serves the logos its bank list names. */
-export const BANK_LOGO_ORIGIN = "https://enablebanking.com";
+const BANK_LOGO_ORIGIN = "https://enablebanking.com";
 
 /**
  * Injected text cannot run script, reach another host, load a plugin, move

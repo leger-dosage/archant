@@ -26,7 +26,7 @@ export function countsInReports(account: AccountSummaryData, reportingCurrency: 
 	return account.active && !account.excludedFromReports && account.currency === reportingCurrency;
 }
 
-export type BalanceSheetType = {
+type BalanceSheetType = {
 	type: AccountType;
 	amount: MinorUnits;
 	/** The type's sum over the group's total, between 0 and 1 in the usual case. */

@@ -12,6 +12,8 @@
 		"./csv-mapping": "./csv-mapping.ts",
 		"./migrate": "./migrate.ts",
 		"./money": "./money.ts",
+		"./months": "./months.ts",
+		"./name-limits": "./name-limits.ts",
 		"./qif-options": "./qif-options.ts",
 		"./rules": "./rules.ts",
 		"./schema/accounts": "./schema/accounts.ts",
@@ -41,7 +43,7 @@
 		"generate": "drizzle-kit generate",
 		"migrate:local": "node --env-file-if-exists=../../.env migrate.ts",
 		"typecheck": "tsc -p tsconfig.json",
-		"test": "vitest run"
+		"test": "vitest run --coverage"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.18.0",
@@ -49,6 +51,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",
+		"@vitest/coverage-v8": "^5.0.2",
 		"drizzle-kit": "^0.31.11",
 		"typescript": "catalog:",
 		"vitest": "catalog:"

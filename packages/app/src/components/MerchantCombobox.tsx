@@ -4,7 +4,7 @@ import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/schema/merchants";
+import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
 import {
 	Command,

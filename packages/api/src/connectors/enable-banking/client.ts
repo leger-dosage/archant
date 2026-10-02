@@ -99,7 +99,7 @@ export const MAX_PAGES = 100;
  * Sure's `EnableBankingItem::Importer`: the windows, in days before today,
  * asked for when a bank refuses the period with `WRONG_TRANSACTIONS_PERIOD`.
  */
-export const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
+const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
 
 /**
  * The starts to try after `since` is refused, in order: each fallback window
@@ -318,6 +318,20 @@ function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): Ban
 	};
 }
 
+/**
+ * The URL without its trailing slashes. A loop rather than `/\/+$/`, whose
+ * backtracking is quadratic on a long run of slashes, as CodeQL flagged.
+ */
+function withoutTrailingSlashes(url: string): string {
+	let end = url.length;
+
+	while (url[end - 1] === "/") {
+		end -= 1;
+	}
+
+	return url.slice(0, end);
+}
+
 type Call = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
 
 async function call<Schema extends z.ZodType>(
@@ -332,7 +346,7 @@ async function call<Schema extends z.ZodType>(
 	let response: Response;
 
 	try {
-		response = await fetch(`${config.apiUrl.replace(/\/+$/u, "")}${path}`, {
+		response = await fetch(`${withoutTrailingSlashes(config.apiUrl)}${path}`, {
 			method,
 			headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
 			...(body === undefined ? {} : { body: JSON.stringify(body) }),

@@ -249,6 +249,7 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 				<Button
 					variant="ghost"
 					// The bar inverts the theme, so the red darkens where the bar turns light.
+					// oxlint-disable-next-line shadcn/no-raw-colors
 					className="text-red-400 hover:bg-background/15 hover:text-red-300 dark:text-red-600 dark:hover:text-red-700"
 					disabled={busy}
 					onClick={() => setConfirming(true)}

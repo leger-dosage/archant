@@ -375,7 +375,7 @@ export async function previewRules(deps: ServiceDeps, id?: string): Promise<{ ch
 	return { changed: plan.size };
 }
 
-export type RuleRunData = {
+type RuleRunData = {
 	id: string;
 	/** `null` once the rule is deleted; `rule` still says what ran. */
 	ruleId: string | null;

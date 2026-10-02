@@ -5,6 +5,9 @@ import fr from "../locales/fr.json";
 
 export type FieldErrorCode = keyof typeof fr.errors.fields;
 
+/** A field's error as a form shows it: react-hook-form's, or one found by path. */
+export type ShownError = { type: string; message?: string };
+
 function isFieldErrorCode(value: string): value is FieldErrorCode {
 	return Object.hasOwn(fr.errors.fields, value);
 }

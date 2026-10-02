@@ -33,7 +33,7 @@ function isHttpsOrLoopback(url: string): boolean {
 }
 
 /** AES-256 wants exactly this many bytes of key. */
-export const ENCRYPTION_KEY_BYTES = 32;
+const ENCRYPTION_KEY_BYTES = 32;
 
 /**
  * The RSA private key a PEM holds, PKCS#1 (`BEGIN RSA PRIVATE KEY`) or

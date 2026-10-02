@@ -1,5 +1,3 @@
-import type { FieldError } from "react-hook-form";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
@@ -12,14 +10,14 @@ import { z } from "zod";
 
 import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { authClient } from "@/lib/auth-client";
+import { useAuthActions } from "@/hooks/useAuthActions";
 import { showErrorToast } from "@/lib/error-toast";
-import { fieldErrorCode } from "@/lib/form-errors";
 import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_authed/settings/security")({
@@ -49,26 +47,13 @@ type ChangePasswordValues = z.input<typeof changePasswordSchema>;
 
 const EMPTY = { currentPassword: "", newPassword: "", confirmPassword: "" };
 
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
-
 /**
  * The first name the dashboard greets, Better Auth's `user.name`. Saved
  * through Better Auth's own update, never a route of ours (AD-13).
  */
 function ProfileSection() {
 	const { t } = useTranslation();
+	const { rename } = useAuthActions();
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const name = Route.useRouteContext({ select: (context) => context.session.user.name });
@@ -79,7 +64,7 @@ function ProfileSection() {
 	const { errors, isSubmitting } = form.formState;
 
 	const submit = form.handleSubmit(async (values) => {
-		const { error } = await authClient.updateUser({ name: values.name });
+		const { error } = await rename(values.name);
 
 		if (error === null) {
 			// The session sits in the route context, from a query cached for good
@@ -148,6 +133,7 @@ function SecurityPage() {
 
 function PasswordSection() {
 	const { t } = useTranslation();
+	const { changePassword } = useAuthActions();
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const form = useForm<ChangePasswordValues>({
@@ -157,13 +143,7 @@ function PasswordSection() {
 	const { errors, isSubmitting } = form.formState;
 
 	const submit = form.handleSubmit(async ({ currentPassword, newPassword }) => {
-		// Better Auth revokes every other session and hands this browser a fresh
-		// cookie; nothing here touches a session itself (AD-13).
-		const { error } = await authClient.changePassword({
-			currentPassword,
-			newPassword,
-			revokeOtherSessions: true,
-		});
+		const { error } = await changePassword({ currentPassword, newPassword });
 
 		if (error === null) {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.session });
@@ -280,6 +260,7 @@ type AuthFailure = { code?: string | undefined; status: number };
  */
 function TwoFactorSection() {
 	const { t } = useTranslation();
+	const { disableTwoFactor, enableTwoFactor, generateBackupCodes } = useAuthActions();
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const enabled = Route.useRouteContext({
@@ -317,7 +298,7 @@ function TwoFactorSection() {
 	};
 
 	const start = passwordForm.handleSubmit(async ({ password }) => {
-		const { data, error } = await authClient.twoFactor.enable({ password });
+		const { data, error } = await enableTwoFactor(password);
 
 		if (error !== null) {
 			await handleFailure(error);
@@ -332,7 +313,7 @@ function TwoFactorSection() {
 	});
 
 	const regenerate = passwordForm.handleSubmit(async ({ password }) => {
-		const { data, error } = await authClient.twoFactor.generateBackupCodes({ password });
+		const { data, error } = await generateBackupCodes(password);
 
 		if (error === null) {
 			passwordForm.reset({ password: "" });
@@ -344,7 +325,7 @@ function TwoFactorSection() {
 	});
 
 	const disable = passwordForm.handleSubmit(async ({ password }) => {
-		const { error } = await authClient.twoFactor.disable({ password });
+		const { error } = await disableTwoFactor(password);
 
 		if (error === null) {
 			passwordForm.reset({ password: "" });
@@ -461,6 +442,7 @@ function ScanStep({
 	onEnabled: () => Promise<void>;
 }) {
 	const { t } = useTranslation();
+	const { verifyTotp } = useAuthActions();
 	const form = useForm<TotpValues>({
 		resolver: zodResolver(totpSchema),
 		defaultValues: { code: "" },
@@ -471,9 +453,7 @@ function ScanStep({
 
 	const submit = form.handleSubmit(async ({ code }) => {
 		// Apps show the code as « 123 456 ».
-		const { error } = await authClient.twoFactor.verifyTotp({
-			code: code.replace(/\s+/gu, ""),
-		});
+		const { error } = await verifyTotp(code.replace(/\s+/gu, ""));
 
 		if (error === null) {
 			await onEnabled();

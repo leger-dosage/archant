@@ -53,7 +53,7 @@ export type ImportDeps = ServiceDeps & { logger: Logger; db: Pick<Database, "$cl
 export const STATISTICS_REFRESH_LINES = 1000;
 
 /** How long an unconfirmed preview keeps its file before the purge at start. */
-export const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
+const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Imports write as a bank does, not as the user typing: no field gets locked
 // (AD-10), so later rules may still categorise what a file brought in.
@@ -66,7 +66,7 @@ const ORIGIN = "sync";
  * mapping in use, else the saved one fitted to the file's columns, else the
  * French defaults.
  */
-export type CsvPreview = {
+type CsvPreview = {
 	/** The file's first records as they are, split with the delimiter in use. */
 	sample: string[][];
 	mapping: CsvMapping | null;
@@ -78,7 +78,7 @@ export type CsvPreview = {
  * How a QIF file's dates were read. `ambiguous` says every date reads both
  * ways, so Aperçu offers the choice.
  */
-export type QifPreview = { dateOrder: QifDateOrder; ambiguous: boolean };
+type QifPreview = { dateOrder: QifDateOrder; ambiguous: boolean };
 
 export type ImportPreview = {
 	id: string;
@@ -103,7 +103,7 @@ export type ConfirmedImport = { id: string; counts: ImportCounts };
  * One row of an account's import history. `removable` is what a revert would
  * delete now, `null` once reverted; `counts` stay as confirm stored them.
  */
-export type ImportHistoryItem = {
+type ImportHistoryItem = {
 	id: string;
 	fileName: string;
 	source: FileSourceId;

@@ -77,7 +77,7 @@ export type IngestOptions = {
 };
 
 /** A line as the preview shows it; `entryId` names the entry it is or pairs with. */
-export type PreviewLine = {
+type PreviewLine = {
 	ref: string;
 	date: IsoDate;
 	amount: MinorUnits;
@@ -89,7 +89,7 @@ export type PreviewLine = {
  * A refused line. `line` is `null` when the source could not read it, and
  * `ref` is then the line's position in the source rather than in the statement.
  */
-export type RejectedLine = {
+type RejectedLine = {
 	ref: string;
 	reason: RejectionCode;
 	line: { date: IsoDate; amount: MinorUnits; label: string } | null;

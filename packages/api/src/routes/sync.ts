@@ -12,7 +12,7 @@ export type SyncRouteDeps = BankConnectionDeps & {
 };
 
 /** Whether the header carries the secret, compared in constant time. */
-export function carriesSecret(header: string | undefined, secret: string | undefined): boolean {
+function carriesSecret(header: string | undefined, secret: string | undefined): boolean {
 	// The scheme is case-insensitive (RFC 7235): `bearer` is as good as `Bearer`.
 	const match = /^bearer (.+)$/iu.exec(header ?? "");
 

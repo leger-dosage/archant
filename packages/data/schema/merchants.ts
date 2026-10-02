@@ -1,8 +1,6 @@
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const MERCHANT_NAME_MAX_LENGTH = 60;
-
 /**
  * One shop the bank spells many ways. Names come from the user only for now;
  * a merchant created from bank data will need a source column, as Sure's

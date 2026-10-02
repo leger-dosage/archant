@@ -1,5 +1,4 @@
 import type { CategoryData } from "@/hooks/useCategories";
-import type { FieldError } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef } from "react";
@@ -11,10 +10,11 @@ import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
 import type { CategoryColor } from "@archant/data/category-presets";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/schema/categories";
-import { CATEGORY_KINDS } from "@archant/data/schema/categories";
+import type { CategoryKind } from "@archant/data/category-presets";
+import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 import { ChoiceField } from "@/components/ChoiceField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +31,7 @@ import { useCreateCategory, useUpdateCategory } from "@/hooks/useCategories";
 import { ApiError } from "@/lib/api";
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 import { newCategory } from "@/lib/new-category";
 
 const FIELD_NAMES = ["name", "kind", "color", "icon", "parentId"] as const;
@@ -52,20 +52,6 @@ const blank = (kind: CategoryKind | undefined): CreateCategoryInput =>
 
 function isSwatch(color: string): color is CategoryColor {
 	return CATEGORY_COLORS.some((swatch) => swatch === color);
-}
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
 }
 
 type CategoryDialogProps = {

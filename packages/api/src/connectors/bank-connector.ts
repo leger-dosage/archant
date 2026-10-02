@@ -17,7 +17,7 @@ export type Institution = {
 	maximumConsentValidity: number | null;
 };
 
-export type AuthorizationRequest = {
+type AuthorizationRequest = {
 	institution: Institution;
 	/** Opaque, single use; the provider hands it back on the callback. */
 	state: string;
@@ -41,7 +41,7 @@ export type BankAccountRef = {
 };
 
 /** An open session: a bearer credential for the account data until the consent ends. */
-export type BankSession = {
+type BankSession = {
 	sessionId: string;
 	/** Epoch milliseconds. */
 	consentExpiresAt: number;

@@ -13,20 +13,12 @@ export type ImportPreviewData = InferResponseType<
 	201
 >["data"];
 export type ImportGroupsData = ImportPreviewData["groups"];
-export type ConfirmedImportData = InferResponseType<
-	(typeof api.imports)[":id"]["confirm"]["$post"],
-	200
->["data"];
 
-export type ImportHistoryPageData = InferResponseType<
+type ImportHistoryPageData = InferResponseType<
 	(typeof api.accounts)[":id"]["imports"]["$get"],
 	200
 >["data"];
 export type ImportHistoryItemData = ImportHistoryPageData["items"][number];
-export type RevertedImportData = InferResponseType<
-	(typeof api.imports)[":id"]["revert"]["$post"],
-	200
->["data"];
 
 /** A page of the account's confirmed and reverted imports, latest first. */
 export function useAccountImports(accountId: string, page: number) {

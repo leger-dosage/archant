@@ -1,5 +1,5 @@
 import type { AccountDetailData } from "@/hooks/useAccount";
-import type { FieldError, UseFormReturn } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo } from "react";
@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import type { AccountSettingsFormInput } from "@archant/api/schemas/accounts";
 import { accountSettingsFormSchema } from "@archant/api/schemas/accounts";
 
+import { FieldMessage } from "@/components/FieldMessage";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +35,7 @@ import { useUpdateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 import { loanDetailsToInput } from "@/lib/loan-details";
 
 const FIELD_NAMES = [
@@ -45,20 +46,6 @@ const FIELD_NAMES = [
 	"details.interestRate",
 	"details.endDate",
 ] as const;
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 /** Rendered for a loan only, so no other account's form ever holds `details`. */
 function LoanFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {

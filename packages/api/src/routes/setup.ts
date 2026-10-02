@@ -1,14 +1,13 @@
 import type { SetupDeps } from "../services/setup.ts";
 import type { Context } from "hono";
 
-import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 
 import { clientKey, forwardedFor } from "../lib/client-address.ts";
 import { AppError } from "../lib/errors.ts";
 import { createRateLimiter } from "../lib/rate-limit.ts";
-import { validationError } from "../lib/zod-error.ts";
+import { validated } from "../lib/validated.ts";
 import { setupSchema } from "../schemas/setup.ts";
 import { assertSetupOpen, completeSetup, getSetupStatus } from "../services/setup.ts";
 
@@ -56,19 +55,9 @@ export function setupRoutes(deps: SetupRouteDeps) {
 
 	return new Hono()
 		.get("/", async (c) => c.json({ data: await getSetupStatus(deps) }, 200))
-		.post(
-			"/",
-			open,
-			limited,
-			zValidator("json", setupSchema, (result) => {
-				if (!result.success) {
-					throw validationError(result.error);
-				}
-			}),
-			async (c) => {
-				const data = await completeSetup(deps, c.req.valid("json"));
+		.post("/", open, limited, validated("json", setupSchema), async (c) => {
+			const data = await completeSetup(deps, c.req.valid("json"));
 
-				return c.json({ data }, 201);
-			},
-		);
+			return c.json({ data }, 201);
+		});
 }

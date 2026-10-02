@@ -1,4 +1,4 @@
-import type { FieldError, Resolver } from "react-hook-form";
+import type { Resolver } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useController, useForm } from "react-hook-form";
@@ -11,6 +11,7 @@ import type { AccountType } from "@archant/data/account-types";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { DateField } from "@/components/DateField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +36,7 @@ import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { yearsAgo } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors } from "@/lib/form-errors";
 
 const TOP_FIELD_NAMES = [
 	"name",
@@ -93,20 +94,6 @@ const resolver: Resolver<CreateAccountInput> = async (values, context, options) 
 		context,
 		options,
 	);
-
-function FieldMessage({ id, error }: { id: string; error: FieldError | undefined }) {
-	const { t } = useTranslation();
-
-	if (error === undefined) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(`errors.fields.${fieldErrorCode(error)}`)}
-		</p>
-	);
-}
 
 type CreateAccountDialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
 

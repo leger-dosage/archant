@@ -7,7 +7,7 @@
 		"app": "pnpm --filter @archant/app",
 		"data": "pnpm --filter @archant/data",
 		"format": "oxfmt .",
-		"lint:code": "oxlint --type-aware --max-warnings 0 --no-error-on-unmatched-pattern",
+		"lint:code": "oxlint --type-aware --max-warnings 0 --no-error-on-unmatched-pattern && knip",
 		"lint:format": "oxfmt --check .",
 		"typecheck": "pnpm -r typecheck",
 		"test": "pnpm -r test",
@@ -15,6 +15,7 @@
 	},
 	"devDependencies": {
 		"@shadcn/lint": "^0.2.0",
+		"knip": "^6.39.0",
 		"oxfmt": "^0.70.0",
 		"oxlint": "^1.85.0",
 		"oxlint-tsgolint": "^7.0.2003",

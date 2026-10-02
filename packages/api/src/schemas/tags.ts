@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { TAG_NAME_MAX_LENGTH } from "@archant/data/schema/tags";
+import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
 // NFC: a pasted « Été » may arrive decomposed, and would otherwise sit beside
 // the composed one as a second tag of the same name.

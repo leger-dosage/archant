@@ -21,3 +21,7 @@ local.db
 local.db-*
 # The copies the server takes before migrating, beside `local.db`.
 backups/
+
+# BMAD's per-person install answers; the shared ones live in
+# _bmad/custom/config.toml.
+_bmad/config.user.toml

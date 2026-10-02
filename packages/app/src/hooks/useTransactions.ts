@@ -18,7 +18,7 @@ import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 import { toApiQuery, toTotalsQuery } from "@/lib/transaction-filters";
 
-export type TransactionPageData = InferResponseType<
+type TransactionPageData = InferResponseType<
 	(typeof api.accounts)[":id"]["transactions"]["$get"],
 	200
 >["data"];
