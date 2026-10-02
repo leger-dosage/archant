@@ -6,11 +6,12 @@ import { AppError } from "../../lib/errors.ts";
 
 /**
  * Routes a visitor without a session may reach: Better Auth's own, setup,
- * the health check (Story 3.3) and the scheduled sync, which carries its own
- * secret instead (Epic 10).
+ * the health check (Story 3.3), the scheduled sync, which carries its own
+ * secret instead (Epic 10), and `/api/mcp`, which takes an assistant's token
+ * and never a session (AD-19).
  */
 const PUBLIC_PREFIXES = ["/api/auth/"];
-const PUBLIC_PATHS = new Set(["/api/auth", "/api/setup", "/api/health", "/api/sync"]);
+const PUBLIC_PATHS = new Set(["/api/auth", "/api/setup", "/api/health", "/api/sync", "/api/mcp"]);
 
 export function isPublicPath(path: string): boolean {
 	return PUBLIC_PATHS.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));

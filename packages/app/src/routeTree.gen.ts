@@ -17,9 +17,11 @@ import { Route as AuthedRecurringRouteImport } from './routes/_authed.recurring'
 import { Route as AuthedRulesRouteImport } from './routes/_authed.rules'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedTransactionsRouteImport } from './routes/_authed.transactions'
+import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as AuthedAccountsIndexRouteImport } from './routes/_authed.accounts.index'
 import { Route as AuthedAccountsAccountIdRouteImport } from './routes/_authed.accounts.$accountId'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settings.index'
+import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.settings.assistants'
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
 import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.settings.categories'
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
@@ -67,6 +69,11 @@ const AuthedTransactionsRoute = AuthedTransactionsRouteImport.update({
   path: '/transactions',
   getParentRoute: () => AuthedRoute,
 } as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedAccountsIndexRoute = AuthedAccountsIndexRouteImport.update({
   id: '/accounts/',
   path: '/accounts/',
@@ -82,6 +89,12 @@ const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedSettingsAssistantsRoute =
+  AuthedSettingsAssistantsRouteImport.update({
+    id: '/assistants',
+    path: '/assistants',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 const AuthedSettingsBanksRoute = AuthedSettingsBanksRouteImport.update({
   id: '/banks',
   path: '/banks',
@@ -129,7 +142,9 @@ export interface FileRoutesByFullPath {
   '/rules': typeof AuthedRulesRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/transactions': typeof AuthedTransactionsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
@@ -146,8 +161,10 @@ export interface FileRoutesByTo {
   '/recurring': typeof AuthedRecurringRoute
   '/rules': typeof AuthedRulesRoute
   '/transactions': typeof AuthedTransactionsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/': typeof AuthedIndexRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
@@ -167,8 +184,10 @@ export interface FileRoutesById {
   '/_authed/rules': typeof AuthedRulesRoute
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/_authed/transactions': typeof AuthedTransactionsRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/_authed/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/_authed/settings/merchants': typeof AuthedSettingsMerchantsRoute
@@ -189,7 +208,9 @@ export interface FileRouteTypes {
     | '/rules'
     | '/settings'
     | '/transactions'
+    | '/oauth/consent'
     | '/accounts/$accountId'
+    | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
     | '/settings/merchants'
@@ -206,8 +227,10 @@ export interface FileRouteTypes {
     | '/recurring'
     | '/rules'
     | '/transactions'
+    | '/oauth/consent'
     | '/'
     | '/accounts/$accountId'
+    | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
     | '/settings/merchants'
@@ -226,8 +249,10 @@ export interface FileRouteTypes {
     | '/_authed/rules'
     | '/_authed/settings'
     | '/_authed/transactions'
+    | '/oauth/consent'
     | '/_authed/'
     | '/_authed/accounts/$accountId'
+    | '/_authed/settings/assistants'
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
     | '/_authed/settings/merchants'
@@ -243,6 +268,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
+  OauthConsentRoute: typeof OauthConsentRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -303,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedTransactionsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/accounts/': {
       id: '/_authed/accounts/'
       path: '/accounts'
@@ -322,6 +355,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof AuthedSettingsIndexRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
+    '/_authed/settings/assistants': {
+      id: '/_authed/settings/assistants'
+      path: '/assistants'
+      fullPath: '/settings/assistants'
+      preLoaderRoute: typeof AuthedSettingsAssistantsRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
     '/_authed/settings/banks': {
@@ -377,6 +417,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedSettingsRouteChildren {
+  AuthedSettingsAssistantsRoute: typeof AuthedSettingsAssistantsRoute
   AuthedSettingsBanksRoute: typeof AuthedSettingsBanksRoute
   AuthedSettingsCategoriesRoute: typeof AuthedSettingsCategoriesRoute
   AuthedSettingsMerchantsRoute: typeof AuthedSettingsMerchantsRoute
@@ -388,6 +429,7 @@ interface AuthedSettingsRouteChildren {
 }
 
 const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
+  AuthedSettingsAssistantsRoute: AuthedSettingsAssistantsRoute,
   AuthedSettingsBanksRoute: AuthedSettingsBanksRoute,
   AuthedSettingsCategoriesRoute: AuthedSettingsCategoriesRoute,
   AuthedSettingsMerchantsRoute: AuthedSettingsMerchantsRoute,
@@ -429,6 +471,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
+  OauthConsentRoute: OauthConsentRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

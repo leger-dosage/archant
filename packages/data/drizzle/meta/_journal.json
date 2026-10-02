@@ -267,6 +267,13 @@
       "when": 1790932882748,
       "tag": "0037_add_rule_action_replacement",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1790948764970,
+      "tag": "0038_add_assistants",
+      "breakpoints": true
     }
   ]
 }

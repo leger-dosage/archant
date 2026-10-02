@@ -23,7 +23,9 @@ import type { Database } from "@archant/data/client";
 import { withForwardedFor } from "./lib/client-address.ts";
 import { contentSecurityPolicy } from "./lib/content-security-policy.ts";
 import { AppError } from "./lib/errors.ts";
+import { mcpHandler } from "./mcp/server.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
+import { assistantsRoutes } from "./routes/assistants.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { healthRoutes } from "./routes/health.ts";
@@ -42,6 +44,7 @@ import { tagsRoutes } from "./routes/tags.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
 import { versionRoutes } from "./routes/version.ts";
+import { assistantsAvailable } from "./services/auth.ts";
 import {
 	DEVICE_COOKIE,
 	deviceCookieOptions,
@@ -237,6 +240,7 @@ function createApi(deps: AppDeps) {
 		.route("/merchants", merchantsRoutes(deps))
 		.route("/tags", tagsRoutes(deps))
 		.route("/rules", rulesRoutes(deps))
+		.route("/assistants", assistantsRoutes(deps))
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/bank-connections", bankConnectionsRoutes(deps))
@@ -302,6 +306,10 @@ function serveInterface(app: Hono, root: string) {
  * answer an unknown API route with the page.
  */
 export function createApp(deps: AppDeps) {
+	// Assistants need HTTPS or loopback (`assistantsAvailable`); without them
+	// `/api/mcp` is the API's ordinary `404`.
+	const mcp = assistantsAvailable(deps.trustedOrigin) ? mcpHandler(deps) : null;
+
 	const app = new Hono()
 		// Outermost, so it sees each response as finished, assets included: a
 		// page of transactions or the interface's bundle shrinks several times
@@ -309,8 +317,9 @@ export function createApp(deps: AppDeps) {
 		// 1 KB the header costs more than it saves. Never on Better Auth's
 		// answers: one can carry a session token beside text the request sent,
 		// and compressing both lets an observer guess the token from the
-		// length (BREACH).
-		.use("*", except("/api/auth/*", compress({ encoding: "gzip", threshold: 1024 })))
+		// length (BREACH). Nor on `/api/mcp`'s, for the same reason: an answer
+		// holds account names beside what the assistant sent.
+		.use("*", except(["/api/auth/*", "/api/mcp"], compress({ encoding: "gzip", threshold: 1024 })))
 		// Every response, pages and API alike: without `X-Frame-Options` a
 		// third-party site could frame the sign-in page and steer a click, and
 		// `nosniff` stops a browser from running a file under a type it guessed.
@@ -343,8 +352,14 @@ export function createApp(deps: AppDeps) {
 			"/api/*",
 			// The scheduled sync carries a bearer secret, which no foreign page can
 			// attach, and a cron's bodiless `curl -X POST` has no content type,
-			// which `csrf()` takes for a form from no origin.
-			except("/api/sync", csrf({ origin: new URL(deps.trustedOrigin).origin })),
+			// which `csrf()` takes for a form from no origin. An assistant's token
+			// requests are forms from no origin too, from a command-line client,
+			// and carry the client's own proof: a code verifier or a refresh
+			// token. `/api/mcp` takes a bearer token and has its own origin check.
+			except(
+				["/api/sync", "/api/mcp", "/api/auth/oauth2/token", "/api/auth/oauth2/revoke"],
+				csrf({ origin: new URL(deps.trustedOrigin).origin }),
+			),
 		)
 		.on("POST", "/api/auth/sign-in/email", signInCeiling(deps))
 		.on(
@@ -363,10 +378,29 @@ export function createApp(deps: AppDeps) {
 				withForwardedFor(c.req.raw, deps.clientAddress(c), deps.trustedProxies.length > 0),
 			),
 		)
+		// No session there (AD-19): a strict origin check against DNS rebinding,
+		// then the token check and the tools.
+		.use("/api/mcp", sameOrigin(deps, { strict: true }))
+		.all("/api/mcp", async (c) => (mcp === null ? notFound(c) : mcp(c.req.raw)))
 		.use("/api/*", requireSession(deps.auth))
 		.use("/api/*", dailySync(deps))
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);
+
+	if (mcp !== null) {
+		// RFC 8414 and RFC 9728 put these at the root, outside `/api`; Better
+		// Auth's handler answers both from the plugins' own `onRequest`.
+		for (const path of [
+			"/.well-known/oauth-authorization-server/api/auth",
+			"/.well-known/oauth-protected-resource/api/mcp",
+		]) {
+			app.on(["GET", "HEAD"], path, async (c) => deps.auth.handler(c.req.raw));
+		}
+	}
+
+	// Before the interface's fallback, which would answer a discovery request
+	// with the page, and a client would take HTML for metadata.
+	app.all("/.well-known/*", notFound);
 
 	if (deps.webDist !== undefined) {
 		serveInterface(app, deps.webDist);

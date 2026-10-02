@@ -41,6 +41,8 @@ describe("isPublicPath", () => {
 		["/api/setup", true],
 		["/api/health", true],
 		["/api/sync", true],
+		["/api/mcp", true],
+		["/api/mcp/other", false],
 		["/api/authx", false],
 		["/api/setup/other", false],
 		["/api/accounts", false],

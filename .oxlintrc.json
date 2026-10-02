@@ -248,6 +248,68 @@
 			}
 		},
 		{
+			// MCP tools follow AD-1 as routes do: one service call with the route's
+			// `deps`, never the database itself (AD-19).
+			"files": ["packages/api/src/mcp/**"],
+			"rules": {
+				"eslint/no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "drizzle-orm",
+								"message": "A tool calls a service, never the database (AD-19)."
+							},
+							{
+								"name": "@archant/data/client",
+								"message": "A tool calls a service, never the database (AD-19)."
+							},
+							// Repeated from the first override, which this one replaces.
+							{
+								"name": "@archant/data/schema/entries",
+								"message": "Only services/ledger/ writes entries (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/balances",
+								"message": "Only services/ledger/ writes balances; read them through balanceOn (AD-2, AD-8)."
+							},
+							{
+								"name": "@archant/data/schema/transactions",
+								"message": "Only services/ledger/ writes transactions (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/transfers",
+								"message": "Only services/ledger/ writes transfers (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/rejected-transfers",
+								"message": "Only services/ledger/ writes rejected transfers (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/entry-keys",
+								"message": "Only services/ledger/ writes entry keys (AD-2, AD-7)."
+							},
+							{
+								"name": "@archant/data/schema/taggings",
+								"message": "Only services/ledger/ links tags to transactions (AD-2)."
+							},
+							{
+								"name": "@archant/data/schema/imports",
+								"message": "Only services/ledger/ confirms imports (AD-2, AD-4).",
+								"allowTypeImports": true
+							}
+						],
+						"patterns": [
+							{
+								"group": ["drizzle-orm/*"],
+								"message": "A tool calls a service, never the database (AD-19)."
+							}
+						]
+					}
+				]
+			}
+		},
+		{
 			// Uploading stores a previewed import and the start purges stale ones;
 			// confirming it stays the ledger's, in the same transaction as the
 			// entries (AD-4). The other ledger tables stay out of reach.

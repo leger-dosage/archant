@@ -79,6 +79,14 @@ export const queryKeys = {
 	},
 	/** The running release. */
 	version: ["version"] as const,
+	/**
+	 * Connected assistants, with the address to give one. A disconnection
+	 * invalidates `all`; `client(id)` is the consent page's, read once.
+	 */
+	assistants: {
+		all: ["assistants"] as const,
+		client: (clientId: string) => ["assistants", "client", clientId] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

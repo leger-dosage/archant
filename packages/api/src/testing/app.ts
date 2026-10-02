@@ -12,7 +12,7 @@ import { z } from "zod";
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
 import { bankDepsFromEnv } from "../services/bank-connections.ts";
-import { buildTestApp, createSignedInTemplate, withSession } from "./auth.ts";
+import { buildTestApp, createSignedInTemplate, createTestAuth, withSession } from "./auth.ts";
 import { TEST_APPLICATION_ID, TEST_ENCRYPTION_KEY_BASE64, TEST_PKCS1_BASE64 } from "./bank.ts";
 import { mockProvider } from "./enable-banking.ts";
 import { createTempDatabase } from "./temp-database.ts";
@@ -612,8 +612,11 @@ export async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configu
 	own = await freshDatabase();
 	logLines = [];
 	const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
+	// Started before the test spies on the database: Better Auth's start reads it.
+	const auth = createTestAuth(own.db, logger);
+	await auth.$context;
 
-	return { db: own.db, app: buildTestApp(own.db, logger, undefined, {}, bank) };
+	return { db: own.db, app: buildTestApp(own.db, logger, auth, {}, bank) };
 }
 
 export async function linkedConnection(app: ReturnType<typeof buildTestApp>) {

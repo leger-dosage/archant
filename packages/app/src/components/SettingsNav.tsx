@@ -1,5 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { BanknoteIcon, ShapesIcon, ShieldCheckIcon, StoreIcon, TagsIcon } from "lucide-react";
+import {
+	BanknoteIcon,
+	BotIcon,
+	ShapesIcon,
+	ShieldCheckIcon,
+	StoreIcon,
+	TagsIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useVersion } from "@/hooks/useVersion";
@@ -11,6 +18,7 @@ export const SETTINGS_SECTIONS = [
 	{ to: "/settings/categories", label: "settings.sections.categories", icon: ShapesIcon },
 	{ to: "/settings/merchants", label: "settings.sections.merchants", icon: StoreIcon },
 	{ to: "/settings/tags", label: "settings.sections.tags", icon: TagsIcon },
+	{ to: "/settings/assistants", label: "settings.sections.assistants", icon: BotIcon },
 	{ to: "/settings/security", label: "settings.sections.security", icon: ShieldCheckIcon },
 ] as const;
 

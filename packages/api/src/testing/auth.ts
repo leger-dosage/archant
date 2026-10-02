@@ -2,6 +2,7 @@ import type { Logger } from "../lib/logger.ts";
 import type { Auth } from "../services/auth.ts";
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
 import type { TempDatabase } from "./temp-database.ts";
+import type { ClientMetadataResourceFetch } from "@better-auth/oauth-provider";
 
 import type { Database } from "@archant/data/client";
 
@@ -22,16 +23,38 @@ export const TEST_SETUP_TOKEN = "archant-test-setup-token";
 
 export type TestApp = ReturnType<typeof createApp>;
 
+/**
+ * Where a Client ID Metadata Document comes from in tests: nowhere, unless a
+ * spec hands in its own. No test reaches the network.
+ */
+const NO_METADATA: ClientMetadataResourceFetch = () => {
+	throw new Error("A spec fetched a client metadata document without providing one.");
+};
+
 export function createTestAuth(
 	db: Database,
 	logger: Logger = createLogger("silent"),
 	trustedProxies: string[] = [],
+	{
+		baseURL = TEST_ORIGIN,
+		fetchClientMetadataResource = NO_METADATA,
+	}: { baseURL?: string; fetchClientMetadataResource?: ClientMetadataResourceFetch } = {},
 ): Auth {
-	return createAuth({ db, secret: TEST_SECRET, baseURL: TEST_ORIGIN, trustedProxies, logger });
+	return createAuth({
+		db,
+		secret: TEST_SECRET,
+		baseURL,
+		trustedProxies,
+		logger,
+		fetchClientMetadataResource,
+	});
 }
 
-/** A TCP peer and the proxies trusted, for specs about the client address. */
-export type TestNetwork = { peer?: string; trustedProxies?: string[] };
+/**
+ * A TCP peer and the proxies trusted, for specs about the client address, and
+ * `BETTER_AUTH_URL` when a spec needs another than the interface's.
+ */
+export type TestNetwork = { peer?: string; trustedProxies?: string[]; origin?: string };
 
 export type TestBank = Partial<
 	Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl">
@@ -56,13 +79,14 @@ export function buildTestApp(
 	bank: TestBank = {},
 ): TestApp {
 	const trustedProxies = network.trustedProxies ?? [];
+	const origin = network.origin ?? TEST_ORIGIN;
 
 	return createApp({
 		db,
 		timeZone: "Europe/Paris",
 		logger,
-		auth: auth ?? createTestAuth(db, logger, trustedProxies),
-		trustedOrigin: TEST_ORIGIN,
+		auth: auth ?? createTestAuth(db, logger, trustedProxies, { baseURL: origin }),
+		trustedOrigin: origin,
 		authSecret: TEST_SECRET,
 		trustedProxies,
 		// In process there is no socket unless a spec names a peer.

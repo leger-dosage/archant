@@ -2,7 +2,7 @@
 title: 'Story 16.1: Connect an assistant'
 type: 'feature'
 created: '2026-10-02'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b3841913eacb9f1fde2f4f1ce78cdf3378f3b6c3'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -72,17 +72,17 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/data/money.spec.ts`, `money.ts` -- `toDecimalString` cases first (negative, zero, 0- and 3-decimal currencies), then extract it.
-- [ ] `pnpm-workspace.yaml`, both `package.json` -- versions above; pull request description gives each dependency's reason.
-- [ ] `packages/data/schema/oauth.ts`, `schema/assistant-calls.ts`, `package.json`, `pnpm data generate` -- tables and `0038`; a spec compares every plugin `schema` model and field with the adapter map, so an upgrade adding a field fails the gate.
-- [ ] `packages/api/src/services/auth.spec.ts`, `services/auth.ts` -- options above and the HTTPS-or-loopback switch; specs for metadata (PKCE `S256`, registration endpoint, CIMD), disabled paths, refresh rotation, consent deletion leaving refresh tokens valid (pins the gap).
-- [ ] `packages/api/src/services/assistants.spec.ts`, `assistants.ts` -- `listAssistants` (client name, scopes, consent date, last call), `disconnectAssistant` in one transaction, `holdsConsent(clientId, userId)`.
-- [ ] `packages/api/src/services/assistant-calls.spec.ts`, `assistant-calls.ts` -- record and 90-day purge.
-- [ ] `packages/api/src/mcp/server.spec.ts`, `mcp/server.ts`, `mcp/{accounts,categories,merchants,tags}.ts` -- handler, token check, consent check, origin, scope filtering, call recording; every matrix row.
-- [ ] `packages/api/src/routes/assistants.spec.ts`, `routes/assistants.ts`, `app.ts`, `routes/middleware/auth.ts`, `lib/errors.ts`, `.oxlintrc.json` -- `GET /api/assistants`, `DELETE /api/assistants/:clientId`; middleware and `/.well-known` wiring; `app.spec.ts` covers the passes.
-- [ ] `packages/app/src/lib/auth-client.ts`, `routes/sign-in.tsx`, `routes/oauth.consent.tsx`, `routes/_authed.settings.assistants.tsx`, `hooks/useAssistants.ts`, `lib/query-keys.ts`, `components/SettingsNav.tsx`, shared copy component, `locales/fr.json`, `vite.config.ts`.
-- [ ] `packages/app/e2e/assistants.spec.ts` in the `two-factor` project -- register a client dynamically, sign in with a TOTP code, untick write, exchange the code with PKCE, `tools/list` shows read tools only, disconnect from « Assistants IA », then the access token (before expiry) and the refresh token are refused. The client's `redirect_uri` is a loopback URL fulfilled by `page.route`.
-- [ ] `docs/deployment.md` « Connecting an assistant », `docs/hosting.md`, `docs/security-model.md` (CIMD fetch under « What leaves the server »), `.env.example` nothing new, `EXPERIENCE.md:143` « no assistant chat », `epics.md` Story 16.1 and AD-19 in `docs/architecture.md` -- the key set read in process rather than over loopback, `offline_access`, the HTTPS-or-loopback switch.
+- [x] `packages/data/money.spec.ts`, `money.ts` -- `toDecimalString` cases first (negative, zero, 0- and 3-decimal currencies), then extract it.
+- [x] `pnpm-workspace.yaml`, both `package.json` -- versions above; pull request description gives each dependency's reason.
+- [x] `packages/data/schema/oauth.ts`, `schema/assistant-calls.ts`, `package.json`, `pnpm data generate` -- tables and `0038`; a spec compares every plugin `schema` model and field with the adapter map, so an upgrade adding a field fails the gate.
+- [x] `packages/api/src/services/auth.spec.ts`, `services/auth.ts` -- options above and the HTTPS-or-loopback switch; specs for metadata (PKCE `S256`, registration endpoint, CIMD), disabled paths, refresh rotation, consent deletion leaving refresh tokens valid (pins the gap).
+- [x] `packages/api/src/services/assistants.spec.ts`, `assistants.ts` -- `listAssistants` (client name, scopes, consent date, last call), `disconnectAssistant` in one transaction, `holdsConsent(clientId, userId)`.
+- [x] `packages/api/src/services/assistant-calls.spec.ts`, `assistant-calls.ts` -- record and 90-day purge.
+- [x] `packages/api/src/mcp/server.spec.ts`, `mcp/server.ts`, `mcp/{accounts,categories,merchants,tags}.ts` -- handler, token check, consent check, origin, scope filtering, call recording; every matrix row.
+- [x] `packages/api/src/routes/assistants.spec.ts`, `routes/assistants.ts`, `app.ts`, `routes/middleware/auth.ts`, `lib/errors.ts`, `.oxlintrc.json` -- `GET /api/assistants`, `DELETE /api/assistants/:clientId`; middleware and `/.well-known` wiring; `app.spec.ts` covers the passes.
+- [x] `packages/app/src/lib/auth-client.ts`, `routes/sign-in.tsx`, `routes/oauth.consent.tsx`, `routes/_authed.settings.assistants.tsx`, `hooks/useAssistants.ts`, `lib/query-keys.ts`, `components/SettingsNav.tsx`, shared copy component, `locales/fr.json`, `vite.config.ts`.
+- [x] `packages/app/e2e/assistants.spec.ts` in the `two-factor` project -- register a client dynamically, sign in with a TOTP code, untick write, exchange the code with PKCE, `tools/list` shows read tools only, disconnect from « Assistants IA », then the access token (before expiry) and the refresh token are refused. The client's `redirect_uri` is a loopback URL fulfilled by `page.route`.
+- [x] `docs/deployment.md` « Connecting an assistant », `docs/hosting.md`, `docs/security-model.md` (CIMD fetch under « What leaves the server »), `.env.example` nothing new, `EXPERIENCE.md:143` « no assistant chat », `epics.md` Story 16.1 and AD-19 in `docs/architecture.md` -- the key set read in process rather than over loopback, `offline_access`, the HTTPS-or-loopback switch.
 
 **Acceptance Criteria:**
 - Given Story 16.1 of `epics.md`, when the story ships, then each of its criteria holds, with the revisions this spec records.
@@ -103,6 +103,39 @@ Reading the key set over `http://127.0.0.1:${PORT}` fails when `HOST` names one 
 
 ## Implementation Notes
 
+- `holdsConsent` became `grantedScopes(deps, clientId, userId)`: it returns the consent's Archant scopes or `null`, and `/api/mcp` grants the intersection of those and the token's, so a consent narrowed later also narrows a live token.
+- `@better-auth/oauth-provider` declares OpenAPI parameters that `exactOptionalPropertyTypes` refuses against `BetterAuthPlugin`; `services/auth.ts` types the `mcp()` plugin by its id alone (`untyped`). Nothing calls its endpoints through `auth.api`.
+- `jwt({ disableSettingJwtHeader: true })`: otherwise every `getSession` in `requireSession` would sign a JWT. `grantTypes` drops `client_credentials`.
+- `mcp()`'s start seeds `/api/mcp` in `oauth_resources`, so Better Auth's start now reads the database: `index.ts` awaits `auth.$context`, and `createAuth` observes the promise so a spec dropping an instance is no unhandled rejection.
+- Dynamic registration with a loopback `redirect_uri` needs `application_type: "native"` (Better Auth defaults to `web`, which refuses `http://127.0.0.1`). Whether VS Code and Cursor send it is unverified; CIMD clients default to native.
+- The SDK validates tool input before the tool runs, so a refused argument answers the SDK's `isError` text and is not recorded; `VALIDATION_ERROR` with fields applies once a tool parses input itself (16.2).
+- Manual check on the owner's tailnet instance (Claude Code: sign-in, consent, `get_accounts`, whether it asks for `offline_access`): not done here, pending.
+- Manual QA on a throwaway server (port 8791): password sign-in from an authorisation reached `/oauth/consent`, write unticked gave `archant:read offline_access` with a refresh token, `tools/list` and `get_categories` answered, « Déconnecter » then refused the access token (`401`) and the refresh token (`invalid_grant`). The `401` challenge named `archant:read archant:write` only; since a client requests the scopes the challenge names, `offline_access` was added to it.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| Layer | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| blind, edge | `recordAssistantCall` in `finally` can throw and replace the tool's result, sending the raw database message to the assistant | medium | `call()` awaited the record unguarded; the SDK turns a thrown error into its message | patched: record failure logged by name, result kept, spec added |
+| edge | `changedRows` set after `tool.output.parse`, so a write whose output fails to parse records 0 rows | low | Assignment followed the parse | patched |
+| blind | Annotations hardcoded in `serverFor`, so 16.2's first write tool would be announced read-only | low | `Tool` had no `annotations` field | patched: `annotations` on each tool |
+| blind, edge | An out-of-scope or invalid `tools/call` is answered by the SDK, without `insufficient_scope` and without a call record | medium | No 16.1 tool takes arguments or needs `archant:write`; the SDK validates before `call()` | deferred to 16.2 |
+| blind | `epic-16-context.md` still said the key set is read over loopback | low | It predated the spec's revision | patched |
+| blind | Unauthenticated registration lets `oauth_clients` grow without bound | low | Disconnection keeps the client row; only the tailnet reaches the owner's instance | deferred |
+| blind | The consent page shows a self-declared `client_name` | low | Only the return host distinguishes two clients of the same name | deferred |
+| blind, edge | A failed `publicClient` lookup leaves « Autoriser » enabled for an unnamed assistant | medium | `client.isError` was not read | patched: only « Refuser » stays |
+| edge | A signed query without `scope` shows no box and posts an empty scope | maybe-false | Whether Better Auth sends the consent page a request with no scope was not checked; it applies the client's default scopes otherwise | rejected: would only be low |
+| blind, verification-gap | « Refuser » untested | medium | No test sent `accept: false` | patched: e2e checks `error=access_denied`, no code, no consent |
+| verification-gap | The password-only sign-in of an assistant's authorisation untested | medium | The e2e went through the code step only | patched: e2e signs in with the password only and reaches `/oauth/consent` |
+| blind | The `mcp/**` lint override does not stop `deps.db` in a tool | low | Routes have the same convention without a lint rule (AD-1) | rejected: consistent with routes |
+| blind | « Rotating `BETTER_AUTH_SECRET` … every assistant signs in again » unverified | medium | A spec showed the token request answers 500 until the `jwks` rows are deleted | patched: spec and documented recovery |
+| blind, edge | The e2e leaves two-factor on when it fails midway, breaking the next projects | medium | No `finally` around `turnTwoFactorOff` | patched |
+| blind, edge | `ASSISTANT_NOT_FOUND` on disconnect keeps the dialog open and the stale row | low | `onError` only toasted | patched |
+| blind, edge | « Last call » is empty after 90 days, and spans a reconnection | low | `listAssistants` reads `assistant_calls`, kept 90 days | rejected: the record's own retention, unlikely to mislead |
+| blind | `serverInfo.version` hardcoded `1.0.0` | low | `APP_VERSION` exists | rejected: no client reads it, fix adds a dependency to `mcpHandler` |
+| edge | Non-JSON `oauth_consents.scopes` throws a `SyntaxError` | low | Better Auth writes the column itself | rejected: needs a corrupted row |
+| edge | A code exchange racing a disconnection leaves an orphan refresh token | maybe-false | `/api/mcp` refuses its access tokens while no consent exists; whether it revives on a later reconnection of the same client was not checked | rejected: same client, would only be low |
+| edge | A JWT revoked through `/oauth2/revoke` still works for ten minutes | false | Archant's revocation is the disconnection, which `/api/mcp` enforces through the consent check; a JWT cannot be recalled, as AD-19 records | rejected |
+| verification-gap | No spec builds a token carrying `cnf` | low | No DPoP token is issued | deferred |

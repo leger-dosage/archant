@@ -200,3 +200,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-7-fewer-home-made-parts.md`
   summary: Test that `noDrizzleInBundle` in `packages/app/vite.config.ts` refuses a bundle holding a `drizzle-orm` module and passes one without.
   evidence: The refusal was checked once by hand during Story 15.7; `test:e2e` and `image` only ever build a clean bundle, so a typo in the guard would go unnoticed.
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-connect-an-assistant.md`
+  summary: Refuse a `tools/call` outside the token's scopes with `insufficient_scope`, and record calls the SDK refuses before a tool runs (unknown tool, invalid arguments), once Story 16.2 brings write tools and arguments.
+  evidence: Today an out-of-scope tool is only absent from `tools/list`; a direct call gets the SDK's unknown-tool answer and no `assistant_calls` row, and the SDK validates arguments before `call()` in `mcp/server.ts`, so its `validationError` branch never runs. No 16.1 tool takes an argument or needs `archant:write`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-connect-an-assistant.md`
+  summary: Purge `oauth_clients` rows that never received a consent, or were disconnected, after some time.
+  evidence: `allowUnauthenticatedClientRegistration` lets anyone who reaches the host register a client, and `disconnectAssistant` keeps the client row, since Better Auth refuses deleting an ownerless client; nothing bounds the table. Only the tailnet reaches the owner's instance.
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-connect-an-assistant.md`
+  summary: Tell the owner on the consent page whether the assistant's name comes from a Client ID Metadata Document at an `https://` address or was declared by a self-registered client.
+  evidence: A dynamically registered client chooses its own `client_name`, such as « Claude Code »; only the return host shown beside it tells two apart.
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-1-connect-an-assistant.md`
+  summary: Test that `/api/mcp` refuses a server-signed token carrying `cnf`.
+  evidence: `authenticate` in `mcp/server.ts` refuses DPoP-bound tokens, but no spec builds one; none is issued today, so the test matters once DPoP is configured.

@@ -6,6 +6,16 @@ import { AppError } from "../../lib/errors.ts";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+type SameOriginOptions = {
+	/**
+	 * Every method, and a `null` origin refused too. For `/api/mcp`, which has
+	 * no `csrf()` behind it: a page served from another address, or rebound
+	 * by DNS to this one, must never reach a tool. An absent origin still
+	 * passes: a command-line client sends none.
+	 */
+	strict?: boolean;
+};
+
 /**
  * Refuses a write whose `Origin` is not `BETTER_AUTH_URL`'s, ahead of `csrf()`
  * and Better Auth. A first run behind Tailscale with `ARCHANT_URL` left empty
@@ -16,16 +26,19 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * An absent or `null` origin is left to `csrf()` and Better Auth, as before:
  * a cron's `curl` sends none, and a sandboxed form sends `null`.
  */
-export function sameOrigin(deps: { trustedOrigin: string; logger: Logger }) {
+export function sameOrigin(
+	deps: { trustedOrigin: string; logger: Logger },
+	{ strict = false }: SameOriginOptions = {},
+) {
 	const expected = new URL(deps.trustedOrigin).origin;
 
 	return createMiddleware(async (c, next) => {
 		const origin = c.req.header("origin");
 
 		if (
-			UNSAFE_METHODS.has(c.req.method) &&
+			(strict || UNSAFE_METHODS.has(c.req.method)) &&
 			origin !== undefined &&
-			origin !== "null" &&
+			(strict || origin !== "null") &&
 			origin !== expected
 		) {
 			deps.logger.warn({ origin, expected }, "request from another origin refused");

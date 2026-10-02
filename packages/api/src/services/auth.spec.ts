@@ -1,22 +1,38 @@
 import type { SignedInTemplate, TestApp } from "../testing/auth.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { Auth } from "./auth.ts";
+import type { Table } from "drizzle-orm";
 
-import { eq } from "drizzle-orm";
+import { getAuthTables } from "better-auth/db";
+import { eq, getTableColumns } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { rateLimits, signInFailures } from "@archant/data/schema/auth";
+import { jwks, oauthConsents } from "@archant/data/schema/oauth";
 
 import { createLogger } from "../lib/logger.ts";
+import {
+	MCP_RESOURCE,
+	REDIRECT_URI,
+	authorizeQuery,
+	connect,
+	pkce,
+	refresh,
+	registerClient,
+} from "../testing/assistant.ts";
 import {
 	ADMIN,
 	TEST_ORIGIN,
 	buildTestApp,
 	createSignedInTemplate,
 	createTestAuth,
+	signIn,
 	TEST_SECRET,
+	withSession,
 } from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { AUTH_SCHEMA, assistantsAvailable, createAuth } from "./auth.ts";
 import * as deviceCookie from "./device-cookie.ts";
 import { DEVICE_COOKIE, signDeviceCookie, verifyDeviceCookie } from "./device-cookie.ts";
 import * as ceiling from "./sign-in-failures.ts";
@@ -492,5 +508,259 @@ describe("anything but a known device once the ceiling is full", () => {
 
 		expect(response.status).toBe(200);
 		expect(known).not.toHaveBeenCalled();
+	});
+});
+
+/** A signed-in browser and a command-line assistant, against one Better Auth. */
+function assistantServer(options: Parameters<typeof createTestAuth>[3] = {}) {
+	const auth = createTestAuth(temp.db, silent, [], options);
+
+	return {
+		auth,
+		bare: buildTestApp(temp.db, silent, auth),
+		signedIn: withSession(buildTestApp(temp.db, silent, auth), template.cookie),
+	};
+}
+
+const metadata = z.object({
+	issuer: z.string(),
+	registration_endpoint: z.string(),
+	code_challenge_methods_supported: z.array(z.string()),
+	client_id_metadata_document_supported: z.boolean(),
+	grant_types_supported: z.array(z.string()),
+	scopes_supported: z.array(z.string()),
+});
+
+describe("the authorisation server's metadata", () => {
+	it("advertises PKCE with S256, dynamic registration and Client ID Metadata Documents", async () => {
+		const { bare } = assistantServer();
+
+		const response = await bare.request("/.well-known/oauth-authorization-server/api/auth");
+
+		expect(response.status).toBe(200);
+		expect(metadata.parse(await response.json())).toEqual({
+			issuer: `${TEST_ORIGIN}/api/auth`,
+			registration_endpoint: `${TEST_ORIGIN}/api/auth/oauth2/register`,
+			code_challenge_methods_supported: ["S256"],
+			client_id_metadata_document_supported: true,
+			grant_types_supported: ["authorization_code", "refresh_token"],
+			scopes_supported: ["archant:read", "archant:write", "offline_access"],
+		});
+	});
+
+	it("describes /api/mcp as a protected resource of this server", async () => {
+		const { bare } = assistantServer();
+
+		const response = await bare.request("/.well-known/oauth-protected-resource/api/mcp");
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			resource: MCP_RESOURCE,
+			authorization_servers: [`${TEST_ORIGIN}/api/auth`],
+			scopes_supported: ["archant:read", "archant:write"],
+		});
+	});
+});
+
+describe("client registration", () => {
+	it.each(["/api/auth/oauth2/create-client", "/api/auth/oauth2/update-client"])(
+		"disables %s, even for the signed-in owner",
+		async (path) => {
+			const { signedIn } = assistantServer();
+
+			const response = await signedIn.request(path, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ redirect_uris: [REDIRECT_URI] }),
+			});
+
+			expect(response.status).toBe(404);
+		},
+	);
+
+	it("registers a client from its Client ID Metadata Document, fetched through the transport given", async () => {
+		const clientId = "https://assistant.example.com/oauth/client.json";
+		const fetched: string[] = [];
+		const { signedIn } = assistantServer({
+			fetchClientMetadataResource: async (input) => {
+				fetched.push(String(input));
+
+				return Response.json({
+					client_id: clientId,
+					client_name: "Example assistant",
+					redirect_uris: [REDIRECT_URI],
+					token_endpoint_auth_method: "none",
+					grant_types: ["authorization_code", "refresh_token"],
+					response_types: ["code"],
+				});
+			},
+		});
+		const { challenge } = pkce();
+
+		const response = await signedIn.request(
+			`/api/auth/oauth2/authorize?${authorizeQuery(clientId, challenge)}`,
+		);
+
+		expect(fetched).toEqual([clientId]);
+		expect(new URL(response.headers.get("location") ?? "", TEST_ORIGIN).pathname).toBe(
+			"/oauth/consent",
+		);
+	});
+});
+
+describe("tokens", () => {
+	it("issues a ten-minute JWT bound to /api/mcp and a refresh token", async () => {
+		const { bare, signedIn } = assistantServer();
+		const clientId = await registerClient(bare);
+
+		const tokens = await connect(signedIn, bare, clientId);
+		const [, payload] = tokens.access_token.split(".");
+		const claims = z
+			.object({
+				aud: z.string(),
+				iss: z.string(),
+				azp: z.string(),
+				exp: z.number(),
+				iat: z.number(),
+			})
+			.parse(JSON.parse(Buffer.from(payload ?? "", "base64url").toString()));
+
+		expect(claims).toMatchObject({
+			aud: MCP_RESOURCE,
+			iss: `${TEST_ORIGIN}/api/auth`,
+			azp: clientId,
+		});
+		expect(claims.exp - claims.iat).toBe(600);
+	});
+
+	it("rotates the refresh token, and refuses the old one once the 30-second retry window is over", async () => {
+		const { bare, signedIn } = assistantServer();
+		const clientId = await registerClient(bare);
+		const tokens = await connect(signedIn, bare, clientId);
+
+		const rotated = await refresh(bare, clientId, tokens.refresh_token);
+		const next = z.object({ refresh_token: z.string() }).parse(await rotated.json());
+
+		expect(rotated.status).toBe(200);
+		expect(next.refresh_token).not.toBe(tokens.refresh_token);
+
+		vi.setSystemTime(Date.now() + 31_000);
+		const replayed = await refresh(bare, clientId, tokens.refresh_token);
+
+		expect(replayed.status).toBe(400);
+		expect(await replayed.json()).toMatchObject({ error: "invalid_grant" });
+	});
+
+	it("still refreshes after Better Auth's own consent deletion: the gap disconnectAssistant closes", async () => {
+		const { bare, signedIn } = assistantServer();
+		const clientId = await registerClient(bare);
+		const tokens = await connect(signedIn, bare, clientId);
+
+		await temp.db.delete(oauthConsents).where(eq(oauthConsents.clientId, clientId));
+
+		expect((await refresh(bare, clientId, tokens.refresh_token)).status).toBe(200);
+	});
+});
+
+describe("a rotated BETTER_AUTH_SECRET", () => {
+	it("leaves the stored signing key unreadable until its rows are deleted", async () => {
+		const before = assistantServer();
+		await connect(before.signedIn, before.bare, await registerClient(before.bare));
+		const auth = createAuth({
+			db: temp.db,
+			secret: "another-secret-of-at-least-32-characters",
+			baseURL: TEST_ORIGIN,
+			trustedProxies: [],
+			logger: silent,
+		});
+		const bare = buildTestApp(temp.db, silent, auth);
+		// The old session cookie no longer verifies: the owner signs in again.
+		const signedIn = withSession(
+			buildTestApp(temp.db, silent, auth),
+			(await signIn(bare, ADMIN)).headers
+				.getSetCookie()
+				.map((line) => line.split(";")[0])
+				.join("; "),
+		);
+
+		await expect(connect(signedIn, bare, await registerClient(bare))).rejects.toThrow(
+			"Token exchange failed with 500",
+		);
+
+		await temp.db.delete(jwks);
+
+		await expect(connect(signedIn, bare, await registerClient(bare))).resolves.toHaveProperty(
+			"access_token",
+		);
+	});
+});
+
+describe("the tables Better Auth writes", () => {
+	it("are all declared, every field a column, every other column optional", async () => {
+		const { auth } = assistantServer();
+		// Its start seeds `/api/mcp` as a resource; done before the database closes.
+		await auth.$context;
+		const declared: Record<string, Table> = AUTH_SCHEMA;
+		const problems: string[] = [];
+
+		for (const table of Object.values(getAuthTables(auth.options))) {
+			const key = `${table.modelName}s`;
+			const drizzleTable = declared[key];
+
+			if (drizzleTable === undefined) {
+				problems.push(`no table for ${key}`);
+				continue;
+			}
+
+			const columns = getTableColumns(drizzleTable);
+			const written = new Set([
+				"id",
+				...Object.entries(table.fields).map(([name, field]) => field.fieldName ?? name),
+			]);
+
+			for (const field of written) {
+				if (!(field in columns)) {
+					problems.push(`${key}.${field} missing`);
+				}
+			}
+
+			for (const [name, column] of Object.entries(columns)) {
+				if (!written.has(name) && column.notNull && !column.hasDefault) {
+					problems.push(`${key}.${name} required but never written`);
+				}
+			}
+		}
+
+		expect(problems).toEqual([]);
+	});
+});
+
+describe("an address assistants cannot use", () => {
+	it.each([
+		["https://archant.example.com", true],
+		["http://localhost:5173", true],
+		["http://127.0.0.1:8787", true],
+		["http://[::1]:8787", true],
+		["http://nas.lan:8787", false],
+		["http://192.168.1.10:8787", false],
+	])("%s allows assistants: %s", (url, available) => {
+		expect(assistantsAvailable(url)).toBe(available);
+	});
+
+	it("starts without assistants on plain HTTP: /api/mcp and the metadata answer 404", async () => {
+		const origin = "http://nas.lan:8787";
+		const app = buildTestApp(temp.db, silent, undefined, { origin });
+
+		const mcp = await app.request("/api/mcp", { method: "POST", body: "{}" });
+		const discovery = await app.request("/.well-known/oauth-protected-resource/api/mcp");
+		const register = await app.request("/api/auth/oauth2/register", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "{}",
+		});
+
+		expect(mcp.status).toBe(404);
+		expect(discovery.status).toBe(404);
+		expect(register.status).toBe(404);
 	});
 });

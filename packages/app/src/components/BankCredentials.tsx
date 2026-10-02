@@ -1,11 +1,12 @@
 import type { BankSetupData } from "@/hooks/useBankConnections";
 import type { FormEvent } from "react";
 
-import { CopyIcon, Loader2Icon, LockIcon } from "lucide-react";
+import { Loader2Icon, LockIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { CopyableAddress } from "@/components/CopyableAddress";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,38 +43,6 @@ export function Unavailable({ missing }: { missing: string[] }) {
 			>
 				{t("banks.unavailable.docs")}
 			</a>
-		</div>
-	);
-}
-
-/** The redirect address with a button that copies it, to paste into the portal. */
-function RedirectAddress({ url }: { url: string }) {
-	const { t } = useTranslation();
-
-	const copy = async () => {
-		try {
-			await navigator.clipboard.writeText(url);
-			toast.success(t("banks.credentials.copied"));
-		} catch {
-			// No clipboard outside a secure context, or permission refused.
-			toast.error(t("banks.credentials.copyFailed"));
-		}
-	};
-
-	return (
-		<div className="flex items-center gap-2">
-			<code className="min-w-0 flex-1 rounded bg-muted px-2 py-1 font-mono text-sm break-all select-all">
-				{url}
-			</code>
-			<Button
-				type="button"
-				variant="outline"
-				size="icon"
-				aria-label={t("banks.credentials.copy")}
-				onClick={() => void copy()}
-			>
-				<CopyIcon aria-hidden />
-			</Button>
 		</div>
 	);
 }
@@ -164,7 +133,7 @@ export function CredentialsForm({ setup }: { setup: BankSetupData }) {
 					</li>
 					<li className="flex flex-col gap-1.5">
 						<span>{t("banks.credentials.step2")}</span>
-						<RedirectAddress url={setup.redirectUrl} />
+						<CopyableAddress value={setup.redirectUrl} copyLabel={t("banks.credentials.copy")} />
 					</li>
 					<li>{t("banks.credentials.step3")}</li>
 				</ol>
@@ -265,7 +234,7 @@ export function EnvironmentCredentials({
 					{t("banks.credentials.environmentDescription")}
 				</p>
 				<p className="mt-2 text-sm">{t("banks.credentials.redirectLabel")}</p>
-				<RedirectAddress url={redirectUrl} />
+				<CopyableAddress value={redirectUrl} copyLabel={t("banks.credentials.copy")} />
 			</div>
 		</Section>
 	);

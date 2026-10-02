@@ -2987,7 +2987,7 @@ So that it acts with the access I grant and nothing more.
 
 **Given** a token
 **When** it reaches `/api/mcp`
-**Then** `requireMcpAuth` checks its signature or record, issuer, audience and expiry before any tool runs; a token issued for another audience, expired or revoked gets `401`; a session cookie alone gets `401`; a request carrying an `Origin` other than `BETTER_AUTH_URL`'s gets `403`, against DNS rebinding
+**Then** the check `requireMcpAuth` makes, signature, issuer, audience and expiry, runs before any tool, through the helpers it is built from; a token issued for another audience, expired or revoked gets `401`; a session cookie alone gets `401`; a request carrying an `Origin` other than `BETTER_AUTH_URL`'s gets `403`, against DNS rebinding
 
 **Given** the application's middleware
 **When** a request reaches `/api/mcp`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke` or `/.well-known/*`
@@ -2999,9 +2999,9 @@ So that it acts with the access I grant and nothing more.
 
 **Given** an access token
 **When** it is issued
-**Then** it is a JWT that lives 10 minutes, the refresh token lives 30 days and rotates, and `requireMcpAuth` reads the key set from the server's loopback address rather than its public name, which a host behind Tailscale may not resolve for itself
+**Then** it is a JWT that lives 10 minutes, the refresh token lives 30 days and rotates, and the key set is read in process through `auth.api` rather than over HTTP from the server's public name, which a host behind Tailscale may not resolve for itself; `offline_access` is granted with read, since Better Auth issues a refresh token only for it
 
-**Given** a token that passes `requireMcpAuth`
+**Given** a token that passes that check
 **When** its client no longer holds the owner's consent
 **Then** the call is refused with `401` before any tool runs, so a disconnection takes effect at the next call
 
