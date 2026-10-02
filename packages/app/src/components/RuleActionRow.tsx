@@ -22,6 +22,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { described, errorAt, errorId, newAction } from "@/lib/rule-form";
+import { cn } from "@/lib/utils";
 
 const PATTERN_GUIDE =
 	"https://github.com/leger-dosage/archant/blob/main/docs/troubleshooting.md#labels-show-backslashes-or-a-card-prefix";
@@ -52,6 +53,9 @@ export function ActionRow({
 	const error = errorAt(errors, path) ?? errorAt(errors, `actions.${index}`);
 	const id = `rule-action-${index}`;
 	const replacementPath = `actions.${index}.replacement`;
+	// The replacement's fields sit under visible labels (a 16px line and a 6px gap),
+	// so the type and the remove button drop by as much to stay level with the pattern.
+	const levelWithPattern = actionType === "replace_in_transaction_name" ? "mt-5.5" : undefined;
 	const replacementError = errorAt(errors, replacementPath);
 	const current = value.field.value ?? "";
 	// The value's name is the action's: « Catégorie », « Renommer », « Virement avec ».
@@ -168,7 +172,7 @@ export function ActionRow({
 					}}
 				>
 					<SelectTrigger
-						className="w-52 shrink-0"
+						className={cn("w-52 shrink-0", levelWithPattern)}
 						aria-label={t("rules.form.action", { index: label })}
 					>
 						<SelectValue />
@@ -184,15 +188,17 @@ export function ActionRow({
 					</SelectContent>
 				</Select>
 				<div className="min-w-0 flex-1">{valueField()}</div>
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon"
-					aria-label={t("rules.form.removeAction", { index: label })}
-					onClick={onRemove}
-				>
-					<XIcon />
-				</Button>
+				<div className={levelWithPattern}>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						aria-label={t("rules.form.removeAction", { index: label })}
+						onClick={onRemove}
+					>
+						<XIcon />
+					</Button>
+				</div>
 			</div>
 			{actionType !== "replace_in_transaction_name" && (
 				<FieldMessage id={errorId(path)} error={error} />
