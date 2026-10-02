@@ -511,6 +511,22 @@ describe("planActions' per-rule tallies", () => {
 		expect(plan([courses], rows)).toHaveLength(3);
 	});
 
+	it("counts each row any rule matched once, changed or not, and none no rule reaches", () => {
+		const rules = [
+			withActions([{ type: "set_transaction_category", categoryId: "courses" }]),
+			withActions([{ type: "set_transaction_merchant", merchantId: "amazon" }], [], "r2"),
+		];
+		const rows = [
+			candidate(),
+			candidate({ id: "e2", categoryId: "courses", merchantId: "amazon" }),
+		];
+
+		expect(planActions(rules, rows, "EUR", 20).matched).toBe(2);
+		expect(
+			planActions([withActions([], [label("like", "nothing")])], rows, "EUR", 20).matched,
+		).toBe(0);
+	});
+
 	it("tallies a rule against what earlier rules planned, one tally per rule in order", () => {
 		const rules = [
 			withActions(

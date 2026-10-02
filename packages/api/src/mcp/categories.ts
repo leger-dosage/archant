@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { CATEGORY_KINDS } from "@archant/data/category-presets";
+import { CATEGORY_KINDS, newCategory } from "@archant/data/category-presets";
 
-import { noToolInput } from "../schemas/assistants.ts";
-import { listCategories } from "../services/categories.ts";
-import { READ_ONLY, defineTool } from "./tool.ts";
+import { createCategoryInput, noToolInput } from "../schemas/assistants.ts";
+import { createCategory, listCategories } from "../services/categories.ts";
+import { CREATES, READ_ONLY, defineTool } from "./tool.ts";
 
 const category = z.object({
 	id: z.string(),
@@ -37,6 +37,36 @@ export const getCategories = defineTool({
 				})),
 			},
 			changedRows: 0,
+		};
+	},
+});
+
+export const createCategoryTool = defineTool({
+	name: "create_category",
+	title: "Create a category",
+	description:
+		"Creates a category as Archant's category picker does, with its default colour and icon, which the owner may change later, and returns its id for a rule's action or condition. A child takes its parent's kind. A name already taken answers VALIDATION_ERROR with name_taken: use that category's id from get_categories instead.",
+	scope: "archant:write",
+	annotations: CREATES,
+	input: createCategoryInput,
+	output: z.object({ category: category.omit({ transactionCount: true }) }),
+	run: async (deps, { name, kind, parentId }) => {
+		const created = await createCategory(deps, {
+			...newCategory(name),
+			kind,
+			parentId: parentId ?? null,
+		});
+
+		return {
+			result: {
+				category: {
+					id: created.id,
+					name: created.name,
+					kind: created.kind,
+					parentId: created.parentId,
+				},
+			},
+			changedRows: 1,
 		};
 	},
 });

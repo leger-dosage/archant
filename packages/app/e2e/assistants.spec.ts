@@ -19,7 +19,17 @@ const REDIRECT_URI = "http://127.0.0.1:33418/callback";
 
 const MCP = `${WEB_URL}/api/mcp`;
 
-const READ_TOOLS = ["get_accounts", "get_categories", "get_merchants", "get_tags"];
+const READ_TOOLS = [
+	"get_accounts",
+	"get_categories",
+	"get_merchants",
+	"get_tags",
+	"get_transactions",
+	"group_transactions_by_label",
+	"get_rules",
+	"get_rule_runs",
+	"preview_rule",
+];
 
 const section = (page: Page) => page.getByRole("region", { name: "Double authentification" });
 
@@ -245,6 +255,26 @@ async function connectThenDisconnect(
 		.object({ tools: z.array(z.object({ name: z.string() })) })
 		.parse(resultOf(await listed.text()));
 	expect(tools.map((tool) => tool.name)).toEqual(READ_TOOLS);
+
+	// A write tool is refused to a read-only token before the SDK runs.
+	const refused = await request.post(MCP, {
+		headers: {
+			authorization: `Bearer ${tokens.access_token}`,
+			accept: "application/json, text/event-stream",
+			"mcp-protocol-version": "2025-11-25",
+		},
+		data: {
+			jsonrpc: "2.0",
+			id: 2,
+			method: "tools/call",
+			params: {
+				name: "create_rule",
+				arguments: { conditions: [], actions: [{ actionType: "exclude_transaction" }] },
+			},
+		},
+	});
+	expect(refused.status()).toBe(403);
+	expect(refused.headers()["www-authenticate"]).toContain('error="insufficient_scope"');
 
 	// The consent left the owner signed in: « Réglages › Assistants IA ».
 	await page.unroute(`${REDIRECT_URI}**`);

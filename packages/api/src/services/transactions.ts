@@ -25,6 +25,7 @@ import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import type { FileSourceId } from "@archant/data/schema/imports";
 
 import { today } from "../domain/dates.ts";
+import { normalizeLabel } from "../domain/normalize-label.ts";
 import { amountBoundsFor } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
@@ -53,6 +54,7 @@ import {
 	listTransactionPage,
 	listTransactions,
 	sumTransactions,
+	sumTransactionsByLabel,
 } from "./ledger/queries.ts";
 import { recurringEntryIds } from "./recurring.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -311,6 +313,110 @@ export async function transactionTotals(
 				.reduce((skipped, row) => skipped + row.count, 0),
 		},
 	};
+}
+
+/**
+ * A page of the list with its count and sums, as the list reads them in two
+ * requests: what an assistant reads in one call.
+ */
+export async function findTransactions(
+	deps: ServiceDeps,
+	query: TransactionFilterRequest,
+): Promise<FilteredTransactionPage & TransactionTotals> {
+	const [page, totals] = await Promise.all([
+		listAllTransactions(deps, query),
+		transactionTotals(deps, query),
+	]);
+
+	return { ...page, ...totals };
+}
+
+/** Transactions whose labels read the same, case, accents and spaces aside. */
+export type LabelGroup = {
+	/** The label most of them carry, as the bank wrote it. */
+	label: string;
+	count: number;
+	/** Signed, in `currency`: a group never mixes currencies nor signs. */
+	total: MinorUnits;
+	currency: string;
+	lastDate: IsoDate;
+	/** The categories its transactions carry, `null` for uncategorised ones first. */
+	categoryIds: (string | null)[];
+};
+
+/** Past this a list of groups is no longer read through; `groupCount` says how many there are. */
+const MAX_LABEL_GROUPS = 100;
+
+type GroupDraft = Omit<LabelGroup, "label" | "categoryIds"> & {
+	labels: Map<string, number>;
+	categoryIds: Set<string | null>;
+};
+
+/** The label most rows carry; the first in code-point order among equals, so it never flickers. */
+function mostFrequent(labels: ReadonlyMap<string, number>): string {
+	let best = "";
+	let bestCount = 0;
+
+	for (const [label, count] of labels) {
+		if (count > bestCount || (count === bestCount && label < best)) {
+			best = label;
+			bestCount = count;
+		}
+	}
+
+	return best;
+}
+
+const nullFirst = (a: string | null, b: string | null) =>
+	a === null ? -1 : b === null ? 1 : a < b ? -1 : 1;
+
+/**
+ * The transactions matching the list's filter, grouped by label as Sure's
+ * « Catégoriser » offers them: case, accents and spaces aside, each currency
+ * and each sign apart, as Sure keeps income and expenses apart. The largest
+ * groups first, `MAX_LABEL_GROUPS` at most, with how many there are.
+ */
+export async function groupTransactionsByLabel(
+	deps: ServiceDeps,
+	query: TransactionTotalsRequest,
+): Promise<{ groups: LabelGroup[]; groupCount: number }> {
+	const rows = await sumTransactionsByLabel(deps, await filterOf(deps, query));
+	const drafts = new Map<string, GroupDraft>();
+
+	for (const row of rows) {
+		const key = JSON.stringify([normalizeLabel(row.label), row.currency, row.outflow]);
+		const draft = drafts.get(key) ?? {
+			count: 0,
+			total: toMinorUnits(0),
+			currency: row.currency,
+			lastDate: row.lastDate,
+			labels: new Map<string, number>(),
+			categoryIds: new Set<string | null>(),
+		};
+
+		draft.count += row.count;
+		draft.total = toMinorUnits(draft.total + row.amount);
+		draft.lastDate = row.lastDate > draft.lastDate ? row.lastDate : draft.lastDate;
+		draft.labels.set(row.label, (draft.labels.get(row.label) ?? 0) + row.count);
+		draft.categoryIds.add(row.categoryId);
+		drafts.set(key, draft);
+	}
+
+	const groups = [...drafts.values()]
+		.map(({ labels, categoryIds, ...draft }) => ({
+			...draft,
+			label: mostFrequent(labels),
+			categoryIds: [...categoryIds].toSorted(nullFirst),
+		}))
+		.toSorted(
+			(a, b) =>
+				b.count - a.count ||
+				a.label.localeCompare(b.label, "fr") ||
+				a.currency.localeCompare(b.currency) ||
+				a.total - b.total,
+		);
+
+	return { groups: groups.slice(0, MAX_LABEL_GROUPS), groupCount: groups.length };
 }
 
 /** Records a transaction typed by the user, in its account's currency. */
