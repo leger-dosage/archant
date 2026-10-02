@@ -125,6 +125,14 @@ FR58: The user can turn on two-factor sign-in with a time-based one-time code (T
 FR59: Every release publishes a versioned container image, for amd64 and arm64, that a self-hoster pulls and pins; the interface shows the running version.
 FR60: Before applying a pending migration, the server copies the database beside it, so a failed upgrade can go back to the previous version with that copy.
 
+#### AI assistants
+
+FR61: The user connects an AI assistant to Archant through MCP, the Model Context Protocol, at `/api/mcp`: the assistant signs the user in through Better Auth, and the user grants it read access, or read and write access, on a consent page.
+FR62: The user sees every connected assistant with what it may do, when it last called Archant and the writes it made, and disconnects it at once.
+FR63: An assistant can create, edit, enable, disable, delete, preview and apply rules, and create the categories, merchants and tags a rule names.
+FR64: An assistant can read accounts, transactions, net worth, income and expenses, and recurring transactions.
+FR65: An assistant can set a transaction's category, merchant, tags, notes, label and exclusion, one at a time or in bulk.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
@@ -145,6 +153,7 @@ NFR15: A request cannot exhaust the server: every route has a body size limit, s
 NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy. Outside a container, the server listens on loopback only unless told otherwise.
 NFR17: The build, its dependencies and its published images are pinned, kept current by a bot, and attested: actions by commit SHA, base images by digest, the package manager by hash, and every release image with an SBOM and a build provenance attestation.
 NFR18: A vulnerability can be reported privately, GitHub's secret scanning and code scanning run on the repository, and the default branch and release tags are protected by rulesets.
+NFR19: An assistant holds only a token bound to `/api/mcp`, short-lived, scoped to read or write, and revocable from the interface; every tool parses its input with Zod and calls the same service function as the interface; no tool deletes a transaction; every write an assistant makes is recorded without its amounts or labels.
 
 ### Additional Requirements
 
@@ -242,8 +251,13 @@ FR57: Epic 13 - Setup token
 FR58: Epic 13 - Two-factor sign-in
 FR59: Epic 13 - Versioned image and visible version
 FR60: Epic 13 - Copy before migration
+FR61: Epic 16 - Connect an assistant through MCP and Better Auth
+FR62: Epic 16 - Connected assistants, their writes, disconnection
+FR63: Epic 16 - Rule tools
+FR64: Epic 16 - Read tools
+FR65: Epic 16 - Classification tools
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19.
 
 ## Epic List
 
@@ -321,6 +335,11 @@ The interface stops reading small: Sure's shell, pages, type scale and control s
 
 A stranger can trust, install and contribute to Archant, and the owner's instance stays fast and hard to lock: a private way to report a vulnerability, a protected default branch, a pinned and attested supply chain, documents for contributors and self-hosters, the sign-in lockout of the audit of 2026-09-30 fixed, SQLite given the statistics and indexes a decade of history needs, and the ledger split into modules a contributor can read.
 **FRs covered:** none new; NFR17, NFR18; revises NFR10
+
+### Epic 16: Ask an assistant to act in Archant
+
+The owner asks an AI assistant, such as Claude Code, to write the rules that clean up their bank lines, then to read and classify their finances: Archant serves MCP from the API's own process, and the assistant signs in through Better Auth with a token the owner can revoke.
+**FRs covered:** FR61, FR62, FR63, FR64, FR65; NFR19
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -2900,3 +2919,210 @@ So that I have less code to read and one place to fix each bug.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** they pass, a Vitest spec checks that the Better Auth address keys match the former ones for IPv4, IPv6 and trusted proxies, and a build check fails if a Drizzle module lands in the interface's bundle
+
+## Epic 16: Ask an assistant to act in Archant
+
+On 2026-10-02 the owner reopened a subject Archant had left out: letting an AI assistant act in the application. Their first use is to ask an assistant to write rules for them, since cleaning up bank labels and categorising them takes one rule per shop. They asked for a server that runs in the API's own process, never a separate project, signed in through Better Auth if possible, following Sure's tools and choices where they hold and departing where something simpler, safer or more current exists. WebMCP, the browser API through which a page declares tools to an agent in the browser, was considered first and set aside the same day: it is an origin trial in Chrome only, renamed in May 2026, used by no mainstream agent, and it would run with the full rights of the browser's session.
+
+MCP, the Model Context Protocol, lets an assistant call the tools a server declares. Sure serves it at `POST /mcp` since v0.6.8 (`app/controllers/mcp_controller.rb`, read on `origin/main` at `efe34c6ff`, 2 October 2026): a hand-written JSON-RPC controller, an OAuth server through Doorkeeper with dynamic client registration, one `read_write` scope, tokens that live a year, a static `MCP_API_TOKEN` fallback, and the 21 tools of its in-app chat (`Assistant.function_classes`), 14 more behind preview features. None of them touches rules. A separate Python project, `we-promise/sure-mcp-server`, wraps Sure's REST API over stdio; it came first and is no longer maintained.
+
+Archant keeps Sure's shape, an endpoint inside the application and OAuth on its own users, and departs where Sure's weak points matter for bank data:
+
+- The protocol comes from the official TypeScript SDK, `@modelcontextprotocol/server` 2.x, in stateless Streamable HTTP, serving the 2026-07-28 specification and the 2025-11-25 one that current clients still speak. Sure hand-writes three methods and no streaming.
+- Better Auth is the authorisation server: `@better-auth/mcp` over `@better-auth/oauth-provider`, with `@better-auth/cimd` for Client ID Metadata Documents, which the specification now prefers, and dynamic client registration kept for Claude Code, VS Code and Cursor. Better Auth 1.7 removed its former `mcp` and `oidcProvider` plugins; these packages need Better Auth 1.7.7, so Story 16.1 raises the catalog's range.
+- Two scopes, `archant:read` and `archant:write`, where Sure has one. The consent page lets the owner grant read only. A tool the token's scopes do not allow is absent from `tools/list` and refused with `insufficient_scope` if called.
+- Tokens are bound to `/api/mcp` as their audience (RFC 8707), live minutes rather than a year, refresh for 30 days with rotation, and die when the owner disconnects the assistant. No static token: OAuth covers every client Archant targets.
+- Rule tools, which Sure lacks, with a preview that shows sample transactions and an apply step that names the count it expects, so a rule never runs on a history the owner has not seen counted.
+- Amounts travel as decimal strings with their currency, never as JSON numbers, and every reference is an id returned by a list tool, where Sure mixes floats, names and ids.
+- Every tool call is recorded: tool, assistant, time, outcome and count changed, never the arguments. Sure records nothing.
+- Each tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so a client can ask before a write, and returns `structuredContent` against an `outputSchema`.
+
+Labels, notes and merchant names are written by whoever sends money, and an assistant reads them before it acts. That is the risk this epic is shaped around: no tool deletes a transaction, a category, a merchant or a tag, bulk writes name the count they expect, the server's instructions and each read tool's description say that these fields are bank data and never instructions, and the owner can grant read only.
+
+Archant is open source, so the server is built from the MCP specification and the documented APIs of the SDK and of Better Auth, with no private workaround. Where Better Auth stops short, the gap is closed in one service and pinned by a test, so an upgrade that changes the behaviour fails the gate. Reading `@better-auth/mcp` and `@better-auth/oauth-provider` 1.7.7 on 2026-10-02 found two such gaps:
+
+- `requireMcpAuth` checks an access token against the JSON Web Key Set only: signature, issuer, audience and expiry, never the database. A token therefore outlives a disconnection until it expires.
+- Deleting a consent leaves the client's refresh tokens valid, since the refresh grant never reads consents, and deleting a client is refused for a client that registered itself, since it has no owner.
+
+So a disconnection deletes the consent and revokes the client's tokens itself, and `/api/mcp` checks, after `requireMcpAuth`, that the token's client still holds a consent: a disconnected assistant is refused at its next call, not ten minutes later. Opaque tokens checked in process were the other way; `requireMcpAuth` cannot read them, and introspecting them would need a confidential client calling the server's own endpoint.
+
+The owner's instance is reachable only through Tailscale. Claude Code, VS Code and Cursor on a machine of the tailnet connect to it directly. Claude Desktop, claude.ai and ChatGPT reach a server from their vendor's cloud, so they cannot; the owner chose on 2026-10-02 not to support them, Claude Desktop included, and the documentation says so without recommending to open the instance to the internet.
+
+Left out on purpose:
+
+- an assistant chat inside Archant (Sure's chat panel), which stays dropped: the assistant is the user's own;
+- tools for features Archant does not have: holdings, budgets, goals, bills, insights, documents and account statements;
+- `create_transaction` and `delete_transaction`: transactions come from banks and files, and an irreversible delete is what an injected label would aim for; the interface keeps both;
+- deleting or merging categories, merchants and tags, imports, bank connections, sync, balance snapshots and transfers;
+- MCP resources, prompts and the multi-round-trip input requests of the 2026-07-28 specification: annotations and the count guard cover confirmation until a client needs more;
+- API keys through `@better-auth/api-key`, a later fallback if a client without OAuth matters.
+
+Story 16.1 comes first: it builds the connection with four read tools. Story 16.2, the owner's use, follows. Stories 16.3 and 16.4 can follow in either order.
+
+### Story 16.1: Connect an assistant
+
+As the household's administrator,
+I want to connect an AI assistant to Archant by signing in, and to disconnect it whenever I choose,
+So that it acts with the access I grant and nothing more.
+
+**Requirements:** FR61, FR62, NFR3, NFR6, NFR15, NFR19
+
+**Acceptance Criteria:**
+
+**Given** the API
+**When** this story ships
+**Then** `better-auth` is at `^1.7.7` with the `jwt`, `mcp` (from `@better-auth/mcp`) and `cimd` (from `@better-auth/cimd`) plugins beside `admin` and `twoFactor`; the resource is `${BETTER_AUTH_URL}/api/mcp`, the scopes `archant:read` and `archant:write`; the tables they need are declared in `@archant/data` with snake_case columns and a migration, as AD-13 keeps Better Auth's schema; `/oauth2/create-client` and `/oauth2/update-client` are disabled
+
+**Given** an MCP client with no token
+**When** it calls `POST /api/mcp`
+**Then** it gets `401` with `WWW-Authenticate` naming the protected resource metadata, and `/.well-known/oauth-protected-resource/api/mcp` and the authorisation server's metadata answer, advertising PKCE with S256, dynamic registration and Client ID Metadata Documents
+
+**Given** Claude Code, which registers through a Client ID Metadata Document, and a client that registers dynamically
+**When** the owner adds `https://<host>/api/mcp`
+**Then** the browser opens `/sign-in`, then the code step when two-factor is on, then the consent page at `/oauth/consent`, and the client receives its tokens; the sign-in page carries Better Auth's signed OAuth query through both steps and follows the address Better Auth returns rather than its own `redirect`
+
+**Given** the consent page
+**When** it opens
+**Then** it names the client, the host it returns to, and each requested scope in plain French, « Lire vos comptes, vos opérations et vos règles » and « Créer et modifier vos règles, classer vos opérations »; the write scope can be unticked; « Autoriser » and « Refuser » post through Better Auth's client and the page then sets `window.location`, so `form-action 'self'` stays
+
+**Given** a token
+**When** it reaches `/api/mcp`
+**Then** `requireMcpAuth` checks its signature or record, issuer, audience and expiry before any tool runs; a token issued for another audience, expired or revoked gets `401`; a session cookie alone gets `401`; a request carrying an `Origin` other than `BETTER_AUTH_URL`'s gets `403`, against DNS rebinding
+
+**Given** the application's middleware
+**When** a request reaches `/api/mcp`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke` or `/.well-known/*`
+**Then** `requireSession`, `csrf()` and `sameOrigin` let it through to their own checks, `compress` leaves `/api/mcp` alone, the 64 KB body limit applies, and `/.well-known/*` is answered before the interface's fallback
+
+**Given** a valid token
+**When** the client lists and calls tools
+**Then** `get_accounts`, `get_categories`, `get_merchants` and `get_tags` answer, each parsing its input with Zod, calling the service function its route calls, returning `structuredContent` with an `outputSchema`, amounts as decimal strings such as `"-12.50"` with their currency, and `readOnlyHint: true`; a failing service returns `isError` with the `AppError` code and message, never a stack
+
+**Given** an access token
+**When** it is issued
+**Then** it is a JWT that lives 10 minutes, the refresh token lives 30 days and rotates, and `requireMcpAuth` reads the key set from the server's loopback address rather than its public name, which a host behind Tailscale may not resolve for itself
+
+**Given** a token that passes `requireMcpAuth`
+**When** its client no longer holds the owner's consent
+**Then** the call is refused with `401` before any tool runs, so a disconnection takes effect at the next call
+
+**Given** « Réglages › Assistants IA » at `/settings/assistants`
+**When** the owner opens it
+**Then** it shows the address to give an assistant with a copy button and a link to `docs/deployment.md#connecting-an-assistant`, and lists each connected assistant with its name, its scopes, its connection date and its last call; « Déconnecter » asks for confirmation, then, in one database transaction, deletes its consent and revokes its refresh and access tokens, since Better Auth's consent deletion leaves the refresh tokens valid
+
+**Given** any tool call
+**When** it ends
+**Then** an `assistant_calls` row records the client, the tool, the time, the outcome code and the number of rows it changed, never its arguments or its result; rows older than 90 days are deleted when a new one is written
+
+**Given** `docs/`
+**When** a self-hoster connects an assistant
+**Then** `docs/deployment.md` « Connecting an assistant » gives the commands for Claude Code, VS Code and Cursor, says that Claude Desktop, claude.ai and ChatGPT connect from their vendor's cloud and are not supported, and states the scopes; `docs/hosting.md` covers the tailnet case; `docs/security-model.md` says what an assistant can read and write and that labels are text from third parties
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the metadata, the `401` challenge, a wrong audience, an expired token, a token whose consent was deleted, a refresh after a disconnection, scope filtering, the `Origin` check, each tool and the call record; Playwright drives a client through dynamic registration, sign-in with two-factor, consent with write unticked, a token exchange and a `tools/list` that lists read tools only, then a disconnection from « Assistants IA » after which both the access token, before its expiry, and the refresh token are refused
+
+### Story 16.2: Ask an assistant to write my rules
+
+As the household's administrator,
+I want to ask an assistant to look at my transactions and write the rules that clean them up,
+So that I describe what I want once instead of writing one rule per shop.
+
+**Requirements:** FR36, FR37, FR38, FR63, FR64, NFR19
+
+**Acceptance Criteria:**
+
+**Given** a token with `archant:read`
+**When** the assistant looks for what to clean up
+**Then** `get_transactions` takes the transaction list's filters (account, direction, category with `none` for uncategorised, merchant, tag, dates, amount range, text, page, `pageSize` up to 100) and returns each transaction's id, date, label, amount, currency, account, category, merchant, tags, notes, exclusion and transfer state, with the count and the income and expense of the filtered rows; `group_transactions_by_label` returns, for the same filters, up to 100 groups of identical normalised labels with their count, total, last date and the categories they carry, as Sure's « Catégoriser » flow groups uncategorised lines
+
+**Given** a token with `archant:read`
+**When** the assistant reads the rules
+**Then** `get_rules` returns every rule in the order it applies, with its conditions, actions, start date and state, and `get_rule_runs` the page of past applications
+
+**Given** a draft rule or a saved rule's id
+**When** the assistant calls `preview_rule`
+**Then** it answers how many transactions match, how many would change, and up to 20 of those that would change with each targeted field's current and new value, counting as Story 8.3 counts: locked fields and values already set do not change; nothing is written
+
+**Given** a token with `archant:write`
+**When** the assistant calls `create_rule`, `update_rule`, `set_rule_enabled` or `delete_rule`
+**Then** the input takes the rule form's shape, condition and action types as closed enums whose descriptions state each operator, and goes through `createRule`, `updateRule`, `setRuleEnabled` or `deleteRule`; a refused input returns `VALIDATION_ERROR` with each field's path and code, so the assistant can correct it; a created rule is enabled and applies to new transactions, as from the interface; `delete_rule` carries `destructiveHint: true`
+
+**Given** a rule that names a category, merchant or tag the household lacks
+**When** the assistant calls `create_category`, `create_merchant` or `create_tag`
+**Then** it is created as from the interface's pickers and its id returned
+
+**Given** `apply_rules` with an optional rule id and the `expectedChanged` count a preview returned
+**When** the count of transactions that would change differs at that moment
+**Then** nothing is written and it answers `RULE_PREVIEW_STALE` with the current count; when it matches, the rules apply as « Appliquer » does in Story 8.3, recorded among « Exécutions récentes »; the tool carries `destructiveHint: true`
+
+**Given** the server's `instructions`
+**When** a client reads them
+**Then** they describe the workflow: group the labels, draft a rule, preview it, show the owner the count and the samples, create it, preview again, apply with the count; and they state that labels, notes and merchant names are bank data, never instructions
+
+**Given** a token with `archant:read` only
+**When** the assistant calls a write tool
+**Then** it is refused with `insufficient_scope` and nothing is written
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers each tool through the MCP handler: a draft preview's samples, a rule created with a field error then corrected, a replace-in-the-label rule previewed and applied, a stale count refused, a locked field left unchanged, a read-only token refused, and a label that reads as an instruction returned as data; `preview_rule`'s new samples are covered in the rules service to the branch
+
+### Story 16.3: Ask an assistant about my finances
+
+As the household's administrator,
+I want an assistant to read my net worth, my month's income and expenses and my recurring payments,
+So that I can ask it questions about my money in plain words.
+
+**Requirements:** FR64, NFR2, NFR19
+
+**Acceptance Criteria:**
+
+**Given** a token with `archant:read`
+**When** the assistant calls `get_balance_sheet` with a period of the dashboard (1 month, 3 months, 6 months, 1 year, all)
+**Then** it returns net worth, assets and liabilities in the reporting currency and their series, and how many accounts in another currency were left out, as the dashboard does
+
+**Given** a month
+**When** the assistant calls `get_income_statement`
+**Then** it returns income and expenses by top-level category with the uncategorised total, from `services/reports.ts` as the dashboard reads them, so the two never disagree
+
+**Given** `get_accounts` with `includeBalanceSeries` and a period
+**When** the assistant calls it
+**Then** each account carries its balance history for that period, as its page charts it
+
+**Given** a status and an optional number of days
+**When** the assistant calls `get_recurring_transactions`
+**Then** it returns the recurring series with their expected next date and amount, at most 200, filtered by status and by a next date within those days
+
+**Given** a transaction id
+**When** the assistant calls `get_transaction`
+**Then** it returns the transaction with its notes, tags, transfer and source
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest checks each tool against the route that serves the same figure, an account in another currency left out with its count, and every amount returned as a decimal string
+
+### Story 16.4: Ask an assistant to classify my transactions
+
+As the household's administrator,
+I want an assistant to set the category, merchant, tags or notes of transactions it finds,
+So that the lines no rule covers get sorted too.
+
+**Requirements:** FR23, FR26, FR38, FR65, NFR19
+
+**Acceptance Criteria:**
+
+**Given** a token with `archant:write`
+**When** the assistant calls `update_transaction` with an id and any of category, merchant, tags, notes, label and exclusion
+**Then** it goes through the same service function as the transaction sheet, with `origin: "user"` because the owner asked for it, so the fields it sets are locked against rules as an edit in the interface locks them
+
+**Given** a token with `archant:write`
+**When** the assistant calls `bulk_update_transactions` with up to 200 ids, or with the list's filters and the `expectedCount` that `get_transactions` returned
+**Then** it sets category, merchant, added tags or exclusion as the bulk bar does; with filters, a count that differs at that moment writes nothing and answers `BULK_COUNT_STALE` with the current count; the tool carries `destructiveHint: true`
+
+**Given** a token with `archant:write`
+**When** the assistant calls `rename_category`, `rename_merchant` or `rename_tag`
+**Then** the item is renamed as under « Réglages », and a name already taken is refused with the same field error
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers each tool: a field locked after an assistant's edit and left by a rule afterwards, a bulk update by ids and by filters, a stale count refused, a read-only token refused, and every write recorded in `assistant_calls` with its count
