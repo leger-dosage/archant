@@ -212,3 +212,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-16-1-connect-an-assistant.md`
   summary: Test that `/api/mcp` refuses a server-signed token carrying `cnf`.
   evidence: `authenticate` in `mcp/server.ts` refuses DPoP-bound tokens, but no spec builds one; none is issued today, so the test matters once DPoP is configured.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-2-ask-an-assistant-to-write-my-rules.md`
+  summary: Measure `group_transactions_by_label` at ten years of history and cap or page `sumTransactionsByLabel` if needed.
+  evidence: The query returns one row per exact label, currency, sign and category with no limit; with mostly distinct bank labels a call loads about one row per transaction. Settle it with a case in `history-volume.spec.ts` over the 100,000-transaction seed.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-16-2-ask-an-assistant-to-write-my-rules.md`
+  summary: Fix the race in `packages/app/e2e/bank-connections.spec.ts` where the connection page's heading stays « Banques » after a bank's callback.
+  evidence: The trace shows `GET /api/bank-connections` starting 7 ms after `POST /api/bank-connections/callback` and returning without the new connection, which is never fetched again; the file failed on commit 94f652c too (2 of 37 in one of three runs), and on this branch 1 of 37 in three of six runs.

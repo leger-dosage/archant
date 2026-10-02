@@ -18,6 +18,17 @@ describe("toFieldErrors", () => {
 			{ path: "nested.amount", code: "invalid_amount" },
 		]);
 	});
+
+	it("names each key a strict object does not take in its own path", () => {
+		const strict = z.strictObject({ nested: z.strictObject({ kept: z.string() }) });
+		const result = strict.safeParse({ extra: 1, nested: { kept: "a", one: 1, two: 2 } });
+
+		expect(toFieldErrors(result.error!)).toEqual([
+			{ path: "nested.one", code: "unrecognized_keys" },
+			{ path: "nested.two", code: "unrecognized_keys" },
+			{ path: "extra", code: "unrecognized_keys" },
+		]);
+	});
 });
 
 describe("validationError", () => {

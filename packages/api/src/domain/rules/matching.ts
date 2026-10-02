@@ -363,15 +363,17 @@ export type RuleTally = {
  * actions overwrite them. An action on a locked field, or naming a deleted
  * row, plans nothing, so later rules see the value unchanged. A tag past
  * `maxTagsPerRow` is skipped. A candidate no rule changes is absent from
- * `plan`; `perRule` holds one tally per rule, in the same order.
+ * `plan`; `perRule` holds one tally per rule, in the same order; `matched`
+ * counts the candidates any rule matched, each once, changed or not.
  */
 export function planActions(
 	rules: readonly Rule[],
 	candidates: readonly RuleCandidate[],
 	reportingCurrency: string,
 	maxTagsPerRow: number,
-): { plan: Map<string, RowPlan>; perRule: RuleTally[] } {
+): { plan: Map<string, RowPlan>; perRule: RuleTally[]; matched: number } {
 	const plan = new Map<string, RowPlan>();
+	let matched = 0;
 	const tallied = rules.map((rule) => ({
 		rule,
 		tally: { ruleId: rule.id, matched: 0, changed: 0 },
@@ -380,10 +382,12 @@ export function planActions(
 	for (const candidate of candidates) {
 		// The row as later rules see it: what earlier ones planned over the row as it is.
 		let row = candidate;
+		let reached = false;
 
 		for (const { rule, tally } of tallied) {
 			if (matches(rule, row, reportingCurrency)) {
 				const before = row;
+				reached = true;
 
 				for (const action of rule.actions) {
 					row = { ...row, ...applyAction(action, row, maxTagsPerRow) };
@@ -394,6 +398,7 @@ export function planActions(
 			}
 		}
 
+		matched += reached ? 1 : 0;
 		const planned = planOf(candidate, row);
 
 		if (Object.keys(planned).length > 0) {
@@ -401,5 +406,5 @@ export function planActions(
 		}
 	}
 
-	return { plan, perRule: tallied.map(({ tally }) => tally) };
+	return { plan, perRule: tallied.map(({ tally }) => tally), matched };
 }

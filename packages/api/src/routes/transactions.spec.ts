@@ -869,7 +869,7 @@ describe("POST /api/transactions/bulk-update", () => {
 			}),
 		).resolves.toMatchObject({
 			status: 400,
-			body: { error: { fields: [{ path: "filter", code: "unrecognized_keys" }] } },
+			body: { error: { fields: [{ path: "filter.pageSize", code: "unrecognized_keys" }] } },
 		});
 		await expect(
 			request("POST", "/api/transactions/bulk-update", {

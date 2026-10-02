@@ -298,7 +298,11 @@ The first call opens the browser on Archant's sign-in page, then the code step w
 
 The assistant then holds an access token valid ten minutes, bound to `/api/mcp`, and a refresh token valid 30 days, replaced at each use. It identifies itself either with a Client ID Metadata Document, which Archant fetches from the assistant's publisher, or by registering itself; Archant accepts both and nothing else.
 
-Today the assistant can call `get_accounts`, `get_categories`, `get_merchants` and `get_tags`, which read only. Amounts are decimal strings such as `"-12.50"` beside their currency. Each call is recorded with the assistant, the tool, the time and its outcome, never its arguments or its answer, and kept 90 days.
+With `archant:read`, the assistant can call `get_accounts`, `get_categories`, `get_merchants`, `get_tags`, `get_transactions`, `group_transactions_by_label`, `get_rules`, `get_rule_runs` and `preview_rule`, which read only. With `archant:write` as well, it can call `create_rule`, `update_rule`, `set_rule_enabled`, `delete_rule`, `apply_rules`, `create_category`, `create_merchant` and `create_tag`. No tool deletes or merges a transaction, a category, a merchant or a tag, and none creates a transaction. Amounts are decimal strings such as `"-12.50"` beside their currency. Each call is recorded with the assistant, the tool, the time, its outcome and the rows it changed, never its arguments or its answer, and kept 90 days.
+
+The server tells the assistant how to write rules: group the labels, draft a rule, preview it and show you how many transactions it would change with a sample of them, then create it, preview it again and apply it with that count. `apply_rules` writes nothing when the count has changed since the preview, and answers the count now. A field you set by hand is never changed by a rule, as in the interface, and each application appears in « Exécutions récentes » on the rules page.
+
+An assistant granted read only that calls a write tool gets a `403` with `WWW-Authenticate: Bearer error="insufficient_scope"`, and nothing is written. A client following the MCP specification may offer to sign in again for the write scope; the consent page then asks you again, and you can untick it again.
 
 The page lists each connected assistant with its access, the date you allowed it and its last call. « Déconnecter » takes effect at the assistant's next call: its access token is refused before its ten minutes are up, and its refresh token is deleted.
 

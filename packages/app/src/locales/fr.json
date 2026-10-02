@@ -1258,6 +1258,7 @@
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
+		"RULE_PREVIEW_STALE": "Les opérations ont changé depuis l'aperçu ({{changed}} à modifier maintenant). Relancez l'aperçu avant d'appliquer.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",

@@ -1,5 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
-import type { Rule } from "../domain/rules/matching.ts";
+import type { Rule, RowPlan, RuleCandidate } from "../domain/rules/matching.ts";
 import type {
 	RuleConditionRequest,
 	RuleEnabledInput,
@@ -12,9 +12,13 @@ import type { ReadRule, Reference } from "./rule-reader.ts";
 
 import { asc, count, desc, eq } from "drizzle-orm";
 
+import type { MinorUnits } from "@archant/data/money";
 import type { RuleActionType, RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import { ruleActions, ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
-import type { NewRuleCondition, RuleCondition as RuleConditionRow } from "@archant/data/types";
+import type {
+	RuleAction as RuleActionRow,
+	RuleCondition as RuleConditionRow,
+} from "@archant/data/types";
 
 import { planActions } from "../domain/rules/matching.ts";
 import { AppError } from "../lib/errors.ts";
@@ -174,10 +178,13 @@ async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest):
 
 type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** Writes a rule's conditions and actions, in the form's order. */
-async function insertParts(tx: Transaction, ruleId: string, rule: RuleRequest): Promise<void> {
-	const rows = rule.conditions.flatMap(
-		(condition: RuleConditionRequest, position): NewRuleCondition[] => {
+/** A rule's conditions and actions as rows, in the form's order, each with a new id. */
+function partsOf(
+	ruleId: string,
+	rule: RuleRequest,
+): { conditions: RuleConditionRow[]; actions: RuleActionRow[] } {
+	const conditions = rule.conditions.flatMap(
+		(condition: RuleConditionRequest, position): RuleConditionRow[] => {
 			const id = crypto.randomUUID();
 
 			if (condition.conditionType !== "compound") {
@@ -204,21 +211,27 @@ async function insertParts(tx: Transaction, ruleId: string, rule: RuleRequest): 
 			];
 		},
 	);
+	const actions = rule.actions.map((action, position) => ({
+		id: crypto.randomUUID(),
+		ruleId,
+		position,
+		actionType: action.actionType,
+		value: action.value,
+		replacement: action.replacement,
+	}));
 
-	if (rows.length > 0) {
-		await tx.insert(ruleConditions).values(rows);
+	return { conditions, actions };
+}
+
+/** Writes a rule's conditions and actions, in the form's order. */
+async function insertParts(tx: Transaction, ruleId: string, rule: RuleRequest): Promise<void> {
+	const { conditions, actions } = partsOf(ruleId, rule);
+
+	if (conditions.length > 0) {
+		await tx.insert(ruleConditions).values(conditions);
 	}
 
-	await tx.insert(ruleActions).values(
-		rule.actions.map((action, position) => ({
-			id: crypto.randomUUID(),
-			ruleId,
-			position,
-			actionType: action.actionType,
-			value: action.value,
-			replacement: action.replacement,
-		})),
-	);
+	await tx.insert(ruleActions).values(actions);
 }
 
 /** Creates a rule, enabled at once, as in Sure. */
@@ -320,17 +333,8 @@ export async function deleteRule(deps: ServiceDeps, id: string): Promise<{ id: s
 /** A rule as the evaluator reads it, beside the snapshot a run keeps of it. */
 type Applied = { rule: Rule; snapshot: RuleSnapshot };
 
-/**
- * The rules an application runs: the one `id` names, enabled or not, or every
- * enabled rule in application order. Throws `NOT_FOUND` for an unknown id.
- */
-async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
-	const found = await readRules(db, id === undefined ? { enabled: true } : { id });
-
-	if (id !== undefined && found.length === 0) {
-		throw notFound();
-	}
-
+/** Each rule as the evaluator reads it, beside its snapshot. */
+async function appliedOf(db: Pick<Db, "select">, found: readonly ReadRule[]): Promise<Applied[]> {
 	if (found.length === 0) {
 		return [];
 	}
@@ -342,6 +346,41 @@ async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Pro
 
 		return { rule: toRule(read, known), snapshot: { name, conditions, actions } };
 	});
+}
+
+/**
+ * The rules an application runs: the one `id` names, enabled or not, or every
+ * enabled rule in application order. Throws `NOT_FOUND` for an unknown id.
+ */
+async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
+	const found = await readRules(db, id === undefined ? { enabled: true } : { id });
+
+	if (id !== undefined && found.length === 0) {
+		throw notFound();
+	}
+
+	return appliedOf(db, found);
+}
+
+/**
+ * A rule not saved yet, checked as a save checks it, then read as the
+ * evaluator reads a stored one: a preview refuses what a save would.
+ */
+async function draftToApply(db: Pick<Db, "select">, input: RuleInput): Promise<Applied[]> {
+	const rule = parse(input);
+	await assertReferencesExist(db, rule);
+	const id = crypto.randomUUID();
+	const now = Date.now();
+	const row = {
+		id,
+		name: rule.name,
+		enabled: true,
+		effectiveDate: rule.effectiveDate,
+		createdAt: now,
+		updatedAt: now,
+	};
+
+	return appliedOf(db, [{ row, ...partsOf(id, rule) }]);
 }
 
 /**
@@ -358,30 +397,132 @@ function earliestStart(reached: readonly Rule[]): IsoDate | null {
 	return starts.filter((start) => start !== null).toSorted()[0] ?? null;
 }
 
-/** The plan and per-rule tallies of `applied` over the transactions it reaches. */
+/** The plan and per-rule tallies of `applied` over the transactions it reaches, and those. */
 async function planOver(db: Pick<Db, "select">, applied: readonly Applied[]) {
 	const evaluated = applied.map(({ rule }) => rule);
 	const candidates = await ruleCandidates(db, earliestStart(evaluated));
 
-	return planActions(evaluated, candidates, getReportingCurrency(), MAX_TAGS_PER_TRANSACTION);
+	return {
+		...planActions(evaluated, candidates, getReportingCurrency(), MAX_TAGS_PER_TRANSACTION),
+		candidates,
+	};
+}
+
+/** One field a preview would change: its value now, and the one it would get. */
+type FieldChange<Value> = { from: Value; to: Value };
+
+/** A transaction a preview would change, as it stands, with what would change on it. */
+type RulePreviewSample = {
+	id: string;
+	date: IsoDate;
+	/** The label as it stands; `changes.label` gives the new one. */
+	label: string;
+	amount: MinorUnits;
+	currency: string;
+	accountId: string;
+	changes: {
+		category?: FieldChange<string | null>;
+		merchant?: FieldChange<string | null>;
+		tags?: FieldChange<string[]>;
+		label?: FieldChange<string>;
+		excluded?: FieldChange<boolean>;
+		expectedTransferAccount?: FieldChange<string | null>;
+	};
+};
+
+export type RulePreview = {
+	/** Transactions at least one rule matched, a locked or unchanged one included. */
+	matched: number;
+	/** Transactions an application would change, each once. */
+	changed: number;
+	/** Up to `PREVIEW_SAMPLES` of the changed ones, most recent first. */
+	samples: RulePreviewSample[];
+};
+
+/** Enough to show what a rule does, few enough to read in a conversation. */
+const PREVIEW_SAMPLES = 20;
+
+function sampleOf(row: RuleCandidate, planned: RowPlan): RulePreviewSample {
+	return {
+		id: row.id,
+		date: row.date,
+		label: row.label,
+		amount: row.amount,
+		currency: row.currency,
+		accountId: row.accountId,
+		changes: {
+			...(planned.categoryId === undefined
+				? {}
+				: { category: { from: row.categoryId, to: planned.categoryId } }),
+			...(planned.merchantId === undefined
+				? {}
+				: { merchant: { from: row.merchantId, to: planned.merchantId } }),
+			...(planned.addTagIds === undefined
+				? {}
+				: { tags: { from: [...row.tagIds], to: [...row.tagIds, ...planned.addTagIds] } }),
+			...(planned.label === undefined ? {} : { label: { from: row.label, to: planned.label } }),
+			...(planned.excluded === undefined
+				? {}
+				: { excluded: { from: row.excluded, to: planned.excluded } }),
+			...(planned.expectedTransferAccountId === undefined
+				? {}
+				: {
+						expectedTransferAccount: {
+							from: row.expectedTransferAccountId,
+							to: planned.expectedTransferAccountId,
+						},
+					}),
+		},
+	};
+}
+
+/** The changed rows among `candidates`, read from the most recent, `PREVIEW_SAMPLES` at most. */
+function samplesOf(
+	candidates: readonly RuleCandidate[],
+	plan: ReadonlyMap<string, RowPlan>,
+): RulePreviewSample[] {
+	const samples: RulePreviewSample[] = [];
+
+	// `ruleCandidates` reads the oldest first.
+	for (const row of candidates.toReversed()) {
+		const planned = plan.get(row.id);
+
+		if (planned !== undefined) {
+			samples.push(sampleOf(row, planned));
+		}
+
+		if (samples.length === PREVIEW_SAMPLES) {
+			break;
+		}
+	}
+
+	return samples;
 }
 
 /**
- * How many existing transactions applying the rule `id`, or every enabled
- * rule when it is absent, would change: a locked field or a value already
- * there is no change, and a row several rules change counts once. Writes
- * nothing and records no run.
+ * What applying rules to existing transactions would do: the saved rule an
+ * id names, a draft in the form's shape, checked as a save checks it, or
+ * every enabled rule when `target` is absent. Counts the rows any rule
+ * matches and those it would change: a locked field or a value already there
+ * is no change, and a row several rules change counts once. Gives a sample of
+ * the changed rows, field by field. Writes nothing and records no run.
  */
-export async function previewRules(deps: ServiceDeps, id?: string): Promise<{ changed: number }> {
-	const applied = await rulesToApply(deps.db, id);
+export async function previewRules(
+	deps: ServiceDeps,
+	target?: string | RuleInput,
+): Promise<RulePreview> {
+	const applied =
+		typeof target === "object"
+			? await draftToApply(deps.db, target)
+			: await rulesToApply(deps.db, target);
 
 	if (applied.length === 0) {
-		return { changed: 0 };
+		return { matched: 0, changed: 0, samples: [] };
 	}
 
-	const { plan } = await planOver(deps.db, applied);
+	const { plan, matched, candidates } = await planOver(deps.db, applied);
 
-	return { changed: plan.size };
+	return { matched, changed: plan.size, samples: samplesOf(candidates, plan) };
 }
 
 type RuleRunData = {
@@ -407,17 +548,28 @@ export type RuleApplication = { changed: number; runs: RuleRunData[] };
  * marked, and records one run per rule. No balance moves: no rule action
  * changes an amount. Answers how many rows it changed, a row several rules
  * change counted once, and the runs; none without a rule to apply.
+ *
+ * With `expectedChanged`, the count a preview gave, it writes nothing and
+ * answers `RULE_PREVIEW_STALE` when the rows to change now number otherwise.
+ * Only the count is compared: the same count on different rows is not detected.
  */
-export async function applyRules(deps: ServiceDeps, id?: string): Promise<RuleApplication> {
+export async function applyRules(
+	deps: ServiceDeps,
+	id?: string,
+	expectedChanged?: number,
+): Promise<RuleApplication> {
 	return deps.db.transaction(
 		async (tx) => {
 			const applied = await rulesToApply(tx, id);
 
 			if (applied.length === 0) {
+				assertExpected(expectedChanged, 0);
+
 				return { changed: 0, runs: [] };
 			}
 
 			const { plan, perRule } = await planOver(tx, applied);
+			assertExpected(expectedChanged, plan.size);
 			const now = Date.now();
 			// Inside this transaction, the ledger's own becomes a savepoint: the
 			// writes and the runs commit together.
@@ -451,6 +603,17 @@ export async function applyRules(deps: ServiceDeps, id?: string): Promise<RuleAp
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+function assertExpected(expected: number | undefined, changed: number): void {
+	if (expected !== undefined && expected !== changed) {
+		throw new AppError(
+			"RULE_PREVIEW_STALE",
+			"The transactions to change are no longer those the preview counted.",
+			undefined,
+			{ changed: String(changed) },
+		);
+	}
 }
 
 export type RuleRunPage = {

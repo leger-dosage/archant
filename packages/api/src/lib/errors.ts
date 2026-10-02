@@ -32,6 +32,11 @@ export const ERROR_STATUSES = {
 	INVALID_IMPORT_FILE: 400,
 	/** The account changed between an import's preview and its confirmation. */
 	IMPORT_PREVIEW_STALE: 409,
+	/**
+	 * An application of rules whose count of rows to change differs from the
+	 * one its preview gave; `params.changed` is the count now. Nothing is written.
+	 */
+	RULE_PREVIEW_STALE: 409,
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
 	/**

@@ -387,6 +387,57 @@ export async function sumTransactions(
 	}));
 }
 
+/** The transactions of one label, one currency, one sign and one category. */
+export type LabelTotal = {
+	label: string;
+	currency: string;
+	/** `true` for money out: a label's refunds stay apart from its purchases. */
+	outflow: boolean;
+	categoryId: string | null;
+	count: number;
+	amount: MinorUnits;
+	lastDate: IsoDate;
+};
+
+/**
+ * The transactions matching `filter`, counted and summed per exact label,
+ * currency, sign and category, as Sure's « Catégoriser » groups the lines it
+ * offers. Excluded and pending rows count, as in the list. Labels that differ
+ * by case or accents only are the caller's to merge: SQLite's `lower` folds
+ * ASCII only.
+ */
+export async function sumTransactionsByLabel(
+	deps: ServiceDeps,
+	filter: TransactionFilter,
+): Promise<LabelTotal[]> {
+	const where = filterCondition(filter, joinedTransferSide);
+
+	if (where === null) {
+		return [];
+	}
+
+	const outflow = sql<number>`${entries.amount} < 0`;
+	const rows = await deps.db
+		.select({
+			label: transactions.label,
+			currency: entries.currency,
+			outflow: outflow.mapWith(Boolean),
+			categoryId: transactions.categoryId,
+			count: count(),
+			amount: sum(entries.amount).mapWith(Number),
+			// Never null: a group holds one row at least.
+			lastDate: sql<IsoDate>`max(${entries.date})`,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(where)
+		.groupBy(transactions.label, entries.currency, outflow, transactions.categoryId);
+
+	return rows.map(toRecord);
+}
+
 /**
  * The counted transactions of `accountIds` between `from` and `to`, both
  * inclusive, summed per category and per sign: `countsInCashFlow`'s SQL

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
 import type { CategoryColor } from "@archant/data/category-presets";
-import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
+import { CATEGORY_COLORS, CATEGORY_ICONS, newCategory } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
 import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
@@ -32,7 +32,6 @@ import { ApiError } from "@/lib/api";
 import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
-import { newCategory } from "@/lib/new-category";
 
 const FIELD_NAMES = ["name", "kind", "color", "icon", "parentId"] as const;
 

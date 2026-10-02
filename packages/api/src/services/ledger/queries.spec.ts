@@ -28,7 +28,13 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { updateTransaction } from "./edits.ts";
-import { cashFlowByCategory, entryOrigins, listTransactions, sumTransactions } from "./queries.ts";
+import {
+	cashFlowByCategory,
+	entryOrigins,
+	listTransactions,
+	sumTransactions,
+	sumTransactionsByLabel,
+} from "./queries.ts";
 
 useLedgerDatabase();
 
@@ -373,6 +379,94 @@ describe("sumTransactions", () => {
 		await expect(sumTransactions(deps(), { accountIds: [joint.id], q: "loyer" })).resolves.toEqual([
 			{ currency: "EUR", amount: -90000, income: 0, expense: -90000, count: 1 },
 		]);
+	});
+});
+
+const byLabelAndSign = <Row extends { label: string; outflow: boolean; currency: string }>(
+	rows: Row[],
+) =>
+	rows.toSorted(
+		(a, b) =>
+			a.label.localeCompare(b.label) ||
+			Number(a.outflow) - Number(b.outflow) ||
+			a.currency.localeCompare(b.currency),
+	);
+
+describe("sumTransactionsByLabel", () => {
+	it("counts and sums per exact label, currency, sign and category, with the last date", async () => {
+		const joint = await openChecking();
+		const dollars = await openChecking({ name: "Dollars", currency: "USD" });
+		const groceries = await newCategory("Courses");
+		await add(joint.id, { label: "CB LIDL", amount: toMinorUnits(-1000), date: "2026-09-10" });
+		await add(joint.id, { label: "CB LIDL", amount: toMinorUnits(-500), date: "2026-09-12" });
+		await add(joint.id, { label: "CB LIDL", amount: toMinorUnits(300), date: "2026-09-11" });
+		await add(joint.id, { label: "cb lidl", amount: toMinorUnits(-200), date: "2026-09-05" });
+		const filed = await add(joint.id, { label: "CB LIDL", amount: toMinorUnits(-100) });
+		await updateTransaction(deps(), filed, { categoryId: groceries }, { origin: "user" });
+		await add(dollars.id, { label: "CB LIDL", amount: toMinorUnits(-700), currency: "USD" });
+
+		const rows = await sumTransactionsByLabel(deps(), { accountIds: [joint.id, dollars.id] });
+
+		expect(byLabelAndSign(rows)).toEqual(
+			byLabelAndSign([
+				{
+					label: "CB LIDL",
+					currency: "EUR",
+					outflow: true,
+					categoryId: null,
+					count: 2,
+					amount: -1500,
+					lastDate: "2026-09-12",
+				},
+				{
+					label: "CB LIDL",
+					currency: "EUR",
+					outflow: true,
+					categoryId: groceries,
+					count: 1,
+					amount: -100,
+					lastDate: "2026-09-10",
+				},
+				{
+					label: "CB LIDL",
+					currency: "EUR",
+					outflow: false,
+					categoryId: null,
+					count: 1,
+					amount: 300,
+					lastDate: "2026-09-11",
+				},
+				{
+					label: "CB LIDL",
+					currency: "USD",
+					outflow: true,
+					categoryId: null,
+					count: 1,
+					amount: -700,
+					lastDate: "2026-09-10",
+				},
+				{
+					label: "cb lidl",
+					currency: "EUR",
+					outflow: true,
+					categoryId: null,
+					count: 1,
+					amount: -200,
+					lastDate: "2026-09-05",
+				},
+			]),
+		);
+	});
+
+	it("groups only the rows the filter keeps, and none for a filter that matches nothing", async () => {
+		const joint = await openChecking();
+		await add(joint.id, { label: "Loyer", amount: toMinorUnits(-90000) });
+		await add(joint.id, { label: "Pain", amount: toMinorUnits(-120) });
+
+		await expect(
+			sumTransactionsByLabel(deps(), { accountIds: [joint.id], q: "loyer" }),
+		).resolves.toMatchObject([{ label: "Loyer", count: 1 }]);
+		await expect(sumTransactionsByLabel(deps(), { accountIds: [] })).resolves.toEqual([]);
 	});
 });
 

@@ -4,7 +4,7 @@ import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { CATEGORY_NAME_MAX_LENGTH } from "@archant/data/category-presets";
+import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 
 import { TintedIcon } from "@/components/TintedIcon";
 import {
@@ -20,7 +20,6 @@ import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
 import { showErrorToast } from "@/lib/error-toast";
 import { isNewName } from "@/lib/name-key";
-import { newCategory } from "@/lib/new-category";
 import { matchesSearch } from "@/lib/search-match";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their

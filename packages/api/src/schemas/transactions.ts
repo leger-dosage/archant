@@ -220,7 +220,7 @@ function repeated(max: number) {
 /** One value of the `direction` filter, as `direction` in `domain/cash-flow.ts` returns it. */
 export const directionSchema = z.enum(DIRECTIONS);
 
-const filterFields = {
+export const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
 	// Repeats are dropped rather than refused: « Revenus » twice is still « Revenus ».
 	direction: z
@@ -244,7 +244,7 @@ type FilterFields = {
 	amountMax?: string | undefined;
 };
 
-function checkFilter(value: FilterFields, context: z.core.$RefinementCtx) {
+export function checkFilter(value: FilterFields, context: z.core.$RefinementCtx) {
 	if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
 		context.addIssue({ code: "custom", path: ["to"], message: "before_from" });
 	}
@@ -265,7 +265,7 @@ function checkFilter(value: FilterFields, context: z.core.$RefinementCtx) {
 	}
 }
 
-function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest }: Value) {
+export function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest }: Value) {
 	const min = amountMin === undefined ? null : parseAmountBound(amountMin);
 	const max = amountMax === undefined ? null : parseAmountBound(amountMax);
 

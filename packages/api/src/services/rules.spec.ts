@@ -551,7 +551,7 @@ describe("previewRules and applyRules", () => {
 			actions: [{ actionType: "replace_in_transaction_name", value: "\\\\", replacement: " " }],
 		});
 
-		await expect(previewRules(deps(), rule.id)).resolves.toEqual({ changed: 1 });
+		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 1 });
 		await applyRules(deps(), rule.id);
 
 		const rows = await candidatesOf([terminal, plain]);
@@ -588,7 +588,7 @@ describe("previewRules and applyRules", () => {
 			actions: [action()],
 		});
 
-		await expect(previewRules(deps(), rule.id)).resolves.toEqual({ changed: 3 });
+		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 3 });
 		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
 			total: 0,
 		});
@@ -633,7 +633,7 @@ describe("previewRules and applyRules", () => {
 			false,
 			false,
 		]);
-		await expect(previewRules(deps(), rule.id)).resolves.toEqual({ changed: 0 });
+		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 0 });
 	});
 
 	it("apply a disabled rule from its own menu, leaving its switch off", async () => {
@@ -665,7 +665,7 @@ describe("previewRules and applyRules", () => {
 		const disabled = await laterRule({ conditions: [labelHas("compte3")], actions: [action()] });
 		await setRuleEnabled(deps(), disabled.id, { enabled: false });
 
-		await expect(previewRules(deps())).resolves.toEqual({ changed: 1 });
+		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 1 });
 
 		const { changed, runs } = await applyRules(deps());
 
@@ -690,7 +690,7 @@ describe("previewRules and applyRules", () => {
 			actions: [action()],
 		});
 
-		await expect(previewRules(deps(), rule.id)).resolves.toEqual({ changed: 1 });
+		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 1 });
 		await applyRules(deps());
 		await expect(candidatesOf([may, june])).resolves.toMatchObject([
 			{ categoryId: null },
@@ -708,7 +708,7 @@ describe("previewRules and applyRules", () => {
 		});
 		await laterRule({ conditions: [labelHas("compte6")], actions: [action("loisirs")] });
 
-		await expect(previewRules(deps())).resolves.toEqual({ changed: 2 });
+		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 2 });
 		await expect(applyRules(deps())).resolves.toMatchObject({ changed: 2 });
 		await expect(candidatesOf([may, june])).resolves.toMatchObject([
 			{ categoryId: "loisirs" },
@@ -730,7 +730,7 @@ describe("previewRules and applyRules", () => {
 			actions: [action("loisirs")],
 		});
 
-		await expect(previewRules(deps())).resolves.toEqual({ changed: 2 });
+		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 2 });
 		await expect(applyRules(deps())).resolves.toMatchObject({ changed: 2 });
 		await expect(candidatesOf([may, june])).resolves.toMatchObject([
 			{ categoryId: "loisirs" },
@@ -742,7 +742,7 @@ describe("previewRules and applyRules", () => {
 		const rule = await createRule(deps(), { conditions: [], actions: [action()] });
 		await setRuleEnabled(deps(), rule.id, { enabled: false });
 
-		await expect(previewRules(deps())).resolves.toEqual({ changed: 0 });
+		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 0 });
 		await expect(applyRules(deps())).resolves.toEqual({ changed: 0, runs: [] });
 		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
 			total: 0,
@@ -752,6 +752,170 @@ describe("previewRules and applyRules", () => {
 	it("answer NOT_FOUND for an unknown rule", async () => {
 		await expect(previewRules(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(applyRules(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+// Story 16.2: what an assistant previews before it saves or applies.
+
+describe("previewRules on a draft, and its samples", () => {
+	it("previews a draft without saving it, giving each changed label's current and new value", async () => {
+		const [first = "", second = ""] = await rowsOf([
+			"CB CARREFOUR DRAFT1",
+			"CB CARREFOUR DRAFT1 B",
+		]);
+
+		const preview = await previewRules(deps(), {
+			conditions: [labelHas("draft1")],
+			actions: [{ actionType: "replace_in_transaction_name", value: "^CB ", replacement: "" }],
+		});
+
+		expect(preview.matched).toBe(2);
+		expect(preview.changed).toBe(2);
+		expect(preview.samples.map((sample) => sample.id).toSorted()).toEqual(
+			[first, second].toSorted(),
+		);
+		const [candidate] = await candidatesOf([first]);
+		expect(preview.samples.find((sample) => sample.id === first)).toEqual({
+			id: first,
+			date: "2026-09-10",
+			label: "CB CARREFOUR DRAFT1",
+			amount: -1000,
+			currency: "EUR",
+			accountId: candidate?.accountId,
+			changes: { label: { from: "CB CARREFOUR DRAFT1", to: "CARREFOUR DRAFT1" } },
+		});
+		await expect(listRules(deps())).resolves.toEqual([]);
+		await expect(candidatesOf([first])).resolves.toMatchObject([{ label: "CB CARREFOUR DRAFT1" }]);
+		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
+			total: 0,
+		});
+	});
+
+	it("refuses a draft as a save would, on the field at fault", async () => {
+		await expect(
+			previewRules(deps(), {
+				conditions: [{ conditionType: "transaction_name", operator: ">", value: "x" }],
+				actions: [action()],
+			}),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "conditions.0.operator", code: "invalid_value" }],
+		});
+		await expect(
+			previewRules(deps(), { conditions: [], actions: [action("missing")] }),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "actions.0.value", code: "invalid_value" }],
+		});
+	});
+
+	it("counts a locked row as matched, never as changed nor as a sample", async () => {
+		const [locked = "", open = ""] = await rowsOf(["DRAFT2 LOCKED", "DRAFT2 OPEN"]);
+		await updateTransaction(deps(), locked, { categoryId: "loisirs" }, { origin: "user" });
+
+		const preview = await previewRules(deps(), {
+			conditions: [labelHas("draft2")],
+			actions: [action()],
+		});
+
+		expect(preview).toMatchObject({ matched: 2, changed: 1 });
+		expect(preview.samples).toEqual([
+			expect.objectContaining({
+				id: open,
+				changes: { category: { from: null, to: "courses" } },
+			}),
+		]);
+	});
+
+	it("gives at most 20 samples, the most recent first", async () => {
+		const older = await rowsOf(
+			Array.from({ length: 22 }, (_, index) => `DRAFT3 ${index}`),
+			"2026-09-10",
+		);
+		const [newest = ""] = await rowsOf(["DRAFT3 NEW"], "2026-09-20");
+
+		const preview = await previewRules(deps(), {
+			conditions: [labelHas("draft3")],
+			actions: [action()],
+		});
+
+		expect(preview).toMatchObject({ matched: 23, changed: 23 });
+		expect(preview.samples).toHaveLength(20);
+		expect(preview.samples[0]?.id).toBe(newest);
+		expect(preview.samples.slice(1).every((sample) => older.includes(sample.id))).toBe(true);
+	});
+
+	it("gives every kind of field an action changes, with its current and new value", async () => {
+		const [id = ""] = await rowsOf(["DRAFT4"]);
+
+		const { samples } = await previewRules(deps(), {
+			conditions: [labelHas("draft4")],
+			actions: [
+				action(),
+				{ actionType: "set_transaction_merchant", value: "amazon" },
+				{ actionType: "set_transaction_tags", value: "achats" },
+				{ actionType: "set_transaction_name", value: "Courses" },
+				{ actionType: "exclude_transaction" },
+				{ actionType: "set_as_transfer_or_payment", value: "a1" },
+			],
+		});
+
+		expect(samples).toEqual([
+			expect.objectContaining({
+				id,
+				changes: {
+					category: { from: null, to: "courses" },
+					merchant: { from: null, to: "amazon" },
+					tags: { from: [], to: ["achats"] },
+					label: { from: "DRAFT4", to: "Courses" },
+					excluded: { from: false, to: true },
+					expectedTransferAccount: { from: null, to: "a1" },
+				},
+			}),
+		]);
+	});
+
+	it("previews a saved rule by its id and every enabled rule alike, samples included", async () => {
+		const [id = ""] = await rowsOf(["DRAFT5"]);
+		const rule = await createRule(deps(), {
+			conditions: [labelHas("draft5")],
+			actions: [action()],
+		});
+
+		const byId = await previewRules(deps(), rule.id);
+
+		expect(byId).toMatchObject({ matched: 1, changed: 1, samples: [{ id }] });
+		await expect(previewRules(deps())).resolves.toEqual(byId);
+	});
+});
+
+describe("applyRules with the count a preview gave", () => {
+	it("writes nothing and records no run when the count changed, naming the count now", async () => {
+		const ids = await rowsOf(["STALE1 A", "STALE1 B", "STALE1 C", "STALE1 D"]);
+		const rule = await createRule(deps(), {
+			conditions: [labelHas("stale1")],
+			actions: [action()],
+		});
+
+		await expect(applyRules(deps(), rule.id, 3)).rejects.toMatchObject({
+			code: "RULE_PREVIEW_STALE",
+			status: 409,
+			params: { changed: "4" },
+		});
+		await expect(candidatesOf(ids)).resolves.toMatchObject(ids.map(() => ({ categoryId: null })));
+		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
+			total: 0,
+		});
+
+		await expect(applyRules(deps(), rule.id, 4)).resolves.toMatchObject({ changed: 4 });
+	});
+
+	it("compares with none when no rule is enabled", async () => {
+		await expect(applyRules(deps(), undefined, 2)).rejects.toMatchObject({
+			code: "RULE_PREVIEW_STALE",
+			params: { changed: "0" },
+		});
+		await expect(applyRules(deps(), undefined, 0)).resolves.toEqual({ changed: 0, runs: [] });
 	});
 });
 
