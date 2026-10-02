@@ -53,6 +53,8 @@ export const newAction = (
 	actionType,
 	// An exclusion takes no value: the schema refuses one.
 	value: isValuelessAction(actionType) ? null : "",
+	// Only a replacement in the label has a replacement: the schema refuses one elsewhere.
+	replacement: actionType === "replace_in_transaction_name" ? "" : null,
 });
 
 // Sure's new rule starts with one condition and one action to fill in.
@@ -91,7 +93,11 @@ export function valuesOf(rule: RuleData, currency: CurrencyCode): FormValues {
 					}
 				: leafValues(condition, currency),
 		),
-		actions: rule.actions.map((action) => ({ actionType: action.actionType, value: action.value })),
+		actions: rule.actions.map((action) => ({
+			actionType: action.actionType,
+			value: action.value,
+			replacement: action.replacement ?? null,
+		})),
 	};
 }
 
@@ -112,7 +118,7 @@ export function fieldNames(values: FormValues): Path<FormValues>[] {
 	}
 
 	for (const index of values.actions.keys()) {
-		names.push(`actions.${index}`, `actions.${index}.value`);
+		names.push(`actions.${index}`, `actions.${index}.value`, `actions.${index}.replacement`);
 	}
 
 	return names;

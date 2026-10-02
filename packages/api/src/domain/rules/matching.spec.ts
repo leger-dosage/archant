@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
+import { compileLabelPattern } from "./label-pattern.ts";
 import { matches, planActions } from "./matching.ts";
 
 const candidate = (overrides: Partial<RuleCandidate> = {}): RuleCandidate => ({
@@ -422,6 +423,72 @@ describe("planActions", () => {
 
 		expect(plan([expectLivret], [candidate({ transfer: { kind: "internal_move" } })])).toEqual([]);
 		expect(plan([expectLivret], [candidate({ accountId: "livret" })])).toEqual([]);
+	});
+});
+
+const replacing = (
+	pattern: string,
+	replacement: string,
+	id = "r1",
+	conditions: Condition[] = [],
+) => {
+	const compiled = compileLabelPattern(pattern);
+
+	if (compiled === null) {
+		throw new Error(`${pattern} does not compile`);
+	}
+
+	return withActions(
+		[{ type: "replace_in_transaction_name", pattern: compiled, replacement }],
+		conditions,
+		id,
+	);
+};
+
+describe("planActions' replacement in the label", () => {
+	it("rewrites the label of a card terminal line", () => {
+		expect(
+			plan(
+				[replacing("\\\\", " ")],
+				[candidate({ label: "LECLERC SANS CONTAC\\ANCENIS-SAINT\\ FR" })],
+			),
+		).toEqual([["e1", { label: "LECLERC SANS CONTAC ANCENIS-SAINT FR" }]]);
+	});
+
+	it("plans nothing where the pattern does not match, and counts it as matched only", () => {
+		const rules = [replacing("^CARTE ", "")];
+		const rows = [candidate({ label: "CARTE PICARD" }), candidate({ id: "e2", label: "IKEA" })];
+
+		expect(plan(rules, rows)).toEqual([["e1", { label: "PICARD" }]]);
+		expect(tallies(rules, rows)).toEqual([{ ruleId: "r1", matched: 2, changed: 1 }]);
+	});
+
+	it("leaves a locked label alone", () => {
+		expect(
+			plan(
+				[replacing("^CARTE ", "")],
+				[candidate({ label: "CARTE PICARD", lockedFields: ["label"] })],
+			),
+		).toEqual([]);
+	});
+
+	it("lets a later rule read the label an earlier one wrote, so a prefix and a suffix both go", () => {
+		const rules = [
+			replacing("^CARTE \\d{2}/\\d{2}/\\d{2} ", "", "r1"),
+			replacing("\\s*CB\\*\\d{4}$", "", "r2", [label("like", "picard sa 788 4 cb*")]),
+		];
+
+		expect(plan(rules, [candidate({ label: "CARTE 29/09/26 PICARD SA 788 4 CB*2769" })])).toEqual([
+			["e1", { label: "PICARD SA 788 4" }],
+		]);
+	});
+
+	it("applies after a rename of the same rule, in the order of its actions", () => {
+		const rename = { type: "set_transaction_name", label: "Amazon" } as const;
+
+		expect(plan([withActions([rename, ...replacing("ama", "AMA").actions])])).toEqual([
+			["e1", { label: "AMAzon" }],
+		]);
 	});
 });
 

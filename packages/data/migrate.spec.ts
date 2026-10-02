@@ -1016,6 +1016,41 @@ describe("rules", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("accepts a replacement in the label with its text, and keeps older actions through 0037", async () => {
+		const before = await migratedBefore("0037");
+		await insertRule(before, "r1");
+		const kept = [
+			"set_transaction_category",
+			"set_transaction_merchant",
+			"set_transaction_tags",
+			"set_transaction_name",
+			"set_as_transfer_or_payment",
+		];
+		await Promise.all(kept.map((type, index) => insertAction(before, `a${index + 1}`, type)));
+		await before.run(
+			sql`insert into rule_actions (id, rule_id, position, action_type, value) values ('a6', 'r1', 0, 'exclude_transaction', null)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, action_type as type, value, replacement from rule_actions order by id`,
+			),
+		).resolves.toEqual([
+			...kept.map((type, index) => ({ id: `a${index + 1}`, type, value: "c1", replacement: null })),
+			{ id: "a6", type: "exclude_transaction", value: null, replacement: null },
+		]);
+		await database.run(
+			sql`insert into rule_actions (id, rule_id, position, action_type, value, replacement) values ('a7', 'r1', 1, 'replace_in_transaction_name', '^CARTE ', ' ')`,
+		);
+		await expect(
+			database.get(sql`select value, replacement from rule_actions where id = 'a7'`),
+		).resolves.toEqual({ value: "^CARTE ", replacement: " " });
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("starts a transaction expecting no counterpart, and forgets the account once it goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

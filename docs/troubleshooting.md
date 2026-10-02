@@ -72,6 +72,28 @@ A bank connection shows « Consentement expiré », and the banner says:
 
 A bank grants access for 90 days at most, and Archant asks for no more, so nothing syncs once it ends. A sync attempted anyway answers `CONSENT_EXPIRED`. Renew it: « Reconnecter » in the banner, or « Renouveler le consentement » on the connection's page in « Réglages » › « Banques ». The bank asks for your consent again; nothing is deleted, and the next sync picks up where the last one stopped. The banner warns 14 days before the end, so it can be renewed without a gap.
 
+## Labels show backslashes or a card prefix
+
+A synced transaction reads like the bank's card terminal wrote it:
+
+> LECLERC SANS CONTAC\ANCENIS-SAINT\ FR
+>
+> CARTE 29/09/26 PICARD SA 788 4 CB\*2769
+
+Archant keeps the label as the bank sends it, and a bank has its own formats, so nothing is cleaned by default. A rule does it. Under « Règles », « Ajouter une règle », pick the action « Remplacer dans le libellé », type the pattern in « Rechercher » and the text that takes its place in « Remplacer par », empty to remove what matched. Leave the conditions empty to reach every transaction, or add « Libellé contient » to reach one shop. Saving offers to apply the rule to the transactions already there.
+
+These three rules clean the labels above, one rule each, since a rule holds one replacement:
+
+| Rechercher                  | Remplacer par | Result                                 |
+| --------------------------- | ------------- | -------------------------------------- |
+| `\\`                        | a space       | `LECLERC SANS CONTAC ANCENIS-SAINT FR` |
+| `^CARTE \d{2}/\d{2}/\d{2} ` | nothing       | `PICARD SA 788 4 CB*2769`              |
+| `\s*CB\*\d{4}$`             | nothing       | `PICARD SA 788 4`                      |
+
+The pattern is an [RE2 expression](https://github.com/google/re2/wiki/Syntax), read without regard to case, and every match is replaced. The first rule needs two backslashes because one escapes the other, and its replacement is a single space; a trailing space in a pattern counts, so type it. RE2 has no back reference and no lookahead: a pattern that uses one is refused when you save. The replacement is taken as typed, so `$` and `\` mean nothing special in it.
+
+Rules apply in the order they were created, each reading the label the earlier ones wrote. A label you edited by hand is never changed, and a replacement that would empty a label leaves it as it was. Once a rule rewrites a label, the bank's original text is not kept, but the lines the bank sends as remittance information stay in the transaction's notes.
+
 ## The server restarts in a loop after an upgrade
 
 After an upgrade, `docker compose up --wait` never reports healthy, and `docker compose logs archant` repeats a `fatal` line:

@@ -75,7 +75,11 @@ export type SummaryCondition = {
 
 export type SummaryRule = {
 	conditions: readonly SummaryCondition[];
-	actions: readonly { actionType: RuleActionType; value: string | null }[];
+	actions: readonly {
+		actionType: RuleActionType;
+		value: string | null;
+		replacement?: string | null | undefined;
+	}[];
 };
 
 export type SummaryNames = {
@@ -151,6 +155,18 @@ function actionText(action: SummaryRule["actions"][number], names: SummaryNames,
 		}
 		case "set_transaction_name":
 			return t("rules.summary.rename", { name: value });
+		case "replace_in_transaction_name": {
+			const replacement = action.replacement ?? "";
+
+			if (replacement === "") {
+				return t("rules.summary.remove", { pattern: value });
+			}
+
+			// A space reads as nothing between quotation marks, and it is the usual replacement.
+			return replacement.trim() === ""
+				? t("rules.summary.replaceBySpace", { pattern: value })
+				: t("rules.summary.replace", { pattern: value, replacement });
+		}
 		case "exclude_transaction":
 			return t("rules.summary.exclude");
 		default: {

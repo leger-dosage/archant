@@ -363,7 +363,7 @@ export function apiHelpers(request: APIRequestContext) {
 		async createRule(input: {
 			name?: string;
 			conditions: { conditionType: string; operator: string; value: string | null }[];
-			actions: { actionType: string; value: string | null }[];
+			actions: { actionType: string; value: string | null; replacement?: string }[];
 		}): Promise<string> {
 			return created(
 				await request.post("/api/rules", {

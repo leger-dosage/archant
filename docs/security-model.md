@@ -65,6 +65,10 @@ Log lines carry ids, counts, durations and error codes, never an amount, a label
 
 The one secret a log prints is the setup token, while no user exists: it only lets someone create the administrator, a restart replaces it, and it is worthless once setup is done. Whoever reads the logs before then can take the instance, so do not ship them anywhere before setup.
 
+## Patterns in rules
+
+The rule action « Remplacer dans le libellé » takes a pattern written by the administrator and runs it on the label of every new transaction, text the bank sends and which whoever pays you partly chooses. A pattern runs in RE2, through `re2js` in `packages/api/src/domain/rules/label-pattern.ts`, never in the built-in `RegExp`: RE2 reads a label in time linear in its length, where a backtracking engine can need exponential time on a pattern such as `(a+)+$` and, on Node's single thread, hold every request and the day's first synchronisation. A pattern RE2 refuses, back references and lookaheads included, is refused when the rule is saved.
+
 ## Sign-in limits
 
 Better Auth refuses a fourth sign-in from one client address within ten seconds. Above it, the server refuses every sign-in once 20 have failed across all addresses in the same ten minutes, before Better Auth reads the password: a guesser with many addresses cannot try in parallel. Those counts live in the database, so a restart resets nothing.

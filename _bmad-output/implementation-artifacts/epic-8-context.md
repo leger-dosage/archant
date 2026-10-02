@@ -11,6 +11,7 @@ New transactions are categorised and cleaned up automatically, whatever their so
 - Story 8.1: Create a categorisation rule
 - Story 8.2: More rule conditions and actions
 - Story 8.3: Apply rules to existing transactions
+- Story 8.4: Replace in the label
 
 ## Requirements & Constraints
 

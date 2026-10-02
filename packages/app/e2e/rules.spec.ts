@@ -453,6 +453,118 @@ test("the form points at an empty « Renommer » and saves nothing", async ({ pa
 	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
+// Story 8.4: replace in the label.
+
+test("a replacement in the label cleans the label of an imported card terminal line", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const marker = uniqueName("LECLERC").replace(" ", "-");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await choose(page, "Action 1", "Remplacer dans le libellé");
+	await dialog(page).getByRole("textbox", { name: "Rechercher", exact: true }).fill("\\\\");
+	await dialog(page).getByRole("textbox", { name: "Remplacer par", exact: true }).fill(" ");
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(ruleRow(page, `Si Libellé contient ${marker}, alors Remplacer`)).toBeVisible();
+
+	await api.importFile(
+		account.id,
+		sgml([
+			{
+				daysAgo: 2,
+				amount: "-42,90",
+				label: `${marker}\\ANCENIS-SAINT\\ FR`,
+				fitid: uniqueName("A"),
+			},
+		]),
+	);
+	await page.goto(`/transactions?q=${encodeURIComponent(marker)}`);
+	await expect(
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ hasText: `${marker} ANCENIS-SAINT FR` }),
+	).toBeVisible();
+});
+
+test("the form points at a pattern RE2 refuses and saves nothing", async ({ page }) => {
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill("carrefour");
+	await choose(page, "Action 1", "Remplacer dans le libellé");
+	await dialog(page).getByRole("textbox", { name: "Rechercher", exact: true }).fill("(a)\\1");
+
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(
+		dialog(page).getByRole("textbox", { name: "Rechercher", exact: true }),
+	).toHaveAttribute("aria-invalid", "true");
+	await expect(dialog(page).getByText(/^Expression non reconnue\./u)).toBeVisible();
+	await dialog(page).getByRole("button", { name: "Annuler" }).click();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
+});
+
+/** Opens « Modifier » on the rule, checks the replacement it shows, and saves it unchanged. */
+async function reopenAndSaveReplacement(page: Page, marker: string) {
+	await ruleRow(page, marker)
+		.getByRole("button", { name: /^Actions pour / })
+		.click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog(page).getByRole("textbox", { name: "Rechercher", exact: true })).toHaveValue(
+		"\\\\",
+	);
+	await expect(
+		dialog(page).getByRole("textbox", { name: "Remplacer par", exact: true }),
+	).toHaveValue(" ");
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+}
+
+test("« Modifier » reopens a replacement as typed, and saving it unchanged keeps it", async ({
+	page,
+	api,
+}) => {
+	const marker = uniqueName("LECLERC").replace(" ", "-");
+	await api.createRule({
+		conditions: [labelLike(marker)],
+		actions: [{ actionType: "replace_in_transaction_name", value: "\\\\", replacement: " " }],
+	});
+	await visit(page);
+	await expect(ruleRow(page, "par une espace")).toBeVisible();
+
+	await reopenAndSaveReplacement(page, marker);
+	await reopenAndSaveReplacement(page, marker);
+});
+
+test("an action changed away from a replacement saves without the replacement typed before", async ({
+	page,
+}) => {
+	const marker = uniqueName("LECLERC").replace(" ", "-");
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await choose(page, "Action 1", "Remplacer dans le libellé");
+	await dialog(page).getByRole("textbox", { name: "Remplacer par", exact: true }).fill("x");
+	await choose(page, "Action 1", "Renommer");
+	await dialog(page).getByRole("textbox", { name: "Renommer", exact: true }).fill("Leclerc");
+
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(
+		ruleRow(page, `Si Libellé contient ${marker}, alors Renommer en « Leclerc »`),
+	).toBeVisible();
+});
+
 // Story 8.3: applying rules to existing transactions.
 
 const runsTable = (page: Page) => page.getByRole("table", { name: "Exécutions récentes" });

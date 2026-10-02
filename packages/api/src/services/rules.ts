@@ -33,7 +33,8 @@ import { getReportingCurrency } from "./settings.ts";
 
 /**
  * An action's `value` is a category, merchant, tag or account id, which may
- * name a deleted one; the new label of a rename; `null` for an exclusion.
+ * name a deleted one; the new label of a rename; the pattern of a replacement
+ * in the label; `null` for an exclusion.
  */
 export type RuleData = RuleSnapshot & {
 	id: string;
@@ -67,7 +68,14 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 		enabled: row.enabled,
 		effectiveDate: row.effectiveDate,
 		conditions: conditionTree(conditions, null),
-		actions: actions.map((action) => ({ actionType: action.actionType, value: action.value })),
+		actions: actions.map((action) => ({
+			actionType: action.actionType,
+			value: action.value,
+			// Only a replacement in the label has one: the other actions stay as they were.
+			...(action.actionType === "replace_in_transaction_name"
+				? { replacement: action.replacement ?? "" }
+				: {}),
+		})),
 	};
 }
 
@@ -208,6 +216,7 @@ async function insertParts(tx: Transaction, ruleId: string, rule: RuleRequest): 
 			position,
 			actionType: action.actionType,
 			value: action.value,
+			replacement: action.replacement,
 		})),
 	);
 }
