@@ -876,6 +876,13 @@
 			"moved": "Argent déplacé.",
 			"noTarget": "Aucune autre catégorie ne peut recevoir cet argent : une catégorie n'en donne ni à sa catégorie parente ni à ses sous-catégories."
 		},
+		"rollover": {
+			"label": "Report",
+			"toggle": "Report de {{name}}",
+			"title": "Conserver d'un mois sur l'autre ce que cette catégorie n'a pas dépensé",
+			"card": "+{{amount}} reporté",
+			"sheet": "Reporté"
+		},
 		"donut": {
 			"title": "Dépenses",
 			"label_one": "Dépenses {{ofMonth}} : {{spent}} sur {{budget}}, réparties sur {{count}} catégorie.",

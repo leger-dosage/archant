@@ -223,3 +223,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-2-spread-the-budget-over-categories.md`
   summary: No end-to-end test checks the budget categories' filter in a month where no card is over (hidden toggle, `?filter=` ignored).
   evidence: The only filter test runs in February 2024, where « Cadeaux » is always over; removing `anyOver &&` passes every test.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-4-carry-what-is-left-to-next-month.md`
+  summary: No end-to-end step proves that saving a category amount or moving money stales a later month's cached budget page, whose carry changed.
+  evidence: `showMonth` in `useBudget.ts` invalidates the other months; only the rollover switch path is exercised by `e2e/budgets.spec.ts`, and the gap heals within the 30 s `staleTime`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-4-carry-what-is-left-to-next-month.md`
+  summary: No test observes that a budget write in a household without rollover skips the history read in `refreshRollover`.
+  evidence: The volume test runs no budget write; removing the early return breaks no test. Settling it needs a query count, which the repository has nowhere.

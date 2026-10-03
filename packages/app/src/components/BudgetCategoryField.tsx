@@ -13,9 +13,10 @@ import { BudgetMoveDialog } from "@/components/BudgetMoveDialog";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useSaveCategoryBudget } from "@/hooks/useBudget";
+import { Switch } from "@/components/ui/switch";
+import { useSaveCategoryBudget, useSetCategoryRollover } from "@/hooks/useBudget";
 import { amountToText } from "@/lib/amount-sign";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,8 @@ function currencySymbol(currency: string): string {
 
 /**
  * One row of the categories step: a colour mark, the name, the median, the
- * amount, then « Déplacer de l'argent » where the category can give some.
+ * « Report » switch, the amount, then « Déplacer de l'argent » where the
+ * category can give some.
  */
 function CategoryAmountRow({
 	color,
@@ -42,6 +44,7 @@ function CategoryAmountRow({
 	currency,
 	indented,
 	fieldId,
+	rollover,
 	action,
 	children,
 }: {
@@ -51,6 +54,8 @@ function CategoryAmountRow({
 	currency: string;
 	indented: boolean;
 	fieldId: string;
+	/** The « Report » switch; its place stays empty without one, so the amounts line up. */
+	rollover?: React.ReactNode;
 	/** The move button; its place stays empty without one, so the amounts line up. */
 	action?: React.ReactNode;
 	children: React.ReactNode;
@@ -58,7 +63,9 @@ function CategoryAmountRow({
 	const { t } = useTranslation();
 
 	return (
-		<div className="flex w-full items-start gap-3">
+		// Below `sm` the controls take their own line: beside them, the QA capture
+		// at 360 px showed each category's name cut to two letters.
+		<div className="flex w-full flex-wrap items-start gap-x-3 gap-y-2 sm:flex-nowrap">
 			{indented && (
 				<CornerDownRightIcon
 					aria-hidden="true"
@@ -80,8 +87,14 @@ function CategoryAmountRow({
 						: t("budgets.allocation.median", { amount: formatMoney({ amount: median, currency }) })}
 				</p>
 			</div>
-			{children}
-			{action ?? <span aria-hidden="true" className="size-9 shrink-0" />}
+			<div className="flex shrink-0 items-start justify-end gap-3 max-sm:w-full">
+				<div className="flex h-9 shrink-0 items-center justify-end gap-1.5">
+					{/* The switch's own width, so the amounts line up on a row without one. */}
+					{rollover ?? <span aria-hidden="true" className="w-8" />}
+				</div>
+				{children}
+				{action ?? <span aria-hidden="true" className="size-9 shrink-0" />}
+			</div>
 		</div>
 	);
 }
@@ -95,6 +108,45 @@ function AmountBox({ currency, children }: { currency: string; children: React.R
 			</span>
 			{children}
 		</div>
+	);
+}
+
+/**
+ * Sure's rollover toggle: what the category leaves this month carries into
+ * the next month set up, and the choice holds for the later months too. Saved
+ * on change, after the month's other writes.
+ */
+function RolloverSwitch({ month, line }: { month: string; line: BudgetCategoryData }) {
+	const { t } = useTranslation();
+	const switchId = useId();
+	const save = useSetCategoryRollover(month);
+	// The choice sent shows at once; the answer, or a failure, settles it. Never
+	// disabled meanwhile, which would drop keyboard focus: the month's scope
+	// already sends its writes one after the other.
+	const checked = save.isPending ? save.variables.input.rolloverEnabled : line.rolloverEnabled;
+
+	return (
+		<span className="flex items-center gap-1.5">
+			{/* Hidden on a narrow screen, where the name needs the room; the switch keeps its name. */}
+			<label
+				htmlFor={switchId}
+				className="hidden cursor-pointer text-xs text-muted-foreground sm:inline"
+			>
+				{t("budgets.rollover.label")}
+			</label>
+			<Switch
+				id={switchId}
+				checked={checked}
+				aria-label={t("budgets.rollover.toggle", { name: line.name })}
+				title={t("budgets.rollover.title")}
+				onCheckedChange={(rolloverEnabled) =>
+					save.mutate(
+						{ categoryId: line.categoryId, input: { rolloverEnabled } },
+						{ onError: (error) => showErrorToast(errorCodeOf(error)) },
+					)
+				}
+			/>
+		</span>
 	);
 }
 
@@ -202,6 +254,7 @@ export function BudgetCategoryField({
 				currency={currency}
 				indented={line.parentId !== null}
 				fieldId={fieldId}
+				rollover={<RolloverSwitch month={month} line={line} />}
 				action={
 					// Sure offers a move from any amount; Archant from what can be
 					// given, so a shared child or a parent its children hold has none.
