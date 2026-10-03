@@ -8,7 +8,7 @@ import { eq, getTableColumns } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { rateLimits, signInFailures } from "@archant/data/schema/auth";
+import { rateLimits, sessions, signInFailures, users } from "@archant/data/schema/auth";
 import { jwks, oauthConsents } from "@archant/data/schema/oauth";
 
 import { createLogger } from "../lib/logger.ts";
@@ -29,6 +29,7 @@ import {
 	createTestAuth,
 	signIn,
 	TEST_SECRET,
+	addViewer,
 	withSession,
 } from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
@@ -659,6 +660,95 @@ describe("tokens", () => {
 		await temp.db.delete(oauthConsents).where(eq(oauthConsents.clientId, clientId));
 
 		expect((await refresh(bare, clientId, tokens.refresh_token)).status).toBe(200);
+	});
+});
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/** The signed query of the consent page an assistant's authorisation sends `app`'s user to. */
+async function consentQuery(app: TestApp, clientId: string): Promise<string> {
+	const { challenge } = pkce();
+	const authorize = await app.request(
+		`/api/auth/oauth2/authorize?${authorizeQuery(clientId, challenge)}`,
+	);
+	const consentPage = new URL(authorize.headers.get("location") ?? "", TEST_ORIGIN);
+
+	expect(consentPage.pathname).toBe("/oauth/consent");
+
+	return consentPage.search.slice(1);
+}
+
+async function postConsent(app: TestApp, body: Record<string, unknown>): Promise<Response> {
+	return app.request("/api/auth/oauth2/consent", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
+describe("roles", () => {
+	it("stores viewer for a user created without a role, so a forgotten one fails closed", async () => {
+		const auth = createTestAuth(temp.db);
+
+		const { user } = await auth.api.createUser({
+			body: { email: "nobody@example.test", password: "a long enough password", name: "" },
+		});
+
+		await expect(
+			temp.db.select({ role: users.role }).from(users).where(eq(users.id, user.id)),
+		).resolves.toEqual([{ role: "viewer" }]);
+	});
+
+	it("refuses a viewer's consent, allowing or refusing, before Better Auth reads it, storing none", async () => {
+		const { auth, bare } = assistantServer();
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), await addViewer(bare, auth));
+		const oauthQuery = await consentQuery(viewer, await registerClient(bare));
+
+		const allowed = await postConsent(viewer, {
+			accept: true,
+			scope: "archant:read",
+			oauth_query: oauthQuery,
+		});
+		const denied = await postConsent(viewer, { accept: false, oauth_query: oauthQuery });
+
+		expect([allowed.status, denied.status]).toEqual([403, 403]);
+		expect(await allowed.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+		expect(await denied.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+		await expect(temp.db.select().from(oauthConsents)).resolves.toEqual([]);
+	});
+
+	it("lets Better Auth alone extend a day-old session on an administrator's consent, its cookie sent once", async () => {
+		const { bare, signedIn } = assistantServer();
+		const oauthQuery = await consentQuery(signedIn, await registerClient(bare));
+		// A day old: Better Auth extends a session once a day of its seven is spent.
+		await temp.db.update(sessions).set({ expiresAt: new Date(Date.now() + 6 * DAY - HOUR) });
+
+		const response = await postConsent(signedIn, {
+			accept: true,
+			scope: "archant:read",
+			oauth_query: oauthQuery,
+		});
+
+		expect(response.status).toBe(200);
+		expect(
+			response.headers
+				.getSetCookie()
+				.filter((line) => line.startsWith("better-auth.session_token=")),
+		).toHaveLength(1);
+	});
+
+	it("answers a consent without a session UNAUTHORIZED", async () => {
+		const { bare } = assistantServer();
+
+		const response = await bare.request("/api/auth/oauth2/consent", {
+			method: "POST",
+			headers: { "content-type": "application/json", origin: TEST_ORIGIN },
+			body: JSON.stringify({ accept: true }),
+		});
+
+		expect(response.status).toBe(401);
+		await expect(temp.db.select().from(oauthConsents)).resolves.toEqual([]);
 	});
 });
 

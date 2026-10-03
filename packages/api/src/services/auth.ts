@@ -212,10 +212,13 @@ export function createAuth({
 			schema: AUTH_SCHEMA,
 		}),
 		account: { modelName: "auth_accounts" },
-		// No public sign-up: the only user is the administrator setup creates.
+		// No public sign-up: setup creates the administrator.
 		emailAndPassword: { enabled: true, disableSignUp: true },
 		plugins: [
-			admin({ defaultRole: "admin" }),
+			// A user created without a role reads and writes nothing more than a
+			// viewer: every creation names its role, and a forgotten one fails
+			// closed (AD-21).
+			admin({ defaultRole: "viewer" }),
 			// Every other option at its default: 6-digit, 30-second TOTP, ten
 			// backup codes stored encrypted, 5 attempts per challenge, a
 			// 15-minute lockout after 10 failures and 3 requests per 10 seconds

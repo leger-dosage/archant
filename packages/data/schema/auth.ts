@@ -12,10 +12,13 @@ import { inList } from "./check.ts";
  */
 
 /**
- * Every role a user can hold. Only `admin` exists: one household, one owner.
- * A `viewer` later is a new value here and a check rebuilt, no data migration.
+ * Every role a user can hold (AD-21): an `admin` reads and writes everything,
+ * a `viewer` reads what an administrator reads, bank credentials, assistants
+ * and the export apart, and writes nothing. One global role rather than
+ * Sure's per-account sharing, since one instance is one household. A new
+ * value is a check rebuilt, no data migration.
  */
-export const USER_ROLES = ["admin"] as const;
+export const USER_ROLES = ["admin", "viewer"] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
 

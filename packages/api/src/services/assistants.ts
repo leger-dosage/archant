@@ -4,6 +4,7 @@ import { and, eq, max } from "drizzle-orm";
 import { z } from "zod";
 
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
+import { users } from "@archant/data/schema/auth";
 import {
 	oauthAccessTokens,
 	oauthClients,
@@ -111,8 +112,11 @@ export async function disconnectAssistant(deps: ServiceDeps, clientId: string): 
 
 /**
  * The Archant scopes `userId` still grants `clientId`, `null` once it was
- * disconnected. A token's own scopes are what it was issued; these are what
- * the owner allows now, and a call gets no more than both.
+ * disconnected or once `userId` is no longer an administrator. A token's own
+ * scopes are what it was issued; these are what that administrator allows
+ * now, and a call gets no more than both. An assistant has no session, so this is the
+ * one reader of `role` besides `requireRole` (AD-21): a consent counts only
+ * while its user is an administrator, and a demoted one's tokens stop at once.
  */
 export async function grantedScopes(
 	deps: ServiceDeps,
@@ -122,7 +126,14 @@ export async function grantedScopes(
 	const consent = await deps.db
 		.select({ scopes: oauthConsents.scopes })
 		.from(oauthConsents)
-		.where(and(eq(oauthConsents.clientId, clientId), eq(oauthConsents.userId, userId)))
+		.innerJoin(users, eq(users.id, oauthConsents.userId))
+		.where(
+			and(
+				eq(oauthConsents.clientId, clientId),
+				eq(oauthConsents.userId, userId),
+				eq(users.role, "admin"),
+			),
+		)
 		.get();
 
 	return consent === undefined ? null : archantScopes(consent.scopes);

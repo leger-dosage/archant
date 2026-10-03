@@ -244,3 +244,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-19-3-attach-a-receipt-to-a-transaction.md`
   summary: No automated check shows a PDF attachment in a browser under the sandboxed policy; Chromium was checked by hand, Firefox and Safari not at all.
   evidence: medium, unverified for Firefox and Safari: the end-to-end suite runs Chromium's headless shell, which downloads a PDF rather than showing it, and headless Firefox would not start on the build machine. Settle it by opening a PDF attachment in both browsers.
+- source_spec: `_bmad-output/implementation-artifacts/spec-20-1-a-read-only-role-enforced-by-the-server.md`
+  summary: A viewer's every page would show « Cette action n'est pas autorisée. », since `BankAlerts` reads `GET /api/bank-connections/setup`, now an administrator's only, through `Page`.
+  evidence: `BankAlerts.tsx:113` calls `useBankSetup()` without `meta.optional`, and the global query handler retries and toasts `FORBIDDEN`; no viewer can exist before Story 20.2, and Story 20.3's acceptance criteria now name it.

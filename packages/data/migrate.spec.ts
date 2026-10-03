@@ -272,12 +272,70 @@ const insertUser = (database: Database, id: string, role: string | null) =>
 	);
 
 describe("users and settings", () => {
-	it("accepts the admin role only, and requires one", async () => {
+	it("accepts the admin and viewer roles only, and requires one", async () => {
 		const database = await migrated();
 
 		await expect(insertUser(database, "u1", "admin")).resolves.toBeDefined();
-		await expect(insertUser(database, "u2", "viewer")).rejects.toThrow();
-		await expect(insertUser(database, "u3", null)).rejects.toThrow();
+		await expect(insertUser(database, "u2", "viewer")).resolves.toBeDefined();
+		await expect(insertUser(database, "u3", "owner")).rejects.toThrow();
+		await expect(insertUser(database, "u4", null)).rejects.toThrow();
+	});
+
+	it("keeps an administrator's session, credential, two-factor and consent when 0044 rebuilds users", async () => {
+		const before = await migratedBefore("0044");
+		await insertUser(before, "u1", "admin");
+		await before.run(sql`update users set two_factor_enabled = 1 where id = 'u1'`);
+		await before.run(
+			sql`insert into sessions (id, expires_at, token, updated_at, user_id) values ('s1', 0, 't1', 0, 'u1')`,
+		);
+		await before.run(
+			sql`insert into auth_accounts (id, account_id, provider_id, user_id, password, updated_at) values ('c1', 'u1', 'credential', 'u1', 'hash', 0)`,
+		);
+		await before.run(
+			sql`insert into two_factors (id, secret, backup_codes, user_id) values ('f1', 'secret', 'codes', 'u1')`,
+		);
+		await before.run(
+			sql`insert into oauth_clients (id, client_id, redirect_uris, user_id) values ('k1', 'client', '[]', 'u1')`,
+		);
+		await before.run(
+			sql`insert into oauth_consents (id, client_id, user_id, scopes, created_at, updated_at) values ('o1', 'client', 'u1', '["archant:read"]', 0, 0)`,
+		);
+		await before.run(
+			sql`insert into oauth_refresh_tokens (id, token, client_id, user_id, expires_at, created_at, scopes) values ('r1', 'refresh', 'client', 'u1', 0, 0, '[]')`,
+		);
+		await before.run(
+			sql`insert into oauth_access_tokens (id, token, client_id, user_id, expires_at, created_at, scopes) values ('a1', 'access', 'client', 'u1', 0, 0, '[]')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, email, role, two_factor_enabled as twoFactorEnabled from users`),
+		).resolves.toEqual([
+			{ id: "u1", email: "u1@example.test", role: "admin", twoFactorEnabled: 1 },
+		]);
+		await expect(database.all(sql`select id from sessions`)).resolves.toEqual([{ id: "s1" }]);
+		await expect(database.all(sql`select password from auth_accounts`)).resolves.toEqual([
+			{ password: "hash" },
+		]);
+		await expect(database.all(sql`select id from two_factors`)).resolves.toEqual([{ id: "f1" }]);
+		await expect(database.all(sql`select id from oauth_consents`)).resolves.toEqual([{ id: "o1" }]);
+		await expect(database.all(sql`select user_id as userId from oauth_clients`)).resolves.toEqual([
+			{ userId: "u1" },
+		]);
+		await expect(database.all(sql`select id from oauth_refresh_tokens`)).resolves.toEqual([
+			{ id: "r1" },
+		]);
+		await expect(database.all(sql`select id from oauth_access_tokens`)).resolves.toEqual([
+			{ id: "a1" },
+		]);
+		await expect(insertUser(database, "u2", "viewer")).resolves.toBeDefined();
+		await expect(insertUser(database, "u3", "owner")).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error && String(error.cause).includes("users_role_check"),
+		);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
 	it("holds a setting once, so inserting its key is a one-time claim", async () => {

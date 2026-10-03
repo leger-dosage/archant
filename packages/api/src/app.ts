@@ -1,5 +1,6 @@
 import type { ErrorBody } from "./lib/errors.ts";
 import type { Logger } from "./lib/logger.ts";
+import type { SessionEnv } from "./routes/middleware/auth.ts";
 import type { Auth } from "./services/auth.ts";
 import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
@@ -39,6 +40,7 @@ import { importsRoutes } from "./routes/imports.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
+import { requireRole, viewerReadOnly } from "./routes/middleware/roles.ts";
 import { sameOrigin } from "./routes/middleware/same-origin.ts";
 import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
@@ -294,7 +296,7 @@ function cacheControl(value: string): MiddlewareHandler {
  * revalidated: an `index.html` cached across an upgrade would ask for assets
  * the new build no longer has.
  */
-function serveInterface(app: Hono, root: string) {
+function serveInterface(app: Hono<SessionEnv>, root: string) {
 	app.get(
 		"/assets/*",
 		cacheControl("public, max-age=31536000, immutable"),
@@ -314,9 +316,9 @@ function serveInterface(app: Hono, root: string) {
  * The assembly point: the API under `/api`, the built interface under `/`
  * when there is one, and the error envelope for all of it. Order matters: the
  * origin check and Better Auth's handler come before the session guard, which
- * comes before the first-visit sync and every route it protects; `/api` has
- * its own JSON 404 before the interface's fallback, which would otherwise
- * answer an unknown API route with the page.
+ * comes before the viewer's refusal of writes, the first-visit sync and every
+ * route it protects; `/api` has its own JSON 404 before the interface's
+ * fallback, which would otherwise answer an unknown API route with the page.
  */
 export function createApp(deps: AppDeps) {
 	// Assistants need HTTPS or loopback (`assistantsAvailable`); without them
@@ -406,6 +408,15 @@ export function createApp(deps: AppDeps) {
 			],
 			deviceCookie(deps),
 		)
+		// Only an administrator connects an assistant (AD-21). Better Auth's
+		// consent endpoint is public, as its whole handler is, so its session is
+		// checked here and its role read by the same `requireRole` as every route.
+		.on(
+			"POST",
+			"/api/auth/oauth2/consent",
+			requireSession(deps.auth, { always: true }),
+			requireRole("admin"),
+		)
 		// Better Auth answers in its own shape, outside the envelope and outside
 		// `AppType`; the interface calls it through `better-auth/react`.
 		.on(["GET", "POST"], "/api/auth/*", async (c) =>
@@ -418,6 +429,9 @@ export function createApp(deps: AppDeps) {
 		.use("/api/mcp", sameOrigin(deps, { strict: true }))
 		.all("/api/mcp", async (c) => (mcp === null ? notFound(c) : mcp(c.req.raw)))
 		.use("/api/*", requireSession(deps.auth))
+		// Before the day's sync and every route: a viewer's write is refused
+		// before anything reads it, and their reads still start the sync.
+		.use("/api/*", viewerReadOnly())
 		.use("/api/*", dailySync(deps))
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);

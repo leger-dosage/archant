@@ -28,12 +28,16 @@ import {
 	saveBankCredentials,
 } from "../services/bank-credentials.ts";
 import { syncConnection } from "../services/sync.ts";
+import { requireRole } from "./middleware/roles.ts";
 
 export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 	return (
 		new Hono()
-			// Always answers: the page reads it to name what is missing.
-			.get("/setup", async (c) => c.json({ data: await bankSetup(deps) }, 200))
+			// Always answers an administrator: the page reads it to name what is
+			// missing. Nobody else: it says which credentials are stored.
+			.get("/setup", requireRole("admin"), async (c) =>
+				c.json({ data: await bankSetup(deps) }, 200),
+			)
 			// Before the guard: it is how credentials come to exist at all.
 			.put("/credentials", validated("json", saveBankCredentialsSchema), async (c) =>
 				c.json({ data: await saveBankCredentials(deps, c.req.valid("json")) }, 200),

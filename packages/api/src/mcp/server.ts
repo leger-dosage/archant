@@ -160,7 +160,8 @@ function scopesOf(payload: JWTPayload): Set<string> {
  * read through `auth.api` rather than over HTTP: the server need not reach
  * its own public name, which a host behind Tailscale may not resolve, nor
  * `HOST`, which may name a single interface. Then the one check Better Auth
- * leaves out: the client still holds the owner's consent.
+ * leaves out: the client still holds the consent of a user who is still an
+ * administrator.
  */
 async function authenticate(deps: McpDeps, request: Request): Promise<Caller> {
 	const token = tokenOf(request);
@@ -204,7 +205,7 @@ async function authenticate(deps: McpDeps, request: Request): Promise<Caller> {
 	const granted = await grantedScopes(deps, clientId, userId);
 
 	if (granted === null) {
-		throw new Refused("the assistant was disconnected");
+		throw new Refused("the assistant was disconnected, or its user is not an administrator");
 	}
 
 	const claimed = scopesOf(payload);
