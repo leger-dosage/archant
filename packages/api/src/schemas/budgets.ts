@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { CurrencyCode } from "@archant/data/money";
-import { parseAmount } from "@archant/data/money";
+import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { monthSchema } from "./reports.ts";
 
@@ -19,27 +19,28 @@ export type BudgetInput = z.input<typeof budgetBodySchema>;
 
 /** An amount the household plans: required, and never negative. */
 function plannedAmount(currency: CurrencyCode) {
-	return z
-		.string()
-		.trim()
-		.min(1)
-		.transform((text, context) => {
-			const amount = parseAmount(text, currency);
+	return z.string().trim().min(1).transform(amountIn(currency));
+}
 
-			if (amount === null) {
-				context.addIssue({ code: "custom", message: "invalid_amount" });
+/** Reads typed text as minor units of `currency`, refusing what is unreadable or negative. */
+function amountIn(currency: CurrencyCode) {
+	return (text: string, context: z.RefinementCtx) => {
+		const amount = parseAmount(text, currency);
 
-				return z.NEVER;
-			}
+		if (amount === null) {
+			context.addIssue({ code: "custom", message: "invalid_amount" });
 
-			if (amount < 0) {
-				context.addIssue({ code: "custom", message: "negative_amount" });
+			return z.NEVER;
+		}
 
-				return z.NEVER;
-			}
+		if (amount < 0) {
+			context.addIssue({ code: "custom", message: "negative_amount" });
 
-			return amount;
-		});
+			return z.NEVER;
+		}
+
+		return amount;
+	};
 }
 
 /**
@@ -56,3 +57,29 @@ export function budgetSchema(currency: CurrencyCode) {
 
 /** What the interface's form holds: the text typed, before the schema parses it. */
 export type BudgetFormInput = z.input<ReturnType<typeof budgetSchema>>;
+
+export const budgetCategoryParamSchema = z.object({
+	month: monthSchema,
+	categoryId: z.string().min(1),
+});
+
+// Text, as `budgetBodySchema`: the service parses it in the reporting currency.
+export const budgetCategoryBodySchema = z.object({ budgetedSpending: z.string() });
+
+export type BudgetCategoryInput = z.input<typeof budgetCategoryBodySchema>;
+
+/**
+ * One category's amount for the month. Blank is 0, as Sure's `.presence || 0`:
+ * a subcategory left blank shares its parent's amount. Shared with the
+ * interface's field, so both report the same codes.
+ */
+export function budgetCategorySchema(currency: CurrencyCode) {
+	return z.object({
+		budgetedSpending: z
+			.string()
+			.trim()
+			.transform((text, context) =>
+				text === "" ? toMinorUnits(0) : amountIn(currency)(text, context),
+			),
+	});
+}

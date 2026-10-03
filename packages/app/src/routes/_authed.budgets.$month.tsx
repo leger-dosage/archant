@@ -1,35 +1,74 @@
+import type { BudgetData } from "@/hooks/useBudget";
+
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { PiggyBankIcon } from "lucide-react";
+import { PencilIcon, PiggyBankIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 import { monthSchema } from "@archant/api/schemas/reports";
 
+import { BUDGET_FILTERS, BudgetCategories } from "@/components/BudgetCategories";
 import { BudgetDonut } from "@/components/BudgetDonut";
 import { BudgetMonthPicker, BudgetOutOfRange } from "@/components/BudgetMonthPicker";
 import { BudgetSummary } from "@/components/BudgetSummary";
 import { EmptyState } from "@/components/EmptyState";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Page } from "@/components/Page";
+import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget } from "@/hooks/useBudget";
 import { errorCodeOf } from "@/lib/api";
 import { ofMonth, toIsoMonth } from "@/lib/dates";
 
+// Absent means « Toutes »; a value from an old or hand-edited link falls back to it.
+const searchSchema = z.object({
+	filter: z.enum(BUDGET_FILTERS).optional().catch(undefined),
+});
+
 export const Route = createFileRoute("/_authed/budgets/$month")({
+	validateSearch: searchSchema,
 	component: BudgetMonthPage,
 });
 
 /**
+ * Sure's `_over_allocation_warning`, in the donut's place: the categories
+ * take more than the total, so the ring would draw nothing true.
+ */
+function OverAllocation({ budget }: { budget: BudgetData }) {
+	const { t } = useTranslation();
+
+	return (
+		<Section title={t("budgets.donut.title")}>
+			<div className="flex min-h-72 flex-col items-center justify-center gap-4 p-8 text-center">
+				<TriangleAlertIcon aria-hidden="true" className="size-6 text-destructive" />
+				<h3 className="font-medium">{t("budgets.donut.overAllocated.title")}</h3>
+				<p className="max-w-sm text-sm text-muted-foreground">
+					{t("budgets.donut.overAllocated.description")}
+				</p>
+				<Button variant="outline" size="sm" asChild>
+					<Link to="/budgets/$month/categories" params={{ month: budget.month }}>
+						{t("budgets.donut.overAllocated.action")}
+						<PencilIcon aria-hidden="true" />
+					</Link>
+				</Button>
+			</div>
+		</Section>
+	);
+}
+
+/**
  * Sure's budget page for one calendar month: the header with its arrows,
  * picker and « Aujourd'hui », then, once the month is set up, the donut and
- * the summary; before that, « Définir le budget ». Reading a month writes
- * nothing.
+ * the summary, then a card per category; before that, « Définir le budget ».
+ * Reading a month writes nothing.
  */
 function BudgetMonthPage() {
 	const { t } = useTranslation();
 	const { month } = Route.useParams();
+	const { filter } = Route.useSearch();
+	const navigate = Route.useNavigate();
 	const budget = useBudget(month);
 	const current = toIsoMonth();
 	const title = monthSchema.safeParse(month).success
@@ -73,10 +112,21 @@ function BudgetMonthPage() {
 				(data.setUp ? (
 					<>
 						<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
-							<BudgetDonut budget={data} />
+							{data.allocated > (data.budgetedSpending ?? 0) ? (
+								<OverAllocation budget={data} />
+							) : (
+								<BudgetDonut budget={data} />
+							)}
 							<BudgetSummary budget={data} />
 						</div>
 						<LeftOutNotice accounts={data.leftOut} />
+						<BudgetCategories
+							budget={data}
+							filter={filter}
+							onFilterChange={(next) =>
+								void navigate({ search: { filter: next }, replace: true, resetScroll: false })
+							}
+						/>
 					</>
 				) : (
 					<EmptyState

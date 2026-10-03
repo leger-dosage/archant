@@ -52,13 +52,15 @@ describe("queryKeys.accounts.imports", () => {
 });
 
 describe("queryKeys.transactions.all", () => {
-	it("prefixes the cross-account list, its totals and every account's list", async () => {
+	it("prefixes the cross-account list, its totals, its latest rows and every account's list", async () => {
 		const client = new QueryClient();
 		const list = queryKeys.transactions.list({ q: "loyer" }, 2);
 		const totals = queryKeys.transactions.totals({ q: "loyer" });
+		const recent = queryKeys.transactions.recent({ category: ["c"] });
 		const account = queryKeys.transactions.byAccount("a", 1);
 		client.setQueryData(list, { items: [] });
 		client.setQueryData(totals, { total: 0 });
+		client.setQueryData(recent, []);
 		client.setQueryData(account, { items: [] });
 
 		// What every transaction write does through `useInvalidateAccount`.
@@ -66,6 +68,7 @@ describe("queryKeys.transactions.all", () => {
 
 		expect(client.getQueryState(list)?.isInvalidated).toBe(true);
 		expect(client.getQueryState(totals)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(recent)?.isInvalidated).toBe(true);
 		expect(client.getQueryState(account)?.isInvalidated).toBe(true);
 	});
 });

@@ -3291,7 +3291,7 @@ So that I know where to hold back.
 
 **Given** spending in no category, or in a category with no amount
 **When** the month is shown
-**Then** « Sans catégorie » carries what the total leaves unallocated, never stored, as Sure's synthetic uncategorised row
+**Then** « Sans catégorie » carries what the total leaves unallocated, never stored, and spends the uncategorised outflow, as Sure's synthetic uncategorised row; a category with no amount that spent is a « Dépassé » card of its own, as Sure's `unbudgeted_with_spending?`
 
 **Given** a category card
 **When** the month is shown

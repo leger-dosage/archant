@@ -14,6 +14,7 @@ import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { BudgetOutOfRange } from "@/components/BudgetMonthPicker";
+import { BudgetSteps } from "@/components/BudgetSteps";
 import { FieldMessage } from "@/components/FieldMessage";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Page } from "@/components/Page";
@@ -75,8 +76,9 @@ function BudgetForm({ budget, currency }: { budget: BudgetData; currency: Curren
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			await saveBudget.mutateAsync(values);
-			// No success toast: the month's page, with its donut, says it.
-			await navigate({ to: "/budgets/$month", params: { month: budget.month } });
+			// On to the second step, as Sure's `BudgetsController#update`; no
+			// success toast, the step's allocation bar says it.
+			await navigate({ to: "/budgets/$month/categories", params: { month: budget.month } });
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 			const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
@@ -147,7 +149,7 @@ function BudgetForm({ budget, currency }: { budget: BudgetData; currency: Curren
 	);
 }
 
-/** `/budgets/:month/edit`: sets up a month, or changes its two amounts. */
+/** `/budgets/:month/edit`: the budget's first step, which sets up a month or changes its two amounts. */
 function BudgetEditPage() {
 	const { t } = useTranslation();
 	const { month } = Route.useParams();
@@ -171,6 +173,8 @@ function BudgetEditPage() {
 
 	return (
 		<Page title={title} description={t("budgets.form.description")} centred>
+			<BudgetSteps budget={data} current="budget" />
+
 			{budget.isPending && <Skeleton className="h-56 w-full rounded-xl" aria-hidden="true" />}
 
 			{outOfRange && (
