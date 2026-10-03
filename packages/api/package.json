@@ -37,6 +37,7 @@
 		"@t3-oss/env-core": "catalog:",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
+		"fflate": "^0.8.3",
 		"hono": "catalog:",
 		"jose": "^6.2.12",
 		"ofx-js": "1.1.1",

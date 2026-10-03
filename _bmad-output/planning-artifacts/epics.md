@@ -3429,7 +3429,7 @@ So that my data is never locked in Archant.
 
 **Given** `all.ndjson`
 **When** it is written
-**Then** each line is `{"type", "data"}` with Sure's types (`Account`, `Balance`, `Category`, `Tag`, `Merchant`, `RecurringTransaction`, `Transaction`, `Transfer`, `RejectedTransfer`, `Valuation`, `Rule`) and every field Sure's `SureImport::Preflight` requires, rule operands as names with a `value_ref`, as Sure; a test checks every line against a schema written from that preflight
+**Then** each line is `{"type", "data"}` with Sure's types (`Account`, `Balance`, `Category`, `Tag`, `Merchant`, `RecurringTransaction`, `Transaction`, `Transfer`, `RejectedTransfer`, `Valuation`, `Budget`, `BudgetCategory`, `Rule`) and every field Sure's `SureImport::Preflight` requires, rule operands as names with a `value_ref`, as Sure; a test checks every line against a schema written from that preflight
 
 **Given** the export
 **When** it is read field by field

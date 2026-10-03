@@ -29,6 +29,7 @@ import { assistantsRoutes } from "./routes/assistants.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
+import { exportRoutes } from "./routes/export.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
@@ -245,6 +246,7 @@ function createApi(deps: AppDeps) {
 		.route("/assistants", assistantsRoutes(deps))
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
+		.route("/export", exportRoutes(deps))
 		.route("/bank-connections", bankConnectionsRoutes(deps))
 		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
@@ -320,8 +322,16 @@ export function createApp(deps: AppDeps) {
 		// answers: one can carry a session token beside text the request sent,
 		// and compressing both lets an observer guess the token from the
 		// length (BREACH). Nor on `/api/mcp`'s, for the same reason: an answer
-		// holds account names beside what the assistant sent.
-		.use("*", except(["/api/auth/*", "/api/mcp"], compress({ encoding: "gzip", threshold: 1024 })))
+		// holds account names beside what the assistant sent. Nor on
+		// `/api/export`'s, a ZIP deflated already, which gzip would only hold
+		// back in its buffer.
+		.use(
+			"*",
+			except(
+				["/api/auth/*", "/api/mcp", "/api/export"],
+				compress({ encoding: "gzip", threshold: 1024 }),
+			),
+		)
 		// Every response, pages and API alike: without `X-Frame-Options` a
 		// third-party site could frame the sign-in page and steer a click, and
 		// `nosniff` stops a browser from running a file under a type it guessed.

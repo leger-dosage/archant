@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createDb, refreshStatistics } from "./client.ts";
+import { createDb, readSnapshot, refreshStatistics } from "./client.ts";
 
 let directory: string;
 
@@ -91,5 +91,87 @@ describe("refreshStatistics", () => {
 
 		expect(rows.map((row) => row.idx)).toContain("t_kind");
 		db.$client.close();
+	});
+});
+
+/** A file database with one row in `t`, written before any snapshot opens. */
+async function ledger(name: string) {
+	const db = await createDb(`file:${join(directory, name)}`);
+	await db.run(sql`create table t (id integer primary key, label text)`);
+	await db.run(sql`insert into t (label) values ('before')`);
+
+	return db;
+}
+
+describe("readSnapshot", () => {
+	it("keeps reading the state it opened on, and blocks no write meanwhile", async () => {
+		const db = await ledger("snapshot.db");
+		const snapshot = await readSnapshot(db);
+
+		try {
+			// Under the ledger's own lock, as every ledger write takes it: it
+			// commits at once rather than waiting for the snapshot to end.
+			await db.transaction(
+				async (tx) => {
+					await tx.run(sql`insert into t (label) values ('after')`);
+				},
+				{ behavior: "immediate" },
+			);
+
+			const seen = await snapshot.db.all<{ label: string }>(sql`select label from t`);
+			const now = await db.all<{ label: string }>(sql`select label from t order by id`);
+
+			expect(seen.map((row) => row.label)).toEqual(["before"]);
+			expect(now.map((row) => row.label)).toEqual(["before", "after"]);
+		} finally {
+			snapshot.close();
+			db.$client.close();
+		}
+	});
+
+	it("runs a batch in the snapshot, and refuses to open a transaction or migrate in it", async () => {
+		const db = await ledger("batch.db");
+		const snapshot = await readSnapshot(db);
+
+		try {
+			const [first, second] = await snapshot.db.$client.batch([
+				"select count(*) as count from t",
+				["select label from t where id = ?", [1]],
+			]);
+			const text = await snapshot.db.$client.execute("select label from t where id = ?", [1]);
+
+			expect(first?.rows[0]?.["count"]).toBe(1);
+			expect(second?.rows[0]?.["label"]).toBe("before");
+			expect(text.rows[0]?.["label"]).toBe("before");
+			await snapshot.db.$client.executeMultiple("select 1; select 2;");
+			expect(snapshot.db.$client.protocol).toBe("file");
+			expect(() => snapshot.db.$client.transaction()).toThrow("A read snapshot only reads.");
+			expect(() => snapshot.db.$client.migrate([])).toThrow("A read snapshot only reads.");
+			expect(() => snapshot.db.$client.sync()).toThrow("A read snapshot only reads.");
+			expect(() => snapshot.db.$client.reconnect()).toThrow("A read snapshot only reads.");
+		} finally {
+			snapshot.close();
+			db.$client.close();
+		}
+	});
+
+	it("gives its connection back once closed", async () => {
+		const db = await ledger("closed.db");
+		const snapshot = await readSnapshot(db);
+
+		expect(snapshot.db.$client.closed).toBe(false);
+		snapshot.db.$client.close();
+
+		expect(snapshot.db.$client.closed).toBe(true);
+		await expect(snapshot.db.all(sql`select label from t`)).rejects.toThrow();
+		await expect(db.all(sql`select label from t`)).resolves.toHaveLength(1);
+		db.$client.close();
+	});
+
+	it("opens nothing on a client that is closed", async () => {
+		const db = await ledger("gone.db");
+		db.$client.close();
+
+		await expect(readSnapshot(db)).rejects.toThrow();
 	});
 });

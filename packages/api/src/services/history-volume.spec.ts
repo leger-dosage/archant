@@ -1,5 +1,6 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 
+import { unzipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -11,8 +12,10 @@ import { transfers } from "@archant/data/schema/transfers";
 
 import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { exportArchive } from "./export.ts";
 import { confirmImport, createImport, previewImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
+import { transactionPages } from "./ledger/export.ts";
 import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 
@@ -21,6 +24,7 @@ import { listTransferCandidates } from "./transfers.ts";
 const MARGIN = process.env["CI"] === undefined ? 1 : 2;
 const PAGE_MS = 150 * MARGIN;
 const IMPORT_MS = 3000 * MARGIN;
+const EXPORT_MS = 10_000 * MARGIN;
 
 const ROWS = 100_000;
 const DAYS = 3650;
@@ -229,6 +233,19 @@ function only(statements: Captured[], pattern: RegExp): Captured {
 	return statement;
 }
 
+/** Reads `reader` to its end, handing each chunk to `take` as it arrives. */
+async function readToEnd(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+	take: (chunk: Uint8Array) => void,
+): Promise<void> {
+	const read = await reader.read();
+
+	if (!read.done) {
+		take(read.value);
+		await readToEnd(reader, take);
+	}
+}
+
 /** The milliseconds `run` takes, after one warm-up run as a running server has had. */
 async function timed(run: () => Promise<unknown>): Promise<number> {
 	await run();
@@ -280,6 +297,38 @@ describe("NFR10 at 100,000 transactions", () => {
 			timed(async () => listAccountTransactions(deps(), jointId, listQuery)),
 		).resolves.toBeLessThan(PAGE_MS);
 	});
+
+	// Before the import below, which adds its own lines.
+	it("streams the whole export in under 10 seconds, its first bytes early and half of them before the end", async () => {
+		const chunks: Uint8Array[] = [];
+		const arrivals: { at: number; bytes: number }[] = [];
+		const started = performance.now();
+		const reader = exportArchive({ ...importDeps(), db: temp.db }).body.getReader();
+
+		await readToEnd(reader, (chunk) => {
+			arrivals.push({ at: performance.now() - started, bytes: chunk.length });
+			chunks.push(chunk);
+		});
+
+		const elapsed = performance.now() - started;
+		const archive = unzipSync(new Uint8Array(await new Blob(chunks).arrayBuffer()));
+		const csvLines = new TextDecoder().decode(archive["transactions.csv"]).split("\n");
+
+		expect(elapsed).toBeLessThan(EXPORT_MS);
+		// Streamed: buffered pages would send nearly every byte at the very end.
+		const total = arrivals.reduce((sum, arrival) => sum + arrival.bytes, 0);
+		const sentBy = (moment: number) =>
+			arrivals
+				.filter((arrival) => arrival.at <= moment)
+				.reduce((sum, arrival) => sum + arrival.bytes, 0);
+
+		expect(arrivals[0]?.at ?? elapsed).toBeLessThan(elapsed / 2);
+		expect(sentBy(elapsed * 0.8)).toBeGreaterThanOrEqual(total / 2);
+		// The header, every transaction, and the empty string after the last newline.
+		expect(csvLines).toHaveLength(ROWS + 2);
+		// Pulled a page at a time: no single chunk holds a whole file.
+		expect(Math.max(...chunks.map((chunk) => chunk.length))).toBeLessThan(1024 * 1024);
+	}, 60_000);
 
 	it("confirms a 24,000-line OFX file in under 3 seconds", async () => {
 		const accountId = await openAccount("Compte courant", "checking");
@@ -342,6 +391,23 @@ describe("query plans at 100,000 transactions", () => {
 
 		expect(plan).toMatch(/SEARCH entries USING INDEX entries_kind_date \(kind=\?\)/u);
 		expect(plan).toMatch(WITHIN_A_DAY);
+	});
+
+	it("reads each page of the export's transactions from the date index, after the last one", async () => {
+		const statements = await statementsOf(async () => {
+			const pages = transactionPages(temp.db);
+			await pages.next();
+			await pages.next();
+			await pages.return(undefined);
+		});
+		const plan = await planOf(
+			only(statements, /\("entries"\."date", "entries"\."created_at", "entries"\."id"\) >/u),
+		);
+
+		expect(plan).toMatch(
+			/SEARCH entries USING INDEX entries_kind_date \(kind=\? AND \(date,created_at,id\)>\(\?,\?,\?\)\)/u,
+		);
+		expect(plan).not.toMatch(/TEMP B-TREE/u);
 	});
 
 	it("lists one account from its date index, sorting only within a day", async () => {

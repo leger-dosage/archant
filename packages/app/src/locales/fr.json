@@ -1185,6 +1185,7 @@
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
 			"assistants": "Assistants IA",
+			"data": "Données",
 			"security": "Sécurité"
 		},
 		"version": "Version {{version}}",
@@ -1219,6 +1220,33 @@
 			"title": "Les assistants demandent HTTPS",
 			"description": "L'adresse de ce serveur est en HTTP. Servez Archant en HTTPS, par exemple avec Tailscale, puis redémarrez-le."
 		}
+	},
+	"data": {
+		"title": "Données",
+		"description": "Téléchargez tout ce qu'Archant contient en une archive ZIP, dans le format d'export de Sure. Vos données ne restent jamais enfermées ici.",
+		"export": "Exporter mes données",
+		"holds": {
+			"title": "Ce que l'archive contient",
+			"accounts": "Vos comptes, leur solde jour par jour et les détails de vos prêts",
+			"transactions": "Vos opérations, avec leur catégorie, leur marchand, leurs étiquettes et leurs notes",
+			"transfers": "Vos virements, et les paires que vous avez refusées",
+			"snapshots": "Vos relevés de solde",
+			"taxonomy": "Vos catégories, marchands et étiquettes",
+			"recurring": "Vos opérations récurrentes",
+			"budgets": "Vos budgets, mois par mois",
+			"rules": "Vos règles"
+		},
+		"leavesOut": {
+			"title": "Ce qu'elle laisse de côté",
+			"secrets": "Votre mot de passe, vos sessions, vos clés et vos jetons",
+			"banks": "Vos connexions bancaires et l'identité des comptes de la banque",
+			"keys": "Les clés de dédoublonnage et les fichiers importés",
+			"settings": "Vos réglages et le journal des assistants",
+			"replacements": "Les règles qui ne font que remplacer un texte dans le libellé, que Sure ne sait pas lire"
+		},
+		"sign": "Dans l'archive, les montants suivent le signe de Sure : un achat est positif et un revenu négatif, à l'inverse d'Archant. Les soldes, les relevés et les budgets gardent leur signe.",
+		"notBackup": "L'archive contient vos montants et vos libellés en clair : gardez-la en lieu sûr. Ce n'est pas une sauvegarde : Archant ne la relit pas. Pour restaurer Archant, utilisez la copie de la base de données.",
+		"guide": "Voir le guide"
 	},
 	"consent": {
 		"title": "Autoriser un assistant",

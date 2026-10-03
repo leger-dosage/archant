@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import type { Client, InArgs, InStatement, Transaction } from "@libsql/client";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 
 import { createClient } from "@libsql/client";
@@ -86,4 +86,68 @@ export async function createDb(url: string, authToken?: string): Promise<Databas
  */
 export async function refreshStatistics(db: Pick<Database, "$client">): Promise<void> {
 	await db.$client.executeMultiple("PRAGMA analysis_limit=1000; ANALYZE;");
+}
+
+/** What a snapshot refuses: it only reads, and it is already a transaction. */
+function readOnly(): never {
+	throw new Error("A read snapshot only reads.");
+}
+
+/**
+ * A libSQL client whose every statement runs in `transaction`, so Drizzle can
+ * be handed the transaction as if it were the client: Drizzle has no way to
+ * wrap a transaction it did not open itself.
+ */
+function clientOver(transaction: Transaction, protocol: string): Client {
+	return {
+		execute: async (statement: InStatement, args?: InArgs) =>
+			transaction.execute(
+				args === undefined || typeof statement !== "string" ? statement : { sql: statement, args },
+			),
+		batch: async (statements) =>
+			transaction.batch(
+				statements.map((statement) =>
+					Array.isArray(statement) ? { sql: statement[0], args: statement[1] ?? [] } : statement,
+				),
+			),
+		executeMultiple: async (statements) => transaction.executeMultiple(statements),
+		migrate: readOnly,
+		transaction: readOnly,
+		sync: readOnly,
+		reconnect: readOnly,
+		close: () => transaction.close(),
+		get closed() {
+			return transaction.closed;
+		},
+		protocol,
+	};
+}
+
+/** A Drizzle instance reading one consistent state of the database; `close` ends it. */
+export type ReadSnapshot = { db: Database; close: () => void };
+
+/**
+ * Opens a read that sees the database as it stands now, whatever commits
+ * while it lasts, for a reader that spans many queries, such as an export
+ * streamed over a slow connection. libSQL's `deferred` transaction takes its
+ * own pooled connection and, under WAL, begins at its first read without the
+ * write lock: Drizzle's own `transaction` always sends `BEGIN IMMEDIATE`, and
+ * would hold every ledger write back for the whole download. The first read
+ * happens here, so the snapshot is the state at the call, not at the first
+ * query the caller gets round to.
+ */
+export async function readSnapshot(db: Pick<Database, "$client">): Promise<ReadSnapshot> {
+	const transaction = await db.$client.transaction("deferred");
+
+	try {
+		await transaction.execute("select count(*) from sqlite_schema");
+	} catch (error) {
+		transaction.close();
+		throw error;
+	}
+
+	return {
+		db: drizzle(clientOver(transaction, db.$client.protocol)),
+		close: () => transaction.close(),
+	};
 }
