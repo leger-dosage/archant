@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
 	BanknoteIcon,
 	BotIcon,
+	DatabaseIcon,
 	ShapesIcon,
 	ShieldCheckIcon,
 	StoreIcon,
@@ -19,6 +20,7 @@ export const SETTINGS_SECTIONS = [
 	{ to: "/settings/merchants", label: "settings.sections.merchants", icon: StoreIcon },
 	{ to: "/settings/tags", label: "settings.sections.tags", icon: TagsIcon },
 	{ to: "/settings/assistants", label: "settings.sections.assistants", icon: BotIcon },
+	{ to: "/settings/data", label: "settings.sections.data", icon: DatabaseIcon },
 	{ to: "/settings/security", label: "settings.sections.security", icon: ShieldCheckIcon },
 ] as const;
 

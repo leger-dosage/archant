@@ -236,16 +236,18 @@ function chainOf(
 	});
 }
 
+/** A stored row's carry: what the last budget write stored, and what the chain gives it now. */
+export type RolloverAmount = { id: string; stored: MinorUnits; carried: MinorUnits };
+
 /**
- * Sure's `RolloverCalculator#recompute!`, under the caller's write lock:
- * computes the chain again from the first month set up that has a category
- * with rollover on, or a carry left by one switched off since, and stores
- * each `rolled_over_amount` that changed. A household that never turned
- * rollover on pays one query. Every budget write calls it; a ledger write
- * does not, so a read computes the chain again rather than trusting it.
+ * What each stored row receives from the month before, the chain the page
+ * reads: computed again from the first month set up that has a category with
+ * rollover on, or a carry left by one switched off since. A row before that
+ * month, or of a household that never turned rollover on, receives 0 and is
+ * left out. A household without rollover pays one query.
  */
-async function refreshRollover(tx: Db, deps: ServiceDeps) {
-	const relevant = await tx
+export async function rolloverAmounts(deps: ServiceDeps): Promise<RolloverAmount[]> {
+	const relevant = await deps.db
 		.select({ month: min(budgets.month) })
 		.from(budgets)
 		.innerJoin(budgetCategoryRows, eq(budgetCategoryRows.budgetId, budgets.id))
@@ -262,26 +264,41 @@ async function refreshRollover(tx: Db, deps: ServiceDeps) {
 	const first = relevant?.month ?? null;
 
 	if (first === null) {
-		return;
+		return [];
 	}
 
-	const months = await setUpMonths(tx, { from: first });
+	const months = await setUpMonths(deps.db, { from: first });
 	const last = months.at(-1)?.month ?? first;
-	const history = await getCashFlowHistory({ ...deps, db: tx }, shiftMonth(last, 1));
-	const chain = chainOf(months, history, await treeCategories(tx));
-	const now = Date.now();
-	const changed = months.flatMap((month) =>
-		month.rows
-			.map((row) => ({ row, carried: chain.get(month.month)?.get(row.categoryId) ?? 0 }))
-			.filter(({ row, carried }) => row.rolledOverAmount !== carried),
+	const history = await getCashFlowHistory(deps, shiftMonth(last, 1));
+	const chain = chainOf(months, history, await treeCategories(deps.db));
+
+	return months.flatMap((month) =>
+		month.rows.map((row) => ({
+			id: row.id,
+			stored: row.rolledOverAmount,
+			carried: chain.get(month.month)?.get(row.categoryId) ?? toMinorUnits(0),
+		})),
 	);
+}
+
+/**
+ * Sure's `RolloverCalculator#recompute!`, under the caller's write lock:
+ * stores each `rolled_over_amount` that `rolloverAmounts` changes. Every
+ * budget write calls it; a ledger write does not, so a read computes the
+ * chain again rather than trusting it.
+ */
+async function refreshRollover(tx: Db, deps: ServiceDeps) {
+	const changed = (await rolloverAmounts({ ...deps, db: tx })).filter(
+		(row) => row.stored !== row.carried,
+	);
+	const now = Date.now();
 
 	await changed.reduce<Promise<unknown>>(
-		(previous, { row, carried }) =>
+		(previous, row) =>
 			previous.then(() =>
 				tx
 					.update(budgetCategoryRows)
-					.set({ rolledOverAmount: carried, updatedAt: now })
+					.set({ rolledOverAmount: row.carried, updatedAt: now })
 					.where(eq(budgetCategoryRows.id, row.id)),
 			),
 		Promise.resolve(),
