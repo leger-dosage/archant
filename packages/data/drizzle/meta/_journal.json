@@ -274,6 +274,13 @@
       "when": 1790948764970,
       "tag": "0038_add_assistants",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791022192479,
+      "tag": "0039_add_budgets",
+      "breakpoints": true
     }
   ]
 }

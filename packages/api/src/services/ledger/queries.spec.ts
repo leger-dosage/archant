@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import { countsInCashFlow } from "../../domain/cash-flow.ts";
+import { monthRange } from "../../domain/dates.ts";
 import {
 	add,
 	addStandard,
@@ -27,13 +28,16 @@ import {
 	transferAmount,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
+import { createTempDatabase } from "../../testing/temp-database.ts";
 import { updateTransaction } from "./edits.ts";
 import {
 	cashFlowByCategory,
+	cashFlowByMonth,
 	entryOrigins,
 	listTransactions,
 	sumTransactions,
 	sumTransactionsByLabel,
+	oldestEntryDate,
 } from "./queries.ts";
 
 useLedgerDatabase();
@@ -549,5 +553,79 @@ describe("cashFlowByCategory", () => {
 		await expect(
 			cashFlowByCategory(deps(), { from: "2026-09-01", to: "2026-09-30", accountIds: [] }),
 		).resolves.toEqual([]);
+	});
+});
+
+describe("cashFlowByMonth", () => {
+	it("gives each month exactly the rows `cashFlowByCategory` gives it, up to `to`", async () => {
+		const { livret } = await openHousehold();
+		const mortgage = await openLoan();
+		const joint = await openChecking({ name: "Compte courant", openingDate: "2026-06-01" });
+		const accountIds = [joint.id, livret.id, mortgage.id];
+		const groceries = await newCategory("Courses par mois");
+		const inCategory = async (amount: number, date: string) => {
+			const id = await add(joint.id, { amount: toMinorUnits(amount), date, label: "Courses" });
+			await updateTransaction(deps(), id, { categoryId: groceries }, asUser);
+
+			return id;
+		};
+		await inCategory(-transferAmount(), "2026-07-03");
+		await inCategory(transferAmount(), "2026-07-31");
+		await inCategory(-transferAmount(), "2026-08-01");
+		await add(joint.id, { amount: toMinorUnits(transferAmount()), date: "2026-08-15" });
+		await add(joint.id, { amount: toMinorUnits(-transferAmount()), date: "2026-08-16" });
+		const excluded = await inCategory(-transferAmount(), "2026-08-20");
+		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		await add(joint.id, {
+			amount: toMinorUnits(-transferAmount()),
+			date: "2026-09-02",
+			pending: true,
+		});
+		await pairOf("internal_move", joint.id, livret.id);
+		await loanPaymentOf(joint.id, mortgage.id);
+		// After `to`: left out.
+		await inCategory(-transferAmount(), "2026-10-01");
+
+		const rows = await cashFlowByMonth(deps(), { to: "2026-09-30", accountIds });
+
+		const months = ["2026-06", "2026-07", "2026-08", "2026-09"];
+		const expected = await Promise.all(
+			months.map((month) => cashFlowByCategory(deps(), { ...monthRange(month), accountIds })),
+		);
+
+		expect(
+			months.map((month) =>
+				byCategoryAndAmount(
+					rows
+						.filter((row) => row.month === month)
+						.map(({ categoryId, amount }) => ({ categoryId, amount })),
+				),
+			),
+		).toEqual(expected.map(byCategoryAndAmount));
+		expect([...new Set(rows.map((row) => row.month))].toSorted()).toEqual([
+			"2026-07",
+			"2026-08",
+			"2026-09",
+		]);
+		await expect(cashFlowByMonth(deps(), { to: "2026-09-30", accountIds: [] })).resolves.toEqual(
+			[],
+		);
+	});
+});
+
+describe("oldestEntryDate", () => {
+	it("names the earliest entry of any kind, and nothing in an empty ledger", async () => {
+		const empty = await createTempDatabase();
+
+		try {
+			await expect(oldestEntryDate({ db: empty.db, timeZone: "Europe/Paris" })).resolves.toBe(null);
+		} finally {
+			await empty.dispose();
+		}
+
+		// An opening anchor is an entry: the account's opening date counts.
+		await openChecking({ name: "Ancien compte", openingDate: "2003-04-05" });
+
+		await expect(oldestEntryDate(deps())).resolves.toBe("2003-04-05");
 	});
 });

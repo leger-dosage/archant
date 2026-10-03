@@ -49,6 +49,7 @@ test("the rail shows the logo and an icon on each entry, the accounts column eac
 				["Accueil", "layout-dashboard"],
 				["Opérations", "receipt"],
 				["Comptes", "wallet"],
+				["Budgets", "piggy-bank"],
 				["Récurrent", "calendar"],
 				["Règles", "funnel"],
 				["Réglages", "settings"],

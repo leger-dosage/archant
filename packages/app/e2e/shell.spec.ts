@@ -14,7 +14,15 @@ const column = (page: Page) => page.getByRole("complementary", { name: "Liste de
 
 const breadcrumbs = (page: Page) => page.getByRole("navigation", { name: "Fil d'Ariane" });
 
-const DESTINATIONS = ["Accueil", "Opérations", "Comptes", "Récurrent", "Règles", "Réglages"];
+const DESTINATIONS = [
+	"Accueil",
+	"Opérations",
+	"Comptes",
+	"Budgets",
+	"Récurrent",
+	"Règles",
+	"Réglages",
+];
 
 /** A summary as `/api/accounts` answers it. */
 const summary = (
@@ -299,7 +307,7 @@ test("a settings section's title and actions top its content, in one 896 px colu
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the bottom navigation holds the six destinations, and the menu opens the accounts column", async ({
+	test("the bottom navigation holds the seven destinations, and the menu opens the accounts column", async ({
 		page,
 	}) => {
 		await fixedAccounts(page);

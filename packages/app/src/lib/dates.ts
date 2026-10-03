@@ -119,3 +119,15 @@ export function ofMonth(month: string): string {
 
 	return /^[aeiouéâ]/u.test(text) ? `d'${text}` : `de ${text}`;
 }
+
+/** `2026-09` as « septembre 2026 », the budget picker's label. */
+export function monthLabel(month: string): string {
+	return monthYear.format(new Date(`${month}-01T00:00:00Z`));
+}
+
+const monthOnly = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" });
+
+/** « janvier » to « décembre », in calendar order. */
+export const MONTH_NAMES: readonly string[] = Array.from({ length: 12 }, (_, index) =>
+	monthOnly.format(new Date(Date.UTC(2026, index, 1))),
+);

@@ -6,14 +6,13 @@ import { useTranslation } from "react-i18next";
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
+import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Money } from "@/components/Money";
 import { PeriodToggle } from "@/components/PeriodToggle";
 import { Section } from "@/components/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNetWorth } from "@/hooks/useNetWorth";
 import { changeText } from "@/lib/balance-change";
-
-const listFormat = new Intl.ListFormat("fr");
 
 /**
  * « +2,1 % sur 3 mois » after a trend arrow. Only the arrow takes the trend
@@ -115,13 +114,7 @@ export function NetWorthSection({
 					valueLabel={t("dashboard.netWorth")}
 					height={208}
 				/>
-				{data !== undefined && data.leftOut.length > 0 && (
-					<p className="text-xs text-muted-foreground">
-						{t("dashboard.leftOut", {
-							names: listFormat.format(data.leftOut.map((account) => account.name)),
-						})}
-					</p>
-				)}
+				{data !== undefined && <LeftOutNotice accounts={data.leftOut} />}
 			</div>
 		</Section>
 	);

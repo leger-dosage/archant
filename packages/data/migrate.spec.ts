@@ -1515,6 +1515,29 @@ describe("deleted entry keys", () => {
 	});
 });
 
+const insertBudget = (
+	database: Database,
+	id: string,
+	month: string,
+	spending: number | null,
+	income: number | null,
+) =>
+	database.run(
+		sql`insert into budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at) values (${id}, ${month}, 'EUR', ${spending}, ${income}, 0, 0)`,
+	);
+
+describe("budgets", () => {
+	it("holds one budget per month, amounts unset or never negative", async () => {
+		const database = await migrated();
+
+		await expect(insertBudget(database, "b1", "2026-10", null, null)).resolves.toBeDefined();
+		await expect(insertBudget(database, "b2", "2026-10", 100, 100)).rejects.toThrow();
+		await expect(insertBudget(database, "b3", "2026-11", 0, 250_000)).resolves.toBeDefined();
+		await expect(insertBudget(database, "b4", "2026-12", -1, 0)).rejects.toThrow();
+		await expect(insertBudget(database, "b5", "2027-01", 0, -1)).rejects.toThrow();
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);

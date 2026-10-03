@@ -27,6 +27,7 @@ import { mcpHandler } from "./mcp/server.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
 import { assistantsRoutes } from "./routes/assistants.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
+import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
@@ -234,6 +235,7 @@ function createApi(deps: AppDeps) {
 		.route("/accounts", accountsRoutes(deps))
 		.route("/transactions", transactionsRoutes(deps))
 		.route("/transfers", transfersRoutes(deps))
+		.route("/budgets", budgetsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
