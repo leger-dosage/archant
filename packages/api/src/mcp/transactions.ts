@@ -68,7 +68,7 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 export const getTransactions = defineTool({
 	name: "get_transactions",
 	title: "Transactions",
-	description: `A page of every account's transactions matching the filter, most recent first, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skippedCount. ${BANK_TEXT}`,
+	description: `A page of every account's transactions matching the filter, most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skippedCount. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getTransactionsInput,
@@ -201,7 +201,7 @@ export const getTransactionTool = defineTool({
 export const updateTransactionTool = defineTool({
 	name: "update_transaction",
 	title: "Classify a transaction",
-	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it as get_transaction does. Its date and amount come from the bank and never change here. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
+	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it as get_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers TRANSACTION_SPLIT. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: updateTransactionInput,

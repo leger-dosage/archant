@@ -239,6 +239,33 @@ describe("GET /api/budgets/:month", () => {
 		});
 	});
 
+	it("counts a split's lines in their categories, and never its parent", async () => {
+		const account = await openOwn({ openingDate: "2026-09-01" });
+		const food = await ownCategory("Alimentation");
+		const home = await ownCategory("Maison");
+		const parent = await line(account.id, "2026-09-05", "-100,00");
+		await sendOwn("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{ label: "Alimentation", amount: "-60,00", categoryId: food },
+				{ label: "Maison", amount: "-40,00", categoryId: home },
+			],
+		});
+
+		const budget = await budgetOf("2026-09");
+		expect(budget.actual).toEqual({ spending: 10_000, income: 0 });
+		expect(budget.uncategorised.spent).toBe(0);
+		expect(
+			budget.categories
+				.filter((row) => row.categoryId === food || row.categoryId === home)
+				.map((row) => [row.categoryId, row.spent]),
+		).toEqual(
+			expect.arrayContaining([
+				[food, 6_000],
+				[home, 4_000],
+			]),
+		);
+	});
+
 	it("leaves an account in another currency out of actuals and medians, and names it", async () => {
 		const account = await openOwn({ openingDate: "2026-07-01" });
 		const dollars = await openOwn({
