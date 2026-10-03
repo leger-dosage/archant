@@ -87,6 +87,71 @@ export function budgetCategorySchema(currency: CurrencyCode) {
 	});
 }
 
+/**
+ * What an assistant sets in a month at once, as Sure's `UpdateBudget`: the
+ * total, the expected income and amounts by category id, each optional, each
+ * read by the rules of `budgetSchema` and `budgetCategorySchema`. Something
+ * must be given, a category once, and never « Sans catégorie »: it has no id,
+ * since it holds what the total leaves unallocated. Whether the month is set
+ * up, and whether an id names an expense category, need the database: the
+ * service checks them.
+ */
+export function budgetUpdateSchema(currency: CurrencyCode) {
+	return z
+		.object({
+			budgetedSpending: plannedAmount(currency).optional(),
+			expectedIncome: plannedAmount(currency).optional(),
+			categories: z
+				.array(
+					z.object({
+						categoryId: z
+							.string()
+							.min(1)
+							.nullable()
+							.transform((id, context) => {
+								if (id === null) {
+									context.addIssue({ code: "custom", message: "uncategorised" });
+
+									return z.NEVER;
+								}
+
+								return id;
+							}),
+						budgeted: budgetCategorySchema(currency).shape.budgetedSpending,
+					}),
+				)
+				.optional(),
+		})
+		.superRefine((value, context) => {
+			const categories = value.categories ?? [];
+
+			if (
+				value.budgetedSpending === undefined &&
+				value.expectedIncome === undefined &&
+				categories.length === 0
+			) {
+				context.addIssue({ code: "custom", message: "empty_patch" });
+			}
+
+			const seen = new Set<string>();
+
+			for (const [index, { categoryId }] of categories.entries()) {
+				if (seen.has(categoryId)) {
+					context.addIssue({
+						code: "custom",
+						path: ["categories", index, "categoryId"],
+						message: "duplicate",
+					});
+				}
+
+				seen.add(categoryId);
+			}
+		});
+}
+
+/** What `updateBudget` takes: the text sent, before the schema parses it. */
+export type BudgetUpdateInput = z.input<ReturnType<typeof budgetUpdateSchema>>;
+
 // Text, as `budgetBodySchema`: the service parses the amount in the reporting currency.
 export const budgetMoveBodySchema = z.object({
 	fromCategoryId: z.string(),
