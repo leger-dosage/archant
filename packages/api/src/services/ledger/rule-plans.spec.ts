@@ -25,6 +25,7 @@ import {
 	openChecking,
 	openHousehold,
 	snapshot,
+	splitInTwo,
 	tagsOf,
 	temp,
 	transferAmount,
@@ -127,6 +128,24 @@ describe("applyRulePlan", () => {
 		await expect(tagsOf(locked)).resolves.toEqual([]);
 		await expect(excludedOf(locked)).resolves.toBe(false);
 		await expect(findTransaction(deps(), locked)).resolves.toMatchObject({ label: "Boulangerie" });
+	});
+
+	it("never excludes a split's child, whose exclusion is locked, and leaves its parent excluded", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const { parent, food } = await splitInTwo(account.id);
+
+		const written = await write(
+			new Map([
+				[parent, { excluded: true }],
+				[food, { excluded: true, categoryId: groceries }],
+			]),
+		);
+
+		expect(written).toEqual({ changed: [food], marked: [] });
+		await expect(excludedOf(parent)).resolves.toBe(true);
+		await expect(excludedOf(food)).resolves.toBe(false);
+		await expect(categoryOf(food)).resolves.toBe(groceries);
 	});
 
 	it("adds a tag beside the others, and skips it at the cap", async () => {
@@ -282,6 +301,18 @@ describe("ruleCandidates", () => {
 		);
 
 		expect(own.map((candidate) => candidate.id)).toEqual([id]);
+	});
+
+	it("reads a split's children and never its parent, whose exclusion stays locked", async () => {
+		const account = await openChecking();
+		const { parent, food, home } = await splitInTwo(account.id);
+
+		const own = (await ruleCandidates(temp.db, null)).filter(
+			(candidate) => candidate.accountId === account.id,
+		);
+
+		expect(own.map((candidate) => candidate.id).toSorted()).toEqual([food, home].toSorted());
+		await expect(lockedFields(parent)).resolves.toContain("excluded");
 	});
 
 	it("reads the tags of more rows than one lookup holds", async () => {

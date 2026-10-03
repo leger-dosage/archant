@@ -41,6 +41,7 @@ import { updateTransaction } from "./edits.ts";
 import { removableOf } from "./import-revert.ts";
 import { entryOrigins, findTransaction, listTransactions } from "./queries.ts";
 import { recordSnapshot } from "./snapshots.ts";
+import { splitTransaction } from "./splits.ts";
 
 useLedgerDatabase();
 
@@ -434,6 +435,35 @@ describe("possible duplicates", () => {
 			await expect(dismissDuplicate(deps(), crypto.randomUUID())).rejects.toMatchObject({
 				code: "NOT_FOUND",
 			});
+		});
+	});
+
+	describe("and a split", () => {
+		it("never offers a split's parent or child, and refuses merging into either", async () => {
+			const { account, amount, first, second, flagged } = await fileTie();
+			const parent = await add(account.id, { date: "2026-09-05", amount, label: "PEAGE D" });
+			const split = await splitTransaction(
+				deps(),
+				parent,
+				[
+					{ label: "Péage", amount, categoryId: null },
+					{ label: "Rien", amount: toMinorUnits(0), categoryId: null },
+				],
+				asUser,
+			);
+			const [child = ""] = split.childIds;
+
+			await expect(duplicateCandidates(deps(), flagged)).resolves.toMatchObject([
+				{ id: first },
+				{ id: second },
+			]);
+			await expect(mergeDuplicate(deps(), flagged, parent)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(mergeDuplicate(deps(), flagged, child)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(flagOf(flagged)).resolves.toBe(true);
 		});
 	});
 });

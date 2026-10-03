@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin } from "./shared.ts";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { AccountSubtype, AccountType, LoanDetails } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
@@ -18,7 +18,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import type { Account } from "@archant/data/types";
 
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { rejectedOf, transferOf } from "./shared.ts";
+import { isSplitChild, rejectedOf, transferOf } from "./shared.ts";
 
 export type NewAccountInput = {
 	name: string;
@@ -83,10 +83,11 @@ export async function createAccount(
  * Deletes an account and everything it holds, as one write: its entries'
  * keys and the tombstones of the ones the user deleted, its transactions'
  * taggings, transfers and rejected pairs, its transactions, all its entries,
- * snapshots and opening anchor included, its daily balances, its imports,
- * then the account. Children go first, since their foreign keys restrict. A
- * transfer's other side, on another account, stays as a standard
- * transaction, as Sure's `cleanup_transfers` leaves it. Every delete selects
+ * split lines before their parents, snapshots and opening anchor included,
+ * its daily balances, its imports, then the account. Children go first,
+ * since their foreign keys restrict. A transfer's other side, on another
+ * account, stays as a standard transaction, as Sure's `cleanup_transfers`
+ * leaves it. Every delete selects
  * by `account_id` through a subquery, never a list of ids, so a history of
  * 100,000 transactions binds one parameter, not 100,000.
  */
@@ -131,6 +132,8 @@ export async function deleteAccount(
 						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
 					),
 				);
+			// Split lines before their parents, which their foreign key restricts.
+			await tx.delete(entries).where(and(eq(entries.accountId, accountId), isSplitChild));
 			await tx.delete(entries).where(eq(entries.accountId, accountId));
 			await tx.delete(balances).where(eq(balances.accountId, accountId));
 			await tx.delete(imports).where(eq(imports.accountId, accountId));

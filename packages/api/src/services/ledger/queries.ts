@@ -71,6 +71,11 @@ export type TransactionRecord = {
 	 * (AD-7), until the user merges or dismisses it.
 	 */
 	possibleDuplicate: boolean;
+	/**
+	 * The transaction this one is a split line of (AD-20), `null` for an
+	 * unsplit transaction or a split's parent.
+	 */
+	parentEntryId: string | null;
 };
 
 /**
@@ -107,6 +112,7 @@ const transactionColumns = {
 	possibleDuplicate: transactions.possibleDuplicate,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
+	parentEntryId: entries.parentEntryId,
 };
 
 function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: MinorUnits } {

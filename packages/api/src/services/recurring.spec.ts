@@ -17,6 +17,7 @@ import { bulkUpdateTransactions, updateTransaction } from "./ledger/edits.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { findTransaction } from "./ledger/queries.ts";
 import { recordSnapshot } from "./ledger/snapshots.ts";
+import { splitTransaction } from "./ledger/splits.ts";
 import {
 	addRecurringFromEntry,
 	detectRecurring,
@@ -292,6 +293,31 @@ describe("detectRecurring", () => {
 
 		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 1 });
 		await expect(stored()).resolves.toMatchObject([{ occurrenceCount: 3 }]);
+	});
+
+	it("reads a split's lines, never its parent", async () => {
+		const accountId = await account();
+		const bills = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		await bills.reduce<Promise<unknown>>(
+			(pending, id, index) =>
+				pending.then(async () =>
+					splitTransaction(
+						deps(),
+						id,
+						[
+							{ label: "Abonnement", amount: toMinorUnits(-5000), categoryId: null },
+							{ label: `Option ${index}`, amount: toMinorUnits(-1500), categoryId: null },
+						],
+						{ origin: "user" },
+					),
+				),
+			Promise.resolve(),
+		);
+
+		await expect(detectRecurring(deps())).resolves.toEqual({ detected: 1 });
+		await expect(stored()).resolves.toMatchObject([
+			{ label: "Abonnement", amount: -5000, occurrenceCount: 3 },
+		]);
 	});
 });
 

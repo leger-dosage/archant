@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { LineKeys, PairCandidate } from "../../domain/keys.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, inArray, notExists, sql } from "drizzle-orm";
+import { and, between, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
 
 import { toMinorUnits } from "@archant/data/money";
 import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
@@ -116,7 +116,8 @@ export async function tombstoneBankKeys(
 
 /**
  * The account's transactions a line may pair with (AD-7): dated within the
- * window of the lines, and carrying no key from this source.
+ * window of the lines, carrying no key from this source, and no split line,
+ * whose money the bank knows as its parent's (AD-20).
  */
 export async function pairCandidates(
 	tx: Transaction,
@@ -139,6 +140,7 @@ export async function pairCandidates(
 			and(
 				eq(entries.accountId, accountId),
 				eq(entries.kind, "transaction"),
+				isNull(entries.parentEntryId),
 				between(entries.date, addDays(first, -MATCH_WINDOW_DAYS), addDays(last, MATCH_WINDOW_DAYS)),
 				notExists(
 					tx

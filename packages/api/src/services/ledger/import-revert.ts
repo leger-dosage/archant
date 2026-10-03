@@ -20,7 +20,13 @@ import type { Entry } from "@archant/data/types";
 import { addDays, maxDate } from "../../domain/dates.ts";
 import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { ROWS_PER_INSERT, inSequence, rejectedOf, transferOf } from "./shared.ts";
+import {
+	ROWS_PER_INSERT,
+	deleteSplitChildren,
+	inSequence,
+	rejectedOf,
+	transferOf,
+} from "./shared.ts";
 
 /** What reverting an import deletes now: its created transactions, and its snapshot (0 or 1). */
 export type Removable = { transactions: number; snapshot: number };
@@ -150,13 +156,14 @@ export type RevertResult = { accountId: string; removed: Removable };
 /**
  * Undoes a confirmed import, in one transaction (AD-7): deletes the keys it
  * wrote, the transactions it created that no other source holds, edited ones
- * included as Sure deletes every entry of an import, and the snapshot it still
- * owns. When the import moved the opening anchor, its amount gets back what
- * the deleted lines had shifted it by, and its date moves back toward where
- * it stood, across days no remaining entry holds. Sure keeps the moved date,
- * but it accepts lines before the opening date: Archant refuses them, so a
- * kept date would read the same file differently next time. Then marks the
- * import `reverted` and recomputes. The `imports` row stays, for the history.
+ * included as Sure deletes every entry of an import, split ones with their
+ * lines, and the snapshot it still owns. When the import moved the opening
+ * anchor, its amount gets back what the deleted lines had shifted it by, and
+ * its date moves back toward where it stood, across days no remaining entry
+ * holds. Sure keeps the moved date, but it accepts lines before the opening
+ * date: Archant refuses them, so a kept date would read the same file
+ * differently next time. Then marks the import `reverted` and recomputes.
+ * The `imports` row stays, for the history.
  */
 export async function revertImport(
 	deps: ServiceDeps,
@@ -191,8 +198,8 @@ export async function revertImport(
 			// 1. Every key it wrote, on the entries it created and matched alike.
 			await tx.delete(entryKeys).where(eq(entryKeys.importId, importId));
 
-			// 2. What it created and nothing else holds; the detail rows first,
-			// since their foreign key restricts deleting the entry.
+			// 2. What it created and nothing else holds; split lines and the
+			// detail rows first, since their foreign keys restrict deleting the entry.
 			const created = await tx
 				.select({ id: entries.id, date: entries.date, amount: entries.amount })
 				.from(entries)
@@ -205,6 +212,7 @@ export async function revertImport(
 				);
 			const ids = created.map((entry) => entry.id);
 
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteSplitChildren(tx, chunk));
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
 			);
