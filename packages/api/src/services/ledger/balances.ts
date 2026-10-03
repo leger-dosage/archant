@@ -21,7 +21,7 @@ import { fillDays } from "../../domain/balances/history.ts";
 import { reverseBalances } from "../../domain/balances/reverse.ts";
 import { addDays, maxDate, today } from "../../domain/dates.ts";
 import { AppError } from "../../lib/errors.ts";
-import { inSequence } from "./shared.ts";
+import { inSequence, notSplitParent } from "./shared.ts";
 
 // SQLite caps bound parameters per statement at 32 766; four columns per row
 // keeps a chunk far below it, and a decade of history is 3 650 rows.
@@ -63,6 +63,8 @@ async function lastBalanceDay(tx: Transaction, accountId: string, timeZone: stri
  * The account's booked transactions summed per day, on the rows `where`
  * keeps. Every balance reads its movements here: a pending line counts in no
  * balance until the bank books it (AD-8), as Sure's `Entry.excluding_pending`.
+ * A split parent counts through its children (AD-20): balances count excluded
+ * rows, so its exclusion alone would count the money twice.
  */
 export async function bookedMovements(
 	db: Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">,
@@ -73,7 +75,9 @@ export async function bookedMovements(
 		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(and(eq(entries.accountId, accountId), eq(transactions.pending, false), where))
+		.where(
+			and(eq(entries.accountId, accountId), eq(transactions.pending, false), notSplitParent, where),
+		)
 		.groupBy(entries.date);
 }
 

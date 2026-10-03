@@ -69,6 +69,7 @@ import { removableOf } from "./import-revert.ts";
 import { ingest } from "./ingest.ts";
 import { entryOrigins, findTransaction, listTransactions } from "./queries.ts";
 import { listSnapshots, updateSnapshot } from "./snapshots.ts";
+import { splitTransaction } from "./splits.ts";
 import { rejectTransfer } from "./transfers.ts";
 
 useLedgerDatabase();
@@ -96,6 +97,7 @@ describe("ingest", () => {
 			transfer: null,
 			transferSuggested: false,
 			possibleDuplicate: false,
+			parentEntryId: null,
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -1484,5 +1486,32 @@ describe("ingest from a bank connection", () => {
 			code: "NOT_FOUND",
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
+	});
+});
+
+describe("ingest and a split", () => {
+	it("finds a split parent by its keys when the bank sends its line again, and writes nothing", async () => {
+		const { account, bank } = await linkedChecking();
+		const sent = newBankLine({ externalId: "EB-SPLIT", amount: toMinorUnits(-transferAmount()) });
+		const [parent = ""] = (await sync(account.id, bank.connectionId, [sent])).created;
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Courses", amount: toMinorUnits(-1_000), categoryId: null },
+				{ label: "Maison", amount: toMinorUnits(sent.amount + 1_000), categoryId: null },
+			],
+			{ origin: "user" },
+		);
+		const days = await history(account.id);
+
+		const again = await sync(account.id, bank.connectionId, [sent]);
+
+		expect(again.groups.present).toMatchObject([{ entryId: parent }]);
+		expect(again.created).toEqual([]);
+		await expect(transactionCount(account.id)).resolves.toBe(3);
+		await expect(excludedOf(parent)).resolves.toBe(true);
+		await expect(keysOf(split.childIds[0] ?? "")).resolves.toEqual([]);
+		await expect(history(account.id)).resolves.toEqual(days);
 	});
 });

@@ -45,6 +45,7 @@ import { updateTransaction } from "./edits.ts";
 import { removableOf, revertImport } from "./import-revert.ts";
 import { entryOrigins, findTransaction } from "./queries.ts";
 import { updateSnapshot } from "./snapshots.ts";
+import { splitTransaction } from "./splits.ts";
 
 useLedgerDatabase();
 
@@ -202,6 +203,36 @@ describe("revertImport", () => {
 
 		await expect(tagsOf(cafeId)).resolves.toEqual([]);
 		await expect(tagsOf(salaryId)).resolves.toEqual([]);
+	});
+
+	it("deletes a split it created with its children, and puts the balances back", async () => {
+		const account = await openChecking();
+		const before = await history(account.id);
+		const { importId, result } = await importStatement(account.id, statementOf(cafe));
+		const [cafeId = ""] = result.created;
+		const split = await splitTransaction(
+			deps(),
+			cafeId,
+			[
+				{ label: "Café", amount: toMinorUnits(-290), categoryId: null },
+				{ label: "Croissant", amount: toMinorUnits(cafe.amount + 290), categoryId: null },
+			],
+			{ origin: "user" },
+		);
+		await updateTransaction(
+			deps(),
+			split.childIds[0] ?? "",
+			{ tagIds: [await newTag("Petit-déjeuner")] },
+			{
+				origin: "user",
+			},
+		);
+
+		await expect(revert(importId)).resolves.toMatchObject({ removed: { transactions: 1 } });
+
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+		await expect(tagsOf(split.childIds[0] ?? "")).resolves.toEqual([]);
+		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
 	it("deletes a transaction the user edited since the import", async () => {

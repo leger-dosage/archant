@@ -5,6 +5,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { balances } from "@archant/data/schema/balances";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
+import { deletedEntryKeys } from "@archant/data/schema/entry-keys";
 import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -22,17 +23,22 @@ import {
 	history,
 	importStatement,
 	keysOf,
+	linkedChecking,
 	lockedFields,
 	merchantOf,
+	newBankLine,
 	newCategory,
 	newMerchant,
 	newTag,
 	openChecking,
 	setToday,
+	splitInTwo,
 	statementOf,
+	sync,
 	tagsOf,
 	temp,
 	transactionCount,
+	transferAmount,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
@@ -51,6 +57,7 @@ import {
 	updateTransaction,
 } from "./edits.ts";
 import { findTransaction } from "./queries.ts";
+import { splitTransaction } from "./splits.ts";
 
 useLedgerDatabase();
 
@@ -472,6 +479,50 @@ describe("updateTransaction", () => {
 	});
 });
 
+describe("updateTransaction on a split", () => {
+	it.each([
+		["date", { date: "2026-09-05" }, { date: "2026-09-05" }],
+		["amount", { amount: toMinorUnits(-1) }, { amount: toMinorUnits(-1) }],
+		["exclusion", { excluded: false }, { excluded: true }],
+	])(
+		"refuses a change of the %s of the parent or a child with TRANSACTION_SPLIT",
+		async (_name, ofParent, ofChild) => {
+			const account = await openChecking();
+			const { parent, food } = await splitInTwo(account.id);
+
+			await expect(updateTransaction(deps(), parent, ofParent, asUser)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(updateTransaction(deps(), food, ofChild, asUser)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(excludedOf(parent)).resolves.toBe(true);
+			await expect(excludedOf(food)).resolves.toBe(false);
+		},
+	);
+
+	it("classifies a child or the parent, and leaves a value it already holds alone", async () => {
+		const account = await openChecking();
+		const { parent, food } = await splitInTwo(account.id);
+		const groceries = await newCategory("Courses");
+
+		await updateTransaction(
+			deps(),
+			food,
+			{ label: "Fruits", categoryId: groceries, amount: toMinorUnits(-6_000), excluded: false },
+			asUser,
+		);
+		await updateTransaction(deps(), parent, { notes: "Ticket", excluded: true }, asUser);
+
+		await expect(findTransaction(deps(), food)).resolves.toMatchObject({
+			label: "Fruits",
+			categoryId: groceries,
+			amount: -6_000,
+		});
+		await expect(findTransaction(deps(), parent)).resolves.toMatchObject({ notes: "Ticket" });
+	});
+});
+
 describe("deleteTransaction", () => {
 	it("removes the transaction and puts the balance back", async () => {
 		const account = await openChecking();
@@ -527,6 +578,45 @@ describe("deleteTransaction", () => {
 		await expect(findTransaction(deps(), id)).resolves.toBeNull();
 		await expect(tagsOf(id)).resolves.toEqual([]);
 		await expect(temp.db.select().from(tags).where(eq(tags.id, holidays))).resolves.toHaveLength(1);
+	});
+
+	it("deletes a split parent with its children, tombstoning its bank keys", async () => {
+		const { account, bank } = await linkedChecking();
+		const line = newBankLine({ externalId: "SPLIT1", amount: toMinorUnits(-transferAmount()) });
+		const [parent = ""] = (await sync(account.id, bank.connectionId, [line])).created;
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "A", amount: toMinorUnits(-1_000), categoryId: null },
+				{ label: "B", amount: toMinorUnits(line.amount + 1_000), categoryId: null },
+			],
+			asUser,
+		);
+
+		await deleteTransaction(deps(), parent, asUser);
+
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+		await expect(
+			temp.db.select().from(entries).where(inArray(entries.id, split.childIds)),
+		).resolves.toEqual([]);
+		await expect(
+			temp.db.select().from(deletedEntryKeys).where(eq(deletedEntryKeys.accountId, account.id)),
+		).resolves.toHaveLength(2);
+		await expect(sync(account.id, bank.connectionId, [line])).resolves.toMatchObject({
+			created: [],
+		});
+	});
+
+	it("refuses to delete a child alone with TRANSACTION_SPLIT", async () => {
+		const account = await openChecking();
+		const { parent, food } = await splitInTwo(account.id);
+
+		await expect(deleteTransaction(deps(), food, asUser)).rejects.toMatchObject({
+			code: "TRANSACTION_SPLIT",
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(3);
+		await expect(excludedOf(parent)).resolves.toBe(true);
 	});
 
 	it("answers NOT_FOUND for an unknown transaction", async () => {
@@ -941,6 +1031,43 @@ describe("bulkUpdateTransactions", () => {
 		await expect(history(account.id)).resolves.toEqual(days);
 	});
 
+	it("classifies a split's rows and leaves their exclusion as it is", async () => {
+		const account = await openChecking();
+		const { parent, food, home } = await splitInTwo(account.id);
+		const other = await add(account.id, { label: "Pharmacie" });
+		const groceries = await newCategory("Courses divisées");
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ ids: [parent, food, other] },
+				{ excluded: true, categoryId: groceries },
+				asUser,
+			),
+		).resolves.toEqual({ matched: 3, changed: 3 });
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id] } },
+				{ excluded: false },
+				asUser,
+			),
+		).resolves.toEqual({ matched: 3, changed: 1 });
+		// Named by id, the parent keeps its exclusion: only the split lifts it.
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [parent] }, { excluded: false }, asUser),
+		).resolves.toEqual({ matched: 1, changed: 0 });
+
+		await expect(Promise.all([parent, food, home, other].map(excludedOf))).resolves.toEqual([
+			true,
+			false,
+			false,
+			false,
+		]);
+		await expect(categoryOf(food)).resolves.toBe(groceries);
+		await expect(categoryOf(parent)).resolves.toBe(groceries);
+	});
+
 	it("keeps a locked field for any origin but the user's", async () => {
 		const account = await openChecking();
 		const groceries = await newCategory("Courses");
@@ -1129,6 +1256,30 @@ describe("bulkDeleteTransactions", () => {
 
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 		await expect(findTransaction(deps(), kept)).resolves.not.toBeNull();
+	});
+
+	it("deletes a selected parent with its children and skips a selected child, as Sure", async () => {
+		const account = await openChecking();
+		const deleted = await splitInTwo(account.id, { date: "2026-09-05" });
+		const kept = await splitInTwo(account.id, { date: "2026-09-06" });
+
+		await expect(
+			bulkDeleteTransactions(deps(), { ids: [deleted.parent, deleted.food, kept.home] }, asUser),
+		).resolves.toBe(1);
+		await expect(
+			bulkDeleteTransactions(deps(), { filter: { accountIds: [account.id] } }, asUser),
+		).resolves.toBe(0);
+
+		await expect(
+			temp.db
+				.select({ id: entries.id })
+				.from(entries)
+				.where(inArray(entries.id, [deleted.parent, deleted.food, deleted.home])),
+		).resolves.toEqual([]);
+		await expect(transactionCount(account.id)).resolves.toBe(3);
+		const days = await history(account.id);
+		expect(days.get("2026-09-05")).toBe(123456);
+		expect(days.get("2026-09-06")).toBe(123456 + kept.amount);
 	});
 
 	it("deletes nothing when an id names no transaction", async () => {

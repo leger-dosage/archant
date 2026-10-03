@@ -5,7 +5,7 @@ import type { Origin, Transaction } from "./shared.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { and, between, eq, inArray, ne, not, sql } from "drizzle-orm";
+import { and, between, eq, inArray, isNotNull, isNull, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -34,6 +34,7 @@ import {
 	inSequence,
 	inTransferSql,
 	invalidField,
+	isSplitChild,
 } from "./shared.ts";
 
 /** A transaction that can be the other side of a transfer, as the picker lists it. */
@@ -94,15 +95,21 @@ function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
 }
 
 /**
- * The SQL of `isTransferCandidate`'s `excluded` and `accountActive`: neither
- * an excluded row nor a row of a deactivated account is ever a side, as
- * Sure's `Family::AutoTransferMatchable`.
+ * The SQL of `isTransferCandidate`'s `excluded`, `accountActive` and
+ * `splitChild`: neither an excluded row, a row of a deactivated account nor a
+ * split line is ever a side, as Sure's `Family::AutoTransferMatchable`; a
+ * split parent is excluded (AD-20).
  */
 function matchableSide(
+	entry: Record<"parentEntryId", SQLiteColumn>,
 	transaction: Record<"excluded", SQLiteColumn>,
 	account: Record<"active", SQLiteColumn>,
 ): SQL | undefined {
-	return and(eq(transaction.excluded, false), eq(account.active, true));
+	return and(
+		isNull(entry.parentEntryId),
+		eq(transaction.excluded, false),
+		eq(account.active, true),
+	);
 }
 
 const sideColumns = {
@@ -116,6 +123,7 @@ const sideColumns = {
 	inTransfer: inAnyTransfer.mapWith(Boolean),
 	excluded: transactions.excluded,
 	accountActive: accounts.active,
+	splitChild: isSplitChild.mapWith(Boolean),
 };
 
 /** One transaction as the matching rule reads it, `undefined` when the id names none. */
@@ -165,6 +173,7 @@ function candidatePairQuery(
 				inTransfer: inTransferSql(sourceEntry.id).mapWith(Boolean),
 				excluded: sourceTransaction.excluded,
 				accountActive: sourceAccount.active,
+				splitChild: isNotNull(sourceEntry.parentEntryId).mapWith(Boolean),
 				expectedAccountId: sourceTransaction.expectedTransferAccountId,
 			},
 			candidate: {
@@ -188,8 +197,8 @@ function candidatePairQuery(
 				candidateOf(sourceEntry, entries),
 				eq(transactions.entryId, entries.id),
 				eq(accounts.id, entries.accountId),
-				matchableSide(sourceTransaction, sourceAccount),
-				matchableSide(transactions, accounts),
+				matchableSide(sourceEntry, sourceTransaction, sourceAccount),
+				matchableSide(entries, transactions, accounts),
 				counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
 			),
 		)

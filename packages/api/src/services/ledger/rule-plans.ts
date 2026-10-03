@@ -25,6 +25,7 @@ import {
 	chunksOf,
 	inAnyTransfer,
 	inSequence,
+	notSplitParent,
 	oneByOne,
 	transferColumns,
 } from "./shared.ts";
@@ -231,7 +232,8 @@ export async function applyRulePlanToHistory(
 
 /**
  * Every transaction as a rule reads it, for applying rules to history:
- * possible duplicates and excluded rows included, with their merchant,
+ * possible duplicates and excluded rows included, split parents left out for
+ * their children (AD-20), with their merchant,
  * category, tags, notes, transfer kind, expected counterpart and locks.
  * `from` keeps rows dated on or after it; `null` keeps every date. Tags are
  * read `KEYS_PER_LOOKUP` rows per query, below SQLite's parameter cap.
@@ -252,7 +254,11 @@ export async function ruleCandidates(
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.where(
-			and(eq(entries.kind, "transaction"), from === null ? undefined : gte(entries.date, from)),
+			and(
+				eq(entries.kind, "transaction"),
+				notSplitParent,
+				from === null ? undefined : gte(entries.date, from),
+			),
 		)
 		.orderBy(entries.date, entries.createdAt, entries.id);
 	const tagsOf = await tagIdsByEntry(

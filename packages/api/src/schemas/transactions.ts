@@ -9,6 +9,12 @@ export const LABEL_MAX_LENGTH = 200;
 export const NOTES_MAX_LENGTH = 2000;
 /** Past this a tag stops telling a trip apart; the route refuses a larger set. */
 export const MAX_TAGS_PER_TRANSACTION = 20;
+/**
+ * The most lines a split holds. Sure sets none; one receipt's lines fit well
+ * below it. The body limit still applies: fifty lines with long notes exceed
+ * it, and the route answers `PAYLOAD_TOO_LARGE` before any field check.
+ */
+export const MAX_SPLIT_LINES = 50;
 
 // What the route checks before it knows the account: every field is text, so
 // the typed client knows the body's shape. The amount is parsed afterwards,
@@ -33,6 +39,24 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 	// The whole set; the ledger checks that every id names a tag.
 	tagIds: z.array(z.string()).optional(),
 });
+
+// A split's body as the route checks it before it knows the account: the
+// amounts are text, parsed with the account's currency by
+// `splitTransactionSchema`.
+export const splitBodySchema = z.object({
+	lines: z.array(
+		z.object({
+			id: z.string().optional(),
+			label: z.string(),
+			amount: z.string(),
+			categoryId: z.string().nullable(),
+			tagIds: z.array(z.string()).optional(),
+			notes: z.string().nullable().optional(),
+		}),
+	),
+});
+
+export type SplitInput = z.input<typeof splitBodySchema>;
 
 /** Merging a possible duplicate into the candidate the user picked. */
 export const mergeDuplicateBodySchema = z.object({ into: z.string().min(1) });
@@ -119,6 +143,51 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 				...(notes === undefined ? {} : { notes: notes === "" ? null : notes }),
 			};
 		});
+}
+
+/**
+ * The full check of a split's lines, with the same field codes as a
+ * transaction's, under `lines.N`: one to `MAX_SPLIT_LINES` lines, each a
+ * label, an amount in `currency` and a category or `null`. A line's id names
+ * a child kept in place, and its absent tags or notes are left as they are;
+ * a blank note is no note. That the lines sum to the parent is the ledger's
+ * to check, on `lines`.
+ */
+export function splitTransactionSchema(currency: CurrencyCode) {
+	const line = z
+		.object({
+			id: z.string().min(1).optional(),
+			label: fields.label,
+			amount: fields.amount,
+			categoryId: z.string().min(1).nullable(),
+			tagIds: z
+				.array(z.string().min(1))
+				.transform((ids) => [...new Set(ids)])
+				.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
+				.optional(),
+			notes: z
+				.string()
+				.trim()
+				.max(NOTES_MAX_LENGTH)
+				.nullable()
+				.optional()
+				.transform((value) => (value === "" ? null : value)),
+		})
+		.superRefine(amountIn(currency))
+		.transform(({ amount: text, ...rest }, context) => {
+			const amount = parseAmount(text, currency);
+
+			if (amount === null) {
+				// Already reported by the refinement, as in `createTransactionSchema`.
+				context.addIssue({ code: "custom", path: ["amount"], message: "invalid_amount" });
+
+				return z.NEVER;
+			}
+
+			return { ...rest, amount };
+		});
+
+	return z.object({ lines: z.array(line).min(1).max(MAX_SPLIT_LINES) });
 }
 
 /**
