@@ -219,3 +219,7 @@ development_status:
   24-3-the-loan-overview: backlog
   24-4-where-my-loan-is-heading: backlog
   epic-24-retrospective: optional
+
+  epic-25: backlog
+  25-1-choose-the-start-date-of-the-first-sync: backlog
+  epic-25-retrospective: optional

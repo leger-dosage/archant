@@ -8,7 +8,7 @@ scope: "Archant, the ten epics of epics.md"
 status: final
 created: "2026-09-21"
 updated: "2026-10-03"
-binds: [FR1-FR56, FR61-FR94, NFR1-NFR12, NFR14, NFR19, NFR20]
+binds: [FR1-FR56, FR61-FR95, NFR1-NFR12, NFR14, NFR19, NFR20]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md
   - ../_bmad-output/planning-artifacts/epics.md
