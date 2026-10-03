@@ -1,7 +1,7 @@
 import type { BudgetCategoryData } from "@/hooks/useBudget";
 import type { ShownError } from "@/lib/form-errors";
 
-import { CornerDownRightIcon } from "lucide-react";
+import { ArrowRightLeftIcon, CornerDownRightIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -9,7 +9,9 @@ import { budgetCategorySchema } from "@archant/api/schemas/budgets";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 
+import { BudgetMoveDialog } from "@/components/BudgetMoveDialog";
 import { FieldMessage } from "@/components/FieldMessage";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSaveCategoryBudget } from "@/hooks/useBudget";
 import { amountToText } from "@/lib/amount-sign";
@@ -29,7 +31,10 @@ function currencySymbol(currency: string): string {
 	);
 }
 
-/** One row of the categories step: a colour mark, the name, the median, then the amount. */
+/**
+ * One row of the categories step: a colour mark, the name, the median, the
+ * amount, then « Déplacer de l'argent » where the category can give some.
+ */
 function CategoryAmountRow({
 	color,
 	label,
@@ -37,6 +42,7 @@ function CategoryAmountRow({
 	currency,
 	indented,
 	fieldId,
+	action,
 	children,
 }: {
 	color: string;
@@ -45,6 +51,8 @@ function CategoryAmountRow({
 	currency: string;
 	indented: boolean;
 	fieldId: string;
+	/** The move button; its place stays empty without one, so the amounts line up. */
+	action?: React.ReactNode;
 	children: React.ReactNode;
 }) {
 	const { t } = useTranslation();
@@ -73,6 +81,7 @@ function CategoryAmountRow({
 				</p>
 			</div>
 			{children}
+			{action ?? <span aria-hidden="true" className="size-9 shrink-0" />}
 		</div>
 	);
 }
@@ -100,15 +109,19 @@ export function BudgetCategoryField({
 	currency,
 	line,
 	parentName,
+	categories,
 }: {
 	month: string;
 	currency: CurrencyCode;
 	line: BudgetCategoryData;
 	/** The parent's name, for a subcategory's hint. */
 	parentName: string | null;
+	/** Every expense category of the month, where a move can send money. */
+	categories: readonly BudgetCategoryData[];
 }) {
 	const { t } = useTranslation();
 	const fieldId = useId();
+	const [moving, setMoving] = useState(false);
 	const save = useSaveCategoryBudget(month);
 	const saved = textOf(line.budgetedSpending, currency);
 	const [text, setText] = useState(saved);
@@ -189,6 +202,22 @@ export function BudgetCategoryField({
 				currency={currency}
 				indented={line.parentId !== null}
 				fieldId={fieldId}
+				action={
+					// Sure offers a move from any amount; Archant from what can be
+					// given, so a shared child or a parent its children hold has none.
+					line.movable > 0 ? (
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							aria-label={t("budgets.move.open", { name: line.name })}
+							title={t("budgets.move.open", { name: line.name })}
+							onClick={() => setMoving(true)}
+						>
+							<ArrowRightLeftIcon aria-hidden="true" />
+						</Button>
+					) : undefined
+				}
 			>
 				<AmountBox currency={currency}>
 					<Input
@@ -216,9 +245,18 @@ export function BudgetCategoryField({
 					{t("budgets.allocation.sharedHint", { parent: parentName })}
 				</p>
 			)}
-			<div className={cn("flex justify-end", error === undefined && "hidden")}>
+			{/* Under the amount it is about, not under the move button. */}
+			<div className={cn("flex justify-end pr-12", error === undefined && "hidden")}>
 				<FieldMessage id={`${fieldId}-error`} error={error} />
 			</div>
+			<BudgetMoveDialog
+				month={month}
+				currency={currency}
+				source={line}
+				categories={categories}
+				open={moving}
+				onOpenChange={setMoving}
+			/>
 		</div>
 	);
 }

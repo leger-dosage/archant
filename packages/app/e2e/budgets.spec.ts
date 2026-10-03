@@ -7,12 +7,16 @@ import { shiftMonth } from "@archant/data/months";
 import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
-// Stories 17.1 and 17.2: a month's budget, then its categories. One database
-// serves the whole run, so each test owns its months, of 2023 and February
-// 2024, which no other test writes to: the actuals are exact. The medians take
-// every earlier month, so they stay exact only while no other test records a
-// line in euros before November 2023; a category's own medians, of a
-// category no other test uses, always are. December 2023 is this file's too.
+// Stories 17.1 to 17.3: a month's budget, its categories, then a copy and
+// moves. One database serves the whole run, so each test owns its months, of
+// 2023 and February to May 2024, which no other test writes to: the actuals
+// are exact. The 2023-11 test runs before the 2023-05 one sets that month up,
+// so it meets no earlier month set up and offers « Définir le budget », not a
+// copy. The
+// medians take every earlier month, so they stay exact only while no other
+// test records a line in euros before November 2023; a category's own
+// medians, of a category no other test uses, always are. December 2023 is
+// this file's too.
 
 const heading = (page: Page, month: string) =>
 	page.getByRole("heading", { level: 1, name: `Budget ${ofMonth(month)}` });
@@ -452,5 +456,130 @@ test("a month is spread over its categories, which show their status and open a 
 		await expect(page).toHaveURL(/[?&]to=2024-02-29(&|$)/u);
 		await expect(page.getByText("Retrait")).toBeVisible();
 		await expect(page.getByText("Remboursement")).toBeHidden();
+	});
+});
+
+const moveButton = (page: Page, name: string) =>
+	page.getByRole("button", { name: `Déplacer de l'argent depuis ${name}`, exact: true });
+
+test("a month is copied from the latest one set up, then money moves between its categories", async ({
+	page,
+	api,
+	request,
+}) => {
+	// Story 17.3: March 2024 is set up, April left alone, May copied. No line
+	// is needed: the account only keeps March inside the budgets' bounds.
+	await api.openAccount({ openingBalance: "0", openingDate: "2024-03-01" });
+	const house = await api.createCategory({ name: uniqueName("Maison") });
+	const works = await api.createCategory({ name: uniqueName("Travaux"), parentId: house.id });
+	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
+	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
+	const setUp = await request.put("/api/budgets/2024-03", {
+		data: { budgetedSpending: "1 500,00", expectedIncome: "2 000,00" },
+	});
+	expect(setUp.ok(), await setUp.text()).toBe(true);
+	// One after the other: each is an `immediate` write. « Maison » ends at
+	// 1 000, its reserve of 700 beside « Travaux », ring-fenced at 300.
+	await (
+		[
+			[house.id, "700"],
+			[works.id, "300"],
+			[leisure.id, "200"],
+		] as const
+	).reduce(async (previous, [categoryId, budgetedSpending]) => {
+		await previous;
+		const saved = await request.put(`/api/budgets/2024-03/categories/${categoryId}`, {
+			data: { budgetedSpending },
+		});
+		expect(saved.ok(), await saved.text()).toBe(true);
+	}, Promise.resolve());
+
+	await test.step("a month not set up offers the latest earlier month, or a blank form", async () => {
+		await page.goto("/budgets/2024-04");
+		await expect(page.getByRole("button", { name: "Copier mars 2024" })).toBeVisible();
+		await expect(page.getByRole("link", { name: "Définir le budget" })).toBeHidden();
+		await page.getByRole("link", { name: "Partir de zéro" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-04/edit");
+		await expect(
+			page.getByRole("heading", { level: 1, name: "Définir le budget d'avril 2024" }),
+		).toBeVisible();
+	});
+
+	await test.step("« Copier » skips the month left alone, then opens « Catégories »", async () => {
+		await page.goto("/budgets/2024-05");
+		await expect(page.getByText("Reprenez les montants de mars 2024")).toBeVisible();
+		await page.getByRole("button", { name: "Copier mars 2024" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-05/categories");
+		await expect(page.getByText("Budget copié depuis mars 2024.")).toBeVisible();
+		await expect(field(page, house.name)).toHaveValue("1000,00");
+		await expect(field(page, works.name)).toHaveValue("300,00");
+		await expect(field(page, garden.name)).toHaveValue("");
+		await expect(field(page, leisure.name)).toHaveValue("200,00");
+		await expect(allocation(page)).toContainText("80 % alloués");
+	});
+
+	await test.step("only a category that can give some offers a move", async () => {
+		await expect(moveButton(page, house.name)).toBeVisible();
+		await expect(moveButton(page, works.name)).toBeVisible();
+		// Shared, it holds nothing of its own.
+		await expect(moveButton(page, garden.name)).toHaveCount(0);
+	});
+
+	await test.step("a move refuses more than the source can give, then moves", async () => {
+		await moveButton(page, house.name).click();
+		const dialog = page.getByRole("dialog", { name: `Déplacer de l'argent depuis ${house.name}` });
+		// What « Maison » keeps beyond « Travaux »: 700, not its 1 000.
+		await expect(dialog).toContainText(`${house.name} peut donner jusqu'à ${euros(70_000)}`);
+
+		await dialog.getByRole("combobox", { name: "Vers" }).click();
+		const options = page.getByRole("listbox");
+		await expect(options.getByRole("option", { name: house.name, exact: true })).toBeDisabled();
+		await expect(options.getByRole("option", { name: works.name, exact: true })).toBeDisabled();
+		await expect(options.getByRole("option", { name: garden.name, exact: true })).toBeDisabled();
+		await options.getByRole("option", { name: leisure.name, exact: true }).click();
+
+		await dialog.getByLabel("Montant").fill("701");
+		await dialog.getByRole("button", { name: "Déplacer" }).click();
+		await expect(dialog.getByText("Cette catégorie ne peut pas donner autant.")).toBeVisible();
+
+		await dialog.getByLabel("Montant").fill("50");
+		await dialog.getByRole("button", { name: "Déplacer" }).click();
+
+		await expect(dialog).toBeHidden();
+		await expect(page.getByText("Argent déplacé.")).toBeVisible();
+		await expect(field(page, house.name)).toHaveValue("950,00");
+		await expect(field(page, leisure.name)).toHaveValue("250,00");
+		await expect(allocation(page)).toContainText("80 % alloués");
+	});
+
+	await test.step("a subcategory cannot send to its own parent", async () => {
+		await moveButton(page, works.name).click();
+		const dialog = page.getByRole("dialog", { name: `Déplacer de l'argent depuis ${works.name}` });
+		await dialog.getByRole("combobox", { name: "Vers" }).click();
+		const options = page.getByRole("listbox");
+
+		await expect(options.getByRole("option", { name: house.name, exact: true })).toBeDisabled();
+		await expect(options.getByRole("option", { name: garden.name, exact: true })).toBeEnabled();
+		await page.keyboard.press("Escape");
+		await dialog.getByRole("button", { name: "Annuler" }).click();
+		await expect(dialog).toBeHidden();
+	});
+
+	await test.step("a copy into a month set up meanwhile is refused, and the month shows", async () => {
+		await page.goto("/budgets/2024-04");
+		const copy = page.getByRole("button", { name: "Copier mars 2024" });
+		await expect(copy).toBeVisible();
+		// Set up in another tab while this one still offers the copy.
+		const setUpMeanwhile = await request.put("/api/budgets/2024-04", {
+			data: { budgetedSpending: "900,00", expectedIncome: "0" },
+		});
+		expect(setUpMeanwhile.ok(), await setUpMeanwhile.text()).toBe(true);
+		await copy.click();
+
+		await expect(page.getByText("Ce mois a déjà un budget. Il n'a pas été modifié.")).toBeVisible();
+		await expect(copy).toBeHidden();
+		await expect(plan(page, "Dépenses prévues")).toContainText(euros(90_000));
 	});
 });

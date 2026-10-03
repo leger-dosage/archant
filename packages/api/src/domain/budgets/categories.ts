@@ -45,6 +45,8 @@ export type BudgetCategoryLine = Envelope & {
 	icon: CategoryIcon;
 	/** A subcategory at 0: it shares its parent's amount, « Partagé ». */
 	shared: boolean;
+	/** What a move can take from it, as Sure's `movable_from`: see `movableOf`. */
+	movable: MinorUnits;
 };
 
 /** « Sans catégorie »: what the total leaves unallocated, never stored. */
@@ -103,6 +105,22 @@ export function parentAfterOwnSave(amounts: {
 	children: MinorUnits;
 }): MinorUnits {
 	return toMinorUnits(Math.max(amounts.typed, amounts.children));
+}
+
+/**
+ * Sure's `movable_from`: what a move can take from a category. A subcategory
+ * gives its stored amount; a parent only what it keeps beyond its
+ * ring-fenced children, never below zero, since their money is theirs.
+ */
+export function movableOf(amounts: {
+	amount: MinorUnits;
+	parentId: string | null;
+	/** Its children's stored amounts, summed: a shared child's is 0. */
+	children: MinorUnits;
+}): MinorUnits {
+	const { amount, parentId, children } = amounts;
+
+	return parentId === null ? toMinorUnits(Math.max(amount - children, 0)) : amount;
 }
 
 /**
@@ -283,6 +301,11 @@ export function budgetCategories(input: {
 			icon: category.icon,
 			budgetedSpending,
 			shared,
+			movable: movableOf({
+				amount: budgetedSpending,
+				parentId: category.parentId,
+				children: sumOf(childrenOf(category.id).map((child) => amountOf(child.id))),
+			}),
 			...statsOf(past.perCategory.get(category.id) ?? []),
 			...(category.parentId !== null && shared
 				? sharedOf(category.parentId, spent)
