@@ -3,7 +3,7 @@ import type { sessions, users } from "./schema/auth.ts";
 import type { balances } from "./schema/balances.ts";
 import type { bankAccounts } from "./schema/bank-accounts.ts";
 import type { bankConnections } from "./schema/bank-connections.ts";
-import type { budgets } from "./schema/budgets.ts";
+import type { budgetCategories, budgets } from "./schema/budgets.ts";
 import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
 import type { deletedEntryKeys, entryKeys } from "./schema/entry-keys.ts";
@@ -90,3 +90,6 @@ export type NewBankAccount = InferInsertModel<typeof bankAccounts>;
 
 export type Budget = InferSelectModel<typeof budgets>;
 export type NewBudget = InferInsertModel<typeof budgets>;
+
+export type BudgetCategory = InferSelectModel<typeof budgetCategories>;
+export type NewBudgetCategory = InferInsertModel<typeof budgetCategories>;

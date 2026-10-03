@@ -278,3 +278,25 @@ export function useBulkDeleteTransactions() {
 		onError: (error) => showErrorToast(errorCodeOf(error)),
 	});
 }
+
+/** How many rows a category's sheet lists, as Sure's `take(3)`. */
+const RECENT_COUNT = 3;
+
+/**
+ * The first rows of the list a category's sheet links to: the same filter,
+ * the same order, so the sheet never shows a row the list would not.
+ */
+export function useRecentTransactions(filters: TransactionFilters, enabled: boolean) {
+	return useQuery({
+		queryKey: queryKeys.transactions.recent(filters),
+		queryFn: async () =>
+			(
+				await unwrap(
+					api.transactions.$get({
+						query: { ...toApiQuery(filters, 1), pageSize: String(RECENT_COUNT) },
+					}),
+				)
+			).data.items,
+		enabled,
+	});
+}

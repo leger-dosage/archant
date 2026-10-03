@@ -7,10 +7,12 @@ import { shiftMonth } from "@archant/data/months";
 import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
-// Story 17.1: a month's budget. One database serves the whole run, so each
-// test owns months of 2023, which no other test writes to: the actuals are
-// exact. The medians take every earlier month, so they stay exact only while
-// no other test records a line in euros before November 2023.
+// Stories 17.1 and 17.2: a month's budget, then its categories. One database
+// serves the whole run, so each test owns its months, of 2023 and February
+// 2024, which no other test writes to: the actuals are exact. The medians take
+// every earlier month, so they stay exact only while no other test records a
+// line in euros before November 2023; a category's own medians, of a
+// category no other test uses, always are. December 2023 is this file's too.
 
 const heading = (page: Page, month: string) =>
 	page.getByRole("heading", { level: 1, name: `Budget ${ofMonth(month)}` });
@@ -152,6 +154,9 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 
 	await page.getByRole("button", { name: "Enregistrer" }).click();
 
+	// Saving « Budget » leads to « Catégories », as Sure's; « Valider » to the month.
+	await expect(page).toHaveURL("/budgets/2023-11/categories");
+	await page.getByRole("button", { name: "Valider" }).click();
 	await expect(page).toHaveURL("/budgets/2023-11");
 	await expect(heading(page, "2023-11")).toBeVisible();
 	await expect(donut(page).getByRole("img")).toHaveAccessibleName(
@@ -190,6 +195,8 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	await spending.fill("2 000,00");
 	await page.getByRole("button", { name: "Enregistrer" }).click();
 
+	await expect(page).toHaveURL("/budgets/2023-11/categories");
+	await page.getByRole("button", { name: "Valider" }).click();
 	await expect(page).toHaveURL("/budgets/2023-11");
 	await expect(plan(page, "Dépenses prévues")).toContainText(`${euros(40_000)} restants`);
 	// Under budget, what is left closes the ring in grey.
@@ -226,4 +233,224 @@ test("an account in another currency is named under the budget", async ({ page, 
 	await expect(page.getByText(/^Hors des totaux, faute de conversion/u)).toContainText(
 		dollars.name,
 	);
+});
+
+const field = (page: Page, name: string) => page.getByRole("textbox", { name, exact: true });
+
+const allocation = (page: Page) => page.locator('[data-slot="budget-allocation"]');
+
+const categoriesCard = (page: Page) =>
+	page.getByRole("region", { name: "Catégories", exact: true });
+
+const group = (page: Page, name: "Dépassées" | "Dans les clous") =>
+	categoriesCard(page).getByRole("region", { name, exact: true });
+
+const card = (page: Page, name: string) =>
+	categoriesCard(page).getByRole("button", { name: new RegExp(`^${name} `, "u") });
+
+test("a month is spread over its categories, which show their status and open a sheet", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "10 000,00", openingDate: "2023-12-01" });
+	const house = await api.createCategory({ name: uniqueName("Maison"), color: "#4ea7fc" });
+	const works = await api.createCategory({ name: uniqueName("Travaux"), parentId: house.id });
+	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
+	const gifts = await api.createCategory({ name: uniqueName("Cadeaux") });
+	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
+	// One after the other: each is an `immediate` ledger write.
+	const lines = [
+		["2023-12-10", "-100,00", house.id, "Quincaillerie"],
+		// December only: the dashboard's tests own January 2024.
+		["2023-12-12", "-300,00", works.id, "Plombier"],
+		["2024-02-03", "-100,00", works.id, "Peinture"],
+		["2024-02-04", "-650,00", garden.id, "Pépinière"],
+		["2024-02-05", "-20,00", gifts.id, "Fleuriste"],
+		// Four in « Cadeaux »: its sheet lists the three latest.
+		["2024-02-07", "-5,00", gifts.id, "Carte"],
+		["2024-02-08", "-5,00", gifts.id, "Ruban"],
+		["2024-02-09", "-5,00", gifts.id, "Papier"],
+		// « Sans catégorie »: its outflow spends, its income does not.
+		["2024-02-10", "-30,00", null, "Retrait"],
+		["2024-02-11", "500,00", null, "Remboursement"],
+	] as const;
+	await lines.reduce(async (previous, [date, amount, categoryId, label]) => {
+		await previous;
+		const id = await api.addTransaction(account.id, { date, label, amount });
+
+		if (categoryId !== null) {
+			await api.categorise([id], categoryId);
+		}
+	}, Promise.resolve());
+
+	await test.step("« Budget » leads to « Catégories »", async () => {
+		await page.goto("/budgets/2024-02/edit");
+		await page.getByLabel("Dépenses prévues").fill("1 000");
+		await page.getByLabel("Revenus attendus").fill("0");
+		await page.getByRole("button", { name: "Enregistrer" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-02/categories");
+		const steps = page.getByRole("navigation", { name: "Étapes du budget" });
+		await expect(steps.getByRole("link", { name: "Budget, terminée" })).toBeVisible();
+		await expect(steps.getByRole("link", { name: "Catégories" })).toHaveAttribute(
+			"aria-current",
+			"page",
+		);
+		await expect(allocation(page)).toContainText("0 % alloués");
+		await expect(allocation(page)).toContainText(`${euros(100_000)} restant à allouer`);
+	});
+
+	await test.step("each amount saves on change, beside its median", async () => {
+		// December's 100 and the child's 300: a parent's month includes its children's.
+		await expect(page.getByText(`${euros(40_000)}/mois en médiane`)).toBeVisible();
+		await expect(field(page, works.name)).toHaveAttribute("placeholder", "Partagé");
+		await expect(field(page, works.name)).toHaveAccessibleDescription(
+			new RegExp(
+				`^${euros(30_000)}/mois en médiane Laissez vide pour partager le budget de ${house.name}\\.$`,
+				"u",
+			),
+		);
+
+		await field(page, house.name).fill("700");
+		await field(page, house.name).press("Tab");
+		await expect(allocation(page)).toContainText("70 % alloués");
+
+		// Ring-fenced: the parent keeps its reserve of 700 beside the child's 300.
+		await field(page, works.name).fill("300");
+		await field(page, works.name).press("Tab");
+		await expect(field(page, house.name)).toHaveValue("1000,00");
+		await expect(allocation(page)).toContainText("100 % alloués");
+		await expect(field(page, "Sans catégorie")).toHaveValue("0,00");
+	});
+
+	await test.step("« Valider » waits while the categories pass the total", async () => {
+		await field(page, leisure.name).fill("-5");
+		await field(page, leisure.name).press("Tab");
+		await expect(page.getByText("Le montant ne peut pas être négatif.")).toBeVisible();
+
+		await field(page, leisure.name).fill("200");
+		await field(page, leisure.name).press("Tab");
+		await expect(allocation(page)).toContainText("Plus de 100 % alloués");
+		await expect(allocation(page)).toContainText(`Budget dépassé de ${euros(20_000)}`);
+		await expect(page.getByRole("button", { name: "Valider" })).toBeDisabled();
+
+		// The month's donut gives way to the warning.
+		await page.goto("/budgets/2024-02");
+		await expect(page.getByRole("heading", { name: "Budget sur-alloué" })).toBeVisible();
+		await expect(donut(page).getByRole("img")).toBeHidden();
+		await page.getByRole("link", { name: "Corriger les catégories" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-02/categories");
+		await field(page, leisure.name).fill("");
+		await field(page, leisure.name).press("Tab");
+		await expect(allocation(page)).toContainText("100 % alloués");
+		await page.getByRole("button", { name: "Valider" }).click();
+		await expect(page).toHaveURL("/budgets/2024-02");
+		await expect(donut(page).getByRole("img")).toBeVisible();
+	});
+
+	await test.step("the cards show each status, in « Dépassées » or « Dans les clous »", async () => {
+		const over = group(page, "Dépassées");
+		const onTrack = group(page, "Dans les clous");
+
+		// Spent with no amount: over, its budget left out. « Sans catégorie »
+		// has nothing left once the categories take the whole total.
+		await expect(over.getByRole("button")).toHaveCount(2);
+		await expect(card(page, gifts.name)).toContainText("Dépassé");
+		await expect(card(page, gifts.name)).toContainText(`Dépensé : ${euros(3_500)}`);
+		await expect(card(page, gifts.name)).toContainText(`Dépassement : ${euros(3_500)}`);
+		await expect(card(page, gifts.name)).not.toContainText("Budgété");
+		await expect(card(page, gifts.name).locator('[data-status="budgetOver"]')).toHaveCSS(
+			"color",
+			rgb("#c91313"),
+		);
+
+		await expect(card(page, "Sans catégorie")).toContainText(`Dépensé : ${euros(3_000)}`);
+		await expect(card(page, "Sans catégorie")).toContainText(`Dépassement : ${euros(3_000)}`);
+
+		// The parent, then its children: « Loisirs », neither budgeted nor
+		// spending, is hidden.
+		await expect(onTrack.getByRole("button")).toHaveCount(3);
+		await expect(card(page, house.name)).toContainText("Dans les clous");
+		await expect(card(page, house.name)).toContainText(`Dépensé : ${euros(75_000)}`);
+		await expect(card(page, house.name)).toContainText(`Budgété : ${euros(100_000)}`);
+		await expect(card(page, house.name)).toContainText(`Reste : ${euros(25_000)}`);
+		await expect(card(page, works.name)).toContainText(`Reste : ${euros(20_000)}`);
+		// Shared: what the parent keeps beyond « Travaux », 700, less its 650.
+		await expect(card(page, garden.name)).toContainText("Bientôt atteint");
+		await expect(card(page, garden.name)).toContainText("Budgété : Partagé");
+		await expect(card(page, garden.name)).toContainText(`Reste : ${euros(5_000)}`);
+		await expect(card(page, leisure.name)).toBeHidden();
+	});
+
+	await test.step("the filter keeps one group, in the URL", async () => {
+		const filter = page.getByRole("radiogroup", { name: "Filtrer les catégories" });
+		await filter.getByRole("radio", { name: "Dépassées" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-02?filter=over-budget");
+		await expect(group(page, "Dans les clous")).toBeHidden();
+		await page.reload();
+		await expect(card(page, gifts.name)).toBeVisible();
+		await expect(group(page, "Dans les clous")).toBeHidden();
+
+		await filter.getByRole("radio", { name: "Toutes" }).click();
+		await expect(page).toHaveURL("/budgets/2024-02");
+		await expect(group(page, "Dans les clous")).toBeVisible();
+	});
+
+	await test.step("a card opens its sheet, with the month's latest rows", async () => {
+		await card(page, house.name).click();
+		const sheet = page.getByRole("dialog", { name: house.name });
+
+		await expect(sheet).toContainText(`Dépenses de février 2024${euros(75_000)}`);
+		await expect(sheet).toContainText(`Statut${euros(25_000)} restants`);
+		await expect(sheet).toContainText(`Budgété${euros(100_000)}`);
+		// December, its one earlier month.
+		await expect(sheet).toContainText(`Moyenne mensuelle${euros(40_000)}`);
+		await expect(sheet).toContainText(`Médiane mensuelle${euros(40_000)}`);
+		const recent = sheet.getByRole("list", { name: "Opérations récentes" });
+		await expect(recent.getByRole("listitem")).toHaveCount(2);
+		await expect(recent.getByRole("listitem").first()).toContainText("Pépinière");
+		await expect(recent.getByRole("listitem").last()).toContainText("Peinture");
+
+		await sheet.getByRole("link", { name: "Voir toutes les opérations" }).click();
+		await expect(page).toHaveURL(/\/transactions\?/u);
+		await expect(page).toHaveURL(new RegExp(`[?&]category=[^&]*${house.id}`, "u"));
+		await expect(page).toHaveURL(/[?&]from=2024-02-01(&|$)/u);
+		await expect(page).toHaveURL(/[?&]to=2024-02-29(&|$)/u);
+		// The parent's rows and its children's, as the sheet listed them.
+		await expect(page.getByText("Pépinière")).toBeVisible();
+	});
+
+	await test.step("a sheet lists three rows, « Sans catégorie »'s its outflow only", async () => {
+		await page.goto("/budgets/2024-02");
+		await card(page, gifts.name).click();
+		const gifted = page.getByRole("dialog", { name: gifts.name });
+		const giftRows = gifted
+			.getByRole("list", { name: "Opérations récentes" })
+			.getByRole("listitem");
+
+		await expect(giftRows).toHaveCount(3);
+		await expect(giftRows.nth(0)).toContainText("Papier");
+		await expect(giftRows.nth(1)).toContainText("Ruban");
+		await expect(giftRows.nth(2)).toContainText("Carte");
+		await page.keyboard.press("Escape");
+		await expect(gifted).toBeHidden();
+
+		await card(page, "Sans catégorie").click();
+		const uncategorised = page.getByRole("dialog", { name: "Sans catégorie" });
+		const rows = uncategorised
+			.getByRole("list", { name: "Opérations récentes" })
+			.getByRole("listitem");
+
+		await expect(rows).toHaveCount(1);
+		await expect(rows).toContainText("Retrait");
+		await uncategorised.getByRole("link", { name: "Voir toutes les opérations" }).click();
+		await expect(page).toHaveURL(/[?&]category=[^&]*none/u);
+		await expect(page).toHaveURL(/[?&]direction=[^&]*expense/u);
+		await expect(page).toHaveURL(/[?&]from=2024-02-01(&|$)/u);
+		await expect(page).toHaveURL(/[?&]to=2024-02-29(&|$)/u);
+		await expect(page.getByText("Retrait")).toBeVisible();
+		await expect(page.getByText("Remboursement")).toBeHidden();
+	});
 });

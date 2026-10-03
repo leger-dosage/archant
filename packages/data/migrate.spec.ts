@@ -1536,6 +1536,35 @@ describe("budgets", () => {
 		await expect(insertBudget(database, "b4", "2026-12", -1, 0)).rejects.toThrow();
 		await expect(insertBudget(database, "b5", "2027-01", 0, -1)).rejects.toThrow();
 	});
+
+	it("holds one amount per category and budget, never negative, gone with either", async () => {
+		const database = await migrated();
+		const insertAmount = (id: string, budgetId: string, categoryId: string, amount: number) =>
+			database.run(
+				sql`insert into budget_categories (id, budget_id, category_id, budgeted_spending, created_at, updated_at) values (${id}, ${budgetId}, ${categoryId}, ${amount}, 0, 0)`,
+			);
+		const remaining = async () =>
+			(await database.all<{ id: string }>(sql`select id from budget_categories order by id`)).map(
+				(row) => row.id,
+			);
+		await insertBudget(database, "b1", "2026-10", 100_000, 0);
+		await insertBudget(database, "b2", "2026-11", 100_000, 0);
+		await insertCategory(database, "c1", "Courses");
+		await insertCategory(database, "c2", "Loisirs");
+
+		await expect(insertAmount("bc1", "b1", "c1", 50_000)).resolves.toBeDefined();
+		await expect(insertAmount("bc2", "b1", "c1", 10_000)).rejects.toThrow();
+		await expect(insertAmount("bc3", "b1", "c2", -1)).rejects.toThrow();
+		await expect(insertAmount("bc4", "b1", "unknown", 0)).rejects.toThrow();
+		await insertAmount("bc5", "b1", "c2", 0);
+		await insertAmount("bc6", "b2", "c1", 20_000);
+
+		await database.run(sql`delete from categories where id = 'c2'`);
+		await expect(remaining()).resolves.toEqual(["bc1", "bc6"]);
+
+		await database.run(sql`delete from budgets where id = 'b1'`);
+		await expect(remaining()).resolves.toEqual(["bc6"]);
+	});
 });
 
 describe("migrateFromEnv", () => {

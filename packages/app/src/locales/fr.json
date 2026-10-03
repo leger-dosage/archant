@@ -866,7 +866,12 @@
 			"labelEmpty": "Dépenses {{ofMonth}} : {{spent}} sur {{budget}}.",
 			"spent": "Dépensé",
 			"of": "sur {{amount}}",
-			"edit": "Modifier le budget"
+			"edit": "Modifier le budget",
+			"overAllocated": {
+				"title": "Budget sur-alloué",
+				"description": "Les catégories se partagent plus que les dépenses prévues. Corrigez leurs montants pour retrouver le graphique.",
+				"action": "Corriger les catégories"
+			}
 		},
 		"summary": {
 			"title": "Résumé",
@@ -890,6 +895,73 @@
 			"suggestHint": "Remplit chaque montant avec la médiane des mois précédents.",
 			"noSuggestion": "Aucun mois précédent ne permet de suggérer un montant.",
 			"save": "Enregistrer"
+		},
+		"steps": {
+			"label": "Étapes du budget",
+			"budget": "Budget",
+			"categories": "Catégories",
+			"done": "{{step}}, terminée"
+		},
+		"allocation": {
+			"title": "Répartir le budget {{ofMonth}}",
+			"description": "Fixez un plafond par catégorie de dépenses. Ce que vous n'attribuez à aucune revient à « Sans catégorie ».",
+			"percent": "{{percent}} alloués",
+			"over": "Plus de 100 % alloués",
+			"of": "{{allocated}} sur {{total}}",
+			"left": "{{amount}} restant à allouer",
+			"exceeded": "Budget dépassé de {{amount}}",
+			"median": "{{amount}}/mois en médiane",
+			"noMedian": "Pas encore d'historique",
+			"shared": "Partagé",
+			"sharedHint": "Laissez vide pour partager le budget de {{parent}}.",
+			"uncategorisedHint": "Ce qui reste du total, calculé seul.",
+			"confirm": "Valider",
+			"confirmHint": "Ramenez les catégories sous les dépenses prévues pour valider.",
+			"notSetUp": "Définissez d'abord les dépenses prévues de ce mois, puis répartissez-les ici.",
+			"noCategories": "Aucune catégorie de dépenses. Créez-en dans les réglages pour leur donner un budget.",
+			"settings": "Gérer les catégories"
+		},
+		"categories": {
+			"title": "Catégories",
+			"edit": "Modifier",
+			"editLabel": "Modifier le budget des catégories",
+			"filter": {
+				"label": "Filtrer les catégories",
+				"all": "Toutes",
+				"over": "Dépassées",
+				"onTrack": "Dans les clous"
+			},
+			"over": "Dépassées",
+			"onTrack": "Dans les clous",
+			"count_one": "{{count}} catégorie",
+			"count_other": "{{count}} catégories",
+			"spentLabel": "Dépensé : ",
+			"budgetedLabel": "Budgété : ",
+			"leftLabel": "Reste : ",
+			"overByLabel": "Dépassement : ",
+			"shared": "Partagé",
+			"empty": "Aucune catégorie n'a de budget ni de dépense ce mois-ci."
+		},
+		"status": {
+			"over": "Dépassé",
+			"near": "Bientôt atteint",
+			"onTrack": "Dans les clous"
+		},
+		"sheet": {
+			"category": "Catégorie",
+			"ofBudget": "{{spent}} sur {{budgeted}}",
+			"overview": "Aperçu",
+			"spending": "Dépenses {{ofMonth}}",
+			"status": "Statut",
+			"left": "{{amount}} restants",
+			"overBy": "{{amount}} de dépassement",
+			"budgeted": "Budgété",
+			"average": "Moyenne mensuelle",
+			"median": "Médiane mensuelle",
+			"none": "Aucune",
+			"recent": "Opérations récentes",
+			"all": "Voir toutes les opérations",
+			"noTransactions": "Aucune opération ce mois-ci."
 		}
 	},
 	"recurring": {
@@ -1316,6 +1388,7 @@
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
+		"BUDGET_NOT_SET_UP": "Définissez d'abord les dépenses prévues de ce mois.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
 		"ORIGIN_MISMATCH": "Archant est configuré pour une autre adresse. Donnez à ARCHANT_URL l'adresse affichée dans la barre d'adresse, puis redémarrez Archant.",

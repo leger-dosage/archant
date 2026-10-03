@@ -281,6 +281,13 @@
       "when": 1791022192479,
       "tag": "0039_add_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791026519403,
+      "tag": "0040_add_budget_categories",
+      "breakpoints": true
     }
   ]
 }

@@ -102,6 +102,8 @@ export const queryKeys = {
 		 * No page, so turning one reads them from the cache.
 		 */
 		totals: (filters: TransactionFilters) => ["transactions", "totals", filters] as const,
+		/** The latest rows under its filters, a budget category's sheet's three. */
+		recent: (filters: TransactionFilters) => ["transactions", "recent", filters] as const,
 		/** Prefixes every page of one account's list. */
 		ofAccount: (accountId: string) => ["transactions", "account", accountId] as const,
 		byAccount: (accountId: string, page: number) =>
