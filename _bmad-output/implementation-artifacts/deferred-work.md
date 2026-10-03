@@ -232,3 +232,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-18-1-download-all-my-data.md`
   summary: On a Turso database, the export's read snapshot is a remote interactive stream that may expire during a slow download.
   evidence: unverified, medium if true; `readSnapshot` opens `$client.transaction("deferred")`, which over `libsql://` holds a Hrana stream between pulls. Settle it by exporting a large history from a Turso database through a throttled client and watching for a stream expiry.
+- source_spec: `_bmad-output/implementation-artifacts/spec-19-2-split-from-the-interface.md`
+  summary: EXPERIENCE.md says a sheet never opens a dialog except a confirmation, while the transfer, duplicate and split pickers all open one from the transaction sheet.
+  evidence: `TransferDialog` and `DuplicateDialog` predate Story 19.2, which asks for a split dialog from the sheet; the rule or the sheet's pickers need reconciling in the UX document.
+- source_spec: `_bmad-output/implementation-artifacts/spec-19-2-split-from-the-interface.md`
+  summary: The volume test never times or plans the list's read of split parents by id.
+  evidence: medium, unverified: `history-volume.spec.ts` seeds no split, so `listTransactionsById` returns early there; a seeded page of lines timed under `PAGE_MS` with a primary-key search in its plan would settle it.
