@@ -50,6 +50,11 @@ export const ERROR_STATUSES = {
 	 * dismissed, or merged, in another tab. Nothing is written.
 	 */
 	DUPLICATE_RESOLVED: 409,
+	/**
+	 * A category's amount in a month whose total is not set: Sure's form only
+	 * reaches its categories after « Budget ». Nothing is written.
+	 */
+	BUDGET_NOT_SET_UP: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

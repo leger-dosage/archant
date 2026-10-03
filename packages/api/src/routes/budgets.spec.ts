@@ -19,9 +19,23 @@ useSignedInApp();
 // The clock is 2026-09-21 in Europe/Paris: the current month is 2026-09, and
 // budgets reach from 2024-09, or the oldest entry's month, to 2028-09.
 
+const envelope = z.object({
+	budgetedSpending: z.number(),
+	budgeted: z.boolean(),
+	spent: z.number(),
+	available: z.number(),
+	percentSpent: z.number(),
+	status: z.enum(["over", "near", "onTrack"]),
+	section: z.enum(["over", "onTrack"]).nullable(),
+	median: z.number().nullable(),
+	average: z.number().nullable(),
+});
+
 const budgetBody = z.object({
 	data: z.object({
 		month: z.string(),
+		from: z.string(),
+		to: z.string(),
 		currency: z.string(),
 		setUp: z.boolean(),
 		budgetedSpending: z.number().nullable(),
@@ -36,6 +50,18 @@ const budgetBody = z.object({
 				spent: z.number(),
 			}),
 		),
+		categories: z.array(
+			envelope.extend({
+				categoryId: z.string(),
+				parentId: z.string().nullable(),
+				name: z.string(),
+				color: z.string(),
+				icon: z.string(),
+				shared: z.boolean(),
+			}),
+		),
+		uncategorised: envelope,
+		allocated: z.number(),
 		suggested: z.object({ spending: z.number().nullable(), income: z.number().nullable() }),
 		previousMonth: z.string().nullable(),
 		nextMonth: z.string().nullable(),
@@ -59,6 +85,12 @@ async function save(month: string, budgetedSpending: string, expectedIncome: str
 async function budgetRows() {
 	return own?.db.all(
 		sql`select month, currency, budgeted_spending as budgetedSpending, expected_income as expectedIncome from budgets`,
+	);
+}
+
+async function amountRows() {
+	return own?.db.all(
+		sql`select category_id as categoryId, budgeted_spending as budgetedSpending from budget_categories order by budgeted_spending`,
 	);
 }
 
@@ -97,10 +129,12 @@ async function household() {
 
 describe("GET /api/budgets/:month", () => {
 	it("answers a month not set up with its actuals and suggestions, and writes nothing", async () => {
-		const { courses } = await household();
+		const { courses, clothes } = await household();
 
 		await expect(budgetOf("2026-09")).resolves.toEqual({
 			month: "2026-09",
+			from: "2026-09-01",
+			to: "2026-09-30",
 			currency: "EUR",
 			setUp: false,
 			budgetedSpending: null,
@@ -111,6 +145,55 @@ describe("GET /api/budgets/:month", () => {
 				{ categoryId: courses, name: "Courses", color: "#e99537", icon: "tag", spent: 6_000 },
 				{ categoryId: null, name: null, color: null, icon: null, spent: 1_500 },
 			],
+			// Nothing is budgeted yet: « Courses » spent with no amount, so it is over.
+			categories: [
+				{
+					categoryId: courses,
+					parentId: null,
+					name: "Courses",
+					color: "#e99537",
+					icon: "tag",
+					budgetedSpending: 0,
+					shared: false,
+					budgeted: false,
+					spent: 6_000,
+					available: -6_000,
+					percentSpent: 100,
+					status: "over",
+					section: "over",
+					median: 25_000,
+					average: 25_000,
+				},
+				{
+					categoryId: clothes,
+					parentId: null,
+					name: "Vêtements",
+					color: "#4ea7fc",
+					icon: "tag",
+					budgetedSpending: 0,
+					shared: false,
+					budgeted: false,
+					spent: 0,
+					available: 0,
+					percentSpent: 0,
+					status: "onTrack",
+					section: null,
+					median: null,
+					average: null,
+				},
+			],
+			uncategorised: {
+				budgetedSpending: 0,
+				budgeted: false,
+				spent: 1_500,
+				available: -1_500,
+				percentSpent: 100,
+				status: "over",
+				section: "over",
+				median: null,
+				average: null,
+			},
+			allocated: 0,
 			suggested: { spending: 25_000, income: 250_000 },
 			previousMonth: "2026-08",
 			nextMonth: "2026-10",
@@ -118,6 +201,7 @@ describe("GET /api/budgets/:month", () => {
 			leftOut: [],
 		});
 		await expect(budgetRows()).resolves.toEqual([]);
+		await expect(amountRows()).resolves.toEqual([]);
 	});
 
 	it("suggests from the months before the shown one, or before the current one", async () => {
@@ -277,5 +361,282 @@ describe("PUT /api/budgets/:month", () => {
 			[404, "NOT_FOUND"],
 		]);
 		await expect(budgetRows()).resolves.toEqual([]);
+	});
+});
+
+const put = (month: string, categoryId: string, budgetedSpending: string) =>
+	ownRequest("PUT", `/api/budgets/${month}/categories/${categoryId}`, { budgetedSpending });
+
+async function saved(month: string, categoryId: string, budgetedSpending: string) {
+	const { status, body } = await put(month, categoryId, budgetedSpending);
+
+	expect(status, JSON.stringify(body)).toBe(200);
+
+	return budgetBody.parse(body).data;
+}
+
+const lineOf = (budget: z.infer<typeof budgetBody>["data"], categoryId: string) =>
+	budget.categories.find((item) => item.categoryId === categoryId);
+
+/** « Maison » with two children, in a September set up at 2 000,00. */
+async function house() {
+	const account = await openOwn({ openingDate: "2026-04-01", openingBalance: "10 000,00" });
+	const parent = await ownCategory("Maison");
+	const works = await ownCategory("Travaux", { parentId: parent });
+	const garden = await ownCategory("Jardin", { parentId: parent });
+	await save("2026-09", "2 000", "0");
+
+	return { account, parent, works, garden };
+}
+
+describe("PUT /api/budgets/:month/categories/:categoryId", () => {
+	it("sets a parent's amount, which the allocation counts, and answers the month", async () => {
+		const { parent } = await house();
+
+		const budget = await saved("2026-09", parent, "500");
+
+		expect(lineOf(budget, parent)).toMatchObject({
+			budgetedSpending: 50_000,
+			budgeted: true,
+			section: "onTrack",
+		});
+		expect(budget).toMatchObject({
+			allocated: 50_000,
+			uncategorised: { budgetedSpending: 150_000 },
+		});
+		await expect(amountRows()).resolves.toEqual([{ categoryId: parent, budgetedSpending: 50_000 }]);
+
+		await saved("2026-09", parent, "450,50");
+
+		await expect(amountRows()).resolves.toEqual([{ categoryId: parent, budgetedSpending: 45_050 }]);
+	});
+
+	it("ring-fences a child, then shares it again, keeping the parent's reserve", async () => {
+		const { parent, works, garden } = await house();
+		await saved("2026-09", parent, "1 000");
+
+		// Sure's `sync_parent_budgeted_spending!`: the parent keeps its whole
+		// reserve beside the new child amount.
+		const fenced = await saved("2026-09", works, "300");
+
+		expect(lineOf(fenced, works)).toMatchObject({ budgetedSpending: 30_000, shared: false });
+		expect(lineOf(fenced, parent)?.budgetedSpending).toBe(130_000);
+		expect(lineOf(fenced, garden)).toMatchObject({ budgetedSpending: 0, shared: true });
+
+		const sharedAgain = await saved("2026-09", works, "");
+
+		expect(lineOf(sharedAgain, works)).toMatchObject({ budgetedSpending: 0, shared: true });
+		expect(lineOf(sharedAgain, parent)?.budgetedSpending).toBe(100_000);
+	});
+
+	it("lowers the parent by what a ring-fenced child gives back", async () => {
+		const { parent, works } = await house();
+		// The parent at 1 000 holds « Travaux », ring-fenced at 300.
+		await saved("2026-09", works, "300");
+		await saved("2026-09", parent, "1 000");
+
+		const budget = await saved("2026-09", works, "  ");
+
+		expect(lineOf(budget, parent)?.budgetedSpending).toBe(70_000);
+	});
+
+	it("never lets a parent's own save go below its ring-fenced children", async () => {
+		const { parent, works } = await house();
+		await saved("2026-09", works, "300");
+
+		const budget = await saved("2026-09", parent, "100");
+
+		expect(lineOf(budget, parent)?.budgetedSpending).toBe(30_000);
+		expect(budget.allocated).toBe(30_000);
+	});
+
+	it("keeps each month's amounts to that month", async () => {
+		const { parent, works, garden } = await house();
+		await save("2026-08", "2 000", "0");
+		await saved("2026-08", parent, "800");
+		await saved("2026-08", garden, "500");
+
+		const september = await saved("2026-09", works, "200");
+
+		// August's « Jardin » is no sibling of September's « Travaux ».
+		expect(lineOf(september, parent)?.budgetedSpending).toBe(20_000);
+		expect(lineOf(september, garden)?.budgetedSpending).toBe(0);
+		expect(september.allocated).toBe(20_000);
+		expect((await budgetOf("2026-08")).allocated).toBe(130_000);
+	});
+
+	it("creates the parent's row from a child's first amount", async () => {
+		const { parent, works, garden } = await house();
+		await saved("2026-09", garden, "50");
+
+		const budget = await saved("2026-09", works, "200");
+
+		expect(lineOf(budget, parent)?.budgetedSpending).toBe(25_000);
+		expect(budget.allocated).toBe(25_000);
+		await expect(amountRows()).resolves.toEqual([
+			{ categoryId: garden, budgetedSpending: 5_000 },
+			{ categoryId: works, budgetedSpending: 20_000 },
+			{ categoryId: parent, budgetedSpending: 25_000 },
+		]);
+	});
+
+	it("splits a parent's spending between ring-fenced and shared children", async () => {
+		const { account, parent, works, garden } = await house();
+		await saved("2026-09", parent, "700");
+		await saved("2026-09", works, "300");
+		await line(account.id, "2026-09-03", "-100,00", works);
+		await line(account.id, "2026-09-04", "-650,00", garden);
+
+		const budget = await budgetOf("2026-09");
+
+		expect(lineOf(budget, parent)).toMatchObject({
+			budgetedSpending: 100_000,
+			spent: 75_000,
+			available: 25_000,
+		});
+		expect(lineOf(budget, works)).toMatchObject({ spent: 10_000, available: 20_000 });
+		expect(lineOf(budget, garden)).toMatchObject({
+			shared: true,
+			spent: 65_000,
+			available: 5_000,
+			status: "near",
+			section: "onTrack",
+		});
+	});
+
+	it("names each category's status and section", async () => {
+		const account = await openOwn({ openingDate: "2026-04-01" });
+		const groceries = await ownCategory("Courses");
+		const leisure = await ownCategory("Loisirs");
+		const gifts = await ownCategory("Cadeaux");
+		const travel = await ownCategory("Voyages");
+		await save("2026-09", "1 000", "0");
+		await saved("2026-09", groceries, "100");
+		await saved("2026-09", leisure, "100");
+		await saved("2026-09", travel, "100");
+		await line(account.id, "2026-09-05", "-90,00", groceries);
+		await line(account.id, "2026-09-06", "-20,00", gifts);
+		await line(account.id, "2026-09-07", "-120,00", travel);
+
+		const budget = await budgetOf("2026-09");
+
+		expect(
+			budget.categories.map((item) => [item.name, item.status, item.section, item.available]),
+		).toEqual([
+			["Cadeaux", "over", "over", -2_000],
+			["Courses", "near", "onTrack", 1_000],
+			["Loisirs", "onTrack", "onTrack", 10_000],
+			["Voyages", "over", "over", -2_000],
+		]);
+		expect(budget.uncategorised).toMatchObject({
+			budgetedSpending: 70_000,
+			section: "onTrack",
+		});
+	});
+
+	it("budgets « Sans catégorie » nothing once the categories take more than the total", async () => {
+		const account = await openOwn({ openingDate: "2026-04-01" });
+		const groceries = await ownCategory("Courses");
+		const rent = await ownCategory("Loyer");
+		await save("2026-09", "1 000", "0");
+		await saved("2026-09", groceries, "200");
+		await line(account.id, "2026-09-05", "-15,00");
+
+		const budget = await saved("2026-09", rent, "1 000");
+
+		expect(budget.allocated).toBe(120_000);
+		expect(budget.uncategorised).toMatchObject({
+			budgetedSpending: 0,
+			spent: 1_500,
+			status: "over",
+			section: "over",
+		});
+	});
+
+	it("gives each category the median and average of the months it has a line in", async () => {
+		const { account, parent, works } = await house();
+		await line(account.id, "2026-05-10", "-100,00", works);
+		await line(account.id, "2026-06-10", "-300,00", parent);
+		await line(account.id, "2026-07-10", "-50,00", parent);
+		await line(account.id, "2026-09-10", "-900,00", parent);
+
+		const budget = await budgetOf("2026-09");
+
+		expect(lineOf(budget, parent)).toMatchObject({ median: 10_000, average: 15_000 });
+		expect(lineOf(budget, works)).toMatchObject({ median: 10_000, average: 10_000 });
+	});
+
+	it("refuses a month not set up, and writes nothing", async () => {
+		await openOwn();
+		const groceries = await ownCategory("Courses");
+
+		const { status, body } = await put("2026-09", groceries, "100");
+
+		expect(status).toBe(409);
+		expect(errorBody.parse(body).error.code).toBe("BUDGET_NOT_SET_UP");
+		await expect(amountRows()).resolves.toEqual([]);
+	});
+
+	it("refuses an income category or an unknown one, and writes nothing", async () => {
+		await openOwn();
+		const salary = await ownCategory("Salaire", { kind: "income" });
+		await save("2026-09", "1 000", "0");
+
+		const refused = await Promise.all([
+			put("2026-09", salary, "100"),
+			put("2026-09", "inconnue", "100"),
+		]);
+
+		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual([
+			[404, "NOT_FOUND"],
+			[404, "NOT_FOUND"],
+		]);
+		await expect(amountRows()).resolves.toEqual([]);
+	});
+
+	it("refuses a month out of bounds", async () => {
+		await openOwn({ openingDate: "2026-09-01" });
+		const groceries = await ownCategory("Courses");
+
+		const { status, body } = await put("2028-10", groceries, "100");
+
+		expect(status).toBe(404);
+		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+
+	it.each([
+		["a negative amount", "-5", "negative_amount"],
+		["text", "cent euros", "invalid_amount"],
+	])("refuses %s, and writes nothing", async (_label, budgetedSpending, code) => {
+		await openOwn();
+		const groceries = await ownCategory("Courses");
+		await save("2026-09", "1 000", "0");
+
+		const { status, body } = await put("2026-09", groceries, budgetedSpending);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "budgetedSpending", code }],
+		});
+		await expect(amountRows()).resolves.toEqual([]);
+	});
+
+	it("requires the amount as text", async () => {
+		await openOwn();
+		const groceries = await ownCategory("Courses");
+
+		const { status, body } = await ownRequest(
+			"PUT",
+			`/api/budgets/2026-09/categories/${groceries}`,
+			{
+				budgetedSpending: 100,
+			},
+		);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "budgetedSpending", code: "invalid_type" },
+		]);
 	});
 });

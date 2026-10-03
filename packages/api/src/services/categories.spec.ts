@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
@@ -37,6 +38,7 @@ beforeEach(async () => {
 	await temp.db.run(sql`update transactions set category_id = null, category_origin = null`);
 	await temp.db.update(categories).set({ parentId: null });
 	await temp.db.delete(categories);
+	await temp.db.delete(budgets);
 });
 
 const input = (overrides: Partial<CreateCategoryRequest> = {}): CreateCategoryRequest => ({
@@ -50,6 +52,36 @@ const input = (overrides: Partial<CreateCategoryRequest> = {}): CreateCategoryRe
 
 const create = (overrides: Partial<CreateCategoryRequest> = {}) =>
 	createCategory(deps(), input(overrides));
+
+/** Gives each category an amount in a budget of its own month. */
+async function budgeted(...categoryIds: string[]) {
+	await categoryIds.reduce(async (previous, categoryId, index) => {
+		await previous;
+		const budgetId = crypto.randomUUID();
+		await temp.db.insert(budgets).values({
+			id: budgetId,
+			month: `2026-${String(index + 1).padStart(2, "0")}`,
+			currency: "EUR",
+			budgetedSpending: 100_000,
+			expectedIncome: 0,
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		await temp.db.insert(budgetCategories).values({
+			id: crypto.randomUUID(),
+			budgetId,
+			categoryId,
+			budgetedSpending: 10_000,
+			createdAt: 0,
+			updatedAt: 0,
+		});
+	}, Promise.resolve());
+}
+
+const budgetedCategories = async () =>
+	(await temp.db.select({ categoryId: budgetCategories.categoryId }).from(budgetCategories)).map(
+		(row) => row.categoryId,
+	);
 
 /** `count` new transactions in `categoryId`, set by hand. */
 async function transactionsIn(categoryId: string | null, count: number): Promise<string[]> {
@@ -370,6 +402,16 @@ describe("deleteCategory", () => {
 		]);
 	});
 
+	it("deletes the category's budget amounts, and only its own", async () => {
+		const gifts = await create({ name: "Cadeaux" });
+		const travel = await create({ name: "Voyages" });
+		await budgeted(gifts.id, travel.id);
+
+		await deleteCategory(deps(), gifts.id, travel.id);
+
+		await expect(budgetedCategories()).resolves.toEqual([travel.id]);
+	});
+
 	it("makes the children top-level, keeping their kind and colour", async () => {
 		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
@@ -435,6 +477,16 @@ describe("mergeCategory", () => {
 			{ origin: "user", locked: ["category"] },
 			{ origin: "user", locked: ["category"] },
 		]);
+	});
+
+	it("deletes the source's budget amounts, leaving the target's as they were", async () => {
+		const groceries = await create({ name: "Courses" });
+		const food = await create({ name: "Alimentation" });
+		await budgeted(groceries.id, food.id);
+
+		await mergeCategory(deps(), groceries.id, food.id);
+
+		await expect(budgetedCategories()).resolves.toEqual([food.id]);
 	});
 
 	it("moves the source's children under the target, with its kind and colour", async () => {

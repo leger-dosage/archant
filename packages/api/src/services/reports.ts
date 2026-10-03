@@ -174,6 +174,13 @@ export type CashFlow = {
 	leftOut: LeftOutAccount[];
 };
 
+/** A month's cash flow beside the counted rows and the categories it was built from. */
+type CashFlowWithRows = {
+	cashFlow: CashFlow;
+	rows: CashFlowRow[];
+	categories: CashFlowCategory[];
+};
+
 /**
  * A calendar month's income and expenses by top-level category, over the
  * accounts net worth counts. The whole month counts, future-dated rows
@@ -182,6 +189,17 @@ export type CashFlow = {
  * this report leaves out and transfer sides that kept a category.
  */
 export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<CashFlow> {
+	return (await getCashFlowWithRows(deps, month)).cashFlow;
+}
+
+/**
+ * `getCashFlow` with the rows it counted and the categories it read, so a
+ * budget computes each category's spending from the same rows (AD-9).
+ */
+export async function getCashFlowWithRows(
+	deps: ServiceDeps,
+	month: IsoMonth,
+): Promise<CashFlowWithRows> {
 	const { from, to } = monthRange(month);
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
@@ -189,7 +207,11 @@ export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<C
 		breakdownCategories(deps),
 	]);
 
-	return { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories), leftOut };
+	return {
+		cashFlow: { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories), leftOut },
+		rows,
+		categories: allCategories,
+	};
 }
 
 /** Every category as `cashFlowBreakdown` reads it. */
@@ -206,15 +228,18 @@ async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[
 		.from(categories);
 }
 
+/** One month of `getCashFlowHistory`: its breakdown beside the rows it counted. */
+type MonthHistory = MonthBreakdown & { rows: CashFlowRow[] };
+
 /**
  * `getCashFlow`'s breakdown of every month before `before`, over the same
- * accounts and from the same rows, read in one query: what the budget's
- * suggestions take their medians from.
+ * accounts and from the same rows, read in one query, each beside its rows:
+ * what the budget's suggestions and each category's median take.
  */
 export async function getCashFlowHistory(
 	deps: ServiceDeps,
 	before: IsoMonth,
-): Promise<MonthBreakdown[]> {
+): Promise<MonthHistory[]> {
 	const { counted } = await reportedAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByMonth(deps, {
@@ -235,6 +260,6 @@ export async function getCashFlowHistory(
 		.map(([month, monthRows]) => {
 			const { income, lines } = cashFlowBreakdown(monthRows, allCategories);
 
-			return { month, income, lines };
+			return { month, income, lines, rows: monthRows };
 		});
 }
