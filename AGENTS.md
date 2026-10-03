@@ -80,6 +80,8 @@ Success is `{ "data": ... }`, failure is `{ "error": { "code": "...", "message":
 
 Error messages returned by the API are in English. The interface translates them from the code.
 
+A route never checks a role to refuse a write: `viewerReadOnly` in `packages/api/src/routes/middleware/roles.ts` refuses every method but `GET` and `HEAD` from a viewer before any route runs, so a route that writes uses a mutating method, and a `GET` never writes. A read only an administrator may see calls `requireRole("admin")` from the same file (AD-21).
+
 ## Security
 
 This application holds bank transactions. The bar is higher than the usual side project.
