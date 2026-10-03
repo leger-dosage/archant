@@ -51,6 +51,10 @@ const linkedBody = z.object({
 	data: z.object({ transfer: z.object({ id: z.string() }).nullable() }),
 });
 
+const splitBody = z.object({
+	data: z.object({ children: z.array(z.object({ id: z.string() })) }),
+});
+
 const ruleListBody = z.object({ data: z.array(z.object({ id: z.string() })) });
 
 const accountListBody = z.object({
@@ -411,6 +415,23 @@ export function apiHelpers(request: APIRequestContext) {
 		/** Follows a transaction as a confirmed series, as the sheet's « Récurrence » button does. */
 		async addRecurring(entryId: string): Promise<string> {
 			return created(await request.post("/api/recurring", { data: { entryId } }));
+		},
+
+		/**
+		 * Splits a transaction into lines, as « Diviser » does; the amounts are
+		 * signed text, as typed. Returns the lines' ids, in the order given.
+		 */
+		async splitTransaction(
+			transactionId: string,
+			lines: { label: string; amount: string; categoryId?: string | null }[],
+		): Promise<string[]> {
+			const response = await request.post(`/api/transactions/${transactionId}/split`, {
+				data: { lines: lines.map((line) => ({ categoryId: null, ...line })) },
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+
+			return splitBody.parse(await response.json()).data.children.map((child) => child.id);
 		},
 
 		/** Links two transactions as a transfer, as a pick in « Rapprocher un virement » does. */

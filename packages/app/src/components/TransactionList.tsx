@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 
 type TransactionListProps = {
 	items: readonly TransactionData[];
+	/** The parents of the split lines in `items`, shown above them and never counted. */
+	splitParents?: readonly TransactionData[];
 	onOpen: (transaction: TransactionData) => void;
 	/** Shows each row's account, for a list spanning several. */
 	showAccount?: boolean;
@@ -189,12 +191,231 @@ const SHOWN_TAGS = 3;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
+const ROW_DIVIDER = "border-b border-line last:border-b-0";
+
+/** What every row of one list reads, built once per render of the list. */
+type RowContext = {
+	onOpen: (transaction: TransactionData) => void;
+	showAccount: boolean;
+	selection: Selection | undefined;
+	columns: string;
+	categories: readonly CategoryData[] | undefined;
+	categoryOf: ReadonlyMap<string, CategoryData>;
+	merchantNames: ReadonlyMap<string, string>;
+	tagNames: ReadonlyMap<string, string>;
+	/** The row whose category combobox is open, so a pick closes it. */
+	picking: string | null;
+	setPicking: (id: string | null) => void;
+	setCategory: ReturnType<typeof useSetTransactionCategory>;
+};
+
+/**
+ * One transaction's line: a row of its own, a split's parent above its
+ * lines, or one of those lines. A parent is muted with « Divisée », and has
+ * neither a checkbox nor a category chip: the list's figures, its selection
+ * and a category all go to its lines, as Sure's `_split_parent_row`.
+ */
+function RowLine({
+	item,
+	kind,
+	context,
+}: {
+	item: TransactionData;
+	kind: "row" | "parent" | "child";
+	context: RowContext;
+}) {
+	const { t } = useTranslation();
+	const { selection, columns, showAccount, picking, setPicking, setCategory } = context;
+	const parent = kind === "parent";
+	const caption = transferCaption(item);
+	const categoryShown = showsCategory(item.amount, item.transfer);
+	const merchantName =
+		item.merchantId === null ? undefined : context.merchantNames.get(item.merchantId);
+	// A transfer side names the other account where a purchase names its
+	// merchant. A spent outflow shows its category, so its kind joins the
+	// caption, as Sure's « Loan payment • A → B ».
+	const subtitle =
+		caption === null
+			? merchantName
+			: categoryShown && item.transfer !== null
+				? t("transactions.transfer.spentCaption", {
+						kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
+						caption: t(caption.key, { account: caption.account }),
+					})
+				: t(caption.key, { account: caption.account });
+	const category = item.categoryId === null ? undefined : context.categoryOf.get(item.categoryId);
+	const rowTags = item.tagIds
+		.flatMap((id) => {
+			const name = context.tagNames.get(id);
+
+			return name === undefined ? [] : [name];
+		})
+		.toSorted((a, b) => byName.compare(a, b));
+	const selected = !parent && selection?.isSelected(item.id) === true;
+	// A parent's item holds its lines' list too, so its line is a block inside it.
+	const Line = parent ? "div" : "li";
+
+	return (
+		<Line
+			data-selected={selected || undefined}
+			className={cn(
+				"relative flex items-center hover:bg-hover has-[[data-transaction-id]:focus-visible]:bg-hover md:h-14",
+				!parent && ROW_DIVIDER,
+				// A line sits under its parent's label, its own icon and label
+				// pushed right: the amounts keep their column.
+				kind === "child" && "pl-6",
+				selected &&
+					"bg-selection before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent-brand hover:bg-selection has-[[data-transaction-id]:focus-visible]:bg-selection",
+			)}
+		>
+			{selection !== undefined &&
+				(parent ? (
+					// The checkbox's room, so the parent's icon lines up with its lines'.
+					<span aria-hidden="true" className="ml-3 size-4 shrink-0" />
+				) : (
+					<RowCheckbox
+						label={item.label}
+						checked={selected}
+						onToggle={(range) => (range ? selection.extendTo(item.id) : selection.toggle(item.id))}
+					/>
+				))}
+			{/*
+			 * Below 768 px two lines: the label and the amount, then the
+			 * date and the category. From 768 px one line of columns. The
+			 * row button spans every cell; the category button sits over
+			 * the cell the row button leaves empty.
+			 */}
+			<div
+				className={cn(
+					"grid min-w-0 flex-1 grid-cols-[3rem_auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1 md:h-full md:grid-rows-1 md:gap-y-0",
+					columns,
+				)}
+			>
+				<button
+					type="button"
+					// Lets the sheet give focus back to this row after an edit
+					// moved it under another day, which remounts it.
+					data-transaction-id={item.id}
+					onClick={() => context.onOpen(item)}
+					className="col-span-full row-start-1 row-end-3 grid grid-cols-subgrid grid-rows-subgrid items-center rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:row-end-2 md:py-0"
+				>
+					<TintedIcon
+						size="lg"
+						subject={rowSubject(
+							item,
+							category === undefined ? null : category,
+							merchantName ?? null,
+						)}
+						className="col-start-1 row-start-1 row-end-3 md:row-end-2"
+					/>
+					<span className="col-start-2 col-end-4 row-start-1 flex min-w-0 flex-col md:col-end-3">
+						<span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+							<span
+								className={cn("truncate font-medium", parent && "text-muted-foreground")}
+								title={item.label}
+							>
+								{item.label}
+							</span>
+							{parent && <StatusBadge status="split" iconBelowMd className="shrink-0" />}
+							{item.pending && <StatusBadge status="pending" iconBelowMd className="shrink-0" />}
+							{/* The sheet's own condition: a side it shows no category for has no series. */}
+							{!parent && item.recurring && categoryShown && (
+								<StatusBadge status="recurring" iconBelowMd className="shrink-0" />
+							)}
+							{item.transfer !== null && (
+								<StatusBadge status="transfer" iconBelowMd className="shrink-0" />
+							)}
+							{item.transfer === null && item.transferSuggested && (
+								<StatusBadge status="transferSuggested" iconBelowMd className="shrink-0" />
+							)}
+							{item.possibleDuplicate && (
+								<StatusBadge status="duplicate" iconBelowMd className="shrink-0" />
+							)}
+						</span>
+						{(subtitle !== undefined || rowTags.length > 0) && (
+							<span className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground md:flex">
+								{subtitle !== undefined && <span className="truncate">{subtitle}</span>}
+								{rowTags.slice(0, SHOWN_TAGS).map((name) => (
+									<Badge
+										key={name}
+										variant="outline"
+										className="max-w-32 font-normal text-muted-foreground"
+									>
+										<span className="truncate">{name}</span>
+									</Badge>
+								))}
+								{rowTags.length > SHOWN_TAGS && (
+									<Badge variant="outline" className="font-normal text-muted-foreground">
+										{t("transactions.tags.more", {
+											count: rowTags.length - SHOWN_TAGS,
+										})}
+									</Badge>
+								)}
+							</span>
+						)}
+					</span>
+					{/* The day's group already names it from 768 px. */}
+					<span className="col-start-2 row-start-2 flex h-6 items-center self-start text-xs whitespace-nowrap text-muted-foreground md:hidden">
+						{formatShortDate(item.date)}
+					</span>
+					{/* Left empty: the category button stays outside this one, keeping its own name, and sits over it. */}
+					<span aria-hidden="true" className="hidden md:col-start-3 md:row-start-1 md:block" />
+					{showAccount && (
+						<span
+							data-slot="row-account"
+							className="hidden min-w-0 items-center gap-1.5 text-foreground-secondary lg:col-start-4 lg:row-start-1 lg:flex"
+							title={item.accountName}
+						>
+							<TintedIcon size="sm" subject={{ kind: "account", type: item.accountType }} />
+							<span className="truncate">{item.accountName}</span>
+						</span>
+					)}
+					<span className="col-[-2/-1] row-start-1 flex items-center justify-end gap-1.5">
+						{/* A parent's badge already says why it is not counted. */}
+						{!parent && item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
+						{/* Named in words by its badge, never by colour alone. */}
+						<Money
+							amount={item.amount}
+							currency={item.currency}
+							signed
+							muted={parent || item.excluded || item.pending}
+						/>
+					</span>
+				</button>
+				{parent ? null : item.transfer !== null && !categoryShown ? (
+					<TransferChip kind={item.transfer.kind} />
+				) : (
+					<CategoryChip
+						transaction={item}
+						categories={context.categories}
+						open={picking === item.id}
+						onOpenChange={(open) => setPicking(open ? item.id : null)}
+						onPick={(categoryId) => {
+							setPicking(null);
+							if (categoryId !== item.categoryId) {
+								setCategory.mutate({
+									id: item.id,
+									value: categoryId,
+									previous: item.categoryId,
+								});
+							}
+						}}
+					/>
+				)}
+			</div>
+		</Line>
+	);
+}
+
 /**
  * Transactions, most recent first, under a header per day. Each row is a
  * button that opens its sheet; its category chip opens the category picker.
+ * A split's lines sit in a list of their own under their parent, from
+ * `splitParents`, which nothing counts.
  */
 export function TransactionList({
 	items,
+	splitParents = [],
 	onOpen,
 	showAccount = false,
 	selection,
@@ -202,17 +423,24 @@ export function TransactionList({
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
-	const categoryOf = new Map((categories.data ?? []).map((category) => [category.id, category]));
 	const setCategory = useSetTransactionCategory();
 	const merchants = useMerchants();
-	const merchantNames = new Map(
-		(merchants.data ?? []).map((merchant) => [merchant.id, merchant.name]),
-	);
 	const tags = useTags();
-	const tagNames = new Map((tags.data ?? []).map((tag) => [tag.id, tag.name]));
-	// The row whose category combobox is open, so a pick closes it.
 	const [picking, setPicking] = useState<string | null>(null);
 	const columns = columnsOf(showAccount);
+	const context: RowContext = {
+		onOpen,
+		showAccount,
+		selection,
+		columns,
+		categories: categories.data,
+		categoryOf: new Map((categories.data ?? []).map((category) => [category.id, category])),
+		merchantNames: new Map((merchants.data ?? []).map((merchant) => [merchant.id, merchant.name])),
+		tagNames: new Map((tags.data ?? []).map((tag) => [tag.id, tag.name])),
+		picking,
+		setPicking,
+		setCategory,
+	};
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -242,7 +470,7 @@ export function TransactionList({
 					</div>
 				</div>
 			</div>
-			{groupByDay(items).map((day) => (
+			{groupByDay(items, splitParents).map((day) => (
 				<InsetGroup
 					key={day.date}
 					id={`day-${day.date}`}
@@ -264,190 +492,23 @@ export function TransactionList({
 					}
 				>
 					<ul>
-						{day.items.map((item) => {
-							const caption = transferCaption(item);
-							const categoryShown = showsCategory(item.amount, item.transfer);
-							const merchantName =
-								item.merchantId === null ? undefined : merchantNames.get(item.merchantId);
-							// A transfer side names the other account where a purchase names its
-							// merchant. A spent outflow shows its category, so its kind joins the
-							// caption, as Sure's « Loan payment • A → B ».
-							const subtitle =
-								caption === null
-									? merchantName
-									: categoryShown && item.transfer !== null
-										? t("transactions.transfer.spentCaption", {
-												kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
-												caption: t(caption.key, { account: caption.account }),
-											})
-										: t(caption.key, { account: caption.account });
-							const category =
-								item.categoryId === null ? undefined : categoryOf.get(item.categoryId);
-							const rowTags = item.tagIds
-								.flatMap((id) => {
-									const name = tagNames.get(id);
-
-									return name === undefined ? [] : [name];
-								})
-								.toSorted((a, b) => byName.compare(a, b));
-							const selected = selection?.isSelected(item.id) === true;
-
-							return (
-								<li
-									key={item.id}
-									data-selected={selected || undefined}
-									className={cn(
-										"relative flex items-center border-b border-line last:border-b-0 hover:bg-hover has-[[data-transaction-id]:focus-visible]:bg-hover md:h-14",
-										selected &&
-											"bg-selection before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent-brand hover:bg-selection has-[[data-transaction-id]:focus-visible]:bg-selection",
-									)}
-								>
-									{selection !== undefined && (
-										<RowCheckbox
-											label={item.label}
-											checked={selected}
-											onToggle={(range) =>
-												range ? selection.extendTo(item.id) : selection.toggle(item.id)
-											}
-										/>
-									)}
-									{/*
-									 * Below 768 px two lines: the label and the amount, then the
-									 * date and the category. From 768 px one line of columns. The
-									 * row button spans every cell; the category button sits over
-									 * the cell the row button leaves empty.
-									 */}
-									<div
-										className={cn(
-											"grid min-w-0 flex-1 grid-cols-[3rem_auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1 md:h-full md:grid-rows-1 md:gap-y-0",
-											columns,
-										)}
+						{day.entries.map((entry) =>
+							entry.kind === "row" ? (
+								<RowLine key={entry.row.id} item={entry.row} kind="row" context={context} />
+							) : (
+								<li key={`split-${entry.parent.id}`} className={ROW_DIVIDER}>
+									<RowLine item={entry.parent} kind="parent" context={context} />
+									<ul
+										aria-label={t("transactions.split.lines", { label: entry.parent.label })}
+										className="border-t border-line"
 									>
-										<button
-											type="button"
-											// Lets the sheet give focus back to this row after an edit
-											// moved it under another day, which remounts it.
-											data-transaction-id={item.id}
-											onClick={() => onOpen(item)}
-											className="col-span-full row-start-1 row-end-3 grid grid-cols-subgrid grid-rows-subgrid items-center rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:row-end-2 md:py-0"
-										>
-											<TintedIcon
-												size="lg"
-												subject={rowSubject(
-													item,
-													category === undefined ? null : category,
-													merchantName ?? null,
-												)}
-												className="col-start-1 row-start-1 row-end-3 md:row-end-2"
-											/>
-											<span className="col-start-2 col-end-4 row-start-1 flex min-w-0 flex-col md:col-end-3">
-												<span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-													<span className="truncate font-medium" title={item.label}>
-														{item.label}
-													</span>
-													{item.pending && (
-														<StatusBadge status="pending" iconBelowMd className="shrink-0" />
-													)}
-													{/* The sheet's own condition: a side it shows no category for has no series. */}
-													{item.recurring && categoryShown && (
-														<StatusBadge status="recurring" iconBelowMd className="shrink-0" />
-													)}
-													{item.transfer !== null && (
-														<StatusBadge status="transfer" iconBelowMd className="shrink-0" />
-													)}
-													{item.transfer === null && item.transferSuggested && (
-														<StatusBadge
-															status="transferSuggested"
-															iconBelowMd
-															className="shrink-0"
-														/>
-													)}
-													{item.possibleDuplicate && (
-														<StatusBadge status="duplicate" iconBelowMd className="shrink-0" />
-													)}
-												</span>
-												{(subtitle !== undefined || rowTags.length > 0) && (
-													<span className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground md:flex">
-														{subtitle !== undefined && <span className="truncate">{subtitle}</span>}
-														{rowTags.slice(0, SHOWN_TAGS).map((name) => (
-															<Badge
-																key={name}
-																variant="outline"
-																className="max-w-32 font-normal text-muted-foreground"
-															>
-																<span className="truncate">{name}</span>
-															</Badge>
-														))}
-														{rowTags.length > SHOWN_TAGS && (
-															<Badge
-																variant="outline"
-																className="font-normal text-muted-foreground"
-															>
-																{t("transactions.tags.more", {
-																	count: rowTags.length - SHOWN_TAGS,
-																})}
-															</Badge>
-														)}
-													</span>
-												)}
-											</span>
-											{/* The day's group already names it from 768 px. */}
-											<span className="col-start-2 row-start-2 flex h-6 items-center self-start text-xs whitespace-nowrap text-muted-foreground md:hidden">
-												{formatShortDate(item.date)}
-											</span>
-											{/* Left empty: the category button stays outside this one, keeping its own name, and sits over it. */}
-											<span
-												aria-hidden="true"
-												className="hidden md:col-start-3 md:row-start-1 md:block"
-											/>
-											{showAccount && (
-												<span
-													data-slot="row-account"
-													className="hidden min-w-0 items-center gap-1.5 text-foreground-secondary lg:col-start-4 lg:row-start-1 lg:flex"
-													title={item.accountName}
-												>
-													<TintedIcon
-														size="sm"
-														subject={{ kind: "account", type: item.accountType }}
-													/>
-													<span className="truncate">{item.accountName}</span>
-												</span>
-											)}
-											<span className="col-[-2/-1] row-start-1 flex items-center justify-end gap-1.5">
-												{item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
-												{/* Named in words by its badge, never by colour alone. */}
-												<Money
-													amount={item.amount}
-													currency={item.currency}
-													signed
-													muted={item.excluded || item.pending}
-												/>
-											</span>
-										</button>
-										{item.transfer !== null && !categoryShown ? (
-											<TransferChip kind={item.transfer.kind} />
-										) : (
-											<CategoryChip
-												transaction={item}
-												categories={categories.data}
-												open={picking === item.id}
-												onOpenChange={(open) => setPicking(open ? item.id : null)}
-												onPick={(categoryId) => {
-													setPicking(null);
-													if (categoryId !== item.categoryId) {
-														setCategory.mutate({
-															id: item.id,
-															value: categoryId,
-															previous: item.categoryId,
-														});
-													}
-												}}
-											/>
-										)}
-									</div>
+										{entry.children.map((child) => (
+											<RowLine key={child.id} item={child} kind="child" context={context} />
+										))}
+									</ul>
 								</li>
-							);
-						})}
+							),
+						)}
 					</ul>
 				</InsetGroup>
 			))}

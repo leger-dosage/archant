@@ -55,8 +55,9 @@ export function TransactionSheet({
 	// Radix returns focus to a `SheetTrigger`; this sheet is opened from rows
 	// and buttons of the page instead, so it remembers which one itself.
 	const opener = useRef<HTMLElement | null>(null);
-	// A merge deletes the row that opened the sheet: focus goes to the survivor's.
-	const survivor = useRef<string | null>(null);
+	// A merge deletes the row that opened the sheet, and a split or its undoing
+	// replaces it: the row focus goes to instead, the survivor's or the split parent's.
+	const focusRowId = useRef<string | null>(null);
 	const setDirty = useCallback((value: boolean) => {
 		dirty.current = value;
 	}, []);
@@ -88,12 +89,12 @@ export function TransactionSheet({
 				onCloseAutoFocus={(event) => {
 					const id = opener.current?.dataset["transactionId"];
 					const target =
-						survivor.current !== null
-							? rowById(survivor.current)
+						focusRowId.current !== null
+							? rowById(focusRowId.current)
 							: opener.current?.isConnected === true || id === undefined
 								? opener.current
 								: rowById(id);
-					survivor.current = null;
+					focusRowId.current = null;
 
 					if (target?.isConnected === true) {
 						event.preventDefault();
@@ -137,8 +138,8 @@ export function TransactionSheet({
 						dirty.current = false;
 						onOpenChange(false);
 					}}
-					onMerged={(survivorId) => {
-						survivor.current = survivorId;
+					onCloseFocusing={(rowId) => {
+						focusRowId.current = rowId;
 						dirty.current = false;
 						onOpenChange(false);
 					}}

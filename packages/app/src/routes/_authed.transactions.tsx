@@ -34,6 +34,7 @@ import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
 import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
+import { shownOrder } from "@/lib/transaction-days";
 import {
 	filtersOf,
 	hasFilters,
@@ -163,7 +164,9 @@ function OperationsPage() {
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	// The rows shown belong to the filters and page asked for only once loaded;
 	// a placeholder page must not be ticked under the new filters.
-	const shownItems = transactions.isPlaceholderData ? [] : (data?.items ?? []);
+	const shownItems = transactions.isPlaceholderData
+		? []
+		: shownOrder(data?.items ?? [], data?.splitParents ?? []);
 	const selection = useSelection(
 		JSON.stringify([filters, page]),
 		shownItems.map((item) => item.id),
@@ -309,6 +312,7 @@ function OperationsPage() {
 				{data !== undefined && data.items.length > 0 && (
 					<TransactionList
 						items={data.items}
+						splitParents={data.splitParents}
 						showAccount
 						headingLevel={2}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}

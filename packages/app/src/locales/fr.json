@@ -275,7 +275,8 @@
 		"delete": {
 			"action": "Supprimer",
 			"title": "Supprimer l'opération « {{label}} » ?",
-			"description": "L'opération de {{amount}} sera supprimée définitivement, et le solde du compte recalculé sans elle."
+			"description": "L'opération de {{amount}} sera supprimée définitivement, et le solde du compte recalculé sans elle.",
+			"splitDescription": "L'opération de {{amount}} et les lignes de sa division seront supprimées définitivement, et le solde du compte recalculé sans elles."
 		},
 		"discard": {
 			"title": "Abandonner les modifications ?",
@@ -365,6 +366,37 @@
 			"added": "Opération ajoutée aux récurrences",
 			"member": "Cette opération fait partie de la récurrence « {{name}} ».",
 			"open": "Voir les récurrences"
+		},
+		"split": {
+			"badge": "Divisée",
+			"section": "Division",
+			"offer": "Répartissez cette opération entre plusieurs lignes, chacune avec sa catégorie.",
+			"submit": "Diviser",
+			"title": "Diviser l'opération",
+			"editTitle": "Modifier la division",
+			"description": "« {{label}} » du {{date}}, {{amount}}. Les lignes doivent totaliser ce montant.",
+			"line": "Ligne {{index}}",
+			"ofLine": "de la ligne {{index}}",
+			"categoryOf": "Catégorie de la ligne {{index}} : {{name}}",
+			"categoryOfLine": "Catégorie de la ligne {{index}}",
+			"natureOf": "Sens de la ligne {{index}}",
+			"remove": "Retirer la ligne {{index}}",
+			"add": "Ajouter une ligne",
+			"remaining": "Reste à répartir",
+			"tooFew": "Ajoutez au moins une ligne.",
+			"tooMany": "Une division compte {{max}} lignes au plus.",
+			"created": "Opération divisée",
+			"edited": "Division modifiée",
+			"lines": "Lignes de « {{label}} »",
+			"parentDescription_one": "Cette opération est divisée en {{count}} ligne. Elle n'est plus comptée : sa ligne l'est à sa place.",
+			"parentDescription_other": "Cette opération est divisée en {{count}} lignes. Elle n'est plus comptée : ses lignes le sont à sa place.",
+			"childDescription": "Cette opération est une ligne de « {{label}} » du {{date}}, {{amount}}.",
+			"edit": "Modifier la division",
+			"undo": "Annuler la division",
+			"undoTitle": "Annuler la division ?",
+			"undoDescription": "Les lignes de la division seront supprimées, et « {{label}} » de {{amount}} sera de nouveau comptée.",
+			"keep": "Garder la division",
+			"undone": "Division annulée"
 		}
 	},
 	"operations": {

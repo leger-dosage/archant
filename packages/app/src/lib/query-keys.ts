@@ -118,6 +118,13 @@ export const queryKeys = {
 		duplicateCandidates: (transactionId: string) =>
 			["transactions", "duplicate-candidates", transactionId] as const,
 		/**
+		 * The split a transaction's sheet shows, from its parent or a line.
+		 * Under `all`: an edit of a line, or of the parent, changes what it lists.
+		 */
+		split: (transactionId: string) => ["transactions", "split", transactionId] as const,
+		/** Prefixes every split: undoing one leaves nothing to read at its key. */
+		splits: ["transactions", "split"] as const,
+		/**
 		 * The dashboard's income and expenses of a month. Under `all`: every
 		 * transaction, category-assignment, transfer and account-flag write
 		 * already invalidates it, and so does a category's own edit, which

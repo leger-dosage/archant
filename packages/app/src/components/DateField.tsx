@@ -18,6 +18,7 @@ type DateFieldProps = {
 	invalid?: boolean;
 	/** Id of the element holding this field's error message, when there is one. */
 	describedBy?: string;
+	disabled?: boolean;
 };
 
 /**
@@ -31,6 +32,7 @@ export function DateField({
 	onBlur,
 	invalid = false,
 	describedBy,
+	disabled = false,
 }: DateFieldProps) {
 	const { t } = useTranslation();
 	const [text, setText] = useState(() => isoToFrench(value));
@@ -45,6 +47,7 @@ export function DateField({
 				inputMode="numeric"
 				placeholder={t("accounts.form.datePlaceholder")}
 				aria-invalid={invalid}
+				disabled={disabled}
 				{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
 				onChange={(event) => {
 					setText(event.target.value);
@@ -58,6 +61,7 @@ export function DateField({
 						type="button"
 						variant="outline"
 						size="icon"
+						disabled={disabled}
 						aria-label={t("accounts.form.pickDate")}
 					>
 						<CalendarIcon />
