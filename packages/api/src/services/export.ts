@@ -22,6 +22,7 @@ import { balanceOn } from "./ledger/balances.ts";
 import {
 	balancePages,
 	exportedAccounts,
+	exportedAttachments,
 	exportedBudgetCategories,
 	exportedBudgets,
 	exportedCategories,
@@ -923,6 +924,36 @@ async function budgetLines(deps: ServiceDeps): Promise<Line[]> {
 
 type Part = readonly [name: string, chunks: () => AsyncIterable<string>];
 
+/**
+ * `attachments.json`, Sure's `generate_attachments_manifest`: one line of
+ * JSON listing every attachment without its bytes, which never leave. The
+ * entry is the transaction, so `record_id` and `entry_id` are both its id.
+ * `checksum` is `null`: Sure's is Active Storage's MD5, which Archant does
+ * not keep.
+ */
+async function* attachmentsJson(deps: ServiceDeps) {
+	const attachments = await exportedAttachments(deps.db);
+
+	yield JSON.stringify({
+		version: 1,
+		binary_included: false,
+		attachments: attachments.map((attachment) => ({
+			id: attachment.id,
+			record_type: "Transaction",
+			record_id: attachment.transactionId,
+			name: "attachments",
+			filename: attachment.filename,
+			content_type: attachment.contentType,
+			byte_size: attachment.byteSize,
+			checksum: null,
+			binary_included: false,
+			created_at: timestamp(attachment.createdAt),
+			entry_id: attachment.transactionId,
+			account_id: attachment.accountId,
+		})),
+	});
+}
+
 async function* version() {
 	yield `export_version: ${EXPORT_VERSION}\n`;
 }
@@ -938,6 +969,7 @@ function partsOf(deps: ServiceDeps, counts: Counts): Part[] {
 		["categories.csv", () => categoriesCsv(readers)],
 		["merchants.csv", () => merchantsCsv(readers)],
 		["rules.csv", () => rulesCsv(readers)],
+		["attachments.json", () => attachmentsJson(deps)],
 		["all.ndjson", () => allNdjson(deps, readers, counts)],
 	];
 }

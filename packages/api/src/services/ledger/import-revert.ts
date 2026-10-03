@@ -19,6 +19,7 @@ import type { Entry } from "@archant/data/types";
 
 import { addDays, maxDate } from "../../domain/dates.ts";
 import { AppError } from "../../lib/errors.ts";
+import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import {
 	ROWS_PER_INSERT,
@@ -198,8 +199,9 @@ export async function revertImport(
 			// 1. Every key it wrote, on the entries it created and matched alike.
 			await tx.delete(entryKeys).where(eq(entryKeys.importId, importId));
 
-			// 2. What it created and nothing else holds; split lines and the
-			// detail rows first, since their foreign keys restrict deleting the entry.
+			// 2. What it created and nothing else holds; split lines, the
+			// attachments and the detail rows first, since their foreign keys
+			// restrict deleting the entry.
 			const created = await tx
 				.select({ id: entries.id, date: entries.date, amount: entries.amount })
 				.from(entries)
@@ -216,6 +218,7 @@ export async function revertImport(
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
 			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteAttachmentsOf(tx, chunk));
 			// The other side, maybe on another account, becomes a standard transaction.
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(transfers).where(transferOf(chunk)),

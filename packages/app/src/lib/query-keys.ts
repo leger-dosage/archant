@@ -125,6 +125,11 @@ export const queryKeys = {
 		/** Prefixes every split: undoing one leaves nothing to read at its key. */
 		splits: ["transactions", "split"] as const,
 		/**
+		 * A transaction's attachments. Under `all`: a merge moves the absorbed
+		 * row's onto the survivor, and every merge already invalidates `all`.
+		 */
+		attachments: (transactionId: string) => ["transactions", "attachments", transactionId] as const,
+		/**
 		 * The dashboard's income and expenses of a month. Under `all`: every
 		 * transaction, category-assignment, transfer and account-flag write
 		 * already invalidates it, and so does a category's own edit, which

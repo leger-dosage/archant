@@ -19,6 +19,7 @@ import { minDate, today } from "../../domain/dates.ts";
 import { rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
+import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { tombstoneBankKeys } from "./entry-keys.ts";
 import { correlatedTransferSide, filterCondition } from "./filter.ts";
@@ -422,6 +423,7 @@ export async function bulkDeleteTransactions(
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
 			);
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteAttachmentsOf(tx, chunk));
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(transfers).where(transferOf(chunk)),
 			);

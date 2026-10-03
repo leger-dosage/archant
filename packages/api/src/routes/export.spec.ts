@@ -40,6 +40,7 @@ describe("GET /api/export", () => {
 			"categories.csv",
 			"merchants.csv",
 			"rules.csv",
+			"attachments.json",
 			"all.ndjson",
 		]);
 		expect(strFromU8(files["transactions.csv"] ?? new Uint8Array())).toContain(

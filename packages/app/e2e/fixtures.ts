@@ -434,6 +434,22 @@ export function apiHelpers(request: APIRequestContext) {
 			return splitBody.parse(await response.json()).data.children.map((child) => child.id);
 		},
 
+		/**
+		 * Attaches a file to a transaction, as « Ajouter » in its sheet does with
+		 * each file chosen. Returns the attachment's id.
+		 */
+		async attachFile(
+			transactionId: string,
+			file: { name: string; mimeType: string; buffer: Buffer },
+		): Promise<string> {
+			return created(
+				await request.post(`/api/transactions/${transactionId}/attachments`, {
+					headers: sameOrigin,
+					multipart: { file },
+				}),
+			);
+		},
+
 		/** Links two transactions as a transfer, as a pick in « Rapprocher un virement » does. */
 		async matchTransfer(transactionId: string, counterpartId: string): Promise<string> {
 			return created(

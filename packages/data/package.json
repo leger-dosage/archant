@@ -5,6 +5,7 @@
 	"type": "module",
 	"exports": {
 		"./account-types": "./account-types.ts",
+		"./attachments": "./attachments.ts",
 		"./backup": "./backup.ts",
 		"./bank-countries": "./bank-countries.ts",
 		"./category-presets": "./category-presets.ts",
@@ -36,6 +37,7 @@
 		"./schema/settings": "./schema/settings.ts",
 		"./schema/taggings": "./schema/taggings.ts",
 		"./schema/tags": "./schema/tags.ts",
+		"./schema/transaction-attachments": "./schema/transaction-attachments.ts",
 		"./schema/transactions": "./schema/transactions.ts",
 		"./schema/transfers": "./schema/transfers.ts",
 		"./testing/migrations": "./testing/migrations.ts",

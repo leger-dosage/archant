@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-import { THEME_SCRIPT_HASH, contentSecurityPolicy } from "./content-security-policy.ts";
+import {
+	THEME_SCRIPT_HASH,
+	attachmentContentSecurityPolicy,
+	contentSecurityPolicy,
+} from "./content-security-policy.ts";
 
 describe("THEME_SCRIPT_HASH", () => {
 	it("matches the inline script of the interface's index.html", async () => {
@@ -37,5 +41,16 @@ describe("contentSecurityPolicy", () => {
 		expect(policy.defaultSrc).toEqual(["'self'"]);
 		expect(policy.scriptSrc).not.toContain("'unsafe-inline'");
 		expect(policy).toMatchObject({ formAction: ["'self'"], frameSrc: ["'none'"] });
+	});
+});
+
+describe("attachmentContentSecurityPolicy", () => {
+	it("is the app's policy with an empty sandbox", () => {
+		const url = "https://api.enablebanking.com";
+
+		expect(attachmentContentSecurityPolicy(url)).toEqual({
+			...contentSecurityPolicy(url),
+			sandbox: [],
+		});
 	});
 });
