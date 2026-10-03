@@ -51,6 +51,18 @@ export const ERROR_STATUSES = {
 	 */
 	DUPLICATE_RESOLVED: 409,
 	/**
+	 * A split of a transfer side, a pending, excluded or possibly duplicated
+	 * transaction, or a parent or a child of a split, as Sure's `splittable?`.
+	 * Nothing is written.
+	 */
+	NOT_SPLITTABLE: 409,
+	/**
+	 * A change to the date, the amount or the exclusion of a split's parent or
+	 * child, a child deleted alone, or a merge into either: the split is edited
+	 * as a whole (AD-20). Nothing is written.
+	 */
+	TRANSACTION_SPLIT: 409,
+	/**
 	 * A category's amount in a month whose total is not set: Sure's form only
 	 * reaches its categories after « Budget ». Nothing is written.
 	 */

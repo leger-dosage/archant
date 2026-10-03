@@ -22,6 +22,7 @@ import {
 	openPinned,
 	setToday,
 	snapshot,
+	splitInTwo,
 	tagsOf,
 	temp,
 	useLedgerDatabase,
@@ -206,6 +207,22 @@ describe("deleteAccount", () => {
 		await expect(rowsOf(temp.db, account.id)).resolves.toMatchObject({ transactions: 0 });
 		await expect(tagsOf(mine)).resolves.toEqual([]);
 		await expect(tagsOf(theirs)).resolves.toEqual([holidays]);
+	});
+
+	it("removes a split's children before their parent", async () => {
+		const account = await openChecking();
+		const { food } = await splitInTwo(account.id);
+		await updateTransaction(
+			deps(),
+			food,
+			{ tagIds: [await newTag("Divisée")] },
+			{ origin: "user" },
+		);
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(rowsOf(temp.db, account.id)).resolves.toMatchObject({ transactions: 0 });
+		await expect(tagsOf(food)).resolves.toEqual([]);
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {

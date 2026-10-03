@@ -1440,6 +1440,8 @@
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
+		"NOT_SPLITTABLE": "Cette opération ne peut pas être divisée : un virement, une opération en attente, exclue, signalée comme doublon possible ou déjà divisée ne se divise pas.",
+		"TRANSACTION_SPLIT": "Cette opération fait partie d'une division. Modifiez la division, ou annulez-la d'abord.",
 		"BUDGET_NOT_SET_UP": "Définissez d'abord les dépenses prévues de ce mois.",
 		"BUDGET_ALREADY_SET_UP": "Ce mois a déjà un budget. Il n'a pas été modifié.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
@@ -1464,6 +1466,8 @@
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
+			"split_sum_mismatch": "Les lignes doivent totaliser le montant de l'opération.",
+			"not_a_child": "Cette ligne n'appartient pas à cette division.",
 			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
 			"negative_amount": "Le montant ne peut pas être négatif.",
 			"invalid_currency": "Devise inconnue.",

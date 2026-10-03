@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
+import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
 import { imports } from "@archant/data/schema/imports";
@@ -26,6 +27,7 @@ import {
 	rowOf,
 	setToday,
 	settled,
+	splitInTwo,
 	statementOf,
 	sync,
 	temp,
@@ -289,5 +291,29 @@ describe("a deleted transaction and the next sync", () => {
 		await expect(
 			temp.db.select().from(accounts).where(eq(accounts.id, account.id)),
 		).resolves.toEqual([]);
+	});
+});
+
+describe("pairing and a split", () => {
+	it("never pairs a line with a split's child, and pairs one with the parent the bank knows", async () => {
+		const account = await openChecking();
+		const { parent, food, amount } = await splitInTwo(account.id, { date: "2026-09-10" });
+		const childLine = line({
+			externalId: "F-CHILD",
+			date: "2026-09-11",
+			amount: toMinorUnits(-6_000),
+		});
+		const parentLine = line({
+			externalId: "F-PARENT",
+			date: "2026-09-11",
+			amount: toMinorUnits(amount),
+		});
+
+		const { result } = await importStatement(account.id, statementOf(childLine, parentLine));
+
+		expect(counts(result)).toMatchObject({ created: 1, matched: 1, duplicates: 0 });
+		expect(result.groups.matched).toMatchObject([{ entryId: parent }]);
+		await expect(keysOf(food)).resolves.toEqual([]);
+		await expect(transactionCount(account.id)).resolves.toBe(4);
 	});
 });

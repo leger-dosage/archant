@@ -1,6 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { ExportedTransactionRow } from "./ledger/export.ts";
 
 import { Zip, ZipDeflate } from "fflate";
 import Papa from "papaparse";
@@ -451,7 +452,8 @@ async function* transactionsCsv(deps: ServiceDeps, readers: Readers) {
 	const categories = byId(await readers.categories());
 	const tags = byId(await readers.tags());
 
-	for await (const page of transactionPages(deps.db)) {
+	// A split's lines, never its parent, as Sure's `exportable_transactions`.
+	for await (const page of transactionPages(deps.db, "lines")) {
 		yield csv(
 			page.map((row) => [
 				row.date,
@@ -511,6 +513,44 @@ async function* rulesCsv(readers: Readers) {
 					];
 		}),
 	);
+}
+
+type SplitLineRow = ExportedTransactionRow["splitLines"][number];
+
+/** What Sure's `Transaction` has no key for, under `archant`. */
+function archantTransaction(transaction: ExportedTransactionRow["transaction"]) {
+	return {
+		pending: transaction.pending,
+		locked_fields: transaction.lockedFields,
+		category_origin: transaction.categoryOrigin,
+		reference: transaction.reference,
+		possible_duplicate: transaction.possibleDuplicate,
+	};
+}
+
+/**
+ * A split line under its parent, with the keys of Sure's
+ * `serialize_split_lines_for_export`. A line is never a transfer side
+ * (AD-20), so its kind is `standard`; the entry is the transaction, so both
+ * ids are its own.
+ */
+function sureSplitLine(line: SplitLineRow) {
+	return {
+		id: line.id,
+		entry_id: line.id,
+		amount: sureAmount(toMinorUnits(line.amount), line.currency),
+		currency: line.currency,
+		name: line.transaction.label,
+		notes: line.transaction.notes,
+		excluded: line.transaction.excluded,
+		category_id: line.transaction.categoryId,
+		merchant_id: line.transaction.merchantId,
+		tag_ids: line.tagIds,
+		kind: "standard",
+		created_at: timestamp(line.createdAt),
+		updated_at: timestamp(line.updatedAt),
+		archant: archantTransaction(line.transaction),
+	};
 }
 
 /**
@@ -649,7 +689,9 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 	// The ids of transactions too old for Sure: few, unlike the ones kept.
 	const tooOld = new Set<string>();
 
-	for await (const page of transactionPages(deps.db)) {
+	// Top-level rows, a split's lines under its parent, as Sure's
+	// `ndjson_exportable_transactions`.
+	for await (const page of transactionPages(deps.db, "nested")) {
 		for (const row of page) {
 			if (row.date < from) {
 				tooOld.add(row.id);
@@ -684,12 +726,11 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 							kind,
 							created_at: timestamp(row.createdAt),
 							updated_at: timestamp(row.updatedAt),
+							...(row.splitLines.length === 0
+								? {}
+								: { split_lines: row.splitLines.map(sureSplitLine) }),
 							archant: {
-								pending: row.transaction.pending,
-								locked_fields: row.transaction.lockedFields,
-								category_origin: row.transaction.categoryOrigin,
-								reference: row.transaction.reference,
-								possible_duplicate: row.transaction.possibleDuplicate,
+								...archantTransaction(row.transaction),
 								// Every transfer, Sure's or not: one Sure refuses keeps its link here.
 								transfer:
 									row.outflowOf === null

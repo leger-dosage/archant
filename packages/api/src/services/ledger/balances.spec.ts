@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import { toMinorUnits } from "@archant/data/money";
+
 import {
 	add,
 	checking,
 	deps,
+	linkedChecking,
 	openChecking,
 	setToday,
+	splitInTwo,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createAccount } from "./accounts.ts";
@@ -76,5 +80,31 @@ describe("openingDateOf", () => {
 
 		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
 		await expect(openingDateOf(deps(), "nope")).resolves.toBeNull();
+	});
+});
+
+describe("balances and a split", () => {
+	it("counts a split's money once when a later write recomputes over it, forward", async () => {
+		const account = await openChecking();
+		const { amount } = await splitInTwo(account.id, { date: "2026-09-10" });
+
+		await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-1_000) });
+
+		await expect(balanceOn(deps(), account.id, "2026-09-10")).resolves.toMatchObject({
+			amount: 123456 - 1_000 + amount,
+		});
+	});
+
+	it("counts a split's money once when a later write recomputes over it, backward", async () => {
+		const { account } = await linkedChecking(100_000);
+		const { amount } = await splitInTwo(account.id, { date: "2026-09-10" });
+		const before = await balanceOn(deps(), account.id, "2026-09-09");
+
+		await add(account.id, { date: "2026-09-05", amount: toMinorUnits(-1_000) });
+
+		await expect(balanceOn(deps(), account.id, "2026-09-09")).resolves.toEqual(before);
+		await expect(balanceOn(deps(), account.id, "2026-09-10")).resolves.toMatchObject({
+			amount: (before?.amount ?? 0) + amount,
+		});
 	});
 });

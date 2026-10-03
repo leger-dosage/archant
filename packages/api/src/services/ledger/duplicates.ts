@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, inArray, ne, notExists, or } from "drizzle-orm";
+import { and, between, eq, inArray, isNull, ne, notExists, or } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -19,7 +19,15 @@ import { MATCH_WINDOW_DAYS } from "../../domain/keys.ts";
 import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { transactionRow } from "./patch.ts";
-import { deleteTransactionRows, invalidField, oneByOne, rejectedOf, transferOf } from "./shared.ts";
+import {
+	deleteTransactionRows,
+	invalidField,
+	notSplitParent,
+	oneByOne,
+	refuseSplit,
+	rejectedOf,
+	transferOf,
+} from "./shared.ts";
 
 /**
  * `absorb` with an entry as its source (AD-17): a possible duplicate merged
@@ -124,10 +132,12 @@ export type DuplicateCandidate = {
 /**
  * `entryId` with its candidates: `pairCandidates`' rule applied to it alone
  * (AD-7). The same account and amount, dated within `MATCH_WINDOW_DAYS`
- * either side, not itself, and carrying no key from a source that keyed it:
- * the entries its import or sync would have paired it with, had there been
- * one. Nearest date first, then the older entry. A transaction no longer
- * flagged has none. Throws `NOT_FOUND` for an unknown transaction.
+ * either side, not itself, no part of a split, and carrying no key from a
+ * source that keyed it: the entries its import or sync would have paired it
+ * with, had there been one, a split parent aside, which a merge would leave
+ * with lines summing to another entry (AD-20). Nearest date first, then the
+ * older entry. A transaction no longer flagged has none. Throws `NOT_FOUND`
+ * for an unknown transaction.
  */
 async function duplicateCandidatesOf(
 	db: Pick<Transaction, "select" | "selectDistinct">,
@@ -181,6 +191,8 @@ async function duplicateCandidatesOf(
 					addDays(source.date, MATCH_WINDOW_DAYS),
 				),
 				ne(entries.id, entryId),
+				isNull(entries.parentEntryId),
+				notSplitParent,
 				notExists(
 					db
 						.select({ key: entryKeys.key })
@@ -227,7 +239,8 @@ export async function duplicateCandidates(
  * deleted one's date. There is no way back, as in Sure. The flag and the
  * candidates are read again inside the write, so a merge or a dismissal in
  * another tab cannot slip between them. Throws `NOT_FOUND` for an unknown
- * `entryId`, `DUPLICATE_RESOLVED` when it is no longer flagged, and
+ * `entryId`, `TRANSACTION_SPLIT` when either side is a split's parent or
+ * child (AD-20), `DUPLICATE_RESOLVED` when it is no longer flagged, and
  * `VALIDATION_ERROR` on `into` when `intoId` is no candidate.
  */
 export async function mergeDuplicate(
@@ -238,6 +251,8 @@ export async function mergeDuplicate(
 	await deps.db.transaction(
 		async (tx) => {
 			const { source, candidates } = await duplicateCandidatesOf(tx, entryId);
+
+			await refuseSplit(tx, [entryId, intoId]);
 
 			if (!source.flagged) {
 				throw new AppError("DUPLICATE_RESOLVED", "This transaction is no longer flagged.");

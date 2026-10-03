@@ -21,6 +21,7 @@ const side = (overrides: Partial<TransferSide> = {}): TransferSide => ({
 	inTransfer: false,
 	excluded: false,
 	accountActive: true,
+	splitChild: false,
 	...overrides,
 });
 
@@ -78,6 +79,11 @@ describe("isTransferCandidate", () => {
 	it("refuses a side on an inactive account, whichever side", () => {
 		expect(isTransferCandidate(outflow, { ...inflow, accountActive: false })).toBe(false);
 		expect(isTransferCandidate({ ...outflow, accountActive: false }, inflow)).toBe(false);
+	});
+
+	it("refuses a split line, whichever side", () => {
+		expect(isTransferCandidate(outflow, { ...inflow, splitChild: true })).toBe(false);
+		expect(isTransferCandidate({ ...outflow, splitChild: true }, inflow)).toBe(false);
 	});
 });
 

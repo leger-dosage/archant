@@ -476,6 +476,97 @@ describe("exportArchive", () => {
 		expect(tags?.split(/(?<!\\),/u).toSorted()).toEqual(["A\\\\B\\|C", "Voyage\\, été"]);
 	});
 
+	it("lists a split's lines in transactions.csv, and nests them under their parent in all.ndjson", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		const food = await ownCategory("Alimentation");
+		const receipt = await created("/api/tags", { name: "Reçu" });
+		const parent = await postOwn(checking.id, {
+			date: "2026-09-09",
+			label: "HYPERMARCHE",
+			amount: "-100,00",
+		});
+		const body = await sendOwn("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{
+					label: "Courses",
+					amount: "-60,00",
+					categoryId: food,
+					tagIds: [receipt],
+					notes: "Fruits",
+				},
+				{ label: "Maison", amount: "-40,00", categoryId: null },
+			],
+		});
+		const [first, second] = z
+			.object({ data: z.object({ children: z.array(z.object({ id: z.string() })) }) })
+			.parse(body).data.children;
+
+		const archive = await exported();
+
+		expect(archive.csv("transactions.csv").slice(1)).toEqual([
+			["2026-09-09", "Compte joint", "60.00", "Courses", "Alimentation", "Reçu", "Fruits", "EUR"],
+			["2026-09-09", "Compte joint", "40.00", "Maison", "", "", "", "EUR"],
+		]);
+		expect(archive.of("Transaction")).toEqual([
+			expect.objectContaining({
+				id: parent,
+				amount: "100.00",
+				excluded: true,
+				split_lines: [
+					{
+						id: first?.id,
+						entry_id: first?.id,
+						amount: "60.00",
+						currency: "EUR",
+						name: "Courses",
+						notes: "Fruits",
+						excluded: false,
+						category_id: food,
+						merchant_id: null,
+						tag_ids: [receipt],
+						kind: "standard",
+						created_at: "2026-09-21T10:00:00.000Z",
+						updated_at: "2026-09-21T10:00:00.000Z",
+						archant: {
+							pending: false,
+							locked_fields: ["date", "amount", "label", "excluded", "notes", "category", "tags"],
+							category_origin: "user",
+							reference: null,
+							possible_duplicate: false,
+						},
+					},
+					expect.objectContaining({ id: second?.id, amount: "40.00", category_id: null }),
+				],
+			}),
+		]);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+
+		const parentLine = archive.lines.find((row) => row.type === "Transaction");
+		const unbalanced = {
+			type: "Transaction",
+			data: {
+				...parentLine?.data,
+				id: "t2",
+				split_lines: [
+					{
+						...z.array(z.record(z.string(), z.unknown())).parse(parentLine?.data["split_lines"])[0],
+						amount: "60.01",
+						category_id: "nowhere",
+					},
+				],
+			},
+		};
+
+		expect(surePreflight(`${archive.ndjson}${JSON.stringify(unbalanced)}\n`)).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining("split line amounts that do not sum"),
+				expect.stringContaining("repeats the transactions id"),
+				expect.stringContaining("Transaction split line.category_id points at no exported row"),
+			]),
+		);
+	});
+
 	it("keeps one valuation per account and day: the opening anchor, then the bank's, then a snapshot", async () => {
 		const { ids } = await household();
 		const db = database();
