@@ -3355,7 +3355,7 @@ So that a yearly expense such as gifts can build up over months.
 
 **Given** a change to an amount, a transaction of a past month or a rollover choice
 **When** it is saved
-**Then** the chain from that month on is recomputed by a pure function in `domain/budgets/rollover.ts` and written in the same transaction; a recategorised transaction's month is recomputed by the ledger's write
+**Then** the next read of a month shows the chain computed again by a pure function in `domain/budgets/rollover.ts`, writing nothing, and each budget write stores the whole chain in its own transaction; the ledger never recomputes it
 
 **Given** a category card
 **When** it carries money in

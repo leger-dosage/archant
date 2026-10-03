@@ -234,7 +234,8 @@ type MonthHistory = MonthBreakdown & { rows: CashFlowRow[] };
 /**
  * `getCashFlow`'s breakdown of every month before `before`, over the same
  * accounts and from the same rows, read in one query, each beside its rows:
- * what the budget's suggestions and each category's median take.
+ * what the budget's suggestions, each category's median and the budget's
+ * rollover chain take.
  */
 export async function getCashFlowHistory(
 	deps: ServiceDeps,

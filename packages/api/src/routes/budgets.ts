@@ -9,6 +9,7 @@ import {
 	budgetCategoryParamSchema,
 	budgetMoveBodySchema,
 	budgetParamSchema,
+	budgetRolloverBodySchema,
 } from "../schemas/budgets.ts";
 import {
 	copyBudget,
@@ -16,6 +17,7 @@ import {
 	moveCategoryBudget,
 	saveBudget,
 	saveCategoryBudget,
+	setCategoryRollover,
 } from "../services/budgets.ts";
 
 export function budgetsRoutes(deps: ServiceDeps) {
@@ -42,6 +44,19 @@ export function budgetsRoutes(deps: ServiceDeps) {
 
 				return c.json(
 					{ data: await saveCategoryBudget(deps, month, categoryId, c.req.valid("json")) },
+					200,
+				);
+			},
+		)
+		.put(
+			"/:month/categories/:categoryId/rollover",
+			validated("param", budgetCategoryParamSchema),
+			validated("json", budgetRolloverBodySchema),
+			async (c) => {
+				const { month, categoryId } = c.req.valid("param");
+
+				return c.json(
+					{ data: await setCategoryRollover(deps, month, categoryId, c.req.valid("json")) },
 					200,
 				);
 			},

@@ -116,6 +116,11 @@ export function BudgetCategorySheet({
 								</span>
 							</Figure>
 							<Figure label={t("budgets.sheet.budgeted")}>{budgeted}</Figure>
+							{envelope.kind === "category" && envelope.line.rolledOver > 0 && (
+								<Figure label={t("budgets.rollover.sheet")}>
+									{money(envelope.line.rolledOver)}
+								</Figure>
+							)}
 							<Figure label={t("budgets.sheet.average")}>{optional(line.average)}</Figure>
 							<Figure label={t("budgets.sheet.median")}>{optional(line.median)}</Figure>
 						</dl>

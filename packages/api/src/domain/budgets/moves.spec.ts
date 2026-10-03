@@ -6,7 +6,7 @@ import type { CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { copiedAmounts, moveAllocation } from "./moves.ts";
+import { copiedRows, moveAllocation } from "./moves.ts";
 
 const amounts = (entries: Record<string, number>) =>
 	new Map(Object.entries(entries).map(([id, amount]) => [id, toMinorUnits(amount)]));
@@ -115,31 +115,49 @@ describe("moveAllocation", () => {
 	});
 });
 
-describe("copiedAmounts", () => {
-	it("copies each amount of a category still an expense category", () => {
-		const copied = copiedAmounts({
+/** Rows of `[amount, rollover on]`, as a month stores them. */
+const rows = (entries: Record<string, [number, boolean]>) =>
+	new Map(
+		Object.entries(entries).map(([id, [amount, rolloverEnabled]]) => [
+			id,
+			{ budgetedSpending: minor(amount), rolloverEnabled },
+		]),
+	);
+
+describe("copiedRows", () => {
+	it("copies each row of a category still an expense category, its rollover switch included", () => {
+		const copied = copiedRows({
 			categories: [P, A, B, Q, category("Salaire", null, "income")],
-			source: amounts({ P: 100_000, A: 30_000, Q: 20_000, Salaire: 5_000, Disparue: 10_000 }),
+			source: rows({
+				P: [100_000, true],
+				A: [30_000, false],
+				B: [0, true],
+				Q: [20_000, false],
+				Salaire: [5_000, true],
+				Disparue: [10_000, true],
+			}),
 		});
 
-		expect(Object.fromEntries(copied)).toEqual({ P: 100_000, A: 30_000, Q: 20_000 });
+		expect(copied).toEqual(
+			rows({ P: [100_000, true], A: [30_000, false], B: [0, true], Q: [20_000, false] }),
+		);
 	});
 
 	it("lifts a parent to the children re-parented under it since", () => {
-		const copied = copiedAmounts({
+		const copied = copiedRows({
 			categories: [P, category("C", "P")],
-			source: amounts({ P: 20_000, C: 30_000 }),
+			source: rows({ P: [20_000, true], C: [30_000, false] }),
 		});
 
-		expect(Object.fromEntries(copied)).toEqual({ P: 30_000, C: 30_000 });
+		expect(copied).toEqual(rows({ P: [30_000, true], C: [30_000, false] }));
 	});
 
-	it("gives a parent without an amount its children's", () => {
-		const copied = copiedAmounts({
+	it("gives a parent without a row its children's amounts, rollover off", () => {
+		const copied = copiedRows({
 			categories: [P, A, Q],
-			source: amounts({ A: 30_000 }),
+			source: rows({ A: [30_000, true] }),
 		});
 
-		expect(Object.fromEntries(copied)).toEqual({ P: 30_000, A: 30_000 });
+		expect(copied).toEqual(rows({ P: [30_000, false], A: [30_000, true] }));
 	});
 });
