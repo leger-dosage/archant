@@ -184,7 +184,8 @@ async function currencyOf(deps: ServiceDeps, accountId: string): Promise<Currenc
 	return account.currency;
 }
 
-async function found(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+/** One transaction as its sheet shows it, with its source. */
+export async function getTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 	const record = await findTransaction(deps, id);
 
 	if (record === null) {
@@ -456,7 +457,7 @@ export async function createTransaction(
 		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 	}
 
-	return found(deps, id);
+	return getTransaction(deps, id);
 }
 
 /** Edits a transaction on the user's behalf. */
@@ -465,7 +466,7 @@ export async function updateTransaction(
 	id: string,
 	input: TransactionPatchInput,
 ): Promise<TransactionItem> {
-	const current = await found(deps, id);
+	const current = await getTransaction(deps, id);
 	const currency = await currencyOf(deps, current.accountId);
 	const parsed = updateTransactionSchema(currency).safeParse(input);
 
@@ -479,7 +480,7 @@ export async function updateTransaction(
 		throw rejectionError(result.reason);
 	}
 
-	return found(deps, id);
+	return getTransaction(deps, id);
 }
 
 /** Deletes a transaction for good. */
@@ -508,14 +509,14 @@ export async function mergeDuplicate(
 ): Promise<TransactionItem> {
 	await mergeLedgerDuplicate(deps, id, body.into);
 
-	return found(deps, body.into);
+	return getTransaction(deps, body.into);
 }
 
 /** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
 export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 	await dismissLedgerDuplicate(deps, id);
 
-	return found(deps, id);
+	return getTransaction(deps, id);
 }
 
 async function selectionOf(

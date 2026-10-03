@@ -288,6 +288,7 @@ describe("GET /api/reports/cash-flow", () => {
 			income: 0,
 			expenses: -5000,
 			lines: { income: [], expense: [line(courses, "Courses", -5000)] },
+			leftOut: [],
 		});
 	});
 
@@ -512,6 +513,7 @@ describe("GET /api/reports/cash-flow", () => {
 			income: 0,
 			expenses: 0,
 			lines: { income: [], expense: [] },
+			leftOut: [],
 		});
 	});
 

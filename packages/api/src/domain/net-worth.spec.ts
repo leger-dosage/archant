@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { netWorthSeries } from "./net-worth.ts";
+import { classificationSeries, netWorthSeries } from "./net-worth.ts";
 
 const point = (date: string, balance: number): DailyBalance => ({
 	date,
@@ -57,5 +57,27 @@ describe("netWorthSeries", () => {
 	it("is empty without an account or without a point", () => {
 		expect(netWorthSeries([])).toEqual([]);
 		expect(netWorthSeries([{ classification: "asset", points: [] }])).toEqual([]);
+	});
+});
+
+describe("classificationSeries", () => {
+	const accounts = [
+		{
+			classification: "asset" as const,
+			points: [point("2026-09-20", 100), point("2026-09-21", 90)],
+		},
+		{ classification: "asset" as const, points: [point("2026-09-21", 10)] },
+		{ classification: "liability" as const, points: [point("2026-09-21", 30)] },
+	];
+
+	it("adds the assets alone, day by day", () => {
+		expect(classificationSeries(accounts, "asset")).toEqual([
+			point("2026-09-20", 100),
+			point("2026-09-21", 100),
+		]);
+	});
+
+	it("adds the liabilities as the positive amount owed, from their first day", () => {
+		expect(classificationSeries(accounts, "liability")).toEqual([point("2026-09-21", 30)]);
 	});
 });

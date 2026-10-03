@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { balanceChange, fillDays, periodRange } from "./history.ts";
+import { addDays } from "../dates.ts";
+import { balanceChange, fillDays, periodRange, sampleSeries } from "./history.ts";
 
 describe("periodRange", () => {
 	it("goes back one, three, six or twelve calendar months from today", () => {
@@ -131,5 +132,80 @@ describe("fillDays", () => {
 
 	it("is empty without any row", () => {
 		expect(fillDays([], "2026-09-19", "2026-09-21")).toEqual([]);
+	});
+});
+
+/** One point a day from `from` to `to`, each worth its index. */
+const daily = (from: string, to: string) => {
+	const points: DailyBalance[] = [];
+
+	for (let date = from; date <= to; date = addDays(date, 1)) {
+		points.push(point(date, points.length));
+	}
+
+	return points;
+};
+
+describe("sampleSeries", () => {
+	it("is daily and empty for an empty series", () => {
+		expect(sampleSeries([])).toEqual({ interval: "day", points: [] });
+	});
+
+	it("keeps every day of a single point and of a year spanning a 29 February", () => {
+		expect(sampleSeries([point("2026-09-21", 100)])).toEqual({
+			interval: "day",
+			points: [point("2026-09-21", 100)],
+		});
+
+		const leapYear = daily("2023-09-21", "2024-09-21");
+
+		expect(leapYear).toHaveLength(367);
+		expect(sampleSeries(leapYear)).toEqual({ interval: "day", points: leapYear });
+	});
+
+	it("keeps every day up to a calendar year, each week's last day just past it, today last", () => {
+		expect(sampleSeries(daily("2025-09-21", "2026-09-21")).interval).toBe("day");
+
+		const points = daily("2025-09-20", "2026-09-21");
+		const sampled = sampleSeries(points);
+
+		expect(sampled.interval).toBe("week");
+		// 2025-09-20 is a Saturday: its week ends on Sunday the 21st.
+		expect(sampled.points.slice(0, 2)).toEqual([point("2025-09-21", 1), point("2025-09-28", 8)]);
+		// 2026-09-21 is a Monday: alone in the last week, kept as today.
+		expect(sampled.points.at(-2)).toEqual(point("2026-09-20", 365));
+		expect(sampled.points.at(-1)).toEqual(points.at(-1));
+		expect(sampled.points).toHaveLength(54);
+	});
+
+	it("stays weekly up to five calendar years and turns monthly just past them", () => {
+		expect(sampleSeries(daily("2021-09-21", "2026-09-21")).interval).toBe("week");
+
+		const points = daily("2021-09-20", "2026-09-21");
+		const sampled = sampleSeries(points);
+
+		expect(sampled.interval).toBe("month");
+		expect(sampled.points.slice(0, 2)).toEqual([point("2021-09-30", 10), point("2021-10-31", 41)]);
+		expect(sampled.points.at(-1)).toEqual(points.at(-1));
+		expect(sampled.points).toHaveLength(61);
+	});
+
+	it("samples at the interval it is given, whatever the span", () => {
+		const points = daily("2026-08-01", "2026-09-21");
+
+		expect(sampleSeries(points, "month")).toEqual({
+			interval: "month",
+			points: [point("2026-08-31", 30), point("2026-09-21", 51)],
+		});
+	});
+
+	it("bounds ten years to about 120 points, a gap leaving its bucket out", () => {
+		const points = [...daily("2016-09-21", "2020-12-31"), ...daily("2021-02-01", "2026-09-21")];
+		const sampled = sampleSeries(points);
+
+		expect(sampled.interval).toBe("month");
+		expect(sampled.points).toHaveLength(120);
+		expect(sampled.points.some((kept) => kept.date.startsWith("2021-01"))).toBe(false);
+		expect(sampled.points.at(-1)).toEqual(points.at(-1));
 	});
 });

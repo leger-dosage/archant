@@ -2,8 +2,11 @@ import { z } from "zod";
 
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
+import { BALANCE_PERIODS } from "./balances.ts";
 import { createCategorySchema } from "./categories.ts";
 import { merchantSchema } from "./merchants.ts";
+import { RECURRING_VIEWS } from "./recurring.ts";
+import { monthSchema } from "./reports.ts";
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "./rules.ts";
 import { tagSchema } from "./tags.ts";
 import {
@@ -16,6 +19,60 @@ import {
 
 /** The input of a tool that takes none: an assistant may send `{}`, nothing more. */
 export const noToolInput = z.strictObject({});
+
+/**
+ * A period ending today, as the dashboard's and an account page's charts
+ * offer them. A year by default, as Sure's tools default to the last 365 days.
+ */
+const toolPeriod = z
+	.enum(BALANCE_PERIODS)
+	.default("1Y")
+	.describe(
+		'"1M", "3M", "6M" or "1Y": that many months ending today; "all": since the first account opened.',
+	);
+
+/** `get_accounts`: today's balances, and with `includeBalanceSeries` their history. */
+export const getAccountsInput = z.strictObject({
+	includeBalanceSeries: z
+		.boolean()
+		.default(false)
+		.describe("Adds each account's balance over the period, as its page charts it."),
+	period: toolPeriod.describe(
+		'Only with includeBalanceSeries. "1M", "3M", "6M" or "1Y": that many months ending today; "all": since the account opened.',
+	),
+});
+
+/** `get_balance_sheet`: net worth over a period. */
+export const balanceSheetInput = z.strictObject({ period: toolPeriod });
+
+/** `get_income_statement`: one calendar month's income and expenses. */
+export const incomeStatementInput = z.strictObject({
+	month: monthSchema.optional().describe("YYYY-MM; the current month when absent."),
+});
+
+/** `get_recurring_transactions`: the series « Récurrents » lists, narrowed. */
+export const recurringInput = z.strictObject({
+	status: z
+		.enum(RECURRING_VIEWS)
+		.default("current")
+		.describe(
+			'"current": detected or confirmed; "inactive": stopped by the owner; "all": both, dismissed ones never.',
+		),
+	withinDays: z
+		.number()
+		.int()
+		.min(1)
+		.max(365)
+		.optional()
+		.describe(
+			"Keeps the series expected from today to today plus this many days; overdue ones are left out.",
+		),
+});
+
+/** `get_transaction`: one transaction in full. */
+export const transactionIdInput = z.strictObject({
+	id: z.string().min(1).describe("A transaction id from get_transactions."),
+});
 
 /** The page an assistant reads at once: a list page of the interface, no more. */
 const MAX_TOOL_PAGE_SIZE = 100;
