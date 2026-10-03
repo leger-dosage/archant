@@ -122,5 +122,10 @@ export const queryKeys = {
 		 * renames or recolours a line.
 		 */
 		cashFlow: (month: string) => ["transactions", "cash-flow", month] as const,
+		/**
+		 * A month's budget with its actuals and suggestions. Under `all`, as
+		 * `cashFlow`: every write that moves the month's cash flow refreshes it.
+		 */
+		budget: (month: string) => ["transactions", "budget", month] as const,
 	},
 };

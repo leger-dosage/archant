@@ -7,6 +7,7 @@
 		"./app": "./src/app.ts",
 		"./schemas/accounts": "./src/schemas/accounts.ts",
 		"./schemas/balances": "./src/schemas/balances.ts",
+		"./schemas/budgets": "./src/schemas/budgets.ts",
 		"./schemas/categories": "./src/schemas/categories.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
 		"./schemas/merchants": "./src/schemas/merchants.ts",

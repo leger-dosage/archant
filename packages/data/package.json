@@ -22,6 +22,7 @@
 		"./schema/balances": "./schema/balances.ts",
 		"./schema/bank-accounts": "./schema/bank-accounts.ts",
 		"./schema/bank-connections": "./schema/bank-connections.ts",
+		"./schema/budgets": "./schema/budgets.ts",
 		"./schema/categories": "./schema/categories.ts",
 		"./schema/entries": "./schema/entries.ts",
 		"./schema/entry-keys": "./schema/entry-keys.ts",

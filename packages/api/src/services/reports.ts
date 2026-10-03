@@ -1,6 +1,11 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, SampledSeries } from "../domain/balances/history.ts";
-import type { CashFlowLine } from "../domain/cash-flow.ts";
+import type {
+	CashFlowCategory,
+	CashFlowLine,
+	CashFlowRow,
+	MonthBreakdown,
+} from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
 import type { BalancePeriod } from "../schemas/balances.ts";
@@ -10,6 +15,7 @@ import type { Classification } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import { shiftMonth } from "@archant/data/months";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import type { Account } from "@archant/data/types";
@@ -20,7 +26,7 @@ import { monthRange, today } from "../domain/dates.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
-import { cashFlowByCategory } from "./ledger/queries.ts";
+import { cashFlowByCategory, cashFlowByMonth } from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** An account left out of the totals because no rate converts its currency. */
@@ -180,17 +186,55 @@ export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<C
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByCategory(deps, { from, to, accountIds: counted.map((row) => row.id) }),
-		deps.db
-			.select({
-				id: categories.id,
-				name: categories.name,
-				kind: categories.kind,
-				color: categories.color,
-				icon: categories.icon,
-				parentId: categories.parentId,
-			})
-			.from(categories),
+		breakdownCategories(deps),
 	]);
 
 	return { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories), leftOut };
+}
+
+/** Every category as `cashFlowBreakdown` reads it. */
+async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[]> {
+	return deps.db
+		.select({
+			id: categories.id,
+			name: categories.name,
+			kind: categories.kind,
+			color: categories.color,
+			icon: categories.icon,
+			parentId: categories.parentId,
+		})
+		.from(categories);
+}
+
+/**
+ * `getCashFlow`'s breakdown of every month before `before`, over the same
+ * accounts and from the same rows, read in one query: what the budget's
+ * suggestions take their medians from.
+ */
+export async function getCashFlowHistory(
+	deps: ServiceDeps,
+	before: IsoMonth,
+): Promise<MonthBreakdown[]> {
+	const { counted } = await reportedAccounts(deps);
+	const [rows, allCategories] = await Promise.all([
+		cashFlowByMonth(deps, {
+			to: monthRange(shiftMonth(before, -1)).to,
+			accountIds: counted.map((row) => row.id),
+		}),
+		breakdownCategories(deps),
+	]);
+	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
+
+	for (const row of rows) {
+		byMonth.set(row.month, [...(byMonth.get(row.month) ?? []), row]);
+	}
+
+	// Oldest first; a month without a counted row is absent.
+	return [...byMonth]
+		.toSorted(([a], [b]) => a.localeCompare(b))
+		.map(([month, monthRows]) => {
+			const { income, lines } = cashFlowBreakdown(monthRows, allCategories);
+
+			return { month, income, lines };
+		});
 }

@@ -1,5 +1,5 @@
 import type { CashFlowRow } from "../../domain/cash-flow.ts";
-import type { IsoDate } from "../../domain/dates.ts";
+import type { IsoDate, IsoMonth } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { TransactionFilter } from "./filter.ts";
 import type { Transaction, TransferColumns } from "./shared.ts";
@@ -439,6 +439,23 @@ export async function sumTransactionsByLabel(
 }
 
 /**
+ * The rows every cash-flow query counts (AD-9): income and expense sides of
+ * `accountIds` in the range, neither excluded nor pending. One definition, so
+ * the month's breakdown and the budget's history never disagree; `null` when
+ * nothing can match.
+ */
+function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
+	const where = filterCondition(
+		{ ...range, direction: ["income", "expense"] },
+		correlatedTransferSide,
+	);
+
+	return where === null
+		? null
+		: and(where, eq(transactions.excluded, false), eq(transactions.pending, false));
+}
+
+/**
  * The counted transactions of `accountIds` between `from` and `to`, both
  * inclusive, summed per category and per sign: `countsInCashFlow`'s SQL
  * twin, tied to it by a parity test. Uncategorised rows keep their two signs
@@ -450,10 +467,7 @@ export async function cashFlowByCategory(
 	deps: ServiceDeps,
 	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
 ): Promise<CashFlowRow[]> {
-	const where = filterCondition(
-		{ ...range, direction: ["income", "expense"] },
-		correlatedTransferSide,
-	);
+	const where = countedInCashFlow(range);
 
 	if (where === null) {
 		return [];
@@ -466,8 +480,53 @@ export async function cashFlowByCategory(
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(and(where, eq(transactions.excluded, false), eq(transactions.pending, false)))
+		.where(where)
 		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
 
 	return rows.map(toRecord);
+}
+
+/**
+ * `cashFlowByCategory`'s rows over every month up to `to`, inclusive, each
+ * group also keyed by its calendar month: the same counted rows, so a month's
+ * rows here sum to that month's rows there, which a parity test checks. The
+ * budget's suggestions read it, one query for the whole history.
+ */
+export async function cashFlowByMonth(
+	deps: ServiceDeps,
+	range: { to: IsoDate; accountIds: readonly string[] },
+): Promise<(CashFlowRow & { month: IsoMonth })[]> {
+	const where = countedInCashFlow(range);
+
+	if (where === null) {
+		return [];
+	}
+
+	const month = sql<IsoMonth>`substr(${entries.date}, 1, 7)`;
+	const rows = await deps.db
+		.select({
+			month,
+			categoryId: transactions.categoryId,
+			amount: sum(entries.amount).mapWith(Number),
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(where)
+		.groupBy(month, transactions.categoryId, sql`${entries.amount} > 0`);
+
+	return rows.map(toRecord);
+}
+
+/**
+ * The date of the oldest entry of any kind on any account, an opening anchor
+ * included; `null` when the ledger holds none. Budgets reach back to its month.
+ */
+export async function oldestEntryDate(deps: ServiceDeps): Promise<IsoDate | null> {
+	const [oldest] = await deps.db
+		.select({ date: entries.date })
+		.from(entries)
+		.orderBy(entries.date)
+		.limit(1);
+
+	return oldest?.date ?? null;
 }
