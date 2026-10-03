@@ -599,6 +599,27 @@ describe("GET /api/accounts/:id/transactions", () => {
 		expect(second.data.items.map((item) => item.label)).toEqual(["C"]);
 	});
 
+	it("adds the parents of the page's split children", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, { ...expense, amount: "-100,00" });
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		await request("POST", `/api/transactions/${data.id}/split`, {
+			lines: [
+				{ label: "Fruits", amount: "-60,00", categoryId: null },
+				{ label: "Savon", amount: "-40,00", categoryId: null },
+			],
+		});
+
+		const page = await transactionsOf(account.id);
+
+		expect(page.items.map((item) => [item.parentEntryId, item.splitParent])).toEqual([
+			[data.id, false],
+			[data.id, false],
+		]);
+		expect(page.splitParents).toMatchObject([{ id: data.id, splitParent: true, excluded: true }]);
+		expect(page.total).toBe(2);
+	});
+
 	it.each([
 		["page=0", "page"],
 		["pageSize=201", "pageSize"],

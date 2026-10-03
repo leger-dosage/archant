@@ -210,6 +210,8 @@ export function transactionFormSchema(currency: CurrencyCode) {
 
 /** What the interface's form holds: the text typed, before the schema parses it. */
 export type TransactionFormInput = z.input<ReturnType<typeof transactionFormSchema>>;
+/** What the split dialog holds: each line's text typed, before the schema parses it. */
+export type SplitFormInput = z.input<ReturnType<typeof splitTransactionSchema>>;
 export type CreateTransactionRequest = z.output<ReturnType<typeof createTransactionSchema>>;
 export type UpdateTransactionRequest = z.output<ReturnType<typeof updateTransactionSchema>>;
 

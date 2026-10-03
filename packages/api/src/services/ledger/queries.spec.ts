@@ -37,6 +37,7 @@ import {
 	entryOrigins,
 	findTransaction,
 	listTransactions,
+	listTransactionsById,
 	sumTransactions,
 	sumTransactionsByLabel,
 	oldestEntryDate,
@@ -366,6 +367,32 @@ describe("listTransactions across accounts", () => {
 			items: [],
 			total: 0,
 		});
+	});
+});
+
+describe("listTransactionsById", () => {
+	it("reads the rows named, as the list shows them and in its order, whatever the filter leaves out", async () => {
+		const account = await openChecking({ name: "Divisé" });
+		const older = await add(account.id, { date: "2026-09-02", label: "Ancienne" });
+		const { parent, food } = await splitInTwo(account.id, { date: "2026-09-12" });
+
+		const rows = await listTransactionsById(deps(), [older, parent, "nope"]);
+
+		expect(rows.map((row) => row.id)).toEqual([parent, older]);
+		expect(rows[0]).toMatchObject({
+			label: "HYPERMARCHE",
+			excluded: true,
+			parentEntryId: null,
+			accountName: "Divisé",
+			accountType: "depository",
+			tagIds: [],
+			transfer: null,
+			transferSuggested: false,
+		});
+		await expect(listTransactionsById(deps(), [food])).resolves.toMatchObject([
+			{ id: food, parentEntryId: parent },
+		]);
+		await expect(listTransactionsById(deps(), [])).resolves.toEqual([]);
 	});
 });
 
