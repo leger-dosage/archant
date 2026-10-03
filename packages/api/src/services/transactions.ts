@@ -7,6 +7,7 @@ import type {
 	BulkSelectionRequest,
 	BulkUpdateRequest,
 	MergeDuplicateRequest,
+	SplitInput,
 	TransactionFilterRequest,
 	TransactionInput,
 	TransactionPatchInput,
@@ -17,6 +18,7 @@ import type { DuplicateCandidate } from "./ledger/duplicates.ts";
 import type { BulkSelection } from "./ledger/edits.ts";
 import type { TransactionFilter } from "./ledger/filter.ts";
 import type { EntryOrigin, TransactionListRecord, TransactionRecord } from "./ledger/queries.ts";
+import type { Split } from "./ledger/splits.ts";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
@@ -32,6 +34,7 @@ import { validationError } from "../lib/zod-error.ts";
 import {
 	UNCATEGORISED,
 	createTransactionSchema,
+	splitTransactionSchema,
 	updateTransactionSchema,
 } from "../schemas/transactions.ts";
 import { getAccount } from "./accounts.ts";
@@ -56,6 +59,12 @@ import {
 	sumTransactions,
 	sumTransactionsByLabel,
 } from "./ledger/queries.ts";
+import {
+	editSplit as editLedgerSplit,
+	splitOf,
+	splitTransaction as splitLedgerTransaction,
+	unsplitTransaction as unsplitLedgerTransaction,
+} from "./ledger/splits.ts";
 import { recurringEntryIds } from "./recurring.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -560,4 +569,63 @@ export async function bulkDeleteTransactions(
 	);
 
 	return { deleted };
+}
+
+/** A split as its sheet shows it: the parent, excluded, and its children, oldest first. */
+export type SplitItem = { parent: TransactionItem; children: TransactionItem[] };
+
+async function splitItemOf(deps: ServiceDeps, split: Split): Promise<SplitItem> {
+	const [parent, ...children] = await Promise.all(
+		[split.parentId, ...split.childIds].map(async (id) => getTransaction(deps, id)),
+	);
+
+	if (parent === undefined) {
+		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+	}
+
+	return { parent, children };
+}
+
+/** The lines of a split request, their amounts parsed in the currency of `id`'s account. */
+async function parsedSplitLines(deps: ServiceDeps, id: string, input: SplitInput) {
+	const current = await getTransaction(deps, id);
+	const parsed = splitTransactionSchema(await currencyOf(deps, current.accountId)).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	return parsed.data.lines;
+}
+
+/** The split `id` belongs to, from its parent or a child; `NOT_FOUND` for an unsplit one. */
+export async function getSplit(deps: ServiceDeps, id: string): Promise<SplitItem> {
+	return splitItemOf(deps, await splitOf(deps, id));
+}
+
+/** Splits a transaction into lines on the user's behalf (AD-20). */
+export async function splitTransaction(
+	deps: ServiceDeps,
+	id: string,
+	input: SplitInput,
+): Promise<SplitItem> {
+	const lines = await parsedSplitLines(deps, id, input);
+
+	return splitItemOf(deps, await splitLedgerTransaction(deps, id, lines, { origin: "user" }));
+}
+
+/** Replaces a split's lines on the user's behalf, keeping the children named by id. */
+export async function editSplit(
+	deps: ServiceDeps,
+	id: string,
+	input: SplitInput,
+): Promise<SplitItem> {
+	const lines = await parsedSplitLines(deps, id, input);
+
+	return splitItemOf(deps, await editLedgerSplit(deps, id, lines, { origin: "user" }));
+}
+
+/** Undoes a split on the user's behalf, and returns its parent as it now stands. */
+export async function unsplitTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	return getTransaction(deps, await unsplitLedgerTransaction(deps, id, { origin: "user" }));
 }

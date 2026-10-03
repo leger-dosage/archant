@@ -7,6 +7,7 @@ import {
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
 	mergeDuplicateBodySchema,
+	splitBodySchema,
 	transactionFilterSchema,
 	transactionPatchBodySchema,
 	transactionTotalsSchema,
@@ -16,10 +17,14 @@ import {
 	bulkUpdateTransactions,
 	deleteTransaction,
 	dismissDuplicate,
+	editSplit,
+	getSplit,
 	listAllTransactions,
 	listDuplicateCandidates,
 	mergeDuplicate,
+	splitTransaction,
 	transactionTotals,
+	unsplitTransaction,
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
@@ -54,6 +59,19 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.post("/:id/dismiss-duplicate", async (c) =>
 				c.json({ data: await dismissDuplicate(deps, c.req.param("id")) }, 200),
+			)
+			// From the parent or a child, as Sure's `resolve_to_parent!`.
+			.get("/:id/split", async (c) =>
+				c.json({ data: await getSplit(deps, c.req.param("id")) }, 200),
+			)
+			.post("/:id/split", validated("json", splitBodySchema), async (c) =>
+				c.json({ data: await splitTransaction(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+			)
+			.put("/:id/split", validated("json", splitBodySchema), async (c) =>
+				c.json({ data: await editSplit(deps, c.req.param("id"), c.req.valid("json")) }, 200),
+			)
+			.delete("/:id/split", async (c) =>
+				c.json({ data: await unsplitTransaction(deps, c.req.param("id")) }, 200),
 			)
 			.patch("/:id", validated("json", transactionPatchBodySchema), async (c) =>
 				c.json(
