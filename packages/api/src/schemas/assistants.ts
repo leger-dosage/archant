@@ -457,3 +457,55 @@ export const renameCategoryInput = z.strictObject({
 export const renameMerchantInput = z.strictObject({ merchantId, ...merchantSchema.shape });
 
 export const renameTagInput = z.strictObject({ tagId, ...tagSchema.shape });
+
+/** `get_budget`: a month's budget, and up to eleven months before it, as Sure's `GetBudget`. */
+export const budgetInput = z.strictObject({
+	month: monthSchema.optional().describe("YYYY-MM; the current month when absent."),
+	priorMonths: z
+		.number()
+		.int()
+		.min(0)
+		.max(11)
+		.default(0)
+		.describe(
+			"How many months before month to add, up to 11; those before the first month a budget can cover are left out.",
+		),
+});
+
+const budgetAmount = (what: string) =>
+	z
+		.string()
+		.optional()
+		.describe(
+			`${what}, a decimal string such as "1500.00" in the reporting currency; absent keeps it.`,
+		);
+
+/**
+ * `update_budget`: what the budget page sets, at once. Passed raw to
+ * `updateBudget`, which parses the amounts as the page's fields are parsed
+ * and refuses an empty call, a category twice and « Sans catégorie ».
+ */
+export const updateBudgetInput = z.strictObject({
+	month: monthSchema.describe("YYYY-MM: the month to set."),
+	budgetedSpending: budgetAmount("The month's planned spending"),
+	expectedIncome: budgetAmount("The month's expected income"),
+	categories: z
+		.array(
+			z.strictObject({
+				categoryId: categoryId
+					.nullable()
+					.describe(
+						"An expense category id from get_categories or get_budget. null, « Sans catégorie », is refused: it holds what budgetedSpending leaves unallocated.",
+					),
+				budgeted: z
+					.string()
+					.describe(
+						'The amount, a decimal string such as "250.00"; "" or "0" lets a subcategory share its parent\'s. A parent\'s amount is never below what its subcategories hold.',
+					),
+			}),
+		)
+		.optional()
+		.describe(
+			"Category amounts, each category once; the month must be set up, by this call or before.",
+		),
+});

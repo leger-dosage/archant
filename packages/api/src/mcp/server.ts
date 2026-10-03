@@ -32,6 +32,7 @@ import { recordAssistantCall } from "../services/assistant-calls.ts";
 import { ARCHANT_SCOPES, grantedScopes } from "../services/assistants.ts";
 import { mcpIssuer, mcpResource } from "../services/auth.ts";
 import { getAccounts } from "./accounts.ts";
+import { getBudgetTool, updateBudgetTool } from "./budgets.ts";
 import { createCategoryTool, getCategories, renameCategoryTool } from "./categories.ts";
 import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
 import { getRecurringTransactions } from "./recurring.ts";
@@ -76,6 +77,7 @@ const TOOLS: AnyTool[] = [
 	groupTransactionLabels,
 	getBalanceSheetTool,
 	getIncomeStatement,
+	getBudgetTool,
 	getRecurringTransactions,
 	getRules,
 	getRuleRuns,
@@ -93,6 +95,7 @@ const TOOLS: AnyTool[] = [
 	renameCategoryTool,
 	renameMerchantTool,
 	renameTagTool,
+	updateBudgetTool,
 ];
 
 /** The 64 KB of every other `/api` route; `bodyLimit` has refused anything larger by now. */
@@ -122,6 +125,9 @@ const INSTRUCTIONS = [
 	"- update_transaction and bulk_update_transactions lock each field they change, as an edit by the owner does: no rule changes it afterwards.",
 	"- Before update_transaction, or bulk_update_transactions by ids, tell the owner what you are about to change.",
 	"- Before bulk_update_transactions with a filter, call get_transactions with that filter, show the owner its total and pass it as expectedCount. If it answers BULK_COUNT_STALE, read again and show the owner.",
+	"To plan a month's budget:",
+	"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
+	"- Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",
 ].join("\n");
 
 /** The claims `/api/mcp` relies on, once the signature, issuer, audience and expiry are checked. */
