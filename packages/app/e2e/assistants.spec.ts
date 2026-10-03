@@ -29,6 +29,7 @@ const READ_TOOLS = [
 	"group_transactions_by_label",
 	"get_balance_sheet",
 	"get_income_statement",
+	"get_budget",
 	"get_recurring_transactions",
 	"get_rules",
 	"get_rule_runs",
@@ -228,8 +229,12 @@ async function connectThenDisconnect(
 	await expect(page).toHaveURL(/\/oauth\/consent\?/u);
 	await expect(page.getByText("Agent de test demande l'accès à Archant.")).toBeVisible();
 	await expect(page.getByText(/sur 127\.0\.0\.1:33418\./u)).toBeVisible();
-	await expect(page.getByLabel("Lire vos comptes, vos opérations et vos règles")).toBeChecked();
-	const write = page.getByLabel("Créer et modifier vos règles, classer vos opérations");
+	await expect(
+		page.getByLabel("Lire vos comptes, vos opérations, vos règles et vos budgets"),
+	).toBeChecked();
+	const write = page.getByLabel(
+		"Créer et modifier vos règles, classer vos opérations, définir vos budgets",
+	);
 	await expect(write).toBeChecked();
 	await write.uncheck();
 	await page.getByRole("button", { name: "Autoriser" }).click();

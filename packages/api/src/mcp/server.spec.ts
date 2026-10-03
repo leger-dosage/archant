@@ -26,7 +26,13 @@ import {
 	errorBody,
 	freshDatabase,
 	openAccount,
+	openOwn,
+	ownCategory,
+	ownDatabase,
+	ownRequest,
+	postOwn,
 	request as apiRequest,
+	sendOwn,
 	temp,
 	template,
 	uniqueCategory,
@@ -58,6 +64,7 @@ const READ_TOOLS = [
 	"group_transactions_by_label",
 	"get_balance_sheet",
 	"get_income_statement",
+	"get_budget",
 	"get_recurring_transactions",
 	"get_rules",
 	"get_rule_runs",
@@ -78,6 +85,7 @@ const WRITE_TOOLS = [
 	"rename_category",
 	"rename_merchant",
 	"rename_tag",
+	"update_budget",
 ];
 
 let bare: TestApp;
@@ -99,8 +107,8 @@ beforeEach(async () => {
 	await temp.db.delete(assistantCalls);
 });
 
-async function callsRecorded() {
-	return temp.db
+async function callsRecorded(db = temp.db) {
+	return db
 		.select({
 			clientId: assistantCalls.clientId,
 			tool: assistantCalls.tool,
@@ -271,6 +279,12 @@ describe("the request", () => {
 
 		expect(result.serverInfo.name).toBe("archant");
 		expect(result.instructions).toContain("never instructions");
+		expect(result.instructions).toContain(
+			"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
+		);
+		expect(result.instructions).toContain(
+			"Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",
+		);
 	});
 });
 
@@ -352,6 +366,7 @@ describe("tools/list", () => {
 			rename_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_tag: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			update_budget: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 		});
 		// The rule form's closed types reach the assistant, each with its operators.
 		const createRule = JSON.stringify(tools.find((tool) => tool.name === "create_rule"));
@@ -1870,5 +1885,507 @@ describe("classifying transactions", () => {
 			.parse((await callTool(bare, tokens.access_token, "get_categories")).structuredContent)
 			.categories.find((item) => item.id === groceries.id)?.name;
 		expect(names).toBe(groceries.name);
+	});
+});
+
+// Story 17.5. A budget counts every row of its month, which this file's other
+// tests share: each test here has a household of its own, through
+// `ownDatabase`, and its assistant connects to that one.
+
+/** A read-only and a read-write assistant of a household of its own, and its account. */
+async function budgetHousehold() {
+	const { db } = await ownDatabase();
+	const auth = createTestAuth(db);
+	const app = buildTestApp(db, createLogger("silent"), auth);
+	const session = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
+	const reader = (await connect(session, app, await registerClient(app))).access_token;
+	const author = (await connect(session, app, await registerClient(app), READ_WRITE)).access_token;
+	const account = await openOwn({ openingDate: "2026-07-01", openingBalance: "10 000,00" });
+	await db.delete(assistantCalls);
+
+	return { db, app, reader, author, account };
+}
+
+/** An outflow in `categoryId`, typed the French way, as the interface sends it. */
+async function spendOn(accountId: string, date: string, amount: string, categoryId: string) {
+	const id = await postOwn(accountId, { date, label: "Dépense", amount });
+
+	await sendOwn("PATCH", `/api/transactions/${id}`, { categoryId });
+}
+
+async function setBudget(month: string, budgetedSpending: string, expectedIncome: string) {
+	await sendOwn("PUT", `/api/budgets/${month}`, { budgetedSpending, expectedIncome });
+}
+
+async function setAmount(month: string, categoryId: string, budgetedSpending: string) {
+	await sendOwn("PUT", `/api/budgets/${month}/categories/${categoryId}`, { budgetedSpending });
+}
+
+const budgetStatus = z.enum(["over_budget", "near_limit", "on_track", "unbudgeted", "no_activity"]);
+
+const budgetMonth = z.object({
+	month: z.string(),
+	from: z.string(),
+	to: z.string(),
+	currency: z.string(),
+	setUp: z.boolean(),
+	budgetedSpending: z.string().regex(decimalString).nullable(),
+	expectedIncome: z.string().regex(decimalString).nullable(),
+	allocated: z.string().regex(decimalString),
+	actualSpending: z.string().regex(decimalString),
+	actualIncome: z.string().regex(decimalString),
+	categories: z.array(
+		z.strictObject({
+			categoryId: z.string(),
+			parentId: z.string().nullable(),
+			name: z.string(),
+			budgeted: z.string().regex(decimalString),
+			shared: z.boolean(),
+			carried: z.string().regex(decimalString),
+			actual: z.string().regex(decimalString),
+			available: z.string().regex(decimalString),
+			status: budgetStatus,
+			percentSpent: z.number(),
+			rolloverEnabled: z.boolean(),
+		}),
+	),
+	uncategorised: z.strictObject({
+		budgeted: z.string().regex(decimalString),
+		actual: z.string().regex(decimalString),
+		available: z.string().regex(decimalString),
+		status: budgetStatus,
+	}),
+});
+
+const budgetResult = z.object({
+	months: z.array(budgetMonth),
+	leftOutCount: z.number(),
+	leftOutAccountIds: z.array(z.string()),
+});
+
+const updatedBudget = budgetMonth.extend({
+	leftOutCount: z.number(),
+	leftOutAccountIds: z.array(z.string()),
+});
+
+const routeBudget = z.object({
+	month: z.string(),
+	from: z.string(),
+	to: z.string(),
+	currency: z.string(),
+	setUp: z.boolean(),
+	budgetedSpending: z.number().nullable(),
+	expectedIncome: z.number().nullable(),
+	allocated: z.number(),
+	actual: z.object({ spending: z.number(), income: z.number() }),
+	categories: z.array(
+		z.object({
+			categoryId: z.string(),
+			parentId: z.string().nullable(),
+			name: z.string(),
+			budgetedSpending: z.number(),
+			shared: z.boolean(),
+			rolledOver: z.number(),
+			spent: z.number(),
+			available: z.number(),
+			percentSpent: z.number(),
+			rolloverEnabled: z.boolean(),
+		}),
+	),
+	uncategorised: z.object({
+		budgetedSpending: z.number(),
+		spent: z.number(),
+		available: z.number(),
+	}),
+});
+
+/** What `GET /api/budgets/:month` gives, each amount as the tool writes it; statuses apart. */
+async function budgetFromRoute(month: string) {
+	const { status, body } = await ownRequest("GET", `/api/budgets/${month}`);
+
+	expect(status).toBe(200);
+
+	const route = routeBudget.parse(z.object({ data: z.unknown() }).parse(body).data);
+	const nullable = (amount: number | null) => (amount === null ? null : money(amount));
+
+	return {
+		month: route.month,
+		from: route.from,
+		to: route.to,
+		currency: route.currency,
+		setUp: route.setUp,
+		budgetedSpending: nullable(route.budgetedSpending),
+		expectedIncome: nullable(route.expectedIncome),
+		allocated: money(route.allocated),
+		actualSpending: money(route.actual.spending),
+		actualIncome: money(route.actual.income),
+		categories: route.categories.map((line) => ({
+			categoryId: line.categoryId,
+			parentId: line.parentId,
+			name: line.name,
+			budgeted: money(line.budgetedSpending),
+			shared: line.shared,
+			carried: money(line.rolledOver),
+			actual: money(line.spent),
+			available: money(line.available),
+			percentSpent: Math.round(line.percentSpent * 10) / 10,
+			rolloverEnabled: line.rolloverEnabled,
+		})),
+		uncategorised: {
+			budgeted: money(route.uncategorised.budgetedSpending),
+			actual: money(route.uncategorised.spent),
+			available: money(route.uncategorised.available),
+		},
+	};
+}
+
+const lineOf = (month: z.infer<typeof budgetMonth>, id: string) =>
+	month.categories.find((line) => line.categoryId === id);
+
+async function budgetRowCount(db: typeof temp.db) {
+	const { rows } = await db.$client.execute("select count(*) as n from budgets");
+
+	return rows[0]?.n;
+}
+
+describe("reading a budget", () => {
+	it("get_budget gives each category's status as Sure's GetBudget, every amount as the page's", async () => {
+		const { db, app, reader, account } = await budgetHousehold();
+		const over = await ownCategory("Dépassée");
+		const near = await ownCategory("Presque");
+		const under = await ownCategory("Tranquille");
+		const unbudgeted = await ownCategory("Imprévue");
+		const untouched = await ownCategory("Intacte");
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+		await Promise.all([over, near, under].map(async (id) => setAmount("2026-09", id, "100,00")));
+		await spendOn(account.id, "2026-09-03", "-150,00", over);
+		await spendOn(account.id, "2026-09-04", "-95,00", near);
+		await spendOn(account.id, "2026-09-05", "-33,33", under);
+		await spendOn(account.id, "2026-09-06", "-30,00", unbudgeted);
+
+		const result = await callTool(app, reader, "get_budget", { month: "2026-09" });
+		const { months, ...leftOut } = budgetResult.parse(result.structuredContent);
+		const [september] = months;
+		const statusOf = (id: string) =>
+			september?.categories.find((line) => line.categoryId === id)?.status;
+
+		expect(months).toHaveLength(1);
+		expect([over, near, under, unbudgeted, untouched].map(statusOf)).toEqual([
+			"over_budget",
+			"near_limit",
+			"on_track",
+			"unbudgeted",
+			"no_activity",
+		]);
+		expect(september).toMatchObject(await budgetFromRoute("2026-09"));
+		expect(september).toMatchObject({
+			setUp: true,
+			budgetedSpending: "1000.00",
+			expectedIncome: "2000.00",
+			allocated: "300.00",
+			actualSpending: "308.33",
+			uncategorised: { budgeted: "700.00", actual: "0.00", status: "on_track" },
+		});
+		expect(september?.categories.find((line) => line.categoryId === over)).toEqual({
+			categoryId: over,
+			parentId: null,
+			name: "Dépassée",
+			budgeted: "100.00",
+			shared: false,
+			carried: "0.00",
+			actual: "150.00",
+			available: "-50.00",
+			status: "over_budget",
+			percentSpent: 150,
+			rolloverEnabled: false,
+		});
+		expect(september?.categories.find((line) => line.categoryId === under)).toMatchObject({
+			actual: "33.33",
+			available: "66.67",
+			percentSpent: 33.3,
+		});
+		expect(leftOut).toEqual({ leftOutCount: 0, leftOutAccountIds: [] });
+		expect(outcomes(await callsRecorded(db))).toEqual([
+			{ tool: "get_budget", outcome: "OK", changedRows: 0 },
+		]);
+	});
+
+	it("get_budget carries what a month left into the next, earlier months first, as the page shows them", async () => {
+		const { app, reader, account } = await budgetHousehold();
+		const gifts = await ownCategory("Cadeaux");
+		const birthdays = await ownCategory("Anniversaires", { parentId: gifts });
+		await setBudget("2026-08", "1 000,00", "2 000,00");
+		await setAmount("2026-08", gifts, "100,00");
+		await sendOwn("PUT", `/api/budgets/2026-08/categories/${gifts}/rollover`, {
+			rolloverEnabled: true,
+		});
+		await spendOn(account.id, "2026-08-12", "-40,00", birthdays);
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+
+		const { months } = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "2026-09", priorMonths: 1 }))
+				.structuredContent,
+		);
+		const [august, september] = months;
+
+		expect(months.map((item) => item.month)).toEqual(["2026-08", "2026-09"]);
+		expect(august).toMatchObject(await budgetFromRoute("2026-08"));
+		expect(september).toMatchObject(await budgetFromRoute("2026-09"));
+		expect(september?.categories.find((line) => line.categoryId === gifts)).toMatchObject({
+			budgeted: "0.00",
+			carried: "60.00",
+			available: "60.00",
+			rolloverEnabled: true,
+			status: "on_track",
+		});
+		expect(september?.categories.find((line) => line.categoryId === birthdays)).toMatchObject({
+			shared: true,
+			carried: "60.00",
+		});
+	});
+
+	it("get_budget drops the months before the first one a budget covers, and shows a month not set up", async () => {
+		const { app, reader } = await budgetHousehold();
+
+		const { months } = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "2024-11", priorMonths: 11 }))
+				.structuredContent,
+		);
+		const current = budgetResult.parse(
+			(await callTool(app, reader, "get_budget")).structuredContent,
+		);
+
+		// The clock is 2026-09-21: budgets reach back to 2024-09.
+		expect(months.map((item) => item.month)).toEqual(["2024-09", "2024-10", "2024-11"]);
+		expect(current.months.map((item) => item.month)).toEqual(["2026-09"]);
+		expect(current.months[0]).toMatchObject({
+			setUp: false,
+			budgetedSpending: null,
+			expectedIncome: null,
+			allocated: "0.00",
+		});
+		expect(current.months[0]).toMatchObject(await budgetFromRoute("2026-09"));
+	});
+
+	it("get_budget answers a month out of bounds with NOT_FOUND, and refuses more than eleven earlier months", async () => {
+		const { app, reader } = await budgetHousehold();
+
+		const ahead = await callTool(app, reader, "get_budget", { month: "2029-09" });
+		const tooMany = await callTool(app, reader, "get_budget", { priorMonths: 12 });
+
+		expect(ahead).toEqual({
+			isError: true,
+			content: [{ type: "text", text: "NOT_FOUND: No budget can be set for this month." }],
+		});
+		expect(tooMany.content[0]?.text).toContain('"path":"priorMonths","code":"too_big"');
+	});
+});
+
+describe("setting a budget", () => {
+	it("update_budget sets up a month with its categories, inheriting a switch, then changes one field at a time", async () => {
+		const { db, app, author } = await budgetHousehold();
+		const gifts = await ownCategory("Cadeaux");
+		const groceries = await ownCategory("Courses");
+		const home = await ownCategory("Maison");
+		const garden = await ownCategory("Jardin", { parentId: home });
+		await setBudget("2026-08", "1 000,00", "2 000,00");
+		await sendOwn("PUT", `/api/budgets/2026-08/categories/${gifts}/rollover`, {
+			rolloverEnabled: true,
+		});
+
+		const created = await callTool(app, author, "update_budget", {
+			month: "2026-09",
+			budgetedSpending: "1500.00",
+			expectedIncome: "3000.00",
+			categories: [{ categoryId: groceries, budgeted: "400.00" }],
+		});
+		const read = budgetResult.parse(
+			(await callTool(app, author, "get_budget", { month: "2026-09" })).structuredContent,
+		);
+		const september = updatedBudget.parse(created.structuredContent);
+
+		expect(september).toEqual({
+			...read.months[0],
+			leftOutCount: read.leftOutCount,
+			leftOutAccountIds: read.leftOutAccountIds,
+		});
+		expect(september).toMatchObject({
+			setUp: true,
+			budgetedSpending: "1500.00",
+			expectedIncome: "3000.00",
+			allocated: "400.00",
+		});
+		expect(lineOf(september, groceries)?.budgeted).toBe("400.00");
+		expect(lineOf(september, gifts)?.rolloverEnabled).toBe(true);
+
+		const partial = updatedBudget.parse(
+			(
+				await callTool(app, author, "update_budget", {
+					month: "2026-09",
+					expectedIncome: "3200.00",
+				})
+			).structuredContent,
+		);
+
+		expect(partial).toMatchObject({ budgetedSpending: "1500.00", expectedIncome: "3200.00" });
+
+		// The parent comes first here: it is written last, so its 500 stays.
+		const both = updatedBudget.parse(
+			(
+				await callTool(app, author, "update_budget", {
+					month: "2026-09",
+					categories: [
+						{ categoryId: home, budgeted: "500.00" },
+						{ categoryId: garden, budgeted: "200.00" },
+					],
+				})
+			).structuredContent,
+		);
+
+		expect(lineOf(both, home)).toMatchObject({ budgeted: "500.00", shared: false });
+		expect(lineOf(both, garden)).toMatchObject({ budgeted: "200.00", shared: false });
+		expect(both).toMatchObject(await budgetFromRoute("2026-09"));
+		expect(outcomes(await callsRecorded(db))).toEqual([
+			{ tool: "update_budget", outcome: "OK", changedRows: 2 },
+			{ tool: "get_budget", outcome: "OK", changedRows: 0 },
+			{ tool: "update_budget", outcome: "OK", changedRows: 1 },
+			{ tool: "update_budget", outcome: "OK", changedRows: 2 },
+		]);
+	});
+
+	it("update_budget refuses half a set-up, a category before it, « Sans catégorie », a category twice and nothing, writing nothing", async () => {
+		const { db, app, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		const salary = await ownCategory("Salaire", { kind: "income" });
+		const call = async (args: Record<string, unknown>) =>
+			(await callTool(app, author, "update_budget", { month: "2026-10", ...args })).content[0]
+				?.text;
+
+		await expect(call({ budgetedSpending: "1000.00" })).resolves.toBe(
+			'VALIDATION_ERROR: The request is invalid. [{"path":"expectedIncome","code":"required"}]',
+		);
+		await expect(
+			call({ categories: [{ categoryId: groceries, budgeted: "100.00" }] }),
+		).resolves.toMatch(/^BUDGET_NOT_SET_UP: /u);
+		await expect(
+			call({
+				budgetedSpending: "1000.00",
+				expectedIncome: "2000.00",
+				categories: [{ categoryId: null, budgeted: "100.00" }],
+			}),
+		).resolves.toBe(
+			'VALIDATION_ERROR: The request is invalid. [{"path":"categories.0.categoryId","code":"uncategorised"}]',
+		);
+		await expect(
+			call({
+				budgetedSpending: "1000.00",
+				expectedIncome: "2000.00",
+				categories: [
+					{ categoryId: groceries, budgeted: "100.00" },
+					{ categoryId: groceries, budgeted: "200.00" },
+				],
+			}),
+		).resolves.toBe(
+			'VALIDATION_ERROR: The request is invalid. [{"path":"categories.1.categoryId","code":"duplicate"}]',
+		);
+		await expect(call({})).resolves.toContain('"code":"empty_patch"');
+		await expect(call({ budgetedSpending: "-5.00", expectedIncome: "2000.00" })).resolves.toContain(
+			'"path":"budgetedSpending","code":"negative_amount"',
+		);
+		// A first set-up whose category is refused is rolled back with it.
+		await expect(
+			call({
+				budgetedSpending: "1000.00",
+				expectedIncome: "2000.00",
+				categories: [{ categoryId: salary, budgeted: "100.00" }],
+			}),
+		).resolves.toBe("NOT_FOUND: No expense category has this id.");
+		await expect(
+			call({ month: "2029-09", budgetedSpending: "1000.00", expectedIncome: "2000.00" }),
+		).resolves.toBe("NOT_FOUND: No budget can be set for this month.");
+		await expect(budgetRowCount(db)).resolves.toBe(0);
+		expect(outcomes(await callsRecorded(db))).toEqual([
+			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_budget", outcome: "BUDGET_NOT_SET_UP", changedRows: 0 },
+			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_budget", outcome: "NOT_FOUND", changedRows: 0 },
+			{ tool: "update_budget", outcome: "NOT_FOUND", changedRows: 0 },
+		]);
+	});
+
+	it("update_budget stores the carry again when it changes an earlier month's amount", async () => {
+		const { db, app, author, account } = await budgetHousehold();
+		const gifts = await ownCategory("Cadeaux");
+		await setBudget("2026-08", "1 000,00", "2 000,00");
+		await setAmount("2026-08", gifts, "100,00");
+		await sendOwn("PUT", `/api/budgets/2026-08/categories/${gifts}/rollover`, {
+			rolloverEnabled: true,
+		});
+		await spendOn(account.id, "2026-08-12", "-40,00", gifts);
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+		const carriedIntoSeptember = async () => {
+			const { rows } = await db.$client.execute({
+				sql: `select budget_categories.rolled_over_amount as carried
+					from budget_categories join budgets on budgets.id = budget_categories.budget_id
+					where budgets.month = '2026-09' and budget_categories.category_id = ?`,
+				args: [gifts],
+			});
+
+			return rows[0]?.carried;
+		};
+
+		await expect(carriedIntoSeptember()).resolves.toBe(6_000);
+
+		const result = await callTool(app, author, "update_budget", {
+			month: "2026-08",
+			categories: [{ categoryId: gifts, budgeted: "150.00" }],
+		});
+
+		expect(result.isError).toBeUndefined();
+		await expect(carriedIntoSeptember()).resolves.toBe(11_000);
+	});
+
+	it("update_budget refuses an income category with NOT_FOUND, leaving the total it was given unwritten", async () => {
+		const { app, author } = await budgetHousehold();
+		const salary = await ownCategory("Salaire", { kind: "income" });
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+
+		const result = await callTool(app, author, "update_budget", {
+			month: "2026-09",
+			budgetedSpending: "1800.00",
+			categories: [{ categoryId: salary, budgeted: "50.00" }],
+		});
+		const unknown = await callTool(app, author, "update_budget", {
+			month: "2026-09",
+			categories: [{ categoryId: "missing", budgeted: "50.00" }],
+		});
+
+		expect(result).toEqual({
+			isError: true,
+			content: [{ type: "text", text: "NOT_FOUND: No expense category has this id." }],
+		});
+		expect(unknown.content[0]?.text).toBe("NOT_FOUND: No expense category has this id.");
+		await expect(budgetFromRoute("2026-09")).resolves.toMatchObject({
+			budgetedSpending: "1000.00",
+		});
+	});
+
+	it("refuses update_budget to a read-only token with a 403 scope challenge, writing nothing", async () => {
+		const { db, app, reader } = await budgetHousehold();
+
+		const response = await mcp(app, reader, "tools/call", {
+			name: "update_budget",
+			arguments: { month: "2026-09", budgetedSpending: "1000.00", expectedIncome: "2000.00" },
+		});
+
+		expect(response.status).toBe(403);
+		expect(response.headers.get("www-authenticate")).toContain('error="insufficient_scope"');
+		expect(outcomes(await callsRecorded(db))).toEqual([
+			{ tool: "update_budget", outcome: "INSUFFICIENT_SCOPE", changedRows: 0 },
+		]);
+		await expect(budgetRowCount(db)).resolves.toBe(0);
 	});
 });

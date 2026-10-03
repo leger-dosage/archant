@@ -9,22 +9,15 @@ import { today } from "../domain/dates.ts";
 import { balanceSheetInput, incomeStatementInput } from "../schemas/assistants.ts";
 import { BALANCE_PERIODS } from "../schemas/balances.ts";
 import { getBalanceSheet, getCashFlow } from "../services/reports.ts";
-import { READ_ONLY, decimal, defineTool, seriesOf, seriesOutput } from "./tool.ts";
-
-const leftOutFields = {
-	leftOutCount: z
-		.number()
-		.int()
-		.describe(
-			"Active accounts in another currency, left out of every figure here until exchange rates exist: say so to the owner when above zero.",
-		),
-	leftOutAccountIds: z.array(z.string()).describe("Their ids, as get_accounts gives them."),
-};
-
-const leftOutOf = (leftOut: readonly { id: string }[]) => ({
-	leftOutCount: leftOut.length,
-	leftOutAccountIds: leftOut.map((account) => account.id),
-});
+import {
+	READ_ONLY,
+	decimal,
+	defineTool,
+	leftOutFields,
+	leftOutOf,
+	seriesOf,
+	seriesOutput,
+} from "./tool.ts";
 
 export const getBalanceSheetTool = defineTool({
 	name: "get_balance_sheet",

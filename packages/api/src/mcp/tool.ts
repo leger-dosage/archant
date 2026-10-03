@@ -102,3 +102,20 @@ export function seriesOf(series: SampledSeries, currency: string): z.input<typeo
 		})),
 	};
 }
+
+/** What a figure counted in the reporting currency says of the accounts it left out. */
+export const leftOutFields = {
+	leftOutCount: z
+		.number()
+		.int()
+		.describe(
+			"Active accounts in another currency, left out of every figure here until exchange rates exist: say so to the owner when above zero.",
+		),
+	leftOutAccountIds: z.array(z.string()).describe("Their ids, as get_accounts gives them."),
+};
+
+/** The left-out fields of the accounts a service named. */
+export const leftOutOf = (leftOut: readonly { id: string }[]) => ({
+	leftOutCount: leftOut.length,
+	leftOutAccountIds: leftOut.map((account) => account.id),
+});
