@@ -44,6 +44,7 @@ import {
 	exportedValuations,
 	transactionPages,
 } from "./export.ts";
+import { splitTransaction } from "./splits.ts";
 import { rejectTransfer } from "./transfers.ts";
 
 useLedgerDatabase();
@@ -171,7 +172,7 @@ describe("transactionPages", () => {
 			.where(eq(entries.kind, "transaction"))
 			.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
 
-		const pages = await all(transactionPages(temp.db, 2));
+		const pages = await all(transactionPages(temp.db, "lines", 2));
 		const rows = pages.flat();
 		const byId = new Map(rows.map((row) => [row.id, row]));
 
@@ -197,20 +198,66 @@ describe("transactionPages", () => {
 	it("reads only the snapshot it is handed, while a write elsewhere goes through", async () => {
 		const account = await openChecking({ name: "Instantané" });
 		await add(account.id, { date: "2026-09-02", label: "Avant" });
-		const before = (await all(transactionPages(temp.db))).flat().length;
+		const before = (await all(transactionPages(temp.db, "lines"))).flat().length;
 		const reading = await readSnapshot(temp.db);
 
 		try {
-			const pages = transactionPages(reading.db, 1);
+			const pages = transactionPages(reading.db, "lines", 1);
 			await pages.next();
 			await add(account.id, { date: "2026-09-03", label: "Après" });
 			const rest = await all({ [Symbol.asyncIterator]: () => pages });
 
 			expect(1 + rest.flat().length).toBe(before);
-			expect((await all(transactionPages(temp.db))).flat()).toHaveLength(before + 1);
+			expect((await all(transactionPages(temp.db, "lines"))).flat()).toHaveLength(before + 1);
 		} finally {
 			reading.close();
 		}
+	});
+
+	it("reads a split's lines alone, or its parent with its lines nested, as Sure's exporter", async () => {
+		const account = await openChecking({ name: "Divisé" });
+		const parent = await add(account.id, {
+			date: "2026-09-04",
+			amount: toMinorUnits(-10_000),
+			label: "HYPERMARCHE",
+		});
+		const kept = await add(account.id, { date: "2026-09-04", label: "Seule" });
+		const [food, home] = [await newCategory("Courses"), await newCategory("Maison")];
+		const tag = await newTag("Reçu");
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: food, tagIds: [tag] },
+				{ label: "Maison", amount: toMinorUnits(-4_000), categoryId: home },
+			],
+			{ origin: "user" },
+		);
+		const ofAccount = async (view: "lines" | "nested") =>
+			(await all(transactionPages(temp.db, view, 1)))
+				.flat()
+				.filter((row) => row.accountId === account.id);
+
+		const lines = await ofAccount("lines");
+		const nested = await ofAccount("nested");
+
+		expect(lines.map((row) => row.id).toSorted()).toEqual([...split.childIds, kept].toSorted());
+		expect(lines.every((row) => row.splitLines.length === 0)).toBe(true);
+		expect(nested.map((row) => row.id).toSorted()).toEqual([parent, kept].toSorted());
+		expect(nested.find((row) => row.id === parent)).toMatchObject({
+			transaction: { excluded: true },
+			splitLines: [
+				{
+					id: split.childIds[0],
+					parentEntryId: parent,
+					amount: -6_000,
+					tagIds: [tag],
+					transaction: { label: "Courses", categoryId: food },
+				},
+				{ id: split.childIds[1], amount: -4_000, tagIds: [], transaction: { label: "Maison" } },
+			],
+		});
+		expect(nested.find((row) => row.id === kept)?.splitLines).toEqual([]);
 	});
 });
 
