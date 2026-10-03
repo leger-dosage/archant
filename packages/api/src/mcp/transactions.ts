@@ -1,14 +1,22 @@
+import type { TransactionRecord } from "../services/ledger/queries.ts";
+
 import { z } from "zod";
 
 import { toDecimalString } from "@archant/data/money";
+import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
 import { TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
-import { getTransactionsInput, groupTransactionsInput } from "../schemas/assistants.ts";
-import { findTransactions, groupTransactionsByLabel } from "../services/transactions.ts";
-import { BANK_TEXT, READ_ONLY, defineTool } from "./tool.ts";
-
-const decimal = (what: string) =>
-	z.string().describe(`${what}, a decimal string such as "-12.50" in the currency beside it.`);
+import {
+	getTransactionsInput,
+	groupTransactionsInput,
+	transactionIdInput,
+} from "../schemas/assistants.ts";
+import {
+	findTransactions,
+	getTransaction,
+	groupTransactionsByLabel,
+} from "../services/transactions.ts";
+import { BANK_TEXT, READ_ONLY, decimal, defineTool } from "./tool.ts";
 
 const transaction = z.object({
 	id: z.string(),
@@ -28,6 +36,28 @@ const transaction = z.object({
 		.describe("The transfer it is a side of, with the other side's account; null for none."),
 	pending: z.boolean().describe("Not booked by the bank yet."),
 });
+
+/** A transaction as get_transactions lists it. */
+function itemOf(item: TransactionRecord): z.input<typeof transaction> {
+	return {
+		id: item.id,
+		date: item.date,
+		label: item.label,
+		amount: toDecimalString(item),
+		currency: item.currency,
+		accountId: item.accountId,
+		categoryId: item.categoryId,
+		merchantId: item.merchantId,
+		tagIds: item.tagIds,
+		notes: item.notes,
+		excluded: item.excluded,
+		transfer:
+			item.transfer === null
+				? null
+				: { kind: item.transfer.kind, counterpartAccountId: item.transfer.counterpartAccountId },
+		pending: item.pending,
+	};
+}
 
 export const getTransactions = defineTool({
 	name: "get_transactions",
@@ -51,27 +81,7 @@ export const getTransactions = defineTool({
 
 		return {
 			result: {
-				items: found.items.map((item) => ({
-					id: item.id,
-					date: item.date,
-					label: item.label,
-					amount: toDecimalString(item),
-					currency: item.currency,
-					accountId: item.accountId,
-					categoryId: item.categoryId,
-					merchantId: item.merchantId,
-					tagIds: item.tagIds,
-					notes: item.notes,
-					excluded: item.excluded,
-					transfer:
-						item.transfer === null
-							? null
-							: {
-									kind: item.transfer.kind,
-									counterpartAccountId: item.transfer.counterpartAccountId,
-								},
-					pending: item.pending,
-				})),
+				items: found.items.map(itemOf),
 				page: found.page,
 				pageSize: found.pageSize,
 				total: found.total,
@@ -119,6 +129,60 @@ export const groupTransactionLabels = defineTool({
 					categoryIds: group.categoryIds,
 				})),
 				groupCount,
+			},
+			changedRows: 0,
+		};
+	},
+});
+
+const source = z
+	.discriminatedUnion("kind", [
+		z.object({ kind: z.literal("manual") }),
+		z.object({
+			kind: z.literal("import"),
+			// A string, not the enum: only the ledger imports the imports table (AD-2).
+			format: z.string().describe('The file\'s format: "ofx", "csv" or "qif".'),
+			date: z.string().describe("The day the file was imported."),
+		}),
+		z.object({ kind: z.literal("bank"), connector: z.enum(BANK_CONNECTOR_IDS) }),
+	])
+	.describe("Typed by hand, brought by a file, or synced from a bank.");
+
+export const getTransactionTool = defineTool({
+	name: "get_transaction",
+	title: "Transaction",
+	description: `One transaction in full, as its sheet shows it: get_transactions' fields, its reference, the other side of its transfer with that account's name, and where it came from. ${BANK_TEXT}`,
+	scope: "archant:read",
+	annotations: READ_ONLY,
+	input: transactionIdInput,
+	output: transaction.extend({
+		reference: z.string().nullable().describe("A cheque or QIF number from the file it came in."),
+		transfer: z
+			.object({
+				kind: z.enum(TRANSFER_KINDS),
+				counterpartAccountId: z.string(),
+				counterpartAccountName: z.string(),
+			})
+			.nullable()
+			.describe("The transfer it is a side of, with the other side's account; null for none."),
+		source,
+	}),
+	run: async (deps, input) => {
+		const item = await getTransaction(deps, input.id);
+
+		return {
+			result: {
+				...itemOf(item),
+				reference: item.reference,
+				transfer:
+					item.transfer === null
+						? null
+						: {
+								kind: item.transfer.kind,
+								counterpartAccountId: item.transfer.counterpartAccountId,
+								counterpartAccountName: item.transfer.counterpartAccountName,
+							},
+				source: item.source,
 			},
 			changedRows: 0,
 		};

@@ -515,6 +515,75 @@ describe("listRecurring", () => {
 	});
 });
 
+/** Five series on one account, each with its own status and next date. */
+async function fiveSeries() {
+	const accountId = await account();
+	await addRows(accountId, ["2026-06-24", "2026-07-24", "2026-08-24"], "SOON", -1000);
+	await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "LATER", -2000);
+	await addRows(accountId, ["2026-07-15", "2026-08-15", "2026-09-15"], "OVERDUE", -3000);
+	await addRows(accountId, ["2026-06-25", "2026-07-25", "2026-08-25"], "STOPPED", -4000);
+	await addRows(accountId, ["2026-06-26", "2026-07-26", "2026-08-26"], "GONE", -5000);
+	await detectRecurring(deps());
+	const idOf = new Map((await stored()).map((row) => [row.label, row.id]));
+	await setStatus(idOf.get("LATER")!, "confirmed");
+	await setStatus(idOf.get("STOPPED")!, "inactive");
+	await setStatus(idOf.get("GONE")!, "dismissed");
+	// Overdue since the 15th, as when the bank has not taken that month's bill yet.
+	await temp.db
+		.update(recurringTransactions)
+		.set({ nextExpectedDate: "2026-09-15" })
+		.where(eq(recurringTransactions.id, idOf.get("OVERDUE")!));
+}
+
+const labelsOf = (filter: Parameters<typeof listRecurring>[1]) =>
+	listRecurring(deps(), filter).then((rows) => rows.map((row) => row.label));
+
+describe("listRecurring with a filter", () => {
+	it("keeps detected and confirmed series for current, inactive ones for inactive, both for all", async () => {
+		await fiveSeries();
+
+		await expect(labelsOf({ status: "current" })).resolves.toEqual(["OVERDUE", "SOON", "LATER"]);
+		await expect(labelsOf({ status: "inactive" })).resolves.toEqual(["STOPPED"]);
+		await expect(labelsOf({ status: "all" })).resolves.toEqual([
+			"OVERDUE",
+			"SOON",
+			"LATER",
+			"STOPPED",
+		]);
+		// The page's call, without a filter, is the same list as all.
+		await expect(labelsOf(undefined)).resolves.toEqual(await labelsOf({ status: "all" }));
+	});
+
+	it("keeps the next dates from today to today plus the days, overdue ones out", async () => {
+		await fiveSeries();
+		const nextOf = new Map((await stored()).map((row) => [row.label, row.nextExpectedDate]));
+
+		// Today is 2026-09-21: SOON is due in 3 days, LATER in 19, OVERDUE was due a week ago.
+		expect(nextOf.get("SOON")).toBe("2026-09-24");
+		expect(nextOf.get("LATER")).toBe("2026-10-10");
+		expect(nextOf.get("OVERDUE")).toBe("2026-09-15");
+		await expect(labelsOf({ status: "current", withinDays: 7 })).resolves.toEqual(["SOON"]);
+		await expect(labelsOf({ status: "current", withinDays: 3 })).resolves.toEqual(["SOON"]);
+		await expect(labelsOf({ status: "current", withinDays: 2 })).resolves.toEqual([]);
+		await expect(labelsOf({ status: "all", withinDays: 19 })).resolves.toEqual([
+			"SOON",
+			"LATER",
+			"STOPPED",
+		]);
+		await expect(labelsOf({ status: "inactive", withinDays: 7 })).resolves.toEqual(["STOPPED"]);
+	});
+
+	it("keeps a series due today in the window", async () => {
+		await fiveSeries();
+		await temp.db
+			.update(recurringTransactions)
+			.set({ nextExpectedDate: "2026-09-21" })
+			.where(eq(recurringTransactions.label, "SOON"));
+
+		await expect(labelsOf({ status: "current", withinDays: 1 })).resolves.toEqual(["SOON"]);
+	});
+});
+
 describe("setRecurringStatus", () => {
 	it("confirms a detected or inactive pattern", async () => {
 		const accountId = await account();

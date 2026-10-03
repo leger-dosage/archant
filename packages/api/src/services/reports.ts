@@ -1,5 +1,5 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
-import type { BalanceChange } from "../domain/balances/history.ts";
+import type { BalanceChange, SampledSeries } from "../domain/balances/history.ts";
 import type { CashFlowLine } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
@@ -14,10 +14,10 @@ import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import type { Account } from "@archant/data/types";
 
-import { balanceChange, periodRange } from "../domain/balances/history.ts";
+import { balanceChange, periodRange, sampleSeries } from "../domain/balances/history.ts";
 import { cashFlowBreakdown } from "../domain/cash-flow.ts";
 import { monthRange, today } from "../domain/dates.ts";
-import { netWorthSeries } from "../domain/net-worth.ts";
+import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
 import { cashFlowByCategory } from "./ledger/queries.ts";
@@ -74,11 +74,13 @@ async function reportedAccounts(deps: ServiceDeps) {
 }
 
 /**
- * The household's net worth over a period ending today, over the accounts of
- * `reportedAccounts`. Today's set counts for every day, since an account keeps
- * no deactivation date, so the headline always equals the last point.
+ * Every counted account's daily balances over a period ending today, over
+ * the accounts of `reportedAccounts`. Today's set counts for every day, since
+ * an account keeps no deactivation date, so a headline always equals the
+ * last point. Shared by the dashboard's net worth and the assistant's balance
+ * sheet, so the two never disagree.
  */
-export async function getNetWorth(deps: ServiceDeps, period: BalancePeriod): Promise<NetWorth> {
+async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
 	const to = today(deps.timeZone);
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
 
@@ -97,21 +99,58 @@ export async function getNetWorth(deps: ServiceDeps, period: BalancePeriod): Pro
 						points: await balancesBetween(deps, row.id, range.from, range.to),
 					})),
 				);
-	const points = netWorthSeries(series);
 	const assets = totalOf(series, "asset");
 	const liabilities = totalOf(series, "liability");
 
 	return {
-		period,
 		from: range?.from ?? null,
 		to,
 		currency,
+		series,
 		netWorth: toMinorUnits(assets - liabilities),
 		assets,
 		liabilities,
-		points,
-		change: balanceChange(points),
 		leftOut,
+	};
+}
+
+/** The household's net worth over a period ending today, as the dashboard charts it. */
+export async function getNetWorth(deps: ServiceDeps, period: BalancePeriod): Promise<NetWorth> {
+	const { series, ...totals } = await countedSeries(deps, period);
+	const points = netWorthSeries(series);
+
+	return { period, ...totals, points, change: balanceChange(points) };
+}
+
+type BalanceSheet = Omit<NetWorth, "points"> & {
+	/** Net worth, assets and liabilities (positive), sampled by `sampleSeries`. */
+	series: { netWorth: SampledSeries; assets: SampledSeries; liabilities: SampledSeries };
+};
+
+/**
+ * `getNetWorth`'s figures with the assets' and liabilities' series beside the
+ * net worth's, as Sure's balance sheet tool gives them, each sampled so ten
+ * years stay about 120 points. The change is the daily series', the
+ * dashboard's.
+ */
+export async function getBalanceSheet(
+	deps: ServiceDeps,
+	period: BalancePeriod,
+): Promise<BalanceSheet> {
+	const { series, ...totals } = await countedSeries(deps, period);
+	const points = netWorthSeries(series);
+	const netWorth = sampleSeries(points);
+
+	return {
+		period,
+		...totals,
+		change: balanceChange(points),
+		// At net worth's interval, so the three series line up point for point.
+		series: {
+			netWorth,
+			assets: sampleSeries(classificationSeries(series, "asset"), netWorth.interval),
+			liabilities: sampleSeries(classificationSeries(series, "liability"), netWorth.interval),
+		},
 	};
 }
 
@@ -125,6 +164,8 @@ export type CashFlow = {
 	income: MinorUnits;
 	expenses: MinorUnits;
 	lines: { income: CashFlowLine[]; expense: CashFlowLine[] };
+	/** Active accounts included in reports but held in another currency, by name. */
+	leftOut: LeftOutAccount[];
 };
 
 /**
@@ -136,7 +177,7 @@ export type CashFlow = {
  */
 export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<CashFlow> {
 	const { from, to } = monthRange(month);
-	const { currency, counted } = await reportedAccounts(deps);
+	const { currency, counted, leftOut } = await reportedAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByCategory(deps, { from, to, accountIds: counted.map((row) => row.id) }),
 		deps.db
@@ -151,5 +192,5 @@ export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<C
 			.from(categories),
 	]);
 
-	return { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories) };
+	return { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories), leftOut };
 }

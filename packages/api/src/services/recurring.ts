@@ -1,7 +1,8 @@
 import type { IsoDate } from "../domain/dates.ts";
+import type { RecurringView } from "../schemas/recurring.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, between, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -12,7 +13,7 @@ import type { RecurringStatus } from "@archant/data/schema/recurring-transaction
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { direction } from "../domain/cash-flow.ts";
-import { addMonths, today } from "../domain/dates.ts";
+import { addDays, addMonths, today } from "../domain/dates.ts";
 import {
 	MANUAL_LOOKBACK_MONTHS,
 	currentNextDate,
@@ -288,14 +289,43 @@ async function getRecord(db: Pick<ServiceDeps["db"], "select">, id: string) {
 	return toRecord(row);
 }
 
+type RecurringFilter = {
+	status: RecurringView;
+	/** Keeps the series expected from today to today plus this many days, overdue ones out. */
+	withinDays?: number | undefined;
+};
+
+const VIEW_STATUSES: Record<RecurringView, readonly RecurringStatus[]> = {
+	current: ["detected", "confirmed"],
+	inactive: ["inactive"],
+	all: ["detected", "confirmed", "inactive"],
+};
+
 /**
  * Every pattern but the dismissed ones, current before inactive, each by next
  * expected date as Sure orders them. The whole set, not a page: a household
- * has a few dozen at most.
+ * has a few dozen at most. `filter` narrows it by status and, as Sure's
+ * `upcoming_within_days`, by next date; the page passes none.
  */
-export async function listRecurring(deps: ServiceDeps): Promise<RecurringRecord[]> {
+export async function listRecurring(
+	deps: ServiceDeps,
+	filter?: RecurringFilter,
+): Promise<RecurringRecord[]> {
+	const from = today(deps.timeZone);
+	const window =
+		filter?.withinDays === undefined
+			? undefined
+			: between(recurringTransactions.nextExpectedDate, from, addDays(from, filter.withinDays));
 	const rows = await selectRecords(deps.db)
-		.where(ne(recurringTransactions.status, "dismissed"))
+		.where(
+			and(
+				ne(recurringTransactions.status, "dismissed"),
+				filter === undefined
+					? undefined
+					: inArray(recurringTransactions.status, [...VIEW_STATUSES[filter.status]]),
+				window,
+			),
+		)
 		.orderBy(
 			sql`case when ${recurringTransactions.status} = 'inactive' then 1 else 0 end`,
 			asc(recurringTransactions.nextExpectedDate),

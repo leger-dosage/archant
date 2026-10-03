@@ -86,3 +86,58 @@ export function fillDays(
 
 	return points;
 }
+
+export const SERIES_INTERVALS = ["day", "week", "month"] as const;
+
+type SeriesInterval = (typeof SERIES_INTERVALS)[number];
+
+export type SampledSeries = { interval: SeriesInterval; points: DailyBalance[] };
+
+/** The Monday starting `date`'s week, as ISO 8601 counts weeks. */
+function weekOf(date: IsoDate): IsoDate {
+	const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+
+	return addDays(date, -((weekday + 6) % 7));
+}
+
+/**
+ * Sure's `Period#interval`: every day up to a calendar year from the first
+ * point to the last, every week beyond, every month beyond five years.
+ */
+function intervalOf(points: readonly DailyBalance[]): SeriesInterval {
+	const first = points.at(0);
+	const last = points.at(-1);
+
+	if (first === undefined || last === undefined || last.date <= addMonths(first.date, 12)) {
+		return "day";
+	}
+
+	return last.date <= addMonths(first.date, 60) ? "week" : "month";
+}
+
+/**
+ * A daily series thinned as Sure's `Period#interval` does, or at `interval`
+ * when given, so series charted together share one. Each week or month keeps
+ * its last day, so the last point stays the last day, today, and still equals
+ * the headline figure. Ten years of days become about 120 points, a size an
+ * assistant reads without spending its context on it.
+ */
+export function sampleSeries(
+	points: readonly DailyBalance[],
+	interval: SeriesInterval = intervalOf(points),
+): SampledSeries {
+	if (interval === "day") {
+		return { interval, points: [...points] };
+	}
+
+	const bucketOf = interval === "week" ? weekOf : (date: IsoDate) => date.slice(0, 7);
+	const lastOfBucket = new Map<string, DailyBalance>();
+
+	// Points are oldest first, so each bucket ends holding its latest one, and
+	// a Map keeps the buckets in the order they first appear.
+	for (const point of points) {
+		lastOfBucket.set(bucketOf(point.date), point);
+	}
+
+	return { interval, points: [...lastOfBucket.values()] };
+}
