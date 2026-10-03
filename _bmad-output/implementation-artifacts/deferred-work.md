@@ -307,3 +307,12 @@
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 5, transfer matching)
   summary: Transfer matching pairs unrelated lines of the same amount: two outflows of the same sign, a card purchase with a refund from another merchant, a card payment with a friend's transfer.
   evidence: Seen on the owner's instance on 2026-10-03: BoursoBank sent three `immediat_debit` card accounts whose lines copy the checking account's card payments, and 8 pairs formed, among them « LA POSTE.FR » −5.49 on the checking account paired as `credit_card_payment` with its own copy −5.49 on a card account, « DECATHLON » −29.99 paired with « AVOIR VERTBAUDET » +29.99, and « BOULANGERIE MADE » −5.00 with a +5.00 transfer from a person. Check the sign test of `domain/transfer-matching.ts` for liability accounts, and compare Sure's matcher, which also weighs the label, before trusting an amount and a date alone.
+- source_spec: `_bmad-output/implementation-artifacts/spec-hide-inactive-account-transactions.md`
+  summary: Decide whether rules apply to lines a file import or a manual entry creates on a deactivated account, now that applying rules to history leaves those rows out.
+  evidence: `ingest` in `services/ledger/ingest.ts` runs the enabled rules on every created line whatever the account's state; syncs skip deactivated accounts, so only an import or a manual entry reaches it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-hide-inactive-account-transactions.md`
+  summary: A deactivated account kept in `/transactions` filters by an old link now lists nothing without saying why.
+  evidence: `TransactionFilters.tsx` keeps the chip of an inactive account in `?account=`; Sure lists nothing either. Dropping the chip or a sentence would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-hide-inactive-account-transactions.md`
+  summary: Assert the query plan of `/api/transactions?account=<one>` with the active-account predicate.
+  evidence: maybe-false, medium if true: one named account drops the `+` hint and now meets a second `in` on `account_id`; a case in `history-volume.spec.ts` would settle it.

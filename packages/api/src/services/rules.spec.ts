@@ -538,7 +538,7 @@ async function laterRule(input: RuleInput) {
 
 /** The rows of `ids`, in that order. */
 async function candidatesOf(ids: readonly string[]) {
-	const rows = await ruleCandidates(temp.db, null);
+	const rows = await ruleCandidates(temp.db, null, { activeAccountsOnly: true });
 
 	return ids.map((id) => rows.find((row) => row.id === id));
 }

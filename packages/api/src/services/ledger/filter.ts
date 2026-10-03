@@ -18,6 +18,7 @@ import {
 	sql,
 } from "drizzle-orm";
 
+import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 import { taggings } from "@archant/data/schema/taggings";
 import { transactions } from "@archant/data/schema/transactions";
@@ -33,6 +34,12 @@ import { asInflow, asOutflow, notSplitParent } from "./shared.ts";
  */
 export type TransactionFilter = {
 	accountIds?: readonly string[] | undefined;
+	/**
+	 * Also match rows of deactivated accounts. Only an account's own page sets
+	 * it: everywhere else, as Sure's `Entry.visible`, an inactive account's rows
+	 * are hidden, even when the filter names that account.
+	 */
+	includeInactiveAccounts?: boolean | undefined;
 	/** Inclusive. */
 	from?: IsoDate | undefined;
 	/** Inclusive. */
@@ -202,6 +209,9 @@ export function filterCondition(
 		eq(kind, "transaction"),
 		notSplitParent,
 		accountIds === undefined ? undefined : inArray(accountId, [...accountIds]),
+		filter.includeInactiveAccounts === true
+			? undefined
+			: sql`${accountId} in (select ${accounts.id} from ${accounts} where ${accounts.active} = 1)`,
 		filter.from === undefined ? undefined : gte(entries.date, filter.from),
 		filter.to === undefined ? undefined : lte(entries.date, filter.to),
 		amounts === undefined

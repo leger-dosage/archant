@@ -98,7 +98,14 @@ export const entries = sqliteTable(
 		// The list's totals group every transaction by currency and add up its
 		// amounts. Covering, so the sum reads this index alone and never the
 		// table: with 100,000 transactions the first page and its totals answer
-		// in under 150 ms.
-		index("entries_kind_currency_amount").on(table.kind, table.currency, table.amount, table.id),
+		// in under 150 ms. `account_id` keeps it covering once a deactivated
+		// account's rows are left out, as Sure's `Entry.visible`.
+		index("entries_kind_currency_amount").on(
+			table.kind,
+			table.currency,
+			table.amount,
+			table.id,
+			table.accountId,
+		),
 	],
 );

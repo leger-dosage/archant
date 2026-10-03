@@ -32,6 +32,7 @@ import {
 	transferRows,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
+import { updateAccount } from "../accounts.ts";
 import { updateTransaction } from "./edits.ts";
 import { ingest } from "./ingest.ts";
 import { findTransaction } from "./queries.ts";
@@ -234,8 +235,14 @@ describe("applyRulePlan", () => {
 
 // Story 8.3: applying rules to history reads every transaction as a rule does.
 
-const candidatesOf = async (ids: readonly string[], from: string | null = null) =>
-	(await ruleCandidates(temp.db, from)).filter((candidate) => ids.includes(candidate.id));
+const candidatesOf = async (
+	ids: readonly string[],
+	from: string | null = null,
+	activeAccountsOnly = true,
+) =>
+	(await ruleCandidates(temp.db, from, { activeAccountsOnly })).filter((candidate) =>
+		ids.includes(candidate.id),
+	);
 
 describe("ruleCandidates", () => {
 	it("reads what a rule reads and writes, locks and the transfer kind included", async () => {
@@ -296,7 +303,7 @@ describe("ruleCandidates", () => {
 		const id = await add(account.id);
 		await snapshot(account.id, "2026-09-15", 1000);
 
-		const own = (await ruleCandidates(temp.db, null)).filter(
+		const own = (await ruleCandidates(temp.db, null, { activeAccountsOnly: true })).filter(
 			(candidate) => candidate.accountId === account.id,
 		);
 
@@ -307,12 +314,28 @@ describe("ruleCandidates", () => {
 		const account = await openChecking();
 		const { parent, food, home } = await splitInTwo(account.id);
 
-		const own = (await ruleCandidates(temp.db, null)).filter(
+		const own = (await ruleCandidates(temp.db, null, { activeAccountsOnly: true })).filter(
 			(candidate) => candidate.accountId === account.id,
 		);
 
 		expect(own.map((candidate) => candidate.id).toSorted()).toEqual([food, home].toSorted());
 		await expect(lockedFields(parent)).resolves.toContain("excluded");
+	});
+
+	it("leaves out a deactivated account's rows, as Sure's rules read only visible ones", async () => {
+		const active = await openChecking();
+		const inactive = await openChecking({ name: "Carte" });
+		const kept = await add(active.id);
+		const hidden = await add(inactive.id);
+		await updateAccount(deps(), inactive.id, { active: false });
+
+		const read = await candidatesOf([kept, hidden]);
+		const everyAccount = await candidatesOf([kept, hidden], null, false);
+
+		expect(read.map((candidate) => candidate.id)).toEqual([kept]);
+		expect(everyAccount.map((candidate) => candidate.id).toSorted()).toEqual(
+			[kept, hidden].toSorted(),
+		);
 	});
 
 	it("reads the tags of more rows than one lookup holds", async () => {

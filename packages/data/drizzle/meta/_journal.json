@@ -379,6 +379,13 @@
       "when": 1791106689848,
       "tag": "0053_add_trade_income",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1791139100304,
+      "tag": "0054_entries_totals_index_account",
+      "breakpoints": true
     }
   ]
 }

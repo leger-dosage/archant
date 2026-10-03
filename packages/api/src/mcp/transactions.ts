@@ -68,7 +68,7 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 export const getTransactions = defineTool({
 	name: "get_transactions",
 	title: "Transactions",
-	description: `A page of every account's transactions matching the filter, most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skippedCount. ${BANK_TEXT}`,
+	description: `A page of the transactions of every active account matching the filter; a deactivated account's are left out even when named, as in Archant's list; most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skippedCount. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getTransactionsInput,
@@ -104,7 +104,7 @@ export const getTransactions = defineTool({
 export const groupTransactionLabels = defineTool({
 	name: "group_transactions_by_label",
 	title: "Transactions grouped by label",
-	description: `Every transaction matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category ["none"] keeps the uncategorised ones. ${BANK_TEXT}`,
+	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category ["none"] keeps the uncategorised ones. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: groupTransactionsInput,
@@ -215,7 +215,7 @@ export const updateTransactionTool = defineTool({
 export const bulkUpdateTransactionsTool = defineTool({
 	name: "bulk_update_transactions",
 	title: "Classify transactions in bulk",
-	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction a filter matches. With a filter, first call get_transactions with it, show the owner its total and pass that total as expectedCount: when the filter matches another count now, nothing is written and it answers BULK_COUNT_STALE with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
+	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total and pass that total as expectedCount: when the filter matches another count now, nothing is written and it answers BULK_COUNT_STALE with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: bulkUpdateTransactionsInput,

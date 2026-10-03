@@ -33,6 +33,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
+import { updateAccount } from "../accounts.ts";
 import { updateTransaction } from "./edits.ts";
 import {
 	cashFlowByCategory,
@@ -760,5 +761,44 @@ describe("oldestEntryDate", () => {
 		await openChecking({ name: "Ancien compte", openingDate: "2003-04-05" });
 
 		await expect(oldestEntryDate(deps())).resolves.toBe("2003-04-05");
+	});
+});
+
+// As Sure's `Entry.visible`: a deactivated account's rows are hidden from the
+// list, its count and sums, and the label groups, even when the filter names
+// the account; only the account's own page asks for them.
+
+describe("transactions of a deactivated account", () => {
+	it("are hidden everywhere a filter reads, even when the account is named", async () => {
+		const { joint, card, accountIds } = await openPair();
+		const label = `Doublon ${crypto.randomUUID()}`;
+		await add(joint.id, { label, amount: toMinorUnits(-549) });
+		await add(card.id, { label, amount: toMinorUnits(-549) });
+		await updateAccount(deps(), card.id, { active: false });
+
+		const page = await listTransactions(deps(), { accountIds, q: label }, firstPage);
+		const named = await listTransactions(deps(), { accountIds: [card.id] }, firstPage);
+		const sums = await sumTransactions(deps(), { accountIds, q: label });
+		const groups = await sumTransactionsByLabel(deps(), { accountIds, q: label });
+
+		expect(page.items.map((item) => item.accountId)).toEqual([joint.id]);
+		expect(page.total).toBe(1);
+		expect(named).toEqual({ items: [], total: 0 });
+		expect(sums).toEqual([expect.objectContaining({ count: 1 })]);
+		expect(groups).toEqual([expect.objectContaining({ count: 1, amount: -549 })]);
+	});
+
+	it("are listed on the account's own page", async () => {
+		const { card } = await openPair();
+		await add(card.id, { label: "Copie" });
+		await updateAccount(deps(), card.id, { active: false });
+
+		const page = await listTransactions(
+			deps(),
+			{ accountIds: [card.id], includeInactiveAccounts: true },
+			firstPage,
+		);
+
+		expect(labelsOf(page)).toEqual(["Copie"]);
 	});
 });

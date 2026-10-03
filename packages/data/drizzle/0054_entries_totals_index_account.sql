@@ -1,0 +1,2 @@
+DROP INDEX `entries_kind_currency_amount`;--> statement-breakpoint
+CREATE INDEX `entries_kind_currency_amount` ON `entries` (`kind`,`currency`,`amount`,`id`,`account_id`);

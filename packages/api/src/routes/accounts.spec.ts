@@ -1274,16 +1274,20 @@ describe("GET /api/accounts with inactive and excluded accounts", () => {
 		expect((await listOwnAccounts(client)).groups[0]?.total).toBe(123456);
 	});
 
-	it("keeps a deactivated account's transactions in the cross-account list", async () => {
+	// As Sure's `Entry.visible`: the cross-account list hides a deactivated
+	// account's rows even when it names the account; its own page keeps them.
+	it("hides a deactivated account's transactions from the cross-account list only", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 
 		await patchAccount(account.id, { active: false });
 
 		const { body } = await request("GET", `/api/transactions?account=${account.id}`);
-		expect(listBody.parse(body).data.items).toEqual([
-			expect.objectContaining({ accountId: account.id, label: "Boulangerie" }),
-		]);
+		expect(listBody.parse(body).data.items).toEqual([]);
+		const page = await request("GET", `/api/accounts/${account.id}/transactions`);
+		expect(page.body).toMatchObject({
+			data: { items: [{ accountId: account.id, label: "Boulangerie" }], total: 1 },
+		});
 	});
 });
 

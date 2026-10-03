@@ -117,7 +117,9 @@ export async function detectRecurring(deps: ServiceDeps): Promise<DetectionResul
 
 	return deps.db.transaction(
 		async (tx) => {
-			const candidates = await ruleCandidates(tx, addMonths(day, -MANUAL_LOOKBACK_MONTHS));
+			const candidates = await ruleCandidates(tx, addMonths(day, -MANUAL_LOOKBACK_MONTHS), {
+				activeAccountsOnly: false,
+			});
 			const loaded = await tx
 				.select({
 					id: recurringTransactions.id,
