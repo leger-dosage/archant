@@ -220,3 +220,41 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-16-2-ask-an-assistant-to-write-my-rules.md`
   summary: Fix the race in `packages/app/e2e/bank-connections.spec.ts` where the connection page's heading stays « Banques » after a bank's callback.
   evidence: The trace shows `GET /api/bank-connections` starting 7 ms after `POST /api/bank-connections/callback` and returning without the new connection, which is never fetched again; the file failed on commit 94f652c too (2 of 37 in one of three runs), and on this branch 1 of 37 in three of six runs.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: A loan's bank debits should move its balance by themselves, each payment carrying its principal, interest and borrower insurance, instead of the balance following snapshots and payments paired by hand.
+  evidence: Explored on 2026-10-03 while planning Epic 23. Today Archant pairs a loan payment only with a counterpart that already exists on the loan account (Epic 5, Story 7.1), so a mortgage debited from a checking account leaves the loan balance unchanged until a snapshot; Epic 19 refuses to split a transfer side (`NOT_SPLITTABLE`), so a payment cannot carry its interest and insurance. Sure computes a contract schedule, a payoff projection and borrower insurance since #3327 and #3474 (`app/models/loan.rb`, `loan/simulator.rb`, `loan/payoff_projection.rb`, `loan/insurance.rb`), but no bank debit moves its loan balance or is split either. References: Wealthfolio PR #1868, a pure schedule engine fed by stored loan parameters plus dated events, where a confirmed balance overrides the estimate; beanschedule's stateful mode, which splits an imported bank debit into principal, interest and fees from the loan's actual balance; GnuCash's loan assistant for the fields a loan needs (amount, rate, term, start date, payment frequency, the accounts paid from and to, and the escrow or insurance parts of a payment). Decide where the schedule lives against AD-8 and AD-11 and whether a split of a transfer side is allowed before any story.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Port Sure's loan overview: down payment, start date, borrower insurance, amortisation schedule, payoff projection and the chart of the contract schedule beside the recorded balance.
+  evidence: Sure #3327 (2026-09-30) and #3474 (2026-09-27). Story 7.1 keeps original amount, rate in basis points and end date only, and the Loan row of `docs/sure-parity.md` records no decision on the rest. It is the read-only half of the loan entry above; plan the two together.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Accept Enable Banking's booked balance types `OPBD` and `PRCD` after `CLBD`, used only when no other balance has a newer `reference_date`.
+  evidence: Sure #3739 (2026-09-27). `BALANCE_TYPES = ["ITBD", "CLBD"]` in `packages/api/src/connectors/enable-banking/client.ts`; a bank that sends only `OPBD` or `PRCD` fails every sync with `BANK_BALANCE_UNAVAILABLE`. Both are booked balances, so AD-18's reason holds; amend AD-18 with the change.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Ask for a new consent as soon as Enable Banking rejects a session with 401 or 404 before its stored expiry.
+  evidence: Sure #3854 (2026-09-29). `connectionAlert` in `packages/api/src/domain/bank-connection-alert.ts` knows only a local expiry, an expiry within 14 days and a sync older than 48 hours, so a consent revoked at the bank shows as `BANK_PROVIDER_ERROR` failures for two days before « Renouveler » appears.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Accept each TOTP code once, by storing the last accepted time step and claiming it with a conditional update.
+  evidence: Sure #3830 (2026-09-29). Better Auth's `verifyTOTP` keeps no used step, so a code read over a shoulder or relayed by a phishing page works again within its window, the password still required. Do it through a Better Auth hook on `/two-factor/verify-totp` or upstream, never by hand (AD-13, NFR6); until then `docs/security-model.md` should name the limit.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: The bills calendar: a month grid of due dates, and an iCal feed a phone calendar subscribes to.
+  evidence: Sure #3202 (`bills/calendar.html.erb`, `bills_feeds_controller.rb`). Left out of Epic 23 to keep it buildable: the grid repeats the bills list. The feed is served at a secret URL without a session, which AD-13's list of unguarded routes does not allow, and the owner's instance is reachable only through Tailscale; it needs its own AD.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: Sure's income plan: declared paydays slice time, and each bill is funded from the paycheck before it, with cash on hand for the days before the next payday.
+  evidence: Sure `recurring_transaction/paycheck_planner.rb` and `get_paycheck_plan`. It rests on declared income series, which Story 23.2 brings, and on cash on hand, which Epics 17 and 21 left out; Sure reworked it in #3879, #3917 and #3928 within two days, so wait until it settles.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: Subscription dates on a bill (trial end, renewal, cancellation) and the notices they raise on the bills page and in `get_bill_audit`.
+  evidence: Sure's `renews_on`, `trial_ends_on` and `cancelled_on` (#3201), shown by `bills/_state_chips.html.erb` and `BillsController#collect_notices`. Left out of Epic 23 to keep it buildable; nothing in matching or detection reads them.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: Recurring transfers between two of the household's accounts, such as a standing order to a savings account, declared from a matched transfer.
+  evidence: Sure's `RecurringTransaction.create_from_transfer` and `destination_account_id`; its bills page lists only those into a card or a loan. Archant already treats loan payments and contributions as series (Spec 9.1, AD-9); Sure's own matching of recurring transfers is an open issue (#1590).
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
+  summary: A transaction picker with search in the declare-a-bill dialog, and applying a payment link to the other series of the same merchant.
+  evidence: Sure's `recurring_transactions#new` with `picker` and `apply_payment_url_to_siblings`. Story 23.2 reaches any transaction through the sheet's « Créer une facture » instead.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Story 22.1's spec should send Yahoo price requests without cookie or crumb, retry with authentication on 401, and copy Sure's exchange suffixes for European venues.
+  evidence: Sure #3795 and #3769 (2026-09-28), which ended persistent 429 answers and priced XETRA and Euronext listings.
+  planned: Story 22.1 in `_bmad-output/planning-artifacts/epics.md`.
+- source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23, Sure review)
+  summary: Story 18.1's schema test should follow Sure's import preflight as of #3671, where a dangling `merchant_id` is a warning, and Sure's import now reuses categories, tags and merchants by name.
+  evidence: Sure #3671 and #3725 (2026-09-25).
+  planned: Story 18.1 in `_bmad-output/planning-artifacts/epics.md`.
