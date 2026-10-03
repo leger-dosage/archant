@@ -26,6 +26,7 @@ import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settin
 import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.settings.assistants'
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
 import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.settings.categories'
+import { Route as AuthedSettingsDataRouteImport } from './routes/_authed.settings.data'
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
@@ -120,6 +121,11 @@ const AuthedSettingsCategoriesRoute =
     path: '/categories',
     getParentRoute: () => AuthedSettingsRoute,
   } as any)
+const AuthedSettingsDataRoute = AuthedSettingsDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => AuthedSettingsRoute,
+} as any)
 const AuthedSettingsMerchantsRoute = AuthedSettingsMerchantsRouteImport.update({
   id: '/merchants',
   path: '/merchants',
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/settings/data': typeof AuthedSettingsDataRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/settings/data': typeof AuthedSettingsDataRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/_authed/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
+  '/_authed/settings/data': typeof AuthedSettingsDataRoute
   '/_authed/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
+    | '/settings/data'
     | '/settings/merchants'
     | '/settings/security'
     | '/settings/tags'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
+    | '/settings/data'
     | '/settings/merchants'
     | '/settings/security'
     | '/settings/tags'
@@ -301,6 +312,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/assistants'
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
+    | '/_authed/settings/data'
     | '/_authed/settings/merchants'
     | '/_authed/settings/security'
     | '/_authed/settings/tags'
@@ -441,6 +453,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsCategoriesRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/settings/data': {
+      id: '/_authed/settings/data'
+      path: '/data'
+      fullPath: '/settings/data'
+      preLoaderRoute: typeof AuthedSettingsDataRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
     '/_authed/settings/merchants': {
       id: '/_authed/settings/merchants'
       path: '/merchants'
@@ -497,6 +516,7 @@ interface AuthedSettingsRouteChildren {
   AuthedSettingsAssistantsRoute: typeof AuthedSettingsAssistantsRoute
   AuthedSettingsBanksRoute: typeof AuthedSettingsBanksRoute
   AuthedSettingsCategoriesRoute: typeof AuthedSettingsCategoriesRoute
+  AuthedSettingsDataRoute: typeof AuthedSettingsDataRoute
   AuthedSettingsMerchantsRoute: typeof AuthedSettingsMerchantsRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsTagsRoute: typeof AuthedSettingsTagsRoute
@@ -509,6 +529,7 @@ const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
   AuthedSettingsAssistantsRoute: AuthedSettingsAssistantsRoute,
   AuthedSettingsBanksRoute: AuthedSettingsBanksRoute,
   AuthedSettingsCategoriesRoute: AuthedSettingsCategoriesRoute,
+  AuthedSettingsDataRoute: AuthedSettingsDataRoute,
   AuthedSettingsMerchantsRoute: AuthedSettingsMerchantsRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsTagsRoute: AuthedSettingsTagsRoute,
