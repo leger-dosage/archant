@@ -91,8 +91,8 @@ FR39: Withdrawn. A categorisation provider interface with no provider behind it 
 
 #### Recurring transactions
 
-FR40: The system detects recurring transactions: same merchant or label, similar amount, regular interval, over the last months.
-FR41: The user sees recurring transactions with their expected next date and amount, and can confirm, dismiss or add one by hand.
+FR40: The system detects recurring transactions: same merchant or label, similar amount, regular interval, over the last months. Revised by Epic 23: amounts within 7.5 % of each other and every day within 2 of the expected day, as Sure since 31 August 2026 (FR84).
+FR41: The user sees recurring transactions with their expected next date and amount, and can confirm, dismiss or add one by hand. Revised by Epic 23: bills with schedules, due dates and payments (FR85 to FR89).
 
 #### Access
 
@@ -168,6 +168,16 @@ FR80: Archant knows securities by ISIN, ticker and venue, and fetches their dail
 FR81: The user records buys and sells on an investment account.
 FR82: An investment account's value is its cash plus its holdings, computed daily from trades and prices, and the user sees each position with its average cost and unrealised gain.
 FR83: The user records dividends and interest, and converts a transaction on an investment account into a trade.
+
+#### Bills
+
+FR84: The system detects recurring payments as Sure does: rows of one account, merchant or label and currency, amounts within 7.5 % of their cluster's mean, at least three of them, the latest within 45 days, every one within 2 days of the expected day; a detection is a suggestion until the user confirms it.
+FR85: The user confirms or dismisses a suggestion, pauses, resumes and deletes a series; a dismissed or deleted detected series is never suggested again, and a series with no payment for two of its own cycles becomes inactive.
+FR86: A series has a schedule: weekly, every two weeks, twice a month, monthly, quarterly, twice a year, yearly, or every N weeks, months or years; the user declares a bill or an income by hand or from a transaction, and edits its name, amount, account, type, category, schedule, number of payments, autopay, notes and payment link.
+FR87: An active series has dated occurrences; a transaction pays the occurrence it matches within its date window and amount tolerance, by itself when the match is sure and unambiguous, as a suggestion the user confirms or rejects otherwise; detection on demand and a confirmation rebuild six months of paid history.
+FR88: The user sees the bills page: overdue, due this month with paid ones in place, later and totals; marks an occurrence paid with or without a transaction, records a partial payment, skips, reopens or postpones it, and changes its amount; lists every bill with its monthly cost; and sees in the transaction list what is expected within ten days.
+FR89: The system records a series' new price when two consecutive payments agree on it, and the user sees each bill's payments and price changes over twelve months.
+FR90: An assistant reads bills, their payments and an audit of them, records a payment, and creates and edits a bill.
 
 ### NonFunctional Requirements
 
@@ -267,8 +277,8 @@ FR36: Epic 8 - Rule definition
 FR37: Epic 8 - Rules on new and existing transactions
 FR38: Epic 8 - Manual edits win over rules
 FR39: Withdrawn
-FR40: Epic 9 - Recurring detection
-FR41: Epic 9 - Recurring list and management
+FR40: Epic 9 - Recurring detection; Epic 23 - Sure's current detector
+FR41: Epic 9 - Recurring list and management; Epic 23 - Bills
 FR42: Epic 3 - First-launch administrator setup
 FR43: Epic 3 (sessions), Epic 10 (sync secret) - Route protection
 FR44: Epic 3 - User roles
@@ -311,8 +321,15 @@ FR80: Epic 22 - Securities and prices
 FR81: Epic 22 - Trades
 FR82: Epic 22 - Holdings and cash plus holdings
 FR83: Epic 22 - Dividends, interest, convert to trade
+FR84: Epic 23 - Detection as Sure does it today
+FR85: Epic 23 - Suggestions, pause, end, staleness
+FR86: Epic 23 - Schedules and bills declared by hand
+FR87: Epic 23 - Occurrences and payment matching
+FR88: Epic 23 - Bills page, occurrence actions, all bills, upcoming
+FR89: Epic 23 - Price changes and a bill's history
+FR90: Epic 23 - Bill tools for assistants
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41.
 
 ## Epic List
 
@@ -425,6 +442,11 @@ The owner saves toward targets funded by their accounts' balances and sees what 
 
 An investment account shows its positions, their average cost and their gain, valued from daily prices the owner allows Archant to fetch.
 **FRs covered:** FR80, FR81, FR82, FR83; NFR20; revises FR10
+
+### Epic 23: Bills and recurring payments
+
+Archant finds and follows recurring payments as Sure does today: amounts that move by a few cents or a price rise stay one series, each bill has a schedule and due dates, and the bank lines that pay them settle them, a few days late included, on a bills page that says what is overdue, due and paid.
+**FRs covered:** FR84, FR85, FR86, FR87, FR88, FR89, FR90; revises FR40, FR41
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -3990,3 +4012,323 @@ So that my account's history reads as my broker's.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 23: Bills and recurring payments
+
+On 2026-10-03 the owner found that a monthly mortgage debit is neither detected nor recounted: its label is constant once a rule renames it, but its amount moves by a few cents (571,29, 571,36, 571,22, 571,29) and its day between the 5th and the 10th (6 July, 10 August, 7 September, 5 October). Archant groups by exact amount and ports the identifier Sure had before 31 August 2026 (`sure-parity.md`, Recurring transactions). The owner asked for Sure's current recurring code, and for whichever of its bills features fit one household. Sure was read on `origin/main` at `14638a701` (2 October 2026).
+
+Sure replaced its identifier and added bills in three pull requests: #3201 (schema and domain, 31 August), #3202 (pages and calendar feed, 1 September) and #3203 (assistant tools, 1 September), followed by #3565 (investment accounts skipped, 15 September) and #3636 (custom repeat interval, 26 September); #2972 (16 August) had anchored the manual pass on the series' own amount. `app/models/recurring_transaction/identifier.rb` clusters a group's amounts within 7.5 % of the cluster's running mean and requires every day within 2 of the expected day; `schedule.rb` owns all date math through recurrence rules; `occurrence_generator.rb` materialises due dates; `matcher.rb` scores bank lines against open occurrences and `allocator.rb` writes payments; `history_backfiller.rb` rebuilds six months; `price_change_detector.rb` records new prices; `cleaner.rb` retires a series after two of its own cycles; `bills_controller.rb` and `recurring_occurrences_controller.rb` serve the pages.
+
+Sure's current identifier does not detect the owner's mortgage either: the expected day of 6, 10, 7 and 5 is the 7th, and the 10th is 3 days from it. Sure follows such a bill once it is declared: its matcher accepts a payment from 2 days early to 7 days late, within 7.5 % of the amount. Epic 23 ports both, so the mortgage is followed as Sure follows it, and records no departure on the day tolerance.
+
+Archant takes the identifier, the statuses, the schedules, bills declared by hand, occurrences, matching, history rebuilding, price changes, the bills page, the list of all bills, the « upcoming » tab and the assistant tools. Departures, each forced by a decision already taken:
+
+- Amounts are signed from the account's point of view (AD-5), so clustering sorts by Sure's sign, the negated amount, to form the same clusters; the 7.5 % test runs in integers, `1000 × |amount × n − sum| ≤ 75 × |sum|` (NFR1). An occurrence's expected amount and a payment's amount stay positive magnitudes in minor units, as Sure's.
+- One currency per account and no exchange rates (AD-6, NFR2): no `source_amount` or `source_currency` on a payment; totals leave out, and name, the series in another currency.
+- No family, no preview-feature gate and no switch that turns the feature off: Archant's only preference is the theme (`sure-parity.md`, Product-wide differences).
+- No job, no debounce, no advisory lock: detection, occurrence generation, matching and price changes run in that order, in one immediate transaction, after an import, a revert or a sync commits and from « Détecter » (NFR9, AD-1); the first signed-in request of the day generates the day's occurrences, as AD-18's daily sync, where Sure runs at 05:30 UTC.
+- No orphan repair: an entry's id never changes (AD-17), so `absorb` moves payments and rejections onto the survivor instead of Sure's `repair_orphans!`.
+- A loan payment or investment contribution outflow stays a candidate for detection and matching, where Sure skips every transfer kind (Spec 9.1, AD-9). Recurring transfers between two of the household's accounts wait (`sure-parity.md`).
+- Labels are compared normalised (Spec 9.1); Story 11.8's re-key and refresh, Spec 9.2's next date for a plain monthly series and its stale check at each detection stay, with Sure's amount and day tests inside them. Sure's Cleaner runs only from its button.
+- `paused` is not stored: Sure's own Pause button and its `update_bill` tool write `inactive`, and only Sure's v1 API and import, which Archant lacks, write `paused`.
+- Fields that no screen or assistant tool of Sure sets are not ported, and their Sure defaults are constants in `domain/recurring/` (`AGENTS.md`, nothing unused): weekend adjustment, end date, nth weekday, holiday calendar, amount strategy (`fixed`), per-series notice and grace days (3 each), match window (2 days early, 7 late), and `upcoming_window_days`, which only Sure's export reads.
+- Sure's `remove_old_inactive_transactions` has no caller, so nothing deletes an old inactive series.
+- The occurrence and payment tables join the export (AD-23) as Sure's `RecurrenceRule`, `RecurringOccurrence`, `RecurringAllocation` and `RecurringPriceChange` lines.
+
+Story 23.1 comes first, then 23.2, then 23.3. Stories 23.4 and 23.5 follow 23.3 in any order. Story 23.6 comes last.
+
+### Story 23.1: Find recurring payments as Sure does today
+
+As the household's administrator,
+I want Archant to find a payment whose amount moves by a few cents or rises in price,
+So that each of my subscriptions and bills is suggested once, never missed or listed twice.
+
+**Requirements:** FR84, FR85, NFR1
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** a migration turns `detected` into `suggested`, `confirmed` into `active` and `dismissed` into `ended`, keeps `inactive`, and `RECURRING_STATUSES` becomes `suggested`, `active`, `inactive`, `ended`; `recurring_transactions` gains nullable `expected_amount_min`, `expected_amount_max`, `expected_amount_avg` in minor units and `dedup_scope` (text, default empty), and its unique indexes become account, merchant or label key, amount, currency and `dedup_scope`, as Sure's `idx_recurring_txns_acct_*`
+
+**Given** the transactions of the last three months, transfers left out as Spec 9.1 says, and no row of an investment account, as Sure since #3565
+**When** detection runs
+**Then** rows are grouped by account, merchant or else normalised label, and currency, without the amount; within a group, sorted by Sure's signed amount, a row joins the current cluster while it lies within 7.5 % of the cluster's mean, computed exactly in integers, or starts a new one, as Sure's `cluster_by_amount`
+
+**Given** a cluster
+**When** it is tested
+**Then** it is a pattern when it has at least three rows, its latest within 45 days, and every row's day within 2 of Sure's expected day on the 31-day circle, which replaces Archant's pairwise 5-day spread; its amount is the latest row's, and its lowest, highest and mean amounts are stored as its band
+
+**Given** a pattern and the stored series of its account, key and currency
+**When** detection writes
+**Then** it claims the series whose amount is nearest within 7.5 % of the pattern's mean, `ended` and manual ones included; a claimed `ended` or manual series is left untouched; any other gets its last date, count, band and day refreshed, never its amount or status; an unclaimed pattern creates a `suggested` series, its `dedup_scope` set to its mean when its key already has a series, as Sure's `identify_recurring_patterns`
+
+**Given** a mortgage debited 571,29 €, 571,36 € and 571,22 € on 7 July, 7 August and 8 September
+**When** detection runs on 15 September
+**Then** one suggested series is stored, amount 571,22 €, band 571,22 € to 571,36 €, day 7
+
+**Given** the same debits on 6 July, 10 August, 7 September and 5 October
+**When** detection runs on 6 October
+**Then** no series is suggested, since the 10th lies 3 days from the expected 7th, as in Sure; Story 23.3 follows this mortgage once declared
+
+**Given** a manual active series
+**When** detection runs
+**Then** its count, last date and band come from its transactions of the last six months whose amount lies between half and twice its own and whose day lies within 2 of its expected day, as Sure's `update_manual_recurring_transactions` since #2972; Story 11.8's re-key and refresh of the other series apply the same amount and day tests
+
+**Given** an active series
+**When** detection runs, or the owner chooses « Nettoyer les obsolètes »
+**Then** it becomes `inactive` once its last occurrence is older than two of its cycles, at least two months, or six for a manual series, and no matching transaction came since, as Sure's `Cleaner`; a suggestion never becomes inactive, and one whose rows all left its window is deleted (Spec 11.8)
+
+**Given** a series
+**When** the owner acts on it
+**Then** « Ajouter la facture » makes a suggestion `active` and « Ce n'est pas une facture » makes it `ended`; « Mettre en pause » makes an active series `inactive` and « Reprendre » makes any other `active`, as Sure's `toggle_status`; « Supprimer » deletes a manual series and ends a detected one; detection never recreates an ended series; any other transition answers `VALIDATION_ERROR`
+
+**Given** `/recurring`
+**When** it opens
+**Then** « Nouvelles factures possibles » lists the suggestions with their count, each with its name, amount, « Vue 3 fois », and the two buttons, as Sure's `_suggested_series`; the list shows « Active », « En pause » and « Inactive » series, an amount whose band spreads as « varie de 571,22 € à 571,36 € », and hides ended ones; `get_recurring_transactions` describes the new statuses
+
+**Given** the identifier
+**When** its tests run
+**Then** `domain/recurring/identifier.ts` is covered to the branch: clusters across a price rise, three tiers of one merchant, the circular day around month ends, and the integer tolerance at exactly 7.5 %
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 23.2: Schedules, and bills declared by hand
+
+As the household's administrator,
+I want to say how often a bill comes, and to add one Archant has not found,
+So that my quarterly water bill, my yearly insurance and my mortgage are followed too.
+
+**Requirements:** FR85, FR86, NFR1, NFR12
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `recurrence_rules (id, recurring_transaction_id, frequency, interval, day_of_month, weekday, month_of_year, position)` holds Sure's checks (frequency `weekly`, `monthly` or `yearly`, interval above 0, day 1 to 31 or −1 for the last, weekday 0 to 6, month 1 to 12, never a day and a weekday together) and goes with its series; `recurring_transactions` gains `name`, `anchor_date`, `end_after_count` (1 to 600), `bill_type` (`bill`, `subscription`, `installment`, `income`, `other`), `category_id` (set null on delete), `autopay`, `notes`, `payment_url` and `schedule_pinned_at`; every existing series gets one monthly rule on its day, anchored on its last date, as Sure's migration
+
+**Given** `domain/recurring/schedule.ts`
+**When** it computes dates
+**Then** it ports Sure's `Schedule`: the occurrences of each rule between two dates (weekly from the anchor's week, every N months from the anchor's month and clamped to the month's end, yearly), the first occurrence after a date, the cycle that holds a date, occurrences per year, whether a date lies within 2 days of an occurrence (a weekly rule on its exact weekday), and an installment that ends after N payments; it is pure and covered to the branch
+
+**Given** the frequency picker
+**When** the owner opens it
+**Then** it offers Sure's presets « Mensuelle », « Hebdomadaire », « Toutes les deux semaines », « Deux fois par mois », « Trimestrielle », « Semestrielle », « Annuelle », and « Tous les N » weeks, months or years up to 99, as #3636; a series' rules read back to their preset, as Sure's `FrequencyPreset.detect`, and a shape no preset expresses reads « Personnalisée » and is left as it is
+
+**Given** a series
+**When** the owner edits it
+**Then** the dialog sets its name, amount, account, type, category, frequency, number of payments for an installment, autopay, notes and payment link; a link must be `http` or `https` with a host, and a bare host becomes `https`, as Sure's `normalize_payment_url`; a typed name is what the interface shows, while matching keeps the merchant or label
+
+**Given** a series whose frequency the owner changed
+**When** detection later refreshes it
+**Then** its dates move but its day never does, as Sure's `schedule_pinned?`; an unpinned monthly series follows a detected day shift, as Sure's `sync_monthly_rule_day`
+
+**Given** « Ajouter une facture » or « Ajouter un revenu »
+**When** the owner fills name, amount, account, first due date and frequency, and optionally autopay, notes and link
+**Then** an active manual series is created, anchored on that date, its sign set by bill or income, as Sure's `DeclaredBill`; the same account, key and amount twice answers `RECURRING_ALREADY_EXISTS`
+
+**Given** the declare dialog
+**When** it opens
+**Then** it offers up to eight starting points: for a bill, patterns of two or more rows of at least 1 € that no series claims, latest first, as Sure's `candidate_patterns`; for an income, sources of two or more deposits in 90 days that no income series claims, largest first, as Sure's `income_source_candidates`; choosing one fills the form
+
+**Given** a saved transaction that is not a transfer side
+**When** the owner opens its « Récurrence » block
+**Then** « Ajouter aux récurrences » keeps Sure's `create_from_transaction`, and « Créer une facture » opens the declare dialog filled with the merchant's name or else the label, the amount, the account, income for a positive amount, and the next date on its day from today, as Sure's `prefill_recurring_from_entry`
+
+**Given** a new suggestion
+**When** detection creates it
+**Then** Sure's `Classifier`, with its keyword lists unchanged, sets its type among installment, subscription and bill, its category as the most frequent among its rows, and autopay unless it is a bill; an inflow is `income` with no category
+
+**Given** an active series of any schedule
+**When** staleness is checked
+**Then** two cycles are two of its own, at least two months or six for a manual one, as Sure's `staleness_threshold_date`; a non-monthly series' next date is its schedule's first occurrence after its last date, and a plain monthly one keeps Spec 9.2's
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 23.3: Occurrences and the payments that settle them
+
+As the household's administrator,
+I want each bill's due dates to be settled by the bank lines that pay them, a few days late or a few cents off included,
+So that I know what is paid without ticking anything.
+
+**Requirements:** FR87, FR89, NFR1, NFR9
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** it adds, as Sure's #3201: `recurring_occurrences (id, recurring_transaction_id, original_due_on, due_on, currency, expected_amount, status, snoozed_until, closed_at, closed_source, notes)`, unique on series and `original_due_on`, status `scheduled`, `paid`, `skipped` or `missed`, closed exactly when not scheduled; `recurring_allocations (id, recurring_occurrence_id, entry_id, allocated_amount, state, source, match_confidence, match_signals, paid_on)`, the entry set null on delete, the amount above 0, state `suggested` or `confirmed`, source `auto_matched`, `user_confirmed` or `user_created`, one row per occurrence and entry; `recurring_match_rejections` unique on series and entry; `recurring_price_changes` unique on series and `effective_on`; the series gains Sure's `matcher_hints`, name aliases and a learned tolerance, parsed by Zod
+
+**Given** an active series
+**When** occurrences are generated
+**Then** it has one per due date from the start of its current cycle, not before its anchor for a manual series, up to 90 days ahead or its next due date, as Sure's `OccurrenceGenerator`; a change to its schedule or status rebuilds its future scheduled occurrences that carry no payment; a series that is not active gets none
+
+**Given** an open occurrence and the transactions of its date window
+**When** the matcher runs
+**Then** a candidate has the series' currency, account and sign, its merchant or its normalised label or an alias, is not excluded, not a split parent (AD-20), not rejected for the series and not already a confirmed payment; the window opens 2 days before the due date and closes 7 after, each side under half a cycle, and an overdue occurrence stays open to today
+
+**Given** a candidate
+**When** it is scored
+**Then** it scores as Sure's `Matcher#score`: 0.40 for the merchant or 0.35 for the label, 0.30 for the exact amount or 0.25 down to 0.15 within the larger of 7.5 % and the learned tolerance, capped at 25 %, and nothing outside it, 0.20 on the due date down to 0.05 at the window's edge, 0.10 for the account; scores are integers in ten-thousandths
+
+**Given** scored candidates
+**When** payments are written
+**Then** the highest claims first and each transaction and occurrence is taken once; from 0.85, for a booked transaction 0.15 ahead of its next best occurrence, a confirmed payment is written; from 0.60 a suggested one, never for an income; within one series a transaction pairs only with its nearest open occurrence; an occurrence whose confirmed payments reach its expected amount is paid, and its expected amount is fixed at the first payment, as Sure's `Allocator`
+
+**Given** the mortgage of 6 July, 10 August, 7 September and 5 October, its rows carrying a merchant, declared from the 5 October line
+**When** the owner chooses « Détecter »
+**Then** the occurrences of 5 July, 5 August, 5 September and 5 October are paid; without a merchant, 10 August scores 0.8165, below Sure's 0.85, so its occurrence stays unpaid and is deleted with the other past ones nothing paid, as Sure's `HistoryBackfiller`
+
+**Given** an active mortgage due on the 5th
+**When** a sync brings a payment of 571,36 € on the 10th
+**Then** it is suggested for that occurrence; confirming it pays the occurrence; rejecting it records a rejection, and that transaction is never suggested again for that series
+
+**Given** « Détecter », or the owner confirming a suggestion
+**When** it runs
+**Then** six months of past occurrences are generated, for every active series or for that one, closed by matches of the confirmed tier only, and the past ones nothing pays are deleted; running it twice changes nothing
+
+**Given** the owner attaching a transaction by hand to an occurrence
+**When** its label or amount differs from the series'
+**Then** the label joins the series' aliases and the gap widens its learned tolerance, never past 25 %, as Sure's `learn_from_manual_attach!`; a transaction's payments never exceed its amount
+
+**Given** a series' two latest paid occurrences, each settled by one confirmed payment
+**When** both amounts agree and differ from the series' amount
+**Then** a price change is recorded at the latest due date; a detected series takes the new amount and a manual one keeps its own, as Sure's `PriceChangeDetector`; open occurrences already due keep the old amount, as Sure's `pin_amount_on_dates_already_due`
+
+**Given** an import, a revert or a sync that commits, or « Détecter »
+**When** it finishes
+**Then** detection, generation, matching and price changes run in that order in one immediate transaction, and a failure is logged with its code only and never fails the request; the first signed-in request of the day in `APP_TIMEZONE` generates occurrences
+
+**Given** a transaction absorbed or deleted
+**When** the ledger writes
+**Then** `absorb` moves its payments and rejections onto the survivor (AD-17), and a deleted transaction's payment stays, with no transaction, as Sure's `on_delete: :nullify`
+
+**Given** the transaction sheet and `/recurring`
+**When** a transaction pays an occurrence
+**Then** the sheet's « Récurrence » block says « Paie l'échéance du 5 octobre de Prêt immobilier », and each series on `/recurring` shows its current occurrence as « Payée », « À payer le 5 novembre » or « 3 jours de retard »
+
+**Given** the matcher
+**When** its tests run
+**Then** `domain/recurring/matcher.ts` is covered to the branch: ambiguity between two series, a pending transaction, an income, a rejection, the window's edges and the half-cycle cap of a weekly bill
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 23.4: The bills page
+
+As the household's administrator,
+I want one page saying what is overdue, what is due this month and what is already paid,
+So that I settle my month from one place.
+
+**Requirements:** FR88, NFR2, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the rail
+**When** this story ships
+**Then** « Factures » at `/bills` replaces « Récurrences », `EXPERIENCE.md` lists the surface, and `sure-parity.md`'s Recurring transactions rows say what Archant does
+
+**Given** `/bills`
+**When** it opens
+**Then** it lists the open occurrences of active outgoing series: « Requiert votre attention » for those more than three days past due and not postponed, « Ce mois-ci » with the month's paid ones in place under a check, « Après ce mois-ci » with one row per series, « Inactive » for paused series' open occurrences, and « Prochaine », the next four from today, as Sure's `bills#index`
+
+**Given** the same page
+**When** totals are shown
+**Then** « À payer sous 7 jours », « En retard », « Payé ce mois-ci » and « Restant ce mois-ci » are in the reporting currency, and a series in another currency is left out and named (NFR2)
+
+**Given** an occurrence row
+**When** it is shown
+**Then** it reads « À payer dans 4 jours, 5 novembre », « À payer aujourd'hui », « 3 jours de retard, échéance le 5 octobre », « Reportée au 12 octobre » or « Partiel · 120,00 € restant », as Sure's `due_label`, and « Bientôt due » from three days before its date
+
+**Given** suggestions
+**When** the page opens
+**Then** it shows « Nouvelles factures possibles » from Story 23.1, and each suggested payment as « PRLV CREDIT AGRICOLE ressemble à un paiement de Prêt immobilier » with its percentage and the signals behind it, « Appliquer » and « Pas cette facture »
+
+**Given** an occurrence
+**When** the owner opens it
+**Then** a sheet offers « Marquer comme payée » for what remains, at a date; « Ajouter un paiement » with an amount, a date and optionally a transaction, the candidates scored by the matcher's `explain` and those that could never belong left out; « Ignorer cette échéance », « Rouvrir », « Reporter » to a date, « Modifier le montant » of this occurrence alone, and removing a payment, as Sure's `recurring_occurrences` and `recurring_allocations` routes
+
+**Given** no series
+**When** the page opens
+**Then** « Aucune facture pour l'instant » offers « Trouver les transactions récurrentes », which runs « Détecter » and tells how many suggestions it found, and « Ajouter une facture »; without any transaction, it says to connect a bank or import a file
+
+**Given** a viewer (AD-21)
+**When** they open the page
+**Then** they see it without any action, and the server refuses every write
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 23.5: Every bill and its story
+
+As the household's administrator,
+I want to list all my bills with what each costs a month, open one to see its payments and price changes, and see in my transactions what is coming,
+So that I know what my commitments cost and which went up.
+
+**Requirements:** FR41, FR88, FR89, NFR12
+
+**Acceptance Criteria:**
+
+**Given** `/bills?view=all`
+**When** it opens
+**Then** a table lists every series but suggestions with its name, type, frequency, amount or band, monthly equivalent, next due date and state; filters « En retard », « Bientôt due », « Partiellement payée », « Payée », « En pause », « Terminée », a type, a search on the name, and sorts by due date, name or amount, as Sure's `bills/all`
+
+**Given** a series' monthly equivalent
+**When** it is computed
+**Then** it is its amount times its occurrences per year over twelve, rounded half to even to the minor unit, as Sure's `monthly_equivalent_amount`; « Engagement récurrent » sums it per month and per year over outgoing series, incomes left out
+
+**Given** `/recurring`
+**When** it is requested
+**Then** it redirects to `/bills?view=all`, and Story 11.8's sentence in the transaction sheet links to the series' own page
+
+**Given** `/bills/:id`
+**When** it opens
+**Then** a drawer shows the next payment, the average paid, the last twelve months as paid, skipped, missed or empty, its price changes as « 13,49 € → 15,99 € (+18,5 %) », « Paiement 3 sur 12 » for an installment, the last account used, its notes and its payment link opening in a new tab, with edit, pause or resume, and delete, as Sure's `bills#show`
+
+**Given** `/transactions`
+**When** the owner chooses « À venir »
+**Then** active series due within ten days are listed by date with their amount or band, as Sure's `transactions/_upcoming`, and an empty tab says none is expected
+
+**Given** « Réglages »
+**When** the owner opens « Transactions récurrentes » at `/settings/recurring`
+**Then** it explains detection and when it runs, lists the suggestions, and offers « Identifier les modèles », which runs « Détecter », and « Nettoyer les obsolètes », as Sure's `recurring_transactions#index`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 23.6: Ask an assistant about my bills
+
+As the household's administrator,
+I want my assistant to read my bills, review them, record a payment and set one up when I ask,
+So that I can go through my bills in conversation.
+
+**Requirements:** FR90, NFR19
+
+**Acceptance Criteria:**
+
+**Given** a read token
+**When** the assistant calls `get_bills`
+**Then** it filters by status (`active` by default, `suggested`, `paused` for inactive, `ended`, `all`), payment state, type, a search and `due_within_days` from 1 to 365, returns at most 100 bills with their current occurrence's state and monthly equivalent, and totals that leave out income, as Sure's `GetBills`; amounts are positive decimal strings with their currency, the type carrying the direction, as Sure's
+
+**Given** a read token
+**When** the assistant calls `get_bill_details` or `get_bill_audit`
+**Then** the first returns one bill's configuration, schedule, twelve months of occurrences with their payments and its price changes; the second returns Sure's sections of possible duplicates (same name, amount and day), price changes over 1 to 24 months, bills overdue by a whole cycle, paused bills with unpaid occurrences, suggestions and undeclared patterns, twenty items each, as Sure's `GetBillAudit`
+
+**Given** a write token
+**When** the assistant calls `create_bill`, `update_bill` or `record_bill_payment`
+**Then** they go through the services the interface calls: a bill by name, amount, first due date, frequency, account and category by exact name; an edit of name, amount from now on, account, category, type, `active` or `paused`, frequency and day, autopay, link and notes; a payment of an open occurrence, the current one by default, in full or in part, dated today by default; each call is recorded in `assistant_calls`
+
+**Given** Epic 16's list of tools left out
+**When** this story ships
+**Then** bills leave it, `get_paycheck_plan` stays out, and `docs/deployment.md` names the six tools
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** every acceptance criterion above has a Vitest test through the MCP handler
