@@ -22,8 +22,11 @@ function plannedAmount(currency: CurrencyCode) {
 	return z.string().trim().min(1).transform(amountIn(currency));
 }
 
-/** Reads typed text as minor units of `currency`, refusing what is unreadable or negative. */
-function amountIn(currency: CurrencyCode) {
+/**
+ * Reads typed text as minor units of `currency`, refusing what is unreadable
+ * or negative; zero too when `positive`, as money moved must be some.
+ */
+function amountIn(currency: CurrencyCode, positive = false) {
 	return (text: string, context: z.RefinementCtx) => {
 		const amount = parseAmount(text, currency);
 
@@ -33,8 +36,8 @@ function amountIn(currency: CurrencyCode) {
 			return z.NEVER;
 		}
 
-		if (amount < 0) {
-			context.addIssue({ code: "custom", message: "negative_amount" });
+		if (positive ? amount <= 0 : amount < 0) {
+			context.addIssue({ code: "custom", message: positive ? "not_positive" : "negative_amount" });
 
 			return z.NEVER;
 		}
@@ -83,3 +86,29 @@ export function budgetCategorySchema(currency: CurrencyCode) {
 			),
 	});
 }
+
+// Text, as `budgetBodySchema`: the service parses the amount in the reporting currency.
+export const budgetMoveBodySchema = z.object({
+	fromCategoryId: z.string(),
+	toCategoryId: z.string(),
+	amount: z.string(),
+});
+
+export type BudgetMoveInput = z.input<typeof budgetMoveBodySchema>;
+
+/**
+ * Money moved from one category to another, as Sure's move dialog: the
+ * amount is required and above zero. What the source can give, and which
+ * destinations it may reach, need the month's amounts: the service checks
+ * them. Shared with the interface's dialog, so both report the same codes.
+ */
+export function budgetMoveSchema(currency: CurrencyCode) {
+	return z.object({
+		fromCategoryId: z.string().min(1),
+		toCategoryId: z.string().min(1),
+		amount: z.string().trim().min(1).transform(amountIn(currency, true)),
+	});
+}
+
+/** What the move dialog's form holds: the text typed, before the schema parses it. */
+export type BudgetMoveFormInput = z.input<ReturnType<typeof budgetMoveSchema>>;

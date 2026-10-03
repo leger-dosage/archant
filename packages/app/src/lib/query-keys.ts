@@ -129,5 +129,10 @@ export const queryKeys = {
 		 * `cashFlow`: every write that moves the month's cash flow refreshes it.
 		 */
 		budget: (month: string) => ["transactions", "budget", month] as const,
+		/**
+		 * Prefixes every month's budget: a month set up becomes the one a later
+		 * month offers to copy, so setting one up stales the others.
+		 */
+		budgets: ["transactions", "budget"] as const,
 	},
 };

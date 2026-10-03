@@ -93,6 +93,26 @@ describe("budgetCategories", () => {
 		expect(result.uncategorised.budgetedSpending).toBe(50_000);
 	});
 
+	it("gives each category what a move can take from it, as Sure's `movable_from`", () => {
+		const result = budgetOf({
+			amounts: amounts({ Courses: 50_000, Maison: 100_000, Travaux: 30_000 }),
+		});
+
+		expect(lineOf(result, "Courses").movable).toBe(50_000);
+		// A parent keeps what its ring-fenced children hold.
+		expect(lineOf(result, "Maison").movable).toBe(70_000);
+		expect(lineOf(result, "Travaux").movable).toBe(30_000);
+		expect(lineOf(result, "Jardin").movable).toBe(0);
+	});
+
+	it("gives nothing from a parent all held by its children, or stored below them", () => {
+		const held = budgetOf({ amounts: amounts({ Maison: 30_000, Travaux: 30_000 }) });
+		const below = budgetOf({ amounts: amounts({ Maison: 10_000, Travaux: 30_000 }) });
+
+		expect(lineOf(held, "Maison").movable).toBe(0);
+		expect(lineOf(below, "Maison").movable).toBe(0);
+	});
+
 	it("budgets « Sans catégorie » nothing once the allocation passes the total", () => {
 		const result = budgetOf({
 			amounts: amounts({ Courses: 20_000, Maison: 100_000 }),

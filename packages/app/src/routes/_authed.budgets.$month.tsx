@@ -1,9 +1,10 @@
 import type { BudgetData } from "@/hooks/useBudget";
 
-import { Link, createFileRoute } from "@tanstack/react-router";
-import { PencilIcon, PiggyBankIcon, TriangleAlertIcon } from "lucide-react";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { CopyIcon, PencilIcon, PiggyBankIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { monthSchema } from "@archant/api/schemas/reports";
@@ -18,9 +19,10 @@ import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBudget } from "@/hooks/useBudget";
+import { useBudget, useCopyBudget } from "@/hooks/useBudget";
 import { errorCodeOf } from "@/lib/api";
-import { ofMonth, toIsoMonth } from "@/lib/dates";
+import { monthLabel, ofMonth, toIsoMonth } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 
 // Absent means « Toutes »; a value from an old or hand-edited link falls back to it.
 const searchSchema = z.object({
@@ -59,9 +61,64 @@ function OverAllocation({ budget }: { budget: BudgetData }) {
 }
 
 /**
+ * A month not set up: « Définir le budget », or, once an earlier month is
+ * set up, Sure's « Copier <mois> » beside « Partir de zéro ». A copy leads to
+ * « Catégories », where its amounts can be adjusted.
+ */
+function NotSetUp({ budget }: { budget: BudgetData }) {
+	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const copy = useCopyBudget(budget.month);
+	const source = budget.copySource;
+
+	const copyFrom = () =>
+		copy.mutate(undefined, {
+			// The month the server copied, which can be later than the one offered.
+			onSuccess: ({ copiedFrom }) => {
+				toast.success(t("budgets.copy.copied", { month: monthLabel(copiedFrom) }));
+				void navigate({ to: "/budgets/$month/categories", params: { month: budget.month } });
+			},
+			onError: (error) => showErrorToast(errorCodeOf(error)),
+		});
+
+	return (
+		<EmptyState
+			icon={{ kind: "transfer", icon: PiggyBankIcon }}
+			title={t("budgets.notSetUp.title")}
+			description={
+				source === null
+					? t("budgets.notSetUp.description")
+					: t("budgets.copy.description", { ofMonth: ofMonth(source) })
+			}
+			action={
+				source === null ? (
+					<Button asChild>
+						<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
+							{t("budgets.notSetUp.action")}
+						</Link>
+					</Button>
+				) : (
+					<div className="flex flex-wrap justify-center gap-2">
+						<Button type="button" disabled={copy.isPending} onClick={copyFrom}>
+							<CopyIcon aria-hidden="true" />
+							{t("budgets.copy.action", { month: monthLabel(source) })}
+						</Button>
+						<Button variant="outline" asChild>
+							<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
+								{t("budgets.copy.fresh")}
+							</Link>
+						</Button>
+					</div>
+				)
+			}
+		/>
+	);
+}
+
+/**
  * Sure's budget page for one calendar month: the header with its arrows,
  * picker and « Aujourd'hui », then, once the month is set up, the donut and
- * the summary, then a card per category; before that, « Définir le budget ».
+ * the summary, then a card per category; before that, a way to set it up.
  * Reading a month writes nothing.
  */
 function BudgetMonthPage() {
@@ -129,18 +186,7 @@ function BudgetMonthPage() {
 						/>
 					</>
 				) : (
-					<EmptyState
-						icon={{ kind: "transfer", icon: PiggyBankIcon }}
-						title={t("budgets.notSetUp.title")}
-						description={t("budgets.notSetUp.description")}
-						action={
-							<Button asChild>
-								<Link to="/budgets/$month/edit" params={{ month }}>
-									{t("budgets.notSetUp.action")}
-								</Link>
-							</Button>
-						}
-					/>
+					<NotSetUp budget={data} />
 				))}
 		</Page>
 	);

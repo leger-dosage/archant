@@ -7,9 +7,16 @@ import {
 	budgetBodySchema,
 	budgetCategoryBodySchema,
 	budgetCategoryParamSchema,
+	budgetMoveBodySchema,
 	budgetParamSchema,
 } from "../schemas/budgets.ts";
-import { getBudget, saveBudget, saveCategoryBudget } from "../services/budgets.ts";
+import {
+	copyBudget,
+	getBudget,
+	moveCategoryBudget,
+	saveBudget,
+	saveCategoryBudget,
+} from "../services/budgets.ts";
 
 export function budgetsRoutes(deps: ServiceDeps) {
 	return new Hono()
@@ -38,5 +45,20 @@ export function budgetsRoutes(deps: ServiceDeps) {
 					200,
 				);
 			},
+		)
+		.post("/:month/copy", validated("param", budgetParamSchema), async (c) =>
+			c.json({ data: await copyBudget(deps, c.req.valid("param").month) }, 200),
+		)
+		.post(
+			"/:month/move",
+			validated("param", budgetParamSchema),
+			validated("json", budgetMoveBodySchema),
+			async (c) =>
+				c.json(
+					{
+						data: await moveCategoryBudget(deps, c.req.valid("param").month, c.req.valid("json")),
+					},
+					200,
+				),
 		);
 }

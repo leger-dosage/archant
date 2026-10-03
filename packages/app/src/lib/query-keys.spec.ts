@@ -125,6 +125,18 @@ describe("queryKeys.transactions.budget", () => {
 	});
 });
 
+describe("queryKeys.transactions.budgets", () => {
+	it("prefixes every month's budget", async () => {
+		const client = new QueryClient();
+		const key = queryKeys.transactions.budget("2026-09");
+		client.setQueryData(key, { setUp: false });
+
+		await client.invalidateQueries({ queryKey: queryKeys.transactions.budgets });
+
+		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+	});
+});
+
 describe("queryKeys.recurring.ofEntry", () => {
 	it("goes stale with the recurring list", async () => {
 		const client = new QueryClient();
