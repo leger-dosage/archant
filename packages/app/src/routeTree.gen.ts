@@ -20,6 +20,8 @@ import { Route as AuthedTransactionsRouteImport } from './routes/_authed.transac
 import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as AuthedAccountsIndexRouteImport } from './routes/_authed.accounts.index'
 import { Route as AuthedAccountsAccountIdRouteImport } from './routes/_authed.accounts.$accountId'
+import { Route as AuthedBudgetsIndexRouteImport } from './routes/_authed.budgets.index'
+import { Route as AuthedBudgetsMonthRouteImport } from './routes/_authed.budgets.$month'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settings.index'
 import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.settings.assistants'
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
@@ -27,6 +29,7 @@ import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.s
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
+import { Route as AuthedBudgetsMonthEditRouteImport } from './routes/_authed.budgets.$month_.edit'
 import { Route as AuthedSettingsBanksConnectionIdRouteImport } from './routes/_authed.settings.banks_.$connectionId'
 import { Route as AuthedSettingsBanksCallbackRouteImport } from './routes/_authed.settings.banks_.callback'
 
@@ -84,6 +87,16 @@ const AuthedAccountsAccountIdRoute = AuthedAccountsAccountIdRouteImport.update({
   path: '/accounts/$accountId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedBudgetsIndexRoute = AuthedBudgetsIndexRouteImport.update({
+  id: '/budgets/',
+  path: '/budgets/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedBudgetsMonthRoute = AuthedBudgetsMonthRouteImport.update({
+  id: '/budgets/$month',
+  path: '/budgets/$month',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -121,6 +134,11 @@ const AuthedSettingsTagsRoute = AuthedSettingsTagsRouteImport.update({
   path: '/tags',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedBudgetsMonthEditRoute = AuthedBudgetsMonthEditRouteImport.update({
+  id: '/budgets/$month_/edit',
+  path: '/budgets/$month/edit',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedSettingsBanksConnectionIdRoute =
   AuthedSettingsBanksConnectionIdRouteImport.update({
     id: '/banks_/$connectionId',
@@ -144,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/transactions': typeof AuthedTransactionsRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -151,7 +170,9 @@ export interface FileRoutesByFullPath {
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
   '/accounts/': typeof AuthedAccountsIndexRoute
+  '/budgets/': typeof AuthedBudgetsIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
 }
@@ -164,6 +185,7 @@ export interface FileRoutesByTo {
   '/oauth/consent': typeof OauthConsentRoute
   '/': typeof AuthedIndexRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -171,7 +193,9 @@ export interface FileRoutesByTo {
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
   '/accounts': typeof AuthedAccountsIndexRoute
+  '/budgets': typeof AuthedBudgetsIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
 }
@@ -187,6 +211,7 @@ export interface FileRoutesById {
   '/oauth/consent': typeof OauthConsentRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
+  '/_authed/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/_authed/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -194,7 +219,9 @@ export interface FileRoutesById {
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
   '/_authed/accounts/': typeof AuthedAccountsIndexRoute
+  '/_authed/budgets/': typeof AuthedBudgetsIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/budgets/$month_/edit': typeof AuthedBudgetsMonthEditRoute
   '/_authed/settings/banks_/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/_authed/settings/banks_/callback': typeof AuthedSettingsBanksCallbackRoute
 }
@@ -210,6 +237,7 @@ export interface FileRouteTypes {
     | '/transactions'
     | '/oauth/consent'
     | '/accounts/$accountId'
+    | '/budgets/$month'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -217,7 +245,9 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/settings/tags'
     | '/accounts/'
+    | '/budgets/'
     | '/settings/'
+    | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -230,6 +260,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/'
     | '/accounts/$accountId'
+    | '/budgets/$month'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -237,7 +268,9 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/settings/tags'
     | '/accounts'
+    | '/budgets'
     | '/settings'
+    | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
   id:
@@ -252,6 +285,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/_authed/'
     | '/_authed/accounts/$accountId'
+    | '/_authed/budgets/$month'
     | '/_authed/settings/assistants'
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
@@ -259,7 +293,9 @@ export interface FileRouteTypes {
     | '/_authed/settings/security'
     | '/_authed/settings/tags'
     | '/_authed/accounts/'
+    | '/_authed/budgets/'
     | '/_authed/settings/'
+    | '/_authed/budgets/$month_/edit'
     | '/_authed/settings/banks_/$connectionId'
     | '/_authed/settings/banks_/callback'
   fileRoutesById: FileRoutesById
@@ -350,6 +386,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAccountsAccountIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/budgets/': {
+      id: '/_authed/budgets/'
+      path: '/budgets'
+      fullPath: '/budgets/'
+      preLoaderRoute: typeof AuthedBudgetsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/budgets/$month': {
+      id: '/_authed/budgets/$month'
+      path: '/budgets/$month'
+      fullPath: '/budgets/$month'
+      preLoaderRoute: typeof AuthedBudgetsMonthRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/': {
       id: '/_authed/settings/'
       path: '/'
@@ -398,6 +448,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/settings/tags'
       preLoaderRoute: typeof AuthedSettingsTagsRouteImport
       parentRoute: typeof AuthedSettingsRoute
+    }
+    '/_authed/budgets/$month_/edit': {
+      id: '/_authed/budgets/$month_/edit'
+      path: '/budgets/$month/edit'
+      fullPath: '/budgets/$month/edit'
+      preLoaderRoute: typeof AuthedBudgetsMonthEditRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/banks_/$connectionId': {
       id: '/_authed/settings/banks_/$connectionId'
@@ -451,7 +508,10 @@ interface AuthedRouteChildren {
   AuthedTransactionsRoute: typeof AuthedTransactionsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAccountsAccountIdRoute: typeof AuthedAccountsAccountIdRoute
+  AuthedBudgetsMonthRoute: typeof AuthedBudgetsMonthRoute
   AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
+  AuthedBudgetsIndexRoute: typeof AuthedBudgetsIndexRoute
+  AuthedBudgetsMonthEditRoute: typeof AuthedBudgetsMonthEditRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -461,7 +521,10 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedTransactionsRoute: AuthedTransactionsRoute,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAccountsAccountIdRoute: AuthedAccountsAccountIdRoute,
+  AuthedBudgetsMonthRoute: AuthedBudgetsMonthRoute,
   AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
+  AuthedBudgetsIndexRoute: AuthedBudgetsIndexRoute,
+  AuthedBudgetsMonthEditRoute: AuthedBudgetsMonthEditRoute,
 }
 
 const AuthedRouteWithChildren =

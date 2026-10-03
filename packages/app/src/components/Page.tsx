@@ -39,12 +39,12 @@ type PageProps = {
 	children: ReactNode;
 };
 
-type Crumb = { label: ReactNode; to?: "/" | "/accounts" | "/settings" };
+type Crumb = { label: ReactNode; to?: "/" | "/accounts" | "/budgets" | "/settings" };
 
 /**
  * The page and its parents, from the URL alone so that no page has to pass
- * them: « Accueil / Opérations », « Comptes / Compte joint », « Réglages /
- * Catégories ».
+ * them: « Accueil / Opérations », « Comptes / Compte joint », « Budgets /
+ * Budget d'octobre 2026 », « Réglages / Catégories ».
  */
 function useCrumbs(title: ReactNode): Crumb[] {
 	const { t } = useTranslation();
@@ -56,6 +56,10 @@ function useCrumbs(title: ReactNode): Crumb[] {
 
 	if (pathname.startsWith("/accounts/") && pathname !== "/accounts/") {
 		return [{ label: t("nav.accounts"), to: "/accounts" }, { label: title }];
+	}
+
+	if (pathname.startsWith("/budgets/")) {
+		return [{ label: t("nav.budgets"), to: "/budgets" }, { label: title }];
 	}
 
 	if (pathname.startsWith("/settings")) {

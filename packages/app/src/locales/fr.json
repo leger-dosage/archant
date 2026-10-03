@@ -25,6 +25,7 @@
 		"dashboard": "Accueil",
 		"accounts": "Comptes",
 		"operations": "Opérations",
+		"budgets": "Budgets",
 		"recurring": "Récurrent",
 		"rules": "Règles",
 		"settings": "Réglages",
@@ -838,6 +839,59 @@
 			"deleted": "Étiquette « {{name}} » supprimée."
 		}
 	},
+	"budgets": {
+		"title": "Budget {{ofMonth}}",
+		"previous": "Mois précédent",
+		"next": "Mois suivant",
+		"today": "Aujourd'hui",
+		"picker": {
+			"label": "Choisir un mois, {{month}}",
+			"previousYear": "Année précédente",
+			"nextYear": "Année suivante",
+			"months": "Mois de {{year}}"
+		},
+		"outOfRange": {
+			"title": "Mois hors de portée",
+			"description": "Un budget couvre de deux ans avant le mois en cours, ou depuis la plus ancienne opération, jusqu'à deux ans après."
+		},
+		"notSetUp": {
+			"title": "Aucun budget pour ce mois",
+			"description": "Fixez ce que vous prévoyez de dépenser et de gagner ce mois-ci.",
+			"action": "Définir le budget"
+		},
+		"donut": {
+			"title": "Dépenses",
+			"label_one": "Dépenses {{ofMonth}} : {{spent}} sur {{budget}}, réparties sur {{count}} catégorie.",
+			"label_other": "Dépenses {{ofMonth}} : {{spent}} sur {{budget}}, réparties sur {{count}} catégories.",
+			"labelEmpty": "Dépenses {{ofMonth}} : {{spent}} sur {{budget}}.",
+			"spent": "Dépensé",
+			"of": "sur {{amount}}",
+			"edit": "Modifier le budget"
+		},
+		"summary": {
+			"title": "Résumé",
+			"expectedIncome": "Revenus attendus",
+			"earned": "{{amount}} gagnés",
+			"incomeLeft": "{{amount}} à venir",
+			"incomeOver": "{{amount}} de plus",
+			"budgetedSpending": "Dépenses prévues",
+			"spent": "{{amount}} dépensés",
+			"left": "{{amount}} restants",
+			"over": "{{amount}} de dépassement"
+		},
+		"form": {
+			"setUpTitle": "Définir le budget {{ofMonth}}",
+			"editTitle": "Modifier le budget {{ofMonth}}",
+			"description": "Ce que vous prévoyez de dépenser et de gagner ce mois-ci.",
+			"step": "Budget",
+			"budgetedSpending": "Dépenses prévues",
+			"expectedIncome": "Revenus attendus",
+			"suggest": "Suggérer",
+			"suggestHint": "Remplit chaque montant avec la médiane des mois précédents.",
+			"noSuggestion": "Aucun mois précédent ne permet de suggérer un montant.",
+			"save": "Enregistrer"
+		}
+	},
 	"recurring": {
 		"title": "Récurrences",
 		"description": "Les abonnements et factures qui reviennent chaque mois, détectés sur les trois derniers mois d'opérations. Confirmez ceux que vous voulez suivre, écartez les autres. Une récurrence détectée sans opération depuis deux mois devient inactive.",
@@ -1285,6 +1339,7 @@
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
 			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
+			"negative_amount": "Le montant ne peut pas être négatif.",
 			"invalid_currency": "Devise inconnue.",
 			"invalid_subtype": "Type de compte invalide.",
 			"invalid_rate": "Taux invalide. Exemple : 3,45, entre 0 et 100.",

@@ -30,7 +30,7 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | Import | Dialog over account detail | "Importer" on an account | File, column mapping, preview, confirmation | 2 |
 | Transactions | `/transactions` | Rail | All transactions, filters in the URL, bulk actions | 1 |
 | Transaction | Sheet over the current page | Row click, or `Enter` on a focused row | Edit every field | 1 |
-| Budgets | `/budgets/:month` | Rail, between Opérations and Récurrences | A month's budget: donut, summary, categories with statuses; set-up steps Budget then Catégories; month as `YYYY-MM` | 17 |
+| Budgets | `/budgets/:month`, `/budgets/:month/edit` | Rail, between Comptes and Récurrent; `/budgets` opens the current month | A month's budget: arrows, a month picker by year and « Aujourd'hui », months from two years back, or the oldest entry's month, to two years ahead; once set up, the donut of spending by top-level expense category with « <dépensé> sur <budget> » in its centre, and the summary of income and spending against plan; before that, « Définir le budget », a form with « Dépenses prévues », « Revenus attendus » and « Suggérer »; categories with statuses and the Catégories step come with Story 17.2; month as `YYYY-MM` | 17 |
 | Recurring | `/recurring` | Rail | Subscriptions and bills with the next date | 9 |
 | Goals | `/goals`, `/goals/:id` | Rail | Goals as cards with a progress ring; a goal with its accounts' shares and its projection | 21 |
 | Rules | `/rules` | Rail | Rules list and editor | 8 |
