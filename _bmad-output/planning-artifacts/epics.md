@@ -3481,7 +3481,7 @@ So that my reports show what I really spent on what.
 **When** it is split
 **Then** the children's amounts sum to the parent's exactly, in minor units, signs mixed allowed; each child copies the account, date, currency and merchant, and has its own label, amount, category, tags and notes; the parent is excluded and its `excluded` field locked with `origin: "user"` (AD-10)
 
-**Given** a transfer side, a pending transaction, an excluded transaction, a parent or a child
+**Given** a transfer side, a pending transaction, an excluded transaction, a possible duplicate, a parent or a child
 **When** a split is requested
 **Then** it is refused with `NOT_SPLITTABLE`, as Sure's `splittable?`
 
@@ -3491,7 +3491,7 @@ So that my reports show what I really spent on what.
 
 **Given** every reader
 **When** a split exists
-**Then** balances, the list, its count and totals, `cashFlowByCategory`, `countsInCashFlow` and its SQL twin, rule candidates, recurring detection and transfer candidates count the children and never the parent; a rule never clears a parent's exclusion; the parity test of AD-9 covers splits
+**Then** balances, the list, its count and totals, `cashFlowByCategory`, `countsInCashFlow` and its SQL twin, rule candidates and recurring detection count the children and never the parent; transfer matching takes neither a parent nor a child; a rule never clears a parent's exclusion; the parity test of AD-9 covers splits
 
 **Given** a bank or file line
 **When** it is ingested
