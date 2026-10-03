@@ -28,7 +28,7 @@ One running instance is one household. Amounts are in euros, but every amount ca
 
 [sure-parity.md](sure-parity.md) compares each area with Sure: what is at parity, what differs on purpose and why, what comes later, and what has no recorded decision yet. What comes back later is listed in `_bmad-output/planning-artifacts/feature-inventory.md`.
 
-Explicit non-goals: multi-tenancy beyond one household, a hosted offering, investment portfolio tracking at parity with Sure, server-side rendering, SEO.
+Explicit non-goals: multi-tenancy beyond one household, a hosted offering, server-side rendering, SEO.
 
 ## Known hard parts
 
