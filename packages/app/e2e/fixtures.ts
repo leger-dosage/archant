@@ -10,6 +10,7 @@ import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CsvMapping } from "@archant/data/schema/imports";
+import type { UserRole } from "@archant/data/user-roles";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
 import { PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
@@ -46,6 +47,8 @@ export type CreateCategoryOptions = {
 const sameOrigin = { origin: WEB_URL };
 
 const createdBody = z.object({ data: z.object({ id: z.string() }) });
+
+const invitationBody = z.object({ data: z.object({ id: z.string(), url: z.string() }) });
 
 const linkedBody = z.object({
 	data: z.object({ transfer: z.object({ id: z.string() }).nullable() }),
@@ -333,6 +336,15 @@ export function apiHelpers(request: APIRequestContext) {
 
 				expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 			}, Promise.resolve());
+		},
+
+		/** Invites `email` as the administrator would, and answers the link, shown once. */
+		async invite(email: string, role: UserRole = "viewer"): Promise<{ id: string; url: string }> {
+			const response = await request.post("/api/invitations", { data: { email, role } });
+
+			expect(response.status(), `${response.url()} answered ${await response.text()}`).toBe(201);
+
+			return invitationBody.parse(await response.json()).data;
 		},
 
 		async createTag(name: string = uniqueName("Étiquette")): Promise<Created> {

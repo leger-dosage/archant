@@ -247,3 +247,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-20-1-a-read-only-role-enforced-by-the-server.md`
   summary: A viewer's every page would show « Cette action n'est pas autorisée. », since `BankAlerts` reads `GET /api/bank-connections/setup`, now an administrator's only, through `Page`.
   evidence: `BankAlerts.tsx:113` calls `useBankSetup()` without `meta.optional`, and the global query handler retries and toasts `FORBIDDEN`; no viewer can exist before Story 20.2, and Story 20.3's acceptance criteria now name it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
+  summary: A viewer sees « Membres » in the settings and its « Inviter » button, and the page's read answers `FORBIDDEN`.
+  evidence: `SettingsNav` lists `/settings/members` for every role, and `GET /api/invitations` calls `requireRole("admin")`; Story 20.3's acceptance criteria already ask settings to show « Sécurité » only to a viewer and no page to send a read the server refuses them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
+  summary: An administrator demoted to viewer keeps their pending invitations, administrator ones included, valid until they expire or another administrator revokes them.
+  evidence: `invitations.inviter_id` cascades on a user's deletion only, and no role change exists before Story 20.3; that story decides whether a demotion revokes them, or checks the inviter's role at acceptance.
+- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
+  summary: With a second administrator invited, each sees and can disconnect the other's assistants, and a client both authorised appears twice.
+  evidence: `services/assistants.ts` `listAssistants` says « Archant has one user » and reads every consent; Story 20.3's acceptance criteria ask it and `disconnectAssistant` to read and change the signed-in user's only.

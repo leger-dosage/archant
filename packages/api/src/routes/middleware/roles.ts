@@ -2,7 +2,7 @@ import type { SessionEnv } from "./auth.ts";
 
 import { createMiddleware } from "hono/factory";
 
-import type { UserRole } from "@archant/data/schema/auth";
+import type { UserRole } from "@archant/data/user-roles";
 
 import { AppError } from "../../lib/errors.ts";
 import { isPublicPath } from "./auth.ts";

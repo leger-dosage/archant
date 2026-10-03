@@ -1,6 +1,9 @@
+import type { UserRole } from "../user-roles.ts";
+
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { USER_ROLES } from "../user-roles.ts";
 import { inList } from "./check.ts";
 
 /**
@@ -10,17 +13,6 @@ import { inList } from "./check.ts";
  * Better Auth writes `Date` objects, which `timestamp_ms` stores as epoch
  * milliseconds like every other timestamp in the schema.
  */
-
-/**
- * Every role a user can hold (AD-21): an `admin` reads and writes everything,
- * a `viewer` reads what an administrator reads, bank credentials, assistants
- * and the export apart, and writes nothing. One global role rather than
- * Sure's per-account sharing, since one instance is one household. A new
- * value is a check rebuilt, no data migration.
- */
-export const USER_ROLES = ["admin", "viewer"] as const;
-
-export type UserRole = (typeof USER_ROLES)[number];
 
 const createdAt = () =>
 	integer("created_at", { mode: "timestamp_ms" })

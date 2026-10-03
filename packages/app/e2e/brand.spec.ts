@@ -84,6 +84,7 @@ test("each settings entry has its icon", async ({ page }) => {
 				["Catégories", "shapes"],
 				["Marchands", "store"],
 				["Étiquettes", "tags"],
+				["Membres", "users"],
 				["Sécurité", "shield-check"],
 			] as const
 		).map(([name, icon]) =>

@@ -27,13 +27,13 @@ export function forwardedFor(
 	return `${incoming}, ${peer}`;
 }
 
-/** `request` with its `x-forwarded-for` replaced by `forwardedFor`. */
-export function withForwardedFor(
-	request: Request,
+/** A copy of `incoming` with its `x-forwarded-for` replaced by `forwardedFor`. */
+export function forwardedHeaders(
+	incoming: Headers,
 	peer: string | undefined,
 	trustsProxies: boolean,
-): Request {
-	const headers = new Headers(request.headers);
+): Headers {
+	const headers = new Headers(incoming);
 	const value = forwardedFor(headers.get("x-forwarded-for"), peer, trustsProxies);
 
 	if (value === null) {
@@ -42,7 +42,16 @@ export function withForwardedFor(
 		headers.set("x-forwarded-for", value);
 	}
 
-	return new Request(request, { headers });
+	return headers;
+}
+
+/** `request` with its `x-forwarded-for` replaced by `forwardedFor`. */
+export function withForwardedFor(
+	request: Request,
+	peer: string | undefined,
+	trustsProxies: boolean,
+): Request {
+	return new Request(request, { headers: forwardedHeaders(request.headers, peer, trustsProxies) });
 }
 
 /** The bucket every request shares when no address can be believed, as in Better Auth. */

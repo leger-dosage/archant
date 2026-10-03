@@ -1237,6 +1237,7 @@
 			"tags": "Étiquettes",
 			"assistants": "Assistants IA",
 			"data": "Données",
+			"members": "Membres",
 			"security": "Sécurité"
 		},
 		"version": "Version {{version}}",
@@ -1270,6 +1271,39 @@
 		"unavailable": {
 			"title": "Les assistants demandent HTTPS",
 			"description": "L'adresse de ce serveur est en HTTP. Servez Archant en HTTPS, par exemple avec Tailscale, puis redémarrez-le."
+		}
+	},
+	"members": {
+		"title": "Membres",
+		"description": "Invitez une personne de votre foyer. Elle choisit son propre mot de passe depuis le lien que vous lui envoyez.",
+		"invite": "Inviter",
+		"pending": "Invitations en attente",
+		"expires": "Expire le {{date}}",
+		"revoke": "Révoquer",
+		"revokeNamed": "Révoquer l'invitation de {{email}}",
+		"revoked": "Invitation de {{email}} révoquée.",
+		"revokeDialog": {
+			"title": "Révoquer l'invitation de {{email}} ?",
+			"description": "Son lien cessera aussitôt de fonctionner. Vous pourrez inviter cette adresse de nouveau."
+		},
+		"empty": {
+			"title": "Aucune invitation en attente",
+			"description": "Une invitation apparaît ici jusqu'à ce que la personne crée son compte, ou pendant trois jours au plus."
+		},
+		"roles": {
+			"viewer": "Lecteur",
+			"admin": "Administrateur"
+		},
+		"inviteDialog": {
+			"title": "Inviter une personne",
+			"description": "Archant n'envoie pas d'e-mail. Vous copierez un lien et l'enverrez vous-même.",
+			"email": "Adresse e-mail",
+			"role": "Rôle",
+			"submit": "Créer le lien",
+			"linkTitle": "Lien d'invitation pour {{email}}",
+			"linkOnce": "Ce lien ne sera plus affiché. Copiez-le maintenant et envoyez-le à la personne invitée. Il expire dans trois jours.",
+			"copy": "Copier le lien d'invitation",
+			"done": "Terminé"
 		}
 	},
 	"data": {
@@ -1457,7 +1491,7 @@
 	},
 	"setup": {
 		"title": "Créer le compte administrateur",
-		"description": "Ce compte est le seul à accéder à Archant. Il n'existe pas d'inscription publique.",
+		"description": "Ce compte administre Archant. Il n'existe pas d'inscription publique, vous inviterez ensuite les membres du foyer depuis les réglages.",
 		"token": "Jeton de configuration",
 		"tokenHint": "Affiché dans les journaux du serveur à chaque démarrage : docker compose logs archant avec le conteneur, sinon le terminal où tourne le serveur.",
 		"firstName": "Prénom",
@@ -1467,6 +1501,26 @@
 		"passwordHint": "Au moins 8 caractères.",
 		"confirmPassword": "Confirmer le mot de passe",
 		"submit": "Créer le compte"
+	},
+	"invitation": {
+		"title": "Rejoindre Archant",
+		"intro": "{{inviter}} vous invite à rejoindre Archant en tant que {{role}}.",
+		"roles": {
+			"viewer": "lecteur",
+			"admin": "administrateur"
+		},
+		"email": "Adresse e-mail",
+		"firstName": "Prénom",
+		"firstNameHint": "Facultatif. Le tableau de bord vous accueille par ce prénom.",
+		"password": "Mot de passe",
+		"passwordHint": "Au moins 8 caractères.",
+		"confirmPassword": "Confirmer le mot de passe",
+		"submit": "Créer mon compte",
+		"created": "Votre compte est créé. Connectez-vous pour continuer.",
+		"invalidTitle": "Invitation non valable",
+		"signIn": "Se connecter",
+		"signedIn": "Vous êtes connecté en tant que {{email}}. Déconnectez-vous pour accepter cette invitation.",
+		"signOut": "Se déconnecter"
 	},
 	"signIn": {
 		"title": "Connexion",
@@ -1483,6 +1537,7 @@
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"ASSISTANT_NOT_FOUND": "Cet assistant est déjà déconnecté.",
+		"INVITATION_INVALID": "Cette invitation n'est plus valable.",
 		"VALIDATION_ERROR": "Certains champs sont invalides. Corrigez-les puis réessayez.",
 		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
@@ -1539,6 +1594,8 @@
 			"before_from": "La date de fin doit suivre la date de début.",
 			"below_min": "Le maximum doit être supérieur ou égal au minimum.",
 			"invalid_email": "Adresse e-mail invalide.",
+			"user_exists": "Un compte existe déjà avec cette adresse.",
+			"invitation_pending": "Une invitation attend déjà cette adresse. Révoquez-la pour en créer une autre.",
 			"password_too_short": "Le mot de passe doit contenir au moins 8 caractères.",
 			"password_too_long": "Le mot de passe ne peut pas dépasser 128 caractères.",
 			"password_mismatch": "Les mots de passe ne correspondent pas.",

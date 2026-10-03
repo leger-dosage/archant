@@ -338,6 +338,44 @@ describe("users and settings", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("holds one pending invitation per email, a known role only, gone with its inviter", async () => {
+		const database = await migrated();
+		await insertUser(database, "u1", "admin");
+		const insertInvitation = (
+			id: string,
+			{
+				email = "camille@example.test",
+				role = "viewer",
+				acceptedAt = null,
+				hash = id,
+			}: { email?: string; role?: string; acceptedAt?: number | null; hash?: string } = {},
+		) =>
+			database.run(
+				sql`insert into invitations (id, email, role, token_hash, inviter_id, expires_at, accepted_at, created_at) values (${id}, ${email}, ${role}, ${hash}, 'u1', 1, ${acceptedAt}, 0)`,
+			);
+
+		await expect(insertInvitation("i1")).resolves.toBeDefined();
+		await expect(insertInvitation("i2")).rejects.toThrow();
+		await expect(insertInvitation("i3", { acceptedAt: 5 })).resolves.toBeDefined();
+		await expect(insertInvitation("i4", { acceptedAt: 6 })).resolves.toBeDefined();
+		await expect(
+			insertInvitation("i5", { email: "dominique@example.test", role: "admin" }),
+		).resolves.toBeDefined();
+		await expect(
+			insertInvitation("i6", { email: "eve@example.test", role: "owner" }),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error && String(error.cause).includes("invitations_role_check"),
+		);
+		await expect(
+			insertInvitation("i7", { email: "eve@example.test", hash: "i1" }),
+		).rejects.toThrow();
+
+		await database.run(sql`delete from users where id = 'u1'`);
+
+		await expect(database.all(sql`select id from invitations`)).resolves.toEqual([]);
+	});
+
 	it("holds a setting once, so inserting its key is a one-time claim", async () => {
 		const database = await migrated();
 		const claim = () =>
