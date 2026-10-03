@@ -196,6 +196,51 @@ const action = z.strictObject({
 	value_ref: z.union([valueRef, z.array(valueRef)]).optional(),
 });
 
+const TRANSACTION_KINDS = [
+	"standard",
+	"funds_movement",
+	"cc_payment",
+	"loan_payment",
+	"one_time",
+	"investment_contribution",
+] as const;
+
+/** A decimal string as an integer count of its smallest digit, at `scale` digits. */
+function scaled(text: string, scale: number): bigint {
+	const [whole = "0", fraction = ""] = text.replace("-", "").split(".");
+	const units = BigInt(whole + fraction.padEnd(scale, "0"));
+
+	return text.startsWith("-") ? -units : units;
+}
+
+/** `validate_split_line_total`: the lines sum to the transaction's amount, exactly. */
+function sumsTo(amount: string, lines: readonly { amount: string }[]): boolean {
+	const scale = Math.max(
+		...[amount, ...lines.map((line) => line.amount)].map((text) => text.split(".")[1]?.length ?? 0),
+	);
+
+	return (
+		lines.reduce((total, line) => total + scaled(line.amount, scale), 0n) === scaled(amount, scale)
+	);
+}
+
+// `serialize_split_lines_for_export`'s keys; `importable_split_rows` needs an amount.
+const splitLine = z.strictObject({
+	id,
+	entry_id: id,
+	amount: decimal,
+	currency,
+	name: present,
+	notes: z.string().nullable(),
+	excluded: z.boolean(),
+	category_id: z.string().nullable(),
+	merchant_id: z.string().nullable(),
+	tag_ids: z.array(id),
+	kind: z.enum(TRANSACTION_KINDS),
+	...stamps,
+	archant,
+});
+
 const SCHEMAS = {
 	Account: z.strictObject({
 		id,
@@ -244,29 +289,28 @@ const SCHEMAS = {
 		...stamps,
 		archant,
 	}),
-	Transaction: z.strictObject({
-		id,
-		account_id: id,
-		date,
-		amount: decimal,
-		currency,
-		name: present,
-		notes: z.string().nullable(),
-		excluded: z.boolean(),
-		category_id: z.string().nullable(),
-		merchant_id: z.string().nullable(),
-		tag_ids: z.array(id),
-		kind: z.enum([
-			"standard",
-			"funds_movement",
-			"cc_payment",
-			"loan_payment",
-			"one_time",
-			"investment_contribution",
-		]),
-		...stamps,
-		archant,
-	}),
+	Transaction: z
+		.strictObject({
+			id,
+			account_id: id,
+			date,
+			amount: decimal,
+			currency,
+			name: present,
+			notes: z.string().nullable(),
+			excluded: z.boolean(),
+			category_id: z.string().nullable(),
+			merchant_id: z.string().nullable(),
+			tag_ids: z.array(id),
+			kind: z.enum(TRANSACTION_KINDS),
+			...stamps,
+			split_lines: z.array(splitLine).min(1).optional(),
+			archant,
+		})
+		.refine(
+			(row) => row.split_lines === undefined || sumsTo(row.amount, row.split_lines),
+			"split line amounts that do not sum to the transaction's",
+		),
 	Transfer: z.strictObject({
 		id,
 		inflow_transaction_id: id,
@@ -376,6 +420,15 @@ type Row = { line: number; type: SureType; data: Record<string, unknown> };
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
+/** A transaction's split lines, as far as they are objects; none for any other row. */
+const splitLinesOf = (row: Row): Record<string, unknown>[] =>
+	row.type === "Transaction"
+		? z
+				.array(z.record(z.string(), z.unknown()))
+				.catch([])
+				.parse(row.data["split_lines"] ?? [])
+		: [];
+
 function isSureType(type: string): type is SureType {
 	return Object.hasOwn(SCHEMAS, type);
 }
@@ -446,13 +499,18 @@ function crossLineProblems(rows: readonly Row[]): string[] {
 
 		if (namespace !== undefined) {
 			const seen = ids.get(namespace) ?? new Map<string, number>();
-			const first = seen.get(text(row.data["id"]));
 
-			if (first !== undefined) {
-				problems.push(`line ${row.line} repeats the ${namespace} id of line ${first}`);
+			// `add_split_line_source_ids`: a split line's id is a transaction's too.
+			for (const value of [row.data, ...splitLinesOf(row)].map((data) => text(data["id"]))) {
+				const first = seen.get(value);
+
+				if (first !== undefined) {
+					problems.push(`line ${row.line} repeats the ${namespace} id of line ${first}`);
+				}
+
+				seen.set(value, row.line);
 			}
 
-			seen.set(text(row.data["id"]), row.line);
 			ids.set(namespace, seen);
 		}
 	}
@@ -484,19 +542,29 @@ function crossLineProblems(rows: readonly Row[]): string[] {
 		}
 	}
 
-	for (const row of rows) {
-		const references = Object.entries(REFERENCES[row.type] ?? {});
+	// A split line's references, as `validate_split_line_references` reads them.
+	const subjects = rows.flatMap((row) => [
+		{ row, type: row.type, data: row.data, references: REFERENCES[row.type] ?? {} },
+		...splitLinesOf(row).map((data) => ({
+			row,
+			type: "Transaction split line",
+			data,
+			references: { category_id: "categories", merchant_id: "merchants" },
+		})),
+	]);
+
+	for (const { row, type, data, references } of subjects) {
 		const tags =
-			row.type === "Transaction" ? z.array(z.string()).catch([]).parse(row.data["tag_ids"]) : [];
+			row.type === "Transaction" ? z.array(z.string()).catch([]).parse(data["tag_ids"]) : [];
 
 		for (const [field, namespace] of [
-			...references,
+			...Object.entries(references),
 			...tags.map((tag): [string, string] => [`tag_ids ${tag}`, "tags"]),
 		]) {
-			const value = field.startsWith("tag_ids ") ? field.slice(8) : text(row.data[field]);
+			const value = field.startsWith("tag_ids ") ? field.slice(8) : text(data[field]);
 
 			if (value !== "" && ids.get(namespace)?.has(value) !== true) {
-				problems.push(`line ${row.line} ${row.type}.${field} points at no exported row`);
+				problems.push(`line ${row.line} ${type}.${field} points at no exported row`);
 			}
 		}
 	}

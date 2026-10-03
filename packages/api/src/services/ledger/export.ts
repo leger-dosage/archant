@@ -1,6 +1,6 @@
 import type { ServiceDeps } from "../deps.ts";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "@archant/data/schema/accounts";
@@ -19,7 +19,7 @@ import { transfers } from "@archant/data/schema/transfers";
 
 import { today } from "../../domain/dates.ts";
 import { balanceOn } from "./balances.ts";
-import { KEYS_PER_LOOKUP, asInflow, asOutflow, inSequence } from "./shared.ts";
+import { KEYS_PER_LOOKUP, asInflow, asOutflow, inSequence, notSplitParent } from "./shared.ts";
 
 /**
  * Every column the archive reads, by table, under its TypeScript key (AD-23).
@@ -94,6 +94,7 @@ export const EXPORTED_COLUMNS = {
 		date: entries.date,
 		amount: entries.amount,
 		currency: entries.currency,
+		parentEntryId: entries.parentEntryId,
 		createdAt: entries.createdAt,
 		updatedAt: entries.updatedAt,
 	},
@@ -318,12 +319,63 @@ async function tagsOf(db: Reader, ids: readonly string[]): Promise<Map<string, s
 	return found;
 }
 
-/** One page of transactions after `after`, by date then creation, each with its tags and transfer side. */
-async function transactionPage(
+/**
+ * Which rows of a split a page holds: its lines and never its parent, as
+ * `transactions.csv` lists them, or its parent with its lines under
+ * `splitLines`, as `all.ndjson` nests them (AD-20). An unsplit transaction is
+ * in both.
+ */
+export type SplitView = "lines" | "nested";
+
+type PageKey = { date: string; createdAt: number; id: string };
+
+/** The tag ids and the split lines, empty unless `nested`, of each of `rows`. */
+async function withDetails<Row extends { id: string }>(
 	db: Reader,
-	size: number,
-	after: { date: string; createdAt: number; id: string } | null,
+	rows: readonly Row[],
+	view: SplitView,
 ) {
+	const ids = rows.map((row) => row.id);
+	const lines: Awaited<ReturnType<typeof splitLinesOf>> = [];
+
+	if (view === "nested") {
+		await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+			lines.push(...(await splitLinesOf(db, chunk)));
+		});
+	}
+
+	const tagIds = await tagsOf(db, [...ids, ...lines.map((line) => line.id)]);
+	const linesOf = new Map<string | null, ((typeof lines)[number] & { tagIds: string[] })[]>();
+
+	for (const line of lines) {
+		linesOf.set(line.parentEntryId, [
+			...(linesOf.get(line.parentEntryId) ?? []),
+			{ ...line, tagIds: tagIds.get(line.id) ?? [] },
+		]);
+	}
+
+	return rows.map((row) => ({
+		...row,
+		tagIds: tagIds.get(row.id) ?? [],
+		splitLines: linesOf.get(row.id) ?? [],
+	}));
+}
+
+/** The split lines of `parentIds`, by creation, as Sure orders them. */
+function splitLinesOf(db: Reader, parentIds: readonly string[]) {
+	return db
+		.select({ ...EXPORTED_COLUMNS.entries, transaction: EXPORTED_COLUMNS.transactions })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(inArray(entries.parentEntryId, [...parentIds]))
+		.orderBy(asc(entries.createdAt), asc(entries.id));
+}
+
+/**
+ * One page of transactions after `after`, by date then creation, each with
+ * its tags, its transfer side, and its split lines as `view` says.
+ */
+async function transactionPage(db: Reader, view: SplitView, size: number, after: PageKey | null) {
 	const page = await db
 		.select({
 			...EXPORTED_COLUMNS.entries,
@@ -339,6 +391,7 @@ async function transactionPage(
 		.where(
 			and(
 				eq(entries.kind, "transaction"),
+				view === "lines" ? notSplitParent : isNull(entries.parentEntryId),
 				after === null
 					? undefined
 					: sql`(${entries.date}, ${entries.createdAt}, ${entries.id}) > (${after.date}, ${after.createdAt}, ${after.id})`,
@@ -346,23 +399,20 @@ async function transactionPage(
 		)
 		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id))
 		.limit(size);
-	const tagIds = await tagsOf(
-		db,
-		page.map((row) => row.id),
-	);
 
-	return page.map((row) => ({ ...row, tagIds: tagIds.get(row.id) ?? [] }));
+	return withDetails(db, page, view);
 }
 
+/** A transaction as the archive reads it. */
+export type ExportedTransactionRow = Awaited<ReturnType<typeof transactionPage>>[number];
+
 /**
- * Every transaction, by date then creation, `size` rows at a time. The keyset
- * follows `entries_kind_date`, so a page costs the same at the end of a
- * decade as at its start.
+ * Every transaction, by date then creation, `size` rows at a time, a split
+ * as `view` says. The keyset follows `entries_kind_date`, so a page costs the
+ * same at the end of a decade as at its start.
  */
-export function transactionPages(db: Reader, size = PAGE_ROWS) {
-	return keysetPages(async (after: { date: string; createdAt: number; id: string } | null) =>
-		transactionPage(db, size, after),
-	);
+export function transactionPages(db: Reader, view: SplitView, size = PAGE_ROWS) {
+	return keysetPages(async (after: PageKey | null) => transactionPage(db, view, size, after));
 }
 
 const outflowEntry = alias(entries, "outflow_entry");
