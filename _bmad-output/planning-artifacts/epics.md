@@ -39,7 +39,7 @@ FR5: The user can see all accounts grouped by type, each with its current balanc
 FR6: The user can record a balance snapshot for an account at a date. From that date, the snapshot overrides the computed balance.
 FR7: The system computes a daily balance history for each account from its opening balance, transactions and balance snapshots, and recomputes it after any change to them.
 FR8: The user can see an account's balance history as a chart over a chosen period.
-FR9: The user can create a loan account, a liability whose outstanding amount is tracked through balance snapshots and payments.
+FR9: The user can create a loan account, a liability whose outstanding amount is tracked through balance snapshots and payments. Revised by Epic 24: its terms as Sure records them, an amortisation schedule, an overview and a payoff projection (FR91 to FR94).
 FR10: The user can create an investment account (PEA) tracked through balance snapshots only, without holdings. Revised by Epic 22: trades and holdings join the snapshots (FR80 to FR83), and an account without trades stays as it is.
 FR11: The user can create a property or a vehicle account, an asset tracked through balance snapshots.
 
@@ -179,6 +179,13 @@ FR88: The user sees the bills page: overdue, due this month with paid ones in pl
 FR89: The system records a series' new price when two consecutive payments agree on it, and the user sees each bill's payments and price changes over twelve months.
 FR90: An assistant reads bills, their payments and an audit of them, records a payment, and creates and edits a bill.
 
+#### Loans
+
+FR91: The user records a loan's terms as Sure does: amount borrowed, origination date, term in months, a fixed, variable or adjustable rate with its dated changes, a down payment, and borrower insurance at an annual rate, level on the amount borrowed or decreasing on what is owed.
+FR92: The system computes a loan's amortisation schedule, constant payments re-sized at each rate change, and its insurance premiums, and the user sees each payment's date, principal, interest and remaining balance, with the total interest and total cost.
+FR93: The user sees a loan's overview: amount borrowed and owed, rate and payment in force, term, original payoff date, total cost with insurance, leverage against the down payment, the share repaid, and the current instalment split into principal, interest and insurance.
+FR94: The system projects a loan's payoff from its recorded balance at the contracted payments, and the user sees the recorded balance, the contract's schedule and the projection on one chart, with the months and interest saved or the amount left unpaid at maturity.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
@@ -246,7 +253,7 @@ FR5: Epic 1 - Accounts grouped by type with balance
 FR6: Epic 1 - Balance snapshots
 FR7: Epic 1 - Daily balance history
 FR8: Epic 1 - Balance history chart
-FR9: Epic 7 - Loan account
+FR9: Epic 7 - Loan account; Epic 24 - Terms, schedule, overview, projection
 FR10: Epic 7 - Investment (PEA) account
 FR11: Epic 7 - Property and vehicle accounts
 FR12: Epic 2 - Import a file into an account
@@ -328,8 +335,12 @@ FR87: Epic 23 - Occurrences and payment matching
 FR88: Epic 23 - Bills page, occurrence actions, all bills, upcoming
 FR89: Epic 23 - Price changes and a bill's history
 FR90: Epic 23 - Bill tools for assistants
+FR91: Epic 24 - A loan's terms as Sure records them
+FR92: Epic 24 - Amortisation schedule and insurance
+FR93: Epic 24 - Loan overview
+FR94: Epic 24 - Payoff projection and the loan chart
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41. Epic 24, asked by the owner on 2026-10-03 to catch up with Sure's loans, adds FR91 to FR94 and revises FR9.
 
 ## Epic List
 
@@ -447,6 +458,11 @@ An investment account shows its positions, their average cost and their gain, va
 
 Archant finds and follows recurring payments as Sure does today: amounts that move by a few cents or a price rise stay one series, each bill has a schedule and due dates, and the bank lines that pay them settle them, a few days late included, on a bills page that says what is overdue, due and paid.
 **FRs covered:** FR84, FR85, FR86, FR87, FR88, FR89, FR90; revises FR40, FR41
+
+### Epic 24: Loans as Sure follows them
+
+A loan account knows its contract, as in Sure: what was borrowed, when, for how long, at which rates and with which insurance; it shows its amortisation schedule, an overview of what is repaid and what each instalment pays, and where the recorded balance is heading against the contract.
+**FRs covered:** FR91, FR92, FR93, FR94; revises FR9
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -4332,3 +4348,190 @@ So that I can go through my bills in conversation.
 **Given** the finished story
 **When** `pnpm test` runs
 **Then** every acceptance criterion above has a Vitest test through the MCP handler
+
+## Epic 24: Loans as Sure follows them
+
+On 2026-10-03 the owner asked to catch up with Sure's loans. Sure added them in four pull requests: #2984 (9 September 2026, a constant-payment schedule, `app/models/loan/amortization_schedule.rb`), #3473 (15 September, the period engine `loan/simulator.rb` and `loan/amortization_math.rb`, variable rates through `loan/rate_resolver.rb`, a start date), #3474 (27 September, `loan/payoff_projection.rb` and `loan/payoff_chart.rb`) and #3327 (30 September, a down payment, borrower insurance in `loan/insurance.rb`, and the overview's figures in `loan.rb`, `loans/tabs/_overview.html.erb` and `_repayment_progress.html.erb`). Sure was read on `origin/main` at `14638a701` (2 October 2026); later loan commits only touch its demo data (#3933). Sure's assistant and API expose none of it.
+
+Story 7.1 gave Archant's loan an amount borrowed, a rate in basis points and an end date, and records the account's opening balance as the amount still owed. Its Design Notes give the end date and the basis points no reason beyond the story's wording, so Epic 24 aligns them with Sure: a term in months, and rates as precise as Sure's columns (three decimals for the interest rate, four for insurance).
+
+Sure's engine reproduces the owner's ING mortgage: 130 000,00 € at 1,82 % over 300 months gives Sure's level payment of 539,69 €, a balance of 105 104,82 € after payment 69 and of 104 724,54 € after payment 70, which splits into 380,28 € of principal and 159,41 € of interest, plus 31,60 € of level insurance at 0,2917 %. Three things differ from ING's table and stay as Sure has them. Sure dates each payment on the origination day of the month, so the owner records 5 December 2020, the day the instalments fall on, rather than the drawdown on the 3rd. Sure charges whole months, so ING's first instalment of 584,25 € shows as 571,29 €: its 12,96 € are the two days of interest from the 3rd to the 5th. ING's table numbers its rows from the drawdown, so the instalment of 5 October 2026 is its row 71 and Sure's payment 70. `deferred-work.md` keeps a first payment date and broken-period interest for later.
+
+Departures, each forced by a decision already taken:
+
+- Rates are integers in millionths, so 1,82 % is `18200` and 0,2917 % is `2917` (NFR1); Sure stores decimals with three and four places. Existing rates move from basis points by a factor of 100.
+- The engine computes in exact integer fractions (`BigInt`) and rounds each period's interest, each payment and each premium half up to the minor unit, as Sure's `BigDecimal#round` (NFR1, AD-25); Sure truncates its monthly rate, so a period whose interest falls exactly on a half cent could differ by one cent. The overview's shares are integer percentages, where Sure uses floats.
+- The terms stay in `accounts.details`, validated by Zod, with the rate changes as an array inside it (AD-6, Spec 7.1); Sure has a `loans` table and a JSON column for the changes.
+- The opening balance stays the amount still owed when the account was opened (Spec 7.1). Sure's schedule falls back to the first valuation when no principal is recorded; in Archant that valuation is a balance part way down, so a loan without « Montant emprunté » has no schedule.
+- Without a start date, origination is the account's opening date, as Sure's `origination_date`; Archant has one opening anchor, where Sure tries the first valuation first.
+- French-market subtypes stay (Spec 7.1).
+- Sure's `:hold` payment strategy has no caller and is not ported (`AGENTS.md`, nothing unused).
+- The loan chart uses the account chart's periods (UX-DR5); Sure moved its loan chart onto its shared periods in #3474 too.
+- Every figure is computed when read, never stored, as Sure's.
+- The export (AD-23) carries the terms in Sure's `accountable` of the `Account` line.
+
+Story 24.1 comes first, then 24.2. Stories 24.3 and 24.4 follow 24.2 in any order.
+
+### Story 24.1: Record a loan's terms as Sure does
+
+As the household's administrator,
+I want to record my loan's contract: when it started, for how long, its rates and its insurance,
+So that Archant can compute what each instalment repays.
+
+**Requirements:** FR91, NFR1, NFR12
+
+**Acceptance Criteria:**
+
+**Given** the loan details
+**When** this story ships
+**Then** `LoanDetails` holds `originalAmount`, `downPayment` (minor units, zero or more), `startDate`, `termMonths` (1 to 1 200, Sure's `MAX_PERIODS`), `rateType` (`fixed`, `variable`, `adjustable`), `interestRate` and `insuranceRate` in millionths, `insuranceRateType` (`level_term`, `decreasing_life`, or null), and `rateChanges`, an array of `{ effectiveDate, rate }`; every rate lies between 0 and 100 %, as Sure's `MAX_INTEREST_RATE`
+
+**Given** an existing loan
+**When** the migration runs
+**Then** its rate is multiplied by 100; an end date stays until its details are next saved, the dialog then proposes as « Durée » the months from its origination date to that end date, and saving drops the end date
+
+**Given** the create dialog or « Modifier les détails du prêt »
+**When** a loan kind is chosen
+**Then** it offers « Montant emprunté », « Apport personnel », « Date d'origine » (« Laissez vide pour prendre la date d'ouverture du compte »), « Durée (mois) », « Taux d'intérêt (%) » with three decimals, « Type de taux » (« Fixe », « Variable », « Révisable »), « Taux d'assurance (%) » with four decimals and « Type d'assurance » (« Aucune », « Constante », « Dégressive »), with Sure's hint « Un taux annuel, prélevé chaque mois en complément de la mensualité. L'assurance constante porte sur le capital initial, l'assurance dégressive sur le capital restant dû. »
+
+**Given** a variable or adjustable rate
+**When** the owner edits the loan
+**Then** « Changements de taux » lists rows of an effective date and a rate, « Ajouter un changement » adds one, a row left empty is skipped, an incomplete one or a rate outside 0 to 100 % is refused with `invalid_rate_change`, a date before origination with `rate_change_before_origination`, and a date entered twice keeps the last; switching to a fixed rate hides the rows and keeps them, as Sure's `rate_changes=`
+
+**Given** an origination date after today
+**When** the loan is saved
+**Then** it is refused with `invalid_date`, as Sure's `start_date` validation
+
+**Given** the account header
+**When** a loan is shown
+**Then** `LoanSummary` names the amount borrowed, the rate and its type, and the term in years or months
+
+**Given** the export of Epic 18
+**When** it writes a loan
+**Then** its `Account` line carries Sure's `accountable` fields `initial_balance`, `down_payment`, `start_date`, `term_months`, `rate_type`, `interest_rate`, `variable_rate_schedule`, `insurance_rate` and `insurance_rate_type`, rates as Sure's decimal percentages (AD-23)
+
+**Given** a viewer (AD-21)
+**When** they open a loan
+**Then** they read its terms and the server refuses their edit
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 24.2: The amortisation schedule
+
+As the household's administrator,
+I want to see my loan's schedule as my bank's table shows it,
+So that I know what each payment repays and what the loan costs me.
+
+**Requirements:** FR92, NFR1, NFR11
+
+**Acceptance Criteria:**
+
+**Given** `domain/loans/`
+**When** this story ships
+**Then** it ports Sure's `AmortizationMath` (the level payment, with the first-period interest of a period that straddles a rate change, and one period's split with the final payment settling the balance), `Simulator` with its `reamortize` and `scheduled` strategies, `RateResolver`, `AmortizationSchedule` and `Insurance` as pure functions, covered to the branch
+
+**Given** a loan with a rate type, a rate, a term of 1 to 1 200 months and an amount borrowed above zero
+**When** its schedule is computed
+**Then** payment n falls n months after origination, clamped to the month's end; each period's interest is the opening balance times the rate in force when the period opened over twelve; each payment is sized at the rate in force on its date and re-sized only when that rate moves; the last payment settles the balance, as Sure's `Simulator`
+
+**Given** the owner's ING mortgage: 130 000,00 € borrowed, origination 5 December 2020, 300 months, fixed at 1,820 %, level insurance at 0,2917 %
+**When** its schedule is computed
+**Then** the payment is 539,69 €; payment 69, on 5 September 2026, leaves 105 104,82 €; payment 70, on 5 October 2026, repays 380,28 € of principal and 159,41 € of interest and leaves 104 724,54 €, with a premium of 31,60 €; payment 300, on 5 December 2045, is 539,65 €; the total interest is 31 906,96 €, the total paid 161 906,96 € and the insurance 9 480,00 €
+
+**Given** a variable loan with a rate change effective between two payment dates
+**When** its schedule is computed
+**Then** the period that opened before the change accrues at the old rate, the payment on or after the change is re-sized so that it covers that period and is level to maturity, and the final settlement differs from it by cents only, as Sure's `first_period_interest`
+
+**Given** a decreasing insurance
+**When** its premiums are computed
+**Then** each premium is a twelfth of the rate on the balance at the start of its period; a level one charges the amount borrowed every month, as Sure's `Loan::Insurance`
+
+**Given** a loan with a schedule
+**When** the owner opens its account
+**Then** an « Échéancier » tab shows « Mensualité » (« Première mensualité » when the schedule re-sizes later), « Intérêts totaux » and « Coût total », the sentence « Calculé à partir du montant emprunté, du taux et de la durée, depuis le 5 décembre 2020. Les remboursements anticipés n'y figurent pas. », a notice for a variable rate, and a table of number, date, payment, principal, interest and remaining balance with past rows shaded, as Sure's `loans/tabs/_schedule`
+
+**Given** a loan without a schedule
+**When** its account opens
+**Then** it has no « Échéancier » tab, as Sure's `account_page.rb`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 24.3: The loan overview
+
+As the household's administrator,
+I want one view of my loan: what I borrowed, what I owe, what it costs, how much I have repaid and what my next instalment pays,
+So that I read my mortgage without opening the bank's table.
+
+**Requirements:** FR93, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** a loan account
+**When** the owner opens its « Vue d'ensemble » tab
+**Then** it shows « Capital d'origine », « Capital restant » (the account's balance), « Taux d'intérêt » in force today with three decimals, « Mensualité » (a fixed loan's level payment, a variable loan's payment in force, « N/D » once the schedule has run out), « Durée » in years or months, « Date de fin prévue » (the schedule's last payment), « Type », « Coût total » or « Coût total assurance comprise », « Assurance » (the total, or « 0,2917 % par an » for a rate with no schedule to apply it to), and « Effet de levier » when a down payment is recorded; any figure it cannot compute reads « Inconnu », as Sure's `loans/tabs/_overview`
+
+**Given** a down payment
+**When** leverage is computed
+**Then** it is the amount borrowed over the down payment, shown as « 4,0x », and banded « Prudent » below 4, « Modéré » from 4 to 8 and « Élevé » from 8, as Sure's `LEVERAGE_BANDS`
+
+**Given** the owner's ING mortgage on 4 October 2026, its recorded balance 105 104,82 €
+**When** the overview opens
+**Then** a ring reads « 19 % remboursé sur 130 000,00 € », and « Échéance 70 · 5 octobre 2026 » lists « Capital 380,28 € 67 % », « Intérêts 159,41 € 28 % », « Assurance 31,60 € 6 % » and « Total 571,29 € »; « Date de fin prévue » reads 5 décembre 2045 and « Coût total assurance comprise » 171 386,96 €
+
+**Given** the instalment shown
+**When** it is chosen
+**Then** it is the one after the months fully served since origination, as Sure's `months_elapsed`, and a finished loan shows none; the ring is left out when the paydown cannot be measured, as Sure's `balance_paid_ratio`
+
+**Given** the overview
+**When** the owner chooses « Modifier les détails du prêt »
+**Then** the dialog of Story 24.1 opens
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 24.4: Where my loan is heading
+
+As the household's administrator,
+I want to see my recorded balance beside the contract's schedule and where it leads,
+So that I know whether an early repayment shortens my loan and by how much.
+
+**Requirements:** FR94, NFR1, NFR13
+
+**Acceptance Criteria:**
+
+**Given** `domain/loans/payoff-projection.ts`
+**When** a loan with a schedule has a positive balance and payments left
+**Then** it runs Sure's `PayoffProjection`: from the recorded balance, over the contract's remaining payment dates and no further, paying each date the contract's own payment, from the period the schedule opened before today, and without settling a balance left at maturity; it gives the payoff date, the months saved, the interest saved against the contract's remaining interest, or the amount left at maturity
+
+**Given** the owner's ING mortgage on 6 October 2026, its recorded balance 104 724,54 €
+**When** the projection runs
+**Then** it ends on 5 December 2045 with no month and no interest saved
+
+**Given** the same loan with 10 000,00 € repaid early, its recorded balance 94 724,54 €
+**When** the projection runs
+**Then** it ends on 5 November 2043, 25 months early, and saves 3 906,00 € of interest
+
+**Given** a balance the contract's payments no longer clear by maturity
+**When** the projection runs
+**Then** it gives no payoff date and names the amount left, as Sure's `balloon_amount`
+
+**Given** a loan account with a schedule
+**When** its page opens
+**Then** its balance chart becomes Sure's loan chart: « Solde enregistré » from the account's daily balances, « Échéancier du contrat » from origination at the amount borrowed, and « Projection » from today, a « Aujourd'hui » marker, over the account chart's periods clamped to the loan's life, with a text summary of today's balance and both payoff dates and the table alternative of UX-DR5, as Sure's `Loan::PayoffChart`
+
+**Given** the chart and the « Échéancier » tab
+**When** they show the projection
+**Then** the chart says « 25 mois et 3 906,00 € d'intérêts économisés » or « 1 234,56 € restants à l'échéance », and the tab gains « Fin prévue », the projection's payoff date, « Non soldé à l'échéance » when it has none
+
+**Given** a loan without a schedule
+**When** its page opens
+**Then** it keeps the account's usual balance chart
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
