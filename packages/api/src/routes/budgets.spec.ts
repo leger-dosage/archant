@@ -60,6 +60,8 @@ const budgetBody = z.object({
 				icon: z.string(),
 				shared: z.boolean(),
 				movable: z.number(),
+				rolloverEnabled: z.boolean(),
+				rolledOver: z.number(),
 			}),
 		),
 		uncategorised: envelope,
@@ -159,6 +161,8 @@ describe("GET /api/budgets/:month", () => {
 					budgetedSpending: 0,
 					shared: false,
 					movable: 0,
+					rolloverEnabled: false,
+					rolledOver: 0,
 					budgeted: false,
 					spent: 6_000,
 					available: -6_000,
@@ -177,6 +181,8 @@ describe("GET /api/budgets/:month", () => {
 					budgetedSpending: 0,
 					shared: false,
 					movable: 0,
+					rolloverEnabled: false,
+					rolledOver: 0,
 					budgeted: false,
 					spent: 0,
 					available: 0,
@@ -957,5 +963,338 @@ describe("POST /api/budgets/:month/move", () => {
 			[409, "BUDGET_NOT_SET_UP"],
 			[404, "NOT_FOUND"],
 		]);
+	});
+});
+
+const toggle = (month: string, categoryId: string, rolloverEnabled: unknown) =>
+	ownRequest("PUT", `/api/budgets/${month}/categories/${categoryId}/rollover`, { rolloverEnabled });
+
+async function toggled(month: string, categoryId: string, rolloverEnabled: boolean) {
+	const { status, body } = await toggle(month, categoryId, rolloverEnabled);
+
+	expect(status, JSON.stringify(body)).toBe(200);
+
+	return budgetBody.parse(body).data;
+}
+
+/** A category's stored rows, by month: its switch and what the last budget write carried in. */
+async function storedOf(categoryId: string) {
+	const rows = await own?.db.all<{ month: string; enabled: number; carried: number }>(
+		sql`select budgets.month as month, budget_categories.rollover_enabled as enabled,
+			budget_categories.rolled_over_amount as carried
+			from budget_categories join budgets on budgets.id = budget_categories.budget_id
+			where budget_categories.category_id = ${categoryId} order by budgets.month`,
+	);
+
+	return Object.fromEntries(
+		(rows ?? []).map((row) => [row.month, [row.enabled === 1, row.carried]]),
+	);
+}
+
+/** « Cadeaux » at 100 in June 2026, rollover on, having spent 30. */
+async function giftsInJune(spent = "-30,00") {
+	const account = await openOwn({ openingDate: "2026-04-01", openingBalance: "10 000,00" });
+	const gift = await ownCategory("Cadeaux");
+	await save("2026-06", "1 000", "0");
+	await saved("2026-06", gift, "100");
+	await toggled("2026-06", gift, true);
+	await line(account.id, "2026-06-10", spent, gift);
+
+	return { account, gift };
+}
+
+describe("PUT /api/budgets/:month/categories/:categoryId/rollover", () => {
+	it("carries a surplus into the next month set up, which inherits the switch", async () => {
+		const { gift } = await giftsInJune();
+
+		await save("2026-07", "1 000", "0");
+		const july = await budgetOf("2026-07");
+
+		expect(lineOf(july, gift)).toMatchObject({
+			rolloverEnabled: true,
+			rolledOver: 7_000,
+			budgetedSpending: 0,
+			budgeted: true,
+			available: 7_000,
+			section: "onTrack",
+		});
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-06": [true, 0],
+			"2026-07": [true, 7_000],
+		});
+
+		// What came in counts in what remains, never in the allocation.
+		const saved50 = await saved("2026-07", gift, "50");
+
+		expect(lineOf(saved50, gift)).toMatchObject({
+			rolledOver: 7_000,
+			available: 12_000,
+			movable: 5_000,
+		});
+		expect(saved50.allocated).toBe(5_000);
+	});
+
+	it("crosses a month never set up, and adds each month's surplus", async () => {
+		const { gift } = await giftsInJune();
+
+		await save("2026-08", "1 000", "0");
+		expect(lineOf(await budgetOf("2026-08"), gift)?.rolledOver).toBe(7_000);
+
+		// July, set up after, inherits from June and leaves its 50 untouched.
+		await save("2026-07", "1 000", "0");
+		await saved("2026-07", gift, "50");
+
+		expect(lineOf(await budgetOf("2026-08"), gift)?.rolledOver).toBe(12_000);
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-06": [true, 0],
+			"2026-07": [true, 7_000],
+			"2026-08": [true, 12_000],
+		});
+	});
+
+	it("carries nothing from an overspent month", async () => {
+		const { gift } = await giftsInJune("-130,00");
+
+		await save("2026-07", "1 000", "0");
+
+		expect(lineOf(await budgetOf("2026-07"), gift)).toMatchObject({
+			rolloverEnabled: true,
+			rolledOver: 0,
+		});
+	});
+
+	it("applies a choice to the later months set up, never the earlier ones", async () => {
+		await openOwn({ openingDate: "2026-04-01" });
+		const gift = await ownCategory("Cadeaux");
+		// One after the other: each is an `immediate` write.
+		await ["2026-05", "2026-06", "2026-07", "2026-08"].reduce(async (previous, month) => {
+			await previous;
+			await save(month, "1 000", "0");
+		}, Promise.resolve());
+
+		const may = await toggled("2026-05", gift, true);
+
+		expect(lineOf(may, gift)?.rolloverEnabled).toBe(true);
+		await toggled("2026-06", gift, false);
+
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-05": [true, 0],
+			"2026-06": [false, 0],
+			"2026-07": [false, 0],
+			"2026-08": [false, 0],
+		});
+	});
+
+	it("switches off only the rows there are, creating none", async () => {
+		await openOwn({ openingDate: "2026-04-01" });
+		const gift = await ownCategory("Cadeaux");
+		await save("2026-05", "1 000", "0");
+		await save("2026-06", "1 000", "0");
+		await saved("2026-05", gift, "100");
+
+		await toggled("2026-05", gift, false);
+
+		await expect(storedOf(gift)).resolves.toEqual({ "2026-05": [false, 0] });
+	});
+
+	it("copies the switch, never what came in, and stores the chain in the same write", async () => {
+		const { gift } = await giftsInJune();
+		await save("2026-07", "1 000", "0");
+		await saved("2026-07", gift, "50");
+
+		const { status, body } = await ownRequest("POST", "/api/budgets/2026-08/copy");
+
+		expect(status, JSON.stringify(body)).toBe(200);
+		expect(lineOf(budgetBody.parse(body).data, gift)).toMatchObject({
+			rolloverEnabled: true,
+			budgetedSpending: 5_000,
+			rolledOver: 12_000,
+		});
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-06": [true, 0],
+			"2026-07": [true, 7_000],
+			"2026-08": [true, 12_000],
+		});
+	});
+
+	it("stops the carry in both directions in a month switched off", async () => {
+		const { gift } = await giftsInJune();
+		await save("2026-07", "1 000", "0");
+		await save("2026-08", "1 000", "0");
+		await saved("2026-07", gift, "50");
+
+		await toggled("2026-07", gift, false);
+		await toggled("2026-08", gift, true);
+
+		expect(lineOf(await budgetOf("2026-07"), gift)).toMatchObject({
+			rolloverEnabled: false,
+			rolledOver: 0,
+			available: 5_000,
+		});
+		expect(lineOf(await budgetOf("2026-08"), gift)).toMatchObject({
+			rolloverEnabled: true,
+			rolledOver: 0,
+		});
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-06": [true, 0],
+			"2026-07": [false, 0],
+			"2026-08": [true, 0],
+		});
+	});
+
+	it("lets a ring-fenced child carry its own, which its parent shows beside its own", async () => {
+		const { account, parent, works } = await house();
+		await save("2026-06", "1 000", "0");
+		// « Maison » at 300 holds « Travaux », ring-fenced at 100.
+		await saved("2026-06", parent, "200");
+		await saved("2026-06", works, "100");
+		await toggled("2026-06", parent, true);
+		await toggled("2026-06", works, true);
+		await line(account.id, "2026-06-10", "-20,00", works);
+		await line(account.id, "2026-06-11", "-50,00", parent);
+
+		// A copy keeps each switch and computes what comes in.
+		const { status, body } = await copy("2026-07");
+
+		expect(status, JSON.stringify(body)).toBe(200);
+		const july = budgetBody.parse(body).data;
+		expect(lineOf(july, works)).toMatchObject({ rolloverEnabled: true, rolledOver: 8_000 });
+		expect(lineOf(july, parent)).toMatchObject({
+			rolloverEnabled: true,
+			budgetedSpending: 30_000,
+			rolledOver: 23_000,
+			available: 53_000,
+		});
+		expect(july.allocated).toBe(30_000);
+		await expect(storedOf(parent)).resolves.toMatchObject({ "2026-07": [true, 15_000] });
+		await expect(storedOf(works)).resolves.toMatchObject({ "2026-07": [true, 8_000] });
+	});
+
+	it("gives a shared child nothing of its own, and shows it its parent's carry", async () => {
+		const { account, parent, garden } = await house();
+		await save("2026-06", "1 000", "0");
+		await saved("2026-06", parent, "300");
+		await toggled("2026-06", parent, true);
+		await toggled("2026-06", garden, true);
+		await line(account.id, "2026-06-10", "-40,00", garden);
+
+		await copy("2026-07");
+		const july = await budgetOf("2026-07");
+
+		expect(lineOf(july, parent)?.rolledOver).toBe(26_000);
+		expect(lineOf(july, garden)).toMatchObject({ shared: true, rolledOver: 26_000 });
+		// September, set up already, takes the switch too.
+		await expect(storedOf(garden)).resolves.toEqual({
+			"2026-06": [true, 0],
+			"2026-07": [true, 0],
+			"2026-09": [true, 0],
+		});
+		await expect(storedOf(parent)).resolves.toMatchObject({ "2026-07": [true, 26_000] });
+	});
+
+	it("reads a recategorised line at once, and stores it at the next budget write", async () => {
+		const { account, gift } = await giftsInJune();
+		await save("2026-07", "1 000", "0");
+		const withdrawal = await line(account.id, "2026-06-12", "-30,00");
+
+		await sendOwn("PATCH", `/api/transactions/${withdrawal}`, { categoryId: gift });
+
+		expect(lineOf(await budgetOf("2026-07"), gift)?.rolledOver).toBe(4_000);
+		// Reading writes nothing.
+		await expect(storedOf(gift)).resolves.toMatchObject({ "2026-07": [true, 7_000] });
+
+		await save("2026-07", "900", "0");
+
+		await expect(storedOf(gift)).resolves.toMatchObject({ "2026-07": [true, 4_000] });
+	});
+
+	it("stores the chain again after a move out of a category with rollover on", async () => {
+		const { gift } = await giftsInJune();
+		const leisure = await ownCategory("Loisirs");
+		await save("2026-07", "1 000", "0");
+		await expect(storedOf(gift)).resolves.toMatchObject({ "2026-07": [true, 7_000] });
+
+		const { status, body } = await move("2026-06", gift, leisure, "20");
+
+		expect(status, JSON.stringify(body)).toBe(200);
+		await expect(storedOf(gift)).resolves.toMatchObject({ "2026-07": [true, 5_000] });
+	});
+
+	it("stores the chain again after a ring-fenced child's amount changes", async () => {
+		const { parent, works } = await house();
+		await save("2026-06", "1 000", "0");
+		await saved("2026-06", parent, "200");
+		await saved("2026-06", works, "100");
+		await toggled("2026-06", works, true);
+		await save("2026-07", "1 000", "0");
+		// Ring-fenced in July too: a shared child receives nothing.
+		await saved("2026-07", works, "50");
+		await expect(storedOf(works)).resolves.toMatchObject({ "2026-07": [true, 10_000] });
+
+		await saved("2026-06", works, "150");
+
+		await expect(storedOf(works)).resolves.toMatchObject({ "2026-07": [true, 15_000] });
+	});
+
+	it("clears a stored carry once the last switch goes off", async () => {
+		const { gift } = await giftsInJune();
+		await save("2026-07", "1 000", "0");
+		await expect(storedOf(gift)).resolves.toMatchObject({ "2026-07": [true, 7_000] });
+
+		await toggled("2026-06", gift, false);
+
+		await expect(storedOf(gift)).resolves.toEqual({
+			"2026-06": [false, 0],
+			"2026-07": [false, 0],
+		});
+	});
+
+	it("never inherits a switch for a category turned into income since", async () => {
+		await openOwn({ openingDate: "2026-04-01" });
+		const bonus = await ownCategory("Primes");
+		await save("2026-06", "1 000", "0");
+		await toggled("2026-06", bonus, true);
+		await sendOwn("PATCH", `/api/categories/${bonus}`, { kind: "income" });
+
+		await save("2026-07", "1 000", "0");
+
+		await expect(storedOf(bonus)).resolves.toEqual({ "2026-06": [true, 0] });
+	});
+
+	it("refuses a month not set up, an income or unknown category, or out of bounds, and writes nothing", async () => {
+		await openOwn({ openingDate: "2026-04-01" });
+		const gift = await ownCategory("Cadeaux");
+		const salary = await ownCategory("Salaire", { kind: "income" });
+		await save("2026-06", "1 000", "0");
+
+		const refused = await Promise.all([
+			toggle("2026-07", gift, true),
+			toggle("2026-06", salary, true),
+			toggle("2026-06", "inconnue", true),
+			toggle("2028-10", gift, true),
+		]);
+
+		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual([
+			[409, "BUDGET_NOT_SET_UP"],
+			[404, "NOT_FOUND"],
+			[404, "NOT_FOUND"],
+			[404, "NOT_FOUND"],
+		]);
+		await expect(amountRows()).resolves.toEqual([]);
+	});
+
+	it("requires the switch as a boolean", async () => {
+		await openOwn({ openingDate: "2026-04-01" });
+		const gift = await ownCategory("Cadeaux");
+		await save("2026-06", "1 000", "0");
+
+		const { status, body } = await toggle("2026-06", gift, "yes");
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "rolloverEnabled", code: "invalid_type" }],
+		});
+		await expect(amountRows()).resolves.toEqual([]);
 	});
 });

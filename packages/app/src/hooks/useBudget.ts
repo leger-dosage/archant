@@ -7,6 +7,7 @@ import type {
 	BudgetCategoryInput,
 	BudgetInput,
 	BudgetMoveInput,
+	BudgetRolloverInput,
 } from "@archant/api/schemas/budgets";
 
 import { api, errorCodeOf, unwrap } from "@/lib/api";
@@ -38,15 +39,16 @@ export function useSaveBudget(month: string) {
 		mutationFn: async (input: BudgetInput) =>
 			(await unwrap(api.budgets[":month"].$put({ param: { month }, json: input }))).data,
 		// The answer is the month as it now reads: the page shows it at once.
-		onSuccess: (budget) => setUpMonth(queryClient, month, budget),
+		onSuccess: (budget) => showMonth(queryClient, month, budget),
 	});
 }
 
 /**
- * Shows a month just set up, and stales the others: a later month may now
- * offer to copy this one rather than an older one.
+ * Shows a month as a write left it, and stales the others: a later month may
+ * now offer to copy this one rather than an older one, and what each later
+ * month receives from the months before it may have changed.
  */
-function setUpMonth(queryClient: QueryClient, month: string, budget: BudgetData) {
+function showMonth(queryClient: QueryClient, month: string, budget: BudgetData) {
 	void queryClient.invalidateQueries({
 		queryKey: queryKeys.transactions.budgets,
 		predicate: (query) => query.queryKey[2] !== month,
@@ -76,9 +78,7 @@ export function useSaveCategoryBudget(month: string) {
 					}),
 				)
 			).data,
-		onSuccess: (budget) => {
-			queryClient.setQueryData(queryKeys.transactions.budget(month), budget);
-		},
+		onSuccess: (budget) => showMonth(queryClient, month, budget),
 	});
 }
 
@@ -89,7 +89,7 @@ export function useCopyBudget(month: string) {
 	return useMutation({
 		mutationFn: async () =>
 			(await unwrap(api.budgets[":month"].copy.$post({ param: { month } }))).data,
-		onSuccess: (budget) => setUpMonth(queryClient, month, budget),
+		onSuccess: (budget) => showMonth(queryClient, month, budget),
 		// Set up in another tab, or its source changed: the page reads the month again.
 		onError: () =>
 			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
@@ -104,10 +104,33 @@ export function useMoveBudget(month: string) {
 		scope: categoriesScope(month),
 		mutationFn: async (input: BudgetMoveInput) =>
 			(await unwrap(api.budgets[":month"].move.$post({ param: { month }, json: input }))).data,
-		onSuccess: (budget) => {
-			queryClient.setQueryData(queryKeys.transactions.budget(month), budget);
-		},
+		onSuccess: (budget) => showMonth(queryClient, month, budget),
 		// Changed in another tab: the dialog's figures and destinations read the month again.
+		onError: () =>
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
+	});
+}
+
+/**
+ * Sets one category's « Report » switch, in this month and the later ones set
+ * up; the answer is the whole month, what came in included.
+ */
+export function useSetCategoryRollover(month: string) {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		scope: categoriesScope(month),
+		mutationFn: async ({ categoryId, input }: { categoryId: string; input: BudgetRolloverInput }) =>
+			(
+				await unwrap(
+					api.budgets[":month"].categories[":categoryId"].rollover.$put({
+						param: { month, categoryId },
+						json: input,
+					}),
+				)
+			).data,
+		onSuccess: (budget) => showMonth(queryClient, month, budget),
+		// Deleted, or turned into income, in another tab: the page reads the month again.
 		onError: () =>
 			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
 	});

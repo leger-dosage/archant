@@ -112,3 +112,8 @@ export function budgetMoveSchema(currency: CurrencyCode) {
 
 /** What the move dialog's form holds: the text typed, before the schema parses it. */
 export type BudgetMoveFormInput = z.input<ReturnType<typeof budgetMoveSchema>>;
+
+/** One category's « Report » switch, in a month and the later ones set up. */
+export const budgetRolloverBodySchema = z.object({ rolloverEnabled: z.boolean() });
+
+export type BudgetRolloverInput = z.input<typeof budgetRolloverBodySchema>;

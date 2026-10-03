@@ -131,7 +131,8 @@ export const queryKeys = {
 		budget: (month: string) => ["transactions", "budget", month] as const,
 		/**
 		 * Prefixes every month's budget: a month set up becomes the one a later
-		 * month offers to copy, so setting one up stales the others.
+		 * month offers to copy, and any budget write can change what a later
+		 * month receives, so every budget write stales the others.
 		 */
 		budgets: ["transactions", "budget"] as const,
 	},
