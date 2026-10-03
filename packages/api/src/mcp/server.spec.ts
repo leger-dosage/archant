@@ -73,6 +73,11 @@ const WRITE_TOOLS = [
 	"create_category",
 	"create_merchant",
 	"create_tag",
+	"update_transaction",
+	"bulk_update_transactions",
+	"rename_category",
+	"rename_merchant",
+	"rename_tag",
 ];
 
 let bare: TestApp;
@@ -338,6 +343,15 @@ describe("tools/list", () => {
 			create_category: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			create_merchant: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			create_tag: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+			update_transaction: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			bulk_update_transactions: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: true,
+			},
+			rename_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			rename_tag: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 		});
 		// The rule form's closed types reach the assistant, each with its operators.
 		const createRule = JSON.stringify(tools.find((tool) => tool.name === "create_rule"));
@@ -1531,5 +1545,330 @@ describe("creating what a rule names", () => {
 				}),
 			]),
 		);
+	});
+});
+
+async function lockedFieldsOf(id: string): Promise<unknown> {
+	const { rows } = await temp.db.$client.execute({
+		sql: "select locked_fields from transactions where entry_id = ?",
+		args: [id],
+	});
+
+	return JSON.parse(z.string().parse(rows[0]?.locked_fields));
+}
+
+async function categoriesOf(token: string, accountIds: string[]) {
+	return listed
+		.parse(
+			(await callTool(bare, token, "get_transactions", { account: accountIds })).structuredContent,
+		)
+		.items.map((item) => item.categoryId);
+}
+
+const bulkResult = z.object({ matched: z.number(), changed: z.number() });
+
+describe("classifying transactions", () => {
+	it("update_transaction locks the category it sets, which a rule applied afterwards leaves and does not count", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Classé" });
+		const byAssistant = await createCategory(uniqueCategory("Loisirs"));
+		const byRule = await createCategory(uniqueCategory("Courses"));
+		const edited = await spend(account, "CLASS1 PICARD");
+		const open = await spend(account, "CLASS1 PICARD");
+
+		const updated = await callTool(bare, token, "update_transaction", {
+			id: edited,
+			categoryId: byAssistant.id,
+			notes: "Dîner",
+		});
+
+		expect(updated.structuredContent).toEqual(
+			(await callTool(bare, token, "get_transaction", { id: edited })).structuredContent,
+		);
+		expect(updated.structuredContent).toMatchObject({
+			categoryId: byAssistant.id,
+			notes: "Dîner",
+			amount: "-12.50",
+		});
+		await expect(lockedFieldsOf(edited)).resolves.toEqual(["notes", "category"]);
+
+		const ruleId = savedRule.parse(
+			(
+				await callTool(bare, token, "create_rule", {
+					conditions: [labelLike("class1")],
+					actions: [{ actionType: "set_transaction_category", value: byRule.id }],
+				})
+			).structuredContent,
+		).rule.id;
+		const preview = previewed.parse(
+			(await callTool(bare, token, "preview_rule", { ruleId })).structuredContent,
+		);
+		const applied = await callTool(bare, token, "apply_rules", { ruleId, expectedChanged: 1 });
+
+		expect(preview).toMatchObject({ matched: 2, changed: 1 });
+		expect(applied.structuredContent).toMatchObject({ changed: 1 });
+		const after = listed
+			.parse(
+				(await callTool(bare, token, "get_transactions", { account: [account.id] }))
+					.structuredContent,
+			)
+			.items.map((item) => [item.id, item.categoryId]);
+		expect(Object.fromEntries(after)).toEqual({ [edited]: byAssistant.id, [open]: byRule.id });
+		expect(outcomes(await callsRecorded())).toContainEqual({
+			tool: "update_transaction",
+			outcome: "OK",
+			changedRows: 1,
+		});
+	});
+
+	it("update_transaction clears a category, locking it, and refuses a date or an amount", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Effacé" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const id = await spend(account, "CLEAR2 MONOP");
+		await callTool(bare, token, "update_transaction", { id, categoryId: groceries.id });
+
+		const cleared = await callTool(bare, token, "update_transaction", { id, categoryId: null });
+		const refused = await callTool(bare, token, "update_transaction", {
+			id,
+			amount: "-1.00",
+			date: "2026-09-01",
+		});
+		const empty = await callTool(bare, token, "update_transaction", { id });
+
+		expect(cleared.structuredContent).toMatchObject({ categoryId: null });
+		await expect(lockedFieldsOf(id)).resolves.toEqual(["category"]);
+		expect(refused.isError).toBe(true);
+		expect(refused.content[0]?.text).toContain('"path":"amount","code":"unrecognized_keys"');
+		expect(refused.content[0]?.text).toContain('"path":"date","code":"unrecognized_keys"');
+		expect(empty.content[0]?.text).toContain('"code":"empty_patch"');
+		expect(
+			(await callTool(bare, token, "get_transaction", { id })).structuredContent,
+		).toMatchObject({ date: "2026-09-10", amount: "-12.50" });
+	});
+
+	it("bulk_update_transactions by ids adds tags beside those each carries", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Étiqueté" });
+		const holidays = await createTag(`Vacances ${crypto.randomUUID().slice(0, 8)}`);
+		const work = await createTag(`Travaux ${crypto.randomUUID().slice(0, 8)}`);
+		const ids = await spendAll(account, [
+			{ label: "BULK3 A" },
+			{ label: "BULK3 B" },
+			{ label: "BULK3 C" },
+		]);
+		const [tagged = ""] = ids;
+		await callTool(bare, token, "update_transaction", { id: tagged, tagIds: [holidays.id] });
+
+		const result = await callTool(bare, token, "bulk_update_transactions", {
+			ids,
+			patch: { addTagIds: [work.id] },
+		});
+
+		expect(result.structuredContent).toEqual({ matched: 3, changed: 3 });
+		expect(
+			z
+				.object({ tagIds: z.array(z.string()) })
+				.parse((await callTool(bare, token, "get_transaction", { id: tagged })).structuredContent)
+				.tagIds.toSorted(),
+		).toEqual([holidays.id, work.id].toSorted());
+		expect(outcomes(await callsRecorded())).toContainEqual({
+			tool: "bulk_update_transactions",
+			outcome: "OK",
+			changedRows: 3,
+		});
+	});
+
+	it("bulk_update_transactions by ids counts a row already on the category as matched, not changed", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Déjà classé" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const ids = await spendAll(account, [{ label: "SAME11 A" }, { label: "SAME11 B" }]);
+		const [already = ""] = ids;
+		await callTool(bare, token, "update_transaction", { id: already, categoryId: groceries.id });
+		await temp.db.delete(assistantCalls);
+
+		const result = await callTool(bare, token, "bulk_update_transactions", {
+			ids,
+			patch: { categoryId: groceries.id },
+		});
+
+		expect(result.structuredContent).toEqual({ matched: 2, changed: 1 });
+		expect(outcomes(await callsRecorded())).toEqual([
+			{ tool: "bulk_update_transactions", outcome: "OK", changedRows: 1 },
+		]);
+	});
+
+	it("bulk_update_transactions by filter writes when get_transactions' total, every currency included, is expected", async () => {
+		const token = await writer();
+		const euros = await openAccount({ name: "Filtre euros" });
+		const dollars = await openAccount({ name: "Filtre dollars", currency: "USD" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		await spend(euros, "FILTER4 A");
+		await spend(euros, "FILTER4 B");
+		await spend(dollars, "FILTER4 C");
+		const filter = { account: [euros.id, dollars.id], category: ["none"] };
+		const { total } = listed.parse(
+			(await callTool(bare, token, "get_transactions", filter)).structuredContent,
+		);
+
+		const result = await callTool(bare, token, "bulk_update_transactions", {
+			filter,
+			expectedCount: total,
+			patch: { categoryId: groceries.id },
+		});
+
+		expect(total).toBe(3);
+		expect(bulkResult.parse(result.structuredContent)).toEqual({ matched: total, changed: 3 });
+		await expect(categoriesOf(token, [euros.id, dollars.id])).resolves.toEqual([
+			groceries.id,
+			groceries.id,
+			groceries.id,
+		]);
+	});
+
+	it("bulk_update_transactions writes nothing and answers the count now when it changed", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Compte périmé" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		await spend(account, "STALE6 A");
+		await spend(account, "STALE6 B");
+
+		const result = await callTool(bare, token, "bulk_update_transactions", {
+			filter: { account: [account.id] },
+			expectedCount: 1,
+			patch: { categoryId: groceries.id },
+		});
+
+		expect(result).toEqual({
+			isError: true,
+			content: [
+				{
+					type: "text",
+					text: 'BULK_COUNT_STALE: The filter now matches another count of transactions than expected. {"count":"2"}',
+				},
+			],
+		});
+		await expect(categoriesOf(token, [account.id])).resolves.toEqual([null, null]);
+		expect(outcomes(await callsRecorded())).toContainEqual({
+			tool: "bulk_update_transactions",
+			outcome: "BULK_COUNT_STALE",
+			changedRows: 0,
+		});
+	});
+
+	it("bulk_update_transactions refuses a filter without its count, a count beside ids, and neither selection", async () => {
+		const token = await writer();
+		const call = async (args: Record<string, unknown>) =>
+			(
+				await callTool(bare, token, "bulk_update_transactions", {
+					patch: { excluded: true },
+					...args,
+				})
+			).content[0]?.text;
+
+		await expect(call({ filter: { q: "missing7" } })).resolves.toContain(
+			'"path":"expectedCount","code":"required"',
+		);
+		await expect(call({ ids: ["a"], expectedCount: 1 })).resolves.toContain(
+			'"path":"expectedCount","code":"filter_only"',
+		);
+		await expect(call({})).resolves.toContain('"path":"ids","code":"ids_or_filter"');
+		await expect(call({ ids: ["a"], patch: { excluded: true, tagIds: ["b"] } })).resolves.toContain(
+			'"path":"patch.tagIds","code":"unrecognized_keys"',
+		);
+	});
+
+	it("bulk_update_transactions writes nothing when an id names no transaction", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Inconnu" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const id = await spend(account, "UNKNOWN8 A");
+
+		const result = await callTool(bare, token, "bulk_update_transactions", {
+			ids: [id, "missing"],
+			patch: { categoryId: groceries.id },
+		});
+
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain('"path":"ids","code":"invalid_value"');
+		await expect(categoriesOf(token, [account.id])).resolves.toEqual([null]);
+	});
+
+	it("renames a category, a merchant and a tag as « Réglages » does, refusing a taken name and an unknown id", async () => {
+		const token = await writer();
+		const category = await createCategory(uniqueCategory("Alimentation"));
+		const merchant = await createMerchant(`AMZN ${crypto.randomUUID().slice(0, 8)}`);
+		const tag = await createTag(`Vacances RENAME9 ${crypto.randomUUID().slice(0, 8)}`);
+		const other = await createTag(`Travaux RENAME9 ${crypto.randomUUID().slice(0, 8)}`);
+		const categoryName = uniqueCategory("Courses");
+		const merchantName = `Amazon ${crypto.randomUUID().slice(0, 8)}`;
+
+		const renamedCategory = await callTool(bare, token, "rename_category", {
+			categoryId: category.id,
+			name: categoryName,
+		});
+		const renamedMerchant = await callTool(bare, token, "rename_merchant", {
+			merchantId: merchant.id,
+			name: merchantName,
+		});
+		const taken = await callTool(bare, token, "rename_tag", {
+			tagId: tag.id,
+			name: other.name.toUpperCase(),
+		});
+		const unknown = await callTool(bare, token, "rename_tag", { tagId: "missing", name: "Libre" });
+
+		expect(renamedCategory.structuredContent).toEqual({
+			category: { id: category.id, name: categoryName, kind: category.kind, parentId: null },
+		});
+		expect(renamedMerchant.structuredContent).toEqual({
+			merchant: { id: merchant.id, name: merchantName },
+		});
+		expect(taken.content[0]?.text).toContain('"path":"name","code":"name_taken"');
+		expect(unknown.content[0]?.text).toMatch(/^NOT_FOUND: /u);
+		expect(outcomes(await callsRecorded())).toEqual(
+			expect.arrayContaining([
+				{ tool: "rename_category", outcome: "OK", changedRows: 1 },
+				{ tool: "rename_merchant", outcome: "OK", changedRows: 1 },
+				{ tool: "rename_tag", outcome: "VALIDATION_ERROR", changedRows: 0 },
+				{ tool: "rename_tag", outcome: "NOT_FOUND", changedRows: 0 },
+			]),
+		);
+	});
+
+	it("refuses each of the five to a read-only token with a 403 scope challenge, writing nothing", async () => {
+		const account = await openAccount({ name: "Lecture seule" });
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const merchant = await createMerchant(`Lecture ${crypto.randomUUID().slice(0, 8)}`);
+		const tag = await createTag(`Lecture ${crypto.randomUUID().slice(0, 8)}`);
+		const id = await spend(account, "READONLY10 A");
+		const calls: [string, Record<string, unknown>][] = [
+			["update_transaction", { id, categoryId: groceries.id }],
+			["bulk_update_transactions", { ids: [id], patch: { categoryId: groceries.id } }],
+			["rename_category", { categoryId: groceries.id, name: "Renommée" }],
+			["rename_merchant", { merchantId: merchant.id, name: "Renommé" }],
+			["rename_tag", { tagId: tag.id, name: "Renommé" }],
+		];
+
+		const statuses = await calls.reduce<Promise<number[]>>(async (previous, [name, args]) => {
+			const done = await previous;
+			const response = await mcp(bare, tokens.access_token, "tools/call", {
+				name,
+				arguments: args,
+			});
+
+			return [...done, response.status];
+		}, Promise.resolve([]));
+
+		expect(statuses).toEqual([403, 403, 403, 403, 403]);
+		expect(outcomes(await callsRecorded())).toEqual(
+			calls.map(([tool]) => ({ tool, outcome: "INSUFFICIENT_SCOPE", changedRows: 0 })),
+		);
+		await expect(categoriesOf(tokens.access_token, [account.id])).resolves.toEqual([null]);
+		const names = z
+			.object({ categories: z.array(z.object({ id: z.string(), name: z.string() })) })
+			.parse((await callTool(bare, tokens.access_token, "get_categories")).structuredContent)
+			.categories.find((item) => item.id === groceries.id)?.name;
+		expect(names).toBe(groceries.name);
 	});
 });

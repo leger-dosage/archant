@@ -819,7 +819,7 @@ describe("POST /api/transactions/bulk-update", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { updated: 3 } });
+		expect(await response.json()).toEqual({ data: { updated: 3, changed: 3 } });
 		const rows = await rowsOf(account.id);
 		expect(rows.map((row) => [row.category, row.origin, row.locked])).toEqual(
 			ids.map(() => [groceries.id, "user", `${manualLocks},"category"]`]),
@@ -876,7 +876,7 @@ describe("POST /api/transactions/bulk-update", () => {
 				filter: { account: account.id, category: "none" },
 				patch: { categoryId: groceries.id },
 			}),
-		).resolves.toEqual({ status: 200, body: { data: { updated: 3 } } });
+		).resolves.toEqual({ status: 200, body: { data: { updated: 3, changed: 3 } } });
 		expect((await rowsOf(account.id)).map((row) => row.category)).toEqual(
 			ids.map(() => groceries.id),
 		);
@@ -904,7 +904,7 @@ describe("POST /api/transactions/bulk-update", () => {
 				filter: { account: account.id, q: "introuvable" },
 				patch: { excluded: true },
 			}),
-		).resolves.toEqual({ status: 200, body: { data: { updated: 0 } } });
+		).resolves.toEqual({ status: 200, body: { data: { updated: 0, changed: 0 } } });
 	});
 
 	it.each([

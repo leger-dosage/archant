@@ -10,7 +10,10 @@ import { monthSchema } from "./reports.ts";
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "./rules.ts";
 import { tagSchema } from "./tags.ts";
 import {
+	MAX_BULK_IDS,
 	MAX_TAG_FILTER,
+	bulkIds,
+	bulkPatchSchema,
 	checkFilter,
 	directionSchema,
 	filterFields,
@@ -352,3 +355,105 @@ export const createCategoryInput = createCategorySchema
 export const createMerchantInput = merchantSchema.strict();
 
 export const createTagInput = tagSchema.strict();
+
+const categoryId = z
+	.string()
+	.min(1)
+	.describe("A category id from get_categories or create_category.");
+const merchantId = z
+	.string()
+	.min(1)
+	.describe("A merchant id from get_merchants or create_merchant.");
+const tagId = z.string().min(1).describe("A tag id from get_tags or create_tag.");
+
+/**
+ * `update_transaction`: the transaction sheet's fields, never its date nor its
+ * amount, which come from the bank: a label written to mislead the assistant
+ * must not move money. Passed raw to `updateTransaction`, which parses them as
+ * it parses the sheet's.
+ */
+export const updateTransactionInput = z
+	.strictObject({
+		id: transactionIdInput.shape.id,
+		categoryId: categoryId
+			.nullable()
+			.optional()
+			.describe("A category id; null leaves it uncategorised."),
+		merchantId: merchantId
+			.nullable()
+			.optional()
+			.describe("A merchant id; null removes the merchant."),
+		tagIds: z
+			.array(tagId)
+			.optional()
+			.describe("The whole set of tag ids, replacing the tags it carries; [] removes them all."),
+		notes: z
+			.string()
+			.nullable()
+			.optional()
+			.describe("The notes, replacing them; null or empty removes them."),
+		label: z.string().optional().describe("The new label, replacing the whole label."),
+		excluded: z
+			.boolean()
+			.optional()
+			.describe("true leaves it out of reports; it still counts in the balance."),
+	})
+	.refine(
+		(value) => Object.entries(value).some(([key, field]) => key !== "id" && field !== undefined),
+		{ message: "empty_patch" },
+	);
+
+/**
+ * `bulk_update_transactions`: the bulk bar's patch on up to 200 ids, or on
+ * every transaction a filter matches. With a filter, the count the assistant
+ * read and showed the owner is required: the ledger writes nothing if the
+ * filter now selects another count.
+ */
+export const bulkUpdateTransactionsInput = z
+	.strictObject({
+		ids: bulkIds
+			.optional()
+			.describe(
+				`Up to ${MAX_BULK_IDS} transaction ids from get_transactions; without filter. Every id must exist, or nothing is written.`,
+			),
+		filter: groupTransactionsInput
+			.optional()
+			.describe("get_transactions' filter, without page or pageSize; without ids."),
+		expectedCount: z
+			.number()
+			.int()
+			.min(0)
+			.optional()
+			.describe(
+				"Required with filter, refused with ids: the total get_transactions gave for the same filter, shown to the owner. Nothing is written if the filter matches another count now.",
+			),
+		// Strict: a misspelt key would otherwise be dropped, and the patch would change less than asked.
+		patch: bulkPatchSchema
+			.strict()
+			.describe(
+				"At least one of: categoryId (null leaves them uncategorised), merchantId (null removes it), addTagIds (tag ids added beside those each carries, never removing one), excluded.",
+			),
+	})
+	.superRefine((value, context) => {
+		if ((value.ids === undefined) === (value.filter === undefined)) {
+			context.addIssue({ code: "custom", path: ["ids"], message: "ids_or_filter" });
+		}
+
+		if (value.filter !== undefined && value.expectedCount === undefined) {
+			context.addIssue({ code: "custom", path: ["expectedCount"], message: "required" });
+		}
+
+		if (value.ids !== undefined && value.expectedCount !== undefined) {
+			context.addIssue({ code: "custom", path: ["expectedCount"], message: "filter_only" });
+		}
+	});
+
+/** The names « Réglages » takes: one rule for creating and renaming. */
+export const renameCategoryInput = z.strictObject({
+	categoryId,
+	name: createCategorySchema.shape.name,
+});
+
+export const renameMerchantInput = z.strictObject({ merchantId, ...merchantSchema.shape });
+
+export const renameTagInput = z.strictObject({ tagId, ...tagSchema.shape });

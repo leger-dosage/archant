@@ -151,7 +151,7 @@ describe("transfer sides and categories", () => {
 				{ categoryId: groceries, excluded: true },
 				{ origin: "user" },
 			),
-		).resolves.toBe(3);
+		).resolves.toEqual({ matched: 3, changed: 3 });
 
 		await expect(categoryOf(standard)).resolves.toBe(groceries);
 		await expect(categoryOf(outflow)).resolves.toBeNull();
@@ -159,6 +159,40 @@ describe("transfer sides and categories", () => {
 		await expect(categoryOriginOf(outflow)).resolves.toBeNull();
 		await expect(lockedFields(outflow)).resolves.toEqual([...(outflowLocks ?? []), "excluded"]);
 		await expect(findTransaction(deps(), outflow)).resolves.toMatchObject({ excluded: true });
+	});
+
+	it("selects for a bulk edit as many rows as the totals count, transfer sides included", async () => {
+		const { checking: joint, livret } = await matchedPair();
+		const mortgage = await openLoan();
+		await loanPaymentOf(joint.id, mortgage.id);
+		await add(joint.id, { amount: toMinorUnits(-transferAmount()) });
+		const accountIds = [joint.id, livret.id, mortgage.id];
+		const filters = [
+			{ accountIds, uncategorised: true },
+			{ accountIds, direction: ["transfer" as const] },
+		];
+
+		const results = await filters.reduce<Promise<{ counted: number; matched: number }[]>>(
+			async (previous, filter) => {
+				const done = await previous;
+				const counted = (await sumTransactions(deps(), filter)).reduce(
+					(total, row) => total + row.count,
+					0,
+				);
+				const { matched } = await bulkUpdateTransactions(
+					deps(),
+					{ filter },
+					{ excluded: true },
+					{ origin: "user", expectedCount: counted },
+				);
+
+				return [...done, { counted, matched }];
+			},
+			Promise.resolve([]),
+		);
+
+		expect(results.map(({ counted }) => counted)).toEqual([2, 3]);
+		expect(results.map(({ matched }) => matched)).toEqual(results.map(({ counted }) => counted));
 	});
 
 	it("sets a bulk category on the spent outflow of a loan payment, as the dashboard counts it", async () => {
@@ -175,7 +209,7 @@ describe("transfer sides and categories", () => {
 				{ categoryId: housing },
 				{ origin: "user" },
 			),
-		).resolves.toBe(4);
+		).resolves.toEqual({ matched: 4, changed: 1 });
 
 		await expect(categoryOf(loan.outflow)).resolves.toBe(housing);
 		await expect(categoryOf(loan.inflow)).resolves.toBeNull();

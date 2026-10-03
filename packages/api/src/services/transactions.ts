@@ -528,20 +528,24 @@ async function selectionOf(
 
 /**
  * Sets a category or a merchant, adds tags or changes the exclusion on the
- * selected transactions, on the user's behalf, and counts the rows selected.
+ * selected transactions, on the user's behalf, and counts the rows selected
+ * and the rows changed. With `expectedCount`, which an assistant passes and
+ * the bulk bar never does, a selection of another size writes nothing and
+ * throws `BULK_COUNT_STALE`.
  */
 export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
 	body: BulkUpdateRequest,
-): Promise<{ updated: number }> {
-	const updated = await bulkUpdateLedgerTransactions(
+	options: { expectedCount?: number | undefined } = {},
+): Promise<{ updated: number; changed: number }> {
+	const { matched, changed } = await bulkUpdateLedgerTransactions(
 		deps,
 		await selectionOf(deps, body.selection),
 		body.patch,
-		{ origin: "user" },
+		{ origin: "user", expectedCount: options.expectedCount },
 	);
 
-	return { updated };
+	return { updated: matched, changed };
 }
 
 /** Deletes the selected transactions for good and counts them. */
