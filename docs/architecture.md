@@ -8,7 +8,7 @@ scope: "Archant, the ten epics of epics.md"
 status: final
 created: "2026-09-21"
 updated: "2026-10-03"
-binds: [FR1-FR56, FR61-FR83, NFR1-NFR12, NFR14, NFR19, NFR20]
+binds: [FR1-FR56, FR61-FR90, NFR1-NFR12, NFR14, NFR19, NFR20]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md
   - ../_bmad-output/planning-artifacts/epics.md
@@ -186,7 +186,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 2, 4, 5, 9, 10; FR51, FR52
 - **Prevents:** a pending-to-booked replacement or a duplicate merge changing an entry's id and orphaning its tags, transfer, recurring link and keys.
-- **Rule:** An entry's id never changes. `absorb(survivorId, source)`, in `services/ledger/pending.ts`, updates the survivor in place, skipping locked fields, moves every key, tagging, transfer and recurring link onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A booked line is looked up by its fingerprint, then its `ext:` key; a pending line by its `ext:` key only, since its fingerprint's occurrence index shifts once an identical line before it is booked. A pending line no key found is recognised within its group of identical pending lines (same date, amount and normalised label), among the connection's unclaimed pending entries holding a fingerprint of that group, ordered by the lowest index they hold, then age, then id. A group with at least as many lines as entries lost no line, so each line first takes the entry holding its own fingerprint, and a line left over is new; a shorter group lost the line booked first, so its lines, in statement order, take the last entries. An entry recognised this way keeps the fingerprint it holds and takes no other of its group, or a twin bought later would be taken for it. Indices are searched up to 100 (`MAX_IDENTICAL_LINES`). A line with an `ext:` key never takes a candidate holding one, since its reference would have found it; a line without one takes any candidate. A pending entry absent from syncs on two different days, in `APP_TIMEZONE`, is deleted; a line the sync refused still vouches for the entry its key names (`transactions.pending_missed_syncs` and `transactions.pending_missed_on`, beside `transactions.pending`: AD-8 keeps transaction-only columns on `transactions`). The user's "merge possible duplicate" action uses `absorb` too.
+- **Rule:** An entry's id never changes. `absorb(survivorId, source)`, in `services/ledger/pending.ts`, updates the survivor in place, skipping locked fields, moves every key, tagging, transfer, recurring link and recurring payment onto it, and deletes the absorbed row. Pending reconciliation, step 3 of AD-4, uses it: an exact key match on a pending entry absorbs the booked line, amount changes included; otherwise a booked line absorbs a pending entry of the same account and connection with the same amount within 5 days. A booked line is looked up by its fingerprint, then its `ext:` key; a pending line by its `ext:` key only, since its fingerprint's occurrence index shifts once an identical line before it is booked. A pending line no key found is recognised within its group of identical pending lines (same date, amount and normalised label), among the connection's unclaimed pending entries holding a fingerprint of that group, ordered by the lowest index they hold, then age, then id. A group with at least as many lines as entries lost no line, so each line first takes the entry holding its own fingerprint, and a line left over is new; a shorter group lost the line booked first, so its lines, in statement order, take the last entries. An entry recognised this way keeps the fingerprint it holds and takes no other of its group, or a twin bought later would be taken for it. Indices are searched up to 100 (`MAX_IDENTICAL_LINES`). A line with an `ext:` key never takes a candidate holding one, since its reference would have found it; a line without one takes any candidate. A pending entry absent from syncs on two different days, in `APP_TIMEZONE`, is deleted; a line the sync refused still vouches for the entry its key names (`transactions.pending_missed_syncs` and `transactions.pending_missed_on`, beside `transactions.pending`: AD-8 keeps transaction-only columns on `transactions`). The user's "merge possible duplicate" action uses `absorb` too.
 
 ### AD-18 — Enable Banking specifics
 
@@ -223,6 +223,12 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 - **Binds:** Epic 18; FR71
 - **Prevents:** a secret leaving in an archive, a new table missing from the export, and an archive held in memory.
 - **Rule:** `GET /api/export` streams a ZIP built in the request, in Sure's export format: Sure's file names and columns, and an `all.ndjson` that Sure's `SureImport` accepts, so amounts follow Sure's sign there. It sits outside the envelope and outside compression. Each table is read through an allowlist of exported columns in `services/export.ts`, and a spec fails when a schema column is neither exported nor listed as left out. A story that adds a table adds it to the export or to the left-out list.
+
+### AD-24 — Recurring series, occurrences and payments
+
+- **Binds:** Epics 9, 23; FR40, FR41, FR84–FR90
+- **Prevents:** detection and matching disagreeing on what « the same day » or « the same amount » means, two date engines, a transaction paying two occurrences beyond its amount, a float in a tolerance or a score, and a payment lost when a pending line is replaced.
+- **Rule:** `domain/recurring/` holds Sure's identifier, schedule engine and matcher as pure functions; `domain/recurring/schedule.ts` is the only code that computes a series' dates, and the identifier, the manual pass, the cleaner, the generator and the matcher all ask it whether a date lies within 2 days of an occurrence. Tolerances and scores are integers: an amount is within 7.5 % of a reference when `1000 × |a − r| ≤ 75 × |r|`, and a score counts ten-thousandths. A series' amount is signed as its transactions (AD-5); an occurrence's expected amount and a payment's amount are positive magnitudes in the series' currency (AD-6). `services/recurring/` writes series, occurrences and payments in one immediate transaction, run after an import, a revert or a sync commits, from « Détecter », and for occurrences on the first signed-in request of the day; a failure is logged with its code and never fails the request (AD-1). A payment references its entry with `ON DELETE SET NULL`; `absorb` (AD-17) moves payments and rejections onto the survivor. A split parent is never a candidate and its children are (AD-20). The export carries every table of this decision as Sure's lines (AD-23).
 
 ## Consistency Conventions
 
@@ -291,6 +297,10 @@ erDiagram
   bank_connections ||--o{ accounts : links
   bank_connections ||--o{ entry_keys : wrote
   accounts ||--o{ recurring_transactions : repeats
+  recurring_transactions ||--o{ recurrence_rules : schedules
+  recurring_transactions ||--o{ recurring_occurrences : falls_due
+  recurring_occurrences ||--o{ recurring_allocations : paid_by
+  entries |o--o{ recurring_allocations : pays
   users ||--o{ sessions : "Better Auth"
 ```
 
@@ -326,7 +336,7 @@ packages/
     routes/            # Hono adapters, one file per resource; middleware/
     schemas/           # request schemas shared with the interface
     services/          # ledger/, imports.ts, sync.ts, reports.ts, seed.ts, setup.ts, crypto.ts
-    domain/            # balances/, keys, transfer-matching, cash-flow, recurring, statement, provider-date
+    domain/            # balances/, keys, transfer-matching, cash-flow, recurring/ (identifier, schedule, matcher), statement, provider-date
     connectors/        # registry.ts, ofx/, csv/, qif/, enable-banking/
     lib/errors.ts
   app/src/
@@ -348,7 +358,7 @@ packages/
 | Transfers (Epic 5)                         | `domain/transfer-matching.ts`, ledger                                              | AD-4, AD-9, AD-11                            |
 | Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                       | AD-6, AD-8, AD-9                             |
 | Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                            | AD-4, AD-10                                  |
-| Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                | AD-1, AD-4, AD-17                            |
+| Recurring and bills (Epics 9, 23)          | `domain/recurring/`, `services/recurring/`, after commit                           | AD-1, AD-4, AD-17, AD-24                     |
 | Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                   | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
 | Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                          | AD-1, AD-13, AD-14, AD-19                    |
 | Budgets (Epic 17)                          | `services/budgets.ts`, `domain/budgets/`                                           | AD-1, AD-6, AD-9                             |
