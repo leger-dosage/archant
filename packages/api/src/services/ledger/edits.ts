@@ -16,6 +16,7 @@ import { transfers } from "@archant/data/schema/transfers";
 
 import { minDate, today } from "../../domain/dates.ts";
 import { rejectionFor } from "../../domain/statement.ts";
+import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { tombstoneBankKeys } from "./entry-keys.ts";
@@ -230,21 +231,27 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 	return rows;
 }
 
+/** How many rows a bulk edit selected, and how many of them it changed. */
+export type BulkUpdateResult = { matched: number; changed: number };
+
 /**
  * Sets a category or a merchant, adds tags or changes the exclusion on every
  * selected row, all or nothing, and returns how many rows the selection
- * matched, unchanged ones included. Each row follows `updateTransaction`'s
- * rules through `changeOf`. An unknown category, merchant or tag, or a row
- * the new tags would carry past `MAX_TAGS_PER_TRANSACTION`, fails the call on
- * its `patch` field. Classification and exclusion move no balance, so nothing
- * is recomputed.
+ * matched, unchanged ones included, and how many it changed. Each row follows
+ * `updateTransaction`'s rules through `changeOf`. An unknown category,
+ * merchant or tag, or a row the new tags would carry past
+ * `MAX_TAGS_PER_TRANSACTION`, fails the call on its `patch` field. With
+ * `expectedCount`, a selection matching another count throws
+ * `BULK_COUNT_STALE` and writes nothing: an assistant read that count, and the
+ * owner agreed to it, before the call. Classification and exclusion move no
+ * balance, so nothing is recomputed.
  */
 export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
 	selection: BulkSelection,
 	patch: BulkPatch,
-	options: { origin: Origin },
-): Promise<number> {
+	options: { origin: Origin; expectedCount?: number | undefined },
+): Promise<BulkUpdateResult> {
 	return deps.db.transaction(
 		async (tx) => {
 			const { categoryId, merchantId, excluded } = patch;
@@ -271,6 +278,16 @@ export async function bulkUpdateTransactions(
 			}
 
 			const rows = await selectedRows(tx, selection);
+
+			if (options.expectedCount !== undefined && options.expectedCount !== rows.length) {
+				throw new AppError(
+					"BULK_COUNT_STALE",
+					"The filter now matches another count of transactions than expected.",
+					undefined,
+					{ count: String(rows.length) },
+				);
+			}
+
 			const tagsOf =
 				added === undefined
 					? new Map<string, string[]>()
@@ -285,6 +302,7 @@ export async function bulkUpdateTransactions(
 				{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
 			>();
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
+			let changed = 0;
 
 			for (const { id, categoryHidden, ...row } of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
@@ -309,6 +327,7 @@ export async function bulkUpdateTransactions(
 					continue;
 				}
 
+				changed += 1;
 				const detail = detailOf(current, change, options.origin);
 				const key = JSON.stringify(detail);
 				const group = writes.get(key);
@@ -337,7 +356,7 @@ export async function bulkUpdateTransactions(
 			);
 			await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
 
-			return rows.length;
+			return { matched: rows.length, changed };
 		},
 		{ behavior: "immediate" },
 	);

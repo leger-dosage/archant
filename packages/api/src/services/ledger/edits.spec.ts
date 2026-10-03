@@ -748,7 +748,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids }, { categoryId: groceries }, asUser),
-		).resolves.toBe(3);
+		).resolves.toEqual({ matched: 3, changed: 3 });
 
 		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([
 			groceries,
@@ -787,7 +787,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [tagged, bare] }, { addTagIds: [work] }, asUser),
-		).resolves.toBe(2);
+		).resolves.toEqual({ matched: 2, changed: 2 });
 
 		await expect(tagsOf(tagged)).resolves.toEqual([holidays, work].toSorted());
 		await expect(tagsOf(bare)).resolves.toEqual([work]);
@@ -826,7 +826,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [already, moved] }, { categoryId: groceries }, asUser),
-		).resolves.toBe(2);
+		).resolves.toEqual({ matched: 2, changed: 1 });
 
 		await expect(lockedFields(already)).resolves.toEqual([]);
 		await expect(categoryOriginOf(already)).resolves.toBe("rule");
@@ -852,7 +852,7 @@ describe("bulkUpdateTransactions", () => {
 				{ categoryId: groceries },
 				asUser,
 			),
-		).resolves.toBe(3);
+		).resolves.toEqual({ matched: 3, changed: 3 });
 
 		await expect(Promise.all(uncategorised.map(categoryOf))).resolves.toEqual([
 			groceries,
@@ -873,10 +873,10 @@ describe("bulkUpdateTransactions", () => {
 				{ excluded: true },
 				asUser,
 			),
-		).resolves.toBe(0);
+		).resolves.toEqual({ matched: 0, changed: 0 });
 		await expect(
 			bulkUpdateTransactions(deps(), { filter: { merchantIds: [] } }, { excluded: true }, asUser),
-		).resolves.toBe(0);
+		).resolves.toEqual({ matched: 0, changed: 0 });
 	});
 
 	it("writes nothing when an id names no transaction", async () => {
@@ -907,7 +907,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [id, id] }, { excluded: true }, asUser),
-		).resolves.toBe(1);
+		).resolves.toEqual({ matched: 1, changed: 1 });
 	});
 
 	it.each([
@@ -956,6 +956,44 @@ describe("bulkUpdateTransactions", () => {
 		);
 
 		await expect(categoryOf(id)).resolves.toBe(groceries);
+	});
+
+	it("writes nothing when a filter now selects another count than expected", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const ids = [await add(account.id, {}, "sync"), await add(account.id, {}, "sync")];
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id], uncategorised: true } },
+				{ categoryId: groceries },
+				{ ...asUser, expectedCount: 3 },
+			),
+		).rejects.toMatchObject({ code: "BULK_COUNT_STALE", params: { count: "2" } });
+
+		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([null, null]);
+		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual([[], []]);
+	});
+
+	it("writes when the filter selects the count expected, unchanged rows counted apart", async () => {
+		const account = await openChecking();
+		const groceries = await newCategory("Courses");
+		const already = await add(account.id, {}, "sync");
+		const moved = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), already, { categoryId: groceries }, { origin: "rule" });
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id] } },
+				{ categoryId: groceries },
+				{ ...asUser, expectedCount: 2 },
+			),
+		).resolves.toEqual({ matched: 2, changed: 1 });
+
+		await expect(categoryOf(moved)).resolves.toBe(groceries);
+		await expect(lockedFields(already)).resolves.toEqual([]);
 	});
 });
 
@@ -1020,7 +1058,7 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 					{ categoryId: category, addTagIds: [tag] },
 					asUser,
 				),
-			).resolves.toBe(5000);
+			).resolves.toEqual({ matched: 5000, changed: 5000 });
 
 			expect(transaction).toHaveBeenCalledTimes(1);
 			await expect(

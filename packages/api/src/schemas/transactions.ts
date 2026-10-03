@@ -319,7 +319,7 @@ export type BulkFilterRequest = z.output<typeof bulkFilterSchema>;
 export const MAX_BULK_IDS = MAX_PAGE_SIZE;
 
 // Repeats are dropped before the bounds count, so a row ticked twice never refuses.
-const bulkIds = z
+export const bulkIds = z
 	.array(z.string().min(1))
 	.transform((ids) => [...new Set(ids)])
 	.pipe(z.array(z.string()).min(1).max(MAX_BULK_IDS));

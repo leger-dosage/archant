@@ -2,9 +2,9 @@ import { z } from "zod";
 
 import { CATEGORY_KINDS, newCategory } from "@archant/data/category-presets";
 
-import { createCategoryInput, noToolInput } from "../schemas/assistants.ts";
-import { createCategory, listCategories } from "../services/categories.ts";
-import { CREATES, READ_ONLY, defineTool } from "./tool.ts";
+import { createCategoryInput, noToolInput, renameCategoryInput } from "../schemas/assistants.ts";
+import { createCategory, listCategories, updateCategory } from "../services/categories.ts";
+import { CREATES, READ_ONLY, REPLACES, defineTool } from "./tool.ts";
 
 const category = z.object({
 	id: z.string(),
@@ -64,6 +64,32 @@ export const createCategoryTool = defineTool({
 					name: created.name,
 					kind: created.kind,
 					parentId: created.parentId,
+				},
+			},
+			changedRows: 1,
+		};
+	},
+});
+
+export const renameCategoryTool = defineTool({
+	name: "rename_category",
+	title: "Rename a category",
+	description:
+		"Renames a category as « Réglages » does; its kind, colour, icon and parent stay. A name another category holds, case aside, answers VALIDATION_ERROR with name_taken.",
+	scope: "archant:write",
+	annotations: REPLACES,
+	input: renameCategoryInput,
+	output: z.object({ category: category.omit({ transactionCount: true }) }),
+	run: async (deps, { categoryId, name }) => {
+		const renamed = await updateCategory(deps, categoryId, { name });
+
+		return {
+			result: {
+				category: {
+					id: renamed.id,
+					name: renamed.name,
+					kind: renamed.kind,
+					parentId: renamed.parentId,
 				},
 			},
 			changedRows: 1,

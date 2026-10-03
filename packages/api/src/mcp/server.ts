@@ -32,8 +32,8 @@ import { recordAssistantCall } from "../services/assistant-calls.ts";
 import { ARCHANT_SCOPES, grantedScopes } from "../services/assistants.ts";
 import { mcpIssuer, mcpResource } from "../services/auth.ts";
 import { getAccounts } from "./accounts.ts";
-import { createCategoryTool, getCategories } from "./categories.ts";
-import { createMerchantTool, getMerchants } from "./merchants.ts";
+import { createCategoryTool, getCategories, renameCategoryTool } from "./categories.ts";
+import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
 import { getRecurringTransactions } from "./recurring.ts";
 import { getBalanceSheetTool, getIncomeStatement } from "./reports.ts";
 import {
@@ -46,8 +46,14 @@ import {
 	setRuleEnabledTool,
 	updateRuleTool,
 } from "./rules.ts";
-import { createTagTool, getTags } from "./tags.ts";
-import { getTransactionTool, getTransactions, groupTransactionLabels } from "./transactions.ts";
+import { createTagTool, getTags, renameTagTool } from "./tags.ts";
+import {
+	bulkUpdateTransactionsTool,
+	getTransactionTool,
+	getTransactions,
+	groupTransactionLabels,
+	updateTransactionTool,
+} from "./transactions.ts";
 
 export type McpDeps = ServiceDeps & {
 	/** `getJwks`, whose key set signs every access token. */
@@ -82,6 +88,11 @@ const TOOLS: AnyTool[] = [
 	createCategoryTool,
 	createMerchantTool,
 	createTagTool,
+	updateTransactionTool,
+	bulkUpdateTransactionsTool,
+	renameCategoryTool,
+	renameMerchantTool,
+	renameTagTool,
 ];
 
 /** The 64 KB of every other `/api` route; `bodyLimit` has refused anything larger by now. */
@@ -106,6 +117,11 @@ const INSTRUCTIONS = [
 	"5. Call preview_rule again with the new rule's ruleId; existing transactions are not changed until rules are applied.",
 	"6. Call apply_rules with that ruleId and the changed count as expectedChanged. If it answers RULE_PREVIEW_STALE, preview again and show the owner.",
 	"A field the owner set by hand is never changed by a rule.",
+	"To classify transactions no rule covers:",
+	"- Prefer a rule when a label repeats: it also sorts the transactions still to come.",
+	"- update_transaction and bulk_update_transactions lock each field they change, as an edit by the owner does: no rule changes it afterwards.",
+	"- Before update_transaction, or bulk_update_transactions by ids, tell the owner what you are about to change.",
+	"- Before bulk_update_transactions with a filter, call get_transactions with that filter, show the owner its total and pass it as expectedCount. If it answers BULK_COUNT_STALE, read again and show the owner.",
 ].join("\n");
 
 /** The claims `/api/mcp` relies on, once the signature, issuer, audience and expiry are checked. */
