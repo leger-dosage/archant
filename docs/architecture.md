@@ -7,8 +7,8 @@ paradigm: "modular monolith, ports and adapters"
 scope: "Archant, the ten epics of epics.md"
 status: final
 created: "2026-09-21"
-updated: "2026-10-02"
-binds: [FR1-FR56, FR61-FR65, NFR1-NFR12, NFR14, NFR19]
+updated: "2026-10-03"
+binds: [FR1-FR56, FR61-FR83, NFR1-NFR12, NFR14, NFR19, NFR20]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md
   - ../_bmad-output/planning-artifacts/epics.md
@@ -162,7 +162,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 3, 10; FR42–FR45, NFR6
 - **Prevents:** a hand-rolled session check, the setup route staying open, a user promoting themselves, and the cron being refused by the session guard.
-- **Rule:** Better Auth with its Drizzle adapter (`usePlural: true`), email and password, public sign-up disabled, and its `admin` plugin. Its credentials table is renamed `auth_accounts` so it never collides with the domain's `accounts`. Its schema is generated once with the `auth` CLI into `packages/data/schema/auth.ts`, then maintained by hand; `role` is declared with `input: false` and carries a check constraint from `USER_ROLES` in `@archant/data`. `/api/setup` first claims the `setup_completed_at` settings row atomically, then creates the user with `auth.api.createUser`; if the claim fails it answers `403`. One middleware guards every `/api` route except `/api/health`, `/api/auth/*`, `/api/setup`, `/api/sync` and `/api/mcp`, which AD-19 guards with an OAuth token. `/api/sync` accepts only `Authorization: Bearer <SYNC_SECRET>`, compared in constant time. The interface's sync button calls `POST /api/bank-connections/:id/sync` with the session; both call the same `services/sync.ts` function. Mutating routes use Hono's `csrf()` middleware. Authorisation reads `role` through one helper, `requireRole`. `/api/auth/*` is Better Auth's own handler, outside the envelope and outside `AppType`.
+- **Rule:** Better Auth with its Drizzle adapter (`usePlural: true`), email and password, public sign-up disabled, and its `admin` plugin. Its credentials table is renamed `auth_accounts` so it never collides with the domain's `accounts`. Its schema is generated once with the `auth` CLI into `packages/data/schema/auth.ts`, then maintained by hand; `role` is declared with `input: false` and carries a check constraint from `USER_ROLES` in `@archant/data`. `/api/setup` first claims the `setup_completed_at` settings row atomically, then creates the user with `auth.api.createUser`; if the claim fails it answers `403`. One middleware guards every `/api` route except `/api/health`, `/api/auth/*`, `/api/setup`, `/api/sync` and `/api/mcp`, which AD-19 guards with an OAuth token. `/api/sync` accepts only `Authorization: Bearer <SYNC_SECRET>`, compared in constant time. The interface's sync button calls `POST /api/bank-connections/:id/sync` with the session; both call the same `services/sync.ts` function. Mutating routes use Hono's `csrf()` middleware. Authorisation reads `role` through one helper, `requireRole`, which Story 20.1 builds with its first caller (AD-21). `/api/auth/*` is Better Auth's own handler, outside the envelope and outside `AppType`.
 
 ### AD-14 — Secrets and logs
 
@@ -199,6 +199,30 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 - **Binds:** Epic 16; FR61–FR65, NFR19
 - **Prevents:** an assistant reaching data through a second code path, a token that outlives its grant or works elsewhere, a separate server process, and a prompt hidden in a bank label turning into an irreversible write.
 - **Rule:** `POST /api/mcp` serves MCP in stateless Streamable HTTP through `@modelcontextprotocol/server`, from the API's process; `GET` answers 405. It sits outside the envelope and outside `AppType`, like `/api/auth/*`. Better Auth is the authorisation server, through `@better-auth/mcp`, `@better-auth/oauth-provider`, `@better-auth/cimd` and `jwt`, loaded only when `BETTER_AUTH_URL` is HTTPS or loopback, since `mcp()` refuses any other resource at start: otherwise the server starts without them and `/api/mcp` answers 404. Every request's token gets the check `requireMcpAuth` makes, signature, issuer `${BETTER_AUTH_URL}/api/auth`, audience `${BETTER_AUTH_URL}/api/mcp` and expiry, through the two public helpers it is built from, `verifyJwsAccessToken` and `createResourceServerChallenge`, with the key set read in process through `auth.api` rather than over HTTP, which a host behind Tailscale or a `HOST` naming one interface would break; a spec pins that both refuse the same tokens. Then one read checks that its client still holds the user's consent, before any tool runs; a session cookie is never accepted there. `offline_access` is granted with read and never shown, since Better Auth issues a refresh token only for it. Disconnecting an assistant deletes its consent and revokes its refresh and access tokens in one transaction, because Better Auth's consent deletion leaves refresh tokens valid. Scopes are `archant:read` and `archant:write`; `tools/list` shows only the tools a token's scopes allow, and a single `tools/call` naming a tool the token's scopes do not allow answers `403` with `WWW-Authenticate: Bearer error="insufficient_scope"`, its `scope` and `resource_metadata`, before the SDK runs, as MCP 2025-11-25's scope challenge says; the refusal is recorded. The SDK receives each tool's input as its JSON Schema with a check that accepts any value, so the tool's own Zod parse is the only input check: a refused argument answers `VALIDATION_ERROR` with each field's path and code, and is recorded, where the SDK's check would answer plain text and record nothing. Tools live in `packages/api/src/mcp/`, one file per resource, and follow AD-1 as routes do: parse the input with a Zod schema from `schemas/`, call exactly one service function with the same `deps`, never import `db` or Drizzle; a tool returning rule amounts also reads `getReportingCurrency`, a setting rather than a service call, to give them as decimal strings. Tool names are snake_case verbs, as Sure's. Amounts cross as decimal strings with their currency, references as ids. Every tool declares MCP annotations and an `outputSchema`; a tool that writes many rows takes the count a read returned and refuses to write when the count changed. No tool deletes a transaction, a category, a merchant or a tag. Writes keep their usual origins: a rule application `rule`, an edit `user`. `assistant_calls` records each call's client, tool, time, outcome and changed count, never arguments or results, and keeps 90 days.
+
+### AD-20 — Splits
+
+- **Binds:** Epic 19; FR72, FR83
+- **Prevents:** a split counted twice in a balance, bank keys moving off the row the bank knows, and a child mistaken for a bank line.
+- **Rule:** As in Sure, a split keeps its parent and adds children: `entries.parent_entry_id` references the parent with `ON DELETE RESTRICT`, and `services/ledger/splits.ts` writes both. The children's amounts sum to the parent's exactly. The parent keeps its deduplication keys, is excluded with `excluded` locked, and counts in no balance, list, total, report, rule, recurring detection or transfer matching; its children count in all of them. A child is never a pairing, duplicate or transfer candidate, and is never absorbed. Deleting a parent, by any path, deletes its children first in the same transaction. Editing a split updates the children it keeps by id (AD-17). A transaction converted into a trade (AD-22) is a parent whose only child is the trade, under the same rules.
+
+### AD-21 — Roles
+
+- **Binds:** Epic 20; FR44, FR74–FR76
+- **Prevents:** a write route forgotten by a per-route check, a role read from the interface, and a user created as an administrator by default.
+- **Rule:** `USER_ROLES` is `admin` and `viewer`. `requireSession` puts the user on the context; `requireRole(role)` is the only reader of `role`. One middleware after `requireSession` refuses `POST`, `PUT`, `PATCH` and `DELETE` from a `viewer` with `403 FORBIDDEN`; a spec walks every mutating route of `AppType` against it. Reads limited to administrators, bank credentials, assistants, members and the export, call `requireRole("admin")`. Better Auth's `admin({ defaultRole })` is `viewer`, and every creation names its role. Only an administrator holds an MCP consent. Invitations store the SHA-256 of their token, expire after three days, and create the user through `auth.api.createUser` in the transaction that accepts them; the last administrator can be neither demoted nor removed.
+
+### AD-22 — Securities, trades and holdings
+
+- **Binds:** Epic 22; FR10, FR80–FR83, NFR20
+- **Prevents:** a float in a quantity or a price, an investment balance computed twice, a price provider reached without the owner's consent, and a test reaching it.
+- **Rule:** Quantities are integers in millionths of a unit, and prices integers in millionths of the currency's major unit, read by helpers in `@archant/data` beside `money.ts`; a value is `quantity × price` computed in `BigInt` and rounded half to even to the currency's minor unit. `entries.kind` admits `trade`, whose columns live in `trades`, written by `services/ledger/trades.ts`; a buy's amount is negative (AD-5), and a trade's currency is its account's (AD-6). `holdings` holds one row per account, security and day, derived by `domain/holdings/forward.ts` and written by the ledger only. An investment account's stored balance is `cash + holdings value`, `balances.cash` holding the first term; a valuation sets the total and the cash follows, as Sure's balance calculator. Prices come through `connectors/prices/`, a port apart from AD-3's, whose only adapter is Yahoo Finance; it is off until the owner turns it on, sends only identifiers, and is fetched on the first signed-in request of the day and by a button, as AD-18's daily sync. A security with no provider is priced from its trades and from prices the owner types.
+
+### AD-23 — Export
+
+- **Binds:** Epic 18; FR71
+- **Prevents:** a secret leaving in an archive, a new table missing from the export, and an archive held in memory.
+- **Rule:** `GET /api/export` streams a ZIP built in the request, in Sure's export format: Sure's file names and columns, and an `all.ndjson` that Sure's `SureImport` accepts, so amounts follow Sure's sign there. It sits outside the envelope and outside compression. Each table is read through an allowlist of exported columns in `services/export.ts`, and a spec fails when a schema column is neither exported nor listed as left out. A story that adds a table adds it to the export or to the left-out list.
 
 ## Consistency Conventions
 
@@ -327,12 +351,18 @@ packages/
 | Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                | AD-1, AD-4, AD-17                            |
 | Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                   | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
 | Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                          | AD-1, AD-13, AD-14, AD-19                    |
+| Budgets (Epic 17)                          | `services/budgets.ts`, `domain/budgets/`                                           | AD-1, AD-6, AD-9                             |
+| Export (Epic 18)                           | `services/export.ts`                                                               | AD-14, AD-23                                 |
+| Splits and attachments (Epic 19)           | `services/ledger/splits.ts`, `services/attachments.ts`                             | AD-2, AD-7, AD-17, AD-20                     |
+| Members (Epic 20)                          | `routes/middleware/auth.ts`, `services/invitations.ts`                             | AD-13, AD-21                                 |
+| Savings goals (Epic 21)                    | `services/goals.ts`, `domain/goals.ts`                                             | AD-1, AD-6, AD-8                             |
+| Investments (Epic 22)                      | `connectors/prices/`, `services/ledger/trades.ts`, `domain/holdings/`              | AD-2, AD-5, AD-6, AD-8, AD-22                |
 
 ## Deferred
 
 - **Rules data model.** Follows Sure's, as Epic 8 describes; its tables are settled by Story 8.1. Fixed now: rules run at step 5 of AD-4, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the step-6 matcher reads; it never creates a transfer itself.
 - **Currency conversion.** No exchange rates until a non-euro account exists; AD-6 keeps the door open.
-- **Roles beyond `admin`, and invitations.** `requireRole` and the `admin` plugin exist; a `viewer` role needs new checks only.
+- **Roles beyond `admin` and `viewer`.** Epic 20 brings `viewer` (AD-21); per-account sharing stays out.
 - **Full-text search.** `LIKE` on label and notes until NFR10's target fails: the first page of the list in under 150 ms at 100,000 transactions. SQLite FTS5 then arrives through one migration and one query helper in `services/`, the only place raw SQL is then allowed.
 - **Accessibility (NFR13).** Settled in `DESIGN.md` and `EXPERIENCE.md` by `bmad-ux`.
 - **Backups.** Documented in `docs/deployment.md` with `VACUUM INTO`, not run by the application.

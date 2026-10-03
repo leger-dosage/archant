@@ -64,6 +64,8 @@ The detailed breakdown, with stories and acceptance criteria, is in `epics.md`. 
 
 Epics 4 and 5 come before the dashboard: without them the charts show wrong numbers.
 
+On 2026-10-03, after Epic 16, the owner chose six items of « Later, not dropped », in this order, and asked that they follow Sure as closely as possible: budgets (Epic 17), full data export (18), splits and attachments (19), the `viewer` role and invitations (20), savings goals (21), and investment holdings with security prices (22). AI categorisation leaves the list: an assistant connected through MCP writes rules and classifies transactions since Epic 16. Currency conversion stays until a non-euro account exists.
+
 ## Visual identity
 
 To settle through `bmad-ux` before the first interface story. Direction agreed so far: shadcn/ui with Tailwind CSS, Sure and Linear as inspiration, departures from Sure allowed. `docs/tech-stack.md` records the choice when the first interface story installs it.

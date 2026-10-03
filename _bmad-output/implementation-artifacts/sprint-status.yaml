@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-03-2026 10:57
+last_updated: 10-03-2026 16:00
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -165,3 +165,41 @@ development_status:
   16-3-ask-an-assistant-about-my-finances: done
   16-4-ask-an-assistant-to-classify-my-transactions: done
   epic-16-retrospective: optional
+
+  epic-17: backlog
+  17-1-set-up-a-months-budget: backlog
+  17-2-spread-the-budget-over-categories: backlog
+  17-3-copy-a-budget-and-move-money: backlog
+  17-4-carry-what-is-left-to-next-month: backlog
+  17-5-ask-an-assistant-about-my-budget: backlog
+  epic-17-retrospective: optional
+
+  epic-18: backlog
+  18-1-download-all-my-data: backlog
+  epic-18-retrospective: optional
+
+  epic-19: backlog
+  19-1-split-a-transaction-in-the-ledger: backlog
+  19-2-split-from-the-interface: backlog
+  19-3-attach-a-receipt-to-a-transaction: backlog
+  epic-19-retrospective: optional
+
+  epic-20: backlog
+  20-1-a-read-only-role-enforced-by-the-server: backlog
+  20-2-invite-someone-with-a-link: backlog
+  20-3-members-and-what-a-viewer-sees: backlog
+  epic-20-retrospective: optional
+
+  epic-21: backlog
+  21-1-save-toward-a-goal: backlog
+  21-2-follow-a-goal-to-its-end: backlog
+  21-3-keep-a-reserve: backlog
+  epic-21-retrospective: optional
+
+  epic-22: backlog
+  22-1-securities-and-their-prices: backlog
+  22-2-record-trades: backlog
+  22-3-holdings-and-an-investment-accounts-value: backlog
+  22-4-see-my-holdings: backlog
+  22-5-dividends-interest-and-lines-that-are-trades: backlog
+  epic-22-retrospective: optional
