@@ -238,3 +238,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-19-2-split-from-the-interface.md`
   summary: The volume test never times or plans the list's read of split parents by id.
   evidence: medium, unverified: `history-volume.spec.ts` seeds no split, so `listTransactionsById` returns early there; a seeded page of lines timed under `PAGE_MS` with a primary-key search in its plan would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-19-3-attach-a-receipt-to-a-transaction.md`
+  summary: On a Turso database, serving an attachment near 10 MiB may fail, since Turso refuses a response over 10 MB and its HTTP protocol carries a blob in base64.
+  evidence: medium, unverified: `readAttachment` selects the whole `content` in one statement; libsql-client-ts issue 191 reports `RESPONSE_TOO_LARGE` past 10 MB. Settle it by uploading and opening a 9 MB PDF against a Turso database; a fix reads the blob in slices with `substr`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-19-3-attach-a-receipt-to-a-transaction.md`
+  summary: No automated check shows a PDF attachment in a browser under the sandboxed policy; Chromium was checked by hand, Firefox and Safari not at all.
+  evidence: medium, unverified for Firefox and Safari: the end-to-end suite runs Chromium's headless shell, which downloads a PDF rather than showing it, and headless Firefox would not start on the build machine. Settle it by opening a PDF attachment in both browsers.
