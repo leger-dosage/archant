@@ -1611,3 +1611,32 @@ describe("budgets", () => {
 		);
 	});
 });
+
+describe("splits", () => {
+	it("keeps every entry unsplit when 0042 adds the parent, and restricts deleting a parent", async () => {
+		const before = await migratedBefore("0042");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, parent_entry_id as parentEntryId from entries`),
+		).resolves.toEqual([{ id: "e1", parentEntryId: null }]);
+		await insertEntry(database, "e2", "transaction", null);
+		await database.run(sql`update entries set parent_entry_id = 'e1' where id = 'e2'`);
+		await expect(
+			database.run(sql`update entries set parent_entry_id = 'nope' where id = 'e2'`),
+		).rejects.toThrow();
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select name, partial from pragma_index_list('entries') where name = 'entries_parent_entry'`,
+			),
+		).resolves.toEqual([{ name: "entries_parent_entry", partial: 1 }]);
+		await database.run(sql`delete from entries where id = 'e2'`);
+		await database.run(sql`delete from entries where id = 'e1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
