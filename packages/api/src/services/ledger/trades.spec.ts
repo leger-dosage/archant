@@ -144,7 +144,7 @@ const securityCount = async () =>
 	(await temp.db.select({ n: count() }).from(securities).get())?.n ?? 0;
 
 describe("recordTrade", () => {
-	it("records a buy as cash leaving the account, its quantity positive, the balance moved from its date", async () => {
+	it("records a buy as cash leaving the account, its quantity positive, the balance moved from its date by its fee", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 
@@ -160,10 +160,11 @@ describe("recordTrade", () => {
 			fee: 250,
 			securityId,
 		});
+		// The cash less the buy, plus the 10 shares at the buy's own price.
 		const days = await history(account.id);
 		expect(days.get("2026-09-09")).toBe(2_500_000);
-		expect(days.get("2026-09-10")).toBe(2_500_000 - 612_650);
-		expect(days.get("2026-09-21")).toBe(2_500_000 - 612_650);
+		expect(days.get("2026-09-10")).toBe(2_500_000 - 612_650 + 612_400);
+		expect(days.get("2026-09-21")).toBe(2_500_000 - 612_650 + 612_400);
 	});
 
 	it("records a sale of what is held as cash coming in, its quantity negative", async () => {
@@ -177,8 +178,9 @@ describe("recordTrade", () => {
 		);
 
 		await expect(stored(id)).resolves.toMatchObject({ amount: 260_000, quantity: -4_000_000 });
+		// The 6 shares left are worth the sale's price.
 		const days = await history(account.id);
-		expect(days.get("2026-09-15")).toBe(2_500_000 - 612_650 + 260_000);
+		expect(days.get("2026-09-15")).toBe(2_500_000 - 612_650 + 260_000 + 390_000);
 	});
 
 	it("rounds the product to the cent", async () => {
@@ -449,8 +451,9 @@ describe("updateTrade", () => {
 		});
 		const days = await history(account.id);
 		expect(days.get("2026-09-10")).toBe(2_500_000);
-		expect(days.get("2026-09-12")).toBe(2_500_000 - 612_650);
-		expect(days.get("2026-09-14")).toBe(2_500_000 - 612_650 + 349_900);
+		expect(days.get("2026-09-12")).toBe(2_500_000 - 612_650 + 612_400);
+		// 5 shares left, at the sale's 700 €.
+		expect(days.get("2026-09-14")).toBe(2_500_000 - 612_650 + 349_900 + 350_000);
 	});
 
 	it("keeps what the patch leaves out, the sign of a sale included", async () => {
@@ -480,7 +483,7 @@ describe("updateTrade", () => {
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-04")).toBe(2_500_000);
-		expect(days.get("2026-09-05")).toBe(2_500_000 - 612_650);
+		expect(days.get("2026-09-05")).toBe(2_500_000 - 612_650 + 612_400);
 	});
 
 	it("refuses an edit that leaves a later sale short, and writes nothing", async () => {
@@ -569,7 +572,7 @@ describe("deleteTrade", () => {
 });
 
 describe("balances with trades", () => {
-	it("count a trade as cash beside booked transactions, and a snapshot's gap with it", async () => {
+	it("count a trade as cash beside booked transactions, and a snapshot's gap with its holdings", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(100_000), pending: false });
@@ -581,8 +584,23 @@ describe("balances with trades", () => {
 
 		expect(items[0]).toMatchObject({
 			balance: 2_000_000,
-			computed: 2_500_000 + 100_000 - 612_650,
-			gap: 2_000_000 - (2_500_000 + 100_000 - 612_650),
+			computed: 2_500_000 + 100_000 - 612_650 + 612_400,
+			gap: 2_000_000 - (2_500_000 + 100_000 - 612_650 + 612_400),
+		});
+	});
+
+	it("read a snapshot's gap from the day before's cash, its holdings valued on the day", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		await record(account.id, buy(securityId));
+		await snapshot(account.id, "2026-09-12", 2_400_000);
+
+		const { items } = await listSnapshots(deps(), account.id, firstPage);
+
+		expect(items[0]).toMatchObject({
+			balance: 2_400_000,
+			computed: 2_500_000 - 612_650 + 612_400,
+			gap: 2_400_000 - (2_500_000 - 612_650 + 612_400),
 		});
 	});
 

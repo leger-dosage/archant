@@ -16,6 +16,7 @@ import { startOfDay, today } from "../domain/dates.ts";
 import { fillPrices, priceWindow } from "../domain/prices.ts";
 import { AppError } from "../lib/errors.ts";
 import { LEASE_MS, codeOf } from "./bank-connections.ts";
+import { revalueHoldings } from "./ledger/holdings.ts";
 import { PRICE_PROVIDER_SETTING, enabledProvider, heldSecurities } from "./securities.ts";
 
 // A run's state, one `settings` row each, as epoch milliseconds or a code.
@@ -196,7 +197,9 @@ async function storedRange(deps: Db, securityId: string): Promise<StoredRange | 
 
 /**
  * Fetches one security's window and writes it with the security's reset
- * count, in one transaction. Returns how many days it wrote.
+ * count, in one transaction that also revalues its holders from the earliest
+ * day written (AD-22): prices and the values derived from them commit
+ * together. Returns how many days it wrote.
  */
 async function priceSecurity(
 	deps: PriceDeps,
@@ -296,6 +299,14 @@ async function priceSecurity(
 					updatedAt: now,
 				})
 				.where(eq(securities.id, security.id));
+
+			const [earliest] = rows;
+
+			if (earliest !== undefined) {
+				await revalueHoldings(tx, security.id, earliest.date, deps.timeZone, {
+					origin: "provider",
+				});
+			}
 		},
 		{ behavior: "immediate" },
 	);

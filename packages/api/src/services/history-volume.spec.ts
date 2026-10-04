@@ -1,21 +1,30 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 
+import { and, eq } from "drizzle-orm";
 import { unzipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { refreshStatistics } from "@archant/data/client";
+import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
+import { holdings } from "@archant/data/schema/holdings";
+import { securities, securityPrices } from "@archant/data/schema/securities";
+import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
+import { addDays, today } from "../domain/dates.ts";
+import { tradeAmount } from "../domain/trades.ts";
 import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { exportArchive } from "./export.ts";
 import { confirmImport, createImport, previewImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
+import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
+import { revalueHoldings } from "./ledger/holdings.ts";
 import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 
@@ -25,19 +34,26 @@ const MARGIN = process.env["CI"] === undefined ? 1 : 2;
 const PAGE_MS = 150 * MARGIN;
 const IMPORT_MS = 3000 * MARGIN;
 const EXPORT_MS = 10_000 * MARGIN;
+const REVALUE_MS = 1000 * MARGIN;
 
 const ROWS = 100_000;
 const DAYS = 3650;
 const OFX_LINES = 24_000;
 const FIRST_DAY = Date.UTC(2016, 0, 2);
+const SECURITIES = 20;
+const TIME_ZONE = "Europe/Paris";
 
 let temp: TempDatabase;
 let jointId = "";
 let savingsId = "";
 let cardId = "";
 let suggestedId = "";
+let securityIds: string[] = [];
+let peaId = "";
+/** Days each security is held, from its first trade to today. */
+let heldDays = 0;
 
-const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
+const deps = () => ({ db: temp.db, timeZone: TIME_ZONE });
 const importDeps = () => ({ ...deps(), logger: createLogger("silent") });
 
 function chunksOf<Row>(rows: readonly Row[], size: number): Row[][] {
@@ -128,6 +144,119 @@ function seedRows(): { rows: SeedRow[]; pairs: [string, string][] } {
 	return { rows: rows.slice(0, ROWS), pairs };
 }
 
+/** A security's close on the `day`-th day of the decade, in millionths of a euro. */
+const closeOf = (security: number, day: number) =>
+	toMicros((50 + security * 10 + (day % 100)) * 1_000_000);
+
+/** Today's close as the timed fetch writes it: a euro above the seeded one. */
+const closeToday = (security: number) => toMicros(closeOf(security, DAYS) + 1_000_000);
+
+/**
+ * Ten years of a PEA beside the household: twenty securities priced every
+ * day up to today, each bought on the first day of every month and partly
+ * sold every twelfth, inserted directly as the transactions are, then one
+ * ledger recompute that writes its holdings and balances.
+ */
+async function seedInvestments() {
+	const last = today(TIME_ZONE);
+	const first = addDays(last, -DAYS);
+	const pea = await createAccount(
+		deps(),
+		{
+			name: "PEA",
+			type: "investment",
+			subtype: "pea",
+			currency: "EUR",
+			openingBalance: toMinorUnits(10_000_000),
+			openingDate: addDays(first, -1),
+		},
+		{ origin: "user" },
+	);
+	const now = Date.UTC(2026, 0, 1);
+	securityIds = Array.from({ length: SECURITIES }, () => crypto.randomUUID());
+
+	await temp.db.insert(securities).values(
+		securityIds.map((id, index) => ({
+			id,
+			isin: null,
+			ticker: `T${index}.PA`,
+			mic: "XPAR",
+			name: `Titre ${index}`,
+			currency: "EUR",
+			provider: "yahoo" as const,
+			createdAt: now,
+			updatedAt: now,
+		})),
+	);
+
+	const days = Array.from({ length: DAYS + 1 }, (_, day) => ({ day, date: addDays(first, day) }));
+	const prices = securityIds.flatMap((securityId, security) =>
+		days.map(({ day, date }) => ({
+			securityId,
+			date,
+			price: closeOf(security, day),
+			currency: "EUR",
+			source: "provider" as const,
+		})),
+	);
+
+	await chunksOf(prices, 1000).reduce(async (previous, chunk) => {
+		await previous;
+		await temp.db.insert(securityPrices).values(chunk);
+	}, Promise.resolve());
+
+	const monthly = days.filter(({ date }) => date.endsWith("-01"));
+	peaId = pea.id;
+	heldDays = DAYS + 1 - (monthly[0]?.day ?? 0);
+	const rows = securityIds.flatMap((securityId, security) =>
+		monthly.map(({ day, date }, month) => {
+			const quantity = toMicros(month % 12 === 11 ? -6_000_000 : 1_000_000);
+			const price = closeOf(security, day);
+			const fee = toMinorUnits(100);
+
+			return {
+				id: crypto.randomUUID(),
+				date,
+				securityId,
+				quantity,
+				price,
+				fee,
+				amount: tradeAmount({ quantity, price, fee }, "EUR") ?? 0,
+			};
+		}),
+	);
+
+	await chunksOf(rows, 1000).reduce(async (previous, chunk, number) => {
+		await previous;
+		await temp.db.insert(entries).values(
+			chunk.map((row, index) => ({
+				id: row.id,
+				accountId: pea.id,
+				kind: "trade" as const,
+				date: row.date,
+				amount: row.amount,
+				currency: "EUR",
+				createdAt: now + number * 1000 + index,
+				updatedAt: now + number * 1000 + index,
+			})),
+		);
+		await temp.db.insert(trades).values(
+			chunk.map((row) => ({
+				entryId: row.id,
+				securityId: row.securityId,
+				quantity: row.quantity,
+				price: row.price,
+				fee: row.fee,
+			})),
+		);
+	}, Promise.resolve());
+
+	await temp.db.transaction(
+		async (tx) => recomputeBalances(tx, pea, addDays(first, -1), TIME_ZONE),
+		{ behavior: "immediate" },
+	);
+}
+
 async function seed() {
 	jointId = await openAccount("Compte joint", "checking");
 	savingsId = await openAccount("Livret A", "savings");
@@ -179,6 +308,7 @@ async function seed() {
 		);
 	}, Promise.resolve());
 
+	await seedInvestments();
 	await refreshStatistics(temp.db);
 }
 
@@ -326,9 +456,58 @@ describe("NFR10 at 100,000 transactions", () => {
 		expect(sentBy(elapsed * 0.8)).toBeGreaterThanOrEqual(total / 2);
 		// The header, every transaction, and the empty string after the last newline.
 		expect(csvLines).toHaveLength(ROWS + 2);
+		// A holding a day for each security, from its first trade on.
+		const holdingLines = new TextDecoder()
+			.decode(archive["all.ndjson"])
+			.split("\n")
+			.filter((line) => line.startsWith('{"type":"Holding"'));
+		expect(holdingLines).toHaveLength(SECURITIES * heldDays);
 		// Pulled a page at a time: no single chunk holds a whole file.
 		expect(Math.max(...chunks.map((chunk) => chunk.length))).toBeLessThan(1024 * 1024);
 	}, 60_000);
+
+	it("values twenty securities again after a day's prices in under a second", async () => {
+		// The daily fetch writes again from its earliest provisional day.
+		const day = today(TIME_ZONE);
+		const from = addDays(day, -7);
+		// As `priceSecurity`: the day's price and its holders' values in one transaction.
+		const revalueAll = async () =>
+			securityIds.reduce(async (previous, securityId, security) => {
+				await previous;
+				await temp.db.transaction(
+					async (tx) => {
+						await tx
+							.insert(securityPrices)
+							.values({
+								securityId,
+								date: day,
+								price: closeToday(security),
+								currency: "EUR",
+								source: "provider",
+							})
+							.onConflictDoUpdate({
+								target: [securityPrices.securityId, securityPrices.date],
+								set: { price: closeToday(security) },
+							});
+						await revalueHoldings(tx, securityId, from, TIME_ZONE, { origin: "provider" });
+					},
+					{ behavior: "immediate" },
+				);
+			}, Promise.resolve());
+
+		await expect(timed(revalueAll)).resolves.toBeLessThan(REVALUE_MS);
+		const [held] = await temp.db
+			.select({ price: holdings.price })
+			.from(holdings)
+			.where(
+				and(
+					eq(holdings.accountId, peaId),
+					eq(holdings.securityId, securityIds[0] ?? ""),
+					eq(holdings.date, day),
+				),
+			);
+		expect(held?.price).toBe(closeToday(0));
+	});
 
 	it("confirms a 24,000-line OFX file in under 3 seconds", async () => {
 		const accountId = await openAccount("Compte courant", "checking");

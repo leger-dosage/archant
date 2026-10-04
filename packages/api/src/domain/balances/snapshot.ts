@@ -32,10 +32,12 @@ export function snapshotRejectionFor(
 }
 
 export type SnapshotGapInput = {
-	/** Stored balance at the end of the day before the snapshot. */
-	previous: MinorUnits;
+	/** Stored cash at the end of the day before the snapshot. */
+	previousCash: MinorUnits;
 	/** Sum of the signed transaction amounts (AD-5) dated on the snapshot day. */
 	movements: MinorUnits;
+	/** What the account's holdings are worth on the snapshot day; zero without any. */
+	holdingsValue: MinorUnits;
 	/** The snapshot's stored balance. */
 	recorded: MinorUnits;
 	classification: Classification;
@@ -43,12 +45,13 @@ export type SnapshotGapInput = {
 
 /**
  * The balance Archant would have computed for the snapshot day without the
- * snapshot, and how far the recorded one is from it. Mirrors the sign rule of
- * `forwardBalances`, so the gap is exactly what the snapshot corrected.
+ * snapshot, and how far the recorded one is from it. Mirrors `forwardBalances`,
+ * the day's cash plus its holdings, so the gap is exactly what the snapshot
+ * corrected.
  */
 export function snapshotGap(input: SnapshotGapInput): { computed: MinorUnits; gap: MinorUnits } {
 	const sign = input.classification === "asset" ? 1 : -1;
-	const computed = input.previous + sign * input.movements;
+	const computed = input.previousCash + sign * input.movements + input.holdingsValue;
 
 	return { computed: toMinorUnits(computed), gap: toMinorUnits(input.recorded - computed) };
 }

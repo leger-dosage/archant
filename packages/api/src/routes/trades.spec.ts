@@ -102,7 +102,8 @@ describe("POST /api/accounts/:id/trades", () => {
 			},
 		});
 		await expect(balanceOnDay(account.id, "2026-09-09")).resolves.toBe(2_500_000);
-		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650);
+		// The cash less the buy, the 10 shares at its price on top.
+		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 612_400);
 	});
 
 	it("records a sale of what is held, and refuses one above it with QUANTITY_UNAVAILABLE", async () => {
@@ -131,7 +132,8 @@ describe("POST /api/accounts/:id/trades", () => {
 			code: "QUANTITY_UNAVAILABLE",
 			message: "The account would sell more than it holds.",
 		});
-		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 260_000);
+		// The 6 shares left at the sale's 650 €.
+		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 260_000 + 390_000);
 	});
 
 	it("creates a security typed by hand, and reuses it for the same ISIN", async () => {
@@ -292,8 +294,9 @@ describe("PATCH /api/trades/:id", () => {
 			fee: 100,
 			amount: 174_900,
 		});
+		// The 7.5 shares left at the sale's 700 €.
 		await expect(balanceOnDay(account.id, "2026-09-08")).resolves.toBe(
-			2_500_000 - 612_650 + 174_900,
+			2_500_000 - 612_650 + 174_900 + 525_000,
 		);
 	});
 

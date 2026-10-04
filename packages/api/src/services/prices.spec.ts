@@ -13,6 +13,8 @@ import { createLogger } from "../lib/logger.ts";
 import { deleteSecurities, holdSecurity, insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { TEST_YAHOO_URL, chartBody, mockYahoo, yahooFixtures } from "../testing/yahoo.ts";
+import { balanceOn } from "./ledger/balances.ts";
+import * as ledgerHoldings from "./ledger/holdings.ts";
 import { priceStatus, setPricesEnabled, startDailyPrices, updatePrices } from "./prices.ts";
 import { heldSecurities, searchSecurities } from "./securities.ts";
 
@@ -313,6 +315,48 @@ describe("updatePrices", () => {
 			lastError: null,
 			updating: false,
 		});
+	});
+
+	it("values the holders' accounts at the fetched prices, from the first day written", async () => {
+		mockYahoo();
+		const id = await newSecurity({}, { held: false });
+		// One share bought at 1.00 € on Monday 14, out of an account opened at zero.
+		const accountId = await holdSecurity(temp.db, id, "2026-09-14");
+		const other = await holdSecurity(
+			temp.db,
+			await newSecurity({ ticker: "AI.PA", provider: null }, { held: false }),
+			"2026-09-14",
+		);
+		const otherBefore = await balanceOn(deps(), other, "2026-09-21");
+		await enable();
+
+		await updatePrices(deps());
+
+		await expect(balanceOn(deps(), accountId, "2026-09-13")).resolves.toEqual({
+			amount: 0,
+			currency: "EUR",
+		});
+		await expect(balanceOn(deps(), accountId, "2026-09-14")).resolves.toEqual({
+			amount: -100 + 60_450,
+			currency: "EUR",
+		});
+		await expect(balanceOn(deps(), accountId, "2026-09-21")).resolves.toEqual({
+			amount: -100 + 62_810,
+			currency: "EUR",
+		});
+		await expect(balanceOn(deps(), other, "2026-09-21")).resolves.toEqual(otherBefore);
+	});
+
+	it("writes no price when its holders cannot be valued, as one transaction", async () => {
+		mockYahoo();
+		const id = await newSecurity();
+		vi.spyOn(ledgerHoldings, "revalueHoldings").mockRejectedValue(new Error("disk full"));
+		await enable();
+
+		const status = await updatePrices(deps());
+
+		await expect(pricesOf(id)).resolves.toEqual([]);
+		expect(status.lastError).toBe("INTERNAL_ERROR");
 	});
 
 	it("fetches the provisional days again the next day, and the new one", async () => {

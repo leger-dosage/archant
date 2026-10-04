@@ -149,7 +149,7 @@ describe("recordSnapshot", () => {
 	it("leaves no row behind when the recompute fails", async () => {
 		const account = await openPinned();
 		const before = await history(account.id);
-		const row = { date: "2026-09-21", balance: toMinorUnits(1) };
+		const row = { date: "2026-09-21", balance: toMinorUnits(1), cash: toMinorUnits(1) };
 		vi.spyOn(forward, "forwardBalances").mockReturnValue([row, row]);
 
 		await expect(snapshot(account.id, "2026-03-05", 200000)).rejects.toThrow();

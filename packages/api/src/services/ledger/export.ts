@@ -1,6 +1,7 @@
+import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "@archant/data/schema/accounts";
@@ -9,6 +10,7 @@ import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
+import { holdings } from "@archant/data/schema/holdings";
 import { merchants } from "@archant/data/schema/merchants";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -50,6 +52,7 @@ export const EXPORTED_COLUMNS = {
 		accountId: balances.accountId,
 		date: balances.date,
 		balance: balances.balance,
+		cash: balances.cash,
 		currency: balances.currency,
 	},
 	categories: {
@@ -126,8 +129,18 @@ export const EXPORTED_COLUMNS = {
 		price: trades.price,
 		fee: trades.fee,
 	},
-	// What a `Trade` line names its security by, as Sure's exporter: Sure's
-	// all.ndjson has no `Security` line, which its importer refuses.
+	holdings: {
+		accountId: holdings.accountId,
+		securityId: holdings.securityId,
+		date: holdings.date,
+		quantity: holdings.quantity,
+		price: holdings.price,
+		amount: holdings.amount,
+		costBasis: holdings.costBasis,
+	},
+	// What a `Trade` or a `Holding` line names its security by, as Sure's
+	// exporter: Sure's all.ndjson has no `Security` line, which its importer
+	// refuses.
 	securities: {
 		id: securities.id,
 		isin: securities.isin,
@@ -296,7 +309,7 @@ export const LEFT_OUT = {
 
 type Reader = Pick<ServiceDeps["db"], "select">;
 
-/** Rows per keyset page of the two tables that grow with history. */
+/** Rows per keyset page of the tables that grow with history. */
 const PAGE_ROWS = 2000;
 
 /** Every account, oldest first, with its balance today; `null` before its opening date. */
@@ -344,6 +357,37 @@ export function balancePages(db: Reader, size = PAGE_ROWS) {
 					: sql`(${balances.accountId}, ${balances.date}) > (${after.accountId}, ${after.date})`,
 			)
 			.orderBy(asc(balances.accountId), asc(balances.date))
+			.limit(size),
+	);
+}
+
+type HoldingKey = { accountId: string; date: string; securityId: string };
+
+/**
+ * Every holding dated `from` on, with its security and its account's
+ * currency, by account, day then security, `size` rows at a time, along the
+ * primary key.
+ */
+export function holdingPages(db: Reader, from: IsoDate, size = PAGE_ROWS) {
+	return keysetPages(async (after: HoldingKey | null) =>
+		db
+			.select({
+				...EXPORTED_COLUMNS.holdings,
+				currency: EXPORTED_COLUMNS.accounts.currency,
+				security: EXPORTED_COLUMNS.securities,
+			})
+			.from(holdings)
+			.innerJoin(accounts, eq(accounts.id, holdings.accountId))
+			.innerJoin(securities, eq(securities.id, holdings.securityId))
+			.where(
+				and(
+					gte(holdings.date, from),
+					after === null
+						? undefined
+						: sql`(${holdings.accountId}, ${holdings.date}, ${holdings.securityId}) > (${after.accountId}, ${after.date}, ${after.securityId})`,
+				),
+			)
+			.orderBy(asc(holdings.accountId), asc(holdings.date), asc(holdings.securityId))
 			.limit(size),
 	);
 }

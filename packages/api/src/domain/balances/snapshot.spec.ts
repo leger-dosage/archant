@@ -28,8 +28,9 @@ describe("snapshotGap", () => {
 		// Checking at 1 500,00 with a -120,00 on 2026-03-02, snapshot 2 000,00 on 03-05.
 		expect(
 			snapshotGap({
-				previous: m(138000),
+				previousCash: m(138000),
 				movements: m(0),
+				holdingsValue: m(0),
 				recorded: m(200000),
 				classification: "asset",
 			}),
@@ -39,8 +40,9 @@ describe("snapshotGap", () => {
 	it("counts a transaction of the snapshot day in the computed balance only", () => {
 		expect(
 			snapshotGap({
-				previous: m(138000),
+				previousCash: m(138000),
 				movements: m(-3000),
+				holdingsValue: m(0),
 				recorded: m(200000),
 				classification: "asset",
 			}),
@@ -51,19 +53,34 @@ describe("snapshotGap", () => {
 		// A card owing 490,30 with a -30,00 purchase on the day owes 520,30.
 		expect(
 			snapshotGap({
-				previous: m(49030),
+				previousCash: m(49030),
 				movements: m(-3000),
+				holdingsValue: m(0),
 				recorded: m(52000),
 				classification: "liability",
 			}),
 		).toEqual({ computed: 52030, gap: -30 });
 	});
 
+	it("adds what the holdings are worth on the day to the cash before it", () => {
+		// Story 22.3's matrix: a snapshot of 30 000 € on a day LVMH is worth 6 500 €.
+		expect(
+			snapshotGap({
+				previousCash: m(1_887_350),
+				movements: m(0),
+				holdingsValue: m(650_000),
+				recorded: m(3_000_000),
+				classification: "asset",
+			}),
+		).toEqual({ computed: 2_537_350, gap: 462_650 });
+	});
+
 	it("is zero when the recorded balance matches", () => {
 		expect(
 			snapshotGap({
-				previous: m(-8000),
+				previousCash: m(-8000),
 				movements: m(0),
+				holdingsValue: m(0),
 				recorded: m(-8000),
 				classification: "asset",
 			}),

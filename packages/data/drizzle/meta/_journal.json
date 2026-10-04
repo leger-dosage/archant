@@ -358,6 +358,13 @@
       "when": 1791092953234,
       "tag": "0050_add_trades",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791097431601,
+      "tag": "0051_add_holdings",
+      "breakpoints": true
     }
   ]
 }

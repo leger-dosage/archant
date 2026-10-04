@@ -56,6 +56,7 @@ const TYPE_ORDER = [
 	"Transfer",
 	"RejectedTransfer",
 	"Trade",
+	"Holding",
 	"Valuation",
 	"Budget",
 	"BudgetCategory",
@@ -475,6 +476,55 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes holdings as Sure's exporter, each naming its security as a Trade line, and the cash beside each balance", async () => {
+		const { ids, lvmh } = await household();
+
+		const archive = await exported();
+		const holdings = archive.of("Holding");
+		const lvmhOn = (date: string) =>
+			holdings.find((row) => row["security_id"] === lvmh && row["date"] === date);
+
+		// One a day and security, from each security's first trade to today.
+		expect(holdings).toHaveLength(12 + 11 + 9);
+		expect(lvmhOn("2026-09-10")).toEqual({
+			account_id: ids.other,
+			security_id: lvmh,
+			ticker: "MC.PA",
+			security_name: "LVMH",
+			exchange_operating_mic: "XPAR",
+			date: "2026-09-10",
+			qty: "1",
+			price: "612.4",
+			amount: "612.40",
+			currency: "EUR",
+			cost_basis: "612.4",
+			cost_basis_source: "calculated",
+			cost_basis_locked: false,
+			security_locked: false,
+			archant: { isin: "FR0000121014" },
+		});
+		// Half sold at 650: the cost basis stays, the price is the sale's.
+		expect(lvmhOn("2026-09-21")).toMatchObject({
+			qty: "0.5",
+			price: "650",
+			amount: "325.00",
+			cost_basis: "612.4",
+		});
+		expect(holdings).toContainEqual(
+			expect.objectContaining({ ticker: "Parts sociales", date: "2026-09-13", amount: "10.00" }),
+		);
+		// The 50 € opening less the four trades, the holdings' 325 + 100 + 10 on top.
+		expect(archive.of("Balance")).toContainEqual(
+			expect.objectContaining({
+				account_id: ids.other,
+				date: "2026-09-21",
+				cash_balance: "-349.90",
+				balance: "85.10",
+			}),
+		);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("maps accounts to Sure's accountables, the rest under archant", async () => {
 		const { ids } = await household();
 
@@ -571,6 +621,7 @@ describe("exportArchive", () => {
 			account_id: ids.consumer,
 			date: "2026-04-01",
 			balance: "12000.00",
+			cash_balance: "12000.00",
 			currency: "EUR",
 		});
 		expect(archive.csv("transactions.csv")).toContainEqual([
@@ -825,6 +876,7 @@ describe("exportArchive", () => {
 		const archive = await exported();
 
 		expect(archive.of("Trade").map((row) => row["id"])).toEqual([recent]);
+		expect(archive.of("Holding")[0]).toMatchObject({ date: "1997-09-21", qty: "1" });
 		expect(
 			archive
 				.csv("trades.csv")
@@ -961,6 +1013,7 @@ describe("exportArchive", () => {
 				data: { account_id: "nowhere", date: "2026-09-01", balance: "1.00", currency: "EUR" },
 			},
 			{ type: "Valuation", data: archive.of("Valuation")[0] },
+			{ type: "Holding", data: { ...archive.of("Holding")[0], qty: "-1", account_id: "nowhere" } },
 			{ type: "Tag", data: archive.of("Tag")[0] },
 			{
 				type: "Transfer",
@@ -990,6 +1043,8 @@ describe("exportArchive", () => {
 			expect.arrayContaining([
 				expect.stringContaining("has an unsupported type Security"),
 				expect.stringContaining("Balance.account_id points at no exported row"),
+				expect.stringContaining("Holding.account_id points at no exported row"),
+				expect.stringContaining("Holding: ✖ negative"),
 				expect.stringContaining("is a second valuation"),
 				expect.stringContaining("repeats the tags id"),
 				expect.stringContaining("Tag name"),

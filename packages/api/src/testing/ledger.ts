@@ -497,12 +497,13 @@ export async function openLoan() {
 	});
 }
 
-export async function openPea() {
+export async function openPea(overrides: Partial<NewAccountInput> = {}) {
 	return openChecking({
 		name: "PEA",
 		type: "investment",
 		subtype: "pea",
 		openingBalance: toMinorUnits(2_500_000),
+		...overrides,
 	});
 }
 

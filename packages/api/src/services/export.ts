@@ -37,6 +37,7 @@ import {
 	exportedTrades,
 	exportedTransfers,
 	exportedValuations,
+	holdingPages,
 	transactionPages,
 } from "./ledger/export.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -480,13 +481,13 @@ async function* transactionsCsv(deps: ServiceDeps, readers: Readers) {
 type Trade = Awaited<ReturnType<typeof exportedTrades>>[number];
 
 /**
- * What Sure's importer finds a trade's security by: its ticker, else its
- * ISIN for one typed by hand, else its name, such as a fonds euros. Never
- * blank: Sure's preflight refuses a `Trade` line without a ticker, and one
- * refusal fails the whole import.
+ * What Sure's importer finds a trade's or a holding's security by: its
+ * ticker, else its ISIN for one typed by hand, else its name, such as a
+ * fonds euros. Never blank: Sure's preflight refuses a `Trade` or a
+ * `Holding` line without a ticker, and one refusal fails the whole import.
  */
-function sureTicker(trade: Trade): string {
-	return trade.security.ticker ?? trade.security.isin ?? trade.security.name;
+function sureTicker(row: Pick<Trade, "security">): string {
+	return row.security.ticker ?? row.security.isin ?? row.security.name;
 }
 
 async function* tradesCsv(readers: Readers) {
@@ -652,6 +653,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					account_id: row.accountId,
 					date: row.date,
 					balance: decimal(toMinorUnits(row.balance), row.currency),
+					cash_balance: decimal(row.cash, row.currency),
 					currency: row.currency,
 				},
 			})),
@@ -847,6 +849,34 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 			})),
 		counts,
 	);
+
+	// No `id`: a holding is derived, and Sure's importer finds one by its
+	// account, security and day.
+	for await (const page of holdingPages(deps.db, from)) {
+		yield ndjson(
+			page.map((row) => ({
+				type: "Holding",
+				data: {
+					account_id: row.accountId,
+					security_id: row.securityId,
+					ticker: sureTicker(row),
+					security_name: row.security.name,
+					exchange_operating_mic: row.security.mic,
+					date: row.date,
+					qty: formatMicros(row.quantity),
+					price: formatMicros(row.price),
+					amount: decimal(row.amount, row.currency),
+					currency: row.currency,
+					cost_basis: row.costBasis === null ? null : formatMicros(row.costBasis),
+					cost_basis_source: row.costBasis === null ? null : "calculated",
+					cost_basis_locked: false,
+					security_locked: false,
+					archant: { isin: row.security.isin },
+				},
+			})),
+			counts,
+		);
+	}
 
 	const valuations = await exportedValuations(deps);
 	const moved = new Map(
