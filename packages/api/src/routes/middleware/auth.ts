@@ -17,25 +17,40 @@ export function isPublicPath(path: string): boolean {
 	return PUBLIC_PATHS.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
+/** The signed-in user, as Better Auth reads it from the session. */
+type SessionUser = Auth["$Infer"]["Session"]["user"];
+
+/**
+ * What `requireSession` leaves on the context: the user, read by
+ * `requireRole`. Optional, since a public path passes without one.
+ */
+export type SessionEnv = { Variables: { user?: SessionUser } };
+
 /**
  * The one session check (AD-13), in front of every `/api` route, unknown
  * ones included, so a missing route reveals nothing without a session.
+ * `always` checks a public path too: the one Better Auth endpoint Archant
+ * guards itself, which answers the request once the check passes and
+ * extends the session itself, so it is read here without a refresh.
  */
-export function requireSession(auth: Pick<Auth, "api">) {
-	return createMiddleware(async (c, next) => {
-		if (isPublicPath(c.req.path)) {
+export function requireSession(auth: Pick<Auth, "api">, { always = false } = {}) {
+	return createMiddleware<SessionEnv>(async (c, next) => {
+		if (!always && isPublicPath(c.req.path)) {
 			await next();
 			return;
 		}
 
 		const { headers, response: session } = await auth.api.getSession({
 			headers: c.req.raw.headers,
+			query: { disableRefresh: always },
 			returnHeaders: true,
 		});
 
 		if (session === null) {
 			throw new AppError("UNAUTHORIZED", "Sign in to continue.");
 		}
+
+		c.set("user", session.user);
 
 		// Better Auth extends a session older than a day and re-sends its cookie.
 		// Dropped, a tab used daily without a reload would still be signed out

@@ -11,7 +11,10 @@ export const ERROR_STATUSES = {
 	VALIDATION_ERROR: 400,
 	/** No valid session on a guarded route. */
 	UNAUTHORIZED: 401,
-	/** Setup once a user exists, or a form post with no origin. */
+	/**
+	 * Setup once a user exists, a form post with no origin, or a role that
+	 * does not allow the request: a viewer's write, or a read kept to administrators.
+	 */
 	FORBIDDEN: 403,
 	/**
 	 * A write from an origin other than `BETTER_AUTH_URL`'s, `/api/auth/*`

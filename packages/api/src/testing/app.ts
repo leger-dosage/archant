@@ -619,7 +619,7 @@ export async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configu
 	const auth = createTestAuth(own.db, logger);
 	await auth.$context;
 
-	return { db: own.db, app: buildTestApp(own.db, logger, auth, {}, bank) };
+	return { db: own.db, auth, app: buildTestApp(own.db, logger, auth, {}, bank) };
 }
 
 export async function linkedConnection(app: ReturnType<typeof buildTestApp>) {

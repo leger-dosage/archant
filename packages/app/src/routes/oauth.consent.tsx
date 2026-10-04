@@ -40,15 +40,26 @@ export const Route = createFileRoute("/oauth/consent")({
 	component: ConsentPage,
 });
 
+/** The code a failed answer is told by: the server refuses a viewer's with 403. */
+function failureCode(status: number | undefined): "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_ERROR" {
+	if (status === 401) {
+		return "UNAUTHORIZED";
+	}
+
+	return status === 403 ? "FORBIDDEN" : "INTERNAL_ERROR";
+}
+
 /** The host the assistant gets its code at, from the signed query: never a guess. */
 function hostOf(redirectUri: string): string | null {
 	return URL.canParse(redirectUri) ? new URL(redirectUri).host : null;
 }
 
 /**
- * Where the owner lets an assistant act in Archant (AD-19). Each scope in
- * plain French; write can be unticked, read cannot, since without it the
- * assistant can do nothing. `offline_access`, which only renews the access,
+ * Where the owner lets an assistant act in Archant (AD-19). Only an
+ * administrator connects one (AD-21): anyone else reads why, with nothing to
+ * press, and the server refuses their answer whatever the page shows. Each
+ * scope in plain French; write can be unticked, read cannot, since without it
+ * the assistant can do nothing. `offline_access`, which only renews the access,
  * goes with read and is never shown. Both answers post through Better Auth's
  * client, then the page follows the address it returns: `form-action 'self'`
  * would refuse a form posted to the assistant.
@@ -57,6 +68,11 @@ function ConsentPage() {
 	const { t } = useTranslation();
 	const { assistantClient, consent } = useAuthActions();
 	const search = Route.useSearch();
+	const session = useQuery(sessionQuery);
+	// Signed out since the page opened is left to the flow below: a refusal is
+	// for a signed-in user who is not an administrator.
+	const user = session.data?.user;
+	const refused = user !== undefined && user.role !== "admin";
 	const writeId = useId();
 	const requested = search.scope.split(" ").filter((scope) => scope !== "");
 	const [write, setWrite] = useState(requested.includes(WRITE));
@@ -74,6 +90,7 @@ function ConsentPage() {
 			return data;
 		},
 		retry: false,
+		enabled: !refused,
 	});
 	const name = client.data?.client_name ?? t("consent.unnamed");
 
@@ -89,12 +106,23 @@ function ConsentPage() {
 
 		if (error !== null || !next.success) {
 			setPending(false);
-			showErrorToast(error?.status === 401 ? "UNAUTHORIZED" : "INTERNAL_ERROR");
+			showErrorToast(failureCode(error?.status));
 			return;
 		}
 
 		window.location.href = next.data.url;
 	};
+
+	if (refused) {
+		return (
+			<OutsideShell className="flex flex-col gap-2">
+				<h1 className="page-title">{t("consent.title")}</h1>
+				<p role="alert" className="text-sm text-destructive">
+					{t("consent.administratorOnly")}
+				</p>
+			</OutsideShell>
+		);
+	}
 
 	return (
 		<OutsideShell className="flex flex-col gap-6">

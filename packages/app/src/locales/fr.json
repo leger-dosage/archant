@@ -1303,6 +1303,7 @@
 		"title": "Autoriser un assistant",
 		"unnamed": "Un assistant sans nom",
 		"unidentified": "Cet assistant n'a pas pu être identifié. Vous pouvez seulement refuser.",
+		"administratorOnly": "Seul un administrateur peut connecter un assistant.",
 		"asking": "{{name}} demande l'accès à Archant.",
 		"returnsTo": "Il recevra votre réponse sur {{host}}.",
 		"scopes": "Il pourra :",

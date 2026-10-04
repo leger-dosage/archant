@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
-import { rateLimits } from "@archant/data/schema/auth";
+import { rateLimits, users } from "@archant/data/schema/auth";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { server } from "../../vitest.setup.ts";
@@ -175,6 +175,29 @@ describe("the token check", () => {
 
 		expect(response.status).toBe(401);
 		expect(await callsRecorded()).toEqual([]);
+	});
+
+	it("refuses an administrator's token once the user is made a viewer, with the challenge", async () => {
+		const { db } = await ownDatabase();
+		const auth = createTestAuth(db);
+		const ownBare = buildTestApp(db, createLogger("silent"), auth);
+		const ownSignedIn = withSession(
+			buildTestApp(db, createLogger("silent"), auth),
+			template.cookie,
+		);
+		const ownTokens = await connect(ownSignedIn, ownBare, await registerClient(ownBare));
+
+		expect((await mcp(ownBare, ownTokens.access_token, "tools/list")).status).toBe(200);
+
+		await db.update(users).set({ role: "viewer" });
+		const response = await mcp(ownBare, ownTokens.access_token, "tools/call", {
+			name: "get_tags",
+			arguments: {},
+		});
+
+		expect(response.status).toBe(401);
+		expect(response.headers.get("www-authenticate")).toContain("resource_metadata=");
+		expect(await callsRecorded(db)).toEqual([]);
 	});
 
 	it("refuses the refresh token after a disconnection", async () => {

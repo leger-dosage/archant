@@ -3687,7 +3687,7 @@ So that access follows the household.
 
 **Given** a viewer signed in
 **When** they browse
-**Then** no control that writes is shown: no « Nouveau », « Importer », « Synchroniser », edit, delete, bulk bar, rule editor or budget form; settings show « Sécurité » only; a write the interface missed still fails on the server
+**Then** no control that writes is shown: no « Nouveau », « Importer », « Synchroniser », edit, delete, bulk bar, rule editor or budget form; settings show « Sécurité » only; no page sends a read the server refuses a viewer, such as the bank setup `BankAlerts` reads on every page since Story 20.1 made it an administrator's, so no error shows; a write the interface missed still fails on the server
 
 **Given** `listAssistants` and `disconnectAssistant`
 **When** two users exist

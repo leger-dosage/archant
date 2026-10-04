@@ -12,7 +12,7 @@ import {
 	template,
 	useSignedInApp,
 } from "../../testing/app.ts";
-import { buildTestApp, withSession } from "../../testing/auth.ts";
+import { addViewer, buildTestApp, withSession } from "../../testing/auth.ts";
 import { mockProvider } from "../../testing/enable-banking.ts";
 
 useSignedInApp();
@@ -38,13 +38,13 @@ describe("the first visit of the day", () => {
 
 	/** A linked connection whose last attempt was yesterday, as on a new day. */
 	async function dueConnection() {
-		const { db, app } = await syncApp();
+		const { db, auth, app } = await syncApp();
 		const linked = await linkedConnection(app);
 		await db.run(
 			sql`update bank_connections set sync_attempted_at = ${Date.now() - DAY} where id = ${linked.connection.id}`,
 		);
 
-		return { db, app, ...linked };
+		return { db, auth, app, ...linked };
 	}
 
 	it("starts the sync on an authenticated request, whose own answer says it runs", async () => {
@@ -85,6 +85,30 @@ describe("the first visit of the day", () => {
 		});
 		expect((await lines.json()).data.items.length).toBeGreaterThan(0);
 		// The day's attempt is spent: a later request reads nothing more.
+		expect(transactionReads(requests)).toHaveLength(2);
+	});
+
+	it("starts the sync on a viewer's first read, as Sure's AutoSync runs for every member", async () => {
+		const { db, auth, connection } = await dueConnection();
+		const silent = createLogger("silent");
+		const cookie = await addViewer(buildTestApp(db, silent, auth), auth);
+		const viewer = withSession(buildTestApp(db, silent, auth, {}, configuredBank()), cookie);
+		const requests = mockProvider();
+		const now = Date.now();
+
+		const response = await viewer.request("/api/accounts");
+
+		expect(response.status).toBe(200);
+		await expect(syncState(db, connection.id)).resolves.toMatchObject({ syncAttemptedAt: now });
+		await vi.waitFor(
+			async () => {
+				await expect(syncState(db, connection.id)).resolves.toMatchObject({
+					syncStartedAt: null,
+					lastSyncedAt: now,
+				});
+			},
+			{ timeout: 10_000 },
+		);
 		expect(transactionReads(requests)).toHaveLength(2);
 	});
 

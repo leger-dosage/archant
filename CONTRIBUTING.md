@@ -22,6 +22,8 @@ One pull request per change: a fix, a feature, a refactor, never two of them tog
 
 A new dependency needs a reason in the pull request description: dependencies stay few and popular.
 
+A route that writes uses `POST`, `PUT`, `PATCH` or `DELETE`, never `GET`: the server refuses those methods to a read-only member before any route runs, so a new route needs no permission check of its own. A read only an administrator may see calls `requireRole("admin")`.
+
 ## Translations
 
 The interface is in French, through [i18next](https://www.i18next.com/). Every visible string lives in [`packages/app/src/locales/fr.json`](packages/app/src/locales/fr.json); fixes to its wording are welcome. A new language is a bigger change, with a locale file to keep complete and a way to pick it: open an issue to discuss it first. Code, comments, documents and API error messages stay in English.

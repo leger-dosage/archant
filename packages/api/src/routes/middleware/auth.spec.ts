@@ -1,7 +1,9 @@
 import type { TestApp } from "../../testing/auth.ts";
 import type { TempDatabase } from "../../testing/temp-database.ts";
+import type { SessionEnv } from "./auth.ts";
 
 import { sql } from "drizzle-orm";
+import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -9,12 +11,13 @@ import {
 	ADMIN,
 	TEST_ORIGIN,
 	buildTestApp,
+	createTestAuth,
 	setUpAndSignIn,
 	signIn,
 	withSession,
 } from "../../testing/auth.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
-import { isPublicPath } from "./auth.ts";
+import { isPublicPath, requireSession } from "./auth.ts";
 
 let temp: TempDatabase;
 let cookie: string;
@@ -78,6 +81,17 @@ describe("the session guard", () => {
 
 		expect((await app.request("/api/accounts")).status).toBe(200);
 		expect((await app.request("/api/nope")).status).toBe(404);
+	});
+
+	it("puts the signed-in user on the context", async () => {
+		const app = new Hono<SessionEnv>()
+			.use("/api/*", requireSession(createTestAuth(temp.db)))
+			.get("/api/me", (c) => c.json({ email: c.get("user")?.email, role: c.get("user")?.role }));
+
+		const response = await app.request("/api/me", { headers: { cookie } });
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({ email: ADMIN.email, role: "admin" });
 	});
 
 	it("leaves setup and Better Auth's own routes reachable without a session", async () => {
