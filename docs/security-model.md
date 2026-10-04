@@ -25,7 +25,9 @@ Neither secret lives in the database, so a copy of the file alone does not open 
 
 ## What leaves the server
 
-With a local SQLite file, the default, the server calls one host: Enable Banking, at `ENABLE_BANKING_API_URL`, `https://api.enablebanking.com` by default, and only once a bank connector is configured. Each request carries a JSON Web Token signed with the application's private key. The calls, all in `packages/api/src/connectors/enable-banking/client.ts`, are:
+With a local SQLite file, the default, the server calls at most two hosts, each only once the owner sets it up: Enable Banking for the banks, and Yahoo Finance for security prices, [below](#security-prices).
+
+Enable Banking is at `ENABLE_BANKING_API_URL`, `https://api.enablebanking.com` by default, and called only once a bank connector is configured. Each request carries a JSON Web Token signed with the application's private key. The calls, all in `packages/api/src/connectors/enable-banking/client.ts`, are:
 
 | Request                            | When                                 | What it sends                                                                                                |
 | ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
@@ -46,6 +48,21 @@ Nothing Archant computes, no category, rule, note or other account, is sent. Eve
 The browser loads the bank logos of the bank list from the addresses Enable Banking returns for them, on `https://enablebanking.com` today, which therefore sees your address and that the list opened. Every other request of the interface goes to Archant's own origin. The Content-Security-Policy says so: scripts, styles, API calls and everything else from Archant's own origin alone, images from it, from `data:` URLs, from `https://enablebanking.com` and always from the origin of `ENABLE_BANKING_API_URL`, which is Enable Banking's API in production and the fake's in the end-to-end suite, no frame, and no form posted anywhere else. Styles may be inline, because the interface's libraries inject them at runtime; scripts never are, but for the theme script the policy names by its hash.
 
 `ENABLE_BANKING_API_URL` must be HTTPS. Plain HTTP is accepted for `localhost`, `127.0.0.0/8` and `[::1]` only, for a local fake such as the end-to-end suite's; any other `http://` address stops the server at startup, naming the variable.
+
+### Security prices
+
+Price fetching is off by default, and nothing then reaches Yahoo Finance: the daily run, « Mettre à jour les cours » and the security search all stop before any request. The owner turns it on from « Réglages › Placements », which names the host before the switch is pressed; turning it off again stops every request at once and keeps the prices already stored.
+
+Once on, the server calls Yahoo Finance at `YAHOO_FINANCE_URL`, `https://query1.finance.yahoo.com` by default, on the first signed-in request of each day in `APP_TIMEZONE`, on « Mettre à jour les cours », and on a search for a security. Yahoo learns the server's address and which securities the household holds: their tickers, every day, and the days since each was first held. It never learns a quantity, an amount, an account or who holds them. The calls, all in `packages/api/src/connectors/prices/yahoo.ts`, are:
+
+| Request                          | When                                 | What it sends                                                          |
+| -------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `GET /v8/finance/chart/{symbol}` | The day's first visit, or the button | A held security's ticker with its venue's suffix, and the days to read |
+| `GET /v1/finance/search`         | A search for a security              | The text typed                                                         |
+
+Each request carries a browser's `User-Agent`, as Sure's, and no cookie or key: Yahoo needs none for these two endpoints. A security priced by hand, such as a fonds euros, has no ticker and is never sent. The browser never calls Yahoo: the Content-Security-Policy above does not name it. The log of a run holds the security's id, counts, durations and error codes, never a ticker, a name, an ISIN or a price.
+
+`YAHOO_FINANCE_URL` must be HTTPS, with the same loopback exception as `ENABLE_BANKING_API_URL`; only tests point it elsewhere.
 
 ## Attachments
 
@@ -75,7 +92,7 @@ The link's page reads the token from its address and sends it to the API in a re
 
 ## Members and viewers
 
-A member is an `admin` or a `viewer`, one role for the whole instance. A viewer reads every account, transaction, balance, budget, savings goal, recurring payment, rule and its runs, category, merchant and tag, and every transaction's notes, tags and attachments, as an administrator does. They cannot read the Enable Banking credentials, the assistants, the members and pending invitations, or the export: those reads answer `403`. They write nothing: the server refuses every `POST`, `PUT`, `PATCH` and `DELETE` from a viewer on `/api` before any route runs, whatever the interface shows. A viewer still changes their own first name, password and two-factor sign-in through Better Auth's routes, and the first request of the day they send starts the day's bank sync as the administrator's would. They connect no assistant.
+A member is an `admin` or a `viewer`, one role for the whole instance. A viewer reads every account, transaction, balance, budget, savings goal, recurring payment, rule and its runs, category, merchant and tag, and every transaction's notes, tags and attachments, as an administrator does. They cannot read the Enable Banking credentials, the assistants, the members and pending invitations, the export, price fetching's state or the security search: those reads answer `403`. They write nothing: the server refuses every `POST`, `PUT`, `PATCH` and `DELETE` from a viewer on `/api` before any route runs, whatever the interface shows. A viewer still changes their own first name, password and two-factor sign-in through Better Auth's routes, and the first request of the day they send starts the day's bank sync and price fetch as the administrator's would. They connect no assistant.
 
 The interface hides every control that writes from a viewer and shows them « Sécurité » alone in the settings, but it decides nothing: a write it missed still fails on the server.
 

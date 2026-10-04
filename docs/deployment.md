@@ -78,6 +78,8 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                                                |
 | `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                                          |
 
+Security prices need no variable. Fetching them is off until the owner turns it on from « Réglages › Placements »; it then reaches Yahoo Finance at `YAHOO_FINANCE_URL`, `https://query1.finance.yahoo.com` by default, which only tests change, on the first visit of the day and from « Mettre à jour les cours ». [What leaves the server](security-model.md#security-prices) says what Yahoo learns.
+
 The image sets the rest: `DATABASE_URL=file:/data/archant.db` on the `archant-data` volume, `WEB_DIST=/app/packages/app/dist`, port 8787, `HOST=0.0.0.0`, and `APP_VERSION`, the exact release it was built from, which « Réglages » shows; a local build leaves it empty. Outside a container the server listens on `127.0.0.1` only; the image makes it listen on every interface of the container, because a published port reaches the container through its network interface, never its loopback. That exposes nothing more: who reaches the server is decided by the published port, `127.0.0.1` only unless you open it. The server runs as the unprivileged `node` user, on a read-only root filesystem where only the `/data` volume and an in-memory `/tmp` accept writes, with every Linux capability dropped and `no-new-privileges` set.
 
 ### Behind a reverse proxy
