@@ -13,6 +13,8 @@ import {
 	HandIcon,
 	RefreshCwOffIcon,
 	RepeatIcon,
+	ShieldAlertIcon,
+	ShieldCheckIcon,
 	SparklesIcon,
 	SplitIcon,
 	TrendingUpIcon,
@@ -66,6 +68,10 @@ const STATUSES = {
 	goalOnTrack: { icon: TrendingUpIcon, key: "goals.status.on_track", tone: "neutral" },
 	goalNoTargetDate: { icon: CalendarOffIcon, key: "goals.status.no_target_date", tone: "neutral" },
 	goalReached: { icon: CircleCheckIcon, key: "goals.status.reached", tone: "neutral" },
+	// A reserve's, Sure's `funded` and `depleted`: one below its target needs
+	// refilling, which is attention, not an alarm.
+	goalFunded: { icon: ShieldCheckIcon, key: "goals.status.funded", tone: "neutral" },
+	goalDepleted: { icon: ShieldAlertIcon, key: "goals.status.depleted", tone: "warning" },
 	// A goal that is not active says its state in place of its progress, as
 	// Sure's card footer: « En pause », « Terminé », « Archivé ».
 	goalPaused: { icon: CirclePauseIcon, key: "goals.states.paused", tone: "neutral" },

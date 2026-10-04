@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
 import { CATEGORY_COLORS } from "@archant/data/category-presets";
+import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
+import { GOAL_KINDS, GOAL_TARGET_MODES } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -42,7 +44,10 @@ type Link = GoalFormInput["accounts"][number];
 
 const FIELD_NAMES = [
 	"name",
+	"kind",
+	"targetMode",
 	"targetAmount",
+	"targetMonths",
 	"targetDate",
 	"color",
 	"icon",
@@ -66,7 +71,10 @@ const errorId = (path: string) => `goal-${path.replaceAll(".", "-")}-error`;
 function blank(): GoalFormInput {
 	return {
 		name: "",
+		kind: "one_off",
+		targetMode: "fixed",
 		targetAmount: "",
+		targetMonths: "",
 		targetDate: "",
 		color: CATEGORY_COLORS[0],
 		icon: "piggy-bank",
@@ -83,7 +91,10 @@ function blank(): GoalFormInput {
 function valuesOf(goal: GoalData, offered: ReadonlySet<string>): GoalFormInput {
 	return {
 		name: goal.name,
+		kind: goal.kind,
+		targetMode: goal.targetMode,
 		targetAmount: amountToText(goal.targetAmount, goal.currency),
+		targetMonths: goal.targetMonths === null ? "" : String(goal.targetMonths),
 		targetDate: goal.targetDate ?? "",
 		color: goal.color,
 		icon: goal.icon,
@@ -98,6 +109,60 @@ function valuesOf(goal: GoalData, offered: ReadonlySet<string>): GoalFormInput {
 	};
 }
 
+/**
+ * What the form sends: a reserve has no date, and only a reserve counts in
+ * months of expenses, so what the hidden fields still hold never fails it.
+ */
+function sent(values: GoalFormInput): GoalFormInput {
+	return values.kind === "maintained"
+		? { ...values, targetDate: "" }
+		: { ...values, targetMode: "fixed" };
+}
+
+/** A radio drawn as a card, as `DuplicateDialog`'s, its hint read as its description. */
+function RadioCard({
+	name,
+	value,
+	checked,
+	label,
+	hint,
+	onChange,
+}: {
+	name: string;
+	value: string;
+	checked: boolean;
+	label: string;
+	hint?: string;
+	onChange: () => void;
+}) {
+	const id = `${name}-${value}`;
+
+	return (
+		<label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-md border px-3 py-2 hover:bg-muted has-checked:border-ring has-checked:bg-muted has-focus-visible:ring-2 has-focus-visible:ring-ring">
+			<input
+				type="radio"
+				name={name}
+				value={value}
+				checked={checked}
+				onChange={onChange}
+				aria-labelledby={`${id}-label`}
+				{...(hint === undefined ? {} : { "aria-describedby": `${id}-hint` })}
+				className="mt-0.5 size-4 shrink-0 accent-primary outline-none"
+			/>
+			<span className="flex min-w-0 flex-col gap-0.5">
+				<span id={`${id}-label`} className="text-sm">
+					{label}
+				</span>
+				{hint !== undefined && (
+					<span id={`${id}-hint`} className="text-xs text-muted-foreground">
+						{hint}
+					</span>
+				)}
+			</span>
+		</label>
+	);
+}
+
 type GoalDialogProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -110,10 +175,12 @@ type GoalDialogProps = {
 };
 
 /**
- * Creates or edits a goal, as Sure's form: a name, a target and an optional
- * date, a colour and an icon, the accounts that hold the money, each ticked
- * with a fixed amount or, left blank, its whole balance, and notes. A new
- * goal takes its first account's currency; an edited one keeps its own.
+ * Creates or edits a goal, as Sure's form: a name, a one-off goal or a
+ * reserve, a target and, for a one-off goal, an optional date, a colour and
+ * an icon, the accounts that hold the money, each ticked with a fixed amount
+ * or, left blank, its whole balance, and notes. A reserve's target is an
+ * amount or a number of months of expenses, which the server multiplies. A
+ * new goal takes its first account's currency; an edited one keeps its own.
  */
 export function GoalDialog({
 	open,
@@ -137,7 +204,11 @@ export function GoalDialog({
 	// there, in the goal's currency. Read through a ref, since that currency
 	// follows the accounts ticked.
 	const resolve: Resolver<GoalFormInput> = async (values, context, options) =>
-		zodResolver(goalSchema(currencyOf(values)), undefined, { raw: true })(values, context, options);
+		zodResolver(goalSchema(currencyOf(values)), undefined, { raw: true })(
+			sent(values),
+			context,
+			options,
+		);
 	const resolver = useRef(resolve);
 	resolver.current = resolve;
 	const form = useForm<GoalFormInput>({
@@ -149,6 +220,10 @@ export function GoalDialog({
 	const color = useController({ control: form.control, name: "color" });
 	const icon = useController({ control: form.control, name: "icon" });
 	const targetDate = useController({ control: form.control, name: "targetDate" });
+	const kind = useController({ control: form.control, name: "kind" });
+	const targetMode = useController({ control: form.control, name: "targetMode" });
+	const reserve = kind.field.value === "maintained";
+	const inMonths = reserve && targetMode.field.value === "months_of_expenses";
 	const links = useController({ control: form.control, name: "accounts" });
 	const linked = links.field.value;
 	// A goal's accounts share its currency: once one is ticked, or for a goal
@@ -187,6 +262,7 @@ export function GoalDialog({
 		);
 	};
 
+	// The resolver hands `sent`'s values over, so a reserve's date never leaves.
 	const submit = form.handleSubmit(async (values) => {
 		try {
 			if (goal === undefined) {
@@ -237,6 +313,24 @@ export function GoalDialog({
 					className="flex flex-col gap-4"
 					onSubmit={(event) => void submit(event)}
 				>
+					<fieldset className="flex flex-col gap-2" {...described("kind")}>
+						<legend className="mb-1 text-sm font-medium">{t("goals.form.kind")}</legend>
+						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+							{GOAL_KINDS.map((value: GoalKind) => (
+								<RadioCard
+									key={value}
+									name="goal-kind"
+									value={value}
+									checked={kind.field.value === value}
+									label={t(`goals.form.kinds.${value}.label`)}
+									hint={t(`goals.form.kinds.${value}.hint`)}
+									onChange={() => kind.field.onChange(value)}
+								/>
+							))}
+						</div>
+						{message("kind")}
+					</fieldset>
+
 					<div className="flex items-end gap-3">
 						{/* Sure's form previews the goal as the cards will draw it. */}
 						<div role="img" aria-label={t("goals.form.preview")} className="py-0.5">
@@ -258,34 +352,78 @@ export function GoalDialog({
 					</div>
 					{message("name")}
 
+					{reserve && (
+						<fieldset className="flex flex-col gap-2" {...described("targetMode")}>
+							<legend className="mb-1 text-sm font-medium">{t("goals.form.targetMode")}</legend>
+							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{GOAL_TARGET_MODES.map((value: GoalTargetMode) => (
+									<RadioCard
+										key={value}
+										name="goal-targetMode"
+										value={value}
+										checked={targetMode.field.value === value}
+										label={t(`goals.form.targetModes.${value}`)}
+										onChange={() => targetMode.field.onChange(value)}
+									/>
+								))}
+							</div>
+							{message("targetMode")}
+						</fieldset>
+					)}
+
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="goal-targetAmount">{t("goals.form.target")}</Label>
-							<Input
-								id="goal-targetAmount"
-								inputMode="decimal"
-								autoComplete="off"
-								className="text-right tabular-nums"
-								aria-invalid={errorAt(errors, "targetAmount") !== undefined}
-								{...described("targetAmount")}
-								{...form.register("targetAmount")}
-							/>
-							{message("targetAmount")}
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="goal-targetDate">{t("goals.form.date")}</Label>
-							<DateField
-								id="goal-targetDate"
-								value={targetDate.field.value ?? ""}
-								onChange={targetDate.field.onChange}
-								onBlur={targetDate.field.onBlur}
-								invalid={errorAt(errors, "targetDate") !== undefined}
-								{...(errorAt(errors, "targetDate") === undefined
-									? {}
-									: { describedBy: errorId("targetDate") })}
-							/>
-							{message("targetDate")}
-						</div>
+						{inMonths ? (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="goal-targetMonths">{t("goals.form.targetMonths")}</Label>
+								<Input
+									id="goal-targetMonths"
+									inputMode="numeric"
+									autoComplete="off"
+									className="text-right tabular-nums"
+									aria-invalid={errorAt(errors, "targetMonths") !== undefined}
+									aria-describedby={
+										errorAt(errors, "targetMonths") === undefined
+											? "goal-targetMonths-hint"
+											: `goal-targetMonths-hint ${errorId("targetMonths")}`
+									}
+									{...form.register("targetMonths")}
+								/>
+								<p id="goal-targetMonths-hint" className="text-xs text-muted-foreground">
+									{t("goals.form.targetMonthsHint")}
+								</p>
+								{message("targetMonths")}
+							</div>
+						) : (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="goal-targetAmount">{t("goals.form.target")}</Label>
+								<Input
+									id="goal-targetAmount"
+									inputMode="decimal"
+									autoComplete="off"
+									className="text-right tabular-nums"
+									aria-invalid={errorAt(errors, "targetAmount") !== undefined}
+									{...described("targetAmount")}
+									{...form.register("targetAmount")}
+								/>
+								{message("targetAmount")}
+							</div>
+						)}
+						{!reserve && (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="goal-targetDate">{t("goals.form.date")}</Label>
+								<DateField
+									id="goal-targetDate"
+									value={targetDate.field.value ?? ""}
+									onChange={targetDate.field.onChange}
+									onBlur={targetDate.field.onBlur}
+									invalid={errorAt(errors, "targetDate") !== undefined}
+									{...(errorAt(errors, "targetDate") === undefined
+										? {}
+										: { describedBy: errorId("targetDate") })}
+								/>
+								{message("targetDate")}
+							</div>
+						)}
 					</div>
 
 					<fieldset className="flex flex-col gap-2" {...described("accounts")}>

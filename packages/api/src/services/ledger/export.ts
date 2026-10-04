@@ -167,6 +167,8 @@ export const EXPORTED_COLUMNS = {
 		notes: goals.notes,
 		state: goals.state,
 		kind: goals.kind,
+		targetMode: goals.targetMode,
+		targetMonths: goals.targetMonths,
 		completedAmount: goals.completedAmount,
 		completedAt: goals.completedAt,
 		createdAt: goals.createdAt,

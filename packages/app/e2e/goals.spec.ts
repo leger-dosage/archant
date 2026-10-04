@@ -1,10 +1,12 @@
 import type { Page } from "@playwright/test";
 
+import { z } from "zod";
+
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
-// Stories 21.1 and 21.2: save toward a goal, and follow it to its end. One
-// database serves the whole run, so each test links accounts of its own,
-// which no other goal takes.
+// Stories 21.1 to 21.3: save toward a goal, follow it to its end, and keep a
+// reserve. One database serves the whole run, so each test links accounts of
+// its own, which no other goal takes.
 
 const rail = (page: Page) => page.getByRole("navigation", { name: "Navigation principale" });
 
@@ -425,4 +427,132 @@ test("the dashboard's « Objectifs » card sums the goals holding their money, a
 
 	await goals.getByRole("link", { name: "Tous les objectifs" }).click();
 	await expect(page).toHaveURL("/goals");
+});
+
+const suggestedBody = z.object({
+	data: z.object({ suggested: z.object({ spending: z.number().nullable() }) }),
+});
+
+test("a reserve in months of expenses aims for the budget's suggested spending times its months", async ({
+	page,
+	api,
+	request,
+}) => {
+	// 45 days back is always in a complete month before this one.
+	const checking = await api.openAccount({ openingBalance: "5 000,00", openingDate: daysAgo(60) });
+	await api.addTransaction(checking.id, { date: daysAgo(45), label: "Courses", amount: "-300" });
+	const savings = await api.openAccount({
+		name: uniqueName("Livret A"),
+		kind: "savings",
+		openingBalance: "0,00",
+		openingDate: daysAgo(30),
+	});
+	const budget = await request.get(`/api/budgets/${daysAgo(0).slice(0, 7)}`);
+	const median = suggestedBody.parse(await budget.json()).data.suggested.spending;
+	// The server refuses a median of zero.
+	expect(median ?? 0).toBeGreaterThan(0);
+	const target = 6 * (median ?? 0);
+	const name = uniqueName("Urgences");
+
+	const dialog = await openNewGoal(page);
+	await dialog.getByLabel("Nom").fill(name);
+	await expect(dialog.getByRole("radio", { name: "Objectif ponctuel" })).toBeChecked();
+	await dialog.getByRole("radio", { name: "Réserve" }).check();
+	// A reserve is kept, never reached by a day.
+	await expect(dialog.getByLabel("Échéance (facultative)")).toHaveCount(0);
+	await expect(dialog.getByRole("radio", { name: "Un montant fixe" })).toBeChecked();
+	await dialog.getByRole("radio", { name: "Un nombre de mois de dépenses" }).check();
+	await expect(dialog.getByLabel("Montant visé", { exact: true })).toHaveCount(0);
+	await dialog.getByLabel("Mois de dépenses", { exact: true }).fill("6");
+	await dialog.getByRole("checkbox", { name: savings.name }).check();
+	await dialog.getByRole("button", { name: "Créer l'objectif" }).click();
+
+	await expect(dialog).toBeHidden();
+	const reserveCard = card(page, name);
+	await expect(reserveCard).toContainText(`${euros(0)} sur ${euros(target)}`);
+	await expect(reserveCard).toContainText("Entamée");
+	await expect(reserveCard).toContainText("6 mois de dépenses");
+	await expect(reserveCard).not.toContainText("par mois");
+
+	await reserveCard.click();
+	const progress = page.getByRole("region", { name: "Progression" });
+	await expect(progress).toContainText(
+		`6 mois de dépenses, à ${euros(median ?? 0)} par mois : la médiane de vos dépenses mensuelles`,
+	);
+	await expect(progress.getByRole("term")).toContainText([
+		"Épargné",
+		"Montant visé",
+		"À recompléter",
+	]);
+	await expect(progress.getByRole("term")).not.toContainText(["Échéance"]);
+
+	await page.getByRole("button", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier l'objectif" });
+	await expect(edit.getByRole("radio", { name: "Réserve" })).toBeChecked();
+	await expect(edit.getByLabel("Mois de dépenses", { exact: true })).toHaveValue("6");
+
+	// Back to a one-off goal: the form sends a fixed target and leaves the months behind.
+	await edit.getByRole("radio", { name: "Objectif ponctuel" }).check();
+	await edit.getByLabel("Montant visé", { exact: true }).fill("2 500");
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit).toBeHidden();
+	await expect(progress.getByRole("definition")).toContainText([euros(0), euros(250_000)]);
+	await expect(progress).not.toContainText("mois de dépenses");
+	await expect(progress.getByRole("term")).toContainText(["Échéance"]);
+	await page.goto("/goals");
+	await expect(card(page, name)).toContainText(`${euros(0)} sur ${euros(250_000)}`);
+	await expect(card(page, name)).not.toContainText("mois de dépenses");
+});
+
+test("a covered reserve is « Constituée », one below its target « Entamée » sorts first, and neither is ever marked as finished", async ({
+	page,
+	api,
+}) => {
+	const full = await api.openAccount({
+		name: uniqueName("Livret A"),
+		kind: "savings",
+		openingBalance: "1 000,00",
+	});
+	const thin = await api.openAccount({
+		name: uniqueName("LDDS"),
+		kind: "savings",
+		openingBalance: "300,00",
+	});
+	// By name, the funded reserve would come first.
+	const funded = await api.createGoal({
+		name: uniqueName("Abri"),
+		kind: "maintained",
+		targetAmount: "800",
+		accounts: [{ accountId: full.id }],
+	});
+	const depleted = await api.createGoal({
+		name: uniqueName("Urgences"),
+		kind: "maintained",
+		targetAmount: "800",
+		accounts: [{ accountId: thin.id }],
+	});
+
+	await page.goto("/goals");
+	await expect(card(page, funded.name)).toContainText(`${euros(100_000)} sur ${euros(80_000)}`);
+	await expect(card(page, funded.name)).toContainText("Constituée");
+	await expect(card(page, depleted.name)).toContainText("Entamée");
+	const names = await page
+		.getByRole("list", { name: "Objectifs" })
+		.getByRole("heading", { level: 2 })
+		.allTextContents();
+	expect(names.indexOf(depleted.name)).toBeGreaterThanOrEqual(0);
+	expect(names.indexOf(depleted.name)).toBeLessThan(names.indexOf(funded.name));
+
+	await card(page, depleted.name).click();
+	const progress = page.getByRole("region", { name: "Progression" });
+	await expect(progress).toContainText("Entamée");
+	await expect(progress.getByRole("definition")).toContainText([
+		euros(30_000),
+		euros(80_000),
+		euros(50_000),
+	]);
+	const menu = await openMenu(page, depleted.name);
+	await expect(menu.getByRole("menuitem", { name: "Mettre en pause" })).toBeVisible();
+	await expect(menu.getByRole("menuitem", { name: "Archiver" })).toBeVisible();
+	await expect(menu.getByRole("menuitem", { name: "Marquer comme terminé" })).toHaveCount(0);
 });

@@ -1,7 +1,7 @@
 import type { DailyBalance } from "./balances/forward.ts";
 import type { IsoDate } from "./dates.ts";
 
-import type { GoalState } from "@archant/data/goals";
+import type { GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
 import { RELEASED_GOAL_STATES } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -80,19 +80,33 @@ export function paceStart(today: IsoDate, openingDate: IsoDate | null): IsoDate 
 }
 
 /**
- * Sure's display statuses of a goal that saves toward a target, in the order
- * its list shows them: what needs attention first.
+ * Where each of Sure's display statuses sorts among active goals, as its
+ * `ACTIVE_DISPLAY_STATUS_RANK`: what needs attention first, a reserve below
+ * its target beside a goal behind its pace, a funded reserve beside a
+ * reached goal.
  */
-const GOAL_STATUSES = ["behind", "on_track", "no_target_date", "reached"] as const;
+const STATUS_RANKS = {
+	behind: 0,
+	depleted: 0,
+	on_track: 1,
+	no_target_date: 2,
+	reached: 3,
+	funded: 3,
+} as const;
 
-export type GoalStatus = (typeof GOAL_STATUSES)[number];
+/**
+ * A goal that saves toward a target is `behind`, `on_track`, `no_target_date`
+ * or `reached`; a reserve is `funded` when its balance covers its target,
+ * else `depleted`.
+ */
+export type GoalStatus = keyof typeof STATUS_RANKS;
 
 export type GoalProgress = {
 	saved: MinorUnits;
 	remaining: MinorUnits;
 	/** Floored, and 99 at most until nothing remains, so a ring never shows full too early. */
 	percent: number;
-	/** What to put aside each month to reach the target by its date; `null` without a date. */
+	/** What to put aside each month to reach the target by its date; `null` without a date, or for a reserve. */
 	monthlyNeeded: MinorUnits | null;
 	/** The linked accounts' monthly change over their last 90 days, whole accounts as Sure's. */
 	pace: MinorUnits;
@@ -108,9 +122,11 @@ export type GoalProgress = {
  * as Sure's does. `accounts` holds each linked account's balance today and at
  * its `paceStart`. A completed goal is reached at 100 %, whatever it saved,
  * as Sure's `progress_percent` and `status`: `saved` is then the amount
- * frozen when it was completed.
+ * frozen when it was completed. A reserve has no date, so asks for no
+ * monthly amount, and is funded or depleted, as Sure's `maintained` goal.
  */
 export function goalProgress(input: {
+	kind: GoalKind;
 	target: MinorUnits;
 	saved: MinorUnits;
 	targetDate: IsoDate | null;
@@ -127,8 +143,11 @@ export function goalProgress(input: {
 		0n,
 	);
 	const pace = toMinorUnits(Number(floorDiv(change, PACE_MONTHS)));
+	const reserve = input.kind === "maintained";
 	const monthlyNeeded =
-		input.targetDate === null ? null : monthlyAmount(remaining, input.today, input.targetDate);
+		reserve || input.targetDate === null
+			? null
+			: monthlyAmount(remaining, input.today, input.targetDate);
 
 	return {
 		saved,
@@ -136,8 +155,16 @@ export function goalProgress(input: {
 		percent,
 		monthlyNeeded,
 		pace,
-		status: completed ? "reached" : statusOf(remaining, monthlyNeeded, pace),
+		status: completed
+			? "reached"
+			: reserve
+				? reserveStatus(remaining)
+				: statusOf(remaining, monthlyNeeded, pace),
 	};
+}
+
+function reserveStatus(remaining: MinorUnits): GoalStatus {
+	return remaining === 0 ? "funded" : "depleted";
 }
 
 function monthlyAmount(remaining: MinorUnits, today: IsoDate, targetDate: IsoDate): MinorUnits {
@@ -168,24 +195,64 @@ function statusOf(
 	return monthlyNeeded <= pace ? "on_track" : "behind";
 }
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
-
-/** Where a goal that is not active sorts: after every active one, in this order. */
-const STATE_RANKS = { paused: 0, completed: 1, archived: 2 } as const satisfies Record<
-	Exclude<GoalState, "active">,
-	number
->;
-
-function rankOf(goal: { state: GoalState; status: GoalStatus }): number {
-	return goal.state === "active"
-		? GOAL_STATUSES.indexOf(goal.status)
-		: GOAL_STATUSES.length + STATE_RANKS[goal.state];
+/**
+ * A reserve's target in months of expenses, as Sure's
+ * `months_of_expenses_amount`: the median monthly expenses times the months,
+ * or `null` without a median above zero, since a target of zero would read
+ * as a reserve already funded.
+ */
+export function monthsOfExpenses(months: number, median: MinorUnits | null): MinorUnits | null {
+	return median === null || median <= 0 ? null : toMinorUnits(months * median);
 }
 
 /**
- * Sure's `active_display_sort` then its index: active goals behind first,
- * then on track, without a date, reached; then paused, completed and
- * archived goals; by name in French order within each.
+ * A goal's target when read, and the median it multiplies. A fixed target is
+ * the amount stored. A reserve in months of expenses follows the median
+ * monthly expenses, which only exist in the reporting currency (AD-6): in
+ * another currency, or without a median, the target stored when it was last
+ * saved stands, as Sure's « a stale floor beats a wrong one ».
+ */
+export function targetAsRead(
+	goal: {
+		targetMode: GoalTargetMode;
+		targetMonths: number | null;
+		targetAmount: MinorUnits;
+		currency: string;
+	},
+	expenses: { currency: string; median: MinorUnits | null },
+): { targetAmount: MinorUnits; monthlyExpenses: MinorUnits | null } {
+	const computed =
+		goal.targetMode === "months_of_expenses" &&
+		goal.targetMonths !== null &&
+		goal.currency === expenses.currency
+			? monthsOfExpenses(goal.targetMonths, expenses.median)
+			: null;
+
+	return computed === null
+		? { targetAmount: goal.targetAmount, monthlyExpenses: null }
+		: { targetAmount: computed, monthlyExpenses: expenses.median };
+}
+
+const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+
+/** Where a goal that is not active sorts: after every active one, in this order. */
+const AFTER_ACTIVE = Math.max(...Object.values(STATUS_RANKS)) + 1;
+
+const STATE_RANKS = {
+	paused: AFTER_ACTIVE,
+	completed: AFTER_ACTIVE + 1,
+	archived: AFTER_ACTIVE + 2,
+} as const satisfies Record<Exclude<GoalState, "active">, number>;
+
+function rankOf(goal: { state: GoalState; status: GoalStatus }): number {
+	return goal.state === "active" ? STATUS_RANKS[goal.status] : STATE_RANKS[goal.state];
+}
+
+/**
+ * Sure's `active_display_sort` then its index: active goals behind and
+ * depleted reserves first, then on track, without a date, reached and funded;
+ * then paused, completed and archived goals; by name in French order within
+ * each.
  */
 export function compareGoals(
 	a: { state: GoalState; status: GoalStatus; name: string },

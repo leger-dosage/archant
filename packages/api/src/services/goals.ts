@@ -1,20 +1,21 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { GoalLink, GoalProgress, SavedPoint } from "../domain/goals.ts";
 import type { FieldError } from "../lib/errors.ts";
-import type { GoalInput, GoalRequest } from "../schemas/goals.ts";
+import type { GoalInput, GoalRequest, GoalTarget } from "../schemas/goals.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryColor, CategoryIcon } from "@archant/data/category-presets";
-import type { GoalEvent, GoalKind, GoalState } from "@archant/data/goals";
+import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
 import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
+import { suggestions } from "../domain/budgets/actuals.ts";
 import { minDate, today } from "../domain/dates.ts";
 import {
 	backingShares,
@@ -22,12 +23,15 @@ import {
 	goalProgress,
 	goalSeries,
 	goalsSummary,
+	monthsOfExpenses,
 	paceStart,
+	targetAsRead,
 } from "../domain/goals.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { balanceOn, balancesBetween, openingDateOf } from "./ledger/balances.ts";
+import { getCashFlowHistory } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** One linked account as a goal shows it. */
@@ -52,7 +56,17 @@ type GoalAccountShare = {
 export type GoalSummary = GoalProgress & {
 	id: string;
 	name: string;
+	/** The target as read: for a reserve in months, the months times `monthlyExpenses`. */
 	targetAmount: MinorUnits;
+	targetMode: GoalTargetMode;
+	/** How many months of expenses a reserve holds; `null` for a fixed target. */
+	targetMonths: number | null;
+	/**
+	 * The median monthly expenses the target multiplies, in the reporting
+	 * currency; `null` for a fixed target, and when the target last computed
+	 * stands because there is no median to multiply.
+	 */
+	monthlyExpenses: MinorUnits | null;
 	/** The currency of every amount here, its accounts'. */
 	currency: string;
 	targetDate: IsoDate | null;
@@ -141,14 +155,34 @@ function linkOf(row: LinkRow): GoalLink {
 }
 
 /**
+ * The household's median monthly expenses, as the budget suggests spending
+ * (Story 17.1): every complete month before the current one in
+ * `APP_TIMEZONE` that has an expense line, in the reporting currency (AD-9).
+ * Reads only.
+ */
+async function monthlyExpenses(deps: ServiceDeps): Promise<MinorUnits | null> {
+	const current = today(deps.timeZone).slice(0, 7);
+
+	return suggestions(await getCashFlowHistory(deps, current), current, current).spending;
+}
+
+/**
  * Every goal with its figures, as Sure's `Goal.prepared_for`, sorted as its
  * list: active goals behind first, then paused, completed and archived ones.
  * Each goal reads its share of every account it links; a goal with a frozen
- * amount reads that instead, as Sure's `current_balance`. Reads only.
+ * amount reads that instead, as Sure's `current_balance`. A reserve in
+ * months of expenses reads its target from the median monthly expenses,
+ * read only when such a reserve exists. Reads only.
  */
 export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 	const date = today(deps.timeZone);
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
+	const expenses = {
+		currency: getReportingCurrency(),
+		median: goalRows.some((goal) => goal.targetMode === "months_of_expenses")
+			? await monthlyExpenses(deps)
+			: null,
+	};
 	const accountIds = [...new Set(linkRows.map((row) => row.accountId))];
 	const figures = new Map(
 		await Promise.all(
@@ -176,8 +210,13 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 						: toMinorUnits(0),
 				};
 			});
+			const { targetAmount, monthlyExpenses: median } = targetAsRead(
+				{ ...goal, targetAmount: toMinorUnits(goal.targetAmount) },
+				expenses,
+			);
 			const progress = goalProgress({
-				target: toMinorUnits(goal.targetAmount),
+				kind: goal.kind,
+				target: targetAmount,
 				saved: toMinorUnits(
 					goal.completedAmount ?? shares.reduce((sum, account) => sum + account.share, 0),
 				),
@@ -190,7 +229,10 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 			return {
 				id: goal.id,
 				name: goal.name,
-				targetAmount: toMinorUnits(goal.targetAmount),
+				targetAmount,
+				targetMode: goal.targetMode,
+				targetMonths: goal.targetMonths,
+				monthlyExpenses: median,
 				currency: goal.currency,
 				targetDate: goal.targetDate,
 				color: goal.color,
@@ -369,6 +411,56 @@ async function assertFundable(
 	}
 }
 
+/**
+ * What a goal stores as its target: the amount typed, or, for a reserve in
+ * months of expenses, the months times the median monthly expenses now, the
+ * figure its read falls back on, as Sure's `apply_months_of_expenses_target`
+ * stores it on save. Without a median, or for a goal in a currency other
+ * than the reporting one, in which the median is counted (AD-6), `kept` stands
+ * when given: the target of a reserve saved with the same months, so a rename
+ * never fails on a median gone since. Refused otherwise. Reads through the
+ * caller's transaction.
+ */
+async function storedTarget(
+	deps: ServiceDeps,
+	currency: string,
+	target: GoalTarget,
+	kept: MinorUnits | null,
+): Promise<MinorUnits> {
+	if (target.mode === "fixed") {
+		return target.amount;
+	}
+
+	const reported = currency === getReportingCurrency();
+	const amount = reported ? monthsOfExpenses(target.months, await monthlyExpenses(deps)) : null;
+
+	if (amount !== null) {
+		return amount;
+	}
+
+	if (kept !== null) {
+		return kept;
+	}
+
+	throw fieldError("targetMonths", reported ? "no_expenses" : "not_reporting_currency");
+}
+
+/** One refused field, as the schema reports one. */
+function fieldError(path: string, code: string): AppError {
+	return new AppError("VALIDATION_ERROR", "The request is invalid.", [{ path, code }]);
+}
+
+/** A goal's target and kind as the `goals` row holds them. */
+function targetColumns(goal: GoalRequest, targetAmount: MinorUnits) {
+	return {
+		kind: goal.kind,
+		targetMode: goal.target.mode,
+		targetMonths: goal.target.mode === "months_of_expenses" ? goal.target.months : null,
+		targetAmount,
+		targetDate: goal.targetDate,
+	};
+}
+
 async function insertLinks(db: Db, goalId: string, links: GoalRequest["accounts"]) {
 	await db.insert(goalAccounts).values(
 		links.map((link) => ({
@@ -423,12 +515,12 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 			const now = Date.now();
 
 			await assertFundable(tx, null, currency, goal.accounts);
+			const targetAmount = await storedTarget({ ...deps, db: tx }, currency, goal.target, null);
 			await tx.insert(goals).values({
 				id,
 				name: goal.name,
-				targetAmount: goal.targetAmount,
+				...targetColumns(goal, targetAmount),
 				currency,
-				targetDate: goal.targetDate,
 				color: goal.color,
 				icon: goal.icon,
 				notes: goal.notes,
@@ -445,7 +537,9 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 
 /**
  * Replaces a goal's fields and links, in its own currency, which never
- * changes: an account in another one is refused.
+ * changes: an account in another one is refused. A completed or archived
+ * goal keeps its kind, as Sure's `kind_locked_while_released`: it becomes a
+ * reserve, or stops being one, once active again.
  */
 export async function updateGoal(
 	deps: ServiceDeps,
@@ -462,13 +556,26 @@ export async function updateGoal(
 
 			const goal = parse(input, currencyCode(existing.currency));
 
+			if (goal.kind !== existing.kind && RELEASED.includes(existing.state)) {
+				throw fieldError("kind", "kind_locked");
+			}
+
 			await assertFundable(tx, id, existing.currency, goal.accounts);
+			const unchanged =
+				existing.targetMode === "months_of_expenses" &&
+				goal.target.mode === "months_of_expenses" &&
+				existing.targetMonths === goal.target.months;
+			const targetAmount = await storedTarget(
+				{ ...deps, db: tx },
+				existing.currency,
+				goal.target,
+				unchanged ? toMinorUnits(existing.targetAmount) : null,
+			);
 			await tx
 				.update(goals)
 				.set({
 					name: goal.name,
-					targetAmount: goal.targetAmount,
-					targetDate: goal.targetDate,
+					...targetColumns(goal, targetAmount),
 					color: goal.color,
 					icon: goal.icon,
 					notes: goal.notes,

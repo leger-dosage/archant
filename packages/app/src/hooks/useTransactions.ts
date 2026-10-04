@@ -246,9 +246,9 @@ export function useInvalidateBulk() {
 			queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
-			...(options.balances
-				? [queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all })]
-				: []),
+			queryClient.invalidateQueries({
+				queryKey: options.balances ? queryKeys.accounts.all : queryKeys.accounts.goals,
+			}),
 		]);
 }
 

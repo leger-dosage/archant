@@ -9,7 +9,9 @@ import {
 	goalProgress,
 	goalSeries,
 	goalsSummary,
+	monthsOfExpenses,
 	paceStart,
+	targetAsRead,
 } from "./goals.ts";
 
 const fixed = (goalId: string, amount: number) => ({
@@ -86,6 +88,7 @@ describe("paceStart", () => {
 
 const progress = (overrides: Partial<Parameters<typeof goalProgress>[0]> = {}) =>
 	goalProgress({
+		kind: "one_off",
 		target: toMinorUnits(100_000),
 		saved: toMinorUnits(20_000),
 		targetDate: null,
@@ -187,6 +190,32 @@ describe("goalProgress of a completed goal", () => {
 	});
 });
 
+describe("goalProgress of a reserve", () => {
+	it("is funded once its share covers its target, as Sure's maintained goal", () => {
+		expect(
+			progress({ kind: "maintained", saved: toMinorUnits(100_000), target: toMinorUnits(80_000) }),
+		).toEqual({
+			saved: 100_000,
+			remaining: 0,
+			percent: 100,
+			monthlyNeeded: null,
+			pace: 0,
+			status: "funded",
+		});
+	});
+
+	it("is depleted below its target, and never asks for a monthly amount", () => {
+		expect(
+			progress({
+				kind: "maintained",
+				saved: toMinorUnits(30_000),
+				target: toMinorUnits(80_000),
+				targetDate: "2026-10-21",
+			}),
+		).toMatchObject({ remaining: 50_000, percent: 37, monthlyNeeded: null, status: "depleted" });
+	});
+});
+
 describe("compareGoals", () => {
 	it("sorts behind, on track, without a date, then reached, by French name within each", () => {
 		const goals = (
@@ -210,6 +239,28 @@ describe("compareGoals", () => {
 		]);
 	});
 
+	it("sorts a depleted reserve with goals behind, a funded one with goals reached", () => {
+		const goals = (
+			[
+				["funded", "Abri"],
+				["reached", "Voiture"],
+				["no_target_date", "Réserve"],
+				["on_track", "Vacances"],
+				["depleted", "Urgences"],
+				["behind", "Travaux"],
+			] as const
+		).map(([status, name]) => ({ state: "active" as const, status, name }));
+
+		expect(goals.toSorted(compareGoals).map((goal) => goal.name)).toEqual([
+			"Travaux",
+			"Urgences",
+			"Vacances",
+			"Réserve",
+			"Abri",
+			"Voiture",
+		]);
+	});
+
 	it("puts paused, then completed, then archived goals after every active one, by name", () => {
 		const goals = [
 			{ state: "archived", status: "behind", name: "Ancien" },
@@ -228,6 +279,59 @@ describe("compareGoals", () => {
 			"Vélo",
 			"Ancien",
 		]);
+	});
+});
+
+describe("monthsOfExpenses", () => {
+	it("multiplies the median monthly expenses by the months", () => {
+		expect(monthsOfExpenses(6, toMinorUnits(200_000))).toBe(1_200_000);
+	});
+
+	it.each([
+		["no median", null],
+		["a median of zero", 0],
+	])("has no target with %s", (_label, median) => {
+		expect(monthsOfExpenses(6, median === null ? null : toMinorUnits(median))).toBeNull();
+	});
+});
+
+const reserve = {
+	targetMode: "months_of_expenses" as const,
+	targetMonths: 6,
+	targetAmount: toMinorUnits(900_000),
+	currency: "EUR",
+};
+
+describe("targetAsRead", () => {
+	it("follows the median monthly expenses for a reserve in months, in the reporting currency", () => {
+		expect(targetAsRead(reserve, { currency: "EUR", median: toMinorUnits(200_000) })).toEqual({
+			targetAmount: 1_200_000,
+			monthlyExpenses: 200_000,
+		});
+	});
+
+	it("keeps the stored target without a median, or in another currency", () => {
+		const stored = { targetAmount: 900_000, monthlyExpenses: null };
+
+		expect(targetAsRead(reserve, { currency: "EUR", median: null })).toEqual(stored);
+		expect(targetAsRead(reserve, { currency: "USD", median: toMinorUnits(200_000) })).toEqual(
+			stored,
+		);
+		expect(
+			targetAsRead(
+				{ ...reserve, targetMonths: null },
+				{ currency: "EUR", median: toMinorUnits(200_000) },
+			),
+		).toEqual(stored);
+	});
+
+	it("reads a fixed target as stored", () => {
+		expect(
+			targetAsRead(
+				{ ...reserve, targetMode: "fixed", targetMonths: null },
+				{ currency: "EUR", median: toMinorUnits(200_000) },
+			),
+		).toEqual({ targetAmount: 900_000, monthlyExpenses: null });
 	});
 });
 
@@ -323,6 +427,18 @@ describe("goalsSummary", () => {
 			goals: [expect.objectContaining({ name: "Vacances" }), expect.anything(), expect.anything()],
 		});
 		expect(summary.goals.map((item) => item.name)).toEqual(["Vacances", "Vélo", "Voyage"]);
+	});
+
+	it("counts a reserve in what is saved and aimed for, never as behind", () => {
+		expect(
+			goalsSummary(
+				[
+					goal("Urgences", 30_000, 80_000, { status: "depleted" }),
+					goal("Abri", 100_000, 80_000, { status: "funded" }),
+				],
+				"EUR",
+			),
+		).toMatchObject({ count: 2, saved: 130_000, target: 160_000, behind: 0 });
 	});
 
 	it("lists the first five, and nothing without a goal holding its money", () => {

@@ -49,6 +49,9 @@ const goal = z.object({
 	id: z.string(),
 	name: z.string(),
 	targetAmount: z.number(),
+	targetMode: z.string(),
+	targetMonths: z.number().nullable(),
+	monthlyExpenses: z.number().nullable(),
 	currency: z.string(),
 	targetDate: z.string().nullable(),
 	color: z.string(),
@@ -743,13 +746,14 @@ describe("a goal's lifecycle", () => {
 
 	it("never completes a reserve", async () => {
 		const account = await savings("300");
-		const created = await create("Réserve", [{ accountId: account.id }]);
-		await (await own()).db.run(sql`update goals set kind = 'maintained' where id = ${created.id}`);
+		const created = await create("Réserve", [{ accountId: account.id }], { kind: "maintained" });
+		const kept = await goalRows();
 
 		await expect(refusal(created.id, "complete")).resolves.toMatchObject({
 			status: 409,
 			error: { code: "GOAL_STATE_INVALID" },
 		});
+		await expect(goalRows()).resolves.toEqual(kept);
 		await expect(fire(created.id, "archive")).resolves.toMatchObject({ state: "archived" });
 	});
 
@@ -805,6 +809,342 @@ describe("a goal's lifecycle", () => {
 			"En pause",
 			"Terminé",
 			"Archivé",
+		]);
+	});
+});
+
+/** A current account opened long ago, spending `amount` on each `date`, one after the other. */
+async function spent(lines: readonly (readonly [string, string])[]) {
+	const account = await savings("100 000", { name: "Compte courant", subtype: "checking" });
+
+	// One after the other: each is an `immediate` ledger write.
+	return lines.reduce(
+		async (previous, [date, amount]) => [
+			...(await previous),
+			await postOwn(account.id, { date, label: "Courses", amount }),
+		],
+		Promise.resolve<string[]>([]),
+	);
+}
+
+/** 2 000, 1 000 and 3 000 spent in the three months before September: a median of 2 000. */
+const THREE_MONTHS = [
+	["2026-06-10", "-2 000"],
+	["2026-07-10", "-1 000"],
+	["2026-08-10", "-3 000"],
+] as const;
+
+const reserve = (months: string) => ({
+	kind: "maintained",
+	targetMode: "months_of_expenses",
+	targetMonths: months,
+	targetAmount: "",
+});
+
+async function storedTargets() {
+	return (await own()).db.all(
+		sql`select target_amount as amount, target_mode as mode, target_months as months, target_date as date from goals`,
+	);
+}
+
+describe("a reserve", () => {
+	it("aims for its months times the median monthly expenses, read again as they move", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+
+		const created = await create("Urgences", [{ accountId: account.id }], {
+			...reserve("6"),
+			targetDate: "2027-06-30",
+		});
+
+		expect(created).toMatchObject({
+			kind: "maintained",
+			targetMode: "months_of_expenses",
+			targetMonths: 6,
+			targetAmount: 1_200_000,
+			monthlyExpenses: 200_000,
+			targetDate: null,
+			saved: 300_000,
+			remaining: 900_000,
+			monthlyNeeded: null,
+			status: "depleted",
+		});
+		await expect(storedTargets()).resolves.toEqual([
+			{ amount: 1_200_000, mode: "months_of_expenses", months: 6, date: null },
+		]);
+
+		// A month of 5 000 before them: the median of four is 2 500.
+		await spent([["2026-05-10", "-5 000"]]);
+
+		await expect(list()).resolves.toMatchObject([
+			{ targetAmount: 1_500_000, monthlyExpenses: 250_000 },
+		]);
+		// Read, never written.
+		await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_200_000 }]);
+	});
+
+	it("refuses months of expenses before a complete month has any", async () => {
+		await spent([["2026-09-10", "-9 000"]]);
+		const account = await savings("3 000");
+
+		await expect(
+			rejection(body("Urgences", [{ accountId: account.id }], reserve("6"))),
+		).resolves.toEqual({
+			code: "VALIDATION_ERROR",
+			message: "The request is invalid.",
+			fields: [{ path: "targetMonths", code: "no_expenses" }],
+		});
+		await expect(goalCount()).resolves.toBe(0);
+	});
+
+	it("refuses months of expenses for accounts outside the reporting currency", async () => {
+		await spent(THREE_MONTHS);
+		const dollars = await savings("3 000", { currency: "USD" });
+
+		await expect(
+			rejection(body("Urgences", [{ accountId: dollars.id }], reserve("6"))),
+		).resolves.toMatchObject({
+			fields: [{ path: "targetMonths", code: "not_reporting_currency" }],
+		});
+		await expect(goalCount()).resolves.toBe(0);
+	});
+
+	it("keeps the target last computed once the median is gone", async () => {
+		const ids = await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		await create("Urgences", [{ accountId: account.id }], reserve("6"));
+
+		await Promise.all(
+			ids.map(async (id) => sendOwn("PATCH", `/api/transactions/${id}`, { excluded: true })),
+		);
+
+		await expect(list()).resolves.toMatchObject([
+			{ targetAmount: 1_200_000, monthlyExpenses: null, targetMonths: 6, status: "depleted" },
+		]);
+	});
+
+	it("keeps its stored target when renamed after the median is gone, and refuses new months", async () => {
+		const ids = await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const created = await create("Urgences", [{ accountId: account.id }], reserve("6"));
+		await Promise.all(
+			ids.map(async (id) => sendOwn("PATCH", `/api/transactions/${id}`, { excluded: true })),
+		);
+
+		const renamed = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Épargne de précaution", [{ accountId: account.id }], reserve("6")),
+		);
+
+		expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+		await expect(storedTargets()).resolves.toEqual([
+			{ amount: 1_200_000, mode: "months_of_expenses", months: 6, date: null },
+		]);
+		await expect(
+			rejection(
+				body("Épargne de précaution", [{ accountId: account.id }], reserve("3")),
+				"PUT",
+				`/api/goals/${created.id}`,
+			),
+		).resolves.toMatchObject({ fields: [{ path: "targetMonths", code: "no_expenses" }] });
+	});
+
+	it("is created in months without any amount", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const json = {
+			name: "Urgences",
+			kind: "maintained",
+			targetMode: "months_of_expenses",
+			targetMonths: "6",
+			targetDate: null,
+			color: "#27a644",
+			icon: "piggy-bank",
+			notes: null,
+			accounts: [{ accountId: account.id, allocatedAmount: "" }],
+		};
+
+		const { status, body: answer } = await send("POST", "/api/goals", json);
+
+		expect(status, JSON.stringify(answer)).toBe(201);
+		expect(z.object({ data: goal }).parse(answer).data.targetAmount).toBe(1_200_000);
+	});
+
+	it("is funded once its share covers a fixed target, depleted below it, and sorts with goals behind", async () => {
+		const a = await savedInto("Livret A");
+		const b = await savedInto("LDDS");
+		const thin = await savings("300", { name: "Livret jeune" });
+		const full = await savings("1 000", { name: "CEL" });
+		const fixedReserve = { kind: "maintained", targetMode: "fixed", targetAmount: "800" };
+
+		// 30 days ahead: 1 000 left is on track, 2 000 left is behind.
+		await create("Vacances", [a], { targetAmount: "4 000", targetDate: "2026-10-21" });
+		await create("Travaux", [b], { targetAmount: "5 000", targetDate: "2026-10-21" });
+		await create("Urgences", [{ accountId: thin.id }], fixedReserve);
+		const funded = await create("Abri", [{ accountId: full.id }], fixedReserve);
+
+		expect(funded).toMatchObject({
+			targetAmount: 80_000,
+			targetMode: "fixed",
+			targetMonths: null,
+			monthlyExpenses: null,
+			remaining: 0,
+			percent: 100,
+			status: "funded",
+		});
+		expect((await list()).map((item) => [item.name, item.status])).toEqual([
+			["Travaux", "behind"],
+			["Urgences", "depleted"],
+			["Vacances", "on_track"],
+			["Abri", "funded"],
+		]);
+	});
+
+	it("counts in the dashboard's totals, never as behind", async () => {
+		const account = await savings("300");
+		await create("Urgences", [{ accountId: account.id }], {
+			kind: "maintained",
+			targetAmount: "800",
+		});
+
+		const { body: answer } = await send("GET", "/api/goals/summary");
+
+		expect(answer).toMatchObject({ data: { count: 1, saved: 30_000, target: 80_000, behind: 0 } });
+	});
+
+	it.each([
+		[
+			"a one-off goal in months",
+			{ targetMode: "months_of_expenses", targetMonths: "6" },
+			[{ path: "targetMode", code: "reserve_only" }],
+		],
+		["no months", reserve(""), [{ path: "targetMonths", code: "invalid_months" }]],
+		["zero months", reserve("0"), [{ path: "targetMonths", code: "invalid_months" }]],
+		["121 months", reserve("121"), [{ path: "targetMonths", code: "invalid_months" }]],
+		["half a month", reserve("1,5"), [{ path: "targetMonths", code: "invalid_months" }]],
+		["an unknown kind", { kind: "reserve" }, [{ path: "kind", code: "invalid_value" }]],
+		["an unknown mode", { targetMode: "weekly" }, [{ path: "targetMode", code: "invalid_value" }]],
+	])("refuses %s", async (_label, overrides, fields) => {
+		await expect(
+			rejection({ ...body("Urgences", [{ accountId: "a" }]), ...overrides }),
+		).resolves.toMatchObject({ code: "VALIDATION_ERROR", fields });
+	});
+
+	it("reports the months beside every other field's error", async () => {
+		const { fields } = await rejection({ ...body("  ", []), ...reserve("0") });
+
+		expect(fields).toEqual(
+			expect.arrayContaining([
+				{ path: "name", code: "too_small" },
+				{ path: "accounts", code: "no_account" },
+				{ path: "targetMonths", code: "invalid_months" },
+			]),
+		);
+	});
+
+	it("reads only the field its mode uses", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const other = await savings("100", { name: "LDDS" });
+
+		await expect(
+			create("Urgences", [{ accountId: account.id }], { ...reserve("1"), targetAmount: "abc" }),
+		).resolves.toMatchObject({ targetAmount: 200_000 });
+		await expect(
+			create("Vacances", [{ accountId: other.id }], { targetMonths: "abc" }),
+		).resolves.toMatchObject({ targetAmount: 100_000, targetMode: "fixed", targetMonths: null });
+	});
+
+	it("turns an active goal into a reserve, dropping its date, but not a completed or archived one", async () => {
+		const account = await savings("300");
+		const other = await savings("200", { name: "LDDS" });
+		const active = await create("Urgences", [{ accountId: account.id }], {
+			targetDate: "2027-06-30",
+		});
+		const archived = await create("Ancien", [{ accountId: other.id }]);
+		await fire(archived.id, "archive");
+
+		const { status, body: answer } = await send(
+			"PUT",
+			`/api/goals/${active.id}`,
+			body("Urgences", [{ accountId: account.id }], {
+				kind: "maintained",
+				targetDate: "2027-06-30",
+			}),
+		);
+
+		expect(status).toBe(200);
+		expect(z.object({ data: goal }).parse(answer).data).toMatchObject({
+			kind: "maintained",
+			targetDate: null,
+			status: "depleted",
+		});
+		const kept = await goalRows();
+		await expect(
+			rejection(
+				body("Ancien", [{ accountId: other.id }], { kind: "maintained" }),
+				"PUT",
+				`/api/goals/${archived.id}`,
+			),
+		).resolves.toEqual({
+			code: "VALIDATION_ERROR",
+			message: "The request is invalid.",
+			fields: [{ path: "kind", code: "kind_locked" }],
+		});
+		await expect(goalRows()).resolves.toEqual(kept);
+		// Its other fields still change.
+		await expect(
+			send("PUT", `/api/goals/${archived.id}`, body("Ancien projet", [{ accountId: other.id }])),
+		).resolves.toMatchObject({ status: 200 });
+	});
+
+	it("turns a paused goal into a reserve", async () => {
+		const account = await savings("300");
+		const paused = await create("Vélo", [{ accountId: account.id }]);
+		await fire(paused.id, "pause");
+
+		const { status, body: answer } = await send(
+			"PUT",
+			`/api/goals/${paused.id}`,
+			body("Vélo", [{ accountId: account.id }], { kind: "maintained" }),
+		);
+
+		expect(status, JSON.stringify(answer)).toBe(200);
+		expect(z.object({ data: goal }).parse(answer).data).toMatchObject({
+			kind: "maintained",
+			state: "paused",
+		});
+	});
+
+	it("keeps a completed goal's kind", async () => {
+		const account = await savings("300");
+		const completed = await create("Vélo", [{ accountId: account.id }]);
+		await fire(completed.id, "complete");
+
+		await expect(
+			rejection(
+				body("Vélo", [{ accountId: account.id }], { kind: "maintained" }),
+				"PUT",
+				`/api/goals/${completed.id}`,
+			),
+		).resolves.toMatchObject({ fields: [{ path: "kind", code: "kind_locked" }] });
+	});
+
+	it("stores a new product when a reserve in months is saved again", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const created = await create("Urgences", [{ accountId: account.id }], reserve("6"));
+
+		const { status } = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Urgences", [{ accountId: account.id }], reserve("3")),
+		);
+
+		expect(status).toBe(200);
+		await expect(storedTargets()).resolves.toEqual([
+			{ amount: 600_000, mode: "months_of_expenses", months: 3, date: null },
 		]);
 	});
 });
