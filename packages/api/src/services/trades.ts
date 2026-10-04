@@ -61,13 +61,14 @@ async function found(deps: ServiceDeps, id: string): Promise<TradeData> {
 }
 
 /**
- * A page of one account's trades, most recent first. Any account answers, a
- * page with no trade for one that is not an investment account.
+ * A page of one account's trades, most recent first, only those in
+ * `securityId` when it is given. Any account answers, a page with no trade
+ * for one that is not an investment account.
  */
 export async function listAccountTrades(
 	deps: ServiceDeps,
 	accountId: string,
-	page: { page: number; pageSize: number },
+	page: { page: number; pageSize: number; securityId?: string | undefined },
 ): Promise<TradePage> {
 	await getAccount(deps, accountId);
 	const { items, total } = await listTrades(deps, accountId, page);

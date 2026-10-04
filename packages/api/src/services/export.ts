@@ -36,6 +36,8 @@ import {
 	exportedTags,
 	exportedTrades,
 	exportedTransfers,
+	exportedCostBasisLocks,
+	exportedTypedPrices,
 	exportedValuations,
 	holdingPages,
 	transactionPages,
@@ -851,29 +853,45 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 	);
 
 	// No `id`: a holding is derived, and Sure's importer finds one by its
-	// account, security and day.
+	// account, security and day. A cost basis the owner locked stands on the
+	// days its position holds the security, as Sure's `cost_basis_source`
+	// ranks it.
+	const locks = new Map(
+		(await exportedCostBasisLocks(deps.db)).map((lock) => [
+			`${lock.accountId} ${lock.securityId}`,
+			lock,
+		]),
+	);
+
 	for await (const page of holdingPages(deps.db, from)) {
 		yield ndjson(
-			page.map((row) => ({
-				type: "Holding",
-				data: {
-					account_id: row.accountId,
-					security_id: row.securityId,
-					ticker: sureTicker(row),
-					security_name: row.security.name,
-					exchange_operating_mic: row.security.mic,
-					date: row.date,
-					qty: formatMicros(row.quantity),
-					price: formatMicros(row.price),
-					amount: decimal(row.amount, row.currency),
-					currency: row.currency,
-					cost_basis: row.costBasis === null ? null : formatMicros(row.costBasis),
-					cost_basis_source: row.costBasis === null ? null : "calculated",
-					cost_basis_locked: false,
-					security_locked: false,
-					archant: { isin: row.security.isin },
-				},
-			})),
+			page.map((row) => {
+				const lock = locks.get(`${row.accountId} ${row.securityId}`);
+				const locked =
+					lock !== undefined && row.quantity > 0 && (lock.after === null || row.date > lock.after);
+				const costBasis = locked ? lock.costBasis : row.costBasis;
+
+				return {
+					type: "Holding",
+					data: {
+						account_id: row.accountId,
+						security_id: row.securityId,
+						ticker: sureTicker(row),
+						security_name: row.security.name,
+						exchange_operating_mic: row.security.mic,
+						date: row.date,
+						qty: formatMicros(row.quantity),
+						price: formatMicros(row.price),
+						amount: decimal(row.amount, row.currency),
+						currency: row.currency,
+						cost_basis: costBasis === null ? null : formatMicros(costBasis),
+						cost_basis_source: costBasis === null ? null : locked ? "manual" : "calculated",
+						cost_basis_locked: locked,
+						security_locked: false,
+						archant: { isin: row.security.isin },
+					},
+				};
+			}),
 			counts,
 		);
 	}
@@ -1075,6 +1093,32 @@ async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
 }
 
 /**
+ * `prices.ndjson`: each price the owner typed, a `SecurityPrice` line naming
+ * its security as a `Trade` line does. Apart from `all.ndjson`, because
+ * `SureImport::Preflight` refuses a price line (AD-23); the provider's
+ * prices stay out, its next fetch finding them again.
+ */
+async function* pricesNdjson(deps: ServiceDeps, counts: Counts) {
+	yield ndjson(
+		(await exportedTypedPrices(deps.db)).map((row) => ({
+			type: "SecurityPrice",
+			data: {
+				security_id: row.securityId,
+				ticker: sureTicker(row),
+				security_name: row.security.name,
+				exchange_operating_mic: row.security.mic,
+				date: row.date,
+				price: formatMicros(row.price),
+				currency: row.currency,
+				source: row.source,
+				archant: { isin: row.security.isin },
+			},
+		})),
+		counts,
+	);
+}
+
+/**
  * `attachments.json`, Sure's `generate_attachments_manifest`: one line of
  * JSON listing every attachment without its bytes, which never leave. The
  * entry is the transaction, so `record_id` and `entry_id` are both its id.
@@ -1126,6 +1170,7 @@ function partsOf(deps: ServiceDeps, counts: Counts): Part[] {
 		["attachments.json", () => attachmentsJson(deps)],
 		["all.ndjson", () => allNdjson(deps, readers, counts)],
 		["goals.ndjson", () => goalsNdjson(deps, counts)],
+		["prices.ndjson", () => pricesNdjson(deps, counts)],
 	];
 }
 

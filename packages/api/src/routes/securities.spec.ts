@@ -2,6 +2,9 @@ import { testClient } from "hono/testing";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
+import { accounts } from "@archant/data/schema/accounts";
+import { securityPrices } from "@archant/data/schema/securities";
+
 import { buildApp, errorBody, ownDatabase, useSignedInApp } from "../testing/app.ts";
 import { insertSecurity } from "../testing/prices.ts";
 import { mockYahoo } from "../testing/yahoo.ts";
@@ -90,5 +93,61 @@ describe("GET /api/securities", () => {
 		await expect(response.json()).resolves.toEqual({
 			data: { enabled: true, known: [], items: [], unavailable: true },
 		});
+	});
+});
+
+describe("POST /api/securities/:id/prices", () => {
+	it("types a price for a security priced by hand, and its holder's balance follows", async () => {
+		const { db, securities } = await api();
+		const id = await insertSecurity(db, {
+			ticker: null,
+			mic: null,
+			provider: null,
+			name: "Fonds euros",
+		});
+		const [holder] = await db.select({ id: accounts.id }).from(accounts);
+
+		const response = await securities[":id"].prices.$post({
+			param: { id },
+			json: { date: "2026-09-21", price: "105,00" },
+		});
+
+		expect(response.status).toBe(201);
+		await expect(response.json()).resolves.toEqual({
+			data: { securityId: id, date: "2026-09-21", price: "105", currency: "EUR", source: "manual" },
+		});
+		const account = await testClient(buildApp(db)).api.accounts[":id"].$get({
+			param: { id: holder?.id ?? "" },
+		});
+		// One share bought at 1.00 € from an opening at zero, now worth 105.00 €.
+		expect((await account.json()).data.balance).toBe(10_400);
+	});
+
+	it("refuses a security its provider prices with PRICE_FROM_PROVIDER, and a bad body with its fields", async () => {
+		const { db, securities } = await api();
+		const listed = await insertSecurity(db, {}, { held: false });
+		const typed = await insertSecurity(
+			db,
+			{ ticker: null, mic: null, provider: null },
+			{ held: false },
+		);
+
+		const refused = await securities[":id"].prices.$post({
+			param: { id: listed },
+			json: { date: "2026-09-21", price: "105" },
+		});
+		const invalid = await securities[":id"].prices.$post({
+			param: { id: typed },
+			json: { date: "2026-09-22", price: "-1" },
+		});
+
+		expect(refused.status).toBe(409);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("PRICE_FROM_PROVIDER");
+		expect(invalid.status).toBe(400);
+		expect(errorBody.parse(await invalid.json()).error.fields).toEqual([
+			{ path: "date", code: "date_in_future" },
+			{ path: "price", code: "invalid_price" },
+		]);
+		await expect(db.select().from(securityPrices)).resolves.toEqual([]);
 	});
 });

@@ -55,7 +55,7 @@ const HOLDING_ROWS_PER_INSERT = 1000;
 const FORWARD_VALUATION_KINDS = ["opening_anchor", "reconciliation"] as const;
 
 /** The stored balance at the end of `date`: the last row on or before it. */
-async function lastBalanceOnOrBefore(
+export async function lastBalanceOnOrBefore(
 	db: Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">,
 	accountId: string,
 	date: IsoDate,

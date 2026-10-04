@@ -29,6 +29,14 @@ export const queryKeys = {
 		/** Under `detail(id)` too: every trade write invalidates the account. */
 		trades: (id: string, page: number) => ["accounts", "detail", id, "trades", page] as const,
 		/**
+		 * Under `detail(id)` too: a trade, a snapshot or a typed price moves
+		 * what the account holds, and a lock its cost basis alone.
+		 */
+		holdings: (id: string) => ["accounts", "detail", id, "holdings"] as const,
+		/** A position sheet's trades, under `detail(id)` with the account's other trades. */
+		positionTrades: (id: string, securityId: string) =>
+			["accounts", "detail", id, "position-trades", securityId] as const,
+		/**
 		 * Under `all`, not under one account: every write that moves a
 		 * balance, flips an account's flags or adds an account already
 		 * invalidates `all`, so the dashboard follows with no change to them.

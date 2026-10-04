@@ -175,6 +175,20 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page.getByRole("cell", { name: "3 × 100,00 €" })).toBeVisible();
 			await expectNone(page, [{ role: "button", name: "Ajouter un ordre" }]);
 			await expect(page.locator("[data-trade-id]")).toHaveCount(0);
+
+			// « Positions » and a position's sheet are read, with no form.
+			await page.getByRole("tab", { name: "Positions" }).click();
+			await page.getByRole("button", { name: `${prefix} fonds`, exact: true }).click();
+			const position = page.getByRole("dialog", { name: `${prefix} fonds` });
+			await expect(position.getByText("Dernier cours")).toBeVisible();
+			await expect(position.getByRole("list", { name: "Ordres" })).toContainText("3 × 100,00 €");
+			await expect(position.getByRole("region", { name: "Saisir un cours" })).toHaveCount(0);
+			await expectNone(position, [
+				{ role: "button", name: "Enregistrer le cours" },
+				{ role: "button", name: "Verrouiller le PRU" },
+			]);
+			await page.keyboard.press("Escape");
+			await expect(position).toBeHidden();
 		});
 
 		await test.step("operations: no selection, plain category pills, and a sheet to read", async () => {

@@ -2197,4 +2197,28 @@ describe("holdings", () => {
 		await database.run(sql`delete from accounts where id = 'a1'`);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
+
+	it("holds one cost basis lock per account and security, never negative, gone with its account", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "investment", "pea");
+		await insertSecurity(database, "s1");
+		await insertSecurity(database, "s2", { ticker: "AI.PA" });
+		const lock = (securityId: string, costBasis: number) =>
+			database.run(
+				sql`insert into cost_basis_locks (account_id, security_id, cost_basis, locked_on) values ('a1', ${securityId}, ${costBasis}, '2026-09-21')`,
+			);
+
+		await expect(lock("s1", 40_000_000)).resolves.toBeDefined();
+		await expect(lock("s1", 41_000_000)).rejects.toThrow();
+		await expect(lock("nope", 1)).rejects.toThrow();
+		await expect(lock("s2", -1)).rejects.toThrow();
+		// A free share's cost basis is zero, still a lock.
+		await expect(lock("s2", 0)).resolves.toBeDefined();
+		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
+
+		await database.run(sql`delete from accounts where id = 'a1'`);
+
+		await expect(database.all(sql`select * from cost_basis_locks`)).resolves.toEqual([]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
 });

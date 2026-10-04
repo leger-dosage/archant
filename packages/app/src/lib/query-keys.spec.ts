@@ -211,3 +211,22 @@ describe("queryKeys.accounts.goals", () => {
 		expect(client.getQueryState(summary)?.isInvalidated).toBe(true);
 	});
 });
+
+describe("queryKeys.accounts.holdings", () => {
+	it("goes stale when its account is invalidated, and only then", async () => {
+		const client = new QueryClient();
+		const own = queryKeys.accounts.holdings("a");
+		const trades = queryKeys.accounts.positionTrades("a", "s");
+		const other = queryKeys.accounts.holdings("b");
+		client.setQueryData(own, { positions: [] });
+		client.setQueryData(trades, { items: [] });
+		client.setQueryData(other, { positions: [] });
+
+		// What every trade write does through `useInvalidateAccount`.
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.detail("a") });
+
+		expect(client.getQueryState(own)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(trades)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+	});
+});

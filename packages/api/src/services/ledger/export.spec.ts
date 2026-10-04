@@ -12,7 +12,9 @@ import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { entries } from "@archant/data/schema/entries";
 import { holdings } from "@archant/data/schema/holdings";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
+import { securityPrices } from "@archant/data/schema/securities";
 import { taggings } from "@archant/data/schema/taggings";
+import { trades } from "@archant/data/schema/trades";
 
 import {
 	add,
@@ -44,10 +46,13 @@ import {
 	exportedRules,
 	exportedTags,
 	exportedTransfers,
+	exportedCostBasisLocks,
+	exportedTypedPrices,
 	exportedValuations,
 	holdingPages,
 	transactionPages,
 } from "./export.ts";
+import { lockCostBasis } from "./holdings.ts";
 import { splitTransaction } from "./splits.ts";
 import { recordTrade } from "./trades.ts";
 import { rejectTransfer } from "./transfers.ts";
@@ -210,6 +215,94 @@ describe("holdingPages", () => {
 			currency: "EUR",
 			security: { ticker: null, mic: null, isin: "FR0000120073" },
 		});
+	});
+});
+
+describe("the cost basis locks and typed prices", () => {
+	it("read each lock of a running position with its last day at zero, and the typed prices alone", async () => {
+		setToday("2026-09-21T10:00:00Z");
+		const pea = await openPea();
+		const trade = (date: string, quantity: number, side: "buy" | "sell" = "buy") =>
+			recordTrade(
+				deps(),
+				pea.id,
+				{
+					side,
+					security: { source: "manual", isin: "FR0010315771", name: "Fonds verrouillé" },
+					date,
+					quantity: toMicros(quantity),
+					price: toMicros(10_500_000),
+					fee: toMinorUnits(0),
+				},
+				{ origin: "user" },
+			);
+		const { id: tradeId } = await trade("2026-09-17", 2_000_000);
+		const [{ securityId } = { securityId: "" }] = await temp.db
+			.select({ securityId: trades.securityId })
+			.from(trades)
+			.where(eq(trades.entryId, tradeId));
+		// Sold in full, then bought again: the lock is the new position's.
+		await trade("2026-09-18", 2_000_000, "sell");
+		await trade("2026-09-19", 1_000_000);
+		await lockCostBasis(deps(), pea.id, securityId, toMicros(9_000_000), { origin: "user" });
+		await temp.db.insert(securityPrices).values([
+			{
+				securityId,
+				date: "2026-09-19",
+				price: toMicros(11_000_000),
+				currency: "EUR",
+				source: "manual",
+			},
+			{
+				securityId,
+				date: "2026-09-18",
+				price: toMicros(10_000_000),
+				currency: "EUR",
+				source: "provider",
+			},
+			{
+				securityId,
+				date: "2026-09-17",
+				price: toMicros(10_200_000),
+				currency: "EUR",
+				source: "manual",
+			},
+		]);
+
+		const typed = (await exportedTypedPrices(temp.db)).filter(
+			(row) => row.securityId === securityId,
+		);
+
+		await expect(exportedCostBasisLocks(temp.db)).resolves.toContainEqual({
+			accountId: pea.id,
+			securityId,
+			costBasis: 9_000_000,
+			after: "2026-09-18",
+		});
+		expect(typed).toEqual([
+			{
+				securityId,
+				date: "2026-09-17",
+				price: 10_200_000,
+				currency: "EUR",
+				source: "manual",
+				security: {
+					id: securityId,
+					isin: "FR0010315771",
+					ticker: null,
+					mic: null,
+					name: "Fonds verrouillé",
+				},
+			},
+			expect.objectContaining({ date: "2026-09-19" }),
+		]);
+
+		// A full sale on or after the day it was locked ends the position and the lock.
+		await trade("2026-09-21", 1_000_000, "sell");
+
+		await expect(exportedCostBasisLocks(temp.db)).resolves.not.toContainEqual(
+			expect.objectContaining({ accountId: pea.id }),
+		);
 	});
 });
 

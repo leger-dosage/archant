@@ -15,7 +15,13 @@ import { createTempDatabase } from "../testing/temp-database.ts";
 import { TEST_YAHOO_URL, chartBody, mockYahoo, yahooFixtures } from "../testing/yahoo.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import * as ledgerHoldings from "./ledger/holdings.ts";
-import { priceStatus, setPricesEnabled, startDailyPrices, updatePrices } from "./prices.ts";
+import {
+	priceStatus,
+	setPricesEnabled,
+	startDailyPrices,
+	typePrice,
+	updatePrices,
+} from "./prices.ts";
 import { heldSecurities, searchSecurities } from "./securities.ts";
 
 const NOW = Date.parse("2026-09-21T10:00:00Z");
@@ -788,5 +794,104 @@ describe("startDailyPrices", () => {
 		// No security was read: the last update stays the one before.
 		await expect(setting("prices_updated_at")).resolves.toBeNull();
 		expect(logLines.join("\n")).not.toContain("database is locked");
+	});
+});
+
+/** A fonds euros typed by hand, held by one share bought at 1.00 € on 2026-09-14. */
+async function heldFund() {
+	const id = await newSecurity(
+		{ ticker: null, mic: null, isin: null, provider: null, name: "Fonds euros" },
+		{ held: false },
+	);
+	const accountId = await holdSecurity(temp.db, id, "2026-09-14");
+
+	return { id, accountId };
+}
+
+describe("typePrice", () => {
+	it("writes a manual price and values its holders at it at once", async () => {
+		const { id, accountId } = await heldFund();
+		const revalue = vi.spyOn(ledgerHoldings, "revalueHoldings");
+
+		await expect(typePrice(deps(), id, { date: "2026-09-21", price: "105" })).resolves.toEqual({
+			securityId: id,
+			date: "2026-09-21",
+			price: "105",
+			currency: "EUR",
+			source: "manual",
+		});
+
+		await expect(pricesOf(id)).resolves.toEqual([
+			{ date: "2026-09-21", price: 105_000_000, provisional: false, source: "manual" },
+		]);
+		expect(revalue).toHaveBeenCalledWith(expect.anything(), id, "2026-09-21", "Europe/Paris", {
+			origin: "user",
+		});
+		// The cash, −1.00 €, and the share now worth 105.00 €.
+		await expect(balanceOn(deps(), accountId, "2026-09-21")).resolves.toEqual({
+			amount: 10_400,
+			currency: "EUR",
+		});
+	});
+
+	it("replaces a price of the same day, a provider's included, with the one typed", async () => {
+		const { id } = await heldFund();
+		await typePrice(deps(), id, { date: "2026-09-18", price: "102,5" });
+		await typePrice(deps(), id, { date: "2026-09-18", price: "103" });
+		const offline = await newSecurity({ offline: true });
+		await temp.db.insert(securityPrices).values({
+			securityId: offline,
+			date: "2026-09-18",
+			price: toMicros(600_000_000),
+			currency: "EUR",
+			provisional: true,
+			source: "provider",
+		});
+
+		await typePrice(deps(), offline, { date: "2026-09-18", price: "601" });
+
+		await expect(pricesOf(id)).resolves.toEqual([
+			{ date: "2026-09-18", price: 103_000_000, provisional: false, source: "manual" },
+		]);
+		await expect(pricesOf(offline)).resolves.toEqual([
+			{ date: "2026-09-18", price: 601_000_000, provisional: false, source: "manual" },
+		]);
+	});
+
+	it("refuses a security its provider prices, writing nothing", async () => {
+		const id = await newSecurity();
+
+		await expect(typePrice(deps(), id, { date: "2026-09-21", price: "105" })).rejects.toMatchObject(
+			{
+				code: "PRICE_FROM_PROVIDER",
+			},
+		);
+		await expect(pricesOf(id)).resolves.toEqual([]);
+	});
+
+	it("refuses an unknown security, a day after today and a price not above zero", async () => {
+		const { id } = await heldFund();
+
+		await expect(
+			typePrice(deps(), "nope", { date: "2026-09-21", price: "1" }),
+		).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(typePrice(deps(), id, { date: "2026-09-22", price: "0" })).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [
+				{ path: "date", code: "date_in_future" },
+				{ path: "price", code: "invalid_price" },
+			],
+		});
+		await expect(typePrice(deps(), id, { date: "21/09/2026", price: "abc" })).rejects.toMatchObject(
+			{
+				fields: [
+					{ path: "date", code: "invalid_format" },
+					{ path: "price", code: "invalid_price" },
+				],
+			},
+		);
+		await expect(pricesOf(id)).resolves.toEqual([]);
 	});
 });

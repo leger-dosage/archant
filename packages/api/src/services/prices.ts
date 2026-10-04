@@ -2,11 +2,14 @@ import type { PriceProvider } from "../connectors/prices/price-provider.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { StoredRange } from "../domain/prices.ts";
 import type { ErrorCode } from "../lib/errors.ts";
+import type { TypedPriceInput } from "../schemas/prices.ts";
+import type { ServiceDeps } from "./deps.ts";
 import type { PriceDeps } from "./securities.ts";
 
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, max, min, ne, sql } from "drizzle-orm";
 
 import type { Micros } from "@archant/data/micros";
+import { formatMicros } from "@archant/data/micros";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
 import type { Security } from "@archant/data/types";
@@ -15,6 +18,8 @@ import { priceUnavailable } from "../connectors/prices/price-provider.ts";
 import { startOfDay, today } from "../domain/dates.ts";
 import { fillPrices, priceWindow } from "../domain/prices.ts";
 import { AppError } from "../lib/errors.ts";
+import { validationError } from "../lib/zod-error.ts";
+import { typedPriceSchema } from "../schemas/prices.ts";
 import { LEASE_MS, codeOf } from "./bank-connections.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { PRICE_PROVIDER_SETTING, enabledProvider, heldSecurities } from "./securities.ts";
@@ -513,4 +518,86 @@ export async function startDailyPrices(deps: PriceDeps): Promise<DailyPriceRun |
 	return (await takeLease(deps, now, true)) === "taken"
 		? { run: () => run(deps, provider, false, now) }
 		: null;
+}
+
+/** A price typed by hand, as « Saisir un cours » answers it. */
+export type TypedPrice = {
+	securityId: string;
+	date: IsoDate;
+	/** Per unit, in the security's currency. */
+	price: string;
+	currency: string;
+	source: "manual";
+};
+
+/**
+ * « Saisir un cours », as Sure's holding drawer: a day's price for a security
+ * no provider prices, with none or offline, on the user's behalf. One
+ * immediate transaction writes it, replacing any price of that day, and
+ * revalues its holders from that day, as a fetch does (AD-22); no fetch
+ * overwrites it. A security its provider prices is refused with
+ * `PRICE_FROM_PROVIDER`.
+ */
+export async function typePrice(
+	deps: ServiceDeps,
+	securityId: string,
+	input: TypedPriceInput,
+): Promise<TypedPrice> {
+	const parsed = typedPriceSchema(today(deps.timeZone)).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const { date, price } = parsed.data;
+	// Read in the transaction that writes: a fetch that just set the security
+	// back online would otherwise see its price shadowed by this one.
+	const currency = await deps.db.transaction(
+		async (tx) => {
+			const security = await tx
+				.select({
+					currency: securities.currency,
+					provider: securities.provider,
+					offline: securities.offline,
+				})
+				.from(securities)
+				.where(eq(securities.id, securityId))
+				.get();
+
+			if (security === undefined) {
+				throw new AppError("NOT_FOUND", "No security has this id.");
+			}
+
+			if (security.provider !== null && !security.offline) {
+				throw new AppError("PRICE_FROM_PROVIDER", "This security's prices come from its provider.");
+			}
+
+			await tx
+				.insert(securityPrices)
+				.values({
+					securityId,
+					date,
+					price,
+					currency: security.currency,
+					provisional: false,
+					source: "manual",
+				})
+				.onConflictDoUpdate({
+					target: [securityPrices.securityId, securityPrices.date],
+					set: { price, currency: security.currency, provisional: false, source: "manual" },
+				});
+			await revalueHoldings(tx, securityId, date, deps.timeZone, { origin: "user" });
+
+			return security.currency;
+		},
+		{ behavior: "immediate" },
+	);
+
+	return {
+		securityId,
+		date,
+		price: formatMicros(price),
+		currency,
+		source: "manual",
+	};
 }

@@ -10,12 +10,12 @@ import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
-import { holdings } from "@archant/data/schema/holdings";
+import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { merchants } from "@archant/data/schema/merchants";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
-import { securities } from "@archant/data/schema/securities";
+import { securities, securityPrices } from "@archant/data/schema/securities";
 import { taggings } from "@archant/data/schema/taggings";
 import { tags } from "@archant/data/schema/tags";
 import { trades } from "@archant/data/schema/trades";
@@ -25,6 +25,7 @@ import { transfers } from "@archant/data/schema/transfers";
 
 import { today } from "../../domain/dates.ts";
 import { balanceOn } from "./balances.ts";
+import { liveCostBasisLocks } from "./holdings.ts";
 import { KEYS_PER_LOOKUP, asInflow, asOutflow, inSequence, notSplitParent } from "./shared.ts";
 
 /**
@@ -137,6 +138,21 @@ export const EXPORTED_COLUMNS = {
 		price: holdings.price,
 		amount: holdings.amount,
 		costBasis: holdings.costBasis,
+	},
+	// A cost basis the owner locked, which a `Holding` line on a day the
+	// account holds the security writes as a manual one, as Sure's.
+	cost_basis_locks: {
+		accountId: costBasisLocks.accountId,
+		securityId: costBasisLocks.securityId,
+		costBasis: costBasisLocks.costBasis,
+	},
+	// The prices typed by hand, in prices.ndjson: the provider's are fetched again.
+	security_prices: {
+		securityId: securityPrices.securityId,
+		date: securityPrices.date,
+		price: securityPrices.price,
+		currency: securityPrices.currency,
+		source: securityPrices.source,
 	},
 	// What a `Trade` or a `Holding` line names its security by, as Sure's
 	// exporter: Sure's all.ndjson has no `Security` line, which its importer
@@ -287,8 +303,14 @@ export const LEFT_OUT = {
 		createdAt: "Sure's Trade line names a security without its timestamps.",
 		updatedAt: "Sure's Trade line names a security without its timestamps.",
 	},
-	security_prices:
-		"Prices fetched from the provider, which Sure's all.ndjson does not carry: the provider fetches them again.",
+	cost_basis_locks: {
+		lockedOn:
+			"The day the owner locked it, which Sure's `Holding` line does not carry: it only tells which days the lock stands on.",
+	},
+	security_prices: {
+		provisional:
+			"Fetch bookkeeping of the provider's last seven days; a typed price, the only kind exported, is never provisional.",
+	},
 	sessions: SECRETS,
 	settings: "Instance settings, the saved Enable Banking credentials among them.",
 	sign_in_failures: "Sign-in throttling.",
@@ -571,6 +593,26 @@ export function exportedTrades(db: Reader) {
 		.innerJoin(entries, eq(entries.id, trades.entryId))
 		.innerJoin(securities, eq(securities.id, trades.securityId))
 		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
+}
+
+/**
+ * Every cost basis the owner locked on a position still running, with the
+ * position's last day at quantity zero before it, `null` when none: the
+ * `Holding` lines of the days after it that hold the security carry it.
+ * `lockedOn` only tells a running position from an ended one, and stays.
+ */
+export async function exportedCostBasisLocks(db: Reader) {
+	return liveCostBasisLocks(db, null);
+}
+
+/** Every price typed by hand, with its security, by day then security. */
+export function exportedTypedPrices(db: Reader) {
+	return db
+		.select({ ...EXPORTED_COLUMNS.security_prices, security: EXPORTED_COLUMNS.securities })
+		.from(securityPrices)
+		.innerJoin(securities, eq(securities.id, securityPrices.securityId))
+		.where(eq(securityPrices.source, "manual"))
+		.orderBy(asc(securityPrices.date), asc(securityPrices.securityId));
 }
 
 /**

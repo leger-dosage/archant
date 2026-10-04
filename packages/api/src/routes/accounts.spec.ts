@@ -1533,3 +1533,127 @@ describe("GET /api/accounts/:id/imports", () => {
 		).resolves.toMatchObject({ status: 400, body: { error: { code: "VALIDATION_ERROR" } } });
 	});
 });
+
+/** A PEA holding 10 of a fund typed by hand, bought at 612.40 € with 2.50 € of fees. */
+async function heldFund() {
+	const account = await openAccount({ ...pea, openingDate: "2026-09-01" });
+	const trade = await request("POST", `/api/accounts/${account.id}/trades`, {
+		side: "buy",
+		security: { source: "manual", name: `Fonds ${crypto.randomUUID()}` },
+		date: "2026-09-10",
+		quantity: "10",
+		price: "612,40",
+		fee: "2,50",
+	});
+	const securityId = z
+		.object({ data: z.object({ security: z.object({ id: z.string() }) }) })
+		.parse(trade.body).data.security.id;
+
+	return { account, securityId };
+}
+
+const holdings = (accountId: string) =>
+	testClient(buildApp()).api.accounts[":id"].holdings.$get({ param: { id: accountId } });
+
+const costBasis = () =>
+	testClient(buildApp()).api.accounts[":id"].holdings[":securityId"]["cost-basis"];
+
+describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
+	it("lists the positions and the cash, numbers as decimal strings", async () => {
+		const { account, securityId } = await heldFund();
+
+		const response = await holdings(account.id);
+
+		expect(response.status).toBe(200);
+		const { data } = await response.json();
+		expect(data).toMatchObject({
+			accountId: account.id,
+			currency: "EUR",
+			date: "2026-09-21",
+			cash: 1_887_350,
+			total: 2_499_750,
+			positions: [
+				{
+					security: { id: securityId, ticker: null, provider: null, offline: false },
+					quantity: "10",
+					price: "612.4",
+					priceDate: "2026-09-10",
+					amount: 612_400,
+					costBasis: "612.4",
+					costBasisLocked: false,
+					gain: 0,
+					gainPercent: "0",
+					weight: "24.49845",
+				},
+			],
+		});
+		expect(data.cashWeight).toBe("75.50155");
+	});
+
+	it("answers any account, NOT_FOUND for none", async () => {
+		const account = await openAccount();
+
+		const response = await holdings(account.id);
+		const missing = await holdings("nope");
+
+		await expect(response.json()).resolves.toEqual({
+			data: {
+				accountId: account.id,
+				currency: "EUR",
+				date: null,
+				positions: [],
+				cash: 123_456,
+				cashWeight: "100",
+				total: 123_456,
+			},
+		});
+		expect(missing.status).toBe(404);
+	});
+
+	it("locks a cost basis and unlocks it, each answering the position", async () => {
+		const { account, securityId } = await heldFund();
+		const route = costBasis();
+		const param = { id: account.id, securityId };
+
+		const locked = await route.$put({ param, json: { costBasis: "600" } });
+
+		expect(locked.status).toBe(200);
+		await expect(locked.json()).resolves.toMatchObject({
+			data: { costBasis: "600", costBasisLocked: true, gain: 12_400, gainPercent: "2.066667" },
+		});
+
+		const unlocked = await route.$delete({ param });
+
+		expect(unlocked.status).toBe(200);
+		await expect(unlocked.json()).resolves.toMatchObject({
+			data: { costBasis: "612.4", costBasisLocked: false },
+		});
+	});
+
+	it("refuses a cost basis below zero, a security not held and an account that is not an investment one", async () => {
+		const { account, securityId } = await heldFund();
+		const checking = await openAccount();
+
+		const invalid = await costBasis().$put({
+			param: { id: account.id, securityId },
+			json: { costBasis: "-1" },
+		});
+		const notHeld = await costBasis().$put({
+			param: { id: account.id, securityId: "nope" },
+			json: { costBasis: "1" },
+		});
+		const notInvestment = await costBasis().$delete({
+			param: { id: checking.id, securityId },
+		});
+
+		expect(invalid.status).toBe(400);
+		expect(errorBody.parse(await invalid.json()).error.fields).toEqual([
+			{ path: "costBasis", code: "invalid_price" },
+		]);
+		expect(notHeld.status).toBe(404);
+		expect(notInvestment.status).toBe(409);
+		expect(errorBody.parse(await notInvestment.json()).error.code).toBe(
+			"NOT_AN_INVESTMENT_ACCOUNT",
+		);
+	});
+});

@@ -121,6 +121,11 @@ export const ERROR_STATUSES = {
 	/** A price update is running; its lease frees itself after ten minutes. */
 	PRICE_UPDATE_IN_PROGRESS: 409,
 	/**
+	 * « Saisir un cours » on a security its provider prices and that is not
+	 * offline: the next fetch would contradict it. Nothing is written.
+	 */
+	PRICE_FROM_PROVIDER: 409,
+	/**
 	 * A delete of an account a bank still feeds: the next sync would offer its
 	 * bank account for linking again, so the bank is disconnected first, as Sure.
 	 */

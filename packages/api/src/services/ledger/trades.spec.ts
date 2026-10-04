@@ -660,6 +660,23 @@ describe("reading trades", () => {
 		await expect(findTrade(deps(), "nope")).resolves.toBeNull();
 	});
 
+	it("lists only one security's trades when asked, as a position's sheet does", async () => {
+		const account = await openPea();
+		const lvmh = await newSecurity();
+		const other = await newSecurity();
+		const bought = await record(account.id, buy(lvmh, { date: "2026-09-02" }));
+		await record(account.id, buy(other, { date: "2026-09-03" }));
+		const sold = await record(
+			account.id,
+			sell(lvmh, { date: "2026-09-04", quantity: toMicros(1_000_000) }),
+		);
+
+		const page = await listTrades(deps(), account.id, { page: 1, pageSize: 50, securityId: lvmh });
+
+		expect(page.total).toBe(2);
+		expect(page.items.map((item) => item.id)).toEqual([sold, bought]);
+	});
+
 	it("names each traded security from its first trade on any account, a sold one included", async () => {
 		const pea = await openPea();
 		const other = await openPea();

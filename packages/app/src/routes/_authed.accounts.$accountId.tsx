@@ -1,3 +1,4 @@
+import type { HoldingsData, PositionData } from "@/hooks/useHoldings";
 import type { SnapshotData } from "@/hooks/useSnapshots";
 import type { TradeData } from "@/hooks/useTrades";
 import type { TransactionData } from "@/hooks/useTransactions";
@@ -24,6 +25,8 @@ import { Money } from "@/components/Money";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { PeriodToggle } from "@/components/PeriodToggle";
+import { PositionList, PositionListSkeleton } from "@/components/PositionList";
+import { PositionSheet } from "@/components/PositionSheet";
 import { Section } from "@/components/Section";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
@@ -44,6 +47,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAccount } from "@/hooks/useAccount";
 import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
+import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
@@ -54,7 +58,7 @@ import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots", "trades", "imports"] as const;
+const ACCOUNT_TABS = ["transactions", "snapshots", "positions", "trades", "imports"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -87,6 +91,8 @@ type SheetState = { open: boolean; transaction: TransactionData | null };
 type SnapshotDialogState = { open: boolean; snapshot: SnapshotData | null };
 
 type TradeDialogState = { open: boolean; trade: TradeData | null };
+
+type PositionSheetState = { open: boolean; securityId: string | null };
 
 /** Keeps a list of this page within its last page. */
 function useClampAccountPage(
@@ -293,6 +299,32 @@ function TradesPanel({ accountId, page, canAdd, onAdd, onOpen }: TradesPanelProp
 	);
 }
 
+type PositionsPanelProps = {
+	holdings: ReturnType<typeof useAccountHoldings>;
+	onOpen: (position: PositionData) => void;
+};
+
+function PositionsPanel({ holdings, onOpen }: PositionsPanelProps) {
+	const { t } = useTranslation();
+	const data: HoldingsData | undefined = holdings.data;
+
+	return (
+		<div className="flex flex-col gap-3">
+			{holdings.isPending && <PositionListSkeleton />}
+
+			{holdings.isError && (
+				<ListError error={holdings.error} onRetry={() => void holdings.refetch()} />
+			)}
+
+			{data !== undefined && data.positions.length === 0 && (
+				<EmptyNote>{t("positions.empty")}</EmptyNote>
+			)}
+
+			{data !== undefined && <PositionList holdings={data} onOpen={onOpen} />}
+		</div>
+	);
+}
+
 function ImportsPanel({ accountId, page }: { accountId: string; page: number }) {
 	const { t } = useTranslation();
 	const imports = useAccountImports(accountId, page);
@@ -354,6 +386,10 @@ function AccountPage() {
 		snapshot: null,
 	});
 	const [tradeDialog, setTradeDialog] = useState<TradeDialogState>({ open: false, trade: null });
+	const [positionSheet, setPositionSheet] = useState<PositionSheetState>({
+		open: false,
+		securityId: null,
+	});
 	const [importing, setImporting] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
@@ -367,12 +403,26 @@ function AccountPage() {
 	}, [name, t]);
 
 	// Only an investment account holds securities: « Ordres » is its tab alone,
-	// and a link to it on another account opens « Opérations ».
+	// and a link to it on another account opens « Opérations ». « Positions »
+	// shows once the account has traded, as Sure's holdings table; a link to it
+	// before then opens « Opérations » too.
 	const investment = account.data?.type === "investment";
+	// Its answer says whether « Positions » shows; asked for by a link, the
+	// tab shows while it loads or fails, with its skeleton or its error.
+	const holdings = useAccountHoldings(accountId, investment);
+	const traded =
+		investment &&
+		(holdings.data === undefined ? requestedTab === "positions" : holdings.data.date !== null);
 	const tab =
-		requestedTab === "trades" && account.data !== undefined && !investment
+		(requestedTab === "trades" && account.data !== undefined && !investment) ||
+		(requestedTab === "positions" && account.data !== undefined && !traded)
 			? DEFAULT_TAB
 			: requestedTab;
+	// The sheet reads the position afresh, so a lock or a typed price shows at once.
+	const openPosition =
+		holdings.data?.positions.find(
+			(position) => position.security.id === positionSheet.securityId,
+		) ?? null;
 	const currency = account.data?.currency;
 	const writable: { id: string; currency: CurrencyCode; openingDate: string } | undefined =
 		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
@@ -498,6 +548,11 @@ function AccountPage() {
 					<TabsTrigger value="snapshots" className={FLAT_TAB}>
 						{t("accountDetail.tabs.snapshots")}
 					</TabsTrigger>
+					{traded && (
+						<TabsTrigger value="positions" className={FLAT_TAB}>
+							{t("accountDetail.tabs.positions")}
+						</TabsTrigger>
+					)}
 					{investment && (
 						<TabsTrigger value="trades" className={FLAT_TAB}>
 							{t("accountDetail.tabs.trades")}
@@ -525,6 +580,16 @@ function AccountPage() {
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 					/>
 				</TabsContent>
+				{traded && (
+					<TabsContent value="positions">
+						<PositionsPanel
+							holdings={holdings}
+							onOpen={(position) =>
+								setPositionSheet({ open: true, securityId: position.security.id })
+							}
+						/>
+					</TabsContent>
+				)}
 				{investment && (
 					<TabsContent value="trades">
 						<TradesPanel
@@ -543,6 +608,15 @@ function AccountPage() {
 
 			{writable !== undefined && (
 				<>
+					{traded && (
+						<PositionSheet
+							account={writable}
+							position={openPosition}
+							open={positionSheet.open && openPosition !== null}
+							canWrite={admin}
+							onOpenChange={(open) => setPositionSheet((current) => ({ ...current, open }))}
+						/>
+					)}
 					<TransactionSheet
 						account={writable}
 						open={sheet.open}

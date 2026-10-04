@@ -49,3 +49,35 @@ export const holdings = sqliteTable(
 		check("holdings_amount_check", sql`${table.amount} >= 0`),
 	],
 );
+
+/**
+ * A cost basis the owner set by hand, as Sure's `set_manual_cost_basis!`:
+ * it locks the average cost of the position held on `lockedOn`, which every
+ * reader takes instead of the calculated one on that position's days, as
+ * Sure's `cost_basis_source` ranks manual above calculated. A full sale on
+ * or after `lockedOn` ends that position, and the lock with it: a rebuy is
+ * priced from its own buys. Holdings keep the calculated one, so unlocking
+ * deletes the row and it is back, with no recompute: a cost basis moves no
+ * balance (AD-22).
+ */
+export const costBasisLocks = sqliteTable(
+	"cost_basis_locks",
+	{
+		// Cascade: a lock means nothing once its account is gone.
+		accountId: text("account_id")
+			.notNull()
+			.references(() => accounts.id, { onDelete: "cascade" }),
+		// Restrict: a security someone held is history, never deleted under it.
+		securityId: text("security_id")
+			.notNull()
+			.references(() => securities.id, { onDelete: "restrict" }),
+		/** Millionths of the account currency's major unit, per unit. */
+		costBasis: integer("cost_basis").$type<Micros>().notNull(),
+		/** `YYYY-MM-DD` in `APP_TIMEZONE`: the day the owner locked it. */
+		lockedOn: text("locked_on").notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.accountId, table.securityId] }),
+		check("cost_basis_locks_cost_basis_check", sql`${table.costBasis} >= 0`),
+	],
+);

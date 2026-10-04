@@ -1,15 +1,25 @@
 import type { IsoDate } from "../../domain/dates.ts";
+import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, max, sql } from "drizzle-orm";
 
+import type { Micros } from "@archant/data/micros";
+import { toMicros } from "@archant/data/micros";
+import type { MinorUnits } from "@archant/data/money";
+import { MAX_MINOR_UNITS, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
+import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
+import type { PriceProviderId } from "@archant/data/schema/securities";
+import { securities, securityPrices } from "@archant/data/schema/securities";
 import { trades } from "@archant/data/schema/trades";
 
-import { maxDate } from "../../domain/dates.ts";
-import { recomputeBalances } from "./balances.ts";
-import { oneByOne } from "./shared.ts";
+import { maxDate, today } from "../../domain/dates.ts";
+import { marketValue } from "../../domain/trades.ts";
+import { AppError } from "../../lib/errors.ts";
+import { accountWithOpeningDate, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
+import { invalidField, oneByOne } from "./shared.ts";
 
 /**
  * Values again what `securityId`'s prices from `from` on changed: each
@@ -43,5 +53,304 @@ export async function revalueHoldings(
 
 	await oneByOne(holders, async ({ firstTrade: first, ...account }) =>
 		recomputeBalances(tx, account, maxDate(from, first), timeZone),
+	);
+}
+
+type Reader = Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">;
+
+/** A security an account holds at the end of a day, as its positions read it. */
+export type CurrentHolding = {
+	security: {
+		id: string;
+		name: string;
+		ticker: string | null;
+		mic: string | null;
+		isin: string | null;
+		/** `null` for a security priced by hand. */
+		provider: PriceProviderId | null;
+		offline: boolean;
+	};
+	/** Above zero: a security sold out is no position. */
+	quantity: Micros;
+	/** Per unit, in millionths of the account currency's major unit. */
+	price: Micros;
+	amount: MinorUnits;
+	/** The lock's when the owner set one on this position, else the calculated one. */
+	costBasis: Micros | null;
+	costBasisLocked: boolean;
+	/**
+	 * The day the price shown was set: the later of the security's last
+	 * stored price and its last trade on this account, neither after the
+	 * holdings' day.
+	 */
+	priceDate: IsoDate;
+};
+
+export type CurrentHoldings = {
+	/** The account's last holdings day on or before the day asked; `null` with no trade then. */
+	date: IsoDate | null;
+	/** By value, then name. */
+	holdings: CurrentHolding[];
+	/** The cash of the last stored balance on or before the day asked; zero before the opening date. */
+	cash: MinorUnits;
+};
+
+/**
+ * A cost basis the owner locked on a position still running: `after` is the
+ * position's last day at quantity zero before it, `null` when it never was,
+ * so the lock stands on the days after it that hold the security.
+ */
+export type LiveCostBasisLock = {
+	accountId: string;
+	securityId: string;
+	costBasis: Micros;
+	after: IsoDate | null;
+};
+
+/**
+ * The cost basis locks whose position still runs, one account's or every
+ * one's. A day at quantity zero on or after the day it was locked ended that
+ * position, a full sale, and the lock with it: a rebuy is priced from its own
+ * buys, as Sure's tracker starts over. Such a lock stays in its table, read
+ * by nothing, until the owner locks or unlocks that security again.
+ */
+export async function liveCostBasisLocks(
+	db: Reader,
+	accountId: string | null,
+): Promise<LiveCostBasisLock[]> {
+	const lastZero = db
+		.select({
+			accountId: holdings.accountId,
+			securityId: holdings.securityId,
+			day: sql<IsoDate>`max(${holdings.date})`.as("last_zero_day"),
+		})
+		.from(holdings)
+		.where(
+			and(
+				eq(holdings.quantity, toMicros(0)),
+				accountId === null ? undefined : eq(holdings.accountId, accountId),
+			),
+		)
+		.groupBy(holdings.accountId, holdings.securityId)
+		.as("last_zero");
+	const rows = await db
+		.select({
+			accountId: costBasisLocks.accountId,
+			securityId: costBasisLocks.securityId,
+			costBasis: costBasisLocks.costBasis,
+			lockedOn: costBasisLocks.lockedOn,
+			after: lastZero.day,
+		})
+		.from(costBasisLocks)
+		.leftJoin(
+			lastZero,
+			and(
+				eq(lastZero.accountId, costBasisLocks.accountId),
+				eq(lastZero.securityId, costBasisLocks.securityId),
+			),
+		)
+		.where(accountId === null ? undefined : eq(costBasisLocks.accountId, accountId))
+		.orderBy(asc(costBasisLocks.accountId), asc(costBasisLocks.securityId));
+
+	return rows
+		.filter(({ after, lockedOn }) => after === null || after < lockedOn)
+		.map(({ lockedOn: _lockedOn, ...lock }) => lock);
+}
+
+/** The account's last holdings day on or before `day`, `null` before its first trade. */
+async function lastHoldingsDay(db: Reader, accountId: string, day: IsoDate) {
+	const row = await db
+		.select({ date: max(holdings.date) })
+		.from(holdings)
+		.where(and(eq(holdings.accountId, accountId), lte(holdings.date, day)))
+		.get();
+
+	return row?.date ?? null;
+}
+
+/**
+ * What an account holds at the end of `day`, as Sure's holdings table reads
+ * it: each security's holding on the account's last holdings day on or
+ * before `day`, quantity above zero, by value then name, its cost basis the
+ * lock's when the owner set one on this position (AD-22), and the cash of the
+ * last stored balance on or before `day`.
+ */
+export async function currentHoldings(
+	db: Reader,
+	accountId: string,
+	day: IsoDate,
+): Promise<CurrentHoldings> {
+	const balance = await lastBalanceOnOrBefore(db, accountId, day);
+	const cash = toMinorUnits(balance?.cash ?? 0);
+	const date = await lastHoldingsDay(db, accountId, day);
+
+	if (date === null) {
+		return { date, holdings: [], cash };
+	}
+
+	// The later of the last stored price and the last trade on the account:
+	// a held security always has a trade, the stored price may be missing.
+	const lastPrice = db
+		.select({ date: max(securityPrices.date) })
+		.from(securityPrices)
+		.where(and(eq(securityPrices.securityId, holdings.securityId), lte(securityPrices.date, date)));
+	const lastTrade = db
+		.select({ date: max(entries.date) })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				eq(trades.securityId, holdings.securityId),
+				lte(entries.date, date),
+			),
+		);
+	const rows = await db
+		.select({
+			quantity: holdings.quantity,
+			price: holdings.price,
+			amount: holdings.amount,
+			costBasis: holdings.costBasis,
+			priceDate: sql<IsoDate>`max(coalesce((${lastPrice}), (${lastTrade})), (${lastTrade}))`,
+			security: {
+				id: securities.id,
+				name: securities.name,
+				ticker: securities.ticker,
+				mic: securities.mic,
+				isin: securities.isin,
+				provider: securities.provider,
+				offline: securities.offline,
+			},
+		})
+		.from(holdings)
+		.innerJoin(securities, eq(securities.id, holdings.securityId))
+		.where(
+			and(
+				eq(holdings.accountId, accountId),
+				eq(holdings.date, date),
+				gt(holdings.quantity, toMicros(0)),
+			),
+		)
+		.orderBy(desc(holdings.amount), asc(securities.name), asc(securities.id));
+	const locked = new Map(
+		(await liveCostBasisLocks(db, accountId)).map((lock) => [lock.securityId, lock.costBasis]),
+	);
+
+	return {
+		date,
+		holdings: rows.map((row) => {
+			const lock = locked.get(row.security.id);
+
+			return {
+				...row,
+				amount: toMinorUnits(row.amount),
+				costBasis: lock ?? row.costBasis,
+				costBasisLocked: lock !== undefined,
+			};
+		}),
+		cash,
+	};
+}
+
+/** The refusal of a cost basis for a security the account does not hold. */
+export const notHeld = () => new AppError("NOT_FOUND", "The account holds none of this security.");
+
+/**
+ * The quantity the investment account `accountId` holds of `securityId`
+ * today, refused when it holds none: only a position has a cost basis to
+ * lock. Also returns the account's currency and today's date.
+ */
+async function heldToday(
+	tx: Transaction,
+	accountId: string,
+	securityId: string,
+	timeZone: string,
+): Promise<{ quantity: Micros; currency: string; day: IsoDate }> {
+	const account = await accountWithOpeningDate(tx, accountId);
+
+	if (account.type !== "investment") {
+		throw new AppError("NOT_AN_INVESTMENT_ACCOUNT", "Only an investment account holds trades.");
+	}
+
+	const day = today(timeZone);
+	const date = await lastHoldingsDay(tx, accountId, day);
+	const row =
+		date === null
+			? undefined
+			: await tx
+					.select({ quantity: holdings.quantity })
+					.from(holdings)
+					.where(
+						and(
+							eq(holdings.accountId, accountId),
+							eq(holdings.date, date),
+							eq(holdings.securityId, securityId),
+							gt(holdings.quantity, toMicros(0)),
+						),
+					)
+					.get();
+
+	if (row === undefined) {
+		throw notHeld();
+	}
+
+	return { quantity: row.quantity, currency: account.currency, day };
+}
+
+/**
+ * Sets a position's cost basis by hand and locks it, as Sure's
+ * `set_manual_cost_basis!`: every reader then takes it over the calculated
+ * one, until a full sale ends the position. Holdings keep theirs and no
+ * balance moves, so nothing is recomputed. A cost basis whose book value no
+ * balance could hold is refused on `costBasis`, as a trade's amount is.
+ */
+export async function lockCostBasis(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+	costBasis: Micros,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const held = await heldToday(tx, accountId, securityId, deps.timeZone);
+
+			if (marketValue(held.quantity, costBasis, held.currency) > BigInt(MAX_MINOR_UNITS)) {
+				throw invalidField("costBasis", "too_big");
+			}
+
+			await tx
+				.insert(costBasisLocks)
+				.values({ accountId, securityId, costBasis, lockedOn: held.day })
+				.onConflictDoUpdate({
+					target: [costBasisLocks.accountId, costBasisLocks.securityId],
+					set: { costBasis, lockedOn: held.day },
+				});
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Unlocks a position's cost basis: the calculated one is back at once, as
+ * Sure's next sync replaces an unlocked manual one, a lock a full sale ended
+ * deleted with it. Nothing is recomputed.
+ */
+export async function unlockCostBasis(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+	_options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			await heldToday(tx, accountId, securityId, deps.timeZone);
+			await tx
+				.delete(costBasisLocks)
+				.where(
+					and(eq(costBasisLocks.accountId, accountId), eq(costBasisLocks.securityId, securityId)),
+				);
+		},
+		{ behavior: "immediate" },
 	);
 }
