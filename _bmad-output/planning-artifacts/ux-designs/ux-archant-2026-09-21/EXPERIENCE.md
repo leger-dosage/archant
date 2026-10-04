@@ -1,7 +1,7 @@
 ---
 name: Archant
 status: final
-updated: '2026-10-02'
+updated: '2026-10-03'
 sources:
   - ../../feature-inventory.md
   - ../../epics.md
@@ -14,7 +14,7 @@ sources:
 
 Responsive web, desktop first. A phone can read everything and make quick edits, such as categorising a transaction; importing files and managing rules are laptop tasks. shadcn/ui on Vite, React, TanStack Router and Tailwind CSS 4. `DESIGN.md` is the visual reference; this file specifies behaviour and only the delta over shadcn's components.
 
-One instance serves one household and, for now, one signed-in user with the `admin` role. The interface is in French, through i18next, with every string in `locales/fr.json`. Routes and search params are English, as in Sure: a URL is not translated, so it must read the same whatever the locale.
+One instance serves one household: administrators, and from Epic 20 viewers who read everything and change nothing. The interface is in French, through i18next, with every string in `locales/fr.json`. Routes and search params are English, as in Sure: a URL is not translated, so it must read the same whatever the locale.
 
 Navigation entries appear with the epic that ships them: a surface whose epic has not shipped is absent, never disabled.
 
@@ -26,16 +26,19 @@ Navigation entries appear with the epic that ships them: a surface whose epic ha
 | Sign-in | `/sign-in` | Any page without a session | Sign in | 3 |
 | Dashboard | `/` | Rail | A greeting, net worth and its history, the month's flow by category, the balance sheet by account type | 6, 12 |
 | Accounts | `/accounts` | Rail | Accounts grouped under Actifs and Passifs, with totals; add an account | 1 |
-| Account detail | `/accounts/:id` | Accounts column, accounts page | Balance, chart, tabs Opérations, Soldes, Imports; account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
+| Account detail | `/accounts/:id` | Accounts column, accounts page | Balance, chart, tabs Opérations, Soldes, Imports, and Positions on an investment account with trades (Epic 22); account actions (Modifier, Exclure des rapports, Désactiver, Supprimer le compte) in the « … » menu beside the name | 1 |
 | Import | Dialog over account detail | "Importer" on an account | File, column mapping, preview, confirmation | 2 |
 | Transactions | `/transactions` | Rail | All transactions, filters in the URL, bulk actions | 1 |
 | Transaction | Sheet over the current page | Row click, or `Enter` on a focused row | Edit every field | 1 |
+| Budgets | `/budgets/:month` | Rail, between Opérations and Récurrences | A month's budget: donut, summary, categories with statuses; set-up steps Budget then Catégories; month as `YYYY-MM` | 17 |
 | Recurring | `/recurring` | Rail | Subscriptions and bills with the next date | 9 |
+| Goals | `/goals`, `/goals/:id` | Rail | Goals as cards with a progress ring; a goal with its accounts' shares and its projection | 21 |
 | Rules | `/rules` | Rail | Rules list and editor | 8 |
-| Settings | `/settings/...` | Rail | Banques, Catégories, Marchands, Étiquettes, Sécurité, Assistants IA | 3, 4, 10, 16 |
+| Settings | `/settings/...` | Rail | Banques, Catégories, Marchands, Étiquettes, Sécurité, Assistants IA, Données, Membres, Placements; a viewer sees Sécurité only | 3, 4, 10, 16, 18, 20, 22 |
+| Invitation | `/invitations/:token` | A link the administrator sends | Name who invites and the role, set a name and a password | 20 |
 | Assistant consent | `/oauth/consent` | An assistant's sign-in, after `/sign-in` | Name the assistant and where it returns, grant read or read and write, or refuse | 16 |
 
-Until Epic 6 ships, `/` redirects to `/accounts`. Since Epic 14 the shell is Sure's: a rail of destinations, an accounts column that lists every active account grouped by type with balances, and a top bar with breadcrumbs. The accounts column shows on every signed-in page but settings, which put their own navigation column in its place. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
+Until Epic 6 ships, `/` redirects to `/accounts`. Since Epic 14 the shell is Sure's: a rail of destinations, an accounts column that lists every active account grouped by type with balances, and a top bar with breadcrumbs. The accounts column shows on every signed-in page but settings, which put their own navigation column in its place. A transaction's sheet gains « Diviser » and « Pièces jointes » with Epic 19; a viewer sees no control that writes, since Epic 20. Dialogs and sheets stack one level deep at most: the import dialog never opens a sheet, and a sheet never opens a dialog except a confirmation.
 
 → Composition reference: [mockups/sure-proportions-frame-and-font.html](mockups/sure-proportions-frame-and-font.html) with frame A for the shell and the transactions list; [mockups/key-linear-classic-dark.html](mockups/key-linear-classic-dark.html) for the dashboard's content, the empty dashboard, the logo and the favicon, its shell and sizes superseded. This spine and `DESIGN.md` win on conflict.
 

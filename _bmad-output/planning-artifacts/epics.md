@@ -40,7 +40,7 @@ FR6: The user can record a balance snapshot for an account at a date. From that 
 FR7: The system computes a daily balance history for each account from its opening balance, transactions and balance snapshots, and recomputes it after any change to them.
 FR8: The user can see an account's balance history as a chart over a chosen period.
 FR9: The user can create a loan account, a liability whose outstanding amount is tracked through balance snapshots and payments.
-FR10: The user can create an investment account (PEA) tracked through balance snapshots only, without holdings.
+FR10: The user can create an investment account (PEA) tracked through balance snapshots only, without holdings. Revised by Epic 22: trades and holdings join the snapshots (FR80 to FR83), and an account without trades stays as it is.
 FR11: The user can create a property or a vehicle account, an asset tracked through balance snapshots.
 
 #### File import
@@ -98,7 +98,7 @@ FR41: The user sees recurring transactions with their expected next date and amo
 
 FR42: On first launch with no user, a setup screen creates the administrator account with an email and a password. Public sign-up does not exist.
 FR43: The user signs in and out. Every API route requires a session, except health, sign-in and first-launch setup. `POST /api/sync` requires the shared secret instead.
-FR44: Every user has a role. `admin` is the only role in use; the schema allows adding `viewer` later without a data migration.
+FR44: Every user has a role. `admin` is the only role in use; the schema allows adding `viewer` later without a data migration. Revised by Epic 20: `viewer` comes into use (FR74).
 FR45: The user can change their password. A forgotten password is reset through a command run on the server, since a self-hosted instance may have no email service.
 
 #### Deployment
@@ -133,6 +133,42 @@ FR63: An assistant can create, edit, enable, disable, delete, preview and apply 
 FR64: An assistant can read accounts, transactions, net worth, income and expenses, and recurring transactions.
 FR65: An assistant can set a transaction's category, merchant, tags, notes, label and exclusion, one at a time or in bulk.
 
+#### Budgets
+
+FR66: The user sets a month's planned spending and expected income, suggested from earlier months, and follows actual spending and income against them, as in Sure.
+FR67: The user spreads the month's spending over expense categories, subcategories sharing or ring-fencing their parent's amount, and sees each category over budget, near its limit or on track.
+FR68: The user copies a month's budget from the latest month set up, and moves money between categories.
+FR69: The user carries a category's unspent amount into the next month, category by category.
+FR70: An assistant can read a month's budget with its earlier months, and set its amounts.
+
+#### Data export
+
+FR71: The user downloads every account, transaction, balance, category, merchant, tag, rule and recurring item in one archive, in Sure's export format, without any secret.
+
+#### Splits and attachments
+
+FR72: The user splits a transaction into lines that sum to it, each with its own label, amount, category, tags and notes; the lines replace the transaction in every balance, report, list, rule and detection.
+FR73: The user attaches receipts and invoices, images or PDFs, to a transaction.
+
+#### Household members
+
+FR74: A user with the `viewer` role reads everything an administrator reads, except bank credentials, assistants, members and the export, and writes nothing; the server refuses every write.
+FR75: The administrator invites a person by a link that expires, as an administrator or a viewer; the invited person sets their own password.
+FR76: The administrator lists members and pending invitations, changes a role, removes a member and revokes an invitation; the last administrator always remains.
+
+#### Savings goals
+
+FR77: The user sets a savings goal with a target and an optional date, funded by the whole balance or a fixed amount of linked accounts, and sees what remains, the monthly amount needed, and whether it is on track.
+FR78: The user pauses, completes, archives and reopens a goal, sees its projection, and sees active goals on the dashboard.
+FR79: The user keeps a reserve whose target is a fixed amount or a number of months of expenses.
+
+#### Investments
+
+FR80: Archant knows securities by ISIN, ticker and venue, and fetches their daily prices from a provider the user turns on; a security without a provider is priced by hand.
+FR81: The user records buys and sells on an investment account.
+FR82: An investment account's value is its cash plus its holdings, computed daily from trades and prices, and the user sees each position with its average cost and unrealised gain.
+FR83: The user records dividends and interest, and converts a transaction on an investment account into a trade.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
@@ -154,6 +190,7 @@ NFR16: The default deployment exposes nothing it does not need: the container pu
 NFR17: The build, its dependencies and its published images are pinned, kept current by a bot, and attested: actions by commit SHA, base images by digest, the package manager by hash, and every release image with an SBOM and a build provenance attestation.
 NFR18: A vulnerability can be reported privately, GitHub's secret scanning and code scanning run on the repository, and the default branch and release tags are protected by rulesets.
 NFR19: An assistant holds only a token bound to `/api/mcp`, short-lived, scoped to read or write, and revocable from the interface; every tool parses its input with Zod and calls the same service function as the interface; no tool deletes a transaction; every write an assistant makes is recorded without its amounts or labels.
+NFR20: An outbound call that tells a third party something about the household, such as a price request naming a security held, is off until the user turns it on, says which host it reaches, and sends identifiers only, never an amount or a quantity.
 
 ### Additional Requirements
 
@@ -256,8 +293,26 @@ FR62: Epic 16 - Connected assistants, their writes, disconnection
 FR63: Epic 16 - Rule tools
 FR64: Epic 16 - Read tools
 FR65: Epic 16 - Classification tools
+FR66: Epic 17 - A month's budget
+FR67: Epic 17 - Budget by category
+FR68: Epic 17 - Copy a budget, move money
+FR69: Epic 17 - Rollover
+FR70: Epic 17 - Budget tools for assistants
+FR71: Epic 18 - Full data export
+FR72: Epic 19 - Split a transaction
+FR73: Epic 19 - Attachments
+FR74: Epic 20 - Viewer role
+FR75: Epic 20 - Invitations by link
+FR76: Epic 20 - Members
+FR77: Epic 21 - Savings goals funded by accounts
+FR78: Epic 21 - Goal lifecycle and projection
+FR79: Epic 21 - Reserves
+FR80: Epic 22 - Securities and prices
+FR81: Epic 22 - Trades
+FR82: Epic 22 - Holdings and cash plus holdings
+FR83: Epic 22 - Dividends, interest, convert to trade
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking.
 
 ## Epic List
 
@@ -340,6 +395,36 @@ A stranger can trust, install and contribute to Archant, and the owner's instanc
 
 The owner asks an AI assistant, such as Claude Code, to write the rules that clean up their bank lines, then to read and classify their finances: Archant serves MCP from the API's own process, and the assistant signs in through Better Auth with a token the owner can revoke.
 **FRs covered:** FR61, FR62, FR63, FR64, FR65; NFR19
+
+### Epic 17: Monthly budgets
+
+The owner plans each month's spending by category, as in Sure: a total and an expected income suggested from past months, an amount per expense category, statuses, a copy from the last month, money moved between categories, and an unspent amount carried over.
+**FRs covered:** FR66, FR67, FR68, FR69, FR70
+
+### Epic 18: Export all my data
+
+The owner downloads every figure Archant holds in one archive, in Sure's export format, so they can always leave.
+**FRs covered:** FR71
+
+### Epic 19: Split a transaction and attach receipts
+
+A mixed receipt becomes several lines with their own categories, and a receipt or an invoice sits beside its transaction.
+**FRs covered:** FR72, FR73
+
+### Epic 20: Share Archant read-only with the household
+
+A member of the household reads the accounts with their own sign-in, invited by a link, and the server refuses them every write.
+**FRs covered:** FR74, FR75, FR76; revises FR44
+
+### Epic 21: Savings goals
+
+The owner saves toward targets funded by their accounts' balances and sees what to put aside each month, as in Sure's goals.
+**FRs covered:** FR77, FR78, FR79
+
+### Epic 22: Investment holdings and prices
+
+An investment account shows its positions, their average cost and their gain, valued from daily prices the owner allows Archant to fetch.
+**FRs covered:** FR80, FR81, FR82, FR83; NFR20; revises FR10
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -3126,3 +3211,774 @@ So that the lines no rule covers get sorted too.
 **Given** the finished story
 **When** `pnpm test` runs
 **Then** Vitest covers each tool: a field locked after an assistant's edit and left by a rule afterwards, a bulk update by ids and by filters, a stale count refused, a read-only token refused, and every write recorded in `assistant_calls` with its count
+
+## Epic 17: Monthly budgets
+
+On 2026-10-03 the owner chose the next six epics, 17 to 22, from the « Later, not dropped » list of `feature-inventory.md`, and asked that they follow Sure as closely as possible. Sure was read on `origin/main` at `14638a701` (2 October 2026) for all six.
+
+Budgets come first because classification is now reliable: rules, merchants, and an assistant that classifies. Sure's budget is a month with a spending total and an expected income (`app/models/budget.rb`), one amount per category (`budget_category.rb`), statuses per category, a copy from the latest month set up, moving money between categories, and a per-category rollover of what was not spent (`budget/rollover_calculator.rb`). Archant takes all of it, with these departures, each forced by a decision already taken:
+
+- Months are calendar months, `YYYY-MM` in the URL as the dashboard's `?month=`: Spec 6.2 left out Sure's `month_start_day`. Sure writes `oct-2026`.
+- Amounts are integer minor units in the reporting currency (AD-6, NFR1); Sure's `decimal(19,4)` and its 1:1 fallback for a missing exchange rate do not exist. Accounts in another currency are left out of actual spending and named, as on the dashboard (NFR2).
+- Actual spending comes from `cashFlowByCategory` and `direction()` (AD-9), never a second definition: excluded, pending and transfer lines are out, loan payments and investment contributions count as expenses, as in Sure. A category's actual is the negated signed sum of its counted lines and of its subcategories', floored at zero, so a refund lowers it, as Sure's `max(expense − income, 0)`.
+- Only expense categories carry a budget amount. Archant keeps the category kind Sure removed (`sure-parity.md`, Classification); an income category's actual under Sure's formula is always zero. Expected income stays one figure for the month, as in Sure.
+- Reading a month never writes. Sure creates a month's rows when its page opens (`Budget.find_or_bootstrap`); Archant creates them on the first save, so a read-only user (Epic 20) sees any month without writing.
+- One household, so no `family_id`, no personal budgets and no `budget_shares` (Inventory).
+- Sure's rollover takes a Postgres advisory lock; Archant computes the chain in a pure function under `domain/` and writes it in an immediate transaction (AD-1, AD-2).
+- Nothing about bills or goals' « cash on hand »: Archant has no bills, and goals arrive in Epic 21 without that panel.
+
+Story 17.1 comes first. 17.2 follows. 17.3, 17.4 and 17.5 can follow in any order.
+
+### Story 17.1: Set up a month's budget
+
+As the household's administrator,
+I want to set what I plan to spend and earn in a month, helped by what I usually spend,
+So that I see at a glance how the month is going.
+
+**Requirements:** FR66, NFR1, NFR2, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at)` holds one row per month, unique on `month` (`YYYY-MM`), amounts as nullable integers in minor units, and a month is set up when `budgeted_spending` is not null, as Sure's `initialized?`
+
+**Given** `/budgets`
+**When** the owner opens it
+**Then** it redirects to `/budgets/<current month>`; the month page has previous and next arrows, a month picker by year and « Aujourd'hui », and refuses a month more than two years before the oldest entry's month or more than two years after the current one, as Sure's `budget_date_valid?`
+
+**Given** a month not set up
+**When** its page opens
+**Then** nothing is written; the page offers « Définir le budget », a form with « Dépenses prévues » and « Revenus attendus », both required, and « Suggérer » fills each with the median of the earlier months' totals that have counted lines, as Sure's `estimated_spending` and `estimated_income`
+
+**Given** a month set up
+**When** its page opens
+**Then** a donut shows actual spending by top-level expense category against the month's total, its centre « 1 234,56 € sur 2 000,00 € » with a link to edit, and a summary card shows expected income against earned and planned spending against spent, as Sure's `_budget_donut` and `_budgeted_summary`
+
+**Given** actual spending and income
+**When** they are computed
+**Then** they come from `services/reports.ts` through `cashFlowByCategory` (AD-9), in the reporting currency, and an account left out for its currency is named as on the dashboard
+
+**Given** the rail
+**When** this story ships
+**Then** « Budgets » appears between « Opérations » and « Récurrences », `EXPERIENCE.md` lists the surface, and `sure-parity.md`'s Budgets row says what Archant does
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 17.2: Spread the budget over categories
+
+As the household's administrator,
+I want to give each expense category its share of the month and see which ones overflow,
+So that I know where to hold back.
+
+**Requirements:** FR67, NFR1, NFR12
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `budget_categories (id, budget_id, category_id, budgeted_spending, created_at, updated_at)` is unique on `(budget_id, category_id)`, its amount an integer in minor units, deleted with its budget or its category; merging a category deletes the merged category's rows, as Sure's `dependent: :destroy`
+
+**Given** the budget's second step, « Catégories »
+**When** the owner opens it
+**Then** each expense category has an amount field saved on change, with its monthly median beside it, as Sure's « /m avg »; a progress bar shows the share of the total allocated, and « Valider » stays disabled while the allocation exceeds the total
+
+**Given** a subcategory without its own amount
+**When** the budget is read
+**Then** it shares its parent's budget, shown « Partagé »; a subcategory with its own amount is ring-fenced, and the parent's amount becomes the sum of its children plus its own reserve, as Sure's `budget_category.rb`
+
+**Given** spending in no category, or in a category with no amount
+**When** the month is shown
+**Then** « Sans catégorie » carries what the total leaves unallocated, never stored, as Sure's synthetic uncategorised row
+
+**Given** a category card
+**When** the month is shown
+**Then** it shows spent, budgeted and what remains or overflows, with a status « Dépassé », « Bientôt atteint » from 90 %, or « Dans les clous », and a filter « Toutes, Dépassées, Dans les clous », as Sure's statuses
+
+**Given** a category card
+**When** the owner opens it
+**Then** a sheet shows the month's spending, the monthly average and median, the three latest transactions, and a link to `/transactions` filtered on the category and the month
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 17.3: Copy a budget and move money
+
+As the household's administrator,
+I want to start a month from the last one I set up, and to move money between categories mid-month,
+So that a budget takes seconds, not a form each month.
+
+**Requirements:** FR68
+
+**Acceptance Criteria:**
+
+**Given** a month not set up and an earlier month set up
+**When** its page opens
+**Then** it offers « Copier <mois> » and « Partir de zéro »; copying takes the latest earlier month set up, not necessarily the previous one, and copies the total, expected income and each category's amount, skipping categories since deleted, as Sure's `copy_from!`
+
+**Given** a month already set up
+**When** a copy is requested
+**Then** it is refused with `BUDGET_ALREADY_SET_UP`
+
+**Given** two categories of a month set up
+**When** the owner moves an amount from one to the other
+**Then** both amounts change in one transaction; moving from « Sans catégorie », between a parent and its own child, or more than the source holds is refused, as Sure's `move_allocation!`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 17.4: Carry what is left to next month
+
+As the household's administrator,
+I want what I did not spend in a category to carry over when I choose,
+So that a yearly expense such as gifts can build up over months.
+
+**Requirements:** FR69
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `budget_categories` gains `rollover_enabled` (default false) and `rolled_over_amount` (integer, never negative)
+
+**Given** a category with rollover on
+**When** a month is set up after a month that left money in it
+**Then** the surplus `max(0, budgeted + carried in − actual)` carries into the next month set up, crossing months never set up untouched; an overspent month carries nothing; turning rollover off stops the carry, as Sure's `Budget::RolloverCalculator`
+
+**Given** a new month
+**When** it is set up, by hand or by copy
+**Then** each category inherits its rollover choice from the latest month set up, and changing it applies to the later months too
+
+**Given** a change to an amount, a transaction of a past month or a rollover choice
+**When** it is saved
+**Then** the chain from that month on is recomputed by a pure function in `domain/budgets/rollover.ts` and written in the same transaction; a recategorised transaction's month is recomputed by the ledger's write
+
+**Given** a category card
+**When** it carries money in
+**Then** it shows « +<montant> reporté », and the amount counts in what remains, not in the allocation total, as in Sure
+
+**Given** the rollover function
+**When** its tests run
+**Then** every branch is covered: gaps, subcategories ring-fenced or shared, a deleted category, an overspent month
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 17.5: Ask an assistant about my budget
+
+As the household's administrator,
+I want my assistant to read my budget and to set its amounts when I ask,
+So that I can plan a month in conversation.
+
+**Requirements:** FR70, NFR19
+
+**Acceptance Criteria:**
+
+**Given** a read token
+**When** the assistant calls `get_budget` with a month
+**Then** it returns that month and up to eleven earlier ones, each with its total, expected income, actual spending and income, and each category's budgeted, actual, carried amount and status among `over_budget`, `near_limit`, `on_track`, `unbudgeted` and `no_activity`, as Sure's `GetBudget`, amounts as decimal strings with their currency
+
+**Given** a write token
+**When** the assistant calls `update_budget`
+**Then** it sets the total, the expected income and category amounts by category id, through the service the interface calls; « Sans catégorie » is refused, as in Sure's `UpdateBudget`; annotations `REPLACES`, the call recorded in `assistant_calls`
+
+**Given** Epic 16's list of tools left out
+**When** this story ships
+**Then** budgets leave that list, and `docs/deployment.md` names the two tools
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** every acceptance criterion above has a Vitest test through the MCP handler
+
+## Epic 18: Export all my data
+
+The owner can take every figure out of Archant in readable files, and leave for Sure if they ever want to. Sure builds a ZIP in a background job and keeps it until deleted (`app/models/family/data_exporter.rb`, `family_export.rb`): `accounts.csv`, `transactions.csv`, `trades.csv`, `categories.csv`, `merchants.csv`, `rules.csv`, `attachments.json`, `all.ndjson` and `version.txt`. Sure imports its own `all.ndjson` back (`SureImport`).
+
+Archant writes the same files, under the same names and columns, so that Sure's `SureImport` accepts the `all.ndjson`: leaving for Sure is the portability a self-hoster expects. Amounts therefore follow Sure's sign in the files, a purchase positive, as decimal strings; the dialog says so. Departures:
+
+- No job, no stored archive, no list of past exports: the archive is built inside `GET /api/export` and streamed (NFR9). Sure's statuses, polling, cancel and stuck-export reaper exist only because of its queue. `/data` is the only writable directory, and an archive kept there would need a retention rule Sure never had.
+- The response is a ZIP, outside the envelope, as AD-15 allows for `/api/auth/*` and `/api/mcp`; the interface downloads it through a plain link, never through `hc`. Compression leaves it alone.
+- Fields come from an allowlist per table, never a whole row: Sure's `Account#as_json` leaks provider ids. No authentication table, no bank session, no key, no `identification_hash`, no `provider_uid`, no deduplication key, no raw import file.
+- Archant's own fields that Sure lacks, such as locked fields, transfer kinds, dismissed recurring items and loan details, travel in `all.ndjson` under Archant names that Sure's importer ignores.
+- No import of an archive: a full restore is the `VACUUM INTO` copy of `docs/deployment.md`, and Sure's own importer duplicates accounts on a second run. `docs/deployment.md` says which to use when.
+
+Every later epic that adds a table adds its rows to the export in the same story, as Sure's exporter covers budgets, splits, trades and holdings: AD-23 records it.
+
+### Story 18.1: Download all my data
+
+As the household's administrator,
+I want to download all my accounts, transactions and settings in one archive,
+So that my data is never locked in Archant.
+
+**Requirements:** FR71, NFR3, NFR4, NFR5, NFR9, NFR10, NFR14
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Données » at `/settings/data`
+**When** the owner opens it
+**Then** it lists what the archive holds and what it leaves out, says that amounts follow Sure's sign, and « Exporter mes données » downloads `archant_export_YYYYMMDD_HHMMSS.zip`
+
+**Given** `GET /api/export`
+**When** it answers
+**Then** it streams a ZIP with `version.txt`, `accounts.csv`, `transactions.csv`, `categories.csv`, `merchants.csv`, `rules.csv` and `all.ndjson`, under Sure's names and in Sure's column order (`data_exporter.rb`), with `Content-Disposition: attachment` and no compression on top; the ZIP library is one maintained, streaming library justified in the pull request
+
+**Given** `all.ndjson`
+**When** it is written
+**Then** each line is `{"type", "data"}` with Sure's types (`Account`, `Balance`, `Category`, `Tag`, `Merchant`, `RecurringTransaction`, `Transaction`, `Transfer`, `RejectedTransfer`, `Valuation`, `Rule`) and every field Sure's `SureImport::Preflight` requires, rule operands as names with a `value_ref`, as Sure; a test checks every line against a schema written from that preflight
+
+**Given** the export
+**When** it is read field by field
+**Then** each table is written through an allowlist, and a test fails when a column is added to a table without being listed as exported or left out; no secret, key, token, deduplication key or raw file appears
+
+**Given** 100,000 transactions
+**When** the export runs
+**Then** it streams without holding the archive in memory, and the volume project measures it under 10 seconds
+
+**Given** `docs/deployment.md`, `docs/security-model.md` and `docs/sure-parity.md`
+**When** this story ships
+**Then** they say that the archive is portable, not a backup, that it holds amounts and labels in clear, and how to move to Sure with it
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 19: Split a transaction and attach receipts
+
+A supermarket receipt mixes food and household goods; a transfer to a joint account covers rent and savings. Sure splits a transaction into child entries that sum to it (`Entry#split!`), excludes the parent from reports and counts the children everywhere (`excluding_split_parents`), and attaches up to ten files of 10 MB to a transaction (`Transaction has_many_attached :attachments`).
+
+Archant takes that model: the parent keeps its bank figures and its deduplication keys, is excluded and locked, and its children carry the money in every balance, report, list, rule and detection. AD-20 records it. Departures:
+
+- The foreign key from a child to its parent restricts, and the ledger deletes children first, where Sure cascades (AD-2).
+- Editing a split keeps the children it keeps, by id, where Sure deletes and recreates them and loses their tags, notes and attachments silently (AD-17).
+- A child is never a candidate for pairing a bank line, for a possible duplicate, or for a transfer; Sure's matcher can take a child by accident (`find_duplicate_transaction`).
+- The list always groups children under their parent: Sure's `show_split_grouped` preference contradicts Archant's choice of a theme as the only preference.
+- QIF split records stay unread (Spec 2.4).
+- Attachments live in SQLite, as `imports.content` does, so the `VACUUM INTO` backup and a Turso database hold them; the root filesystem is read-only.
+- An attachment's type is checked from its first bytes, and it is served with `Content-Disposition` and `nosniff`.
+
+Story 19.1 comes first, then 19.2. Story 19.3 is independent.
+
+### Story 19.1: Split a transaction in the ledger
+
+As the household's administrator,
+I want a transaction to become several lines, each with its own category and amount,
+So that my reports show what I really spent on what.
+
+**Requirements:** FR72, NFR1, NFR8, NFR11
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `entries.parent_entry_id` references `entries` with `ON DELETE RESTRICT`; `services/ledger/splits.ts` owns `splitTransaction`, `editSplit` and `unsplitTransaction`, each in one immediate transaction that recomputes balances
+
+**Given** a transaction
+**When** it is split
+**Then** the children's amounts sum to the parent's exactly, in minor units, signs mixed allowed; each child copies the account, date, currency and merchant, and has its own label, amount, category, tags and notes; the parent is excluded and its `excluded` field locked with `origin: "user"` (AD-10)
+
+**Given** a transfer side, a pending transaction, an excluded transaction, a parent or a child
+**When** a split is requested
+**Then** it is refused with `NOT_SPLITTABLE`, as Sure's `splittable?`
+
+**Given** a split
+**When** it is edited
+**Then** children sent with their id are updated in place, others created, missing ones deleted; unsplitting deletes the children and lifts the parent's exclusion
+
+**Given** every reader
+**When** a split exists
+**Then** balances, the list, its count and totals, `cashFlowByCategory`, `countsInCashFlow` and its SQL twin, rule candidates, recurring detection and transfer candidates count the children and never the parent; a rule never clears a parent's exclusion; the parity test of AD-9 covers splits
+
+**Given** a bank or file line
+**When** it is ingested
+**Then** it finds a parent through its keys and writes nothing, and a child is never a pairing or duplicate candidate; a parent cannot be absorbed or merged
+
+**Given** a parent deleted one by one, in bulk, by an import revert or with its account
+**When** the ledger deletes it
+**Then** its children go first in the same transaction, and its bank keys are tombstoned as today
+
+**Given** the MCP tools and the export
+**When** a split exists
+**Then** `get_transactions` lists children and not parents; `update_transaction` refuses amount and exclusion changes on a parent or a child; `all.ndjson` nests `split_lines` under the parent and `transactions.csv` lists children, as Sure's exporter
+
+**Given** the ledger's split module
+**When** its tests run
+**Then** every branch is covered
+
+### Story 19.2: Split from the interface
+
+As the household's administrator,
+I want to split a transaction from its sheet and see the split in the list,
+So that a mixed receipt takes a minute to sort.
+
+**Requirements:** FR72, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** a splittable transaction's sheet
+**When** the owner chooses « Diviser »
+**Then** a dialog lists lines of label, amount and category, « Ajouter une ligne », and a « Reste à répartir » counter that turns red until it reaches zero; « Diviser » stays disabled until then, as Sure's split dialog
+
+**Given** the transactions list
+**When** a split exists
+**Then** the parent shows muted with a « Divisée » badge and its children indented below it, and the filters, count and totals follow the children
+
+**Given** a parent's or a child's sheet
+**When** it opens
+**Then** a parent lists its children with « Modifier la division » and « Annuler la division »; a child shows its parent and edits its own label, category, tags and notes, never its date or account
+
+**Given** the finished story
+**When** `pnpm test:e2e` runs
+**Then** every acceptance criterion above has a Playwright test
+
+### Story 19.3: Attach a receipt to a transaction
+
+As the household's administrator,
+I want to attach a receipt or an invoice to a transaction,
+So that I find the proof when I need it.
+
+**Requirements:** FR73, NFR3, NFR15
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `transaction_attachments (id, transaction_id, filename, content_type, byte_size, content, created_at)` holds each file as a blob, at most 10 per transaction and 10 MB each, of JPEG, PNG, GIF, WebP or PDF, as Sure's `validate_attachments`
+
+**Given** an upload
+**When** it reaches the API
+**Then** its route has its own body limit, its type is read from its first bytes and must match an allowed type, its name is cleaned, and an eleventh file or a twelve-megabyte one is refused with a field code
+
+**Given** an attachment
+**When** it is opened
+**Then** it is served with its type, `Content-Disposition` naming the file, `X-Content-Type-Options: nosniff` and a `sandbox` Content-Security-Policy; images and PDFs open in a new tab, the rest download
+
+**Given** a transaction's sheet
+**When** it opens
+**Then** « Pièces jointes » lists each file with its size, « Ajouter » and a delete with confirmation; a child of a split has its own attachments
+
+**Given** a transaction deleted, its account deleted or its import reverted
+**When** the ledger deletes it
+**Then** its attachments go in the same transaction
+
+**Given** the export
+**When** attachments exist
+**Then** `attachments.json` lists them without their content, as Sure's manifest
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 20: Share Archant read-only with the household
+
+A second person of the household reads the accounts without being able to change them. Sure has four roles and per-account sharing; its `guest` is mostly a layout, and can still edit categories, tags and rules. Self-hosted Sure invites by a link the admin copies, since it sends no email (`invitations_controller.rb`, `settings/profiles/show.html.erb`), with a token that expires after three days.
+
+Archant adds one role, `viewer`, which reads everything and writes nothing, as FR44 planned, and invites by link as self-hosted Sure does. AD-21 records the rules. Departures:
+
+- One global role instead of per-account sharing: one instance is one household, and per-account sharing is dropped (Inventory).
+- The viewer cannot edit categories, tags, rules or merchants, which Sure's guest can: the Inventory asked for a read-only role.
+- The server refuses every write of a viewer in one middleware on the method, so a route added later is covered without thinking of it; the interface hides write controls, and the server's refusal stays the authority.
+- The invitation token is stored hashed, where Sure encrypts it; the link is shown once, at creation.
+- No email: the link is copied, as self-hosted Sure does, since Archant has no mail service (FR45).
+- No « join with an existing account »: one instance is one household.
+- A viewer cannot connect an assistant, since Sure keeps its MCP settings to admins; assistants stay the owner's.
+
+AD-13 names a `requireRole` helper that Stories 3.1 and 3.2 never built; Story 20.1 builds it.
+
+Story 20.1 comes first. 20.2 and 20.3 follow in order.
+
+### Story 20.1: A read-only role, enforced by the server
+
+As the household's administrator,
+I want a `viewer` role that the server refuses every write to,
+So that sharing my accounts can never cost me a change I did not make.
+
+**Requirements:** FR74, NFR6, NFR7, NFR19
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `USER_ROLES` is `["admin", "viewer"]`, the check constraint is rebuilt by a migration without touching data, and Better Auth's `admin({ defaultRole })` is `viewer`, so a user created without a role fails closed
+
+**Given** `requireSession`
+**When** it lets a request through
+**Then** the user is on the context, and `requireRole("admin")` exists as AD-13 says
+
+**Given** a viewer's session
+**When** it sends `POST`, `PUT`, `PATCH` or `DELETE` to any `/api` route behind `requireSession`
+**Then** the answer is `403 FORBIDDEN` before the route runs; a spec walks every mutating route of `AppType` and fails when one answers otherwise
+
+**Given** a viewer
+**When** they read `/api/bank-connections/setup`, the assistants list or `/api/export`, or the members list once Story 20.3 adds it
+**Then** those routes answer `403`; every other read answers as for the owner
+
+**Given** a viewer
+**When** they use Better Auth's own routes
+**Then** they change their name, their password and two-factor sign-in, as Sure's members do
+
+**Given** a viewer signing an assistant in
+**When** the consent page opens
+**Then** it refuses, and `/api/mcp` refuses a token whose user is not an admin
+
+**Given** the first request of the day
+**When** a viewer sends it
+**Then** the day's bank sync starts as for the owner, as Sure's `AutoSync` runs for every member
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** every acceptance criterion above has a Vitest test
+
+### Story 20.2: Invite someone with a link
+
+As the household's administrator,
+I want to invite a member of my household with a link I send myself,
+So that they set their own password without me knowing it.
+
+**Requirements:** FR75, NFR3, NFR15
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `invitations (id, email, role, token_hash, inviter_id, expires_at, accepted_at, created_at)` holds the SHA-256 of a 32-byte random token, expires after three days, and allows one pending invitation per email, as Sure's `invitation.rb`
+
+**Given** the owner
+**When** they invite an email as `viewer` or `admin`
+**Then** the link `/invitations/<token>` is shown once with a copy button; an email that already has a user is refused
+
+**Given** the link
+**When** someone opens it
+**Then** a page names who invites and the role, and asks for a name and a password; the email is the invitation's, not editable; an expired, used or unknown token answers « Cette invitation n'est plus valable. »
+
+**Given** the acceptance
+**When** it is posted
+**Then** a public route, rate-limited as `/api/setup`, creates the user through `auth.api.createUser` with the invitation's role, marks the invitation accepted in the same transaction and signs them in; public sign-up stays off (FR42)
+
+**Given** a pending invitation
+**When** the owner revokes it
+**Then** its link stops working
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 20.3: Members, and what a viewer sees
+
+As the household's administrator,
+I want to see who has access, change a role, and remove someone,
+So that access follows the household.
+
+**Requirements:** FR76, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Membres » at `/settings/members`
+**When** the owner opens it
+**Then** it lists each member with their role, each pending invitation with its expiry and « Révoquer », and « Inviter »
+
+**Given** a member other than the owner themselves
+**When** the owner changes their role or removes them
+**Then** the change applies at the member's next request; removing deletes their sessions; the last admin can never be demoted or removed
+
+**Given** a viewer signed in
+**When** they browse
+**Then** no control that writes is shown: no « Nouveau », « Importer », « Synchroniser », edit, delete, bulk bar, rule editor or budget form; settings show « Sécurité » only; a write the interface missed still fails on the server
+
+**Given** `listAssistants` and `disconnectAssistant`
+**When** two users exist
+**Then** they read and change the signed-in user's assistants only
+
+**Given** `docs/security-model.md` and `docs/sure-parity.md`
+**When** this story ships
+**Then** they say what a viewer reads and what they cannot do
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 21: Savings goals
+
+The owner sets a target, such as a holiday or an emergency fund, and sees it fill from the accounts that hold the money. Sure's goals, still behind its preview flag, read linked accounts' balances rather than transactions (`app/models/goal.rb`): each link takes the whole balance or a fixed amount, one calculation keeps two goals from counting the same euros, and a goal reports what remains, the monthly amount needed by its date, and whether it is on track from its accounts' last 90 days. A goal can be paused, completed, archived, and a « maintained » goal is a reserve sized in months of expenses.
+
+Archant takes that model. Departures:
+
+- No pledges (`goal_pledge.rb`): matching a promised deposit to an incoming line would be a new step in AD-4's pipeline and a link from the ledger's rows to goals, for a reminder.
+- No spending a goal (`consume!`) and no withdrawal detector: they write goal stamps on transactions, which only the ledger writes (AD-2).
+- Progress reads balances only: Archant has no holdings until Epic 22, and Sure's « contributions » basis needs market flows.
+- The pace is the change of the linked balances over 90 days divided by three, not Sure's net inflow of transactions: a savings account tracked by snapshots moves through valuations, which Sure's pace leaves out, and would read zero.
+- No jobs: a reserve's target in months of expenses is computed when read, where Sure refreshes it monthly (NFR9).
+- A goal is in its accounts' currency, as in Sure; the totals across goals keep the reporting currency and name the others (NFR2).
+
+Story 21.1 comes first; 21.2 and 21.3 follow in either order.
+
+### Story 21.1: Save toward a goal
+
+As the household's administrator,
+I want to set a target and a date, and link the accounts that hold the money,
+So that I know how far I am and what to put aside each month.
+
+**Requirements:** FR77, NFR1, NFR2, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `goals (id, name, target_amount, currency, target_date, color, icon, notes, state, kind, created_at, updated_at)` and `goal_accounts (goal_id, account_id, allocated_amount)` exist, amounts in minor units, `state` and `kind` checked from `const` arrays, `goal_accounts` deleted with its goal and by the ledger with its account
+
+**Given** a new goal
+**When** it is saved
+**Then** it has a name, a positive target, at least one active depository or investment account in its currency, as Sure's `FUNDABLE_ACCOUNT_TYPES`, and each link takes the whole balance or a fixed amount; two whole-balance links on one account are refused
+
+**Given** several goals on one account
+**When** their progress is computed
+**Then** fixed amounts are taken first, a whole-balance link takes what is left, fixed amounts above the balance are scaled down in proportion, and a balance at or below zero backs nothing, as Sure's `backing_share_for`, in a pure function in `domain/goals.ts`
+
+**Given** a goal
+**When** it is shown
+**Then** it shows saved against target, what remains, the monthly amount needed by its date rounded up to the cent, and a status « Atteint », « Sans échéance », « En bonne voie » or « En retard » from the 90-day pace
+
+**Given** `/goals`
+**When** the owner opens it
+**Then** goals show as cards with a progress ring, « Nouvel objectif » opens a dialog, and the rail shows « Objectifs »; `/goals/:id` shows a goal with each account's share
+
+**Given** the goal function
+**When** its tests run
+**Then** every branch is covered
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 21.2: Follow a goal to its end
+
+As the household's administrator,
+I want to pause, complete or archive a goal and see where it is heading,
+So that my goals reflect my plans as they change.
+
+**Requirements:** FR78
+
+**Acceptance Criteria:**
+
+**Given** a goal
+**When** the owner pauses, resumes, completes, archives, restores or reopens it
+**Then** the transitions are Sure's: completing freezes the amount saved and its date, archived and completed goals release their accounts, a paused goal keeps them, and restoring is refused when another goal has meanwhile taken a whole account it used
+
+**Given** a goal's page
+**When** it opens
+**Then** a chart shows its share of the linked balances over 90 days and the line to its target by its date
+
+**Given** the dashboard
+**When** goals exist
+**Then** a card shows the total saved against the total target of active goals in the reporting currency, how many are behind, and up to five goals, as Sure's « Plan » card
+
+**Given** the export
+**When** goals exist
+**Then** `all.ndjson` carries them and their links
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 21.3: Keep a reserve
+
+As the household's administrator,
+I want an emergency fund sized in months of expenses,
+So that it follows my spending without me updating it.
+
+**Requirements:** FR79
+
+**Acceptance Criteria:**
+
+**Given** a new goal
+**When** the owner chooses « Réserve »
+**Then** it has no date, cannot be completed, and its target is a fixed amount or a number of months of expenses, the median of the monthly expenses of AD-9 times that number, computed when read
+
+**Given** a reserve
+**When** its balance covers its target
+**Then** its status is « Constituée », otherwise « Entamée », and it sorts first when entamée, as Sure's `depleted`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 22: Investment holdings and prices
+
+A PEA or a brokerage account shows what it holds, at what average cost, and what it is worth today. Archant tracks investment accounts by balance snapshots only (Spec 7.2), and `project-overview.md` listed « investment portfolio tracking at parity with Sure » as a non-goal; the owner withdrew it on 2026-10-03 by choosing this epic.
+
+Sure records trades as a third kind of entry (`Trade`: quantity, price, fee), computes one holding per security and day forward from them (`Holding::ForwardCalculator`), with a weighted average cost that leaves fees out (`CostBasisTracker`), prices each day from a provider and carries the last price over gaps (`Security::Price::Importer`), and makes an investment account's balance cash plus holdings, a snapshot setting the total and moving the cash (`balance/base_calculator.rb`). Its trade form takes buys, sells, dividends and interest; a transaction on an investment account converts to a trade.
+
+Sure's default price provider, Twelve Data, needs a key, and its free plan leaves out Euronext Paris. Yahoo Finance, which Sure also supports, needs none, covers ten years, and on 2026-10-03 found `CW8.PA` from the ISIN `LU1681043599` with euro closes. Archant takes Yahoo through a new connector port, off until the owner turns it on, since it sends the household's securities to a third party. AD-22 records the model. Departures:
+
+- Securities carry an ISIN, which Sure has no column for: a French household knows its funds by ISIN.
+- Quantities and prices are integers at a fixed scale, never floats or decimals, with products computed exactly (AD-6, AD-22).
+- A buy is negative cash (AD-5), the opposite of Sure.
+- A trade's currency is its account's (AD-6); a listing in another currency is refused until conversion exists.
+- Investment accounts are never linked to a bank (`LINKABLE_TYPES`), so holdings are computed forward only, never backward.
+- Prices are fetched on the first visit of the day and by a button, never by a cron (NFR9).
+- A security with no provider, such as a fonds euros or a unit of account that Yahoo does not list, is priced from its trades and from prices the owner types, where Sure leaves an offline security unpriced.
+- An account with no trade keeps working as today: its holdings are worth zero and its snapshots are its cash.
+
+Stories go in order, 22.1 to 22.5.
+
+### Story 22.1: Securities and their prices
+
+As the household's administrator,
+I want Archant to know the securities I hold and fetch their prices when I allow it,
+So that my portfolio is valued without typing prices.
+
+**Requirements:** FR80, NFR3, NFR5, NFR11, NFR14, NFR20
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `securities (id, isin, ticker, mic, name, currency, provider, offline, created_at)` and `security_prices (security_id, date, price, currency, provisional, source)` exist, a price an integer at AD-22's scale, unique on `(security_id, date)`
+
+**Given** the connector port
+**When** this story ships
+**Then** `connectors/prices/` declares `searchSecurities` and `dailyPrices`, and `connectors/prices/yahoo.ts` implements them with `fetch` and Zod, mapping Euronext venues as Sure's `yahoo_finance.rb` does; recorded responses serve its tests, and no test reaches Yahoo
+
+**Given** « Réglages › Placements » at `/settings/investments`
+**When** the owner turns price fetching on
+**Then** the page says which host is called and that it learns the securities held; off by default, search offers manual entry only and no request leaves the server
+
+**Given** price fetching on
+**When** the first signed-in request of the day arrives, or the owner presses « Mettre à jour les cours »
+**Then** each held security's prices are fetched since its last stored day, beside the request; a gap carries the last price, the last seven days are provisional and fetched again, and a security that fails five times in a row is marked offline, as Sure
+
+**Given** a provider failure
+**When** it happens
+**Then** it is logged without the security's identifiers tied to amounts, and the page shows the last update
+
+**Given** `docs/security-model.md`
+**When** this story ships
+**Then** it names the new host, what it learns and how to keep it off
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 22.2: Record trades
+
+As the household's administrator,
+I want to record buys and sells on an investment account,
+So that Archant knows what I hold.
+
+**Requirements:** FR81, NFR1, NFR8
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `entries.kind` admits `trade`, and `trades (entry_id, security_id, quantity, price, fee)` holds the rest, quantity signed, positive for a buy; `services/ledger/trades.ts` writes them with an `origin`
+
+**Given** an investment account
+**When** the owner adds « Achat » or « Vente » with a security, a quantity, a price and fees
+**Then** the entry's amount is `−(quantity × price + fee)` rounded to the minor unit, negative for a buy (AD-5); the security comes from the search of Story 22.1 or is created offline by ISIN, name and currency; a currency other than the account's is refused
+
+**Given** a sale
+**When** it exceeds the quantity held on its date
+**Then** it is refused with `QUANTITY_UNAVAILABLE`
+
+**Given** a trade
+**When** it is edited or deleted
+**Then** the account's balances are recomputed from its date, as for a transaction
+
+**Given** the export
+**When** trades exist
+**Then** `trades.csv` and `all.ndjson` carry them, as Sure's exporter, and `Security` lines carry the ISIN
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 22.3: Holdings and an investment account's value
+
+As the household's administrator,
+I want an investment account's value to be its cash plus what its securities are worth,
+So that my net worth follows the markets.
+
+**Requirements:** FR82, NFR1, NFR10, NFR11
+
+**Acceptance Criteria:**
+
+**Given** `domain/holdings/forward.ts`
+**When** it runs on an account's trades and prices
+**Then** it returns one holding per security and day from the first trade to today, the quantity from trades, the price from the provider, else the latest trade or typed price, carried over gaps, and a weighted average cost per share without fees, as Sure's `ForwardCalculator` and `CostBasisTracker`; every branch is covered
+
+**Given** the schema
+**When** this story ships
+**Then** `holdings (account_id, security_id, date, quantity, price, amount, cost_basis)` is derived and written by the ledger only, and `balances` gains `cash`, with `balance = cash + holdings value`
+
+**Given** an investment account
+**When** a trade, a price import or a snapshot changes it
+**Then** its holdings and balances are recomputed from the earliest date touched; a snapshot sets the total and the cash becomes the total less the holdings value, as Sure's `base_calculator.rb`
+
+**Given** an investment account with no trade
+**When** this story ships
+**Then** its balances are unchanged: cash equals the balance, holdings are worth zero
+
+**Given** 100,000 transactions and ten years of daily prices for twenty securities
+**When** the volume project runs
+**Then** a recomputation after a day's prices stays under one second
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** every acceptance criterion above has a Vitest test
+
+### Story 22.4: See my holdings
+
+As the household's administrator,
+I want to see each security I hold with its value, its average cost and its gain,
+So that I follow my portfolio in Archant.
+
+**Requirements:** FR82, FR64, NFR12, NFR13
+
+**Acceptance Criteria:**
+
+**Given** an investment account's page
+**When** it has trades
+**Then** a « Positions » tab lists each security with its name and ticker, its weight, its « PRU », its value and quantity, and its « +/- value latente » in amount and percent, then a « Liquidités » row, as Sure's holdings table
+
+**Given** a position
+**When** the owner opens it
+**Then** a sheet shows its last price and date, its trades, « Saisir un cours » for an offline security, and a cost basis the owner can set and lock, as Sure's holding drawer
+
+**Given** a read token
+**When** the assistant calls `get_holdings` with an account
+**Then** it returns each position with quantities, prices and amounts as decimal strings, through the service the page calls
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+### Story 22.5: Dividends, interest, and lines that are trades
+
+As the household's administrator,
+I want to record dividends and interest, and turn an imported line into a trade,
+So that my account's history reads as my broker's.
+
+**Requirements:** FR83
+
+**Acceptance Criteria:**
+
+**Given** an investment account
+**When** the owner adds « Dividende » or « Intérêts »
+**Then** a trade of quantity zero carries the amount, positive, on a held security or on the account's cash, as Sure's `CreateForm`, and counts as income in reports
+
+**Given** a transaction on an investment account that is not a transfer side
+**When** the owner converts it to a trade
+**Then** a trade takes its date and amount, and the transaction stays as the trade's origin, excluded, locked and left out of every balance and report as a split parent is (AD-20), as Sure's convert to trade excludes it; its deduplication keys stay on it, so a re-import finds it and writes nothing
+
+**Given** a contribution from a current account
+**When** it is matched as a transfer
+**Then** its inflow side stays a transaction, counted in cash (AD-11)
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
