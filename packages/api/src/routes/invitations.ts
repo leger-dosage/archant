@@ -5,7 +5,6 @@ import type { SessionEnv } from "./middleware/auth.ts";
 import { Hono } from "hono";
 
 import { forwardedHeaders } from "../lib/client-address.ts";
-import { AppError } from "../lib/errors.ts";
 import { validated } from "../lib/validated.ts";
 import {
 	acceptInvitationSchema,
@@ -20,7 +19,7 @@ import {
 	revokeInvitation,
 } from "../services/invitations.ts";
 import { limitAttempts } from "./middleware/attempts.ts";
-import { requireRole } from "./middleware/roles.ts";
+import { requireRole, signedInUser } from "./middleware/roles.ts";
 
 export type InvitationsRouteDeps = InvitationDeps & AttemptsDeps;
 
@@ -37,12 +36,7 @@ export function invitationsRoutes(deps: InvitationsRouteDeps) {
 	return new Hono<SessionEnv>()
 		.get("/", requireRole("admin"), async (c) => c.json({ data: await listInvitations(deps) }, 200))
 		.post("/", requireRole("admin"), validated("json", createInvitationSchema), async (c) => {
-			const inviter = c.get("user");
-
-			// `requireRole` let only a signed-in administrator through.
-			if (inviter === undefined) {
-				throw new AppError("FORBIDDEN", "Your role does not allow this.");
-			}
+			const inviter = signedInUser(c);
 
 			return c.json({ data: await createInvitation(deps, inviter.id, c.req.valid("json")) }, 201);
 		})

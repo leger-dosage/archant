@@ -20,6 +20,7 @@ import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget, useCopyBudget } from "@/hooks/useBudget";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 import { monthLabel, ofMonth, toIsoMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
@@ -36,10 +37,12 @@ export const Route = createFileRoute("/_authed/budgets/$month")({
 
 /**
  * Sure's `_over_allocation_warning`, in the donut's place: the categories
- * take more than the total, so the ring would draw nothing true.
+ * take more than the total, so the ring would draw nothing true. A viewer
+ * reads it without the way to fix it.
  */
 function OverAllocation({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 
 	return (
 		<Section title={t("budgets.donut.title")}>
@@ -49,12 +52,14 @@ function OverAllocation({ budget }: { budget: BudgetData }) {
 				<p className="max-w-sm text-sm text-muted-foreground">
 					{t("budgets.donut.overAllocated.description")}
 				</p>
-				<Button variant="outline" size="sm" asChild>
-					<Link to="/budgets/$month/categories" params={{ month: budget.month }}>
-						{t("budgets.donut.overAllocated.action")}
-						<PencilIcon aria-hidden="true" />
-					</Link>
-				</Button>
+				{admin && (
+					<Button variant="outline" size="sm" asChild>
+						<Link to="/budgets/$month/categories" params={{ month: budget.month }}>
+							{t("budgets.donut.overAllocated.action")}
+							<PencilIcon aria-hidden="true" />
+						</Link>
+					</Button>
+				)}
 			</div>
 		</Section>
 	);
@@ -63,10 +68,12 @@ function OverAllocation({ budget }: { budget: BudgetData }) {
 /**
  * A month not set up: « Définir le budget », or, once an earlier month is
  * set up, Sure's « Copier <mois> » beside « Partir de zéro ». A copy leads to
- * « Catégories », where its amounts can be adjusted.
+ * « Catégories », where its amounts can be adjusted. A viewer reads the
+ * sentence alone: setting a month up writes it.
  */
 function NotSetUp({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const navigate = useNavigate();
 	const copy = useCopyBudget(budget.month);
 	const source = budget.copySource;
@@ -91,7 +98,7 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 					: t("budgets.copy.description", { ofMonth: ofMonth(source) })
 			}
 			action={
-				source === null ? (
+				!admin ? null : source === null ? (
 					<Button asChild>
 						<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
 							{t("budgets.notSetUp.action")}

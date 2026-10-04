@@ -42,6 +42,7 @@ import { useAccount } from "@/hooks/useAccount";
 import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountImports } from "@/hooks/useImports";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
@@ -119,7 +120,8 @@ type TransactionsPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	onAdd: () => void;
+	/** `null` for a viewer, who adds nothing: the empty state keeps its text alone. */
+	onAdd: (() => void) | null;
 	onOpen: (transaction: TransactionData) => void;
 };
 
@@ -144,9 +146,11 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 				title={t("transactions.empty.title")}
 				description={t("transactions.empty.description")}
 				action={
-					<Button onClick={onAdd} disabled={!canAdd}>
-						{t("transactions.add")}
-					</Button>
+					onAdd === null ? null : (
+						<Button onClick={onAdd} disabled={!canAdd}>
+							{t("transactions.add")}
+						</Button>
+					)
 				}
 			/>
 		);
@@ -180,8 +184,9 @@ type SnapshotsPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	onAdd: () => void;
-	onOpen: (snapshot: SnapshotData) => void;
+	/** Both `null` for a viewer: no « Ajouter un solde », and rows that open nothing. */
+	onAdd: (() => void) | null;
+	onOpen: ((snapshot: SnapshotData) => void) | null;
 };
 
 function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPanelProps) {
@@ -199,11 +204,13 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 
 	return (
 		<div className="flex flex-col gap-3">
-			<div className="flex justify-end">
-				<Button variant="outline" onClick={onAdd} disabled={!canAdd}>
-					{t("snapshots.add")}
-				</Button>
-			</div>
+			{onAdd !== null && (
+				<div className="flex justify-end">
+					<Button variant="outline" onClick={onAdd} disabled={!canAdd}>
+						{t("snapshots.add")}
+					</Button>
+				</div>
+			)}
 
 			{snapshots.isPending && <SnapshotListSkeleton />}
 
@@ -279,6 +286,7 @@ function AccountPage() {
 		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
+	const admin = useIsAdmin();
 	const balanceHistory = useBalanceHistory(accountId, period);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	const [snapshotDialog, setSnapshotDialog] = useState<SnapshotDialogState>({
@@ -353,7 +361,7 @@ function AccountPage() {
 			}
 			title={account.data?.name ?? t("accountDetail.title")}
 			actions={
-				account.data !== undefined ? (
+				account.data !== undefined && admin ? (
 					<>
 						<Tooltip>
 							<TooltipTrigger asChild>
@@ -430,7 +438,7 @@ function AccountPage() {
 						accountId={accountId}
 						page={page}
 						canAdd={canAddTransaction}
-						onAdd={openNew}
+						onAdd={admin ? openNew : null}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}
 					/>
 				</TabsContent>
@@ -439,8 +447,8 @@ function AccountPage() {
 						accountId={accountId}
 						page={snapshotsPage}
 						canAdd={canAddSnapshot}
-						onAdd={openNewSnapshot}
-						onOpen={(snapshot) => setSnapshotDialog({ open: true, snapshot })}
+						onAdd={admin ? openNewSnapshot : null}
+						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 					/>
 				</TabsContent>
 				<TabsContent value="imports">
@@ -456,13 +464,17 @@ function AccountPage() {
 						transaction={sheet.transaction}
 						onOpenChange={(open) => setSheet((current) => ({ ...current, open }))}
 					/>
-					<SnapshotDialog
-						account={writable}
-						open={snapshotDialog.open}
-						snapshot={snapshotDialog.snapshot}
-						onOpenChange={(open) => setSnapshotDialog((current) => ({ ...current, open }))}
-					/>
-					<ImportDialog account={writable} open={importing} onOpenChange={setImporting} />
+					{admin && (
+						<>
+							<SnapshotDialog
+								account={writable}
+								open={snapshotDialog.open}
+								snapshot={snapshotDialog.snapshot}
+								onOpenChange={(open) => setSnapshotDialog((current) => ({ ...current, open }))}
+							/>
+							<ImportDialog account={writable} open={importing} onOpenChange={setImporting} />
+						</>
+					)}
 				</>
 			)}
 		</Page>

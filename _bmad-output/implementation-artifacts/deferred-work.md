@@ -244,15 +244,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-19-3-attach-a-receipt-to-a-transaction.md`
   summary: No automated check shows a PDF attachment in a browser under the sandboxed policy; Chromium was checked by hand, Firefox and Safari not at all.
   evidence: medium, unverified for Firefox and Safari: the end-to-end suite runs Chromium's headless shell, which downloads a PDF rather than showing it, and headless Firefox would not start on the build machine. Settle it by opening a PDF attachment in both browsers.
-- source_spec: `_bmad-output/implementation-artifacts/spec-20-1-a-read-only-role-enforced-by-the-server.md`
-  summary: A viewer's every page would show « Cette action n'est pas autorisée. », since `BankAlerts` reads `GET /api/bank-connections/setup`, now an administrator's only, through `Page`.
-  evidence: `BankAlerts.tsx:113` calls `useBankSetup()` without `meta.optional`, and the global query handler retries and toasts `FORBIDDEN`; no viewer can exist before Story 20.2, and Story 20.3's acceptance criteria now name it.
-- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
-  summary: A viewer sees « Membres » in the settings and its « Inviter » button, and the page's read answers `FORBIDDEN`.
-  evidence: `SettingsNav` lists `/settings/members` for every role, and `GET /api/invitations` calls `requireRole("admin")`; Story 20.3's acceptance criteria already ask settings to show « Sécurité » only to a viewer and no page to send a read the server refuses them.
-- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
-  summary: An administrator demoted to viewer keeps their pending invitations, administrator ones included, valid until they expire or another administrator revokes them.
-  evidence: `invitations.inviter_id` cascades on a user's deletion only, and no role change exists before Story 20.3; that story decides whether a demotion revokes them, or checks the inviter's role at acceptance.
-- source_spec: `_bmad-output/implementation-artifacts/spec-20-2-invite-someone-with-a-link.md`
-  summary: With a second administrator invited, each sees and can disconnect the other's assistants, and a client both authorised appears twice.
-  evidence: `services/assistants.ts` `listAssistants` says « Archant has one user » and reads every consent; Story 20.3's acceptance criteria ask it and `disconnectAssistant` to read and change the signed-in user's only.
+- source_spec: `_bmad-output/implementation-artifacts/spec-20-3-members-and-what-a-viewer-sees.md`
+  summary: Two administrators who both authorise the same assistant client each see the other's last call date in « Réglages › Assistants IA ».
+  evidence: `listAssistants` filters consents by user, but its `lastCalls` subquery groups `assistant_calls` by `client_id` alone, and that table has no user column; settling it adds `user_id` to `assistant_calls` through a migration and filters on it.

@@ -1,6 +1,6 @@
 import type { BudgetData } from "@/hooks/useBudget";
 
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,9 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget } from "@/hooks/useBudget";
 import { errorCodeOf } from "@/lib/api";
+import { isAdmin } from "@/lib/auth-client";
 import { ofMonth, toIsoMonth } from "@/lib/dates";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
+	// A viewer reads the month: its allocation writes, and the server would refuse the save.
+	beforeLoad: ({ context, params }) => {
+		if (!isAdmin(context.session)) {
+			throw redirect({ to: "/budgets/$month", params: { month: params.month } });
+		}
+	},
 	component: BudgetCategoriesPage,
 });
 

@@ -1,4 +1,5 @@
 import type { TestApp } from "../testing/auth.ts";
+import type { Auth } from "./auth.ts";
 
 import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +15,14 @@ import {
 import { createLogger } from "../lib/logger.ts";
 import { own, ownDatabase, template, useSignedInApp } from "../testing/app.ts";
 import { READ_WRITE, connect, registerClient } from "../testing/assistant.ts";
-import { buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import {
+	ADMIN,
+	buildTestApp,
+	cookieOf,
+	createTestAuth,
+	signIn,
+	withSession,
+} from "../testing/auth.ts";
 import { recordAssistantCall } from "./assistant-calls.ts";
 import { disconnectAssistant, grantedScopes, listAssistants } from "./assistants.ts";
 
@@ -22,6 +30,7 @@ useSignedInApp();
 
 let bare: TestApp;
 let signedIn: TestApp;
+let auth: Auth;
 
 const deps = () => {
 	if (own === undefined) {
@@ -34,20 +43,24 @@ const deps = () => {
 beforeEach(async () => {
 	const { db } = await ownDatabase();
 	await db.delete(rateLimits);
-	const auth = createTestAuth(db);
+	auth = createTestAuth(db);
 	bare = buildTestApp(db, createLogger("silent"), auth);
 	signedIn = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
 });
 
 async function ownerId(): Promise<string> {
-	const owner = await deps().db.select({ id: users.id }).from(users).get();
+	const owner = await deps()
+		.db.select({ id: users.id })
+		.from(users)
+		.where(eq(users.email, ADMIN.email))
+		.get();
 
 	return owner?.id ?? "";
 }
 
 describe("listAssistants", () => {
 	it("lists nothing before an assistant connects", async () => {
-		expect(await listAssistants(deps())).toEqual([]);
+		expect(await listAssistants(deps(), await ownerId())).toEqual([]);
 	});
 
 	it("names each connected assistant with its scopes, connection date and last call", async () => {
@@ -67,7 +80,7 @@ describe("listAssistants", () => {
 			Date.parse("2026-09-22T10:00:00Z"),
 		);
 
-		expect(await listAssistants(deps())).toEqual([
+		expect(await listAssistants(deps(), await ownerId())).toEqual([
 			{
 				clientId: reader,
 				name: "Claude Code",
@@ -88,7 +101,7 @@ describe("listAssistants", () => {
 	it("leaves out a client that registered but was never allowed", async () => {
 		await registerClient(bare);
 
-		expect(await listAssistants(deps())).toEqual([]);
+		expect(await listAssistants(deps(), await ownerId())).toEqual([]);
 	});
 });
 
@@ -99,7 +112,7 @@ describe("disconnectAssistant", () => {
 		const other = await registerClient(bare, "Cursor");
 		await connect(signedIn, bare, other);
 
-		await disconnectAssistant(deps(), clientId);
+		await disconnectAssistant(deps(), await ownerId(), clientId);
 
 		const { db } = deps();
 		const of = (table: typeof oauthConsents | typeof oauthRefreshTokens) =>
@@ -112,7 +125,9 @@ describe("disconnectAssistant", () => {
 		expect(
 			await db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId)),
 		).toHaveLength(1);
-		expect((await listAssistants(deps())).map((assistant) => assistant.clientId)).toEqual([other]);
+		expect(
+			(await listAssistants(deps(), await ownerId())).map((assistant) => assistant.clientId),
+		).toEqual([other]);
 		expect(
 			await db.select().from(oauthRefreshTokens).where(eq(oauthRefreshTokens.clientId, other)),
 		).toHaveLength(1);
@@ -121,10 +136,10 @@ describe("disconnectAssistant", () => {
 	it("refuses an assistant that holds no consent with ASSISTANT_NOT_FOUND", async () => {
 		const clientId = await registerClient(bare);
 
-		await expect(disconnectAssistant(deps(), clientId)).rejects.toMatchObject({
+		await expect(disconnectAssistant(deps(), await ownerId(), clientId)).rejects.toMatchObject({
 			code: "ASSISTANT_NOT_FOUND",
 		});
-		await expect(disconnectAssistant(deps(), "unknown")).rejects.toMatchObject({
+		await expect(disconnectAssistant(deps(), await ownerId(), "unknown")).rejects.toMatchObject({
 			code: "ASSISTANT_NOT_FOUND",
 		});
 	});
@@ -139,8 +154,8 @@ describe("disconnectAssistant", () => {
 			sql`create trigger refuse_refresh_delete before delete on oauth_refresh_tokens begin select raise(abort, 'disk full'); end`,
 		);
 
-		await expect(disconnectAssistant(deps(), clientId)).rejects.toThrow();
-		expect(await listAssistants(deps())).toHaveLength(1);
+		await expect(disconnectAssistant(deps(), await ownerId(), clientId)).rejects.toThrow();
+		expect(await listAssistants(deps(), await ownerId())).toHaveLength(1);
 	});
 });
 
@@ -156,8 +171,73 @@ describe("grantedScopes", () => {
 		]);
 		expect(await grantedScopes(deps(), clientId, "someone-else")).toBeNull();
 
-		await disconnectAssistant(deps(), clientId);
+		await disconnectAssistant(deps(), await ownerId(), clientId);
 
 		expect(await grantedScopes(deps(), clientId, userId)).toBeNull();
+	});
+});
+
+/** A second administrator, signed in: their id and the app that sends their session. */
+async function secondAdmin() {
+	const credentials = { email: "second@example.test", password: "a long passphrase" };
+	const { user } = await auth.api.createUser({
+		body: { ...credentials, name: "", data: { role: "admin" } },
+	});
+	const response = await signIn(bare, credentials);
+
+	return {
+		id: user.id,
+		app: withSession(buildTestApp(deps().db, createLogger("silent"), auth), cookieOf(response)),
+	};
+}
+
+describe("two administrators", () => {
+	it("each list their own assistants, a client both allowed included", async () => {
+		const second = await secondAdmin();
+		const shared = await registerClient(bare, "Claude Code");
+		const theirs = await registerClient(bare, "Cursor");
+		await connect(signedIn, bare, shared);
+		await connect(second.app, bare, shared, READ_WRITE);
+		vi.setSystemTime(new Date("2026-09-21T11:00:00Z"));
+		await connect(second.app, bare, theirs);
+
+		const mine = await listAssistants(deps(), await ownerId());
+		const others = await listAssistants(deps(), second.id);
+
+		expect(mine.map((assistant) => [assistant.clientId, assistant.scopes])).toEqual([
+			[shared, ["archant:read"]],
+		]);
+		expect(others.map((assistant) => [assistant.clientId, assistant.scopes])).toEqual([
+			[shared, ["archant:read", "archant:write"]],
+			[theirs, ["archant:read"]],
+		]);
+	});
+
+	it("never disconnect each other's assistants", async () => {
+		const second = await secondAdmin();
+		const shared = await registerClient(bare, "Claude Code");
+		const theirs = await registerClient(bare, "Cursor");
+		await connect(signedIn, bare, shared);
+		await connect(second.app, bare, shared);
+		vi.setSystemTime(new Date("2026-09-21T11:00:00Z"));
+		await connect(second.app, bare, theirs);
+		const owner = await ownerId();
+
+		await expect(disconnectAssistant(deps(), owner, theirs)).rejects.toMatchObject({
+			code: "ASSISTANT_NOT_FOUND",
+		});
+		await disconnectAssistant(deps(), owner, shared);
+
+		expect(await listAssistants(deps(), owner)).toEqual([]);
+		expect(
+			(await listAssistants(deps(), second.id)).map((assistant) => assistant.clientId),
+		).toEqual([shared, theirs]);
+		expect(
+			await deps()
+				.db.select({ userId: oauthRefreshTokens.userId })
+				.from(oauthRefreshTokens)
+				.where(eq(oauthRefreshTokens.clientId, shared)),
+		).toEqual([{ userId: second.id }]);
+		expect(await grantedScopes(deps(), shared, second.id)).toEqual(["archant:read"]);
 	});
 });

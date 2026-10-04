@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useVersion } from "@/hooks/useVersion";
 import { releaseUrl } from "@/lib/release";
 
@@ -33,11 +34,15 @@ export const SETTINGS_SECTIONS = [
  */
 export function SettingsNav() {
 	const { t } = useTranslation();
+	// A viewer has « Sécurité » alone; the settings route sends them there from any other.
+	const sections = useIsAdmin()
+		? SETTINGS_SECTIONS
+		: SETTINGS_SECTIONS.filter(({ to }) => to === "/settings/security");
 
 	return (
 		<nav aria-label={t("settings.title")} className="flex flex-col gap-4 p-3">
 			<ul className="flex flex-col gap-1">
-				{SETTINGS_SECTIONS.map(({ to, label, icon: Icon }) => (
+				{sections.map(({ to, label, icon: Icon }) => (
 					<li key={to}>
 						<Link
 							to={to}

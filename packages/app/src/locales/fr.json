@@ -103,7 +103,8 @@
 		},
 		"empty": {
 			"title": "Aucun compte pour l'instant",
-			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici."
+			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici.",
+			"viewerDescription": "L'administrateur du foyer ajoute les comptes. Ils apparaîtront ici."
 		}
 	},
 	"accounts": {
@@ -258,6 +259,7 @@
 		"form": {
 			"addTitle": "Ajouter une opération",
 			"editTitle": "Modifier l'opération",
+			"viewTitle": "Opération",
 			"date": "Date",
 			"label": "Libellé",
 			"amount": "Montant",
@@ -367,7 +369,8 @@
 			"add": "Ajouter aux récurrences",
 			"added": "Opération ajoutée aux récurrences",
 			"member": "Cette opération fait partie de la récurrence « {{name}} ».",
-			"open": "Voir les récurrences"
+			"open": "Voir les récurrences",
+			"none": "Cette opération ne fait partie d'aucune récurrence."
 		},
 		"split": {
 			"badge": "Divisée",
@@ -405,6 +408,7 @@
 		"attachments": {
 			"section": "Pièces jointes",
 			"empty": "Aucune pièce jointe. Joignez un ticket ou une facture : image ou PDF, 10 Mo au plus.",
+			"none": "Aucune pièce jointe.",
 			"list": "Pièces jointes de « {{label}} »",
 			"add": "Ajouter",
 			"uploading": "Envoi…",
@@ -1096,6 +1100,7 @@
 		"delete": "Supprimer",
 		"enabled": "Règle activée.",
 		"disabled": "Règle désactivée. Les opérations qu'elle a déjà modifiées restent telles quelles.",
+		"disabledBadge": "Désactivée",
 		"summary": {
 			"condition": "Si {{field}} {{operator}} {{value}}, alors {{action}}",
 			"emptyCondition": "Si {{field}} {{operator}}, alors {{action}}",
@@ -1275,7 +1280,28 @@
 	},
 	"members": {
 		"title": "Membres",
-		"description": "Invitez une personne de votre foyer. Elle choisit son propre mot de passe depuis le lien que vous lui envoyez.",
+		"description": "Les personnes qui ont accès à Archant. Une personne invitée choisit son propre mot de passe depuis le lien que vous lui envoyez.",
+		"list": "Membres",
+		"you": "Vous",
+		"actions": "Actions pour {{name}}",
+		"promote": "Passer administrateur",
+		"demote": "Passer lecteur",
+		"remove": "Retirer",
+		"promoteDialog": {
+			"title": "Passer {{name}} administrateur ?",
+			"description": "{{name}} pourra tout modifier, inviter et retirer des membres, et connecter des assistants. Le changement s'applique dès sa prochaine action."
+		},
+		"demoteDialog": {
+			"title": "Passer {{name}} lecteur ?",
+			"description": "{{name}} pourra tout lire sans rien modifier. Ses assistants connectés et ses invitations en attente seront supprimés."
+		},
+		"removeDialog": {
+			"title": "Retirer {{name}} ?",
+			"description": "{{name}} n'aura plus accès à Archant : ses sessions seront fermées sur tous ses appareils. Les comptes et les opérations du foyer restent."
+		},
+		"promoted": "{{name}} est maintenant administrateur.",
+		"demoted": "{{name}} est maintenant lecteur.",
+		"removed": "{{name}} n'a plus accès à Archant.",
 		"invite": "Inviter",
 		"pending": "Invitations en attente",
 		"expires": "Expire le {{date}}",
@@ -1461,7 +1487,7 @@
 	"security": {
 		"title": "Sécurité",
 		"passwordTitle": "Mot de passe",
-		"description": "Le mot de passe du compte administrateur. Le modifier ferme les sessions ouvertes sur les autres appareils.",
+		"description": "Le mot de passe de votre compte. Le modifier ferme les sessions ouvertes sur les autres appareils.",
 		"currentPassword": "Mot de passe actuel",
 		"newPassword": "Nouveau mot de passe",
 		"confirmPassword": "Confirmer le nouveau mot de passe",
@@ -1566,6 +1592,8 @@
 		"BANK_CREDENTIALS_LOCKED": "Déconnectez toutes les banques avant de modifier les identifiants Enable Banking.",
 		"BANK_CREDENTIALS_FROM_ENVIRONMENT": "Les variables d'environnement du serveur fixent les identifiants Enable Banking.",
 		"BANK_AUTHORIZATION_INVALID": "Cette autorisation bancaire est inconnue, déjà utilisée ou expirée. Recommencez la connexion.",
+		"CANNOT_CHANGE_SELF": "Vous ne pouvez ni changer votre propre rôle ni vous retirer.",
+		"LAST_ADMIN": "Le foyer doit garder au moins un administrateur.",
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
 		"CONSENT_EXPIRED": "Le consentement de cette banque a expiré. Renouvelez-le pour reprendre la synchronisation.",

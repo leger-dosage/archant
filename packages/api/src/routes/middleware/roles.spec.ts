@@ -52,6 +52,7 @@ const ADMIN_READS = [
 	"/api/bank-connections/setup",
 	"/api/assistants",
 	"/api/invitations",
+	"/api/members",
 	"/api/export",
 ];
 

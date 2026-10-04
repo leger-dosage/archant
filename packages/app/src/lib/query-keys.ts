@@ -95,6 +95,10 @@ export const queryKeys = {
 		all: ["invitations"] as const,
 		preview: (token: string) => ["invitation-preview", token] as const,
 	},
+	/** The household's members, one query: a role change or a removal invalidates `all`. */
+	members: {
+		all: ["members"] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

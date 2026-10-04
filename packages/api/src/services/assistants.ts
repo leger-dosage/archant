@@ -50,10 +50,14 @@ function archantScopes(stored: string): ArchantScope[] {
 }
 
 /**
- * Every assistant the owner has allowed, oldest first. Archant has one user,
- * so a consent row is a connected assistant, and its removal a disconnection.
+ * Every assistant `userId` has allowed, oldest first: a consent row is a
+ * connected assistant, and its removal a disconnection. Another
+ * administrator's stay theirs, to list and to disconnect (AD-21).
  */
-export async function listAssistants(deps: ServiceDeps): Promise<AssistantSummary[]> {
+export async function listAssistants(
+	deps: ServiceDeps,
+	userId: string,
+): Promise<AssistantSummary[]> {
 	const lastCalls = deps.db
 		.select({
 			clientId: assistantCalls.clientId,
@@ -74,6 +78,7 @@ export async function listAssistants(deps: ServiceDeps): Promise<AssistantSummar
 		.from(oauthConsents)
 		.innerJoin(oauthClients, eq(oauthClients.clientId, oauthConsents.clientId))
 		.leftJoin(lastCalls, eq(lastCalls.clientId, oauthConsents.clientId))
+		.where(eq(oauthConsents.userId, userId))
 		.orderBy(oauthConsents.createdAt, oauthConsents.clientId);
 
 	return rows.map((row) => ({
@@ -86,27 +91,36 @@ export async function listAssistants(deps: ServiceDeps): Promise<AssistantSummar
 }
 
 /**
- * Disconnects an assistant at once: its consent, then every token it holds,
- * in one transaction. Better Auth's own consent deletion leaves the refresh
- * tokens valid, since its refresh grant never reads consents; the deletes
- * below are the ones its `invalidateRefreshFamily` makes after a replay. The
- * client row stays: Better Auth refuses deleting a client nobody owns, and a
+ * Disconnects `userId`'s assistant at once: their consent, then every token
+ * it holds for them, in one transaction. Another administrator's consent to
+ * the same client is not theirs to remove, and answers as unknown. Better
+ * Auth's own consent deletion leaves the refresh tokens valid, since its
+ * refresh grant never reads consents; the deletes below are the ones its
+ * `invalidateRefreshFamily` makes after a replay. The client row stays: Better Auth refuses deleting a client nobody owns, and a
  * self-registered one has no owner. An access token already issued is a JWT
  * nothing can recall; `/api/mcp` refuses it because the consent is gone.
  */
-export async function disconnectAssistant(deps: ServiceDeps, clientId: string): Promise<void> {
+export async function disconnectAssistant(
+	deps: ServiceDeps,
+	userId: string,
+	clientId: string,
+): Promise<void> {
 	await deps.db.transaction(async (tx) => {
 		const removed = await tx
 			.delete(oauthConsents)
-			.where(eq(oauthConsents.clientId, clientId))
+			.where(and(eq(oauthConsents.clientId, clientId), eq(oauthConsents.userId, userId)))
 			.returning({ id: oauthConsents.id });
 
 		if (removed.length === 0) {
 			throw new AppError("ASSISTANT_NOT_FOUND", "No connected assistant has this id.");
 		}
 
-		await tx.delete(oauthAccessTokens).where(eq(oauthAccessTokens.clientId, clientId));
-		await tx.delete(oauthRefreshTokens).where(eq(oauthRefreshTokens.clientId, clientId));
+		await tx
+			.delete(oauthAccessTokens)
+			.where(and(eq(oauthAccessTokens.clientId, clientId), eq(oauthAccessTokens.userId, userId)));
+		await tx
+			.delete(oauthRefreshTokens)
+			.where(and(eq(oauthRefreshTokens.clientId, clientId), eq(oauthRefreshTokens.userId, userId)));
 	});
 }
 

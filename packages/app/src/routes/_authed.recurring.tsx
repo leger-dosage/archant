@@ -31,6 +31,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useDetectRecurring, useRecurring, useSetRecurringStatus } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
@@ -95,9 +96,11 @@ function RecurringActions({
 /**
  * The detected, confirmed and inactive patterns, current ones first, each by
  * next expected date. Dismissed ones are gone from here and from detection.
+ * A viewer reads them, without « Détecter » or a row's menu.
  */
 function RecurringPage() {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const recurring = useRecurring();
 	const detect = useDetectRecurring();
 	const setStatus = useSetRecurringStatus();
@@ -134,7 +137,7 @@ function RecurringPage() {
 			description={t("recurring.description")}
 			actions={
 				// An empty list offers its own, the one way forward.
-				recurring.data !== undefined && list.length === 0 ? undefined : (
+				!admin || (recurring.data !== undefined && list.length === 0) ? undefined : (
 					<Button variant="outline" disabled={detect.isPending} onClick={runDetection}>
 						{t("recurring.detect")}
 					</Button>
@@ -166,9 +169,11 @@ function RecurringPage() {
 						title={t("recurring.empty.title")}
 						description={t("recurring.empty.description")}
 						action={
-							<Button disabled={detect.isPending} onClick={runDetection}>
-								{t("recurring.empty.action")}
-							</Button>
+							admin ? (
+								<Button disabled={detect.isPending} onClick={runDetection}>
+									{t("recurring.empty.action")}
+								</Button>
+							) : null
 						}
 					/>
 				) : (
@@ -195,9 +200,11 @@ function RecurringPage() {
 										<TableHead scope="col" className="type-overline text-muted-foreground">
 											{t("recurring.columns.status")}
 										</TableHead>
-										<TableHead scope="col">
-											<span className="sr-only">{t("recurring.columns.actions")}</span>
-										</TableHead>
+										{admin && (
+											<TableHead scope="col">
+												<span className="sr-only">{t("recurring.columns.actions")}</span>
+											</TableHead>
+										)}
 									</TableRow>
 								</TableHeader>
 								<TableBody>
@@ -235,17 +242,19 @@ function RecurringPage() {
 													{item.manual && <StatusBadge status="recurringManual" />}
 												</span>
 											</TableCell>
-											<TableCell className="w-10 text-right">
-												<RecurringActions
-													item={item}
-													disabled={setStatus.isPending}
-													onSet={(status) => move(item, status)}
-													onDismiss={() => {
-														setDismissing(item);
-														setDismissOpen(true);
-													}}
-												/>
-											</TableCell>
+											{admin && (
+												<TableCell className="w-10 text-right">
+													<RecurringActions
+														item={item}
+														disabled={setStatus.isPending}
+														onSet={(status) => move(item, status)}
+														onDismiss={() => {
+															setDismissing(item);
+															setDismissOpen(true);
+														}}
+													/>
+												</TableCell>
+											)}
 										</TableRow>
 									))}
 								</TableBody>

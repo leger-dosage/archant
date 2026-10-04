@@ -45,6 +45,8 @@ const STATUSES = {
 	},
 	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", tone: "neutral" },
 	recurringManual: { icon: HandIcon, key: "recurring.manual", tone: "neutral" },
+	// What a viewer reads in place of a disabled rule's switch.
+	ruleDisabled: { icon: CirclePauseIcon, key: "rules.disabledBadge", tone: "neutral" },
 	// A connection that needs the user, as BankAlerts' strip says above the page.
 	consentExpiring: { icon: ClockAlertIcon, key: "banks.consentExpiring", tone: "warning" },
 	consentExpired: { icon: TriangleAlertIcon, key: "banks.consentExpired", tone: "warning" },

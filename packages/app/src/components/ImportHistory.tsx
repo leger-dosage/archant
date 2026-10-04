@@ -17,6 +17,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useRevertImport } from "@/hooks/useImports";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
@@ -82,11 +83,12 @@ type ImportHistoryProps = {
 
 /**
  * One account's confirmed and reverted imports, latest first, with the counts
- * confirm stored. A confirmed one can be reverted, after a confirmation that
- * states what goes.
+ * confirm stored. A confirmed one can be reverted by an administrator, after
+ * a confirmation that states what goes.
  */
 export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const revertImport = useRevertImport(accountId);
 	const [target, setTarget] = useState<ImportHistoryItemData | null>(null);
 	// Kept while the dialog closes, so its text does not blank out mid-animation.
@@ -156,17 +158,19 @@ export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 								<TableCell className="text-right tabular-nums">{item.counts.rejected}</TableCell>
 								<TableCell className="text-right whitespace-nowrap">
 									{item.revertedAt === null ? (
-										<Button
-											variant="outline"
-											size="sm"
-											aria-label={t("imports.history.revertLabel", {
-												fileName: item.fileName,
-												date,
-											})}
-											onClick={() => open(item)}
-										>
-											{t("imports.history.revert")}
-										</Button>
+										admin && (
+											<Button
+												variant="outline"
+												size="sm"
+												aria-label={t("imports.history.revertLabel", {
+													fileName: item.fileName,
+													date,
+												})}
+												onClick={() => open(item)}
+											>
+												{t("imports.history.revert")}
+											</Button>
+										)
 									) : (
 										<span className="text-sm text-muted-foreground">
 											{t("imports.history.revertedOn", { date: dayOf(item.revertedAt) })}

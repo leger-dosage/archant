@@ -4,8 +4,11 @@ import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 
-/** The dashboard of a household without accounts: one way forward, « Ajouter un compte ». */
-export function DashboardEmpty({ onAddAccount }: { onAddAccount: () => void }) {
+/**
+ * The dashboard of a household without accounts: one way forward, « Ajouter
+ * un compte ». A viewer, who adds none, reads that the administrator does.
+ */
+export function DashboardEmpty({ onAddAccount }: { onAddAccount: (() => void) | null }) {
 	const { t } = useTranslation();
 
 	return (
@@ -16,8 +19,12 @@ export function DashboardEmpty({ onAddAccount }: { onAddAccount: () => void }) {
 			level={2}
 			icon={{ kind: "transfer", icon: LandmarkIcon }}
 			title={t("dashboard.empty.title")}
-			description={t("dashboard.empty.description")}
-			action={<Button onClick={onAddAccount}>{t("accounts.add")}</Button>}
+			description={t(
+				onAddAccount === null ? "dashboard.empty.viewerDescription" : "dashboard.empty.description",
+			)}
+			action={
+				onAddAccount === null ? null : <Button onClick={onAddAccount}>{t("accounts.add")}</Button>
+			}
 		/>
 	);
 }

@@ -96,6 +96,13 @@ let tokens: Tokens;
 
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
 
+/** Disconnects the assistant as the administrator who connected it, this database's only user. */
+async function disconnect(): Promise<void> {
+	const owner = await temp.db.select({ id: users.id }).from(users).get();
+
+	await disconnectAssistant(deps(), owner?.id ?? "", clientId);
+}
+
 beforeEach(async () => {
 	// Registration is limited per address, and the fake clock never lets a
 	// window pass: each test starts with a fresh allowance.
@@ -166,7 +173,7 @@ describe("the token check", () => {
 	});
 
 	it("refuses a token whose assistant was disconnected, before its expiry and before any tool", async () => {
-		await disconnectAssistant(deps(), clientId);
+		await disconnect();
 
 		const response = await mcp(bare, tokens.access_token, "tools/call", {
 			name: "get_tags",
@@ -201,7 +208,7 @@ describe("the token check", () => {
 	});
 
 	it("refuses the refresh token after a disconnection", async () => {
-		await disconnectAssistant(deps(), clientId);
+		await disconnect();
 
 		const response = await refresh(bare, clientId, tokens.refresh_token);
 

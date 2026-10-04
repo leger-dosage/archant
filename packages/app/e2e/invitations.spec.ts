@@ -42,7 +42,7 @@ test("an invited person opens the link signed out, sets a password and lands sig
 
 	await page.goto("/settings/members");
 	await expect(page.getByRole("heading", { level: 1, name: "Membres" })).toBeVisible();
-	await page.getByRole("button", { name: "Inviter", exact: true }).first().click();
+	await page.getByRole("button", { name: "Inviter", exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Inviter une personne" });
 	await dialog.getByLabel("Adresse e-mail").fill(email);
 	await expect(dialog.getByRole("combobox", { name: "Rôle" })).toHaveText("Lecteur");
@@ -112,7 +112,7 @@ test("a revoked link and an unknown one say the invitation is no longer valid", 
 
 test("inviting an email that has an account says so under the field", async ({ page }) => {
 	await page.goto("/settings/members");
-	await page.getByRole("button", { name: "Inviter", exact: true }).first().click();
+	await page.getByRole("button", { name: "Inviter", exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Inviter une personne" });
 	const field = dialog.getByLabel("Adresse e-mail");
 	await field.fill(ADMIN.email);

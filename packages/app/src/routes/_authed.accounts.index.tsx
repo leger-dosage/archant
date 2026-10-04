@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 
 // Absent means inactive accounts stay hidden, so links need no search params.
@@ -29,6 +30,7 @@ function AccountsPage() {
 	const accounts = useAccounts();
 	const { showInactive = false } = Route.useSearch();
 	const navigate = Route.useNavigate();
+	const admin = useIsAdmin();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const all = accounts.data?.groups.flatMap((group) => group.accounts) ?? [];
 	const hasAccounts = all.length > 0;
@@ -42,7 +44,7 @@ function AccountsPage() {
 		<Page
 			title={t("accounts.title")}
 			actions={
-				hasAccounts ? (
+				hasAccounts && admin ? (
 					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
 				) : undefined
 			}
@@ -84,10 +86,16 @@ function AccountsPage() {
 					icon={{ kind: "transfer", icon: LandmarkIcon }}
 					title={t("accounts.empty.title")}
 					description={t("accounts.empty.description")}
-					action={<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>}
+					action={
+						admin ? (
+							<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
+						) : null
+					}
 				/>
 			)}
-			<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			{admin && (
+				<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			)}
 		</Page>
 	);
 }

@@ -1,7 +1,9 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { isAdmin, isSetupOpen, sessionQuery } from "@/lib/auth-client";
 
 /**
  * Every page behind the sign-in, inside Sure's shell: the rail, the accounts
@@ -26,6 +28,19 @@ export const Route = createFileRoute("/_authed")({
 });
 
 function AuthedLayout() {
+	const router = useRouter();
+	const admin = useIsAdmin();
+	const loadedAsAdmin = isAdmin(Route.useRouteContext({ select: ({ session }) => session }));
+
+	// The role changed under an open page, read again on a refusal or when the
+	// window comes back: the route guards run again, so a demoted member leaves
+	// a page kept to administrators.
+	useEffect(() => {
+		if (admin !== loadedAsAdmin) {
+			void router.invalidate();
+		}
+	}, [admin, loadedAsAdmin, router]);
+
 	return (
 		<AppShell>
 			<Outlet />

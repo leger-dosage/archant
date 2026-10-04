@@ -22,7 +22,7 @@ One pull request per change: a fix, a feature, a refactor, never two of them tog
 
 A new dependency needs a reason in the pull request description: dependencies stay few and popular.
 
-A route that writes uses `POST`, `PUT`, `PATCH` or `DELETE`, never `GET`: the server refuses those methods to a read-only member before any route runs, so a new route needs no permission check of its own. A read only an administrator may see calls `requireRole("admin")`.
+A route that writes uses `POST`, `PUT`, `PATCH` or `DELETE`, never `GET`: the server refuses those methods to a read-only member before any route runs, so a new route needs no permission check of its own. A read only an administrator may see calls `requireRole("admin")`. In the interface, a control that writes is shown only when `useIsAdmin()` is true, so a viewer never meets a refusal; the server's refusal stays the authority.
 
 ## Translations
 

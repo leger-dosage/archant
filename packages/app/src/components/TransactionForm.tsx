@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { SheetFooter } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useAttachmentCount } from "@/hooks/useAttachments";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -82,6 +83,8 @@ export function TransactionForm({
 	onDirtyChange,
 }: TransactionFormProps) {
 	const { t } = useTranslation();
+	// A viewer reads every field, disabled, and saves nothing.
+	const admin = useIsAdmin();
 	const createTransaction = useCreateTransaction(account.id);
 	const updateTransaction = useUpdateTransaction(account.id);
 	const deleteTransaction = useDeleteTransaction(account.id);
@@ -233,6 +236,11 @@ export function TransactionForm({
 						return;
 					}
 
+					if (!admin) {
+						event.preventDefault();
+						return;
+					}
+
 					void submit(event);
 				}}
 				onKeyDown={(event) => {
@@ -241,7 +249,7 @@ export function TransactionForm({
 						return;
 					}
 
-					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+					if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && admin) {
 						event.preventDefault();
 						// The button is disabled while saving; the shortcut must be too,
 						// or a double press records the transaction twice.
@@ -282,121 +290,123 @@ export function TransactionForm({
 					<RecurringBlock transaction={transaction} dirty={isDirty} />
 				)}
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="transaction-date">{t("transactions.form.date")}</Label>
-					<DateField
-						id="transaction-date"
-						value={date.field.value}
-						onChange={date.field.onChange}
-						onBlur={date.field.onBlur}
-						disabled={inSplit}
-						invalid={errors.date !== undefined}
-						{...(errors.date === undefined ? {} : { describedBy: "transaction-date-error" })}
-					/>
-					<FieldMessage id="transaction-date-error" error={errors.date} />
-				</div>
-
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="transaction-label">{t("transactions.form.label")}</Label>
-					<Input
-						id="transaction-label"
-						autoComplete="off"
-						aria-invalid={errors.label !== undefined}
-						{...describedBy("label")}
-						{...form.register("label")}
-					/>
-					<FieldMessage id="transaction-label-error" error={errors.label} />
-				</div>
-
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="transaction-amount">{t("transactions.form.amount")}</Label>
-					<AmountField
-						id="transaction-amount"
-						value={amount.field.value}
-						onChange={amount.field.onChange}
-						onBlur={amount.field.onBlur}
-						disabled={inSplit}
-						invalid={errors.amount !== undefined}
-						{...(errors.amount === undefined ? {} : { describedBy: "transaction-amount-error" })}
-					/>
-					<FieldMessage id="transaction-amount-error" error={errors.amount} />
-				</div>
-
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
-					<textarea
-						id="transaction-notes"
-						rows={4}
-						className="min-h-20 w-full rounded-sm border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
-						aria-invalid={errors.notes !== undefined}
-						{...describedBy("notes")}
-						{...form.register("notes")}
-					/>
-					<FieldMessage id="transaction-notes-error" error={errors.notes} />
-				</div>
-
-				{/* A transfer side the dashboard does not count has no category to pick. */}
-				{transaction !== null && showsCategory(transaction.amount, transfer) && (
+				<fieldset disabled={!admin} className="flex min-w-0 flex-col gap-4">
 					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
-						<CategoryField
-							value={category.field.value}
-							onChange={category.field.onChange}
-							invalid={errors.categoryId !== undefined}
-							describedBy={
-								errors.categoryId === undefined ? undefined : "transaction-categoryId-error"
-							}
+						<Label htmlFor="transaction-date">{t("transactions.form.date")}</Label>
+						<DateField
+							id="transaction-date"
+							value={date.field.value}
+							onChange={date.field.onChange}
+							onBlur={date.field.onBlur}
+							disabled={inSplit}
+							invalid={errors.date !== undefined}
+							{...(errors.date === undefined ? {} : { describedBy: "transaction-date-error" })}
 						/>
-						<FieldMessage id="transaction-categoryId-error" error={errors.categoryId} />
+						<FieldMessage id="transaction-date-error" error={errors.date} />
 					</div>
-				)}
 
-				{transaction !== null && (
 					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="transaction-merchant">{t("transactions.form.merchant")}</Label>
-						<MerchantField
-							disabled={splitChild}
-							value={merchant.field.value}
-							onChange={merchant.field.onChange}
-							invalid={errors.merchantId !== undefined}
-							describedBy={
-								errors.merchantId === undefined ? undefined : "transaction-merchantId-error"
-							}
+						<Label htmlFor="transaction-label">{t("transactions.form.label")}</Label>
+						<Input
+							id="transaction-label"
+							autoComplete="off"
+							aria-invalid={errors.label !== undefined}
+							{...describedBy("label")}
+							{...form.register("label")}
 						/>
-						<FieldMessage id="transaction-merchantId-error" error={errors.merchantId} />
+						<FieldMessage id="transaction-label-error" error={errors.label} />
 					</div>
-				)}
 
-				{transaction !== null && (
 					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="transaction-tags">{t("transactions.form.tags")}</Label>
-						<TagsField
-							value={tagIds.field.value}
-							onChange={tagIds.field.onChange}
-							invalid={errors.tagIds !== undefined}
-							describedBy={errors.tagIds === undefined ? undefined : "transaction-tagIds-error"}
+						<Label htmlFor="transaction-amount">{t("transactions.form.amount")}</Label>
+						<AmountField
+							id="transaction-amount"
+							value={amount.field.value}
+							onChange={amount.field.onChange}
+							onBlur={amount.field.onBlur}
+							disabled={inSplit}
+							invalid={errors.amount !== undefined}
+							{...(errors.amount === undefined ? {} : { describedBy: "transaction-amount-error" })}
 						/>
-						<FieldMessage id="transaction-tagIds-error" error={tagsError} />
+						<FieldMessage id="transaction-amount-error" error={errors.amount} />
 					</div>
-				)}
 
-				{transaction !== null && !inSplit && (
-					<div className="flex items-center justify-between gap-4">
-						<Label htmlFor="transaction-excluded">{t("transactions.form.excluded")}</Label>
-						<Switch
-							id="transaction-excluded"
-							checked={excluded.field.value}
-							onCheckedChange={excluded.field.onChange}
-							onBlur={excluded.field.onBlur}
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
+						<textarea
+							id="transaction-notes"
+							rows={4}
+							className="min-h-20 w-full rounded-sm border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
+							aria-invalid={errors.notes !== undefined}
+							{...describedBy("notes")}
+							{...form.register("notes")}
 						/>
+						<FieldMessage id="transaction-notes-error" error={errors.notes} />
 					</div>
-				)}
+
+					{/* A transfer side the dashboard does not count has no category to pick. */}
+					{transaction !== null && showsCategory(transaction.amount, transfer) && (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
+							<CategoryField
+								value={category.field.value}
+								onChange={category.field.onChange}
+								invalid={errors.categoryId !== undefined}
+								describedBy={
+									errors.categoryId === undefined ? undefined : "transaction-categoryId-error"
+								}
+							/>
+							<FieldMessage id="transaction-categoryId-error" error={errors.categoryId} />
+						</div>
+					)}
+
+					{transaction !== null && (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="transaction-merchant">{t("transactions.form.merchant")}</Label>
+							<MerchantField
+								disabled={splitChild}
+								value={merchant.field.value}
+								onChange={merchant.field.onChange}
+								invalid={errors.merchantId !== undefined}
+								describedBy={
+									errors.merchantId === undefined ? undefined : "transaction-merchantId-error"
+								}
+							/>
+							<FieldMessage id="transaction-merchantId-error" error={errors.merchantId} />
+						</div>
+					)}
+
+					{transaction !== null && (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="transaction-tags">{t("transactions.form.tags")}</Label>
+							<TagsField
+								value={tagIds.field.value}
+								onChange={tagIds.field.onChange}
+								invalid={errors.tagIds !== undefined}
+								describedBy={errors.tagIds === undefined ? undefined : "transaction-tagIds-error"}
+							/>
+							<FieldMessage id="transaction-tagIds-error" error={tagsError} />
+						</div>
+					)}
+
+					{transaction !== null && !inSplit && (
+						<div className="flex items-center justify-between gap-4">
+							<Label htmlFor="transaction-excluded">{t("transactions.form.excluded")}</Label>
+							<Switch
+								id="transaction-excluded"
+								checked={excluded.field.value}
+								onCheckedChange={excluded.field.onChange}
+								onBlur={excluded.field.onBlur}
+							/>
+						</div>
+					)}
+				</fieldset>
 
 				{transaction !== null && <TransactionAttachments transaction={transaction} />}
 			</form>
 
 			<SheetFooter className="flex-row items-center justify-between border-t">
-				{transaction === null || splitChild ? (
+				{transaction === null || splitChild || !admin ? (
 					<span />
 				) : (
 					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
@@ -405,17 +415,19 @@ export function TransactionForm({
 				)}
 				<div className="flex gap-2">
 					<Button type="button" variant="outline" onClick={onCancel}>
-						{t("common.cancel")}
+						{admin ? t("common.cancel") : t("common.close")}
 					</Button>
-					<Button
-						type="submit"
-						form="transaction-form"
-						disabled={isSubmitting}
-						title={t("transactions.form.saveShortcut")}
-						aria-keyshortcuts="Meta+Enter Control+Enter"
-					>
-						{t("transactions.form.save")}
-					</Button>
+					{admin && (
+						<Button
+							type="submit"
+							form="transaction-form"
+							disabled={isSubmitting}
+							title={t("transactions.form.saveShortcut")}
+							aria-keyshortcuts="Meta+Enter Control+Enter"
+						>
+							{t("transactions.form.save")}
+						</Button>
+					)}
 				</div>
 			</SheetFooter>
 

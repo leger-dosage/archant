@@ -17,6 +17,7 @@ import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { RuleDialog } from "@/components/RuleDialog";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -37,6 +38,7 @@ import {
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMerchants } from "@/hooks/useMerchants";
 import {
@@ -91,6 +93,21 @@ type Applying = {
 
 // The API stores instants; the user reads the day it ran, in their zone.
 const dayOf = (epochMs: number) => formatShortDate(toIsoDate(new Date(epochMs)));
+
+/** A rule as a viewer reads it: no switch and no menu, « Désactivée » when it is. */
+function RuleLine({ rule, summary }: { rule: RuleData; summary: string }) {
+	const title = rule.name ?? summary;
+
+	return (
+		<div className="flex min-h-14 items-center gap-3 px-4 py-2">
+			<div className="flex min-w-0 flex-1 flex-col">
+				<span className="truncate font-medium">{title}</span>
+				{rule.name !== null && <span className="truncate text-muted-foreground">{summary}</span>}
+			</div>
+			{!rule.enabled && <StatusBadge status="ruleDisabled" />}
+		</div>
+	);
+}
 
 function RuleRow({
 	rule,
@@ -254,9 +271,11 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
  * The rules, in the order they apply, each with its switch and its menu. New
  * transactions go through the enabled ones as they arrive; existing ones
  * only through an application the user confirms, listed under the rules.
+ * A viewer reads the rules and their runs, and changes none.
  */
 function RulesPage() {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const { runsPage = 1 } = Route.useSearch();
 	const desktop = useMediaQuery(DESKTOP_QUERY);
 	const rules = useRules();
@@ -361,7 +380,7 @@ function RulesPage() {
 			title={t("rules.title")}
 			description={t("rules.description")}
 			actions={
-				desktop ? (
+				desktop && admin ? (
 					<>
 						<Button
 							variant="outline"
@@ -412,7 +431,11 @@ function RulesPage() {
 						icon={{ kind: "transfer", icon: ListFilterIcon }}
 						title={t("rules.empty.title")}
 						description={t("rules.empty.description")}
-						action={<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>}
+						action={
+							admin ? (
+								<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
+							) : null
+						}
 					/>
 				) : (
 					<ListCard>
@@ -420,14 +443,18 @@ function RulesPage() {
 							<ul aria-label={t("rules.title")} className="divide-y divide-line">
 								{list.map((item) => (
 									<li key={item.id}>
-										<RuleRow
-											rule={item}
-											summary={summaryOf(item)}
-											onEdit={() => openDialog({ action: "edit", id: item.id })}
-											onApply={() => void askToApply(item)}
-											applyDisabled={previewing}
-											onDelete={() => openDialog({ action: "delete", id: item.id })}
-										/>
+										{!admin ? (
+											<RuleLine rule={item} summary={summaryOf(item)} />
+										) : (
+											<RuleRow
+												rule={item}
+												summary={summaryOf(item)}
+												onEdit={() => openDialog({ action: "edit", id: item.id })}
+												onApply={() => void askToApply(item)}
+												applyDisabled={previewing}
+												onDelete={() => openDialog({ action: "delete", id: item.id })}
+											/>
+										)}
 									</li>
 								))}
 							</ul>

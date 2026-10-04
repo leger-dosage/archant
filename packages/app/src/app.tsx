@@ -39,6 +39,17 @@ function signInAgain(error: unknown): boolean {
 	return true;
 }
 
+/**
+ * A request refused for the role: an administrator changed it since the
+ * session was read. Read it again, and the page hides what this member can
+ * no longer do; `_authed` runs the route guards again when the role differs.
+ */
+function readRoleAgain(error: unknown): void {
+	if (errorCodeOf(error) === "FORBIDDEN") {
+		void queryClient.invalidateQueries({ queryKey: queryKeys.session });
+	}
+}
+
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
@@ -48,7 +59,9 @@ const queryClient = new QueryClient({
 			staleTime: 30_000,
 			// Retrying a lost session only delays the sign-in page by the backoff,
 			// seven seconds with the default three retries.
-			retry: (failureCount, error) => errorCodeOf(error) !== "UNAUTHORIZED" && failureCount < 3,
+			// A refusal for the role answers the same until the session is read again.
+			retry: (failureCount, error) =>
+				!["UNAUTHORIZED", "FORBIDDEN"].includes(errorCodeOf(error)) && failureCount < 3,
 		},
 	},
 	// A failed read has no form to show it next to, so it becomes a toast. Writes
@@ -58,6 +71,8 @@ const queryClient = new QueryClient({
 			if (signInAgain(error)) {
 				return;
 			}
+
+			readRoleAgain(error);
 
 			const code = errorCodeOf(error);
 
@@ -77,7 +92,9 @@ const queryClient = new QueryClient({
 	}),
 	mutationCache: new MutationCache({
 		onError: (error) => {
-			signInAgain(error);
+			if (!signInAgain(error)) {
+				readRoleAgain(error);
+			}
 		},
 	}),
 });

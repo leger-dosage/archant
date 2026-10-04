@@ -17,6 +17,7 @@ import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoMonth } from "@/lib/dates";
 
@@ -39,6 +40,7 @@ function DashboardPage() {
 	const currentMonth = toIsoMonth();
 	const { period = DEFAULT_BALANCE_PERIOD, month = currentMonth } = Route.useSearch();
 	const navigate = Route.useNavigate();
+	const admin = useIsAdmin();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
 	const name = Route.useRouteContext({ select: (context) => context.session.user.name.trim() });
@@ -80,7 +82,7 @@ function DashboardPage() {
 			// Sure's dashboard has this one action; importing and adding a
 			// transaction need an account, and live on its page.
 			actions={
-				hasAccounts ? (
+				hasAccounts && admin ? (
 					<Button onClick={() => setCreatingAccount(true)}>
 						<PlusIcon aria-hidden="true" />
 						{t("accounts.add")}
@@ -118,11 +120,13 @@ function DashboardPage() {
 							<BalanceSheetSection list={accounts.data} />
 						</div>
 					) : (
-						<DashboardEmpty onAddAccount={() => setCreatingAccount(true)} />
+						<DashboardEmpty onAddAccount={admin ? () => setCreatingAccount(true) : null} />
 					)}
 				</>
 			)}
-			<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			{admin && (
+				<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
+			)}
 		</Page>
 	);
 }
