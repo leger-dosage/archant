@@ -57,6 +57,7 @@ function Allocation({ budget, currency }: { budget: BudgetData; currency: Curren
 								currency={currency}
 								line={line}
 								parentName={line.parentId === null ? null : (nameOf.get(line.parentId) ?? null)}
+								categories={budget.categories}
 							/>
 						))}
 						<UncategorisedField

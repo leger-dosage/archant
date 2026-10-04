@@ -55,6 +55,11 @@ export const ERROR_STATUSES = {
 	 * reaches its categories after « Budget ». Nothing is written.
 	 */
 	BUDGET_NOT_SET_UP: 409,
+	/**
+	 * A copy into a month already set up: Sure only offers one to a month
+	 * that is not, and never overwrites. Nothing is written.
+	 */
+	BUDGET_ALREADY_SET_UP: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */
