@@ -149,7 +149,7 @@ async function encodeForm(
 }
 
 /** The `name=value` pairs a response sets, as a `Cookie` header. */
-function cookieOf(response: Response): string {
+export function cookieOf(response: Response): string {
 	return response.headers
 		.getSetCookie()
 		.map((line) => line.split(";")[0])

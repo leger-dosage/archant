@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
@@ -134,6 +135,27 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 }
 
 /**
+ * The row's category for a viewer, who changes none: the pill alone, not a
+ * button, letting a click through to the row as the transfer pill does.
+ */
+function CategoryLabel({ categoryId }: { categoryId: string | null }) {
+	const { color, icon, name } = useCategoryShown(categoryId);
+
+	return (
+		<span className={cn(CATEGORY_SLOT, "pointer-events-none")}>
+			{name === null ? (
+				<Skeleton className="h-6 w-24 rounded-full" />
+			) : (
+				<CategoryPill
+					category={color === null || icon === null ? null : { name, color, icon }}
+					fallback={name}
+				/>
+			)}
+		</span>
+	);
+}
+
+/**
  * A transfer side's pill, where a standard row has its category: not a
  * button, since a side the dashboard does not count has no category to pick
  * until it is dissociated. A spent outflow shows its category instead
@@ -198,6 +220,8 @@ type RowContext = {
 	onOpen: (transaction: TransactionData) => void;
 	showAccount: boolean;
 	selection: Selection | undefined;
+	/** Whether the category chip opens its picker; a viewer's is a plain pill. */
+	admin: boolean;
 	columns: string;
 	categories: readonly CategoryData[] | undefined;
 	categoryOf: ReadonlyMap<string, CategoryData>;
@@ -384,6 +408,8 @@ function RowLine({
 				</button>
 				{parent ? null : item.transfer !== null && !categoryShown ? (
 					<TransferChip kind={item.transfer.kind} />
+				) : !context.admin ? (
+					<CategoryLabel categoryId={item.categoryId} />
 				) : (
 					<CategoryChip
 						transaction={item}
@@ -423,6 +449,7 @@ export function TransactionList({
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
+	const admin = useIsAdmin();
 	const setCategory = useSetTransactionCategory();
 	const merchants = useMerchants();
 	const tags = useTags();
@@ -432,6 +459,7 @@ export function TransactionList({
 		onOpen,
 		showAccount,
 		selection,
+		admin,
 		columns,
 		categories: categories.data,
 		categoryOf: new Map((categories.data ?? []).map((category) => [category.id, category])),

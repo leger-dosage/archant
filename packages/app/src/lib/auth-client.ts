@@ -23,7 +23,9 @@ export type Session = typeof authClient.$Infer.Session;
 /**
  * The signed-in session, or `null`. Cached until a call answers
  * `UNAUTHORIZED`, which sets it to `null` (app.tsx): asking Better Auth on every
- * navigation would add a round trip to each page for nothing.
+ * navigation would add a round trip to each page for nothing. Read again when
+ * the window comes back and when a call answers `FORBIDDEN`, so a role an
+ * administrator changed shows without a reload.
  */
 export const sessionQuery = queryOptions({
 	queryKey: queryKeys.session,
@@ -44,7 +46,17 @@ export const sessionQuery = queryOptions({
 	// Only `NETWORK_ERROR` is thrown: retrying would delay the page that says so by the backoff.
 	retry: false,
 	staleTime: Number.POSITIVE_INFINITY,
+	refetchOnWindowFocus: "always",
 });
+
+/**
+ * Whether the session is an administrator's (AD-21): what the interface shows
+ * a viewer follows from it, never what the server allows. `useIsAdmin` and
+ * the route guards read it; the consent page reads the role too.
+ */
+export function isAdmin(session: Session | null | undefined): boolean {
+	return session?.user.role === "admin";
+}
 
 /** Whether first-launch setup is still open: no user exists yet. */
 export async function isSetupOpen(): Promise<boolean> {

@@ -13,6 +13,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { formatShortDate } from "@/lib/balance-change";
 
 /** A row's button in the page, found again after a refetch remounted it. */
@@ -30,7 +31,9 @@ type TransactionSheetProps = {
 /**
  * Adds or edits one transaction. Saves on `⌘Enter` or Enregistrer; `Esc`,
  * Annuler and the close button ask before throwing away unsaved changes, and
- * only then (EXPERIENCE.md). Focus goes back to what opened it.
+ * only then (EXPERIENCE.md). Focus goes back to what opened it. A viewer
+ * reads it as « Opération », every field disabled: the sheet is the only
+ * place a transaction's notes, tags and receipts show.
  */
 export function TransactionSheet({
 	account,
@@ -39,6 +42,7 @@ export function TransactionSheet({
 	onOpenChange,
 }: TransactionSheetProps) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
 	const [wasOpen, setWasOpen] = useState(open);
@@ -107,7 +111,13 @@ export function TransactionSheet({
 			>
 				<SheetHeader className="border-b">
 					<SheetTitle>
-						{t(transaction === null ? "transactions.form.addTitle" : "transactions.form.editTitle")}
+						{t(
+							transaction === null
+								? "transactions.form.addTitle"
+								: admin
+									? "transactions.form.editTitle"
+									: "transactions.form.viewTitle",
+						)}
 					</SheetTitle>
 					<SheetDescription>
 						{transaction?.source.kind === "import"

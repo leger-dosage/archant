@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserMenu } from "@/components/UserMenu";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { ACCOUNT_TABS, accountTypeGroups, isAccountTab } from "@/lib/account-group-totals";
@@ -203,21 +204,27 @@ function AccountList() {
 }
 
 /**
- * Sure's accounts column: « Ajouter un compte », then the active accounts by
- * type with each type's total, filtered by the Tout, Actifs and Passifs tabs.
+ * Sure's accounts column: « Ajouter un compte », for an administrator, then
+ * the active accounts by type with each type's total, filtered by the Tout,
+ * Actifs and Passifs tabs.
  */
 function AccountsColumn({ id }: { id?: string }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const [creating, setCreating] = useState(false);
 
 	return (
 		<aside id={id} aria-label={t("accountsColumn.label")} className="flex flex-col gap-3 p-3">
-			<Button variant="outline" className="w-full" onClick={() => setCreating(true)}>
-				<PlusIcon aria-hidden="true" />
-				{t("accounts.add")}
-			</Button>
+			{admin && (
+				<>
+					<Button variant="outline" className="w-full" onClick={() => setCreating(true)}>
+						<PlusIcon aria-hidden="true" />
+						{t("accounts.add")}
+					</Button>
+					<LazyCreateAccountDialog open={creating} onOpenChange={setCreating} />
+				</>
+			)}
 			<AccountList />
-			<LazyCreateAccountDialog open={creating} onOpenChange={setCreating} />
 		</aside>
 	);
 }

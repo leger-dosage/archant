@@ -80,6 +80,13 @@ export const ERROR_STATUSES = {
 	 * that is not, and never overwrites. Nothing is written.
 	 */
 	BUDGET_ALREADY_SET_UP: 409,
+	/**
+	 * A change of the signed-in member's own role, or their own removal, as
+	 * Sure's `cannot_remove_self`: another administrator does it. Nothing is written.
+	 */
+	CANNOT_CHANGE_SELF: 409,
+	/** A demotion or a removal that would leave no administrator. Nothing is written. */
+	LAST_ADMIN: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

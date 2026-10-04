@@ -17,6 +17,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { cn } from "@/lib/utils";
 
 /** The filter's values in the URL; « Toutes » is the absent one. */
@@ -180,6 +181,7 @@ export function BudgetCategories({
 	onFilterChange: (filter: BudgetFilter | undefined) => void;
 }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	// The sheet keeps the last card it opened while it slides out.
 	const [opened, setOpened] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
@@ -270,16 +272,18 @@ export function BudgetCategories({
 							</ToggleGroupItem>
 						</ToggleGroup>
 					)}
-					<Button variant="outline" size="sm" asChild>
-						<Link
-							to="/budgets/$month/categories"
-							params={{ month: budget.month }}
-							aria-label={t("budgets.categories.editLabel")}
-						>
-							<Settings2Icon aria-hidden="true" />
-							{t("budgets.categories.edit")}
-						</Link>
-					</Button>
+					{admin && (
+						<Button variant="outline" size="sm" asChild>
+							<Link
+								to="/budgets/$month/categories"
+								params={{ month: budget.month }}
+								aria-label={t("budgets.categories.editLabel")}
+							>
+								<Settings2Icon aria-hidden="true" />
+								{t("budgets.categories.edit")}
+							</Link>
+						</Button>
+					)}
 				</div>
 			}
 		>

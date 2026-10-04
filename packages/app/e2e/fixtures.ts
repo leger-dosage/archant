@@ -514,6 +514,22 @@ export function apiHelpers(request: APIRequestContext) {
 
 export type Api = ReturnType<typeof apiHelpers>;
 
+/**
+ * Accepts an invitation link through `request`, as its page does: the
+ * account is created and `request` holds its session afterwards.
+ */
+export async function acceptInvitation(
+	request: APIRequestContext,
+	url: string,
+	body: { name?: string; password: string },
+) {
+	const response = await request.post("/api/invitations/accept", {
+		data: { token: url.split("/").at(-1), ...body },
+	});
+
+	expect(response.status(), `${response.url()} answered ${await response.text()}`).toBe(201);
+}
+
 /** The page-side function the Content-Security-Policy guard reports through. */
 const CSP_VIOLATION_BINDING = "archantCspViolation";
 

@@ -1,7 +1,7 @@
 import type { BudgetData } from "@/hooks/useBudget";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { SparklesIcon } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
@@ -26,11 +26,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget, useSaveBudget } from "@/hooks/useBudget";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
+import { isAdmin } from "@/lib/auth-client";
 import { ofMonth, toIsoMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/edit")({
+	// A viewer reads the month: its form writes, and the server would refuse the save.
+	beforeLoad: ({ context, params }) => {
+		if (!isAdmin(context.session)) {
+			throw redirect({ to: "/budgets/$month", params: { month: params.month } });
+		}
+	},
 	component: BudgetEditPage,
 });
 

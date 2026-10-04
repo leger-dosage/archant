@@ -18,6 +18,7 @@ import {
 	useDeleteAttachment,
 	useUploadAttachment,
 } from "@/hooks/useAttachments";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { formatFileSize } from "@/lib/file-size";
@@ -44,7 +45,8 @@ function AttachmentItem({
 }: {
 	transactionId: string;
 	attachment: Attachment;
-	onDelete: () => void;
+	/** `null` for a viewer, who opens a file and deletes none. */
+	onDelete: (() => void) | null;
 }) {
 	const { t } = useTranslation();
 	const Icon = attachment.contentType === "application/pdf" ? FileTextIcon : ImageIcon;
@@ -68,15 +70,17 @@ function AttachmentItem({
 					</span>
 				</div>
 			</div>
-			<Button
-				type="button"
-				variant="ghost"
-				size="icon-sm"
-				aria-label={t("transactions.attachments.remove", { name: attachment.filename })}
-				onClick={onDelete}
-			>
-				<Trash2Icon aria-hidden="true" />
-			</Button>
+			{onDelete !== null && (
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					aria-label={t("transactions.attachments.remove", { name: attachment.filename })}
+					onClick={onDelete}
+				>
+					<Trash2Icon aria-hidden="true" />
+				</Button>
+			)}
 		</li>
 	);
 }
@@ -85,10 +89,12 @@ function AttachmentItem({
  * The sheet's « Pièces jointes », as Sure's `transactions/_attachments`: each
  * file with its size, opened in a new tab, « Ajouter » and a delete with
  * confirmation. Every action saves at once, apart from the form, and never
- * touches it, so none waits for its unsaved edits.
+ * touches it, so none waits for its unsaved edits. A viewer opens the files,
+ * and neither adds nor deletes one.
  */
 export function TransactionAttachments({ transaction }: { transaction: TransactionData }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const attachments = useAttachments(transaction.id);
 	const upload = useUploadAttachment(transaction.id);
 	const remove = useDeleteAttachment(transaction.id);
@@ -162,7 +168,9 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 					{t(`errors.${errorCodeOf(attachments.error)}`)}
 				</p>
 			) : count === 0 ? (
-				<p className="text-sm text-muted-foreground">{t("transactions.attachments.empty")}</p>
+				<p className="text-sm text-muted-foreground">
+					{t(admin ? "transactions.attachments.empty" : "transactions.attachments.none")}
+				</p>
 			) : (
 				<ul
 					aria-label={t("transactions.attachments.list", { label: transaction.label })}
@@ -173,10 +181,14 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 							key={attachment.id}
 							transactionId={transaction.id}
 							attachment={attachment}
-							onDelete={() => {
-								setDeleting(attachment);
-								setConfirming(true);
-							}}
+							onDelete={
+								admin
+									? () => {
+											setDeleting(attachment);
+											setConfirming(true);
+										}
+									: null
+							}
 						/>
 					))}
 				</ul>
@@ -193,49 +205,55 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 					))}
 				</ul>
 			)}
-			<div className="flex flex-col items-start gap-1">
-				<Button
-					type="button"
-					variant="outline"
-					disabled={full || uploading || attachments.isPending}
-					onClick={() => input.current?.click()}
-				>
-					<PaperclipIcon aria-hidden="true" />
-					{uploading ? t("transactions.attachments.uploading") : t("transactions.attachments.add")}
-				</Button>
-				{full && (
-					<p className="text-xs text-muted-foreground">{t("transactions.attachments.full")}</p>
-				)}
-				<input
-					ref={input}
-					type="file"
-					multiple
-					hidden
-					accept={ATTACHMENT_CONTENT_TYPES.join(",")}
-					aria-label={t("transactions.attachments.input")}
-					onChange={(event) => {
-						const files = Array.from(event.currentTarget.files ?? []);
-						// Emptied at once, so choosing the same file again fires a change.
-						event.currentTarget.value = "";
+			{admin && (
+				<>
+					<div className="flex flex-col items-start gap-1">
+						<Button
+							type="button"
+							variant="outline"
+							disabled={full || uploading || attachments.isPending}
+							onClick={() => input.current?.click()}
+						>
+							<PaperclipIcon aria-hidden="true" />
+							{uploading
+								? t("transactions.attachments.uploading")
+								: t("transactions.attachments.add")}
+						</Button>
+						{full && (
+							<p className="text-xs text-muted-foreground">{t("transactions.attachments.full")}</p>
+						)}
+						<input
+							ref={input}
+							type="file"
+							multiple
+							hidden
+							accept={ATTACHMENT_CONTENT_TYPES.join(",")}
+							aria-label={t("transactions.attachments.input")}
+							onChange={(event) => {
+								const files = Array.from(event.currentTarget.files ?? []);
+								// Emptied at once, so choosing the same file again fires a change.
+								event.currentTarget.value = "";
 
-						if (files.length > 0) {
-							void send(files);
-						}
-					}}
-				/>
-			</div>
-			<ConfirmDialog
-				open={confirming}
-				onOpenChange={setConfirming}
-				title={t("transactions.attachments.removeTitle")}
-				description={t("transactions.attachments.removeDescription", {
-					name: deleting?.filename ?? "",
-				})}
-				confirmLabel={t("transactions.attachments.removeAction")}
-				destructive
-				pending={remove.isPending}
-				onConfirm={confirmDelete}
-			/>
+								if (files.length > 0) {
+									void send(files);
+								}
+							}}
+						/>
+					</div>
+					<ConfirmDialog
+						open={confirming}
+						onOpenChange={setConfirming}
+						title={t("transactions.attachments.removeTitle")}
+						description={t("transactions.attachments.removeDescription", {
+							name: deleting?.filename ?? "",
+						})}
+						confirmLabel={t("transactions.attachments.removeAction")}
+						destructive
+						pending={remove.isPending}
+						onConfirm={confirmDelete}
+					/>
+				</>
+			)}
 		</section>
 	);
 }

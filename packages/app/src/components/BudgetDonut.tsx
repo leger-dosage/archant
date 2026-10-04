@@ -11,6 +11,7 @@ import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { ofMonth } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,7 @@ function segmentsOf(budget: BudgetData, budgeted: MinorUnits): CashFlowSegment[]
  */
 export function BudgetDonut({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const budgeted = toMinorUnits(budget.budgetedSpending ?? 0);
 	const spent = budget.actual.spending;
 	const over = spent > budgeted;
@@ -89,15 +91,21 @@ export function BudgetDonut({ budget }: { budget: BudgetData }) {
 							currency={budget.currency}
 							className={cn("text-2xl", over && "text-destructive")}
 						/>
-						<Link
-							to="/budgets/$month/edit"
-							params={{ month: budget.month }}
-							className="flex items-center gap-1 rounded-sm text-sm text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-						>
-							{t("budgets.donut.of", { amount: values.budget })}
-							<PencilIcon aria-hidden="true" className="size-3.5" />
-							<span className="sr-only">{t("budgets.donut.edit")}</span>
-						</Link>
+						{admin ? (
+							<Link
+								to="/budgets/$month/edit"
+								params={{ month: budget.month }}
+								className="flex items-center gap-1 rounded-sm text-sm text-muted-foreground tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								{t("budgets.donut.of", { amount: values.budget })}
+								<PencilIcon aria-hidden="true" className="size-3.5" />
+								<span className="sr-only">{t("budgets.donut.edit")}</span>
+							</Link>
+						) : (
+							<span className="text-sm text-muted-foreground tabular-nums">
+								{t("budgets.donut.of", { amount: values.budget })}
+							</span>
+						)}
 					</div>
 				</div>
 			</div>

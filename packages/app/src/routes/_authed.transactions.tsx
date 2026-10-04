@@ -29,6 +29,7 @@ import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
@@ -148,6 +149,7 @@ function OperationsPage() {
 	const categories = useCategories();
 	const merchants = useMerchants();
 	const tags = useTags();
+	const admin = useIsAdmin();
 	const data = transactions.data;
 	const figures = totals.data;
 	// The previous filter's figures may stay in the strip while the new ones
@@ -317,8 +319,8 @@ function OperationsPage() {
 						headingLevel={2}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}
 						// The previous page's rows, shown while the next loads, cannot be ticked
-						// under the new filters.
-						{...(transactions.isPlaceholderData ? {} : { selection })}
+						// under the new filters. A viewer has no bulk action to tick rows for.
+						{...(transactions.isPlaceholderData || !admin ? {} : { selection })}
 					/>
 				)}
 
@@ -332,7 +334,7 @@ function OperationsPage() {
 				)}
 			</TransactionListCard>
 
-			{settled !== undefined && selection.target !== null && (
+			{admin && settled !== undefined && selection.target !== null && (
 				<BulkBar
 					selection={selection}
 					target={selection.target}

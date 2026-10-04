@@ -16,7 +16,8 @@ import { formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 
 type SnapshotListProps = {
 	items: readonly SnapshotData[];
-	onOpen: (snapshot: SnapshotData) => void;
+	/** `null` for a viewer: a row opens the form that edits it, which they cannot use. */
+	onOpen: ((snapshot: SnapshotData) => void) | null;
 };
 
 /**
@@ -48,14 +49,18 @@ export function SnapshotList({ items, onOpen }: SnapshotListProps) {
 					// click anywhere opens it, and the keyboard reaches one button.
 					<TableRow key={item.id} className="relative h-9">
 						<TableCell>
-							<button
-								type="button"
-								data-snapshot-id={item.id}
-								onClick={() => onOpen(item)}
-								className="rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
-							>
-								{formatTableDate(item.date)}
-							</button>
+							{onOpen === null ? (
+								formatTableDate(item.date)
+							) : (
+								<button
+									type="button"
+									data-snapshot-id={item.id}
+									onClick={() => onOpen(item)}
+									className="rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
+								>
+									{formatTableDate(item.date)}
+								</button>
+							)}
 						</TableCell>
 						<TableCell className="text-right">
 							<Money amount={item.balance} currency={item.currency} />

@@ -13,6 +13,7 @@ import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDismissDuplicate, useMergeDuplicate } from "@/hooks/useDuplicates";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { errorCodeOf } from "@/lib/api";
@@ -26,7 +27,8 @@ export type TransferLink = TransactionData["transfer"];
  * « Dissocier » for a transfer side, « Rapprocher un virement » for a standard
  * transaction, under a suggestion when it has several candidates. It
  * saves at once, apart from the form, so it keeps the link it last saved
- * rather than the row the sheet was opened with.
+ * rather than the row the sheet was opened with. A viewer reads the link
+ * without its actions.
  */
 export function TransferBlock({
 	transaction,
@@ -38,6 +40,7 @@ export function TransferBlock({
 	onChange: (transfer: TransferLink) => void;
 }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const matchTransfer = useMatchTransfer();
 	const unmatchTransfer = useUnmatchTransfer();
 	const rejectTransfer = useRejectTransfer();
@@ -95,16 +98,20 @@ export function TransferBlock({
 							? t("transactions.transfer.suggestion")
 							: t("transactions.transfer.none")}
 					</p>
-					<Button type="button" variant="outline" onClick={() => setPicking(true)}>
-						{t("transactions.transfer.match")}
-					</Button>
-					<TransferDialog
-						transactionId={transaction.id}
-						open={picking}
-						onOpenChange={setPicking}
-						onPick={match}
-						pending={matchTransfer.isPending}
-					/>
+					{admin && (
+						<>
+							<Button type="button" variant="outline" onClick={() => setPicking(true)}>
+								{t("transactions.transfer.match")}
+							</Button>
+							<TransferDialog
+								transactionId={transaction.id}
+								open={picking}
+								onOpenChange={setPicking}
+								onPick={match}
+								pending={matchTransfer.isPending}
+							/>
+						</>
+					)}
 				</div>
 			) : (
 				<div className="flex items-center justify-between gap-4">
@@ -115,24 +122,28 @@ export function TransferBlock({
 							{t(`transactions.transfer.kinds.${transfer.kind}`)}
 						</span>
 					</p>
-					<div className="flex shrink-0 gap-2">
-						<Button
-							type="button"
-							variant="outline"
-							disabled={pending}
-							onClick={() => undo(rejectTransfer, transfer.id, "transactions.transfer.rejected")}
-						>
-							{t("transactions.transfer.reject")}
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							disabled={pending}
-							onClick={() => undo(unmatchTransfer, transfer.id, "transactions.transfer.unmatched")}
-						>
-							{t("transactions.transfer.unmatch")}
-						</Button>
-					</div>
+					{admin && (
+						<div className="flex shrink-0 gap-2">
+							<Button
+								type="button"
+								variant="outline"
+								disabled={pending}
+								onClick={() => undo(rejectTransfer, transfer.id, "transactions.transfer.rejected")}
+							>
+								{t("transactions.transfer.reject")}
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								disabled={pending}
+								onClick={() =>
+									undo(unmatchTransfer, transfer.id, "transactions.transfer.unmatched")
+								}
+							>
+								{t("transactions.transfer.unmatch")}
+							</Button>
+						</div>
+					)}
 				</div>
 			)}
 		</section>
@@ -144,7 +155,8 @@ export function TransferBlock({
  * « Fusionner avec… » deletes this transaction into the one picked, and
  * « Ce n'est pas un doublon » clears the flag. Both save at once, apart from
  * the form, as the transfer block does. A merge or a dismissal made in
- * another tab hides the block rather than offering it again.
+ * another tab hides the block rather than offering it again. A viewer reads
+ * the flag without its actions.
  */
 export function DuplicateBlock({
 	transaction,
@@ -162,6 +174,7 @@ export function DuplicateBlock({
 	onGone: () => void;
 }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const mergeDuplicate = useMergeDuplicate();
 	const dismissDuplicate = useDismissDuplicate();
 	const [picking, setPicking] = useState(false);
@@ -215,31 +228,35 @@ export function DuplicateBlock({
 				<StatusBadge status="duplicate" />
 			</h3>
 			<p className="text-sm text-muted-foreground">{t("transactions.duplicate.description")}</p>
-			<div className="flex flex-wrap gap-2">
-				<Button
-					type="button"
-					variant="outline"
-					disabled={dismissDuplicate.isPending}
-					onClick={() => setPicking(true)}
-				>
-					{t("transactions.duplicate.mergeWith")}
-				</Button>
-				<Button
-					type="button"
-					variant="outline"
-					disabled={mergeDuplicate.isPending || dismissDuplicate.isPending}
-					onClick={dismiss}
-				>
-					{t("transactions.duplicate.dismiss")}
-				</Button>
-			</div>
-			<DuplicateDialog
-				transactionId={transaction.id}
-				open={picking}
-				onOpenChange={setPicking}
-				onMerge={merge}
-				pending={mergeDuplicate.isPending}
-			/>
+			{admin && (
+				<>
+					<div className="flex flex-wrap gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							disabled={dismissDuplicate.isPending}
+							onClick={() => setPicking(true)}
+						>
+							{t("transactions.duplicate.mergeWith")}
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={mergeDuplicate.isPending || dismissDuplicate.isPending}
+							onClick={dismiss}
+						>
+							{t("transactions.duplicate.dismiss")}
+						</Button>
+					</div>
+					<DuplicateDialog
+						transactionId={transaction.id}
+						open={picking}
+						onOpenChange={setPicking}
+						onMerge={merge}
+						pending={mergeDuplicate.isPending}
+					/>
+				</>
+			)}
 		</section>
 	);
 }
@@ -248,7 +265,8 @@ export function DuplicateBlock({
  * The sheet's « Récurrence » block: names the series the saved transaction
  * belongs to, with a link to the page, or else adds it to the recurring
  * patterns, confirmed, at once and apart from the form, as the transfer
- * block does. Hidden on a transfer side the API refuses.
+ * block does. Hidden on a transfer side the API refuses. A viewer reads
+ * whether it belongs to a series, and adds none.
  */
 export function RecurringBlock({
 	transaction,
@@ -259,6 +277,7 @@ export function RecurringBlock({
 	dirty: boolean;
 }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const series = useRecurringOfEntry(transaction.id);
 	const addRecurring = useAddRecurring();
 
@@ -280,6 +299,8 @@ export function RecurringBlock({
 						<Link to="/recurring">{t("transactions.recurring.open")}</Link>
 					</Button>
 				</div>
+			) : !admin ? (
+				<p className="text-sm text-muted-foreground">{t("transactions.recurring.none")}</p>
 			) : (
 				<div className="flex flex-col items-start gap-2">
 					<p className="text-sm text-muted-foreground">{t("transactions.recurring.description")}</p>

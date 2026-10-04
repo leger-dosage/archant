@@ -1,4 +1,5 @@
 import type { SessionEnv } from "./auth.ts";
+import type { Context } from "hono";
 
 import { createMiddleware } from "hono/factory";
 
@@ -21,6 +22,20 @@ export function requireRole(role: UserRole) {
 
 		await next();
 	});
+}
+
+/**
+ * The signed-in user of a guarded route: `requireSession` let only a
+ * signed-in user through, so the check only satisfies the type.
+ */
+export function signedInUser(c: Context<SessionEnv>) {
+	const user = c.get("user");
+
+	if (user === undefined) {
+		throw new AppError("FORBIDDEN", "Your role does not allow this.");
+	}
+
+	return user;
 }
 
 /**

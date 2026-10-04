@@ -4,9 +4,23 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { rateLimits } from "@archant/data/schema/auth";
 
 import { createLogger } from "../lib/logger.ts";
-import { buildApp, errorBody, temp, template, useSignedInApp } from "../testing/app.ts";
+import {
+	buildApp,
+	errorBody,
+	ownDatabase,
+	temp,
+	template,
+	useSignedInApp,
+} from "../testing/app.ts";
 import { READ_WRITE, connect, registerClient } from "../testing/assistant.ts";
-import { buildTestApp, createTestAuth, TEST_ORIGIN, withSession } from "../testing/auth.ts";
+import {
+	buildTestApp,
+	cookieOf,
+	createTestAuth,
+	signIn,
+	TEST_ORIGIN,
+	withSession,
+} from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -91,5 +105,40 @@ describe("DELETE /api/assistants/:clientId", () => {
 
 		expect(response.status).toBe(404);
 		expect(errorBody.parse(await response.json()).error.code).toBe("ASSISTANT_NOT_FOUND");
+	});
+});
+
+describe("two administrators", () => {
+	it("each list and disconnect their own assistants only", async () => {
+		const { db } = await ownDatabase();
+		await db.delete(rateLimits);
+		const auth = createTestAuth(db);
+		const bare = buildTestApp(db, createLogger("silent"), auth);
+		const first = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
+		const credentials = { email: "second@example.test", password: "a long passphrase" };
+		await auth.api.createUser({ body: { ...credentials, name: "", data: { role: "admin" } } });
+		const second = withSession(
+			buildTestApp(db, createLogger("silent"), auth),
+			cookieOf(await signIn(bare, credentials)),
+		);
+		const mine = await registerClient(bare, "Claude Code");
+		const theirs = await registerClient(bare, "Cursor");
+		await connect(first, bare, mine);
+		await connect(second, bare, theirs);
+		const listed = async (app: typeof first) =>
+			(await (await testClient(app).api.assistants.$get()).json()).data.assistants.map(
+				(assistant) => assistant.clientId,
+			);
+
+		expect(await listed(first)).toEqual([mine]);
+		expect(await listed(second)).toEqual([theirs]);
+
+		const refused = await testClient(first).api.assistants[":clientId"].$delete({
+			param: { clientId: theirs },
+		});
+
+		expect(refused.status).toBe(404);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("ASSISTANT_NOT_FOUND");
+		expect(await listed(second)).toEqual([theirs]);
 	});
 });
