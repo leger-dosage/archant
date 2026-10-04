@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { dayHeading, frenchToIso, isoToFrench, ofMonth, toIsoMonth, yearsAgo } from "./dates.ts";
+import {
+	MONTH_NAMES,
+	dayHeading,
+	frenchToIso,
+	isoToFrench,
+	monthLabel,
+	ofMonth,
+	toIsoMonth,
+	yearsAgo,
+} from "./dates.ts";
 
 describe("frenchToIso", () => {
 	it("reads a typed French date, padded or not", () => {
@@ -67,5 +76,20 @@ describe("ofMonth", () => {
 		expect(ofMonth("2024-04")).toBe("d'avril 2024");
 		expect(ofMonth("2024-08")).toBe("d'août 2024");
 		expect(ofMonth("2024-10")).toBe("d'octobre 2024");
+	});
+});
+
+describe("monthLabel", () => {
+	it("names a month and its year", () => {
+		expect(monthLabel("2026-09")).toBe("septembre 2026");
+		expect(monthLabel("2024-01")).toBe("janvier 2024");
+	});
+});
+
+describe("MONTH_NAMES", () => {
+	it("lists the twelve months in calendar order", () => {
+		expect(MONTH_NAMES).toHaveLength(12);
+		expect(MONTH_NAMES[0]).toBe("janvier");
+		expect(MONTH_NAMES[11]).toBe("décembre");
 	});
 });

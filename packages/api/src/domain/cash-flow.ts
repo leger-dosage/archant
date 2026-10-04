@@ -1,3 +1,5 @@
+import type { IsoMonth } from "./dates.ts";
+
 import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -79,6 +81,9 @@ export type CashFlowBreakdown = {
 	expenses: MinorUnits;
 	lines: { income: CashFlowLine[]; expense: CashFlowLine[] };
 };
+
+/** One calendar month of `cashFlowBreakdown`, as a series of months reads it. */
+export type MonthBreakdown = { month: IsoMonth } & Pick<CashFlowBreakdown, "income" | "lines">;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 

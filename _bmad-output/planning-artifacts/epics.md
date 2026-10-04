@@ -3245,7 +3245,7 @@ So that I see at a glance how the month is going.
 
 **Given** `/budgets`
 **When** the owner opens it
-**Then** it redirects to `/budgets/<current month>`; the month page has previous and next arrows, a month picker by year and « Aujourd'hui », and refuses a month more than two years before the oldest entry's month or more than two years after the current one, as Sure's `budget_date_valid?`
+**Then** it redirects to `/budgets/<current month>`; the month page has previous and next arrows, a month picker by year and « Aujourd'hui », and refuses a month before both the month two years before the current one and the oldest entry's month, or more than two years after the current one, as Sure's `budget_date_valid?`
 
 **Given** a month not set up
 **When** its page opens
@@ -3261,7 +3261,7 @@ So that I see at a glance how the month is going.
 
 **Given** the rail
 **When** this story ships
-**Then** « Budgets » appears between « Opérations » and « Récurrences », `EXPERIENCE.md` lists the surface, and `sure-parity.md`'s Budgets row says what Archant does
+**Then** « Budgets » appears between « Comptes » and « Récurrent », `EXPERIENCE.md` lists the surface, and `sure-parity.md`'s Budgets row says what Archant does
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
