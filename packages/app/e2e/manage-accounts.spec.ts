@@ -198,7 +198,7 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 	await page.keyboard.press("Escape");
 });
 
-test("a deactivated account leaves /accounts, the accounts column and the filter, and comes back when reactivated", async ({
+test("a deactivated account leaves /accounts, the accounts column, /transactions and the filter, and comes back when reactivated", async ({
 	page,
 	api,
 }) => {
@@ -232,11 +232,12 @@ test("a deactivated account leaves /accounts, the accounts column and the filter
 	await expect(row).toContainText("Inactif");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 9_900));
 
-	// Its transactions stay listed, but the filter no longer offers it.
+	// As Sure's `Entry.visible`, its transactions leave /transactions and stay on
+	// its own page; the filter no longer offers it.
+	await page.goto(`/accounts/${account.id}`);
+	await expect(page.getByRole("main").getByText(label)).toBeVisible();
 	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
-	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
-		new RegExp(`${label}.*${account.name}`, "u"),
-	]);
+	await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(0);
 	const menu = await openAccountFilter(page);
 	await expect(menu.getByRole("checkbox", { name: account.name })).toHaveCount(0);
 	await page.keyboard.press("Escape");
@@ -268,7 +269,10 @@ test("a deactivated account leaves /accounts, the accounts column and the filter
 	await expect(pageRow(page, account.name)).not.toContainText("Inactif");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before));
 
-	await page.goto("/transactions");
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	await expect(page.getByRole("main").getByRole("listitem")).toHaveText([
+		new RegExp(`${label}.*${account.name}`, "u"),
+	]);
 	const reopened = await openAccountFilter(page);
 	await expect(reopened.getByRole("checkbox", { name: account.name })).toBeVisible();
 });

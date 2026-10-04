@@ -186,7 +186,8 @@ type CashFlowWithRows = {
  * accounts net worth counts. The whole month counts, future-dated rows
  * included, so a line's drill-down covers the same dates. That list filters on
  * category and dates only, so it can also show excluded rows, rows of accounts
- * this report leaves out and transfer sides that kept a category.
+ * excluded from reports, which this report leaves out, and transfer sides that
+ * kept a category; a deactivated account's rows are hidden from both.
  */
 export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<CashFlow> {
 	return (await getCashFlowWithRows(deps, month)).cashFlow;

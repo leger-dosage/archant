@@ -400,7 +400,9 @@ function earliestStart(reached: readonly Rule[]): IsoDate | null {
 /** The plan and per-rule tallies of `applied` over the transactions it reaches, and those. */
 async function planOver(db: Pick<Db, "select">, applied: readonly Applied[]) {
 	const evaluated = applied.map(({ rule }) => rule);
-	const candidates = await ruleCandidates(db, earliestStart(evaluated));
+	const candidates = await ruleCandidates(db, earliestStart(evaluated), {
+		activeAccountsOnly: true,
+	});
 
 	return {
 		...planActions(evaluated, candidates, getReportingCurrency(), MAX_TAGS_PER_TRANSACTION),

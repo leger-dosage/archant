@@ -256,7 +256,11 @@ export async function listAccountTransactions(
 	page: { page: number; pageSize: number },
 ): Promise<TransactionPage> {
 	await getAccount(deps, accountId);
-	const { items, total } = await listTransactions(deps, { accountIds: [accountId] }, page);
+	const { items, total } = await listTransactions(
+		deps,
+		{ accountIds: [accountId], includeInactiveAccounts: true },
+		page,
+	);
 
 	return {
 		...(await pageItemsOf(deps, items)),

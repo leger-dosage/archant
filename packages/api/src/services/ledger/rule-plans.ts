@@ -235,12 +235,16 @@ export async function applyRulePlanToHistory(
  * possible duplicates and excluded rows included, split parents left out for
  * their children (AD-20), with their merchant,
  * category, tags, notes, transfer kind, expected counterpart and locks.
- * `from` keeps rows dated on or after it; `null` keeps every date. Tags are
+ * `from` keeps rows dated on or after it; `null` keeps every date.
+ * `activeAccountsOnly` leaves out a deactivated account's rows, as Sure's
+ * rules read `family.transactions.visible` while its recurring identifier,
+ * which also reads these rows, reads every account. Tags are
  * read `KEYS_PER_LOOKUP` rows per query, below SQLite's parameter cap.
  */
 export async function ruleCandidates(
 	db: Pick<Transaction, "select">,
 	from: IsoDate | null,
+	{ activeAccountsOnly }: { activeAccountsOnly: boolean },
 ): Promise<RuleCandidate[]> {
 	const rows = await db
 		.select({
@@ -253,10 +257,12 @@ export async function ruleCandidates(
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.where(
 			and(
 				eq(entries.kind, "transaction"),
 				notSplitParent,
+				activeAccountsOnly ? eq(accounts.active, true) : undefined,
 				from === null ? undefined : gte(entries.date, from),
 			),
 		)
