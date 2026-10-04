@@ -11,12 +11,23 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatShortDate } from "@/lib/balance-change";
 
-export const GOAL_BADGES = {
+const GOAL_BADGES = {
 	behind: "goalBehind",
 	on_track: "goalOnTrack",
 	no_target_date: "goalNoTargetDate",
 	reached: "goalReached",
 } as const satisfies Record<GoalStatus, Status>;
+
+const STATE_BADGES = {
+	paused: "goalPaused",
+	completed: "goalCompleted",
+	archived: "goalArchived",
+} as const satisfies Record<Exclude<GoalData["state"], "active">, Status>;
+
+/** An active goal's progress status, or the state of one that is not active. */
+export function goalBadge(goal: Pick<GoalData, "state" | "status">): Status {
+	return goal.state === "active" ? GOAL_BADGES[goal.status] : STATE_BADGES[goal.state];
+}
 
 /** « 200 € sur 1 000 € », what is saved against the target. */
 function savedOf(goal: GoalData, t: TFunction): string {
@@ -28,14 +39,14 @@ function savedOf(goal: GoalData, t: TFunction): string {
 
 /**
  * One goal in the list, as Sure's card: its ring, its name, saved against
- * target, its status, and what to put aside each month by its date, when it
- * has one: « Sans échéance » already says it has none. The whole card leads
- * to the goal's page.
+ * target, its status, or its state when it is not active, and what to put
+ * aside each month by its date, when it has one: « Sans échéance » already
+ * says it has none. The whole card leads to the goal's page.
  */
 export function GoalCard({ goal }: { goal: GoalData }) {
 	const { t } = useTranslation();
-	// A reached goal asks for nothing more.
-	const monthly = goal.remaining > 0 ? goal.monthlyNeeded : null;
+	// A reached goal asks for nothing more, nor one that stopped saving.
+	const monthly = goal.state === "active" && goal.remaining > 0 ? goal.monthlyNeeded : null;
 
 	return (
 		<Link
@@ -52,7 +63,7 @@ export function GoalCard({ goal }: { goal: GoalData }) {
 				<h2 className="truncate card-title">{goal.name}</h2>
 				<p className="tabular-nums">{savedOf(goal, t)}</p>
 				<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-					<StatusBadge status={GOAL_BADGES[goal.status]} />
+					<StatusBadge status={goalBadge(goal)} />
 					{monthly !== null && (
 						<span className="tabular-nums">
 							{t("goals.monthly", {

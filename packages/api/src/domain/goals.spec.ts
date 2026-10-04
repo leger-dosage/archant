@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { backingShares, compareGoals, goalProgress, paceStart } from "./goals.ts";
+import { addDays } from "./dates.ts";
+import {
+	backingShares,
+	compareGoals,
+	goalProgress,
+	goalSeries,
+	goalsSummary,
+	paceStart,
+} from "./goals.ts";
 
 const fixed = (goalId: string, amount: number) => ({
 	goalId,
@@ -83,6 +91,7 @@ const progress = (overrides: Partial<Parameters<typeof goalProgress>[0]> = {}) =
 		targetDate: null,
 		today: "2026-09-21",
 		accounts: [],
+		completed: false,
 		...overrides,
 	});
 
@@ -162,16 +171,34 @@ describe("goalProgress", () => {
 	});
 });
 
+describe("goalProgress of a completed goal", () => {
+	it("is reached at 100 % on the amount frozen, even short of its target", () => {
+		expect(
+			progress({ saved: toMinorUnits(45_000), targetDate: "2027-01-01", completed: true }),
+		).toMatchObject({ saved: 45_000, remaining: 55_000, percent: 100, status: "reached" });
+	});
+
+	it("reads an archived goal's frozen amount as any other saved amount", () => {
+		expect(progress({ saved: toMinorUnits(45_000), targetDate: "2026-09-01" })).toMatchObject({
+			saved: 45_000,
+			percent: 45,
+			status: "behind",
+		});
+	});
+});
+
 describe("compareGoals", () => {
 	it("sorts behind, on track, without a date, then reached, by French name within each", () => {
-		const goals = [
-			{ status: "reached", name: "Voiture" },
-			{ status: "no_target_date", name: "Réserve" },
-			{ status: "on_track", name: "Vacances" },
-			{ status: "behind", name: "Travaux" },
-			{ status: "behind", name: "Été" },
-			{ status: "behind", name: "anniversaire" },
-		] as const;
+		const goals = (
+			[
+				["reached", "Voiture"],
+				["no_target_date", "Réserve"],
+				["on_track", "Vacances"],
+				["behind", "Travaux"],
+				["behind", "Été"],
+				["behind", "anniversaire"],
+			] as const
+		).map(([status, name]) => ({ state: "active" as const, status, name }));
 
 		expect(goals.toSorted(compareGoals).map((goal) => goal.name)).toEqual([
 			"anniversaire",
@@ -181,5 +208,140 @@ describe("compareGoals", () => {
 			"Réserve",
 			"Voiture",
 		]);
+	});
+
+	it("puts paused, then completed, then archived goals after every active one, by name", () => {
+		const goals = [
+			{ state: "archived", status: "behind", name: "Ancien" },
+			{ state: "completed", status: "reached", name: "Vélo" },
+			{ state: "paused", status: "behind", name: "Travaux" },
+			{ state: "paused", status: "on_track", name: "Piscine" },
+			{ state: "active", status: "reached", name: "Voiture" },
+			{ state: "completed", status: "reached", name: "Camping" },
+		] as const;
+
+		expect(goals.toSorted(compareGoals).map((goal) => goal.name)).toEqual([
+			"Voiture",
+			"Piscine",
+			"Travaux",
+			"Camping",
+			"Vélo",
+			"Ancien",
+		]);
+	});
+});
+
+/** One balance per day from `from`, as `balancesBetween` reads them. */
+const daily = (from: string, amounts: readonly number[]) =>
+	amounts.map((amount, index) => ({ date: addDays(from, index), balance: toMinorUnits(amount) }));
+
+describe("goalSeries", () => {
+	it("draws each day's share under today's links, the last point being what is saved", () => {
+		// 0 → 1 000 over 90 days, B taking 300 first: A's whole link starts at 0, ends at 700.
+		const from = "2026-06-23";
+		const balances = daily(
+			from,
+			Array.from({ length: 91 }, (_, day) => Math.round((100_000 * day) / 90)),
+		);
+
+		const points = goalSeries({
+			goalId: "A",
+			from,
+			to: "2026-09-21",
+			accounts: [{ balances, links: [whole("A"), fixed("B", 30_000)] }],
+		});
+
+		expect(points).toHaveLength(91);
+		expect(points.at(0)).toEqual({ date: from, saved: 0 });
+		expect(points.at(45)).toEqual({ date: "2026-08-07", saved: 20_000 });
+		expect(points.at(-1)).toEqual({ date: "2026-09-21", saved: 70_000 });
+	});
+
+	it("sums every account, one opened since backing nothing before its first balance", () => {
+		const points = goalSeries({
+			goalId: "A",
+			from: "2026-09-18",
+			to: "2026-09-21",
+			accounts: [
+				{ balances: daily("2026-09-18", [100, 100, 200, 200]), links: [whole("A")] },
+				{ balances: daily("2026-09-20", [50, 80]), links: [fixed("A", 60)] },
+			],
+		});
+
+		expect(points.map((point) => point.saved)).toEqual([100, 100, 250, 260]);
+	});
+
+	it("backs nothing from an account whose links leave the goal out", () => {
+		expect(
+			goalSeries({
+				goalId: "A",
+				from: "2026-09-21",
+				to: "2026-09-21",
+				accounts: [{ balances: daily("2026-09-21", [500]), links: [whole("B")] }],
+			}),
+		).toEqual([{ date: "2026-09-21", saved: 0 }]);
+	});
+});
+
+const goal = (
+	name: string,
+	saved: number,
+	target: number,
+	overrides: Partial<Parameters<typeof goalsSummary>[0][number]> = {},
+) => ({
+	id: name,
+	name,
+	state: "active" as const,
+	status: "on_track" as const,
+	currency: "EUR",
+	saved: toMinorUnits(saved),
+	targetAmount: toMinorUnits(target),
+	...overrides,
+});
+
+describe("goalsSummary", () => {
+	it("sums the goals holding their money in the reporting currency, and names the others", () => {
+		const summary = goalsSummary(
+			[
+				goal("Vacances", 20_000, 100_000, { status: "behind" }),
+				goal("Vélo", 30_000, 50_000, { state: "paused", status: "behind" }),
+				goal("Voyage", 10_000, 90_000, { currency: "USD", status: "behind" }),
+				goal("Voiture", 80_000, 80_000, { state: "completed", status: "reached" }),
+				goal("Ancien", 5_000, 10_000, { state: "archived" }),
+			],
+			"EUR",
+		);
+
+		expect(summary).toEqual({
+			currency: "EUR",
+			count: 3,
+			saved: 50_000,
+			target: 150_000,
+			// A paused goal is never behind, as Sure's `behind_pace?`.
+			behind: 2,
+			leftOut: [{ id: "Voyage", name: "Voyage" }],
+			goals: [expect.objectContaining({ name: "Vacances" }), expect.anything(), expect.anything()],
+		});
+		expect(summary.goals.map((item) => item.name)).toEqual(["Vacances", "Vélo", "Voyage"]);
+	});
+
+	it("lists the first five, and nothing without a goal holding its money", () => {
+		const many = ["A", "B", "C", "D", "E", "F"].map((name) => goal(name, 0, 100));
+
+		expect(goalsSummary(many, "EUR").goals.map((item) => item.name)).toEqual([
+			"A",
+			"B",
+			"C",
+			"D",
+			"E",
+		]);
+		expect(goalsSummary([goal("Fini", 100, 100, { state: "completed" })], "EUR")).toMatchObject({
+			count: 0,
+			saved: 0,
+			target: 0,
+			behind: 0,
+			leftOut: [],
+			goals: [],
+		});
 	});
 });

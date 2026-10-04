@@ -295,7 +295,7 @@ The dashboard opens with « Bonjour {prénom} » in `{typography.greeting}` and 
 
 Rows of the transactions list are `{spacing.row}` high: 10px of vertical padding around a 36px tinted icon. That is the one proportion improved over Sure, whose rows reach 68px. Amount columns are right-aligned; the label column takes the remaining width and truncates with an ellipsis and a tooltip.
 
-Below 1024px, as in Sure: a top bar with the menu button, the logo and the user menu; a fixed bottom navigation on `{colors.background}` with the rail's entries; the accounts column opens as a full-screen overlay; content padding drops to `{spacing.content-padding-mobile}` and leaves room above the bottom navigation.
+Below 1024px, as in Sure: a top bar with the menu button, the logo and the user menu; a fixed bottom navigation on `{colors.background}` with « Accueil », « Opérations », « Budgets », « Objectifs » and « Plus », a menu of the rail's other entries; the accounts column opens as a full-screen overlay; content padding drops to `{spacing.content-padding-mobile}` and leaves room above the bottom navigation.
 
 ## Elevation & Depth
 

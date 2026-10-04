@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
-import { GOAL_NAME_MAX_LENGTH, GOAL_NOTES_MAX_LENGTH } from "@archant/data/goals";
+import { GOAL_EVENTS, GOAL_NAME_MAX_LENGTH, GOAL_NOTES_MAX_LENGTH } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 
 import { amountIn } from "./budgets.ts";
@@ -20,6 +20,9 @@ export const goalBodySchema = z.object({
 });
 
 export type GoalInput = z.input<typeof goalBodySchema>;
+
+/** `POST /api/goals/:id/:event`: one of Sure's events, else a `VALIDATION_ERROR`. */
+export const goalEventParamSchema = z.object({ id: z.string(), event: z.enum(GOAL_EVENTS) });
 
 /** Text no longer than `max`, refused as `too_long`, the code the form names. */
 function atMost(max: number) {

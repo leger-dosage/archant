@@ -1000,6 +1000,7 @@ describe("exportArchive", () => {
 			targetAmount: "8 000",
 			accounts: [{ accountId: ids.pea, allocatedAmount: "" }],
 		});
+		await sendOwn("POST", `/api/goals/${car}/complete`);
 
 		const archive = await exported();
 		const goals = (archive.text["goals.ndjson"] ?? "")
@@ -1022,13 +1023,24 @@ describe("exportArchive", () => {
 				notes: "Grèce",
 				state: "active",
 				kind: "one_off",
+				completed_amount: null,
+				completed_at: null,
 				created_at: "2026-09-21T10:00:00.000Z",
 				updated_at: "2026-09-21T10:00:00.000Z",
 			},
 		});
 		expect(goals[1]).toMatchObject({
 			type: "Goal",
-			data: { id: car, target_amount: "8000.00", target_date: null, notes: null },
+			data: {
+				id: car,
+				target_amount: "8000.00",
+				target_date: null,
+				notes: null,
+				state: "completed",
+				// The PEA's 1 200, less the 150 the holiday takes first.
+				completed_amount: "1050.00",
+				completed_at: "2026-09-21T10:00:01.000Z",
+			},
 		});
 		expect(goals.slice(2)).toEqual(
 			[

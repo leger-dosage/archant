@@ -1,9 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 
 import {
+	ArchiveIcon,
 	ArrowLeftRightIcon,
 	CalendarOffIcon,
 	CircleAlertIcon,
+	CircleCheckBigIcon,
 	CircleCheckIcon,
 	CirclePauseIcon,
 	ClockAlertIcon,
@@ -64,6 +66,11 @@ const STATUSES = {
 	goalOnTrack: { icon: TrendingUpIcon, key: "goals.status.on_track", tone: "neutral" },
 	goalNoTargetDate: { icon: CalendarOffIcon, key: "goals.status.no_target_date", tone: "neutral" },
 	goalReached: { icon: CircleCheckIcon, key: "goals.status.reached", tone: "neutral" },
+	// A goal that is not active says its state in place of its progress, as
+	// Sure's card footer: « En pause », « Terminé », « Archivé ».
+	goalPaused: { icon: CirclePauseIcon, key: "goals.states.paused", tone: "neutral" },
+	goalCompleted: { icon: CircleCheckBigIcon, key: "goals.states.completed", tone: "neutral" },
+	goalArchived: { icon: ArchiveIcon, key: "goals.states.archived", tone: "neutral" },
 } as const satisfies Record<
 	string,
 	{ icon: LucideIcon; key: string; tone: "neutral" | "warning" | "destructive" }

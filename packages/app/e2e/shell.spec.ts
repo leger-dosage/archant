@@ -25,6 +25,22 @@ const DESTINATIONS = [
 	"Réglages",
 ];
 
+// Story 21.2: below 1024 px, four destinations and « Plus », whose menu holds the others.
+const PHONE_DESTINATIONS = ["Accueil", "Opérations", "Budgets", "Objectifs"];
+
+const MORE = ["Comptes", "Récurrent", "Règles", "Réglages"];
+
+/** The labels of the bottom navigation that their entry cuts short. */
+async function cutLabels(page: Page): Promise<string[]> {
+	return rail(page)
+		.locator("a > span:last-child, button > span:last-child")
+		.evaluateAll((labels) =>
+			labels
+				.filter((label) => label.scrollWidth > label.clientWidth)
+				.map((label) => label.textContent ?? ""),
+		);
+}
+
 /** A summary as `/api/accounts` answers it. */
 const summary = (
 	id: string,
@@ -308,7 +324,7 @@ test("a settings section's title and actions top its content, in one 896 px colu
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the bottom navigation holds the eight destinations, and the menu opens the accounts column", async ({
+	test("the bottom navigation holds four destinations and « Plus », and the menu opens the accounts column", async ({
 		page,
 	}) => {
 		await fixedAccounts(page);
@@ -316,7 +332,8 @@ test.describe("on a phone", () => {
 		await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 
 		const bottom = rail(page);
-		await expect(bottom.getByRole("link")).toHaveText(DESTINATIONS);
+		await expect(bottom.getByRole("link")).toHaveText(PHONE_DESTINATIONS);
+		await expect(bottom.getByRole("button", { name: "Plus" })).toBeVisible();
 		await expect(bottom).toHaveCSS("position", "fixed");
 		await expect(column(page)).toHaveCount(0);
 		await expect(breadcrumbs(page)).toHaveCount(0);
@@ -361,15 +378,75 @@ test.describe("on a phone", () => {
 		await expect(menu.getByRole("menuitem", { name: "Se déconnecter" })).toBeVisible();
 	});
 
-	test("the bottom navigation leads to each page", async ({ page }) => {
+	test("the bottom navigation leads to each page, the last four through « Plus »", async ({
+		page,
+	}) => {
 		await page.goto("/");
-		await rail(page).getByRole("link", { name: "Règles" }).click();
+		await rail(page).getByRole("link", { name: "Objectifs" }).click();
+		await expect(page).toHaveURL(/\/goals$/u);
+		await expect(rail(page).getByRole("link", { name: "Objectifs" })).toHaveAttribute(
+			"aria-current",
+			"page",
+		);
+		const more = rail(page).getByRole("button", { name: "Plus" });
+		await expect(more).not.toHaveAttribute("aria-current");
+
+		await more.click();
+		const menu = page.getByRole("menu");
+		await expect(menu.getByRole("menuitem")).toHaveText(MORE);
+		await menu.getByRole("menuitem", { name: "Règles" }).click();
 
 		await expect(page).toHaveURL(/\/rules$/u);
 		await expect(page.getByRole("heading", { level: 1, name: "Règles" })).toBeVisible();
-		await expect(rail(page).getByRole("link", { name: "Règles" })).toHaveAttribute(
+		await expect(more).toHaveAttribute("aria-current", "page");
+		await expect(rail(page).locator('[aria-current="page"]')).toHaveCount(1);
+		await more.click();
+		await expect(page.getByRole("menuitem", { name: "Règles" })).toHaveAttribute(
 			"aria-current",
 			"page",
 		);
 	});
 });
+
+for (const width of [360, 390]) {
+	test.describe(`on a ${width} px screen`, () => {
+		test.use({ viewport: { width, height: 800 } });
+
+		test("every bottom-navigation label shows whole, and each of the eight destinations is reachable", async ({
+			page,
+		}) => {
+			await page.goto("/");
+			await expect(rail(page).getByRole("link")).toHaveText(PHONE_DESTINATIONS);
+			await expect(cutLabels(page)).resolves.toEqual([]);
+
+			// One after the other: each step leaves from the page the one before reached.
+			const reached = await [...PHONE_DESTINATIONS, ...MORE].reduce<Promise<string[]>>(
+				async (previous, name) => {
+					const done = await previous;
+
+					if (PHONE_DESTINATIONS.includes(name)) {
+						await rail(page).getByRole("link", { name }).click();
+						await expect(rail(page).getByRole("link", { name })).toHaveAttribute(
+							"aria-current",
+							"page",
+						);
+					} else {
+						await rail(page).getByRole("button", { name: "Plus" }).click();
+						await page.getByRole("menuitem", { name }).click();
+						await expect(page.getByRole("menu")).toBeHidden();
+						await expect(rail(page).getByRole("button", { name: "Plus" })).toHaveAttribute(
+							"aria-current",
+							"page",
+						);
+					}
+
+					return [...done, name];
+				},
+				Promise.resolve([]),
+			);
+
+			expect(reached.toSorted()).toEqual(DESTINATIONS.toSorted());
+			await expect(cutLabels(page)).resolves.toEqual([]);
+		});
+	});
+}

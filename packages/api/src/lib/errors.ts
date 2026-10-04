@@ -87,6 +87,17 @@ export const ERROR_STATUSES = {
 	CANNOT_CHANGE_SELF: 409,
 	/** A demotion or a removal that would leave no administrator. Nothing is written. */
 	LAST_ADMIN: 409,
+	/**
+	 * A goal event that does not apply from the goal's state, as resuming an
+	 * active goal or completing an archived one or a reserve. Nothing is written.
+	 */
+	GOAL_STATE_INVALID: 409,
+	/**
+	 * A restore or a reopening of a goal whose whole-balance account another
+	 * goal has taken whole since, as Sure's `restore_must_not_recreate_whole_account_conflict`;
+	 * `params.accountId` names it, never its name (AD-14). Nothing is written.
+	 */
+	GOAL_ACCOUNT_TAKEN: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

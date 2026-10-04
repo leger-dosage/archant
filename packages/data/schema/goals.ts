@@ -32,6 +32,14 @@ export const goals = sqliteTable(
 		notes: text("notes"),
 		state: text("state").$type<GoalState>().notNull().default("active"),
 		kind: text("kind").$type<GoalKind>().notNull().default("one_off"),
+		/**
+		 * What the goal had saved when it was completed, in minor units, and
+		 * when, in epoch milliseconds, as Sure's: a closed goal reports what it
+		 * reached, not what its accounts hold since. Kept when it is archived,
+		 * cleared when it becomes active again.
+		 */
+		completedAmount: integer("completed_amount"),
+		completedAt: integer("completed_at"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
@@ -39,6 +47,10 @@ export const goals = sqliteTable(
 		check("goals_target_amount_check", sql`${table.targetAmount} > 0`),
 		check("goals_state_check", sql`${table.state} in ${inList(GOAL_STATES)}`),
 		check("goals_kind_check", sql`${table.kind} in ${inList(GOAL_KINDS)}`),
+		check(
+			"goals_completed_check",
+			sql`(${table.completedAmount} is null) = (${table.completedAt} is null)`,
+		),
 	],
 );
 

@@ -4,13 +4,20 @@
 import type { AccountType } from "./account-types.ts";
 
 /**
- * Sure's goal states. A goal is created `active`; pausing, completing and
- * archiving it arrive with Story 21.2. A new value is a check rebuilt, no
- * data migration.
+ * Sure's goal states. A goal is created `active`, then moves through
+ * `GOAL_EVENTS`. A new value is a check rebuilt, no data migration.
  */
 export const GOAL_STATES = ["active", "paused", "completed", "archived"] as const;
 
 export type GoalState = (typeof GOAL_STATES)[number];
+
+/**
+ * Sure's AASM events on a goal, `unarchive` named `restore`. The page offers
+ * the ones `goalTransition` allows, which are the ones the server accepts.
+ */
+export const GOAL_EVENTS = ["pause", "resume", "complete", "archive", "restore", "reopen"] as const;
+
+export type GoalEvent = (typeof GOAL_EVENTS)[number];
 
 /**
  * Sure's `kind`: a `one_off` goal saves toward a target by a date, a
@@ -29,6 +36,31 @@ export const RELEASED_GOAL_STATES = [
 	"completed",
 	"archived",
 ] as const satisfies readonly GoalState[];
+
+const TRANSITIONS = {
+	pause: { from: ["active"], to: "paused" },
+	resume: { from: ["paused"], to: "active" },
+	complete: { from: ["active", "paused"], to: "completed" },
+	archive: { from: ["active", "paused", "completed"], to: "archived" },
+	restore: { from: ["archived"], to: "active" },
+	reopen: { from: ["completed"], to: "active" },
+} as const satisfies Record<GoalEvent, { from: readonly GoalState[]; to: GoalState }>;
+
+/**
+ * The state `event` takes a goal to, as Sure's `aasm` block, or `null` when
+ * it does not apply from `state`. Only a one-off goal completes: completing
+ * releases the money, the opposite of what a reserve is for.
+ */
+export function goalTransition(
+	state: GoalState,
+	kind: GoalKind,
+	event: GoalEvent,
+): GoalState | null {
+	const { from, to } = TRANSITIONS[event];
+	const allowed = (from as readonly GoalState[]).includes(state);
+
+	return allowed && (event !== "complete" || kind === "one_off") ? to : null;
+}
 
 export const GOAL_NAME_MAX_LENGTH = 100;
 

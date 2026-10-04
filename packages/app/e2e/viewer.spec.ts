@@ -106,6 +106,8 @@ test("a viewer reads every page with no control that writes, and the server refu
 		targetAmount: "2 000",
 		accounts: [{ accountId: savings.id, allocatedAmount: "50" }],
 	});
+	// Paused, so its page shows a banner whose button a viewer must not see.
+	await api.goalEvent(goal.id, "pause");
 	const rule = await api.createRule({
 		name: `${prefix} règle`,
 		conditions: [{ conditionType: "transaction_name", operator: "like", value: prefix }],
@@ -245,7 +247,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page).toHaveURL(`${WEB_URL}/budgets/${MONTH}`);
 		});
 
-		await test.step("goals: cards and a page to read, nothing to create, edit or delete", async () => {
+		await test.step("goals: cards and a page to read, nothing to create, edit, delete, pause or resume", async () => {
 			await page.goto("/goals");
 			const goalCard = page
 				.getByRole("list", { name: "Objectifs" })
@@ -256,9 +258,13 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await goalCard.click();
 			await expect(page.getByRole("heading", { level: 1, name: goal.name })).toBeVisible();
 			await expect(page.getByRole("region", { name: "Comptes liés" })).toContainText(savings.name);
+			await expect(page.getByRole("region", { name: "Cet objectif est en pause" })).toBeVisible();
+			await expect(page.getByRole("region", { name: "Projection" })).toBeVisible();
 			await expectNone(page, [
 				{ role: "button", name: "Modifier" },
 				{ role: "button", name: "Supprimer" },
+				{ role: "button", name: `Actions pour ${goal.name}` },
+				{ role: "button", name: "Reprendre l'objectif" },
 			]);
 		});
 

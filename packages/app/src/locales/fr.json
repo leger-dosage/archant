@@ -33,7 +33,9 @@
 		"signOut": "Se déconnecter",
 		"openMenu": "Ouvrir le menu",
 		"toggleAccounts": "Replier ou déplier la liste des comptes",
-		"breadcrumbs": "Fil d'Ariane"
+		"breadcrumbs": "Fil d'Ariane",
+		"more": "Plus",
+		"moreMenu": "Autres pages"
 	},
 	"accountsColumn": {
 		"label": "Liste des comptes",
@@ -106,6 +108,17 @@
 			"title": "Aucun compte pour l'instant",
 			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici.",
 			"viewerDescription": "L'administrateur du foyer ajoute les comptes. Ils apparaîtront ici."
+		},
+		"goals": {
+			"title": "Objectifs",
+			"count_one": "{{count}} actif",
+			"count_other": "{{count}} actifs",
+			"ofTargets": "sur {{target}} tous objectifs confondus",
+			"behind_one": "{{count}} en retard",
+			"behind_other": "{{count}} en retard",
+			"onPace": "Tout est dans les temps",
+			"list": "Objectifs en cours",
+			"all": "Tous les objectifs"
 		}
 	},
 	"accounts": {
@@ -1072,7 +1085,8 @@
 			"date": "Échéance",
 			"pace": "Rythme sur 90 jours",
 			"perMonth": "{{amount}} par mois",
-			"noDate": "Aucune"
+			"noDate": "Aucune",
+			"reachedOn": "Atteint le {{date}} · {{amount}}"
 		},
 		"accounts": {
 			"title": "Comptes liés",
@@ -1115,6 +1129,81 @@
 			"save": "Enregistrer",
 			"created": "Objectif « {{name}} » créé.",
 			"saved": "Objectif « {{name}} » enregistré."
+		},
+		"states": {
+			"paused": "En pause",
+			"completed": "Terminé",
+			"archived": "Archivé"
+		},
+		"archived": {
+			"title": "Archivés",
+			"show_one": "Afficher {{count}} objectif archivé",
+			"show_other": "Afficher les {{count}} objectifs archivés",
+			"hide": "Masquer les objectifs archivés"
+		},
+		"menu": "Actions pour {{name}}",
+		"events": {
+			"pause": {
+				"action": "Mettre en pause",
+				"done": "Objectif « {{name}} » mis en pause."
+			},
+			"resume": {
+				"action": "Reprendre",
+				"done": "Objectif « {{name}} » repris."
+			},
+			"complete": {
+				"action": "Marquer comme terminé",
+				"done": "Objectif « {{name}} » marqué comme terminé."
+			},
+			"archive": {
+				"action": "Archiver",
+				"done": "Objectif « {{name}} » archivé."
+			},
+			"restore": {
+				"action": "Restaurer",
+				"done": "Objectif « {{name}} » restauré."
+			},
+			"reopen": {
+				"action": "Rouvrir",
+				"done": "Objectif « {{name}} » rouvert."
+			}
+		},
+		"completeDialog": {
+			"title": "Marquer cet objectif comme terminé ?",
+			"description": "L'argent qui lui était affecté sera libéré pour vos autres objectifs sur le même compte. Il quittera la liste des objectifs en cours, et vous pourrez toujours l'archiver ou le rouvrir plus tard.",
+			"short": "Vous êtes à {{percent}} %, {{saved}} sur {{target}}. Marquer comme terminé enregistrera cela comme votre réussite à la place de l'objectif initial. Continuez, ou fermez ceci et modifiez plutôt le montant visé.",
+			"action": "Marquer comme terminé"
+		},
+		"archiveDialog": {
+			"title": "Archiver cet objectif ?",
+			"description": "Les objectifs archivés disparaissent de la liste principale. Vous pourrez les restaurer plus tard. L'archivage n'enregistre pas le montant atteint : marquez d'abord l'objectif comme terminé si vous voulez le conserver.",
+			"descriptionCompleted": "Les objectifs archivés disparaissent de la liste principale. Vous pourrez les restaurer plus tard.",
+			"action": "Archiver"
+		},
+		"banner": {
+			"paused": {
+				"title": "Cet objectif est en pause",
+				"body": "Reprenez-le pour continuer à suivre vos progrès.",
+				"action": "Reprendre l'objectif"
+			},
+			"archived": {
+				"title": "Cet objectif est archivé",
+				"body": "Restaurez-le pour continuer à y contribuer, ou conservez-le comme archive.",
+				"action": "Restaurer l'objectif"
+			},
+			"completed": {
+				"title": "Objectif atteint. Bon travail !",
+				"body": "Objectif terminé à {{saved}} sur {{target}}. Conservez-le, ou archivez-le dès maintenant.",
+				"action": "Archiver l'objectif"
+			}
+		},
+		"chart": {
+			"title": "Projection",
+			"summary": "Épargné : {{saved}}, {{change}} depuis le {{from}}. Montant visé : {{target}}.",
+			"projection": "Pour l'atteindre le {{date}}, il faut épargner {{monthly}} par mois.",
+			"saved": "Épargné",
+			"projected": "Projection",
+			"target": "Montant visé"
 		}
 	},
 	"recurring": {
@@ -1723,6 +1812,8 @@
 			"not_fundable": "Ce compte ne peut pas porter d'objectif : choisissez un compte courant, d'épargne ou d'investissement actif.",
 			"currency_mismatch": "Ce compte n'est pas dans la devise de l'objectif.",
 			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant."
-		}
+		},
+		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
+		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant."
 	}
 }

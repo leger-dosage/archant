@@ -148,7 +148,7 @@ describe("a viewer's writes", () => {
 		const walked = routes.map(({ method, path }) => `${method} ${path}`);
 
 		// Fails if the walk stops finding routes, rather than passing on none.
-		expect(routes.length).toBeGreaterThanOrEqual(61);
+		expect(routes.length).toBeGreaterThanOrEqual(62);
 		// Epics 17 to 19 and 21: budgets, splits, attachments and goals.
 		expect(walked).toEqual(
 			expect.arrayContaining([
@@ -161,6 +161,7 @@ describe("a viewer's writes", () => {
 				"POST /api/goals",
 				"PUT /api/goals/x",
 				"DELETE /api/goals/x",
+				"POST /api/goals/x/x",
 			]),
 		);
 
@@ -228,7 +229,7 @@ describe("a viewer's reads", () => {
 					.replace(":month", "2026-09"),
 		).filter(({ path }) => !ADMIN_READS.includes(path));
 
-		expect(routes.length).toBeGreaterThanOrEqual(31);
+		expect(routes.length).toBeGreaterThanOrEqual(33);
 
 		const statuses = async (app: () => TestApp) =>
 			Promise.all(
@@ -246,6 +247,7 @@ describe("a viewer's reads", () => {
 				`/api/accounts/${account.id} 200`,
 				`/api/transactions/${transactionId}/attachments 200`,
 				"/api/budgets/2026-09 200",
+				"/api/goals/summary 200",
 			]),
 		);
 		expect(viewerStatuses).toEqual(await statuses(admin));

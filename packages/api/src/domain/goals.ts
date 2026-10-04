@@ -1,5 +1,8 @@
+import type { DailyBalance } from "./balances/forward.ts";
 import type { IsoDate } from "./dates.ts";
 
+import type { GoalState } from "@archant/data/goals";
+import { RELEASED_GOAL_STATES } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
@@ -67,7 +70,8 @@ const PACE_MONTHS = BigInt(PACE_DAYS / DAYS_PER_MONTH);
 /**
  * The day a linked account's pace starts from: 90 days ago, or its opening
  * date if later, and never after today, so an account opened at a future
- * date moves nothing yet rather than falling by its opening balance.
+ * date moves nothing yet rather than falling by its opening balance. Given
+ * the earliest opening date of a goal's accounts, the day its chart starts.
  */
 export function paceStart(today: IsoDate, openingDate: IsoDate | null): IsoDate {
 	const start = addDays(today, -PACE_DAYS);
@@ -102,7 +106,9 @@ export type GoalProgress = {
  * month rather than all of it, and all of it once the date has come. The
  * pace divides the 90-day change by three, even for an account opened since,
  * as Sure's does. `accounts` holds each linked account's balance today and at
- * its `paceStart`.
+ * its `paceStart`. A completed goal is reached at 100 %, whatever it saved,
+ * as Sure's `progress_percent` and `status`: `saved` is then the amount
+ * frozen when it was completed.
  */
 export function goalProgress(input: {
 	target: MinorUnits;
@@ -110,10 +116,12 @@ export function goalProgress(input: {
 	targetDate: IsoDate | null;
 	today: IsoDate;
 	accounts: readonly { now: MinorUnits; before: MinorUnits }[];
+	completed: boolean;
 }): GoalProgress {
-	const { target, saved } = input;
+	const { target, saved, completed } = input;
 	const remaining = toMinorUnits(Math.max(target - saved, 0));
-	const percent = remaining === 0 ? 100 : Math.min(Math.floor((saved * 100) / target), 99);
+	const percent =
+		completed || remaining === 0 ? 100 : Math.min(Math.floor((saved * 100) / target), 99);
 	const change = input.accounts.reduce(
 		(sum, account) => sum + BigInt(account.now) - BigInt(account.before),
 		0n,
@@ -128,7 +136,7 @@ export function goalProgress(input: {
 		percent,
 		monthlyNeeded,
 		pace,
-		status: statusOf(remaining, monthlyNeeded, pace),
+		status: completed ? "reached" : statusOf(remaining, monthlyNeeded, pace),
 	};
 }
 
@@ -162,16 +170,102 @@ function statusOf(
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
+/** Where a goal that is not active sorts: after every active one, in this order. */
+const STATE_RANKS = { paused: 0, completed: 1, archived: 2 } as const satisfies Record<
+	Exclude<GoalState, "active">,
+	number
+>;
+
+function rankOf(goal: { state: GoalState; status: GoalStatus }): number {
+	return goal.state === "active"
+		? GOAL_STATUSES.indexOf(goal.status)
+		: GOAL_STATUSES.length + STATE_RANKS[goal.state];
+}
+
 /**
- * Sure's `active_display_sort`: behind first, then on track, without a date,
- * reached, and by name in French order within each.
+ * Sure's `active_display_sort` then its index: active goals behind first,
+ * then on track, without a date, reached; then paused, completed and
+ * archived goals; by name in French order within each.
  */
 export function compareGoals(
-	a: { status: GoalStatus; name: string },
-	b: { status: GoalStatus; name: string },
+	a: { state: GoalState; status: GoalStatus; name: string },
+	b: { state: GoalState; status: GoalStatus; name: string },
 ): number {
-	return (
-		GOAL_STATUSES.indexOf(a.status) - GOAL_STATUSES.indexOf(b.status) ||
-		byName.compare(a.name, b.name)
-	);
+	return rankOf(a) - rankOf(b) || byName.compare(a.name, b.name);
+}
+
+/** One linked account's balances over the series' days, and the links its balance is split among. */
+export type SeriesAccount = { balances: readonly DailyBalance[]; links: readonly GoalLink[] };
+
+export type SavedPoint = { date: IsoDate; saved: MinorUnits };
+
+/**
+ * What a goal had saved each day from `from` to `to`, both included: on each
+ * day, the sum of `backingShares` of each of its accounts' balance among
+ * today's links, so the last point is the amount saved shown beside it and
+ * two goals on one account never draw the same euros. A day an account has
+ * no balance, before it opened, it backs nothing.
+ */
+export function goalSeries(input: {
+	goalId: string;
+	from: IsoDate;
+	to: IsoDate;
+	accounts: readonly SeriesAccount[];
+}): SavedPoint[] {
+	const accounts = input.accounts.map((account) => ({
+		links: account.links,
+		byDay: new Map(account.balances.map((row) => [row.date, row.balance])),
+	}));
+
+	return Array.from({ length: daysBetween(input.from, input.to) + 1 }, (_, index) => {
+		const date = addDays(input.from, index);
+		const saved = accounts.reduce((sum, { links, byDay }) => {
+			const balance = byDay.get(date);
+
+			return balance === undefined
+				? sum
+				: sum + (backingShares(balance, links).get(input.goalId) ?? 0);
+		}, 0);
+
+		return { date, saved: toMinorUnits(saved) };
+	});
+}
+
+const RELEASED: readonly GoalState[] = RELEASED_GOAL_STATES;
+
+/** How many goals the dashboard's card lists, as Sure's `goals.first(5)`. */
+const SUMMARY_GOALS = 5;
+
+type Summarised = {
+	id: string;
+	name: string;
+	state: GoalState;
+	status: GoalStatus;
+	currency: string;
+	saved: MinorUnits;
+	targetAmount: MinorUnits;
+};
+
+/**
+ * The dashboard's card, as Sure's `Goal.summary_for` on its Plan page: the
+ * goals that hold their money, active and paused, counted; what they saved
+ * and aim for, summed over those in `currency`, the others named as left out
+ * (AD-6); how many active ones are behind, as Sure's `behind_pace?`, which
+ * leaves a paused goal out; and the first five in the list's order.
+ */
+export function goalsSummary<Goal extends Summarised>(goals: readonly Goal[], currency: string) {
+	const holding = goals.filter((goal) => !RELEASED.includes(goal.state));
+	const counted = holding.filter((goal) => goal.currency === currency);
+
+	return {
+		currency,
+		count: holding.length,
+		saved: toMinorUnits(counted.reduce((sum, goal) => sum + goal.saved, 0)),
+		target: toMinorUnits(counted.reduce((sum, goal) => sum + goal.targetAmount, 0)),
+		behind: holding.filter((goal) => goal.state === "active" && goal.status === "behind").length,
+		leftOut: holding
+			.filter((goal) => goal.currency !== currency)
+			.map((goal) => ({ id: goal.id, name: goal.name })),
+		goals: holding.slice(0, SUMMARY_GOALS),
+	};
 }

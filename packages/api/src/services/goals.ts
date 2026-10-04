@@ -1,5 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
-import type { GoalLink, GoalProgress } from "../domain/goals.ts";
+import type { GoalLink, GoalProgress, SavedPoint } from "../domain/goals.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { GoalInput, GoalRequest } from "../schemas/goals.ts";
 import type { ServiceDeps } from "./deps.ts";
@@ -8,19 +8,26 @@ import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryColor, CategoryIcon } from "@archant/data/category-presets";
-import type { GoalKind, GoalState } from "@archant/data/goals";
-import { RELEASED_GOAL_STATES, canBackGoal } from "@archant/data/goals";
+import type { GoalEvent, GoalKind, GoalState } from "@archant/data/goals";
+import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
-import { today } from "../domain/dates.ts";
-import { backingShares, compareGoals, goalProgress, paceStart } from "../domain/goals.ts";
+import { minDate, today } from "../domain/dates.ts";
+import {
+	backingShares,
+	compareGoals,
+	goalProgress,
+	goalSeries,
+	goalsSummary,
+	paceStart,
+} from "../domain/goals.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
-import { balanceOn, openingDateOf } from "./ledger/balances.ts";
+import { balanceOn, balancesBetween, openingDateOf } from "./ledger/balances.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** One linked account as a goal shows it. */
@@ -54,6 +61,8 @@ export type GoalSummary = GoalProgress & {
 	notes: string | null;
 	state: GoalState;
 	kind: GoalKind;
+	/** When it was completed, in epoch milliseconds; kept once archived, `null` otherwise. */
+	completedAt: number | null;
 	/** By account name. */
 	accounts: GoalAccountShare[];
 };
@@ -78,13 +87,10 @@ async function accountFigures(deps: ServiceDeps, accountId: string, date: IsoDat
 }
 
 /**
- * Every goal with its figures, as Sure's `Goal.prepared_for`, behind ones
- * first, as its `active_display_sort`: the links of goals that hold their
- * money share each account's balance, and each goal reads its share of
- * every account it links. Reads only.
+ * Every goal, every link with its account, and, by account, the links of the
+ * goals that hold their money, which share its balance. Reads only.
  */
-export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
-	const date = today(deps.timeZone);
+async function loadGoals(deps: ServiceDeps) {
 	const [goalRows, linkRows] = await Promise.all([
 		deps.db.select().from(goals),
 		deps.db
@@ -100,19 +106,9 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 			.from(goalAccounts)
 			.innerJoin(accounts, eq(accounts.id, goalAccounts.accountId)),
 	]);
-	const accountIds = [...new Set(linkRows.map((row) => row.accountId))];
-	const figures = new Map(
-		await Promise.all(
-			accountIds.map(async (id) => [id, await accountFigures(deps, id, date)] as const),
-		),
-	);
 	const holding = new Set(
 		goalRows.filter((goal) => !RELEASED.includes(goal.state)).map((goal) => goal.id),
 	);
-	const linkOf = (row: (typeof linkRows)[number]): GoalLink => ({
-		goalId: row.goalId,
-		allocatedAmount: row.allocatedAmount === null ? null : toMinorUnits(row.allocatedAmount),
-	});
 	const pool = new Map<string, GoalLink[]>();
 
 	for (const row of linkRows) {
@@ -121,14 +117,50 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 		}
 	}
 
+	/**
+	 * The links `row`'s account balance is split among for its goal: a goal
+	 * that released its money still reads what it would back beside the
+	 * goals holding theirs.
+	 */
+	const competing = (row: LinkRow): GoalLink[] => {
+		const shared = pool.get(row.accountId) ?? [];
+
+		return holding.has(row.goalId) ? shared : [...shared, linkOf(row)];
+	};
+
+	return { goalRows, linkRows, competing };
+}
+
+type LinkRow = { goalId: string; accountId: string; allocatedAmount: number | null };
+
+function linkOf(row: LinkRow): GoalLink {
+	return {
+		goalId: row.goalId,
+		allocatedAmount: row.allocatedAmount === null ? null : toMinorUnits(row.allocatedAmount),
+	};
+}
+
+/**
+ * Every goal with its figures, as Sure's `Goal.prepared_for`, sorted as its
+ * list: active goals behind first, then paused, completed and archived ones.
+ * Each goal reads its share of every account it links; a goal with a frozen
+ * amount reads that instead, as Sure's `current_balance`. Reads only.
+ */
+export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
+	const date = today(deps.timeZone);
+	const { goalRows, linkRows, competing } = await loadGoals(deps);
+	const accountIds = [...new Set(linkRows.map((row) => row.accountId))];
+	const figures = new Map(
+		await Promise.all(
+			accountIds.map(async (id) => [id, await accountFigures(deps, id, date)] as const),
+		),
+	);
+
 	return goalRows
 		.map((goal): GoalSummary => {
 			const links = linkRows.filter((row) => row.goalId === goal.id);
 			const shares = links.map((row): GoalAccountShare => {
 				const { now } = figures.get(row.accountId) ?? { now: toMinorUnits(0) };
-				const shared = pool.get(row.accountId) ?? [];
-				// A goal that released its money still reads what it would back.
-				const competing = holding.has(goal.id) ? shared : [...shared, linkOf(row)];
 
 				return {
 					accountId: row.accountId,
@@ -140,16 +172,19 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 					allocatedAmount: linkOf(row).allocatedAmount,
 					// A deactivated account backs nothing, as it counts in no total.
 					share: row.active
-						? (backingShares(now, competing).get(goal.id) ?? toMinorUnits(0))
+						? (backingShares(now, competing(row)).get(goal.id) ?? toMinorUnits(0))
 						: toMinorUnits(0),
 				};
 			});
 			const progress = goalProgress({
 				target: toMinorUnits(goal.targetAmount),
-				saved: toMinorUnits(shares.reduce((sum, account) => sum + account.share, 0)),
+				saved: toMinorUnits(
+					goal.completedAmount ?? shares.reduce((sum, account) => sum + account.share, 0),
+				),
 				targetDate: goal.targetDate,
 				today: date,
 				accounts: links.flatMap((row) => (row.active ? (figures.get(row.accountId) ?? []) : [])),
+				completed: goal.state === "completed",
 			});
 
 			return {
@@ -163,6 +198,7 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 				notes: goal.notes,
 				state: goal.state,
 				kind: goal.kind,
+				completedAt: goal.completedAt,
 				...progress,
 				accounts: shares.toSorted((a, b) => byName.compare(a.name, b.name)),
 			};
@@ -178,6 +214,50 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
 	}
 
 	return goal;
+}
+
+/**
+ * The dashboard's card: the goals that hold their money, summed in the
+ * reporting currency, as Sure's Plan card. Reads only.
+ */
+export async function getGoalsSummary(deps: ServiceDeps) {
+	return goalsSummary(await listGoals(deps), getReportingCurrency());
+}
+
+export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
+
+/**
+ * What a goal had saved each day of its chart, as Sure's projection panel's
+ * `balance_series_values`: from 90 days ago, or from the earliest opening of
+ * its active accounts if later, to today, each day its share of each active
+ * account's balance under today's links (AD-8). Reads only.
+ */
+export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<GoalHistory> {
+	const date = today(deps.timeZone);
+	const { goalRows, linkRows, competing } = await loadGoals(deps);
+	const goal = goalRows.find((candidate) => candidate.id === id);
+
+	if (goal === undefined) {
+		throw notFound();
+	}
+
+	const links = linkRows.filter((row) => row.goalId === id && row.active);
+	const openings = await Promise.all(links.map(async (row) => openingDateOf(deps, row.accountId)));
+	const opened = openings.filter((opening) => opening !== null);
+	const from = paceStart(date, opened.length === 0 ? null : opened.reduce(minDate));
+	const accountsSeries = await Promise.all(
+		links.map(async (row) => ({
+			balances: await balancesBetween(deps, row.accountId, from, date),
+			links: competing(row),
+		})),
+	);
+
+	return {
+		currency: goal.currency,
+		from,
+		to: date,
+		points: goalSeries({ goalId: id, from, to: date, accounts: accountsSeries }),
+	};
 }
 
 /** A stored currency as the schema reads amounts in; the reporting one if it is no longer known. */
@@ -200,11 +280,39 @@ function parse(input: GoalInput, currency: CurrencyCode): GoalRequest {
 }
 
 /**
+ * Which of `accountIds` a goal other than `goalId` that holds its money
+ * takes whole: two whole-balance links on one account would count it twice.
+ */
+async function wholeTakenElsewhere(
+	db: Db,
+	goalId: string | null,
+	accountIds: readonly string[],
+): Promise<Set<string>> {
+	const taken = await db
+		.select({ accountId: goalAccounts.accountId })
+		.from(goalAccounts)
+		.innerJoin(goals, eq(goals.id, goalAccounts.goalId))
+		.where(
+			and(
+				inArray(goalAccounts.accountId, [...accountIds]),
+				isNull(goalAccounts.allocatedAmount),
+				notInArray(goals.state, [...RELEASED_GOAL_STATES]),
+				goalId === null ? undefined : ne(goals.id, goalId),
+			),
+		);
+
+	return new Set(taken.map((row) => row.accountId));
+}
+
+/**
  * Refuses a link to an account that cannot back the goal, as Sure's
  * validations: unknown, inactive or neither a depository nor an investment
  * account, held in another currency, or taken whole by another goal that
  * holds its money, which two whole-balance links on one account would count
- * twice. Under the caller's write lock, so two saves never both take one
+ * twice. A whole-balance link the goal already had is not checked again, as
+ * Sure's `whole_account_link_must_be_exclusive` checks new or changed links
+ * only: a released goal is renamed even after another goal took its account
+ * whole. Under the caller's write lock, so two saves never both take one
  * account whole.
  */
 async function assertFundable(
@@ -214,7 +322,7 @@ async function assertFundable(
 	links: GoalRequest["accounts"],
 ): Promise<void> {
 	const ids = links.map((link) => link.accountId);
-	const [rows, taken] = await Promise.all([
+	const [rows, takenWhole, ownWhole] = await Promise.all([
 		db
 			.select({
 				id: accounts.id,
@@ -224,21 +332,16 @@ async function assertFundable(
 			})
 			.from(accounts)
 			.where(inArray(accounts.id, ids)),
-		db
-			.select({ accountId: goalAccounts.accountId })
-			.from(goalAccounts)
-			.innerJoin(goals, eq(goals.id, goalAccounts.goalId))
-			.where(
-				and(
-					inArray(goalAccounts.accountId, ids),
-					isNull(goalAccounts.allocatedAmount),
-					notInArray(goals.state, [...RELEASED_GOAL_STATES]),
-					goalId === null ? undefined : ne(goals.id, goalId),
-				),
-			),
+		wholeTakenElsewhere(db, goalId, ids),
+		goalId === null
+			? []
+			: db
+					.select({ accountId: goalAccounts.accountId })
+					.from(goalAccounts)
+					.where(and(eq(goalAccounts.goalId, goalId), isNull(goalAccounts.allocatedAmount))),
 	]);
 	const found = new Map(rows.map((row) => [row.id, row]));
-	const takenWhole = new Set(taken.map((row) => row.accountId));
+	const kept = new Set(ownWhole.map((row) => row.accountId));
 	const fields = links.flatMap((link, index): FieldError[] => {
 		const account = found.get(link.accountId);
 
@@ -250,7 +353,11 @@ async function assertFundable(
 			return [{ path: `accounts.${index}.accountId`, code: "currency_mismatch" }];
 		}
 
-		if (link.allocatedAmount === null && takenWhole.has(link.accountId)) {
+		if (
+			link.allocatedAmount === null &&
+			takenWhole.has(link.accountId) &&
+			!kept.has(link.accountId)
+		) {
 			return [{ path: `accounts.${index}.allocatedAmount`, code: "whole_balance_taken" }];
 		}
 
@@ -386,4 +493,92 @@ export async function deleteGoal(deps: ServiceDeps, id: string): Promise<{ id: s
 	}
 
 	return { id };
+}
+
+/**
+ * Refuses to bring a released goal back while another goal holding its money
+ * now takes whole an account this one takes whole, as Sure's
+ * `restore_must_not_recreate_whole_account_conflict`: the account would back
+ * both twice. Names the first such account by id only (AD-14). Under the
+ * caller's write lock.
+ */
+async function assertWholeAccountsFree(db: Db, goalId: string): Promise<void> {
+	const own = await db
+		.select({ accountId: goalAccounts.accountId })
+		.from(goalAccounts)
+		.where(and(eq(goalAccounts.goalId, goalId), isNull(goalAccounts.allocatedAmount)))
+		.orderBy(goalAccounts.accountId);
+	const ids = own.map((row) => row.accountId);
+	const taken = ids.length === 0 ? new Set<string>() : await wholeTakenElsewhere(db, goalId, ids);
+	const accountId = ids.find((id) => taken.has(id));
+
+	if (accountId !== undefined) {
+		throw new AppError(
+			"GOAL_ACCOUNT_TAKEN",
+			"Another goal now takes whole an account this goal takes whole.",
+			undefined,
+			{ accountId },
+		);
+	}
+}
+
+/**
+ * Moves a goal through one of Sure's events, then returns it with its
+ * figures. Completing freezes what it saved and when; becoming active again
+ * from a released state clears both, and archiving a completed goal keeps
+ * them. An event that does not apply from the goal's state is refused.
+ */
+export async function transitionGoal(
+	deps: ServiceDeps,
+	id: string,
+	event: GoalEvent,
+): Promise<GoalSummary> {
+	// Read before the write lock, which the balance reads do not run under:
+	// the transaction rechecks the state, and one household's single writer
+	// leaves a balance moving in between harmless.
+	const frozen = event === "complete" ? (await getGoal(deps, id)).saved : null;
+
+	await deps.db.transaction(
+		async (tx) => {
+			const existing = await tx
+				.select({ state: goals.state, kind: goals.kind })
+				.from(goals)
+				.where(eq(goals.id, id))
+				.get();
+
+			if (existing === undefined) {
+				throw notFound();
+			}
+
+			const next = goalTransition(existing.state, existing.kind, event);
+
+			if (next === null) {
+				throw new AppError(
+					"GOAL_STATE_INVALID",
+					`This goal is ${existing.state}: ${event} does not apply.`,
+				);
+			}
+
+			const thawed = RELEASED.includes(existing.state) && !RELEASED.includes(next);
+
+			if (thawed) {
+				await assertWholeAccountsFree(tx, id);
+			}
+
+			const now = Date.now();
+
+			await tx
+				.update(goals)
+				.set({
+					state: next,
+					updatedAt: now,
+					...(next === "completed" ? { completedAmount: frozen, completedAt: now } : {}),
+					...(thawed ? { completedAmount: null, completedAt: null } : {}),
+				})
+				.where(eq(goals.id, id));
+		},
+		{ behavior: "immediate" },
+	);
+
+	return getGoal(deps, id);
 }

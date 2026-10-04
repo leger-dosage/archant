@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarIcon,
+	EllipsisIcon,
 	FunnelIcon,
 	GoalIcon,
 	LayoutDashboardIcon,
@@ -25,6 +26,12 @@ import { Money } from "@/components/Money";
 import { SettingsNav } from "@/components/SettingsNav";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -55,40 +62,106 @@ export function useShell(): ShellState | null {
 
 // Sure's order: the home, then the lists, then the settings. `exact` for
 // Comptes: on an account page the column's row is the current entry.
+// `phone`: one of the bottom bar's four; the others wait under « Plus ».
 const DESTINATIONS = [
-	{ to: "/", label: "nav.dashboard", icon: LayoutDashboardIcon, exact: false },
-	{ to: "/transactions", label: "nav.operations", icon: ReceiptIcon, exact: false },
-	{ to: "/accounts", label: "nav.accounts", icon: WalletIcon, exact: true },
-	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false },
-	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false },
-	{ to: "/recurring", label: "nav.recurring", icon: CalendarIcon, exact: false },
-	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false },
-	{ to: "/settings", label: "nav.settings", icon: SettingsIcon, exact: false },
-] as const satisfies readonly { to: string; label: string; icon: LucideIcon; exact: boolean }[];
+	{ to: "/", label: "nav.dashboard", icon: LayoutDashboardIcon, exact: false, phone: true },
+	{ to: "/transactions", label: "nav.operations", icon: ReceiptIcon, exact: false, phone: true },
+	{ to: "/accounts", label: "nav.accounts", icon: WalletIcon, exact: true, phone: false },
+	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false, phone: true },
+	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false, phone: true },
+	{ to: "/recurring", label: "nav.recurring", icon: CalendarIcon, exact: false, phone: false },
+	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false, phone: false },
+	{ to: "/settings", label: "nav.settings", icon: SettingsIcon, exact: false, phone: false },
+] as const satisfies readonly {
+	to: string;
+	label: string;
+	icon: LucideIcon;
+	exact: boolean;
+	phone: boolean;
+}[];
+
+type Destination = (typeof DESTINATIONS)[number];
+
+const ENTRY =
+	"group flex min-w-0 flex-1 flex-col items-center gap-1 py-1.5 text-[11px] leading-[1.27] font-medium text-muted-foreground outline-none hover:text-foreground aria-[current=page]:text-foreground lg:flex-none";
+
+/** An entry's icon tile and label, a link's or the « Plus » button's. */
+function EntryContent({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+	return (
+		<>
+			<span className="grid size-8 place-items-center rounded-lg border border-transparent group-hover:bg-hover group-focus-visible:ring-2 group-focus-visible:ring-ring group-aria-[current=page]:border-border group-aria-[current=page]:bg-card group-aria-expanded:bg-hover">
+				<Icon aria-hidden="true" className="size-4" />
+			</span>
+			<span className="max-w-full truncate">{label}</span>
+		</>
+	);
+}
+
+function DestinationLink({ destination }: { destination: Destination }) {
+	const { t } = useTranslation();
+	const { to, label, icon, exact } = destination;
+
+	return (
+		<Link to={to} activeOptions={{ exact, includeSearch: false }} className={ENTRY}>
+			<EntryContent icon={icon} label={t(label)} />
+		</Link>
+	);
+}
+
+/** Whether `pathname` is `destination`'s page, as the router's `Link` decides it. */
+function isAt(pathname: string, { to, exact }: Destination): boolean {
+	return pathname === to || (!exact && pathname.startsWith(`${to}/`));
+}
 
 /**
- * The destinations, in the rail and in the bottom navigation. The router's
- * `Link` sets `aria-current="page"` on the current one; the search params
- * never decide it.
+ * The rail: every destination. The router's `Link` sets `aria-current="page"`
+ * on the current one; the search params never decide it.
  */
 function MainNav({ className }: { className?: string }) {
 	const { t } = useTranslation();
 
 	return (
 		<nav aria-label={t("nav.main")} className={className}>
-			{DESTINATIONS.map(({ to, label, icon: Icon, exact }) => (
-				<Link
-					key={to}
-					to={to}
-					activeOptions={{ exact, includeSearch: false }}
-					className="group flex min-w-0 flex-1 flex-col items-center gap-1 py-1.5 text-[11px] leading-[1.27] font-medium text-muted-foreground outline-none hover:text-foreground aria-[current=page]:text-foreground lg:flex-none"
-				>
-					<span className="grid size-8 place-items-center rounded-lg border border-transparent group-hover:bg-hover group-focus-visible:ring-2 group-focus-visible:ring-ring group-aria-[current=page]:border-border group-aria-[current=page]:bg-card">
-						<Icon aria-hidden="true" className="size-4" />
-					</span>
-					<span className="max-w-full truncate">{t(label)}</span>
-				</Link>
+			{DESTINATIONS.map((destination) => (
+				<DestinationLink key={destination.to} destination={destination} />
 			))}
+		</nav>
+	);
+}
+
+/**
+ * Below 1024 px, Sure's bottom bar of four to six entries: « Accueil »,
+ * « Opérations », « Budgets » and « Objectifs », then « Plus », a menu of
+ * the others, marked current when the page is one of them. Eight entries cut
+ * their labels at 390 px. The accounts list and the settings are also in the
+ * top bar's menu and avatar, as Sure's.
+ */
+function BottomNav({ className }: { className?: string }) {
+	const { t } = useTranslation();
+	const pathname = useRouterState({ select: (router) => router.location.pathname });
+	const more = DESTINATIONS.filter((destination) => !destination.phone);
+	const inMore = more.some((destination) => isAt(pathname, destination));
+
+	return (
+		<nav aria-label={t("nav.main")} className={className}>
+			{DESTINATIONS.filter((destination) => destination.phone).map((destination) => (
+				<DestinationLink key={destination.to} destination={destination} />
+			))}
+			<DropdownMenu>
+				<DropdownMenuTrigger aria-current={inMore ? "page" : undefined} className={ENTRY}>
+					<EntryContent icon={EllipsisIcon} label={t("nav.more")} />
+				</DropdownMenuTrigger>
+				<DropdownMenuContent side="top" align="end" aria-label={t("nav.moreMenu")}>
+					{more.map(({ to, label, icon: Icon, exact }) => (
+						<DropdownMenuItem key={to} asChild>
+							<Link to={to} activeOptions={{ exact, includeSearch: false }}>
+								<Icon aria-hidden="true" />
+								{t(label)}
+							</Link>
+						</DropdownMenuItem>
+					))}
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</nav>
 	);
 }
@@ -295,7 +368,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 							{children}
 						</main>
 					</div>
-					<MainNav className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background px-1 pb-[env(safe-area-inset-bottom)] lg:hidden" />
+					<BottomNav className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background px-1 pb-[env(safe-area-inset-bottom)] lg:hidden" />
 					<SheetContent
 						side="left"
 						aria-describedby={undefined}
