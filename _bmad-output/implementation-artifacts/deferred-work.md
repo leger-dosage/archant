@@ -229,3 +229,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-17-4-carry-what-is-left-to-next-month.md`
   summary: No test observes that a budget write in a household without rollover skips the history read in `refreshRollover`.
   evidence: The volume test runs no budget write; removing the early return breaks no test. Settling it needs a query count, which the repository has nowhere.
+- source_spec: `_bmad-output/implementation-artifacts/spec-18-1-download-all-my-data.md`
+  summary: On a Turso database, the export's read snapshot is a remote interactive stream that may expire during a slow download.
+  evidence: unverified, medium if true; `readSnapshot` opens `$client.transaction("deferred")`, which over `libsql://` holds a Hrana stream between pulls. Settle it by exporting a large history from a Turso database through a throttled client and watching for a stream expiry.

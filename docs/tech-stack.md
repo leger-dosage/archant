@@ -81,7 +81,8 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 | `zod`                            | 4.6.x         | Schemas at every boundary                                     |
 | `jose`                           | 6.2.x         | Signs the JWT that authenticates to Enable Banking            |
 | `ofx-js`                         | 1.1.1         | OFX file parsing, patched in `patches/` to run in linear time |
-| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing                                              |
+| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing, and the export's CSV files                  |
+| `fflate`                         | 0.8.x         | The export's ZIP, deflated entry by entry as it streams       |
 | `vitest`                         | 5.0.x         | Unit and integration tests                                    |
 | `@vitest/coverage-v8`            | 5.0.x         | Branch coverage thresholds on the money paths                 |
 | `msw`                            | 2.15.x        | Fails any test that reaches the network                       |
