@@ -954,6 +954,11 @@ async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
 					notes: goal.notes,
 					state: goal.state,
 					kind: goal.kind,
+					completed_amount:
+						goal.completedAmount === null
+							? null
+							: decimal(toMinorUnits(goal.completedAmount), goal.currency),
+					completed_at: goal.completedAt === null ? null : timestamp(goal.completedAt),
 					created_at: timestamp(goal.createdAt),
 					updated_at: timestamp(goal.updatedAt),
 				},

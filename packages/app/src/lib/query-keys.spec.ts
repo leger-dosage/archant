@@ -169,4 +169,17 @@ describe("queryKeys.accounts.goals", () => {
 
 		expect(client.getQueryState(one)?.isInvalidated).toBe(true);
 	});
+
+	it("prefixes a goal's chart and the dashboard's card, so a goal's write refreshes both", async () => {
+		const client = new QueryClient();
+		const history = queryKeys.accounts.goalHistory("g");
+		const summary = queryKeys.accounts.goalsSummary;
+		client.setQueryData(history, { points: [] });
+		client.setQueryData(summary, { goals: [] });
+
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.goals });
+
+		expect(client.getQueryState(history)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(summary)?.isInvalidated).toBe(true);
+	});
 });

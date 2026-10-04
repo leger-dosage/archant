@@ -39,6 +39,13 @@ export const queryKeys = {
 		 */
 		goals: ["accounts", "goals"] as const,
 		goal: (id: string) => ["accounts", "goals", id] as const,
+		/** Under `goal(id)`: a chart reads the same balances and links as its goal. */
+		goalHistory: (id: string) => ["accounts", "goals", id, "history"] as const,
+		/**
+		 * The dashboard's card, under `goals`: a goal's own write changes the
+		 * totals, and an id is a UUID, never « summary ».
+		 */
+		goalsSummary: ["accounts", "goals", "summary"] as const,
 	},
 	/** The whole category list, one query: a household keeps a few dozen. */
 	categories: {

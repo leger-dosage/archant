@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import type { GoalInput } from "@archant/api/schemas/goals";
+import type { GoalEvent } from "@archant/data/goals";
 import { canBackGoal } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
@@ -16,6 +17,13 @@ import { queryKeys } from "@/lib/query-keys";
 export type GoalData = InferResponseType<typeof api.goals.$get, 200>["data"][number];
 
 export type GoalStatus = GoalData["status"];
+
+export type GoalHistoryData = InferResponseType<
+	(typeof api.goals)[":id"]["history"]["$get"],
+	200
+>["data"];
+
+export type GoalsSummaryData = InferResponseType<typeof api.goals.summary.$get, 200>["data"];
 
 /**
  * The accounts a goal's dialog offers, as Sure's: the active depository and
@@ -53,6 +61,23 @@ export function useGoal(id: string) {
 	});
 }
 
+/** What a goal saved each day of its chart, for an active or a paused goal only. */
+export function useGoalHistory(id: string, enabled: boolean) {
+	return useQuery({
+		queryKey: queryKeys.accounts.goalHistory(id),
+		queryFn: async () => (await unwrap(api.goals[":id"].history.$get({ param: { id } }))).data,
+		enabled,
+	});
+}
+
+/** The dashboard's card: the goals that hold their money, summed in the reporting currency. */
+export function useGoalsSummary() {
+	return useQuery({
+		queryKey: queryKeys.accounts.goalsSummary,
+		queryFn: async () => (await unwrap(api.goals.summary.$get())).data,
+	});
+}
+
 /** Goals share their accounts: one goal's write can change another's share. */
 function useInvalidateGoals() {
 	const queryClient = useQueryClient();
@@ -66,6 +91,21 @@ export function useCreateGoal() {
 	return useMutation({
 		mutationFn: async (input: GoalInput) => (await unwrap(api.goals.$post({ json: input }))).data,
 		onSuccess: invalidate,
+	});
+}
+
+/**
+ * Pauses, resumes, completes, archives, restores or reopens a goal. A
+ * released goal lets its accounts go to the others, so every goal refreshes;
+ * a refused event too, since its goal may have changed state elsewhere.
+ */
+export function useGoalEvent(id: string) {
+	const invalidate = useInvalidateGoals();
+
+	return useMutation({
+		mutationFn: async (event: GoalEvent) =>
+			(await unwrap(api.goals[":id"][":event"].$post({ param: { id, event } }))).data,
+		onSettled: invalidate,
 	});
 }
 

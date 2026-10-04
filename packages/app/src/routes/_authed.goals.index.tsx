@@ -1,6 +1,8 @@
+import type { GoalData } from "@/hooks/useGoals";
+
 import { createFileRoute } from "@tanstack/react-router";
-import { GoalIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDownIcon, GoalIcon } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -12,14 +14,63 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFundableAccounts, useGoals } from "@/hooks/useGoals";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authed/goals/")({
 	component: GoalsPage,
 });
 
+const GRID = "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3";
+
 /**
- * Sure's goals page: a card per goal, behind ones first, and « Nouvel
- * objectif ». A viewer reads the cards without the button.
+ * Sure's archived section: collapsed below the grid, opened on demand, so a
+ * goal put away stays out of sight until it is looked for.
+ */
+function Archived({ goals }: { goals: GoalData[] }) {
+	const { t } = useTranslation();
+	const [open, setOpen] = useState(false);
+	const listId = useId();
+	const headingId = useId();
+
+	return (
+		<section aria-labelledby={headingId} className="flex flex-col gap-3">
+			<div className="flex flex-wrap items-center gap-3">
+				<h2 id={headingId} className="card-title">
+					{t("goals.archived.title")}
+				</h2>
+				<Button
+					variant="ghost"
+					aria-expanded={open}
+					aria-controls={open ? listId : undefined}
+					onClick={() => setOpen((shown) => !shown)}
+				>
+					<ChevronDownIcon
+						aria-hidden="true"
+						className={cn(
+							"transition-transform motion-reduce:transition-none",
+							open && "rotate-180",
+						)}
+					/>
+					{open ? t("goals.archived.hide") : t("goals.archived.show", { count: goals.length })}
+				</Button>
+			</div>
+			{open && (
+				<ul id={listId} aria-label={t("goals.archived.title")} className={GRID}>
+					{goals.map((goal) => (
+						<li key={goal.id}>
+							<GoalCard goal={goal} />
+						</li>
+					))}
+				</ul>
+			)}
+		</section>
+	);
+}
+
+/**
+ * Sure's goals page: a card per goal, active ones behind first, then paused
+ * and completed ones, archived ones in a collapsed section below, and
+ * « Nouvel objectif ». A viewer reads the cards without the button.
  */
 function GoalsPage() {
 	const { t } = useTranslation();
@@ -29,6 +80,8 @@ function GoalsPage() {
 	// A fresh dialog per opening, so it starts from blank fields.
 	const [dialog, setDialog] = useState({ open: false, session: 0 });
 	const list = goals.data ?? [];
+	const shown = list.filter((goal) => goal.state !== "archived");
+	const archived = list.filter((goal) => goal.state === "archived");
 	const openDialog = () => setDialog(({ session }) => ({ open: true, session: session + 1 }));
 	const addButton = admin ? <Button onClick={openDialog}>{t("goals.add")}</Button> : null;
 
@@ -70,16 +123,18 @@ function GoalsPage() {
 						action={addButton}
 					/>
 				) : (
-					<ul
-						aria-label={t("goals.list")}
-						className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
-					>
-						{list.map((goal) => (
-							<li key={goal.id}>
-								<GoalCard goal={goal} />
-							</li>
-						))}
-					</ul>
+					<>
+						{shown.length > 0 && (
+							<ul aria-label={t("goals.list")} className={GRID}>
+								{shown.map((goal) => (
+									<li key={goal.id}>
+										<GoalCard goal={goal} />
+									</li>
+								))}
+							</ul>
+						)}
+						{archived.length > 0 && <Archived goals={archived} />}
+					</>
 				))}
 
 			{admin && fundable.data !== undefined && dialog.session > 0 && (

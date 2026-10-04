@@ -330,6 +330,13 @@
       "when": 1791075391586,
       "tag": "0046_add_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791080153948,
+      "tag": "0047_add_goal_completion",
+      "breakpoints": true
     }
   ]
 }

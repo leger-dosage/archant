@@ -8,6 +8,7 @@ import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
+import type { GoalEvent } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
@@ -448,6 +449,15 @@ export function apiHelpers(request: APIRequestContext) {
 			});
 
 			return { id: await created(response), name };
+		},
+
+		/** Pauses, completes, archives, restores, resumes or reopens a goal, as its menu does. */
+		async goalEvent(goalId: string, event: GoalEvent) {
+			const response = await request.post(`/api/goals/${goalId}/${event}`, {
+				headers: sameOrigin,
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
 		/** Follows a transaction as a confirmed series, as the sheet's « Récurrence » button does. */

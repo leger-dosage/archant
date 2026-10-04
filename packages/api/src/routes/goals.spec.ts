@@ -56,6 +56,7 @@ const goal = z.object({
 	notes: z.string().nullable(),
 	state: z.string(),
 	kind: z.string(),
+	completedAt: z.number().nullable(),
 	saved: z.number(),
 	remaining: z.number(),
 	percent: z.number(),
@@ -128,6 +129,31 @@ async function savedInto(name: string) {
 	await postOwn(account.id, { date: "2026-08-01", label: "Virement", amount: "3 000" });
 
 	return { accountId: account.id };
+}
+
+/** Fires `event` on a goal, as the page's menu does, and answers the goal. */
+async function fire(id: string, event: string) {
+	const { status, body: answer } = await send("POST", `/api/goals/${id}/${event}`);
+
+	expect(status, JSON.stringify(answer)).toBe(200);
+
+	return z.object({ data: goal }).parse(answer).data;
+}
+
+/** A refused event's status and error, with its params. */
+async function refusal(id: string, event: string) {
+	const { status, body: answer } = await send("POST", `/api/goals/${id}/${event}`);
+
+	return {
+		status,
+		error: errorBody
+			.extend({
+				error: errorBody.shape.error.extend({
+					params: z.record(z.string(), z.string()).optional(),
+				}),
+			})
+			.parse(answer).error,
+	};
 }
 
 async function rejection(json: unknown, method = "POST", path = "/api/goals") {
@@ -489,10 +515,34 @@ describe("goals", () => {
 		await db.run(
 			sql`update goal_accounts set allocated_amount = null where goal_id = ${paused.id}`,
 		);
-		await expect(
-			rejection(body("Travaux", [{ accountId: account.id }]), "PUT", `/api/goals/${archived.id}`),
-		).resolves.toMatchObject({
+		await expect(rejection(body("Travaux", [{ accountId: account.id }]))).resolves.toMatchObject({
 			fields: [{ path: "accounts.0.allocatedAmount", code: "whole_balance_taken" }],
+		});
+	});
+
+	it("renames a released goal whose account another goal took whole since, checking only new links", async () => {
+		const account = await savings("1 000");
+		const other = await savings("500", { name: "LDDS" });
+		const archived = await create("Ancien", [{ accountId: account.id }]);
+		await sendOwn("POST", `/api/goals/${archived.id}/archive`);
+		await create("Travaux", [{ accountId: account.id }]);
+		await create("Voyage", [{ accountId: other.id }]);
+
+		const { status } = await send(
+			"PUT",
+			`/api/goals/${archived.id}`,
+			body("Ancien projet", [{ accountId: account.id }]),
+		);
+
+		expect(status).toBe(200);
+		await expect(
+			rejection(
+				body("Ancien projet", [{ accountId: account.id }, { accountId: other.id }]),
+				"PUT",
+				`/api/goals/${archived.id}`,
+			),
+		).resolves.toMatchObject({
+			fields: [{ path: "accounts.1.allocatedAmount", code: "whole_balance_taken" }],
 		});
 	});
 
@@ -541,6 +591,330 @@ describe("goals", () => {
 	});
 });
 
+const NOW = Date.parse("2026-09-21T10:00:00Z");
+
+/** Every goal row of the test's own database. */
+async function goalRows() {
+	return (await own()).db.all(sql`select * from goals`);
+}
+
+describe("a goal's lifecycle", () => {
+	it("completes a goal, freezing what it saved and when, and lets its account go", async () => {
+		const account = await savings("450");
+		const created = await create("Vélo", [{ accountId: account.id }], {
+			targetDate: "2027-01-01",
+		});
+
+		const completed = await fire(created.id, "complete");
+
+		expect(completed).toMatchObject({
+			state: "completed",
+			saved: 45_000,
+			remaining: 55_000,
+			percent: 100,
+			status: "reached",
+			completedAt: NOW,
+		});
+		// Released: another goal takes the account whole, and the balance moves.
+		const taking = await create("Voyage", [{ accountId: account.id }]);
+		await postOwn(account.id, { date: "2026-09-20", label: "Virement", amount: "250" });
+		const goals = new Map((await list()).map((read) => [read.id, read]));
+
+		expect(goals.get(created.id)).toMatchObject({ saved: 45_000, percent: 100 });
+		expect(goals.get(taking.id)?.saved).toBe(70_000);
+	});
+
+	it("archives a completed goal still at its frozen amount, then reopens it to the live one", async () => {
+		const account = await savings("450");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+		await fire(created.id, "complete");
+		await postOwn(account.id, { date: "2026-09-20", label: "Virement", amount: "550" });
+
+		await expect(fire(created.id, "archive")).resolves.toMatchObject({
+			state: "archived",
+			saved: 45_000,
+			completedAt: NOW,
+		});
+		await expect(fire(created.id, "restore")).resolves.toMatchObject({
+			state: "active",
+			saved: 100_000,
+			completedAt: null,
+		});
+		await fire(created.id, "complete");
+		await expect(fire(created.id, "reopen")).resolves.toMatchObject({
+			state: "active",
+			saved: 100_000,
+			completedAt: null,
+			status: "reached",
+		});
+		const rows = await (
+			await own()
+		).db.all(sql`select completed_amount as amount, completed_at as at from goals`);
+
+		expect(rows).toEqual([{ amount: null, at: null }]);
+	});
+
+	it("archives an active goal without freezing anything", async () => {
+		const account = await savings("300");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+
+		await expect(fire(created.id, "archive")).resolves.toMatchObject({
+			state: "archived",
+			saved: 30_000,
+			completedAt: null,
+		});
+	});
+
+	it("refuses to restore a goal whose whole account another goal has taken since, naming it", async () => {
+		const account = await savings("1 000");
+		const other = await savings("200", { name: "LDDS" });
+		const archived = await create("Ancien", [{ accountId: other.id }, { accountId: account.id }]);
+		await fire(archived.id, "archive");
+		await create("Travaux", [{ accountId: account.id }]);
+
+		await expect(refusal(archived.id, "restore")).resolves.toEqual({
+			status: 409,
+			error: {
+				code: "GOAL_ACCOUNT_TAKEN",
+				message: "Another goal now takes whole an account this goal takes whole.",
+				params: { accountId: account.id },
+			},
+		});
+		await expect(send("GET", `/api/goals/${archived.id}`)).resolves.toMatchObject({
+			body: { data: { state: "archived" } },
+		});
+	});
+
+	it("refuses to reopen a completed goal on the same terms, but not for a fixed amount", async () => {
+		const account = await savings("1 000");
+		const whole = await create("Vélo", [{ accountId: account.id }]);
+		const fixed = await create("Piscine", [{ accountId: account.id, allocatedAmount: "100" }]);
+		await fire(whole.id, "complete");
+		await fire(fixed.id, "complete");
+		await create("Travaux", [{ accountId: account.id }]);
+
+		await expect(refusal(whole.id, "reopen")).resolves.toMatchObject({
+			status: 409,
+			error: { code: "GOAL_ACCOUNT_TAKEN", params: { accountId: account.id } },
+		});
+		await expect(fire(fixed.id, "reopen")).resolves.toMatchObject({ state: "active" });
+	});
+
+	it("keeps a paused goal's accounts, and resumes it", async () => {
+		const account = await savings("1 000");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+
+		await expect(fire(created.id, "pause")).resolves.toMatchObject({
+			state: "paused",
+			saved: 100_000,
+			completedAt: null,
+		});
+		await expect(rejection(body("Voyage", [{ accountId: account.id }]))).resolves.toMatchObject({
+			fields: [{ path: "accounts.0.allocatedAmount", code: "whole_balance_taken" }],
+		});
+		await expect(fire(created.id, "resume")).resolves.toMatchObject({ state: "active" });
+		await fire(created.id, "pause");
+		await expect(fire(created.id, "complete")).resolves.toMatchObject({
+			state: "completed",
+			completedAt: NOW,
+		});
+	});
+
+	it.each([
+		["resume", "an active goal", null],
+		["reopen", "an active goal", null],
+		["complete", "an archived goal", "archive"],
+		["pause", "a completed goal", "complete"],
+		["restore", "a paused goal", "pause"],
+	])("refuses to %s %s, writing nothing", async (event, _label, before) => {
+		const account = await savings("300");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+		if (before !== null) {
+			await fire(created.id, before);
+		}
+		const kept = await goalRows();
+
+		const { status, error } = await refusal(created.id, event);
+
+		expect(status).toBe(409);
+		expect(error.code).toBe("GOAL_STATE_INVALID");
+		await expect(goalRows()).resolves.toEqual(kept);
+	});
+
+	it("never completes a reserve", async () => {
+		const account = await savings("300");
+		const created = await create("Réserve", [{ accountId: account.id }]);
+		await (await own()).db.run(sql`update goals set kind = 'maintained' where id = ${created.id}`);
+
+		await expect(refusal(created.id, "complete")).resolves.toMatchObject({
+			status: 409,
+			error: { code: "GOAL_STATE_INVALID" },
+		});
+		await expect(fire(created.id, "archive")).resolves.toMatchObject({ state: "archived" });
+	});
+
+	it("refuses an unknown event, and an event on an unknown goal", async () => {
+		const account = await savings("300");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+
+		await expect(refusal(created.id, "explode")).resolves.toMatchObject({
+			status: 400,
+			error: { code: "VALIDATION_ERROR", fields: [{ path: "event", code: "invalid_value" }] },
+		});
+		await expect(refusal("unknown", "pause")).resolves.toMatchObject({
+			status: 404,
+			error: { code: "NOT_FOUND" },
+		});
+		await expect(refusal("unknown", "complete")).resolves.toMatchObject({
+			status: 404,
+			error: { code: "NOT_FOUND" },
+		});
+	});
+
+	it("still edits and deletes a goal in any state", async () => {
+		const account = await savings("300");
+		const created = await create("Vélo", [{ accountId: account.id }]);
+		await fire(created.id, "complete");
+
+		const { status } = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Vélo électrique", [{ accountId: account.id }]),
+		);
+
+		expect(status).toBe(200);
+		await expect(send("DELETE", `/api/goals/${created.id}`)).resolves.toMatchObject({
+			status: 200,
+		});
+	});
+
+	it("lists active goals by status, then paused, completed and archived ones", async () => {
+		const account = await savings("1 000");
+		const names = ["Archivé", "Terminé", "En pause", "Actif"];
+		const [archived, completed, paused] = await Promise.all(
+			names.map(async (name) =>
+				create(name, [{ accountId: account.id, allocatedAmount: "10" }], { targetAmount: "100" }),
+			),
+		);
+		await fire(archived?.id ?? "", "archive");
+		await fire(completed?.id ?? "", "complete");
+		await fire(paused?.id ?? "", "pause");
+
+		expect((await list()).map((read) => read.name)).toEqual([
+			"Actif",
+			"En pause",
+			"Terminé",
+			"Archivé",
+		]);
+	});
+});
+
+const history = z.object({
+	data: z.object({
+		currency: z.string(),
+		from: z.string(),
+		to: z.string(),
+		points: z.array(z.object({ date: z.string(), saved: z.number() })),
+	}),
+});
+
+async function historyOf(id: string) {
+	const { status, body: answer } = await send("GET", `/api/goals/${id}/history`);
+
+	expect(status, JSON.stringify(answer)).toBe(200);
+
+	return history.parse(answer).data;
+}
+
+describe("a goal's history", () => {
+	it("draws its share of each day's balance over 90 days, under today's links", async () => {
+		// 0 on 2026-06-23, 1 000 today, another goal taking 300 first.
+		const account = await savings("0", { openingDate: "2026-06-23" });
+		await postOwn(account.id, { date: "2026-09-21", label: "Virement", amount: "1 000" });
+		const created = await create("Vélo", [{ accountId: account.id }]);
+		await create("Piscine", [{ accountId: account.id, allocatedAmount: "300" }]);
+
+		const read = await historyOf(created.id);
+
+		expect(read).toMatchObject({ currency: "EUR", from: "2026-06-23", to: "2026-09-21" });
+		expect(read.points).toHaveLength(91);
+		expect(read.points.at(0)).toEqual({ date: "2026-06-23", saved: 0 });
+		expect(read.points.at(-1)).toEqual({ date: "2026-09-21", saved: 70_000 });
+	});
+
+	it("starts at the earliest opening of its active accounts, leaving a deactivated one out", async () => {
+		const recent = await savings("200", { openingDate: "2026-09-01" });
+		const later = await savings("100", { name: "LDDS", openingDate: "2026-09-10" });
+		const closed = await savings("900", { name: "Livret jeune", openingDate: "2026-01-01" });
+		const created = await create("Vélo", [
+			{ accountId: recent.id },
+			{ accountId: later.id },
+			{ accountId: closed.id },
+		]);
+		await sendOwn("PATCH", `/api/accounts/${closed.id}`, { active: false });
+
+		const read = await historyOf(created.id);
+
+		expect(read.from).toBe("2026-09-01");
+		expect(read.points.at(0)?.saved).toBe(20_000);
+		expect(read.points.find((point) => point.date === "2026-09-10")?.saved).toBe(30_000);
+		expect(read.points.at(-1)?.saved).toBe(30_000);
+	});
+
+	it("goes back 90 days for a goal without an active account", async () => {
+		const closed = await savings("900");
+		const created = await create("Vélo", [{ accountId: closed.id }]);
+		await sendOwn("PATCH", `/api/accounts/${closed.id}`, { active: false });
+
+		const read = await historyOf(created.id);
+
+		expect(read.from).toBe("2026-06-23");
+		expect(read.points.every((point) => point.saved === 0)).toBe(true);
+	});
+
+	it("answers NOT_FOUND for an unknown goal", async () => {
+		const { status } = await send("GET", "/api/goals/unknown/history");
+
+		expect(status).toBe(404);
+	});
+});
+
+describe("the goals' summary", () => {
+	it("sums the goals holding their money in the reporting currency, naming the others", async () => {
+		const first = await savings("200");
+		const second = await savings("300", { name: "LDDS" });
+		const dollars = await savings("100", { currency: "USD" });
+		const done = await savings("50", { name: "Livret jeune" });
+		await create("Vacances", [{ accountId: first.id }], {
+			targetDate: "2026-10-21",
+		});
+		await create("Vélo", [{ accountId: second.id }], { targetAmount: "500" });
+		const voyage = await create("Voyage", [{ accountId: dollars.id }]);
+		const finished = await create("Fini", [{ accountId: done.id }]);
+		await fire(finished.id, "complete");
+
+		const { status, body: answer } = await send("GET", "/api/goals/summary");
+
+		expect(status).toBe(200);
+		expect(answer).toMatchObject({
+			data: {
+				currency: "EUR",
+				count: 3,
+				saved: 50_000,
+				target: 150_000,
+				behind: 1,
+				leftOut: [{ id: voyage.id, name: "Voyage" }],
+			},
+		});
+		expect(
+			z
+				.object({ data: z.object({ goals: z.array(goal) }) })
+				.parse(answer)
+				.data.goals.map((item) => item.name),
+		).toEqual(["Vacances", "Vélo", "Voyage"]);
+	});
+});
+
 const admin = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), template.cookie);
 const viewer = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
 
@@ -569,22 +943,30 @@ describe("a viewer", () => {
 		const { id } = z.object({ data: goal }).parse(created.body).data;
 		const before = await sharedGoalRows();
 
+		const events = ["pause", "resume", "complete", "archive", "restore", "reopen"];
 		const answers = await Promise.all([
 			send("POST", "/api/goals", body("Travaux", [{ accountId, allocatedAmount: "1" }]), viewer()),
 			send("PUT", `/api/goals/${id}`, body("Voyage", [{ accountId }]), viewer()),
 			send("DELETE", `/api/goals/${id}`, undefined, viewer()),
+			...events.map(async (event) =>
+				send("POST", `/api/goals/${id}/${event}`, undefined, viewer()),
+			),
 		]);
 
-		expect(answers.map((answer) => answer.status)).toEqual([403, 403, 403]);
-		expect(answers.map((answer) => errorBody.parse(answer.body).error.code)).toEqual([
-			"FORBIDDEN",
-			"FORBIDDEN",
-			"FORBIDDEN",
-		]);
+		expect(answers.map((answer) => answer.status)).toEqual(Array(9).fill(403));
+		expect(new Set(answers.map((answer) => errorBody.parse(answer.body).error.code))).toEqual(
+			new Set(["FORBIDDEN"]),
+		);
 		await expect(sharedGoalRows()).resolves.toEqual(before);
 		await expect(send("GET", `/api/goals/${id}`, undefined, viewer())).resolves.toMatchObject({
 			status: 200,
 			body: { data: { id, saved: 100_000 } },
+		});
+		await expect(
+			send("GET", `/api/goals/${id}/history`, undefined, viewer()),
+		).resolves.toMatchObject({ status: 200 });
+		await expect(send("GET", "/api/goals/summary", undefined, viewer())).resolves.toMatchObject({
+			status: 200,
 		});
 	});
 });

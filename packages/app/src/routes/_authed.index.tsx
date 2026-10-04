@@ -11,6 +11,7 @@ import { monthSchema } from "@archant/api/schemas/reports";
 import { BalanceSheetSection } from "@/components/BalanceSheetSection";
 import { CashFlowSection } from "@/components/CashFlowSection";
 import { DashboardEmpty } from "@/components/DashboardEmpty";
+import { GoalsSection } from "@/components/GoalsSection";
 import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { NetWorthSection } from "@/components/NetWorthSection";
 import { Page } from "@/components/Page";
@@ -118,6 +119,7 @@ function DashboardPage() {
 								className="2xl:row-span-2"
 							/>
 							<BalanceSheetSection list={accounts.data} />
+							<GoalsSection />
 						</div>
 					) : (
 						<DashboardEmpty onAddAccount={admin ? () => setCreatingAccount(true) : null} />

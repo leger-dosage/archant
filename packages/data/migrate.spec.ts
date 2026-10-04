@@ -1726,6 +1726,40 @@ describe("goals", () => {
 		await expect(remaining()).resolves.toEqual(["g2 a2"]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
+
+	it("holds a completed amount and its time together, or neither", async () => {
+		const database = await migrated();
+		await insertGoal(database, "g1");
+		const complete = (amount: number | null, at: number | null) =>
+			database.run(sql`update goals set completed_amount = ${amount}, completed_at = ${at}`);
+
+		await expect(complete(45_000, 1_790_000_000_000)).resolves.toBeDefined();
+		await expect(complete(null, null)).resolves.toBeDefined();
+		await expect(complete(45_000, null)).rejects.toThrow();
+		await expect(complete(null, 1_790_000_000_000)).rejects.toThrow();
+	});
+
+	it("keeps every goal and its links when 0047 rebuilds goals, none completed", async () => {
+		const before = await migratedBefore("0047");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { state: "paused" });
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, state, completed_amount as completedAmount, completed_at as completedAt from goals`,
+			),
+		).resolves.toEqual([{ id: "g1", state: "paused", completedAmount: null, completedAt: null }]);
+		await expect(
+			database.all(sql`select goal_id as goalId, allocated_amount as amount from goal_accounts`),
+		).resolves.toEqual([{ goalId: "g1", amount: 30_000 }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
 });
 
 describe("migrateFromEnv", () => {
