@@ -15,6 +15,11 @@ type AmountFieldProps = {
 	onBlur?: () => void;
 	invalid?: boolean;
 	describedBy?: string;
+	disabled?: boolean;
+	/** The toggle's position for an empty field: a split's new line takes its parent's. */
+	defaultNature?: Nature;
+	/** The toggle's name, when a form holds several amounts. */
+	natureLabel?: string;
 };
 
 const NATURES: readonly Nature[] = ["expense", "income"];
@@ -31,16 +36,21 @@ export function AmountField({
 	onBlur,
 	invalid = false,
 	describedBy,
+	disabled = false,
+	defaultNature = "expense",
+	natureLabel,
 }: AmountFieldProps) {
 	const { t } = useTranslation();
-	const [nature, setNature] = useState<Nature>(() => initialNature(value));
+	const [nature, setNature] = useState<Nature>(() =>
+		value.trim() === "" ? defaultNature : initialNature(value),
+	);
 	const { magnitude } = splitAmount(value, nature);
 
 	return (
 		<div className="flex gap-2">
 			<div
 				role="group"
-				aria-label={t("transactions.form.nature")}
+				aria-label={natureLabel ?? t("transactions.form.nature")}
 				className="flex shrink-0 rounded-md border p-0.5"
 			>
 				{NATURES.map((option) => (
@@ -50,6 +60,7 @@ export function AmountField({
 						size="sm"
 						variant={nature === option ? "secondary" : "ghost"}
 						aria-pressed={nature === option}
+						disabled={disabled}
 						onClick={() => {
 							setNature(option);
 							onChange(joinAmount({ nature: option, magnitude }));
@@ -66,6 +77,7 @@ export function AmountField({
 				autoComplete="off"
 				className="text-right tabular-nums"
 				aria-invalid={invalid}
+				disabled={disabled}
 				{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
 				onChange={(event) => {
 					const next = splitAmount(event.target.value, nature);

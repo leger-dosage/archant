@@ -161,7 +161,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 			)}
 
 			{data !== undefined && data.total > 0 && (
-				<TransactionList items={data.items} onOpen={onOpen} />
+				<TransactionList items={data.items} splitParents={data.splitParents} onOpen={onOpen} />
 			)}
 
 			{data !== undefined && pageCount > 1 && (

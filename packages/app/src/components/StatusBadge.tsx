@@ -11,6 +11,7 @@ import {
 	RefreshCwOffIcon,
 	RepeatIcon,
 	SparklesIcon,
+	SplitIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -31,6 +32,8 @@ const STATUSES = {
 		key: "transactions.transfer.suggested",
 		tone: "neutral",
 	},
+	// A split's parent, shown above its lines, as Sure's « Split » pill.
+	split: { icon: SplitIcon, key: "transactions.split.badge", tone: "neutral" },
 	// The warning tint, which DESIGN.md keeps for states that need attention.
 	duplicate: { icon: TriangleAlertIcon, key: "transactions.duplicate.flag", tone: "warning" },
 	// A series' state is information, never an alarm: all neutral.

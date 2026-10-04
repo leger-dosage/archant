@@ -192,11 +192,14 @@ export const listItem = z.object({
 		.nullable(),
 	transferSuggested: z.boolean(),
 	possibleDuplicate: z.boolean(),
+	parentEntryId: z.string().nullable(),
+	splitParent: z.boolean(),
 });
 
 export const listBody = z.object({
 	data: z.strictObject({
 		items: z.array(listItem),
+		splitParents: z.array(listItem),
 		page: z.number(),
 		pageSize: z.number(),
 	}),

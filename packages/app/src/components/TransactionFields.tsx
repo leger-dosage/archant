@@ -12,13 +12,24 @@ import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 
-/** The sheet's Catégorie field: the list's combobox behind a button showing the choice. */
+/**
+ * The sheet's Catégorie field: the list's combobox behind a button showing the choice.
+ * A split's dialog holds one per line, each with its own `id` and name.
+ */
 export function CategoryField({
+	id = "transaction-category",
+	accessibleName,
 	value,
 	onChange,
 	invalid,
 	describedBy,
 }: {
+	id?: string;
+	/**
+	 * Replaces the name its `<label>` gives, with the choice kept in it; `null`
+	 * while the categories load.
+	 */
+	accessibleName?: (name: string | null) => string;
 	value: string | null;
 	onChange: (categoryId: string | null) => void;
 	invalid: boolean;
@@ -32,11 +43,12 @@ export function CategoryField({
 		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>
 				<Button
-					id="transaction-category"
+					id={id}
 					type="button"
 					variant="outline"
 					className="w-full justify-start font-normal"
 					aria-invalid={invalid}
+					{...(accessibleName === undefined ? {} : { "aria-label": accessibleName(name) })}
 					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
 				>
 					<TintedIcon
@@ -70,11 +82,14 @@ export function CategoryField({
 
 /** The sheet's Marchand field: the list's combobox behind a button showing the choice. */
 export function MerchantField({
+	disabled = false,
 	value,
 	onChange,
 	invalid,
 	describedBy,
 }: {
+	/** A split's line keeps its parent's merchant. */
+	disabled?: boolean;
 	value: string | null;
 	onChange: (merchantId: string | null) => void;
 	invalid: boolean;
@@ -98,6 +113,7 @@ export function MerchantField({
 					id="transaction-merchant"
 					type="button"
 					variant="outline"
+					disabled={disabled}
 					className="w-full justify-start font-normal"
 					aria-invalid={invalid}
 					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}

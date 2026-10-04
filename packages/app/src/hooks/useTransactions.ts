@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type {
 	BulkDeleteInput,
 	BulkUpdateInput,
+	SplitInput,
 	TransactionInput,
 	TransactionPatchInput,
 } from "@archant/api/schemas/transactions";
@@ -23,6 +24,10 @@ type TransactionPageData = InferResponseType<
 	200
 >["data"];
 export type TransactionData = TransactionPageData["items"][number];
+export type SplitData = InferResponseType<
+	(typeof api.transactions)[":id"]["split"]["$get"],
+	200
+>["data"];
 
 export function useAccountTransactions(accountId: string, page: number) {
 	return useQuery({
@@ -298,5 +303,74 @@ export function useRecentTransactions(filters: TransactionFilters, enabled: bool
 				)
 			).data.items,
 		enabled,
+	});
+}
+
+/** The split `id` belongs to, read from its parent or one of its lines. */
+export function useSplit(id: string, enabled: boolean) {
+	return useQuery({
+		queryKey: queryKeys.transactions.split(id),
+		queryFn: async () => (await unwrap(api.transactions[":id"].split.$get({ param: { id } }))).data,
+		enabled,
+		// A split undone or deleted elsewhere stays gone: the sheet's block says
+		// so inline at once rather than after the retries' backoff.
+		retry: (failures, error) => errorCodeOf(error) !== "NOT_FOUND" && failures < 3,
+		meta: { notFoundInline: true },
+	});
+}
+
+/**
+ * Refreshes what a split, its edit or its undoing changes: the lists with
+ * their totals, the category and tag counts, the splits and the series,
+ * whose rows it moves. No balance moves: the lines sum to the parent. Every
+ * split action closes the sheet, so its split is dropped and the series only
+ * marked stale, both read again on the next opening: a line the action
+ * deleted answers NOT_FOUND, and refetching it through every retry would
+ * hold the mutation for seconds.
+ */
+function useInvalidateSplit() {
+	const invalidate = useInvalidateBulk();
+	const queryClient = useQueryClient();
+
+	return () => {
+		queryClient.removeQueries({ queryKey: queryKeys.transactions.splits });
+
+		return Promise.all([
+			invalidate({ balances: false }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all, refetchType: "none" }),
+		]);
+	};
+}
+
+/** Splits a transaction into lines, as Sure's « Diviser ». */
+export function useSplitTransaction() {
+	const invalidate = useInvalidateSplit();
+
+	return useMutation({
+		mutationFn: async ({ id, input }: { id: string; input: SplitInput }) =>
+			(await unwrap(api.transactions[":id"].split.$post({ param: { id }, json: input }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** Replaces a split's lines, keeping those sent with their id. */
+export function useEditSplit() {
+	const invalidate = useInvalidateSplit();
+
+	return useMutation({
+		mutationFn: async ({ id, input }: { id: string; input: SplitInput }) =>
+			(await unwrap(api.transactions[":id"].split.$put({ param: { id }, json: input }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** Deletes a split's lines and counts its parent again. */
+export function useUnsplitTransaction() {
+	const invalidate = useInvalidateSplit();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.transactions[":id"].split.$delete({ param: { id } }))).data,
+		onSuccess: invalidate,
 	});
 }

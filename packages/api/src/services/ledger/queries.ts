@@ -249,6 +249,54 @@ export async function findTransaction(
 }
 
 /**
+ * The list's select: each transaction with its transfer and its account's
+ * name and type. `listTransactionPage` and `listTransactionsById` narrow it.
+ */
+function listSelect(db: Pick<Transaction, "select">) {
+	return db
+		.select({
+			...transactionColumns,
+			...transferColumns,
+			accountName: accounts.name,
+			accountType: accounts.type,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
+		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
+		.$dynamic();
+}
+
+// A pending row sits at the top of its day: the bank has not settled it yet.
+const listOrder = [
+	desc(entries.date),
+	desc(transactions.pending),
+	desc(entries.createdAt),
+	desc(entries.id),
+];
+
+/** The rows of `listSelect` as records, with their tags and suggestions, in two queries. */
+async function listRecordsOf(
+	db: Pick<Transaction, "select">,
+	rows: Awaited<ReturnType<typeof listSelect>>,
+): Promise<TransactionListRecord[]> {
+	const tagsOf = await tagIdsByEntry(
+		db,
+		rows.map((row) => row.id),
+	);
+	const suggested = await suggestedAmong(db, unmatchedIds(rows));
+
+	return rows.map((row) => ({
+		...withTransferLink(toRecord(row)),
+		tagIds: tagsOf.get(row.id) ?? [],
+		transferSuggested: suggested.has(row.id),
+	}));
+}
+
+/**
  * A page of transactions matching `filter`, most recent first (AD-15), each
  * with its account's name, and no count: the cross-account list asks for its
  * totals apart, once per filter rather than once per page.
@@ -264,42 +312,34 @@ export async function listTransactionPage(
 		return [];
 	}
 
-	const rows = await deps.db
-		.select({
-			...transactionColumns,
-			...transferColumns,
-			accountName: accounts.name,
-			accountType: accounts.type,
-		})
-		.from(entries)
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.innerJoin(accounts, eq(accounts.id, entries.accountId))
-		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
-		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
-		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
+	const rows = await listSelect(deps.db)
 		.where(where)
-		// A pending row sits at the top of its day: the bank has not settled it yet.
-		.orderBy(
-			desc(entries.date),
-			desc(transactions.pending),
-			desc(entries.createdAt),
-			desc(entries.id),
-		)
+		.orderBy(...listOrder)
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
 
-	const tagsOf = await tagIdsByEntry(
-		deps.db,
-		rows.map((row) => row.id),
-	);
-	const suggested = await suggestedAmong(deps.db, unmatchedIds(rows));
+	return listRecordsOf(deps.db, rows);
+}
 
-	return rows.map((row) => ({
-		...withTransferLink(toRecord(row)),
-		tagIds: tagsOf.get(row.id) ?? [],
-		transferSuggested: suggested.has(row.id),
-	}));
+/**
+ * The transactions `ids` names, as the list shows them, with no filter and in
+ * the list's order; an unknown id is absent. The list reads a page's split
+ * parents through it, which no filter keeps, as Sure's `@split_parents`. One
+ * query: a page's ids stay under SQLite's bound on parameters.
+ */
+export async function listTransactionsById(
+	deps: ServiceDeps,
+	ids: readonly string[],
+): Promise<TransactionListRecord[]> {
+	if (ids.length === 0) {
+		return [];
+	}
+
+	const rows = await listSelect(deps.db)
+		.where(inArray(entries.id, [...ids]))
+		.orderBy(...listOrder);
+
+	return listRecordsOf(deps.db, rows);
 }
 
 /**

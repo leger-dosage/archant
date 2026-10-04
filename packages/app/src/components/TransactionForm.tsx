@@ -18,6 +18,7 @@ import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { CategoryField, MerchantField, TagsField } from "@/components/TransactionFields";
 import { DuplicateBlock, RecurringBlock, TransferBlock } from "@/components/TransactionLinks";
+import { SplitBlock } from "@/components/TransactionSplit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -59,8 +60,11 @@ type TransactionFormProps = {
 	transaction: TransactionData | null;
 	/** After a save or a delete. */
 	onClose: () => void;
-	/** After a merge: this transaction is gone, focus goes to the survivor's row. */
-	onMerged: (survivorId: string) => void;
+	/**
+	 * After a merge, a split, its edit or its undoing: the sheet closes and
+	 * focus goes to that row, the survivor's or the split parent's.
+	 */
+	onCloseFocusing: (rowId: string) => void;
 	/** Annuler: the sheet decides whether to ask first. */
 	onCancel: () => void;
 	onDirtyChange: (dirty: boolean) => void;
@@ -70,7 +74,7 @@ export function TransactionForm({
 	account,
 	transaction,
 	onClose,
-	onMerged,
+	onCloseFocusing,
 	onCancel,
 	onDirtyChange,
 }: TransactionFormProps) {
@@ -83,6 +87,21 @@ export function TransactionForm({
 	// Hidden once resolved here; a refetch clearing the flag hides it too.
 	const [duplicateHidden, setDuplicateHidden] = useState(false);
 	const duplicate = transaction?.possibleDuplicate === true && !duplicateHidden;
+	// A split's parent and its lines keep their date, amount and exclusion,
+	// which only the split changes (AD-20); a line keeps its parent's merchant
+	// and goes only with its parent.
+	const splitParent = transaction?.splitParent === true;
+	const splitChild = transaction !== null && transaction.parentEntryId !== null;
+	const inSplit = splitParent || splitChild;
+	// The ledger's own refusal, read from what the sheet shows: a transfer
+	// matched here meanwhile counts.
+	const splittable =
+		transaction !== null &&
+		!inSplit &&
+		transfer === null &&
+		!transaction.pending &&
+		!transaction.excluded &&
+		!duplicate;
 	const formRef = useRef<HTMLFormElement>(null);
 	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
 	const form = useForm<TransactionFormInput>({
@@ -189,8 +208,22 @@ export function TransactionForm({
 				id="transaction-form"
 				noValidate
 				className="flex flex-1 flex-col gap-4 overflow-y-auto px-4"
-				onSubmit={(event) => void submit(event)}
+				onSubmit={(event) => {
+					// A dialog opened from a block below is portaled out of this form,
+					// but React bubbles its submit here along the component tree: the
+					// split dialog's « Diviser » once also saved this sheet.
+					if (event.target !== event.currentTarget) {
+						return;
+					}
+
+					void submit(event);
+				}}
 				onKeyDown={(event) => {
+					// Same bubbling: ⌘Enter in a dialog of a block is that dialog's.
+					if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) {
+						return;
+					}
+
 					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 						event.preventDefault();
 						// The button is disabled while saving; the shortcut must be too,
@@ -201,6 +234,15 @@ export function TransactionForm({
 					}
 				}}
 			>
+				{transaction !== null && (
+					<SplitBlock
+						transaction={transaction}
+						currency={account.currency}
+						splittable={splittable}
+						dirty={isDirty}
+						onDone={onCloseFocusing}
+					/>
+				)}
 				{transaction !== null && duplicate && (
 					<DuplicateBlock
 						transaction={transaction}
@@ -211,15 +253,15 @@ export function TransactionForm({
 								formRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus(),
 							);
 						}}
-						onMerged={onMerged}
+						onMerged={onCloseFocusing}
 						onResolved={() => setDuplicateHidden(true)}
 						onGone={onClose}
 					/>
 				)}
-				{transaction !== null && (
+				{transaction !== null && !inSplit && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
 				)}
-				{transaction !== null && showsCategory(transaction.amount, transfer) && (
+				{transaction !== null && !splitParent && showsCategory(transaction.amount, transfer) && (
 					<RecurringBlock transaction={transaction} dirty={isDirty} />
 				)}
 
@@ -230,6 +272,7 @@ export function TransactionForm({
 						value={date.field.value}
 						onChange={date.field.onChange}
 						onBlur={date.field.onBlur}
+						disabled={inSplit}
 						invalid={errors.date !== undefined}
 						{...(errors.date === undefined ? {} : { describedBy: "transaction-date-error" })}
 					/>
@@ -255,6 +298,7 @@ export function TransactionForm({
 						value={amount.field.value}
 						onChange={amount.field.onChange}
 						onBlur={amount.field.onBlur}
+						disabled={inSplit}
 						invalid={errors.amount !== undefined}
 						{...(errors.amount === undefined ? {} : { describedBy: "transaction-amount-error" })}
 					/>
@@ -294,6 +338,7 @@ export function TransactionForm({
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-merchant">{t("transactions.form.merchant")}</Label>
 						<MerchantField
+							disabled={splitChild}
 							value={merchant.field.value}
 							onChange={merchant.field.onChange}
 							invalid={errors.merchantId !== undefined}
@@ -318,7 +363,7 @@ export function TransactionForm({
 					</div>
 				)}
 
-				{transaction !== null && (
+				{transaction !== null && !inSplit && (
 					<div className="flex items-center justify-between gap-4">
 						<Label htmlFor="transaction-excluded">{t("transactions.form.excluded")}</Label>
 						<Switch
@@ -332,7 +377,7 @@ export function TransactionForm({
 			</form>
 
 			<SheetFooter className="flex-row items-center justify-between border-t">
-				{transaction === null ? (
+				{transaction === null || splitChild ? (
 					<span />
 				) : (
 					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
@@ -360,9 +405,14 @@ export function TransactionForm({
 					open={confirmingDelete}
 					onOpenChange={setConfirmingDelete}
 					title={t("transactions.delete.title", { label: transaction.label })}
-					description={t("transactions.delete.description", {
-						amount: formatMoney({ amount: transaction.amount, currency: transaction.currency }),
-					})}
+					description={t(
+						splitParent
+							? "transactions.delete.splitDescription"
+							: "transactions.delete.description",
+						{
+							amount: formatMoney({ amount: transaction.amount, currency: transaction.currency }),
+						},
+					)}
 					confirmLabel={t("transactions.delete.action")}
 					destructive
 					pending={deleteTransaction.isPending}

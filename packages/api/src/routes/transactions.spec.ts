@@ -638,6 +638,43 @@ describe("GET /api/transactions", () => {
 		}
 	});
 
+	it("adds the parents of the page's split children, whatever the filter and the page", async () => {
+		const account = await openOwn();
+		const client = testClient(buildApp(own?.db)).api;
+		const food = await (await client.categories.$post({ json: category("Courses") })).json();
+		const parent = await postOwn(account.id, { ...expense, label: "HYPER", amount: "-100,00" });
+		await postOwn(account.id, { ...expense, date: "2026-09-02", label: "Seule" });
+		const split = await ownRequest("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{ label: "Fruits", amount: "-60,00", categoryId: food.data.id },
+				{ label: "Savon", amount: "-40,00", categoryId: null },
+			],
+		});
+		expect(split.status).toBe(201);
+
+		const all = await listed("");
+		const filtered = await listed(`?category=${food.data.id}`);
+		const [first, second] = await Promise.all([
+			listed("?pageSize=1"),
+			listed("?page=2&pageSize=1"),
+		]);
+		const unsplit = await listed("?q=Seule");
+
+		expect(all.items.map((item) => [item.label, item.parentEntryId, item.splitParent])).toEqual([
+			["Savon", parent, false],
+			["Fruits", parent, false],
+			["Seule", null, false],
+		]);
+		expect(all.splitParents).toMatchObject([
+			{ id: parent, label: "HYPER", amount: -10000, excluded: true, splitParent: true },
+		]);
+		expect(filtered.items.map((item) => item.label)).toEqual(["Fruits"]);
+		expect(filtered.splitParents.map((item) => item.id)).toEqual([parent]);
+		expect(filtered).toMatchObject({ total: 1, sum: { amount: -6000 } });
+		expect([first.splitParents, second.splitParents].map((rows) => rows.length)).toEqual([1, 1]);
+		expect(unsplit.splitParents).toEqual([]);
+	});
+
 	it("types its query for the interface's client", async () => {
 		const account = await openOwn();
 		await postOwn(account.id, expense);
@@ -1070,7 +1107,12 @@ describe("possible duplicates", () => {
 	});
 
 	const itemBody = z.object({
-		data: listItem.omit({ accountName: true, accountType: true, recurring: true }),
+		data: listItem.omit({
+			accountName: true,
+			accountType: true,
+			recurring: true,
+			splitParent: true,
+		}),
 	});
 
 	it("flags the tie, lists its candidates, and merges it into the one picked", async () => {

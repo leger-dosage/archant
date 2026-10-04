@@ -56,6 +56,7 @@ import {
 	findTransaction,
 	listTransactionPage,
 	listTransactions,
+	listTransactionsById,
 	sumTransactions,
 	sumTransactionsByLabel,
 } from "./ledger/queries.ts";
@@ -85,10 +86,22 @@ type TransactionListItem = TransactionListRecord & {
 	source: TransactionSource;
 	/** Held by a series that is not dismissed, as the sheet's « Récurrent » section reads it. */
 	recurring: boolean;
+	/**
+	 * A split's parent, `true` only in `splitParents`: the list leaves parents
+	 * out, so a row of `items` never is one. Read here rather than on every
+	 * record, where it would add a subquery to the list's select.
+	 */
+	splitParent: boolean;
 };
 
 export type TransactionPage = {
 	items: TransactionListItem[];
+	/**
+	 * The parents of the page's split children, whatever the filter, so the
+	 * list shows each split under its parent, as Sure's `@split_parents`.
+	 * Never counted nor summed.
+	 */
+	splitParents: TransactionListItem[];
 	page: number;
 	pageSize: number;
 	total: number;
@@ -156,13 +169,34 @@ async function withSources<Row extends TransactionRecord>(
 async function listItemsOf(
 	deps: ServiceDeps,
 	records: readonly TransactionListRecord[],
+	options: { splitParent: boolean } = { splitParent: false },
 ): Promise<TransactionListItem[]> {
 	const recurring = await recurringEntryIds(deps.db, records);
 
 	return (await withSources(deps, records)).map((record) => ({
 		...record,
 		recurring: recurring.has(record.id),
+		splitParent: options.splitParent,
 	}));
+}
+
+/** A page's items, and the parents of its split children, read by id. */
+async function pageItemsOf(
+	deps: ServiceDeps,
+	records: readonly TransactionListRecord[],
+): Promise<Pick<TransactionPage, "items" | "splitParents">> {
+	const parentIds = new Set(
+		records.flatMap((record) => (record.parentEntryId === null ? [] : [record.parentEntryId])),
+	);
+
+	const [items, splitParents] = await Promise.all([
+		listItemsOf(deps, records),
+		listTransactionsById(deps, [...parentIds]).then(async (parents) =>
+			listItemsOf(deps, parents, { splitParent: true }),
+		),
+	]);
+
+	return { items, splitParents };
 }
 
 // The ledger names why it refused a line; the form shows it under the date.
@@ -220,7 +254,7 @@ export async function listAccountTransactions(
 	const { items, total } = await listTransactions(deps, { accountIds: [accountId] }, page);
 
 	return {
-		items: await listItemsOf(deps, items),
+		...(await pageItemsOf(deps, items)),
 		page: page.page,
 		pageSize: page.pageSize,
 		total,
@@ -299,7 +333,7 @@ export async function listAllTransactions(
 	const page = { page: query.page, pageSize: query.pageSize };
 	const items = await listTransactionPage(deps, filter, page);
 
-	return { items: await listItemsOf(deps, items), ...page };
+	return { ...(await pageItemsOf(deps, items)), ...page };
 }
 
 /** The count and the signed total of every transaction matching the filter. */
