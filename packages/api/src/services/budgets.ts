@@ -1,15 +1,43 @@
 import type { BudgetActuals, SpendingSegment } from "../domain/budgets/actuals.ts";
-import type { BudgetCategoryLine, UncategorisedLine } from "../domain/budgets/categories.ts";
+import type {
+	BudgetCategoryLine,
+	BudgetRow,
+	MonthRows,
+	TreeCategory,
+	UncategorisedLine,
+} from "../domain/budgets/categories.ts";
 import type { MonthBounds } from "../domain/budgets/months.ts";
+import type { RolloverMonth } from "../domain/budgets/rollover.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
-import type { BudgetCategoryInput, BudgetInput, BudgetMoveInput } from "../schemas/budgets.ts";
+import type {
+	BudgetCategoryInput,
+	BudgetInput,
+	BudgetMoveInput,
+	BudgetRolloverInput,
+} from "../schemas/budgets.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { CashFlow } from "./reports.ts";
 
-import { and, desc, eq, isNotNull, lt, ne, sum } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	gte,
+	inArray,
+	isNotNull,
+	lt,
+	lte,
+	min,
+	ne,
+	or,
+	sum,
+} from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import { shiftMonth } from "@archant/data/months";
 import { budgetCategories as budgetCategoryRows, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 
@@ -18,13 +46,20 @@ import {
 	budgetCategories,
 	parentAfterChildSave,
 	parentAfterOwnSave,
+	spentByCategory,
 } from "../domain/budgets/categories.ts";
 import { budgetBounds, isBudgetMonth, neighbours } from "../domain/budgets/months.ts";
-import { copiedAmounts, moveAllocation } from "../domain/budgets/moves.ts";
+import { copiedRows, moveAllocation } from "../domain/budgets/moves.ts";
+import { rolloverChain } from "../domain/budgets/rollover.ts";
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
-import { budgetCategorySchema, budgetMoveSchema, budgetSchema } from "../schemas/budgets.ts";
+import {
+	budgetCategorySchema,
+	budgetMoveSchema,
+	budgetRolloverBodySchema,
+	budgetSchema,
+} from "../schemas/budgets.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
 import { getCashFlowHistory, getCashFlowWithRows } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -88,17 +123,167 @@ function latestSetUpBefore(db: Db, month: IsoMonth) {
 		.get();
 }
 
-/** A month's stored amounts, by category. */
-async function amountsOf(db: Db, budgetId: string): Promise<Map<string, MinorUnits>> {
+/** A month's stored rows, by category: each amount beside its « Report » switch. */
+async function storedRowsOf(db: Db, budgetId: string): Promise<Map<string, BudgetRow>> {
 	const rows = await db
 		.select({
 			categoryId: budgetCategoryRows.categoryId,
 			budgetedSpending: budgetCategoryRows.budgetedSpending,
+			rolloverEnabled: budgetCategoryRows.rolloverEnabled,
 		})
 		.from(budgetCategoryRows)
 		.where(eq(budgetCategoryRows.budgetId, budgetId));
 
-	return new Map(rows.map((row) => [row.categoryId, toMinorUnits(row.budgetedSpending)]));
+	return new Map(
+		rows.map((row) => [
+			row.categoryId,
+			{
+				budgetedSpending: toMinorUnits(row.budgetedSpending),
+				rolloverEnabled: row.rolloverEnabled,
+			},
+		]),
+	);
+}
+
+/** A stored row as the rollover chain reads and rewrites it. */
+type ChainRow = {
+	id: string;
+	categoryId: string;
+	budgetedSpending: MinorUnits;
+	rolloverEnabled: boolean;
+	rolledOverAmount: MinorUnits;
+};
+
+/** A month set up, oldest first, with its rows: one without a row still breaks a carry. */
+type ChainMonth = { month: IsoMonth; currency: string; rows: ChainRow[] };
+
+/** The months set up within `from` and `to`, both inclusive, each with its rows. */
+async function setUpMonths(
+	db: Db,
+	range: { from?: IsoMonth; to?: IsoMonth },
+): Promise<ChainMonth[]> {
+	const rows = await db
+		.select({
+			month: budgets.month,
+			currency: budgets.currency,
+			// `null` for a month set up without a row.
+			row: {
+				id: budgetCategoryRows.id,
+				categoryId: budgetCategoryRows.categoryId,
+				budgetedSpending: budgetCategoryRows.budgetedSpending,
+				rolloverEnabled: budgetCategoryRows.rolloverEnabled,
+				rolledOverAmount: budgetCategoryRows.rolledOverAmount,
+			},
+		})
+		.from(budgets)
+		.leftJoin(budgetCategoryRows, eq(budgetCategoryRows.budgetId, budgets.id))
+		.where(
+			and(
+				isNotNull(budgets.budgetedSpending),
+				range.from === undefined ? undefined : gte(budgets.month, range.from),
+				range.to === undefined ? undefined : lte(budgets.month, range.to),
+			),
+		)
+		.orderBy(asc(budgets.month));
+	const months = new Map<IsoMonth, ChainMonth>();
+
+	for (const { row, ...budget } of rows) {
+		const month = months.get(budget.month) ?? { ...budget, rows: [] };
+
+		months.set(budget.month, month);
+
+		if (row !== null) {
+			month.rows.push({
+				...row,
+				budgetedSpending: toMinorUnits(row.budgetedSpending),
+				rolledOverAmount: toMinorUnits(row.rolledOverAmount),
+			});
+		}
+	}
+
+	return [...months.values()];
+}
+
+/** Every category, as the chain places it in today's tree. */
+function treeCategories(db: Db) {
+	return db
+		.select({ id: categories.id, kind: categories.kind, parentId: categories.parentId })
+		.from(categories);
+}
+
+/**
+ * The carry into each row of `months`, as `rolloverChain` computes it from
+ * each month's spending: `history` is `getCashFlowHistory`'s, reaching at
+ * least the month before the last one.
+ */
+function chainOf(
+	months: readonly ChainMonth[],
+	history: readonly MonthRows[],
+	allCategories: readonly TreeCategory[],
+) {
+	const rowsOf = new Map(history.map((item) => [item.month, item.rows]));
+
+	return rolloverChain({
+		categories: allCategories,
+		months: months.map((month): RolloverMonth => ({
+			month: month.month,
+			currency: month.currency,
+			rows: new Map(month.rows.map((row) => [row.categoryId, row])),
+			spending: spentByCategory(rowsOf.get(month.month) ?? [], allCategories),
+		})),
+	});
+}
+
+/**
+ * Sure's `RolloverCalculator#recompute!`, under the caller's write lock:
+ * computes the chain again from the first month set up that has a category
+ * with rollover on, or a carry left by one switched off since, and stores
+ * each `rolled_over_amount` that changed. A household that never turned
+ * rollover on pays one query. Every budget write calls it; a ledger write
+ * does not, so a read computes the chain again rather than trusting it.
+ */
+async function refreshRollover(tx: Db, deps: ServiceDeps) {
+	const relevant = await tx
+		.select({ month: min(budgets.month) })
+		.from(budgets)
+		.innerJoin(budgetCategoryRows, eq(budgetCategoryRows.budgetId, budgets.id))
+		.where(
+			and(
+				isNotNull(budgets.budgetedSpending),
+				or(
+					eq(budgetCategoryRows.rolloverEnabled, true),
+					ne(budgetCategoryRows.rolledOverAmount, 0),
+				),
+			),
+		)
+		.get();
+	const first = relevant?.month ?? null;
+
+	if (first === null) {
+		return;
+	}
+
+	const months = await setUpMonths(tx, { from: first });
+	const last = months.at(-1)?.month ?? first;
+	const history = await getCashFlowHistory({ ...deps, db: tx }, shiftMonth(last, 1));
+	const chain = chainOf(months, history, await treeCategories(tx));
+	const now = Date.now();
+	const changed = months.flatMap((month) =>
+		month.rows
+			.map((row) => ({ row, carried: chain.get(month.month)?.get(row.categoryId) ?? 0 }))
+			.filter(({ row, carried }) => row.rolledOverAmount !== carried),
+	);
+
+	await changed.reduce<Promise<unknown>>(
+		(previous, { row, carried }) =>
+			previous.then(() =>
+				tx
+					.update(budgetCategoryRows)
+					.set({ rolledOverAmount: carried, updatedAt: now })
+					.where(eq(budgetCategoryRows.id, row.id)),
+			),
+		Promise.resolve(),
+	);
 }
 
 /** Creates a category's row in a month on its first amount, updates it after. */
@@ -146,7 +331,9 @@ async function budgetMonths(deps: ServiceDeps) {
 /**
  * A month's budget beside its actuals and suggestions. Never writes: a month
  * not set up has no row, and reading it creates none, where Sure bootstraps
- * one on page open. A month out of bounds is `NOT_FOUND`.
+ * one on page open. What each category received is the rollover chain
+ * computed again from the ledger as it stands, never the stored amount, which
+ * only the next budget write refreshes. A month out of bounds is `NOT_FOUND`.
  */
 export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<BudgetMonth> {
 	const { current, bounds } = await budgetMonths(deps);
@@ -155,27 +342,32 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 		throw notFound();
 	}
 
-	const [row, amounts, { cashFlow, rows, categories: allCategories }, history, source] =
+	const [row, chainMonths, { cashFlow, rows, categories: allCategories }, history, source] =
 		await Promise.all([
 			deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
-			deps.db
-				.select({
-					categoryId: budgetCategoryRows.categoryId,
-					budgetedSpending: budgetCategoryRows.budgetedSpending,
-				})
-				.from(budgetCategoryRows)
-				.innerJoin(budgets, eq(budgets.id, budgetCategoryRows.budgetId))
-				.where(eq(budgets.month, month)),
+			setUpMonths(deps.db, { to: month }),
 			getCashFlowWithRows(deps, month),
-			getCashFlowHistory(deps, month < current ? month : current),
+			// Every earlier month: the suggestions and the medians keep those
+			// before the current one, the chain needs them all.
+			getCashFlowHistory(deps, month),
 			latestSetUpBefore(deps.db, month),
 		]);
 	const budgetedSpending = row?.budgetedSpending ?? null;
 	const expectedIncome = row?.expectedIncome ?? null;
+	// A month not set up has no row: its categories have 0 and nothing came in.
+	const shown = chainMonths.find((item) => item.month === month)?.rows ?? [];
+	const carried = chainOf(chainMonths, history, allCategories).get(month);
 	const envelopes = budgetCategories({
 		categories: allCategories,
-		amounts: new Map(
-			amounts.map((amount) => [amount.categoryId, toMinorUnits(amount.budgetedSpending)]),
+		amounts: new Map(shown.map((item) => [item.categoryId, item.budgetedSpending])),
+		rollover: new Map(
+			shown.map((item) => [
+				item.categoryId,
+				{
+					enabled: item.rolloverEnabled,
+					carried: carried?.get(item.categoryId) ?? toMinorUnits(0),
+				},
+			]),
 		),
 		rows,
 		history,
@@ -206,7 +398,10 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 /**
  * Sets a month's planned spending and expected income, in the reporting
  * currency: creates the month's row on its first save, updates it after.
- * Under the write lock, so two saves of one month never both insert.
+ * Under the write lock, so two saves of one month never both insert. A month
+ * set up for the first time inherits each expense category's rollover switch
+ * that is on in the latest earlier month set up, as Sure's
+ * `inherited_rollover_flags`, through a row at 0.
  */
 export async function saveBudget(
 	deps: ServiceDeps,
@@ -231,16 +426,66 @@ export async function saveBudget(
 
 			const now = Date.now();
 			const amounts = { currency, ...parsed.data, updatedAt: now };
-
-			await tx
+			const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+			const budget = await tx
 				.insert(budgets)
 				.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
-				.onConflictDoUpdate({ target: budgets.month, set: amounts });
+				.onConflictDoUpdate({ target: budgets.month, set: amounts })
+				.returning({ id: budgets.id })
+				.get();
+
+			if (before === undefined || before.budgetedSpending === null) {
+				await inheritRollover(tx, month, budget.id, now);
+			}
+
+			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
 	);
 
 	return getBudget(deps, month);
+}
+
+/**
+ * Sure's `inherited_rollover_flags`: a row at 0, rollover on, for each
+ * expense category whose switch is on in the latest month set up before
+ * `month`. A month not set up has no row yet, so nothing here collides.
+ */
+async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: number) {
+	const source = await latestSetUpBefore(tx, month);
+
+	if (source === undefined) {
+		return;
+	}
+
+	const inherited = await tx
+		.select({ categoryId: budgetCategoryRows.categoryId })
+		.from(budgetCategoryRows)
+		.innerJoin(categories, eq(categories.id, budgetCategoryRows.categoryId))
+		.where(
+			and(
+				eq(budgetCategoryRows.budgetId, source.id),
+				eq(budgetCategoryRows.rolloverEnabled, true),
+				eq(categories.kind, "expense"),
+			),
+		);
+
+	if (inherited.length > 0) {
+		await tx
+			.insert(budgetCategoryRows)
+			.values(
+				inherited.map(({ categoryId }) => ({
+					id: crypto.randomUUID(),
+					budgetId,
+					categoryId,
+					budgetedSpending: 0,
+					rolloverEnabled: true,
+					createdAt: now,
+					updatedAt: now,
+				})),
+			)
+			.onConflictDoNothing();
+	}
 }
 
 /**
@@ -326,22 +571,22 @@ export async function saveCategoryBudget(
 					category.id,
 					parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) }),
 				);
+			} else {
+				const previousChild = await amountOf(category.id);
 
-				return;
+				await write(category.id, amount);
+				await write(
+					category.parentId,
+					parentAfterChildSave({
+						parent: await amountOf(category.parentId),
+						siblings: await childrenOf(category.parentId, category.id),
+						previousChild,
+						child: amount,
+					}),
+				);
 			}
 
-			const previousChild = await amountOf(category.id);
-
-			await write(category.id, amount);
-			await write(
-				category.parentId,
-				parentAfterChildSave({
-					parent: await amountOf(category.parentId),
-					siblings: await childrenOf(category.parentId, category.id),
-					previousChild,
-					child: amount,
-				}),
-			);
+			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
 	);
@@ -351,8 +596,9 @@ export async function saveCategoryBudget(
 
 /**
  * Sure's `BudgetsController#copy_previous`: a month not set up takes the
- * total, the expected income and each category's amount of the latest
- * earlier month set up, gaps skipped, as `copiedAmounts` keeps them. Refused
+ * total, the expected income and each category's amount and rollover switch
+ * of the latest earlier month set up, gaps skipped, as `copiedRows` keeps
+ * them; what came in is computed again, never copied. Refused
  * on a month set up, never overwritten, and without a month to copy.
  * Answers the month, as `getBudget` does, and the month copied: the one read
  * under the write lock, which a month set up since the page opened can change.
@@ -383,7 +629,7 @@ export async function copyBudget(
 				throw new AppError("NOT_FOUND", "No earlier month is set up to copy from.");
 			}
 
-			const sourceAmounts = await amountsOf(tx, source.id);
+			const sourceRows = await storedRowsOf(tx, source.id);
 			const allCategories = await tx
 				.select({ id: categories.id, parentId: categories.parentId, kind: categories.kind })
 				.from(categories);
@@ -400,22 +646,25 @@ export async function copyBudget(
 				.onConflictDoUpdate({ target: budgets.month, set: amounts })
 				.returning({ id: budgets.id })
 				.get();
-			const copied = [...copiedAmounts({ categories: allCategories, source: sourceAmounts })];
+			const copied = [...copiedRows({ categories: allCategories, source: sourceRows })];
 
 			// A month not set up has no amount of its own: a category's amount
 			// needs the month set up first, so nothing here can collide.
 			if (copied.length > 0) {
 				await tx.insert(budgetCategoryRows).values(
-					copied.map(([categoryId, budgetedSpending]) => ({
+					copied.map(([categoryId, { budgetedSpending, rolloverEnabled }]) => ({
 						id: crypto.randomUUID(),
 						budgetId: budget.id,
 						categoryId,
 						budgetedSpending,
+						rolloverEnabled,
 						createdAt: now,
 						updatedAt: now,
 					})),
 				);
 			}
+
+			await refreshRollover(tx, deps);
 
 			return source.month;
 		},
@@ -465,9 +714,10 @@ export async function moveCategoryBudget(
 				throw notExpense();
 			}
 
+			const stored = await storedRowsOf(tx, budget.id);
 			const result = moveAllocation({
 				categories: expense,
-				amounts: await amountsOf(tx, budget.id),
+				amounts: new Map([...stored].map(([id, row]) => [id, row.budgetedSpending])),
 				from,
 				to,
 				amount,
@@ -485,6 +735,93 @@ export async function moveCategoryBudget(
 					previous.then(() => writeAmount(tx, budget.id, categoryId, budgetedSpending, now)),
 				Promise.resolve(),
 			);
+			await refreshRollover(tx, deps);
+		},
+		{ behavior: "immediate" },
+	);
+
+	return getBudget(deps, month);
+}
+
+/**
+ * Sure's rollover switch on one expense category: sets it in a month set up
+ * and in every later month set up, turning it on through a row at 0 where the
+ * category has none, as Sure's `propagate_rollover_choice_forward!`, so the
+ * latest choice holds from there on; earlier months keep theirs. Refused as a category's amount
+ * is. Answers the month, as `getBudget` does.
+ */
+export async function setCategoryRollover(
+	deps: ServiceDeps,
+	month: IsoMonth,
+	categoryId: string,
+	input: BudgetRolloverInput,
+): Promise<BudgetMonth> {
+	const parsed = budgetRolloverBodySchema.safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const { rolloverEnabled } = parsed.data;
+
+	await deps.db.transaction(
+		async (tx) => {
+			const { bounds } = await budgetMonths({ ...deps, db: tx });
+
+			if (!isBudgetMonth(month, bounds)) {
+				throw notFound();
+			}
+
+			const budget = await setUpBudget(tx, month);
+			const category = await tx
+				.select({ kind: categories.kind })
+				.from(categories)
+				.where(eq(categories.id, categoryId))
+				.get();
+
+			if (category === undefined || category.kind !== "expense") {
+				throw notExpense();
+			}
+
+			const later = await tx
+				.select({ id: budgets.id })
+				.from(budgets)
+				.where(and(gt(budgets.month, month), isNotNull(budgets.budgetedSpending)));
+			const budgetIds = [budget, ...later].map(({ id }) => id);
+			const now = Date.now();
+
+			if (rolloverEnabled) {
+				await tx
+					.insert(budgetCategoryRows)
+					.values(
+						budgetIds.map((budgetId) => ({
+							id: crypto.randomUUID(),
+							budgetId,
+							categoryId,
+							budgetedSpending: 0,
+							rolloverEnabled,
+							createdAt: now,
+							updatedAt: now,
+						})),
+					)
+					.onConflictDoUpdate({
+						target: [budgetCategoryRows.budgetId, budgetCategoryRows.categoryId],
+						set: { rolloverEnabled, updatedAt: now },
+					});
+			} else {
+				// A month without the category's row already reads as off.
+				await tx
+					.update(budgetCategoryRows)
+					.set({ rolloverEnabled, updatedAt: now })
+					.where(
+						and(
+							eq(budgetCategoryRows.categoryId, categoryId),
+							inArray(budgetCategoryRows.budgetId, budgetIds),
+						),
+					);
+			}
+
+			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
 	);

@@ -7,16 +7,15 @@ import { shiftMonth } from "@archant/data/months";
 import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
-// Stories 17.1 to 17.3: a month's budget, its categories, then a copy and
-// moves. One database serves the whole run, so each test owns its months, of
-// 2023 and February to May 2024, which no other test writes to: the actuals
-// are exact. The 2023-11 test runs before the 2023-05 one sets that month up,
-// so it meets no earlier month set up and offers « Définir le budget », not a
-// copy. The
-// medians take every earlier month, so they stay exact only while no other
-// test records a line in euros before November 2023; a category's own
-// medians, of a category no other test uses, always are. December 2023 is
-// this file's too.
+// Stories 17.1 to 17.4: a month's budget, its categories, then a copy and
+// moves, then rollover. One database serves the whole run, so each test owns
+// its months, of 2023, February to May 2024 and September to December 2024,
+// which no other test writes to: the actuals are exact. The 2023-11 test runs
+// before the 2023-05 one sets that month up, so it meets no earlier month set
+// up and offers « Définir le budget », not a copy. The medians take every
+// earlier month, so they stay exact only while no other test records a line
+// in euros before November 2023; a category's own medians, of a category no
+// other test uses, always are. December 2023 is this file's too.
 
 const heading = (page: Page, month: string) =>
 	page.getByRole("heading", { level: 1, name: `Budget ${ofMonth(month)}` });
@@ -581,5 +580,120 @@ test("a month is copied from the latest one set up, then money moves between its
 		await expect(page.getByText("Ce mois a déjà un budget. Il n'a pas été modifié.")).toBeVisible();
 		await expect(copy).toBeHidden();
 		await expect(plan(page, "Dépenses prévues")).toContainText(euros(90_000));
+	});
+});
+
+const rolloverSwitch = (page: Page, name: string) =>
+	page.getByRole("switch", { name: `Report de ${name}`, exact: true });
+
+/** Flips a category's « Report » switch, and waits for the server to save it. */
+async function flipRollover(page: Page, name: string) {
+	const saved = page.waitForResponse(
+		(response) => response.url().endsWith("/rollover") && response.request().method() === "PUT",
+	);
+	await rolloverSwitch(page, name).click();
+	expect((await saved).ok()).toBe(true);
+}
+
+test("what a category leaves carries into the next month set up, while its switch is on", async ({
+	page,
+	api,
+	request,
+}) => {
+	// Story 17.4: September 2024 is set up, October copied, November left
+	// alone, December set up by its form. Those months come after every
+	// earlier test's, so no month another test shows offers to copy them.
+	const account = await api.openAccount({ openingBalance: "0", openingDate: "2024-09-01" });
+	const gifts = await api.createCategory({ name: uniqueName("Cadeaux") });
+	const setUp = await request.put("/api/budgets/2024-09", {
+		data: { budgetedSpending: "1 000,00", expectedIncome: "0" },
+	});
+	expect(setUp.ok(), await setUp.text()).toBe(true);
+	const amount = await request.put(`/api/budgets/2024-09/categories/${gifts.id}`, {
+		data: { budgetedSpending: "100" },
+	});
+	expect(amount.ok(), await amount.text()).toBe(true);
+	const spent = await api.addTransaction(account.id, {
+		date: "2024-09-10",
+		label: "Fleuriste",
+		amount: "-30,00",
+	});
+	await api.categorise([spent], gifts.id);
+
+	await test.step("« Report » saves on change", async () => {
+		await page.goto("/budgets/2024-09/categories");
+		const toggle = rolloverSwitch(page, gifts.name);
+		await expect(toggle).not.toBeChecked();
+		await expect(toggle).toHaveAttribute(
+			"title",
+			"Conserver d'un mois sur l'autre ce que cette catégorie n'a pas dépensé",
+		);
+
+		await flipRollover(page, gifts.name);
+		await expect(toggle).toBeChecked();
+		await page.reload();
+		await expect(rolloverSwitch(page, gifts.name)).toBeChecked();
+	});
+
+	await test.step("a copy keeps the switch, and the card shows what came in", async () => {
+		await page.goto("/budgets/2024-10");
+		await page.getByRole("button", { name: "Copier septembre 2024" }).click();
+		await expect(page).toHaveURL("/budgets/2024-10/categories");
+		await expect(rolloverSwitch(page, gifts.name)).toBeChecked();
+		// What came in is not allocated: only the 100 copied counts.
+		await expect(allocation(page)).toContainText("10 % alloués");
+
+		await page.getByRole("button", { name: "Valider" }).click();
+		await expect(page).toHaveURL("/budgets/2024-10");
+		await expect(card(page, gifts.name)).toContainText(`Budgété : ${euros(10_000)}`);
+		await expect(card(page, gifts.name)).toContainText(`+${euros(7_000)} reporté`);
+		await expect(card(page, gifts.name)).toContainText(`Reste : ${euros(17_000)}`);
+	});
+
+	await test.step("the sheet shows what came in", async () => {
+		await card(page, gifts.name).click();
+		const sheet = page.getByRole("dialog", { name: gifts.name });
+
+		await expect(sheet).toContainText(`Budgété${euros(10_000)}`);
+		await expect(sheet).toContainText(`Reporté${euros(7_000)}`);
+		await expect(sheet).toContainText(`Statut${euros(17_000)} restants`);
+		await page.keyboard.press("Escape");
+		await expect(sheet).toBeHidden();
+	});
+
+	await test.step("a month set up by its form inherits the switch, across a month left alone", async () => {
+		await page.goto("/budgets/2024-12");
+		await page.getByRole("link", { name: "Partir de zéro" }).click();
+		await page.getByLabel("Dépenses prévues").fill("1 000");
+		await page.getByLabel("Revenus attendus").fill("0");
+		await page.getByRole("button", { name: "Enregistrer" }).click();
+
+		await expect(page).toHaveURL("/budgets/2024-12/categories");
+		await expect(rolloverSwitch(page, gifts.name)).toBeChecked();
+		await expect(page.getByRole("textbox", { name: gifts.name, exact: true })).toHaveValue("");
+
+		await page.getByRole("button", { name: "Valider" }).click();
+		// October's 100 and the 70 it received, November skipped.
+		await expect(card(page, gifts.name)).toContainText(`+${euros(17_000)} reporté`);
+		await expect(card(page, gifts.name)).toContainText(`Reste : ${euros(17_000)}`);
+	});
+
+	await test.step("switching it off stops the carry, in that month and the later ones", async () => {
+		await page.goto("/budgets/2024-10/categories");
+		await flipRollover(page, gifts.name);
+		await expect(rolloverSwitch(page, gifts.name)).not.toBeChecked();
+
+		await page.getByRole("button", { name: "Valider" }).click();
+		await expect(page).toHaveURL("/budgets/2024-10");
+		await expect(card(page, gifts.name)).not.toContainText("reporté");
+		await expect(card(page, gifts.name)).toContainText(`Reste : ${euros(10_000)}`);
+
+		// December, read again since the write staled it, has nothing left to show.
+		await page.getByRole("link", { name: "Mois suivant" }).click();
+		await page.getByRole("link", { name: "Mois suivant" }).click();
+		await expect(heading(page, "2024-12")).toBeVisible();
+		await expect(card(page, gifts.name)).toBeHidden();
+		await page.goto("/budgets/2024-12/categories");
+		await expect(rolloverSwitch(page, gifts.name)).not.toBeChecked();
 	});
 });

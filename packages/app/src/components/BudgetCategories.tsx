@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
+import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { BudgetCategorySheet } from "@/components/BudgetCategorySheet";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -68,6 +68,7 @@ function BudgetCard({
 	const { t } = useTranslation();
 	const { line } = envelope;
 	const shared = envelope.kind === "category" && envelope.line.shared;
+	const rolledOver = envelope.kind === "category" ? envelope.line.rolledOver : toMinorUnits(0);
 	const showBudget = section === "onTrack" || line.budgeted;
 	const money = (amount: MinorUnits) => <Money amount={amount} currency={currency} />;
 
@@ -126,6 +127,13 @@ function BudgetCard({
 							) : (
 								money(line.budgetedSpending)
 							)}
+						</span>
+					)}
+					{showBudget && rolledOver > 0 && (
+						<span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+							{t("budgets.rollover.card", {
+								amount: formatMoney({ amount: rolledOver, currency }),
+							})}
 						</span>
 					)}
 					<span className="whitespace-nowrap lg:ml-auto">

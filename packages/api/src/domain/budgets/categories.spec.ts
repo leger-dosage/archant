@@ -11,6 +11,7 @@ import {
 	budgetCategories,
 	parentAfterChildSave,
 	parentAfterOwnSave,
+	spentByCategory,
 } from "./categories.ts";
 
 const category = (id: string, overrides: Partial<CashFlowCategory> = {}): CashFlowCategory => ({
@@ -35,6 +36,15 @@ const minor = (value: number): MinorUnits => toMinorUnits(value);
 
 const month = (value: string, rows: CashFlowRow[]): MonthRows => ({ month: value, rows });
 
+/** Rollover on, with what came in, by category. */
+const carried = (entries: Record<string, number>) =>
+	new Map(
+		Object.entries(entries).map(([id, amount]) => [
+			id,
+			{ enabled: true, carried: toMinorUnits(amount) },
+		]),
+	);
+
 // « Maison » has two children: « Travaux » and « Jardin ».
 const house = category("Maison");
 const works = category("Travaux", { parentId: "Maison" });
@@ -48,6 +58,7 @@ function budgetOf(
 	return budgetCategories({
 		categories: [house, works, garden, groceries, salary],
 		amounts: new Map(),
+		rollover: new Map(),
 		rows: [],
 		history: [],
 		shown: "2026-09",
@@ -315,6 +326,63 @@ describe("budgetCategories", () => {
 		expect(budgetOf({}).uncategorised.section).toBe("onTrack");
 	});
 
+	describe("rollover", () => {
+		it("counts what came in in what remains, never in the allocation or a move", () => {
+			const result = budgetOf({
+				amounts: amounts({ Courses: 10_000 }),
+				rollover: carried({ Courses: 7_000 }),
+				rows: [row("Courses", -15_000)],
+			});
+
+			expect(lineOf(result, "Courses")).toMatchObject({
+				rolloverEnabled: true,
+				rolledOver: 7_000,
+				budgetedSpending: 10_000,
+				movable: 10_000,
+				available: 2_000,
+				percentSpent: (15_000 / 17_000) * 100,
+				status: "onTrack",
+				section: "onTrack",
+			});
+			expect(result.allocated).toBe(10_000);
+			expect(lineOf(result, "Jardin")).toMatchObject({ rolloverEnabled: false, rolledOver: 0 });
+		});
+
+		it("budgets a category funded only by what came in", () => {
+			const result = budgetOf({
+				rollover: carried({ Courses: 5_000 }),
+				rows: [row("Courses", -1_000)],
+			});
+
+			expect(lineOf(result, "Courses")).toMatchObject({
+				budgeted: true,
+				available: 4_000,
+				section: "onTrack",
+			});
+		});
+
+		it("adds a parent's ring-fenced children's carry to its own, and shows a shared child its parent's", () => {
+			const result = budgetOf({
+				amounts: amounts({ Maison: 30_000, Travaux: 10_000 }),
+				rollover: carried({ Maison: 15_000, Travaux: 8_000, Jardin: 0 }),
+				rows: [row("Travaux", -2_000), row("Jardin", -40_000)],
+			});
+
+			expect(lineOf(result, "Maison")).toMatchObject({
+				rolledOver: 23_000,
+				available: 30_000 + 23_000 - 42_000,
+			});
+			expect(lineOf(result, "Travaux")).toMatchObject({ rolledOver: 8_000, available: 16_000 });
+			// What the parent keeps beyond « Travaux », 200, with its own 150.
+			expect(lineOf(result, "Jardin")).toMatchObject({
+				shared: true,
+				rolledOver: 15_000,
+				available: 0,
+				percentSpent: (40_000 / 35_000) * 100,
+			});
+		});
+	});
+
 	describe("medians and averages", () => {
 		const history = [
 			month("2026-05", [row("Courses", -10_000), row("Travaux", -4_000), row(null, 2_000)]),
@@ -346,6 +414,19 @@ describe("budgetCategories", () => {
 				lineOf(budgetOf({ history, shown: "2027-01", current: "2026-09" }), "Courses").median,
 			).toBe(20_000);
 		});
+	});
+});
+
+describe("spentByCategory", () => {
+	it("counts each expense category's outflow net of refunds, a parent with its children", () => {
+		expect(
+			Object.fromEntries(
+				spentByCategory(
+					[row("Travaux", -3_000), row("Maison", -1_000), row("Courses", 2_000), row(null, -500)],
+					[house, works, garden, groceries, salary],
+				),
+			),
+		).toEqual({ Maison: 4_000, Travaux: 3_000, Courses: 0 });
 	});
 });
 

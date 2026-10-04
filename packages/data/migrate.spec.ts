@@ -1582,3 +1582,32 @@ describe("migrateFromEnv", () => {
 		).resolves.toBeUndefined();
 	});
 });
+
+describe("budgets", () => {
+	it("keeps each amount and turns rollover off when 0041 adds it", async () => {
+		const before = await migratedBefore("0041");
+		await insertCategory(before, "c1", "Cadeaux");
+		await before.run(
+			sql`insert into budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at) values ('b1', '2026-06', 'EUR', 100000, 0, 0, 0)`,
+		);
+		await before.run(
+			sql`insert into budget_categories (id, budget_id, category_id, budgeted_spending, created_at, updated_at) values ('bc1', 'b1', 'c1', 10000, 0, 0)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select budgeted_spending as amount, rollover_enabled as enabled, rolled_over_amount as carried from budget_categories`,
+			),
+		).resolves.toEqual([{ amount: 10_000, enabled: 0, carried: 0 }]);
+		await expect(
+			database.run(sql`update budget_categories set rolled_over_amount = -1`),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error &&
+				String(error.cause).includes("budget_categories_rolled_over_check"),
+		);
+	});
+});

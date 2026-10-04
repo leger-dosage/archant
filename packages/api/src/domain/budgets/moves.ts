@@ -1,4 +1,5 @@
 import type { CashFlowCategory } from "../cash-flow.ts";
+import type { BudgetRow } from "./categories.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -92,23 +93,25 @@ export function moveAllocation(input: {
 }
 
 /**
- * Sure's `Budget#copy_from!`, on the categories of today: each amount of a
- * category that is still an expense category, a deleted one's being gone with
- * it. A parent is then lifted to its children's amounts, as its own save
- * would be, so a child re-parented since cannot leave it below them.
+ * Sure's `Budget#copy_from!`, on the categories of today: each row of a
+ * category that is still an expense category, its amount beside its rollover
+ * switch, a deleted one's being gone with it. What came in is never copied:
+ * the chain computes it. A parent is then lifted to its children's amounts,
+ * as its own save would be, so a child re-parented since cannot leave it
+ * below them; a parent lifted without a row of its own has rollover off.
  */
-export function copiedAmounts(input: {
+export function copiedRows(input: {
 	categories: readonly (BudgetedCategory & Pick<CashFlowCategory, "kind">)[];
-	source: ReadonlyMap<string, MinorUnits>;
-}): Map<string, MinorUnits> {
+	source: ReadonlyMap<string, BudgetRow>;
+}): Map<string, BudgetRow> {
 	const expense = input.categories.filter((category) => category.kind === "expense");
-	const copied = new Map<string, MinorUnits>();
+	const copied = new Map<string, BudgetRow>();
 
 	for (const category of expense) {
-		const amount = input.source.get(category.id);
+		const row = input.source.get(category.id);
 
-		if (amount !== undefined) {
-			copied.set(category.id, amount);
+		if (row !== undefined) {
+			copied.set(category.id, row);
 		}
 	}
 
@@ -116,12 +119,15 @@ export function copiedAmounts(input: {
 		const children = sumOf(
 			expense
 				.filter((category) => category.parentId === parent.id)
-				.map((category) => copied.get(category.id) ?? zero),
+				.map((category) => copied.get(category.id)?.budgetedSpending ?? zero),
 		);
 		const own = copied.get(parent.id);
 
 		if (own !== undefined || children > 0) {
-			copied.set(parent.id, parentAfterOwnSave({ typed: own ?? zero, children }));
+			copied.set(parent.id, {
+				budgetedSpending: parentAfterOwnSave({ typed: own?.budgetedSpending ?? zero, children }),
+				rolloverEnabled: own?.rolloverEnabled ?? false,
+			});
 		}
 	}
 
