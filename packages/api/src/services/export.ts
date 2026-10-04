@@ -954,6 +954,8 @@ async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
 					notes: goal.notes,
 					state: goal.state,
 					kind: goal.kind,
+					target_mode: goal.targetMode,
+					target_months: goal.targetMonths,
 					completed_amount:
 						goal.completedAmount === null
 							? null

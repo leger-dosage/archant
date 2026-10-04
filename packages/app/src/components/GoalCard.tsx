@@ -16,6 +16,8 @@ const GOAL_BADGES = {
 	on_track: "goalOnTrack",
 	no_target_date: "goalNoTargetDate",
 	reached: "goalReached",
+	funded: "goalFunded",
+	depleted: "goalDepleted",
 } as const satisfies Record<GoalStatus, Status>;
 
 const STATE_BADGES = {
@@ -41,7 +43,8 @@ function savedOf(goal: GoalData, t: TFunction): string {
  * One goal in the list, as Sure's card: its ring, its name, saved against
  * target, its status, or its state when it is not active, and what to put
  * aside each month by its date, when it has one: « Sans échéance » already
- * says it has none. The whole card leads to the goal's page.
+ * says it has none. A reserve in months of expenses says how many. The whole
+ * card leads to the goal's page.
  */
 export function GoalCard({ goal }: { goal: GoalData }) {
 	const { t } = useTranslation();
@@ -73,6 +76,9 @@ export function GoalCard({ goal }: { goal: GoalData }) {
 					)}
 					{goal.targetDate !== null && (
 						<span>{t("goals.until", { date: formatShortDate(goal.targetDate) })}</span>
+					)}
+					{goal.targetMonths !== null && (
+						<span>{t("goals.months", { count: goal.targetMonths })}</span>
 					)}
 				</div>
 			</div>

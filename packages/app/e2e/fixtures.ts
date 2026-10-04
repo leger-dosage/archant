@@ -8,7 +8,7 @@ import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
-import type { GoalEvent } from "@archant/data/goals";
+import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
@@ -427,11 +427,16 @@ export function apiHelpers(request: APIRequestContext) {
 
 		/**
 		 * Creates a goal, as « Nouvel objectif » does; each link takes the
-		 * whole balance unless it names an amount, typed as in the form.
+		 * whole balance unless it names an amount, typed as in the form. A
+		 * one-off goal with a fixed target unless `kind` and `targetMode` say
+		 * otherwise.
 		 */
 		async createGoal(input: {
 			name?: string;
+			kind?: GoalKind;
+			targetMode?: GoalTargetMode;
 			targetAmount: string;
+			targetMonths?: string;
 			targetDate?: string | null;
 			accounts: { accountId: string; allocatedAmount?: string }[];
 		}): Promise<Created> {
@@ -439,7 +444,10 @@ export function apiHelpers(request: APIRequestContext) {
 			const response = await request.post("/api/goals", {
 				data: {
 					name,
+					kind: input.kind ?? "one_off",
+					targetMode: input.targetMode ?? "fixed",
 					targetAmount: input.targetAmount,
+					targetMonths: input.targetMonths ?? "",
 					targetDate: input.targetDate ?? null,
 					color: "#27a644",
 					icon: "piggy-bank",

@@ -35,7 +35,9 @@ export const queryKeys = {
 		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change
-		 * to the mutations. A goal's own write invalidates `goals`.
+		 * to the mutations. A goal's own write invalidates `goals`, and so does
+		 * a bulk write that moves no balance, such as an exclusion or a
+		 * category: a reserve's target follows the cash flow.
 		 */
 		goals: ["accounts", "goals"] as const,
 		goal: (id: string) => ["accounts", "goals", id] as const,

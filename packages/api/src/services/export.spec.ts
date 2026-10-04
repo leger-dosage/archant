@@ -1001,6 +1001,24 @@ describe("exportArchive", () => {
 			accounts: [{ accountId: ids.pea, allocatedAmount: "" }],
 		});
 		await sendOwn("POST", `/api/goals/${car}/complete`);
+		vi.setSystemTime(new Date("2026-09-21T10:00:02Z"));
+		// The only month before September with an expense: a median of 400.
+		await postOwn(ids.checking, { date: "2026-08-10", label: "Courses", amount: "-400" });
+		const reserve = await goalOf({
+			name: "Urgences",
+			kind: "maintained",
+			targetMode: "months_of_expenses",
+			targetMonths: "3",
+			targetAmount: "",
+			accounts: [{ accountId: ids.checking, allocatedAmount: "" }],
+		});
+		// The median as read moves; the archive keeps the target stored.
+		await postOwn(ids.checking, { date: "2026-07-10", label: "Courses", amount: "-1 000" });
+		const read = z
+			.object({ data: z.object({ targetAmount: z.number() }) })
+			.parse(await sendOwn("GET", `/api/goals/${reserve}`));
+
+		expect(read.data.targetAmount).not.toBe(120_000);
 
 		const archive = await exported();
 		const goals = (archive.text["goals.ndjson"] ?? "")
@@ -1023,6 +1041,8 @@ describe("exportArchive", () => {
 				notes: "Grèce",
 				state: "active",
 				kind: "one_off",
+				target_mode: "fixed",
+				target_months: null,
 				completed_amount: null,
 				completed_at: null,
 				created_at: "2026-09-21T10:00:00.000Z",
@@ -1042,16 +1062,27 @@ describe("exportArchive", () => {
 				completed_at: "2026-09-21T10:00:01.000Z",
 			},
 		});
-		expect(goals.slice(2)).toEqual(
+		expect(goals[2]).toMatchObject({
+			type: "Goal",
+			data: {
+				id: reserve,
+				target_amount: "1200.00",
+				kind: "maintained",
+				target_mode: "months_of_expenses",
+				target_months: 3,
+			},
+		});
+		expect(goals.slice(3)).toEqual(
 			[
 				...[
 					{ goal_id: holiday, account_id: ids.savings, allocated_amount: null },
 					{ goal_id: holiday, account_id: ids.pea, allocated_amount: "150.00" },
 				].toSorted((a, b) => a.account_id.localeCompare(b.account_id)),
 				{ goal_id: car, account_id: ids.pea, allocated_amount: null },
+				{ goal_id: reserve, account_id: ids.checking, allocated_amount: null },
 			].map((data) => ({ type: "GoalAccount", data })),
 		);
-		expect(archive.log[0]).toMatchObject({ Goal: 2, GoalAccount: 3 });
+		expect(archive.log[0]).toMatchObject({ Goal: 3, GoalAccount: 4 });
 	});
 
 	it("writes rule operands as names with a value_ref, and keeps a replacement under archant", async () => {

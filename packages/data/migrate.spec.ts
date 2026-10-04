@@ -1760,6 +1760,91 @@ describe("goals", () => {
 		).resolves.toEqual([{ goalId: "g1", amount: 30_000 }]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
+
+	it("holds a fixed target, or a reserve's months of expenses between 1 and 120", async () => {
+		const database = await migrated();
+		await insertGoal(database, "g1");
+		await insertGoal(database, "g2", { kind: "maintained" });
+		const target = (id: string, mode: string, months: number | null) =>
+			database.run(
+				sql`update goals set target_mode = ${mode}, target_months = ${months} where id = ${id}`,
+			);
+
+		await expect(
+			database.all(sql`select target_mode as mode, target_months as months from goals`),
+		).resolves.toEqual([
+			{ mode: "fixed", months: null },
+			{ mode: "fixed", months: null },
+		]);
+		await expect(target("g2", "months_of_expenses", 6)).resolves.toBeDefined();
+		await expect(target("g2", "months_of_expenses", 1)).resolves.toBeDefined();
+		await expect(target("g2", "months_of_expenses", 120)).resolves.toBeDefined();
+		await expect(target("g2", "months_of_expenses", 0)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", 121)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", null)).rejects.toThrow();
+		await expect(target("g2", "fixed", 6)).rejects.toThrow();
+		await expect(target("g2", "weekly", null)).rejects.toThrow();
+		// Months of expenses size a reserve, never a one-off goal.
+		await expect(target("g1", "months_of_expenses", 6)).rejects.toThrow();
+	});
+
+	it("keeps a reserve without a date, and a one-off goal with one", async () => {
+		const database = await migrated();
+		await insertGoal(database, "g1");
+		await insertGoal(database, "g2", { kind: "maintained" });
+		const date = (id: string, targetDate: string | null) =>
+			database.run(sql`update goals set target_date = ${targetDate} where id = ${id}`);
+
+		await expect(date("g1", "2027-06-30")).resolves.toBeDefined();
+		await expect(date("g2", null)).resolves.toBeDefined();
+		await expect(date("g2", "2027-06-30")).rejects.toThrow();
+	});
+
+	it("gives every goal a fixed target when 0048 rebuilds goals, dropping a reserve's date", async () => {
+		const before = await migratedBefore("0048");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { state: "completed" });
+		await before.run(
+			sql`update goals set target_date = '2027-06-30', completed_amount = 45000, completed_at = 1790000000000`,
+		);
+		await insertGoal(before, "g2", { kind: "maintained" });
+		await before.run(sql`update goals set target_date = '2027-01-01' where id = 'g2'`);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', null)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, kind, target_amount as target, target_date as targetDate, target_mode as mode, target_months as months, completed_amount as completedAmount from goals order by id`,
+			),
+		).resolves.toEqual([
+			{
+				id: "g1",
+				kind: "one_off",
+				target: 100_000,
+				targetDate: "2027-06-30",
+				mode: "fixed",
+				months: null,
+				completedAmount: 45_000,
+			},
+			{
+				id: "g2",
+				kind: "maintained",
+				target: 100_000,
+				targetDate: null,
+				mode: "fixed",
+				months: null,
+				completedAmount: null,
+			},
+		]);
+		await expect(
+			database.all(sql`select goal_id as goalId, allocated_amount as amount from goal_accounts`),
+		).resolves.toEqual([{ goalId: "g1", amount: null }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
 });
 
 describe("migrateFromEnv", () => {

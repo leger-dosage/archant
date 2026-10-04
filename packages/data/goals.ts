@@ -28,6 +28,18 @@ export const GOAL_KINDS = ["one_off", "maintained"] as const;
 export type GoalKind = (typeof GOAL_KINDS)[number];
 
 /**
+ * Sure's `TARGET_MODES`: a target typed as an amount, or, for a reserve only,
+ * a number of months of the household's median monthly expenses, which the
+ * target follows when read.
+ */
+export const GOAL_TARGET_MODES = ["fixed", "months_of_expenses"] as const;
+
+export type GoalTargetMode = (typeof GOAL_TARGET_MODES)[number];
+
+/** Ten years of expenses: more is a typo, not a reserve. */
+export const GOAL_TARGET_MONTHS_MAX = 120;
+
+/**
  * Sure's `RELEASED_STATES`: a goal in one of these has let go of its money,
  * so its links reserve nothing and a whole-balance link no longer blocks
  * another goal's. A paused goal keeps its reservation.

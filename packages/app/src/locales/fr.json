@@ -1070,23 +1070,29 @@
 			"behind": "En retard",
 			"on_track": "En bonne voie",
 			"no_target_date": "Sans échéance",
-			"reached": "Atteint"
+			"reached": "Atteint",
+			"funded": "Constituée",
+			"depleted": "Entamée"
 		},
 		"ring": "{{percent}} de l'objectif atteint",
 		"savedOf": "{{saved}} sur {{target}}",
 		"monthly": "{{amount}} par mois",
 		"until": "Échéance : {{date}}",
+		"months": "{{count}} mois de dépenses",
 		"figures": {
 			"title": "Progression",
 			"saved": "Épargné",
 			"target": "Montant visé",
 			"remaining": "Reste",
+			"refill": "À recompléter",
 			"monthly": "Par mois",
 			"date": "Échéance",
 			"pace": "Rythme sur 90 jours",
 			"perMonth": "{{amount}} par mois",
 			"noDate": "Aucune",
-			"reachedOn": "Atteint le {{date}} · {{amount}}"
+			"reachedOn": "Atteint le {{date}} · {{amount}}",
+			"monthsOfExpenses": "{{count}} mois de dépenses, à {{median}} par mois : la médiane de vos dépenses mensuelles, comme le budget la suggère.",
+			"monthsStale": "{{count}} mois de dépenses. Faute de dépenses mensuelles comptées dans sa devise, le dernier montant calculé reste en vigueur."
 		},
 		"accounts": {
 			"title": "Comptes liés",
@@ -1114,8 +1120,26 @@
 			"editTitle": "Modifier l'objectif",
 			"description": "Il se remplit avec le solde des comptes liés, en entier ou pour un montant fixe.",
 			"preview": "Aperçu de l'objectif",
+			"kind": "Type d'objectif",
+			"kinds": {
+				"one_off": {
+					"label": "Objectif ponctuel",
+					"hint": "Épargner pour quelque chose, puis le marquer comme terminé une fois la dépense faite."
+				},
+				"maintained": {
+					"label": "Réserve",
+					"hint": "Un solde à maintenir, comme une épargne de précaution. Jamais terminée."
+				}
+			},
 			"name": "Nom",
 			"target": "Montant visé",
+			"targetMode": "Comment le montant visé est fixé",
+			"targetModes": {
+				"fixed": "Un montant fixe",
+				"months_of_expenses": "Un nombre de mois de dépenses"
+			},
+			"targetMonths": "Mois de dépenses",
+			"targetMonthsHint": "Multiplie la médiane de vos dépenses mensuelles, recalculée à chaque affichage.",
 			"date": "Échéance (facultative)",
 			"color": "Couleur",
 			"icon": "Icône",
@@ -1811,7 +1835,12 @@
 			"duplicate_account": "Ce compte est déjà dans la liste.",
 			"not_fundable": "Ce compte ne peut pas porter d'objectif : choisissez un compte courant, d'épargne ou d'investissement actif.",
 			"currency_mismatch": "Ce compte n'est pas dans la devise de l'objectif.",
-			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant."
+			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant.",
+			"invalid_months": "Indiquez un nombre entier de mois, de 1 à 120.",
+			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
+			"no_expenses": "Aucun mois complet ne compte encore de dépenses : choisissez un montant fixe.",
+			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
+			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type."
 		},
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant."

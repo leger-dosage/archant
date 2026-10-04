@@ -58,15 +58,36 @@ function Figure({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
+ * How a reserve in months of expenses reaches its target: the months and the
+ * median they multiply, or, without a median, that the target last computed
+ * stands, as Sure keeps its stale floor.
+ */
+function reserveTargetNote(goal: GoalData, t: TFunction): string | null {
+	if (goal.targetMonths === null) {
+		return null;
+	}
+
+	return goal.monthlyExpenses === null
+		? t("goals.figures.monthsStale", { count: goal.targetMonths })
+		: t("goals.figures.monthsOfExpenses", {
+				count: goal.targetMonths,
+				median: formatMoney({ amount: goal.monthlyExpenses, currency: goal.currency }),
+			});
+}
+
+/**
  * Saved against target, what remains, the monthly amount by the date, and the
  * pace. Only an active goal asks for a monthly amount. A completed goal says
  * when it was reached and with how much, as Sure's « Atteint le … » and its
- * `show_frozen_note?`, and asks for nothing more.
+ * `show_frozen_note?`, and asks for nothing more. A reserve has no date, and
+ * what it misses is to refill, as Sure's « À recompléter ».
  */
 function Progress({ goal }: { goal: GoalData }) {
 	const { t } = useTranslation();
 	const money = (amount: GoalData["saved"]) => <Money amount={amount} currency={goal.currency} />;
 	const completed = goal.state === "completed";
+	const reserve = goal.kind === "maintained";
+	const months = reserveTargetNote(goal, t);
 
 	return (
 		<Section title={t("goals.figures.title")}>
@@ -88,17 +109,22 @@ function Progress({ goal }: { goal: GoalData }) {
 							</span>
 						)}
 					</div>
+					{months !== null && <p className="text-sm text-muted-foreground">{months}</p>}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
 						<Figure label={t("goals.figures.saved")}>{money(goal.saved)}</Figure>
 						<Figure label={t("goals.figures.target")}>{money(goal.targetAmount)}</Figure>
 						{!completed && (
-							<Figure label={t("goals.figures.remaining")}>{money(goal.remaining)}</Figure>
+							<Figure label={t(reserve ? "goals.figures.refill" : "goals.figures.remaining")}>
+								{money(goal.remaining)}
+							</Figure>
 						)}
-						<Figure label={t("goals.figures.date")}>
-							{goal.targetDate === null
-								? t("goals.figures.noDate")
-								: formatShortDate(goal.targetDate)}
-						</Figure>
+						{!reserve && (
+							<Figure label={t("goals.figures.date")}>
+								{goal.targetDate === null
+									? t("goals.figures.noDate")
+									: formatShortDate(goal.targetDate)}
+							</Figure>
+						)}
 						{goal.state === "active" && goal.monthlyNeeded !== null && goal.remaining > 0 && (
 							<Figure label={t("goals.figures.monthly")}>{money(goal.monthlyNeeded)}</Figure>
 						)}
