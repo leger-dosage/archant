@@ -452,19 +452,30 @@ export async function findTrade(deps: ServiceDeps, id: string): Promise<TradeRec
 	return row === undefined ? null : toRecord(row);
 }
 
-/** A page of an account's trades, most recent first (AD-15). */
+/**
+ * A page of an account's trades, most recent first (AD-15), only those in
+ * `securityId` when it is given, as a position's sheet lists them.
+ */
 export async function listTrades(
 	deps: ServiceDeps,
 	accountId: string,
-	page: { page: number; pageSize: number },
+	page: { page: number; pageSize: number; securityId?: string | undefined },
 ): Promise<{ items: TradeRecord[]; total: number }> {
-	const where = and(eq(entries.accountId, accountId), eq(entries.kind, "trade"));
+	const where = and(
+		eq(entries.accountId, accountId),
+		eq(entries.kind, "trade"),
+		page.securityId === undefined ? undefined : eq(trades.securityId, page.securityId),
+	);
 	const rows = await recordQuery(deps.db)
 		.where(where)
 		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
-	const totals = await deps.db.select({ total: count() }).from(entries).where(where);
+	const totals = await deps.db
+		.select({ total: count() })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(where);
 
 	return {
 		items: rows.map(toRecord),

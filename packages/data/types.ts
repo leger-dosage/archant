@@ -8,7 +8,7 @@ import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
 import type { deletedEntryKeys, entryKeys } from "./schema/entry-keys.ts";
 import type { goalAccounts, goals } from "./schema/goals.ts";
-import type { holdings } from "./schema/holdings.ts";
+import type { costBasisLocks, holdings } from "./schema/holdings.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { invitations } from "./schema/invitations.ts";
@@ -123,3 +123,6 @@ export type NewTrade = InferInsertModel<typeof trades>;
 
 export type Holding = InferSelectModel<typeof holdings>;
 export type NewHolding = InferInsertModel<typeof holdings>;
+
+export type CostBasisLock = InferSelectModel<typeof costBasisLocks>;
+export type NewCostBasisLock = InferInsertModel<typeof costBasisLocks>;

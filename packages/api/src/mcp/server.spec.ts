@@ -29,6 +29,7 @@ import {
 	openAccount,
 	openOwn,
 	ownCategory,
+	pea,
 	ownDatabase,
 	ownRequest,
 	postOwn,
@@ -67,6 +68,7 @@ const READ_TOOLS = [
 	"get_income_statement",
 	"get_budget",
 	"get_recurring_transactions",
+	"get_holdings",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",
@@ -1179,6 +1181,85 @@ describe("reading accounts, recurring series and one transaction", () => {
 		expect(result.items).toHaveLength(200);
 		expect(result.total).toBeGreaterThanOrEqual(201);
 		expect(result.truncated).toBe(true);
+	});
+
+	it("get_holdings gives each position as its route does, numbers as decimal strings", async () => {
+		const account = await openAccount({ ...pea, name: "PEA outil", openingDate: "2026-09-01" });
+		const traded = await apiRequest("POST", `/api/accounts/${account.id}/trades`, {
+			side: "buy",
+			security: { source: "manual", name: "Fonds outil", isin: "FR0000121014" },
+			date: "2026-09-10",
+			quantity: "10",
+			price: "612,40",
+			fee: "2,50",
+		});
+		const securityId = z
+			.object({ data: z.object({ security: z.object({ id: z.string() }) }) })
+			.parse(traded.body).data.security.id;
+		const locked = await apiRequest(
+			"PUT",
+			`/api/accounts/${account.id}/holdings/${securityId}/cost-basis`,
+			{ costBasis: "600" },
+		);
+		expect(locked.status).toBe(200);
+		const route = z
+			.object({
+				date: z.string(),
+				cash: z.number(),
+				cashWeight: z.string(),
+				total: z.number(),
+				positions: z.array(
+					z.object({
+						quantity: z.string(),
+						price: z.string(),
+						priceDate: z.string(),
+						amount: z.number(),
+						costBasis: z.string(),
+						bookValue: z.number(),
+						gain: z.number(),
+						gainPercent: z.string(),
+						weight: z.string(),
+					}),
+				),
+			})
+			.parse(await routeData(`/api/accounts/${account.id}/holdings`));
+		const [position] = route.positions;
+
+		const result = await callTool(bare, tokens.access_token, "get_holdings", {
+			accountId: account.id,
+		});
+		const missing = await callTool(bare, tokens.access_token, "get_holdings", {
+			accountId: "nope",
+		});
+
+		expect(result.structuredContent).toEqual({
+			accountId: account.id,
+			currency: "EUR",
+			date: route.date,
+			positions: [
+				{
+					securityId,
+					name: "Fonds outil",
+					ticker: null,
+					isin: "FR0000121014",
+					exchangeMic: null,
+					quantity: "10",
+					price: "612.4",
+					priceDate: "2026-09-10",
+					amount: money(position?.amount),
+					costBasis: "600",
+					costBasisLocked: true,
+					bookValue: money(position?.bookValue),
+					gain: "124.00",
+					gainPercent: position?.gainPercent,
+					weight: position?.weight,
+				},
+			],
+			cash: money(route.cash),
+			cashWeight: route.cashWeight,
+			total: "24997.50",
+		});
+		expect(missing.isError).toBe(true);
 	});
 
 	it("get_transaction gives its notes, tags, reference, transfer and source", async () => {

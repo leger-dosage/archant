@@ -260,6 +260,23 @@ describe("GET /api/accounts/:id/trades", () => {
 		expect(second.data.items.map((item) => item.id)).toEqual([older.id]);
 	});
 
+	it("narrows the page to one security when asked", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		const other = await newSecurity();
+		const kept = await recorded(account.id, buyBody(securityId));
+		await recorded(account.id, buyBody(other));
+
+		const response = await accounts()[":id"].trades.$get({
+			param: { id: account.id },
+			query: { securityId },
+		});
+
+		const { data } = await response.json();
+		expect(data).toMatchObject({ total: 1 });
+		expect(data.items.map((item) => item.id)).toEqual([kept.id]);
+	});
+
 	it("answers an empty page for an account with no trade, and NOT_FOUND for none", async () => {
 		const account = await openAccount();
 

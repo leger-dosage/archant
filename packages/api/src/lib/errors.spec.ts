@@ -22,6 +22,7 @@ describe("AppError", () => {
 		expect(new AppError("BANK_AUTHORIZATION_INVALID", "x").status).toBe(400);
 		expect(new AppError("PRICES_DISABLED", "x").status).toBe(409);
 		expect(new AppError("PRICE_UPDATE_IN_PROGRESS", "x").status).toBe(409);
+		expect(new AppError("PRICE_FROM_PROVIDER", "x").status).toBe(409);
 		expect(new AppError("PRICE_PROVIDER_ERROR", "x").status).toBe(502);
 		expect(new AppError("PRICE_UNAVAILABLE", "x").status).toBe(502);
 		expect(new AppError("NOT_AN_INVESTMENT_ACCOUNT", "x").status).toBe(409);

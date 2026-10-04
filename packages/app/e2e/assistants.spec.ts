@@ -31,6 +31,7 @@ const READ_TOOLS = [
 	"get_income_statement",
 	"get_budget",
 	"get_recurring_transactions",
+	"get_holdings",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",

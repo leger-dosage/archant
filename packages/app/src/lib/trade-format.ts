@@ -41,3 +41,20 @@ export function formatPrice(price: string, currency: string): string {
 export function decimalToText(value: string): string {
 	return value.replace(".", ",");
 }
+
+const shareFormat = new Intl.NumberFormat("fr-FR", {
+	style: "percent",
+	minimumFractionDigits: 1,
+	maximumFractionDigits: 1,
+});
+
+/**
+ * A percentage from the API, a decimal string such as `"60"` or `"-2.5"`,
+ * with one decimal: `60,0 %`, `−2,5 %`. Only shown, so dividing the float
+ * by a hundred costs nothing that matters.
+ */
+export function formatShare(percent: string): string {
+	return isDecimalString(percent)
+		? shareFormat.format(Number(percent) / 100).replace("-", "−")
+		: percent;
+}

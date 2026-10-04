@@ -7,6 +7,7 @@ import { parseAmount } from "@archant/data/money";
 import type { PriceProviderId } from "@archant/data/schema/securities";
 
 import { TRADE_SIDES, isValidIsin, tradeAmount } from "../domain/trades.ts";
+import { pageQuerySchema } from "./transactions.ts";
 
 // The form's « Achat » and « Vente », and its ISIN check, from the domain the
 // API checks them with.
@@ -233,3 +234,8 @@ export function updateTradeSchema(currency: CurrencyCode) {
 
 /** What the interface's trade form holds: the text typed, before the schema parses it. */
 export type TradeFormInput = z.input<ReturnType<typeof createTradeSchema>>;
+
+/** A page of an account's trades, narrowed to one security for a position's sheet. */
+export const tradePageQuerySchema = pageQuerySchema.extend({
+	securityId: z.string().min(1).optional(),
+});

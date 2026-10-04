@@ -42,6 +42,7 @@ const ENTRIES = [
 	"attachments.json",
 	"all.ndjson",
 	"goals.ndjson",
+	"prices.ndjson",
 ];
 
 /** Sure's `Family::DataImporter#import!` order, which `all.ndjson` follows. */
@@ -119,6 +120,20 @@ async function created(path: string, json: Record<string, unknown>) {
 	const body = await sendOwn("POST", path, json);
 
 	return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+}
+
+/** The security a trade of `accountId` is in. */
+async function securityOf(accountId: string, tradeId: string) {
+	const body = await sendOwn("GET", `/api/accounts/${accountId}/trades`);
+	const { data } = z
+		.object({
+			data: z.object({
+				items: z.array(z.object({ id: z.string(), security: z.object({ id: z.string() }) })),
+			}),
+		})
+		.parse(body);
+
+	return data.items.find((item) => item.id === tradeId)?.security.id ?? "";
 }
 
 async function transferOf(outflow: string) {
@@ -270,6 +285,15 @@ async function household() {
 			price: "10",
 		}),
 	};
+	// Sold out at its price: its holdings go on at zero, no cost basis.
+	const soldOut = await created(`/api/accounts/${ids.other}/trades`, {
+		side: "sell",
+		security: { source: "known", id: await securityOf(ids.other, trades.unnamed) },
+		date: "2026-09-16",
+		quantity: "1",
+		price: "10",
+		fee: "0",
+	});
 
 	const subscription = await postOwn(ids.checking, {
 		date: "2026-09-08",
@@ -347,7 +371,7 @@ async function household() {
 		toPea,
 		refused,
 		lvmh,
-		trades,
+		trades: { ...trades, soldOut },
 		rules: { categorise, transfer, replaceOnly },
 	};
 }
@@ -407,6 +431,7 @@ describe("exportArchive", () => {
 		]);
 		expect(archive.lines.map((row) => row.type)).toEqual(DEFAULT_CATEGORIES.map(() => "Category"));
 		expect(archive.text["goals.ndjson"]).toBe("");
+		expect(archive.text["prices.ndjson"]).toBe("");
 		expect(archive.ndjson.endsWith("\n")).toBe(true);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 		expect(archive.log).toHaveLength(1);
@@ -439,6 +464,7 @@ describe("exportArchive", () => {
 			["2026-09-11", "Crypto", "FR0010315770", "100", "1", "100.00", "EUR"],
 			["2026-09-12", "Crypto", "MC.PA", "-0.5", "650", "-325.00", "EUR"],
 			["2026-09-13", "Crypto", "Parts sociales", "1", "10", "10.00", "EUR"],
+			["2026-09-16", "Crypto", "Parts sociales", "-1", "10", "-10.00", "EUR"],
 		]);
 		const lines = archive.of("Trade");
 		expect(lines).toEqual([
@@ -472,6 +498,7 @@ describe("exportArchive", () => {
 				exchange_operating_mic: null,
 				archant: { isin: null, fee: "0.00" },
 			}),
+			expect.objectContaining({ id: trades.soldOut, qty: "-1", amount: "-10.00" }),
 		]);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
@@ -513,16 +540,107 @@ describe("exportArchive", () => {
 		expect(holdings).toContainEqual(
 			expect.objectContaining({ ticker: "Parts sociales", date: "2026-09-13", amount: "10.00" }),
 		);
-		// The 50 € opening less the four trades, the holdings' 325 + 100 + 10 on top.
+		// Sold out: the days after go on at zero, with no cost basis and no source.
+		expect(holdings).toContainEqual(
+			expect.objectContaining({
+				ticker: "Parts sociales",
+				date: "2026-09-21",
+				qty: "0",
+				amount: "0.00",
+				cost_basis: null,
+				cost_basis_source: null,
+				cost_basis_locked: false,
+			}),
+		);
+		// The 50 € opening less the five trades, the holdings' 325 + 100 on top.
 		expect(archive.of("Balance")).toContainEqual(
 			expect.objectContaining({
 				account_id: ids.other,
 				date: "2026-09-21",
-				cash_balance: "-349.90",
+				cash_balance: "-339.90",
 				balance: "85.10",
 			}),
 		);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
+	it("writes each typed price to prices.ndjson, and a locked cost basis on the Holding lines of the days held", async () => {
+		const { ids, lvmh, trades } = await household();
+		const fund = await securityOf(ids.other, trades.fund);
+		await sendOwn("POST", `/api/securities/${fund}/prices`, { date: "2026-09-15", price: "1" });
+		await sendOwn("POST", `/api/securities/${fund}/prices`, { date: "2026-09-14", price: "1,000" });
+		await sendOwn("PUT", `/api/accounts/${ids.other}/holdings/${lvmh}/cost-basis`, {
+			costBasis: "600",
+		});
+		// Sold out on 2026-09-16, bought again, then locked: the lock is the new position's.
+		const parts = await securityOf(ids.other, trades.unnamed);
+		await created(`/api/accounts/${ids.other}/trades`, {
+			side: "buy",
+			security: { source: "known", id: parts },
+			date: "2026-09-18",
+			quantity: "2",
+			price: "12",
+			fee: "0",
+		});
+		await sendOwn("PUT", `/api/accounts/${ids.other}/holdings/${parts}/cost-basis`, {
+			costBasis: "11",
+		});
+
+		const archive = await exported();
+		const prices = (archive.text["prices.ndjson"] ?? "")
+			.split("\n")
+			.filter((row) => row !== "")
+			.map((row): Line => line.parse(JSON.parse(row)));
+		const lvmhOn = (date: string) =>
+			archive.of("Holding").find((row) => row["security_id"] === lvmh && row["date"] === date);
+
+		expect(prices).toEqual([
+			{
+				type: "SecurityPrice",
+				data: {
+					security_id: fund,
+					ticker: "FR0010315770",
+					security_name: "Fonds euros",
+					exchange_operating_mic: null,
+					date: "2026-09-14",
+					price: "1",
+					currency: "EUR",
+					source: "manual",
+					archant: { isin: "FR0010315770" },
+				},
+			},
+			{ type: "SecurityPrice", data: { ...prices[0]?.data, date: "2026-09-15" } },
+		]);
+		expect(lvmhOn("2026-09-10")).toMatchObject({
+			cost_basis: "600",
+			cost_basis_source: "manual",
+			cost_basis_locked: true,
+		});
+		expect(lvmhOn("2026-09-21")).toMatchObject({ qty: "0.5", cost_basis: "600" });
+		const partsOn = (date: string) =>
+			archive.of("Holding").find((row) => row["security_id"] === parts && row["date"] === date);
+		expect(partsOn("2026-09-15")).toMatchObject({
+			qty: "1",
+			cost_basis: "10",
+			cost_basis_source: "calculated",
+			cost_basis_locked: false,
+		});
+		expect(partsOn("2026-09-17")).toMatchObject({
+			qty: "0",
+			cost_basis: null,
+			cost_basis_source: null,
+			cost_basis_locked: false,
+		});
+		expect(partsOn("2026-09-18")).toMatchObject({
+			qty: "2",
+			cost_basis: "11",
+			cost_basis_source: "manual",
+			cost_basis_locked: true,
+		});
+		// Nothing else changes: the price lines stay out of all.ndjson, which Sure's preflight passes.
+		expect(archive.lines.some((row) => row.type === "SecurityPrice")).toBe(false);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.log[0]).toMatchObject({ SecurityPrice: 2 });
 	});
 
 	it("maps accounts to Sure's accountables, the rest under archant", async () => {

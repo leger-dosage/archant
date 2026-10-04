@@ -34,6 +34,7 @@ import { mcpIssuer, mcpResource } from "../services/auth.ts";
 import { getAccounts } from "./accounts.ts";
 import { getBudgetTool, updateBudgetTool } from "./budgets.ts";
 import { createCategoryTool, getCategories, renameCategoryTool } from "./categories.ts";
+import { getHoldings } from "./holdings.ts";
 import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
 import { getRecurringTransactions } from "./recurring.ts";
 import { getBalanceSheetTool, getIncomeStatement } from "./reports.ts";
@@ -79,6 +80,7 @@ const TOOLS: AnyTool[] = [
 	getIncomeStatement,
 	getBudgetTool,
 	getRecurringTransactions,
+	getHoldings,
 	getRules,
 	getRuleRuns,
 	previewRule,

@@ -7,9 +7,10 @@ import { AppError } from "../lib/errors.ts";
 import { validated } from "../lib/validated.ts";
 import { createAccountSchema, updateAccountSchema } from "../schemas/accounts.ts";
 import { balanceQuerySchema } from "../schemas/balances.ts";
+import { costBasisBodySchema } from "../schemas/holdings.ts";
 import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts";
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
-import { tradeBodySchema } from "../schemas/trades.ts";
+import { tradeBodySchema, tradePageQuerySchema } from "../schemas/trades.ts";
 import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
 import {
 	createAccount,
@@ -19,6 +20,7 @@ import {
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
+import { listPositions, setCostBasis, unlockCostBasis } from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
@@ -65,11 +67,36 @@ export function accountsRoutes(deps: ImportDeps) {
 		.post("/:id/snapshots", validated("json", snapshotBodySchema), async (c) =>
 			c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
 		)
-		.get("/:id/trades", validated("query", pageQuerySchema), async (c) =>
+		.get("/:id/trades", validated("query", tradePageQuerySchema), async (c) =>
 			c.json({ data: await listAccountTrades(deps, c.req.param("id"), c.req.valid("query")) }, 200),
 		)
 		.post("/:id/trades", validated("json", tradeBodySchema), async (c) =>
 			c.json({ data: await createTrade(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.get("/:id/holdings", async (c) =>
+			c.json({ data: await listPositions(deps, c.req.param("id")) }, 200),
+		)
+		.put(
+			"/:id/holdings/:securityId/cost-basis",
+			validated("json", costBasisBodySchema),
+			async (c) =>
+				c.json(
+					{
+						data: await setCostBasis(
+							deps,
+							c.req.param("id"),
+							c.req.param("securityId"),
+							c.req.valid("json"),
+						),
+					},
+					200,
+				),
+		)
+		.delete("/:id/holdings/:securityId/cost-basis", async (c) =>
+			c.json(
+				{ data: await unlockCostBasis(deps, c.req.param("id"), c.req.param("securityId")) },
+				200,
+			),
 		)
 		.get("/:id/imports", validated("query", pageQuerySchema), async (c) =>
 			c.json({ data: await listImports(deps, c.req.param("id"), c.req.valid("query")) }, 200),

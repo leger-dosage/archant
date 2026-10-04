@@ -72,6 +72,14 @@ export const recurringInput = z.strictObject({
 		),
 });
 
+/** `get_holdings`: one account's positions today. */
+export const holdingsInput = z.strictObject({
+	accountId: z
+		.string()
+		.min(1)
+		.describe("An account id from get_accounts; an investment account holds positions."),
+});
+
 /** `get_transaction`: one transaction in full. */
 export const transactionIdInput = z.strictObject({
 	id: z.string().min(1).describe("A transaction id from get_transactions."),

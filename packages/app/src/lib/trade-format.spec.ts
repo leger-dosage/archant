@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decimalToText, formatPrice, formatQuantity } from "./trade-format";
+import { decimalToText, formatPrice, formatQuantity, formatShare } from "./trade-format";
 
 // `Intl` separates thousands and the currency with narrow and plain no-break spaces.
 const spaced = (text: string) => text.replaceAll(/[  ]/gu, " ");
@@ -33,5 +33,14 @@ describe("decimalToText", () => {
 	it("writes the decimal comma the form reads", () => {
 		expect(decimalToText("612.4")).toBe("612,4");
 		expect(decimalToText("10")).toBe("10");
+	});
+});
+
+describe("formatShare", () => {
+	it("writes a percentage with one decimal, a negative one with a true minus", () => {
+		expect(spaced(formatShare("60"))).toBe("60,0 %");
+		expect(spaced(formatShare("33.333333"))).toBe("33,3 %");
+		expect(spaced(formatShare("-2.5"))).toBe("−2,5 %");
+		expect(formatShare("n/a")).toBe("n/a");
 	});
 });
