@@ -3036,7 +3036,7 @@ The owner's instance is reachable only through Tailscale. Claude Code, VS Code a
 Left out on purpose:
 
 - an assistant chat inside Archant (Sure's chat panel), which stays dropped: the assistant is the user's own;
-- tools for features Archant does not have: holdings, budgets, goals, bills, insights, documents and account statements;
+- tools for features Archant does not have: holdings, goals, bills, insights, documents and account statements;
 - `create_transaction` and `delete_transaction`: transactions come from banks and files, and an irreversible delete is what an injected label would aim for; the interface keeps both;
 - deleting or merging categories, merchants and tags, imports, bank connections, sync, balance snapshots and transfers;
 - MCP resources, prompts and the multi-round-trip input requests of the 2026-07-28 specification: annotations and the count guard cover confirmation until a client needs more;

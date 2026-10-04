@@ -14,6 +14,7 @@ import type {
 	BudgetInput,
 	BudgetMoveInput,
 	BudgetRolloverInput,
+	BudgetUpdateInput,
 } from "../schemas/budgets.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { CashFlow } from "./reports.ts";
@@ -35,7 +36,7 @@ import {
 	sum,
 } from "drizzle-orm";
 
-import type { MinorUnits } from "@archant/data/money";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
 import { budgetCategories as budgetCategoryRows, budgets } from "@archant/data/schema/budgets";
@@ -59,6 +60,7 @@ import {
 	budgetMoveSchema,
 	budgetRolloverBodySchema,
 	budgetSchema,
+	budgetUpdateSchema,
 } from "../schemas/budgets.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
 import { getCashFlowHistory, getCashFlowWithRows } from "./reports.ts";
@@ -424,26 +426,38 @@ export async function saveBudget(
 				throw notFound();
 			}
 
-			const now = Date.now();
-			const amounts = { currency, ...parsed.data, updatedAt: now };
-			const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
-			const budget = await tx
-				.insert(budgets)
-				.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
-				.onConflictDoUpdate({ target: budgets.month, set: amounts })
-				.returning({ id: budgets.id })
-				.get();
-
-			if (before === undefined || before.budgetedSpending === null) {
-				await inheritRollover(tx, month, budget.id, now);
-			}
-
+			await writeTotals(tx, month, { currency, ...parsed.data });
 			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
 	);
 
 	return getBudget(deps, month);
+}
+
+/**
+ * `saveBudget`'s write, under the caller's write lock and in its bounds:
+ * creates the month's row on its first save, updates it after, and gives a
+ * month set up for the first time the rollover switches it inherits.
+ */
+async function writeTotals(
+	tx: Db,
+	month: IsoMonth,
+	totals: { currency: CurrencyCode; budgetedSpending: MinorUnits; expectedIncome: MinorUnits },
+) {
+	const now = Date.now();
+	const amounts = { ...totals, updatedAt: now };
+	const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+	const budget = await tx
+		.insert(budgets)
+		.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
+		.onConflictDoUpdate({ target: budgets.month, set: amounts })
+		.returning({ id: budgets.id })
+		.get();
+
+	if (before === undefined || before.budgetedSpending === null) {
+		await inheritRollover(tx, month, budget.id, now);
+	}
 }
 
 /**
@@ -530,59 +544,170 @@ export async function saveCategoryBudget(
 				throw notExpense();
 			}
 
-			const amountOf = async (id: string) =>
-				toMinorUnits(
-					(
-						await tx
-							.select({ amount: budgetCategoryRows.budgetedSpending })
-							.from(budgetCategoryRows)
-							.where(
-								and(
-									eq(budgetCategoryRows.budgetId, budget.id),
-									eq(budgetCategoryRows.categoryId, id),
-								),
-							)
-							.get()
-					)?.amount ?? 0,
-				);
-			const now = Date.now();
-			const write = (id: string, budgetedSpending: MinorUnits) =>
-				writeAmount(tx, budget.id, id, budgetedSpending, now);
-			// The children's stored amounts under `parentId`, `except` one: a
-			// shared child's is 0, so this is what the ring-fenced ones hold.
-			const childrenOf = async (parentId: string, except?: string) => {
-				const [children] = await tx
-					.select({ total: sum(budgetCategoryRows.budgetedSpending).mapWith(Number) })
+			await writeCategoryAmount(tx, budget.id, category, amount);
+			await refreshRollover(tx, deps);
+		},
+		{ behavior: "immediate" },
+	);
+
+	return getBudget(deps, month);
+}
+
+/**
+ * `saveCategoryBudget`'s write, under the caller's write lock, in a month set
+ * up and for an expense category: its amount, then its parent's, as
+ * `parentAfterOwnSave` and `parentAfterChildSave` compute them.
+ */
+async function writeCategoryAmount(
+	tx: Db,
+	budgetId: string,
+	category: { id: string; parentId: string | null },
+	amount: MinorUnits,
+) {
+	const amountOf = async (id: string) =>
+		toMinorUnits(
+			(
+				await tx
+					.select({ amount: budgetCategoryRows.budgetedSpending })
 					.from(budgetCategoryRows)
-					.innerJoin(categories, eq(categories.id, budgetCategoryRows.categoryId))
 					.where(
-						and(
-							eq(budgetCategoryRows.budgetId, budget.id),
-							eq(categories.parentId, parentId),
-							except === undefined ? undefined : ne(budgetCategoryRows.categoryId, except),
+						and(eq(budgetCategoryRows.budgetId, budgetId), eq(budgetCategoryRows.categoryId, id)),
+					)
+					.get()
+			)?.amount ?? 0,
+		);
+	const now = Date.now();
+	const write = (id: string, budgetedSpending: MinorUnits) =>
+		writeAmount(tx, budgetId, id, budgetedSpending, now);
+	// The children's stored amounts under `parentId`, `except` one: a
+	// shared child's is 0, so this is what the ring-fenced ones hold.
+	const childrenOf = async (parentId: string, except?: string) => {
+		const [children] = await tx
+			.select({ total: sum(budgetCategoryRows.budgetedSpending).mapWith(Number) })
+			.from(budgetCategoryRows)
+			.innerJoin(categories, eq(categories.id, budgetCategoryRows.categoryId))
+			.where(
+				and(
+					eq(budgetCategoryRows.budgetId, budgetId),
+					eq(categories.parentId, parentId),
+					except === undefined ? undefined : ne(budgetCategoryRows.categoryId, except),
+				),
+			);
+
+		return toMinorUnits(children?.total ?? 0);
+	};
+
+	if (category.parentId === null) {
+		await write(
+			category.id,
+			parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) }),
+		);
+	} else {
+		const previousChild = await amountOf(category.id);
+
+		await write(category.id, amount);
+		await write(
+			category.parentId,
+			parentAfterChildSave({
+				parent: await amountOf(category.parentId),
+				siblings: await childrenOf(category.parentId, category.id),
+				previousChild,
+				child: amount,
+			}),
+		);
+	}
+}
+
+/**
+ * Sure's `UpdateBudget`, for an assistant: sets a month's total, expected
+ * income and category amounts in one transaction, through the writes
+ * `saveBudget` and `saveCategoryBudget` make, so a refusal anywhere leaves
+ * the month as it was. A field absent keeps its stored value; a month not
+ * set up needs both the total and the income, as the form does, so a half
+ * set-up month never exists. Categories follow, subcategories first and
+ * parents last as Sure's, so a parent given beside its child keeps the amount
+ * given; a category amount needs the month set up, by this call or before.
+ * Answers the month, as `getBudget` does.
+ */
+export async function updateBudget(
+	deps: ServiceDeps,
+	month: IsoMonth,
+	input: BudgetUpdateInput,
+): Promise<BudgetMonth> {
+	const currency = getReportingCurrency();
+	const parsed = budgetUpdateSchema(currency).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const { budgetedSpending, expectedIncome, categories: categoryAmounts = [] } = parsed.data;
+
+	await deps.db.transaction(
+		async (tx) => {
+			const { bounds } = await budgetMonths({ ...deps, db: tx });
+
+			if (!isBudgetMonth(month, bounds)) {
+				throw notFound();
+			}
+
+			if (budgetedSpending !== undefined || expectedIncome !== undefined) {
+				const stored = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+				const storedTotal = stored?.budgetedSpending ?? null;
+				const storedIncome = stored?.expectedIncome ?? null;
+				const total = budgetedSpending ?? (storedTotal === null ? null : toMinorUnits(storedTotal));
+				const income =
+					expectedIncome ?? (storedIncome === null ? null : toMinorUnits(storedIncome));
+
+				// Only a month not set up stores neither: both are then required.
+				if (total === null || income === null) {
+					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+						...(total === null ? [{ path: "budgetedSpending", code: "required" }] : []),
+						...(income === null ? [{ path: "expectedIncome", code: "required" }] : []),
+					]);
+				}
+
+				await writeTotals(tx, month, {
+					currency,
+					budgetedSpending: total,
+					expectedIncome: income,
+				});
+			}
+
+			if (categoryAmounts.length > 0) {
+				const budget = await setUpBudget(tx, month);
+				const found = await tx
+					.select({ id: categories.id, parentId: categories.parentId, kind: categories.kind })
+					.from(categories)
+					.where(
+						inArray(
+							categories.id,
+							categoryAmounts.map((entry) => entry.categoryId),
 						),
 					);
+				const byId = new Map(found.map((category) => [category.id, category]));
+				const writes = categoryAmounts.map((entry) => {
+					const category = byId.get(entry.categoryId);
 
-				return toMinorUnits(children?.total ?? 0);
-			};
+					// Only expense categories carry an amount, as income is one figure per month.
+					if (category === undefined || category.kind !== "expense") {
+						throw notExpense();
+					}
 
-			if (category.parentId === null) {
-				await write(
-					category.id,
-					parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) }),
-				);
-			} else {
-				const previousChild = await amountOf(category.id);
+					return { category, amount: entry.budgeted };
+				});
+				// Subcategories first: each lifts its parent, which a parent given
+				// here then sets, never below what its ring-fenced children hold.
+				const ordered = [
+					...writes.filter(({ category }) => category.parentId !== null),
+					...writes.filter(({ category }) => category.parentId === null),
+				];
 
-				await write(category.id, amount);
-				await write(
-					category.parentId,
-					parentAfterChildSave({
-						parent: await amountOf(category.parentId),
-						siblings: await childrenOf(category.parentId, category.id),
-						previousChild,
-						child: amount,
-					}),
+				// In sequence, as every other write on this one connection.
+				await ordered.reduce<Promise<unknown>>(
+					(previous, { category, amount }) =>
+						previous.then(() => writeCategoryAmount(tx, budget.id, category, amount)),
+					Promise.resolve(),
 				);
 			}
 
