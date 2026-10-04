@@ -102,9 +102,9 @@ function over(color: string, share: number, surface: string): string {
 		.join("")}`;
 }
 
-// A warning badge, « Doublon possible » or a connection's consent and sync
-// alerts: the warning text on its own tint, `bg-warning/6` light and `/17`
-// dark, over every surface a row or a card takes.
+// A warning badge, « Doublon possible », a connection's consent and sync
+// alerts or a budget « Bientôt atteint »: the warning text on its own tint,
+// `bg-warning/6` light and `/17` dark, over every surface a row or a card takes.
 describe.each([
 	["light", light, 0.06],
 	["dark", dark, 0.17],
@@ -118,6 +118,21 @@ describe.each([
 			expect(contrastRatio(warning, fill)).toBeGreaterThanOrEqual(4.5);
 		},
 	);
+});
+
+// A budget « Dépassé »: the destructive text on `bg-destructive/6`. Dark
+// destructive is 4.5:1 on a hovered row before any tint, so the badge only
+// sits on a card, never on a row that takes a hover or selection fill.
+describe.each([
+	["light", light],
+	["dark", dark],
+])("the %s destructive badge", (_, tokens) => {
+	it.each(["background", "card", "inset"])("meets WCAG AA on %s", (surface) => {
+		const destructive = tokens.get("destructive") ?? "";
+		const fill = over(destructive, 0.06, tokens.get(surface) ?? "");
+
+		expect(contrastRatio(destructive, fill)).toBeGreaterThanOrEqual(4.5);
+	});
 });
 
 // BankAlerts' strip over the page and the credentials notice inside its

@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
-import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+import { categories } from "./categories.ts";
 
 /**
  * Sure's `Budget`, one row per calendar month, created on the first save:
@@ -26,5 +28,35 @@ export const budgets = sqliteTable(
 			"budgets_amounts_check",
 			sql`${table.budgetedSpending} >= 0 and ${table.expectedIncome} >= 0`,
 		),
+	],
+);
+
+/**
+ * Sure's `BudgetCategory`: one expense category's amount in one month's
+ * budget, in minor units of that budget's currency. Written on the first save
+ * of that amount, never on read: a category without a row has 0. A parent's
+ * amount is its total, its ring-fenced children's amounts plus its own
+ * reserve. Deleted with its budget or its category, as Sure's
+ * `dependent: :destroy`, so a merge drops the merged category's rows too.
+ */
+export const budgetCategories = sqliteTable(
+	"budget_categories",
+	{
+		id: text("id").primaryKey(),
+		budgetId: text("budget_id")
+			.notNull()
+			.references(() => budgets.id, { onDelete: "cascade" }),
+		categoryId: text("category_id")
+			.notNull()
+			.references(() => categories.id, { onDelete: "cascade" }),
+		budgetedSpending: integer("budgeted_spending").notNull(),
+		createdAt: integer("created_at").notNull(),
+		updatedAt: integer("updated_at").notNull(),
+	},
+	(table) => [
+		uniqueIndex("budget_categories_budget_category_unique").on(table.budgetId, table.categoryId),
+		// A category's delete looks its rows up to cascade.
+		index("budget_categories_category").on(table.categoryId),
+		check("budget_categories_amount_check", sql`${table.budgetedSpending} >= 0`),
 	],
 );

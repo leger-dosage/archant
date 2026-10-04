@@ -29,6 +29,7 @@ import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.s
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
+import { Route as AuthedBudgetsMonthCategoriesRouteImport } from './routes/_authed.budgets.$month_.categories'
 import { Route as AuthedBudgetsMonthEditRouteImport } from './routes/_authed.budgets.$month_.edit'
 import { Route as AuthedSettingsBanksConnectionIdRouteImport } from './routes/_authed.settings.banks_.$connectionId'
 import { Route as AuthedSettingsBanksCallbackRouteImport } from './routes/_authed.settings.banks_.callback'
@@ -134,6 +135,12 @@ const AuthedSettingsTagsRoute = AuthedSettingsTagsRouteImport.update({
   path: '/tags',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedBudgetsMonthCategoriesRoute =
+  AuthedBudgetsMonthCategoriesRouteImport.update({
+    id: '/budgets/$month_/categories',
+    path: '/budgets/$month/categories',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedBudgetsMonthEditRoute = AuthedBudgetsMonthEditRouteImport.update({
   id: '/budgets/$month_/edit',
   path: '/budgets/$month/edit',
@@ -172,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/accounts/': typeof AuthedAccountsIndexRoute
   '/budgets/': typeof AuthedBudgetsIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
+  '/budgets/$month/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
@@ -195,6 +203,7 @@ export interface FileRoutesByTo {
   '/accounts': typeof AuthedAccountsIndexRoute
   '/budgets': typeof AuthedBudgetsIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
+  '/budgets/$month/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
@@ -221,6 +230,7 @@ export interface FileRoutesById {
   '/_authed/accounts/': typeof AuthedAccountsIndexRoute
   '/_authed/budgets/': typeof AuthedBudgetsIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
+  '/_authed/budgets/$month_/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/_authed/budgets/$month_/edit': typeof AuthedBudgetsMonthEditRoute
   '/_authed/settings/banks_/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/_authed/settings/banks_/callback': typeof AuthedSettingsBanksCallbackRoute
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/accounts/'
     | '/budgets/'
     | '/settings/'
+    | '/budgets/$month/categories'
     | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
@@ -270,6 +281,7 @@ export interface FileRouteTypes {
     | '/accounts'
     | '/budgets'
     | '/settings'
+    | '/budgets/$month/categories'
     | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
@@ -295,6 +307,7 @@ export interface FileRouteTypes {
     | '/_authed/accounts/'
     | '/_authed/budgets/'
     | '/_authed/settings/'
+    | '/_authed/budgets/$month_/categories'
     | '/_authed/budgets/$month_/edit'
     | '/_authed/settings/banks_/$connectionId'
     | '/_authed/settings/banks_/callback'
@@ -449,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsTagsRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/budgets/$month_/categories': {
+      id: '/_authed/budgets/$month_/categories'
+      path: '/budgets/$month/categories'
+      fullPath: '/budgets/$month/categories'
+      preLoaderRoute: typeof AuthedBudgetsMonthCategoriesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/budgets/$month_/edit': {
       id: '/_authed/budgets/$month_/edit'
       path: '/budgets/$month/edit'
@@ -511,6 +531,7 @@ interface AuthedRouteChildren {
   AuthedBudgetsMonthRoute: typeof AuthedBudgetsMonthRoute
   AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
   AuthedBudgetsIndexRoute: typeof AuthedBudgetsIndexRoute
+  AuthedBudgetsMonthCategoriesRoute: typeof AuthedBudgetsMonthCategoriesRoute
   AuthedBudgetsMonthEditRoute: typeof AuthedBudgetsMonthEditRoute
 }
 
@@ -524,6 +545,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedBudgetsMonthRoute: AuthedBudgetsMonthRoute,
   AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
   AuthedBudgetsIndexRoute: AuthedBudgetsIndexRoute,
+  AuthedBudgetsMonthCategoriesRoute: AuthedBudgetsMonthCategoriesRoute,
   AuthedBudgetsMonthEditRoute: AuthedBudgetsMonthEditRoute,
 }
 

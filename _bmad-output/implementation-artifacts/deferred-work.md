@@ -220,3 +220,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-16-2-ask-an-assistant-to-write-my-rules.md`
   summary: Fix the race in `packages/app/e2e/bank-connections.spec.ts` where the connection page's heading stays « Banques » after a bank's callback.
   evidence: The trace shows `GET /api/bank-connections` starting 7 ms after `POST /api/bank-connections/callback` and returning without the new connection, which is never fetched again; the file failed on commit 94f652c too (2 of 37 in one of three runs), and on this branch 1 of 37 in three of six runs.
+- source_spec: `_bmad-output/implementation-artifacts/spec-17-2-spread-the-budget-over-categories.md`
+  summary: No end-to-end test checks the budget categories' filter in a month where no card is over (hidden toggle, `?filter=` ignored).
+  evidence: The only filter test runs in February 2024, where « Cadeaux » is always over; removing `anyOver &&` passes every test.
