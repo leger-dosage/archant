@@ -104,6 +104,10 @@ export const ERROR_STATUSES = {
 	SYNC_TOO_RECENT: 409,
 	/** This bank connection's consent has ended: nothing is read until it is renewed. */
 	CONSENT_EXPIRED: 409,
+	/** « Mettre à jour les cours » while price fetching is off: nothing reaches the provider. */
+	PRICES_DISABLED: 409,
+	/** A price update is running; its lease frees itself after ten minutes. */
+	PRICE_UPDATE_IN_PROGRESS: 409,
 	/**
 	 * A delete of an account a bank still feeds: the next sync would offer its
 	 * bank account for linking again, so the bank is disconnected first, as Sure.
@@ -134,6 +138,17 @@ export const ERROR_STATUSES = {
 	 * no balance, so the account keeps the one of the sync before.
 	 */
 	BANK_BALANCE_UNAVAILABLE: 502,
+	/**
+	 * The price provider failed, timed out or answered what its schema does not
+	 * allow. A run's last state: it stops there, and no security counts it.
+	 */
+	PRICE_PROVIDER_ERROR: 502,
+	/**
+	 * The provider has no usable price for a security: an unknown symbol, no
+	 * close, or a currency other than the security's. A run's last state; five
+	 * in a row set the security offline.
+	 */
+	PRICE_UNAVAILABLE: 502,
 	/** The health check could not read the database. */
 	SERVICE_UNAVAILABLE: 503,
 	/** A bank route while `ENCRYPTION_KEY` is unset or no Enable Banking credentials apply. */

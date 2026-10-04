@@ -83,6 +83,9 @@ const api = spawn(process.execPath, [entrypoint], {
 		ENABLE_BANKING_PRIVATE_KEY: "",
 		ENCRYPTION_KEY: randomBytes(32).toString("base64"),
 		ENABLE_BANKING_API_URL: bank.url,
+		// The discard port, closed on loopback: no test has a security to price,
+		// and a fetch that strays here fails at once instead of reaching Yahoo.
+		YAHOO_FINANCE_URL: "http://127.0.0.1:9",
 	},
 });
 

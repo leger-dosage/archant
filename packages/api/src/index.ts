@@ -149,6 +149,7 @@ const app = createApp({
 	syncSecret: env.SYNC_SECRET,
 	setupToken,
 	version: env.APP_VERSION,
+	priceApiUrl: env.YAHOO_FINANCE_URL,
 	...bankDepsFromEnv(env),
 });
 

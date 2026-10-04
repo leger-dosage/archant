@@ -3891,7 +3891,7 @@ So that Archant knows what I hold.
 
 **Given** the export
 **When** trades exist
-**Then** `trades.csv` and `all.ndjson` carry them, as Sure's exporter, and `Security` lines carry the ISIN
+**Then** `trades.csv` and `all.ndjson` carry them, as Sure's exporter; each `Trade` line names its security as Sure's does, by id, ticker, name and MIC, and adds its ISIN under `archant`, since Sure's `all.ndjson` has no `Security` line and its importer refuses one
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
@@ -3927,6 +3927,10 @@ So that my net worth follows the markets.
 **When** the volume project runs
 **Then** a recomputation after a day's prices stays under one second
 
+**Given** the export
+**When** holdings exist
+**Then** `all.ndjson` carries them as Sure's `Holding` lines, each naming its security as a `Trade` line does
+
 **Given** the finished story
 **When** `pnpm test` runs
 **Then** every acceptance criterion above has a Vitest test
@@ -3952,6 +3956,10 @@ So that I follow my portfolio in Archant.
 **Given** a read token
 **When** the assistant calls `get_holdings` with an account
 **Then** it returns each position with quantities, prices and amounts as decimal strings, through the service the page calls
+
+**Given** the export
+**When** typed prices exist
+**Then** they leave in a file beside `all.ndjson`, as goals do in `goals.ndjson`, since Sure's importer refuses a price line; `security_prices` is no longer left out whole
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run

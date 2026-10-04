@@ -96,6 +96,13 @@ export const queryKeys = {
 	/** The running release. */
 	version: ["version"] as const,
 	/**
+	 * Price fetching's state, one query: the switch and the button answer the
+	 * new state, and the first visit of the day's run is polled until it ends.
+	 */
+	prices: {
+		status: ["prices", "status"] as const,
+	},
+	/**
 	 * Connected assistants, with the address to give one. A disconnection
 	 * invalidates `all`; `client(id)` is the consent page's, read once.
 	 */

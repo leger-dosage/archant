@@ -15,6 +15,7 @@ import type { merchants } from "./schema/merchants.ts";
 import type { recurringTransactions } from "./schema/recurring-transactions.ts";
 import type { rejectedTransfers } from "./schema/rejected-transfers.ts";
 import type { ruleActions, ruleConditions, ruleRuns, rules } from "./schema/rules.ts";
+import type { securities, securityPrices } from "./schema/securities.ts";
 import type { taggings } from "./schema/taggings.ts";
 import type { tags } from "./schema/tags.ts";
 import type { transactionAttachments } from "./schema/transaction-attachments.ts";
@@ -108,3 +109,9 @@ export type NewGoal = InferInsertModel<typeof goals>;
 
 export type GoalAccount = InferSelectModel<typeof goalAccounts>;
 export type NewGoalAccount = InferInsertModel<typeof goalAccounts>;
+
+export type Security = InferSelectModel<typeof securities>;
+export type NewSecurity = InferInsertModel<typeof securities>;
+
+export type SecurityPrice = InferSelectModel<typeof securityPrices>;
+export type NewSecurityPrice = InferInsertModel<typeof securityPrices>;

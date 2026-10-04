@@ -1954,3 +1954,68 @@ describe("transaction attachments", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
+
+const insertSecurity = (
+	database: Database,
+	id: string,
+	{
+		ticker = "MC.PA",
+		mic = "XPAR",
+		provider = "yahoo",
+	}: { ticker?: string | null; mic?: string | null; provider?: string | null } = {},
+) =>
+	database.run(
+		sql`insert into securities (id, ticker, mic, name, currency, provider, created_at, updated_at) values (${id}, ${ticker}, ${mic}, 'LVMH', 'EUR', ${provider}, 0, 0)`,
+	);
+
+describe("securities", () => {
+	it("holds one listing per ticker, whatever its case, and venue", async () => {
+		const database = await migrated();
+
+		await expect(insertSecurity(database, "s1")).resolves.toBeDefined();
+		await expect(insertSecurity(database, "s2", { ticker: "mc.pa" })).rejects.toThrow();
+		await expect(insertSecurity(database, "s3", { mic: "XAMS" })).resolves.toBeDefined();
+		await expect(insertSecurity(database, "s4", { mic: null })).resolves.toBeDefined();
+		await expect(insertSecurity(database, "s5", { mic: null })).rejects.toThrow();
+		// Created offline, by ISIN and name: no ticker, and never a collision.
+		await expect(
+			insertSecurity(database, "s6", { ticker: null, mic: null, provider: null }),
+		).resolves.toBeDefined();
+		await expect(
+			insertSecurity(database, "s7", { ticker: null, mic: null, provider: null }),
+		).resolves.toBeDefined();
+		await expect(
+			insertSecurity(database, "s8", { ticker: "AI.PA", provider: "boursorama" }),
+		).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select offline, failed_fetch_count as count, first_price_on as first from securities where id = 's1'`,
+			),
+		).resolves.toEqual([{ offline: 0, count: 0, first: null }]);
+		await expect(
+			database.run(sql`update securities set failed_fetch_count = -1 where id = 's1'`),
+		).rejects.toThrow();
+	});
+
+	it("holds one positive price per security and day, gone with its security", async () => {
+		const database = await migrated();
+		await insertSecurity(database, "s1");
+		const price = (date: string, value: number, source = "provider") =>
+			database.run(
+				sql`insert into security_prices (security_id, date, price, currency, source) values ('s1', ${date}, ${value}, 'EUR', ${source})`,
+			);
+
+		await expect(price("2026-09-21", 612_400_000)).resolves.toBeDefined();
+		await expect(price("2026-09-21", 612_500_000)).rejects.toThrow();
+		await expect(price("2026-09-22", 0)).rejects.toThrow();
+		await expect(price("2026-09-22", 1, "typed")).rejects.toThrow();
+		await expect(price("2026-09-22", 1, "manual")).resolves.toBeDefined();
+		await expect(
+			database.all(sql`select provisional from security_prices where date = '2026-09-22'`),
+		).resolves.toEqual([{ provisional: 0 }]);
+
+		await database.run(sql`delete from securities where id = 's1'`);
+		await expect(database.all(sql`select * from security_prices`)).resolves.toEqual([]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});

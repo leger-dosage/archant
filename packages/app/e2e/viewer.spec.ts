@@ -300,15 +300,19 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
 			await expectNone(
 				sections,
-				["Banques", "Catégories", "Assistants IA", "Données", "Membres"].map((section) => ({
-					role: "link",
-					name: section,
-				})),
+				["Banques", "Placements", "Catégories", "Assistants IA", "Données", "Membres"].map(
+					(section) => ({
+						role: "link",
+						name: section,
+					}),
+				),
 			);
 
 			await page.goto("/settings/categories");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 			await page.goto("/settings/banks");
+			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+			await page.goto("/settings/investments");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 		});
 
