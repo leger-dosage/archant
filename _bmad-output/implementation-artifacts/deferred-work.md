@@ -248,11 +248,11 @@
   summary: Two administrators who both authorise the same assistant client each see the other's last call date in « Réglages › Assistants IA ».
   evidence: `listAssistants` filters consents by user, but its `lastCalls` subquery groups `assistant_calls` by `client_id` alone, and that table has no user column; settling it adds `user_id` to `assistant_calls` through a migration and filters on it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-22-1-securities-and-their-prices.md`
-  summary: The same listing can be stored twice, as `MC`/XPAR and `MC.PA`/XPAR, since the unique index compares tickers as typed and `yahooSymbol` accepts both forms.
-  evidence: medium, unverified: no security is created before Story 22.2; its creation path should store one form, Yahoo's symbol with its suffix as search returns it, or index the ticker without the suffix of its MIC.
-- source_spec: `_bmad-output/implementation-artifacts/spec-22-1-securities-and-their-prices.md`
-  summary: Security search keeps every Yahoo quote, indices, currencies and futures included, as Sure does.
-  evidence: low; Story 22.2's trade form decides whether to keep only `EQUITY`, `ETF` and `MUTUALFUND` quotes, which the search answer would then need to carry.
-- source_spec: `_bmad-output/implementation-artifacts/spec-22-1-securities-and-their-prices.md`
   summary: A listing that Yahoo answers with a provider-wide failure every day, a 5xx or a body the schema refuses, stops each run before the securities after it and never goes offline.
   evidence: medium, unverified: no such symbol was seen; once trades hold real securities, the run's logs (`code` per `securityId`) would show it. A fix moves on after one `PRICE_PROVIDER_ERROR` and stops after two in a row.
+- source_spec: `_bmad-output/implementation-artifacts/spec-22-2-record-trades.md`
+  summary: An API client can still store the same listing twice, as `MC`/XPAR beside `MC.PA`/XPAR, since a listing's ticker is stored as sent, upper-cased.
+  evidence: medium, unverified: the interface only sends Yahoo's suffixed symbol, as its search returns it, but `POST /api/accounts/:id/trades` takes any ticker. Settle it by normalising a listing's ticker through the provider's symbol rule, `yahooSymbol`, before it is looked up and stored.
+- source_spec: `_bmad-output/implementation-artifacts/spec-22-2-record-trades.md`
+  summary: AD-15 says request schemas import only `zod` and `@archant/data`, while `schemas/rules.ts`, `schemas/transactions.ts` and now `schemas/trades.ts` import `domain/`.
+  evidence: low; the rule or the three files need reconciling: move the shared pure helpers to `@archant/data`, or amend AD-15 to allow pure `domain/` modules that import no Drizzle.
