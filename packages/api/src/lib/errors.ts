@@ -98,6 +98,18 @@ export const ERROR_STATUSES = {
 	 * `params.accountId` names it, never its name (AD-14). Nothing is written.
 	 */
 	GOAL_ACCOUNT_TAKEN: 409,
+	/**
+	 * A trade on an account other than an investment one: only an investment
+	 * account holds securities (AD-22). Nothing is written.
+	 */
+	NOT_AN_INVESTMENT_ACCOUNT: 409,
+	/**
+	 * A trade, an edit or a deletion after which the account would hold less
+	 * than nothing of a security on some day: a sale above what it holds on
+	 * its date, or a later sale left short. The form shows it on the quantity.
+	 * Nothing is written.
+	 */
+	QUANTITY_UNAVAILABLE: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

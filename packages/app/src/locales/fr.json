@@ -181,6 +181,7 @@
 			"label": "Vues du compte",
 			"transactions": "Opérations",
 			"snapshots": "Soldes",
+			"trades": "Ordres",
 			"imports": "Imports"
 		}
 	},
@@ -553,6 +554,61 @@
 			"action": "Supprimer",
 			"title": "Supprimer le solde du {{date}} ?",
 			"description": "Le solde saisi de {{amount}} sera supprimé, et le solde du compte recalculé à partir des opérations."
+		}
+	},
+	"trades": {
+		"add": "Ajouter un ordre",
+		"empty": "Aucun ordre saisi.",
+		"paginationLabel": "Pages des ordres",
+		"sides": {
+			"buy": "Achat",
+			"sell": "Vente"
+		},
+		"quantityPrice": "{{quantity}} × {{price}}",
+		"columns": {
+			"date": "Date",
+			"side": "Sens",
+			"security": "Titre",
+			"quantityPrice": "Quantité × prix",
+			"amount": "Montant"
+		},
+		"form": {
+			"addTitle": "Ajouter un ordre",
+			"editTitle": "Modifier l'ordre",
+			"description": "Un achat ou une vente de titres. Quantité × prix plus les frais sortent du compte pour un achat ; quantité × prix moins les frais y entrent pour une vente.",
+			"side": "Sens",
+			"security": "Titre",
+			"securityPlaceholder": "Choisir un titre",
+			"manualPick": "Titre saisi manuellement",
+			"isin": "ISIN (facultatif)",
+			"name": "Nom du titre",
+			"date": "Date",
+			"quantity": "Quantité",
+			"price": "Prix unitaire",
+			"fee": "Frais",
+			"save": "Enregistrer",
+			"errors": {
+				"too_big": "Le montant de cet ordre est trop élevé.",
+				"currency_mismatch": "Ce titre n'est pas coté dans la devise du compte."
+			}
+		},
+		"security": {
+			"search": "Rechercher un titre",
+			"hint": "Tapez un nom, un symbole ou un ISIN.",
+			"loading": "Recherche…",
+			"failed": "La recherche a échoué : saisissez le titre manuellement.",
+			"empty": "Aucun titre trouvé.",
+			"known": "Titres connus",
+			"listings": "Yahoo Finance",
+			"manual": "Saisir un titre manuellement",
+			"off": "La récupération des cours est désactivée : seuls les titres connus et la saisie manuelle sont proposés.",
+			"unavailable": "Yahoo Finance ne répond pas : seuls les titres connus et la saisie manuelle sont proposés."
+		},
+		"delete": {
+			"action": "Supprimer",
+			"confirm": "Supprimer l'ordre",
+			"title": "Supprimer l'ordre du {{date}} ?",
+			"description": "L'ordre de {{amount}} sera supprimé, et le solde du compte recalculé."
 		}
 	},
 	"imports": {
@@ -1866,9 +1922,15 @@
 			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
 			"no_expenses": "Aucun mois complet ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
-			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type."
+			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type.",
+			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, six décimales au plus. Exemple : 12,5.",
+			"invalid_price": "Prix invalide : un nombre positif ou nul, six décimales au plus. Exemple : 612,40.",
+			"invalid_isin": "ISIN invalide : deux lettres, neuf lettres ou chiffres, puis un chiffre de contrôle.",
+			"quantity_unavailable": "Le compte ne détient pas assez de ce titre, à cette date ou pour une vente qui suit."
 		},
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
-		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant."
+		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
+		"NOT_AN_INVESTMENT_ACCOUNT": "Seul un compte d'investissement reçoit des ordres.",
+		"QUANTITY_UNAVAILABLE": "Le compte ne détient pas assez de ce titre : une vente, à sa date ou plus tard, dépasserait ce qu'il détient."
 	}
 }

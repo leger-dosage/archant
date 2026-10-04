@@ -153,8 +153,8 @@ describe("a viewer's writes", () => {
 		const walked = routes.map(({ method, path }) => `${method} ${path}`);
 
 		// Fails if the walk stops finding routes, rather than passing on none.
-		expect(routes.length).toBeGreaterThanOrEqual(64);
-		// Epics 17 to 19, 21 and 22: budgets, splits, attachments, goals and prices.
+		expect(routes.length).toBeGreaterThanOrEqual(67);
+		// Epics 17 to 19, 21 and 22: budgets, splits, attachments, goals, prices and trades.
 		expect(walked).toEqual(
 			expect.arrayContaining([
 				"PUT /api/budgets/x",
@@ -169,6 +169,9 @@ describe("a viewer's writes", () => {
 				"POST /api/goals/x/x",
 				"PUT /api/prices/settings",
 				"POST /api/prices/update",
+				"POST /api/accounts/x/trades",
+				"PATCH /api/trades/x",
+				"DELETE /api/trades/x",
 			]),
 		);
 
@@ -255,6 +258,7 @@ describe("a viewer's reads", () => {
 				`/api/transactions/${transactionId}/attachments 200`,
 				"/api/budgets/2026-09 200",
 				"/api/goals/summary 200",
+				`/api/accounts/${account.id}/trades 200`,
 			]),
 		);
 		expect(viewerStatuses).toEqual(await statuses(admin));

@@ -3,6 +3,7 @@ import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { buildApp, errorBody, ownDatabase, useSignedInApp } from "../testing/app.ts";
+import { insertSecurity } from "../testing/prices.ts";
 import { mockYahoo } from "../testing/yahoo.ts";
 
 useSignedInApp();
@@ -11,18 +12,35 @@ async function api() {
 	const own = await ownDatabase();
 	const client = testClient(buildApp(own.db)).api;
 
-	return { securities: client.securities, prices: client.prices };
+	return { db: own.db, securities: client.securities, prices: client.prices };
 }
 
 describe("GET /api/securities", () => {
-	it("finds nothing and asks no one while fetching is off", async () => {
-		const { securities } = await api();
+	it("offers the known securities alone and asks no one while fetching is off", async () => {
+		const { db, securities } = await api();
+		const id = await insertSecurity(db, {}, { held: false });
 		const requests = mockYahoo();
 
 		const response = await securities.$get({ query: { q: "MC" } });
 
 		expect(response.status).toBe(200);
-		await expect(response.json()).resolves.toEqual({ data: { enabled: false, items: [] } });
+		await expect(response.json()).resolves.toEqual({
+			data: {
+				enabled: false,
+				known: [
+					{
+						id,
+						name: "LVMH",
+						ticker: "MC.PA",
+						mic: "XPAR",
+						isin: "FR0000121014",
+						currency: "EUR",
+					},
+				],
+				items: [],
+				unavailable: false,
+			},
+		});
 		expect(requests).toEqual([]);
 	});
 
@@ -61,14 +79,16 @@ describe("GET /api/securities", () => {
 		expect(requests).toEqual([]);
 	});
 
-	it("answers PRICE_PROVIDER_ERROR when the provider fails", async () => {
+	it("answers the known part, unavailable, when the provider fails", async () => {
 		const { securities, prices } = await api();
 		await prices.settings.$put({ json: { enabled: true } });
 		mockYahoo({ search: () => new HttpResponse(null, { status: 500 }) });
 
 		const response = await securities.$get({ query: { q: "MC" } });
 
-		expect(response.status).toBe(502);
-		expect(errorBody.parse(await response.json()).error.code).toBe("PRICE_PROVIDER_ERROR");
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toEqual({
+			data: { enabled: true, known: [], items: [], unavailable: true },
+		});
 	});
 });

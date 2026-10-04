@@ -254,6 +254,28 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
+		 * Records a buy or a sale on an investment account, as « Ajouter un
+		 * ordre » does; a security typed by hand unless `security` says otherwise.
+		 */
+		async recordTrade(
+			accountId: string,
+			input: {
+				side?: "buy" | "sell";
+				security: Record<string, unknown>;
+				date: string;
+				quantity: string;
+				price: string;
+				fee?: string;
+			},
+		): Promise<string> {
+			return created(
+				await request.post(`/api/accounts/${accountId}/trades`, {
+					data: { side: "buy", fee: "0", ...input },
+				}),
+			);
+		},
+
+		/**
 		 * Uploads a file and confirms its preview unchanged, as « Importer »
 		 * does; a CSV file is read with `csv` first. Returns the import's id.
 		 */

@@ -37,6 +37,7 @@ describe("GET /api/export", () => {
 			"version.txt",
 			"accounts.csv",
 			"transactions.csv",
+			"trades.csv",
 			"categories.csv",
 			"merchants.csv",
 			"rules.csv",

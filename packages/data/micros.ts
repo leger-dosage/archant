@@ -80,3 +80,48 @@ export function parseMicros(text: string): Micros | null {
 
 	return isMicros(value) ? value : null;
 }
+
+// Grouped digits use a space, a no-break space or a narrow no-break space, as
+// `money.ts`'s `parseAmount` reads them, and a decimal comma or point.
+const TYPED_PATTERN = /^([-−])?(\d{1,3}(?:[   ]\d{3})+|\d+)(?:[.,](\d+))?$/u;
+
+/**
+ * Reads a quantity or a price typed the French way (`1 234,5`) or the
+ * English way (`1234.5`) into millionths. Returns `null` for anything else,
+ * more than six decimals included: a seventh would be rounded away without
+ * the owner seeing it, where `parseMicros` rounds a provider's float on purpose.
+ */
+export function readMicros(text: string): Micros | null {
+	const match = TYPED_PATTERN.exec(text.trim());
+
+	if (match === null) {
+		return null;
+	}
+
+	const [, sign, integerPart = "", fraction = ""] = match;
+
+	if (fraction.length > SCALE) {
+		return null;
+	}
+
+	const magnitude = BigInt(integerPart.replace(/\D/gu, "") + fraction.padEnd(SCALE, "0"));
+
+	if (magnitude > BigInt(Number.MAX_SAFE_INTEGER)) {
+		return null;
+	}
+
+	return toMicros(Number(sign === undefined ? magnitude : -magnitude));
+}
+
+/**
+ * Millionths as a plain decimal string, without trailing zeros: `"612.4"`,
+ * `"-4"`, `"0.000001"`. What crosses a boundary where a JSON number would
+ * round, and what `readMicros` and `parseMicros` read back.
+ */
+export function formatMicros(value: Micros): string {
+	const digits = String(Math.abs(value)).padStart(SCALE + 1, "0");
+	const fraction = digits.slice(-SCALE).replace(/0+$/u, "");
+	const integer = digits.slice(0, -SCALE);
+
+	return `${value < 0 ? "-" : ""}${integer}${fraction === "" ? "" : `.${fraction}`}`;
+}

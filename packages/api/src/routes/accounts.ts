@@ -9,6 +9,7 @@ import { createAccountSchema, updateAccountSchema } from "../schemas/accounts.ts
 import { balanceQuerySchema } from "../schemas/balances.ts";
 import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts";
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
+import { tradeBodySchema } from "../schemas/trades.ts";
 import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
 import {
 	createAccount,
@@ -20,6 +21,7 @@ import {
 import { getBalanceHistory } from "../services/balances.ts";
 import { createImport, listImports } from "../services/imports.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
+import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 
 export function accountsRoutes(deps: ImportDeps) {
@@ -62,6 +64,12 @@ export function accountsRoutes(deps: ImportDeps) {
 		)
 		.post("/:id/snapshots", validated("json", snapshotBodySchema), async (c) =>
 			c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.get("/:id/trades", validated("query", pageQuerySchema), async (c) =>
+			c.json({ data: await listAccountTrades(deps, c.req.param("id"), c.req.valid("query")) }, 200),
+		)
+		.post("/:id/trades", validated("json", tradeBodySchema), async (c) =>
+			c.json({ data: await createTrade(deps, c.req.param("id"), c.req.valid("json")) }, 201),
 		)
 		.get("/:id/imports", validated("query", pageQuerySchema), async (c) =>
 			c.json({ data: await listImports(deps, c.req.param("id"), c.req.valid("query")) }, 200),

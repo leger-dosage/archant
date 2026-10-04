@@ -2019,3 +2019,103 @@ describe("securities", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
+
+const insertTrade = (
+	database: Database,
+	entryId: string,
+	{
+		securityId = "s1",
+		quantity = 10_000_000,
+		price = 612_400_000,
+		fee = 250,
+	}: { securityId?: string; quantity?: number; price?: number; fee?: number } = {},
+) =>
+	database.run(
+		sql`insert into trades (entry_id, security_id, quantity, price, fee) values (${entryId}, ${securityId}, ${quantity}, ${price}, ${fee})`,
+	);
+
+describe("trades", () => {
+	it("keeps every entry, its links and its indexes when 0050 rebuilds entries for trades", async () => {
+		const before = await migratedBefore("0050");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e0", "valuation", "opening_anchor", "2026-08-01");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertEntry(before, "e2", "transaction", null);
+		await before.run(sql`update entries set parent_entry_id = 'e1' where id = 'e2'`);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Courses')`);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e2', 'Repas')`);
+		await before.run(
+			sql`insert into entry_keys (entry_id, account_id, source, key, import_id) values ('e1', 'a1', 'ofx', 'fp:1', null)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, kind, valuation_kind as valuationKind, parent_entry_id as parentEntryId from entries order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "e0", kind: "valuation", valuationKind: "opening_anchor", parentEntryId: null },
+			{ id: "e1", kind: "transaction", valuationKind: null, parentEntryId: null },
+			{ id: "e2", kind: "transaction", valuationKind: null, parentEntryId: "e1" },
+		]);
+		await expect(
+			database.all(sql`select name from pragma_index_list('entries') order by name`),
+		).resolves.toEqual(
+			[
+				"entries_account_date",
+				"entries_import",
+				"entries_kind_amount_date",
+				"entries_kind_currency_amount",
+				"entries_kind_date",
+				"entries_one_opening_anchor",
+				"entries_one_reconciliation_per_day",
+				"entries_parent_entry",
+				"sqlite_autoindex_entries_1",
+			].map((name) => ({ name })),
+		);
+		// The references to the rebuilt table, its own parent included, still hold.
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(
+			database.run(sql`update entries set parent_entry_id = 'nope' where id = 'e2'`),
+		).rejects.toThrow();
+		await expect(insertEntry(database, "e3", "valuation", "opening_anchor")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds a trade's row beside its entry, signed and never zero, and protects both ends", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "investment", "pea");
+		await insertSecurity(database, "s1");
+
+		await expect(insertEntry(database, "e1", "trade", null)).resolves.toBeDefined();
+		await expect(insertEntry(database, "e2", "trade", "reconciliation")).rejects.toThrow();
+		await expect(insertTrade(database, "e1")).resolves.toBeDefined();
+		await expect(insertTrade(database, "e1")).rejects.toThrow();
+		await insertEntry(database, "e3", "trade", null);
+		await insertEntry(database, "e4", "trade", null);
+		await insertEntry(database, "e5", "trade", null);
+		await insertEntry(database, "e6", "trade", null);
+		await expect(insertTrade(database, "e3", { quantity: 0 })).rejects.toThrow();
+		await expect(insertTrade(database, "e3", { price: -1 })).rejects.toThrow();
+		await expect(insertTrade(database, "e3", { fee: -1 })).rejects.toThrow();
+		await expect(insertTrade(database, "e3", { securityId: "nope" })).rejects.toThrow();
+		await expect(insertTrade(database, "nope")).rejects.toThrow();
+		// A sale, a free share and no fee are all real trades.
+		await expect(insertTrade(database, "e4", { quantity: -4_000_000 })).resolves.toBeDefined();
+		await expect(insertTrade(database, "e5", { price: 0 })).resolves.toBeDefined();
+		await expect(insertTrade(database, "e6", { fee: 0 })).resolves.toBeDefined();
+
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('trades') where name = 'trades_security'`,
+			),
+		).resolves.toHaveLength(1);
+		await database.run(sql`delete from trades where entry_id = 'e1'`);
+		await database.run(sql`delete from entries where id = 'e1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});

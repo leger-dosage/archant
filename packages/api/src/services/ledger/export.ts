@@ -13,8 +13,10 @@ import { merchants } from "@archant/data/schema/merchants";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
+import { securities } from "@archant/data/schema/securities";
 import { taggings } from "@archant/data/schema/taggings";
 import { tags } from "@archant/data/schema/tags";
+import { trades } from "@archant/data/schema/trades";
 import { transactionAttachments } from "@archant/data/schema/transaction-attachments";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
@@ -116,6 +118,22 @@ export const EXPORTED_COLUMNS = {
 	taggings: {
 		transactionId: taggings.transactionId,
 		tagId: taggings.tagId,
+	},
+	trades: {
+		entryId: trades.entryId,
+		securityId: trades.securityId,
+		quantity: trades.quantity,
+		price: trades.price,
+		fee: trades.fee,
+	},
+	// What a `Trade` line names its security by, as Sure's exporter: Sure's
+	// all.ndjson has no `Security` line, which its importer refuses.
+	securities: {
+		id: securities.id,
+		isin: securities.isin,
+		ticker: securities.ticker,
+		mic: securities.mic,
+		name: securities.name,
 	},
 	transaction_attachments: {
 		id: transactionAttachments.id,
@@ -247,8 +265,15 @@ export const LEFT_OUT = {
 		labelKey: "The normalised label detection groups by, derived from the label again.",
 	},
 	rule_runs: "The history of rule applications, as Sure's export leaves it out.",
-	securities:
-		"Sure's all.ndjson has no Security line, which its importer refuses: a security leaves inside the Trade and Holding lines that name it.",
+	securities: {
+		currency: "A trade's currency is its account's, which its line carries (AD-6).",
+		provider: "Where prices come from, a setting of this instance: Sure picks its own provider.",
+		offline: "Fetch bookkeeping, recounted by the next fetches.",
+		failedFetchCount: "Fetch bookkeeping, recounted by the next fetches.",
+		firstPriceOn: "The provider's first day, which its next fetch finds again.",
+		createdAt: "Sure's Trade line names a security without its timestamps.",
+		updatedAt: "Sure's Trade line names a security without its timestamps.",
+	},
 	security_prices:
 		"Prices fetched from the provider, which Sure's all.ndjson does not carry: the provider fetches them again.",
 	sessions: SECRETS,
@@ -488,6 +513,20 @@ export function exportedRejectedTransfers(db: Reader) {
 		.select(EXPORTED_COLUMNS.rejected_transfers)
 		.from(rejectedTransfers)
 		.orderBy(asc(rejectedTransfers.createdAt), asc(rejectedTransfers.id));
+}
+
+/** Every trade with its security, by date then creation, as `transactions.csv` orders its lines. */
+export function exportedTrades(db: Reader) {
+	return db
+		.select({
+			...EXPORTED_COLUMNS.entries,
+			trade: EXPORTED_COLUMNS.trades,
+			security: EXPORTED_COLUMNS.securities,
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.innerJoin(securities, eq(securities.id, trades.securityId))
+		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
 }
 
 /**

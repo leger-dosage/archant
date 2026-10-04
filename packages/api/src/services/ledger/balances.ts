@@ -4,7 +4,7 @@ import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, desc, eq, gt, gte, inArray, isNotNull, lte, or, sum } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sum } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import { classificationOf } from "@archant/data/account-types";
@@ -60,11 +60,13 @@ async function lastBalanceDay(tx: Transaction, accountId: string, timeZone: stri
 }
 
 /**
- * The account's booked transactions summed per day, on the rows `where`
- * keeps. Every balance reads its movements here: a pending line counts in no
- * balance until the bank books it (AD-8), as Sure's `Entry.excluding_pending`.
- * A split parent counts through its children (AD-20): balances count excluded
- * rows, so its exclusion alone would count the money twice.
+ * The account's booked movements summed per day, on the rows `where` keeps:
+ * every entry that is not a valuation, a transaction once booked, a trade by
+ * its cash amount (AD-22). Every balance reads its movements here: a pending
+ * line counts in no balance until the bank books it (AD-8), as Sure's
+ * `Entry.excluding_pending`. A split parent counts through its children
+ * (AD-20): balances count excluded rows, so its exclusion alone would count
+ * the money twice.
  */
 export async function bookedMovements(
 	db: Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">,
@@ -74,9 +76,16 @@ export async function bookedMovements(
 	return db
 		.select({ date: entries.date, amount: sum(entries.amount).mapWith(Number) })
 		.from(entries)
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(transactions, eq(transactions.entryId, entries.id))
 		.where(
-			and(eq(entries.accountId, accountId), eq(transactions.pending, false), notSplitParent, where),
+			and(
+				eq(entries.accountId, accountId),
+				ne(entries.kind, "valuation"),
+				// A trade has no `transactions` row, so no pending flag.
+				or(isNull(transactions.entryId), eq(transactions.pending, false)),
+				notSplitParent,
+				where,
+			),
 		)
 		.groupBy(entries.date);
 }

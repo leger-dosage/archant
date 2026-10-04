@@ -115,6 +115,18 @@ test("a viewer reads every page with no control that writes, and the server refu
 	});
 	const disabled = await administrator.patch(`/api/rules/${rule}`, { data: { enabled: false } });
 	expect(disabled.ok(), await disabled.text()).toBe(true);
+	// A PEA with a trade, whose « Ordres » a viewer reads without a button.
+	const pea = await api.openAccount({
+		name: `${prefix} PEA`,
+		kind: "pea",
+		openingDate: "2022-02-01",
+	});
+	await api.recordTrade(pea.id, {
+		security: { source: "manual", name: `${prefix} fonds` },
+		date: `${MONTH}-15`,
+		quantity: "3",
+		price: "100",
+	});
 	const { url } = await api.invite(`lecteur-${randomUUID().slice(0, 8)}@archant.test`);
 	await acceptInvitation(page.request, url, { name, password: "mot de passe du lecteur" });
 
@@ -138,7 +150,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
 		});
 
-		await test.step("an account shows its rows, snapshots and imports, and nothing to change them", async () => {
+		await test.step("an account shows its rows, snapshots, trades and imports, and nothing to change them", async () => {
 			await page.goto(`/accounts/${account.id}`);
 			await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 			await expect(page.getByText(`${prefix} boulangerie`)).toBeVisible();
@@ -156,6 +168,13 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.getByRole("tab", { name: "Imports" }).click();
 			await expect(page.getByRole("cell", { name: "releve-lecteur.ofx" })).toBeVisible();
 			await expect(page.getByRole("button", { name: /Annuler l'import/u })).toHaveCount(0);
+
+			await page.goto(`/accounts/${pea.id}`);
+			await page.getByRole("tab", { name: "Ordres" }).click();
+			await expect(page.getByRole("cell", { name: `${prefix} fonds` })).toBeVisible();
+			await expect(page.getByRole("cell", { name: "3 × 100,00 €" })).toBeVisible();
+			await expectNone(page, [{ role: "button", name: "Ajouter un ordre" }]);
+			await expect(page.locator("[data-trade-id]")).toHaveCount(0);
 		});
 
 		await test.step("operations: no selection, plain category pills, and a sheet to read", async () => {

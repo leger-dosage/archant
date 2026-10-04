@@ -26,6 +26,8 @@ export const queryKeys = {
 		 * transaction write can change what a revert would delete.
 		 */
 		imports: (id: string, page: number) => ["accounts", "detail", id, "imports", page] as const,
+		/** Under `detail(id)` too: every trade write invalidates the account. */
+		trades: (id: string, page: number) => ["accounts", "detail", id, "trades", page] as const,
 		/**
 		 * Under `all`, not under one account: every write that moves a
 		 * balance, flips an account's flags or adds an account already
@@ -92,6 +94,14 @@ export const queryKeys = {
 		list: ["bank-connections", "list"] as const,
 		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
 		accounts: (connectionId: string) => ["bank-connections", "accounts", connectionId] as const,
+	},
+	/**
+	 * The trade form's security search, by text typed. A trade write
+	 * invalidates `all`: it may have created a security the search now knows.
+	 */
+	securities: {
+		all: ["securities"] as const,
+		search: (query: string) => ["securities", "search", query] as const,
 	},
 	/** The running release. */
 	version: ["version"] as const,

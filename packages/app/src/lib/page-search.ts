@@ -1,5 +1,5 @@
 /** The search param holding a list's page on the account page. */
-export type PageParam = "page" | "snapshotsPage" | "importsPage";
+export type PageParam = "page" | "snapshotsPage" | "tradesPage" | "importsPage";
 
 /** The search param holding the runs' page on `/rules`. */
 export type RulesPageParam = "runsPage";

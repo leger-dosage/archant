@@ -1,6 +1,6 @@
 {
 	"explains": [],
-	"count": 7,
+	"count": 9,
 	"quotes": [
 		{
 			"exchange": "PAR",
@@ -73,6 +73,29 @@
 			"score": 20002.0,
 			"typeDisp": "Equity",
 			"exchDisp": "Frankfurt",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "PAR",
+			"shortname": "CAC 40",
+			"quoteType": "INDEX",
+			"symbol": "^FCHI",
+			"index": "quotes",
+			"score": 20001.0,
+			"typeDisp": "Index",
+			"longname": "CAC 40",
+			"exchDisp": "Paris",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "CCY",
+			"shortname": "MXN/CHF",
+			"quoteType": "currency",
+			"symbol": "MXNCHF=X",
+			"index": "quotes",
+			"score": 20000.0,
+			"typeDisp": "Currency",
+			"exchDisp": "CCY",
 			"isYahooFinance": true
 		},
 		{
