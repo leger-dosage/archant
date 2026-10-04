@@ -2025,13 +2025,20 @@ const insertTrade = (
 	entryId: string,
 	{
 		securityId = "s1",
+		incomeKind = null,
 		quantity = 10_000_000,
 		price = 612_400_000,
 		fee = 250,
-	}: { securityId?: string; quantity?: number; price?: number; fee?: number } = {},
+	}: {
+		securityId?: string | null;
+		incomeKind?: string | null;
+		quantity?: number;
+		price?: number;
+		fee?: number;
+	} = {},
 ) =>
 	database.run(
-		sql`insert into trades (entry_id, security_id, quantity, price, fee) values (${entryId}, ${securityId}, ${quantity}, ${price}, ${fee})`,
+		sql`insert into trades (entry_id, security_id, income_kind, quantity, price, fee) values (${entryId}, ${securityId}, ${incomeKind}, ${quantity}, ${price}, ${fee})`,
 	);
 
 describe("trades", () => {
@@ -2116,6 +2123,92 @@ describe("trades", () => {
 		).resolves.toHaveLength(1);
 		await database.run(sql`delete from trades where entry_id = 'e1'`);
 		await database.run(sql`delete from entries where id = 'e1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps every trade a buy or a sale when 0053 rebuilds trades for income", async () => {
+		const before = await migratedBefore("0053");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertSecurity(before, "s1");
+		await insertEntry(before, "e1", "trade", null);
+		await insertEntry(before, "e2", "trade", null);
+		await before.run(
+			sql`insert into trades (entry_id, security_id, quantity, price, fee) values ('e1', 's1', 10000000, 612400000, 250), ('e2', 's1', -4000000, 650000000, 0)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, security_id as securityId, income_kind as incomeKind, quantity, price, fee from trades order by entry_id`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				securityId: "s1",
+				incomeKind: null,
+				quantity: 10_000_000,
+				price: 612_400_000,
+				fee: 250,
+			},
+			{
+				entryId: "e2",
+				securityId: "s1",
+				incomeKind: null,
+				quantity: -4_000_000,
+				price: 650_000_000,
+				fee: 0,
+			},
+		]);
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('trades') where name = 'trades_security'`,
+			),
+		).resolves.toHaveLength(1);
+		// Both ends still restrict.
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds an income of quantity zero, price and fee zero, on a security or interest on cash", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "investment", "pea");
+		await insertSecurity(database, "s1");
+
+		await Promise.all(
+			["e1", "e2", "e3", "e4"].map(async (id) => insertEntry(database, id, "trade", null)),
+		);
+
+		const income = { quantity: 0, price: 0, fee: 0 };
+
+		await expect(
+			insertTrade(database, "e1", { ...income, incomeKind: "dividend" }),
+		).resolves.toBeDefined();
+		await expect(
+			insertTrade(database, "e2", { ...income, incomeKind: "interest", securityId: null }),
+		).resolves.toBeDefined();
+		await expect(
+			insertTrade(database, "e3", { ...income, incomeKind: "interest" }),
+		).resolves.toBeDefined();
+		// A dividend is paid by a security; a buy or a sale is of one.
+		await expect(
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", securityId: null }),
+		).rejects.toThrow();
+		await expect(insertTrade(database, "e4", { securityId: null })).rejects.toThrow();
+		// A buy of nothing, an income that moves a quantity, a price or a fee.
+		await expect(insertTrade(database, "e4", { quantity: 0 })).rejects.toThrow();
+		await expect(
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", quantity: 1 }),
+		).rejects.toThrow();
+		await expect(
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", price: 1 }),
+		).rejects.toThrow();
+		await expect(
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", fee: 1 }),
+		).rejects.toThrow();
+		await expect(insertTrade(database, "e4", { ...income, incomeKind: "fee" })).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });

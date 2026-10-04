@@ -13,6 +13,7 @@ import {
 	sendOwn,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { insertSecurity } from "../testing/prices.ts";
 
 useSignedInApp();
 
@@ -325,6 +326,41 @@ describe("GET /api/budgets/:month", () => {
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "month", code: "invalid_format" }],
 		});
+	});
+});
+
+describe("a budget's income from an investment account", () => {
+	it("counts a dividend and interest as actual income, never a buy", async () => {
+		await household();
+		const pea = await openOwn({
+			type: "investment",
+			subtype: "pea",
+			openingDate: "2026-04-01",
+			openingBalance: "10 000,00",
+		});
+		if (own === undefined) {
+			throw new Error("household() opens the test's own database.");
+		}
+
+		const securityId = await insertSecurity(own.db, {}, { held: false });
+		const security = { source: "known", id: securityId };
+		const trade = async (body: Record<string, unknown>) =>
+			expect((await ownRequest("POST", `/api/accounts/${pea.id}/trades`, body)).status).toBe(201);
+		await trade({
+			side: "buy",
+			security,
+			date: "2026-09-02",
+			quantity: "10",
+			price: "100",
+			fee: "0",
+		});
+		await trade({ side: "dividend", security, date: "2026-09-10", amount: "12,34" });
+		await trade({ side: "interest", security: null, date: "2026-09-11", amount: "3" });
+
+		const budget = await budgetOf("2026-09");
+
+		// The salary of 1 000,00 and the 15,34 € the PEA was paid; the buy counts nowhere.
+		expect(budget.actual).toEqual({ spending: 7_500, income: 100_000 + 1_534 });
 	});
 });
 

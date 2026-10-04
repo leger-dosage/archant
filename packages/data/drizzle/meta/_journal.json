@@ -372,6 +372,13 @@
       "when": 1791103693041,
       "tag": "0052_add_cost_basis_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1791106689848,
+      "tag": "0053_add_trade_income",
+      "breakpoints": true
     }
   ]
 }

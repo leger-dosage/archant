@@ -47,9 +47,11 @@ export const entries = sqliteTable(
 		// Restrict, as the ledger deletes an account's entries before its imports.
 		importId: text("import_id").references(() => imports.id, { onDelete: "restrict" }),
 		// The transaction this one is a split line of (AD-20), written only by
-		// `services/ledger/splits.ts`. Restrict, not cascade: the ledger deletes
-		// the children before their parent, so a bypass fails instead of
-		// silently dropping lines that carry the money.
+		// `services/ledger/splits.ts`, or, on a trade, the transaction converted
+		// into it, its only child, written only by `services/ledger/trades.ts`.
+		// Restrict, not cascade: the ledger deletes the children before their
+		// parent, so a bypass fails instead of silently dropping lines that
+		// carry the money.
 		parentEntryId: text("parent_entry_id").references((): AnySQLiteColumn => entries.id, {
 			onDelete: "restrict",
 		}),

@@ -9,6 +9,7 @@ import {
 	errorBody,
 	openAccount,
 	pea,
+	postTransaction,
 	request,
 	temp,
 	useSignedInApp,
@@ -21,13 +22,15 @@ const tradeBody = z.object({
 	data: z
 		.object({
 			id: z.string(),
-			security: z.object({
-				id: z.string(),
-				name: z.string(),
-				ticker: z.string().nullable(),
-				mic: z.string().nullable(),
-				isin: z.string().nullable(),
-			}),
+			security: z
+				.object({
+					id: z.string(),
+					name: z.string(),
+					ticker: z.string().nullable(),
+					mic: z.string().nullable(),
+					isin: z.string().nullable(),
+				})
+				.nullable(),
 		})
 		.passthrough(),
 });
@@ -100,6 +103,7 @@ describe("POST /api/accounts/:id/trades", () => {
 				mic: "XPAR",
 				isin: "FR0000121014",
 			},
+			convertedFrom: null,
 		});
 		await expect(balanceOnDay(account.id, "2026-09-09")).resolves.toBe(2_500_000);
 		// The cash less the buy, the 10 shares at its price on top.
@@ -144,7 +148,7 @@ describe("POST /api/accounts/:id/trades", () => {
 		const second = await recorded(account.id, buyBody("", { security: manual }));
 
 		expect(first.security).toEqual({
-			id: second.security.id,
+			id: second.security?.id,
 			name: "Fonds euros",
 			ticker: null,
 			mic: null,
@@ -380,5 +384,239 @@ describe("DELETE /api/trades/:id", () => {
 
 		expect(status).toBe(409);
 		expect(errorBody.parse(body).error.code).toBe("QUANTITY_UNAVAILABLE");
+	});
+});
+
+const dividendBody = (securityId: string, overrides: Record<string, unknown> = {}) => ({
+	side: "dividend" as const,
+	security: lvmh(securityId),
+	date: "2026-09-15",
+	amount: "12,34",
+	...overrides,
+});
+
+/** The cash of the account's balance on `date`, as its positions read it. */
+async function cashOf(accountId: string) {
+	const { body } = await request("GET", `/api/accounts/${accountId}/holdings`);
+
+	return z.object({ data: z.object({ cash: z.number() }) }).parse(body).data.cash;
+}
+
+describe("dividends and interest", () => {
+	it("records a dividend on a held security and interest on cash, each moving cash only", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		await recorded(account.id, buyBody(securityId));
+		const before = await balanceOf(account.id);
+
+		const paid = await recorded(account.id, dividendBody(securityId));
+		const interest = await recorded(account.id, {
+			side: "interest",
+			security: null,
+			date: "2026-09-16",
+			amount: "3",
+		});
+
+		expect(paid).toMatchObject({
+			side: "dividend",
+			quantity: "0",
+			price: "0",
+			fee: 0,
+			amount: 1234,
+			security: { id: securityId },
+			convertedFrom: null,
+		});
+		expect(interest).toMatchObject({ side: "interest", amount: 300, security: null });
+		await expect(balanceOf(account.id)).resolves.toBe(before + 1234 + 300);
+		await expect(cashOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 1234 + 300);
+	});
+
+	it.each([
+		[{ amount: "0" }, "amount", "not_positive"],
+		[{ amount: "-1" }, "amount", "not_positive"],
+		[{ amount: "abc" }, "amount", "invalid_amount"],
+		[{ security: null }, "security", "too_small"],
+	])("refuses %j on %s with %s", async (overrides, path, code) => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		await recorded(account.id, buyBody(securityId));
+
+		const { status, body } = await postTrade(account.id, dividendBody(securityId, overrides));
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path, code }]);
+	});
+
+	it("refuses a security the account never bought with not_held, and a listing", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+
+		const notHeld = await postTrade(account.id, dividendBody(securityId));
+		const listing = await postTrade(
+			account.id,
+			dividendBody(securityId, {
+				security: { source: "manual", name: "Fonds" },
+			}),
+		);
+
+		expect(notHeld.status).toBe(400);
+		expect(errorBody.parse(notHeld.body).error.fields).toEqual([
+			{ path: "security", code: "not_held" },
+		]);
+		expect(listing.status).toBe(400);
+	});
+
+	it("edits an income's amount and date, and refuses a buy's figures on it", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		await recorded(account.id, buyBody(securityId));
+		const paid = await recorded(account.id, dividendBody(securityId));
+
+		const edited = await request("PATCH", `/api/trades/${paid.id}`, {
+			date: "2026-09-12",
+			amount: "20",
+		});
+		const side = await request("PATCH", `/api/trades/${paid.id}`, { side: "buy" });
+		const amount = await request("PATCH", `/api/trades/${paid.id}`, { amount: "0" });
+
+		expect(edited.status).toBe(200);
+		expect(edited.body).toMatchObject({ data: { date: "2026-09-12", amount: 2000 } });
+		expect(errorBody.parse(side.body).error.fields).toEqual([
+			{ path: "side", code: "invalid_value" },
+		]);
+		expect(errorBody.parse(amount.body).error.fields).toEqual([
+			{ path: "amount", code: "not_positive" },
+		]);
+	});
+});
+
+const convertBody = (securityId: string, overrides: Record<string, unknown> = {}) => ({
+	side: "buy" as const,
+	security: lvmh(securityId),
+	quantity: "10",
+	price: "612,40",
+	...overrides,
+});
+
+async function lineOf(accountId: string, amount: string, date = "2026-09-10") {
+	const { status, body } = await postTransaction(accountId, {
+		date,
+		label: "ACHAT LVMH",
+		amount,
+	});
+
+	expect(status, JSON.stringify(body)).toBe(201);
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+}
+
+describe("POST /api/transactions/:id/trade", () => {
+	it("converts a buy line into a trade of its date and amount, the rest its fee, and hides the line", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		const line = await lineOf(account.id, "-6 126,50");
+		const balance = await balanceOf(account.id);
+		const cash = await cashOf(account.id);
+
+		const response = await testClient(buildApp()).api.transactions[":id"].trade.$post({
+			param: { id: line },
+			json: convertBody(securityId),
+		});
+
+		expect(response.status).toBe(201);
+		expect((await response.json()).data).toMatchObject({
+			accountId: account.id,
+			date: "2026-09-10",
+			side: "buy",
+			quantity: "10",
+			price: "612.4",
+			fee: 250,
+			amount: -612_650,
+			convertedFrom: { id: line, label: "ACHAT LVMH" },
+		});
+		// The cash keeps the line's money; the 10 shares are now valued beside it.
+		await expect(cashOf(account.id)).resolves.toBe(cash);
+		await expect(balanceOf(account.id)).resolves.toBe(balance + 612_400);
+		const list = await request("GET", `/api/accounts/${account.id}/transactions`);
+		expect(JSON.stringify(list.body)).not.toContain(line);
+		const transaction = await request("GET", `/api/transactions/${line}/split`);
+		expect(transaction.status).toBe(404);
+	});
+
+	it.each([
+		["a fee below zero", "-6 000", {}, "price", "amount_mismatch"],
+		["a buy of money in", "50", {}, "side", "sign_mismatch"],
+		["no quantity", "-6 126,50", { quantity: "0" }, "quantity", "invalid_quantity"],
+		["no price", "-6 126,50", { price: "x" }, "price", "invalid_price"],
+		["a dividend on cash", "50", { side: "dividend", security: null }, "security", "too_small"],
+	])("refuses %s", async (_name, amount, overrides, path, code) => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		const line = await lineOf(account.id, amount);
+
+		const { status, body } = await request(
+			"POST",
+			`/api/transactions/${line}/trade`,
+			convertBody(securityId, overrides),
+		);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path, code }]);
+	});
+
+	it("converts a line into interest on cash, and undoes it when the trade goes", async () => {
+		const account = await openPea();
+		const line = await lineOf(account.id, "3");
+		const balance = await balanceOf(account.id);
+
+		const { status, body } = await request("POST", `/api/transactions/${line}/trade`, {
+			side: "interest",
+			security: null,
+		});
+		const trade = tradeBody.parse(body).data;
+		const undone = await request("DELETE", `/api/trades/${trade.id}`);
+
+		expect(status).toBe(201);
+		expect(undone.status).toBe(200);
+		await expect(balanceOf(account.id)).resolves.toBe(balance);
+		const list = await request("GET", `/api/accounts/${account.id}/transactions`);
+		expect(JSON.stringify(list.body)).toContain(line);
+	});
+
+	it("refuses a line already converted with NOT_CONVERTIBLE, and one of another account", async () => {
+		const account = await openPea();
+		const current = await openAccount();
+		const securityId = await newSecurity();
+		const line = await lineOf(account.id, "-6 126,50");
+		const elsewhere = await lineOf(current.id, "-6 126,51");
+		await request("POST", `/api/transactions/${line}/trade`, convertBody(securityId));
+
+		const again = await request("POST", `/api/transactions/${line}/trade`, {
+			side: "interest",
+			security: null,
+		});
+		const other = await request("POST", `/api/transactions/${elsewhere}/trade`, {
+			side: "interest",
+			security: null,
+		});
+		const unknown = await request("POST", "/api/transactions/nope/trade", {
+			side: "interest",
+			security: null,
+		});
+
+		expect(again.status).toBe(409);
+		expect(errorBody.parse(again.body).error.code).toBe("NOT_CONVERTIBLE");
+		expect(other.status).toBe(409);
+		expect(errorBody.parse(other.body).error.code).toBe("NOT_AN_INVESTMENT_ACCOUNT");
+		expect(unknown.status).toBe(404);
+	});
+
+	it("refuses a body of the wrong shape before reading the line", async () => {
+		const { status, body } = await request("POST", "/api/transactions/nope/trade", {
+			side: "fee",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
 	});
 });

@@ -238,7 +238,7 @@ describe("the cost basis locks and typed prices", () => {
 			);
 		const { id: tradeId } = await trade("2026-09-17", 2_000_000);
 		const [{ securityId } = { securityId: "" }] = await temp.db
-			.select({ securityId: trades.securityId })
+			.select({ securityId: sql<string>`${trades.securityId}` })
 			.from(trades)
 			.where(eq(trades.entryId, tradeId));
 		// Sold in full, then bought again: the lock is the new position's.

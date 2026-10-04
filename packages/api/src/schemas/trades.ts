@@ -1,17 +1,27 @@
 import { z } from "zod";
 
+import { INCOME_KINDS } from "@archant/data/income-kinds";
 import type { Micros } from "@archant/data/micros";
 import { readMicros } from "@archant/data/micros";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 import type { PriceProviderId } from "@archant/data/schema/securities";
 
-import { TRADE_SIDES, isValidIsin, tradeAmount } from "../domain/trades.ts";
+import {
+	TRADE_SIDES,
+	TRADE_TYPES,
+	conversionFee,
+	isIncomeSide,
+	isValidIsin,
+	signFits,
+	tradeAmount,
+} from "../domain/trades.ts";
 import { pageQuerySchema } from "./transactions.ts";
 
-// The form's « Achat » and « Vente », and its ISIN check, from the domain the
-// API checks them with.
-export { TRADE_SIDES, isValidIsin } from "../domain/trades.ts";
+// The form's four types, its ISIN check and its sign check, from the domain
+// the API checks them with.
+export { TRADE_SIDES, TRADE_TYPES, isIncomeSide, isValidIsin, signFits } from "../domain/trades.ts";
+export type { TradeType } from "../domain/trades.ts";
 
 /** A security's name, as the provider or the owner gives it. */
 export const SECURITY_NAME_MAX_LENGTH = 200;
@@ -30,12 +40,14 @@ export function normalizeIsin(text: string): string {
 	return text.replaceAll(/\s/gu, "").toUpperCase();
 }
 
+const knownSecuritySchema = z.object({ source: z.literal("known"), id: z.string().min(1) });
+
 /**
  * Which security a new trade is in: one already known, a listing the search
  * found, or one typed by hand, its ISIN optional since a fonds euros has none.
  */
 const securityChoiceSchema = z.discriminatedUnion("source", [
-	z.object({ source: z.literal("known"), id: z.string().min(1) }),
+	knownSecuritySchema,
 	z.object({
 		source: z.literal("listing"),
 		ticker: z.string().trim().min(1).max(TICKER_MAX_LENGTH),
@@ -62,27 +74,68 @@ const securityChoiceSchema = z.discriminatedUnion("source", [
 		}),
 ]);
 
-// What the route checks before it knows the account: the security's shape,
-// and every number as text, so the typed client knows the body. Quantity,
-// price and fee are parsed afterwards, with the account's currency, by the
-// schemas below.
-export const tradeBodySchema = z.object({
-	side: z.enum(TRADE_SIDES),
-	security: securityChoiceSchema,
-	date: z.string(),
-	// Unsigned text, typed the French or English way: the side gives the sign,
-	// and a JavaScript number would already have rounded the input.
-	quantity: z.string(),
-	price: z.string(),
-	fee: z.string(),
-});
+/**
+ * An income's security: one the account holds, as Sure's form offers its
+ * holdings only, or `null` for interest on the account's cash.
+ */
+const incomeSecuritySchema = knownSecuritySchema.nullable();
 
-/** An edit never changes the security, as Sure's drawer. */
-export const tradePatchBodySchema = tradeBodySchema.omit({ security: true }).partial();
+// What the route checks before it knows the account: the side, the
+// security's shape, and every number as text, so the typed client knows the
+// body. Quantity, price, fee and amount are parsed afterwards, with the
+// account's currency, by the schemas below.
+export const tradeBodySchema = z.discriminatedUnion("side", [
+	z.object({
+		side: z.enum(TRADE_SIDES),
+		security: securityChoiceSchema,
+		date: z.string(),
+		// Unsigned text, typed the French or English way: the side gives the
+		// sign, and a JavaScript number would already have rounded the input.
+		quantity: z.string(),
+		price: z.string(),
+		fee: z.string(),
+	}),
+	z.object({
+		side: z.enum(INCOME_KINDS),
+		security: incomeSecuritySchema,
+		date: z.string(),
+		amount: z.string(),
+	}),
+]);
+
+/**
+ * An edit never changes the security or the kind, as Sure's drawer: a buy
+ * and a sale take `side`, `quantity`, `price` and `fee`, an income `amount`.
+ */
+export const tradePatchBodySchema = z
+	.object({
+		side: z.enum(TRADE_SIDES),
+		date: z.string(),
+		quantity: z.string(),
+		price: z.string(),
+		fee: z.string(),
+		amount: z.string(),
+	})
+	.partial();
+
+/**
+ * A conversion into a trade: a buy or a sale's security, quantity and price,
+ * the fee being what the transaction's amount leaves; an income's security.
+ */
+export const convertTradeBodySchema = z.discriminatedUnion("side", [
+	z.object({
+		side: z.enum(TRADE_SIDES),
+		security: securityChoiceSchema,
+		quantity: z.string(),
+		price: z.string(),
+	}),
+	z.object({ side: z.enum(INCOME_KINDS), security: incomeSecuritySchema }),
+]);
 
 export type TradeInput = z.input<typeof tradeBodySchema>;
 export type TradePatchInput = z.input<typeof tradePatchBodySchema>;
-export type SecurityChoiceInput = TradeInput["security"];
+export type ConvertTradeInput = z.input<typeof convertTradeBodySchema>;
+export type SecurityChoiceInput = z.input<typeof securityChoiceSchema>;
 
 type Numbers = {
 	quantity?: string | undefined;
@@ -140,14 +193,6 @@ function numbersIn(currency: CurrencyCode) {
 	};
 }
 
-const fieldsShape = {
-	side: z.enum(TRADE_SIDES),
-	date: z.iso.date(),
-	quantity: z.string(),
-	price: z.string(),
-	fee: z.string(),
-};
-
 /** The checked numbers, for a transform that runs only once every refinement passed. */
 function checkedNumbers(
 	value: Numbers,
@@ -178,33 +223,123 @@ function securityOf(choice: z.output<typeof securityChoiceSchema>) {
 	return { source: choice.source, name: choice.name, isin: isin === "" ? null : isin };
 }
 
+type FormSecurity = z.output<typeof securityChoiceSchema> | null;
+
+/**
+ * An income's security checked: a dividend needs one, interest takes the
+ * account's cash without; either names a security already known, one the
+ * account holds, never a listing or one typed by hand.
+ */
+function checkIncomeSecurity(
+	side: "dividend" | "interest",
+	security: FormSecurity,
+	context: z.core.$RefinementCtx,
+): void {
+	if (security === null && side === "dividend") {
+		context.addIssue({ code: "custom", path: ["security"], message: "too_small" });
+	}
+
+	if (security !== null && security.source !== "known") {
+		context.addIssue({ code: "custom", path: ["security"], message: "invalid_value" });
+	}
+}
+
+/** The income's security as the ledger takes it, once `checkIncomeSecurity` passed. */
+function incomeSecurityOf(security: FormSecurity) {
+	if (security !== null && security.source !== "known") {
+		throw new Error("An income's security was not checked.");
+	}
+
+	return security;
+}
+
+/** An income's amount read, `null` when absent, unreadable or not above zero. */
+function incomeAmountOf(text: string | undefined, currency: CurrencyCode): MinorUnits | null {
+	const amount = text === undefined ? null : parseAmount(text, currency);
+
+	return amount !== null && amount > 0 ? amount : null;
+}
+
+function checkIncomeAmount(
+	text: string | undefined,
+	currency: CurrencyCode,
+	context: z.core.$RefinementCtx,
+): void {
+	if (incomeAmountOf(text, currency) === null) {
+		context.addIssue({
+			code: "custom",
+			path: ["amount"],
+			message:
+				text === undefined || parseAmount(text, currency) === null
+					? "invalid_amount"
+					: "not_positive",
+		});
+	}
+}
+
+function checkedIncomeAmount(text: string | undefined, currency: CurrencyCode): MinorUnits {
+	const amount = incomeAmountOf(text, currency);
+
+	if (amount === null) {
+		throw new Error("An income's amount was not checked.");
+	}
+
+	return amount;
+}
+
 /**
  * The full check of a new trade, shared with the interface's form resolver
- * so both report the same field codes. Built per currency: the fee is an
- * amount in the account's. `security` is `null` in the form until one is
- * picked, which this refuses.
+ * so both report the same field codes. Built per currency: the fee and an
+ * income's amount are amounts in the account's. A buy or a sale takes a
+ * security, a quantity, a price and a fee; a dividend or interest, as Sure's
+ * `Trade::CreateForm`, an amount above zero and a held security, interest on
+ * cash none. `security` is `null` in the form until one is picked, and for
+ * interest on cash; the fields of the other kind are ignored, as the form
+ * keeps them while its type changes.
  */
 export function createTradeSchema(currency: CurrencyCode) {
 	return z
-		.object({ ...fieldsShape, security: securityChoiceSchema.nullable() })
-		.superRefine((value, context) => {
-			if (value.security === null) {
+		.object({
+			side: z.enum(TRADE_TYPES),
+			security: securityChoiceSchema.nullable(),
+			date: z.iso.date(),
+			quantity: z.string().optional(),
+			price: z.string().optional(),
+			fee: z.string().optional(),
+			amount: z.string().optional(),
+		})
+		.superRefine(({ side, security, ...value }, context) => {
+			if (isIncomeSide(side)) {
+				checkIncomeSecurity(side, security, context);
+				checkIncomeAmount(value.amount, currency, context);
+
+				return;
+			}
+
+			if (security === null) {
 				context.addIssue({ code: "custom", path: ["security"], message: "too_small" });
 			}
 
-			numbersIn(currency)(value, context);
+			numbersIn(currency)(
+				{ quantity: value.quantity ?? "", price: value.price ?? "", fee: value.fee ?? "" },
+				context,
+			);
 		})
-		.transform(({ security, ...value }) => {
+		.transform(({ side, security, date, ...value }) => {
+			if (isIncomeSide(side)) {
+				return {
+					side,
+					date,
+					security: incomeSecurityOf(security),
+					amount: checkedIncomeAmount(value.amount, currency),
+				};
+			}
+
 			if (security === null) {
 				throw new Error("A trade's security was not checked.");
 			}
 
-			return {
-				side: value.side,
-				date: value.date,
-				security: securityOf(security),
-				...checkedNumbers(value, currency),
-			};
+			return { side, date, security: securityOf(security), ...checkedNumbers(value, currency) };
 		});
 }
 
@@ -217,10 +352,18 @@ export function updateTradeSchema(currency: CurrencyCode) {
 			quantity: z.string().optional(),
 			price: z.string().optional(),
 			fee: z.string().optional(),
+			amount: z.string().optional(),
 		})
-		.superRefine(numbersIn(currency))
+		.superRefine((value, context) => {
+			numbersIn(currency)(value, context);
+
+			if (value.amount !== undefined) {
+				checkIncomeAmount(value.amount, currency, context);
+			}
+		})
 		.transform((value) => {
 			const read = numbersOf(value, currency);
+			const amount = incomeAmountOf(value.amount, currency);
 
 			return {
 				...(value.side === undefined ? {} : { side: value.side }),
@@ -228,12 +371,108 @@ export function updateTradeSchema(currency: CurrencyCode) {
 				...(read.quantity === null ? {} : { quantity: read.quantity }),
 				...(read.price === null ? {} : { price: read.price }),
 				...(read.fee === null ? {} : { fee: read.fee }),
+				...(amount === null ? {} : { amount }),
 			};
+		});
+}
+
+/**
+ * The fee a conversion leaves, as the dialog shows it while the owner types:
+ * `null` until the quantity and the price read, or when the amount does not
+ * cover them.
+ */
+export function conversionFeeOf(
+	side: "buy" | "sell",
+	text: { quantity: string; price: string },
+	amount: MinorUnits,
+	currency: CurrencyCode,
+): MinorUnits | null {
+	const read = numbersOf({ quantity: text.quantity, price: text.price }, currency);
+
+	return read.quantity === null || read.price === null
+		? null
+		: conversionFee(side, { quantity: read.quantity, price: read.price }, amount, currency);
+}
+
+/**
+ * The full check of a conversion of a transaction of `amount` into a trade,
+ * shared with the interface's dialog: the type must move money the way the
+ * transaction did, on `side`; a buy or a sale needs a security, a quantity
+ * and a price whose product the amount covers, the fee being the rest, on
+ * `price`; an income, a security as a new one does. With `amount` `null`,
+ * as the API parses a body, the sign and the fee are left to the ledger,
+ * which checks them once it has refused a line it cannot convert.
+ */
+export function convertTradeSchema(currency: CurrencyCode, amount: MinorUnits | null) {
+	return z
+		.object({
+			side: z.enum(TRADE_TYPES),
+			security: securityChoiceSchema.nullable(),
+			quantity: z.string().optional(),
+			price: z.string().optional(),
+		})
+		.superRefine(({ side, security, ...value }, context) => {
+			const signed = amount === null || signFits(side, amount);
+
+			if (!signed) {
+				context.addIssue({ code: "custom", path: ["side"], message: "sign_mismatch" });
+			}
+
+			if (isIncomeSide(side)) {
+				checkIncomeSecurity(side, security, context);
+
+				return;
+			}
+
+			if (security === null) {
+				context.addIssue({ code: "custom", path: ["security"], message: "too_small" });
+			}
+
+			const text = { quantity: value.quantity ?? "", price: value.price ?? "" };
+			const read = numbersOf(text, currency);
+
+			if (read.quantity === null) {
+				context.addIssue({ code: "custom", path: ["quantity"], message: "invalid_quantity" });
+			}
+
+			if (read.price === null) {
+				context.addIssue({ code: "custom", path: ["price"], message: "invalid_price" });
+			}
+
+			// A fee read against an amount of the wrong sign would only repeat it.
+			if (
+				amount !== null &&
+				signed &&
+				read.quantity !== null &&
+				read.price !== null &&
+				conversionFeeOf(side, text, amount, currency) === null
+			) {
+				context.addIssue({ code: "custom", path: ["price"], message: "amount_mismatch" });
+			}
+		})
+		.transform(({ side, security, ...value }) => {
+			if (isIncomeSide(side)) {
+				return { side, security: incomeSecurityOf(security) };
+			}
+
+			const read = numbersOf(
+				{ quantity: value.quantity ?? "", price: value.price ?? "" },
+				currency,
+			);
+
+			if (security === null || read.quantity === null || read.price === null) {
+				throw new Error("A conversion was not checked.");
+			}
+
+			return { side, security: securityOf(security), quantity: read.quantity, price: read.price };
 		});
 }
 
 /** What the interface's trade form holds: the text typed, before the schema parses it. */
 export type TradeFormInput = z.input<ReturnType<typeof createTradeSchema>>;
+
+/** What the interface's conversion dialog holds. */
+export type ConvertTradeFormInput = z.input<ReturnType<typeof convertTradeSchema>>;
 
 /** A page of an account's trades, narrowed to one security for a position's sheet. */
 export const tradePageQuerySchema = pageQuerySchema.extend({

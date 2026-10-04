@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { costBasisSchema } from "@archant/api/schemas/holdings";
 import type { TypedPriceInput } from "@archant/api/schemas/prices";
 import { typedPriceSchema } from "@archant/api/schemas/prices";
+import { isIncomeSide } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
 
 import { DateField } from "@/components/DateField";
@@ -252,11 +253,12 @@ function PositionTrades({
 								{formatShortDate(trade.date)}
 							</span>
 							<span>
-								{t(`trades.sides.${trade.side}`)} ·{" "}
-								{t("trades.quantityPrice", {
-									quantity: formatQuantity(trade.quantity),
-									price: formatPrice(trade.price, trade.currency),
-								})}
+								{t(`trades.sides.${trade.side}`)}
+								{!isIncomeSide(trade.side) &&
+									` · ${t("trades.quantityPrice", {
+										quantity: formatQuantity(trade.quantity),
+										price: formatPrice(trade.price, trade.currency),
+									})}`}
 							</span>
 						</div>
 						<Money amount={trade.amount} currency={trade.currency} signed />

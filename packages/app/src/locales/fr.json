@@ -563,12 +563,15 @@
 		"paginationLabel": "Pages des ordres",
 		"sides": {
 			"buy": "Achat",
-			"sell": "Vente"
+			"sell": "Vente",
+			"dividend": "Dividende",
+			"interest": "Intérêts"
 		},
+		"cash": "Liquidités",
 		"quantityPrice": "{{quantity}} × {{price}}",
 		"columns": {
 			"date": "Date",
-			"side": "Sens",
+			"side": "Type",
 			"security": "Titre",
 			"quantityPrice": "Quantité × prix",
 			"amount": "Montant"
@@ -576,10 +579,17 @@
 		"form": {
 			"addTitle": "Ajouter un ordre",
 			"editTitle": "Modifier l'ordre",
-			"description": "Un achat ou une vente de titres. Quantité × prix plus les frais sortent du compte pour un achat ; quantité × prix moins les frais y entrent pour une vente.",
-			"side": "Sens",
+			"description": "Un achat, une vente, un dividende ou des intérêts. Quantité × prix plus les frais sortent du compte pour un achat ; quantité × prix moins les frais y entrent pour une vente ; le montant d'un dividende ou d'intérêts y entre.",
+			"side": "Type",
 			"security": "Titre",
 			"securityPlaceholder": "Choisir un titre",
+			"positionPlaceholder": "Choisir une position",
+			"noPositions": "Ce compte ne détient aucun titre aujourd'hui.",
+			"positionsLoading": "Chargement des positions…",
+			"positionsFailed": "Les positions n'ont pas pu être chargées.",
+			"amount": "Montant",
+			"convertedTitle": "Ordre converti",
+			"convertedFrom": "Cet ordre vient de l'opération « {{label}} », dont il garde la date et le montant. Annulez la conversion pour le modifier.",
 			"manualPick": "Titre saisi manuellement",
 			"isin": "ISIN (facultatif)",
 			"name": "Nom du titre",
@@ -610,6 +620,24 @@
 			"confirm": "Supprimer l'ordre",
 			"title": "Supprimer l'ordre du {{date}} ?",
 			"description": "L'ordre de {{amount}} sera supprimé, et le solde du compte recalculé."
+		},
+		"undoConversion": {
+			"action": "Annuler la conversion",
+			"title": "Annuler la conversion ?",
+			"description": "L'ordre sera supprimé et l'opération « {{label}} » de {{amount}} comptera de nouveau.",
+			"keep": "Garder l'ordre",
+			"done": "Conversion annulée."
+		},
+		"convert": {
+			"section": "Ordre",
+			"offer": "Cette opération est un ordre de votre courtier : convertissez-la pour qu'elle compte dans les positions.",
+			"action": "Convertir en ordre",
+			"title": "Convertir en ordre",
+			"description": "L'ordre prend la date et le montant de l'opération ({{amount}}). Pour un achat ou une vente, les frais sont ce qui reste une fois quantité × prix déduit.",
+			"fees": "Frais",
+			"feesUnknown": "—",
+			"save": "Convertir",
+			"done": "Opération convertie en ordre."
 		}
 	},
 	"positions": {
@@ -1888,6 +1916,7 @@
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
 		"NOT_SPLITTABLE": "Cette opération ne peut pas être divisée : un virement, une opération en attente, exclue, signalée comme doublon possible ou déjà divisée ne se divise pas.",
+		"NOT_CONVERTIBLE": "Cette opération ne peut pas être convertie en ordre : un virement, une opération en attente, exclue, signalée comme doublon possible, divisée ou déjà convertie ne se convertit pas.",
 		"TRANSACTION_SPLIT": "Cette opération fait partie d'une division. Modifiez la division, ou annulez-la d'abord.",
 		"BUDGET_NOT_SET_UP": "Définissez d'abord les dépenses prévues de ce mois.",
 		"BUDGET_ALREADY_SET_UP": "Ce mois a déjà un budget. Il n'a pas été modifié.",
@@ -1976,7 +2005,10 @@
 			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, six décimales au plus. Exemple : 12,5.",
 			"invalid_price": "Prix invalide : un nombre positif ou nul, six décimales au plus. Exemple : 612,40.",
 			"invalid_isin": "ISIN invalide : deux lettres, neuf lettres ou chiffres, puis un chiffre de contrôle.",
-			"quantity_unavailable": "Le compte ne détient pas assez de ce titre, à cette date ou pour une vente qui suit."
+			"quantity_unavailable": "Le compte ne détient pas assez de ce titre, à cette date ou pour une vente qui suit.",
+			"not_held": "Le compte ne détenait pas ce titre à cette date.",
+			"amount_mismatch": "Quantité × prix ne laisse pas de frais positifs ou nuls pour le montant de l'opération.",
+			"sign_mismatch": "Ce type ne correspond pas au sens de l'opération : un achat sort du compte, une vente, un dividende ou des intérêts y entrent."
 		},
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",

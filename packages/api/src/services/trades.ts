@@ -36,7 +36,10 @@ function toData({ quantity, price, ...record }: TradeRecord): TradeData {
 }
 
 /** The account's currency, refused unless it is an investment account. */
-async function investmentCurrency(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
+export async function investmentCurrency(
+	deps: ServiceDeps,
+	accountId: string,
+): Promise<CurrencyCode> {
 	const account = await getAccount(deps, accountId);
 
 	if (account.type !== "investment") {
@@ -50,7 +53,8 @@ async function investmentCurrency(deps: ServiceDeps, accountId: string): Promise
 	return account.currency;
 }
 
-async function found(deps: ServiceDeps, id: string): Promise<TradeData> {
+/** One trade as the API answers it; `NOT_FOUND` when the id names none. */
+export async function getTrade(deps: ServiceDeps, id: string): Promise<TradeData> {
 	const record = await findTrade(deps, id);
 
 	if (record === null) {
@@ -76,7 +80,7 @@ export async function listAccountTrades(
 	return { items: items.map(toData), page: page.page, pageSize: page.pageSize, total };
 }
 
-/** Records a buy or a sale on the user's behalf. */
+/** Records a buy, a sale, a dividend or interest on the user's behalf. */
 export async function createTrade(
 	deps: ServiceDeps,
 	accountId: string,
@@ -91,16 +95,19 @@ export async function createTrade(
 
 	const { id } = await recordTrade(deps, accountId, parsed.data, { origin: "user" });
 
-	return found(deps, id);
+	return getTrade(deps, id);
 }
 
-/** Changes a trade's side, date, quantity, price or fee on the user's behalf. */
+/**
+ * Changes a trade's date and figures on the user's behalf: a buy or a
+ * sale's side, quantity, price and fee, an income's amount.
+ */
 export async function updateTrade(
 	deps: ServiceDeps,
 	id: string,
 	input: TradePatchInput,
 ): Promise<TradeData> {
-	const current = await found(deps, id);
+	const current = await getTrade(deps, id);
 	const currency = await investmentCurrency(deps, current.accountId);
 	const parsed = updateTradeSchema(currency).safeParse(input);
 
@@ -110,10 +117,10 @@ export async function updateTrade(
 
 	await updateLedgerTrade(deps, id, parsed.data, { origin: "user" });
 
-	return found(deps, id);
+	return getTrade(deps, id);
 }
 
-/** Deletes a trade for good. */
+/** Deletes a trade for good; a converted one gives its transaction back. */
 export async function deleteTrade(deps: ServiceDeps, id: string): Promise<{ id: string }> {
 	await deleteLedgerTrade(deps, id, { origin: "user" });
 

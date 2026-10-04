@@ -127,6 +127,12 @@ test("a viewer reads every page with no control that writes, and the server refu
 		quantity: "3",
 		price: "100",
 	});
+	// A line of the PEA, which an administrator could convert into a trade.
+	await api.addTransaction(pea.id, {
+		date: `${MONTH}-16`,
+		label: `${prefix} achat courtier`,
+		amount: "-51,37",
+	});
 	const { url } = await api.invite(`lecteur-${randomUUID().slice(0, 8)}@archant.test`);
 	await acceptInvitation(page.request, url, { name, password: "mot de passe du lecteur" });
 
@@ -170,6 +176,16 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page.getByRole("button", { name: /Annuler l'import/u })).toHaveCount(0);
 
 			await page.goto(`/accounts/${pea.id}`);
+			await page
+				.getByRole("main")
+				.locator("button[data-transaction-id]")
+				.filter({ hasText: `${prefix} achat courtier` })
+				.click();
+			const line = page.getByRole("dialog", { name: "Opération" });
+			await expect(line.getByLabel("Libellé")).toHaveValue(`${prefix} achat courtier`);
+			await expectNone(line, [{ role: "button", name: "Convertir en ordre" }]);
+			await line.getByRole("button", { name: "Fermer", exact: true }).first().click();
+			await expect(line).toBeHidden();
 			await page.getByRole("tab", { name: "Ordres" }).click();
 			await expect(page.getByRole("cell", { name: `${prefix} fonds` })).toBeVisible();
 			await expect(page.getByRole("cell", { name: "3 × 100,00 €" })).toBeVisible();

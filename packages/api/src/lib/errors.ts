@@ -67,9 +67,16 @@ export const ERROR_STATUSES = {
 	/**
 	 * A change to the date, the amount or the exclusion of a split's parent or
 	 * child, a child deleted alone, or a merge into either: the split is edited
-	 * as a whole (AD-20). Nothing is written.
+	 * as a whole (AD-20). Also an edit that moves a converted trade's date or
+	 * amount away from its transaction's. Nothing is written.
 	 */
 	TRANSACTION_SPLIT: 409,
+	/**
+	 * A conversion into a trade of a transfer side, a pending, excluded or
+	 * possibly duplicated transaction, or a split's parent or child, a
+	 * converted one included (AD-20, AD-22). Nothing is written.
+	 */
+	NOT_CONVERTIBLE: 409,
 	/**
 	 * A category's amount in a month whose total is not set: Sure's form only
 	 * reaches its categories after « Budget ». Nothing is written.

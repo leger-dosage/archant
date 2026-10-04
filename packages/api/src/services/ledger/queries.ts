@@ -5,7 +5,7 @@ import type { TransactionFilter } from "./filter.ts";
 import type { Transaction, TransferColumns } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, count, desc, eq, inArray, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -17,6 +17,7 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
@@ -502,9 +503,28 @@ function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: rea
 }
 
 /**
+ * The dividends and interest of `accountIds` in the range (AD-9): income,
+ * uncategorised, since a trade carries no category, Sure having dropped it.
+ * Sure counts no trade in its reports; Archant counts the money a security
+ * or the broker pays, never a buy or a sale, which only moves money between
+ * cash and holdings. `accountIds` is never empty here: `countedInCashFlow`
+ * answers `null` first.
+ */
+function incomeTradesIn(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
+	return and(
+		eq(entries.kind, "trade"),
+		isNotNull(trades.incomeKind),
+		inArray(entries.accountId, [...range.accountIds]),
+		range.from === undefined ? undefined : gte(entries.date, range.from),
+		lte(entries.date, range.to),
+	);
+}
+
+/**
  * The counted transactions of `accountIds` between `from` and `to`, both
- * inclusive, summed per category and per sign: `countsInCashFlow`'s SQL
- * twin, tied to it by a parity test. Uncategorised rows keep their two signs
+ * inclusive, summed per category and per sign, then the dividends and
+ * interest of those accounts as uncategorised income: `countsInCashFlow`'s
+ * SQL twin, tied to it by a parity test. Uncategorised rows keep their two signs
  * apart, since « Sans catégorie » splits into income and expenses; a
  * category's two signs meet again in `cashFlowBreakdown`. The currency is the
  * caller's to settle through `accountIds`.
@@ -528,8 +548,17 @@ export async function cashFlowByCategory(
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.where(where)
 		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
+	const income = await deps.db
+		.select({
+			categoryId: sql<null>`null`,
+			amount: sum(entries.amount).mapWith(Number),
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(incomeTradesIn(range))
+		.groupBy(sql`${entries.amount} > 0`);
 
-	return rows.map(toRecord);
+	return [...rows, ...income].map(toRecord);
 }
 
 /**
@@ -559,8 +588,18 @@ export async function cashFlowByMonth(
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.where(where)
 		.groupBy(month, transactions.categoryId, sql`${entries.amount} > 0`);
+	const income = await deps.db
+		.select({
+			month,
+			categoryId: sql<null>`null`,
+			amount: sum(entries.amount).mapWith(Number),
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(incomeTradesIn(range))
+		.groupBy(month, sql`${entries.amount} > 0`);
 
-	return rows.map(toRecord);
+	return [...rows, ...income].map(toRecord);
 }
 
 /**

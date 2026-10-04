@@ -3,6 +3,7 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
+import { convertTradeBodySchema } from "../schemas/trades.ts";
 import {
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
@@ -15,6 +16,7 @@ import {
 import {
 	bulkDeleteTransactions,
 	bulkUpdateTransactions,
+	convertTransaction,
 	deleteTransaction,
 	dismissDuplicate,
 	editSplit,
@@ -72,6 +74,13 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.delete("/:id/split", async (c) =>
 				c.json({ data: await unsplitTransaction(deps, c.req.param("id")) }, 200),
+			)
+			// Sure's « Convertir en ordre »: the trade it makes, in the account's « Ordres ».
+			.post("/:id/trade", validated("json", convertTradeBodySchema), async (c) =>
+				c.json(
+					{ data: await convertTransaction(deps, c.req.param("id"), c.req.valid("json")) },
+					201,
+				),
 			)
 			.patch("/:id", validated("json", transactionPatchBodySchema), async (c) =>
 				c.json(

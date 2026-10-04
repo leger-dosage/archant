@@ -9,11 +9,13 @@ import { useTranslation } from "react-i18next";
 
 import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
+import type { AccountType } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 
 import { AmountField } from "@/components/AmountField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConvertBlock } from "@/components/ConvertTradeDialog";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { TransactionAttachments } from "@/components/TransactionAttachments";
@@ -51,7 +53,13 @@ const FIELD_NAMES = [
 
 type FieldName = (typeof FIELD_NAMES)[number];
 
-export type SheetAccount = { id: string; currency: CurrencyCode; openingDate: string };
+export type SheetAccount = {
+	id: string;
+	currency: CurrencyCode;
+	openingDate: string;
+	/** An investment account's lines can be converted into trades. */
+	type: AccountType;
+};
 
 function sameTags(a: readonly string[], b: readonly string[]): boolean {
 	const set = new Set(a);
@@ -266,6 +274,15 @@ export function TransactionForm({
 						splittable={splittable}
 						dirty={isDirty}
 						onDone={onCloseFocusing}
+					/>
+				)}
+				{/* The ledger's conversion refuses what it refuses a split (AD-20). */}
+				{transaction !== null && admin && account.type === "investment" && splittable && (
+					<ConvertBlock
+						transaction={transaction}
+						currency={account.currency}
+						dirty={isDirty}
+						onConverted={onClose}
 					/>
 				)}
 				{transaction !== null && duplicate && (

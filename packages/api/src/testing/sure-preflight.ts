@@ -339,10 +339,13 @@ const SCHEMAS = {
 		id,
 		entry_id: id,
 		account_id: id,
-		security_id: id,
+		// `null` for interest on cash: Sure's importer finds its security by ticker.
+		security_id: id.nullable(),
 		ticker: present,
 		security_name: present,
 		exchange_operating_mic: z.string().nullable(),
+		// Sure's `Trade::ACTIVITY_LABELS` that Archant records.
+		investment_activity_label: z.enum(["Buy", "Sell", "Dividend", "Interest"]),
 		date,
 		qty: decimal,
 		price: decimal,

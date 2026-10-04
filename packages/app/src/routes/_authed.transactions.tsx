@@ -128,7 +128,12 @@ function OperationSheet({
 
 	return (
 		<TransactionSheet
-			account={{ id: data.id, currency: data.currency, openingDate: data.openingDate }}
+			account={{
+				id: data.id,
+				currency: data.currency,
+				openingDate: data.openingDate,
+				type: data.type,
+			}}
 			open={open}
 			transaction={transaction}
 			onOpenChange={onOpenChange}

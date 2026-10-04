@@ -19,7 +19,7 @@ import { maxDate, today } from "../../domain/dates.ts";
 import { marketValue } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
-import { invalidField, oneByOne } from "./shared.ts";
+import { invalidField, movesQuantity, oneByOne } from "./shared.ts";
 
 /**
  * Values again what `securityId`'s prices from `from` on changed: each
@@ -47,7 +47,7 @@ export async function revalueHoldings(
 		.from(trades)
 		.innerJoin(entries, eq(entries.id, trades.entryId))
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
-		.where(eq(trades.securityId, securityId))
+		.where(and(eq(trades.securityId, securityId), movesQuantity))
 		.groupBy(accounts.id, accounts.type, accounts.currency)
 		.orderBy(asc(accounts.id));
 
@@ -189,7 +189,8 @@ export async function currentHoldings(
 	}
 
 	// The later of the last stored price and the last trade on the account:
-	// a held security always has a trade, the stored price may be missing.
+	// a held security always has a trade, the stored price may be missing. A
+	// dividend sets no price.
 	const lastPrice = db
 		.select({ date: max(securityPrices.date) })
 		.from(securityPrices)
@@ -202,6 +203,7 @@ export async function currentHoldings(
 			and(
 				eq(entries.accountId, accountId),
 				eq(trades.securityId, holdings.securityId),
+				movesQuantity,
 				lte(entries.date, date),
 			),
 		);

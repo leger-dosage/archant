@@ -1,3 +1,4 @@
+import type { SheetAccount } from "@/components/TransactionForm";
 import type { HoldingsData, PositionData } from "@/hooks/useHoldings";
 import type { SnapshotData } from "@/hooks/useSnapshots";
 import type { TradeData } from "@/hooks/useTrades";
@@ -12,7 +13,6 @@ import { z } from "zod";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
-import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
@@ -424,9 +424,14 @@ function AccountPage() {
 			(position) => position.security.id === positionSheet.securityId,
 		) ?? null;
 	const currency = account.data?.currency;
-	const writable: { id: string; currency: CurrencyCode; openingDate: string } | undefined =
+	const writable: SheetAccount | undefined =
 		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
-			? { id: account.data.id, currency, openingDate: account.data.openingDate }
+			? {
+					id: account.data.id,
+					currency,
+					openingDate: account.data.openingDate,
+					type: account.data.type,
+				}
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
 	// A snapshot or a trade must fall after the opening date and not after
