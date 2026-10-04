@@ -17,6 +17,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 import type { Account } from "@archant/data/types";
 
+import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { isSplitChild, rejectedOf, transferOf } from "./shared.ts";
 
@@ -82,14 +83,14 @@ export async function createAccount(
 /**
  * Deletes an account and everything it holds, as one write: its entries'
  * keys and the tombstones of the ones the user deleted, its transactions'
- * taggings, transfers and rejected pairs, its transactions, all its entries,
- * split lines before their parents, snapshots and opening anchor included,
- * its daily balances, its imports, then the account. Children go first,
- * since their foreign keys restrict. A transfer's other side, on another
- * account, stays as a standard transaction, as Sure's `cleanup_transfers`
- * leaves it. Every delete selects
- * by `account_id` through a subquery, never a list of ids, so a history of
- * 100,000 transactions binds one parameter, not 100,000.
+ * taggings, attachments, transfers and rejected pairs, its transactions,
+ * all its entries, split lines before their parents, snapshots and opening
+ * anchor included, its daily balances, its imports, then the account.
+ * Children go first, since their foreign keys restrict. A transfer's other
+ * side, on another account, stays as a standard transaction, as Sure's
+ * `cleanup_transfers` leaves it. Every delete selects by `account_id`
+ * through a subquery, never a list of ids, so a history of 100,000
+ * transactions binds one parameter, not 100,000.
  */
 export async function deleteAccount(
 	deps: ServiceDeps,
@@ -110,6 +111,10 @@ export async function deleteAccount(
 						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
 					),
 				);
+			await deleteAttachmentsOf(
+				tx,
+				tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
+			);
 			await tx
 				.delete(transfers)
 				.where(

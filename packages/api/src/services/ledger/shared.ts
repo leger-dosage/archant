@@ -14,6 +14,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { AppError } from "../../lib/errors.ts";
+import { deleteAttachmentsOf } from "./attachments.ts";
 
 /** Who asked for a write (AD-2). Only `user` locks fields (AD-10). */
 export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
@@ -121,7 +122,7 @@ export async function refuseSplit(
 /**
  * Deletes the split lines of `parentIds`, before the parents themselves:
  * `parent_entry_id` restricts. A child carries no key, transfer or rejected
- * pair (AD-20), only its taggings and its detail row.
+ * pair (AD-20), only its taggings, its attachments and its detail row.
  */
 export async function deleteSplitChildren(
 	tx: Transaction,
@@ -134,6 +135,7 @@ export async function deleteSplitChildren(
 			.where(inArray(entries.parentEntryId, [...parentIds]));
 
 	await tx.delete(taggings).where(inArray(taggings.transactionId, children()));
+	await deleteAttachmentsOf(tx, children());
 	await tx.delete(transactions).where(inArray(transactions.entryId, children()));
 	await tx.delete(entries).where(inArray(entries.parentEntryId, [...parentIds]));
 }
@@ -153,6 +155,7 @@ export async function deleteTransactionRows(
 	await tx.delete(transfers).where(transferOf(ids));
 	await tx.delete(rejectedTransfers).where(rejectedOf(ids));
 	await tx.delete(taggings).where(inArray(taggings.transactionId, ids));
+	await deleteAttachmentsOf(tx, ids);
 	await tx.delete(transactions).where(inArray(transactions.entryId, ids));
 	await tx.delete(entries).where(inArray(entries.id, ids));
 }

@@ -26,7 +26,7 @@ export const ERROR_STATUSES = {
 	 * sign-in while too many failed across every address. The body is not read.
 	 */
 	TOO_MANY_REQUESTS: 429,
-	/** A body over 64 KB on any `/api` route but the upload. Refused before or while reading it. */
+	/** A body over 64 KB on any `/api` route but the two uploads. Refused before or while reading it. */
 	PAYLOAD_TOO_LARGE: 413,
 	/** A file no source can read, or larger than 5 MB. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,

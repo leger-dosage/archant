@@ -65,7 +65,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 1, 2, 4, 5, 7, 8, 10; FR3, FR6, FR7, FR17, FR19, FR22–FR26, FR31–FR33, FR50–FR52
 - **Prevents:** manual entry, file import, bank sync, bulk edit and transfer matching each writing money rows their own way.
-- **Rule:** Only the modules of `services/ledger/` write to `entries`, `transactions`, `entry_keys`, `deleted_entry_keys`, `balances`, `transfers` and `rejected_transfers`, and only they delete an account. Other services call ledger functions. Every ledger function takes an `origin` (`user`, `rule`, `provider`, `sync`, `maintenance`) and runs in one database transaction opened with `behavior: "immediate"`, which recomputes the affected balances before committing. Foreign keys that point at `entries` or `transactions` are `ON DELETE RESTRICT`, so a bypass fails instead of cascading. An oxlint override allows importing those seven tables only from `services/ledger/**`, `domain/**` types, and the test code that seeds rows directly (`testing/ledger.ts`, `services/history-volume.spec.ts`).
+- **Rule:** Only the modules of `services/ledger/` write to `entries`, `transactions`, `entry_keys`, `deleted_entry_keys`, `balances`, `transfers`, `rejected_transfers`, `taggings` and `transaction_attachments`, and only they delete an account; every ledger delete removes a transaction's taggings and attachments before the row. `transaction_attachments` is the ledger's because an upload checks the count and the transaction's existence in the immediate transaction that inserts, which reads `transactions`, and every ledger delete removes them first; `services/attachments.ts` keeps reading the type and cleaning the name. Other services call ledger functions. Every ledger function takes an `origin` (`user`, `rule`, `provider`, `sync`, `maintenance`) and runs in one database transaction opened with `behavior: "immediate"`, which recomputes the affected balances before committing. Foreign keys that point at `entries` or `transactions` are `ON DELETE RESTRICT`, so a bypass fails instead of cascading. An oxlint override allows importing those tables only from `services/ledger/**`, `domain/**` types, and the test code that seeds rows directly (`testing/ledger.ts`, `services/history-volume.spec.ts`).
 
 ### AD-3 — Connector port
 
@@ -222,7 +222,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epic 18; FR71
 - **Prevents:** a secret leaving in an archive, a new table missing from the export, and an archive held in memory.
-- **Rule:** `GET /api/export` streams a ZIP built in the request, in Sure's export format: Sure's file names and columns, and an `all.ndjson` that Sure's `SureImport` accepts, so amounts follow Sure's sign there. It sits outside the envelope and outside compression. Each table is read through `EXPORTED_COLUMNS`, an allowlist of exported columns in `services/ledger/export.ts`, the only place AD-2 lets the ledger's tables be read, beside `LEFT_OUT`, the reason for each column or table left out; a spec fails when a column of a migrated database is in neither or both. `services/export.ts` maps the rows to Sure's files, from one read snapshot (`readSnapshot` in `@archant/data/client`), a page at a time as the client takes the bytes. A story that adds a table adds it to the export or to the left-out list.
+- **Rule:** `GET /api/export` streams a ZIP built in the request, in Sure's export format: Sure's file names and columns, and an `all.ndjson` that Sure's `SureImport` accepts, so amounts follow Sure's sign there. It sits outside the envelope and outside compression. Each table is read through `EXPORTED_COLUMNS`, an allowlist of exported columns in `services/ledger/export.ts`, the only place AD-2 lets the ledger's tables be read, beside `LEFT_OUT`, the reason for each column or table left out; a spec fails when a column of a migrated database is in neither or both. `services/export.ts` maps the rows to Sure's files, from one read snapshot (`readSnapshot` in `@archant/data/client`), a page at a time as the client takes the bytes. A story that adds a table adds it to the export or to the left-out list. Attachments leave as `attachments.json`, Sure's manifest, without their bytes.
 
 ## Consistency Conventions
 
@@ -288,6 +288,7 @@ erDiagram
   categories ||--o{ categories : parent
   merchants ||--o{ transactions : "paid to"
   transactions }o--o{ tags : taggings
+  transactions ||--o{ transaction_attachments : "receipts, 10 at most"
   transactions ||--o| transfers : "outflow or inflow"
   bank_connections ||--o{ accounts : links
   bank_connections ||--o{ entry_keys : wrote
@@ -340,24 +341,24 @@ packages/
 
 ## Capability → Architecture Map
 
-| Area                                       | Lives in                                                                           | Governed by                                  |
-| ------------------------------------------ | ---------------------------------------------------------------------------------- | -------------------------------------------- |
-| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger/`, `domain/balances/`, `data/account-types.ts`                    | AD-2, AD-5, AD-6, AD-8                       |
-| File import (Epic 2)                       | `connectors/{ofx,csv,qif}/`, `services/imports.ts`                                 | AD-3, AD-4, AD-7, AD-17                      |
-| Access and deployment (Epic 3)             | `routes/middleware/auth.ts`, `services/setup.ts`, `cli/`, `index.ts`, `Dockerfile` | AD-12, AD-13, AD-15                          |
-| Classification (Epic 4)                    | `services/classification.ts`, through the ledger                                   | AD-2, AD-10, AD-12                           |
-| Transfers (Epic 5)                         | `domain/transfer-matching.ts`, ledger                                              | AD-4, AD-9, AD-11                            |
-| Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                       | AD-6, AD-8, AD-9                             |
-| Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                            | AD-4, AD-10                                  |
-| Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                | AD-1, AD-4, AD-17                            |
-| Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                   | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
-| Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                          | AD-1, AD-13, AD-14, AD-19                    |
-| Budgets (Epic 17)                          | `services/budgets.ts`, `domain/budgets/`                                           | AD-1, AD-6, AD-9                             |
-| Export (Epic 18)                           | `services/export.ts`, `services/ledger/export.ts`                                  | AD-2, AD-14, AD-23                           |
-| Splits and attachments (Epic 19)           | `services/ledger/splits.ts`, `services/attachments.ts`                             | AD-2, AD-7, AD-17, AD-20                     |
-| Members (Epic 20)                          | `routes/middleware/auth.ts`, `services/invitations.ts`                             | AD-13, AD-21                                 |
-| Savings goals (Epic 21)                    | `services/goals.ts`, `domain/goals.ts`                                             | AD-1, AD-6, AD-8                             |
-| Investments (Epic 22)                      | `connectors/prices/`, `services/ledger/trades.ts`, `domain/holdings/`              | AD-2, AD-5, AD-6, AD-8, AD-22                |
+| Area                                       | Lives in                                                                                 | Governed by                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Accounts, balances, snapshots (Epics 1, 7) | `services/ledger/`, `domain/balances/`, `data/account-types.ts`                          | AD-2, AD-5, AD-6, AD-8                       |
+| File import (Epic 2)                       | `connectors/{ofx,csv,qif}/`, `services/imports.ts`                                       | AD-3, AD-4, AD-7, AD-17                      |
+| Access and deployment (Epic 3)             | `routes/middleware/auth.ts`, `services/setup.ts`, `cli/`, `index.ts`, `Dockerfile`       | AD-12, AD-13, AD-15                          |
+| Classification (Epic 4)                    | `services/classification.ts`, through the ledger                                         | AD-2, AD-10, AD-12                           |
+| Transfers (Epic 5)                         | `domain/transfer-matching.ts`, ledger                                                    | AD-4, AD-9, AD-11                            |
+| Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                             | AD-6, AD-8, AD-9                             |
+| Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                                  | AD-4, AD-10                                  |
+| Recurring (Epic 9)                         | `domain/recurring.ts`, after commit                                                      | AD-1, AD-4, AD-17                            |
+| Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                         | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
+| Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                                | AD-1, AD-13, AD-14, AD-19                    |
+| Budgets (Epic 17)                          | `services/budgets.ts`, `domain/budgets/`                                                 | AD-1, AD-6, AD-9                             |
+| Export (Epic 18)                           | `services/export.ts`, `services/ledger/export.ts`                                        | AD-2, AD-14, AD-23                           |
+| Splits and attachments (Epic 19)           | `services/ledger/splits.ts`, `services/ledger/attachments.ts`, `services/attachments.ts` | AD-2, AD-7, AD-17, AD-20, AD-23              |
+| Members (Epic 20)                          | `routes/middleware/auth.ts`, `services/invitations.ts`                                   | AD-13, AD-21                                 |
+| Savings goals (Epic 21)                    | `services/goals.ts`, `domain/goals.ts`                                                   | AD-1, AD-6, AD-8                             |
+| Investments (Epic 22)                      | `connectors/prices/`, `services/ledger/trades.ts`, `domain/holdings/`                    | AD-2, AD-5, AD-6, AD-8, AD-22                |
 
 ## Deferred
 

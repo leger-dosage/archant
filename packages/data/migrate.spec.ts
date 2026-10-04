@@ -1640,3 +1640,37 @@ describe("splits", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
+
+describe("transaction attachments", () => {
+	it("holds an allowed type's bytes per transaction, and restricts deleting the transaction", async () => {
+		const before = await migratedBefore("0043");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Boulangerie')`);
+		before.$client.close();
+
+		const database = await migrated();
+		const insertAttachment = (id: string, transactionId: string, contentType: string) =>
+			database.run(
+				sql`insert into transaction_attachments (id, transaction_id, filename, content_type, byte_size, content, created_at) values (${id}, ${transactionId}, 'ticket.png', ${contentType}, 4, ${Buffer.from("%PDF")}, 0)`,
+			);
+
+		await expect(insertAttachment("t1", "e1", "application/pdf")).resolves.toBeDefined();
+		await expect(insertAttachment("t2", "e1", "text/html")).rejects.toThrow();
+		await expect(insertAttachment("t3", "nope", "image/png")).rejects.toThrow();
+		await expect(
+			database.all(sql`select hex(content) as content from transaction_attachments`),
+		).resolves.toEqual([{ content: "25504446" }]);
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('transaction_attachments') where name = 'transaction_attachments_transaction'`,
+			),
+		).resolves.toHaveLength(1);
+		await expect(
+			database.run(sql`delete from transactions where entry_id = 'e1'`),
+		).rejects.toThrow();
+		await database.run(sql`delete from transaction_attachments where id = 't1'`);
+		await database.run(sql`delete from transactions where entry_id = 'e1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});

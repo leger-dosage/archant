@@ -112,3 +112,11 @@ docker compose run --rm --no-deps archant sh -c 'df -h /data && ls -l /data /dat
 ```
 
 Free space on the disk that holds Docker's volumes, then start again with `docker compose up --detach --wait`. The server keeps the five most recent copies, each the size of the database, so leave room for five copies of it. Deleting older copies from `/data/backups` frees space too; keep the most recent one, your way back to the previous release, as [Upgrading](deployment.md#upgrading) explains. A permission error names the same directory: the volume must be writable by the container's user, `node`.
+
+## « Le serveur ne répond pas » when attaching a file
+
+« Ajouter » under « Pièces jointes » sends the file, then a toast says:
+
+> Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.
+
+while the rest of the interface works. The server answers a file it refuses with a message under the list naming the file; this toast means the answer never came from it. A reverse proxy in front refused the upload for its size, with a `413` page of its own, or cut the connection. nginx refuses any body over 1 MB by default, and a receipt or an invoice may be 10 MB. Raise the proxy's limit to 11 MB, as [Behind a reverse proxy](deployment.md#behind-a-reverse-proxy) shows, reload it, then attach the file again.

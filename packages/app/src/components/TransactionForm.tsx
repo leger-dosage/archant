@@ -16,6 +16,7 @@ import { AmountField } from "@/components/AmountField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
+import { TransactionAttachments } from "@/components/TransactionAttachments";
 import { CategoryField, MerchantField, TagsField } from "@/components/TransactionFields";
 import { DuplicateBlock, RecurringBlock, TransferBlock } from "@/components/TransactionLinks";
 import { SplitBlock } from "@/components/TransactionSplit";
@@ -24,9 +25,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SheetFooter } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { useAttachmentCount } from "@/hooks/useAttachments";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
+	useSplit,
 	useUpdateTransaction,
 } from "@/hooks/useTransactions";
 import { ApiError } from "@/lib/api";
@@ -102,6 +105,20 @@ export function TransactionForm({
 		!transaction.pending &&
 		!transaction.excluded &&
 		!duplicate;
+	// What the delete takes with it: its own attachments and, for a split's
+	// parent, its lines'. The lines' lists are read only once it is asked for.
+	const split = useSplit(transaction?.id ?? "", splitParent);
+	const goingIds =
+		transaction === null
+			? []
+			: [transaction.id, ...(split.data?.children.map((line) => line.id) ?? [])];
+	const { count: goingAttachmentCount, loading: countingAttachments } = useAttachmentCount(
+		goingIds,
+		confirmingDelete,
+	);
+	// Confirmed only once the count is known, so the dialog never omits a
+	// receipt that goes; a failed read releases it.
+	const attachmentCountUnknown = countingAttachments || (splitParent && split.isPending);
 	const formRef = useRef<HTMLFormElement>(null);
 	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
 	const form = useForm<TransactionFormInput>({
@@ -374,6 +391,8 @@ export function TransactionForm({
 						/>
 					</div>
 				)}
+
+				{transaction !== null && <TransactionAttachments transaction={transaction} />}
 			</form>
 
 			<SheetFooter className="flex-row items-center justify-between border-t">
@@ -405,17 +424,22 @@ export function TransactionForm({
 					open={confirmingDelete}
 					onOpenChange={setConfirmingDelete}
 					title={t("transactions.delete.title", { label: transaction.label })}
-					description={t(
-						splitParent
-							? "transactions.delete.splitDescription"
-							: "transactions.delete.description",
-						{
-							amount: formatMoney({ amount: transaction.amount, currency: transaction.currency }),
-						},
-					)}
+					description={[
+						t(
+							splitParent
+								? "transactions.delete.splitDescription"
+								: "transactions.delete.description",
+							{
+								amount: formatMoney({ amount: transaction.amount, currency: transaction.currency }),
+							},
+						),
+						...(goingAttachmentCount === 0
+							? []
+							: [t("transactions.delete.attachments", { count: goingAttachmentCount })]),
+					].join(" ")}
 					confirmLabel={t("transactions.delete.action")}
 					destructive
-					pending={deleteTransaction.isPending}
+					pending={deleteTransaction.isPending || attachmentCountUnknown}
 					onConfirm={() => void remove()}
 				/>
 			)}

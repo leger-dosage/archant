@@ -17,6 +17,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { addDays, daysBetween } from "../../domain/dates.ts";
 import { MATCH_WINDOW_DAYS } from "../../domain/keys.ts";
 import { AppError } from "../../lib/errors.ts";
+import { moveAttachments } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { transactionRow } from "./patch.ts";
 import {
@@ -37,7 +38,8 @@ import {
  * connection included, so a later sync or re-import of its line finds the
  * survivor, and reverting that import or disconnecting treats it as a
  * matched entry. Its tags join the survivor's, past the input limit if need
- * be. Its transfer moves only onto a survivor in none; otherwise it goes,
+ * be, and so do its attachments, past their cap: a merge never loses a
+ * receipt. Its transfer moves only onto a survivor in none; otherwise it goes,
  * and the other side is a standard transaction again. Its rejected pairs
  * move, but for those the survivor already holds. Returns the absorbed
  * one's date, where balances move; the caller recomputes them.
@@ -57,6 +59,8 @@ async function absorbEntry(
 			.values(absorbed.tagIds.map((tagId) => ({ transactionId: survivorId, tagId })))
 			.onConflictDoNothing();
 	}
+
+	await moveAttachments(tx, absorbedId, survivorId);
 
 	const survivorInTransfer = await tx
 		.select({ id: transfers.id })

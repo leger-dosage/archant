@@ -38,3 +38,14 @@ export function contentSecurityPolicy(bankApiUrl: string): Policy {
 		frameAncestors: ["'none'"],
 	};
 }
+
+/**
+ * The policy an attachment is served under: the app's, plus `sandbox`. A
+ * file opened in its own tab then runs no script and gets an opaque origin,
+ * so a PDF or an SVG crafted to run one could never reach the session or the
+ * API, even if a type were ever misread. Chromium's PDF viewer still shows
+ * the file under it.
+ */
+export function attachmentContentSecurityPolicy(bankApiUrl: string): Policy {
+	return { ...contentSecurityPolicy(bankApiUrl), sandbox: [] };
+}

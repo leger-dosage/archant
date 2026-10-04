@@ -302,6 +302,13 @@
       "when": 1791049760926,
       "tag": "0042_add_split_parent",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791060716590,
+      "tag": "0043_add_transaction_attachments",
+      "breakpoints": true
     }
   ]
 }

@@ -21,11 +21,15 @@ import { z } from "zod";
 import type { Database } from "@archant/data/client";
 
 import { withForwardedFor } from "./lib/client-address.ts";
-import { contentSecurityPolicy } from "./lib/content-security-policy.ts";
+import {
+	attachmentContentSecurityPolicy,
+	contentSecurityPolicy,
+} from "./lib/content-security-policy.ts";
 import { AppError } from "./lib/errors.ts";
 import { mcpHandler } from "./mcp/server.ts";
 import { accountsRoutes } from "./routes/accounts.ts";
 import { assistantsRoutes } from "./routes/assistants.ts";
+import { attachmentsRoutes } from "./routes/attachments.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
@@ -96,9 +100,13 @@ export type AppDeps = ServiceDeps &
 /**
  * Far above any JSON body the interface sends, such as a rule with many
  * conditions, and small enough that no caller, signed in or not, makes the
- * server hold much. The upload has its own, larger limit.
+ * server hold much. The two uploads, a statement and an attachment, have
+ * their own, larger limits.
  */
 const MAX_BODY_BYTES = 64 * 1024;
+
+/** Where an attachment's bytes are served, under a policy of their own. */
+const ATTACHMENT_FILE = "/api/transactions/:id/attachments/:attachmentId";
 
 const tooLarge = () => {
 	throw new AppError("PAYLOAD_TOO_LARGE", "The request body is larger than 64 KB.");
@@ -235,6 +243,7 @@ function createApi(deps: AppDeps) {
 	return new Hono()
 		.route("/accounts", accountsRoutes(deps))
 		.route("/transactions", transactionsRoutes(deps))
+		.route("/transactions/:id/attachments", attachmentsRoutes(deps))
 		.route("/transfers", transfersRoutes(deps))
 		.route("/budgets", budgetsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
@@ -340,8 +349,22 @@ export function createApp(deps: AppDeps) {
 		// too: a browser ignores it there, and splitting by path buys nothing.
 		.use(
 			"*",
+			except(
+				ATTACHMENT_FILE,
+				secureHeaders({
+					contentSecurityPolicy: contentSecurityPolicy(deps.bankApiUrl),
+					xFrameOptions: "DENY",
+				}),
+			),
+		)
+		// An attachment is a file anyone could have crafted: sandboxed, it runs
+		// no script and gets an opaque origin, even opened in a tab of its own.
+		// Excepted above, since `secureHeaders` overwrites the headers of
+		// whatever ran inside it.
+		.use(
+			ATTACHMENT_FILE,
 			secureHeaders({
-				contentSecurityPolicy: contentSecurityPolicy(deps.bankApiUrl),
+				contentSecurityPolicy: attachmentContentSecurityPolicy(deps.bankApiUrl),
 				xFrameOptions: "DENY",
 			}),
 		)
@@ -350,7 +373,7 @@ export function createApp(deps: AppDeps) {
 		.use(
 			"/api/*",
 			except(
-				"/api/accounts/:id/imports",
+				["/api/accounts/:id/imports", "/api/transactions/:id/attachments"],
 				bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }),
 			),
 		)

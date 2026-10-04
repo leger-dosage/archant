@@ -37,6 +37,7 @@ const ENTRIES = [
 	"categories.csv",
 	"merchants.csv",
 	"rules.csv",
+	"attachments.json",
 	"all.ndjson",
 ];
 
@@ -334,6 +335,9 @@ describe("exportArchive", () => {
 		expect(archive.text["rules.csv"]).toBe(
 			"name,resource_type,active,effective_date,conditions,actions\n",
 		);
+		expect(archive.text["attachments.json"]).toBe(
+			'{"version":1,"binary_included":false,"attachments":[]}',
+		);
 		expect(archive.csv("categories.csv")).toHaveLength(DEFAULT_CATEGORIES.length + 1);
 		expect(archive.csv("categories.csv")[0]).toEqual([
 			"name",
@@ -474,6 +478,87 @@ describe("exportArchive", () => {
 		const tags = archive.csv("transactions.csv").find((row) => row[3] === "CB BOULANGERIE")?.[5];
 
 		expect(tags?.split(/(?<!\\),/u).toSorted()).toEqual(["A\\\\B\\|C", "Voyage\\, été"]);
+	});
+
+	it("lists every attachment in attachments.json as Sure's manifest, without its bytes", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		const first = await postOwn(checking.id, {
+			date: "2026-09-09",
+			label: "Pharmacie",
+			amount: "-12,00",
+		});
+		const second = await postOwn(checking.id, {
+			date: "2026-09-10",
+			label: "Garage",
+			amount: "-300,00",
+		});
+		const attach = async (transactionId: string, name: string, bytes: Uint8Array<ArrayBuffer>) => {
+			const form = new FormData();
+			form.append("file", new File([bytes], name));
+			const response = await buildApp(database()).request(
+				`/api/transactions/${transactionId}/attachments`,
+				{ method: "POST", body: form },
+			);
+
+			expect(response.status).toBe(201);
+		};
+		const pdf = new TextEncoder().encode("%PDF-1.7 SECRET-CONTENT");
+		await attach(second, "facture.pdf", pdf);
+		await attach(second, "avoir.pdf", pdf);
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		await attach(first, "ordonnance.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10]));
+		const ids = await database().all<{ id: string; filename: string }>(
+			sql`select id, filename from transaction_attachments`,
+		);
+		const idOf = (filename: string) => ids.find((row) => row.filename === filename)?.id;
+		const ofSecond = (filename: string) => ({
+			id: idOf(filename),
+			record_type: "Transaction",
+			record_id: second,
+			name: "attachments",
+			filename,
+			content_type: "application/pdf",
+			byte_size: pdf.byteLength,
+			checksum: null,
+			binary_included: false,
+			created_at: "2026-09-21T10:00:00.000Z",
+			entry_id: second,
+			account_id: checking.id,
+		});
+
+		const archive = await exported();
+		const manifest = archive.text["attachments.json"] ?? "";
+
+		expect(manifest).not.toContain("\n");
+		expect(manifest).not.toContain("SECRET");
+		// By transaction, then by name.
+		const [before, after] = [first, second].toSorted();
+		const manifestOf = (transactionId: string | undefined) =>
+			transactionId === first
+				? [
+						{
+							id: idOf("ordonnance.png"),
+							record_type: "Transaction",
+							record_id: first,
+							name: "attachments",
+							filename: "ordonnance.png",
+							content_type: "image/png",
+							byte_size: 8,
+							checksum: null,
+							binary_included: false,
+							created_at: "2026-09-21T10:00:01.000Z",
+							entry_id: first,
+							account_id: checking.id,
+						},
+					]
+				: [ofSecond("avoir.pdf"), ofSecond("facture.pdf")];
+
+		expect(JSON.parse(manifest)).toEqual({
+			version: 1,
+			binary_included: false,
+			attachments: [...manifestOf(before), ...manifestOf(after)],
+		});
 	});
 
 	it("lists a split's lines in transactions.csv, and nests them under their parent in all.ndjson", async () => {

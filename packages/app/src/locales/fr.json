@@ -276,7 +276,9 @@
 			"action": "Supprimer",
 			"title": "Supprimer l'opération « {{label}} » ?",
 			"description": "L'opération de {{amount}} sera supprimée définitivement, et le solde du compte recalculé sans elle.",
-			"splitDescription": "L'opération de {{amount}} et les lignes de sa division seront supprimées définitivement, et le solde du compte recalculé sans elles."
+			"splitDescription": "L'opération de {{amount}} et les lignes de sa division seront supprimées définitivement, et le solde du compte recalculé sans elles.",
+			"attachments_one": "{{count}} pièce jointe sera supprimée aussi.",
+			"attachments_other": "{{count}} pièces jointes seront supprimées aussi."
 		},
 		"discard": {
 			"title": "Abandonner les modifications ?",
@@ -395,8 +397,25 @@
 			"undo": "Annuler la division",
 			"undoTitle": "Annuler la division ?",
 			"undoDescription": "Les lignes de la division seront supprimées, et « {{label}} » de {{amount}} sera de nouveau comptée.",
+			"undoAttachments_one": "La pièce jointe de ses lignes sera supprimée aussi.",
+			"undoAttachments_other": "Les {{count}} pièces jointes de ses lignes seront supprimées aussi.",
 			"keep": "Garder la division",
 			"undone": "Division annulée"
+		},
+		"attachments": {
+			"section": "Pièces jointes",
+			"empty": "Aucune pièce jointe. Joignez un ticket ou une facture : image ou PDF, 10 Mo au plus.",
+			"list": "Pièces jointes de « {{label}} »",
+			"add": "Ajouter",
+			"uploading": "Envoi…",
+			"input": "Fichiers à joindre",
+			"full": "Supprimez une pièce jointe pour en ajouter une autre.",
+			"remove": "Supprimer « {{name}} »",
+			"removeAction": "Supprimer",
+			"removeTitle": "Supprimer la pièce jointe ?",
+			"removeDescription": "« {{name}} » sera supprimée définitivement.",
+			"refused": "« {{name}} » : {{message}}",
+			"pending": "Opération en attente : si la banque ne la confirme pas, elle sera supprimée avec ses pièces jointes."
 		}
 	},
 	"operations": {
@@ -1534,7 +1553,10 @@
 			"not_positive": "Le montant doit être supérieur à zéro.",
 			"insufficient_funds": "Cette catégorie ne peut pas donner autant.",
 			"same_category": "Choisissez une autre catégorie que la source.",
-			"parent_child": "Impossible entre une catégorie et sa sous-catégorie."
+			"parent_child": "Impossible entre une catégorie et sa sous-catégorie.",
+			"attachment_too_large": "Ce fichier dépasse 10 Mo.",
+			"attachment_limit": "Une opération compte 10 pièces jointes au plus.",
+			"attachment_type": "Seules les images JPEG, PNG, GIF ou WebP et les PDF sont acceptés."
 		}
 	}
 }

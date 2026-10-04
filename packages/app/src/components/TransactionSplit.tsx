@@ -12,6 +12,7 @@ import { Money } from "@/components/Money";
 import { SplitDialog } from "@/components/SplitDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAttachmentCount } from "@/hooks/useAttachments";
 import { useCategoryShown } from "@/hooks/useCategories";
 import { useSplit, useUnsplitTransaction } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
@@ -55,6 +56,12 @@ function SplitActions({
 	const [editing, setEditing] = useState(false);
 	const [confirming, setConfirming] = useState(false);
 	const { parent } = split;
+	// Undoing deletes the lines with their receipts, as Sure's purge: the
+	// confirmation says how many, read when it opens.
+	const lineAttachments = useAttachmentCount(
+		split.children.map((line) => line.id),
+		confirming,
+	);
 
 	const undo = () =>
 		unsplit.mutate(parent.id, {
@@ -94,14 +101,19 @@ function SplitActions({
 				open={confirming}
 				onOpenChange={setConfirming}
 				title={t("transactions.split.undoTitle")}
-				description={t("transactions.split.undoDescription", {
-					label: parent.label,
-					amount: formatMoney({ amount: parent.amount, currency: parent.currency }),
-				})}
+				description={[
+					t("transactions.split.undoDescription", {
+						label: parent.label,
+						amount: formatMoney({ amount: parent.amount, currency: parent.currency }),
+					}),
+					...(lineAttachments.count === 0
+						? []
+						: [t("transactions.split.undoAttachments", { count: lineAttachments.count })]),
+				].join(" ")}
 				confirmLabel={t("transactions.split.undo")}
 				cancelLabel={t("transactions.split.keep")}
 				destructive
-				pending={unsplit.isPending}
+				pending={unsplit.isPending || lineAttachments.loading}
 				onConfirm={undo}
 			/>
 		</div>

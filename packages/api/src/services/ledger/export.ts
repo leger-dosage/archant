@@ -14,6 +14,7 @@ import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
 import { taggings } from "@archant/data/schema/taggings";
 import { tags } from "@archant/data/schema/tags";
+import { transactionAttachments } from "@archant/data/schema/transaction-attachments";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
@@ -114,6 +115,14 @@ export const EXPORTED_COLUMNS = {
 	taggings: {
 		transactionId: taggings.transactionId,
 		tagId: taggings.tagId,
+	},
+	transaction_attachments: {
+		id: transactionAttachments.id,
+		transactionId: transactionAttachments.transactionId,
+		filename: transactionAttachments.filename,
+		contentType: transactionAttachments.contentType,
+		byteSize: transactionAttachments.byteSize,
+		createdAt: transactionAttachments.createdAt,
 	},
 	transfers: {
 		id: transfers.id,
@@ -221,6 +230,10 @@ export const LEFT_OUT = {
 			"A rule's « Virement avec » waiting for its other side, read once by the next matching.",
 		pendingMissedOn: "Sync bookkeeping for a pending line, recounted by the next sync.",
 		pendingMissedSyncs: "Sync bookkeeping for a pending line, recounted by the next sync.",
+	},
+	transaction_attachments: {
+		content:
+			"The file itself: the archive lists each attachment, as Sure's manifest does, without its bytes.",
 	},
 	two_factors: SECRETS,
 	users: SECRETS,
@@ -508,4 +521,20 @@ export async function exportedRules(db: Reader) {
 		conditions: conditionRows.filter((condition) => condition.ruleId === rule.id),
 		actions: actionRows.filter((action) => action.ruleId === rule.id),
 	}));
+}
+
+/**
+ * Every attachment, without its bytes, with its transaction's account, by
+ * transaction, name and id, as Sure's manifest sorts them.
+ */
+export function exportedAttachments(db: Reader) {
+	return db
+		.select({ ...EXPORTED_COLUMNS.transaction_attachments, accountId: entries.accountId })
+		.from(transactionAttachments)
+		.innerJoin(entries, eq(entries.id, transactionAttachments.transactionId))
+		.orderBy(
+			asc(transactionAttachments.transactionId),
+			asc(transactionAttachments.filename),
+			asc(transactionAttachments.id),
+		);
 }

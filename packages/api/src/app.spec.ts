@@ -337,15 +337,19 @@ describe("the body limit", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("VALIDATION_ERROR");
 	});
 
-	it.each(["/api/auth/sign-in/email", "/api/setup", "/api/mcp", "/api/auth/oauth2/token"])(
-		"refuses a body over 64 KB on %s",
-		async (path) => {
-			const response = await postBody(buildTestApp(temp.db), path, jsonOfSize(64 * 1024 + 1));
+	it.each([
+		"/api/auth/sign-in/email",
+		"/api/setup",
+		"/api/mcp",
+		"/api/auth/oauth2/token",
+		// Only the upload itself takes a file's size.
+		"/api/transactions/t1/attachments/a1",
+	])("refuses a body over 64 KB on %s", async (path) => {
+		const response = await postBody(buildTestApp(temp.db), path, jsonOfSize(64 * 1024 + 1));
 
-			expect(response.status).toBe(413);
-			expect(errorBody.parse(await response.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
-		},
-	);
+		expect(response.status).toBe(413);
+		expect(errorBody.parse(await response.json()).error.code).toBe("PAYLOAD_TOO_LARGE");
+	});
 
 	it("refuses a declared length over 64 KB without reading the body", async () => {
 		const { stream, read } = chunkedBody(1024, 100);

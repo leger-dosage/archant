@@ -15,6 +15,7 @@ import type { rejectedTransfers } from "./schema/rejected-transfers.ts";
 import type { ruleActions, ruleConditions, ruleRuns, rules } from "./schema/rules.ts";
 import type { taggings } from "./schema/taggings.ts";
 import type { tags } from "./schema/tags.ts";
+import type { transactionAttachments } from "./schema/transaction-attachments.ts";
 import type { transactions } from "./schema/transactions.ts";
 import type { transfers } from "./schema/transfers.ts";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
@@ -60,6 +61,9 @@ export type NewTag = InferInsertModel<typeof tags>;
 
 export type Tagging = InferSelectModel<typeof taggings>;
 export type NewTagging = InferInsertModel<typeof taggings>;
+
+export type TransactionAttachment = InferSelectModel<typeof transactionAttachments>;
+export type NewTransactionAttachment = InferInsertModel<typeof transactionAttachments>;
 
 export type Transfer = InferSelectModel<typeof transfers>;
 export type NewTransfer = InferInsertModel<typeof transfers>;
