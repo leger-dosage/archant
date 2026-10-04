@@ -7,6 +7,7 @@ import type { budgetCategories, budgets } from "./schema/budgets.ts";
 import type { categories } from "./schema/categories.ts";
 import type { entries } from "./schema/entries.ts";
 import type { deletedEntryKeys, entryKeys } from "./schema/entry-keys.ts";
+import type { goalAccounts, goals } from "./schema/goals.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
 import type { invitations } from "./schema/invitations.ts";
@@ -101,3 +102,9 @@ export type NewBudget = InferInsertModel<typeof budgets>;
 
 export type BudgetCategory = InferSelectModel<typeof budgetCategories>;
 export type NewBudgetCategory = InferInsertModel<typeof budgetCategories>;
+
+export type Goal = InferSelectModel<typeof goals>;
+export type NewGoal = InferInsertModel<typeof goals>;
+
+export type GoalAccount = InferSelectModel<typeof goalAccounts>;
+export type NewGoalAccount = InferInsertModel<typeof goalAccounts>;

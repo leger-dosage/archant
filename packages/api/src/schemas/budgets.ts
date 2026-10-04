@@ -26,7 +26,7 @@ function plannedAmount(currency: CurrencyCode) {
  * Reads typed text as minor units of `currency`, refusing what is unreadable
  * or negative; zero too when `positive`, as money moved must be some.
  */
-function amountIn(currency: CurrencyCode, positive = false) {
+export function amountIn(currency: CurrencyCode, positive = false) {
 	return (text: string, context: z.RefinementCtx) => {
 		const amount = parseAmount(text, currency);
 

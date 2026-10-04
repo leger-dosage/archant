@@ -21,7 +21,8 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { described, errorAt, errorId, newAction } from "@/lib/rule-form";
+import { errorAt } from "@/lib/form-errors";
+import { described, errorId, newAction } from "@/lib/rule-form";
 import { cn } from "@/lib/utils";
 
 const PATTERN_GUIDE =

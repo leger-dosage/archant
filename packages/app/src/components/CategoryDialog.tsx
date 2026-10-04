@@ -8,14 +8,14 @@ import { toast } from "sonner";
 
 import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
-import type { CategoryColor } from "@archant/data/category-presets";
-import { CATEGORY_COLORS, CATEGORY_ICONS, newCategory } from "@archant/data/category-presets";
+import { newCategory } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
 import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 import { ChoiceField } from "@/components/ChoiceField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { TintedIcon } from "@/components/TintedIcon";
+import { ColorPicker, IconPicker } from "@/components/TintPickers";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -29,7 +29,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateCategory, useUpdateCategory } from "@/hooks/useCategories";
 import { ApiError } from "@/lib/api";
-import { CATEGORY_ICON_COMPONENTS } from "@/lib/category-icons";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
@@ -48,10 +47,6 @@ const valuesOf = (category: CategoryData): CreateCategoryInput => ({
 
 const blank = (kind: CategoryKind | undefined): CreateCategoryInput =>
 	kind === undefined ? newCategory() : { ...newCategory(), kind };
-
-function isSwatch(color: string): color is CategoryColor {
-	return CATEGORY_COLORS.some((swatch) => swatch === color);
-}
 
 type CategoryDialogProps = {
 	open: boolean;
@@ -94,11 +89,6 @@ export function CategoryDialog({
 	const parents = categories.filter(
 		(other) => other.parentId === null && other.id !== category?.id,
 	);
-	// A default carries one of Sure's own colours, outside the swatches; it
-	// stays offered so an edit does not force a new one.
-	const colors: string[] = isSwatch(color.field.value)
-		? [...CATEGORY_COLORS]
-		: [color.field.value, ...CATEGORY_COLORS];
 	// A child shows in its parent's colour, as the API stores it.
 	const previewColor =
 		parents.find((parent) => parent.id === parentId.field.value)?.color ?? color.field.value;
@@ -210,70 +200,23 @@ export function CategoryDialog({
 								onChange={kind.field.onChange}
 							/>
 
-							<fieldset className="flex flex-col gap-1.5" {...describedBy("color")}>
-								<legend className="mb-1.5 text-sm font-medium">{t("categories.form.color")}</legend>
-								<div className="flex flex-wrap gap-2">
-									{colors.map((swatch) => (
-										<label key={swatch} className="relative cursor-pointer">
-											<input
-												type="radio"
-												name="category-color"
-												value={swatch}
-												checked={color.field.value === swatch}
-												onChange={() => color.field.onChange(swatch)}
-												className="peer sr-only"
-											/>
-											<span
-												aria-hidden="true"
-												className="block size-7 rounded-full ring-offset-2 ring-offset-background peer-checked:ring-2 peer-checked:ring-foreground peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ring"
-												style={{ backgroundColor: swatch }}
-											/>
-											<span className="sr-only">
-												{isSwatch(swatch)
-													? t(`categories.colors.${swatch}`)
-													: t("categories.form.currentColor")}
-											</span>
-										</label>
-									))}
-								</div>
-								<FieldMessage id="category-color-error" error={errors.color} />
-							</fieldset>
+							<ColorPicker
+								form="category"
+								legend={t("categories.form.color")}
+								value={color.field.value}
+								onChange={color.field.onChange}
+								error={errors.color}
+							/>
 						</>
 					)}
 
-					<fieldset className="flex flex-col gap-1.5" {...describedBy("icon")}>
-						<legend className="mb-1.5 text-sm font-medium">{t("categories.form.icon")}</legend>
-						<div className="flex flex-wrap gap-1">
-							{CATEGORY_ICONS.map((name) => {
-								const Icon = CATEGORY_ICON_COMPONENTS[name];
-
-								return (
-									<label
-										key={name}
-										className="relative cursor-pointer"
-										title={t(`categories.icons.${name}`)}
-									>
-										<input
-											type="radio"
-											name="category-icon"
-											value={name}
-											checked={icon.field.value === name}
-											onChange={() => icon.field.onChange(name)}
-											className="peer sr-only"
-										/>
-										<span
-											aria-hidden="true"
-											className="flex size-8 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:bg-accent peer-checked:border-foreground peer-checked:text-foreground peer-focus-visible:outline-2 peer-focus-visible:outline-ring"
-										>
-											<Icon className="size-4" />
-										</span>
-										<span className="sr-only">{t(`categories.icons.${name}`)}</span>
-									</label>
-								);
-							})}
-						</div>
-						<FieldMessage id="category-icon-error" error={errors.icon} />
-					</fieldset>
+					<IconPicker
+						form="category"
+						legend={t("categories.form.icon")}
+						value={icon.field.value}
+						onChange={icon.field.onChange}
+						error={errors.icon}
+					/>
 				</form>
 				<DialogFooter>
 					<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

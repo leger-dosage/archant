@@ -26,6 +26,8 @@ import {
 	exportedBudgetCategories,
 	exportedBudgets,
 	exportedCategories,
+	exportedGoalAccounts,
+	exportedGoals,
 	exportedMerchants,
 	exportedRecurring,
 	exportedRejectedTransfers,
@@ -925,6 +927,54 @@ async function budgetLines(deps: ServiceDeps): Promise<Line[]> {
 type Part = readonly [name: string, chunks: () => AsyncIterable<string>];
 
 /**
+ * `goals.ndjson`: each goal and each of its links, in Sure's column names
+ * and as `all.ndjson` writes its lines, amounts as decimals. Apart from
+ * `all.ndjson`, because Sure's exporter writes no goal and
+ * `SureImport::Preflight` refuses a type it does not know (AD-23). A link
+ * has no id or timestamps of its own: the goal and the account name it.
+ */
+async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
+	const [goalRows, links] = await Promise.all([
+		exportedGoals(deps.db),
+		exportedGoalAccounts(deps.db),
+	]);
+
+	yield ndjson(
+		[
+			...goalRows.map((goal) => ({
+				type: "Goal",
+				data: {
+					id: goal.id,
+					name: goal.name,
+					target_amount: decimal(toMinorUnits(goal.targetAmount), goal.currency),
+					currency: goal.currency,
+					target_date: goal.targetDate,
+					color: goal.color,
+					icon: goal.icon,
+					notes: goal.notes,
+					state: goal.state,
+					kind: goal.kind,
+					created_at: timestamp(goal.createdAt),
+					updated_at: timestamp(goal.updatedAt),
+				},
+			})),
+			...links.map((link) => ({
+				type: "GoalAccount",
+				data: {
+					goal_id: link.goalId,
+					account_id: link.accountId,
+					allocated_amount:
+						link.allocatedAmount === null
+							? null
+							: decimal(toMinorUnits(link.allocatedAmount), link.currency),
+				},
+			})),
+		],
+		counts,
+	);
+}
+
+/**
  * `attachments.json`, Sure's `generate_attachments_manifest`: one line of
  * JSON listing every attachment without its bytes, which never leave. The
  * entry is the transaction, so `record_id` and `entry_id` are both its id.
@@ -958,7 +1008,10 @@ async function* version() {
 	yield `export_version: ${EXPORT_VERSION}\n`;
 }
 
-/** The archive's entries, in the order of Sure's, without what Archant has not built yet. */
+/**
+ * The archive's entries, in the order of Sure's, without what Archant has not
+ * built yet, then what Sure's export has no file for.
+ */
 function partsOf(deps: ServiceDeps, counts: Counts): Part[] {
 	const readers = readersOf(deps);
 
@@ -971,6 +1024,7 @@ function partsOf(deps: ServiceDeps, counts: Counts): Part[] {
 		["rules.csv", () => rulesCsv(readers)],
 		["attachments.json", () => attachmentsJson(deps)],
 		["all.ndjson", () => allNdjson(deps, readers, counts)],
+		["goals.ndjson", () => goalsNdjson(deps, counts)],
 	];
 }
 

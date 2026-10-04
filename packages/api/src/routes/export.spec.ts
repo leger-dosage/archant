@@ -42,6 +42,7 @@ describe("GET /api/export", () => {
 			"rules.csv",
 			"attachments.json",
 			"all.ndjson",
+			"goals.ndjson",
 		]);
 		expect(strFromU8(files["transactions.csv"] ?? new Uint8Array())).toContain(
 			"2026-09-10,Compte joint,4.20,Boulangerie,,,,EUR",

@@ -3,9 +3,7 @@ import type { MerchantData } from "@/hooks/useMerchants";
 import type { RuleData } from "@/hooks/useRules";
 import type { TagData } from "@/hooks/useTags";
 import type { ShownError } from "@/lib/form-errors";
-import type { FieldErrors, Path } from "react-hook-form";
-
-import { get } from "react-hook-form";
+import type { Path } from "react-hook-form";
 
 import type { RuleFormInput } from "@archant/api/schemas/rules";
 import type { CurrencyCode } from "@archant/data/money";
@@ -122,27 +120,6 @@ export function fieldNames(values: FormValues): Path<FormValues>[] {
 	}
 
 	return names;
-}
-
-function isShownError(value: unknown): value is ShownError {
-	return (
-		typeof value === "object" && value !== null && "type" in value && typeof value.type === "string"
-	);
-}
-
-/**
- * The error on `path` itself. An array's own error sits on `root` when the
- * resolver reports it on a non-empty list, on the array otherwise.
- */
-export function errorAt(errors: FieldErrors<FormValues>, path: string): ShownError | undefined {
-	const found: unknown = get(errors, path);
-	const root: unknown = get(errors, `${path}.root`);
-
-	if (isShownError(root)) {
-		return root;
-	}
-
-	return isShownError(found) ? found : undefined;
 }
 
 export const errorId = (path: string) => `rule-${path.replaceAll(".", "-")}-error`;

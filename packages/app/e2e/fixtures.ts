@@ -424,6 +424,32 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		/**
+		 * Creates a goal, as « Nouvel objectif » does; each link takes the
+		 * whole balance unless it names an amount, typed as in the form.
+		 */
+		async createGoal(input: {
+			name?: string;
+			targetAmount: string;
+			targetDate?: string | null;
+			accounts: { accountId: string; allocatedAmount?: string }[];
+		}): Promise<Created> {
+			const name = input.name ?? uniqueName("Objectif");
+			const response = await request.post("/api/goals", {
+				data: {
+					name,
+					targetAmount: input.targetAmount,
+					targetDate: input.targetDate ?? null,
+					color: "#27a644",
+					icon: "piggy-bank",
+					notes: null,
+					accounts: input.accounts.map((link) => ({ allocatedAmount: "", ...link })),
+				},
+			});
+
+			return { id: await created(response), name };
+		},
+
 		/** Follows a transaction as a confirmed series, as the sheet's « Récurrence » button does. */
 		async addRecurring(entryId: string): Promise<string> {
 			return created(await request.post("/api/recurring", { data: { entryId } }));

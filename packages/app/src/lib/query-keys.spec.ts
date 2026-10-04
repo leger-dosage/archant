@@ -149,3 +149,24 @@ describe("queryKeys.recurring.ofEntry", () => {
 		expect(client.getQueryState(series)?.isInvalidated).toBe(true);
 	});
 });
+
+describe("queryKeys.accounts.goals", () => {
+	it("goes stale on every write that moves a balance, and on a goal's own write", async () => {
+		const client = new QueryClient();
+		const list = queryKeys.accounts.goals;
+		const one = queryKeys.accounts.goal("g");
+		client.setQueryData(list, []);
+		client.setQueryData(one, {});
+
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.all });
+
+		expect(client.getQueryState(list)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(one)?.isInvalidated).toBe(true);
+
+		client.setQueryData(list, []);
+		client.setQueryData(one, {});
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.goals });
+
+		expect(client.getQueryState(one)?.isInvalidated).toBe(true);
+	});
+});

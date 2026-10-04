@@ -32,6 +32,13 @@ export const queryKeys = {
 		 * invalidates `all`, so the dashboard follows with no change to them.
 		 */
 		netWorth: (period: BalancePeriod) => ["accounts", "net-worth", period] as const,
+		/**
+		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
+		 * balances, so every write that moves one refreshes it with no change
+		 * to the mutations. A goal's own write invalidates `goals`.
+		 */
+		goals: ["accounts", "goals"] as const,
+		goal: (id: string) => ["accounts", "goals", id] as const,
 	},
 	/** The whole category list, one query: a household keeps a few dozen. */
 	categories: {

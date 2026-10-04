@@ -6,6 +6,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarIcon,
 	FunnelIcon,
+	GoalIcon,
 	LayoutDashboardIcon,
 	MenuIcon,
 	PiggyBankIcon,
@@ -59,6 +60,7 @@ const DESTINATIONS = [
 	{ to: "/transactions", label: "nav.operations", icon: ReceiptIcon, exact: false },
 	{ to: "/accounts", label: "nav.accounts", icon: WalletIcon, exact: true },
 	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false },
+	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false },
 	{ to: "/recurring", label: "nav.recurring", icon: CalendarIcon, exact: false },
 	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false },
 	{ to: "/settings", label: "nav.settings", icon: SettingsIcon, exact: false },

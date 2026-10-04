@@ -21,7 +21,8 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { LEAF_TYPES, described, errorAt, errorId, newLeaf } from "@/lib/rule-form";
+import { errorAt } from "@/lib/form-errors";
+import { LEAF_TYPES, described, errorId, newLeaf } from "@/lib/rule-form";
 import { operatorKey } from "@/lib/rule-summary";
 
 /** One condition on a label, an amount, an account, a merchant, a category, a tag, notes or a type. */

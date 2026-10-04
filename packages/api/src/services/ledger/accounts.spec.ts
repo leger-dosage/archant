@@ -7,6 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
+import { goalAccounts, goals } from "@archant/data/schema/goals";
 import { imports } from "@archant/data/schema/imports";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -223,6 +224,32 @@ describe("deleteAccount", () => {
 
 		await expect(rowsOf(temp.db, account.id)).resolves.toMatchObject({ transactions: 0 });
 		await expect(tagsOf(food)).resolves.toEqual([]);
+	});
+
+	it("removes the account's goal links, keeping the goal and its other account", async () => {
+		const account = await openChecking({ name: "Livret A", subtype: "savings" });
+		const other = await openChecking({ name: "LDDS", subtype: "savings" });
+		await temp.db.insert(goals).values({
+			id: "goal-1",
+			name: "Vacances",
+			targetAmount: 100_000,
+			currency: "EUR",
+			color: "#27a644",
+			icon: "piggy-bank",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		await temp.db.insert(goalAccounts).values([
+			{ goalId: "goal-1", accountId: account.id, allocatedAmount: null },
+			{ goalId: "goal-1", accountId: other.id, allocatedAmount: 20_000 },
+		]);
+
+		await deleteAccount(deps(), account.id, { origin: "user" });
+
+		await expect(temp.db.select().from(goalAccounts)).resolves.toEqual([
+			{ goalId: "goal-1", accountId: other.id, allocatedAmount: 20_000 },
+		]);
+		await expect(temp.db.select({ id: goals.id }).from(goals)).resolves.toEqual([{ id: "goal-1" }]);
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {

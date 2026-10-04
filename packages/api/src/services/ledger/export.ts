@@ -8,6 +8,7 @@ import { balances } from "@archant/data/schema/balances";
 import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
+import { goalAccounts, goals } from "@archant/data/schema/goals";
 import { merchants } from "@archant/data/schema/merchants";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -154,6 +155,25 @@ export const EXPORTED_COLUMNS = {
 		rolloverEnabled: budgetCategories.rolloverEnabled,
 		createdAt: budgetCategories.createdAt,
 		updatedAt: budgetCategories.updatedAt,
+	},
+	goals: {
+		id: goals.id,
+		name: goals.name,
+		targetAmount: goals.targetAmount,
+		currency: goals.currency,
+		targetDate: goals.targetDate,
+		color: goals.color,
+		icon: goals.icon,
+		notes: goals.notes,
+		state: goals.state,
+		kind: goals.kind,
+		createdAt: goals.createdAt,
+		updatedAt: goals.updatedAt,
+	},
+	goal_accounts: {
+		goalId: goalAccounts.goalId,
+		accountId: goalAccounts.accountId,
+		allocatedAmount: goalAccounts.allocatedAmount,
 	},
 	rules: {
 		id: rules.id,
@@ -501,6 +521,19 @@ export function exportedBudgetCategories(db: Reader) {
 		.from(budgetCategories)
 		.innerJoin(budgets, eq(budgets.id, budgetCategories.budgetId))
 		.orderBy(asc(budgets.month), asc(budgetCategories.createdAt), asc(budgetCategories.id));
+}
+
+export function exportedGoals(db: Reader) {
+	return db.select(EXPORTED_COLUMNS.goals).from(goals).orderBy(asc(goals.createdAt), asc(goals.id));
+}
+
+/** Every goal's links, with that goal's currency, by goal then account. */
+export function exportedGoalAccounts(db: Reader) {
+	return db
+		.select({ ...EXPORTED_COLUMNS.goal_accounts, currency: EXPORTED_COLUMNS.goals.currency })
+		.from(goalAccounts)
+		.innerJoin(goals, eq(goals.id, goalAccounts.goalId))
+		.orderBy(asc(goals.createdAt), asc(goalAccounts.goalId), asc(goalAccounts.accountId));
 }
 
 /** Every rule in application order, with its conditions and actions in the form's order. */
