@@ -186,6 +186,10 @@ FR92: The system computes a loan's amortisation schedule, constant payments re-s
 FR93: The user sees a loan's overview: amount borrowed and owed, rate and payment in force, term, original payoff date, total cost with insurance, leverage against the down payment, the share repaid, and the current instalment split into principal, interest and insurance.
 FR94: The system projects a loan's payoff from its recorded balance at the contracted payments, and the user sees the recorded balance, the contract's schedule and the projection on one chart, with the months and interest saved or the amount left unpaid at maturity.
 
+#### Bank history
+
+FR95: When linking a bank's accounts, the user chooses the date the first sync reads from, up to two years back, three months by default.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
@@ -339,8 +343,9 @@ FR91: Epic 24 - A loan's terms as Sure records them
 FR92: Epic 24 - Amortisation schedule and insurance
 FR93: Epic 24 - Loan overview
 FR94: Epic 24 - Payoff projection and the loan chart
+FR95: Epic 25 - Start date of the first sync
 
-Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41. Epic 24, asked by the owner on 2026-10-03 to catch up with Sure's loans, adds FR91 to FR94 and revises FR9.
+Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41. Epic 24, asked by the owner on 2026-10-03 to catch up with Sure's loans, adds FR91 to FR94 and revises FR9. Epic 25, asked by the owner on 2026-10-03 after a first sync stopped at three months, adds FR95.
 
 ## Epic List
 
@@ -463,6 +468,11 @@ Archant finds and follows recurring payments as Sure does today: amounts that mo
 
 A loan account knows its contract, as in Sure: what was borrowed, when, for how long, at which rates and with which insurance; it shows its amortisation schedule, an overview of what is repaid and what each instalment pays, and where the recorded balance is heading against the contract.
 **FRs covered:** FR91, FR92, FR93, FR94; revises FR9
+
+### Epic 25: Choose how far back a bank's history goes
+
+When the owner links a bank's accounts, they choose the date the first sync reads from, as in Sure, instead of a fixed three months.
+**FRs covered:** FR95
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -4535,3 +4545,49 @@ So that I know whether an early repayment shortens my loan and by how much.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
+## Epic 25: Choose how far back a bank's history goes
+
+On 2026-10-03 the owner found that their BoursoBank history stopped three months back: `FIRST_WINDOW_DAYS` in `services/sync.ts` reads 90 days for an account never synced. Sure asks for a start date on its account setup screen (`enable_banking_items/setup_accounts.html.erb`, `sync_start_date` on `EnableBankingItem`), from two years back to today, three months by default, and `EnableBankingItem::Importer#determine_sync_start_date` reads from it on an account's first sync only; later syncs start from the last one minus seven days. Sure was read on `origin/main` at `14638a701` (2 October 2026).
+
+How far back a bank answers is the bank's choice: PSD2 guarantees 90 days, and a bank may return less than asked, or nothing older. The date is a request, not a promise, as in Sure.
+
+Departures, each forced by a decision already taken:
+
+- The date belongs to the connection, as Sure's, but the first window stays per bank account (Spec 10.3): an account linked later on the same connection reads from the same date.
+- An account already synced keeps its window: like Sure, changing the date never re-reads older history. The owner's existing accounts get their past from a file import, which recognises lines a sync already brought (AD-7).
+
+### Story 25.1: Choose the start date of the first sync
+
+As the household's administrator,
+I want to choose how far back my bank's first sync reads,
+So that Archant starts with the history I need, when my bank provides it.
+
+**Requirements:** FR95, NFR1
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `bank_connections` gains a nullable `sync_start_date` (`YYYY-MM-DD`), as Sure's `enable_banking_items.sync_start_date`
+
+**Given** a connection's accounts page, before any of its accounts is linked
+**When** it opens
+**Then** « Synchroniser l'historique depuis le » offers a date, three months before today by default, between two years back and today, with a sentence saying the bank may provide less; saving the links saves the date, and a date outside the range answers `VALIDATION_ERROR` with its field
+
+**Given** a bank account that never synced
+**When** its first sync runs
+**Then** its window starts on the connection's `sync_start_date`, or 90 days back when none is set, and never after its oldest pending entry, as `windowStart` does today
+
+**Given** a bank account that synced before
+**When** the date changes or a sync runs
+**Then** its window stays its last sync minus seven days, as Sure's
+
+**Given** a bank that returns nothing older than it allows
+**When** the first sync ends
+**Then** the account holds what the bank returned and no error is shown, as in Sure
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** every acceptance criterion above has an automated test: Playwright for what the interface shows, Vitest for the rest
+
