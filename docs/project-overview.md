@@ -14,7 +14,7 @@ For one household that is the wrong shape. Archant keeps the domain modelling, w
 
 Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. The ten epics of `_bmad-output/planning-artifacts/epics.md` have shipped:
 
-- Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment (valued by snapshots, without holdings), property and vehicle accounts
+- Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment (valued by snapshots, trades and holdings at daily prices), property and vehicle accounts
 - Transaction import from CSV, QIF and OFX files, with preview, deduplication and revert
 - First-launch setup, sign-in, and a single container for deployment
 - Categories, merchants, tags and bulk edit

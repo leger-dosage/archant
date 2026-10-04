@@ -256,3 +256,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-22-2-record-trades.md`
   summary: AD-15 says request schemas import only `zod` and `@archant/data`, while `schemas/rules.ts`, `schemas/transactions.ts` and now `schemas/trades.ts` import `domain/`.
   evidence: low; the rule or the three files need reconciling: move the shared pure helpers to `@archant/data`, or amend AD-15 to allow pure `domain/` modules that import no Drizzle.
+- source_spec: `_bmad-output/implementation-artifacts/spec-22-3-holdings-and-an-investment-accounts-value.md`
+  summary: No test pins that a `Holding` line at quantity zero writes `cost_basis` and `cost_basis_source` both null.
+  evidence: low; the export household sells no security in full, so writing `cost_basis_source: "calculated"` on every line fails neither the assertion nor `surePreflight`. Settle it with a full sale in the export fixture, or with Story 22.4's holdings screen.
