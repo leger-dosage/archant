@@ -3,7 +3,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, count, desc, eq, exists, inArray, ne } from "drizzle-orm";
+import { and, count, desc, eq, exists, inArray, ne, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
@@ -13,6 +13,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
+import { holdings } from "@archant/data/schema/holdings";
 import { transactions } from "@archant/data/schema/transactions";
 
 import {
@@ -238,8 +239,8 @@ type SnapshotRow = {
 /**
  * Reads what `computed` and `gap` need for snapshots of one account on
  * `dates`: one query for the balances of the days before, one for those days'
- * movements, whatever the number of rows. Returns the function adding them to
- * a row.
+ * movements, one for their holdings, whatever the number of rows. Returns the
+ * function adding them to a row.
  */
 async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readonly IsoDate[]) {
 	// A linked account derives each day before its bank balance from the day
@@ -248,7 +249,7 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 	const anchor = await backwardAnchor(db, accountId);
 	const nextDays = dates.map((date) => addDays(date, 1));
 	const balanceRows = await db
-		.select({ date: balances.date, balance: balances.balance })
+		.select({ date: balances.date, balance: balances.balance, cash: balances.cash })
 		.from(balances)
 		.where(
 			and(
@@ -261,8 +262,14 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 		accountId,
 		inArray(entries.date, [...dates, ...nextDays]),
 	);
-	const stored = new Map(balanceRows.map((row) => [row.date, row.balance]));
+	const holdingRows = await db
+		.select({ date: holdings.date, value: sum(holdings.amount).mapWith(Number) })
+		.from(holdings)
+		.where(and(eq(holdings.accountId, accountId), inArray(holdings.date, [...dates])))
+		.groupBy(holdings.date);
+	const stored = new Map(balanceRows.map((row) => [row.date, row]));
 	const movements = new Map(movementRows.map((row) => [row.date, row.amount]));
+	const values = new Map(holdingRows.map((row) => [row.date, row.value]));
 
 	return ({ type, ...row }: SnapshotRow): SnapshotRecord => {
 		const backward = anchor !== undefined && row.date < anchor.date;
@@ -284,14 +291,15 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 			balance,
 			...(backward
 				? snapshotGapBackward({
-						next: toMinorUnits(known),
+						next: toMinorUnits(known.balance),
 						nextMovements: toMinorUnits(movements.get(neighbour) ?? 0),
 						recorded: balance,
 						classification,
 					})
 				: snapshotGap({
-						previous: toMinorUnits(known),
+						previousCash: toMinorUnits(known.cash),
 						movements: toMinorUnits(movements.get(row.date) ?? 0),
+						holdingsValue: toMinorUnits(values.get(row.date) ?? 0),
 						recorded: balance,
 						classification,
 					})),

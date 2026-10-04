@@ -3,11 +3,16 @@ import type { NewAccountInput } from "./ledger/accounts.ts";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
+import { securityPrices } from "@archant/data/schema/securities";
 
+import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
+import { revalueHoldings } from "./ledger/holdings.ts";
 import { ingest } from "./ledger/ingest.ts";
+import { recordTrade } from "./ledger/trades.ts";
 import { getBalanceSheet, getCashFlow, getNetWorth } from "./reports.ts";
 
 let temp: TempDatabase;
@@ -143,6 +148,50 @@ describe("getBalanceSheet", () => {
 
 		expect(sheet).toMatchObject({ netWorth: 100_000, assets: 100_000 });
 		expect(sheet.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);
+	});
+});
+
+describe("getNetWorth", () => {
+	it("counts a PEA's holding at the provider's price that rose since the buy", async () => {
+		const pea = await account({
+			name: "PEA",
+			type: "investment",
+			subtype: "pea",
+			openingBalance: toMinorUnits(2_500_000),
+		});
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		await recordTrade(
+			deps(),
+			pea,
+			{
+				side: "buy",
+				security: { source: "known", id: lvmh },
+				date: "2026-09-10",
+				quantity: toMicros(10_000_000),
+				price: toMicros(612_400_000),
+				fee: toMinorUnits(250),
+			},
+			{ origin: "user" },
+		);
+		await temp.db.transaction(
+			async (tx) => {
+				await tx.insert(securityPrices).values({
+					securityId: lvmh,
+					date: "2026-09-11",
+					price: toMicros(650_000_000),
+					currency: "EUR",
+					source: "provider",
+				});
+				await revalueHoldings(tx, lvmh, "2026-09-11", "Europe/Paris", { origin: "provider" });
+			},
+			{ behavior: "immediate" },
+		);
+
+		const netWorth = await getNetWorth(deps(), "1M");
+
+		// 18 873,50 € of cash and 10 shares at 650 €.
+		expect(netWorth.netWorth).toBe(1_887_350 + 650_000);
+		expect(netWorth.points).toContainEqual({ date: "2026-09-10", balance: 1_887_350 + 612_400 });
 	});
 });
 

@@ -10,6 +10,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
 import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
+import { holdings } from "@archant/data/schema/holdings";
 import { imports } from "@archant/data/schema/imports";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
@@ -86,8 +87,8 @@ export async function createAccount(
  * keys and the tombstones of the ones the user deleted, its transactions'
  * taggings, attachments, transfers and rejected pairs, its transactions
  * and trades, all its entries, split lines before their parents, snapshots
- * and opening anchor included, its daily balances, its imports, then the
- * account.
+ * and opening anchor included, its holdings and daily balances, its imports,
+ * then the account.
  * Children go first, since their foreign keys restrict. A transfer's other
  * side, on another account, stays as a standard transaction, as Sure's
  * `cleanup_transfers` leaves it. Every delete selects by `account_id`
@@ -150,6 +151,7 @@ export async function deleteAccount(
 			// Split lines before their parents, which their foreign key restricts.
 			await tx.delete(entries).where(and(eq(entries.accountId, accountId), isSplitChild));
 			await tx.delete(entries).where(eq(entries.accountId, accountId));
+			await tx.delete(holdings).where(eq(holdings.accountId, accountId));
 			await tx.delete(balances).where(eq(balances.accountId, accountId));
 			await tx.delete(imports).where(eq(imports.accountId, accountId));
 			await tx.delete(accounts).where(eq(accounts.id, accountId));

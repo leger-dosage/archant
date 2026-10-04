@@ -129,7 +129,7 @@ describe("createAccount", () => {
 		const entriesBefore = await temp.db.select().from(entries);
 		// Two rows for one day break the balances primary key, after the account
 		// and its opening anchor are already inserted.
-		const row = { date: "2026-09-21", balance: toMinorUnits(1) };
+		const row = { date: "2026-09-21", balance: toMinorUnits(1), cash: toMinorUnits(1) };
 		vi.spyOn(forward, "forwardBalances").mockReturnValue([row, row]);
 
 		await expect(createAccount(deps(), checking, { origin: "user" })).rejects.toThrow();

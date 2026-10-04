@@ -30,7 +30,7 @@ async function fillNumbers(
 	await dialog.getByLabel("Frais").fill(fee);
 }
 
-test("a PEA records a buy then a sale from « Ordres », and its balance moves by both", async ({
+test("a PEA records a buy then a sale from « Ordres », its balance the cash plus what it holds", async ({
 	page,
 	api,
 }) => {
@@ -68,7 +68,8 @@ test("a PEA records a buy then a sale from « Ordres », and its balance moves b
 			"10 × 612,40 €",
 			euros(-612_650),
 		]);
-		await expect(header(page, account.name)).toContainText(euros(2_500_000 - 612_650));
+		// The 10 shares, worth the buy's price, stay in the balance: only the fee leaves.
+		await expect(header(page, account.name)).toContainText(euros(2_500_000 - 612_650 + 612_400));
 	});
 
 	await test.step("a sale of part of it, the security found among the known ones", async () => {
@@ -89,7 +90,10 @@ test("a PEA records a buy then a sale from « Ordres », and its balance moves b
 			"4 × 650,00 €",
 			`+${euros(260_000)}`,
 		]);
-		await expect(header(page, account.name)).toContainText(euros(2_500_000 - 612_650 + 260_000));
+		// The 6 shares left are worth the sale's 650 €.
+		await expect(header(page, account.name)).toContainText(
+			euros(2_500_000 - 612_650 + 260_000 + 390_000),
+		);
 		// Most recent first.
 		await expect(page.getByRole("row").nth(1)).toContainText(formatTableDate(sold));
 	});
@@ -124,7 +128,7 @@ test("a sale above what is held is refused on its quantity, and nothing is writt
 	await expect(page.getByRole("row")).toHaveCount(2);
 });
 
-test("a trade opened from its row is edited, then deleted, and the balance follows", async ({
+test("a trade opened from its row is edited, then deleted, and the balance follows its fee", async ({
 	page,
 	api,
 }) => {
@@ -143,7 +147,8 @@ test("a trade opened from its row is edited, then deleted, and the balance follo
 	});
 
 	await page.goto(`/accounts/${account.id}?tab=trades`);
-	await expect(header(page, account.name)).toContainText(euros(80_000));
+	// The cash less the buy, plus the two units at its price.
+	await expect(header(page, account.name)).toContainText(euros(100_000));
 	await tradeRow(page, date)
 		.getByRole("button", { name: formatTableDate(date) })
 		.click();
@@ -152,11 +157,12 @@ test("a trade opened from its row is edited, then deleted, and the balance follo
 	await expect(dialog.getByLabel("Titre")).toBeDisabled();
 	await expect(dialog.getByLabel("Titre")).toHaveValue("Fonds euros");
 	await dialog.getByLabel("Quantité").fill("3");
+	await dialog.getByLabel("Frais").fill("5");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog).toBeHidden();
 	await expect(tradeRow(page, date)).toContainText("3 × 100,00 €");
-	await expect(header(page, account.name)).toContainText(euros(70_000));
+	await expect(header(page, account.name)).toContainText(euros(99_500));
 
 	await tradeRow(page, date)
 		.getByRole("button", { name: formatTableDate(date) })

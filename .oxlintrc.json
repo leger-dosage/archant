@@ -104,6 +104,10 @@
 								"message": "Only services/ledger/ writes trades (AD-2, AD-22)."
 							},
 							{
+								"name": "@archant/data/schema/holdings",
+								"message": "Only services/ledger/ writes holdings (AD-2, AD-22)."
+							},
+							{
 								"name": "@archant/data/schema/transaction-attachments",
 								"message": "Only services/ledger/ attaches files to transactions (AD-2)."
 							},
@@ -168,6 +172,11 @@
 							{
 								"name": "@archant/data/schema/trades",
 								"message": "The domain may import trade types only (AD-2).",
+								"allowTypeImports": true
+							},
+							{
+								"name": "@archant/data/schema/holdings",
+								"message": "The domain may import holding types only (AD-2).",
 								"allowTypeImports": true
 							},
 							{
@@ -251,6 +260,11 @@
 								"allowTypeImports": true
 							},
 							{
+								"name": "@archant/data/schema/holdings",
+								"message": "Connectors never touch the database (AD-3).",
+								"allowTypeImports": true
+							},
+							{
 								"name": "@archant/data/schema/transaction-attachments",
 								"message": "Connectors never touch the database (AD-3).",
 								"allowTypeImports": true
@@ -326,6 +340,10 @@
 								"message": "Only services/ledger/ writes trades (AD-2, AD-22)."
 							},
 							{
+								"name": "@archant/data/schema/holdings",
+								"message": "Only services/ledger/ writes holdings (AD-2, AD-22)."
+							},
+							{
 								"name": "@archant/data/schema/transaction-attachments",
 								"message": "Only services/ledger/ attaches files to transactions (AD-2)."
 							},
@@ -386,6 +404,10 @@
 							{
 								"name": "@archant/data/schema/trades",
 								"message": "Only services/ledger/ writes trades (AD-2, AD-22)."
+							},
+							{
+								"name": "@archant/data/schema/holdings",
+								"message": "Only services/ledger/ writes holdings (AD-2, AD-22)."
 							},
 							{
 								"name": "@archant/data/schema/transaction-attachments",

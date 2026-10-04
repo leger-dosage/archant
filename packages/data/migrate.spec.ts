@@ -2119,3 +2119,82 @@ describe("trades", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });
+
+const insertHolding = (
+	database: Database,
+	{
+		date = "2026-09-10",
+		securityId = "s1",
+		quantity = 10_000_000,
+		price = 612_400_000,
+		amount = 612_400,
+		costBasis = 612_400_000,
+	}: {
+		date?: string;
+		securityId?: string;
+		quantity?: number;
+		price?: number;
+		amount?: number;
+		costBasis?: number | null;
+	} = {},
+) =>
+	database.run(
+		sql`insert into holdings (account_id, security_id, date, quantity, price, amount, cost_basis) values ('a1', ${securityId}, ${date}, ${quantity}, ${price}, ${amount}, ${costBasis})`,
+	);
+
+describe("holdings", () => {
+	it("fills every balance's cash from its balance when 0051 adds it", async () => {
+		const before = await migratedBefore("0051");
+		await insertAccount(before, "a1", "investment", "pea");
+		await before.run(
+			sql`insert into balances (account_id, date, balance, currency) values ('a1', '2026-09-01', 2500000, 'EUR'), ('a1', '2026-09-02', -1200, 'EUR')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select date, balance, cash from balances order by date`),
+		).resolves.toEqual([
+			{ date: "2026-09-01", balance: 2_500_000, cash: 2_500_000 },
+			{ date: "2026-09-02", balance: -1200, cash: -1200 },
+		]);
+		await expect(
+			database.run(
+				sql`insert into balances (account_id, date, balance, currency) values ('a1', '2026-09-03', 1, 'EUR')`,
+			),
+		).rejects.toThrow();
+		await expect(
+			database.run(
+				sql`insert into balances (account_id, date, balance, cash, currency) values ('a1', '2026-09-02', 1, 1, 'EUR')`,
+			),
+		).rejects.toThrow();
+		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds one holding per account, day and security, never negative, and protects both ends", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "investment", "pea");
+		await insertSecurity(database, "s1");
+		await insertSecurity(database, "s2", { ticker: "AI.PA" });
+
+		await expect(insertHolding(database)).resolves.toBeDefined();
+		await expect(insertHolding(database)).rejects.toThrow();
+		await expect(insertHolding(database, { securityId: "s2" })).resolves.toBeDefined();
+		// A day after a full sale: nothing held, no cost basis, still a row.
+		await expect(
+			insertHolding(database, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null }),
+		).resolves.toBeDefined();
+		await expect(insertHolding(database, { date: "2026-09-12", quantity: -1 })).rejects.toThrow();
+		await expect(insertHolding(database, { date: "2026-09-12", price: -1 })).rejects.toThrow();
+		await expect(insertHolding(database, { date: "2026-09-12", amount: -1 })).rejects.toThrow();
+		await expect(insertHolding(database, { securityId: "nope" })).rejects.toThrow();
+
+		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
+		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
+		await database.run(sql`delete from holdings`);
+		await database.run(sql`delete from accounts where id = 'a1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});

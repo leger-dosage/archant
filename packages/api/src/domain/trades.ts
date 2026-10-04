@@ -24,23 +24,27 @@ export function sideOf(quantity: Micros): TradeSide {
 const MICROS_SQUARED = 10n ** 12n;
 
 /**
+ * `quantity × price` in minor units of `currency` (AD-22): the product
+ * computed in `BigInt` and rounded half to even to the minor unit. A code
+ * outside ISO 4217 has two decimals, as `toDecimalString` writes it.
+ */
+export function marketValue(quantity: Micros, price: Micros, currency: string): bigint {
+	const minor = 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
+
+	return divideHalfEven(BigInt(quantity) * BigInt(price) * minor, MICROS_SQUARED);
+}
+
+/**
  * A trade's cash amount (AD-22, AD-5): `-(quantity × price + fee)`, the
- * product computed in `BigInt` and rounded half to even to the currency's
- * minor unit, as Sure's `signed_qty * price + fee` with AD-5's sign. A buy
- * is negative, a sale positive less its fee. `null` past `MAX_MINOR_UNITS`
- * either way, which no balance could then sum safely. A code outside ISO 4217
- * has two decimals, as `toDecimalString` writes it.
+ * product rounded as `marketValue` does, as Sure's `signed_qty * price + fee`
+ * with AD-5's sign. A buy is negative, a sale positive less its fee. `null`
+ * past `MAX_MINOR_UNITS` either way, which no balance could then sum safely.
  */
 export function tradeAmount(
 	trade: { quantity: Micros; price: Micros; fee: MinorUnits },
 	currency: string,
 ): MinorUnits | null {
-	const minor = 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
-	const value = divideHalfEven(
-		BigInt(trade.quantity) * BigInt(trade.price) * minor,
-		MICROS_SQUARED,
-	);
-	const amount = -(value + BigInt(trade.fee));
+	const amount = -(marketValue(trade.quantity, trade.price, currency) + BigInt(trade.fee));
 	const limit = BigInt(MAX_MINOR_UNITS);
 
 	return amount > limit || amount < -limit ? null : toMinorUnits(Number(amount));

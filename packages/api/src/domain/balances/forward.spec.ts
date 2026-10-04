@@ -11,9 +11,10 @@ const m = toMinorUnits;
 // Checking opened on 2026-09-01 at 1 234,56, computed from its opening day.
 const opening: ForwardInput = {
 	from: "2026-09-01",
-	previous: m(0),
+	previousCash: m(0),
 	valuations: [{ date: "2026-09-01", balance: m(123456) }],
 	movements: [],
+	holdings: [],
 	until: "2026-09-03",
 	classification: "asset",
 };
@@ -23,9 +24,9 @@ const balances = (input: ForwardInput) => forwardBalances(input).map((row) => ro
 describe("forwardBalances", () => {
 	it("carries the anchor to every day up to the end date when nothing moves", () => {
 		expect(forwardBalances(opening)).toEqual([
-			{ date: "2026-09-01", balance: 123456 },
-			{ date: "2026-09-02", balance: 123456 },
-			{ date: "2026-09-03", balance: 123456 },
+			{ date: "2026-09-01", balance: 123456, cash: 123456 },
+			{ date: "2026-09-02", balance: 123456, cash: 123456 },
+			{ date: "2026-09-03", balance: 123456, cash: 123456 },
 		]);
 	});
 
@@ -76,20 +77,69 @@ describe("forwardBalances", () => {
 		).toEqual([49030, 52030, 42030]);
 	});
 
-	it("starts after the anchor from a given previous balance", () => {
+	it("starts after the anchor from a given previous cash", () => {
 		expect(
 			forwardBalances({
 				from: "2026-09-10",
-				previous: m(123456),
+				previousCash: m(123456),
 				valuations: [],
 				movements: [{ date: "2026-09-10", amount: m(-4290) }],
+				holdings: [],
 				until: "2026-09-11",
 				classification: "asset",
 			}),
 		).toEqual([
-			{ date: "2026-09-10", balance: 119166 },
-			{ date: "2026-09-11", balance: 119166 },
+			{ date: "2026-09-10", balance: 119166, cash: 119166 },
+			{ date: "2026-09-11", balance: 119166, cash: 119166 },
 		]);
+	});
+
+	describe("with holdings", () => {
+		// The PEA of Story 22.3's matrix: 25 000 € opened on 2026-09-01, a buy of
+		// 10 at 612.40 with 2.50 of fees on 2026-09-10, LVMH at 650 the next day.
+		const pea: ForwardInput = {
+			from: "2026-09-09",
+			previousCash: m(2_500_000),
+			valuations: [],
+			movements: [{ date: "2026-09-10", amount: m(-612_650) }],
+			holdings: [
+				{ date: "2026-09-10", value: m(612_400) },
+				{ date: "2026-09-11", value: m(650_000) },
+			],
+			until: "2026-09-11",
+			classification: "asset",
+		};
+
+		it("adds the day's holdings to the cash the movements leave", () => {
+			expect(forwardBalances(pea)).toEqual([
+				{ date: "2026-09-09", balance: 2_500_000, cash: 2_500_000 },
+				{ date: "2026-09-10", balance: 2_499_750, cash: 1_887_350 },
+				{ date: "2026-09-11", balance: 2_537_350, cash: 1_887_350 },
+			]);
+		});
+
+		it("sums every holding of a day", () => {
+			expect(
+				balances({
+					...pea,
+					holdings: [...pea.holdings, { date: "2026-09-11", value: m(36_000) }],
+				}),
+			).toEqual([2_500_000, 2_499_750, 2_573_350]);
+		});
+
+		it("lets a valuation set the total, the cash becoming the total less the holdings", () => {
+			expect(
+				forwardBalances({
+					...pea,
+					valuations: [{ date: "2026-09-11", balance: m(3_000_000) }],
+					until: "2026-09-12",
+					holdings: [...pea.holdings, { date: "2026-09-12", value: m(660_000) }],
+				}).slice(2),
+			).toEqual([
+				{ date: "2026-09-11", balance: 3_000_000, cash: 2_350_000 },
+				{ date: "2026-09-12", balance: 3_010_000, cash: 2_350_000 },
+			]);
+		});
 	});
 
 	it("gives nothing when the start is past the end, after the latest entry was removed", () => {

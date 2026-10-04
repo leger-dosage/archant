@@ -46,14 +46,16 @@ export function reverseBalances(input: ReverseInput): DailyBalance[] {
 		earlier.push({ date, balance: toMinorUnits(balance) });
 	}
 
+	// A bank-linked account holds no security: its cash is its balance.
 	const later = forwardBalances({
 		from: addDays(input.anchor.date, 1),
-		previous: input.anchor.balance,
+		previousCash: input.anchor.balance,
 		valuations: input.valuations,
 		movements: input.movements,
+		holdings: [],
 		until: input.until,
 		classification: input.classification,
-	});
+	}).map((row) => ({ date: row.date, balance: row.balance }));
 
 	return [...earlier.toReversed(), input.anchor, ...later].filter(
 		(row) => row.date >= input.from && row.date <= input.until,

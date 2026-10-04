@@ -269,7 +269,7 @@ describe("ingest", () => {
 	it("leaves no row behind when the recompute fails", async () => {
 		const account = await openChecking();
 		const before = await history(account.id);
-		const row = { date: "2026-09-21", balance: toMinorUnits(1) };
+		const row = { date: "2026-09-21", balance: toMinorUnits(1), cash: toMinorUnits(1) };
 		vi.spyOn(forward, "forwardBalances").mockReturnValue([row, row]);
 
 		await expect(

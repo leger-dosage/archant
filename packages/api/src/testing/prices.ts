@@ -49,13 +49,16 @@ export async function insertSecurity(
 	return id;
 }
 
-/** A buy of one share of `securityId` on `date`, on an investment account opened 365 days before. */
+/**
+ * A buy of one share of `securityId` at 1.00 on `date`, on an investment
+ * account opened 365 days before at zero. Returns the account's id.
+ */
 export async function holdSecurity(
 	db: TempDatabase["db"],
 	securityId: string,
 	date: string,
 	currency = "EUR",
-): Promise<void> {
+): Promise<string> {
 	if (!isCurrencyCode(currency)) {
 		throw new Error(`${currency} is no ISO 4217 code.`);
 	}
@@ -87,6 +90,8 @@ export async function holdSecurity(
 		},
 		{ origin: "user" },
 	);
+
+	return account.id;
 }
 
 /** Deletes every account, their trades with them, then every security and its prices. */

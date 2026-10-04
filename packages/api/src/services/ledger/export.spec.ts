@@ -1,14 +1,16 @@
 import type { Column } from "drizzle-orm";
 
-import { asc, eq, getTableColumns, getTableName, sql } from "drizzle-orm";
+import { asc, eq, getTableColumns, getTableName, gte, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { readSnapshot } from "@archant/data/client";
+import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { balances } from "@archant/data/schema/balances";
 import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { entries } from "@archant/data/schema/entries";
+import { holdings } from "@archant/data/schema/holdings";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
 import { taggings } from "@archant/data/schema/taggings";
 
@@ -22,6 +24,7 @@ import {
 	newMerchant,
 	newTag,
 	openChecking,
+	openPea,
 	setToday,
 	snapshot,
 	temp,
@@ -42,9 +45,11 @@ import {
 	exportedTags,
 	exportedTransfers,
 	exportedValuations,
+	holdingPages,
 	transactionPages,
 } from "./export.ts";
 import { splitTransaction } from "./splits.ts";
+import { recordTrade } from "./trades.ts";
 import { rejectTransfer } from "./transfers.ts";
 
 useLedgerDatabase();
@@ -154,6 +159,57 @@ describe("balancePages", () => {
 			currency: "EUR",
 		});
 		expect(typeof pages.flat()[0]?.balance).toBe("number");
+	});
+});
+
+describe("holdingPages", () => {
+	it("reads every holding from a day on once, by account, day then security, a page at a time", async () => {
+		const pea = await openPea();
+		const buy = async (security: { source: "manual"; isin: string; name: string }, date: string) =>
+			recordTrade(
+				deps(),
+				pea.id,
+				{
+					side: "buy",
+					security,
+					date,
+					quantity: toMicros(2_000_000),
+					price: toMicros(10_500_000),
+					fee: toMinorUnits(0),
+				},
+				{ origin: "user" },
+			);
+		await buy({ source: "manual", isin: "FR0010315770", name: "Fonds euros" }, "2026-09-10");
+		await buy({ source: "manual", isin: "FR0000120073", name: "Parts sociales" }, "2026-09-15");
+		const expected = await temp.db
+			.select({
+				accountId: holdings.accountId,
+				date: holdings.date,
+				securityId: holdings.securityId,
+			})
+			.from(holdings)
+			.where(gte(holdings.date, "2026-09-14"))
+			.orderBy(asc(holdings.accountId), asc(holdings.date), asc(holdings.securityId));
+
+		const pages = await all(holdingPages(temp.db, "2026-09-14", 3));
+		const rows = pages.flat();
+
+		expect(pages.every((page) => page.length <= 3)).toBe(true);
+		expect(
+			rows.map(({ accountId, date, securityId }) => ({ accountId, date, securityId })),
+		).toEqual(expected);
+		expect(expected).toHaveLength(8 + 7);
+		expect(
+			rows.find((row) => row.date === "2026-09-15" && row.security.name === "Parts sociales"),
+		).toMatchObject({
+			accountId: pea.id,
+			quantity: 2_000_000,
+			price: 10_500_000,
+			amount: 2100,
+			costBasis: 10_500_000,
+			currency: "EUR",
+			security: { ticker: null, mic: null, isin: "FR0000120073" },
+		});
 	});
 });
 

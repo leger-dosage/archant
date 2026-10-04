@@ -1,10 +1,25 @@
-import type { DailyBalance } from "../../domain/balances/forward.ts";
+import type { DailyBalance, HoldingValue } from "../../domain/balances/forward.ts";
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sum } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	gte,
+	inArray,
+	isNotNull,
+	isNull,
+	lt,
+	lte,
+	ne,
+	or,
+	sum,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import { classificationOf } from "@archant/data/account-types";
@@ -13,19 +28,27 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
+import { holdings } from "@archant/data/schema/holdings";
+import { securityPrices } from "@archant/data/schema/securities";
+import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
-import type { Account, NewBalance } from "@archant/data/types";
+import type { Account, NewBalance, NewHolding } from "@archant/data/types";
 
 import { forwardBalances } from "../../domain/balances/forward.ts";
 import { fillDays } from "../../domain/balances/history.ts";
 import { reverseBalances } from "../../domain/balances/reverse.ts";
 import { addDays, maxDate, today } from "../../domain/dates.ts";
+import { forwardHoldings } from "../../domain/holdings/forward.ts";
 import { AppError } from "../../lib/errors.ts";
-import { inSequence, notSplitParent } from "./shared.ts";
+import { inSequence, notSplitParent, oneByOne } from "./shared.ts";
 
-// SQLite caps bound parameters per statement at 32 766; four columns per row
+// SQLite caps bound parameters per statement at 32 766; five columns per row
 // keeps a chunk far below it, and a decade of history is 3 650 rows.
 const BALANCE_ROWS_PER_INSERT = 1000;
+
+// Seven columns per row: 7 000 parameters, as far below the cap. A decade of
+// twenty securities is 73 000 rows.
+const HOLDING_ROWS_PER_INSERT = 1000;
 
 // A `current_anchor` belongs to a bank-linked account, computed backward from
 // it (AD-8); the forward computation reads only these two.
@@ -38,7 +61,12 @@ async function lastBalanceOnOrBefore(
 	date: IsoDate,
 ) {
 	return db
-		.select({ date: balances.date, balance: balances.balance, currency: balances.currency })
+		.select({
+			date: balances.date,
+			balance: balances.balance,
+			cash: balances.cash,
+			currency: balances.currency,
+		})
 		.from(balances)
 		.where(and(eq(balances.accountId, accountId), lte(balances.date, date)))
 		.orderBy(desc(balances.date))
@@ -121,8 +149,15 @@ async function recomputeBackward(
 		movements: movements.map((row) => ({ date: row.date, amount: toMinorUnits(row.amount) })),
 		until: await lastBalanceDay(tx, account.id, timeZone),
 		classification: classificationOf(account.type),
-	}).map((row) => ({ accountId: account.id, currency: account.currency, ...row }));
+	}).map((row) => ({
+		accountId: account.id,
+		currency: account.currency,
+		cash: row.balance,
+		...row,
+	}));
 
+	// Holdings are computed forward only: the bank's balance is the whole value.
+	await tx.delete(holdings).where(eq(holdings.accountId, account.id));
 	await tx.delete(balances).where(eq(balances.accountId, account.id));
 	await inSequence(rows, BALANCE_ROWS_PER_INSERT, (chunk) => tx.insert(balances).values(chunk));
 }
@@ -158,11 +193,93 @@ export async function backwardAnchor(db: Pick<ServiceDeps["db"], "select">, acco
 }
 
 /**
+ * Rewrites an investment account's holdings from `from` to `until`, and
+ * deletes the rows past that end; the rows before `from` stay as they are.
+ * The day before `from` is replayed from every earlier trade and each
+ * security's last stored price before it (AD-22). Returns what each holding
+ * is worth, by day.
+ */
+async function recomputeHoldings(
+	tx: Transaction,
+	account: Pick<Account, "id" | "currency">,
+	from: IsoDate,
+	until: IsoDate,
+): Promise<HoldingValue[]> {
+	// In recording order: a buy's place among the day's trades moves its cost basis.
+	const tradeRows = await tx
+		.select({
+			date: entries.date,
+			securityId: trades.securityId,
+			quantity: trades.quantity,
+			price: trades.price,
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(eq(entries.accountId, account.id))
+		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
+	const securityIds = [...new Set(tradeRows.map((row) => row.securityId))];
+	const priceColumns = {
+		securityId: securityPrices.securityId,
+		date: securityPrices.date,
+		price: securityPrices.price,
+	};
+	const prices = await tx
+		.select(priceColumns)
+		.from(securityPrices)
+		.where(
+			and(
+				inArray(securityPrices.securityId, securityIds),
+				gte(securityPrices.date, from),
+				lte(securityPrices.date, until),
+			),
+		);
+	const pricesBefore = new Map<string, (typeof prices)[number]>();
+
+	// One primary-key lookup per security, where a grouped query would read
+	// every price of the decade before `from`.
+	await oneByOne(securityIds, async (securityId) => {
+		const row = await tx
+			.select(priceColumns)
+			.from(securityPrices)
+			.where(and(eq(securityPrices.securityId, securityId), lt(securityPrices.date, from)))
+			.orderBy(desc(securityPrices.date))
+			.limit(1)
+			.get();
+
+		if (row !== undefined) {
+			pricesBefore.set(securityId, row);
+		}
+	});
+
+	const rows: NewHolding[] = forwardHoldings({
+		from,
+		until,
+		trades: tradeRows,
+		prices,
+		pricesBefore,
+		currency: account.currency,
+	}).map((row) => ({ accountId: account.id, ...row }));
+
+	await tx
+		.delete(holdings)
+		.where(
+			and(
+				eq(holdings.accountId, account.id),
+				or(gte(holdings.date, from), gt(holdings.date, until)),
+			),
+		);
+	await inSequence(rows, HOLDING_ROWS_PER_INSERT, (chunk) => tx.insert(holdings).values(chunk));
+
+	return rows.map((row) => ({ date: row.date, value: row.amount }));
+}
+
+/**
  * Rewrites an account's daily balances from `affected`, the earliest date the
  * write touched, to `max(today, latest entry date)`, and deletes the rows past
  * that end. Called by every ledger write inside its own transaction, so no
  * commit ever leaves `balances` stale (AD-2). A bank-linked account with a
- * bank balance is computed backward from it, whole; any other forward.
+ * bank balance is computed backward from it, whole; any other forward, an
+ * investment account's holdings with it, from the same day.
  */
 export async function recomputeBalances(
 	tx: Transaction,
@@ -190,8 +307,8 @@ export async function recomputeBalances(
 	// Rows stop where the last write ended. A line dated past that day leaves a
 	// gap the recompute fills from the last stored row. No row at all means the
 	// account is being created: its opening anchor sets the first balance.
-	const [from, opening] =
-		previous === undefined ? [affected, 0] : [addDays(previous.date, 1), previous.balance];
+	const [from, previousCash] =
+		previous === undefined ? [affected, 0] : [addDays(previous.date, 1), previous.cash];
 	const movements = await bookedMovements(tx, account.id, gte(entries.date, from));
 	const valuations = await tx
 		.select({ date: entries.date, balance: entries.amount })
@@ -204,12 +321,16 @@ export async function recomputeBalances(
 			),
 		);
 	const until = await lastBalanceDay(tx, account.id, timeZone);
+	// Only an investment account holds a security (AD-22).
+	const held =
+		account.type === "investment" ? await recomputeHoldings(tx, account, from, until) : [];
 
 	const rows: NewBalance[] = forwardBalances({
 		from,
-		previous: toMinorUnits(opening),
+		previousCash: toMinorUnits(previousCash),
 		valuations: valuations.map((row) => ({ date: row.date, balance: toMinorUnits(row.balance) })),
 		movements: movements.map((row) => ({ date: row.date, amount: toMinorUnits(row.amount) })),
+		holdings: held,
 		until,
 		classification: classificationOf(account.type),
 	}).map((row) => ({ accountId: account.id, currency: account.currency, ...row }));

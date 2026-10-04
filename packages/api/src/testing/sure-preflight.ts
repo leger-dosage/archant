@@ -155,6 +155,7 @@ const ACTION_TYPES = [
 const present = z.string().refine((value) => value.trim() !== "", "blank");
 const id = present;
 const decimal = z.string().regex(/^-?\d+(\.\d+)?$/u, "not a decimal string");
+const unsigned = decimal.refine((value) => !value.startsWith("-"), "negative");
 const date = z.iso.date();
 const timestamp = z.iso.datetime();
 const currency = z.string().regex(/^[A-Z]{3}$/u);
@@ -259,7 +260,14 @@ const SCHEMAS = {
 		}),
 		archant,
 	}),
-	Balance: z.strictObject({ account_id: id, date, balance: decimal, currency }),
+	Balance: z.strictObject({
+		account_id: id,
+		date,
+		balance: decimal,
+		// Read when present, `balance` otherwise.
+		cash_balance: decimal.optional(),
+		currency,
+	}),
 	// `Category`: a colour Sure's format accepts, an icon, never its filter value.
 	Category: z.strictObject({
 		id,
@@ -343,6 +351,25 @@ const SCHEMAS = {
 		...stamps,
 		archant,
 	}),
+	// `Holding` validates a quantity, a price and an amount of zero or more; the
+	// preflight requires a ticker, as a `Trade`'s.
+	Holding: z.strictObject({
+		account_id: id,
+		security_id: id,
+		ticker: present,
+		security_name: present,
+		exchange_operating_mic: z.string().nullable(),
+		date,
+		qty: unsigned,
+		price: unsigned,
+		amount: unsigned,
+		currency,
+		cost_basis: unsigned.nullable(),
+		cost_basis_source: z.enum(["manual", "calculated", "provider"]).nullable(),
+		cost_basis_locked: z.boolean(),
+		security_locked: z.boolean(),
+		archant,
+	}),
 	Valuation: z.strictObject({
 		id,
 		account_id: id,
@@ -371,7 +398,7 @@ const SCHEMAS = {
 		currency,
 		rollover_enabled: z.boolean(),
 		// `chk_budget_categories_rolled_over_amount_non_negative`.
-		rolled_over_amount: decimal.refine((value) => !value.startsWith("-")),
+		rolled_over_amount: unsigned,
 		...stamps,
 	}),
 	// `Rule`: a name of one character at least, an action, never twice the same,
@@ -430,6 +457,7 @@ const REFERENCES: Partial<Record<SureType, Record<string, string>>> = {
 		outflow_transaction_id: "transactions",
 	},
 	Trade: { account_id: "accounts" },
+	Holding: { account_id: "accounts" },
 	Valuation: { account_id: "accounts" },
 	BudgetCategory: { budget_id: "budgets", category_id: "categories" },
 };

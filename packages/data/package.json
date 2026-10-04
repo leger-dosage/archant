@@ -30,6 +30,7 @@
 		"./schema/entries": "./schema/entries.ts",
 		"./schema/entry-keys": "./schema/entry-keys.ts",
 		"./schema/goals": "./schema/goals.ts",
+		"./schema/holdings": "./schema/holdings.ts",
 		"./schema/import-mappings": "./schema/import-mappings.ts",
 		"./schema/imports": "./schema/imports.ts",
 		"./schema/invitations": "./schema/invitations.ts",
