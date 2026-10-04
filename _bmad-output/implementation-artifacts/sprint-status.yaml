@@ -223,3 +223,11 @@ development_status:
   epic-25: backlog
   25-1-choose-the-start-date-of-the-first-sync: backlog
   epic-25-retrospective: optional
+
+  epic-26: backlog
+  26-1-ask-an-assistant-to-fix-a-transfer: backlog
+  26-2-ask-an-assistant-to-record-a-balance: backlog
+  26-3-ask-an-assistant-about-my-savings-goals: backlog
+  26-4-ask-an-assistant-to-record-or-delete-a-transaction: backlog
+  26-5-ask-an-assistant-to-import-a-bank-file: backlog
+  epic-26-retrospective: optional
