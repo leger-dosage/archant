@@ -29,7 +29,7 @@ const CATEGORY_ORIGIN_OF: Record<Exclude<Origin, "maintenance">, CategoryOrigin>
 	sync: "provider",
 };
 
-function categoryOriginOf(origin: Origin): CategoryOrigin {
+export function categoryOriginOf(origin: Origin): CategoryOrigin {
 	if (origin === "maintenance") {
 		// A programming error, not a request error: no caller does this, and
 		// the row would get an origin without the lock that goes with it.

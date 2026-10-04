@@ -375,6 +375,9 @@ describe("query plans at 100,000 transactions", () => {
 
 		expect(plan).toMatch(/USING COVERING INDEX entries_kind_currency_amount/u);
 		expect(plan).not.toMatch(/CORRELATED/u);
+		// The split parents' ids, read once from the partial index, never the table.
+		expect(plan).toMatch(/split_child USING COVERING INDEX entries_parent_entry/u);
+		expect(plan).not.toMatch(/SCAN split_child/u);
 	});
 
 	it.each([
@@ -395,7 +398,7 @@ describe("query plans at 100,000 transactions", () => {
 
 	it("reads each page of the export's transactions from the date index, after the last one", async () => {
 		const statements = await statementsOf(async () => {
-			const pages = transactionPages(temp.db);
+			const pages = transactionPages(temp.db, "lines");
 			await pages.next();
 			await pages.next();
 			await pages.return(undefined);

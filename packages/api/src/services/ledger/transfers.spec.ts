@@ -7,6 +7,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import {
 	add,
 	addStandard,
+	asUser,
 	categoryOf,
 	confirm,
 	deps,
@@ -23,6 +24,7 @@ import {
 	preview,
 	rejectedRows,
 	revert,
+	splitInTwo,
 	statementOf,
 	tagsOf,
 	temp,
@@ -711,5 +713,22 @@ describe("a rejected pair when a side goes", () => {
 
 		await expect(findTransaction(deps(), outflow)).resolves.toBeNull();
 		await expect(rejectedRows(inflow)).resolves.toEqual([]);
+	});
+});
+
+describe("transfer matching and a split", () => {
+	it("never takes a split's child or parent as a side, by hand or automatically", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const { parent, food } = await splitInTwo(joint.id, { date: "2026-09-10" }, -amount);
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), food)).resolves.toEqual([]);
+		await expect(transferCandidates(deps(), parent)).resolves.toEqual([]);
+		await expect(matchTransfer(deps(), inflow, food, asUser)).rejects.toMatchObject({
+			fields: [{ path: "counterpartId", code: "not_a_candidate" }],
+		});
 	});
 });

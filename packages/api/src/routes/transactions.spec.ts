@@ -1210,3 +1210,163 @@ describe("possible duplicates", () => {
 		expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 403, 403]);
 	});
 });
+
+/** A -100,00 expense on an account of its own. */
+async function newExpense() {
+	const account = await openAccount();
+	const created = await postTransaction(account.id, { ...expense, amount: "-100,00" });
+	const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+	return { account, id: data.id };
+}
+
+describe("/api/transactions/:id/split", () => {
+	const splitBody = z.object({
+		data: z.object({
+			parent: z.object({ id: z.string(), excluded: z.boolean(), parentEntryId: z.null() }),
+			children: z.array(
+				z.object({
+					id: z.string(),
+					label: z.string(),
+					amount: z.number(),
+					categoryId: z.string().nullable(),
+					tagIds: z.array(z.string()),
+					parentEntryId: z.string(),
+				}),
+			),
+		}),
+	});
+
+	it("splits a transaction, reads it from a child, edits it and undoes it, the balance never moving", async () => {
+		const { account, id } = await newExpense();
+		const food = await createCategory(uniqueCategory("Alimentation"));
+		const tag = await createTag(uniqueCategory("Reçu"));
+		const balance = await balanceOf(account.id);
+
+		const created = await request("POST", `/api/transactions/${id}/split`, {
+			lines: [
+				{ label: "Alimentation", amount: "-60,00", categoryId: food.id, tagIds: [tag.id] },
+				{ label: "Maison", amount: "-40", categoryId: null, notes: " " },
+			],
+		});
+		const split = splitBody.parse(created.body).data;
+		const [first, second] = split.children;
+
+		expect(created.status).toBe(201);
+		expect(split.parent).toMatchObject({ id, excluded: true });
+		expect(split.children).toMatchObject([
+			{
+				label: "Alimentation",
+				amount: -6000,
+				categoryId: food.id,
+				tagIds: [tag.id],
+				parentEntryId: id,
+			},
+			{ label: "Maison", amount: -4000, categoryId: null, tagIds: [], parentEntryId: id },
+		]);
+		await expect(balanceOf(account.id)).resolves.toBe(balance);
+
+		const read = await request("GET", `/api/transactions/${second?.id ?? ""}/split`);
+		expect(splitBody.parse(read.body).data).toEqual(split);
+
+		const edited = await request("PUT", `/api/transactions/${id}/split`, {
+			lines: [
+				{ id: first?.id, label: "Fruits", amount: "-70,00", categoryId: food.id },
+				{ label: "Savon", amount: "-30,00", categoryId: null },
+			],
+		});
+		const after = splitBody.parse(edited.body).data;
+
+		expect(edited.status).toBe(200);
+		// Sorted: the clock is frozen, so creation alone does not order them here.
+		expect(after.children.toSorted((a, b) => a.label.localeCompare(b.label))).toMatchObject([
+			{ id: first?.id, label: "Fruits", amount: -7000, tagIds: [tag.id] },
+			{ label: "Savon", amount: -3000 },
+		]);
+		expect(after.children.map((child) => child.id)).not.toContain(second?.id);
+
+		const undone = await request("DELETE", `/api/transactions/${first?.id ?? ""}/split`);
+
+		expect(undone.status).toBe(200);
+		expect(undone.body).toMatchObject({ data: { id, excluded: false, parentEntryId: null } });
+		await expect(balanceOf(account.id)).resolves.toBe(balance);
+		expect((await request("GET", `/api/transactions/${id}/split`)).status).toBe(404);
+	});
+
+	it("refuses lines that do not sum to the transaction, and a bad amount on its line", async () => {
+		const { id } = await newExpense();
+
+		const off = await request("POST", `/api/transactions/${id}/split`, {
+			lines: [
+				{ label: "A", amount: "-60,00", categoryId: null },
+				{ label: "B", amount: "-39,99", categoryId: null },
+			],
+		});
+		const malformed = await request("POST", `/api/transactions/${id}/split`, {
+			lines: [{ label: " ", amount: "douze", categoryId: null }],
+		});
+		const empty = await request("POST", `/api/transactions/${id}/split`, { lines: [] });
+
+		expect(off.status).toBe(400);
+		expect(errorBody.parse(off.body).error.fields).toEqual([
+			{ path: "lines", code: "split_sum_mismatch" },
+		]);
+		expect(errorBody.parse(malformed.body).error.fields).toEqual(
+			expect.arrayContaining([
+				{ path: "lines.0.label", code: "too_small" },
+				{ path: "lines.0.amount", code: "invalid_amount" },
+			]),
+		);
+		expect(errorBody.parse(empty.body).error.fields).toEqual([
+			{ path: "lines", code: "too_small" },
+		]);
+		expect((await request("GET", `/api/transactions/${id}/split`)).status).toBe(404);
+	});
+
+	it("answers NOT_SPLITTABLE for a split's child, and TRANSACTION_SPLIT for a child's amount or delete", async () => {
+		const { id } = await newExpense();
+		const created = await request("POST", `/api/transactions/${id}/split`, {
+			lines: [{ label: "Tout", amount: "-100,00", categoryId: null }],
+		});
+		const [child] = splitBody.parse(created.body).data.children;
+		const childId = child?.id ?? "";
+
+		const again = await request("POST", `/api/transactions/${childId}/split`, {
+			lines: [{ label: "Tout", amount: "-100,00", categoryId: null }],
+		});
+		const patched = await request("PATCH", `/api/transactions/${childId}`, { amount: "-1,00" });
+		const deleted = await request("DELETE", `/api/transactions/${childId}`);
+		const relabelled = await request("PATCH", `/api/transactions/${childId}`, { label: "Courses" });
+
+		expect([again.status, patched.status, deleted.status]).toEqual([409, 409, 409]);
+		expect(errorBody.parse(again.body).error.code).toBe("NOT_SPLITTABLE");
+		expect(errorBody.parse(patched.body).error.code).toBe("TRANSACTION_SPLIT");
+		expect(errorBody.parse(deleted.body).error.code).toBe("TRANSACTION_SPLIT");
+		expect(relabelled.body).toMatchObject({ data: { label: "Courses", parentEntryId: id } });
+	});
+
+	it("answers NOT_FOUND for an unknown transaction", async () => {
+		const lines = { lines: [{ label: "Tout", amount: "-1,00", categoryId: null }] };
+		const responses = await Promise.all([
+			request("GET", "/api/transactions/nope/split"),
+			request("POST", "/api/transactions/nope/split", lines),
+			request("PUT", "/api/transactions/nope/split", lines),
+			request("DELETE", "/api/transactions/nope/split"),
+		]);
+
+		expect(responses.map(({ status }) => status)).toEqual([404, 404, 404, 404]);
+	});
+
+	it("types its routes for the interface's client", async () => {
+		const { id } = await newExpense();
+		const client = testClient(buildApp()).api.transactions[":id"].split;
+
+		const response = await client.$post({
+			param: { id },
+			json: { lines: [{ label: "Tout", amount: "-100,00", categoryId: null }] },
+		});
+
+		expect(response.status).toBe(201);
+		await expect(client.$get({ param: { id } })).resolves.toMatchObject({ status: 200 });
+	});
+});

@@ -11,6 +11,7 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
+import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
@@ -35,13 +36,20 @@ import {
 	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
 	chunksOf,
+	deleteSplitChildren,
 	deleteTransactionRows,
 	inSequence,
+	inSplit,
 	invalidField,
+	isSplitChild,
 	oneByOne,
+	refuseSplit,
 	rejectedOf,
 	transferOf,
 } from "./shared.ts";
+
+/** What only `services/ledger/splits.ts` changes on a split's rows (AD-20). */
+const SPLIT_FIELDS: ReadonlySet<LockableField> = new Set(["date", "amount", "excluded"]);
 
 /**
  * Edits a transaction and recomputes its account's balances from the earlier
@@ -52,7 +60,9 @@ import {
  * category's origin is the call's, `null` without a category. Throws
  * `VALIDATION_ERROR` on `categoryId` or `merchantId` for an unknown category
  * or merchant, checked in the same transaction as the write so a concurrent
- * delete cannot slip between them.
+ * delete cannot slip between them, and `TRANSACTION_SPLIT` for a change of
+ * the date, the amount or the exclusion of a split's parent or child, which
+ * would break the split's sum or count its money twice (AD-20).
  */
 export async function updateTransaction(
 	deps: ServiceDeps,
@@ -66,6 +76,10 @@ export async function updateTransaction(
 			const account = await accountWithOpeningDate(tx, current.accountId);
 			const change = changeOf(current, patch, options.origin);
 			const { next, changed } = change;
+
+			if (changed.some((field) => SPLIT_FIELDS.has(field))) {
+				await refuseSplit(tx, [entryId]);
+			}
 
 			if (
 				changed.includes("category") &&
@@ -156,7 +170,8 @@ export async function updateTransaction(
  * Deletes a transaction for good, as Sure does, and recomputes its account's
  * balances from its date. The rows past the new end go with it. Its bank keys
  * stay as tombstones, so the next sync, which rereads the last week, does not
- * bring it back; its file keys go, so re-importing the file does.
+ * bring it back; its file keys go, so re-importing the file does. A split
+ * parent goes with its children; a child alone throws `TRANSACTION_SPLIT`.
  */
 export async function deleteTransaction(
 	deps: ServiceDeps,
@@ -168,6 +183,7 @@ export async function deleteTransaction(
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
+			await refuseSplit(tx, [entryId], isSplitChild);
 			await tombstoneBankKeys(tx, [entryId], Date.now());
 			await deleteTransactionRows(tx, [entryId]);
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
@@ -206,6 +222,8 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 				id: entries.id,
 				...editableColumns,
 				categoryHidden: correlatedTransferSide.is.mapWith(Boolean),
+				parentEntryId: entries.parentEntryId,
+				split: inSplit.mapWith(Boolean),
 			})
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
@@ -243,8 +261,9 @@ export type BulkUpdateResult = { matched: number; changed: number };
  * `MAX_TAGS_PER_TRANSACTION`, fails the call on its `patch` field. With
  * `expectedCount`, a selection matching another count throws
  * `BULK_COUNT_STALE` and writes nothing: an assistant read that count, and the
- * owner agreed to it, before the call. Classification and exclusion move no
- * balance, so nothing is recomputed.
+ * owner agreed to it, before the call. A split's rows keep their exclusion,
+ * as a locked field: only the split sets it (AD-20). Classification and
+ * exclusion move no balance, so nothing is recomputed.
  */
 export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
@@ -304,7 +323,7 @@ export async function bulkUpdateTransactions(
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 			let changed = 0;
 
-			for (const { id, categoryHidden, ...row } of rows) {
+			for (const { id, categoryHidden, parentEntryId: _parent, split, ...row } of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
 				const tagIds =
 					added === undefined ? undefined : [...new Set([...current.tagIds, ...added])];
@@ -319,7 +338,12 @@ export async function bulkUpdateTransactions(
 					// set: it would stay hidden, and come back unasked when the transfer
 					// is dissociated. The spent outflow of a loan payment or an
 					// investment contribution is counted in its category, so it takes one.
-					{ categoryId: categoryHidden ? undefined : categoryId, merchantId, excluded, tagIds },
+					{
+						categoryId: categoryHidden ? undefined : categoryId,
+						merchantId,
+						excluded: split ? undefined : excluded,
+						tagIds,
+					},
 					options.origin,
 				);
 
@@ -365,7 +389,9 @@ export async function bulkUpdateTransactions(
 /**
  * Deletes every selected transaction for good, all or nothing, as
  * `deleteTransaction` does one, bank keys kept as tombstones, and returns
- * how many went. Recomputes each affected account once, from its earliest
+ * how many went. A selected split parent goes with its children, and a
+ * selected child is skipped, as Sure's `bulk_deletions_controller`; neither
+ * child counts. Recomputes each affected account once, from its earliest
  * deleted date, as `revertImport` does.
  */
 export async function bulkDeleteTransactions(
@@ -375,7 +401,7 @@ export async function bulkDeleteTransactions(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
-			const rows = await selectedRows(tx, selection);
+			const rows = (await selectedRows(tx, selection)).filter((row) => row.parentEntryId === null);
 			const ids = rows.map((row) => row.id);
 			const earliest = new Map<string, IsoDate>();
 
@@ -387,6 +413,7 @@ export async function bulkDeleteTransactions(
 			const now = Date.now();
 
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) => tombstoneBankKeys(tx, chunk, now));
+			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteSplitChildren(tx, chunk));
 			// The same order as `deleteTransaction`: their foreign keys restrict
 			// deleting the entry.
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>

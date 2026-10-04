@@ -1,8 +1,8 @@
 import type { ServiceDeps } from "../deps.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 
-import { inArray, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/sqlite-core";
+import { and, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
+import { QueryBuilder, alias } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
@@ -66,16 +66,89 @@ export function invalidField(path: string, code = "invalid_value"): AppError {
 	return new AppError("VALIDATION_ERROR", "The request is invalid.", [{ path, code }]);
 }
 
+const splitChild = alias(entries, "split_child");
+
+/**
+ * The ids of every split parent (AD-20): an entry some entry names as its
+ * parent. Not correlated, so SQLite reads `entries_parent_entry` once per
+ * query, however many rows the outer query checks against it.
+ */
+const splitParentIds = new QueryBuilder()
+	.select({ id: splitChild.parentEntryId })
+	.from(splitChild)
+	.where(isNotNull(splitChild.parentEntryId));
+
+/**
+ * Leaves split parents out (AD-20): their children carry the money, and the
+ * parent, kept for its bank figures and keys, would count it a second time.
+ */
+export const notSplitParent = notInArray(entries.id, splitParentIds);
+
+/** Whether the entry `id` names is a split parent; for a select or a narrow where. */
+export const isSplitParent = (id: SQLWrapper): SQL => inArray(id, splitParentIds);
+
+/** Whether `entries`' row is a split line. */
+export const isSplitChild = isNotNull(entries.parentEntryId);
+
+/**
+ * Whether `entries`' row is a parent or a child of a split. Spelled out
+ * rather than Drizzle's `or`, which is typed as maybe empty.
+ */
+export const inSplit = sql`(${isSplitChild} or ${isSplitParent(entries.id)})`;
+
+/**
+ * Throws `TRANSACTION_SPLIT` when any of `ids` is a parent or a child of a
+ * split, or only a child with `isSplitChild` as `role`: only
+ * `services/ledger/splits.ts` may move what keeps a split summing to its
+ * parent (AD-20).
+ */
+export async function refuseSplit(
+	tx: Pick<Transaction, "select">,
+	ids: readonly string[],
+	role: SQL = inSplit,
+): Promise<void> {
+	const row = await tx
+		.select({ id: entries.id })
+		.from(entries)
+		.where(and(inArray(entries.id, [...ids]), role))
+		.get();
+
+	if (row !== undefined) {
+		throw new AppError("TRANSACTION_SPLIT", "This transaction is part of a split.");
+	}
+}
+
+/**
+ * Deletes the split lines of `parentIds`, before the parents themselves:
+ * `parent_entry_id` restricts. A child carries no key, transfer or rejected
+ * pair (AD-20), only its taggings and its detail row.
+ */
+export async function deleteSplitChildren(
+	tx: Transaction,
+	parentIds: readonly string[],
+): Promise<void> {
+	const children = () =>
+		tx
+			.select({ id: entries.id })
+			.from(entries)
+			.where(inArray(entries.parentEntryId, [...parentIds]));
+
+	await tx.delete(taggings).where(inArray(taggings.transactionId, children()));
+	await tx.delete(transactions).where(inArray(transactions.entryId, children()));
+	await tx.delete(entries).where(inArray(entries.parentEntryId, [...parentIds]));
+}
+
 /**
  * Deletes transactions and every row that points at them, in the order their
- * foreign keys allow. Without its keys, a line comes back on re-import, as in
- * Sure; without its transfer, the other side is a standard transaction again.
- * The caller recomputes balances.
+ * foreign keys allow, split lines first. Without its keys, a line comes back
+ * on re-import, as in Sure; without its transfer, the other side is a
+ * standard transaction again. The caller recomputes balances.
  */
 export async function deleteTransactionRows(
 	tx: Transaction,
 	ids: readonly string[],
 ): Promise<void> {
+	await deleteSplitChildren(tx, ids);
 	await tx.delete(entryKeys).where(inArray(entryKeys.entryId, ids));
 	await tx.delete(transfers).where(transferOf(ids));
 	await tx.delete(rejectedTransfers).where(rejectedOf(ids));

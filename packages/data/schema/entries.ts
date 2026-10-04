@@ -1,3 +1,5 @@
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -40,6 +42,13 @@ export const entries = sqliteTable(
 		// and on a created transaction another source's key keeps past a revert.
 		// Restrict, as the ledger deletes an account's entries before its imports.
 		importId: text("import_id").references(() => imports.id, { onDelete: "restrict" }),
+		// The transaction this one is a split line of (AD-20), written only by
+		// `services/ledger/splits.ts`. Restrict, not cascade: the ledger deletes
+		// the children before their parent, so a bypass fails instead of
+		// silently dropping lines that carry the money.
+		parentEntryId: text("parent_entry_id").references((): AnySQLiteColumn => entries.id, {
+			onDelete: "restrict",
+		}),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},
@@ -63,6 +72,12 @@ export const entries = sqliteTable(
 			.where(sql`${table.valuationKind} = 'reconciliation'`),
 		index("entries_account_date").on(table.accountId, table.date),
 		index("entries_import").on(table.importId),
+		// Partial: few entries are split lines. SQLite's restrict check reads it on
+		// every delete of an entry, and every reader that drops split parents
+		// reads it whole, once per query.
+		index("entries_parent_entry")
+			.on(table.parentEntryId)
+			.where(sql`${table.parentEntryId} is not null`),
 		// The list orders transactions by these columns, `pending` between the
 		// date and the creation, so no index gives the whole order. Read through
 		// this one, the first page sorts one day at a time and stops at the page:

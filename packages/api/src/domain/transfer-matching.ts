@@ -27,15 +27,22 @@ export type TransferSide = {
 	excluded: boolean;
 	/** Whether the side's account is active, not deactivated. */
 	accountActive: boolean;
+	/**
+	 * A line of a split (AD-20): the bank knows its money as its parent's, and
+	 * moving one line would leave the parent half moved.
+	 */
+	splitChild: boolean;
 };
 
 /**
  * Whether `a` and `b` can be the two sides of one transfer: two transactions
  * of opposite, non-zero amounts in two accounts of one currency, dated within
- * `TRANSFER_WINDOW_DAYS`, neither already matched nor excluded, both
- * accounts active, as Sure's `Family::AutoTransferMatchable`. Symmetric, so
- * the manual picker and the automatic matcher of Story 5.2 agree whichever
- * side they start from. No conversion: a cross-currency move is two standard rows.
+ * `TRANSFER_WINDOW_DAYS`, neither already matched, excluded nor a split
+ * line, both accounts active, as Sure's `Family::AutoTransferMatchable`. A
+ * split parent is excluded, so neither side of a split is ever a candidate.
+ * Symmetric, so the manual picker and the automatic matcher of Story 5.2
+ * agree whichever side they start from. No conversion: a cross-currency move
+ * is two standard rows.
  */
 export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 	return (
@@ -50,6 +57,8 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 		!b.inTransfer &&
 		!a.excluded &&
 		!b.excluded &&
+		!a.splitChild &&
+		!b.splitChild &&
 		a.accountActive &&
 		b.accountActive
 	);

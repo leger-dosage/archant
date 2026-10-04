@@ -25,7 +25,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
 import { LIKE_ESCAPE, escapeLike } from "../../domain/transaction-filter.ts";
-import { asInflow, asOutflow } from "./shared.ts";
+import { asInflow, asOutflow, notSplitParent } from "./shared.ts";
 
 /**
  * What narrows a transaction list. Every field is optional; an empty filter
@@ -169,7 +169,8 @@ export const joinedTransferSide = transferSideOf(
 
 /**
  * The where clause of a filter, `null` when it can match nothing at all, so
- * the caller skips the query rather than asking SQLite for an empty `or`.
+ * the caller skips the query rather than asking SQLite for an empty `or`. A
+ * split parent never matches: its children are the rows that count (AD-20).
  */
 export function filterCondition(
 	filter: TransactionFilter,
@@ -199,6 +200,7 @@ export function filterCondition(
 
 	return and(
 		eq(kind, "transaction"),
+		notSplitParent,
 		accountIds === undefined ? undefined : inArray(accountId, [...accountIds]),
 		filter.from === undefined ? undefined : gte(entries.date, filter.from),
 		filter.to === undefined ? undefined : lte(entries.date, filter.to),

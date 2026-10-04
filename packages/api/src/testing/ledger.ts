@@ -28,6 +28,7 @@ import { linkBankAccount, unlinkBankAccount } from "../services/ledger/bank-link
 import { revertImport } from "../services/ledger/import-revert.ts";
 import { ingest } from "../services/ledger/ingest.ts";
 import { recordSnapshot } from "../services/ledger/snapshots.ts";
+import { splitTransaction } from "../services/ledger/splits.ts";
 import { matchTransfer, unmatchTransfer } from "../services/ledger/transfers.ts";
 import { createTempDatabase } from "./temp-database.ts";
 
@@ -713,3 +714,38 @@ export const twin = (amount: number) => pendingLine(amount, { externalId: null }
 
 export const settled = (amount: number) =>
 	bookedLine(amount, { externalId: null, date: "2026-09-20", label: "CB BOULANGERIE 19/09" });
+
+// Story 19.1: a split keeps its parent and adds children summing to it.
+
+/**
+ * An expense of an amount of its own split in two, `first` and the rest, by
+ * the user; step 6 never links it to another test's rows.
+ */
+export async function splitInTwo(
+	accountId: string,
+	overrides: Partial<NormalizedTransaction> = {},
+	first = -6_000,
+) {
+	const amount = -transferAmount();
+	const parent = await add(accountId, {
+		amount: toMinorUnits(amount),
+		label: "HYPERMARCHE",
+		...overrides,
+	});
+	const split = await splitTransaction(
+		deps(),
+		parent,
+		[
+			{ label: "Courses", amount: toMinorUnits(first), categoryId: null },
+			{ label: "Maison", amount: toMinorUnits(amount - first), categoryId: null },
+		],
+		asUser,
+	);
+	const [food, home] = split.childIds;
+
+	if (food === undefined || home === undefined) {
+		throw new Error("The split has no two children.");
+	}
+
+	return { parent, food, home, amount };
+}

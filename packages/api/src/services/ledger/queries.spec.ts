@@ -24,6 +24,7 @@ import {
 	pairOf,
 	salary,
 	setToday,
+	splitInTwo,
 	statementOf,
 	transferAmount,
 	useLedgerDatabase,
@@ -34,6 +35,7 @@ import {
 	cashFlowByCategory,
 	cashFlowByMonth,
 	entryOrigins,
+	findTransaction,
 	listTransactions,
 	sumTransactions,
 	sumTransactionsByLabel,
@@ -339,6 +341,26 @@ describe("listTransactions across accounts", () => {
 		).resolves.toEqual([{ currency: "EUR", amount: -12870, income: 0, expense: -12870, count: 3 }]);
 	});
 
+	it("lists, counts and filters a split's children, never its parent", async () => {
+		const account = await openChecking({ name: "Divisé" });
+		const { parent, food, home } = await splitInTwo(account.id);
+		const filtered = await listTransactions(
+			deps(),
+			{ accountIds: [account.id], q: "HYPERMARCHE" },
+			firstPage,
+		);
+		const all = await listTransactions(deps(), { accountIds: [account.id] }, firstPage);
+
+		expect(all.items.map((item) => item.id).toSorted()).toEqual([food, home].toSorted());
+		expect(all.items.map((item) => item.parentEntryId)).toEqual([parent, parent]);
+		expect(all.total).toBe(2);
+		expect(filtered).toEqual({ items: [], total: 0 });
+		await expect(findTransaction(deps(), parent)).resolves.toMatchObject({
+			excluded: true,
+			parentEntryId: null,
+		});
+	});
+
 	it("is an empty page for an unknown account", async () => {
 		await expect(listTransactions(deps(), { accountIds: ["nope"] }, firstPage)).resolves.toEqual({
 			items: [],
@@ -373,6 +395,21 @@ describe("sumTransactions", () => {
 		await expect(
 			sumTransactions(deps(), { accountIds: [joint.id], direction: ["expense"] }),
 		).resolves.toEqual([{ currency: "EUR", amount: -5090, income: 0, expense: -5090, count: 2 }]);
+	});
+
+	it("sums a split's children, never its parent", async () => {
+		const account = await openChecking({ name: "Somme divisée" });
+		const { amount } = await splitInTwo(account.id);
+
+		await expect(sumTransactions(deps(), { accountIds: [account.id] })).resolves.toEqual([
+			{ currency: "EUR", amount, income: 0, expense: amount, count: 2 },
+		]);
+		await expect(sumTransactionsByLabel(deps(), { accountIds: [account.id] })).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ label: "Courses", amount: -6_000 }),
+				expect.objectContaining({ label: "Maison", amount: amount + 6_000 }),
+			]),
+		);
 	});
 
 	it("sums only the rows the text matches", async () => {
@@ -527,10 +564,15 @@ describe("cashFlowByCategory", () => {
 		await pairOf("credit_card_payment", joint.id, card.id);
 		await loanPaymentOf(joint.id, mortgage.id);
 		await contributionOf(joint.id, pea.id);
+		// A split: the list leaves its parent out, so it is read apart, and
+		// `countsInCashFlow` must leave it out on its own.
+		const split = await splitInTwo(joint.id, { date: "2026-09-12" });
+		await updateTransaction(deps(), split.food, { categoryId: groceries }, asUser);
+		const parent = await findTransaction(deps(), split.parent);
 
 		const all = await listTransactions(deps(), { accountIds }, firstPage);
 		const expected = new Map<string, { categoryId: string | null; amount: number }>();
-		for (const item of all.items) {
+		for (const item of [...all.items, ...(parent === null ? [] : [parent])]) {
 			if (item.date >= "2026-09-01" && item.date <= "2026-09-30" && countsInCashFlow(item)) {
 				const key = `${item.categoryId}:${item.amount > 0}`;
 				const current = expected.get(key);

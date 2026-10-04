@@ -18,6 +18,7 @@ import * as accountsService from "../services/accounts.ts";
 import * as assistantCallsService from "../services/assistant-calls.ts";
 import { disconnectAssistant } from "../services/assistants.ts";
 import { ingest } from "../services/ledger/ingest.ts";
+import { splitTransaction } from "../services/ledger/splits.ts";
 import * as reportsService from "../services/reports.ts";
 import {
 	createCategory,
@@ -1660,6 +1661,52 @@ describe("classifying transactions", () => {
 		expect(
 			(await callTool(bare, token, "get_transaction", { id })).structuredContent,
 		).toMatchObject({ date: "2026-09-10", amount: "-12.50" });
+	});
+
+	it("get_transactions lists a split's lines and not its parent; update_transaction refuses their exclusion", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Divisé" });
+		// An amount of its own: step 6 would link a common one to another test's rows.
+		const parent = await spend(account, "SPLIT9 HYPER", -98_765);
+		// A rule an earlier test left enabled may have excluded it, and an excluded transaction cannot be split.
+		await temp.db.$client.execute({
+			sql: "update transactions set excluded = 0 where entry_id = ?",
+			args: [parent],
+		});
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "SPLIT9 Courses", amount: toMinorUnits(-6_000), categoryId: null },
+				{ label: "SPLIT9 Maison", amount: toMinorUnits(-92_765), categoryId: null },
+			],
+			{ origin: "user" },
+		);
+		const [child = ""] = split.childIds;
+
+		const found = listed.parse(
+			(await callTool(bare, token, "get_transactions", { account: [account.id] }))
+				.structuredContent,
+		);
+		const onChild = await callTool(bare, token, "update_transaction", {
+			id: child,
+			excluded: true,
+		});
+		const onParent = await callTool(bare, token, "update_transaction", {
+			id: parent,
+			excluded: false,
+		});
+		const relabelled = await callTool(bare, token, "update_transaction", {
+			id: child,
+			label: "SPLIT9 Fruits",
+		});
+
+		expect(found.items.map((item) => item.id).toSorted()).toEqual(split.childIds.toSorted());
+		expect(found.total).toBe(2);
+		expect(onChild.isError).toBe(true);
+		expect(onChild.content[0]?.text).toContain("TRANSACTION_SPLIT");
+		expect(onParent.content[0]?.text).toContain("TRANSACTION_SPLIT");
+		expect(relabelled.structuredContent).toMatchObject({ label: "SPLIT9 Fruits", excluded: false });
 	});
 
 	it("bulk_update_transactions by ids adds tags beside those each carries", async () => {

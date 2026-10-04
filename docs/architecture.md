@@ -204,7 +204,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epic 19; FR72, FR83
 - **Prevents:** a split counted twice in a balance, bank keys moving off the row the bank knows, and a child mistaken for a bank line.
-- **Rule:** As in Sure, a split keeps its parent and adds children: `entries.parent_entry_id` references the parent with `ON DELETE RESTRICT`, and `services/ledger/splits.ts` writes both. The children's amounts sum to the parent's exactly. The parent keeps its deduplication keys, is excluded with `excluded` locked, and counts in no balance, list, total, report, rule, recurring detection or transfer matching; its children count in all of them. A child is never a pairing, duplicate or transfer candidate, and is never absorbed. Deleting a parent, by any path, deletes its children first in the same transaction. Editing a split updates the children it keeps by id (AD-17). A transaction converted into a trade (AD-22) is a parent whose only child is the trade, under the same rules.
+- **Rule:** As in Sure, a split keeps its parent and adds children: `entries.parent_entry_id` references the parent with `ON DELETE RESTRICT`, and `services/ledger/splits.ts` writes both. The children's amounts sum to the parent's exactly. The parent keeps its deduplication keys, is excluded with `excluded` locked, and counts in no balance, list, total, report, rule or recurring detection; its children count in all of them. Neither side of a split is a transfer candidate: the parent is excluded, a child would leave its parent half moved, and a transfer side cannot be split. A child is never a pairing or duplicate candidate, and is never absorbed. Deleting a parent, by any path, deletes its children first in the same transaction. Editing a split updates the children it keeps by id (AD-17). A transaction converted into a trade (AD-22) is a parent whose only child is the trade, under the same rules.
 
 ### AD-21 — Roles
 
@@ -279,6 +279,7 @@ erDiagram
   accounts ||--o{ balances : "daily history"
   entries ||--o| transactions : "kind = transaction"
   entries ||--o{ entry_keys : "dedup keys"
+  entries ||--o{ entries : "split lines"
   imports ||--o{ entry_keys : wrote
   imports ||--o{ entries : "reconciliation valuations"
   accounts ||--o{ imports : receives
