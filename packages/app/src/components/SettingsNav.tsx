@@ -7,6 +7,7 @@ import {
 	ShieldCheckIcon,
 	StoreIcon,
 	TagsIcon,
+	UsersIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -21,6 +22,7 @@ export const SETTINGS_SECTIONS = [
 	{ to: "/settings/tags", label: "settings.sections.tags", icon: TagsIcon },
 	{ to: "/settings/assistants", label: "settings.sections.assistants", icon: BotIcon },
 	{ to: "/settings/data", label: "settings.sections.data", icon: DatabaseIcon },
+	{ to: "/settings/members", label: "settings.sections.members", icon: UsersIcon },
 	{ to: "/settings/security", label: "settings.sections.security", icon: ShieldCheckIcon },
 ] as const;
 

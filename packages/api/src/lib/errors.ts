@@ -8,6 +8,11 @@ export const ERROR_STATUSES = {
 	NOT_FOUND: 404,
 	/** A disconnection of an assistant that holds no consent: never connected, or disconnected already. */
 	ASSISTANT_NOT_FOUND: 404,
+	/**
+	 * An invitation link whose token is unknown, expired, accepted already or
+	 * revoked: the four read alike, so the answer says nothing of which.
+	 */
+	INVITATION_INVALID: 404,
 	VALIDATION_ERROR: 400,
 	/** No valid session on a guarded route. */
 	UNAUTHORIZED: 401,

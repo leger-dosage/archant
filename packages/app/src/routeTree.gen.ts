@@ -17,6 +17,7 @@ import { Route as AuthedRecurringRouteImport } from './routes/_authed.recurring'
 import { Route as AuthedRulesRouteImport } from './routes/_authed.rules'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedTransactionsRouteImport } from './routes/_authed.transactions'
+import { Route as InvitationsTokenRouteImport } from './routes/invitations.$token'
 import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as AuthedAccountsIndexRouteImport } from './routes/_authed.accounts.index'
 import { Route as AuthedAccountsAccountIdRouteImport } from './routes/_authed.accounts.$accountId'
@@ -27,6 +28,7 @@ import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.s
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
 import { Route as AuthedSettingsCategoriesRouteImport } from './routes/_authed.settings.categories'
 import { Route as AuthedSettingsDataRouteImport } from './routes/_authed.settings.data'
+import { Route as AuthedSettingsMembersRouteImport } from './routes/_authed.settings.members'
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
@@ -73,6 +75,11 @@ const AuthedTransactionsRoute = AuthedTransactionsRouteImport.update({
   id: '/transactions',
   path: '/transactions',
   getParentRoute: () => AuthedRoute,
+} as any)
+const InvitationsTokenRoute = InvitationsTokenRouteImport.update({
+  id: '/invitations/$token',
+  path: '/invitations/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OauthConsentRoute = OauthConsentRouteImport.update({
   id: '/oauth/consent',
@@ -126,6 +133,11 @@ const AuthedSettingsDataRoute = AuthedSettingsDataRouteImport.update({
   path: '/data',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedSettingsMembersRoute = AuthedSettingsMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => AuthedSettingsRoute,
+} as any)
 const AuthedSettingsMerchantsRoute = AuthedSettingsMerchantsRouteImport.update({
   id: '/merchants',
   path: '/merchants',
@@ -173,6 +185,7 @@ export interface FileRoutesByFullPath {
   '/rules': typeof AuthedRulesRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/transactions': typeof AuthedTransactionsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
   '/budgets/$month': typeof AuthedBudgetsMonthRoute
@@ -180,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/settings/data': typeof AuthedSettingsDataRoute
+  '/settings/members': typeof AuthedSettingsMembersRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -197,6 +211,7 @@ export interface FileRoutesByTo {
   '/recurring': typeof AuthedRecurringRoute
   '/rules': typeof AuthedRulesRoute
   '/transactions': typeof AuthedTransactionsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/': typeof AuthedIndexRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
@@ -205,6 +220,7 @@ export interface FileRoutesByTo {
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/settings/data': typeof AuthedSettingsDataRoute
+  '/settings/members': typeof AuthedSettingsMembersRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -225,6 +241,7 @@ export interface FileRoutesById {
   '/_authed/rules': typeof AuthedRulesRoute
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/_authed/transactions': typeof AuthedTransactionsRoute
+  '/invitations/$token': typeof InvitationsTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
@@ -233,6 +250,7 @@ export interface FileRoutesById {
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
   '/_authed/settings/data': typeof AuthedSettingsDataRoute
+  '/_authed/settings/members': typeof AuthedSettingsMembersRoute
   '/_authed/settings/merchants': typeof AuthedSettingsMerchantsRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
@@ -254,6 +272,7 @@ export interface FileRouteTypes {
     | '/rules'
     | '/settings'
     | '/transactions'
+    | '/invitations/$token'
     | '/oauth/consent'
     | '/accounts/$accountId'
     | '/budgets/$month'
@@ -261,6 +280,7 @@ export interface FileRouteTypes {
     | '/settings/banks'
     | '/settings/categories'
     | '/settings/data'
+    | '/settings/members'
     | '/settings/merchants'
     | '/settings/security'
     | '/settings/tags'
@@ -278,6 +298,7 @@ export interface FileRouteTypes {
     | '/recurring'
     | '/rules'
     | '/transactions'
+    | '/invitations/$token'
     | '/oauth/consent'
     | '/'
     | '/accounts/$accountId'
@@ -286,6 +307,7 @@ export interface FileRouteTypes {
     | '/settings/banks'
     | '/settings/categories'
     | '/settings/data'
+    | '/settings/members'
     | '/settings/merchants'
     | '/settings/security'
     | '/settings/tags'
@@ -305,6 +327,7 @@ export interface FileRouteTypes {
     | '/_authed/rules'
     | '/_authed/settings'
     | '/_authed/transactions'
+    | '/invitations/$token'
     | '/oauth/consent'
     | '/_authed/'
     | '/_authed/accounts/$accountId'
@@ -313,6 +336,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
     | '/_authed/settings/data'
+    | '/_authed/settings/members'
     | '/_authed/settings/merchants'
     | '/_authed/settings/security'
     | '/_authed/settings/tags'
@@ -329,6 +353,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
+  InvitationsTokenRoute: typeof InvitationsTokenRoute
   OauthConsentRoute: typeof OauthConsentRoute
 }
 
@@ -389,6 +414,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/transactions'
       preLoaderRoute: typeof AuthedTransactionsRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/invitations/$token': {
+      id: '/invitations/$token'
+      path: '/invitations/$token'
+      fullPath: '/invitations/$token'
+      preLoaderRoute: typeof InvitationsTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/oauth/consent': {
       id: '/oauth/consent'
@@ -460,6 +492,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsDataRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/settings/members': {
+      id: '/_authed/settings/members'
+      path: '/members'
+      fullPath: '/settings/members'
+      preLoaderRoute: typeof AuthedSettingsMembersRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
     '/_authed/settings/merchants': {
       id: '/_authed/settings/merchants'
       path: '/merchants'
@@ -517,6 +556,7 @@ interface AuthedSettingsRouteChildren {
   AuthedSettingsBanksRoute: typeof AuthedSettingsBanksRoute
   AuthedSettingsCategoriesRoute: typeof AuthedSettingsCategoriesRoute
   AuthedSettingsDataRoute: typeof AuthedSettingsDataRoute
+  AuthedSettingsMembersRoute: typeof AuthedSettingsMembersRoute
   AuthedSettingsMerchantsRoute: typeof AuthedSettingsMerchantsRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsTagsRoute: typeof AuthedSettingsTagsRoute
@@ -530,6 +570,7 @@ const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
   AuthedSettingsBanksRoute: AuthedSettingsBanksRoute,
   AuthedSettingsCategoriesRoute: AuthedSettingsCategoriesRoute,
   AuthedSettingsDataRoute: AuthedSettingsDataRoute,
+  AuthedSettingsMembersRoute: AuthedSettingsMembersRoute,
   AuthedSettingsMerchantsRoute: AuthedSettingsMerchantsRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsTagsRoute: AuthedSettingsTagsRoute,
@@ -577,6 +618,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
+  InvitationsTokenRoute: InvitationsTokenRoute,
   OauthConsentRoute: OauthConsentRoute,
 }
 export const routeTree = rootRouteImport

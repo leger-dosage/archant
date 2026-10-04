@@ -14,6 +14,19 @@ const isEmail = (value: string) => z.email().safeParse(value).success;
  */
 export const firstNameSchema = z.string().trim().max(60);
 
+/** Trimmed, and then lowercased by Better Auth, which stores every email so. */
+export const emailSchema = z
+	.string()
+	.trim()
+	.min(1, { abort: true })
+	.refine(isEmail, "invalid_email");
+
+/** Better Auth's bounds, each with the field code its form translates. */
+export const passwordSchema = z
+	.string()
+	.refine((value) => value.length >= PASSWORD_MIN_LENGTH, "password_too_short")
+	.refine((value) => value.length <= PASSWORD_MAX_LENGTH, "password_too_long");
+
 // Shared with the setup form, whose resolver runs this same schema. Custom
 // issues carry their field code as their message (lib/zod-error.ts).
 export const setupSchema = z.object({
@@ -21,11 +34,8 @@ export const setupSchema = z.object({
 	// `SETUP_TOKEN_INVALID`, like a wrong one. The form requires one itself.
 	token: z.string().trim().max(200),
 	name: firstNameSchema.optional(),
-	email: z.string().trim().min(1, { abort: true }).refine(isEmail, "invalid_email"),
-	password: z
-		.string()
-		.refine((value) => value.length >= PASSWORD_MIN_LENGTH, "password_too_short")
-		.refine((value) => value.length <= PASSWORD_MAX_LENGTH, "password_too_long"),
+	email: emailSchema,
+	password: passwordSchema,
 });
 
 export type SetupInput = z.infer<typeof setupSchema>;

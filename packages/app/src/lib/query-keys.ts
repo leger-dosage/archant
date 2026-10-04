@@ -87,6 +87,14 @@ export const queryKeys = {
 		all: ["assistants"] as const,
 		client: (clientId: string) => ["assistants", "client", clientId] as const,
 	},
+	/**
+	 * The pending invitations, one query: inviting or revoking invalidates
+	 * `all`. `preview(token)` is the link's page's, read once, outside it.
+	 */
+	invitations: {
+		all: ["invitations"] as const,
+		preview: (token: string) => ["invitation-preview", token] as const,
+	},
 	transactions: {
 		/**
 		 * Prefixes every transaction list, one account's or all of them. A

@@ -10,6 +10,7 @@
 		"./schemas/budgets": "./src/schemas/budgets.ts",
 		"./schemas/categories": "./src/schemas/categories.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
+		"./schemas/invitations": "./src/schemas/invitations.ts",
 		"./schemas/merchants": "./src/schemas/merchants.ts",
 		"./schemas/reports": "./src/schemas/reports.ts",
 		"./schemas/rules": "./src/schemas/rules.ts",

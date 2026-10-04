@@ -9,6 +9,7 @@ import type { entries } from "./schema/entries.ts";
 import type { deletedEntryKeys, entryKeys } from "./schema/entry-keys.ts";
 import type { importMappings } from "./schema/import-mappings.ts";
 import type { imports } from "./schema/imports.ts";
+import type { invitations } from "./schema/invitations.ts";
 import type { merchants } from "./schema/merchants.ts";
 import type { recurringTransactions } from "./schema/recurring-transactions.ts";
 import type { rejectedTransfers } from "./schema/rejected-transfers.ts";
@@ -49,6 +50,9 @@ export type NewUser = InferInsertModel<typeof users>;
 
 export type Session = InferSelectModel<typeof sessions>;
 export type NewSession = InferInsertModel<typeof sessions>;
+
+export type Invitation = InferSelectModel<typeof invitations>;
+export type NewInvitation = InferInsertModel<typeof invitations>;
 
 export type Category = InferSelectModel<typeof categories>;
 export type NewCategory = InferInsertModel<typeof categories>;

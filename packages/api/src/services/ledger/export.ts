@@ -209,6 +209,7 @@ export const LEFT_OUT = {
 	entry_keys: "Deduplication keys, meaningful to this instance only.",
 	import_mappings: "A saved CSV column mapping, a setting.",
 	imports: "Raw import files and their previews.",
+	invitations: SECRETS,
 	jwks: SECRETS,
 	oauth_access_tokens: SECRETS,
 	oauth_client_assertions: SECRETS,

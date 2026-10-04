@@ -37,6 +37,7 @@ import { categoriesRoutes } from "./routes/categories.ts";
 import { exportRoutes } from "./routes/export.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
+import { invitationsRoutes } from "./routes/invitations.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
@@ -255,6 +256,7 @@ function createApi(deps: AppDeps) {
 		.route("/tags", tagsRoutes(deps))
 		.route("/rules", rulesRoutes(deps))
 		.route("/assistants", assistantsRoutes(deps))
+		.route("/invitations", invitationsRoutes(deps))
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/export", exportRoutes(deps))

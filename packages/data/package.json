@@ -29,6 +29,7 @@
 		"./schema/entry-keys": "./schema/entry-keys.ts",
 		"./schema/import-mappings": "./schema/import-mappings.ts",
 		"./schema/imports": "./schema/imports.ts",
+		"./schema/invitations": "./schema/invitations.ts",
 		"./schema/merchants": "./schema/merchants.ts",
 		"./schema/oauth": "./schema/oauth.ts",
 		"./schema/recurring-transactions": "./schema/recurring-transactions.ts",
@@ -42,7 +43,8 @@
 		"./schema/transfers": "./schema/transfers.ts",
 		"./testing/migrations": "./testing/migrations.ts",
 		"./transfer-kinds": "./transfer-kinds.ts",
-		"./types": "./types.ts"
+		"./types": "./types.ts",
+		"./user-roles": "./user-roles.ts"
 	},
 	"scripts": {
 		"generate": "drizzle-kit generate",

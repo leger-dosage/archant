@@ -48,7 +48,12 @@ const viewer = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), v
 const WRITING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** The reads only an administrator gets (AD-21). */
-const ADMIN_READS = ["/api/bank-connections/setup", "/api/assistants", "/api/export"];
+const ADMIN_READS = [
+	"/api/bank-connections/setup",
+	"/api/assistants",
+	"/api/invitations",
+	"/api/export",
+];
 
 /**
  * Every route of the running app under `/api` behind the session guard, its

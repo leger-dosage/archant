@@ -1,44 +1,17 @@
-import { hashPassword } from "better-auth/crypto";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { createDb } from "@archant/data/client";
+import { apiHelpers, expect, test } from "./fixtures.ts";
+import { ADMIN_STATE, WEB_URL } from "./settings.ts";
 
-import { expect, test } from "./fixtures.ts";
-import { DATABASE_FILE, WEB_URL } from "./settings.ts";
-
-// Story 20.1: only an administrator connects an assistant. Nobody can invite a
-// viewer before Story 20.2, so the test writes one to the database, password
-// hashed as Better Auth hashes it. Starts signed out, as a browser an
-// assistant opens.
+// Story 20.1: only an administrator connects an assistant. The viewer comes
+// through an invitation, accepted beside the page, which then starts signed
+// out, as a browser an assistant opens.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const PASSWORD = "mot de passe du lecteur";
 
 const REDIRECT_URI = "http://127.0.0.1:33418/callback";
-
-async function insertViewer(email: string): Promise<void> {
-	const db = await createDb(`file:${DATABASE_FILE}`);
-	const id = randomUUID();
-
-	try {
-		await db.$client.batch(
-			[
-				{
-					sql: "insert into users (id, name, email, role) values (?, '', ?, 'viewer')",
-					args: [id, email],
-				},
-				{
-					sql: "insert into auth_accounts (id, account_id, provider_id, user_id, password, updated_at) values (?, ?, 'credential', ?, ?, ?)",
-					args: [randomUUID(), id, id, await hashPassword(PASSWORD), Date.now()],
-				},
-			],
-			"write",
-		);
-	} finally {
-		db.$client.close();
-	}
-}
 
 function authorizeUrl(clientId: string): string {
 	const query = new URLSearchParams({
@@ -59,9 +32,21 @@ function authorizeUrl(clientId: string): string {
 
 test("the consent page tells a viewer only an administrator connects an assistant, and offers no answer", async ({
 	page,
+	playwright,
 }) => {
 	const email = `lecteur-${randomUUID().slice(0, 8)}@archant.test`;
-	await insertViewer(email);
+	const administrator = await playwright.request.newContext({
+		baseURL: WEB_URL,
+		storageState: ADMIN_STATE,
+	});
+	const { url } = await apiHelpers(administrator).invite(email);
+	await administrator.dispose();
+	const accepted = await page.request.post("/api/invitations/accept", {
+		data: { token: url.split("/").at(-1), password: PASSWORD },
+	});
+	expect(accepted.status()).toBe(201);
+	// The acceptance signed the viewer in; the assistant's browser starts signed out.
+	await page.context().clearCookies();
 	const registered = await page.request.post("/api/auth/oauth2/register", {
 		data: {
 			client_name: "Agent du lecteur",

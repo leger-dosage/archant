@@ -40,7 +40,7 @@ Setup is open. Open /setup and enter the setup token <token>. A new one is print
 
 Take the token from the last line: each start replaces the previous token.
 
-Open Archant at the address `ARCHANT_URL` names, `http://localhost:8787` when it is empty. From any other address, setup and sign-in are refused, and the page says to set `ARCHANT_URL` to the address in the browser's address bar, then restart.
+Open Archant at the address `ARCHANT_URL` names, `http://localhost:8787` when it is empty. From any other address, setup and sign-in are refused, and the page says to set `ARCHANT_URL` to the address in the browser's address bar, then restart. An invitation link from « Réglages » › « Membres » names that address too, so it must be the one the household's members reach, such as a Tailscale name, rather than `localhost`.
 
 Without it, whoever reached `/setup` first would own the instance; a new domain's certificate is public within minutes. Once the administrator exists, no token is printed and setup refuses every request.
 

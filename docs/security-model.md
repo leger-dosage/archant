@@ -67,6 +67,12 @@ docker compose exec archant node -e "new (require('node:sqlite').DatabaseSync)('
 
 Labels, notes and merchant names are written by banks and by whoever sends money, and an assistant reads them before it acts. The server tells every assistant that they are data, never instructions, but an assistant may still follow a sentence hidden in a label. Grant read only unless you want the assistant to change things, and watch its last call on the settings page. Each call is recorded with the assistant, the tool, the time, its outcome and the rows it changed, never its arguments or its answer, and kept 90 days.
 
+## Invitations
+
+« Réglages › Membres » invites an email as a viewer or an administrator and shows a link once. The link holds 32 random bytes; the database stores only their SHA-256, so neither a copy of the file nor a backup gives a working link, and nothing can show it again. Whoever holds the link can create the account it names, with that role, for three days or until it is used or revoked: send it the way you would send a password, and revoke one sent to the wrong place. An administrator's invitation grants everything the administrator has.
+
+The link's page reads the token from its address and sends it to the API in a request body, never in a path, so no error line of the server holds it. The page's address itself holds it, so a reverse proxy's access log and the browser's history keep a link that works until it is used or expires. Accepting is a public route, limited to three attempts per ten seconds per client address, as setup is, before the body is read. A used, expired, revoked or unknown token gets the same answer. The account takes the invitation's email, which the page shows and nobody edits, and the role the administrator chose; public sign-up stays off. Log lines carry the invitation's and the user's ids, never the email, the token or the link.
+
 ## Export
 
 « Réglages » › « Données » and `GET /api/export` hand an administrator's session every account, transaction, balance, category, merchant, tag, recurring payment, transfer, budget and rule, with their amounts, labels and notes in clear, as [Exporting your data](deployment.md#exporting-your-data) describes. A viewer is refused it. Whoever holds an administrator's session can therefore take the whole history in one request: sign out on a shared computer, and treat a downloaded archive as a bank statement. The response is marked `Cache-Control: no-store`, so neither the browser's cache nor a proxy keeps a copy.
