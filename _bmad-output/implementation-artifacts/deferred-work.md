@@ -259,3 +259,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-22-3-holdings-and-an-investment-accounts-value.md`
   summary: No test pins that a `Holding` line at quantity zero writes `cost_basis` and `cost_basis_source` both null.
   evidence: low; the export household sells no security in full, so writing `cost_basis_source: "calculated"` on every line fails neither the assertion nor `surePreflight`. Settle it with a full sale in the export fixture, or with Story 22.4's holdings screen.
+- source_spec: `_bmad-output/implementation-artifacts/spec-22-4-see-my-holdings.md`
+  summary: No Playwright test opens the sheet of a provider security set offline and finds « Saisir un cours ».
+  evidence: low; `PositionSheet` shows the form for `provider === null || offline`, and only the first branch has an end-to-end test, since the suite keeps price fetching off and no fixture sets `offline`. Settle it with an e2e helper that fails a stubbed fetch five times, or a test-only seed.
