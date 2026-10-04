@@ -8,7 +8,7 @@ scope: "Archant, the ten epics of epics.md"
 status: final
 created: "2026-09-21"
 updated: "2026-10-03"
-binds: [FR1-FR56, FR61-FR90, NFR1-NFR12, NFR14, NFR19, NFR20]
+binds: [FR1-FR56, FR61-FR94, NFR1-NFR12, NFR14, NFR19, NFR20]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md
   - ../_bmad-output/planning-artifacts/epics.md
@@ -120,7 +120,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** all; FR1, FR2, FR9–FR11, NFR1, NFR2
 - **Prevents:** floats, two parsers of `1 234,56` disagreeing, the API and a browser disagreeing on a currency's decimals, and two lists of account types.
-- **Rule:** Money is `{ amount: MinorUnits; currency: string }`, where `MinorUnits` is a branded integer. `packages/data/money.ts` owns it, with `parseAmount(text, locale)`, `formatMoney(money, locale)` built on `Intl.NumberFormat`, and a static ISO 4217 minor-unit table. An entry's currency always equals its account's; the ledger refuses anything else. Totals use `settings.reporting_currency` (default `EUR`), read through one helper, and skip, and report, accounts in any other currency. `packages/data/account-types.ts` exports `ACCOUNT_TYPES`: each type with its classification (`asset` or `liability`) and allowed subtypes. Type-specific attributes such as a loan's rate live in `accounts.details`, a JSON column validated by a Zod schema per type.
+- **Rule:** Money is `{ amount: MinorUnits; currency: string }`, where `MinorUnits` is a branded integer. `packages/data/money.ts` owns it, with `parseAmount(text, locale)`, `formatMoney(money, locale)` built on `Intl.NumberFormat`, and a static ISO 4217 minor-unit table. An entry's currency always equals its account's; the ledger refuses anything else. Totals use `settings.reporting_currency` (default `EUR`), read through one helper, and skip, and report, accounts in any other currency. `packages/data/account-types.ts` exports `ACCOUNT_TYPES`: each type with its classification (`asset` or `liability`) and allowed subtypes. Type-specific attributes such as a loan's terms live in `accounts.details`, a JSON column validated by a Zod schema per type; a loan's rates are integers in millionths (AD-25).
 
 ### AD-7 — Deduplication keys
 
@@ -230,6 +230,12 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 - **Prevents:** detection and matching disagreeing on what « the same day » or « the same amount » means, two date engines, a transaction paying two occurrences beyond its amount, a float in a tolerance or a score, and a payment lost when a pending line is replaced.
 - **Rule:** `domain/recurring/` holds Sure's identifier, schedule engine and matcher as pure functions; `domain/recurring/schedule.ts` is the only code that computes a series' dates, and the identifier, the manual pass, the cleaner, the generator and the matcher all ask it whether a date lies within 2 days of an occurrence. Tolerances and scores are integers: an amount is within 7.5 % of a reference when `1000 × |a − r| ≤ 75 × |r|`, and a score counts ten-thousandths. A series' amount is signed as its transactions (AD-5); an occurrence's expected amount and a payment's amount are positive magnitudes in the series' currency (AD-6). `services/recurring/` writes series, occurrences and payments in one immediate transaction, run after an import, a revert or a sync commits, from « Détecter », and for occurrences on the first signed-in request of the day; a failure is logged with its code and never fails the request (AD-1). A payment references its entry with `ON DELETE SET NULL`; `absorb` (AD-17) moves payments and rejections onto the survivor. A split parent is never a candidate and its children are (AD-20). The export carries every table of this decision as Sure's lines (AD-23).
 
+### AD-25 — Loan amortisation
+
+- **Binds:** Epics 7, 24; FR9, FR91–FR94; NFR1
+- **Prevents:** a float in a rate or a payment, a cent of difference with the lender's table, and the schedule, the overview, the chart and the projection computing one period two ways.
+- **Rule:** A loan's terms live in `accounts.details` (AD-6); rates are integers in millionths, 1,82 % being `18200`. `domain/loans/` holds Sure's `AmortizationMath`, `Simulator`, `RateResolver`, `AmortizationSchedule`, `Insurance` and `PayoffProjection` as pure functions, and every loan figure reads them. They compute in exact fractions of `BigInt` and round each period's interest, payment and premium half up to the currency's minor unit, as Sure's `BigDecimal#round`; AD-22's half-to-even rounding does not apply. Payment n falls n months after origination, clamped to the month's end. A period accrues once, at the rate in force when it opened, and a payment is sized at the rate in force on its date. A schedule has at most 1 200 periods. Nothing is stored: every figure is computed on read from the terms and the account's balance.
+
 ## Consistency Conventions
 
 | Concern          | Convention                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
@@ -338,7 +344,7 @@ packages/
     routes/            # Hono adapters, one file per resource; middleware/
     schemas/           # request schemas shared with the interface
     services/          # ledger/, imports.ts, sync.ts, reports.ts, seed.ts, setup.ts, crypto.ts
-    domain/            # balances/, keys, transfer-matching, cash-flow, recurring/ (identifier, schedule, matcher), statement, provider-date
+    domain/            # balances/, keys, transfer-matching, cash-flow, recurring/ (identifier, schedule, matcher), loans/ (amortisation, insurance, projection), statement, provider-date
     connectors/        # registry.ts, ofx/, csv/, qif/, enable-banking/
     lib/errors.ts
   app/src/
@@ -361,6 +367,7 @@ packages/
 | Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                             | AD-6, AD-8, AD-9                             |
 | Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                                  | AD-4, AD-10                                  |
 | Recurring and bills (Epics 9, 23)          | `domain/recurring/`, `services/recurring/`, after commit                                 | AD-1, AD-4, AD-17, AD-24                     |
+| Loans (Epics 7, 24)                        | `domain/loans/`, computed on read                                                        | AD-6, AD-25                                  |
 | Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                         | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
 | Assistants (Epic 16)                       | `mcp/`, `services/auth.ts`, `services/assistant-calls.ts`                                | AD-1, AD-13, AD-14, AD-19                    |
 | Budgets (Epic 17)                          | `services/budgets.ts`, `domain/budgets/`                                                 | AD-1, AD-6, AD-9                             |

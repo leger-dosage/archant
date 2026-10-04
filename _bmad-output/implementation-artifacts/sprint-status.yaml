@@ -212,3 +212,10 @@ development_status:
   23-5-every-bill-and-its-story: backlog
   23-6-ask-an-assistant-about-my-bills: backlog
   epic-23-retrospective: optional
+
+  epic-24: backlog
+  24-1-record-a-loans-terms-as-sure-does: backlog
+  24-2-the-amortisation-schedule: backlog
+  24-3-the-loan-overview: backlog
+  24-4-where-my-loan-is-heading: backlog
+  epic-24-retrospective: optional
