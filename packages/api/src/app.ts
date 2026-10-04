@@ -4,6 +4,7 @@ import type { SessionEnv } from "./routes/middleware/auth.ts";
 import type { Auth } from "./services/auth.ts";
 import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
+import type { PriceDeps } from "./services/securities.ts";
 import type { Reservation, SignInCeilingOptions } from "./services/sign-in-failures.ts";
 import type { Context, MiddlewareHandler, Next } from "hono";
 
@@ -42,12 +43,15 @@ import { invitationsRoutes } from "./routes/invitations.ts";
 import { membersRoutes } from "./routes/members.ts";
 import { merchantsRoutes } from "./routes/merchants.ts";
 import { requireSession } from "./routes/middleware/auth.ts";
+import { dailyPrices } from "./routes/middleware/daily-prices.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
 import { requireRole, viewerReadOnly } from "./routes/middleware/roles.ts";
 import { sameOrigin } from "./routes/middleware/same-origin.ts";
+import { pricesRoutes } from "./routes/prices.ts";
 import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
 import { rulesRoutes } from "./routes/rules.ts";
+import { securitiesRoutes } from "./routes/securities.ts";
 import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
 import { syncRoutes } from "./routes/sync.ts";
@@ -70,7 +74,8 @@ import {
 } from "./services/sign-in-failures.ts";
 
 export type AppDeps = ServiceDeps &
-	BankConnectionDeps & {
+	BankConnectionDeps &
+	PriceDeps & {
 		/** `$client` too, for the statistics a large import refreshes. */
 		db: Pick<Database, "$client">;
 		logger: Logger;
@@ -265,6 +270,8 @@ function createApi(deps: AppDeps) {
 		.route("/reports", reportsRoutes(deps))
 		.route("/export", exportRoutes(deps))
 		.route("/bank-connections", bankConnectionsRoutes(deps))
+		.route("/prices", pricesRoutes(deps))
+		.route("/securities", securitiesRoutes(deps))
 		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
 		.route("/version", versionRoutes(deps))
@@ -322,9 +329,10 @@ function serveInterface(app: Hono<SessionEnv>, root: string) {
  * The assembly point: the API under `/api`, the built interface under `/`
  * when there is one, and the error envelope for all of it. Order matters: the
  * origin check and Better Auth's handler come before the session guard, which
- * comes before the viewer's refusal of writes, the first-visit sync and every
- * route it protects; `/api` has its own JSON 404 before the interface's
- * fallback, which would otherwise answer an unknown API route with the page.
+ * comes before the viewer's refusal of writes, the first-visit sync and price
+ * fetch, and every route it protects; `/api` has its own JSON 404 before the
+ * interface's fallback, which would otherwise answer an unknown API route with
+ * the page.
  */
 export function createApp(deps: AppDeps) {
 	// Assistants need HTTPS or loopback (`assistantsAvailable`); without them
@@ -439,6 +447,7 @@ export function createApp(deps: AppDeps) {
 		// before anything reads it, and their reads still start the sync.
 		.use("/api/*", viewerReadOnly())
 		.use("/api/*", dailySync(deps))
+		.use("/api/*", dailyPrices(deps))
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);
 

@@ -1,13 +1,16 @@
 import type { BankConnector } from "./bank-connector.ts";
 import type { EnableBankingConfig } from "./enable-banking/client.ts";
 import type { FileSource } from "./file-source.ts";
+import type { PriceProvider, PriceProviderConfig } from "./prices/price-provider.ts";
 
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import type { FileSourceId } from "@archant/data/schema/imports";
+import type { PriceProviderId } from "@archant/data/schema/securities";
 
 import { csvSource } from "./csv/csv.ts";
 import { createEnableBankingConnector } from "./enable-banking/client.ts";
 import { ofxSource } from "./ofx/ofx.ts";
+import { createYahooProvider } from "./prices/yahoo.ts";
 import { qifSource } from "./qif/qif.ts";
 
 // Static on purpose: no plugin loading (AD-3). A record, so a connector id
@@ -45,4 +48,18 @@ export function createBankConnector(
 	config: EnableBankingConfig,
 ): BankConnector {
 	return BANK_CONNECTORS[id](config);
+}
+
+// The price port's adapters, apart from the bank's (AD-22). A record, as
+// above, so a provider id without its adapter fails to compile.
+const PRICE_PROVIDERS: Record<PriceProviderId, (config: PriceProviderConfig) => PriceProvider> = {
+	yahoo: createYahooProvider,
+};
+
+/** The price provider `id`, pointed at its API. */
+export function createPriceProvider(
+	id: PriceProviderId,
+	config: PriceProviderConfig,
+): PriceProvider {
+	return PRICE_PROVIDERS[id](config);
 }

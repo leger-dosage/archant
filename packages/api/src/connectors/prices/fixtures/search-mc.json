@@ -1,0 +1,110 @@
+{
+	"explains": [],
+	"count": 7,
+	"quotes": [
+		{
+			"exchange": "PAR",
+			"shortname": "LVMH",
+			"quoteType": "EQUITY",
+			"symbol": "MC.PA",
+			"index": "quotes",
+			"score": 20367.0,
+			"typeDisp": "Equity",
+			"longname": "LVMH Moët Hennessy - Louis Vuitton, Société Européenne",
+			"exchDisp": "Paris",
+			"sector": "Consumer Cyclical",
+			"sectorDisp": "Consumer Cyclical",
+			"industry": "Luxury Goods",
+			"industryDisp": "Luxury Goods",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "PNK",
+			"shortname": "LVMH MOET HENNESSY UNSP/ADR",
+			"quoteType": "EQUITY",
+			"symbol": "LVMUY",
+			"index": "quotes",
+			"score": 20112.0,
+			"typeDisp": "Equity",
+			"longname": "LVMH Moët Hennessy - Louis Vuitton, Société Européenne",
+			"exchDisp": "OTC Markets OTCPK",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "MIL",
+			"shortname": "LVMH",
+			"quoteType": "EQUITY",
+			"symbol": "MC.MI",
+			"index": "quotes",
+			"score": 20035.0,
+			"typeDisp": "Equity",
+			"exchDisp": "Milan",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "NMS",
+			"shortname": "Microchip Technology Incorporat",
+			"quoteType": "EQUITY",
+			"symbol": "MCHP",
+			"index": "quotes",
+			"score": 20020.0,
+			"typeDisp": "Equity",
+			"longname": "Microchip Technology Incorporated",
+			"exchDisp": "NASDAQ",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "GER",
+			"shortname": "LVMH",
+			"quoteType": "EQUITY",
+			"symbol": "MOH.DE",
+			"index": "quotes",
+			"score": 20011.0,
+			"typeDisp": "Equity",
+			"longname": "",
+			"exchDisp": "XETRA",
+			"isYahooFinance": true
+		},
+		{
+			"exchange": "FRA",
+			"quoteType": "EQUITY",
+			"symbol": "MOH.F",
+			"index": "quotes",
+			"score": 20002.0,
+			"typeDisp": "Equity",
+			"exchDisp": "Frankfurt",
+			"isYahooFinance": true
+		},
+		{
+			"index": "0b7a3c1e8d",
+			"name": "Luxury Goods",
+			"permalink": "luxury-goods",
+			"isYahooFinance": true
+		}
+	],
+	"news": [
+		{
+			"uuid": "5d1f9a2e-7c3b-4f1a-9e8d-2b6c4a1f0e3d",
+			"title": "Luxury stocks rally",
+			"publisher": "Example Wire",
+			"link": "https://finance.yahoo.com/news/example",
+			"providerPublishTime": 1790000000,
+			"type": "STORY"
+		}
+	],
+	"nav": [],
+	"lists": [],
+	"researchReports": [],
+	"screenerFieldResults": [],
+	"totalTime": 31,
+	"timeTakenForQuotes": 412,
+	"timeTakenForNews": 600,
+	"timeTakenForAlgowatchlist": 400,
+	"timeTakenForPredefinedScreener": 400,
+	"timeTakenForCrunchbase": 0,
+	"timeTakenForNav": 400,
+	"timeTakenForResearchReports": 0,
+	"timeTakenForScreenerField": 0,
+	"timeTakenForCulturalAssets": 0,
+	"timeTakenForSearchLists": 0
+}

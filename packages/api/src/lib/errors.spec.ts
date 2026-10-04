@@ -20,6 +20,10 @@ describe("AppError", () => {
 		expect(new AppError("BANK_REDIRECT_NOT_ALLOWED", "x").status).toBe(502);
 		expect(new AppError("BANK_BALANCE_UNAVAILABLE", "x").status).toBe(502);
 		expect(new AppError("BANK_AUTHORIZATION_INVALID", "x").status).toBe(400);
+		expect(new AppError("PRICES_DISABLED", "x").status).toBe(409);
+		expect(new AppError("PRICE_UPDATE_IN_PROGRESS", "x").status).toBe(409);
+		expect(new AppError("PRICE_PROVIDER_ERROR", "x").status).toBe(502);
+		expect(new AppError("PRICE_UNAVAILABLE", "x").status).toBe(502);
 	});
 
 	it("serialises fields only when it has some", () => {

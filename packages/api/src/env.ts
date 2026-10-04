@@ -161,6 +161,14 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.url({ protocol: /^https?$/u })
 				.refine(isHttpsOrLoopback)
 				.default("https://api.enablebanking.com"),
+			// Yahoo Finance, the price provider (AD-22), reached only once the
+			// owner turns price fetching on. Overridden only by tests, which point
+			// it at a closed port so a stray request fails rather than leaves.
+			// HTTPS or loopback, as above: the request names the securities held.
+			YAHOO_FINANCE_URL: z
+				.url({ protocol: /^https?$/u })
+				.refine(isHttpsOrLoopback)
+				.default("https://query1.finance.yahoo.com"),
 		},
 		// One variable of the pair alone is a half-finished setup: the stored
 		// credentials would silently apply instead, so startup names the other.

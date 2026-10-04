@@ -1430,6 +1430,7 @@
 			"assistants": "Assistants IA",
 			"data": "Données",
 			"members": "Membres",
+			"investments": "Placements",
 			"security": "Sécurité"
 		},
 		"version": "Version {{version}}",
@@ -1517,6 +1518,27 @@
 			"linkOnce": "Ce lien ne sera plus affiché. Copiez-le maintenant et envoyez-le à la personne invitée. Il expire dans trois jours.",
 			"copy": "Copier le lien d'invitation",
 			"done": "Terminé"
+		}
+	},
+	"investments": {
+		"title": "Placements",
+		"description": "Les cours des titres que vous détenez, pour valoriser vos comptes d'investissement sans les saisir.",
+		"fetch": {
+			"title": "Récupération des cours",
+			"label": "Récupérer les cours chaque jour",
+			"disclosure": "Activée, Archant demande les cours à Yahoo Finance ({{host}}) à la première visite de la journée et quand vous les mettez à jour. Yahoo apprend ainsi quels titres le foyer détient : Archant envoie leur code, jamais une quantité ni un montant. Chercher un titre lui envoie aussi le texte saisi.",
+			"off": "Désactivée, aucune requête ne quitte le serveur : les comptes d'investissement se valorisent par les soldes que vous saisissez.",
+			"enabled": "Récupération des cours activée.",
+			"disabled": "Récupération des cours désactivée."
+		},
+		"update": {
+			"submit": "Mettre à jour les cours",
+			"running": "Mise à jour en cours",
+			"last": "Dernière mise à jour : {{when}}",
+			"never": "Jamais mis à jour",
+			"lastError": "La dernière mise à jour a échoué : {{error}}",
+			"done": "Cours mis à jour.",
+			"failed": "Mise à jour terminée avec une erreur."
 		}
 	},
 	"data": {
@@ -1785,6 +1807,10 @@
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
 		"CONSENT_EXPIRED": "Le consentement de cette banque a expiré. Renouvelez-le pour reprendre la synchronisation.",
 		"ACCOUNT_LINKED": "Ce compte est relié à une banque. Déconnectez la banque avant de le supprimer.",
+		"PRICES_DISABLED": "La récupération des cours est désactivée. Activez-la pour mettre à jour les cours.",
+		"PRICE_UPDATE_IN_PROGRESS": "Mise à jour des cours déjà en cours.",
+		"PRICE_PROVIDER_ERROR": "Yahoo Finance n'a pas répondu correctement. Réessayez plus tard.",
+		"PRICE_UNAVAILABLE": "Yahoo Finance n'a pas de cours pour au moins un titre. Après cinq échecs de suite, un titre n'est plus mis à jour que par ce bouton.",
 		"fields": {
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",

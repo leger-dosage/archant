@@ -38,6 +38,7 @@ describe("validateEnv", () => {
 		expect(env.ENABLE_BANKING_PRIVATE_KEY).toBeUndefined();
 		expect(env.ENCRYPTION_KEY).toBeUndefined();
 		expect(env.ENABLE_BANKING_API_URL).toBe("https://api.enablebanking.com");
+		expect(env.YAHOO_FINANCE_URL).toBe("https://query1.finance.yahoo.com");
 		expect(env.SYNC_SECRET).toBeUndefined();
 	});
 
@@ -144,6 +145,22 @@ describe("validateEnv", () => {
 			"Invalid environment variables: ENABLE_BANKING_API_URL",
 		);
 	});
+
+	it.each(["https://query1.finance.yahoo.com", "http://127.0.0.1:9", "http://localhost:9999"])(
+		"accepts the price provider URL %s",
+		(url) => {
+			expect(validateEnv({ ...required, YAHOO_FINANCE_URL: url }).YAHOO_FINANCE_URL).toBe(url);
+		},
+	);
+
+	it.each(["http://query1.finance.yahoo.com", "http://10.0.0.1", "ftp://localhost", "not a url"])(
+		"refuses the price provider URL %s, naming the variable",
+		(url) => {
+			expect(() => validateEnv({ ...required, YAHOO_FINANCE_URL: url })).toThrow(
+				"Invalid environment variables: YAHOO_FINANCE_URL",
+			);
+		},
+	);
 
 	it.each([
 		["not base64 of a PEM", Buffer.from("hello").toString("base64")],

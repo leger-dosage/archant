@@ -97,6 +97,8 @@ export function buildTestApp(
 		setupToken: TEST_SETUP_TOKEN,
 		// A development build unless a spec names a release.
 		version: network.version ?? null,
+		// `YAHOO_FINANCE_URL`'s default, which msw answers, as `testing/yahoo.ts`.
+		priceApiUrl: "https://query1.finance.yahoo.com",
 		...NO_BANK,
 		...bank,
 		redirectUrl: `${TEST_ORIGIN}/settings/banks/callback`,

@@ -54,7 +54,12 @@ const ADMIN_READS = [
 	"/api/invitations",
 	"/api/members",
 	"/api/export",
+	"/api/prices",
+	"/api/securities",
 ];
+
+/** The query an administrator's read of these paths needs to answer 200. */
+const ADMIN_READ_QUERIES: Record<string, string> = { "/api/securities": "?q=MC" };
 
 /**
  * Every route of the running app under `/api` behind the session guard, its
@@ -148,8 +153,8 @@ describe("a viewer's writes", () => {
 		const walked = routes.map(({ method, path }) => `${method} ${path}`);
 
 		// Fails if the walk stops finding routes, rather than passing on none.
-		expect(routes.length).toBeGreaterThanOrEqual(62);
-		// Epics 17 to 19 and 21: budgets, splits, attachments and goals.
+		expect(routes.length).toBeGreaterThanOrEqual(64);
+		// Epics 17 to 19, 21 and 22: budgets, splits, attachments, goals and prices.
 		expect(walked).toEqual(
 			expect.arrayContaining([
 				"PUT /api/budgets/x",
@@ -162,6 +167,8 @@ describe("a viewer's writes", () => {
 				"PUT /api/goals/x",
 				"DELETE /api/goals/x",
 				"POST /api/goals/x/x",
+				"PUT /api/prices/settings",
+				"POST /api/prices/update",
 			]),
 		);
 
@@ -260,8 +267,9 @@ describe("a viewer's reads", () => {
 	});
 
 	it.each(ADMIN_READS)("leave %s to an administrator", async (path) => {
-		const refused = await viewer().request(path);
-		const allowed = await admin().request(path);
+		const url = `${path}${ADMIN_READ_QUERIES[path] ?? ""}`;
+		const refused = await viewer().request(url);
+		const allowed = await admin().request(url);
 		await allowed.arrayBuffer();
 
 		expect(refused.status).toBe(403);

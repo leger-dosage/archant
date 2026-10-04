@@ -247,6 +247,10 @@ export const LEFT_OUT = {
 		labelKey: "The normalised label detection groups by, derived from the label again.",
 	},
 	rule_runs: "The history of rule applications, as Sure's export leaves it out.",
+	securities:
+		"Sure's all.ndjson has no Security line, which its importer refuses: a security leaves inside the Trade and Holding lines that name it.",
+	security_prices:
+		"Prices fetched from the provider, which Sure's all.ndjson does not carry: the provider fetches them again.",
 	sessions: SECRETS,
 	settings: "Instance settings, the saved Enable Banking credentials among them.",
 	sign_in_failures: "Sign-in throttling.",
