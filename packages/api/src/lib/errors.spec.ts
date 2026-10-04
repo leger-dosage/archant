@@ -27,6 +27,7 @@ describe("AppError", () => {
 		expect(new AppError("PRICE_UNAVAILABLE", "x").status).toBe(502);
 		expect(new AppError("NOT_AN_INVESTMENT_ACCOUNT", "x").status).toBe(409);
 		expect(new AppError("QUANTITY_UNAVAILABLE", "x").status).toBe(409);
+		expect(new AppError("NOT_CONVERTIBLE", "x").status).toBe(409);
 	});
 
 	it("serialises fields only when it has some", () => {

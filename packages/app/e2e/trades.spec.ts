@@ -265,6 +265,115 @@ test("the security list says when fetching is off or Yahoo fails, and offers its
 	await expect(tradeRow(page, daysAgo(4))).toContainText(`Air Liquide${ticker}`);
 });
 
+test("a dividend on a held fund and interest on cash, added from « Ordres », move only the cash", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "25 000,00",
+		openingDate: daysAgo(30),
+	});
+	const fund = uniqueName("Fonds");
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name: fund },
+		date: daysAgo(10),
+		quantity: "10",
+		price: "612,40",
+		fee: "2,50",
+	});
+	const paid = daysAgo(4);
+	const earned = daysAgo(3);
+	const before = 2_500_000 - 612_650 + 612_400;
+
+	await page.goto(`/accounts/${account.id}?tab=trades`);
+	await expect(header(page, account.name)).toContainText(euros(before));
+
+	await test.step("a dividend, on one of the account's positions", async () => {
+		await page.getByRole("button", { name: "Ajouter un ordre" }).click();
+		const dialog = page.getByRole("dialog", { name: "Ajouter un ordre" });
+		await dialog.getByRole("radio", { name: "Dividende" }).click();
+		// An income takes its amount alone.
+		await expect(dialog.getByLabel("Quantité")).toHaveCount(0);
+		await dialog.getByRole("combobox", { name: "Titre" }).click();
+		await expect(page.getByRole("option", { name: "Liquidités" })).toHaveCount(0);
+		await page.getByRole("option", { name: fund }).click();
+		await dialog.getByLabel("Date", { exact: true }).fill(typed(paid));
+		await dialog.getByLabel("Montant").fill("12,34");
+		await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+		await expect(dialog).toBeHidden();
+		await expect(tradeRow(page, paid).getByRole("cell")).toHaveText([
+			formatTableDate(paid),
+			"Dividende",
+			fund,
+			"",
+			`+${euros(1234)}`,
+		]);
+		await expect(header(page, account.name)).toContainText(euros(before + 1234));
+	});
+
+	await test.step("interest, on the account's cash, offered first", async () => {
+		await page.getByRole("button", { name: "Ajouter un ordre" }).click();
+		const dialog = page.getByRole("dialog", { name: "Ajouter un ordre" });
+		await dialog.getByRole("radio", { name: "Intérêts" }).click();
+		await expect(dialog.getByRole("combobox", { name: "Titre" })).toHaveText("Liquidités");
+		await dialog.getByLabel("Date", { exact: true }).fill(typed(earned));
+		await dialog.getByLabel("Montant").fill("3");
+		await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+		await expect(dialog).toBeHidden();
+		await expect(tradeRow(page, earned).getByRole("cell")).toHaveText([
+			formatTableDate(earned),
+			"Intérêts",
+			"Liquidités",
+			"",
+			`+${euros(300)}`,
+		]);
+		await expect(header(page, account.name)).toContainText(euros(before + 1234 + 300));
+	});
+
+	await test.step("the position holds what it held, the dividend in its sheet", async () => {
+		await page.getByRole("tab", { name: "Positions" }).click();
+		const opener = page.getByRole("button", { name: fund, exact: true });
+		// The dividend sets no price: the buy's stays.
+		await expect(page.getByRole("row").filter({ has: opener })).toContainText("10 × 612,40 €");
+		await opener.click();
+		const position = page.getByRole("dialog", { name: fund });
+		await expect(position.getByRole("list", { name: "Ordres" })).toContainText("Dividende");
+		await expect(position.getByRole("list", { name: "Ordres" })).toContainText(
+			"Achat · 10 × 612,40 €",
+		);
+	});
+});
+
+test("an income's amount is edited, its type and security kept", async ({ page, api }) => {
+	const account = await api.openAccount({ kind: "pea", openingDate: daysAgo(30) });
+	const date = daysAgo(3);
+	await api.recordTrade(account.id, { side: "interest", security: null, date, amount: "3" });
+
+	await page.goto(`/accounts/${account.id}?tab=trades`);
+	await tradeRow(page, date)
+		.getByRole("button", { name: formatTableDate(date) })
+		.click();
+	const dialog = page.getByRole("dialog", { name: "Modifier l'ordre" });
+	await expect(dialog.getByRole("radio", { name: "Intérêts" })).toBeChecked();
+	await expect(dialog.getByRole("radio")).toHaveCount(1);
+	await expect(dialog.getByLabel("Titre")).toHaveValue("Liquidités");
+	await expect(dialog.getByLabel("Montant")).toHaveValue("3,00");
+	await dialog.getByLabel("Montant").fill("0");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog.getByLabel("Montant")).toHaveAccessibleDescription(
+		"Le montant doit être supérieur à zéro.",
+	);
+	await dialog.getByLabel("Montant").fill("4,50");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(tradeRow(page, date)).toContainText(`+${euros(450)}`);
+});
+
 test("only an investment account has « Ordres »", async ({ page, api }) => {
 	const account = await api.openAccount();
 

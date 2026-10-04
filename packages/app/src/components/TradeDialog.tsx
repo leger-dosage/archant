@@ -1,25 +1,33 @@
-import type { SecurityPick } from "@/components/SecurityCombobox";
+import type { HeldChoice } from "@/components/TradeFields";
 import type { TradeData } from "@/hooks/useTrades";
-import type { ShownError } from "@/lib/form-errors";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
-import type { TradeFormInput } from "@archant/api/schemas/trades";
+import type { TradeFormInput, TradeType } from "@archant/api/schemas/trades";
 import {
 	SECURITY_NAME_MAX_LENGTH,
 	TRADE_SIDES,
+	TRADE_TYPES,
 	createTradeSchema,
+	isIncomeSide,
 } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
-import { FieldMessage } from "@/components/FieldMessage";
-import { SecurityCombobox, securityLabel } from "@/components/SecurityCombobox";
+import { securityLabel } from "@/components/SecurityCombobox";
+import {
+	IncomeSecuritySelect,
+	SecurityPicker,
+	TradeFieldMessage,
+	TradeTypeToggle,
+	describedBy,
+} from "@/components/TradeFields";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -31,15 +39,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCreateTrade, useDeleteTrade, useUpdateTrade } from "@/hooks/useTrades";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors, errorAt, fieldErrorCode } from "@/lib/form-errors";
+import { applyFieldErrors, errorAt } from "@/lib/form-errors";
 import { decimalToText } from "@/lib/trade-format";
 
 const FIELD_NAMES = [
@@ -51,50 +57,64 @@ const FIELD_NAMES = [
 	"quantity",
 	"price",
 	"fee",
+	"amount",
 ] as const;
 
 type TradeAccount = { id: string; currency: CurrencyCode };
 
+const described = (name: string, error: Parameters<typeof describedBy>[1]) =>
+	describedBy(`trade-${name}-error`, error);
+
 function valuesOf(trade: TradeData | null): TradeFormInput {
-	return trade === null
-		? { side: "buy", security: null, date: toIsoDate(), quantity: "", price: "", fee: "0" }
+	if (trade === null) {
+		return {
+			side: "buy",
+			security: null,
+			date: toIsoDate(),
+			quantity: "",
+			price: "",
+			fee: "0",
+			amount: "",
+		};
+	}
+
+	// An edit never changes the security; the schema still checks one is there.
+	const security =
+		trade.security === null ? null : { source: "known" as const, id: trade.security.id };
+
+	return isIncomeSide(trade.side)
+		? {
+				side: trade.side,
+				security,
+				date: trade.date,
+				quantity: "",
+				price: "",
+				fee: "0",
+				amount: amountToText(trade.amount, trade.currency),
+			}
 		: {
 				side: trade.side,
-				// An edit never changes the security; the schema still checks one is there.
-				security: { source: "known", id: trade.security.id },
+				security,
 				date: trade.date,
 				quantity: decimalToText(trade.quantity),
 				price: decimalToText(trade.price),
 				fee: amountToText(trade.fee, trade.currency),
+				amount: "",
 			};
 }
 
-/**
- * A field's error, with the trade form's own sentence where the shared one
- * would mislead: `too_big` is an amount here, not a text, and a currency
- * mismatch is the security's, not a goal's.
- */
-function TradeFieldMessage({ id, error }: { id: string; error: ShownError | undefined }) {
-	const { t } = useTranslation();
-	const code = error === undefined ? null : fieldErrorCode(error);
-
-	if (code === "too_big" || code === "currency_mismatch") {
-		return (
-			<p id={id} className="text-xs text-destructive">
-				{t(`trades.form.errors.${code}`)}
-			</p>
-		);
+/** The types an edit may move between: a buy and a sale, never an income. */
+function typesOf(trade: TradeData | null): readonly TradeType[] {
+	if (trade === null) {
+		return TRADE_TYPES;
 	}
 
-	return <FieldMessage id={id} error={error} />;
+	return isIncomeSide(trade.side) ? [trade.side] : TRADE_SIDES;
 }
 
-/** A field's ARIA state, pointing at its message when it has an error. */
-function described(name: string, error: ShownError | undefined) {
-	return {
-		"aria-invalid": error !== undefined,
-		...(error === undefined ? {} : { "aria-describedby": `trade-${name}-error` }),
-	};
+/** The security an income names: one already known, or the cash. */
+function heldChoice(choice: TradeFormInput["security"]): HeldChoice | null {
+	return choice !== null && choice.source === "known" ? choice : null;
 }
 
 type TradeFormProps = {
@@ -110,10 +130,12 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 	const updateTrade = useUpdateTrade(account.id);
 	const deleteTrade = useDeleteTrade(account.id);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
-	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState<string | null>(
-		trade === null ? null : securityLabel(trade.security),
+		trade?.security === null || trade === null ? null : securityLabel(trade.security),
 	);
+	// A converted trade keeps its transaction's date and amount: it is read
+	// only, and undoing the conversion is the one thing it offers.
+	const convertedFrom = trade?.convertedFrom ?? null;
 	const schema = useMemo(() => createTradeSchema(account.currency), [account.currency]);
 	const form = useForm<TradeFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
@@ -125,6 +147,7 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 	const side = useController({ control: form.control, name: "side" });
 	const security = useController({ control: form.control, name: "security" });
 	const date = useController({ control: form.control, name: "date" });
+	const income = isIncomeSide(side.field.value);
 	const manual = security.field.value?.source === "manual";
 	const securityError = errorAt(errors, "security");
 	const isinError = errorAt(errors, "security.isin");
@@ -147,26 +170,60 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 		}
 	};
 
-	const pick = ({ choice, label }: SecurityPick) => {
-		security.field.onChange(choice);
-		form.clearErrors("security");
-		setPicked(label);
-		setPicking(false);
+	const changeType = (next: TradeType) => {
+		// A buy's security comes from the search, an income's from the
+		// account's positions: switching between them starts the pick over.
+		if (isIncomeSide(next) !== income) {
+			security.field.onChange(null);
+			setPicked(null);
+		}
+
+		form.clearErrors();
+		side.field.onChange(next);
 	};
 
-	const submit = form.handleSubmit(async ({ security: choice, ...values }) => {
-		try {
-			if (trade !== null) {
-				await updateTrade.mutateAsync({ id: trade.id, input: values });
-			} else if (choice !== null) {
-				await createTrade.mutateAsync({ ...values, security: choice });
+	const submit = form.handleSubmit(
+		async ({
+			side: type,
+			security: choice,
+			date: day,
+			quantity = "",
+			price = "",
+			fee = "",
+			amount = "",
+		}) => {
+			try {
+				if (trade !== null) {
+					await updateTrade.mutateAsync({
+						id: trade.id,
+						input: isIncomeSide(type)
+							? { date: day, amount }
+							: { side: type, date: day, quantity, price, fee },
+					});
+				} else if (isIncomeSide(type)) {
+					await createTrade.mutateAsync({
+						side: type,
+						security: heldChoice(choice),
+						date: day,
+						amount,
+					});
+				} else if (choice !== null) {
+					await createTrade.mutateAsync({
+						side: type,
+						security: choice,
+						date: day,
+						quantity,
+						price,
+						fee,
+					});
+				}
+				// No success toast: the row and the balance changing say it.
+				onClose();
+			} catch (error) {
+				showError(error);
 			}
-			// No success toast: the row and the balance changing say it.
-			onClose();
-		} catch (error) {
-			showError(error);
-		}
-	});
+		},
+	);
 
 	const remove = async () => {
 		if (trade === null) {
@@ -176,6 +233,11 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 		try {
 			await deleteTrade.mutateAsync(trade.id);
 			setConfirmingDelete(false);
+
+			if (convertedFrom !== null) {
+				toast.success(t("trades.undoConversion.done"));
+			}
+
 			onClose();
 		} catch (error) {
 			setConfirmingDelete(false);
@@ -192,141 +254,160 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 				className="flex flex-col gap-4"
 				onSubmit={(event) => void submit(event)}
 			>
-				<div className="flex flex-col gap-1.5">
-					<span id="trade-side-label" className="text-sm font-medium">
-						{t("trades.form.side")}
-					</span>
-					<ToggleGroup
-						type="single"
-						variant="outline"
-						spacing={0}
-						aria-labelledby="trade-side-label"
-						value={side.field.value}
-						// Radix reports an empty value when the pressed item is pressed
-						// again; a trade is always a buy or a sale.
-						onValueChange={(value) => {
-							const next = TRADE_SIDES.find((candidate) => candidate === value);
-
-							if (next !== undefined) {
-								side.field.onChange(next);
-							}
-						}}
-					>
-						{TRADE_SIDES.map((option) => (
-							<ToggleGroupItem key={option} value={option} className="flex-1">
-								{t(`trades.sides.${option}`)}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-				</div>
-
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="trade-security">{t("trades.form.security")}</Label>
-					{trade === null ? (
-						<Popover open={picking} onOpenChange={setPicking}>
-							<PopoverTrigger asChild>
-								<Button
-									id="trade-security"
-									type="button"
-									variant="outline"
-									className="w-full justify-start font-normal"
-									{...described("security", securityError)}
-								>
-									<span className={picked === null ? "text-muted-foreground" : "truncate"}>
-										{picked ?? t("trades.form.securityPlaceholder")}
-									</span>
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
-								<SecurityCombobox onSelect={pick} />
-							</PopoverContent>
-						</Popover>
-					) : (
-						// The security of a recorded trade never changes, as Sure's drawer.
-						<Input id="trade-security" value={picked ?? ""} readOnly disabled />
-					)}
-					<TradeFieldMessage id="trade-security-error" error={securityError} />
-				</div>
-
-				{manual && (
-					<>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="trade-isin">{t("trades.form.isin")}</Label>
-							<Input
-								id="trade-isin"
-								autoComplete="off"
-								className="uppercase"
-								{...described("isin", isinError)}
-								{...form.register("security.isin")}
-							/>
-							<TradeFieldMessage id="trade-isin-error" error={isinError} />
-						</div>
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="trade-name">{t("trades.form.name")}</Label>
-							<Input
-								id="trade-name"
-								autoComplete="off"
-								maxLength={SECURITY_NAME_MAX_LENGTH}
-								{...described("name", nameError)}
-								{...form.register("security.name")}
-							/>
-							<TradeFieldMessage id="trade-name-error" error={nameError} />
-						</div>
-					</>
+				{convertedFrom !== null && (
+					<section aria-labelledby="trade-converted-title" className="flex flex-col gap-1.5">
+						<h3 id="trade-converted-title" className="text-sm font-medium">
+							{t("trades.form.convertedTitle")}
+						</h3>
+						<p className="text-sm text-muted-foreground">
+							{t("trades.form.convertedFrom", { label: convertedFrom.label })}
+						</p>
+					</section>
 				)}
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="trade-date">{t("trades.form.date")}</Label>
-					<DateField
-						id="trade-date"
-						value={date.field.value}
-						onChange={date.field.onChange}
-						onBlur={date.field.onBlur}
-						invalid={errors.date !== undefined}
-						{...(errors.date === undefined ? {} : { describedBy: "trade-date-error" })}
-					/>
-					<TradeFieldMessage id="trade-date-error" error={errors.date} />
-				</div>
-
-				<div className="grid grid-cols-2 gap-3">
+				<fieldset disabled={convertedFrom !== null} className="flex min-w-0 flex-col gap-4">
 					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="trade-quantity">{t("trades.form.quantity")}</Label>
-						<Input
-							id="trade-quantity"
-							inputMode="decimal"
-							autoComplete="off"
-							className="text-right tabular-nums"
-							{...described("quantity", errors.quantity)}
-							{...form.register("quantity")}
+						<span id="trade-side-label" className="text-sm font-medium">
+							{t("trades.form.side")}
+						</span>
+						<TradeTypeToggle
+							labelId="trade-side-label"
+							value={side.field.value}
+							options={typesOf(trade)}
+							disabled={convertedFrom !== null}
+							onChange={changeType}
 						/>
-						<TradeFieldMessage id="trade-quantity-error" error={errors.quantity} />
 					</div>
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="trade-price">{t("trades.form.price")}</Label>
-						<Input
-							id="trade-price"
-							inputMode="decimal"
-							autoComplete="off"
-							className="text-right tabular-nums"
-							{...described("price", errors.price)}
-							{...form.register("price")}
-						/>
-						<TradeFieldMessage id="trade-price-error" error={errors.price} />
-					</div>
-				</div>
 
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="trade-fee">{t("trades.form.fee")}</Label>
-					<Input
-						id="trade-fee"
-						inputMode="decimal"
-						autoComplete="off"
-						className="text-right tabular-nums"
-						{...described("fee", errors.fee)}
-						{...form.register("fee")}
-					/>
-					<TradeFieldMessage id="trade-fee-error" error={errors.fee} />
-				</div>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="trade-security">{t("trades.form.security")}</Label>
+						{trade !== null ? (
+							// The security of a recorded trade never changes, as Sure's drawer.
+							<Input id="trade-security" value={picked ?? t("trades.cash")} readOnly disabled />
+						) : income ? (
+							<IncomeSecuritySelect
+								id="trade-security"
+								accountId={account.id}
+								side={side.field.value === "dividend" ? "dividend" : "interest"}
+								value={heldChoice(security.field.value)}
+								error={securityError}
+								onChange={(choice) => {
+									security.field.onChange(choice);
+									form.clearErrors("security");
+								}}
+							/>
+						) : (
+							<SecurityPicker
+								id="trade-security"
+								picked={picked}
+								error={securityError}
+								onPick={({ choice, label }) => {
+									security.field.onChange(choice);
+									form.clearErrors("security");
+									setPicked(label);
+								}}
+							/>
+						)}
+						<TradeFieldMessage id="trade-security-error" error={securityError} />
+					</div>
+
+					{manual && !income && (
+						<>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="trade-isin">{t("trades.form.isin")}</Label>
+								<Input
+									id="trade-isin"
+									autoComplete="off"
+									className="uppercase"
+									{...described("isin", isinError)}
+									{...form.register("security.isin")}
+								/>
+								<TradeFieldMessage id="trade-isin-error" error={isinError} />
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="trade-name">{t("trades.form.name")}</Label>
+								<Input
+									id="trade-name"
+									autoComplete="off"
+									maxLength={SECURITY_NAME_MAX_LENGTH}
+									{...described("name", nameError)}
+									{...form.register("security.name")}
+								/>
+								<TradeFieldMessage id="trade-name-error" error={nameError} />
+							</div>
+						</>
+					)}
+
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="trade-date">{t("trades.form.date")}</Label>
+						<DateField
+							id="trade-date"
+							value={date.field.value}
+							onChange={date.field.onChange}
+							onBlur={date.field.onBlur}
+							invalid={errors.date !== undefined}
+							{...(errors.date === undefined ? {} : { describedBy: "trade-date-error" })}
+						/>
+						<TradeFieldMessage id="trade-date-error" error={errors.date} />
+					</div>
+
+					{income ? (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="trade-amount">{t("trades.form.amount")}</Label>
+							<Input
+								id="trade-amount"
+								inputMode="decimal"
+								autoComplete="off"
+								className="text-right tabular-nums"
+								{...described("amount", errors.amount)}
+								{...form.register("amount")}
+							/>
+							<TradeFieldMessage id="trade-amount-error" error={errors.amount} />
+						</div>
+					) : (
+						<>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor="trade-quantity">{t("trades.form.quantity")}</Label>
+									<Input
+										id="trade-quantity"
+										inputMode="decimal"
+										autoComplete="off"
+										className="text-right tabular-nums"
+										{...described("quantity", errors.quantity)}
+										{...form.register("quantity")}
+									/>
+									<TradeFieldMessage id="trade-quantity-error" error={errors.quantity} />
+								</div>
+								<div className="flex flex-col gap-1.5">
+									<Label htmlFor="trade-price">{t("trades.form.price")}</Label>
+									<Input
+										id="trade-price"
+										inputMode="decimal"
+										autoComplete="off"
+										className="text-right tabular-nums"
+										{...described("price", errors.price)}
+										{...form.register("price")}
+									/>
+									<TradeFieldMessage id="trade-price-error" error={errors.price} />
+								</div>
+							</div>
+
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="trade-fee">{t("trades.form.fee")}</Label>
+								<Input
+									id="trade-fee"
+									inputMode="decimal"
+									autoComplete="off"
+									className="text-right tabular-nums"
+									{...described("fee", errors.fee)}
+									{...form.register("fee")}
+								/>
+								<TradeFieldMessage id="trade-fee-error" error={errors.fee} />
+							</div>
+						</>
+					)}
+				</fieldset>
 			</form>
 
 			<DialogFooter className="flex-row items-center justify-between sm:justify-between">
@@ -334,33 +415,51 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 					<span />
 				) : (
 					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
-						{t("trades.delete.action")}
+						{t(convertedFrom === null ? "trades.delete.action" : "trades.undoConversion.action")}
 					</Button>
 				)}
 				<div className="flex gap-2">
 					<Button type="button" variant="outline" onClick={onClose}>
-						{t("common.cancel")}
+						{t(convertedFrom === null ? "common.cancel" : "common.close")}
 					</Button>
-					<Button type="submit" form="trade-form" disabled={isSubmitting}>
-						{t("trades.form.save")}
-					</Button>
+					{convertedFrom === null && (
+						<Button type="submit" form="trade-form" disabled={isSubmitting}>
+							{t("trades.form.save")}
+						</Button>
+					)}
 				</div>
 			</DialogFooter>
 
-			{trade !== null && (
-				<ConfirmDialog
-					open={confirmingDelete}
-					onOpenChange={setConfirmingDelete}
-					title={t("trades.delete.title", { date: formatTableDate(trade.date) })}
-					description={t("trades.delete.description", {
-						amount: formatMoney({ amount: trade.amount, currency: trade.currency }),
-					})}
-					confirmLabel={t("trades.delete.confirm")}
-					destructive
-					pending={deleteTrade.isPending}
-					onConfirm={() => void remove()}
-				/>
-			)}
+			{trade !== null &&
+				(convertedFrom === null ? (
+					<ConfirmDialog
+						open={confirmingDelete}
+						onOpenChange={setConfirmingDelete}
+						title={t("trades.delete.title", { date: formatTableDate(trade.date) })}
+						description={t("trades.delete.description", {
+							amount: formatMoney({ amount: trade.amount, currency: trade.currency }),
+						})}
+						confirmLabel={t("trades.delete.confirm")}
+						destructive
+						pending={deleteTrade.isPending}
+						onConfirm={() => void remove()}
+					/>
+				) : (
+					<ConfirmDialog
+						open={confirmingDelete}
+						onOpenChange={setConfirmingDelete}
+						title={t("trades.undoConversion.title")}
+						description={t("trades.undoConversion.description", {
+							label: convertedFrom.label,
+							amount: formatMoney({ amount: trade.amount, currency: trade.currency }),
+						})}
+						confirmLabel={t("trades.undoConversion.action")}
+						cancelLabel={t("trades.undoConversion.keep")}
+						destructive
+						pending={deleteTrade.isPending}
+						onConfirm={() => void remove()}
+					/>
+				))}
 		</>
 	);
 }
@@ -374,8 +473,9 @@ type TradeDialogProps = {
 };
 
 /**
- * Records or edits a buy or a sale. Focus goes back to what opened it, even
- * when the edit moved its row.
+ * Records or edits a buy, a sale, a dividend or interest; a converted trade
+ * opens read only, to undo its conversion. Focus goes back to what opened
+ * it, even when the edit moved its row.
  */
 export function TradeDialog({ account, open, trade, onOpenChange }: TradeDialogProps) {
 	const { t } = useTranslation();

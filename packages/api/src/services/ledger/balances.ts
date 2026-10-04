@@ -40,7 +40,7 @@ import { reverseBalances } from "../../domain/balances/reverse.ts";
 import { addDays, maxDate, today } from "../../domain/dates.ts";
 import { forwardHoldings } from "../../domain/holdings/forward.ts";
 import { AppError } from "../../lib/errors.ts";
-import { inSequence, notSplitParent, oneByOne } from "./shared.ts";
+import { inSequence, movesQuantity, notSplitParent, oneByOne, tradedSecurityId } from "./shared.ts";
 
 // SQLite caps bound parameters per statement at 32 766; five columns per row
 // keeps a chunk far below it, and a decade of history is 3 650 rows.
@@ -205,17 +205,18 @@ async function recomputeHoldings(
 	from: IsoDate,
 	until: IsoDate,
 ): Promise<HoldingValue[]> {
-	// In recording order: a buy's place among the day's trades moves its cost basis.
+	// In recording order: a buy's place among the day's trades moves its cost
+	// basis. A dividend or interest moves cash only.
 	const tradeRows = await tx
 		.select({
 			date: entries.date,
-			securityId: trades.securityId,
+			securityId: tradedSecurityId,
 			quantity: trades.quantity,
 			price: trades.price,
 		})
 		.from(trades)
 		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(eq(entries.accountId, account.id))
+		.where(and(eq(entries.accountId, account.id), movesQuantity))
 		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
 	const securityIds = [...new Set(tradeRows.map((row) => row.securityId))];
 	const priceColumns = {

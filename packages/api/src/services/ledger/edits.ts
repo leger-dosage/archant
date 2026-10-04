@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { TransactionFilter } from "./filter.ts";
 import type { EditableRow, TransactionPatch, UpdateResult } from "./patch.ts";
-import type { Origin, Transaction } from "./shared.ts";
+import type { Origin, TradedPosition, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -38,6 +38,7 @@ import {
 	ROWS_PER_INSERT,
 	chunksOf,
 	deleteSplitChildren,
+	refuseShortfalls,
 	deleteTransactionRows,
 	inSequence,
 	inSplit,
@@ -414,7 +415,11 @@ export async function bulkDeleteTransactions(
 			const now = Date.now();
 
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) => tombstoneBankKeys(tx, chunk, now));
-			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteSplitChildren(tx, chunk));
+			const moved: TradedPosition[] = [];
+			await inSequence(ids, ROWS_PER_INSERT, async (chunk) =>
+				moved.push(...(await deleteSplitChildren(tx, chunk))),
+			);
+			await refuseShortfalls(tx, moved);
 			// The same order as `deleteTransaction`: their foreign keys restrict
 			// deleting the entry.
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>

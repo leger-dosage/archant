@@ -1,10 +1,12 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 import { securityPrices } from "@archant/data/schema/securities";
 
 import { insertSecurity } from "../testing/prices.ts";
@@ -205,5 +207,52 @@ describe("getCashFlow", () => {
 
 		expect(cashFlow.expenses).toBe(0);
 		expect(cashFlow.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);
+	});
+	it("counts a PEA's dividend and interest as uncategorised income, its buy nowhere, and an excluded account's not at all", async () => {
+		const pea = await account({ name: "PEA", type: "investment", subtype: "pea" });
+		const hidden = await account({ name: "PEA caché", type: "investment", subtype: "pea" });
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		const trade = async (accountId: string, input: Parameters<typeof recordTrade>[2]) =>
+			recordTrade(deps(), accountId, input, { origin: "user" });
+		const buy = {
+			side: "buy",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-10",
+			quantity: toMicros(1_000_000),
+			price: toMicros(612_400_000),
+			fee: toMinorUnits(0),
+		} as const;
+		await trade(pea, buy);
+		await trade(hidden, buy);
+		await trade(pea, {
+			side: "dividend",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-15",
+			amount: toMinorUnits(1234),
+		});
+		await trade(pea, {
+			side: "interest",
+			security: null,
+			date: "2026-09-16",
+			amount: toMinorUnits(300),
+		});
+		await trade(hidden, {
+			side: "interest",
+			security: null,
+			date: "2026-09-16",
+			amount: toMinorUnits(999),
+		});
+		await temp.db
+			.update(accounts)
+			.set({ excludedFromReports: true })
+			.where(eq(accounts.id, hidden));
+
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+
+		expect(cashFlow.income).toBe(1534);
+		expect(cashFlow.expenses).toBe(0);
+		expect(cashFlow.lines.income).toEqual([
+			{ categoryId: null, name: null, color: null, icon: null, amount: 1534, share: 1 },
+		]);
 	});
 });

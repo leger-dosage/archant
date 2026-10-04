@@ -2,6 +2,8 @@ import type { TradeData } from "@/hooks/useTrades";
 
 import { useTranslation } from "react-i18next";
 
+import { isIncomeSide } from "@archant/api/schemas/trades";
+
 import { Money } from "@/components/Money";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -22,8 +24,9 @@ type TradeListProps = {
 };
 
 /**
- * One account's buys and sales, most recent first: the date, the side, the
- * security, the quantity at its unit price, and the cash the trade moved.
+ * One account's trades, most recent first: the date, the type, the security
+ * or « Liquidités », the quantity at its unit price for a buy or a sale, and
+ * the cash the trade moved.
  */
 export function TradeList({ items, onOpen }: TradeListProps) {
 	const { t } = useTranslation();
@@ -64,20 +67,26 @@ export function TradeList({ items, onOpen }: TradeListProps) {
 						</TableCell>
 						<TableCell>{t(`trades.sides.${item.side}`)}</TableCell>
 						<TableCell className="max-w-64">
-							<span className="flex min-w-0 flex-col">
-								<span className="truncate">{item.security.name}</span>
-								{(item.security.ticker ?? item.security.isin) !== null && (
-									<span className="truncate text-xs text-muted-foreground">
-										{item.security.ticker ?? item.security.isin}
-									</span>
-								)}
-							</span>
+							{item.security === null ? (
+								t("trades.cash")
+							) : (
+								<span className="flex min-w-0 flex-col">
+									<span className="truncate">{item.security.name}</span>
+									{(item.security.ticker ?? item.security.isin) !== null && (
+										<span className="truncate text-xs text-muted-foreground">
+											{item.security.ticker ?? item.security.isin}
+										</span>
+									)}
+								</span>
+							)}
 						</TableCell>
 						<TableCell className="text-right whitespace-nowrap tabular-nums">
-							{t("trades.quantityPrice", {
-								quantity: formatQuantity(item.quantity),
-								price: formatPrice(item.price, item.currency),
-							})}
+							{/* An income moves cash only: no quantity, no price. */}
+							{!isIncomeSide(item.side) &&
+								t("trades.quantityPrice", {
+									quantity: formatQuantity(item.quantity),
+									price: formatPrice(item.price, item.currency),
+								})}
 						</TableCell>
 						<TableCell className="text-right">
 							<Money amount={item.amount} currency={item.currency} signed />

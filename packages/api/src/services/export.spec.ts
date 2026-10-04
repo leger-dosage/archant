@@ -481,25 +481,110 @@ describe("exportArchive", () => {
 				price: "612.4",
 				amount: "614.90",
 				currency: "EUR",
-				archant: { isin: "FR0000121014", fee: "2.50" },
+				investment_activity_label: "Buy",
+				archant: { isin: "FR0000121014", fee: "2.50", parent_entry_id: null },
 			}),
 			expect.objectContaining({
 				id: trades.fund,
 				ticker: "FR0010315770",
 				security_name: "Fonds euros",
 				exchange_operating_mic: null,
-				archant: { isin: "FR0010315770", fee: "0.00" },
+				archant: { isin: "FR0010315770", fee: "0.00", parent_entry_id: null },
 			}),
-			expect.objectContaining({ id: trades.sold, qty: "-0.5", amount: "-325.00" }),
+			expect.objectContaining({
+				id: trades.sold,
+				qty: "-0.5",
+				amount: "-325.00",
+				investment_activity_label: "Sell",
+			}),
 			// Sure's preflight requires a ticker: a blank one would fail the import whole.
 			expect.objectContaining({
 				id: trades.unnamed,
 				ticker: "Parts sociales",
 				exchange_operating_mic: null,
-				archant: { isin: null, fee: "0.00" },
+				archant: { isin: null, fee: "0.00", parent_entry_id: null },
 			}),
 			expect.objectContaining({ id: trades.soldOut, qty: "-1", amount: "-10.00" }),
 		]);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
+	it("writes dividends, interest on cash and a converted transaction as Sure's own trades leave them", async () => {
+		const { ids, lvmh } = await household();
+		const dividend = await created(`/api/accounts/${ids.other}/trades`, {
+			side: "dividend",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-15",
+			amount: "1,20",
+		});
+		const interest = await created(`/api/accounts/${ids.other}/trades`, {
+			side: "interest",
+			security: null,
+			date: "2026-09-16",
+			amount: "0,30",
+		});
+		const source = await postOwn(ids.other, {
+			date: "2026-09-17",
+			label: "ACHAT LVMH",
+			amount: "-306,20",
+		});
+		const converted = await created(`/api/transactions/${source}/trade`, {
+			side: "buy",
+			security: { source: "known", id: lvmh },
+			quantity: "0,5",
+			price: "612",
+		});
+
+		const archive = await exported();
+		const cash = `CASH-${ids.other}`.toUpperCase();
+
+		expect(archive.csv("trades.csv")).toEqual(
+			expect.arrayContaining([
+				["2026-09-15", "Crypto", "MC.PA", "0", "0", "-1.20", "EUR"],
+				["2026-09-16", "Crypto", cash, "0", "0", "-0.30", "EUR"],
+				["2026-09-17", "Crypto", "MC.PA", "0.5", "612", "306.20", "EUR"],
+			]),
+		);
+		expect(archive.of("Trade")).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: dividend,
+					security_id: lvmh,
+					ticker: "MC.PA",
+					investment_activity_label: "Dividend",
+					qty: "0",
+					price: "0",
+					amount: "-1.20",
+					archant: { isin: "FR0000121014", fee: "0.00", parent_entry_id: null },
+				}),
+				// Sure's `Security.cash_for`: its ticker and name, no security of Archant's.
+				expect.objectContaining({
+					id: interest,
+					security_id: null,
+					ticker: cash,
+					security_name: "Cash",
+					exchange_operating_mic: null,
+					investment_activity_label: "Interest",
+					amount: "-0.30",
+					archant: { isin: null, fee: "0.00", parent_entry_id: null },
+				}),
+				expect.objectContaining({
+					id: converted,
+					investment_activity_label: "Buy",
+					qty: "0.5",
+					amount: "306.20",
+					archant: { isin: "FR0000121014", fee: "0.20", parent_entry_id: source },
+				}),
+			]),
+		);
+		// The converted line leaves as Sure's own conversion leaves it: excluded.
+		expect(archive.of("Transaction")).toContainEqual(
+			expect.objectContaining({ id: source, excluded: true, amount: "306.20" }),
+		);
+		expect(archive.of("Transaction").find((row) => row["id"] === source)).not.toHaveProperty(
+			"split_lines",
+		);
+		expect(archive.csv("transactions.csv").some((row) => row.includes("ACHAT LVMH"))).toBe(false);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 

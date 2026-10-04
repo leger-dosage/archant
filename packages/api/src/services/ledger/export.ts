@@ -126,6 +126,7 @@ export const EXPORTED_COLUMNS = {
 	trades: {
 		entryId: trades.entryId,
 		securityId: trades.securityId,
+		incomeKind: trades.incomeKind,
 		quantity: trades.quantity,
 		price: trades.price,
 		fee: trades.fee,
@@ -581,7 +582,11 @@ export function exportedRejectedTransfers(db: Reader) {
 		.orderBy(asc(rejectedTransfers.createdAt), asc(rejectedTransfers.id));
 }
 
-/** Every trade with its security, by date then creation, as `transactions.csv` orders its lines. */
+/**
+ * Every trade with its security, `null` for interest on cash, by date then
+ * creation, as `transactions.csv` orders its lines. A converted trade names
+ * its transaction in `parentEntryId`.
+ */
 export function exportedTrades(db: Reader) {
 	return db
 		.select({
@@ -591,7 +596,7 @@ export function exportedTrades(db: Reader) {
 		})
 		.from(trades)
 		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.innerJoin(securities, eq(securities.id, trades.securityId))
+		.leftJoin(securities, eq(securities.id, trades.securityId))
 		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
 }
 

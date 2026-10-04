@@ -25,6 +25,9 @@ import * as ledgerBalances from "./balances.ts";
 import { currentHoldings, lockCostBasis, revalueHoldings, unlockCostBasis } from "./holdings.ts";
 import { deleteTrade, recordTrade, updateTrade } from "./trades.ts";
 
+/** A buy or a sale, as the helpers below build them. */
+type OrderInput = Extract<TradeInput, { side: "buy" | "sell" }>;
+
 useLedgerDatabase();
 
 const user = { origin: "user" } as const;
@@ -47,7 +50,7 @@ async function newSecurity(name = "LVMH") {
 }
 
 /** Story 22.3's d: a buy of 10 at 612.40 € with 2.50 € of fees on 2026-09-10. */
-function buy(securityId: string, overrides: Partial<TradeInput> = {}): TradeInput {
+function buy(securityId: string, overrides: Partial<OrderInput> = {}): OrderInput {
 	return {
 		side: "buy",
 		security: { source: "known", id: securityId },
@@ -59,7 +62,7 @@ function buy(securityId: string, overrides: Partial<TradeInput> = {}): TradeInpu
 	};
 }
 
-const sell = (securityId: string, overrides: Partial<TradeInput> = {}) =>
+const sell = (securityId: string, overrides: Partial<OrderInput> = {}) =>
 	buy(securityId, {
 		side: "sell",
 		price: toMicros(650_000_000),
@@ -463,6 +466,22 @@ describe("currentHoldings", () => {
 
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
 			holdings: [{ price: 700_000_000, priceDate: "2026-09-15" }],
+		});
+	});
+
+	it("never dates the price by a dividend, which sets none", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		await record(pea.id, {
+			side: "dividend",
+			security: { source: "known", id: securityId },
+			date: "2026-09-15",
+			amount: toMinorUnits(1234),
+		});
+
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ price: 612_400_000, priceDate: "2026-09-10" }],
 		});
 	});
 

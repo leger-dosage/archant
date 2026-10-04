@@ -2,7 +2,7 @@ import type { InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { TradeInput, TradePatchInput } from "@archant/api/schemas/trades";
+import type { ConvertTradeInput, TradeInput, TradePatchInput } from "@archant/api/schemas/trades";
 
 import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { api, unwrap } from "@/lib/api";
@@ -69,6 +69,21 @@ export function useDeleteTrade(accountId: string) {
 	return useMutation({
 		mutationFn: async (id: string) =>
 			(await unwrap(api.trades[":id"].$delete({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/**
+ * Converts a transaction of `accountId` into a trade: the line leaves its
+ * lists, the trade joins « Ordres » and maybe « Positions », and a dividend
+ * or interest joins the cash flow.
+ */
+export function useConvertTransaction(accountId: string) {
+	const invalidate = useInvalidateTrades(accountId);
+
+	return useMutation({
+		mutationFn: async ({ id, input }: { id: string; input: ConvertTradeInput }) =>
+			(await unwrap(api.transactions[":id"].trade.$post({ param: { id }, json: input }))).data,
 		onSuccess: invalidate,
 	});
 }

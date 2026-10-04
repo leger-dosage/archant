@@ -46,7 +46,9 @@ export type CountedTransaction = CashFlowTransaction & { excluded: boolean; pend
  * (AD-9: its booked version counts once the bank settles it), and income or
  * expense by `direction`. Which accounts count is the caller's choice, the
  * reporting-currency set of `services/reports.ts`. `services/ledger/queries.ts`
- * holds its SQL twin in `cashFlowByCategory`, tied by a parity test.
+ * holds its SQL twin in `cashFlowByCategory`, tied by a parity test, which
+ * also counts a dividend or interest on an investment account as
+ * uncategorised income: a trade, never a transaction.
  */
 export function countsInCashFlow(tx: CountedTransaction): boolean {
 	return !tx.excluded && !tx.pending && direction(tx) !== "transfer";

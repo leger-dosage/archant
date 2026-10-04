@@ -49,6 +49,7 @@
 		"./schema/transfers": "./schema/transfers.ts",
 		"./testing/migrations": "./testing/migrations.ts",
 		"./transfer-kinds": "./transfer-kinds.ts",
+		"./income-kinds": "./income-kinds.ts",
 		"./types": "./types.ts",
 		"./user-roles": "./user-roles.ts"
 	},

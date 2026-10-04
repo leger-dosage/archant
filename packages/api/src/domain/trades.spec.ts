@@ -3,7 +3,18 @@ import { describe, expect, it } from "vitest";
 import { toMicros } from "@archant/data/micros";
 import { MAX_MINOR_UNITS, toMinorUnits } from "@archant/data/money";
 
-import { firstShortfall, isValidIsin, sideOf, signedQuantity, tradeAmount } from "./trades.ts";
+import {
+	conversionFee,
+	firstShortfall,
+	isIncome,
+	isIncomeSide,
+	isValidIsin,
+	sideOf,
+	signFits,
+	signedQuantity,
+	tradeAmount,
+	typeOf,
+} from "./trades.ts";
 
 const micros = (value: number) => toMicros(value);
 
@@ -61,6 +72,90 @@ describe("signedQuantity and sideOf", () => {
 		expect(signedQuantity("sell", micros(4_000_000))).toBe(-4_000_000);
 		expect(sideOf(micros(4_000_000))).toBe("buy");
 		expect(sideOf(micros(-4_000_000))).toBe("sell");
+	});
+});
+
+describe("typeOf and isIncome", () => {
+	it("reads an income's kind, else its quantity's side", () => {
+		expect(typeOf({ quantity: micros(4_000_000), incomeKind: null })).toBe("buy");
+		expect(typeOf({ quantity: micros(-4_000_000), incomeKind: null })).toBe("sell");
+		expect(typeOf({ quantity: micros(0), incomeKind: "dividend" })).toBe("dividend");
+		expect(typeOf({ quantity: micros(0), incomeKind: "interest" })).toBe("interest");
+	});
+
+	it("tells an income from a buy or a sale", () => {
+		expect(isIncome({ side: "dividend" })).toBe(true);
+		expect(isIncome({ side: "interest" })).toBe(true);
+		expect(isIncome({ side: "buy" })).toBe(false);
+		expect(isIncome({ side: "sell" })).toBe(false);
+		expect(isIncomeSide("interest")).toBe(true);
+		expect(isIncomeSide("buy")).toBe(false);
+	});
+});
+
+describe("signFits", () => {
+	it.each([
+		["buy", -100, true],
+		["buy", 0, true],
+		["buy", 100, false],
+		["sell", 100, true],
+		["sell", 0, true],
+		["sell", -100, false],
+		["dividend", 100, true],
+		["dividend", 0, false],
+		["interest", -100, false],
+	] as const)("a %s of %i fits: %s", (type, amount, fits) => {
+		expect(signFits(type, toMinorUnits(amount))).toBe(fits);
+	});
+});
+
+describe("conversionFee", () => {
+	const ten = { quantity: micros(10_000_000), price: micros(612_400_000) };
+
+	it.each([
+		["a buy of 10 at 612.40 for −6 126.50", "buy", ten, -612_650, 250],
+		["a buy whose amount is exactly the value", "buy", ten, -612_400, 0],
+		["a sale of 10 at 612.40 for 6 121.50", "sell", ten, 612_150, 250],
+		["a sale whose amount is exactly the value", "sell", ten, 612_400, 0],
+		// 3 × 0.333335 is 1.000005 €, one cent once rounded.
+		[
+			"the value rounded as a trade's",
+			"buy",
+			{ quantity: micros(3_000_000), price: micros(333_335) },
+			-101,
+			1,
+		],
+	] as const)("leaves %s its fee", (_name, side, figures, amount, fee) => {
+		expect(conversionFee(side, figures, toMinorUnits(amount), "EUR")).toBe(fee);
+		// The trade it makes moves the transaction's amount exactly.
+		expect(
+			tradeAmount(
+				{
+					quantity: signedQuantity(side, figures.quantity),
+					price: figures.price,
+					fee: toMinorUnits(fee),
+				},
+				"EUR",
+			),
+		).toBe(amount);
+	});
+
+	it.each([
+		["a buy above what the transaction paid", "buy", -600_000],
+		["a sale below what the transaction brought", "sell", 612_500],
+	] as const)("refuses %s", (_name, side, amount) => {
+		expect(conversionFee(side, ten, toMinorUnits(amount), "EUR")).toBeNull();
+	});
+
+	it("refuses a fee past MAX_MINOR_UNITS", () => {
+		expect(
+			conversionFee(
+				"sell",
+				{ quantity: micros(1_000_000_000_000), price: micros(1_000_000_000_000) },
+				toMinorUnits(0),
+				"EUR",
+			),
+		).toBeNull();
 	});
 });
 

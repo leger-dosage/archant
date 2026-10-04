@@ -1,6 +1,6 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
-import type { Origin, Transaction } from "./shared.ts";
+import type { Origin, TradedPosition, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
 import { and, count, eq, inArray, isNull, lt, lte, ne, notExists, or } from "drizzle-orm";
@@ -24,6 +24,7 @@ import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import {
 	ROWS_PER_INSERT,
 	deleteSplitChildren,
+	refuseShortfalls,
 	inSequence,
 	rejectedOf,
 	transferOf,
@@ -214,7 +215,11 @@ export async function revertImport(
 				);
 			const ids = created.map((entry) => entry.id);
 
-			await inSequence(ids, ROWS_PER_INSERT, (chunk) => deleteSplitChildren(tx, chunk));
+			const moved: TradedPosition[] = [];
+			await inSequence(ids, ROWS_PER_INSERT, async (chunk) =>
+				moved.push(...(await deleteSplitChildren(tx, chunk))),
+			);
+			await refuseShortfalls(tx, moved);
 			await inSequence(ids, ROWS_PER_INSERT, (chunk) =>
 				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
 			);

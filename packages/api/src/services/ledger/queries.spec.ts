@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
+import { securities } from "@archant/data/schema/securities";
 
 import { countsInCashFlow } from "../../domain/cash-flow.ts";
 import { monthRange } from "../../domain/dates.ts";
@@ -26,6 +28,7 @@ import {
 	setToday,
 	splitInTwo,
 	statementOf,
+	temp,
 	transferAmount,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
@@ -42,6 +45,7 @@ import {
 	sumTransactionsByLabel,
 	oldestEntryDate,
 } from "./queries.ts";
+import { recordTrade } from "./trades.ts";
 
 useLedgerDatabase();
 
@@ -679,6 +683,66 @@ describe("cashFlowByMonth", () => {
 		await expect(cashFlowByMonth(deps(), { to: "2026-09-30", accountIds: [] })).resolves.toEqual(
 			[],
 		);
+	});
+});
+
+const trade = async (accountId: string, input: Parameters<typeof recordTrade>[2]) =>
+	recordTrade(deps(), accountId, input, asUser);
+
+describe("income trades in the cash flow", () => {
+	it("count each dividend and interest of the accounts asked as uncategorised income, never a buy or a sale", async () => {
+		const pea = await openPea({ name: "PEA revenus", openingDate: "2026-06-01" });
+		const elsewhere = await openPea({ name: "PEA ailleurs", openingDate: "2026-06-01" });
+		const securityId = crypto.randomUUID();
+		await temp.db.insert(securities).values({
+			id: securityId,
+			name: "Fonds",
+			currency: "EUR",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const order = {
+			security: { source: "known", id: securityId },
+			quantity: toMicros(10_000_000),
+			price: toMicros(10_000_000),
+			fee: toMinorUnits(0),
+		} as const;
+		await trade(pea.id, { ...order, side: "buy", date: "2026-07-01" });
+		await trade(elsewhere.id, { ...order, side: "buy", date: "2026-07-01" });
+		await trade(pea.id, { ...order, side: "sell", date: "2026-08-20" });
+		const income = (date: string, amount: number) => ({
+			side: "dividend" as const,
+			security: { source: "known" as const, id: securityId },
+			date,
+			amount: toMinorUnits(amount),
+		});
+		await trade(pea.id, income("2026-08-14", 1234));
+		await trade(pea.id, {
+			side: "interest",
+			security: null,
+			date: "2026-09-02",
+			amount: toMinorUnits(300),
+		});
+		await trade(pea.id, {
+			side: "interest",
+			security: null,
+			date: "2026-09-03",
+			amount: toMinorUnits(50),
+		});
+		await trade(elsewhere.id, income("2026-08-14", 999));
+
+		await expect(
+			cashFlowByCategory(deps(), { ...monthRange("2026-08"), accountIds: [pea.id] }),
+		).resolves.toEqual([{ categoryId: null, amount: 1234 }]);
+		await expect(
+			cashFlowByCategory(deps(), { ...monthRange("2026-07"), accountIds: [pea.id] }),
+		).resolves.toEqual([]);
+		await expect(
+			cashFlowByMonth(deps(), { to: "2026-09-30", accountIds: [pea.id] }),
+		).resolves.toEqual([
+			{ month: "2026-08", categoryId: null, amount: 1234 },
+			{ month: "2026-09", categoryId: null, amount: 350 },
+		]);
 	});
 });
 

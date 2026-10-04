@@ -2,7 +2,8 @@ import type { ServiceDeps } from "../deps.ts";
 import type { EditableRow } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { QueryBuilder, alias } from "drizzle-orm/sqlite-core";
 
 import type { MinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
@@ -26,8 +27,17 @@ import {
 	inAnyTransfer,
 	invalidField,
 	isSplitParent,
+	lockedBy,
 	oneByOne,
 } from "./shared.ts";
+
+const convertedTrade = alias(entries, "converted_trade");
+
+/** The ids of every transaction converted into a trade, its only child (AD-22). */
+const convertedIds = new QueryBuilder()
+	.select({ id: convertedTrade.parentEntryId })
+	.from(convertedTrade)
+	.where(and(isNotNull(convertedTrade.parentEntryId), eq(convertedTrade.kind, "trade")));
 
 /** One line of a split, as the split's dialog sends it. */
 export type SplitLine = {
@@ -46,8 +56,12 @@ export type SplitLine = {
 /** A split: its parent and its children, oldest first. */
 export type Split = { parentId: string; childIds: string[] };
 
-/** What a split reads of the transaction it starts from. */
-async function splitRow(db: Pick<Transaction, "select">, id: string) {
+/**
+ * What a split, or a conversion into a trade, reads of the transaction it
+ * starts from. `isParent` holds for a converted transaction too, whose only
+ * child is its trade; `converted` tells it apart.
+ */
+export async function splitRow(db: Pick<Transaction, "select">, id: string) {
 	const row = await db
 		.select({
 			id: entries.id,
@@ -57,6 +71,7 @@ async function splitRow(db: Pick<Transaction, "select">, id: string) {
 			currency: entries.currency,
 			parentEntryId: entries.parentEntryId,
 			isParent: isSplitParent(entries.id).mapWith(Boolean),
+			converted: inArray(entries.id, convertedIds).mapWith(Boolean),
 			inTransfer: inAnyTransfer.mapWith(Boolean),
 			pending: transactions.pending,
 			excluded: transactions.excluded,
@@ -81,7 +96,7 @@ type SplitRow = Awaited<ReturnType<typeof splitRow>>;
 /**
  * The parent of the split `id` belongs to, from the parent or a child, as
  * Sure's `resolve_to_parent!`. Throws `NOT_FOUND` for an unknown or an
- * unsplit transaction.
+ * unsplit transaction, a converted one included: its child is a trade.
  */
 async function parentOf(db: Pick<Transaction, "select">, id: string): Promise<SplitRow> {
 	const row = await splitRow(db, id);
@@ -90,7 +105,7 @@ async function parentOf(db: Pick<Transaction, "select">, id: string): Promise<Sp
 		return splitRow(db, row.parentEntryId);
 	}
 
-	if (!row.isParent) {
+	if (!row.isParent || row.converted) {
 		throw new AppError("NOT_FOUND", "This transaction is not split.");
 	}
 
@@ -106,15 +121,6 @@ async function childIdsOf(db: Pick<Transaction, "select">, parentId: string): Pr
 		.orderBy(asc(entries.createdAt), asc(entries.id));
 
 	return rows.map((row) => row.id);
-}
-
-/** `current` with `fields` locked when a user asks (AD-10); any other origin locks nothing. */
-function lockedBy(
-	origin: Origin,
-	current: readonly LockableField[],
-	fields: readonly LockableField[],
-): LockableField[] {
-	return origin === "user" ? [...new Set([...current, ...fields])] : [...current];
 }
 
 /**

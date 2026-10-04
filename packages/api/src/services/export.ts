@@ -1,4 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
+import type { TradeType } from "../domain/trades.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { ExportedTransactionRow } from "./ledger/export.ts";
@@ -17,6 +18,7 @@ import type { RecurringStatus } from "@archant/data/schema/recurring-transaction
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { daysBetween, monthRange, today } from "../domain/dates.ts";
+import { typeOf } from "../domain/trades.ts";
 import { AppError } from "../lib/errors.ts";
 import { rolloverAmounts } from "./budgets.ts";
 import { balanceOn } from "./ledger/balances.ts";
@@ -482,15 +484,40 @@ async function* transactionsCsv(deps: ServiceDeps, readers: Readers) {
 
 type Trade = Awaited<ReturnType<typeof exportedTrades>>[number];
 
+type ExportedSecurity = { ticker: string | null; isin: string | null; name: string };
+
 /**
  * What Sure's importer finds a trade's or a holding's security by: its
  * ticker, else its ISIN for one typed by hand, else its name, such as a
  * fonds euros. Never blank: Sure's preflight refuses a `Trade` or a
  * `Holding` line without a ticker, and one refusal fails the whole import.
  */
-function sureTicker(row: Pick<Trade, "security">): string {
+function sureTicker(row: { security: ExportedSecurity }): string {
 	return row.security.ticker ?? row.security.isin ?? row.security.name;
 }
+
+/**
+ * A trade's security as Sure's lines name it. Interest on cash has none:
+ * Sure books it on `Security.cash_for(account)`, whose ticker is
+ * `CASH-<account id>` upper-cased and whose name is `Cash`.
+ */
+function tradeSecurity(trade: Trade): { ticker: string; name: string; mic: string | null } {
+	return trade.security === null
+		? { ticker: `CASH-${trade.accountId}`.toUpperCase(), name: "Cash", mic: null }
+		: {
+				ticker: sureTicker({ security: trade.security }),
+				name: trade.security.name,
+				mic: trade.security.mic,
+			};
+}
+
+/** Sure's `Trade#investment_activity_label` for each kind of trade. */
+const SURE_ACTIVITY_LABELS = {
+	buy: "Buy",
+	sell: "Sell",
+	dividend: "Dividend",
+	interest: "Interest",
+} as const satisfies Record<TradeType, string>;
 
 async function* tradesCsv(readers: Readers) {
 	yield csv([["date", "account_name", "ticker", "quantity", "price", "amount", "currency"]]);
@@ -500,7 +527,7 @@ async function* tradesCsv(readers: Readers) {
 		(await readers.trades()).map((trade) => [
 			trade.date,
 			textCell(accounts.get(trade.accountId)?.name),
-			textCell(sureTicker(trade)),
+			textCell(tradeSecurity(trade).ticker),
 			formatMicros(trade.trade.quantity),
 			formatMicros(trade.trade.price),
 			sureAmount(toMinorUnits(trade.amount), trade.currency),
@@ -833,9 +860,10 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					entry_id: trade.id,
 					account_id: trade.accountId,
 					security_id: trade.trade.securityId,
-					ticker: sureTicker(trade),
-					security_name: trade.security.name,
-					exchange_operating_mic: trade.security.mic,
+					ticker: tradeSecurity(trade).ticker,
+					security_name: tradeSecurity(trade).name,
+					exchange_operating_mic: tradeSecurity(trade).mic,
+					investment_activity_label: SURE_ACTIVITY_LABELS[typeOf(trade.trade)],
 					date: trade.date,
 					qty: formatMicros(trade.trade.quantity),
 					price: formatMicros(trade.trade.price),
@@ -844,8 +872,10 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					created_at: timestamp(trade.createdAt),
 					updated_at: timestamp(trade.updatedAt),
 					archant: {
-						isin: trade.security.isin,
+						isin: trade.security?.isin ?? null,
 						fee: decimal(trade.trade.fee, trade.currency),
+						// The transaction converted into it, an excluded `Transaction` line.
+						parent_entry_id: trade.parentEntryId,
 					},
 				},
 			})),

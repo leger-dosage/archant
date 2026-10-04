@@ -18,6 +18,9 @@ import { listPositions, setCostBasis, unlockCostBasis } from "./holdings.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { recordTrade } from "./ledger/trades.ts";
 
+/** A buy or a sale, as the helpers below build them. */
+type OrderInput = Extract<TradeInput, { side: "buy" | "sell" }>;
+
 useLedgerDatabase();
 
 async function newSecurity(name: string) {
@@ -37,7 +40,7 @@ async function newSecurity(name: string) {
 	return id;
 }
 
-async function buy(accountId: string, securityId: string, fields: Partial<TradeInput> = {}) {
+async function buy(accountId: string, securityId: string, fields: Partial<OrderInput> = {}) {
 	await recordTrade(
 		deps(),
 		accountId,

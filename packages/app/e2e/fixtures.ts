@@ -254,23 +254,31 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
-		 * Records a buy or a sale on an investment account, as « Ajouter un
-		 * ordre » does; a security typed by hand unless `security` says otherwise.
+		 * Records a trade on an investment account, as « Ajouter un ordre »
+		 * does: a buy by default, a sale, or a dividend or interest of `amount`,
+		 * `security` `null` for cash.
 		 */
 		async recordTrade(
 			accountId: string,
-			input: {
-				side?: "buy" | "sell";
-				security: Record<string, unknown>;
-				date: string;
-				quantity: string;
-				price: string;
-				fee?: string;
-			},
+			input:
+				| {
+						side?: "buy" | "sell";
+						security: Record<string, unknown>;
+						date: string;
+						quantity: string;
+						price: string;
+						fee?: string;
+				  }
+				| {
+						side: "dividend" | "interest";
+						security: Record<string, unknown> | null;
+						date: string;
+						amount: string;
+				  },
 		): Promise<string> {
 			return created(
 				await request.post(`/api/accounts/${accountId}/trades`, {
-					data: { side: "buy", fee: "0", ...input },
+					data: "amount" in input ? input : { side: "buy", fee: "0", ...input },
 				}),
 			);
 		},

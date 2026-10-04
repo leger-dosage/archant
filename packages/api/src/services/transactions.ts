@@ -1,6 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { RejectionCode } from "../domain/statement.ts";
 import type { FieldError } from "../lib/errors.ts";
+import type { ConvertTradeInput } from "../schemas/trades.ts";
 import type {
 	BulkDeleteRequest,
 	BulkFilterRequest,
@@ -19,6 +20,7 @@ import type { BulkSelection } from "./ledger/edits.ts";
 import type { TransactionFilter } from "./ledger/filter.ts";
 import type { EntryOrigin, TransactionListRecord, TransactionRecord } from "./ledger/queries.ts";
 import type { Split } from "./ledger/splits.ts";
+import type { TradeData } from "./trades.ts";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
@@ -31,6 +33,7 @@ import { normalizeLabel } from "../domain/normalize-label.ts";
 import { amountBoundsFor } from "../domain/transaction-filter.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
+import { convertTradeSchema } from "../schemas/trades.ts";
 import {
 	UNCATEGORISED,
 	createTransactionSchema,
@@ -66,8 +69,10 @@ import {
 	splitTransaction as splitLedgerTransaction,
 	unsplitTransaction as unsplitLedgerTransaction,
 } from "./ledger/splits.ts";
+import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.ts";
 import { recurringEntryIds } from "./recurring.ts";
 import { getReportingCurrency } from "./settings.ts";
+import { getTrade, investmentCurrency } from "./trades.ts";
 
 /**
  * Where a transaction came from, shown in its sheet: typed by hand, or
@@ -662,4 +667,30 @@ export async function editSplit(
 /** Undoes a split on the user's behalf, and returns its parent as it now stands. */
 export async function unsplitTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 	return getTransaction(deps, await unsplitLedgerTransaction(deps, id, { origin: "user" }));
+}
+
+/**
+ * Converts a transaction of an investment account into a trade on the
+ * user's behalf, as Sure's « Convertir en ordre »: the trade takes its date
+ * and amount, and the transaction stays as its excluded parent (AD-20).
+ * Returns the trade.
+ */
+export async function convertTransaction(
+	deps: ServiceDeps,
+	id: string,
+	input: ConvertTradeInput,
+): Promise<TradeData> {
+	const current = await getTransaction(deps, id);
+	const currency = await investmentCurrency(deps, current.accountId);
+	// The sign and the fee are the ledger's to check, after a line it cannot
+	// convert is refused whatever the body says.
+	const parsed = convertTradeSchema(currency, null).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const trade = await convertLedgerTransaction(deps, id, parsed.data, { origin: "user" });
+
+	return getTrade(deps, trade.id);
 }
