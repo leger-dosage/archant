@@ -10,7 +10,7 @@ import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
 
 import { createLogger } from "../lib/logger.ts";
-import { insertSecurity } from "../testing/prices.ts";
+import { deleteSecurities, holdSecurity, insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { TEST_YAHOO_URL, chartBody, mockYahoo, yahooFixtures } from "../testing/yahoo.ts";
 import { priceStatus, setPricesEnabled, startDailyPrices, updatePrices } from "./prices.ts";
@@ -47,12 +47,14 @@ beforeEach(async () => {
 	vi.restoreAllMocks();
 	vi.useFakeTimers({ toFake: ["Date"] });
 	vi.setSystemTime(NOW);
-	await temp.db.delete(securities);
+	await deleteSecurities(temp.db);
 	await temp.db.delete(settings);
 });
 
-const newSecurity = async (fields: Parameters<typeof insertSecurity>[1] = {}) =>
-	insertSecurity(temp.db, fields);
+const newSecurity = async (
+	fields: Parameters<typeof insertSecurity>[1] = {},
+	options: Parameters<typeof insertSecurity>[2] = {},
+) => insertSecurity(temp.db, fields, options);
 
 async function enable() {
 	await setPricesEnabled(deps(), true);
@@ -114,7 +116,12 @@ describe("price fetching off", () => {
 
 		await expect(startDailyPrices(deps())).resolves.toBeNull();
 		await expect(updatePrices(deps())).rejects.toMatchObject({ code: "PRICES_DISABLED" });
-		await expect(searchSecurities(deps(), "MC")).resolves.toEqual({ enabled: false, items: [] });
+		await expect(searchSecurities(deps(), "MC")).resolves.toEqual({
+			enabled: false,
+			known: [expect.objectContaining({ ticker: "MC.PA" })],
+			items: [],
+			unavailable: false,
+		});
 		await expect(priceStatus(deps())).resolves.toEqual({
 			enabled: false,
 			host: "query1.finance.yahoo.com",
@@ -166,16 +173,107 @@ describe("searchSecurities", () => {
 		});
 		expect(requests.map(({ params }) => params["q"])).toEqual(["MC"]);
 	});
+
+	it("offers the known securities first, by name, ticker or ISIN, case and accents aside", async () => {
+		mockYahoo();
+		const lvmh = await newSecurity({ name: "LVMH Moët Hennessy" }, { held: false });
+		const fund = await newSecurity(
+			{ name: "Fonds euros", ticker: null, mic: null, provider: null, isin: null },
+			{ held: false },
+		);
+		await newSecurity(
+			{ name: "Air Liquide", ticker: "AI.PA", isin: "FR0000120073" },
+			{ held: false },
+		);
+
+		const byName = await searchSecurities(deps(), "MOET");
+		const byTicker = await searchSecurities(deps(), "mc.p");
+		const byIsin = await searchSecurities(deps(), "fr000012");
+		const typedByHand = await searchSecurities(deps(), "euros");
+
+		expect(byName.known).toEqual([
+			{
+				id: lvmh,
+				name: "LVMH Moët Hennessy",
+				ticker: "MC.PA",
+				mic: "XPAR",
+				isin: "FR0000121014",
+				currency: "EUR",
+			},
+		]);
+		expect(byTicker.known.map(({ id }) => id)).toEqual([lvmh]);
+		expect(byIsin.known.map(({ name }) => name)).toEqual(["Air Liquide", "LVMH Moët Hennessy"]);
+		expect(typedByHand.known.map(({ id }) => id)).toEqual([fund]);
+	});
+
+	it("offers ten known securities at most", async () => {
+		await Promise.all(
+			Array.from({ length: 12 }, async (_, index) =>
+				newSecurity({ name: `Titre ${index}`, ticker: `T${index}.PA` }, { held: false }),
+			),
+		);
+
+		const { known } = await searchSecurities(deps(), "titre");
+
+		expect(known).toHaveLength(10);
+	});
+
+	it("leaves out the provider's listings already known, whatever the ticker's case", async () => {
+		mockYahoo();
+		await enable();
+		await newSecurity({ ticker: "mc.pa" }, { held: false });
+		// The same symbol on another venue is another listing.
+		await newSecurity({ ticker: "MC.MI", mic: "XPAR" }, { held: false });
+
+		const { known, items } = await searchSecurities(deps(), "mc");
+
+		expect(known.map(({ ticker }) => ticker ?? "").toSorted((a, b) => a.localeCompare(b))).toEqual([
+			"MC.MI",
+			"mc.pa",
+		]);
+		expect(items.map(({ ticker }) => ticker)).toEqual([
+			"LVMUY",
+			"MC.MI",
+			"MCHP",
+			"MOH.DE",
+			"MOH.F",
+		]);
+	});
+
+	it("keeps offering a stored listing the text does not find among the known ones", async () => {
+		mockYahoo();
+		await enable();
+		// Stored from a search, without the ISIN the owner now types.
+		await newSecurity({ isin: null }, { held: false });
+
+		const { known, items } = await searchSecurities(deps(), "FR0000121014");
+
+		expect(known).toEqual([]);
+		expect(items.map(({ ticker }) => ticker)).toContain("MC.PA");
+	});
+
+	it("answers the known part, unavailable, when the provider fails", async () => {
+		mockYahoo({ search: () => new HttpResponse(null, { status: 500 }) });
+		await enable();
+		await newSecurity({}, { held: false });
+
+		await expect(searchSecurities(deps(), "LVMH")).resolves.toEqual({
+			enabled: true,
+			known: [expect.objectContaining({ ticker: "MC.PA" })],
+			items: [],
+			unavailable: true,
+		});
+	});
 });
 
 describe("heldSecurities", () => {
-	it("holds every security from its creation day in the app's zone", async () => {
-		// 23:30 UTC is already the next day in Paris.
-		const late = await newSecurity({
-			ticker: "AI.PA",
-			createdAt: Date.parse("2026-09-15T23:30:00Z"),
-		});
+	it("holds each traded security from its first trade, a sold one too, and no other", async () => {
+		// Created a week before its first trade: the trade, not the row, decides.
+		const late = await newSecurity({ ticker: "AI.PA" }, { held: false });
+		await holdSecurity(temp.db, late, "2026-09-16");
+		await holdSecurity(temp.db, late, "2026-09-18");
 		const early = await newSecurity();
+		await newSecurity({ ticker: "OR.PA" }, { held: false });
 
 		await expect(heldSecurities(deps())).resolves.toEqual([
 			{ securityId: early, from: "2026-09-14" },

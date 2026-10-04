@@ -56,6 +56,7 @@ import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
 import { syncRoutes } from "./routes/sync.ts";
 import { tagsRoutes } from "./routes/tags.ts";
+import { tradesRoutes } from "./routes/trades.ts";
 import { transactionsRoutes } from "./routes/transactions.ts";
 import { transfersRoutes } from "./routes/transfers.ts";
 import { versionRoutes } from "./routes/version.ts";
@@ -258,6 +259,7 @@ function createApi(deps: AppDeps) {
 		.route("/budgets", budgetsRoutes(deps))
 		.route("/goals", goalsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
+		.route("/trades", tradesRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
 		.route("/merchants", merchantsRoutes(deps))

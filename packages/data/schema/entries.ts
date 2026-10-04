@@ -7,7 +7,11 @@ import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
 import { imports } from "./imports.ts";
 
-export const ENTRY_KINDS = ["transaction", "valuation"] as const;
+/**
+ * Sure's delegated types (AD-8): a transaction, a valuation, or a trade, whose
+ * own columns live in `trades` (AD-22).
+ */
+export const ENTRY_KINDS = ["transaction", "valuation", "trade"] as const;
 
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 
@@ -57,7 +61,7 @@ export const entries = sqliteTable(
 		// `is not null` spelled out: `null in (...)` is null, which a check lets through.
 		check(
 			"entries_valuation_kind_check",
-			sql`(${table.kind} = 'valuation' and ${table.valuationKind} is not null and ${table.valuationKind} in ${inList(VALUATION_KINDS)}) or (${table.kind} = 'transaction' and ${table.valuationKind} is null)`,
+			sql`(${table.kind} = 'valuation' and ${table.valuationKind} is not null and ${table.valuationKind} in ${inList(VALUATION_KINDS)}) or (${table.kind} = 'transaction' and ${table.valuationKind} is null) or (${table.kind} = 'trade' and ${table.valuationKind} is null)`,
 		),
 		// Exactly one starting point per account: two opening anchors would make
 		// the forward computation depend on which one a query happens to return.

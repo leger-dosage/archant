@@ -51,6 +51,34 @@ describe("queryKeys.accounts.imports", () => {
 	});
 });
 
+describe("queryKeys.accounts.trades", () => {
+	it("goes stale when its account is invalidated, and only then", async () => {
+		const client = new QueryClient();
+		const own = queryKeys.accounts.trades("a", 1);
+		const other = queryKeys.accounts.trades("b", 1);
+		client.setQueryData(own, { items: [] });
+		client.setQueryData(other, { items: [] });
+
+		// What every trade write does through `useInvalidateAccount`.
+		await client.invalidateQueries({ queryKey: queryKeys.accounts.detail("a") });
+
+		expect(client.getQueryState(own)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+	});
+});
+
+describe("queryKeys.securities.all", () => {
+	it("prefixes every search, which a trade write refreshes", async () => {
+		const client = new QueryClient();
+		const search = queryKeys.securities.search("lvmh");
+		client.setQueryData(search, { known: [] });
+
+		await client.invalidateQueries({ queryKey: queryKeys.securities.all });
+
+		expect(client.getQueryState(search)?.isInvalidated).toBe(true);
+	});
+});
+
 describe("queryKeys.transactions.all", () => {
 	it("prefixes the cross-account list, its totals, its latest rows and every account's list", async () => {
 		const client = new QueryClient();

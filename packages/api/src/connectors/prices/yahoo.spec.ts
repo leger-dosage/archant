@@ -95,8 +95,22 @@ describe("searchSecurities", () => {
 			},
 			// An empty long name falls back on the short one.
 			{ ticker: "MOH.DE", name: "LVMH", mic: "XETR", currency: "EUR", provider: "yahoo" },
-			// No name at all: the symbol.
+			// No name at all: the symbol. The index and the exchange rate after
+			// it are left out, whatever the case of their type: no account holds one.
 			{ ticker: "MOH.F", name: "MOH.F", mic: "XFRA", currency: "EUR", provider: "yahoo" },
+		]);
+	});
+
+	it("keeps a quote that names no type", async () => {
+		mockYahoo({
+			search: () =>
+				HttpResponse.json({
+					quotes: [{ symbol: "AI.PA", exchange: "PAR", shortname: "AIR LIQUIDE" }],
+				}),
+		});
+
+		await expect(yahoo.searchSecurities("AI")).resolves.toEqual([
+			{ ticker: "AI.PA", name: "AIR LIQUIDE", mic: "XPAR", currency: "EUR", provider: "yahoo" },
 		]);
 	});
 

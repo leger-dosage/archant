@@ -19,6 +19,7 @@
 		"./schemas/setup": "./src/schemas/setup.ts",
 		"./schemas/snapshots": "./src/schemas/snapshots.ts",
 		"./schemas/tags": "./src/schemas/tags.ts",
+		"./schemas/trades": "./src/schemas/trades.ts",
 		"./schemas/transactions": "./src/schemas/transactions.ts",
 		"./schemas/transfers": "./src/schemas/transfers.ts"
 	},

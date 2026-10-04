@@ -1,4 +1,5 @@
 import type { SnapshotData } from "@/hooks/useSnapshots";
+import type { TradeData } from "@/hooks/useTrades";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { PageParam } from "@/lib/page-search";
 
@@ -27,6 +28,8 @@ import { Section } from "@/components/Section";
 import { SnapshotDialog } from "@/components/SnapshotDialog";
 import { SnapshotList, SnapshotListSkeleton } from "@/components/SnapshotList";
 import { TintedIcon } from "@/components/TintedIcon";
+import { TradeDialog } from "@/components/TradeDialog";
+import { TradeList, TradeListSkeleton } from "@/components/TradeList";
 import {
 	TransactionList,
 	TransactionListCard,
@@ -44,13 +47,14 @@ import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
+import { useAccountTrades } from "@/hooks/useTrades";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots", "imports"] as const;
+const ACCOUNT_TABS = ["transactions", "snapshots", "trades", "imports"] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -69,6 +73,7 @@ const searchSchema = z.object({
 	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
 	tab: z.enum(ACCOUNT_TABS).optional().catch(undefined),
 	snapshotsPage: z.number().int().min(1).optional().catch(undefined),
+	tradesPage: z.number().int().min(1).optional().catch(undefined),
 	importsPage: z.number().int().min(1).optional().catch(undefined),
 });
 
@@ -80,6 +85,8 @@ export const Route = createFileRoute("/_authed/accounts/$accountId")({
 type SheetState = { open: boolean; transaction: TransactionData | null };
 
 type SnapshotDialogState = { open: boolean; snapshot: SnapshotData | null };
+
+type TradeDialogState = { open: boolean; trade: TradeData | null };
 
 /** Keeps a list of this page within its last page. */
 function useClampAccountPage(
@@ -234,6 +241,58 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 	);
 }
 
+type TradesPanelProps = {
+	accountId: string;
+	page: number;
+	canAdd: boolean;
+	/** Both `null` for a viewer: no « Ajouter un ordre », and rows that open nothing. */
+	onAdd: (() => void) | null;
+	onOpen: ((trade: TradeData) => void) | null;
+};
+
+function TradesPanel({ accountId, page, canAdd, onAdd, onOpen }: TradesPanelProps) {
+	const { t } = useTranslation();
+	const trades = useAccountTrades(accountId, page);
+	const data = trades.data;
+	const pageCount = pageCountOf(data);
+
+	useClampAccountPage(
+		accountId,
+		"tradesPage",
+		page,
+		trades.isPlaceholderData ? undefined : trades.data,
+	);
+
+	return (
+		<div className="flex flex-col gap-3">
+			{onAdd !== null && (
+				<div className="flex justify-end">
+					<Button variant="outline" onClick={onAdd} disabled={!canAdd}>
+						{t("trades.add")}
+					</Button>
+				</div>
+			)}
+
+			{trades.isPending && <TradeListSkeleton />}
+
+			{trades.isError && <ListError error={trades.error} onRetry={() => void trades.refetch()} />}
+
+			{data !== undefined && data.total === 0 && <EmptyNote>{t("trades.empty")}</EmptyNote>}
+
+			{data !== undefined && data.total > 0 && <TradeList items={data.items} onOpen={onOpen} />}
+
+			{data !== undefined && pageCount > 1 && (
+				<Pagination
+					target={{ to: "/accounts/$accountId", accountId, param: "tradesPage" }}
+					page={page}
+					pageCount={pageCount}
+					label={t("trades.paginationLabel")}
+				/>
+			)}
+		</div>
+	);
+}
+
 function ImportsPanel({ accountId, page }: { accountId: string; page: number }) {
 	const { t } = useTranslation();
 	const imports = useAccountImports(accountId, page);
@@ -281,8 +340,9 @@ function AccountPage() {
 	const {
 		page = 1,
 		period = DEFAULT_BALANCE_PERIOD,
-		tab = DEFAULT_TAB,
+		tab: requestedTab = DEFAULT_TAB,
 		snapshotsPage = 1,
+		tradesPage = 1,
 		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
@@ -293,6 +353,7 @@ function AccountPage() {
 		open: false,
 		snapshot: null,
 	});
+	const [tradeDialog, setTradeDialog] = useState<TradeDialogState>({ open: false, trade: null });
 	const [importing, setImporting] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
@@ -305,15 +366,22 @@ function AccountPage() {
 		});
 	}, [name, t]);
 
+	// Only an investment account holds securities: « Ordres » is its tab alone,
+	// and a link to it on another account opens « Opérations ».
+	const investment = account.data?.type === "investment";
+	const tab =
+		requestedTab === "trades" && account.data !== undefined && !investment
+			? DEFAULT_TAB
+			: requestedTab;
 	const currency = account.data?.currency;
 	const writable: { id: string; currency: CurrencyCode; openingDate: string } | undefined =
 		account.data !== undefined && currency !== undefined && isCurrencyCode(currency)
 			? { id: account.data.id, currency, openingDate: account.data.openingDate }
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
-	// A snapshot must fall after the opening date and not after today: an
-	// account opened today or later has no valid date yet.
-	const canAddSnapshot = writable !== undefined && writable.openingDate < toIsoDate();
+	// A snapshot or a trade must fall after the opening date and not after
+	// today: an account opened today or later has no valid date yet.
+	const canDateAfterOpening = writable !== undefined && writable.openingDate < toIsoDate();
 	// The dialog needs the account's currency, like the two forms.
 	const canImport = writable !== undefined;
 
@@ -329,6 +397,7 @@ function AccountPage() {
 
 	const openNew = () => setSheet({ open: true, transaction: null });
 	const openNewSnapshot = () => setSnapshotDialog({ open: true, snapshot: null });
+	const openNewTrade = () => setTradeDialog({ open: true, trade: null });
 	const changePeriod = (next: BalancePeriod) =>
 		void navigate({
 			search: (previous) => ({
@@ -429,6 +498,11 @@ function AccountPage() {
 					<TabsTrigger value="snapshots" className={FLAT_TAB}>
 						{t("accountDetail.tabs.snapshots")}
 					</TabsTrigger>
+					{investment && (
+						<TabsTrigger value="trades" className={FLAT_TAB}>
+							{t("accountDetail.tabs.trades")}
+						</TabsTrigger>
+					)}
 					<TabsTrigger value="imports" className={FLAT_TAB}>
 						{t("accountDetail.tabs.imports")}
 					</TabsTrigger>
@@ -446,11 +520,22 @@ function AccountPage() {
 					<SnapshotsPanel
 						accountId={accountId}
 						page={snapshotsPage}
-						canAdd={canAddSnapshot}
+						canAdd={canDateAfterOpening}
 						onAdd={admin ? openNewSnapshot : null}
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 					/>
 				</TabsContent>
+				{investment && (
+					<TabsContent value="trades">
+						<TradesPanel
+							accountId={accountId}
+							page={tradesPage}
+							canAdd={canDateAfterOpening}
+							onAdd={admin ? openNewTrade : null}
+							onOpen={admin ? (trade) => setTradeDialog({ open: true, trade }) : null}
+						/>
+					</TabsContent>
+				)}
 				<TabsContent value="imports">
 					<ImportsPanel accountId={accountId} page={importsPage} />
 				</TabsContent>
@@ -472,6 +557,14 @@ function AccountPage() {
 								snapshot={snapshotDialog.snapshot}
 								onOpenChange={(open) => setSnapshotDialog((current) => ({ ...current, open }))}
 							/>
+							{investment && (
+								<TradeDialog
+									account={writable}
+									open={tradeDialog.open}
+									trade={tradeDialog.trade}
+									onOpenChange={(open) => setTradeDialog((current) => ({ ...current, open }))}
+								/>
+							)}
 							<ImportDialog account={writable} open={importing} onOpenChange={setImporting} />
 						</>
 					)}

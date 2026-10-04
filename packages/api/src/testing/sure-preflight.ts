@@ -326,6 +326,23 @@ const SCHEMAS = {
 		outflow_transaction_id: id,
 		...stamps,
 	}),
+	// `Trade` requires a quantity, a price and a currency; the preflight, a ticker.
+	Trade: z.strictObject({
+		id,
+		entry_id: id,
+		account_id: id,
+		security_id: id,
+		ticker: present,
+		security_name: present,
+		exchange_operating_mic: z.string().nullable(),
+		date,
+		qty: decimal,
+		price: decimal,
+		amount: decimal,
+		currency,
+		...stamps,
+		archant,
+	}),
 	Valuation: z.strictObject({
 		id,
 		account_id: id,
@@ -412,6 +429,7 @@ const REFERENCES: Partial<Record<SureType, Record<string, string>>> = {
 		inflow_transaction_id: "transactions",
 		outflow_transaction_id: "transactions",
 	},
+	Trade: { account_id: "accounts" },
 	Valuation: { account_id: "accounts" },
 	BudgetCategory: { budget_id: "budgets", category_id: "categories" },
 };

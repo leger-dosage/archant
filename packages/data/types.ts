@@ -18,6 +18,7 @@ import type { ruleActions, ruleConditions, ruleRuns, rules } from "./schema/rule
 import type { securities, securityPrices } from "./schema/securities.ts";
 import type { taggings } from "./schema/taggings.ts";
 import type { tags } from "./schema/tags.ts";
+import type { trades } from "./schema/trades.ts";
 import type { transactionAttachments } from "./schema/transaction-attachments.ts";
 import type { transactions } from "./schema/transactions.ts";
 import type { transfers } from "./schema/transfers.ts";
@@ -115,3 +116,6 @@ export type NewSecurity = InferInsertModel<typeof securities>;
 
 export type SecurityPrice = InferSelectModel<typeof securityPrices>;
 export type NewSecurityPrice = InferInsertModel<typeof securityPrices>;
+
+export type Trade = InferSelectModel<typeof trades>;
+export type NewTrade = InferInsertModel<typeof trades>;

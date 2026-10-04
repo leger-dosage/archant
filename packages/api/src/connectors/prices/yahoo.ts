@@ -121,7 +121,14 @@ const quoteSchema = z.object({
 	longname: z.string().nullish(),
 	shortname: z.string().nullish(),
 	exchange: z.string().nullable().default(null),
+	quoteType: z.string().nullish(),
 });
+
+/**
+ * Yahoo's quote types no account holds: a market index such as `^FCHI`, and
+ * an exchange rate such as `EURUSD=X`. Futures and the rest stay, as in Sure.
+ */
+const UNHELD_QUOTE_TYPES = new Set(["INDEX", "CURRENCY"]);
 
 const chartSchema = z.object({
 	chart: z.object({
@@ -279,7 +286,7 @@ export function createYahooProvider(config: PriceProviderConfig): PriceProvider 
 		return (parsed.data.quotes ?? []).flatMap((item) => {
 			const quote = quoteSchema.safeParse(item);
 
-			if (!quote.success) {
+			if (!quote.success || UNHELD_QUOTE_TYPES.has(quote.data.quoteType?.toUpperCase() ?? "")) {
 				return [];
 			}
 

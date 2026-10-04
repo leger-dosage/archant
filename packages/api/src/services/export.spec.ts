@@ -20,6 +20,7 @@ import {
 	sendOwn,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { insertSecurity } from "../testing/prices.ts";
 import { surePreflight } from "../testing/sure-preflight.ts";
 import { DEFAULT_CATEGORIES } from "./default-categories.ts";
 import { EXPORT_IDLE_MS, archiveName, exportArchive } from "./export.ts";
@@ -34,6 +35,7 @@ const ENTRIES = [
 	"version.txt",
 	"accounts.csv",
 	"transactions.csv",
+	"trades.csv",
 	"categories.csv",
 	"merchants.csv",
 	"rules.csv",
@@ -53,6 +55,7 @@ const TYPE_ORDER = [
 	"Transaction",
 	"Transfer",
 	"RejectedTransfer",
+	"Trade",
 	"Valuation",
 	"Budget",
 	"BudgetCategory",
@@ -230,6 +233,43 @@ async function household() {
 		balance: "1 700,00",
 	});
 
+	const lvmh = await insertSecurity(database(), {}, { held: false });
+	const trade = (json: Record<string, unknown>) =>
+		created(`/api/accounts/${ids.other}/trades`, {
+			side: "buy",
+			date: "2026-09-10",
+			fee: "0",
+			...json,
+		});
+	const trades = {
+		bought: await trade({
+			security: { source: "known", id: lvmh },
+			quantity: "1",
+			price: "612,40",
+			fee: "2,50",
+		}),
+		sold: await trade({
+			side: "sell",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-12",
+			quantity: "0,5",
+			price: "650",
+		}),
+		fund: await trade({
+			security: { source: "manual", isin: "FR0010315770", name: "Fonds euros" },
+			date: "2026-09-11",
+			quantity: "100",
+			price: "1",
+		}),
+		// Neither a ticker nor an ISIN: its name stands for its ticker.
+		unnamed: await trade({
+			security: { source: "manual", name: "Parts sociales" },
+			date: "2026-09-13",
+			quantity: "1",
+			price: "10",
+		}),
+	};
+
 	const subscription = await postOwn(ids.checking, {
 		date: "2026-09-08",
 		label: "NETFLIX",
@@ -305,6 +345,8 @@ async function household() {
 		toLoan,
 		toPea,
 		refused,
+		lvmh,
+		trades,
 		rules: { categorise, transfer, replaceOnly },
 	};
 }
@@ -345,6 +387,9 @@ describe("exportArchive", () => {
 		expect(archive.text["transactions.csv"]).toBe(
 			"date,account_name,amount,name,category,tags,notes,currency\n",
 		);
+		expect(archive.text["trades.csv"]).toBe(
+			"date,account_name,ticker,quantity,price,amount,currency\n",
+		);
 		expect(archive.text["merchants.csv"]).toBe("name,color,website_url\n");
 		expect(archive.text["rules.csv"]).toBe(
 			"name,resource_type,active,effective_date,conditions,actions\n",
@@ -380,6 +425,54 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 		expect(types).toEqual(types.toSorted((a, b) => a - b));
 		expect(new Set(archive.lines.map((row) => row.type))).toEqual(new Set(TYPE_ORDER));
+	});
+
+	it("writes trades as Sure's exporter, the security named on each line and its ISIN under archant", async () => {
+		const { ids, lvmh, trades } = await household();
+
+		const archive = await exported();
+
+		expect(archive.csv("trades.csv").slice(1)).toEqual([
+			["2026-09-10", "Crypto", "MC.PA", "1", "612.4", "614.90", "EUR"],
+			// Typed by hand: the ISIN stands for the ticker, else the name.
+			["2026-09-11", "Crypto", "FR0010315770", "100", "1", "100.00", "EUR"],
+			["2026-09-12", "Crypto", "MC.PA", "-0.5", "650", "-325.00", "EUR"],
+			["2026-09-13", "Crypto", "Parts sociales", "1", "10", "10.00", "EUR"],
+		]);
+		const lines = archive.of("Trade");
+		expect(lines).toEqual([
+			expect.objectContaining({
+				id: trades.bought,
+				entry_id: trades.bought,
+				account_id: ids.other,
+				security_id: lvmh,
+				ticker: "MC.PA",
+				security_name: "LVMH",
+				exchange_operating_mic: "XPAR",
+				date: "2026-09-10",
+				qty: "1",
+				price: "612.4",
+				amount: "614.90",
+				currency: "EUR",
+				archant: { isin: "FR0000121014", fee: "2.50" },
+			}),
+			expect.objectContaining({
+				id: trades.fund,
+				ticker: "FR0010315770",
+				security_name: "Fonds euros",
+				exchange_operating_mic: null,
+				archant: { isin: "FR0010315770", fee: "0.00" },
+			}),
+			expect.objectContaining({ id: trades.sold, qty: "-0.5", amount: "-325.00" }),
+			// Sure's preflight requires a ticker: a blank one would fail the import whole.
+			expect.objectContaining({
+				id: trades.unnamed,
+				ticker: "Parts sociales",
+				exchange_operating_mic: null,
+				archant: { isin: null, fee: "0.00" },
+			}),
+		]);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
 	it("maps accounts to Sure's accountables, the rest under archant", async () => {
@@ -705,6 +798,39 @@ describe("exportArchive", () => {
 			kind: "standard",
 			archant: { transfer: { id: pair.transfer, kind: "internal_move", side: "inflow" } },
 		});
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
+	it("leaves a trade before Sure's 29 years out of all.ndjson, and keeps it in trades.csv", async () => {
+		await ownDatabase();
+		const pea = await account({
+			name: "PEA",
+			type: "investment",
+			subtype: "pea",
+			openingDate: "1990-01-01",
+			openingBalance: "1 000",
+		});
+		const trade = async (date: string) =>
+			created(`/api/accounts/${pea}/trades`, {
+				side: "buy",
+				security: { source: "manual", isin: "FR0010315770", name: "Fonds euros" },
+				date,
+				quantity: "1",
+				price: "10",
+				fee: "0",
+			});
+		await trade("1995-06-01");
+		const recent = await trade("2026-09-10");
+
+		const archive = await exported();
+
+		expect(archive.of("Trade").map((row) => row["id"])).toEqual([recent]);
+		expect(
+			archive
+				.csv("trades.csv")
+				.slice(1)
+				.map((row) => row[0]),
+		).toEqual(["1995-06-01", "2026-09-10"]);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 

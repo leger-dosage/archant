@@ -9,6 +9,7 @@ import Papa from "papaparse";
 import type { AccountType } from "@archant/data/account-types";
 import type { Database, ReadSnapshot } from "@archant/data/client";
 import { readSnapshot } from "@archant/data/client";
+import { formatMicros } from "@archant/data/micros";
 import type { MinorUnits, Money } from "@archant/data/money";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 import type { RuleActionType } from "@archant/data/rules";
@@ -33,6 +34,7 @@ import {
 	exportedRejectedTransfers,
 	exportedRules,
 	exportedTags,
+	exportedTrades,
 	exportedTransfers,
 	exportedValuations,
 	transactionPages,
@@ -412,6 +414,7 @@ function readersOf(deps: ServiceDeps) {
 		tags: once(async () => exportedTags(db)),
 		merchants: once(async () => exportedMerchants(db)),
 		transfers: once(async () => exportedTransfers(db)),
+		trades: once(async () => exportedTrades(db)),
 		rules: once(async () => exportedRules(db)),
 	};
 }
@@ -472,6 +475,35 @@ async function* transactionsCsv(deps: ServiceDeps, readers: Readers) {
 			]),
 		);
 	}
+}
+
+type Trade = Awaited<ReturnType<typeof exportedTrades>>[number];
+
+/**
+ * What Sure's importer finds a trade's security by: its ticker, else its
+ * ISIN for one typed by hand, else its name, such as a fonds euros. Never
+ * blank: Sure's preflight refuses a `Trade` line without a ticker, and one
+ * refusal fails the whole import.
+ */
+function sureTicker(trade: Trade): string {
+	return trade.security.ticker ?? trade.security.isin ?? trade.security.name;
+}
+
+async function* tradesCsv(readers: Readers) {
+	yield csv([["date", "account_name", "ticker", "quantity", "price", "amount", "currency"]]);
+	const accounts = byId(await readers.accounts());
+
+	yield csv(
+		(await readers.trades()).map((trade) => [
+			trade.date,
+			textCell(accounts.get(trade.accountId)?.name),
+			textCell(sureTicker(trade)),
+			formatMicros(trade.trade.quantity),
+			formatMicros(trade.trade.price),
+			sureAmount(toMinorUnits(trade.amount), trade.currency),
+			trade.currency,
+		]),
+	);
 }
 
 async function* categoriesCsv(readers: Readers) {
@@ -785,6 +817,37 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 		counts,
 	);
 
+	// After the rejected pairs, as Sure's exporter.
+	yield ndjson(
+		(await readers.trades())
+			.filter((trade) => trade.date >= from)
+			.map((trade) => ({
+				type: "Trade",
+				data: {
+					// The entry is the trade, so both ids are its own.
+					id: trade.id,
+					entry_id: trade.id,
+					account_id: trade.accountId,
+					security_id: trade.trade.securityId,
+					ticker: sureTicker(trade),
+					security_name: trade.security.name,
+					exchange_operating_mic: trade.security.mic,
+					date: trade.date,
+					qty: formatMicros(trade.trade.quantity),
+					price: formatMicros(trade.trade.price),
+					amount: sureAmount(toMinorUnits(trade.amount), trade.currency),
+					currency: trade.currency,
+					created_at: timestamp(trade.createdAt),
+					updated_at: timestamp(trade.updatedAt),
+					archant: {
+						isin: trade.security.isin,
+						fee: decimal(trade.trade.fee, trade.currency),
+					},
+				},
+			})),
+		counts,
+	);
+
 	const valuations = await exportedValuations(deps);
 	const moved = new Map(
 		await Promise.all(
@@ -1026,6 +1089,7 @@ function partsOf(deps: ServiceDeps, counts: Counts): Part[] {
 		["version.txt", version],
 		["accounts.csv", () => accountsCsv(readers)],
 		["transactions.csv", () => transactionsCsv(deps, readers)],
+		["trades.csv", () => tradesCsv(readers)],
 		["categories.csv", () => categoriesCsv(readers)],
 		["merchants.csv", () => merchantsCsv(readers)],
 		["rules.csv", () => rulesCsv(readers)],

@@ -43,6 +43,7 @@
 		"./schema/taggings": "./schema/taggings.ts",
 		"./schema/tags": "./schema/tags.ts",
 		"./schema/transaction-attachments": "./schema/transaction-attachments.ts",
+		"./schema/trades": "./schema/trades.ts",
 		"./schema/transactions": "./schema/transactions.ts",
 		"./schema/transfers": "./schema/transfers.ts",
 		"./testing/migrations": "./testing/migrations.ts",

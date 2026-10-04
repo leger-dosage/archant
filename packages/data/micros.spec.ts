@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { divideHalfEven, parseMicros, toMicros } from "./micros.ts";
+import { divideHalfEven, formatMicros, parseMicros, readMicros, toMicros } from "./micros.ts";
 
 describe("divideHalfEven", () => {
 	it.each([
@@ -70,5 +70,61 @@ describe("toMicros", () => {
 
 	it.each([0.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])("refuses %d", (value) => {
 		expect(() => toMicros(value)).toThrow(RangeError);
+	});
+});
+
+describe("readMicros", () => {
+	it.each([
+		["10", 10_000_000],
+		["612,40", 612_400_000],
+		["612.4", 612_400_000],
+		["0,333335", 333_335],
+		["1 234,5", 1_234_500_000],
+		["1\u00A0234,5", 1_234_500_000],
+		["1\u202F234", 1_234_000_000],
+		[" 2,5 ", 2_500_000],
+		["-4", -4_000_000],
+		["−0,5", -500_000],
+		["0", 0],
+		["9007199254,740991", Number.MAX_SAFE_INTEGER],
+	])("reads %j as %i millionths", (text, expected) => {
+		expect(readMicros(text)).toBe(expected);
+	});
+
+	it("never returns negative zero", () => {
+		expect(Object.is(readMicros("-0,000"), 0)).toBe(true);
+	});
+
+	it.each([
+		"",
+		"abc",
+		"1,2345678",
+		"1e3",
+		"+1",
+		",5",
+		"1.",
+		"1 00",
+		"12 3456",
+		"9007199254,740992",
+	])("refuses %j", (text) => {
+		expect(readMicros(text)).toBeNull();
+	});
+});
+
+describe("formatMicros", () => {
+	it.each([
+		[612_400_000, "612.4"],
+		[10_000_000, "10"],
+		[-4_000_000, "-4"],
+		[1, "0.000001"],
+		[-500_000, "-0.5"],
+		[0, "0"],
+		[333_335, "0.333335"],
+		[Number.MAX_SAFE_INTEGER, "9007199254.740991"],
+	])("writes %i millionths as %j, which reads back", (value, expected) => {
+		const micros = toMicros(value);
+
+		expect(formatMicros(micros)).toBe(expected);
+		expect(parseMicros(formatMicros(micros))).toBe(value);
 	});
 });

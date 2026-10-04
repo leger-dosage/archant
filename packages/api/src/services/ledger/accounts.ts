@@ -13,6 +13,7 @@ import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
 import { imports } from "@archant/data/schema/imports";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
+import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 import type { Account } from "@archant/data/types";
@@ -83,9 +84,10 @@ export async function createAccount(
 /**
  * Deletes an account and everything it holds, as one write: its entries'
  * keys and the tombstones of the ones the user deleted, its transactions'
- * taggings, attachments, transfers and rejected pairs, its transactions,
- * all its entries, split lines before their parents, snapshots and opening
- * anchor included, its daily balances, its imports, then the account.
+ * taggings, attachments, transfers and rejected pairs, its transactions
+ * and trades, all its entries, split lines before their parents, snapshots
+ * and opening anchor included, its daily balances, its imports, then the
+ * account.
  * Children go first, since their foreign keys restrict. A transfer's other
  * side, on another account, stays as a standard transaction, as Sure's
  * `cleanup_transfers` leaves it. Every delete selects by `account_id`
@@ -126,6 +128,14 @@ export async function deleteAccount(
 				.delete(rejectedTransfers)
 				.where(
 					rejectedOf(
+						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
+					),
+				);
+			await tx
+				.delete(trades)
+				.where(
+					inArray(
+						trades.entryId,
 						tx.select({ id: entries.id }).from(entries).where(eq(entries.accountId, accountId)),
 					),
 				);
