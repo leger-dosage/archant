@@ -1,5 +1,7 @@
 import type { ApiFieldError } from "./api.ts";
-import type { FieldError, FieldValues, Path, UseFormSetError } from "react-hook-form";
+import type { FieldError, FieldErrors, FieldValues, Path, UseFormSetError } from "react-hook-form";
+
+import { get } from "react-hook-form";
 
 import fr from "../locales/fr.json";
 
@@ -46,4 +48,28 @@ export function fieldErrorCode(error: Pick<FieldError, "type" | "message">): Fie
 	const code = error.type === "custom" ? error.message : String(error.type);
 
 	return code !== undefined && isFieldErrorCode(code) ? code : "unknown";
+}
+
+function isShownError(value: unknown): value is ShownError {
+	return (
+		typeof value === "object" && value !== null && "type" in value && typeof value.type === "string"
+	);
+}
+
+/**
+ * The error on `path` itself. An array's own error sits on `root` when the
+ * resolver reports it on a non-empty list, on the array otherwise.
+ */
+export function errorAt<T extends FieldValues>(
+	errors: FieldErrors<T>,
+	path: string,
+): ShownError | undefined {
+	const found: unknown = get(errors, path);
+	const root: unknown = get(errors, `${path}.root`);
+
+	if (isShownError(root)) {
+		return root;
+	}
+
+	return isShownError(found) ? found : undefined;
 }

@@ -30,11 +30,10 @@ import { Label } from "@/components/ui/label";
 import { useCreateRule, useUpdateRule } from "@/hooks/useRules";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors } from "@/lib/form-errors";
+import { applyFieldErrors, errorAt } from "@/lib/form-errors";
 import {
 	defaults,
 	described,
-	errorAt,
 	errorId,
 	fieldNames,
 	newAction,

@@ -26,6 +26,7 @@
 		"accounts": "Comptes",
 		"operations": "Opérations",
 		"budgets": "Budgets",
+		"goals": "Objectifs",
 		"recurring": "Récurrent",
 		"rules": "Règles",
 		"settings": "Réglages",
@@ -1043,6 +1044,79 @@
 			"noTransactions": "Aucune opération ce mois-ci."
 		}
 	},
+	"goals": {
+		"title": "Objectifs",
+		"description": "Un objectif se remplit avec le solde des comptes qui portent l'argent : ce qui est mis de côté, ce qui reste, et ce qu'il faut épargner chaque mois.",
+		"add": "Nouvel objectif",
+		"list": "Objectifs",
+		"empty": {
+			"title": "Aucun objectif pour l'instant",
+			"description": "Fixez un montant à atteindre, des vacances ou une réserve, et liez les comptes d'épargne qui le portent."
+		},
+		"status": {
+			"behind": "En retard",
+			"on_track": "En bonne voie",
+			"no_target_date": "Sans échéance",
+			"reached": "Atteint"
+		},
+		"ring": "{{percent}} de l'objectif atteint",
+		"savedOf": "{{saved}} sur {{target}}",
+		"monthly": "{{amount}} par mois",
+		"until": "Échéance : {{date}}",
+		"figures": {
+			"title": "Progression",
+			"saved": "Épargné",
+			"target": "Montant visé",
+			"remaining": "Reste",
+			"monthly": "Par mois",
+			"date": "Échéance",
+			"pace": "Rythme sur 90 jours",
+			"perMonth": "{{amount}} par mois",
+			"noDate": "Aucune"
+		},
+		"accounts": {
+			"title": "Comptes liés",
+			"earmarked": "{{share}} affectés sur {{balance}}",
+			"whole": "Solde entier",
+			"inactive": "Compte désactivé, non compté",
+			"none": "Aucun compte lié : l'objectif ne se remplit plus."
+		},
+		"notes": "Notes",
+		"edit": "Modifier",
+		"delete": "Supprimer",
+		"deleteDialog": {
+			"title": "Supprimer l'objectif « {{name}} » ?",
+			"description": "Ses comptes et leur historique restent tels quels.",
+			"action": "Supprimer",
+			"deleted": "Objectif « {{name}} » supprimé."
+		},
+		"notFound": {
+			"title": "Objectif introuvable",
+			"description": "Il a peut-être été supprimé.",
+			"back": "Retour aux objectifs"
+		},
+		"form": {
+			"addTitle": "Nouvel objectif",
+			"editTitle": "Modifier l'objectif",
+			"description": "Il se remplit avec le solde des comptes liés, en entier ou pour un montant fixe.",
+			"preview": "Aperçu de l'objectif",
+			"name": "Nom",
+			"target": "Montant visé",
+			"date": "Échéance (facultative)",
+			"color": "Couleur",
+			"icon": "Icône",
+			"accounts": "Comptes",
+			"accountsHint": "Laissez un montant vide pour affecter tout le solde du compte.",
+			"amountFor": "Montant affecté depuis {{name}}",
+			"wholeBalance": "Solde entier",
+			"noAccounts": "Aucun compte courant, d'épargne ou d'investissement actif. Ajoutez-en un pour y lier un objectif.",
+			"notes": "Notes",
+			"create": "Créer l'objectif",
+			"save": "Enregistrer",
+			"created": "Objectif « {{name}} » créé.",
+			"saved": "Objectif « {{name}} » enregistré."
+		}
+	},
 	"recurring": {
 		"title": "Récurrences",
 		"description": "Les abonnements et factures qui reviennent chaque mois, détectés sur les trois derniers mois d'opérations. Confirmez ceux que vous voulez suivre, écartez les autres. Une récurrence détectée sans opération depuis deux mois devient inactive.",
@@ -1642,7 +1716,13 @@
 			"parent_child": "Impossible entre une catégorie et sa sous-catégorie.",
 			"attachment_too_large": "Ce fichier dépasse 10 Mo.",
 			"attachment_limit": "Une opération compte 10 pièces jointes au plus.",
-			"attachment_type": "Seules les images JPEG, PNG, GIF ou WebP et les PDF sont acceptés."
+			"attachment_type": "Seules les images JPEG, PNG, GIF ou WebP et les PDF sont acceptés.",
+			"no_account": "Choisissez au moins un compte.",
+			"too_long": "Ce texte est trop long.",
+			"duplicate_account": "Ce compte est déjà dans la liste.",
+			"not_fundable": "Ce compte ne peut pas porter d'objectif : choisissez un compte courant, d'épargne ou d'investissement actif.",
+			"currency_mismatch": "Ce compte n'est pas dans la devise de l'objectif.",
+			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant."
 		}
 	}
 }

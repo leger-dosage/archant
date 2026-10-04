@@ -13,10 +13,14 @@ export type AccountListData = InferResponseType<typeof api.accounts.$get, 200>["
 export type AccountGroupData = AccountListData["groups"][number];
 export type AccountSummaryData = AccountGroupData["accounts"][number];
 
-export function useAccounts() {
+/** Every account; `select` derives what a caller needs from the one cached list. */
+export function useAccounts<Selected = AccountListData>(
+	options: { select?: (list: AccountListData) => Selected } = {},
+) {
 	return useQuery({
 		queryKey: queryKeys.accounts.all,
 		queryFn: async () => (await unwrap(api.accounts.$get())).data,
+		...options,
 	});
 }
 

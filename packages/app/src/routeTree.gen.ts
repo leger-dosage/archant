@@ -23,6 +23,8 @@ import { Route as AuthedAccountsIndexRouteImport } from './routes/_authed.accoun
 import { Route as AuthedAccountsAccountIdRouteImport } from './routes/_authed.accounts.$accountId'
 import { Route as AuthedBudgetsIndexRouteImport } from './routes/_authed.budgets.index'
 import { Route as AuthedBudgetsMonthRouteImport } from './routes/_authed.budgets.$month'
+import { Route as AuthedGoalsIndexRouteImport } from './routes/_authed.goals.index'
+import { Route as AuthedGoalsGoalIdRouteImport } from './routes/_authed.goals.$goalId'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settings.index'
 import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.settings.assistants'
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
@@ -104,6 +106,16 @@ const AuthedBudgetsIndexRoute = AuthedBudgetsIndexRouteImport.update({
 const AuthedBudgetsMonthRoute = AuthedBudgetsMonthRouteImport.update({
   id: '/budgets/$month',
   path: '/budgets/$month',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedGoalsIndexRoute = AuthedGoalsIndexRouteImport.update({
+  id: '/goals/',
+  path: '/goals/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedGoalsGoalIdRoute = AuthedGoalsGoalIdRouteImport.update({
+  id: '/goals/$goalId',
+  path: '/goals/$goalId',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
@@ -189,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/oauth/consent': typeof OauthConsentRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
   '/budgets/$month': typeof AuthedBudgetsMonthRoute
+  '/goals/$goalId': typeof AuthedGoalsGoalIdRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -199,6 +212,7 @@ export interface FileRoutesByFullPath {
   '/settings/tags': typeof AuthedSettingsTagsRoute
   '/accounts/': typeof AuthedAccountsIndexRoute
   '/budgets/': typeof AuthedBudgetsIndexRoute
+  '/goals/': typeof AuthedGoalsIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/budgets/$month/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
@@ -216,6 +230,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
   '/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
   '/budgets/$month': typeof AuthedBudgetsMonthRoute
+  '/goals/$goalId': typeof AuthedGoalsGoalIdRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -226,6 +241,7 @@ export interface FileRoutesByTo {
   '/settings/tags': typeof AuthedSettingsTagsRoute
   '/accounts': typeof AuthedAccountsIndexRoute
   '/budgets': typeof AuthedBudgetsIndexRoute
+  '/goals': typeof AuthedGoalsIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/budgets/$month/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
@@ -246,6 +262,7 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/accounts/$accountId': typeof AuthedAccountsAccountIdRoute
   '/_authed/budgets/$month': typeof AuthedBudgetsMonthRoute
+  '/_authed/goals/$goalId': typeof AuthedGoalsGoalIdRoute
   '/_authed/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -256,6 +273,7 @@ export interface FileRoutesById {
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
   '/_authed/accounts/': typeof AuthedAccountsIndexRoute
   '/_authed/budgets/': typeof AuthedBudgetsIndexRoute
+  '/_authed/goals/': typeof AuthedGoalsIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
   '/_authed/budgets/$month_/categories': typeof AuthedBudgetsMonthCategoriesRoute
   '/_authed/budgets/$month_/edit': typeof AuthedBudgetsMonthEditRoute
@@ -276,6 +294,7 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/accounts/$accountId'
     | '/budgets/$month'
+    | '/goals/$goalId'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -286,6 +305,7 @@ export interface FileRouteTypes {
     | '/settings/tags'
     | '/accounts/'
     | '/budgets/'
+    | '/goals/'
     | '/settings/'
     | '/budgets/$month/categories'
     | '/budgets/$month/edit'
@@ -303,6 +323,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts/$accountId'
     | '/budgets/$month'
+    | '/goals/$goalId'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -313,6 +334,7 @@ export interface FileRouteTypes {
     | '/settings/tags'
     | '/accounts'
     | '/budgets'
+    | '/goals'
     | '/settings'
     | '/budgets/$month/categories'
     | '/budgets/$month/edit'
@@ -332,6 +354,7 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/accounts/$accountId'
     | '/_authed/budgets/$month'
+    | '/_authed/goals/$goalId'
     | '/_authed/settings/assistants'
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
@@ -342,6 +365,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/tags'
     | '/_authed/accounts/'
     | '/_authed/budgets/'
+    | '/_authed/goals/'
     | '/_authed/settings/'
     | '/_authed/budgets/$month_/categories'
     | '/_authed/budgets/$month_/edit'
@@ -455,6 +479,20 @@ declare module '@tanstack/react-router' {
       path: '/budgets/$month'
       fullPath: '/budgets/$month'
       preLoaderRoute: typeof AuthedBudgetsMonthRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/goals/': {
+      id: '/_authed/goals/'
+      path: '/goals'
+      fullPath: '/goals/'
+      preLoaderRoute: typeof AuthedGoalsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/goals/$goalId': {
+      id: '/_authed/goals/$goalId'
+      path: '/goals/$goalId'
+      fullPath: '/goals/$goalId'
+      preLoaderRoute: typeof AuthedGoalsGoalIdRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/': {
@@ -591,8 +629,10 @@ interface AuthedRouteChildren {
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAccountsAccountIdRoute: typeof AuthedAccountsAccountIdRoute
   AuthedBudgetsMonthRoute: typeof AuthedBudgetsMonthRoute
+  AuthedGoalsGoalIdRoute: typeof AuthedGoalsGoalIdRoute
   AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
   AuthedBudgetsIndexRoute: typeof AuthedBudgetsIndexRoute
+  AuthedGoalsIndexRoute: typeof AuthedGoalsIndexRoute
   AuthedBudgetsMonthCategoriesRoute: typeof AuthedBudgetsMonthCategoriesRoute
   AuthedBudgetsMonthEditRoute: typeof AuthedBudgetsMonthEditRoute
 }
@@ -605,8 +645,10 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAccountsAccountIdRoute: AuthedAccountsAccountIdRoute,
   AuthedBudgetsMonthRoute: AuthedBudgetsMonthRoute,
+  AuthedGoalsGoalIdRoute: AuthedGoalsGoalIdRoute,
   AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
   AuthedBudgetsIndexRoute: AuthedBudgetsIndexRoute,
+  AuthedGoalsIndexRoute: AuthedGoalsIndexRoute,
   AuthedBudgetsMonthCategoriesRoute: AuthedBudgetsMonthCategoriesRoute,
   AuthedBudgetsMonthEditRoute: AuthedBudgetsMonthEditRoute,
 }

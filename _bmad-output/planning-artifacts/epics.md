@@ -3746,6 +3746,10 @@ So that I know how far I am and what to put aside each month.
 **When** the owner opens it
 **Then** goals show as cards with a progress ring, « Nouvel objectif » opens a dialog, and the rail shows « Objectifs »; `/goals/:id` shows a goal with each account's share
 
+**Given** the export
+**When** goals exist
+**Then** `goals.ndjson` carries them and their links as `Goal` and `GoalAccount` lines, beside `all.ndjson` and never in it: Sure's exporter writes no goal and `SureImport::Preflight` refuses a type it does not know (AD-23)
+
 **Given** the goal function
 **When** its tests run
 **Then** every branch is covered
@@ -3775,10 +3779,6 @@ So that my goals reflect my plans as they change.
 **Given** the dashboard
 **When** goals exist
 **Then** a card shows the total saved against the total target of active goals in the reporting currency, how many are behind, and up to five goals, as Sure's « Plan » card
-
-**Given** the export
-**When** goals exist
-**Then** `all.ndjson` carries them and their links
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run

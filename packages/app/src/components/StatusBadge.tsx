@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 
 import {
 	ArrowLeftRightIcon,
+	CalendarOffIcon,
 	CircleAlertIcon,
 	CircleCheckIcon,
 	CirclePauseIcon,
@@ -12,6 +13,7 @@ import {
 	RepeatIcon,
 	SparklesIcon,
 	SplitIcon,
+	TrendingUpIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -56,6 +58,12 @@ const STATUSES = {
 	budgetOver: { icon: CircleAlertIcon, key: "budgets.status.over", tone: "destructive" },
 	budgetNear: { icon: TriangleAlertIcon, key: "budgets.status.near", tone: "warning" },
 	budgetOnTrack: { icon: CircleCheckIcon, key: "budgets.status.onTrack", tone: "neutral" },
+	// A goal's status, Sure's: a late goal needs attention, never an alarm, so
+	// the warning tint rather than the destructive one (DESIGN.md).
+	goalBehind: { icon: ClockAlertIcon, key: "goals.status.behind", tone: "warning" },
+	goalOnTrack: { icon: TrendingUpIcon, key: "goals.status.on_track", tone: "neutral" },
+	goalNoTargetDate: { icon: CalendarOffIcon, key: "goals.status.no_target_date", tone: "neutral" },
+	goalReached: { icon: CircleCheckIcon, key: "goals.status.reached", tone: "neutral" },
 } as const satisfies Record<
 	string,
 	{ icon: LucideIcon; key: string; tone: "neutral" | "warning" | "destructive" }

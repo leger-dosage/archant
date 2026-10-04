@@ -9,6 +9,7 @@
 		"./schemas/balances": "./src/schemas/balances.ts",
 		"./schemas/budgets": "./src/schemas/budgets.ts",
 		"./schemas/categories": "./src/schemas/categories.ts",
+		"./schemas/goals": "./src/schemas/goals.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
 		"./schemas/invitations": "./src/schemas/invitations.ts",
 		"./schemas/members": "./src/schemas/members.ts",

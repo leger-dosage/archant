@@ -39,6 +39,7 @@ const ENTRIES = [
 	"rules.csv",
 	"attachments.json",
 	"all.ndjson",
+	"goals.ndjson",
 ];
 
 /** Sure's `Family::DataImporter#import!` order, which `all.ndjson` follows. */
@@ -308,6 +309,19 @@ async function household() {
 	};
 }
 
+/** Creates a goal through the API in the test's own database and answers its id. */
+async function goalOf(json: Record<string, unknown>) {
+	const body = await sendOwn("POST", "/api/goals", {
+		targetDate: null,
+		color: "#27a644",
+		icon: "piggy-bank",
+		notes: null,
+		...json,
+	});
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+}
+
 describe("exportArchive", () => {
 	it("names the file after the time in APP_TIMEZONE", () => {
 		expect(archiveName(new Date("2026-09-21T10:00:00Z"), "Europe/Paris")).toBe(
@@ -346,6 +360,7 @@ describe("exportArchive", () => {
 			"lucide_icon",
 		]);
 		expect(archive.lines.map((row) => row.type)).toEqual(DEFAULT_CATEGORIES.map(() => "Category"));
+		expect(archive.text["goals.ndjson"]).toBe("");
 		expect(archive.ndjson.endsWith("\n")).toBe(true);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 		expect(archive.log).toHaveLength(1);
@@ -964,6 +979,67 @@ describe("exportArchive", () => {
 				rolled_over_amount: "300.00",
 			}),
 		]);
+	});
+
+	it("writes goals and their links to goals.ndjson, outside the lines Sure's preflight reads", async () => {
+		const { ids } = await household();
+		const holiday = await goalOf({
+			name: "Vacances",
+			targetAmount: "2 000,50",
+			targetDate: "2027-06-30",
+			notes: "Grèce",
+			accounts: [
+				{ accountId: ids.savings, allocatedAmount: "" },
+				{ accountId: ids.pea, allocatedAmount: "150" },
+			],
+		});
+		// A second later, so the archive's order by creation is the test's.
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		const car = await goalOf({
+			name: "Voiture",
+			targetAmount: "8 000",
+			accounts: [{ accountId: ids.pea, allocatedAmount: "" }],
+		});
+
+		const archive = await exported();
+		const goals = (archive.text["goals.ndjson"] ?? "")
+			.split("\n")
+			.filter((row) => row !== "")
+			.map((row): Line => line.parse(JSON.parse(row)));
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.lines.filter((row) => row.type.startsWith("Goal"))).toEqual([]);
+		expect(goals[0]).toEqual({
+			type: "Goal",
+			data: {
+				id: holiday,
+				name: "Vacances",
+				target_amount: "2000.50",
+				currency: "EUR",
+				target_date: "2027-06-30",
+				color: "#27a644",
+				icon: "piggy-bank",
+				notes: "Grèce",
+				state: "active",
+				kind: "one_off",
+				created_at: "2026-09-21T10:00:00.000Z",
+				updated_at: "2026-09-21T10:00:00.000Z",
+			},
+		});
+		expect(goals[1]).toMatchObject({
+			type: "Goal",
+			data: { id: car, target_amount: "8000.00", target_date: null, notes: null },
+		});
+		expect(goals.slice(2)).toEqual(
+			[
+				...[
+					{ goal_id: holiday, account_id: ids.savings, allocated_amount: null },
+					{ goal_id: holiday, account_id: ids.pea, allocated_amount: "150.00" },
+				].toSorted((a, b) => a.account_id.localeCompare(b.account_id)),
+				{ goal_id: car, account_id: ids.pea, allocated_amount: null },
+			].map((data) => ({ type: "GoalAccount", data })),
+		);
+		expect(archive.log[0]).toMatchObject({ Goal: 2, GoalAccount: 3 });
 	});
 
 	it("writes rule operands as names with a value_ref, and keeps a replacement under archant", async () => {

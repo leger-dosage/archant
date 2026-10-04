@@ -35,6 +35,7 @@ import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { exportRoutes } from "./routes/export.ts";
+import { goalsRoutes } from "./routes/goals.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
 import { invitationsRoutes } from "./routes/invitations.ts";
@@ -250,6 +251,7 @@ function createApi(deps: AppDeps) {
 		.route("/transactions/:id/attachments", attachmentsRoutes(deps))
 		.route("/transfers", transfersRoutes(deps))
 		.route("/budgets", budgetsRoutes(deps))
+		.route("/goals", goalsRoutes(deps))
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))

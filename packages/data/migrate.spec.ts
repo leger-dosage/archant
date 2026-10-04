@@ -1663,6 +1663,71 @@ describe("budgets", () => {
 	});
 });
 
+const insertGoal = (
+	database: Database,
+	id: string,
+	{ target = 100_000, state = "active", kind = "one_off" } = {},
+) =>
+	database.run(
+		sql`insert into goals (id, name, target_amount, currency, color, icon, state, kind, created_at, updated_at) values (${id}, 'Vacances', ${target}, 'EUR', '#fc7840', 'piggy-bank', ${state}, ${kind}, 0, 0)`,
+	);
+
+describe("goals", () => {
+	it("holds a positive target, Sure's states and kinds", async () => {
+		const database = await migrated();
+
+		await expect(insertGoal(database, "g1")).resolves.toBeDefined();
+		await expect(
+			database.all(sql`select state, kind, target_date as targetDate from goals`),
+		).resolves.toEqual([{ state: "active", kind: "one_off", targetDate: null }]);
+		await expect(insertGoal(database, "g2", { target: 0 })).rejects.toThrow();
+		await expect(insertGoal(database, "g3", { state: "done" })).rejects.toThrow();
+		await expect(insertGoal(database, "g4", { kind: "reserve" })).rejects.toThrow();
+		await expect(
+			insertGoal(database, "g5", { state: "archived", kind: "maintained" }),
+		).resolves.toBeDefined();
+	});
+
+	it("links an account once per goal, whole or a fixed amount never negative, gone with either", async () => {
+		const database = await migrated();
+		const link = (goalId: string, accountId: string, amount: number | null) =>
+			database.run(
+				sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values (${goalId}, ${accountId}, ${amount})`,
+			);
+		const remaining = async () =>
+			(
+				await database.all<{ link: string }>(
+					sql`select goal_id || ' ' || account_id as link from goal_accounts order by link`,
+				)
+			).map((row) => row.link);
+		await insertAccount(database, "a1", "depository", "savings");
+		await insertAccount(database, "a2", "depository", "checking");
+		await insertGoal(database, "g1");
+		await insertGoal(database, "g2");
+
+		await expect(link("g1", "a1", null)).resolves.toBeDefined();
+		await expect(link("g1", "a1", 0)).rejects.toThrow();
+		await expect(link("g1", "a2", -1)).rejects.toThrow();
+		await expect(link("g1", "unknown", 0)).rejects.toThrow();
+		await expect(link("unknown", "a1", 0)).rejects.toThrow();
+		await link("g1", "a2", 30_000);
+		await link("g2", "a1", 0);
+		await link("g2", "a2", null);
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('goal_accounts') where name = 'goal_accounts_account'`,
+			),
+		).resolves.toHaveLength(1);
+
+		await database.run(sql`delete from accounts where id = 'a1'`);
+		await expect(remaining()).resolves.toEqual(["g1 a2", "g2 a2"]);
+
+		await database.run(sql`delete from goals where id = 'g1'`);
+		await expect(remaining()).resolves.toEqual(["g2 a2"]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("migrateFromEnv", () => {
 	it("names DATABASE_URL when it is missing", async () => {
 		await expect(migrateFromEnv({})).rejects.toThrow(/DATABASE_URL/);
