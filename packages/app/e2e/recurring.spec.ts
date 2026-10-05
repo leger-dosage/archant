@@ -3,15 +3,21 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 9.2: recurring transactions at `/recurring`. One database serves the
-// whole run and detection reads every account, so each test finds its rows
-// by a label no other test uses.
+// Stories 9.2 and 23.1: recurring transactions at `/recurring`. One database
+// serves the whole run and detection reads every account, so each test finds
+// its rows by a label no other test uses.
 
 const PAGE = "/recurring";
 
 const table = (page: Page) => page.getByRole("table", { name: "Récurrences" });
 
 const row = (page: Page, label: string) => table(page).getByRole("row").filter({ hasText: label });
+
+const suggestions = (page: Page) =>
+	page.getByRole("table", { name: "Nouvelles factures possibles" });
+
+const suggestion = (page: Page, label: string) =>
+	suggestions(page).getByRole("row").filter({ hasText: label });
 
 /** Story 12.4: a row's status badge, by its status. */
 const badge = (page: Page, label: string, status: string) =>
@@ -54,13 +60,40 @@ async function openAccount(api: Api) {
 	return api.openAccount({ name: uniqueName("Compte"), openingDate: daysAgo(120) });
 }
 
-async function addMonthly(api: Api, accountId: string, label: string, amount: string, day: number) {
+/** Three monthly rows of `label`, one amount each when `amount` lists three. */
+async function addMonthly(
+	api: Api,
+	accountId: string,
+	label: string,
+	amount: string | readonly string[],
+	day: number,
+) {
 	const { dates, next } = monthly(day);
 
-	await Promise.all(dates.map((date) => api.addTransaction(accountId, { date, label, amount })));
+	await Promise.all(
+		dates.map((date, index) =>
+			api.addTransaction(accountId, {
+				date,
+				label,
+				amount: typeof amount === "string" ? amount : amount[index]!,
+			}),
+		),
+	);
 
 	return next;
 }
+
+/** Adds a suggestion to the followed series, as its « Ajouter la facture » does. */
+async function addSuggestion(page: Page, label: string) {
+	await suggestion(page, label).getByRole("button", { name: "Ajouter la facture" }).click();
+	await expect(toast(page, "Facture ajoutée à vos récurrences").first()).toBeVisible();
+	await expect(suggestion(page, label)).toHaveCount(0);
+}
+
+const openMenu = (page: Page, label: string) =>
+	row(page, label)
+		.getByRole("button", { name: `Actions pour ${label}` })
+		.click();
 
 async function detect(page: Page) {
 	// An empty list offers « Détecter les récurrences » in place of the page header's.
@@ -73,7 +106,30 @@ async function visit(page: Page) {
 	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
 }
 
-test("« Détecter » lists monthly rows with their account, amount and next date, by next date", async ({
+test("« Détecter » offers monthly rows as possible bills, with their amount and how often they were seen", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Abonnement");
+	await addMonthly(api, account.id, label, "-13,99", 5);
+
+	await visit(page);
+	await detect(page);
+
+	const strip = page.getByRole("region", { name: "Nouvelles factures possibles" });
+	await expect(strip).toBeVisible();
+	await expect(suggestion(page, label)).toContainText(euros(-1399));
+	await expect(suggestion(page, label)).toContainText("Vue 3 fois");
+	await expect(suggestion(page, label).getByRole("button")).toHaveText([
+		"Ce n'est pas une facture",
+		"Ajouter la facture",
+	]);
+	// A suggestion is no followed series yet.
+	await expect(row(page, label)).toHaveCount(0);
+});
+
+test("« Ajouter la facture » lists a suggestion with its account, amount and next date, by next date", async ({
 	page,
 	api,
 }) => {
@@ -85,14 +141,16 @@ test("« Détecter » lists monthly rows with their account, amount and next dat
 
 	await visit(page);
 	await detect(page);
+	await addSuggestion(page, early);
+	await addSuggestion(page, late);
 
 	const first = row(page, early);
 	await expect(first).toContainText(account.name);
 	await expect(first).toContainText(euros(-1399));
 	await expect(first).toContainText(tableDate.format(new Date(`${earlyNext}T00:00:00Z`)));
-	await expect(first).toContainText("Détectée");
+	await expect(first).toContainText("Active");
 	await expect(
-		badge(page, early, "recurringDetected").locator("svg.lucide-sparkles"),
+		badge(page, early, "recurringActive").locator("svg.lucide-circle-check"),
 	).toBeVisible();
 	// The name's letter icon, then the account's type icon.
 	const icons = first.locator('[data-slot="tinted-icon"]');
@@ -109,7 +167,51 @@ test("« Détecter » lists monthly rows with their account, amount and next dat
 	expect(at(early) < at(late)).toBe(earlyNext < lateNext);
 });
 
-test("confirming a detected item shows « Confirmée », and deactivating it « Inactive »", async ({
+test("an amount that moves by a few cents reads as the range it varies within", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Prêt");
+	await addMonthly(api, account.id, label, ["-571,29", "-571,36", "-571,22"], 7);
+
+	await visit(page);
+	await detect(page);
+
+	const range = `varie de ${euros(57_122)} à ${euros(57_136)}`;
+	await expect(suggestion(page, label)).toContainText(range);
+
+	await addSuggestion(page, label);
+
+	await expect(row(page, label)).toContainText(range);
+});
+
+test("« Ce n'est pas une facture » removes a suggestion for good", async ({ page, api }) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Salle de sport");
+	await addMonthly(api, account.id, label, "-29,90", 8);
+
+	await visit(page);
+	await detect(page);
+	await suggestion(page, label).getByRole("button", { name: "Ce n'est pas une facture" }).click();
+
+	await expect(toast(page, "Écartée. Elle ne sera plus proposée.")).toBeVisible();
+	await expect(suggestion(page, label)).toHaveCount(0);
+
+	await detect(page);
+	await page.reload();
+	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
+	await expect(
+		table(page)
+			.or(suggestions(page))
+			.or(page.getByText(/Aucune récurrence/u))
+			.first(),
+	).toBeVisible();
+	await expect(suggestion(page, label)).toHaveCount(0);
+	await expect(row(page, label)).toHaveCount(0);
+});
+
+test("« Mettre en pause » shows « Inactive », and « Reprendre » « Active » again", async ({
 	page,
 	api,
 }) => {
@@ -119,62 +221,94 @@ test("confirming a detected item shows « Confirmée », and deactivating it « 
 
 	await visit(page);
 	await detect(page);
-	await row(page, label)
-		.getByRole("button", { name: `Actions pour ${label}` })
-		.click();
-	await page.getByRole("menuitem", { name: "Confirmer" }).click();
+	await addSuggestion(page, label);
 
-	await expect(toast(page, "Récurrence confirmée")).toBeVisible();
-	await expect(row(page, label)).toContainText("Confirmée");
-	await expect(row(page, label)).not.toContainText("Détectée");
-	await expect(
-		badge(page, label, "recurringConfirmed").locator("svg.lucide-circle-check"),
-	).toBeVisible();
+	await openMenu(page, label);
+	await page.getByRole("menuitem", { name: "Mettre en pause" }).click();
 
-	await row(page, label)
-		.getByRole("button", { name: `Actions pour ${label}` })
-		.click();
-	await page.getByRole("menuitem", { name: "Désactiver" }).click();
-
-	await expect(toast(page, "Récurrence désactivée")).toBeVisible();
+	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
 	await expect(row(page, label)).toContainText("Inactive");
 	await expect(
 		badge(page, label, "recurringInactive").locator("svg.lucide-circle-pause"),
 	).toBeVisible();
+
+	await openMenu(page, label);
+	await page.getByRole("menuitem", { name: "Reprendre" }).click();
+
+	await expect(toast(page, "Récurrence reprise")).toBeVisible();
+	await expect(row(page, label)).toContainText("Active");
+	await expect(row(page, label)).not.toContainText("Inactive");
 });
 
-test("a dismissed item disappears and stays gone after « Détecter »", async ({ page, api }) => {
+test("« Supprimer » asks first, then the series is gone and detection never offers it again", async ({
+	page,
+	api,
+}) => {
 	const account = await openAccount(api);
-	const label = uniqueName("Salle de sport");
-	await addMonthly(api, account.id, label, "-29,90", 8);
+	const label = uniqueName("Musique");
+	await addMonthly(api, account.id, label, "-10,99", 9);
 
 	await visit(page);
 	await detect(page);
-	await row(page, label)
-		.getByRole("button", { name: `Actions pour ${label}` })
-		.click();
-	await page.getByRole("menuitem", { name: "Écarter" }).click();
+	await addSuggestion(page, label);
+	await openMenu(page, label);
+	await page.getByRole("menuitem", { name: "Supprimer" }).click();
 
 	const dialog = page.getByRole("alertdialog");
-	await expect(dialog).toContainText(`Écarter « ${label} » ?`);
+	await expect(dialog).toContainText(`Supprimer « ${label} » ?`);
 	await expect(dialog.getByRole("button", { name: "Annuler" })).toBeFocused();
-	await dialog.getByRole("button", { name: "Écarter" }).click();
+	await dialog.getByRole("button", { name: "Supprimer" }).click();
 
 	await expect(dialog).toBeHidden();
+	await expect(toast(page, "Récurrence supprimée")).toBeVisible();
 	await expect(row(page, label)).toHaveCount(0);
 
 	await detect(page);
-	await page.reload();
-	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
-	await expect(
-		table(page)
-			.or(page.getByText(/Aucune récurrence/u))
-			.first(),
-	).toBeVisible();
+
 	await expect(row(page, label)).toHaveCount(0);
+	await expect(suggestion(page, label)).toHaveCount(0);
 });
 
-test("« Ajouter aux récurrences » in the sheet lists the transaction as confirmed and manual", async ({
+test("« Nettoyer les obsolètes » sits beside « Détecter » and says what it retired", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	await api.addRecurring(
+		await api.addTransaction(account.id, {
+			date: daysAgo(1),
+			label: uniqueName("Nettoyage"),
+			amount: "-5,00",
+		}),
+	);
+
+	await visit(page);
+	await page.getByRole("button", { name: "Nettoyer les obsolètes" }).click();
+
+	await expect(
+		toast(page, /^Aucune récurrence obsolète$|récurrences? devenues? inactives?$/u),
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Détecter" })).toBeVisible();
+});
+
+test("« Nettoyer les obsolètes » marks a manual series unpaid for six months inactive", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Compte"), openingDate: daysAgo(400) });
+	const label = uniqueName("Ancien abonnement");
+	await api.addRecurring(
+		await api.addTransaction(account.id, { date: daysAgo(200), label, amount: "-7,00" }),
+	);
+
+	await visit(page);
+	await page.getByRole("button", { name: "Nettoyer les obsolètes" }).click();
+
+	await expect(toast(page, /^\d+ récurrences? devenues? inactives?$/u)).toBeVisible();
+	await expect(badge(page, label, "recurringInactive")).toBeVisible();
+});
+
+test("« Ajouter aux récurrences » in the sheet lists the transaction as active and manual", async ({
 	page,
 	api,
 }) => {
@@ -204,20 +338,20 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as confi
 	).toHaveText("Récurrent");
 
 	await visit(page);
-	await expect(row(page, label)).toContainText("Confirmée");
+	await expect(row(page, label)).toContainText("Active");
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
 	await expect(row(page, label)).toContainText(account.name);
 	// Two neutral badges: a manual series is no alarm.
 	await expect(row(page, label).locator('[data-slot="status-badge"]')).toHaveCount(2);
 	await expect(badge(page, label, "recurringManual").locator("svg.lucide-hand")).toBeVisible();
 	await Promise.all(
-		["recurringConfirmed", "recurringManual"].map((status) =>
+		["recurringActive", "recurringManual"].map((status) =>
 			expect(badge(page, label, status)).toHaveClass(/\bbg-badge\b/u),
 		),
 	);
 
 	await detect(page);
-	await expect(row(page, label)).toContainText("Confirmée");
+	await expect(row(page, label)).toContainText("Active");
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
 });
 
@@ -234,7 +368,7 @@ async function openSheet(page: Page, label: string) {
 	return page.getByRole("dialog", { name: "Modifier l'opération" });
 }
 
-test("the sheet names a transaction's detected series and links to it, and offers to add one otherwise", async ({
+test("the sheet names a transaction's suggested series and links to it, and offers to add one otherwise", async ({
 	page,
 	api,
 }) => {
@@ -252,7 +386,7 @@ test("the sheet names a transaction's detected series and links to it, and offer
 	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toHaveCount(0);
 	await sheet.getByRole("link", { name: "Voir les récurrences" }).click();
 	await expect(page).toHaveURL(/\/recurring$/u);
-	await expect(row(page, label)).toContainText("Détectée");
+	await expect(suggestion(page, label)).toContainText("Vue 3 fois");
 
 	const other = await openSheet(page, single);
 	await expect(other.getByRole("button", { name: "Ajouter aux récurrences" })).toBeVisible();

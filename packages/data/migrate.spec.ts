@@ -1219,9 +1219,23 @@ const insertRecurring = (
 	key: { merchantId?: string; labelKey?: string },
 	amount = -1399,
 	day = 5,
+	dedupScope = "",
+	currency = "EUR",
 ) =>
 	database.run(
-		sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, created_at, updated_at) values (${id}, 'a1', ${key.merchantId ?? null}, ${key.labelKey ?? null}, 'NETFLIX', ${amount}, 'EUR', ${day}, '2026-09-05', '2026-10-05', 3, 0, 0)`,
+		sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, dedup_scope, created_at, updated_at) values (${id}, 'a1', ${key.merchantId ?? null}, ${key.labelKey ?? null}, 'NETFLIX', ${amount}, ${currency}, ${day}, '2026-09-05', '2026-10-05', 3, ${dedupScope}, 0, 0)`,
+	);
+
+// Before 0055 the table has no dedup scope.
+const insertOldRecurring = (
+	database: Database,
+	id: string,
+	accountId: string,
+	status: string,
+	manual = 0,
+) =>
+	database.run(
+		sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, manual, created_at, updated_at) values (${id}, ${accountId}, null, ${`key-${id}`}, 'NETFLIX', -1399, 'EUR', 5, '2026-09-05', '2026-10-05', 3, ${status}, ${manual}, 0, 0)`,
 	);
 
 describe("recurring transactions", () => {
@@ -1241,7 +1255,7 @@ describe("recurring transactions", () => {
 		await expect(insertRecurring(database, "r7", { labelKey: "z" }, -3, 31)).resolves.toBeDefined();
 	});
 
-	it("holds one pattern per account, merchant and amount", async () => {
+	it("holds one pattern per account, merchant, amount, currency and dedup scope", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");
 		await insertMerchant(database, "m1", "Netflix");
@@ -1251,9 +1265,15 @@ describe("recurring transactions", () => {
 		await expect(
 			insertRecurring(database, "r3", { merchantId: "m1" }, -1799),
 		).resolves.toBeDefined();
+		await expect(
+			insertRecurring(database, "r4", { merchantId: "m1" }, -1399, 5, "-1400"),
+		).resolves.toBeDefined();
+		await expect(
+			insertRecurring(database, "r5", { merchantId: "m1" }, -1399, 5, "", "USD"),
+		).resolves.toBeDefined();
 	});
 
-	it("holds one pattern per account, label key and amount", async () => {
+	it("holds one pattern per account, label key, amount, currency and dedup scope", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");
 		await insertRecurring(database, "r1", { labelKey: "prlv edf" });
@@ -1261,6 +1281,12 @@ describe("recurring transactions", () => {
 		await expect(insertRecurring(database, "r2", { labelKey: "prlv edf" })).rejects.toThrow();
 		await expect(
 			insertRecurring(database, "r3", { labelKey: "prlv edf" }, -5000),
+		).resolves.toBeDefined();
+		await expect(
+			insertRecurring(database, "r4", { labelKey: "prlv edf" }, -1399, 5, "-1400"),
+		).resolves.toBeDefined();
+		await expect(
+			insertRecurring(database, "r5", { labelKey: "prlv edf" }, -1399, 5, "", "USD"),
 		).resolves.toBeDefined();
 	});
 
@@ -1282,33 +1308,75 @@ describe("recurring transactions", () => {
 		await expect(database.all(sql`select id from recurring_transactions`)).resolves.toEqual([]);
 	});
 
-	it("starts a pattern detected and not manual, and accepts only a known status", async () => {
+	it("starts a pattern suggested, not manual, without a band or a dedup scope, and accepts only a known status", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");
-		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		await database.run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, created_at, updated_at) values ('r1', 'a1', 'netflix', 'NETFLIX', -1399, 'EUR', 5, '2026-09-05', '2026-10-05', 3, 0, 0)`,
+		);
 		const setStatus = (status: string) =>
 			database.run(sql`update recurring_transactions set status = ${status} where id = 'r1'`);
 
 		await expect(
-			database.get(sql`select status, manual from recurring_transactions where id = 'r1'`),
-		).resolves.toEqual({ status: "detected", manual: 0 });
-		await expect(setStatus("confirmed")).resolves.toBeDefined();
+			database.get(
+				sql`select status, manual, dedup_scope as dedupScope, expected_amount_min as min, expected_amount_max as max, expected_amount_avg as avg from recurring_transactions where id = 'r1'`,
+			),
+		).resolves.toEqual({
+			status: "suggested",
+			manual: 0,
+			dedupScope: "",
+			min: null,
+			max: null,
+			avg: null,
+		});
+		await expect(setStatus("active")).resolves.toBeDefined();
 		await expect(setStatus("inactive")).resolves.toBeDefined();
-		await expect(setStatus("dismissed")).resolves.toBeDefined();
-		await expect(setStatus("deleted")).rejects.toThrow();
+		await expect(setStatus("ended")).resolves.toBeDefined();
+		await expect(setStatus("paused")).rejects.toThrow();
+		await expect(setStatus("detected")).rejects.toThrow();
 	});
 
-	it("marks every existing pattern detected when 0025 adds the status", async () => {
+	it("marks every existing pattern detected when 0025 adds the status, suggested since 0055", async () => {
 		const before = await migratedBefore("0025");
 		await insertAccount(before, "a1", "depository", "checking");
-		await insertRecurring(before, "r1", { labelKey: "netflix" });
+		await before.run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, created_at, updated_at) values ('r1', 'a1', 'netflix', 'NETFLIX', -1399, 'EUR', 5, '2026-09-05', '2026-10-05', 3, 0, 0)`,
+		);
 		before.$client.close();
 
 		const database = await migrated();
 
 		await expect(
 			database.all(sql`select id, status, manual from recurring_transactions`),
-		).resolves.toEqual([{ id: "r1", status: "detected", manual: 0 }]);
+		).resolves.toEqual([{ id: "r1", status: "suggested", manual: 0 }]);
+	});
+
+	it("maps each status to Sure's when 0055 renames them, and ends a series on an investment account", async () => {
+		const before = await migratedBefore("0055");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "investment", "pea");
+		await insertOldRecurring(before, "r1", "a1", "detected");
+		await insertOldRecurring(before, "r2", "a1", "confirmed", 1);
+		await insertOldRecurring(before, "r3", "a1", "inactive");
+		await insertOldRecurring(before, "r4", "a1", "dismissed");
+		await insertOldRecurring(before, "r5", "a2", "confirmed");
+		await insertOldRecurring(before, "r6", "a2", "detected");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, status, manual, dedup_scope as dedupScope, expected_amount_avg as avg from recurring_transactions order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "r1", status: "suggested", manual: 0, dedupScope: "", avg: null },
+			{ id: "r2", status: "active", manual: 1, dedupScope: "", avg: null },
+			{ id: "r3", status: "inactive", manual: 0, dedupScope: "", avg: null },
+			{ id: "r4", status: "ended", manual: 0, dedupScope: "", avg: null },
+			{ id: "r5", status: "ended", manual: 0, dedupScope: "", avg: null },
+			{ id: "r6", status: "ended", manual: 0, dedupScope: "", avg: null },
+		]);
 	});
 });
 

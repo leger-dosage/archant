@@ -15,7 +15,6 @@ import {
 	RepeatIcon,
 	ShieldAlertIcon,
 	ShieldCheckIcon,
-	SparklesIcon,
 	SplitIcon,
 	TrendingUpIcon,
 	TriangleAlertIcon,
@@ -43,12 +42,7 @@ const STATUSES = {
 	// The warning tint, which DESIGN.md keeps for states that need attention.
 	duplicate: { icon: TriangleAlertIcon, key: "transactions.duplicate.flag", tone: "warning" },
 	// A series' state is information, never an alarm: all neutral.
-	recurringDetected: { icon: SparklesIcon, key: "recurring.statuses.detected", tone: "neutral" },
-	recurringConfirmed: {
-		icon: CircleCheckIcon,
-		key: "recurring.statuses.confirmed",
-		tone: "neutral",
-	},
+	recurringActive: { icon: CircleCheckIcon, key: "recurring.statuses.active", tone: "neutral" },
 	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", tone: "neutral" },
 	recurringManual: { icon: HandIcon, key: "recurring.manual", tone: "neutral" },
 	// What a viewer reads in place of a disabled rule's switch.

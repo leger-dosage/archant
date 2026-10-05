@@ -47,7 +47,7 @@ describe("POST /api/recurring/detect", () => {
 });
 
 async function monthlyNetflix() {
-	const { app, account } = await ownRecurringAccount();
+	const { app, db, account } = await ownRecurringAccount();
 	const add = async (date: string) => {
 		const response = await app.request(`/api/accounts/${account.id}/transactions`, {
 			method: "POST",
@@ -59,7 +59,7 @@ async function monthlyNetflix() {
 	};
 	const ids = [await add("2026-07-05"), await add("2026-08-05"), await add("2026-09-05")];
 
-	return { app, account, ids };
+	return { app, db, account, ids };
 }
 
 describe("/api/recurring", () => {
@@ -80,8 +80,10 @@ describe("/api/recurring", () => {
 					label: "Netflix",
 					amount: -1399,
 					currency: "EUR",
+					expectedAmountMin: -1399,
+					expectedAmountMax: -1399,
 					expectedDayOfMonth: 5,
-					status: "detected",
+					status: "suggested",
 					manual: false,
 				}),
 			],
@@ -95,7 +97,7 @@ describe("/api/recurring", () => {
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({
-			data: { label: "Netflix", occurrenceCount: 1, status: "confirmed", manual: true },
+			data: { label: "Netflix", occurrenceCount: 1, status: "active", manual: true },
 		});
 	});
 
@@ -121,7 +123,7 @@ describe("/api/recurring", () => {
 		});
 	});
 
-	it("confirms a pattern, and refuses a move its status cannot make", async () => {
+	it("activates a suggestion, and refuses a move its status cannot make", async () => {
 		const { app } = await monthlyNetflix();
 		const client = testClient(app).api.recurring;
 		await client.detect.$post();
@@ -139,13 +141,13 @@ describe("/api/recurring", () => {
 			fields: [{ path: "status", code: "invalid_value" }],
 		});
 
-		const confirmed = await client[":id"].$patch({ param: { id }, json: { status: "confirmed" } });
+		const activated = await client[":id"].$patch({ param: { id }, json: { status: "active" } });
 
-		expect(confirmed.status).toBe(200);
-		expect(await confirmed.json()).toMatchObject({ data: { id, status: "confirmed" } });
+		expect(activated.status).toBe(200);
+		expect(await activated.json()).toMatchObject({ data: { id, status: "active" } });
 	});
 
-	it("marks the rows of a series recurring in both lists, until it is dismissed", async () => {
+	it("marks the rows of a series recurring in both lists, until it is deleted", async () => {
 		const { app, account, ids } = await monthlyNetflix();
 		const other = await app.request(`/api/accounts/${account.id}/transactions`, {
 			method: "POST",
@@ -176,10 +178,7 @@ describe("/api/recurring", () => {
 			expect(flagged.get(otherId)).toBe(false);
 		}
 
-		await testClient(app).api.recurring[":id"].$patch({
-			param: { id: series.id },
-			json: { status: "dismissed" },
-		});
+		await testClient(app).api.recurring[":id"].$delete({ param: { id: series.id } });
 
 		expect([...(await flags("/api/transactions")).values()]).toEqual([false, false, false, false]);
 	});
@@ -198,7 +197,7 @@ describe("/api/recurring", () => {
 
 		expect(found.status).toBe(200);
 		expect(await found.json()).toMatchObject({
-			data: { label: "Netflix", amount: -1399, status: "detected" },
+			data: { label: "Netflix", amount: -1399, status: "suggested" },
 		});
 
 		const unknown = await client.$get({ param: { entryId: "nope" } });
@@ -214,7 +213,7 @@ describe("/api/recurring", () => {
 		const unknownStatus = await app.request("/api/recurring/nope", {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ status: "deleted" }),
+			body: JSON.stringify({ status: "paused" }),
 		});
 
 		expect(unknownStatus.status).toBe(400);
@@ -225,10 +224,61 @@ describe("/api/recurring", () => {
 
 		const unknownId = await testClient(app).api.recurring[":id"].$patch({
 			param: { id: "nope" },
-			json: { status: "confirmed" },
+			json: { status: "active" },
 		});
 
 		expect(unknownId.status).toBe(404);
 		expect(errorBody.parse(await unknownId.json()).error.code).toBe("NOT_FOUND");
+
+		const unknownDelete = await testClient(app).api.recurring[":id"].$delete({
+			param: { id: "nope" },
+		});
+
+		expect(unknownDelete.status).toBe(404);
+	});
+
+	it("ends a detected series on DELETE, which « Ajouter aux récurrences » brings back", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring;
+		await client.detect.$post();
+		const { data } = await (await client.$get()).json();
+		const detected = data[0]!.id;
+
+		const ended = await client[":id"].$delete({ param: { id: detected } });
+
+		expect(ended.status).toBe(200);
+		expect(await ended.json()).toEqual({ data: { id: detected } });
+		expect((await (await client.$get()).json()).data).toEqual([]);
+
+		await client.detect.$post();
+
+		expect((await (await client.$get()).json()).data).toEqual([]);
+
+		const added = await client.$post({ json: { entryId: ids[2]! } });
+
+		expect(await added.json()).toMatchObject({ data: { id: detected, status: "active" } });
+	});
+
+	it("deletes a manual series on DELETE", async () => {
+		const { app, db, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring;
+		const added = await client.$post({ json: { entryId: ids[2]! } });
+		const { id } = z.object({ data: z.object({ id: z.string() }) }).parse(await added.json()).data;
+
+		const deleted = await client[":id"].$delete({ param: { id } });
+
+		expect(deleted.status).toBe(200);
+		await expect(recurringRows(db)).resolves.toEqual([]);
+	});
+});
+
+describe("POST /api/recurring/cleanup", () => {
+	it("answers how many series became inactive", async () => {
+		const own = await ownDatabase();
+
+		const response = await testClient(buildApp(own.db)).api.recurring.cleanup.$post();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { inactive: 0 } });
 	});
 });

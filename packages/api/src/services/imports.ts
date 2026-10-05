@@ -38,7 +38,7 @@ import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { getAccount } from "./accounts.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
-import { detectRecurring } from "./recurring.ts";
+import { detectRecurring } from "./recurring/series.ts";
 
 /**
  * `$client` too: a large import refreshes SQLite's statistics, which only the

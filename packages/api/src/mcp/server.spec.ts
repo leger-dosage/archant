@@ -1095,7 +1095,7 @@ describe("reading accounts, recurring series and one transaction", () => {
 			lastOccurrenceDate: "2026-08-01",
 			nextExpectedDate,
 			occurrenceCount: 3,
-			status: "confirmed" as const,
+			status: "active" as const,
 			createdAt: 0,
 			updatedAt: 0,
 		});
@@ -1133,7 +1133,7 @@ describe("reading accounts, recurring series and one transaction", () => {
 			accountName: "Prélèvements",
 			amount: "-25.99",
 			currency: "EUR",
-			status: "confirmed",
+			status: "active",
 			expectedDayOfMonth: 24,
 			nextExpectedDate: "2026-09-24",
 			lastOccurrenceDate: "2026-08-01",

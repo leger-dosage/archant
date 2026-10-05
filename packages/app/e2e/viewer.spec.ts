@@ -3,7 +3,15 @@ import type { Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { acceptInvitation, apiHelpers, expect, sgml, test, uniqueName } from "./fixtures.ts";
+import {
+	acceptInvitation,
+	apiHelpers,
+	daysAgo,
+	expect,
+	sgml,
+	test,
+	uniqueName,
+} from "./fixtures.ts";
 import { ADMIN_STATE, WEB_URL } from "./settings.ts";
 
 // Story 20.3: a viewer reads every page and is shown no control that writes.
@@ -24,6 +32,15 @@ const PNG = Buffer.from(
 const MONTH = "2022-03";
 const NEXT_MONTH = "2022-04";
 const OVER_MONTH = "2022-05";
+
+/** The 10th of a month `monthsBack` before the latest 10th up to today. */
+function tenth(monthsBack: number): string {
+	const today = daysAgo(0);
+	const date = new Date(Date.parse(`${today.slice(0, 7)}-10T00:00:00Z`));
+	date.setUTCMonth(date.getUTCMonth() - monthsBack - (Number(today.slice(8, 10)) >= 10 ? 0 : 1));
+
+	return date.toISOString().slice(0, 10);
+}
 
 /** No button or link of these names anywhere on the page. */
 async function expectNone(
@@ -61,6 +78,17 @@ test("a viewer reads every page with no control that writes, and the server refu
 	await api.categorise([bakery], category.id);
 	await api.attachFile(bakery, { name: "ticket.png", mimeType: "image/png", buffer: PNG });
 	await api.addRecurring(bakery);
+	// A suggestion, whose two buttons a viewer never sees.
+	await Promise.all(
+		[0, 1, 2].map((monthsBack) =>
+			api.addTransaction(account.id, {
+				date: tenth(monthsBack),
+				label: `${prefix} abonnement`,
+				amount: "-9,99",
+			}),
+		),
+	);
+	await api.detectRecurring();
 	// A transfer, linked on creation, and a split, each with actions a viewer never sees.
 	const savings = await api.openAccount({ name: `${prefix} épargne`, openingDate: "2022-02-01" });
 	const transfer = await api.addTransaction(account.id, {
@@ -321,8 +349,17 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.goto("/recurring");
 			await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
 			await expect(page.getByRole("cell", { name: `${prefix} boulangerie` })).toBeVisible();
+			await expect(
+				page
+					.getByRole("table", { name: "Nouvelles factures possibles" })
+					.getByRole("row")
+					.filter({ hasText: `${prefix} abonnement` }),
+			).toContainText("Vue 3 fois");
 			await expectNone(page, [
 				{ role: "button", name: "Détecter" },
+				{ role: "button", name: "Nettoyer les obsolètes" },
+				{ role: "button", name: "Ajouter la facture" },
+				{ role: "button", name: "Ce n'est pas une facture" },
 				{ role: "button", name: `Actions pour ${prefix} boulangerie` },
 			]);
 

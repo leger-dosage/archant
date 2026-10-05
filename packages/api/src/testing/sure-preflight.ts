@@ -280,23 +280,35 @@ const SCHEMAS = {
 	}),
 	Tag: z.strictObject({ id, name: present, ...stamps }),
 	Merchant: z.strictObject({ id, name: present, ...stamps }),
-	RecurringTransaction: z.strictObject({
-		id,
-		account_id: id,
-		merchant_id: z.string().nullable(),
-		// `merchant_or_name_present`; every Archant pattern has a label.
-		name: present,
-		amount: decimal,
-		currency,
-		expected_day_of_month: z.number().int().min(1).max(31),
-		last_occurrence_date: date,
-		next_expected_date: date,
-		status: z.enum(["suggested", "active", "paused", "inactive", "ended"]),
-		occurrence_count: z.number().int().min(0),
-		manual: z.boolean(),
-		...stamps,
-		archant,
-	}),
+	RecurringTransaction: z
+		.strictObject({
+			id,
+			account_id: id,
+			merchant_id: z.string().nullable(),
+			// `merchant_or_name_present`; every Archant pattern has a label.
+			name: present,
+			amount: decimal,
+			expected_amount_min: decimal.nullable(),
+			expected_amount_max: decimal.nullable(),
+			expected_amount_avg: decimal.nullable(),
+			currency,
+			expected_day_of_month: z.number().int().min(1).max(31),
+			last_occurrence_date: date,
+			next_expected_date: date,
+			status: z.enum(["suggested", "active", "paused", "inactive", "ended"]),
+			occurrence_count: z.number().int().min(0),
+			manual: z.boolean(),
+			dedup_scope: z.string(),
+			...stamps,
+		})
+		// `amount_variance_consistency`.
+		.refine(
+			(row) =>
+				row.expected_amount_min === null ||
+				row.expected_amount_max === null ||
+				Number(row.expected_amount_min) <= Number(row.expected_amount_max),
+			{ message: "expected_amount_min is above expected_amount_max" },
+		),
 	Transaction: z
 		.strictObject({
 			id,

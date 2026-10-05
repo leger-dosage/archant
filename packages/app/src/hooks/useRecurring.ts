@@ -7,8 +7,8 @@ import { queryKeys } from "@/lib/query-keys";
 
 export type RecurringData = InferResponseType<typeof api.recurring.$get, 200>["data"][number];
 
-/** What the user can move a pattern to; `detected` is detection's alone. */
-export type RecurringMove = Exclude<RecurringData["status"], "detected">;
+/** What the user can move a pattern to; `suggested` is detection's alone. */
+export type RecurringMove = Exclude<RecurringData["status"], "suggested">;
 
 export function useRecurring() {
 	return useQuery({
@@ -63,6 +63,27 @@ export function useAddRecurring() {
 	return useMutation({
 		mutationFn: async (entryId: string) =>
 			(await unwrap(api.recurring.$post({ json: { entryId } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Supprimer »: deletes a manual series, ends a detected one. */
+export function useDeleteRecurring() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.recurring[":id"].$delete({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Nettoyer les obsolètes »: marks stale series inactive. */
+export function useCleanupRecurring() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(api.recurring.cleanup.$post())).data,
 		onSuccess: invalidate,
 	});
 }

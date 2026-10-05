@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { purgeStalePreviews } from "../services/imports.ts";
-import * as recurringService from "../services/recurring.ts";
+import * as recurringService from "../services/recurring/series.ts";
 import {
 	balanceOf,
 	balanceOnDay,

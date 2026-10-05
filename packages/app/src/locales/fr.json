@@ -1365,7 +1365,7 @@
 	},
 	"recurring": {
 		"title": "Récurrences",
-		"description": "Les abonnements et factures qui reviennent chaque mois, détectés sur les trois derniers mois d'opérations. Confirmez ceux que vous voulez suivre, écartez les autres. Une récurrence détectée sans opération depuis deux mois devient inactive.",
+		"description": "Les abonnements et factures qui reviennent chaque mois, à quelques centimes près, détectés sur les trois derniers mois d'opérations. Ajoutez les factures possibles que vous voulez suivre, écartez les autres. Une récurrence sans paiement depuis deux mois devient inactive, six mois pour une récurrence ajoutée à la main.",
 		"list": "Toutes les récurrences",
 		"empty": {
 			"title": "Aucune récurrence pour l'instant",
@@ -1376,6 +1376,10 @@
 		"detected_zero": "Aucune récurrence détectée",
 		"detected_one": "{{count}} récurrence détectée",
 		"detected_other": "{{count}} récurrences détectées",
+		"cleanup": "Nettoyer les obsolètes",
+		"cleaned_zero": "Aucune récurrence obsolète",
+		"cleaned_one": "{{count}} récurrence devenue inactive",
+		"cleaned_other": "{{count}} récurrences devenues inactives",
 		"columns": {
 			"name": "Nom",
 			"account": "Compte",
@@ -1384,24 +1388,33 @@
 			"status": "Statut",
 			"actions": "Actions"
 		},
+		"amountRange": "varie de {{min}} à {{max}}",
 		"statuses": {
-			"detected": "Détectée",
-			"confirmed": "Confirmée",
-			"inactive": "Inactive",
-			"dismissed": "Écartée"
+			"active": "Active",
+			"inactive": "Inactive"
 		},
 		"manual": "Ajoutée à la main",
+		"suggested": {
+			"title": "Nouvelles factures possibles",
+			"seen_one": "Vue une fois",
+			"seen_other": "Vue {{count}} fois",
+			"confirm": "Ajouter la facture",
+			"dismiss": "Ce n'est pas une facture",
+			"added": "Facture ajoutée à vos récurrences",
+			"dismissed": "Écartée. Elle ne sera plus proposée."
+		},
 		"actions": "Actions pour {{name}}",
-		"confirm": "Confirmer",
-		"deactivate": "Désactiver",
-		"dismiss": "Écarter",
-		"confirmed": "Récurrence confirmée",
-		"deactivated": "Récurrence désactivée",
-		"dismissDialog": {
-			"title": "Écarter « {{name}} » ?",
+		"pause": "Mettre en pause",
+		"resume": "Reprendre",
+		"delete": "Supprimer",
+		"paused": "Récurrence mise en pause",
+		"resumed": "Récurrence reprise",
+		"deleteDialog": {
+			"title": "Supprimer « {{name}} » ?",
 			"description": "Elle disparaîtra de la liste et la détection ne la proposera plus. Ses opérations ne seront pas modifiées.",
-			"action": "Écarter",
-			"dismissed": "Récurrence écartée"
+			"descriptionManual": "Elle disparaîtra de la liste. Ses opérations ne seront pas modifiées.",
+			"action": "Supprimer",
+			"deleted": "Récurrence supprimée"
 		}
 	},
 	"rules": {

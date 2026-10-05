@@ -59,7 +59,7 @@ export const recurringInput = z.strictObject({
 		.enum(RECURRING_VIEWS)
 		.default("current")
 		.describe(
-			'"current": detected or confirmed; "inactive": stopped by the owner; "all": both, dismissed ones never.',
+			'"current": suggested or active; "inactive": paused or retired; "all": both, ended ones never.',
 		),
 	withinDays: z
 		.number()

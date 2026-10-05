@@ -14,7 +14,6 @@ import { formatMicros } from "@archant/data/micros";
 import type { MinorUnits, Money } from "@archant/data/money";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 import type { RuleActionType } from "@archant/data/rules";
-import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { daysBetween, monthRange, today } from "../domain/dates.ts";
@@ -87,17 +86,6 @@ const SURE_OUTFLOW_KINDS = {
 	investment_contribution: "investment_contribution",
 } as const satisfies Record<TransferKind, string>;
 
-/**
- * Sure's `RecurringTransaction` statuses. Sure deletes nothing it dismissed
- * either: `ended` is its tombstone, which detection never recreates.
- */
-const SURE_RECURRING_STATUSES = {
-	detected: "active",
-	confirmed: "active",
-	inactive: "inactive",
-	dismissed: "ended",
-} as const satisfies Record<RecurringStatus, string>;
-
 /** Which valuation of a day Sure keeps, `SureImport::Preflight` refusing two. */
 const VALUATION_PRECEDENCE: Record<ValuationKind, number> = {
 	opening_anchor: 0,
@@ -149,6 +137,11 @@ function decimal(amount: MinorUnits, currency: string): string {
  */
 function sureAmount(amount: MinorUnits, currency: string): string {
 	return decimal(toMinorUnits(0 - amount), currency);
+}
+
+/** A series' band amount in Sure's sign, or none before detection measured one. */
+function bandAmount(amount: number | null, currency: string): string | null {
+	return amount === null ? null : sureAmount(toMinorUnits(amount), currency);
 }
 
 /** A rate in basis points as Sure's percentage: 345 is `3.45`. */
@@ -734,16 +727,22 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				merchant_id: row.merchantId,
 				name: row.label,
 				amount: sureAmount(toMinorUnits(row.amount), row.currency),
+				// Sure's sign reverses the order: Archant's largest outflow, its
+				// minimum, is Sure's maximum, and Sure refuses a minimum above it.
+				expected_amount_min: bandAmount(row.expectedAmountMax, row.currency),
+				expected_amount_max: bandAmount(row.expectedAmountMin, row.currency),
+				expected_amount_avg: bandAmount(row.expectedAmountAvg, row.currency),
 				currency: row.currency,
 				expected_day_of_month: row.expectedDayOfMonth,
 				last_occurrence_date: row.lastOccurrenceDate,
 				next_expected_date: row.nextExpectedDate,
-				status: SURE_RECURRING_STATUSES[row.status],
+				// Archant's statuses are Sure's, `paused` aside.
+				status: row.status,
 				occurrence_count: row.occurrenceCount,
 				manual: row.manual,
+				dedup_scope: row.dedupScope,
 				created_at: timestamp(row.createdAt),
 				updated_at: timestamp(row.updatedAt),
-				archant: { status: row.status },
 			},
 		})),
 		counts,

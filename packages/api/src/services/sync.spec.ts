@@ -36,7 +36,7 @@ import { createAccount } from "./ledger/accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import { linkBankAccount } from "./ledger/bank-link.ts";
 import { deleteTransaction } from "./ledger/edits.ts";
-import * as recurringService from "./recurring.ts";
+import * as recurringService from "./recurring/series.ts";
 import { getNetWorth } from "./reports.ts";
 import { startDailySync, syncAll, syncConnection, windowStart } from "./sync.ts";
 
