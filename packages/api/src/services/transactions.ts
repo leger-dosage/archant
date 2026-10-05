@@ -70,7 +70,7 @@ import {
 	unsplitTransaction as unsplitLedgerTransaction,
 } from "./ledger/splits.ts";
 import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.ts";
-import { recurringEntryIds } from "./recurring.ts";
+import { recurringEntryIds } from "./recurring/series.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { getTrade, investmentCurrency } from "./trades.ts";
 

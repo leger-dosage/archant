@@ -498,9 +498,16 @@ export function apiHelpers(request: APIRequestContext) {
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
-		/** Follows a transaction as a confirmed series, as the sheet's « Récurrence » button does. */
+		/** Follows a transaction as an active series, as the sheet's « Récurrence » button does. */
 		async addRecurring(entryId: string): Promise<string> {
 			return created(await request.post("/api/recurring", { data: { entryId } }));
+		},
+
+		/** Runs recurring detection, as « Détecter » does. */
+		async detectRecurring(): Promise<void> {
+			const response = await request.post("/api/recurring/detect", { headers: sameOrigin });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
 		/**

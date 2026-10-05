@@ -306,8 +306,8 @@ async function household() {
 		amount: "-900,00",
 	});
 	await created("/api/recurring", { entryId: subscription });
-	const dismissed = await created("/api/recurring", { entryId: rent });
-	await sendOwn("PATCH", `/api/recurring/${dismissed}`, { status: "dismissed" });
+	const paused = await created("/api/recurring", { entryId: rent });
+	await sendOwn("PATCH", `/api/recurring/${paused}`, { status: "inactive" });
 
 	await sendOwn("PUT", "/api/budgets/2026-08", {
 		budgetedSpending: "1 000",
@@ -1293,6 +1293,28 @@ describe("exportArchive", () => {
 		]);
 	});
 
+	it("writes a recurring band in Sure's sign, its minimum below its maximum", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		await database().run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, amount, expected_amount_min, expected_amount_max, expected_amount_avg, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, dedup_scope, created_at, updated_at) values ('r1', ${checking.id}, 'pret', 'PRET', -57122, -57136, -57122, -57129, 'EUR', 7, '2026-09-08', '2026-10-07', 3, '-57129', 0, 0)`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("RecurringTransaction")).toEqual([
+			expect.objectContaining({
+				amount: "571.22",
+				expected_amount_min: "571.22",
+				expected_amount_max: "571.36",
+				expected_amount_avg: "571.29",
+				status: "suggested",
+				dedup_scope: "-57129",
+			}),
+		]);
+	});
+
 	it("maps recurring patterns, categories and budgets", async () => {
 		const { food, bakery, baker } = await household();
 
@@ -1307,17 +1329,20 @@ describe("exportArchive", () => {
 			expect.objectContaining({
 				name: "LOYER",
 				amount: "900.00",
-				status: "ended",
-				archant: { status: "dismissed" },
+				status: "inactive",
 			}),
 			expect.objectContaining({
 				name: "NETFLIX",
 				amount: "13.49",
+				expected_amount_min: "13.49",
+				expected_amount_max: "13.49",
+				expected_amount_avg: "13.49",
 				status: "active",
 				manual: true,
-				archant: { status: "confirmed" },
+				dedup_scope: "",
 			}),
 		]);
+		expect(archive.of("RecurringTransaction").every((entry) => !("archant" in entry))).toBe(true);
 		expect(archive.of("Category")).toContainEqual(
 			expect.objectContaining({
 				id: bakery,

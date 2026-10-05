@@ -17,7 +17,7 @@ import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { oldestPendingDate } from "./ledger/snapshots.ts";
-import { detectRecurring } from "./recurring.ts";
+import { detectRecurring } from "./recurring/series.ts";
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
 const MIN_INTERVAL_MS = 60 * 60 * 1000;

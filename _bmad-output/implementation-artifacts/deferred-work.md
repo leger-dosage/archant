@@ -316,3 +316,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-hide-inactive-account-transactions.md`
   summary: Assert the query plan of `/api/transactions?account=<one>` with the active-account predicate.
   evidence: maybe-false, medium if true: one named account drops the `+` hint and now meets a second `in` on `account_id`; a case in `history-volume.spec.ts` would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-23-1-find-recurring-payments-as-sure-does-today.md`
+  summary: The transaction sheet and « Ajouter aux récurrences » pick a series of the row's key by exact amount, else the latest, rather than the tier the identifier would claim.
+  evidence: maybe-false, low to medium if true. `seriesOfTransaction` in `services/recurring/series.ts` predates Story 23.1 (Spec 11.8). With two tiers of one merchant a row may name the wrong one; settle it with a two-tier test once Story 23.3's matcher links a payment to its occurrence.

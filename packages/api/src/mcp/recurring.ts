@@ -4,7 +4,7 @@ import { toDecimalString } from "@archant/data/money";
 import { RECURRING_STATUSES } from "@archant/data/schema/recurring-transactions";
 
 import { recurringInput } from "../schemas/assistants.ts";
-import { listRecurring } from "../services/recurring.ts";
+import { listRecurring } from "../services/recurring/series.ts";
 import { BANK_TEXT, READ_ONLY, decimal, defineTool } from "./tool.ts";
 
 /** A household has a few dozen series; past this many, the assistant narrows its filter. */
@@ -13,7 +13,7 @@ const MAX_RECURRING = 200;
 export const getRecurringTransactions = defineTool({
 	name: "get_recurring_transactions",
 	title: "Recurring transactions",
-	description: `The payments and incomes seen on the same day of every month for the same amount, as « Récurrents » lists them: current ones first, each by expected next date. Each gives its amount, its expected day and next date, and its last occurrence. ${BANK_TEXT}`,
+	description: `The payments and incomes seen on the same day of every month for about the same amount, as « Récurrents » lists them: current ones first, each by expected next date. Each gives its amount, its expected day and next date, and its last occurrence. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: recurringInput,
@@ -30,7 +30,9 @@ export const getRecurringTransactions = defineTool({
 				currency: z.string(),
 				status: z
 					.enum(RECURRING_STATUSES)
-					.describe('"detected": found by Archant; "confirmed" by the owner; "inactive": stopped.'),
+					.describe(
+						'"suggested": found by Archant, awaiting the owner; "active": followed by the owner; "inactive": paused or retired.',
+					),
 				expectedDayOfMonth: z.number().int(),
 				nextExpectedDate: z.string(),
 				lastOccurrenceDate: z.string(),

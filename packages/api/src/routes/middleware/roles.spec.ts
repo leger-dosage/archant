@@ -154,8 +154,8 @@ describe("a viewer's writes", () => {
 
 		// Fails if the walk stops finding routes, rather than passing on none.
 		expect(routes.length).toBeGreaterThanOrEqual(70);
-		// Epics 17 to 19, 21 and 22: budgets, splits, attachments, goals, prices,
-		// trades and holdings.
+		// Epics 17 to 19, 21 to 23: budgets, splits, attachments, goals, prices,
+		// trades, holdings and recurring series.
 		expect(walked).toEqual(
 			expect.arrayContaining([
 				"PUT /api/budgets/x",
@@ -177,6 +177,9 @@ describe("a viewer's writes", () => {
 				"PUT /api/accounts/x/holdings/x/cost-basis",
 				"DELETE /api/accounts/x/holdings/x/cost-basis",
 				"POST /api/securities/x/prices",
+				"PATCH /api/recurring/x",
+				"DELETE /api/recurring/x",
+				"POST /api/recurring/cleanup",
 			]),
 		);
 

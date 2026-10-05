@@ -477,7 +477,7 @@ describe("the other tables", () => {
 		expect((await exportedTags(temp.db)).map((row) => row.id)).toContain(tag);
 		expect((await exportedMerchants(temp.db)).map((row) => row.id)).toContain(merchant);
 		expect(await exportedRecurring(temp.db)).toContainEqual(
-			expect.objectContaining({ accountId: account.id, label: "Abonnement", status: "detected" }),
+			expect.objectContaining({ accountId: account.id, label: "Abonnement", status: "suggested" }),
 		);
 	});
 

@@ -264,7 +264,7 @@ export function DuplicateBlock({
 /**
  * The sheet's « Récurrence » block: names the series the saved transaction
  * belongs to, with a link to the page, or else adds it to the recurring
- * patterns, confirmed, at once and apart from the form, as the transfer
+ * patterns, active, at once and apart from the form, as the transfer
  * block does. Hidden on a transfer side the API refuses. A viewer reads
  * whether it belongs to a series, and adds none.
  */

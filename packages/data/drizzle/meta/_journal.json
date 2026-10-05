@@ -386,6 +386,13 @@
       "when": 1791139100304,
       "tag": "0054_entries_totals_index_account",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1791185650311,
+      "tag": "0055_rename_recurring_statuses",
+      "breakpoints": true
     }
   ]
 }
