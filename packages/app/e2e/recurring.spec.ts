@@ -1,7 +1,7 @@
 import type { Api } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
-import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Stories 9.2 and 23.1: recurring transactions at `/recurring`. One database
 // serves the whole run and detection reads every account, so each test finds
@@ -401,4 +401,214 @@ test("the rail's « Récurrent » opens Récurrences", async ({ page }) => {
 		.click();
 	await expect(page).toHaveURL(/\/recurring$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
+});
+
+// Story 23.2: bills and incomes declared by hand, and their schedules.
+
+const billDialog = (page: Page, name: string | RegExp) => page.getByRole("dialog", { name });
+
+/** Picks `option` in the dialog's select labelled `label`. */
+async function choose(
+	page: Page,
+	dialog: ReturnType<typeof billDialog>,
+	label: string,
+	option: string,
+) {
+	await dialog.getByRole("combobox", { name: label }).click();
+	await page.getByRole("option", { name: option, exact: true }).click();
+}
+
+test("« Ajouter une facture » declares a quarterly bill, listed active and manual, due on its first date", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Eau");
+	const due = daysAgo(-20);
+
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une facture" }).click();
+	const dialog = billDialog(page, "Ajouter une facture");
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByLabel("Montant").fill("84,20");
+	await dialog.getByLabel("Prochaine échéance").fill(typed(due));
+	await choose(page, dialog, "Payée depuis", account.name);
+	await choose(page, dialog, "Fréquence", "Trimestrielle");
+	await dialog.getByLabel("Lien de paiement").fill("eau.example/payer");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(toast(page, "Facture ajoutée")).toBeVisible();
+	await expect(dialog).toBeHidden();
+	await expect(row(page, name)).toContainText(euros(-8420));
+	await expect(row(page, name)).toContainText(account.name);
+	await expect(row(page, name)).toContainText(tableDate.format(new Date(`${due}T00:00:00Z`)));
+	await expect(row(page, name)).toContainText("Active");
+	await expect(row(page, name)).toContainText("Ajoutée à la main");
+
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = billDialog(page, `Modifier ${name}`);
+	await expect(edit.getByRole("combobox", { name: "Fréquence" })).toHaveText("Trimestrielle");
+	await expect(edit.getByLabel("Lien de paiement")).toHaveValue("https://eau.example/payer");
+});
+
+test("« Ajouter un revenu » declares an income, positive, without a link or autopay", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Salaire");
+
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter un revenu" }).click();
+	const dialog = billDialog(page, "Ajouter un revenu");
+	await expect(dialog.getByRole("combobox", { name: "Fréquence de versement" })).toHaveText(
+		"Toutes les 2 semaines",
+	);
+	await expect(dialog.getByLabel("Lien de paiement")).toHaveCount(0);
+	await expect(dialog.getByLabel("Paiement automatique")).toHaveCount(0);
+	await dialog.getByLabel("Source").fill(name);
+	await dialog.getByLabel("Montant par paie").fill("2 500,00");
+	await dialog.getByLabel("Prochaine paie").fill(typed(daysAgo(-5)));
+	await choose(page, dialog, "Versé sur", account.name);
+	await choose(page, dialog, "Fréquence de versement", "Mensuelle");
+	await dialog.getByRole("button", { name: "Enregistrer le revenu" }).click();
+
+	await expect(toast(page, "Revenu ajouté")).toBeVisible();
+	await expect(row(page, name)).toContainText(`+${euros(250_000)}`);
+});
+
+test("a deposit seen twice is offered as a starting point, and choosing it fills the form", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Loyer perçu");
+	const last = daysAgo(3);
+	// Far above any other deposit of the run: income starting points come largest first.
+	await api.addTransaction(account.id, { date: daysAgo(33), label, amount: "900 000,00" });
+	await api.addTransaction(account.id, { date: last, label, amount: "900 000,00" });
+
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter un revenu" }).click();
+	const dialog = billDialog(page, "Ajouter un revenu");
+	const starts = dialog.getByRole("region", {
+		name: "Partir d'un versement récurrent que nous avons repéré",
+	});
+	await expect(starts.getByRole("button").first()).toContainText(label);
+	await expect(starts.getByRole("button").first()).toContainText("2×");
+	await starts.getByRole("button", { name: new RegExp(label, "u") }).click();
+
+	await expect(starts).toBeHidden();
+	await expect(dialog.getByLabel("Source")).toHaveValue(label);
+	await expect(dialog.getByLabel("Montant par paie")).toHaveValue("900000,00");
+	await expect(dialog.getByRole("combobox", { name: "Versé sur" })).toHaveText(account.name);
+	await dialog.getByRole("button", { name: "Enregistrer le revenu" }).click();
+
+	await expect(toast(page, "Revenu ajouté")).toBeVisible();
+	await expect(row(page, label)).toContainText(`+${euros(90_000_000)}`);
+});
+
+test("« Créer une facture » in the sheet opens the declare dialog filled from the transaction", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("Assurance");
+	await api.addTransaction(account.id, { date: daysAgo(4), label, amount: "-32,50" });
+
+	const sheet = await openSheet(page, label);
+	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toBeVisible();
+	await sheet.getByRole("button", { name: "Créer une facture" }).click();
+	const dialog = billDialog(page, "Ajouter une facture");
+	await expect(dialog.getByLabel("Nom")).toHaveValue(label);
+	await expect(dialog.getByLabel("Montant")).toHaveValue("32,50");
+	await expect(dialog.getByRole("combobox", { name: "Payée depuis" })).toHaveText(account.name);
+	// Its day from today on: next month's, four days ago this month.
+	await expect(dialog.getByLabel("Prochaine échéance")).not.toHaveValue("");
+	await choose(page, dialog, "Fréquence", "Annuelle");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(toast(page, "Facture ajoutée")).toBeVisible();
+	await expect(dialog).toBeHidden();
+	await expect(sheet).toContainText(`Cette opération fait partie de la récurrence « ${label} ».`);
+
+	await page.keyboard.press("Escape");
+	await visit(page);
+	await expect(row(page, label)).toContainText(euros(-3250));
+});
+
+test("« Modifier » sets a cadence by hand, reads it back, and returns it to its preset", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Électricité");
+	await api.declareBill({
+		name,
+		amount: "65,00",
+		accountId: account.id,
+		firstDueOn: daysAgo(-10),
+	});
+
+	await visit(page);
+	const edit = async () => {
+		await openMenu(page, name);
+		await page.getByRole("menuitem", { name: "Modifier" }).click();
+
+		return billDialog(page, `Modifier ${name}`);
+	};
+
+	let dialog = await edit();
+	await expect(dialog.getByRole("combobox", { name: "Fréquence" })).toHaveText("Mensuelle");
+	await choose(page, dialog, "Fréquence", "Trimestrielle");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(toast(page, "Facture mise à jour")).toBeVisible();
+	await expect(dialog).toBeHidden();
+
+	dialog = await edit();
+	await expect(dialog.getByRole("combobox", { name: "Fréquence" })).toHaveText("Trimestrielle");
+	await choose(page, dialog, "Fréquence", "Intervalle personnalisé");
+	await dialog.getByLabel("Intervalle").fill("4");
+	await choose(page, dialog, "Unité", "mois");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(dialog).toBeHidden();
+
+	dialog = await edit();
+	await expect(dialog.getByRole("combobox", { name: "Fréquence" })).toHaveText(
+		"Intervalle personnalisé",
+	);
+	await expect(dialog.getByLabel("Intervalle")).toHaveValue("4");
+	await choose(page, dialog, "Fréquence", "Mensuelle");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(dialog).toBeHidden();
+
+	dialog = await edit();
+	await expect(dialog.getByRole("combobox", { name: "Fréquence" })).toHaveText("Mensuelle");
+
+	// A typed name is what the list shows.
+	const renamed = uniqueName("Électricité maison");
+	await dialog.getByLabel("Nom").fill(renamed);
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(row(page, renamed)).toContainText(euros(-6500));
+	await expect(row(page, name)).toHaveCount(0);
+});
+
+test("a link that is not http or https is refused on its field", async ({ page, api }) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Internet");
+	await api.declareBill({ name, amount: "29,99", accountId: account.id, firstDueOn: daysAgo(-3) });
+
+	await visit(page);
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = billDialog(page, `Modifier ${name}`);
+	await dialog.getByLabel("Lien de paiement").fill("ftp://box.example");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(dialog.getByLabel("Lien de paiement")).toHaveAttribute("aria-invalid", "true");
+	await expect(dialog).toContainText(
+		"Lien invalide : une adresse http ou https. Exemple : banque.fr/payer.",
+	);
 });

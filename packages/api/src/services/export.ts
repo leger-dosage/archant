@@ -31,6 +31,7 @@ import {
 	exportedGoalAccounts,
 	exportedGoals,
 	exportedMerchants,
+	exportedRecurrenceRules,
 	exportedRecurring,
 	exportedRejectedTransfers,
 	exportedRules,
@@ -725,7 +726,6 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				id: row.id,
 				account_id: row.accountId,
 				merchant_id: row.merchantId,
-				name: row.label,
 				amount: sureAmount(toMinorUnits(row.amount), row.currency),
 				// Sure's sign reverses the order: Archant's largest outflow, its
 				// minimum, is Sure's maximum, and Sure refuses a minimum above it.
@@ -739,10 +739,44 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				// Archant's statuses are Sure's, `paused` aside.
 				status: row.status,
 				occurrence_count: row.occurrenceCount,
+				// Sure's one `name` is both what a series is called and what it
+				// matches: the typed name, else the label.
+				name: row.name ?? row.label,
 				manual: row.manual,
+				payment_url: row.paymentUrl,
+				autopay: row.autopay,
+				notes: row.notes,
+				bill_type: row.billType,
+				category_id: row.categoryId,
+				anchor_date: row.anchorDate,
+				end_mode: row.endAfterCount === null ? "never" : "after_count",
+				end_after_count: row.endAfterCount,
+				matcher_hints:
+					row.schedulePinnedAt === null
+						? {}
+						: { schedule_pinned_at: timestamp(row.schedulePinnedAt) },
 				dedup_scope: row.dedupScope,
 				created_at: timestamp(row.createdAt),
 				updated_at: timestamp(row.updatedAt),
+			},
+		})),
+		counts,
+	);
+
+	yield ndjson(
+		(await exportedRecurrenceRules(deps.db)).map((rule) => ({
+			type: "RecurrenceRule",
+			data: {
+				id: rule.id,
+				recurring_transaction_id: rule.recurringTransactionId,
+				frequency: rule.frequency,
+				interval: rule.interval,
+				day_of_month: rule.dayOfMonth,
+				weekday: rule.weekday,
+				// Archant has no nth weekday: no Sure screen sets one.
+				weekday_ordinal: null,
+				month_of_year: rule.monthOfYear,
+				position: rule.position,
 			},
 		})),
 		counts,

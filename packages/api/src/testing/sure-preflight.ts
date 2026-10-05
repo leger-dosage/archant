@@ -298,6 +298,17 @@ const SCHEMAS = {
 			status: z.enum(["suggested", "active", "paused", "inactive", "ended"]),
 			occurrence_count: z.number().int().min(0),
 			manual: z.boolean(),
+			payment_url: z.url({ protocol: /^https?$/u }).nullable(),
+			autopay: z.boolean(),
+			notes: z.string().nullable(),
+			// `bill_type_matches_shape`: no transfer without a destination account.
+			bill_type: z.enum(["bill", "subscription", "installment", "income", "other"]),
+			category_id: z.string().nullable(),
+			anchor_date: date.nullable(),
+			end_mode: z.enum(["never", "on_date", "after_count"]),
+			// `MAX_END_AFTER_COUNT`.
+			end_after_count: z.number().int().min(1).max(600).nullable(),
+			matcher_hints: z.strictObject({ schedule_pinned_at: timestamp.optional() }),
 			dedup_scope: z.string(),
 			...stamps,
 		})
@@ -308,6 +319,38 @@ const SCHEMAS = {
 				row.expected_amount_max === null ||
 				Number(row.expected_amount_min) <= Number(row.expected_amount_max),
 			{ message: "expected_amount_min is above expected_amount_max" },
+		)
+		// `end_mode_fields_consistent`.
+		.refine((row) => (row.end_mode === "after_count") === (row.end_after_count !== null), {
+			message: "end_after_count does not match end_mode",
+		}),
+	// `RecurrenceRule`'s validations and `day_spec_coherent`, the nth weekday aside.
+	RecurrenceRule: z
+		.strictObject({
+			id,
+			recurring_transaction_id: id,
+			frequency: z.enum(["weekly", "monthly", "yearly"]),
+			interval: z.number().int().min(1),
+			day_of_month: z
+				.number()
+				.int()
+				.min(-1)
+				.max(31)
+				.refine((day) => day !== 0)
+				.nullable(),
+			weekday: z.number().int().min(0).max(6).nullable(),
+			weekday_ordinal: z.null(),
+			month_of_year: z.number().int().min(1).max(12).nullable(),
+			position: z.number().int().min(0),
+		})
+		.refine(
+			(rule) =>
+				rule.frequency === "weekly"
+					? rule.weekday !== null && rule.day_of_month === null && rule.month_of_year === null
+					: rule.day_of_month !== null &&
+						rule.weekday === null &&
+						(rule.month_of_year !== null) === (rule.frequency === "yearly"),
+			{ message: "the day fields do not fit the frequency" },
 		),
 	Transaction: z
 		.strictObject({
@@ -464,7 +507,12 @@ const SOURCE_IDS: Partial<Record<SureType, string>> = {
 const REFERENCES: Partial<Record<SureType, Record<string, string>>> = {
 	Balance: { account_id: "accounts" },
 	Category: { parent_id: "categories" },
-	RecurringTransaction: { account_id: "accounts", merchant_id: "merchants" },
+	RecurringTransaction: {
+		account_id: "accounts",
+		merchant_id: "merchants",
+		category_id: "categories",
+	},
+	RecurrenceRule: { recurring_transaction_id: "recurring_transactions" },
 	Transaction: { account_id: "accounts", category_id: "categories", merchant_id: "merchants" },
 	Transfer: { inflow_transaction_id: "transactions", outflow_transaction_id: "transactions" },
 	RejectedTransfer: {

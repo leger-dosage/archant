@@ -1238,6 +1238,22 @@ const insertOldRecurring = (
 		sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, manual, created_at, updated_at) values (${id}, ${accountId}, null, ${`key-${id}`}, 'NETFLIX', -1399, 'EUR', 5, '2026-09-05', '2026-10-05', 3, ${status}, ${manual}, 0, 0)`,
 	);
 
+const insertRecurrenceRule = (
+	database: Database,
+	id: string,
+	rule: {
+		frequency?: string;
+		interval?: number;
+		day?: number | null;
+		weekday?: number | null;
+		month?: number | null;
+		position?: number;
+	},
+) =>
+	database.run(
+		sql`insert into recurrence_rules (id, recurring_transaction_id, frequency, interval, day_of_month, weekday, month_of_year, position) values (${id}, 'r1', ${rule.frequency ?? "monthly"}, ${rule.interval ?? 1}, ${rule.day === undefined ? 5 : rule.day}, ${rule.weekday ?? null}, ${rule.month ?? null}, ${rule.position ?? 0})`,
+	);
+
 describe("recurring transactions", () => {
 	it("holds a merchant or a label key, never both nor neither, and a day from 1 to 31", async () => {
 		const database = await migrated();
@@ -1377,6 +1393,151 @@ describe("recurring transactions", () => {
 			{ id: "r5", status: "ended", manual: 0, dedupScope: "", avg: null },
 			{ id: "r6", status: "ended", manual: 0, dedupScope: "", avg: null },
 		]);
+	});
+
+	it("gives every series one monthly rule on its day, anchored on its last date, an income when money comes in, when 0056 adds bills", async () => {
+		const before = await migratedBefore("0056");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertRecurring(before, "r1", { labelKey: "netflix" }, -1399, 5);
+		await insertRecurring(before, "r2", { labelKey: "salaire" }, 250_000, 28);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, name, anchor_date as anchor, end_after_count as count, bill_type as type, category_id as category, autopay, notes, payment_url as url, schedule_pinned_at as pinned from recurring_transactions order by id`,
+			),
+		).resolves.toEqual([
+			{
+				id: "r1",
+				name: null,
+				anchor: "2026-09-05",
+				count: null,
+				type: "bill",
+				category: null,
+				autopay: 0,
+				notes: null,
+				url: null,
+				pinned: null,
+			},
+			{
+				id: "r2",
+				name: null,
+				anchor: "2026-09-05",
+				count: null,
+				type: "income",
+				category: null,
+				autopay: 0,
+				notes: null,
+				url: null,
+				pinned: null,
+			},
+		]);
+		const rules = await database.all<{ id: string }>(
+			sql`select id, recurring_transaction_id as series, frequency, interval, day_of_month as day, weekday, month_of_year as month, position from recurrence_rules order by series`,
+		);
+		for (const { id } of rules) {
+			expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+		}
+		expect(rules.map(({ id: _id, ...rule }) => rule)).toEqual([
+			{
+				series: "r1",
+				frequency: "monthly",
+				interval: 1,
+				day: 5,
+				weekday: null,
+				month: null,
+				position: 0,
+			},
+			expect.objectContaining({ series: "r2", frequency: "monthly", day: 28 }),
+		]);
+		expect(rules[0]?.id).not.toBe(rules[1]?.id);
+	});
+
+	it("holds a rule's checks, as Sure's `day_spec_coherent` without the nth weekday", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		let position = 0;
+		const rule = (fields: Parameters<typeof insertRecurrenceRule>[2]) => {
+			position += 1;
+
+			return insertRecurrenceRule(database, `x${position}`, { position, ...fields });
+		};
+
+		await expect(rule({ day: 15 })).resolves.toBeDefined();
+		await expect(rule({ day: -1 })).resolves.toBeDefined();
+		await expect(rule({ day: 31, interval: 3 })).resolves.toBeDefined();
+		await expect(rule({ frequency: "weekly", day: null, weekday: 0 })).resolves.toBeDefined();
+		await expect(rule({ frequency: "weekly", day: null, weekday: 6 })).resolves.toBeDefined();
+		await expect(rule({ frequency: "yearly", day: 1, month: 12 })).resolves.toBeDefined();
+
+		await expect(rule({ frequency: "daily" })).rejects.toThrow();
+		await expect(rule({ interval: 0 })).rejects.toThrow();
+		await expect(rule({ day: 0 })).rejects.toThrow();
+		await expect(rule({ day: 32 })).rejects.toThrow();
+		await expect(rule({ day: -2 })).rejects.toThrow();
+		await expect(rule({ frequency: "weekly", day: null, weekday: 7 })).rejects.toThrow();
+		await expect(rule({ frequency: "yearly", day: 1, month: 13 })).rejects.toThrow();
+		await expect(rule({ frequency: "yearly", day: 1, month: 0 })).rejects.toThrow();
+		await expect(insertRecurrenceRule(database, "neg", { position: -1 })).rejects.toThrow();
+		// Never a day and a weekday.
+		await expect(rule({ day: 5, weekday: 1 })).rejects.toThrow();
+		await expect(rule({ frequency: "weekly", day: 5, weekday: 1 })).rejects.toThrow();
+		// Weekly has a weekday, no day and no month.
+		await expect(rule({ frequency: "weekly", day: null })).rejects.toThrow();
+		await expect(rule({ frequency: "weekly", day: null, weekday: 1, month: 3 })).rejects.toThrow();
+		// Monthly has a day and no month.
+		await expect(rule({ day: null })).rejects.toThrow();
+		await expect(rule({ day: 5, month: 3 })).rejects.toThrow();
+		// Yearly has a day and a month.
+		await expect(rule({ frequency: "yearly", day: 5 })).rejects.toThrow();
+		await expect(rule({ frequency: "yearly", day: null, month: 3 })).rejects.toThrow();
+	});
+
+	it("holds one rule per series and position, and deletes the rules with their series", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		await insertRecurrenceRule(database, "x1", { day: 1 });
+
+		await expect(insertRecurrenceRule(database, "x2", { day: 15 })).rejects.toThrow();
+		await expect(
+			insertRecurrenceRule(database, "x3", { day: 15, position: 1 }),
+		).resolves.toBeDefined();
+
+		await database.run(sql`delete from recurring_transactions where id = 'r1'`);
+
+		await expect(database.all(sql`select id from recurrence_rules`)).resolves.toEqual([]);
+	});
+
+	it("holds a known bill type and 1 to 600 payments, and leaves a series uncategorised when its category goes", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertCategory(database, "c1", "Énergie");
+		await insertRecurring(database, "r1", { labelKey: "edf" });
+		const set = (assignment: ReturnType<typeof sql>) =>
+			database.run(sql`update recurring_transactions set ${assignment} where id = 'r1'`);
+
+		await expect(
+			database.get(
+				sql`select bill_type as type, autopay from recurring_transactions where id = 'r1'`,
+			),
+		).resolves.toEqual({ type: "bill", autopay: 0 });
+		await expect(set(sql`bill_type = 'subscription'`)).resolves.toBeDefined();
+		await expect(set(sql`bill_type = 'transfer'`)).rejects.toThrow();
+		await expect(set(sql`end_after_count = 1`)).resolves.toBeDefined();
+		await expect(set(sql`end_after_count = 600`)).resolves.toBeDefined();
+		await expect(set(sql`end_after_count = 0`)).rejects.toThrow();
+		await expect(set(sql`end_after_count = 601`)).rejects.toThrow();
+		await expect(set(sql`category_id = 'c1'`)).resolves.toBeDefined();
+
+		await database.run(sql`delete from categories where id = 'c1'`);
+
+		await expect(
+			database.get(sql`select id, category_id as category from recurring_transactions`),
+		).resolves.toEqual({ id: "r1", category: null });
 	});
 });
 

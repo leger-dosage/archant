@@ -393,6 +393,13 @@
       "when": 1791185650311,
       "tag": "0055_rename_recurring_statuses",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1791225301062,
+      "tag": "0056_add_bills",
+      "breakpoints": true
     }
   ]
 }

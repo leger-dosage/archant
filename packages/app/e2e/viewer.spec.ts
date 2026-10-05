@@ -259,6 +259,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 					"Supprimer",
 					"Ajouter",
 					"Ajouter aux récurrences",
+					"Créer une facture",
 					"Rapprocher un virement",
 					"Diviser",
 				].map((action) => ({ role: "button", name: action })),
@@ -280,6 +281,22 @@ test("a viewer reads every page with no control that writes, and the server refu
 				{ role: "button", name: "Dissocier" },
 				{ role: "button", name: "Ne plus proposer" },
 				{ role: "button", name: "Rapprocher un virement" },
+			]);
+			await sheet.getByRole("button", { name: "Fermer", exact: true }).first().click();
+			await expect(sheet).toBeHidden();
+
+			// A transaction no series holds: a viewer reads so, and creates none.
+			await page
+				.locator("button[data-transaction-id]")
+				.filter({ hasText: `${prefix} import` })
+				.click();
+			await expect(sheet).toBeVisible();
+			await expect(
+				sheet.getByText("Cette opération ne fait partie d'aucune récurrence."),
+			).toBeVisible();
+			await expectNone(sheet, [
+				{ role: "button", name: "Ajouter aux récurrences" },
+				{ role: "button", name: "Créer une facture" },
 			]);
 			await sheet.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(sheet).toBeHidden();
@@ -358,6 +375,8 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expectNone(page, [
 				{ role: "button", name: "Détecter" },
 				{ role: "button", name: "Nettoyer les obsolètes" },
+				{ role: "button", name: "Ajouter une facture" },
+				{ role: "button", name: "Ajouter un revenu" },
 				{ role: "button", name: "Ajouter la facture" },
 				{ role: "button", name: "Ce n'est pas une facture" },
 				{ role: "button", name: `Actions pour ${prefix} boulangerie` },

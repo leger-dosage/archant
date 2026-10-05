@@ -13,7 +13,7 @@ const MAX_RECURRING = 200;
 export const getRecurringTransactions = defineTool({
 	name: "get_recurring_transactions",
 	title: "Recurring transactions",
-	description: `The payments and incomes seen on the same day of every month for about the same amount, as « Récurrents » lists them: current ones first, each by expected next date. Each gives its amount, its expected day and next date, and its last occurrence. ${BANK_TEXT}`,
+	description: `The payments and incomes that recur on their schedule for about the same amount, as « Récurrents » lists them: current ones first, each by expected next date. Each gives its amount, its expected day and next date, and its last occurrence. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: recurringInput,

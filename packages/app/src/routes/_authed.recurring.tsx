@@ -1,14 +1,16 @@
+import type { BillDialogSubject } from "@/components/BillDialog";
 import type { Status } from "@/components/StatusBadge";
 import type { RecurringData } from "@/hooks/useRecurring";
 
 import { createFileRoute } from "@tanstack/react-router";
 import { EllipsisIcon, RepeatIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
+import { BillDialog } from "@/components/BillDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
@@ -33,8 +35,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { useAccounts } from "@/hooks/useAccounts";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
+	recurringName,
 	useCleanupRecurring,
 	useDeleteRecurring,
 	useDetectRecurring,
@@ -50,7 +54,7 @@ export const Route = createFileRoute("/_authed/recurring")({
 	component: RecurringPage,
 });
 
-const nameOf = (item: RecurringData) => item.merchantName ?? item.label;
+const nameOf = recurringName;
 
 // Suggestions sit in their own strip and ended series never reach the page,
 // so only the two statuses the list shows have a badge.
@@ -93,14 +97,16 @@ function RecurringAmount({ item }: { item: RecurringData }) {
 	);
 }
 
-/** An active or inactive row's menu: pause or resume, and delete. */
+/** An active or inactive row's menu: edit, pause or resume, and delete. */
 function RecurringActions({
 	item,
+	onEdit,
 	onToggle,
 	onDelete,
 	disabled,
 }: {
 	item: Listed;
+	onEdit: () => void;
 	onToggle: () => void;
 	onDelete: () => void;
 	disabled: boolean;
@@ -119,6 +125,7 @@ function RecurringActions({
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
+				<DropdownMenuItem onSelect={onEdit}>{t("recurring.edit")}</DropdownMenuItem>
 				<DropdownMenuItem disabled={disabled} onSelect={onToggle}>
 					{t(item.status === "active" ? "recurring.pause" : "recurring.resume")}
 				</DropdownMenuItem>
@@ -222,8 +229,10 @@ function Suggestions({ items, admin }: { items: readonly RecurringData[]; admin:
 /**
  * Sure's recurring page: the suggestions detection found above the active
  * and inactive series, each by next expected date. Ended series are gone from
- * here and from detection. A viewer reads them, without « Détecter »,
- * « Nettoyer les obsolètes », a suggestion's buttons or a row's menu.
+ * here and from detection. The owner declares a bill or an income Archant has
+ * not found, and edits a series from its menu. A viewer reads them, without
+ * « Ajouter une facture », « Ajouter un revenu », « Détecter », « Nettoyer les
+ * obsolètes », a suggestion's buttons or a row's menu.
  */
 function RecurringPage() {
 	const { t } = useTranslation();
@@ -236,6 +245,22 @@ function RecurringPage() {
 	// Kept while the dialog closes, so its title does not vanish mid-animation.
 	const [deleting, setDeleting] = useState<RecurringData | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	// Kept while the dialog closes, as `deleting`; the key mounts a fresh form per opening.
+	const [subject, setSubject] = useState<{ key: number; of: BillDialogSubject } | null>(null);
+	const [billOpen, setBillOpen] = useState(false);
+	const accounts = useAccounts({
+		select: (data) => data.groups.flatMap((group) => group.accounts),
+	});
+	// A series may sit on an account deactivated since: it stays offered for it.
+	const offered = useMemo(() => {
+		const own = subject?.of.mode === "edit" ? subject.of.series.accountId : null;
+
+		return (accounts.data ?? []).filter((account) => account.active || account.id === own);
+	}, [accounts.data, subject]);
+	const openBill = (of: BillDialogSubject) => {
+		setSubject((current) => ({ key: (current?.key ?? 0) + 1, of }));
+		setBillOpen(true);
+	};
 	const all = recurring.data ?? [];
 	const suggestions = all.filter((item) => item.status === "suggested");
 	const list = all.filter(isListed);
@@ -274,14 +299,27 @@ function RecurringPage() {
 			title={t("recurring.title")}
 			description={t("recurring.description")}
 			actions={
-				// An empty page offers its own « Détecter », the one way forward.
-				!admin || (recurring.data !== undefined && all.length === 0) ? undefined : (
+				!admin ? undefined : (
 					<>
-						<Button variant="outline" disabled={cleanup.isPending} onClick={runCleanup}>
-							{t("recurring.cleanup")}
+						{/* An empty page offers its own « Détecter », the one way forward. */}
+						{(recurring.data === undefined || all.length > 0) && (
+							<>
+								<Button variant="outline" disabled={cleanup.isPending} onClick={runCleanup}>
+									{t("recurring.cleanup")}
+								</Button>
+								<Button variant="outline" disabled={detect.isPending} onClick={runDetection}>
+									{t("recurring.detect")}
+								</Button>
+							</>
+						)}
+						<Button
+							variant="outline"
+							onClick={() => openBill({ mode: "declare", kind: "income", prefill: null })}
+						>
+							{t("recurring.addIncome")}
 						</Button>
-						<Button variant="outline" disabled={detect.isPending} onClick={runDetection}>
-							{t("recurring.detect")}
+						<Button onClick={() => openBill({ mode: "declare", kind: "bill", prefill: null })}>
+							{t("recurring.addBill")}
 						</Button>
 					</>
 				)
@@ -389,6 +427,7 @@ function RecurringPage() {
 												<TableCell className="w-10 text-right">
 													<RecurringActions
 														item={item}
+														onEdit={() => openBill({ mode: "edit", series: item })}
 														disabled={setStatus.isPending || remove.isPending}
 														onToggle={() => toggle(item)}
 														onDelete={() => {
@@ -405,6 +444,16 @@ function RecurringPage() {
 						</InsetGroup>
 					</ListCard>
 				))}
+
+			{subject !== null && (
+				<BillDialog
+					key={subject.key}
+					open={billOpen}
+					onOpenChange={setBillOpen}
+					subject={subject.of}
+					accounts={offered}
+				/>
+			)}
 
 			{deleting !== null && (
 				<ConfirmDialog

@@ -272,6 +272,182 @@ describe("/api/recurring", () => {
 	});
 });
 
+const water = (accountId: string) => ({
+	kind: "bill",
+	name: "Eau",
+	amount: "84,20",
+	accountId,
+	firstDueOn: "2026-10-10",
+	frequency: { preset: "quarterly" },
+	paymentUrl: "eau.example/payer",
+});
+
+describe("POST /api/recurring/declare", () => {
+	it("creates an active manual bill, negative, and answers 409 for the same one twice", async () => {
+		const { app, account } = await ownRecurringAccount();
+		const client = testClient(app).api.recurring.declare;
+
+		const created = await client.$post({ json: water(account.id) });
+
+		expect(created.status).toBe(201);
+		expect(await created.json()).toMatchObject({
+			data: {
+				name: "Eau",
+				amount: -8420,
+				status: "active",
+				manual: true,
+				billType: "bill",
+				paymentUrl: "https://eau.example/payer",
+				nextExpectedDate: "2026-10-10",
+				frequency: { key: "quarterly", dayOfMonth: 10 },
+			},
+		});
+
+		const again = await client.$post({ json: water(account.id) });
+
+		expect(again.status).toBe(409);
+		expect(errorBody.parse(await again.json()).error.code).toBe("RECURRING_ALREADY_EXISTS");
+	});
+
+	it("creates an income positive", async () => {
+		const { app, account } = await ownRecurringAccount();
+
+		const created = await testClient(app).api.recurring.declare.$post({
+			json: { ...water(account.id), kind: "income", name: "Salaire", amount: "2 500,00" },
+		});
+
+		expect(await created.json()).toMatchObject({ data: { amount: 250_000, billType: "income" } });
+	});
+
+	it("refuses a link that is not http or https, and a body it cannot read", async () => {
+		const { app, account } = await ownRecurringAccount();
+
+		const ftp = await testClient(app).api.recurring.declare.$post({
+			json: { ...water(account.id), paymentUrl: "ftp://x" },
+		});
+
+		expect(ftp.status).toBe(400);
+		expect(errorBody.parse(await ftp.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "paymentUrl", code: "invalid_url" }],
+		});
+
+		const empty = await app.request("/api/recurring/declare", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: "{}",
+		});
+
+		expect(empty.status).toBe(400);
+	});
+});
+
+describe("PATCH /api/recurring/:id with the edit fields", () => {
+	it("edits a series, and moves its status when given one", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring;
+		const added = await client.$post({ json: { entryId: ids[2]! } });
+		const { id } = z.object({ data: z.object({ id: z.string() }) }).parse(await added.json()).data;
+
+		const edited = await client[":id"].$patch({
+			param: { id },
+			json: {
+				name: "Netflix Premium",
+				amount: "17,99",
+				billType: "subscription",
+				frequency: { preset: "monthly", dayOfMonth: "5" },
+				autopay: true,
+				paymentUrl: "netflix.com/account",
+			},
+		});
+
+		expect(edited.status).toBe(200);
+		expect(await edited.json()).toMatchObject({
+			data: {
+				name: "Netflix Premium",
+				amount: -1799,
+				billType: "subscription",
+				autopay: true,
+				paymentUrl: "https://netflix.com/account",
+			},
+		});
+
+		const paused = await client[":id"].$patch({ param: { id }, json: { status: "inactive" } });
+
+		expect(await paused.json()).toMatchObject({
+			data: { status: "inactive", name: "Netflix Premium" },
+		});
+
+		const refused = await client[":id"].$patch({ param: { id }, json: { paymentUrl: "ftp://x" } });
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(await refused.json()).error.fields).toEqual([
+			{ path: "paymentUrl", code: "invalid_url" },
+		]);
+	});
+});
+
+describe("PATCH /api/recurring/:id with nothing, or a status beside edits", () => {
+	it("answers VALIDATION_ERROR and changes nothing", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring;
+		const added = await client.$post({ json: { entryId: ids[2]! } });
+		const { id } = z.object({ data: z.object({ id: z.string() }) }).parse(await added.json()).data;
+		const patch = (body: unknown) =>
+			app.request(`/api/recurring/${id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+
+		const empty = await patch({});
+
+		expect(empty.status).toBe(400);
+		expect(errorBody.parse(await empty.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "", code: "invalid_value" }],
+		});
+
+		const mixed = await patch({ status: "inactive", name: "Netflix Premium" });
+
+		expect(mixed.status).toBe(400);
+		expect(errorBody.parse(await mixed.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "status", code: "invalid_value" }],
+		});
+		expect((await (await client.$get()).json()).data).toEqual([
+			expect.objectContaining({ id, status: "active", name: null }),
+		]);
+	});
+});
+
+describe("GET /api/recurring/candidates", () => {
+	it("offers bills or incomes by kind, and refuses another kind", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring.candidates;
+
+		const bills = await client.$get({ query: { kind: "bill" } });
+
+		expect(bills.status).toBe(200);
+		expect(await bills.json()).toEqual({
+			data: [
+				expect.objectContaining({
+					entryId: ids[2],
+					name: "Netflix",
+					amount: 1399,
+					occurrenceCount: 3,
+					lastOccurrenceDate: "2026-09-05",
+				}),
+			],
+		});
+		expect(await (await client.$get({ query: { kind: "income" } })).json()).toEqual({ data: [] });
+
+		const other = await app.request("/api/recurring/candidates?kind=transfer");
+
+		expect(other.status).toBe(400);
+	});
+});
+
 describe("POST /api/recurring/cleanup", () => {
 	it("answers how many series became inactive", async () => {
 		const own = await ownDatabase();

@@ -13,7 +13,9 @@ import {
 	occurrencesOf,
 	refreshSeries,
 	rekey,
+	scheduleOf,
 	staleBefore,
+	syncMonthlyRuleDay,
 } from "./series.ts";
 
 const TODAY = "2026-09-21";
@@ -31,58 +33,16 @@ function row(date: string, overrides: Partial<RecurringCandidate> = {}): Recurri
 	};
 }
 
-describe("nextExpectedDate", () => {
-	it("takes the expected day of the next month when the row came on time", () => {
-		expect(nextExpectedDate("2026-09-05", 5)).toBe("2026-10-05");
-		expect(nextExpectedDate("2026-09-03", 5)).toBe("2026-10-05");
-		expect(nextExpectedDate("2026-09-07", 5)).toBe("2026-10-05");
-	});
+const monthly = (day: number, interval = 1) =>
+	({ frequency: "monthly", interval, dayOfMonth: day }) as const;
 
-	it("moves a month on for a row that came early across the month end", () => {
-		expect(nextExpectedDate("2026-08-31", 1)).toBe("2026-10-01");
-		expect(nextExpectedDate("2026-08-30", 2)).toBe("2026-10-02");
-	});
-
-	it("moves a month back for a row that came late across the month end", () => {
-		expect(nextExpectedDate("2026-09-02", 30)).toBe("2026-09-30");
-		expect(nextExpectedDate("2026-09-01", 31)).toBe("2026-09-30");
-	});
-
-	it("clamps the month end to a shorter month", () => {
-		expect(nextExpectedDate("2026-01-31", 31)).toBe("2026-02-28");
-		expect(nextExpectedDate("2026-08-31", 31)).toBe("2026-09-30");
-	});
-
-	it("keeps the target's month on a tie", () => {
-		// Target 2026-06-16: 2026-06-01 and 2026-07-01 are both 15 days away.
-		expect(nextExpectedDate("2026-05-16", 1)).toBe("2026-06-01");
-	});
-});
-
-describe("nextDateFrom", () => {
-	it("takes today when the expected day is today", () => {
-		expect(nextDateFrom(TODAY, 21)).toBe("2026-09-21");
-	});
-
-	it("takes this month when the expected day is still ahead", () => {
-		expect(nextDateFrom(TODAY, 25)).toBe("2026-09-25");
-	});
-
-	it("takes next month when the expected day has passed", () => {
-		expect(nextDateFrom(TODAY, 20)).toBe("2026-10-20");
-		expect(nextDateFrom("2026-12-15", 3)).toBe("2027-01-03");
-	});
-
-	it("clamps the 31st to the month's last day", () => {
-		expect(nextDateFrom(TODAY, 31)).toBe("2026-09-30");
-		expect(nextDateFrom("2026-09-30", 31)).toBe("2026-09-30");
-		expect(nextDateFrom("2026-10-31", 31)).toBe("2026-10-31");
-		expect(nextDateFrom("2027-01-31", 30)).toBe("2027-02-28");
-	});
-});
-
+/** A plain monthly series on its expected day, unless `overrides` gives its rules. */
 function series(overrides: Partial<StoredSeries> = {}): StoredSeries {
 	return {
+		rules: [monthly(overrides.expectedDayOfMonth ?? 5)],
+		anchorDate: null,
+		endAfterCount: null,
+		schedulePinnedAt: null,
 		id: "s1",
 		accountId: "a1",
 		merchantId: null,
@@ -189,6 +149,33 @@ describe("rekey", () => {
 		).toEqual([
 			{ kind: "move", id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" },
 		]);
+	});
+
+	it("never moves a bill declared with no payment yet onto a purchase of its due date", () => {
+		const declared = series({
+			status: "active",
+			manual: true,
+			labelKey: "eau",
+			label: "Eau",
+			amount: toMinorUnits(-5000),
+			lastOccurrenceDate: "2026-09-10",
+			nextExpectedDate: "2026-09-10",
+			occurrenceCount: 0,
+		});
+
+		expect(
+			rekey(
+				[declared],
+				[
+					row("2026-09-10", {
+						merchantId: null,
+						label: "CARREFOUR",
+						amount: toMinorUnits(-6000),
+					}),
+				],
+				TODAY,
+			),
+		).toEqual({ steps: [], stored: [declared] });
 	});
 
 	it("deletes a suggested holder of the new key and moves", () => {
@@ -308,11 +295,71 @@ describe("occurrencesOf", () => {
 	});
 });
 
+describe("scheduleOf", () => {
+	it("anchors on the anchor date, else the last occurrence date", () => {
+		expect(scheduleOf(series())).toEqual({
+			rules: [monthly(5)],
+			anchorDate: "2026-09-05",
+			endAfterCount: null,
+			expectedDayOfMonth: 5,
+		});
+		expect(scheduleOf(series({ anchorDate: "2026-02-05", endAfterCount: 3 }))).toMatchObject({
+			anchorDate: "2026-02-05",
+			endAfterCount: 3,
+		});
+	});
+});
+
+/** Three monthly payments on the 5th from 5 January 2026. */
+const installment = { rules: [monthly(5)], anchorDate: "2026-01-05", endAfterCount: 3 };
+
+describe("nextExpectedDate", () => {
+	it("keeps Spec 9.2's date for a plain monthly series, the schedule's for any other", () => {
+		expect(nextExpectedDate(series({ expectedDayOfMonth: 1 }), "2026-08-31")).toBe("2026-10-01");
+		expect(
+			nextExpectedDate(series({ rules: [monthly(10, 3)], anchorDate: "2026-02-10" }), "2026-05-12"),
+		).toBe("2026-08-10");
+	});
+
+	it("keeps the last date once an installment has ended", () => {
+		expect(nextExpectedDate(series(installment), "2026-03-05")).toBe("2026-03-05");
+	});
+});
+
+describe("nextDateFrom", () => {
+	it("takes the series' first date from today on", () => {
+		expect(nextDateFrom(series({ expectedDayOfMonth: 21 }), TODAY)).toBe("2026-09-21");
+		expect(nextDateFrom(series(installment), TODAY)).toBeNull();
+	});
+});
+
 describe("currentNextDate", () => {
 	it("keeps a next date from today on, and moves a past one", () => {
-		expect(currentNextDate("2026-09-21", 21, TODAY)).toBe("2026-09-21");
-		expect(currentNextDate("2026-10-05", 5, TODAY)).toBe("2026-10-05");
-		expect(currentNextDate("2026-08-15", 15, TODAY)).toBe("2026-10-15");
+		expect(currentNextDate(series({ expectedDayOfMonth: 21 }), "2026-09-21", TODAY)).toBe(
+			"2026-09-21",
+		);
+		expect(currentNextDate(series(), "2026-10-05", TODAY)).toBe("2026-10-05");
+		expect(currentNextDate(series({ expectedDayOfMonth: 15 }), "2026-08-15", TODAY)).toBe(
+			"2026-10-15",
+		);
+	});
+
+	it("keeps a past date once an installment has ended", () => {
+		expect(currentNextDate(series(installment), "2026-03-05", TODAY)).toBe("2026-03-05");
+	});
+});
+
+describe("syncMonthlyRuleDay", () => {
+	it("moves a plain monthly rule to the detected day", () => {
+		expect(syncMonthlyRuleDay([monthly(5)], 8)).toEqual([monthly(8)]);
+	});
+
+	it("moves nothing else", () => {
+		expect(syncMonthlyRuleDay([monthly(5)], 5)).toBeNull();
+		expect(syncMonthlyRuleDay([monthly(-1)], 8)).toBeNull();
+		expect(syncMonthlyRuleDay([monthly(5, 3)], 8)).toBeNull();
+		expect(syncMonthlyRuleDay([{ frequency: "weekly", interval: 1, weekday: 1 }], 8)).toBeNull();
+		expect(syncMonthlyRuleDay([monthly(1), monthly(15)], 8)).toBeNull();
 	});
 });
 
@@ -380,6 +427,76 @@ describe("refreshSeries", () => {
 		});
 	});
 
+	it("keeps a manual series' last date and count with no row left, a declared bill's dates included", () => {
+		expect(
+			refreshSeries(
+				series({
+					status: "active",
+					manual: true,
+					lastOccurrenceDate: "2026-11-05",
+					nextExpectedDate: "2026-11-05",
+					occurrenceCount: 0,
+				}),
+				[],
+				TODAY,
+			),
+		).toEqual({
+			kind: "update",
+			label: "PRLV NETFLIX",
+			lastOccurrenceDate: "2026-11-05",
+			nextExpectedDate: "2026-11-05",
+			occurrenceCount: 0,
+			band: null,
+		});
+	});
+
+	it("moves a manual series' passed next date from today on, with no row left", () => {
+		expect(
+			refreshSeries(
+				series({
+					status: "active",
+					manual: true,
+					lastOccurrenceDate: "2026-02-05",
+					nextExpectedDate: "2026-03-05",
+					occurrenceCount: 4,
+				}),
+				[],
+				TODAY,
+			),
+		).toEqual({
+			kind: "update",
+			label: "PRLV NETFLIX",
+			lastOccurrenceDate: "2026-02-05",
+			nextExpectedDate: "2026-10-05",
+			occurrenceCount: 4,
+			band: null,
+		});
+	});
+
+	it("reads the rows its schedule matches, and dates the next one from it", () => {
+		const quarterly = series({
+			status: "active",
+			rules: [monthly(10, 3)],
+			anchorDate: "2026-03-10",
+			expectedDayOfMonth: 10,
+		});
+
+		expect(
+			refreshSeries(
+				quarterly,
+				[row("2026-06-11", noMerchant), row("2026-07-10", noMerchant)],
+				TODAY,
+			),
+		).toEqual({
+			kind: "update",
+			label: "PRLV NETFLIX",
+			lastOccurrenceDate: "2026-06-11",
+			nextExpectedDate: "2026-12-10",
+			occurrenceCount: 1,
+			band: null,
+		});
+	});
+
 	it("deletes a suggested series with no row left in its window, whatever its last date", () => {
 		expect(refreshSeries(series(), [], TODAY)).toEqual({ kind: "delete" });
 		expect(
@@ -421,12 +538,24 @@ describe("refreshSeries", () => {
 describe("staleBefore", () => {
 	it("takes the earlier of two months and two monthly cycles, six months for a manual series", () => {
 		// Two months back is 2026-07-21, 61 days back 2026-07-22.
-		expect(staleBefore({ manual: false }, TODAY)).toBe("2026-07-21");
+		expect(staleBefore(series(), TODAY)).toBe("2026-07-21");
 		// 61 days before 2026-10-31 is 2026-08-31, two months 2026-08-31 too.
-		expect(staleBefore({ manual: false }, "2026-10-31")).toBe("2026-08-31");
+		expect(staleBefore(series(), "2026-10-31")).toBe("2026-08-31");
 		// Two months before 2026-03-31 is 2026-01-31, 61 days back 2026-01-29.
-		expect(staleBefore({ manual: false }, "2026-03-31")).toBe("2026-01-29");
-		expect(staleBefore({ manual: true }, TODAY)).toBe("2026-03-21");
+		expect(staleBefore(series(), "2026-03-31")).toBe("2026-01-29");
+		expect(staleBefore(series({ manual: true }), TODAY)).toBe("2026-03-21");
+	});
+
+	it("counts two of the series' own cycles", () => {
+		const quarterly = { rules: [monthly(5, 3)], anchorDate: "2026-06-05" };
+
+		// Two quarters are `ceil(2 × 365.25 / 4)`, 183 days.
+		expect(staleBefore(series(quarterly), TODAY)).toBe("2026-03-22");
+		expect(staleBefore(series({ ...quarterly, manual: true }), TODAY)).toBe("2026-03-21");
+		// Two weeks are under the two-month floor.
+		expect(
+			staleBefore(series({ rules: [{ frequency: "weekly", interval: 1, weekday: 1 }] }), TODAY),
+		).toBe("2026-07-21");
 	});
 });
 

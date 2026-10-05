@@ -1,3 +1,4 @@
+import type { BillPrefill } from "@/components/BillDialog";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { TransferCandidateData } from "@/hooks/useTransfers";
 
@@ -6,15 +7,18 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { BillDialog, prefillFrom } from "@/components/BillDialog";
 import { DuplicateDialog } from "@/components/DuplicateDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAccounts } from "@/hooks/useAccounts";
 import { useDismissDuplicate, useMergeDuplicate } from "@/hooks/useDuplicates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
+import { useMerchants } from "@/hooks/useMerchants";
+import { recurringName, useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
@@ -265,8 +269,9 @@ export function DuplicateBlock({
  * The sheet's « Récurrence » block: names the series the saved transaction
  * belongs to, with a link to the page, or else adds it to the recurring
  * patterns, active, at once and apart from the form, as the transfer
- * block does. Hidden on a transfer side the API refuses. A viewer reads
- * whether it belongs to a series, and adds none.
+ * block does, or opens « Créer une facture » filled from it, as Sure's
+ * `prefill_recurring_from_entry`. Hidden on a transfer side the API refuses.
+ * A viewer reads whether it belongs to a series, and adds none.
  */
 export function RecurringBlock({
 	transaction,
@@ -280,6 +285,32 @@ export function RecurringBlock({
 	const admin = useIsAdmin();
 	const series = useRecurringOfEntry(transaction.id);
 	const addRecurring = useAddRecurring();
+	const merchants = useMerchants();
+	const accounts = useAccounts({
+		select: (data) =>
+			data.groups
+				.flatMap((group) => group.accounts)
+				.filter((account) => account.active || account.id === transaction.accountId),
+	});
+	// Kept while the dialog closes; the key mounts a fresh form per opening.
+	const [prefill, setPrefill] = useState<{ key: number; of: BillPrefill } | null>(null);
+	const [creating, setCreating] = useState(false);
+	const create = () => {
+		const merchant = merchants.data?.find((candidate) => candidate.id === transaction.merchantId);
+
+		setPrefill((current) => ({
+			key: (current?.key ?? 0) + 1,
+			of: prefillFrom({
+				id: transaction.id,
+				name: merchant?.name ?? transaction.label,
+				amount: transaction.amount,
+				currency: transaction.currency,
+				accountId: transaction.accountId,
+				date: transaction.date,
+			}),
+		}));
+		setCreating(true);
+	};
 
 	return (
 		<section aria-labelledby="transaction-recurring-title" className="flex flex-col gap-1.5">
@@ -291,9 +322,7 @@ export function RecurringBlock({
 			) : series.data ? (
 				<div className="flex flex-col items-start gap-2">
 					<p className="text-sm text-muted-foreground">
-						{t("transactions.recurring.member", {
-							name: series.data.merchantName ?? series.data.label,
-						})}
+						{t("transactions.recurring.member", { name: recurringName(series.data) })}
 					</p>
 					<Button variant="outline" asChild>
 						<Link to="/recurring">{t("transactions.recurring.open")}</Link>
@@ -304,20 +333,34 @@ export function RecurringBlock({
 			) : (
 				<div className="flex flex-col items-start gap-2">
 					<p className="text-sm text-muted-foreground">{t("transactions.recurring.description")}</p>
-					<Button
-						type="button"
-						variant="outline"
-						disabled={dirty || addRecurring.isPending}
-						onClick={() =>
-							addRecurring.mutate(transaction.id, {
-								onSuccess: () => toast.success(t("transactions.recurring.added")),
-								onError: (error) => showErrorToast(errorCodeOf(error)),
-							})
-						}
-					>
-						{t("transactions.recurring.add")}
-					</Button>
+					<div className="flex flex-wrap gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							disabled={dirty || addRecurring.isPending}
+							onClick={() =>
+								addRecurring.mutate(transaction.id, {
+									onSuccess: () => toast.success(t("transactions.recurring.added")),
+									onError: (error) => showErrorToast(errorCodeOf(error)),
+								})
+							}
+						>
+							{t("transactions.recurring.add")}
+						</Button>
+						<Button type="button" variant="outline" disabled={dirty} onClick={create}>
+							{t("transactions.recurring.create")}
+						</Button>
+					</div>
 				</div>
+			)}
+			{prefill !== null && (
+				<BillDialog
+					key={prefill.key}
+					open={creating}
+					onOpenChange={setCreating}
+					subject={{ mode: "declare", kind: prefill.of.kind, prefill: prefill.of }}
+					accounts={accounts.data ?? []}
+				/>
 			)}
 		</section>
 	);

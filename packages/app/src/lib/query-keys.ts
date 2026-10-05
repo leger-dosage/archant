@@ -89,6 +89,8 @@ export const queryKeys = {
 		all: ["recurring"] as const,
 		/** Under `all`: adding, confirming or detecting refreshes the sheet's series. */
 		ofEntry: (entryId: string) => ["recurring", "entry", entryId] as const,
+		/** Under `all`: a declared bill takes its starting point off the list. */
+		candidates: (kind: string) => ["recurring", "candidates", kind] as const,
 	},
 	/**
 	 * Bank connections. `setup` changes when credentials are saved, and when a
