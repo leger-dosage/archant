@@ -5,12 +5,30 @@ import { Hono } from "hono";
 import { validated } from "../lib/validated.ts";
 import { candidatesQuerySchema, declareBodySchema } from "../schemas/bills.ts";
 import {
+	addPaymentSchema,
 	addRecurringSchema,
-	attachPaymentSchema,
+	markPaidSchema,
+	occurrencePatchSchema,
 	recurringPatchSchema,
 } from "../schemas/recurring.ts";
-import { billCandidates, declareBill, patchRecurring } from "../services/recurring/bills.ts";
-import { attachEntry, confirmPayment, rejectPayment } from "../services/recurring/payments.ts";
+import {
+	billCandidates,
+	billsOverview,
+	declareBill,
+	occurrenceDetail,
+	patchRecurring,
+} from "../services/recurring/bills.ts";
+import {
+	addPayment,
+	confirmPayment,
+	editOccurrence,
+	markPaid,
+	paymentCandidates,
+	rejectPayment,
+	removePayment,
+	reopenOccurrence,
+	skipOccurrence,
+} from "../services/recurring/payments.ts";
 import { runRecurring } from "../services/recurring/pipeline.ts";
 import {
 	addRecurringFromEntry,
@@ -53,10 +71,29 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.post("/payments/:id/reject", async (c) =>
 			c.json({ data: await rejectPayment(deps, c.req.param("id")) }, 200),
 		)
-		.post("/occurrences/:id/payments", validated("json", attachPaymentSchema), async (c) =>
-			c.json(
-				{ data: await attachEntry(deps, c.req.param("id"), c.req.valid("json").entryId) },
-				201,
-			),
+		.delete("/payments/:id", async (c) =>
+			c.json({ data: await removePayment(deps, c.req.param("id")) }, 200),
+		)
+		.get("/bills", async (c) => c.json({ data: await billsOverview(deps) }, 200))
+		.get("/occurrences/:id", async (c) =>
+			c.json({ data: await occurrenceDetail(deps, c.req.param("id")) }, 200),
+		)
+		.get("/occurrences/:id/candidates", async (c) =>
+			c.json({ data: await paymentCandidates(deps, c.req.param("id")) }, 200),
+		)
+		.patch("/occurrences/:id", validated("json", occurrencePatchSchema), async (c) =>
+			c.json({ data: await editOccurrence(deps, c.req.param("id"), c.req.valid("json")) }, 200),
+		)
+		.post("/occurrences/:id/paid", validated("json", markPaidSchema), async (c) =>
+			c.json({ data: await markPaid(deps, c.req.param("id"), c.req.valid("json").paidOn) }, 200),
+		)
+		.post("/occurrences/:id/skip", async (c) =>
+			c.json({ data: await skipOccurrence(deps, c.req.param("id")) }, 200),
+		)
+		.post("/occurrences/:id/reopen", async (c) =>
+			c.json({ data: await reopenOccurrence(deps, c.req.param("id")) }, 200),
+		)
+		.post("/occurrences/:id/payments", validated("json", addPaymentSchema), async (c) =>
+			c.json({ data: await addPayment(deps, c.req.param("id"), c.req.valid("json")) }, 201),
 		);
 }

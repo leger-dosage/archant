@@ -604,6 +604,7 @@ test("no signed-in screen drops text under 12 px or a control under 28 px", asyn
 		"/transactions",
 		"/accounts",
 		`/accounts/${account.id}`,
+		"/bills",
 		"/recurring",
 		"/rules",
 		"/settings/categories",

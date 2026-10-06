@@ -322,3 +322,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-23-3-occurrences-and-the-payments-that-settle-them.md`
   summary: Re-keying a series onto a key another stored series already holds deletes it, and its occurrences, payments and price changes cascade with it.
   evidence: medium. `detectWithin` in `services/recurring/series.ts` applies `rekey`'s `delete` step (Spec 11.8, `domain/recurring/series.ts:236`); Sure has no re-key. Moving the history onto the holder must resolve the unique (series, `original_due_on`) conflict.
+- source_spec: `_bmad-output/implementation-artifacts/spec-23-4-the-bills-page.md`
+  summary: A bill declared with a future first due date shows an overdue occurrence a cycle before it once « Détecter » runs.
+  evidence: medium, seen in QA. A monthly bill declared on 6 October with its first due date on 8 October showed « 28 jours de retard, échéance le 8 septembre » on `/bills`. `backfillOccurrences` inserts six months back without the anchor clamp, and the prune keeps the current cycle, which starts on 8 September. Sure's `HistoryBackfiller` and `prune_uncovered_past!` at `14638a701` do the same, since `occurrence_pairs_between` clamps to the anchor only for a rule repeating every two or more periods. Clamping the backfill of a manual series at its anchor departs from Sure and needs the owner's call.

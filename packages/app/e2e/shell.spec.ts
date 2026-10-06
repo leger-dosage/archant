@@ -20,7 +20,7 @@ const DESTINATIONS = [
 	"Comptes",
 	"Budgets",
 	"Objectifs",
-	"Récurrent",
+	"Factures",
 	"Règles",
 	"Réglages",
 ];
@@ -28,7 +28,7 @@ const DESTINATIONS = [
 // Story 21.2: below 1024 px, four destinations and « Plus », whose menu holds the others.
 const PHONE_DESTINATIONS = ["Accueil", "Opérations", "Budgets", "Objectifs"];
 
-const MORE = ["Comptes", "Récurrent", "Règles", "Réglages"];
+const MORE = ["Comptes", "Factures", "Règles", "Réglages"];
 
 /** The labels of the bottom navigation that their entry cuts short. */
 async function cutLabels(page: Page): Promise<string[]> {

@@ -7,8 +7,33 @@ import { editBodySchema } from "./bills.ts";
 /** « Ajouter aux récurrences »: the transaction the pattern starts from. */
 export const addRecurringSchema = z.object({ entryId: z.string().min(1) });
 
-/** A transaction the owner attaches by hand to an occurrence. */
-export const attachPaymentSchema = z.object({ entryId: z.string().min(1) });
+/**
+ * « Ajouter un paiement »: a transaction, its amount optional, or else an
+ * amount and a date with no transaction, as Sure's `recurring_allocations`.
+ * The amount is decimal text the service reads in the occurrence's currency.
+ */
+export const addPaymentSchema = z.object({
+	entryId: z.string().min(1).optional(),
+	amount: z.string().optional(),
+	paidOn: z.iso.date().optional(),
+});
+
+export type AddPaymentInput = z.output<typeof addPaymentSchema>;
+
+/** « Marquer comme payée », today unless the owner names the day. */
+export const markPaidSchema = z.object({ paidOn: z.iso.date().optional() });
+
+/**
+ * `PATCH /api/recurring/occurrences/:id`: « Reporter » to a date, or
+ * « Modifier le montant » as decimal text, `null` clearing either, one at a
+ * time as Sure's `snooze` and `override_amount`.
+ */
+export const occurrencePatchSchema = z.union([
+	z.strictObject({ snoozedUntil: z.iso.date().nullable() }),
+	z.strictObject({ expectedAmount: z.string().nullable() }),
+]);
+
+export type OccurrencePatch = z.output<typeof occurrencePatchSchema>;
 
 /**
  * `PATCH /api/recurring/:id`: a status alone, which the service refuses for a

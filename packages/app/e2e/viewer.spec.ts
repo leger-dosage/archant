@@ -382,6 +382,49 @@ test("a viewer reads every page with no control that writes, and the server refu
 				{ role: "button", name: `Actions pour ${prefix} boulangerie` },
 			]);
 
+			// Story 23.4: the bills page and an occurrence's sheet, without any action.
+			const candidatesRead: string[] = [];
+			page.on("request", (request) => {
+				if (/\/api\/recurring\/occurrences\/[^/]+\/candidates/u.test(request.url())) {
+					candidatesRead.push(request.url());
+				}
+			});
+			await page.goto("/bills");
+			await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+			await expect(page.getByRole("link", { name: "Toutes les factures" })).toBeVisible();
+			await expectNone(page, [
+				{ role: "button", name: "Ajouter une facture" },
+				{ role: "button", name: "Appliquer" },
+				{ role: "button", name: "Pas cette facture" },
+				{ role: "button", name: "Ajouter la facture" },
+				{ role: "button", name: "Ce n'est pas une facture" },
+			]);
+			const occurrenceRead = page.waitForResponse((response) =>
+				/\/api\/recurring\/occurrences\/[^/]+$/u.test(response.url()),
+			);
+			await page
+				.locator('[data-slot="inset-group"]')
+				.getByRole("link")
+				.filter({ hasText: `${prefix} boulangerie` })
+				.first()
+				.click();
+			const sheet = page.getByRole("dialog", { name: `${prefix} boulangerie` });
+			await expect(sheet).toBeVisible();
+			expect((await occurrenceRead).status()).toBe(200);
+			await expect(sheet).toContainText("restant");
+			await expectNone(sheet, [
+				{ role: "button", name: "Marquer comme payée" },
+				{ role: "button", name: "Enregistrer le paiement" },
+				{ role: "button", name: "Reporter" },
+				{ role: "button", name: "Modifier le montant" },
+				{ role: "button", name: "Ignorer cette échéance" },
+				{ role: "button", name: "Rouvrir" },
+			]);
+			await expect(sheet.getByRole("textbox")).toHaveCount(0);
+			expect(candidatesRead).toEqual([]);
+			await page.keyboard.press("Escape");
+			await expect(sheet).toBeHidden();
+
 			await page.goto("/rules");
 			const row = page
 				.getByRole("list", { name: "Règles" })
@@ -442,6 +485,12 @@ test("a viewer reads every page with no control that writes, and the server refu
 			return { status: response.status, body: (await response.json()) as unknown };
 		});
 		expect(written.status).toBe(403);
+		const skipped = await page.evaluate(async () => {
+			const response = await fetch("/api/recurring/occurrences/any/skip", { method: "POST" });
+
+			return response.status;
+		});
+		expect(skipped).toBe(403);
 		expect(z.object({ error: z.object({ code: z.string() }) }).parse(written.body).error.code).toBe(
 			"FORBIDDEN",
 		);

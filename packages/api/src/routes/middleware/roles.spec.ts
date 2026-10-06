@@ -184,6 +184,11 @@ describe("a viewer's writes", () => {
 				"POST /api/recurring/payments/x/confirm",
 				"POST /api/recurring/payments/x/reject",
 				"POST /api/recurring/occurrences/x/payments",
+				"POST /api/recurring/occurrences/x/paid",
+				"POST /api/recurring/occurrences/x/skip",
+				"POST /api/recurring/occurrences/x/reopen",
+				"PATCH /api/recurring/occurrences/x",
+				"DELETE /api/recurring/payments/x",
 			]),
 		);
 

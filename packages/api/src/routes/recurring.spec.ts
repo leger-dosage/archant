@@ -581,20 +581,194 @@ describe("POST /api/recurring/occurrences/:id/payments", () => {
 		expect(errorBody.parse(await spent.json()).error.code).toBe("PAYMENT_EXCEEDS_TRANSACTION");
 	});
 
-	it("answers NOT_FOUND for an unknown occurrence, VALIDATION_ERROR without a transaction", async () => {
-		const { app, entryId } = await suggestedMortgage();
+	it("answers NOT_FOUND for an unknown occurrence, VALIDATION_ERROR without a transaction or an amount", async () => {
+		const { app, entryId, occurrences } = await suggestedMortgage();
 		const client = testClient(app).api.recurring.occurrences[":id"].payments;
 
 		const unknown = await client.$post({ param: { id: "nope" }, json: { entryId } });
-		const missing = await app.request("/api/recurring/occurrences/nope/payments", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({}),
+		const missing = await client.$post({
+			param: { id: occurrences[0]!.id },
+			json: { paidOn: "2026-09-20" },
+		});
+		const badDate = await client.$post({
+			param: { id: occurrences[0]!.id },
+			json: { amount: "10,00", paidOn: "20/09/2026" },
 		});
 
 		expect(unknown.status).toBe(404);
 		expect(missing.status).toBe(400);
-		expect(errorBody.parse(await missing.json()).error.code).toBe("VALIDATION_ERROR");
+		expect(errorBody.parse(await missing.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "amount", code: "invalid_type" }],
+		});
+		expect(badDate.status).toBe(400);
+	});
+
+	it("records a payment of no transaction, which DELETE /api/recurring/payments/:id removes", async () => {
+		const { app, occurrences } = await suggestedMortgage();
+		const client = testClient(app).api.recurring;
+
+		const added = await client.occurrences[":id"].payments.$post({
+			param: { id: occurrences[0]!.id },
+			json: { amount: "100,00", paidOn: "2026-09-20" },
+		});
+
+		expect(added.status).toBe(201);
+		const payment = (await added.json()) as { data: { id: string } };
+		expect(payment).toMatchObject({
+			data: { entryId: null, amount: 10_000, source: "user_created", paidOn: "2026-09-20" },
+		});
+
+		const removed = await client.payments[":id"].$delete({ param: { id: payment.data.id } });
+		const again = await client.payments[":id"].$delete({ param: { id: payment.data.id } });
+
+		expect(removed.status).toBe(200);
+		expect(await removed.json()).toEqual({ data: { id: payment.data.id } });
+		expect(again.status).toBe(404);
+	});
+});
+
+describe("GET /api/recurring/bills", () => {
+	it("answers the overdue occurrence with its suggestion queued, the next month later", async () => {
+		const { app, seriesId, payment, occurrences } = await suggestedMortgage();
+
+		const response = await testClient(app).api.recurring.bills.$get();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			data: {
+				currency: "EUR",
+				attention: [
+					{
+						occurrenceId: occurrences[0]!.id,
+						seriesId,
+						name: "Prêt immobilier",
+						dueOn: "2026-09-05",
+						days: -16,
+						state: "overdue",
+						remaining: 57_129,
+						suggestionId: payment.id,
+					},
+				],
+				month: [],
+				later: [{ dueOn: "2026-10-05" }],
+				inactive: [],
+				next: [{ dueOn: "2026-10-05" }],
+				totals: { remaining: 57_129, overdue: 57_129, dueSoon: 57_129, paid: 0 },
+				leftOut: [],
+				review: [
+					{
+						id: payment.id,
+						seriesName: "Prêt immobilier",
+						label: "Prêt immobilier",
+						entryAmount: 60_000,
+						paidOn: "2026-09-10",
+						confidence: 7913,
+					},
+				],
+				hasTransactions: true,
+			},
+		});
+	});
+});
+
+describe("GET /api/recurring/occurrences/:id", () => {
+	it("answers the occurrence, its payments and its suggestion, NOT_FOUND for an unknown id", async () => {
+		const { app, payment, occurrences } = await suggestedMortgage();
+		const client = testClient(app).api.recurring.occurrences[":id"];
+
+		const found = await client.$get({ param: { id: occurrences[0]!.id } });
+		const unknown = await client.$get({ param: { id: "nope" } });
+
+		expect(found.status).toBe(200);
+		expect(await found.json()).toMatchObject({
+			data: {
+				occurrence: { occurrenceId: occurrences[0]!.id, state: "overdue" },
+				payments: [],
+				suggestion: { id: payment.id, amount: 57_129 },
+			},
+		});
+		expect(unknown.status).toBe(404);
+	});
+});
+
+describe("GET /api/recurring/occurrences/:id/candidates", () => {
+	it("offers the window's transactions the matcher scores, never one rejected for the series", async () => {
+		const { app, payment, occurrences, account } = await suggestedMortgage();
+		const client = testClient(app).api.recurring;
+		await client.payments[":id"].reject.$post({ param: { id: payment.id } });
+		const added = await app.request(`/api/accounts/${account.id}/transactions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date: "2026-09-06", label: "Prêt immobilier", amount: "-571,29" }),
+		});
+		const entryId = z.object({ data: z.object({ id: z.string() }) }).parse(await added.json())
+			.data.id;
+
+		const response = await client.occurrences[":id"].candidates.$get({
+			param: { id: occurrences[0]!.id },
+		});
+		const unknown = await client.occurrences[":id"].candidates.$get({ param: { id: "nope" } });
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			data: [{ entryId, label: "Prêt immobilier", amount: -57_129, date: "2026-09-06" }],
+		});
+		expect(unknown.status).toBe(404);
+	});
+});
+
+describe("the occurrence's actions", () => {
+	it("mark it paid, reopen it, skip it, postpone it and change its amount", async () => {
+		const { app, occurrences } = await suggestedMortgage();
+		const client = testClient(app).api.recurring.occurrences[":id"];
+		const param = { id: occurrences[0]!.id };
+
+		const paid = await client.paid.$post({ param, json: { paidOn: "2026-09-12" } });
+		expect(paid.status).toBe(200);
+		expect(await paid.json()).toMatchObject({ data: { status: "paid", closedSource: "user" } });
+
+		const closedAgain = await client.skip.$post({ param });
+		expect(closedAgain.status).toBe(400);
+		expect(errorBody.parse(await closedAgain.json()).error.code).toBe("VALIDATION_ERROR");
+
+		expect(await (await client.reopen.$post({ param })).json()).toMatchObject({
+			data: { status: "scheduled", closedSource: null },
+		});
+		expect(await (await client.skip.$post({ param })).json()).toMatchObject({
+			data: { status: "skipped", closedSource: "user" },
+		});
+		await client.reopen.$post({ param });
+
+		const snoozed = await client.$patch({ param, json: { snoozedUntil: "2026-09-30" } });
+		expect(await snoozed.json()).toMatchObject({ data: { snoozedUntil: "2026-09-30" } });
+		const amount = await client.$patch({ param, json: { expectedAmount: "600,00" } });
+		expect(await amount.json()).toMatchObject({ data: { expectedAmount: 60_000 } });
+	});
+
+	it("answer VALIDATION_ERROR for a patch of nothing or of both, NOT_FOUND for an unknown id", async () => {
+		const { app, occurrences } = await suggestedMortgage();
+		const patch = (id: string, body: unknown) =>
+			app.request(`/api/recurring/occurrences/${id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+		const id = occurrences[0]!.id;
+
+		const nothing = await patch(id, {});
+		const both = await patch(id, { snoozedUntil: null, expectedAmount: null });
+		const unknown = await patch("nope", { snoozedUntil: null });
+		const paidUnknown = await testClient(app).api.recurring.occurrences[":id"].paid.$post({
+			param: { id: "nope" },
+			json: {},
+		});
+
+		expect(nothing.status).toBe(400);
+		expect(errorBody.parse(await nothing.json()).error.code).toBe("VALIDATION_ERROR");
+		expect(both.status).toBe(400);
+		expect(unknown.status).toBe(404);
+		expect(paidUnknown.status).toBe(404);
 	});
 });
 
