@@ -51,7 +51,7 @@ test("the rail shows the logo and an icon on each entry, the accounts column eac
 				["Comptes", "wallet"],
 				["Budgets", "piggy-bank"],
 				["Objectifs", "goal"],
-				["Récurrent", "calendar"],
+				["Factures", "calendar"],
 				["Règles", "funnel"],
 				["Réglages", "settings"],
 			] as const

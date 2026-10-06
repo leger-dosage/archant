@@ -178,6 +178,22 @@ describe("queryKeys.recurring.ofEntry", () => {
 	});
 });
 
+describe("queryKeys.recurring.bills", () => {
+	it("goes stale, with an occurrence's sheet and its candidates, on every recurring write", async () => {
+		const client = new QueryClient();
+		const keys = [
+			queryKeys.recurring.bills,
+			queryKeys.recurring.occurrence("o1"),
+			queryKeys.recurring.paymentCandidates("o1"),
+		];
+		keys.forEach((key) => client.setQueryData(key, null));
+
+		await client.invalidateQueries({ queryKey: queryKeys.recurring.all });
+
+		expect(keys.map((key) => client.getQueryState(key)?.isInvalidated)).toEqual([true, true, true]);
+	});
+});
+
 describe("queryKeys.accounts.goals", () => {
 	it("goes stale on every write that moves a balance, and on a goal's own write", async () => {
 		const client = new QueryClient();

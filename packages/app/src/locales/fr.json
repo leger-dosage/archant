@@ -27,7 +27,7 @@
 		"operations": "Opérations",
 		"budgets": "Budgets",
 		"goals": "Objectifs",
-		"recurring": "Récurrent",
+		"bills": "Factures",
 		"rules": "Règles",
 		"settings": "Réglages",
 		"signOut": "Se déconnecter",
@@ -1363,6 +1363,115 @@
 			"saved": "Épargné",
 			"projected": "Projection",
 			"target": "Montant visé"
+		}
+	},
+	"bills": {
+		"title": "Factures",
+		"description": "Ce qui est en retard, ce qui tombe ce mois-ci et ce qui est déjà payé. Ouvrez une échéance pour la marquer comme payée, l'ignorer, la reporter ou changer son montant.",
+		"all": "Toutes les factures",
+		"totals": {
+			"title": "Ce mois-ci en chiffres",
+			"remaining": "Restant ce mois-ci",
+			"overdue": "En retard",
+			"dueSoon": "À payer sous 7 jours",
+			"paid": "Payé ce mois-ci"
+		},
+		"next": {
+			"title": "Prochaine",
+			"today": "Aujourd'hui",
+			"tomorrow": "Demain"
+		},
+		"sections": {
+			"attention": "Requiert votre attention",
+			"month": "Ce mois-ci",
+			"later": "Après ce mois-ci",
+			"inactive": "Inactives"
+		},
+		"due": {
+			"settled": "Échéance le {{date}}",
+			"snoozed": "Reportée au {{date}}",
+			"overdue_one": "{{count}} jour de retard, échéance le {{date}}",
+			"overdue_other": "{{count}} jours de retard, échéance le {{date}}",
+			"today": "À payer aujourd'hui",
+			"since": "Échéance le {{date}}",
+			"upcoming_one": "À payer demain, {{date}}",
+			"upcoming_other": "À payer dans {{count}} jours, {{date}}"
+		},
+		"partial": "Partiel · {{amount}} restant",
+		"dueSoon": "Bientôt due",
+		"paid": "Payée",
+		"skipped": "Ignorée",
+		"missed": "Manquée",
+		"review": {
+			"title": "Paiements à vérifier",
+			"line": "{{label}} ressemble à un paiement de {{bill}}",
+			"unknown": "Une opération supprimée",
+			"apply": "Appliquer",
+			"reject": "Pas cette facture",
+			"applied": "Paiement appliqué",
+			"rejected": "Écarté. Cette opération ne sera plus proposée pour cette facture."
+		},
+		"match": {
+			"label": "Pourquoi cette correspondance",
+			"merchant": "Même marchand",
+			"name": "Libellé reconnu",
+			"exactAmount": "Montant exact",
+			"amountOff": "{{amount}} d'écart",
+			"onDate": "À la date prévue",
+			"before_one": "{{count}} jour avant l'échéance",
+			"before_other": "{{count}} jours avant l'échéance",
+			"after_one": "{{count}} jour après l'échéance",
+			"after_other": "{{count}} jours après l'échéance"
+		},
+		"empty": {
+			"title": "Aucune facture pour l'instant",
+			"description": "Trouvez les prélèvements qui reviennent dans vos opérations, ou ajoutez une facture à la main.",
+			"noTransactions": "Connectez une banque ou importez un relevé pour que vos factures soient trouvées, ou ajoutez-en une à la main.",
+			"detect": "Trouver les transactions récurrentes"
+		},
+		"sheet": {
+			"kicker": "Échéance",
+			"loading": "Chargement…",
+			"remaining": "{{amount}} restant",
+			"paidHeadline": "{{amount}} payé",
+			"paidOf": "{{paid}} payé sur {{expected}}",
+			"partial": "partiellement payée",
+			"payments": "Paiements",
+			"manualPayment": "Paiement manuel",
+			"removePayment": "Retirer",
+			"removePaymentOf": "Retirer le paiement de {{amount}}",
+			"removeDialog": {
+				"title": "Retirer le paiement de {{amount}} ?",
+				"description": "L'échéance n'en tiendra plus compte. L'opération elle-même n'est pas modifiée.",
+				"action": "Retirer",
+				"done": "Paiement retiré"
+			},
+			"suggestion": "Correspondance proposée",
+			"markPaid": "Marquer comme payée",
+			"markPaidHint": "Règle les {{amount}} restants sans opération, à la date choisie.",
+			"paidOn": "Payée le",
+			"markedPaid": "Échéance marquée comme payée",
+			"addPayment": "Ajouter un paiement",
+			"candidates": "Opérations correspondantes",
+			"noCandidates": "Aucune opération ne correspond autour de l'échéance.",
+			"use": "Utiliser",
+			"useCandidate": "Utiliser {{label}}",
+			"manualHint": "Ou un paiement sans opération, d'un montant et à une date.",
+			"amount": "Montant",
+			"paymentDate": "Date du paiement",
+			"record": "Enregistrer le paiement",
+			"added": "Paiement ajouté",
+			"postpone": "Reporter",
+			"postponeTo": "Reporter au",
+			"postponed": "Échéance reportée au {{date}}",
+			"changeAmount": "Modifier le montant",
+			"changeAmountHint": "Pour cette échéance seulement. Les suivantes gardent le montant de la facture.",
+			"expected": "Montant attendu",
+			"amountChanged": "Montant modifié",
+			"skip": "Ignorer cette échéance",
+			"skippedToast": "Échéance ignorée",
+			"reopen": "Rouvrir",
+			"reopened": "Échéance rouverte"
 		}
 	},
 	"recurring": {

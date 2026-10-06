@@ -45,6 +45,10 @@ const STATUSES = {
 	recurringActive: { icon: CircleCheckIcon, key: "recurring.statuses.active", tone: "neutral" },
 	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", tone: "neutral" },
 	recurringManual: { icon: HandIcon, key: "recurring.manual", tone: "neutral" },
+	// An occurrence from three days before its date, as Sure's `due`: attention, not an alarm.
+	billDueSoon: { icon: ClockIcon, key: "bills.dueSoon", tone: "warning" },
+	// A paid occurrence in place in the month, under a check, as Sure's.
+	billPaid: { icon: CircleCheckIcon, key: "bills.paid", tone: "neutral" },
 	// What a viewer reads in place of a disabled rule's switch.
 	ruleDisabled: { icon: CirclePauseIcon, key: "rules.disabledBadge", tone: "neutral" },
 	// A connection that needs the user, as BankAlerts' strip says above the page.

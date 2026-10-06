@@ -91,6 +91,12 @@ export const queryKeys = {
 		ofEntry: (entryId: string) => ["recurring", "entry", entryId] as const,
 		/** Under `all`: a declared bill takes its starting point off the list. */
 		candidates: (kind: string) => ["recurring", "candidates", kind] as const,
+		/** Under `all`: every recurring write moves the bills page. */
+		bills: ["recurring", "bills"] as const,
+		/** Under `all`, one occurrence's sheet. */
+		occurrence: (id: string) => ["recurring", "occurrence", id] as const,
+		/** Under `all`: a payment added or removed changes what a transaction has left. */
+		paymentCandidates: (id: string) => ["recurring", "occurrence", id, "candidates"] as const,
 	},
 	/**
 	 * Bank connections. `setup` changes when credentials are saved, and when a

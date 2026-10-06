@@ -16,7 +16,7 @@ import {
 } from "../../testing/recurring.ts";
 import { editBill } from "./bills.ts";
 import { generateOccurrences, startDailyOccurrences } from "./occurrences.ts";
-import { attachEntry } from "./payments.ts";
+import { addPayment } from "./payments.ts";
 import { runRecurring } from "./pipeline.ts";
 import { addRecurringFromEntry, cleanupRecurring, deleteRecurring } from "./series.ts";
 
@@ -114,8 +114,8 @@ describe("regenerateFuture", () => {
 			{ date: "2026-09-20", amount: -10_000 },
 		]);
 		const [september, october] = await occurrencesOf(series.id);
-		await attachEntry(deps(), september!.id, paid);
-		await attachEntry(deps(), october!.id, part);
+		await addPayment(deps(), september!.id, { entryId: paid });
+		await addPayment(deps(), october!.id, { entryId: part });
 
 		await editBill(deps(), series.id, { frequency: { preset: "monthly", dayOfMonth: "15" } });
 

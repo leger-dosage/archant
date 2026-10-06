@@ -2,14 +2,21 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchEntry } from "../../domain/recurring/matcher.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, sql } from "drizzle-orm";
+import { and, between, eq, inArray, sql } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
 import { transactions } from "@archant/data/schema/transactions";
 
-import { asInflow, asOutflow, isSplitParent, transferColumns } from "./shared.ts";
+import {
+	KEYS_PER_LOOKUP,
+	asInflow,
+	asOutflow,
+	inSequence,
+	isSplitParent,
+	transferColumns,
+} from "./shared.ts";
 
 type Reader = Pick<Transaction, "select">;
 
@@ -80,4 +87,50 @@ export async function paymentTransaction(
 	return row === undefined
 		? null
 		: { ...row, amount: toMinorUnits(row.amount), splitParent: Boolean(row.splitParent) };
+}
+
+/**
+ * Whether the household holds any transaction, as Sure's
+ * `has_transaction_history`: without one, detection could find nothing, so
+ * the bills page offers only to declare a bill.
+ */
+export async function hasTransactions(db: Reader): Promise<boolean> {
+	const row = await db
+		.select({ id: entries.id })
+		.from(entries)
+		.where(eq(entries.kind, "transaction"))
+		.limit(1)
+		.get();
+
+	return row !== undefined;
+}
+
+/** What the bills page shows of a payment's transaction. */
+export type PaymentEntry = { label: string; amount: MinorUnits; date: IsoDate };
+
+/** The transactions of `ids` the bills page names its payments by, by id. */
+export async function paymentEntries(
+	db: Reader,
+	ids: readonly string[],
+): Promise<Map<string, PaymentEntry>> {
+	const found = new Map<string, PaymentEntry>();
+
+	await inSequence([...new Set(ids)], KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await db
+			.select({
+				id: entries.id,
+				label: transactions.label,
+				amount: entries.amount,
+				date: entries.date,
+			})
+			.from(entries)
+			.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			.where(inArray(entries.id, chunk));
+
+		for (const { id, ...row } of rows) {
+			found.set(id, { ...row, amount: toMinorUnits(row.amount) });
+		}
+	});
+
+	return found;
 }

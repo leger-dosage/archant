@@ -396,16 +396,6 @@ test("the sheet names a transaction's suggested series and links to it, and offe
 	await expect(other).not.toContainText("fait partie de la récurrence");
 });
 
-test("the rail's « Récurrent » opens Récurrences", async ({ page }) => {
-	await page.goto("/accounts");
-	await page
-		.getByRole("navigation", { name: "Navigation principale" })
-		.getByRole("link", { name: "Récurrent", exact: true })
-		.click();
-	await expect(page).toHaveURL(/\/recurring$/u);
-	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
-});
-
 // Story 23.2: bills and incomes declared by hand, and their schedules.
 
 const billDialog = (page: Page, name: string | RegExp) => page.getByRole("dialog", { name });

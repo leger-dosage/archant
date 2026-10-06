@@ -1,8 +1,8 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type { MatchSeries } from "../../domain/recurring/matcher.ts";
 import type { DerivedState } from "../../domain/recurring/occurrences.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
+import type { LoadedSeries } from "./rules.ts";
 
 import { and, eq, inArray, isNotNull, isNull, lt, lte, gte, notExists, sql } from "drizzle-orm";
 
@@ -14,8 +14,6 @@ import {
 	recurringMatchRejections,
 	recurringOccurrences,
 } from "@archant/data/schema/recurring-occurrences";
-import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
-import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { settings } from "@archant/data/schema/settings";
 
 import { addMonths, daysBetween, maxDate, today } from "../../domain/dates.ts";
@@ -26,73 +24,16 @@ import {
 	effectiveDueOn,
 	horizonOf,
 } from "../../domain/recurring/occurrences.ts";
-import { cycleFor, monthlyOn, occurrencesBetween } from "../../domain/recurring/schedule.ts";
-import { scheduleOf } from "../../domain/recurring/series.ts";
+import { cycleFor, occurrencesBetween } from "../../domain/recurring/schedule.ts";
 import { matchableTransactions } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, oneByOne } from "../ledger/shared.ts";
-import { parseAliases } from "./hints.ts";
 import { allocateMatched } from "./payments.ts";
-import { rulesBySeries } from "./rules.ts";
+import { seriesWithSchedules } from "./rules.ts";
 
 type Writer = Pick<Transaction, "select" | "selectDistinct" | "insert" | "update" | "delete">;
 
 // Seven columns an occurrence row: 500 rows bind 3 500 parameters.
 const ROWS_PER_INSERT = 500;
-
-/** A series as generation and matching read it. */
-type LoadedSeries = MatchSeries & {
-	status: RecurringStatus;
-	manual: boolean;
-	anchorDate: IsoDate | null;
-	endAfterCount: number | null;
-};
-
-/** Every series, or those of `ids`, with their schedules. */
-async function loadSeries(
-	tx: Pick<Transaction, "select">,
-	ids?: readonly string[],
-): Promise<Map<string, LoadedSeries>> {
-	const rows = await tx
-		.select({
-			id: recurringTransactions.id,
-			accountId: recurringTransactions.accountId,
-			currency: recurringTransactions.currency,
-			amount: recurringTransactions.amount,
-			merchantId: recurringTransactions.merchantId,
-			labelKey: recurringTransactions.labelKey,
-			name: recurringTransactions.name,
-			nameAliases: recurringTransactions.nameAliases,
-			learnedTolerance: recurringTransactions.learnedTolerance,
-			billType: recurringTransactions.billType,
-			status: recurringTransactions.status,
-			manual: recurringTransactions.manual,
-			anchorDate: recurringTransactions.anchorDate,
-			lastOccurrenceDate: recurringTransactions.lastOccurrenceDate,
-			endAfterCount: recurringTransactions.endAfterCount,
-			expectedDayOfMonth: recurringTransactions.expectedDayOfMonth,
-		})
-		.from(recurringTransactions)
-		.where(ids === undefined ? undefined : inArray(recurringTransactions.id, [...ids]));
-	const rules = await rulesBySeries(tx, ids);
-
-	return new Map(
-		rows.map(({ lastOccurrenceDate, expectedDayOfMonth, nameAliases, ...row }) => [
-			row.id,
-			{
-				...row,
-				amount: toMinorUnits(row.amount),
-				nameAliases: parseAliases(nameAliases),
-				schedule: scheduleOf({
-					rules: rules.get(row.id) ?? [monthlyOn(expectedDayOfMonth)],
-					anchorDate: row.anchorDate,
-					lastOccurrenceDate,
-					endAfterCount: row.endAfterCount,
-					expectedDayOfMonth,
-				}),
-			},
-		]),
-	);
-}
 
 /** Inserts the occurrences of `series` on `dates`, leaving any already there untouched. */
 async function insertOccurrences(
@@ -129,7 +70,7 @@ export async function generateOccurrences(
 	ids?: readonly string[],
 ): Promise<void> {
 	const now = Date.now();
-	const active = [...(await loadSeries(tx, ids)).values()].filter(
+	const active = [...(await seriesWithSchedules(tx, ids)).values()].filter(
 		(series) => series.status === "active",
 	);
 
@@ -232,7 +173,7 @@ export async function matchOccurrences(
 		...row,
 		expectedAmount: row.expectedAmount === null ? null : toMinorUnits(row.expectedAmount),
 	}));
-	const series = await loadSeries(tx);
+	const series = await seriesWithSchedules(tx);
 	const window = entryWindow(series, occurrences, day, backfill);
 
 	if (window === null) {
@@ -285,7 +226,7 @@ export async function backfillOccurrences(
 	ids?: readonly string[],
 ): Promise<void> {
 	const now = Date.now();
-	const active = [...(await loadSeries(tx, ids)).values()].filter(
+	const active = [...(await seriesWithSchedules(tx, ids)).values()].filter(
 		(series) => series.status === "active",
 	);
 

@@ -9,6 +9,12 @@ import { queryKeys } from "@/lib/query-keys";
 
 export type RecurringData = InferResponseType<typeof api.recurring.$get, 200>["data"][number];
 
+export type BillsData = InferResponseType<typeof api.recurring.bills.$get, 200>["data"];
+
+export type BillRowData = BillsData["month"][number];
+
+export type SuggestedPaymentData = BillsData["review"][number];
+
 export type BillCandidateData = InferResponseType<
 	typeof api.recurring.candidates.$get,
 	200
@@ -126,6 +132,115 @@ export function useEditBill() {
 	return useMutation({
 		mutationFn: async ({ id, input }: { id: string; input: EditInput }) =>
 			(await unwrap(api.recurring[":id"].$patch({ param: { id }, json: input }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** The bills page: today's sections, totals and review queue. */
+export function useBills() {
+	return useQuery({
+		queryKey: queryKeys.recurring.bills,
+		queryFn: async () => (await unwrap(api.recurring.bills.$get())).data,
+	});
+}
+
+/** An occurrence's sheet: the occurrence, its payments and its suggestion. */
+export function useOccurrence(id: string) {
+	return useQuery({
+		queryKey: queryKeys.recurring.occurrence(id),
+		queryFn: async () =>
+			(await unwrap(api.recurring.occurrences[":id"].$get({ param: { id } }))).data,
+	});
+}
+
+/** « Ajouter un paiement »'s transactions; only an administrator's sheet mounts what reads them. */
+export function usePaymentCandidates(id: string) {
+	return useQuery({
+		queryKey: queryKeys.recurring.paymentCandidates(id),
+		queryFn: async () =>
+			(await unwrap(api.recurring.occurrences[":id"].candidates.$get({ param: { id } }))).data,
+	});
+}
+
+/** « Appliquer »: the suggested payment becomes one the owner confirmed. */
+export function useConfirmPayment() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.recurring.payments[":id"].confirm.$post({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Pas cette facture »: the transaction is never suggested for that series again. */
+export function useRejectPayment() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.recurring.payments[":id"].reject.$post({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** Removes a payment from its occurrence. */
+export function useRemovePayment() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.recurring.payments[":id"].$delete({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Marquer comme payée », at the date given. */
+export function useMarkPaid(id: string) {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (paidOn: string) =>
+			(
+				await unwrap(
+					api.recurring.occurrences[":id"].paid.$post({ param: { id }, json: { paidOn } }),
+				)
+			).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Ajouter un paiement »: a transaction, or an amount and a date. */
+export function useAddPayment(id: string) {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (json: { entryId?: string; amount?: string; paidOn?: string }) =>
+			(await unwrap(api.recurring.occurrences[":id"].payments.$post({ param: { id }, json }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Ignorer cette échéance » and « Rouvrir ». */
+export function useSetOccurrenceClosed(id: string) {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (action: "skip" | "reopen") =>
+			(await unwrap(api.recurring.occurrences[":id"][action].$post({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** « Reporter » and « Modifier le montant ». */
+export function useEditOccurrence(id: string) {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (
+			patch: { snoozedUntil: string | null } | { expectedAmount: string | null },
+		) =>
+			(await unwrap(api.recurring.occurrences[":id"].$patch({ param: { id }, json: patch }))).data,
 		onSuccess: invalidate,
 	});
 }

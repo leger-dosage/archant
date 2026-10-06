@@ -1,13 +1,20 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchDecision } from "../../domain/recurring/matcher.ts";
+import type { AddPaymentInput, OccurrencePatch } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
 
-import { and, eq, sum } from "drizzle-orm";
+import { and, eq, inArray, sum } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
-import type { AllocationSource, AllocationState } from "@archant/data/recurring";
+import { parseAmount, toMinorUnits } from "@archant/data/money";
+import type {
+	AllocationSource,
+	AllocationState,
+	ClosedSource,
+	OccurrenceStatus,
+} from "@archant/data/recurring";
+import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 import {
 	recurringAllocations,
 	recurringMatchRejections,
@@ -15,8 +22,9 @@ import {
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
+import { today } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
-import { knownNames } from "../../domain/recurring/matcher.ts";
+import { explain, knownNames, windowOf } from "../../domain/recurring/matcher.ts";
 import {
 	isCloseWorthy,
 	learnedTolerance,
@@ -24,9 +32,10 @@ import {
 	resolvedExpected,
 } from "../../domain/recurring/occurrences.ts";
 import { AppError } from "../../lib/errors.ts";
-import { paymentTransaction } from "../ledger/recurring.ts";
-import { invalidField } from "../ledger/shared.ts";
+import { matchableTransactions, paymentTransaction } from "../ledger/recurring.ts";
+import { KEYS_PER_LOOKUP, inSequence, invalidField } from "../ledger/shared.ts";
 import { parseAliases } from "./hints.ts";
+import { seriesWithSchedules } from "./rules.ts";
 
 /** A payment toward an occurrence, as the routes answer it. */
 export type PaymentRecord = {
@@ -381,16 +390,18 @@ async function learnFromAttach(
 
 /**
  * Sure's `allocate!` from a transaction the owner picked: a confirmed payment
- * of what the occurrence still needs, bounded by what the transaction has
- * left, which then teaches the series, as Sure's. A split's parent is
- * refused, its lines carrying the money (AD-20), and so is a transaction in
- * another currency, there being no rate (AD-6); one whose amount is spent
- * answers `PAYMENT_EXCEEDS_TRANSACTION`.
+ * of `amount`, else of what the occurrence still needs, bounded by what the
+ * transaction has left, dated `paidOn` or on the transaction's day, which
+ * then teaches the series, as Sure's. A split's parent is refused, its lines
+ * carrying the money (AD-20), and so is a transaction in another currency,
+ * there being no rate (AD-6); one whose amount is spent, or an amount past
+ * what it has left, answers `PAYMENT_EXCEEDS_TRANSACTION`.
  */
-export async function attachEntry(
+async function attachEntry(
 	deps: ServiceDeps,
 	occurrenceId: string,
 	entryId: string,
+	input: { amount?: string | undefined; paidOn?: IsoDate | undefined },
 ): Promise<PaymentRecord> {
 	return deps.db.transaction(
 		async (tx) => {
@@ -430,7 +441,15 @@ export async function attachEntry(
 				throw invalidField("entryId", "already_attached");
 			}
 
-			const amount = await amountFor(tx, occurrence, entry);
+			const chosen =
+				input.amount === undefined ? null : amountOf(input.amount, occurrence.currency);
+			const amount =
+				chosen === null
+					? await amountFor(tx, occurrence, entry)
+					: // Sure's `guard_entry_capacity!`: never more than the transaction has left.
+						chosen <= (await capacityOf(tx, entry.id, toMinorUnits(Math.abs(entry.amount))))
+						? chosen
+						: toMinorUnits(0);
 
 			if (amount <= 0) {
 				throw exceeds();
@@ -447,7 +466,7 @@ export async function attachEntry(
 				allocatedAmount: amount,
 				state: "confirmed",
 				source: "user_confirmed",
-				paidOn: entry.date,
+				paidOn: input.paidOn ?? entry.date,
 				createdAt: now,
 				updatedAt: now,
 			});
@@ -457,5 +476,386 @@ export async function attachEntry(
 			return paymentOf(tx, id);
 		},
 		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * A positive amount typed as decimal text, read in the occurrence's
+ * currency; a `VALIDATION_ERROR` on `path`, the body's field, otherwise.
+ */
+function amountOf(text: string | undefined, currency: string, path = "amount"): MinorUnits {
+	if (text === undefined) {
+		throw invalidField(path, "invalid_type");
+	}
+
+	const amount = parseAmount(text, currency);
+
+	if (amount === null) {
+		throw invalidField(path, "invalid_amount");
+	}
+
+	if (amount <= 0) {
+		throw invalidField(path, "not_positive");
+	}
+
+	return amount;
+}
+
+/**
+ * Sure's `RecurringAllocationsController#create`: with a transaction, its
+ * payment as `attachEntry` makes it; without one, an amount and a date the
+ * owner gives, a confirmed `user_created` payment, then the close state
+ * follows.
+ */
+export async function addPayment(
+	deps: ServiceDeps,
+	occurrenceId: string,
+	input: AddPaymentInput,
+): Promise<PaymentRecord> {
+	if (input.entryId !== undefined) {
+		return attachEntry(deps, occurrenceId, input.entryId, input);
+	}
+
+	return deps.db.transaction(
+		async (tx) => {
+			const occurrence = await occurrenceOf(tx, occurrenceId);
+
+			if (occurrence === undefined) {
+				throw notFound("occurrence");
+			}
+
+			const amount = amountOf(input.amount, occurrence.currency);
+
+			if (input.paidOn === undefined) {
+				throw invalidField("paidOn", "invalid_type");
+			}
+
+			const now = Date.now();
+			const id = crypto.randomUUID();
+
+			await freezeExpected(tx, occurrence, now);
+			await tx.insert(recurringAllocations).values({
+				id,
+				recurringOccurrenceId: occurrenceId,
+				allocatedAmount: amount,
+				state: "confirmed",
+				source: "user_created",
+				paidOn: input.paidOn,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await refreshCloseState(tx, occurrenceId, now);
+
+			return paymentOf(tx, id);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** An occurrence after the owner acted on it, as the routes answer it. */
+export type OccurrenceRecord = {
+	id: string;
+	dueOn: IsoDate;
+	snoozedUntil: IsoDate | null;
+	status: OccurrenceStatus;
+	closedSource: ClosedSource | null;
+	/** Frozen or set by the owner; `null` reads the series' amount. */
+	expectedAmount: MinorUnits | null;
+};
+
+async function occurrenceRecord(tx: Reader, id: string): Promise<OccurrenceRecord> {
+	const row = (await tx
+		.select({
+			id: recurringOccurrences.id,
+			dueOn: recurringOccurrences.dueOn,
+			snoozedUntil: recurringOccurrences.snoozedUntil,
+			status: recurringOccurrences.status,
+			closedSource: recurringOccurrences.closedSource,
+			expectedAmount: recurringOccurrences.expectedAmount,
+		})
+		.from(recurringOccurrences)
+		.where(eq(recurringOccurrences.id, id))
+		.get())!;
+
+	return {
+		...row,
+		expectedAmount: row.expectedAmount === null ? null : toMinorUnits(row.expectedAmount),
+	};
+}
+
+/** The occurrence of `id`, `NOT_FOUND` without one. */
+async function existingOccurrence(tx: Reader, id: string) {
+	const occurrence = await occurrenceOf(tx, id);
+
+	if (occurrence === undefined) {
+		throw notFound("occurrence");
+	}
+
+	return occurrence;
+}
+
+/** An open occurrence only: any other move of its status is refused (AD-24). */
+function mustBeOpen(occurrence: { status: OccurrenceStatus }): void {
+	if (occurrence.status !== "scheduled") {
+		throw invalidField("status");
+	}
+}
+
+/**
+ * Sure's `mark_paid!`: the amount frozen, what remains settled by a confirmed
+ * `user_created` payment with no transaction, dated `paidOn` or today, and
+ * the occurrence closed paid by the owner, so a removed payment never
+ * reopens it.
+ */
+export async function markPaid(
+	deps: ServiceDeps,
+	id: string,
+	paidOn?: IsoDate,
+): Promise<OccurrenceRecord> {
+	const day = today(deps.timeZone);
+
+	return deps.db.transaction(
+		async (tx) => {
+			const occurrence = await existingOccurrence(tx, id);
+			mustBeOpen(occurrence);
+			const now = Date.now();
+			const remaining = remainingOf(occurrence.expected, await confirmedOf(tx, id));
+
+			await freezeExpected(tx, occurrence, now);
+
+			if (remaining > 0) {
+				await tx.insert(recurringAllocations).values({
+					id: crypto.randomUUID(),
+					recurringOccurrenceId: id,
+					allocatedAmount: remaining,
+					state: "confirmed",
+					source: "user_created",
+					paidOn: paidOn ?? day,
+					createdAt: now,
+					updatedAt: now,
+				});
+			}
+
+			await tx
+				.update(recurringOccurrences)
+				.set({ status: "paid", closedAt: now, closedSource: "user", updatedAt: now })
+				.where(eq(recurringOccurrences.id, id));
+
+			return occurrenceRecord(tx, id);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** « Ignorer cette échéance »: the amount frozen, the occurrence closed skipped by the owner. */
+export async function skipOccurrence(deps: ServiceDeps, id: string): Promise<OccurrenceRecord> {
+	return deps.db.transaction(
+		async (tx) => {
+			const occurrence = await existingOccurrence(tx, id);
+			mustBeOpen(occurrence);
+			const now = Date.now();
+
+			await freezeExpected(tx, occurrence, now);
+			await tx
+				.update(recurringOccurrences)
+				.set({ status: "skipped", closedAt: now, closedSource: "user", updatedAt: now })
+				.where(eq(recurringOccurrences.id, id));
+
+			return occurrenceRecord(tx, id);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Sure's `reopen!`: a closed occurrence open again, its amount and payments
+ * kept. Its close state is not refreshed, so payments that settle it leave
+ * it open until the next payment moves it, as Sure's.
+ */
+export async function reopenOccurrence(deps: ServiceDeps, id: string): Promise<OccurrenceRecord> {
+	return deps.db.transaction(
+		async (tx) => {
+			const occurrence = await existingOccurrence(tx, id);
+
+			if (occurrence.status === "scheduled") {
+				throw invalidField("status");
+			}
+
+			await tx
+				.update(recurringOccurrences)
+				.set({ status: "scheduled", closedAt: null, closedSource: null, updatedAt: Date.now() })
+				.where(eq(recurringOccurrences.id, id));
+
+			return occurrenceRecord(tx, id);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Sure's `snooze!` and `override_amount!`: « Reporter » to a date, or
+ * « Modifier le montant » of this occurrence alone, `null` clearing either.
+ * The close state is not refreshed, as Sure's.
+ */
+export async function editOccurrence(
+	deps: ServiceDeps,
+	id: string,
+	patch: OccurrencePatch,
+): Promise<OccurrenceRecord> {
+	return deps.db.transaction(
+		async (tx) => {
+			const occurrence = await existingOccurrence(tx, id);
+			const now = Date.now();
+			const change =
+				"snoozedUntil" in patch
+					? { snoozedUntil: patch.snoozedUntil }
+					: {
+							expectedAmount:
+								patch.expectedAmount === null
+									? null
+									: amountOf(patch.expectedAmount, occurrence.currency, "expectedAmount"),
+						};
+
+			await tx
+				.update(recurringOccurrences)
+				.set({ ...change, updatedAt: now })
+				.where(eq(recurringOccurrences.id, id));
+
+			return occurrenceRecord(tx, id);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Sure's `unallocate!`: the payment goes, and an occurrence paid by `auto`
+ * that it no longer settles reopens. No rejection is recorded: the owner
+ * removed a payment, not refused a match.
+ */
+export async function removePayment(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	return deps.db.transaction(
+		async (tx) => {
+			const payment = await paymentOf(tx, id);
+
+			await tx.delete(recurringAllocations).where(eq(recurringAllocations.id, id));
+			await refreshCloseState(tx, payment.occurrenceId, Date.now());
+
+			return { id };
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** A transaction « Ajouter un paiement » offers, scored as the matcher would. */
+export type PaymentCandidate = {
+	entryId: string;
+	label: string;
+	date: IsoDate;
+	/** Signed as the transaction (AD-5). */
+	amount: MinorUnits;
+	currency: string;
+	/** Ten-thousandths. */
+	score: number;
+	signals: MatchSignals;
+};
+
+// Sure's `RANKED_SHOWN`.
+const CANDIDATES_SHOWN = 6;
+
+/**
+ * Sure's `ranked_candidates`: the transactions of the occurrence's window
+ * that `explain` scores, without those the owner rejected for the series,
+ * those already on this occurrence and those with nothing left to spend,
+ * the highest score first, six at most.
+ */
+export async function paymentCandidates(
+	deps: ServiceDeps,
+	occurrenceId: string,
+): Promise<PaymentCandidate[]> {
+	const day = today(deps.timeZone);
+	const row = await deps.db
+		.select({
+			id: recurringOccurrences.id,
+			seriesId: recurringOccurrences.recurringTransactionId,
+			dueOn: recurringOccurrences.dueOn,
+			snoozedUntil: recurringOccurrences.snoozedUntil,
+			expectedAmount: recurringOccurrences.expectedAmount,
+		})
+		.from(recurringOccurrences)
+		.where(eq(recurringOccurrences.id, occurrenceId))
+		.get();
+
+	if (row === undefined) {
+		throw notFound("occurrence");
+	}
+
+	const occurrence = {
+		...row,
+		expectedAmount: row.expectedAmount === null ? null : toMinorUnits(row.expectedAmount),
+	};
+	const series = (await seriesWithSchedules(deps.db, [occurrence.seriesId])).get(
+		occurrence.seriesId,
+	)!;
+	const found = await matchableTransactions(deps.db, windowOf(series, occurrence, day));
+	const rejected = await deps.db
+		.select({ entryId: recurringMatchRejections.entryId })
+		.from(recurringMatchRejections)
+		.where(eq(recurringMatchRejections.recurringTransactionId, series.id));
+	const held = await deps.db
+		.select({ entryId: recurringAllocations.entryId })
+		.from(recurringAllocations)
+		.where(eq(recurringAllocations.recurringOccurrenceId, occurrenceId));
+	const left = new Set([...rejected, ...held].map((one) => one.entryId));
+	const spent = new Map<string, MinorUnits>();
+
+	await inSequence(
+		found.map((entry) => entry.id),
+		KEYS_PER_LOOKUP,
+		async (chunk) => {
+			const rows = await deps.db
+				.select({
+					entryId: recurringAllocations.entryId,
+					spent: sum(recurringAllocations.allocatedAmount),
+				})
+				.from(recurringAllocations)
+				.where(inArray(recurringAllocations.entryId, chunk))
+				.groupBy(recurringAllocations.entryId);
+
+			for (const one of rows) {
+				spent.set(one.entryId!, toMinorUnits(Number(one.spent ?? 0)));
+			}
+		},
+	);
+
+	return (
+		found
+			.flatMap((entry): PaymentCandidate[] => {
+				const scored = explain(series, occurrence, entry, day);
+
+				if (
+					scored === null ||
+					left.has(entry.id) ||
+					Math.abs(entry.amount) - (spent.get(entry.id) ?? 0) <= 0
+				) {
+					return [];
+				}
+
+				return [
+					{
+						entryId: entry.id,
+						label: entry.label,
+						date: entry.date,
+						amount: entry.amount,
+						currency: entry.currency,
+						...scored,
+					},
+				];
+			})
+			// Equal scores need an order of their own, or the cut at six moves between reads.
+			.toSorted(
+				(a, b) =>
+					b.score - a.score || b.date.localeCompare(a.date) || a.entryId.localeCompare(b.entryId),
+			)
+			.slice(0, CANDIDATES_SHOWN)
 	);
 }

@@ -503,18 +503,29 @@ export function apiHelpers(request: APIRequestContext) {
 			return created(await request.post("/api/recurring", { data: { entryId } }));
 		},
 
-		/** Declares a monthly bill on `firstDueOn`, as « Ajouter une facture » does. */
+		/**
+		 * Declares a monthly bill on `firstDueOn`, as « Ajouter une facture » does,
+		 * keyed by `entryId`'s label when the dialog started from a transaction.
+		 */
 		async declareBill(input: {
 			name: string;
 			amount: string;
 			accountId: string;
 			firstDueOn: string;
+			entryId?: string;
 		}): Promise<string> {
 			return created(
 				await request.post("/api/recurring/declare", {
 					data: { kind: "bill", frequency: { preset: "monthly" }, ...input },
 				}),
 			);
+		},
+
+		/** Pauses or resumes a series, as its menu's « Mettre en pause » and « Reprendre » do. */
+		async setRecurringStatus(id: string, status: "active" | "inactive"): Promise<void> {
+			const response = await request.patch(`/api/recurring/${id}`, { data: { status } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
 		/** Runs recurring detection, as « Détecter » does. */

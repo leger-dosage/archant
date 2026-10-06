@@ -69,7 +69,7 @@ const DESTINATIONS = [
 	{ to: "/accounts", label: "nav.accounts", icon: WalletIcon, exact: true, phone: false },
 	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false, phone: true },
 	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false, phone: true },
-	{ to: "/recurring", label: "nav.recurring", icon: CalendarIcon, exact: false, phone: false },
+	{ to: "/bills", label: "nav.bills", icon: CalendarIcon, exact: false, phone: false },
 	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false, phone: false },
 	{ to: "/settings", label: "nav.settings", icon: SettingsIcon, exact: false, phone: false },
 ] as const satisfies readonly {
