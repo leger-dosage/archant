@@ -38,6 +38,7 @@
 		"./schema/merchants": "./schema/merchants.ts",
 		"./schema/oauth": "./schema/oauth.ts",
 		"./schema/recurrence-rules": "./schema/recurrence-rules.ts",
+		"./schema/recurring-occurrences": "./schema/recurring-occurrences.ts",
 		"./schema/recurring-transactions": "./schema/recurring-transactions.ts",
 		"./schema/rejected-transfers": "./schema/rejected-transfers.ts",
 		"./schema/rules": "./schema/rules.ts",

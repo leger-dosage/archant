@@ -76,6 +76,15 @@ export const recurringTransactions = sqliteTable(
 		// Sure's `schedule_pinned_at` hint: the owner set the cadence, so
 		// detection moves the dates but never the day or the rules.
 		schedulePinnedAt: integer("schedule_pinned_at"),
+		// Sure's `matcher_hints` `name_aliases`: labels the owner attached by hand
+		// to a series without a merchant, which the matcher then recognises.
+		nameAliases: text("name_aliases", { mode: "json" })
+			.$type<string[]>()
+			.notNull()
+			.default(sql`'[]'`),
+		// Sure's `learned_tolerance_pct`, per mille: how far a payment attached by
+		// hand strayed from the expected amount, never past 250.
+		learnedTolerance: integer("learned_tolerance"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

@@ -32,6 +32,7 @@ import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
 import { declareBillSchema, editBillSchema } from "../../schemas/bills.ts";
 import { findTransaction } from "../ledger/queries.ts";
+import { pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules } from "./rules.ts";
 import {
 	getRecord,
@@ -93,7 +94,7 @@ async function currencyOfAccount(
  * amount, currency and dedup scope. Checked inside the write transaction, so
  * the answer is a `409`, never a constraint failure.
  */
-async function taken(
+export async function taken(
 	tx: Pick<Transaction, "select">,
 	row: SeriesKey & {
 		accountId: string;
@@ -176,6 +177,8 @@ export async function declareBill(
 		dedupScope: String(amount),
 	};
 
+	const date = today(deps.timeZone);
+
 	return deps.db.transaction(
 		async (tx) => {
 			if (await taken(tx, row)) {
@@ -205,8 +208,9 @@ export async function declareBill(
 				updatedAt: now,
 			});
 			await insertRules(tx, [{ id, rules: schedule.rules }]);
+			await regenerateFuture(tx, [id], date);
 
-			return getRecord(tx, id);
+			return getRecord(tx, id, date);
 		},
 		{ behavior: "immediate" },
 	);
@@ -239,7 +243,7 @@ export async function editBill(
 
 	return deps.db.transaction(
 		async (tx) => {
-			const current = await getRecord(tx, id);
+			const current = await getRecord(tx, id, day);
 			const currency = await currencyOfAccount(tx, input.accountId ?? current.accountId);
 			const parsed = editBillSchema(currency).safeParse(input);
 
@@ -337,7 +341,17 @@ export async function editBill(
 				await replaceRules(tx, id, change.rules);
 			}
 
-			return getRecord(tx, id);
+			// Sure's `SCHEDULE_SHAPING_ATTRIBUTES`: the occurrences to come follow
+			// a new cadence, day, anchor, number of payments or currency.
+			if (rescheduled || schedule.expectedDayOfMonth !== current.expectedDayOfMonth || moved) {
+				await regenerateFuture(tx, [id], day);
+			}
+
+			if (amount !== current.amount) {
+				await pinAmountsAlreadyDue(tx, id, current.amount, day);
+			}
+
+			return getRecord(tx, id, day);
 		},
 		{ behavior: "immediate" },
 	);

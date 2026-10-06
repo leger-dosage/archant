@@ -13,6 +13,12 @@ import { goalAccounts, goals } from "@archant/data/schema/goals";
 import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { merchants } from "@archant/data/schema/merchants";
 import { recurrenceRules } from "@archant/data/schema/recurrence-rules";
+import {
+	recurringAllocations,
+	recurringMatchRejections,
+	recurringOccurrences,
+	recurringPriceChanges,
+} from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
@@ -105,6 +111,8 @@ export const EXPORTED_COLUMNS = {
 		notes: recurringTransactions.notes,
 		paymentUrl: recurringTransactions.paymentUrl,
 		schedulePinnedAt: recurringTransactions.schedulePinnedAt,
+		nameAliases: recurringTransactions.nameAliases,
+		learnedTolerance: recurringTransactions.learnedTolerance,
 		createdAt: recurringTransactions.createdAt,
 		updatedAt: recurringTransactions.updatedAt,
 	},
@@ -117,6 +125,44 @@ export const EXPORTED_COLUMNS = {
 		weekday: recurrenceRules.weekday,
 		monthOfYear: recurrenceRules.monthOfYear,
 		position: recurrenceRules.position,
+	},
+	recurring_occurrences: {
+		id: recurringOccurrences.id,
+		recurringTransactionId: recurringOccurrences.recurringTransactionId,
+		originalDueOn: recurringOccurrences.originalDueOn,
+		dueOn: recurringOccurrences.dueOn,
+		currency: recurringOccurrences.currency,
+		expectedAmount: recurringOccurrences.expectedAmount,
+		status: recurringOccurrences.status,
+		snoozedUntil: recurringOccurrences.snoozedUntil,
+		closedAt: recurringOccurrences.closedAt,
+		closedSource: recurringOccurrences.closedSource,
+		notes: recurringOccurrences.notes,
+	},
+	recurring_allocations: {
+		id: recurringAllocations.id,
+		recurringOccurrenceId: recurringAllocations.recurringOccurrenceId,
+		entryId: recurringAllocations.entryId,
+		allocatedAmount: recurringAllocations.allocatedAmount,
+		state: recurringAllocations.state,
+		source: recurringAllocations.source,
+		matchConfidence: recurringAllocations.matchConfidence,
+		matchSignals: recurringAllocations.matchSignals,
+		paidOn: recurringAllocations.paidOn,
+	},
+	recurring_match_rejections: {
+		id: recurringMatchRejections.id,
+		recurringTransactionId: recurringMatchRejections.recurringTransactionId,
+		entryId: recurringMatchRejections.entryId,
+	},
+	recurring_price_changes: {
+		id: recurringPriceChanges.id,
+		recurringTransactionId: recurringPriceChanges.recurringTransactionId,
+		effectiveOn: recurringPriceChanges.effectiveOn,
+		previousAmount: recurringPriceChanges.previousAmount,
+		newAmount: recurringPriceChanges.newAmount,
+		currency: recurringPriceChanges.currency,
+		entryId: recurringPriceChanges.entryId,
 	},
 	entries: {
 		id: entries.id,
@@ -318,6 +364,22 @@ export const LEFT_OUT = {
 	recurring_transactions: {
 		labelKey: "The normalised label detection groups by, derived from the label again.",
 	},
+	recurring_occurrences: {
+		createdAt: "Sure's `RecurringOccurrence` line carries no timestamps.",
+		updatedAt: "Sure's `RecurringOccurrence` line carries no timestamps.",
+	},
+	recurring_allocations: {
+		createdAt: "Sure's `RecurringAllocation` line carries no timestamps.",
+		updatedAt: "Sure's `RecurringAllocation` line carries no timestamps.",
+	},
+	recurring_match_rejections: {
+		createdAt: "Sure's `RecurringMatchRejection` line carries no timestamps.",
+		updatedAt: "Sure's `RecurringMatchRejection` line carries no timestamps.",
+	},
+	recurring_price_changes: {
+		createdAt: "Sure's `RecurringPriceChange` line carries no timestamps.",
+		updatedAt: "Sure's `RecurringPriceChange` line carries no timestamps.",
+	},
 	rule_runs: "The history of rule applications, as Sure's export leaves it out.",
 	securities: {
 		currency: "A trade's currency is its account's, which its line carries (AD-6).",
@@ -471,6 +533,59 @@ export function exportedRecurrenceRules(db: Reader) {
 			asc(recurringTransactions.createdAt),
 			asc(recurringTransactions.id),
 			asc(recurrenceRules.position),
+		);
+}
+
+/** Every occurrence, by series then original due date, as Sure's `RecurringOccurrence` lines. */
+export function exportedOccurrences(db: Reader) {
+	return db
+		.select(EXPORTED_COLUMNS.recurring_occurrences)
+		.from(recurringOccurrences)
+		.orderBy(
+			asc(recurringOccurrences.recurringTransactionId),
+			asc(recurringOccurrences.originalDueOn),
+		);
+}
+
+/** Every payment, with its occurrence's currency, as Sure's `RecurringAllocation` lines. */
+export function exportedAllocations(db: Reader) {
+	return db
+		.select({
+			...EXPORTED_COLUMNS.recurring_allocations,
+			currency: EXPORTED_COLUMNS.recurring_occurrences.currency,
+		})
+		.from(recurringAllocations)
+		.innerJoin(
+			recurringOccurrences,
+			eq(recurringOccurrences.id, recurringAllocations.recurringOccurrenceId),
+		)
+		.orderBy(
+			asc(recurringOccurrences.recurringTransactionId),
+			asc(recurringOccurrences.originalDueOn),
+			asc(recurringAllocations.createdAt),
+			asc(recurringAllocations.id),
+		);
+}
+
+/** Every price change, by series then date, as Sure's `RecurringPriceChange` lines. */
+export function exportedPriceChanges(db: Reader) {
+	return db
+		.select(EXPORTED_COLUMNS.recurring_price_changes)
+		.from(recurringPriceChanges)
+		.orderBy(
+			asc(recurringPriceChanges.recurringTransactionId),
+			asc(recurringPriceChanges.effectiveOn),
+		);
+}
+
+/** Every rejected pair, by series then transaction, as Sure's `RecurringMatchRejection` lines. */
+export function exportedMatchRejections(db: Reader) {
+	return db
+		.select(EXPORTED_COLUMNS.recurring_match_rejections)
+		.from(recurringMatchRejections)
+		.orderBy(
+			asc(recurringMatchRejections.recurringTransactionId),
+			asc(recurringMatchRejections.entryId),
 		);
 }
 

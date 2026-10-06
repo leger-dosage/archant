@@ -17,7 +17,7 @@ import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { oldestPendingDate } from "./ledger/snapshots.ts";
-import { detectRecurring } from "./recurring/series.ts";
+import { runRecurring } from "./recurring/pipeline.ts";
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
@@ -126,8 +126,8 @@ function refusal(syncStartedAt: number | null, now: number): AppError {
  * balance the bank does not give costs the balance alone. The connection's
  * last sync moves only when every account succeeded; its last error holds
  * the first failed account's code, else `BANK_BALANCE_UNAVAILABLE` when a
- * balance was missing. Recurring detection runs once, after every account,
- * and never fails the sync.
+ * balance was missing. The recurring pipeline runs once, after every
+ * account, and never fails the sync.
  */
 async function runSync(
 	deps: BankConnectionDeps,
@@ -287,7 +287,7 @@ async function runSync(
 
 	if (linked.length > errors.length) {
 		try {
-			await detectRecurring(deps);
+			await runRecurring(deps, { backfill: false });
 		} catch (error) {
 			// The code only: an unexpected error's message may embed bound amounts.
 			deps.logger.error({ connectionId, code: codeOf(error) }, "recurring detection failed");

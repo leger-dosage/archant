@@ -386,6 +386,7 @@
 			"create": "Créer une facture",
 			"added": "Opération ajoutée aux récurrences",
 			"member": "Cette opération fait partie de la récurrence « {{name}} ».",
+			"pays": "Paie l'échéance du {{date}} de {{name}}",
 			"open": "Voir les récurrences",
 			"none": "Cette opération ne fait partie d'aucune récurrence."
 		},
@@ -1390,6 +1391,14 @@
 			"actions": "Actions"
 		},
 		"amountRange": "varie de {{min}} à {{max}}",
+		"occurrence": {
+			"paid": "Payée",
+			"skipped": "Ignorée",
+			"missed": "Manquée",
+			"due": "À payer le {{date}}",
+			"overdue_one": "{{count}} jour de retard",
+			"overdue_other": "{{count}} jours de retard"
+		},
 		"statuses": {
 			"active": "Active",
 			"inactive": "Inactive"
@@ -2104,10 +2113,13 @@
 			"invalid_url": "Lien invalide : une adresse http ou https. Exemple : banque.fr/payer.",
 			"invalid_interval": "Indiquez un nombre entier, de 1 à 99.",
 			"invalid_count": "Indiquez un nombre entier de paiements, de 1 à 600.",
-			"sign_mismatch": "Ce type ne correspond pas au sens de l'opération : un achat sort du compte, une vente, un dividende ou des intérêts y entrent."
+			"sign_mismatch": "Ce type ne correspond pas au sens de l'opération : un achat sort du compte, une vente, un dividende ou des intérêts y entrent.",
+			"already_attached": "Cette opération paie déjà cette échéance.",
+			"split_parent": "Cette opération est divisée : rattachez plutôt l'une de ses lignes."
 		},
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"RECURRING_ALREADY_EXISTS": "Une récurrence suit déjà ce compte, ce marchand ou libellé et ce montant.",
+		"PAYMENT_EXCEEDS_TRANSACTION": "Le montant de cette opération paie déjà d'autres échéances.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
 		"NOT_AN_INVESTMENT_ACCOUNT": "Seul un compte d'investissement reçoit des ordres.",
 		"QUANTITY_UNAVAILABLE": "Le compte ne détient pas assez de ce titre : une vente, à sa date ou plus tard, dépasserait ce qu'il détient."

@@ -3,12 +3,17 @@ import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "./shared.ts";
 
 import { and, between, eq, inArray, isNull, ne, notExists, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
+import {
+	recurringAllocations,
+	recurringMatchRejections,
+} from "@archant/data/schema/recurring-occurrences";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
 import { transactions } from "@archant/data/schema/transactions";
@@ -17,6 +22,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { addDays, daysBetween } from "../../domain/dates.ts";
 import { MATCH_WINDOW_DAYS } from "../../domain/keys.ts";
 import { AppError } from "../../lib/errors.ts";
+import { refreshCloseState } from "../recurring/payments.ts";
 import { moveAttachments } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { transactionRow } from "./patch.ts";
@@ -30,6 +36,91 @@ import {
 	transferOf,
 } from "./shared.ts";
 
+const heldAllocation = alias(recurringAllocations, "held_allocation");
+const heldRejection = alias(recurringMatchRejections, "held_rejection");
+
+/**
+ * Moves the absorbed entry's recurring payments and rejections onto the
+ * survivor (AD-17), so a merge never unpays an occurrence nor suggests a
+ * refused transaction again; Sure's orphan repair has no port. Where both
+ * pay one occurrence, a confirmed payment wins over a suggestion, else the
+ * survivor's stays; a rejection the survivor holds for the series stays.
+ * Each occurrence whose payments changed has its close state refreshed.
+ */
+async function moveRecurringPayments(
+	tx: Transaction,
+	survivorId: string,
+	absorbedId: string,
+): Promise<void> {
+	const touched = await tx
+		.selectDistinct({ id: recurringAllocations.recurringOccurrenceId })
+		.from(recurringAllocations)
+		.where(eq(recurringAllocations.entryId, absorbedId));
+
+	// The survivor's suggestion gives way to the absorbed one's confirmed payment.
+	await tx.delete(recurringAllocations).where(
+		and(
+			eq(recurringAllocations.entryId, survivorId),
+			eq(recurringAllocations.state, "suggested"),
+			inArray(
+				recurringAllocations.recurringOccurrenceId,
+				tx
+					.select({ id: heldAllocation.recurringOccurrenceId })
+					.from(heldAllocation)
+					.where(
+						and(eq(heldAllocation.entryId, absorbedId), eq(heldAllocation.state, "confirmed")),
+					),
+			),
+		),
+	);
+	await tx
+		.update(recurringAllocations)
+		.set({ entryId: survivorId })
+		.where(
+			and(
+				eq(recurringAllocations.entryId, absorbedId),
+				notExists(
+					tx
+						.select({ id: heldAllocation.id })
+						.from(heldAllocation)
+						.where(
+							and(
+								eq(heldAllocation.entryId, survivorId),
+								eq(
+									heldAllocation.recurringOccurrenceId,
+									recurringAllocations.recurringOccurrenceId,
+								),
+							),
+						),
+				),
+			),
+		);
+	await tx.delete(recurringAllocations).where(eq(recurringAllocations.entryId, absorbedId));
+	await oneByOne(touched, ({ id }) => refreshCloseState(tx, id, Date.now()));
+	await tx
+		.update(recurringMatchRejections)
+		.set({ entryId: survivorId })
+		.where(
+			and(
+				eq(recurringMatchRejections.entryId, absorbedId),
+				notExists(
+					tx
+						.select({ id: heldRejection.id })
+						.from(heldRejection)
+						.where(
+							and(
+								eq(heldRejection.entryId, survivorId),
+								eq(
+									heldRejection.recurringTransactionId,
+									recurringMatchRejections.recurringTransactionId,
+								),
+							),
+						),
+				),
+			),
+		);
+}
+
 /**
  * `absorb` with an entry as its source (AD-17): a possible duplicate merged
  * by hand into the transaction it repeats. The survivor keeps every column
@@ -39,7 +130,8 @@ import {
  * survivor, and reverting that import or disconnecting treats it as a
  * matched entry. Its tags join the survivor's, past the input limit if need
  * be, and so do its attachments, past their cap: a merge never loses a
- * receipt. Its transfer moves only onto a survivor in none; otherwise it goes,
+ * receipt. Its recurring payments and rejections move, but for those the
+ * survivor already holds. Its transfer moves only onto a survivor in none; otherwise it goes,
  * and the other side is a standard transaction again. Its rejected pairs
  * move, but for those the survivor already holds. Returns the absorbed
  * one's date, where balances move; the caller recomputes them.
@@ -61,6 +153,7 @@ async function absorbEntry(
 	}
 
 	await moveAttachments(tx, absorbedId, survivorId);
+	await moveRecurringPayments(tx, survivorId, absorbedId);
 
 	const survivorInTransfer = await tx
 		.select({ id: transfers.id })

@@ -24,13 +24,17 @@ import { balanceOn } from "./ledger/balances.ts";
 import {
 	balancePages,
 	exportedAccounts,
+	exportedAllocations,
 	exportedAttachments,
 	exportedBudgetCategories,
 	exportedBudgets,
 	exportedCategories,
 	exportedGoalAccounts,
 	exportedGoals,
+	exportedMatchRejections,
 	exportedMerchants,
+	exportedOccurrences,
+	exportedPriceChanges,
 	exportedRecurrenceRules,
 	exportedRecurring,
 	exportedRejectedTransfers,
@@ -44,6 +48,7 @@ import {
 	holdingPages,
 	transactionPages,
 } from "./ledger/export.ts";
+import { parseAliases, parseSignals } from "./recurring/hints.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 export type ExportDeps = ServiceDeps & {
@@ -613,6 +618,128 @@ function sureSplitLine(line: SplitLineRow) {
 }
 
 /**
+ * Sure's `matcher_hints`, assembled from the columns that hold them: the
+ * pinned schedule, the aliases and the learned tolerance, in percent as Sure's
+ * `learned_tolerance_pct`. A hint never set is left out, as Sure's.
+ */
+function matcherHints(row: {
+	schedulePinnedAt: number | null;
+	nameAliases: unknown;
+	learnedTolerance: number | null;
+}): Record<string, unknown> {
+	const aliases = parseAliases(row.nameAliases);
+
+	return {
+		...(row.schedulePinnedAt === null
+			? {}
+			: { schedule_pinned_at: timestamp(row.schedulePinnedAt) }),
+		...(aliases.length === 0 ? {} : { name_aliases: aliases }),
+		...(row.learnedTolerance === null ? {} : { learned_tolerance_pct: row.learnedTolerance / 10 }),
+	};
+}
+
+/** Ten-thousandths as Sure's decimal confidence: 8165 is `0.8165`. */
+function confidence(tenThousandths: number): string {
+	return `${Math.trunc(tenThousandths / 10_000)}.${String(tenThousandths % 10_000).padStart(4, "0")}`;
+}
+
+/**
+ * Sure's `RecurringOccurrence`, `RecurringAllocation`,
+ * `RecurringPriceChange` and `RecurringMatchRejection` lines, in its
+ * exporter's order, after the transactions they point at, as Sure's importer
+ * replays them. A transaction too old for the archive is named by none: Sure
+ * imports such a payment without its transaction, and skips such a rejection.
+ */
+async function* recurringPaymentLines(
+	deps: ServiceDeps,
+	tooOld: ReadonlySet<string>,
+	counts: Counts,
+) {
+	const transactionOf = (entryId: string | null) =>
+		entryId === null || tooOld.has(entryId) ? null : entryId;
+
+	yield ndjson(
+		(await exportedOccurrences(deps.db)).map((row) => ({
+			type: "RecurringOccurrence",
+			data: {
+				id: row.id,
+				recurring_transaction_id: row.recurringTransactionId,
+				original_due_on: row.originalDueOn,
+				due_on: row.dueOn,
+				currency: row.currency,
+				expected_amount:
+					row.expectedAmount === null
+						? null
+						: decimal(toMinorUnits(row.expectedAmount), row.currency),
+				status: row.status,
+				snoozed_until: row.snoozedUntil,
+				closed_at: row.closedAt === null ? null : timestamp(row.closedAt),
+				closed_source: row.closedSource,
+				notes: row.notes,
+			},
+		})),
+		counts,
+	);
+	yield ndjson(
+		(await exportedAllocations(deps.db)).map((row) => {
+			const amount = decimal(toMinorUnits(row.allocatedAmount), row.currency);
+
+			return {
+				type: "RecurringAllocation",
+				data: {
+					id: row.id,
+					recurring_occurrence_id: row.recurringOccurrenceId,
+					transaction_id: transactionOf(row.entryId),
+					allocated_amount: amount,
+					currency: row.currency,
+					// One currency per account (AD-6): a transaction pays in the occurrence's.
+					source_amount: row.entryId === null ? null : amount,
+					source_currency: row.entryId === null ? null : row.currency,
+					state: row.state,
+					source: row.source,
+					match_confidence: row.matchConfidence === null ? null : confidence(row.matchConfidence),
+					match_signals: Object.fromEntries(
+						Object.entries(parseSignals(row.matchSignals)).map(([signal, value]) => [
+							signal,
+							Number(confidence(value ?? 0)),
+						]),
+					),
+					paid_on: row.paidOn,
+				},
+			};
+		}),
+		counts,
+	);
+	yield ndjson(
+		(await exportedPriceChanges(deps.db)).map((row) => ({
+			type: "RecurringPriceChange",
+			data: {
+				id: row.id,
+				recurring_transaction_id: row.recurringTransactionId,
+				effective_on: row.effectiveOn,
+				previous_amount: decimal(toMinorUnits(row.previousAmount), row.currency),
+				new_amount: decimal(toMinorUnits(row.newAmount), row.currency),
+				currency: row.currency,
+				source: "detected",
+				transaction_id: transactionOf(row.entryId),
+			},
+		})),
+		counts,
+	);
+	yield ndjson(
+		(await exportedMatchRejections(deps.db)).map((row) => ({
+			type: "RecurringMatchRejection",
+			data: {
+				id: row.id,
+				recurring_transaction_id: row.recurringTransactionId,
+				transaction_id: transactionOf(row.entryId),
+			},
+		})),
+		counts,
+	);
+}
+
+/**
  * `all.ndjson`, in the order Sure's importer reads its types, so each line's
  * references exist by the time it is imported. Sure's keys carry what Sure
  * can represent; the rest of a row goes under `archant`, which Sure's
@@ -751,10 +878,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				anchor_date: row.anchorDate,
 				end_mode: row.endAfterCount === null ? "never" : "after_count",
 				end_after_count: row.endAfterCount,
-				matcher_hints:
-					row.schedulePinnedAt === null
-						? {}
-						: { schedule_pinned_at: timestamp(row.schedulePinnedAt) },
+				matcher_hints: matcherHints(row),
 				dedup_scope: row.dedupScope,
 				created_at: timestamp(row.createdAt),
 				updated_at: timestamp(row.updatedAt),
@@ -844,6 +968,8 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 			counts,
 		);
 	}
+
+	yield* recurringPaymentLines(deps, tooOld, counts);
 
 	yield ndjson(
 		sureTransfers.map((transfer) => ({

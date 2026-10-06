@@ -400,6 +400,13 @@
       "when": 1791225301062,
       "tag": "0056_add_bills",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1791277626522,
+      "tag": "0057_add_recurring_occurrences",
+      "breakpoints": true
     }
   ]
 }

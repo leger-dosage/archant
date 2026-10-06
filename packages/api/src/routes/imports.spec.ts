@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { purgeStalePreviews } from "../services/imports.ts";
-import * as recurringService from "../services/recurring/series.ts";
+import * as recurringService from "../services/recurring/pipeline.ts";
 import {
 	balanceOf,
 	balanceOnDay,
@@ -239,9 +239,9 @@ describe("POST /api/imports/:id/confirm", () => {
 	});
 
 	it("answers 200 when detection throws, and logs the import id and code only", async () => {
-		vi.spyOn(recurringService, "detectRecurring").mockRejectedValue(
-			new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"),
-		);
+		const run = vi
+			.spyOn(recurringService, "runRecurring")
+			.mockRejectedValue(new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"));
 		const { app, db, account } = await ownRecurringAccount();
 
 		const { id, status } = await confirmOwnImport(app, account.id);
@@ -259,6 +259,7 @@ describe("POST /api/imports/:id/confirm", () => {
 			}),
 		]);
 		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
+		expect(run).toHaveBeenCalledWith(expect.anything(), { backfill: false });
 	});
 });
 
@@ -278,9 +279,9 @@ describe("POST /api/imports/:id/revert and recurring detection", () => {
 		const { app, db, account } = await ownRecurringAccount();
 		const { id } = await confirmOwnImport(app, account.id);
 		clearLogLines();
-		vi.spyOn(recurringService, "detectRecurring").mockRejectedValue(
-			new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"),
-		);
+		const run = vi
+			.spyOn(recurringService, "runRecurring")
+			.mockRejectedValue(new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"));
 
 		const response = await app.request(`/api/imports/${id}/revert`, { method: "POST" });
 
@@ -297,6 +298,7 @@ describe("POST /api/imports/:id/revert and recurring detection", () => {
 			}),
 		]);
 		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
+		expect(run).toHaveBeenCalledWith(expect.anything(), { backfill: false });
 	});
 });
 

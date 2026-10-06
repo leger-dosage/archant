@@ -123,6 +123,12 @@ export const ERROR_STATUSES = {
 	 * `already_exists`. Nothing is written.
 	 */
 	RECURRING_ALREADY_EXISTS: 409,
+	/**
+	 * A transaction attached to an occurrence once its whole amount already
+	 * pays other occurrences: a payment never exceeds its transaction, as
+	 * Sure's `over_allocated`. Nothing is written.
+	 */
+	PAYMENT_EXCEEDS_TRANSACTION: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

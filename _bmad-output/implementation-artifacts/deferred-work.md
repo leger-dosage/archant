@@ -319,3 +319,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-23-1-find-recurring-payments-as-sure-does-today.md`
   summary: The transaction sheet and « Ajouter aux récurrences » pick a series of the row's key by exact amount, else the latest, rather than the tier the identifier would claim.
   evidence: maybe-false, low to medium if true. `seriesOfTransaction` in `services/recurring/series.ts` predates Story 23.1 (Spec 11.8). With two tiers of one merchant a row may name the wrong one; settle it with a two-tier test once Story 23.3's matcher links a payment to its occurrence.
+- source_spec: `_bmad-output/implementation-artifacts/spec-23-3-occurrences-and-the-payments-that-settle-them.md`
+  summary: Re-keying a series onto a key another stored series already holds deletes it, and its occurrences, payments and price changes cascade with it.
+  evidence: medium. `detectWithin` in `services/recurring/series.ts` applies `rekey`'s `delete` step (Spec 11.8, `domain/recurring/series.ts:236`); Sure has no re-key. Moving the history onto the holder must resolve the unique (series, `original_due_on`) conflict.

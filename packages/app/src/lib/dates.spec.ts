@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	dayAndMonth,
 	MONTH_NAMES,
 	dayHeading,
 	frenchToIso,
@@ -67,6 +68,13 @@ describe("yearsAgo", () => {
 describe("toIsoMonth", () => {
 	it("is the month of the local date", () => {
 		expect(toIsoMonth(new Date(2026, 0, 31, 23, 59))).toBe("2026-01");
+	});
+});
+
+describe("dayAndMonth", () => {
+	it("writes the day and the month, whatever the zone", () => {
+		expect(dayAndMonth("2026-10-05")).toBe("5 octobre");
+		expect(dayAndMonth("2026-01-01")).toBe("1 janvier");
 	});
 });
 

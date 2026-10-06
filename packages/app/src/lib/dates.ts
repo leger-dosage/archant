@@ -125,6 +125,17 @@ export function monthLabel(month: string): string {
 	return monthYear.format(new Date(`${month}-01T00:00:00Z`));
 }
 
+const dayMonth = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	timeZone: "UTC",
+});
+
+/** `2026-10-05` as « 5 octobre », formatted at UTC midnight so no zone shifts the day. */
+export function dayAndMonth(iso: string): string {
+	return dayMonth.format(new Date(`${iso}T00:00:00Z`));
+}
+
 const monthOnly = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" });
 
 /** « janvier » to « décembre », in calendar order. */

@@ -248,6 +248,15 @@ export function occurrencesPerYear(schedule: Schedule): number {
 }
 
 /**
+ * Sure's installment plan end in `default_horizon`: `count + 1` cycles of the
+ * schedule, each rounded up to whole days, from `start`, so the horizon holds
+ * an installment's last payment.
+ */
+export function planEnd(schedule: Schedule, start: IsoDate, count: number): IsoDate {
+	return addDays(start, Math.ceil(DAYS_PER_YEAR / occurrencesPerYear(schedule)) * (count + 1));
+}
+
+/**
  * Sure's `matches_day?`: whether one of a rule's own occurrences lies within
  * 2 days of `date`, or on it exactly for a weekly rule, so an every-N cadence
  * refuses a date in the wrong cycle and an ended installment claims none.

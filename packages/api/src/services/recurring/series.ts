@@ -6,6 +6,7 @@ import type { StoredSeries } from "../../domain/recurring/series.ts";
 import type { RecurringView } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
+import type { CurrentOccurrence } from "./occurrences.ts";
 
 import { and, asc, between, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
@@ -15,6 +16,10 @@ import { toMinorUnits } from "@archant/data/money";
 import type { BillType } from "@archant/data/recurring";
 import { accounts } from "@archant/data/schema/accounts";
 import { merchants } from "@archant/data/schema/merchants";
+import {
+	recurringAllocations,
+	recurringOccurrences,
+} from "@archant/data/schema/recurring-occurrences";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
@@ -42,6 +47,7 @@ import {
 import { AppError } from "../../lib/errors.ts";
 import { findTransaction } from "../ledger/queries.ts";
 import { ruleCandidates } from "../ledger/rule-plans.ts";
+import { backfillOccurrences, currentOccurrences, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules, rulesBySeries } from "./rules.ts";
 
 export type DetectionResult = { detected: number };
@@ -81,6 +87,8 @@ export type RecurringRecord = {
 	rules: RecurrenceRule[];
 	/** The rules as the frequency picker reads them. */
 	frequency: Frequency;
+	/** The earliest open occurrence, else the latest; `null` before the first. */
+	currentOccurrence: CurrentOccurrence | null;
 };
 
 // Twenty-eight columns a row: 500 rows bind 14 000 parameters, below SQLite's
@@ -200,7 +208,8 @@ export async function merchantNames(db: Pick<Transaction, "select">): Promise<Ma
 
 /**
  * Applies Sure's `Cleaner` to `stored`: stale active series become inactive,
- * suggestions with no transaction left go. Returns how many became inactive.
+ * suggestions with no transaction left go. A series made inactive loses its
+ * future occurrences, as any status change. Returns how many became inactive.
  */
 async function clean(
 	tx: Transaction,
@@ -220,6 +229,7 @@ async function clean(
 	await oneByOne(chunks(steps.deleted, IDS_PER_UPDATE), (ids) =>
 		tx.delete(recurringTransactions).where(inArray(recurringTransactions.id, ids)),
 	);
+	await regenerateFuture(tx, steps.inactive, day);
 
 	return steps.inactive.length;
 }
@@ -241,225 +251,222 @@ async function clean(
  * a series. Then every other series but the ended ones is recomputed from its
  * current transactions (`refreshSeries`), Sure's manual pass among them, so a
  * revert or a delete never leaves counts and dates built on rows that are
- * gone. Last, Sure's `Cleaner` runs. Reads and writes in one write
- * transaction, so two detections racing each other cannot insert the same
- * pattern twice.
+ * gone. Last, Sure's `Cleaner` runs. A series whose plain monthly rule
+ * follows a new day has its future occurrences rebuilt on it. The first step
+ * of `runRecurring`, inside its immediate transaction, so two detections
+ * racing each other cannot insert the same pattern twice.
  */
-export async function detectRecurring(deps: ServiceDeps): Promise<DetectionResult> {
-	const day = today(deps.timeZone);
+export async function detectWithin(tx: Transaction, day: IsoDate): Promise<DetectionResult> {
+	const { candidates, detectable, creditCards } = await loadCandidates(tx, day);
+	const names = await merchantNames(tx);
+	const now = Date.now();
+	const rekeyed = rekey(await loadSeries(tx), candidates, day);
 
-	return deps.db.transaction(
-		async (tx) => {
-			const { candidates, detectable, creditCards } = await loadCandidates(tx, day);
-			const names = await merchantNames(tx);
-			const now = Date.now();
-			const rekeyed = rekey(await loadSeries(tx), candidates, day);
+	// In order: a move may take a key a delete just freed.
+	await oneByOne(rekeyed.steps, (step) =>
+		step.kind === "delete"
+			? tx.delete(recurringTransactions).where(eq(recurringTransactions.id, step.id))
+			: tx
+					.update(recurringTransactions)
+					.set({
+						merchantId: step.merchantId,
+						labelKey: step.labelKey,
+						label: step.label,
+						updatedAt: now,
+					})
+					.where(eq(recurringTransactions.id, step.id)),
+	);
 
-			// In order: a move may take a key a delete just freed.
-			await oneByOne(rekeyed.steps, (step) =>
-				step.kind === "delete"
-					? tx.delete(recurringTransactions).where(eq(recurringTransactions.id, step.id))
-					: tx
-							.update(recurringTransactions)
-							.set({
-								merchantId: step.merchantId,
-								labelKey: step.labelKey,
-								label: step.label,
-								updatedAt: now,
-							})
-							.where(eq(recurringTransactions.id, step.id)),
-			);
+	const patterns = detectPatterns(detectable, day);
+	// What the series stand as after each write, read by the passes that follow.
+	const current = new Map(rekeyed.stored.map((series) => [series.id, series]));
+	const claimed = new Set<string>();
+	const rulesMoved = new Set<string>();
+	let tombstoned = 0;
+	const created = new Map<string, Classification | null>();
 
-			const patterns = detectPatterns(detectable, day);
-			// What the series stand as after each write, read by the passes that follow.
-			const current = new Map(rekeyed.stored.map((series) => [series.id, series]));
-			const claimed = new Set<string>();
-			const rulesMoved = new Set<string>();
-			let tombstoned = 0;
-			const created = new Map<string, Classification | null>();
+	for (const pattern of patterns) {
+		const series = claimOf(pattern, [...current.values()]);
+		const band = {
+			expectedAmountMin: pattern.expectedAmountMin,
+			expectedAmountMax: pattern.expectedAmountMax,
+			expectedAmountAvg: pattern.expectedAmountAvg,
+		};
 
-			for (const pattern of patterns) {
-				const series = claimOf(pattern, [...current.values()]);
-				const band = {
-					expectedAmountMin: pattern.expectedAmountMin,
-					expectedAmountMax: pattern.expectedAmountMax,
-					expectedAmountAvg: pattern.expectedAmountAvg,
-				};
-
-				if (series !== undefined) {
-					// The owner settled these: an ended one is a tombstone, a manual one
-					// follows its own pass.
-					if (series.status === "ended") {
-						tombstoned += 1;
-						continue;
-					}
-
-					if (series.manual) {
-						continue;
-					}
-
-					const pinned = series.schedulePinnedAt !== null;
-					const moved = pinned
-						? null
-						: syncMonthlyRuleDay(series.rules, pattern.expectedDayOfMonth);
-					const updated: StoredSeries = {
-						...series,
-						...band,
-						label: pattern.label,
-						expectedDayOfMonth: pinned ? series.expectedDayOfMonth : pattern.expectedDayOfMonth,
-						rules: moved ?? series.rules,
-						lastOccurrenceDate: pattern.lastOccurrenceDate,
-						occurrenceCount: pattern.occurrenceCount,
-					};
-					const next = nextExpectedDate(updated, pattern.lastOccurrenceDate);
-
-					if (moved !== null) {
-						rulesMoved.add(series.id);
-					}
-
-					claimed.add(series.id);
-					current.set(series.id, {
-						...updated,
-						nextExpectedDate: isKept(series) ? currentNextDate(updated, next, day) : next,
-					});
-					continue;
-				}
-
-				const sharesKey = [...current.values()].some(
-					(other) =>
-						other.accountId === pattern.accountId &&
-						other.currency === pattern.currency &&
-						other.merchantId === pattern.merchantId &&
-						other.labelKey === pattern.labelKey,
-				);
-				const fresh: StoredSeries = {
-					...band,
-					id: crypto.randomUUID(),
-					accountId: pattern.accountId,
-					merchantId: pattern.merchantId,
-					labelKey: pattern.labelKey,
-					label: pattern.label,
-					amount: pattern.amount,
-					currency: pattern.currency,
-					status: "suggested",
-					manual: false,
-					// A second tier of one key, as Sure's `identity_conditions`.
-					dedupScope: sharesKey ? String(pattern.expectedAmountAvg) : "",
-					expectedDayOfMonth: pattern.expectedDayOfMonth,
-					rules: [monthlyOn(pattern.expectedDayOfMonth)],
-					anchorDate: null,
-					endAfterCount: null,
-					schedulePinnedAt: null,
-					lastOccurrenceDate: pattern.lastOccurrenceDate,
-					nextExpectedDate: pattern.lastOccurrenceDate,
-					occurrenceCount: pattern.occurrenceCount,
-				};
-
-				current.set(fresh.id, {
-					...fresh,
-					nextExpectedDate: nextExpectedDate(fresh, pattern.lastOccurrenceDate),
-				});
-				claimed.add(fresh.id);
-				// An inflow is an income, with no category and no autopay, as Sure's
-				// `create_suggested_series`.
-				created.set(
-					fresh.id,
-					pattern.amount > 0
-						? null
-						: classify({
-								name:
-									(pattern.merchantId === null ? undefined : names.get(pattern.merchantId)) ??
-									pattern.label,
-								rows: pattern.rows,
-								currency: pattern.currency,
-								creditCard: creditCards.has(pattern.accountId),
-							}),
-				);
+		if (series !== undefined) {
+			// The owner settled these: an ended one is a tombstone, a manual one
+			// follows its own pass.
+			if (series.status === "ended") {
+				tombstoned += 1;
+				continue;
 			}
 
-			// From where the run left them: a later pattern may claim a series an
-			// earlier one created, as Sure's `update_claimed_series` after `create!`.
-			const inserts = [...created].map(([id, classification]) => {
-				const {
-					rules: _rules,
-					anchorDate: _anchor,
-					endAfterCount: _count,
-					schedulePinnedAt: _pinned,
-					...series
-				} = current.get(id)!;
+			if (series.manual) {
+				continue;
+			}
 
-				return {
-					...series,
-					billType: classification?.billType ?? ("income" as const),
-					categoryId: classification?.categoryId ?? null,
-					autopay: classification?.autopay ?? false,
-					createdAt: now,
+			const pinned = series.schedulePinnedAt !== null;
+			const moved = pinned ? null : syncMonthlyRuleDay(series.rules, pattern.expectedDayOfMonth);
+			const updated: StoredSeries = {
+				...series,
+				...band,
+				label: pattern.label,
+				expectedDayOfMonth: pinned ? series.expectedDayOfMonth : pattern.expectedDayOfMonth,
+				rules: moved ?? series.rules,
+				lastOccurrenceDate: pattern.lastOccurrenceDate,
+				occurrenceCount: pattern.occurrenceCount,
+			};
+			const next = nextExpectedDate(updated, pattern.lastOccurrenceDate);
+
+			if (moved !== null) {
+				rulesMoved.add(series.id);
+			}
+
+			claimed.add(series.id);
+			current.set(series.id, {
+				...updated,
+				nextExpectedDate: isKept(series) ? currentNextDate(updated, next, day) : next,
+			});
+			continue;
+		}
+
+		const sharesKey = [...current.values()].some(
+			(other) =>
+				other.accountId === pattern.accountId &&
+				other.currency === pattern.currency &&
+				other.merchantId === pattern.merchantId &&
+				other.labelKey === pattern.labelKey,
+		);
+		const fresh: StoredSeries = {
+			...band,
+			id: crypto.randomUUID(),
+			accountId: pattern.accountId,
+			merchantId: pattern.merchantId,
+			labelKey: pattern.labelKey,
+			label: pattern.label,
+			amount: pattern.amount,
+			currency: pattern.currency,
+			status: "suggested",
+			manual: false,
+			// A second tier of one key, as Sure's `identity_conditions`.
+			dedupScope: sharesKey ? String(pattern.expectedAmountAvg) : "",
+			expectedDayOfMonth: pattern.expectedDayOfMonth,
+			rules: [monthlyOn(pattern.expectedDayOfMonth)],
+			anchorDate: null,
+			endAfterCount: null,
+			schedulePinnedAt: null,
+			lastOccurrenceDate: pattern.lastOccurrenceDate,
+			nextExpectedDate: pattern.lastOccurrenceDate,
+			occurrenceCount: pattern.occurrenceCount,
+		};
+
+		current.set(fresh.id, {
+			...fresh,
+			nextExpectedDate: nextExpectedDate(fresh, pattern.lastOccurrenceDate),
+		});
+		claimed.add(fresh.id);
+		// An inflow is an income, with no category and no autopay, as Sure's
+		// `create_suggested_series`.
+		created.set(
+			fresh.id,
+			pattern.amount > 0
+				? null
+				: classify({
+						name:
+							(pattern.merchantId === null ? undefined : names.get(pattern.merchantId)) ??
+							pattern.label,
+						rows: pattern.rows,
+						currency: pattern.currency,
+						creditCard: creditCards.has(pattern.accountId),
+					}),
+		);
+	}
+
+	// From where the run left them: a later pattern may claim a series an
+	// earlier one created, as Sure's `update_claimed_series` after `create!`.
+	const inserts = [...created].map(([id, classification]) => {
+		const {
+			rules: _rules,
+			anchorDate: _anchor,
+			endAfterCount: _count,
+			schedulePinnedAt: _pinned,
+			...series
+		} = current.get(id)!;
+
+		return {
+			...series,
+			billType: classification?.billType ?? ("income" as const),
+			categoryId: classification?.categoryId ?? null,
+			autopay: classification?.autopay ?? false,
+			createdAt: now,
+			updatedAt: now,
+		};
+	});
+
+	await oneByOne(
+		[...claimed].filter((id) => !created.has(id)),
+		async (id) => {
+			const series = current.get(id)!;
+
+			await tx
+				.update(recurringTransactions)
+				.set({
+					label: series.label,
+					expectedAmountMin: series.expectedAmountMin,
+					expectedAmountMax: series.expectedAmountMax,
+					expectedAmountAvg: series.expectedAmountAvg,
+					expectedDayOfMonth: series.expectedDayOfMonth,
+					lastOccurrenceDate: series.lastOccurrenceDate,
+					nextExpectedDate: series.nextExpectedDate,
+					occurrenceCount: series.occurrenceCount,
 					updatedAt: now,
-				};
-			});
+				})
+				.where(eq(recurringTransactions.id, id));
 
-			await oneByOne(
-				[...claimed].filter((id) => !created.has(id)),
-				async (id) => {
-					const series = current.get(id)!;
-
-					await tx
-						.update(recurringTransactions)
-						.set({
-							label: series.label,
-							expectedAmountMin: series.expectedAmountMin,
-							expectedAmountMax: series.expectedAmountMax,
-							expectedAmountAvg: series.expectedAmountAvg,
-							expectedDayOfMonth: series.expectedDayOfMonth,
-							lastOccurrenceDate: series.lastOccurrenceDate,
-							nextExpectedDate: series.nextExpectedDate,
-							occurrenceCount: series.occurrenceCount,
-							updatedAt: now,
-						})
-						.where(eq(recurringTransactions.id, id));
-
-					if (rulesMoved.has(id)) {
-						await replaceRules(tx, id, series.rules);
-					}
-				},
-			);
-			await oneByOne(chunks(inserts, ROWS_PER_INSERT), (chunk) =>
-				tx.insert(recurringTransactions).values(chunk),
-			);
-			await insertRules(
-				tx,
-				[...created.keys()].map((id) => ({ id, rules: current.get(id)!.rules })),
-			);
-
-			const refreshes = [...current.values()]
-				.filter((series) => series.status !== "ended" && !claimed.has(series.id))
-				.map((series) => ({ series, refresh: refreshSeries(series, candidates, day) }));
-
-			await oneByOne(refreshes, ({ series, refresh }) => {
-				if (refresh.kind === "delete") {
-					current.delete(series.id);
-
-					return tx.delete(recurringTransactions).where(eq(recurringTransactions.id, series.id));
-				}
-
-				const { kind: _kind, band, ...dates } = refresh;
-				const updated = { ...series, ...dates, ...band };
-
-				current.set(series.id, updated);
-
-				return tx
-					.update(recurringTransactions)
-					.set({ ...dates, ...band, updatedAt: now })
-					.where(eq(recurringTransactions.id, series.id));
-			});
-
-			await clean(tx, [...current.values()], candidates, day, now);
-
-			// A pattern an ended series claims is not offered again, so it is not counted.
-			return { detected: patterns.length - tombstoned };
+			if (rulesMoved.has(id)) {
+				await replaceRules(tx, id, series.rules);
+			}
 		},
-		{ behavior: "immediate" },
 	);
+	await oneByOne(chunks(inserts, ROWS_PER_INSERT), (chunk) =>
+		tx.insert(recurringTransactions).values(chunk),
+	);
+	await insertRules(
+		tx,
+		[...created.keys()].map((id) => ({ id, rules: current.get(id)!.rules })),
+	);
+
+	const refreshes = [...current.values()]
+		.filter((series) => series.status !== "ended" && !claimed.has(series.id))
+		.map((series) => ({ series, refresh: refreshSeries(series, candidates, day) }));
+
+	await oneByOne(refreshes, ({ series, refresh }) => {
+		if (refresh.kind === "delete") {
+			current.delete(series.id);
+
+			return tx.delete(recurringTransactions).where(eq(recurringTransactions.id, series.id));
+		}
+
+		const { kind: _kind, band, ...dates } = refresh;
+		const updated = { ...series, ...dates, ...band };
+
+		current.set(series.id, updated);
+
+		return tx
+			.update(recurringTransactions)
+			.set({ ...dates, ...band, updatedAt: now })
+			.where(eq(recurringTransactions.id, series.id));
+	});
+
+	await clean(tx, [...current.values()], candidates, day, now);
+	await regenerateFuture(
+		tx,
+		[...rulesMoved].filter((id) => current.has(id)),
+		day,
+	);
+
+	// A pattern an ended series claims is not offered again, so it is not counted.
+	return { detected: patterns.length - tombstoned };
 }
 
 /**
@@ -517,7 +524,7 @@ function selectRecords(db: Pick<ServiceDeps["db"], "select">) {
 
 type RecordRow = Omit<
 	RecurringRecord,
-	"amount" | "expectedAmountMin" | "expectedAmountMax" | "rules" | "frequency"
+	"amount" | "expectedAmountMin" | "expectedAmountMax" | "rules" | "frequency" | "currentOccurrence"
 > & {
 	amount: number;
 	expectedAmountMin: number | null;
@@ -526,16 +533,17 @@ type RecordRow = Omit<
 
 /**
  * Rows as SQLite returns them, their amounts plain integers until
- * `toMinorUnits`, with their rules and the frequency the picker reads them as.
+ * `toMinorUnits`, with their rules, the frequency the picker reads them as,
+ * and their current occurrence on `day`.
  */
 async function toRecords(
 	db: Pick<ServiceDeps["db"], "select">,
 	rows: readonly RecordRow[],
+	day: IsoDate,
 ): Promise<RecurringRecord[]> {
-	const rules = await rulesBySeries(
-		db,
-		rows.map((row) => row.id),
-	);
+	const ids = rows.map((row) => row.id);
+	const rules = await rulesBySeries(db, ids);
+	const occurrences = await currentOccurrences(db, ids, day);
 
 	return rows.map((row) => {
 		// Sure's implicit rule, for a series that would have none.
@@ -548,18 +556,19 @@ async function toRecords(
 			expectedAmountMax: nullableMinor(row.expectedAmountMax),
 			rules: own,
 			frequency: detectFrequency(own),
+			currentOccurrence: occurrences.get(row.id) ?? null,
 		};
 	});
 }
 
-export async function getRecord(db: Pick<ServiceDeps["db"], "select">, id: string) {
+export async function getRecord(db: Pick<ServiceDeps["db"], "select">, id: string, day: IsoDate) {
 	const row = await selectRecords(db).where(eq(recurringTransactions.id, id)).get();
 
 	if (row === undefined) {
 		throw notFound("recurring transaction");
 	}
 
-	const [record] = await toRecords(db, [row]);
+	const [record] = await toRecords(db, [row], day);
 
 	return record!;
 }
@@ -586,11 +595,11 @@ export async function listRecurring(
 	deps: ServiceDeps,
 	filter?: RecurringFilter,
 ): Promise<RecurringRecord[]> {
-	const from = today(deps.timeZone);
+	const day = today(deps.timeZone);
 	const window =
 		filter?.withinDays === undefined
 			? undefined
-			: between(recurringTransactions.nextExpectedDate, from, addDays(from, filter.withinDays));
+			: between(recurringTransactions.nextExpectedDate, day, addDays(day, filter.withinDays));
 	const rows = await selectRecords(deps.db)
 		.where(
 			and(
@@ -607,22 +616,26 @@ export async function listRecurring(
 			asc(recurringTransactions.id),
 		);
 
-	return toRecords(deps.db, rows);
+	return toRecords(deps.db, rows, day);
 }
 
 /**
  * Sure's moves: a suggestion is added or dismissed, an active series paused,
  * an inactive or ended one resumed; any other move is refused. An activated
  * series' past next date moves to its schedule's first date from today on.
+ * Its future occurrences follow the status, and a suggestion the owner adds
+ * gets six months of history, as Sure's `confirm`.
  */
 export async function setRecurringStatus(
 	deps: ServiceDeps,
 	id: string,
 	status: RecurringStatus,
 ): Promise<RecurringRecord> {
+	const day = today(deps.timeZone);
+
 	return deps.db.transaction(
 		async (tx) => {
-			const current = await getRecord(tx, id);
+			const current = await getRecord(tx, id, day);
 
 			if (!ALLOWED_FROM[status].includes(current.status)) {
 				throw invalid("status");
@@ -630,15 +643,20 @@ export async function setRecurringStatus(
 
 			const nextDate =
 				status === "active"
-					? currentNextDate(current, current.nextExpectedDate, today(deps.timeZone))
+					? currentNextDate(current, current.nextExpectedDate, day)
 					: current.nextExpectedDate;
 
 			await tx
 				.update(recurringTransactions)
 				.set({ status, nextExpectedDate: nextDate, updatedAt: Date.now() })
 				.where(eq(recurringTransactions.id, id));
+			await regenerateFuture(tx, [id], day);
 
-			return { ...current, status, nextExpectedDate: nextDate };
+			if (current.status === "suggested" && status === "active") {
+				await backfillOccurrences(tx, day, [id]);
+			}
+
+			return getRecord(tx, id, day);
 		},
 		{ behavior: "immediate" },
 	);
@@ -646,19 +664,25 @@ export async function setRecurringStatus(
 
 /**
  * « Supprimer »: a manual series is deleted, a detected one ended, so the
- * next detection claims it rather than suggest it again.
+ * next detection claims it rather than suggest it again; its future
+ * occurrences go with the status.
  */
 export async function deleteRecurring(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	const day = today(deps.timeZone);
+
 	return deps.db.transaction(
 		async (tx) => {
-			const current = await getRecord(tx, id);
+			const current = await getRecord(tx, id, day);
 
-			await (current.manual
-				? tx.delete(recurringTransactions).where(eq(recurringTransactions.id, id))
-				: tx
-						.update(recurringTransactions)
-						.set({ status: "ended", updatedAt: Date.now() })
-						.where(eq(recurringTransactions.id, id)));
+			if (current.manual) {
+				await tx.delete(recurringTransactions).where(eq(recurringTransactions.id, id));
+			} else {
+				await tx
+					.update(recurringTransactions)
+					.set({ status: "ended", updatedAt: Date.now() })
+					.where(eq(recurringTransactions.id, id));
+				await regenerateFuture(tx, [id], day);
+			}
 
 			return { id };
 		},
@@ -752,21 +776,54 @@ async function transactionOf(deps: ServiceDeps, entryId: string) {
 	return transaction;
 }
 
+/** The occurrence a transaction's confirmed payment settles, as the sheet names it. */
+type PaidOccurrence = { id: string; dueOn: IsoDate };
+
+/** A transaction's series, with the occurrence the transaction pays. */
+export type EntryRecurring = RecurringRecord & { pays: PaidOccurrence | null };
+
 /**
- * The series a transaction belongs to, for the sheet: the row not ended
- * of its account and key, the one of its amount first, else the latest.
- * `null` when there is none.
+ * The series a transaction belongs to, for the sheet. A transaction in a
+ * confirmed payment belongs to that payment's series, and names the
+ * occurrence it pays, the earliest when it pays several; any other belongs
+ * to the row not ended of its account and key, the one of its amount first,
+ * else the latest. `null` when there is none.
  */
 export async function recurringOfEntry(
 	deps: ServiceDeps,
 	entryId: string,
-): Promise<RecurringRecord | null> {
+): Promise<EntryRecurring | null> {
 	const transaction = await transactionOf(deps, entryId);
+	const day = today(deps.timeZone);
+	const paid = await deps.db
+		.select({
+			id: recurringOccurrences.id,
+			dueOn: recurringOccurrences.dueOn,
+			seriesId: recurringOccurrences.recurringTransactionId,
+		})
+		.from(recurringAllocations)
+		.innerJoin(
+			recurringOccurrences,
+			eq(recurringOccurrences.id, recurringAllocations.recurringOccurrenceId),
+		)
+		.where(
+			and(eq(recurringAllocations.entryId, entryId), eq(recurringAllocations.state, "confirmed")),
+		)
+		.orderBy(asc(recurringOccurrences.dueOn), asc(recurringOccurrences.id))
+		.get();
+
+	if (paid !== undefined) {
+		return {
+			...(await getRecord(deps.db, paid.seriesId, day)),
+			pays: { id: paid.id, dueOn: paid.dueOn },
+		};
+	}
+
 	const found = (await seriesOfTransaction(deps.db, transaction)).find(
 		(row) => row.status !== "ended",
 	);
 
-	return found === undefined ? null : getRecord(deps.db, found.id);
+	return found === undefined ? null : { ...(await getRecord(deps.db, found.id, day)), pays: null };
 }
 
 /**
@@ -798,7 +855,7 @@ export async function addRecurringFromEntry(
 			const [existing] = await seriesOfTransaction(tx, transaction);
 
 			if (existing !== undefined) {
-				const current = await getRecord(tx, existing.id);
+				const current = await getRecord(tx, existing.id, date);
 
 				await tx
 					.update(recurringTransactions)
@@ -808,8 +865,9 @@ export async function addRecurringFromEntry(
 						updatedAt: now,
 					})
 					.where(eq(recurringTransactions.id, existing.id));
+				await regenerateFuture(tx, [existing.id], date);
 
-				return getRecord(tx, existing.id);
+				return getRecord(tx, existing.id, date);
 			}
 
 			const id = crypto.randomUUID();
@@ -848,8 +906,9 @@ export async function addRecurringFromEntry(
 				updatedAt: now,
 			});
 			await insertRules(tx, [{ id, rules }]);
+			await regenerateFuture(tx, [id], date);
 
-			return getRecord(tx, id);
+			return getRecord(tx, id, date);
 		},
 		{ behavior: "immediate" },
 	);

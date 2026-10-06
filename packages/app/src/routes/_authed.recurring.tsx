@@ -47,6 +47,7 @@ import {
 } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
+import { dayAndMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 
@@ -94,6 +95,30 @@ function RecurringAmount({ item }: { item: RecurringData }) {
 		>
 			{t("recurring.amountRange", { min: format(low!), max: format(high!) })}
 		</span>
+	);
+}
+
+/**
+ * A series' current occurrence: « Payée » once closed, « 3 jours de retard »
+ * past its grace days, else « À payer le 5 novembre ».
+ */
+function CurrentOccurrence({
+	occurrence,
+}: {
+	occurrence: NonNullable<RecurringData["currentOccurrence"]>;
+}) {
+	const { t } = useTranslation();
+
+	if (occurrence.status !== "scheduled") {
+		return <span>{t(`recurring.occurrence.${occurrence.status}`)}</span>;
+	}
+
+	return occurrence.state === "overdue" ? (
+		<span className="text-destructive">
+			{t("recurring.occurrence.overdue", { count: occurrence.daysLate ?? 0 })}
+		</span>
+	) : (
+		<span>{t("recurring.occurrence.due", { date: dayAndMonth(occurrence.effectiveDueOn) })}</span>
 	);
 }
 
@@ -415,7 +440,11 @@ function RecurringPage() {
 												<RecurringAmount item={item} />
 											</TableCell>
 											<TableCell className="whitespace-nowrap">
-												{formatTableDate(item.nextExpectedDate)}
+												{item.currentOccurrence === null ? (
+													formatTableDate(item.nextExpectedDate)
+												) : (
+													<CurrentOccurrence occurrence={item.currentOccurrence} />
+												)}
 											</TableCell>
 											<TableCell>
 												<span className="flex items-center gap-1.5">
