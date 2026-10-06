@@ -177,6 +177,7 @@ describe("a viewer's writes", () => {
 				"PUT /api/accounts/x/holdings/x/cost-basis",
 				"DELETE /api/accounts/x/holdings/x/cost-basis",
 				"POST /api/securities/x/prices",
+				"POST /api/recurring/declare",
 				"PATCH /api/recurring/x",
 				"DELETE /api/recurring/x",
 				"POST /api/recurring/cleanup",

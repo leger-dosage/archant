@@ -7,6 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { direction } from "../cash-flow.ts";
 import { addDays, addMonths } from "../dates.ts";
 import { normalizeLabel } from "../normalize-label.ts";
+import { DAY_MATCH_TOLERANCE } from "./schedule.ts";
 
 /**
  * What detection reads of a transaction; excluded rows count, as in Sure. The
@@ -38,7 +39,7 @@ export const sameKey = (a: SeriesKey, b: SeriesKey) =>
 	a.merchantId === b.merchantId && a.labelKey === b.labelKey;
 
 /** One detected pattern: a cluster of one group's amounts that recurs on one day. */
-export type RecurringPattern = SeriesKey & {
+export type RecurringPattern<Row extends RecurringCandidate = RecurringCandidate> = SeriesKey & {
 	accountId: string;
 	/** The latest row's raw label. */
 	label: string;
@@ -54,6 +55,10 @@ export type RecurringPattern = SeriesKey & {
 	expectedDayOfMonth: number;
 	lastOccurrenceDate: IsoDate;
 	occurrenceCount: number;
+	/** The cluster's rows, in cluster order, the latest last on its day. */
+	rows: Row[];
+	/** The latest row, the last of the latest day: its label is the one shown. */
+	latest: Row;
 };
 
 // Sure's thresholds (`RecurringTransaction::Identifier` at `14638a701`).
@@ -64,8 +69,6 @@ const CIRCLE = 31;
 // Sure's `DEFAULT_TOLERANCE_PCT` of 7.5, as a fraction of a thousand so the
 // test stays on integers.
 const TOLERANCE_PER_THOUSAND = 75;
-// Sure's `Schedule::DAY_MATCH_TOLERANCE`, shared by detection and the matcher.
-const DAY_MATCH_TOLERANCE = 2;
 // Sure's `AMOUNT_VARIANCE_RATIO`: a payment may halve or double and stay the same.
 const VARIANCE_RATIO = 2;
 
@@ -114,11 +117,6 @@ export function expectedDay(days: readonly number[]): number {
 			: Math.round((rotated[middle - 1]! + rotated[middle]!) / 2);
 
 	return modulo(median + bestPivot) + 1;
-}
-
-/** Whether a date lies within Sure's 2 days of a day of the month, on the circle. */
-export function onExpectedDay(date: IsoDate, day: number): boolean {
-	return dayDistance(dayOf(date), day) <= DAY_MATCH_TOLERANCE;
 }
 
 /**
@@ -183,17 +181,20 @@ export function clusterByAmount<Row extends { amount: MinorUnits }>(rows: readon
  * Sure's `RecurringTransaction::Identifier#collect_patterns`: transactions of
  * the last three months, transfers left out, grouped by account, merchant or
  * else normalised label, and currency, then clustered by amount. A cluster of
- * three or more whose latest row is at most 45 days old and whose every day
- * lies within 2 of the expected day is a pattern. Patterns come group by
- * group, each group's in ascending amount as Sure reads it.
+ * `minOccurrences` or more, three for detection and two for the declare
+ * dialog's starting points, as Sure's `collect_patterns`, whose latest row is
+ * at most 45 days old and whose every day lies within 2 of the expected day,
+ * on Sure's 31-day circle, is a pattern. Patterns come group by group, each
+ * group's in ascending amount as Sure reads it.
  */
-export function detectRecurring(
-	candidates: readonly RecurringCandidate[],
+export function detectRecurring<Row extends RecurringCandidate>(
+	candidates: readonly Row[],
 	today: IsoDate,
-): RecurringPattern[] {
+	minOccurrences = MIN_OCCURRENCES,
+): RecurringPattern<Row>[] {
 	const from = addMonths(today, -LOOKBACK_MONTHS);
 	const freshFrom = addDays(today, -STALE_AFTER_DAYS);
-	const groups = new Map<string, RecurringCandidate[]>();
+	const groups = new Map<string, Row[]>();
 
 	for (const candidate of candidates) {
 		if (candidate.date < from || direction(candidate) === "transfer") {
@@ -217,14 +218,14 @@ export function detectRecurring(
 	}
 
 	return [...groups.values()].flatMap((group) =>
-		clusterByAmount(group).flatMap((cluster): RecurringPattern[] => {
+		clusterByAmount(group).flatMap((cluster): RecurringPattern<Row>[] => {
 			// The last of the latest day wins, so its label is the one shown.
 			const latest = cluster.reduce((best, row) => (row.date >= best.date ? row : best));
 			const days = cluster.map((row) => dayOf(row.date));
 			const day = expectedDay(days);
 
 			if (
-				cluster.length < MIN_OCCURRENCES ||
+				cluster.length < minOccurrences ||
 				latest.date < freshFrom ||
 				!days.every((candidate) => dayDistance(candidate, day) <= DAY_MATCH_TOLERANCE)
 			) {
@@ -248,6 +249,8 @@ export function detectRecurring(
 					expectedDayOfMonth: day,
 					lastOccurrenceDate: latest.date,
 					occurrenceCount: cluster.length,
+					rows: cluster,
+					latest,
 				},
 			];
 		}),
@@ -268,7 +271,10 @@ export type ClaimableSeries = SeriesKey & {
  * The first wins a tie, as Ruby's `min_by`.
  */
 export function claimOf<Series extends ClaimableSeries>(
-	pattern: RecurringPattern,
+	pattern: Pick<
+		RecurringPattern,
+		"accountId" | "currency" | "merchantId" | "labelKey" | "occurrenceCount" | "amountTotal"
+	>,
 	stored: readonly Series[],
 ): Series | undefined {
 	const count = pattern.occurrenceCount;

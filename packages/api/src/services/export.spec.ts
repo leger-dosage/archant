@@ -53,6 +53,7 @@ const TYPE_ORDER = [
 	"Tag",
 	"Merchant",
 	"RecurringTransaction",
+	"RecurrenceRule",
 	"Transaction",
 	"Transfer",
 	"RejectedTransfer",
@@ -1311,6 +1312,71 @@ describe("exportArchive", () => {
 				expected_amount_avg: "571.29",
 				status: "suggested",
 				dedup_scope: "-57129",
+			}),
+		]);
+	});
+
+	it("writes a bill's fields and its rules as Sure's lines", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		await database().run(
+			sql`insert into categories (id, name, kind, color, icon, created_at, updated_at) values ('eau', 'Eau', 'expense', '#e99537', 'tag', 0, 0)`,
+		);
+		await database().run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, name, amount, currency, expected_day_of_month, anchor_date, last_occurrence_date, next_expected_date, occurrence_count, status, manual, bill_type, category_id, autopay, notes, payment_url, end_after_count, schedule_pinned_at, dedup_scope, created_at, updated_at) values ('r1', ${checking.id}, 'eau', 'PRLV EAU', 'Eau', -8420, 'EUR', 10, '2026-07-10', '2026-07-10', '2026-10-10', 1, 'active', 1, 'installment', 'eau', 1, 'Contrat 4821', 'https://eau.example/payer', 4, ${Date.parse("2026-09-20T08:00:00Z")}, '-8420', 0, 0), ('r2', ${checking.id}, 'edf', 'PRLV EDF', null, -6500, 'EUR', 5, null, '2026-09-05', '2026-10-05', 3, 'suggested', 0, 'bill', null, 0, null, null, null, null, '', 1, 1)`,
+		);
+		await database().run(
+			sql`insert into recurrence_rules (id, recurring_transaction_id, frequency, interval, day_of_month, weekday, month_of_year, position) values ('x2', 'r1', 'weekly', 2, null, 3, null, 1), ('x1', 'r1', 'monthly', 3, 10, null, null, 0), ('x3', 'r2', 'yearly', 1, -1, null, 2, 0)`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("RecurringTransaction")).toEqual([
+			expect.objectContaining({
+				id: "r1",
+				name: "Eau",
+				bill_type: "installment",
+				category_id: "eau",
+				autopay: true,
+				notes: "Contrat 4821",
+				payment_url: "https://eau.example/payer",
+				anchor_date: "2026-07-10",
+				end_mode: "after_count",
+				end_after_count: 4,
+				matcher_hints: { schedule_pinned_at: "2026-09-20T08:00:00.000Z" },
+			}),
+			expect.objectContaining({
+				id: "r2",
+				name: "PRLV EDF",
+				bill_type: "bill",
+				category_id: null,
+				autopay: false,
+				payment_url: null,
+				anchor_date: null,
+				end_mode: "never",
+				end_after_count: null,
+				matcher_hints: {},
+			}),
+		]);
+		expect(archive.of("RecurrenceRule")).toEqual([
+			{
+				id: "x1",
+				recurring_transaction_id: "r1",
+				frequency: "monthly",
+				interval: 3,
+				day_of_month: 10,
+				weekday: null,
+				weekday_ordinal: null,
+				month_of_year: null,
+				position: 0,
+			},
+			expect.objectContaining({ id: "x2", frequency: "weekly", weekday: 3, position: 1 }),
+			expect.objectContaining({
+				id: "x3",
+				frequency: "yearly",
+				day_of_month: -1,
+				month_of_year: 2,
 			}),
 		]);
 	});

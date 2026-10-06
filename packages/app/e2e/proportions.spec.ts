@@ -62,7 +62,9 @@ test("recurring: the introduction heads the page, and the series sit in a table 
 
 	await page.goto("/recurring");
 
-	await expect(pageHeader(page)).toContainText("Les abonnements et factures qui reviennent");
+	await expect(pageHeader(page)).toContainText(
+		"Les abonnements, factures et revenus qui reviennent",
+	);
 	const group = await expectListGroup(page, "Toutes les récurrences");
 	const table = group.getByRole("table", { name: "Récurrences" });
 	await expect(table.getByRole("columnheader", { name: "Prochaine échéance" })).toHaveCSS(

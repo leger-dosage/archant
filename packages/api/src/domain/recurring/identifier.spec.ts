@@ -10,7 +10,6 @@ import {
 	dayDistance,
 	detectRecurring,
 	expectedDay,
-	onExpectedDay,
 	roundedMean,
 	seriesKeyOf,
 	withinBand,
@@ -47,15 +46,6 @@ describe("dayDistance", () => {
 		expect(dayDistance(1, 31)).toBe(1);
 		expect(dayDistance(1, 16)).toBe(15);
 		expect(dayDistance(1, 17)).toBe(15);
-	});
-});
-
-describe("onExpectedDay", () => {
-	it("keeps a date within 2 days of the expected day, across the month end", () => {
-		expect(onExpectedDay("2026-09-07", 5)).toBe(true);
-		expect(onExpectedDay("2026-09-08", 5)).toBe(false);
-		expect(onExpectedDay("2026-09-30", 1)).toBe(true);
-		expect(onExpectedDay("2026-09-29", 1)).toBe(false);
 	});
 });
 
@@ -166,8 +156,10 @@ describe("clusterByAmount", () => {
 });
 
 describe("detectRecurring", () => {
-	it("finds a monthly bill with its band", () => {
-		expect(detectRecurring(rows(["2026-07-05", "2026-08-05", "2026-09-05"]), TODAY)).toEqual([
+	it("finds a monthly bill with its band and its rows", () => {
+		const found = rows(["2026-07-05", "2026-08-05", "2026-09-05"]);
+
+		expect(detectRecurring(found, TODAY)).toEqual([
 			{
 				accountId: "a1",
 				merchantId: "netflix",
@@ -182,6 +174,8 @@ describe("detectRecurring", () => {
 				expectedDayOfMonth: 5,
 				lastOccurrenceDate: "2026-09-05",
 				occurrenceCount: 3,
+				rows: found,
+				latest: found[2],
 			},
 		]);
 	});
@@ -250,8 +244,11 @@ describe("detectRecurring", () => {
 		).toEqual([-1000, -2000, -4000]);
 	});
 
-	it("needs three rows", () => {
+	it("needs three rows, or as many as asked", () => {
 		expect(detectRecurring(rows(["2026-08-05", "2026-09-05"]), TODAY)).toEqual([]);
+		expect(detectRecurring(rows(["2026-08-05", "2026-09-05"]), TODAY, 2)).toMatchObject([
+			{ occurrenceCount: 2, lastOccurrenceDate: "2026-09-05" },
+		]);
 	});
 
 	it("drops a cluster whose latest row is more than 45 days old", () => {

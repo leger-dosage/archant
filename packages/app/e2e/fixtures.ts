@@ -503,6 +503,20 @@ export function apiHelpers(request: APIRequestContext) {
 			return created(await request.post("/api/recurring", { data: { entryId } }));
 		},
 
+		/** Declares a monthly bill on `firstDueOn`, as « Ajouter une facture » does. */
+		async declareBill(input: {
+			name: string;
+			amount: string;
+			accountId: string;
+			firstDueOn: string;
+		}): Promise<string> {
+			return created(
+				await request.post("/api/recurring/declare", {
+					data: { kind: "bill", frequency: { preset: "monthly" }, ...input },
+				}),
+			);
+		},
+
 		/** Runs recurring detection, as « Détecter » does. */
 		async detectRecurring(): Promise<void> {
 			const response = await request.post("/api/recurring/detect", { headers: sameOrigin });

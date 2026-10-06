@@ -117,6 +117,12 @@ export const ERROR_STATUSES = {
 	 * Nothing is written.
 	 */
 	QUANTITY_UNAVAILABLE: 409,
+	/**
+	 * A bill declared, or a series edited, onto the account, key, amount and
+	 * currency of another series with the same dedup scope, as Sure's
+	 * `already_exists`. Nothing is written.
+	 */
+	RECURRING_ALREADY_EXISTS: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
 	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */

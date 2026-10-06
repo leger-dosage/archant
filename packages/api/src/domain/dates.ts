@@ -75,6 +75,11 @@ export function daysBetween(from: IsoDate, to: IsoDate): number {
 	return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 }
 
+/** The day of the week, 0 being Sunday, as Ruby's `Date#wday`. */
+export function weekdayOf(date: IsoDate): number {
+	return new Date(`${date}T00:00:00Z`).getUTCDay();
+}
+
 export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
 	return a > b ? a : b;
 }

@@ -9,6 +9,7 @@ import {
 	monthRange,
 	startOfDay,
 	today,
+	weekdayOf,
 	withDay,
 } from "./dates.ts";
 
@@ -125,6 +126,14 @@ describe("addMonths", () => {
 		expect(addMonths("2024-02-29", -12)).toBe("2023-02-28");
 		expect(addMonths("2000-03-30", -1)).toBe("2000-02-29");
 		expect(addMonths("1900-03-30", -1)).toBe("1900-02-28");
+	});
+});
+
+describe("weekdayOf", () => {
+	it("counts from Sunday, as Ruby's `Date#wday`", () => {
+		expect(weekdayOf("2026-09-20")).toBe(0);
+		expect(weekdayOf("2026-09-21")).toBe(1);
+		expect(weekdayOf("2026-09-26")).toBe(6);
 	});
 });
 

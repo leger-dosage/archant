@@ -12,6 +12,7 @@ import { entries } from "@archant/data/schema/entries";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { merchants } from "@archant/data/schema/merchants";
+import { recurrenceRules } from "@archant/data/schema/recurrence-rules";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { ruleActions, ruleConditions, rules } from "@archant/data/schema/rules";
@@ -95,8 +96,27 @@ export const EXPORTED_COLUMNS = {
 		status: recurringTransactions.status,
 		manual: recurringTransactions.manual,
 		dedupScope: recurringTransactions.dedupScope,
+		name: recurringTransactions.name,
+		anchorDate: recurringTransactions.anchorDate,
+		endAfterCount: recurringTransactions.endAfterCount,
+		billType: recurringTransactions.billType,
+		categoryId: recurringTransactions.categoryId,
+		autopay: recurringTransactions.autopay,
+		notes: recurringTransactions.notes,
+		paymentUrl: recurringTransactions.paymentUrl,
+		schedulePinnedAt: recurringTransactions.schedulePinnedAt,
 		createdAt: recurringTransactions.createdAt,
 		updatedAt: recurringTransactions.updatedAt,
+	},
+	recurrence_rules: {
+		id: recurrenceRules.id,
+		recurringTransactionId: recurrenceRules.recurringTransactionId,
+		frequency: recurrenceRules.frequency,
+		interval: recurrenceRules.interval,
+		dayOfMonth: recurrenceRules.dayOfMonth,
+		weekday: recurrenceRules.weekday,
+		monthOfYear: recurrenceRules.monthOfYear,
+		position: recurrenceRules.position,
 	},
 	entries: {
 		id: entries.id,
@@ -436,6 +456,22 @@ export function exportedRecurring(db: Reader) {
 		.select(EXPORTED_COLUMNS.recurring_transactions)
 		.from(recurringTransactions)
 		.orderBy(asc(recurringTransactions.createdAt), asc(recurringTransactions.id));
+}
+
+/** Each series' rules, by series and position, as Sure's `RecurrenceRule` lines. */
+export function exportedRecurrenceRules(db: Reader) {
+	return db
+		.select(EXPORTED_COLUMNS.recurrence_rules)
+		.from(recurrenceRules)
+		.innerJoin(
+			recurringTransactions,
+			eq(recurringTransactions.id, recurrenceRules.recurringTransactionId),
+		)
+		.orderBy(
+			asc(recurringTransactions.createdAt),
+			asc(recurringTransactions.id),
+			asc(recurrenceRules.position),
+		);
 }
 
 /** The tag ids of each transaction of `ids`, sorted. */

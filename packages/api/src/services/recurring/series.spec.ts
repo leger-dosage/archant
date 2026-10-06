@@ -5,7 +5,9 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
+import { recurrenceRules } from "@archant/data/schema/recurrence-rules";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
@@ -19,6 +21,7 @@ import { findTransaction } from "../ledger/queries.ts";
 import { recordSnapshot } from "../ledger/snapshots.ts";
 import { splitTransaction } from "../ledger/splits.ts";
 import { applyRules, createRule } from "../rules.ts";
+import { declareBill, editBill } from "./bills.ts";
 import {
 	addRecurringFromEntry,
 	cleanupRecurring,
@@ -176,6 +179,15 @@ describe("detectRecurring", () => {
 			status: "suggested",
 			manual: false,
 			dedupScope: "",
+			name: null,
+			anchorDate: null,
+			endAfterCount: null,
+			billType: "bill",
+			categoryId: null,
+			autopay: false,
+			notes: null,
+			paymentUrl: null,
+			schedulePinnedAt: null,
 			createdAt: Date.parse("2026-09-21T10:00:00Z"),
 			updatedAt: Date.parse("2026-09-21T10:00:00Z"),
 		});
@@ -801,6 +813,24 @@ describe("listRecurring", () => {
 				occurrenceCount: 3,
 				status: "active",
 				manual: false,
+				name: null,
+				billType: "bill",
+				categoryId: null,
+				autopay: false,
+				notes: null,
+				paymentUrl: null,
+				anchorDate: null,
+				endAfterCount: null,
+				rules: [{ frequency: "monthly", interval: 1, dayOfMonth: 15 }],
+				frequency: {
+					key: "monthly",
+					dayOfMonth: 15,
+					secondDayOfMonth: null,
+					weekday: null,
+					monthOfYear: null,
+					interval: null,
+					intervalUnit: null,
+				},
 			},
 			expect.objectContaining({
 				id: idOf.get("NETFLIX.COM"),
@@ -1038,6 +1068,24 @@ describe("addRecurringFromEntry", () => {
 			occurrenceCount: 1,
 			status: "active",
 			manual: true,
+			name: null,
+			billType: "bill",
+			categoryId: null,
+			autopay: false,
+			notes: null,
+			paymentUrl: null,
+			anchorDate: null,
+			endAfterCount: null,
+			rules: [{ frequency: "monthly", interval: 1, dayOfMonth: 5 }],
+			frequency: {
+				key: "monthly",
+				dayOfMonth: 5,
+				secondDayOfMonth: null,
+				weekday: null,
+				monthOfYear: null,
+				interval: null,
+				intervalUnit: null,
+			},
 		});
 		await expect(stored()).resolves.toMatchObject([{ id: added.id, labelKey: "prlv edf" }]);
 	});
@@ -1567,5 +1615,244 @@ describe("recurringEntryIds", () => {
 
 	it("reads nothing for an empty page", async () => {
 		await expect(recurringEntryIds(temp.db, [])).resolves.toEqual(new Set());
+	});
+});
+
+const rulesOf = (id: string) =>
+	temp.db
+		.select({
+			frequency: recurrenceRules.frequency,
+			interval: recurrenceRules.interval,
+			dayOfMonth: recurrenceRules.dayOfMonth,
+		})
+		.from(recurrenceRules)
+		.where(eq(recurrenceRules.recurringTransactionId, id));
+
+const oneByOneDates = (ids: readonly string[], dates: readonly string[]) =>
+	ids.reduce<Promise<unknown>>(
+		(pending, id, index) =>
+			pending.then(() =>
+				updateTransaction(deps(), id, { date: dates[index]! }, { origin: "user" }),
+			),
+		Promise.resolve(),
+	);
+
+/** The EDF bill detected on the 10th, its rows then moved to the 8th. */
+async function driftedBill() {
+	const accountId = await account();
+	const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+	const row = await detectedBill(accountId, ids);
+	await setRecurringStatus(deps(), row.id, "active");
+	await oneByOneDates(ids, ["2026-07-08", "2026-08-08", "2026-09-08"]);
+
+	return row;
+}
+
+describe("bills and schedules", () => {
+	it("types a new suggestion with Sure's classifier, its category the most frequent of its rows", async () => {
+		const accountId = await account();
+		await temp.db.insert(categories).values(
+			["loisirs", "abonnements"].map((id) => ({
+				id,
+				name: id,
+				kind: "expense" as const,
+				color: "#e99537",
+				icon: "tag" as const,
+				createdAt: 0,
+				updatedAt: 0,
+			})),
+		);
+		const netflix = await addRows(
+			accountId,
+			["2026-07-05", "2026-08-05", "2026-09-05"],
+			"NETFLIX.COM",
+			-1399,
+		);
+		await updateTransaction(deps(), netflix[0]!, { categoryId: "loisirs" }, { origin: "user" });
+		await updateTransaction(deps(), netflix[1]!, { categoryId: "abonnements" }, { origin: "user" });
+		await updateTransaction(deps(), netflix[2]!, { categoryId: "abonnements" }, { origin: "user" });
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "PRLV EDF");
+		await addRows(accountId, ["2026-06-28", "2026-07-28", "2026-08-28"], "SALAIRE", 250_000);
+		// The merchant's name carries the keyword, the label none.
+		await temp.db
+			.insert(merchants)
+			.values({ id: "spotify", name: "Spotify", createdAt: 0, updatedAt: 0 });
+		const music = await addRows(
+			accountId,
+			["2026-07-12", "2026-08-12", "2026-09-12"],
+			"PRLV SEPA 4821",
+			-1099,
+		);
+		await music.reduce<Promise<unknown>>(
+			(pending, id) =>
+				pending.then(() =>
+					updateTransaction(deps(), id, { merchantId: "spotify" }, { origin: "user" }),
+				),
+			Promise.resolve(),
+		);
+		// No word to go by: a flat modest charge is a subscription on a credit card only.
+		const card = await account("Carte", { type: "credit_card", subtype: null });
+		await addRows(card, ["2026-07-15", "2026-08-15", "2026-09-15"], "SERVICE EN LIGNE", -999);
+		await addRows(accountId, ["2026-07-16", "2026-08-16", "2026-09-16"], "SERVICE EN LIGNE", -999);
+
+		await detectRecurring(deps());
+
+		const rows = new Map((await stored()).map((row) => [row.label, row]));
+		expect(rows.get("NETFLIX.COM")).toMatchObject({
+			billType: "subscription",
+			categoryId: "abonnements",
+			autopay: true,
+		});
+		expect(rows.get("PRLV EDF")).toMatchObject({
+			billType: "bill",
+			categoryId: null,
+			autopay: false,
+		});
+		const all = await stored();
+		expect(all.find((row) => row.merchantId === "spotify")).toMatchObject({
+			billType: "subscription",
+			autopay: true,
+		});
+		expect(
+			all
+				.filter((row) => row.label === "SERVICE EN LIGNE")
+				.map((row) => [row.accountId === card, row.billType]),
+		).toEqual(
+			expect.arrayContaining([
+				[true, "subscription"],
+				[false, "bill"],
+			]),
+		);
+		expect(rows.get("SALAIRE")).toMatchObject({
+			billType: "income",
+			categoryId: null,
+			autopay: false,
+		});
+		await expect(rulesOf(rows.get("PRLV EDF")!.id)).resolves.toEqual([
+			{ frequency: "monthly", interval: 1, dayOfMonth: 10 },
+		]);
+	});
+
+	it("moves an unpinned monthly series' day and rule with the day detected", async () => {
+		const row = await driftedBill();
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{
+				id: row.id,
+				expectedDayOfMonth: 8,
+				lastOccurrenceDate: "2026-09-08",
+				nextExpectedDate: "2026-10-08",
+			},
+		]);
+		await expect(rulesOf(row.id)).resolves.toEqual([
+			{ frequency: "monthly", interval: 1, dayOfMonth: 8 },
+		]);
+	});
+
+	it("never moves the day or the rules of a cadence the owner set", async () => {
+		const row = await driftedBill();
+		await editBill(deps(), row.id, { frequency: { preset: "quarterly", dayOfMonth: "10" } });
+
+		await detectRecurring(deps());
+
+		await expect(stored()).resolves.toMatchObject([
+			{
+				id: row.id,
+				expectedDayOfMonth: 10,
+				lastOccurrenceDate: "2026-09-08",
+				nextExpectedDate: "2026-12-10",
+				occurrenceCount: 3,
+				status: "active",
+			},
+		]);
+		await expect(rulesOf(row.id)).resolves.toEqual([
+			{ frequency: "monthly", interval: 3, dayOfMonth: 10 },
+		]);
+	});
+
+	it("keeps a quarterly series active two monthly cycles without payment, as two of its own", async () => {
+		const accountId = await account();
+		const insert = (id: string) =>
+			temp.db.insert(recurringTransactions).values({
+				id,
+				accountId,
+				labelKey: id,
+				label: id,
+				amount: -6500,
+				currency: "EUR",
+				expectedDayOfMonth: 10,
+				anchorDate: "2026-06-10",
+				lastOccurrenceDate: "2026-06-10",
+				nextExpectedDate: "2026-09-10",
+				occurrenceCount: 3,
+				status: "active",
+				createdAt: 0,
+				updatedAt: 0,
+			});
+		await insert("eau");
+		await insert("edf");
+		await temp.db.insert(recurrenceRules).values(
+			[
+				["eau", 3],
+				["edf", 1],
+			].map(([id, interval]) => ({
+				id: `rule-${id}`,
+				recurringTransactionId: String(id),
+				frequency: "monthly" as const,
+				interval: Number(interval),
+				dayOfMonth: 10,
+			})),
+		);
+
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 1 });
+		await expect(
+			stored().then((rows) =>
+				rows.map((row) => `${row.id} ${row.status}`).toSorted((a, b) => a.localeCompare(b)),
+			),
+		).resolves.toEqual(["eau active", "edf inactive"]);
+	});
+
+	it("keeps a declared bill as declared through detection, before its first payment", async () => {
+		const accountId = await account();
+		const ahead = await declareBill(deps(), {
+			kind: "bill",
+			name: "Assurance habitation",
+			amount: "312,00",
+			accountId,
+			firstDueOn: "2026-11-15",
+			frequency: { preset: "annual" },
+		});
+		const late = await declareBill(deps(), {
+			kind: "bill",
+			name: "Taxe foncière",
+			amount: "1 200,00",
+			accountId,
+			firstDueOn: "2026-09-15",
+			frequency: { preset: "annual" },
+		});
+
+		await detectRecurring(deps());
+
+		await expect(listRecurring(deps())).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: ahead.id,
+					status: "active",
+					lastOccurrenceDate: "2026-11-15",
+					nextExpectedDate: "2026-11-15",
+					occurrenceCount: 0,
+				}),
+				// Its due date passed unpaid: due again a year on, its last date kept.
+				expect.objectContaining({
+					id: late.id,
+					status: "active",
+					lastOccurrenceDate: "2026-09-15",
+					nextExpectedDate: "2027-09-15",
+					occurrenceCount: 0,
+				}),
+			]),
+		);
 	});
 });

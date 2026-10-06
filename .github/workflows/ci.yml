@@ -47,7 +47,9 @@ jobs:
   e2e:
     name: test:e2e
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite alone took 14 minutes 24 on 5 October 2026 (Story 23.2), and
+    # the job was cancelled at 15 with every test passed.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
