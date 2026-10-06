@@ -1539,7 +1539,202 @@ describe("recurring transactions", () => {
 			database.get(sql`select id, category_id as category from recurring_transactions`),
 		).resolves.toEqual({ id: "r1", category: null });
 	});
+
+	it("gives every existing series no alias and no learned tolerance when 0057 adds occurrences", async () => {
+		const before = await migratedBefore("0057");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertRecurring(before, "r1", { labelKey: "netflix" });
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, name_aliases as aliases, learned_tolerance as tolerance from recurring_transactions`,
+			),
+		).resolves.toEqual([{ id: "r1", aliases: "[]", tolerance: null }]);
+	});
+
+	it("holds an occurrence's checks, one per series and original date, and deletes it with its series", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		let count = 0;
+		const occurrence = (fields: {
+			due?: string;
+			status?: string;
+			closedAt?: number | null;
+			source?: string | null;
+			amount?: number | null;
+		}) => {
+			count += 1;
+
+			return insertOccurrence(database, `o${count}`, fields);
+		};
+
+		await expect(occurrence({})).resolves.toBeDefined();
+		await expect(
+			database.get(
+				sql`select status, expected_amount as amount, closed_source as source from recurring_occurrences where id = 'o1'`,
+			),
+		).resolves.toEqual({ status: "scheduled", amount: null, source: null });
+		await expect(occurrence({ due: "2026-11-05", amount: 0 })).resolves.toBeDefined();
+		await expect(
+			occurrence({ due: "2026-12-05", status: "paid", closedAt: 1, source: "auto" }),
+		).resolves.toBeDefined();
+		await expect(
+			occurrence({ due: "2027-01-05", status: "skipped", closedAt: 1, source: "user" }),
+		).resolves.toBeDefined();
+		await expect(
+			occurrence({ due: "2027-02-05", status: "missed", closedAt: 1 }),
+		).resolves.toBeDefined();
+
+		// One per series and original date.
+		await expect(occurrence({})).rejects.toThrow();
+		await expect(occurrence({ due: "2027-03-05", status: "late" })).rejects.toThrow();
+		await expect(
+			occurrence({ due: "2027-03-05", status: "paid", closedAt: 1, source: "bank" }),
+		).rejects.toThrow();
+		await expect(occurrence({ due: "2027-03-05", amount: -1 })).rejects.toThrow();
+		// Closed exactly when not scheduled.
+		await expect(occurrence({ due: "2027-03-05", status: "paid" })).rejects.toThrow();
+		await expect(occurrence({ due: "2027-03-05", closedAt: 1 })).rejects.toThrow();
+
+		await database.run(sql`delete from recurring_transactions where id = 'r1'`);
+
+		await expect(database.all(sql`select id from recurring_occurrences`)).resolves.toEqual([]);
+	});
+
+	it("holds a payment's checks, once per occurrence and transaction, and keeps it when its transaction goes", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertEntry(database, "e2", "transaction", null);
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		await insertOccurrence(database, "o1", {});
+		await insertOccurrence(database, "o2", { due: "2026-11-05" });
+		let count = 0;
+		const payment = (fields: Parameters<typeof insertAllocation>[2]) => {
+			count += 1;
+
+			return insertAllocation(database, `p${count}`, fields);
+		};
+
+		await expect(payment({ entryId: "e1" })).resolves.toBeDefined();
+		await expect(
+			database.get(sql`select match_signals as signals from recurring_allocations where id = 'p1'`),
+		).resolves.toEqual({ signals: "{}" });
+		await expect(payment({ entryId: "e1", occurrenceId: "o2" })).resolves.toBeDefined();
+		await expect(payment({ entryId: null })).resolves.toBeDefined();
+		await expect(payment({ entryId: null })).resolves.toBeDefined();
+		await expect(
+			payment({ entryId: "e2", state: "suggested", source: "auto_matched" }),
+		).resolves.toBeDefined();
+
+		await expect(payment({ entryId: "e1" })).rejects.toThrow();
+		await expect(payment({ entryId: null, amount: 0 })).rejects.toThrow();
+		await expect(payment({ entryId: null, state: "pending" })).rejects.toThrow();
+		await expect(payment({ entryId: null, source: "bank" })).rejects.toThrow();
+		await expect(payment({ entryId: null, occurrenceId: "nope" })).rejects.toThrow();
+
+		await database.run(sql`delete from entries where id = 'e1'`);
+
+		await expect(
+			database.all(
+				sql`select id, entry_id as entryId from recurring_allocations where id in ('p1', 'p2') order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "p1", entryId: null },
+			{ id: "p2", entryId: null },
+		]);
+
+		await database.run(sql`delete from recurring_occurrences where id = 'o1'`);
+
+		await expect(
+			database.all(sql`select id from recurring_allocations order by id`),
+		).resolves.toEqual([{ id: "p2" }]);
+	});
+
+	it("holds one rejection per series and transaction, gone with either", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertEntry(database, "e2", "transaction", null);
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		await insertRecurring(database, "r2", { labelKey: "edf" });
+		const reject = (id: string, series: string, entry: string) =>
+			database.run(
+				sql`insert into recurring_match_rejections (id, recurring_transaction_id, entry_id, created_at, updated_at) values (${id}, ${series}, ${entry}, 0, 0)`,
+			);
+
+		await expect(reject("j1", "r1", "e1")).resolves.toBeDefined();
+		await expect(reject("j2", "r2", "e1")).resolves.toBeDefined();
+		await expect(reject("j3", "r1", "e2")).resolves.toBeDefined();
+		await expect(reject("j4", "r1", "e1")).rejects.toThrow();
+
+		await database.run(sql`delete from entries where id = 'e1'`);
+		await expect(database.all(sql`select id from recurring_match_rejections`)).resolves.toEqual([
+			{ id: "j3" },
+		]);
+
+		await database.run(sql`delete from recurring_transactions where id = 'r1'`);
+		await expect(database.all(sql`select id from recurring_match_rejections`)).resolves.toEqual([]);
+	});
+
+	it("holds one price change per series and date, positive amounts, its transaction set null on delete", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertRecurring(database, "r1", { labelKey: "netflix" });
+		const change = (id: string, on: string, previous: number, next: number) =>
+			database.run(
+				sql`insert into recurring_price_changes (id, recurring_transaction_id, effective_on, previous_amount, new_amount, currency, entry_id, created_at, updated_at) values (${id}, 'r1', ${on}, ${previous}, ${next}, 'EUR', 'e1', 0, 0)`,
+			);
+
+		await expect(change("c1", "2026-09-05", 1399, 1599)).resolves.toBeDefined();
+		await expect(change("c2", "2026-09-05", 1599, 1799)).rejects.toThrow();
+		await expect(change("c3", "2026-10-05", 1599, 0)).rejects.toThrow();
+		await expect(change("c4", "2026-10-05", -1, 1599)).rejects.toThrow();
+
+		await database.run(sql`delete from entries where id = 'e1'`);
+		await expect(
+			database.all(sql`select id, entry_id as entryId from recurring_price_changes`),
+		).resolves.toEqual([{ id: "c1", entryId: null }]);
+
+		await database.run(sql`delete from recurring_transactions where id = 'r1'`);
+		await expect(database.all(sql`select id from recurring_price_changes`)).resolves.toEqual([]);
+	});
 });
+
+const insertOccurrence = (
+	database: Database,
+	id: string,
+	fields: {
+		due?: string;
+		status?: string;
+		closedAt?: number | null;
+		source?: string | null;
+		amount?: number | null;
+	},
+) =>
+	database.run(
+		sql`insert into recurring_occurrences (id, recurring_transaction_id, original_due_on, due_on, currency, expected_amount, status, closed_at, closed_source, created_at, updated_at) values (${id}, 'r1', ${fields.due ?? "2026-10-05"}, ${fields.due ?? "2026-10-05"}, 'EUR', ${fields.amount ?? null}, ${fields.status ?? "scheduled"}, ${fields.closedAt ?? null}, ${fields.source ?? null}, 0, 0)`,
+	);
+
+const insertAllocation = (
+	database: Database,
+	id: string,
+	fields: {
+		entryId: string | null;
+		occurrenceId?: string;
+		amount?: number;
+		state?: string;
+		source?: string;
+	},
+) =>
+	database.run(
+		sql`insert into recurring_allocations (id, recurring_occurrence_id, entry_id, allocated_amount, state, source, created_at, updated_at) values (${id}, ${fields.occurrenceId ?? "o1"}, ${fields.entryId}, ${fields.amount ?? 1399}, ${fields.state ?? "confirmed"}, ${fields.source ?? "user_confirmed"}, 0, 0)`,
+	);
 
 const insertConnection = (
 	database: Database,

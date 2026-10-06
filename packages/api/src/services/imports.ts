@@ -38,7 +38,7 @@ import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { getAccount } from "./accounts.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
-import { detectRecurring } from "./recurring/series.ts";
+import { runRecurring } from "./recurring/pipeline.ts";
 
 /**
  * `$client` too: a large import refreshes SQLite's statistics, which only the
@@ -452,13 +452,14 @@ async function refreshAfterImport(deps: ImportDeps, importId: string): Promise<v
 }
 
 /**
- * Recurring detection once a confirm or a revert is committed, so series
- * follow the lines it wrote or removed. The import is done by then: a
- * failure here is logged, code only, and never fails the request.
+ * The recurring pipeline once a confirm or a revert is committed, so series
+ * and their payments follow the lines it wrote or removed. The import is
+ * done by then: a failure here is logged, code only, and never fails the
+ * request.
  */
 async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
 	try {
-		await detectRecurring(deps);
+		await runRecurring(deps, { backfill: false });
 	} catch (error) {
 		// The code only: an unexpected error's message may embed bound amounts.
 		const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";

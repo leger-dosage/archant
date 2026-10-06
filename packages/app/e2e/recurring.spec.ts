@@ -26,12 +26,14 @@ const badge = (page: Page, label: string, status: string) =>
 const toast = (page: Page, text: string | RegExp) =>
 	page.locator("[data-sonner-toast]").filter({ hasText: text });
 
-const tableDate = new Intl.DateTimeFormat("fr-FR", {
+const dayMonth = new Intl.DateTimeFormat("fr-FR", {
 	day: "numeric",
 	month: "long",
-	year: "numeric",
 	timeZone: "UTC",
 });
+
+/** `2026-10-05` as « 5 octobre », as « Prochaine échéance » writes an occurrence's date. */
+const spelled = (iso: string) => dayMonth.format(new Date(`${iso}T00:00:00Z`));
 
 /** `iso` moved by `months` calendar months, on `day` of that month. */
 function onDay(iso: string, months: number, day: number): string {
@@ -147,7 +149,8 @@ test("« Ajouter la facture » lists a suggestion with its account, amount and n
 	const first = row(page, early);
 	await expect(first).toContainText(account.name);
 	await expect(first).toContainText(euros(-1399));
-	await expect(first).toContainText(tableDate.format(new Date(`${earlyNext}T00:00:00Z`)));
+	// History paid by its rows, the next date is the open occurrence to come.
+	await expect(first).toContainText(`À payer le ${spelled(earlyNext)}`);
 	await expect(first).toContainText("Active");
 	await expect(
 		badge(page, early, "recurringActive").locator("svg.lucide-circle-check"),
@@ -158,7 +161,7 @@ test("« Ajouter la facture » lists a suggestion with its account, amount and n
 	await expect(icons.first()).toHaveText(early.charAt(0).toLocaleUpperCase("fr"));
 	await expect(icons.nth(1).locator("svg.lucide-landmark")).toBeVisible();
 	await expect(row(page, late)).toContainText(euros(-6500));
-	await expect(row(page, late)).toContainText(tableDate.format(new Date(`${lateNext}T00:00:00Z`)));
+	await expect(row(page, late)).toContainText(`À payer le ${spelled(lateNext)}`);
 
 	const labels = await table(page).getByRole("row").allInnerTexts();
 	const at = (label: string) => labels.findIndex((text) => text.includes(label));
@@ -441,7 +444,7 @@ test("« Ajouter une facture » declares a quarterly bill, listed active and man
 	await expect(dialog).toBeHidden();
 	await expect(row(page, name)).toContainText(euros(-8420));
 	await expect(row(page, name)).toContainText(account.name);
-	await expect(row(page, name)).toContainText(tableDate.format(new Date(`${due}T00:00:00Z`)));
+	await expect(row(page, name)).toContainText(`À payer le ${spelled(due)}`);
 	await expect(row(page, name)).toContainText("Active");
 	await expect(row(page, name)).toContainText("Ajoutée à la main");
 
@@ -611,4 +614,62 @@ test("a link that is not http or https is refused on its field", async ({ page, 
 	await expect(dialog).toContainText(
 		"Lien invalide : une adresse http ou https. Exemple : banque.fr/payer.",
 	);
+});
+
+/** `iso` a month later, its day clamped to that month's end, as the schedule's monthly rule. */
+function nextMonth(iso: string): string {
+	const year = Number(iso.slice(0, 4));
+	const month = Number(iso.slice(5, 7));
+	const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+
+	return new Date(Date.UTC(year, month, Math.min(Number(iso.slice(8, 10)), lastDay)))
+		.toISOString()
+		.slice(0, 10);
+}
+
+test("a paid transaction's sheet names the occurrence it pays, and the list shows the next one, then « Payée » once paused", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Prêt");
+	const due = daysAgo(1);
+	await api.declareBill({ name, amount: "571,29", accountId: account.id, firstDueOn: due });
+	await api.addTransaction(account.id, { date: due, label: name, amount: "-571,29" });
+	await api.detectRecurring();
+
+	const sheet = await openSheet(page, name);
+	await expect(sheet).toContainText(`Paie l'échéance du ${spelled(due)} de ${name}`);
+	await page.keyboard.press("Escape");
+
+	await visit(page);
+	await expect(row(page, name)).toContainText(`À payer le ${spelled(nextMonth(due))}`);
+
+	// Paused, it keeps only the occurrence it paid.
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Mettre en pause" }).click();
+	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
+	await expect(row(page, name)).toContainText("Payée");
+});
+
+test("an occurrence nothing pays reads how many days late it is past its grace days", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Eau");
+	await api.declareBill({ name, amount: "84,20", accountId: account.id, firstDueOn: daysAgo(10) });
+
+	await visit(page);
+
+	// In « Prochaine échéance », Sure's one date: no second column contradicts it.
+	await expect(row(page, name)).toContainText("10 jours de retard");
+	await expect(table(page).getByRole("columnheader")).toHaveText([
+		"Nom",
+		"Compte",
+		"Montant",
+		"Prochaine échéance",
+		"Statut",
+		"Actions",
+	]);
 });

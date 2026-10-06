@@ -21,6 +21,7 @@ import { useMerchants } from "@/hooks/useMerchants";
 import { recurringName, useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { errorCodeOf } from "@/lib/api";
+import { dayAndMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { transferCaption } from "@/lib/transfers";
 
@@ -322,7 +323,12 @@ export function RecurringBlock({
 			) : series.data ? (
 				<div className="flex flex-col items-start gap-2">
 					<p className="text-sm text-muted-foreground">
-						{t("transactions.recurring.member", { name: recurringName(series.data) })}
+						{series.data.pays === null
+							? t("transactions.recurring.member", { name: recurringName(series.data) })
+							: t("transactions.recurring.pays", {
+									date: dayAndMonth(series.data.pays.dueOn),
+									name: recurringName(series.data),
+								})}
 					</p>
 					<Button variant="outline" asChild>
 						<Link to="/recurring">{t("transactions.recurring.open")}</Link>

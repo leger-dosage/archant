@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 import { entryKeys } from "@archant/data/schema/entry-keys";
+import {
+	recurringAllocations,
+	recurringMatchRejections,
+	recurringOccurrences,
+} from "@archant/data/schema/recurring-occurrences";
+import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -297,6 +303,115 @@ describe("possible duplicates", () => {
 			await mergeDuplicate(deps(), flagged, first);
 
 			await expect(tagsOf(first)).resolves.toEqual([holidays, work].toSorted());
+		});
+
+		it("moves the flagged one's recurring payments and rejections, but for those the survivor holds", async () => {
+			const { account, first, flagged } = await fileTie();
+			const now = Date.now();
+			const series = (id: string) => ({
+				id,
+				accountId: account.id,
+				labelKey: id,
+				label: id,
+				amount: -1000,
+				currency: "EUR",
+				expectedDayOfMonth: 5,
+				lastOccurrenceDate: "2026-09-05",
+				nextExpectedDate: "2026-10-05",
+				occurrenceCount: 1,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await temp.db
+				.insert(recurringTransactions)
+				.values([series("toll"), series("fuel"), series("rent")]);
+			const occurrence = (id: string, seriesId: string) => ({
+				id,
+				recurringTransactionId: seriesId,
+				originalDueOn: "2026-09-05",
+				dueOn: "2026-09-05",
+				currency: "EUR",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await temp.db
+				.insert(recurringOccurrences)
+				.values([
+					occurrence("toll-sep", "toll"),
+					occurrence("fuel-sep", "fuel"),
+					occurrence("rent-sep", "rent"),
+				]);
+			const payment = (
+				id: string,
+				occurrenceId: string,
+				entryId: string,
+				state: "suggested" | "confirmed" = "confirmed",
+				allocatedAmount = 500,
+			) => ({
+				id,
+				recurringOccurrenceId: occurrenceId,
+				entryId,
+				allocatedAmount,
+				state,
+				source: "user_confirmed" as const,
+				paidOn: "2026-09-05",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await temp.db.insert(recurringAllocations).values([
+				payment("moved", "toll-sep", flagged),
+				payment("held", "fuel-sep", first),
+				payment("dropped", "fuel-sep", flagged),
+				// A confirmed payment wins over the survivor's suggestion, and pays the rent.
+				payment("suggestion", "rent-sep", first, "suggested", 1000),
+				payment("upgraded", "rent-sep", flagged, "confirmed", 1000),
+			]);
+			const rejection = (id: string, seriesId: string, entryId: string) => ({
+				id,
+				recurringTransactionId: seriesId,
+				entryId,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await temp.db
+				.insert(recurringMatchRejections)
+				.values([
+					rejection("refused", "toll", flagged),
+					rejection("kept", "fuel", first),
+					rejection("twin", "fuel", flagged),
+				]);
+
+			await mergeDuplicate(deps(), flagged, first);
+
+			await expect(
+				temp.db
+					.select({ id: recurringAllocations.id, entryId: recurringAllocations.entryId })
+					.from(recurringAllocations)
+					.orderBy(recurringAllocations.id),
+			).resolves.toEqual([
+				{ id: "held", entryId: first },
+				{ id: "moved", entryId: first },
+				{ id: "upgraded", entryId: first },
+			]);
+			await expect(
+				temp.db
+					.select({ id: recurringOccurrences.id, status: recurringOccurrences.status })
+					.from(recurringOccurrences)
+					.orderBy(recurringOccurrences.id),
+			).resolves.toEqual([
+				{ id: "fuel-sep", status: "scheduled" },
+				{ id: "rent-sep", status: "paid" },
+				{ id: "toll-sep", status: "scheduled" },
+			]);
+			await expect(
+				temp.db
+					.select({ id: recurringMatchRejections.id, entryId: recurringMatchRejections.entryId })
+					.from(recurringMatchRejections)
+					.orderBy(recurringMatchRejections.id),
+			).resolves.toEqual([
+				{ id: "kept", entryId: first },
+				{ id: "refused", entryId: first },
+			]);
 		});
 
 		it("gives the survivor past the tag limit rather than drop one", async () => {

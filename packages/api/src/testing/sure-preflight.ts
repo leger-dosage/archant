@@ -308,7 +308,11 @@ const SCHEMAS = {
 			end_mode: z.enum(["never", "on_date", "after_count"]),
 			// `MAX_END_AFTER_COUNT`.
 			end_after_count: z.number().int().min(1).max(600).nullable(),
-			matcher_hints: z.strictObject({ schedule_pinned_at: timestamp.optional() }),
+			matcher_hints: z.strictObject({
+				schedule_pinned_at: timestamp.optional(),
+				name_aliases: z.array(present).optional(),
+				learned_tolerance_pct: z.number().positive().max(25).optional(),
+			}),
 			dedup_scope: z.string(),
 			...stamps,
 		})
@@ -352,6 +356,66 @@ const SCHEMAS = {
 						(rule.month_of_year !== null) === (rule.frequency === "yearly"),
 			{ message: "the day fields do not fit the frequency" },
 		),
+	// `import_recurring_occurrences`: an original due date, a status Sure
+	// knows, and `chk_recurring_occurrences_closed_state`.
+	RecurringOccurrence: z
+		.strictObject({
+			id,
+			recurring_transaction_id: id,
+			original_due_on: date,
+			due_on: date,
+			currency,
+			expected_amount: unsigned.nullable(),
+			status: z.enum(["scheduled", "paid", "skipped", "missed"]),
+			snoozed_until: date.nullable(),
+			closed_at: timestamp.nullable(),
+			closed_source: z.enum(["auto", "user"]).nullable(),
+			notes: z.string().nullable(),
+		})
+		.refine((row) => (row.status === "scheduled") === (row.closed_at === null), {
+			message: "closed_at does not match status",
+		}),
+	// `import_recurring_allocations`: a paid date when no transaction is named,
+	// and `chk_recurring_allocations_amount_positive`.
+	RecurringAllocation: z
+		.strictObject({
+			id,
+			recurring_occurrence_id: id,
+			transaction_id: id.nullable(),
+			allocated_amount: unsigned.refine((amount) => Number(amount) > 0),
+			currency,
+			source_amount: unsigned.nullable(),
+			source_currency: currency.nullable(),
+			state: z.enum(["suggested", "confirmed"]),
+			source: z.enum(["auto_matched", "user_confirmed", "user_created"]),
+			match_confidence: z
+				.string()
+				.regex(/^[01]\.\d{4}$/u)
+				.nullable(),
+			match_signals: z.partialRecord(
+				z.enum(["merchant", "name", "amount", "date", "account"]),
+				z.number(),
+			),
+			paid_on: date.nullable(),
+		})
+		.refine((row) => row.transaction_id !== null || row.paid_on !== null, {
+			message: "a payment without a transaction has no paid_on",
+		}),
+	RecurringPriceChange: z.strictObject({
+		id,
+		recurring_transaction_id: id,
+		effective_on: date,
+		previous_amount: unsigned,
+		new_amount: unsigned,
+		currency,
+		source: z.literal("detected"),
+		transaction_id: id.nullable(),
+	}),
+	RecurringMatchRejection: z.strictObject({
+		id,
+		recurring_transaction_id: id,
+		transaction_id: id.nullable(),
+	}),
 	Transaction: z
 		.strictObject({
 			id,
@@ -513,6 +577,16 @@ const REFERENCES: Partial<Record<SureType, Record<string, string>>> = {
 		category_id: "categories",
 	},
 	RecurrenceRule: { recurring_transaction_id: "recurring_transactions" },
+	RecurringOccurrence: { recurring_transaction_id: "recurring_transactions" },
+	RecurringAllocation: { transaction_id: "transactions" },
+	RecurringPriceChange: {
+		recurring_transaction_id: "recurring_transactions",
+		transaction_id: "transactions",
+	},
+	RecurringMatchRejection: {
+		recurring_transaction_id: "recurring_transactions",
+		transaction_id: "transactions",
+	},
 	Transaction: { account_id: "accounts", category_id: "categories", merchant_id: "merchants" },
 	Transfer: { inflow_transaction_id: "transactions", outflow_transaction_id: "transactions" },
 	RejectedTransfer: {

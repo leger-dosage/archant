@@ -181,6 +181,9 @@ describe("a viewer's writes", () => {
 				"PATCH /api/recurring/x",
 				"DELETE /api/recurring/x",
 				"POST /api/recurring/cleanup",
+				"POST /api/recurring/payments/x/confirm",
+				"POST /api/recurring/payments/x/reject",
+				"POST /api/recurring/occurrences/x/payments",
 			]),
 		);
 
@@ -257,6 +260,9 @@ describe("a viewer's reads", () => {
 				),
 			);
 
+		// The day's first read claims the day's occurrences: a write of the day,
+		// which no later read repeats, as the day's sync and prices.
+		await answer(viewer(), "GET", "/api/accounts");
 		const before = await rows();
 		const viewerStatuses = await statuses(viewer);
 

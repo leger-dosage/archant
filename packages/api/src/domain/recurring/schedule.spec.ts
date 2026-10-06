@@ -13,6 +13,7 @@ import {
 	nextOccurrenceFromToday,
 	occurrencesBetween,
 	occurrencesPerYear,
+	planEnd,
 } from "./schedule.ts";
 
 const TODAY = "2026-09-21";
@@ -336,5 +337,13 @@ describe("dueFrom", () => {
 describe("monthlyOn", () => {
 	it("builds one monthly rule on the day", () => {
 		expect(monthlyOn(12)).toEqual({ frequency: "monthly", interval: 1, dayOfMonth: 12 });
+	});
+});
+
+describe("planEnd", () => {
+	it("counts one cycle past the last payment, rounded up to whole days", () => {
+		// 365.25 / 12 is 30.44 days: 31 a cycle, seven of them.
+		expect(planEnd(schedule([monthly(5)]), "2026-10-05", 6)).toBe("2027-05-10");
+		expect(planEnd(schedule([weekly(MONDAY)]), "2026-09-21", 2)).toBe("2026-10-12");
 	});
 });

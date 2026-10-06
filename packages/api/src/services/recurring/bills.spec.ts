@@ -18,7 +18,8 @@ import { updateTransaction } from "../ledger/edits.ts";
 import { ingest } from "../ledger/ingest.ts";
 import { oneByOne } from "../ledger/shared.ts";
 import { billCandidates, declareBill, editBill } from "./bills.ts";
-import { addRecurringFromEntry, detectRecurring, setRecurringStatus } from "./series.ts";
+import { runRecurring } from "./pipeline.ts";
+import { addRecurringFromEntry, setRecurringStatus } from "./series.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -369,7 +370,7 @@ describe("editBill", () => {
 		const dollars = await account("USD", "Dollars");
 		await addRows(accountId, ["2026-07-10", "2026-08-10"], "PRLV EDF", -6500);
 		await addRows(accountId, ["2026-09-10"], "PRLV EDF", -6700);
-		await detectRecurring(deps());
+		await runRecurring(deps(), { backfill: false });
 		const [detected] = await stored();
 		expect(detected).toMatchObject({ expectedAmountMin: -6700, expectedAmountMax: -6500 });
 		await setRecurringStatus(deps(), detected!.id, "active");
@@ -437,7 +438,7 @@ describe("editBill", () => {
 	it("dates a suggestion from its last payment on its new schedule", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "PRLV EDF", -6500);
-		await detectRecurring(deps());
+		await runRecurring(deps(), { backfill: false });
 		const [suggestion] = await stored();
 
 		await expect(
@@ -523,7 +524,7 @@ describe("editBill", () => {
 		const other = await account("EUR", "Autre");
 		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "PRLV EDF", -6500);
 		await addRows(other, ["2026-07-10", "2026-08-10", "2026-09-10"], "PRLV EDF", -6500);
-		await detectRecurring(deps());
+		await runRecurring(deps(), { backfill: false });
 		const [first, second] = await stored();
 		await setRecurringStatus(deps(), first!.id, "active");
 

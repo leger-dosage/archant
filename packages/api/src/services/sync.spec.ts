@@ -36,7 +36,7 @@ import { createAccount } from "./ledger/accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import { linkBankAccount } from "./ledger/bank-link.ts";
 import { deleteTransaction } from "./ledger/edits.ts";
-import * as recurringService from "./recurring/series.ts";
+import * as recurringService from "./recurring/pipeline.ts";
 import { getNetWorth } from "./reports.ts";
 import { startDailySync, syncAll, syncConnection, windowStart } from "./sync.ts";
 
@@ -814,7 +814,7 @@ describe("syncConnection", () => {
 		const syncDeps = deps();
 		const takenOver = NOW + 11 * MINUTE;
 		// While this run reads the bank, its lease expires and another run takes it.
-		vi.spyOn(recurringService, "detectRecurring").mockImplementation(async () => {
+		const run = vi.spyOn(recurringService, "runRecurring").mockImplementation(async () => {
 			await temp.db
 				.update(bankConnections)
 				.set({ syncStartedAt: takenOver })
@@ -828,6 +828,7 @@ describe("syncConnection", () => {
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({
 			syncStartedAt: takenOver,
 		});
+		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
 	});
 
 	it("leaves a connection with nothing linked unsynced, so its first link syncs at once", async () => {
@@ -852,9 +853,9 @@ describe("syncConnection", () => {
 
 	it("keeps the sync when recurring detection fails, and logs its code only", async () => {
 		mockProvider();
-		vi.spyOn(recurringService, "detectRecurring").mockRejectedValue(
-			new Error("amount 4290 refused"),
-		);
+		const run = vi
+			.spyOn(recurringService, "runRecurring")
+			.mockRejectedValue(new Error("amount 4290 refused"));
 		const connectionId = await newConnection();
 		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 		const syncDeps = deps();
@@ -868,6 +869,7 @@ describe("syncConnection", () => {
 			.find((line) => line["msg"] === "recurring detection failed");
 		expect(failure).toMatchObject({ connectionId, code: "INTERNAL_ERROR" });
 		expect(logLines.join("")).not.toContain("4290");
+		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
 	});
 
 	it("logs ids, counts, durations and codes, never an amount, an IBAN, a uid or the session", async () => {

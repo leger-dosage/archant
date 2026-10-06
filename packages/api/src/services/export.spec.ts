@@ -55,6 +55,10 @@ const TYPE_ORDER = [
 	"RecurringTransaction",
 	"RecurrenceRule",
 	"Transaction",
+	"RecurringOccurrence",
+	"RecurringAllocation",
+	"RecurringPriceChange",
+	"RecurringMatchRejection",
 	"Transfer",
 	"RejectedTransfer",
 	"Trade",
@@ -306,9 +310,17 @@ async function household() {
 		label: "LOYER",
 		amount: "-900,00",
 	});
-	await created("/api/recurring", { entryId: subscription });
+	const netflix = await created("/api/recurring", { entryId: subscription });
 	const paused = await created("/api/recurring", { entryId: rent });
 	await sendOwn("PATCH", `/api/recurring/${paused}`, { status: "inactive" });
+	// « Détecter »: each September line pays its occurrence.
+	await sendOwn("POST", "/api/recurring/detect");
+	await database().run(
+		sql`insert into recurring_price_changes (id, recurring_transaction_id, effective_on, previous_amount, new_amount, currency, entry_id, created_at, updated_at) values ('price', ${netflix}, '2026-09-08', 1299, 1349, 'EUR', ${subscription}, 0, 0)`,
+	);
+	await database().run(
+		sql`insert into recurring_match_rejections (id, recurring_transaction_id, entry_id, created_at, updated_at) values ('refused', ${netflix}, ${bread}, 0, 0)`,
+	);
 
 	await sendOwn("PUT", "/api/budgets/2026-08", {
 		budgetedSpending: "1 000",
@@ -374,6 +386,7 @@ async function household() {
 		lvmh,
 		trades: { ...trades, soldOut },
 		rules: { categorise, transfer, replaceOnly },
+		recurring: { netflix, subscription, paused, rent },
 	};
 }
 
@@ -1378,6 +1391,120 @@ describe("exportArchive", () => {
 				day_of_month: -1,
 				month_of_year: 2,
 			}),
+		]);
+	});
+
+	it("writes occurrences, payments, price changes and rejections as Sure's lines, after the transactions", async () => {
+		const { recurring, bread } = await household();
+		await database().run(
+			sql`update recurring_transactions set name_aliases = '["NETFLIX.COM"]', learned_tolerance = 80 where id = ${recurring.netflix}`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(
+			archive.of("RecurringTransaction").find((row) => row["id"] === recurring.netflix),
+		).toMatchObject({ matcher_hints: { name_aliases: ["NETFLIX.COM"], learned_tolerance_pct: 8 } });
+		const occurrences = archive.of("RecurringOccurrence");
+		const paid = occurrences.find(
+			(row) => row["recurring_transaction_id"] === recurring.netflix && row["status"] === "paid",
+		);
+		expect(paid).toEqual({
+			id: paid?.["id"],
+			recurring_transaction_id: recurring.netflix,
+			original_due_on: "2026-09-08",
+			due_on: "2026-09-08",
+			currency: "EUR",
+			expected_amount: "13.49",
+			status: "paid",
+			snoozed_until: null,
+			closed_at: "2026-09-21T10:00:00.000Z",
+			closed_source: "auto",
+			notes: null,
+		});
+		expect(occurrences).toContainEqual(
+			expect.objectContaining({
+				recurring_transaction_id: recurring.netflix,
+				due_on: "2026-10-08",
+				expected_amount: null,
+				status: "scheduled",
+				closed_at: null,
+			}),
+		);
+		expect(archive.of("RecurringAllocation")).toContainEqual({
+			id: archive
+				.of("RecurringAllocation")
+				.find((row) => row["transaction_id"] === recurring.subscription)?.["id"],
+			recurring_occurrence_id: paid?.["id"],
+			transaction_id: recurring.subscription,
+			allocated_amount: "13.49",
+			currency: "EUR",
+			source_amount: "13.49",
+			source_currency: "EUR",
+			state: "confirmed",
+			source: "auto_matched",
+			match_confidence: "0.9500",
+			match_signals: { name: 0.35, amount: 0.3, date: 0.2, account: 0.1 },
+			paid_on: "2026-09-08",
+		});
+		expect(archive.of("RecurringPriceChange")).toEqual([
+			{
+				id: "price",
+				recurring_transaction_id: recurring.netflix,
+				effective_on: "2026-09-08",
+				previous_amount: "12.99",
+				new_amount: "13.49",
+				currency: "EUR",
+				source: "detected",
+				transaction_id: recurring.subscription,
+			},
+		]);
+		expect(archive.of("RecurringMatchRejection")).toEqual([
+			{ id: "refused", recurring_transaction_id: recurring.netflix, transaction_id: bread },
+		]);
+		const types = archive.lines.map((row) => row.type);
+		expect(types.lastIndexOf("Transaction")).toBeLessThan(types.indexOf("RecurringOccurrence"));
+	});
+
+	it("names no transaction too old for Sure on a payment, a price change or a rejection", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "1990-01-01" });
+		const old = await postOwn(checking.id, { date: "1990-02-05", label: "PRLV", amount: "-10" });
+		await database().run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, created_at, updated_at) values ('r1', ${checking.id}, 'prlv', 'PRLV', -1000, 'EUR', 5, '1990-02-05', '1990-03-05', 1, 'active', 0, 0)`,
+		);
+		await database().run(
+			sql`insert into recurring_occurrences (id, recurring_transaction_id, original_due_on, due_on, currency, expected_amount, status, closed_at, closed_source, created_at, updated_at) values ('o1', 'r1', '1990-02-05', '1990-02-05', 'EUR', 1000, 'paid', 0, 'user', 0, 0)`,
+		);
+		await database().run(
+			sql`insert into recurring_allocations (id, recurring_occurrence_id, entry_id, allocated_amount, state, source, paid_on, created_at, updated_at) values ('p1', 'o1', ${old}, 1000, 'confirmed', 'user_confirmed', '1990-02-05', 0, 0), ('p2', 'o1', null, 1, 'confirmed', 'user_created', '1990-02-06', 1, 1)`,
+		);
+		await database().run(
+			sql`insert into recurring_price_changes (id, recurring_transaction_id, effective_on, previous_amount, new_amount, currency, entry_id, created_at, updated_at) values ('c1', 'r1', '1990-02-05', 900, 1000, 'EUR', ${old}, 0, 0)`,
+		);
+		await database().run(
+			sql`insert into recurring_match_rejections (id, recurring_transaction_id, entry_id, created_at, updated_at) values ('j1', 'r1', ${old}, 0, 0)`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("RecurringAllocation")).toEqual([
+			expect.objectContaining({ id: "p1", transaction_id: null, match_confidence: null }),
+			expect.objectContaining({
+				id: "p2",
+				transaction_id: null,
+				source_amount: null,
+				source_currency: null,
+				match_signals: {},
+			}),
+		]);
+		expect(archive.of("RecurringPriceChange")).toEqual([
+			expect.objectContaining({ id: "c1", transaction_id: null }),
+		]);
+		expect(archive.of("RecurringMatchRejection")).toEqual([
+			{ id: "j1", recurring_transaction_id: "r1", transaction_id: null },
 		]);
 	});
 

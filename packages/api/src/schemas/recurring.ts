@@ -7,6 +7,9 @@ import { editBodySchema } from "./bills.ts";
 /** « Ajouter aux récurrences »: the transaction the pattern starts from. */
 export const addRecurringSchema = z.object({ entryId: z.string().min(1) });
 
+/** A transaction the owner attaches by hand to an occurrence. */
+export const attachPaymentSchema = z.object({ entryId: z.string().min(1) });
+
 /**
  * `PATCH /api/recurring/:id`: a status alone, which the service refuses for a
  * move it cannot make, `suggested` included; or else the edit dialog's fields.
