@@ -215,3 +215,67 @@ test("the list pages at 50 transactions", async ({ page, api }) => {
 	await expect(page).not.toHaveURL(/[?&]page=/u);
 	await expect(rows).toHaveCount(50);
 });
+
+// Story 23.5: the « À venir » tab, Sure's `transactions/_upcoming`.
+
+const dayMonth = new Intl.DateTimeFormat("fr-FR", {
+	day: "numeric",
+	month: "long",
+	timeZone: "UTC",
+});
+
+test("« À venir » lists the active series expected within ten days by date, without the filters", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Compte"), openingDate: daysAgo(30) });
+	const prefix = uniqueName("Bientôt");
+	const declare = (name: string, days: number, kind: "bill" | "income" = "bill") =>
+		api.declareBill({
+			name: `${prefix} ${name}`,
+			amount: kind === "income" ? "1 800,00" : "39,99",
+			accountId: account.id,
+			firstDueOn: daysAgo(-days),
+			kind,
+		});
+	await declare("Salaire", 0, "income");
+	await declare("Internet", 3);
+	await declare("Dernier jour", 10);
+	await declare("Trop tard", 11);
+	await api.setRecurringStatus(await declare("En pause", 1), "inactive");
+
+	await page.goto("/transactions");
+	await page.getByRole("tab", { name: "À venir" }).click();
+
+	await expect(page).toHaveURL(/\/transactions\?tab=upcoming$/u);
+	await expect(page.getByRole("searchbox", { name: "Rechercher" })).toBeHidden();
+	const today = page.getByRole("region", {
+		name: dayMonth.format(new Date(`${daysAgo(0)}T00:00:00Z`)),
+	});
+	const salary = today.getByRole("listitem").filter({ hasText: `${prefix} Salaire` });
+	await expect(salary).toContainText("Attendue aujourd'hui");
+	await expect(salary).toContainText(`+${euros(180_000)}`);
+	const internet = page.getByRole("listitem").filter({ hasText: `${prefix} Internet` });
+	await expect(internet).toContainText("Attendue dans 3 jours");
+	await expect(internet).toContainText(euros(-3999));
+	await expect(
+		page.getByRole("listitem").filter({ hasText: `${prefix} Dernier jour` }),
+	).toContainText("Attendue dans 10 jours");
+	await expect(page.getByRole("listitem").filter({ hasText: `${prefix} Trop tard` })).toHaveCount(
+		0,
+	);
+	await expect(page.getByRole("listitem").filter({ hasText: `${prefix} En pause` })).toHaveCount(0);
+
+	await page.getByRole("tab", { name: "Opérations" }).click();
+	await expect(page).toHaveURL(/\/transactions$/u);
+	await expect(page.getByRole("searchbox", { name: "Rechercher" })).toBeVisible();
+});
+
+test("« À venir » says when no payment is expected", async ({ page }) => {
+	await page.route("**/api/recurring/upcoming", (route) => route.fulfill({ json: { data: [] } }));
+	await page.goto("/transactions?tab=upcoming");
+
+	await expect(
+		page.getByText("Aucun paiement récurrent attendu dans les dix prochains jours."),
+	).toBeVisible();
+});

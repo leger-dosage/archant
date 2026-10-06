@@ -8,6 +8,7 @@ import {
 	CircleCheckBigIcon,
 	CircleCheckIcon,
 	CirclePauseIcon,
+	CircleStopIcon,
 	ClockAlertIcon,
 	ClockIcon,
 	HandIcon,
@@ -44,6 +45,7 @@ const STATUSES = {
 	// A series' state is information, never an alarm: all neutral.
 	recurringActive: { icon: CircleCheckIcon, key: "recurring.statuses.active", tone: "neutral" },
 	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", tone: "neutral" },
+	recurringEnded: { icon: CircleStopIcon, key: "recurring.statuses.ended", tone: "neutral" },
 	recurringManual: { icon: HandIcon, key: "recurring.manual", tone: "neutral" },
 	// An occurrence from three days before its date, as Sure's `due`: attention, not an alarm.
 	billDueSoon: { icon: ClockIcon, key: "bills.dueSoon", tone: "warning" },

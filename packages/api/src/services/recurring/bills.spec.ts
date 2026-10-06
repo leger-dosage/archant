@@ -12,6 +12,7 @@ import { merchants } from "@archant/data/schema/merchants";
 import {
 	recurringAllocations,
 	recurringOccurrences,
+	recurringPriceChanges,
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
@@ -21,8 +22,17 @@ import { createAccount } from "../ledger/accounts.ts";
 import { updateTransaction } from "../ledger/edits.ts";
 import { ingest } from "../ledger/ingest.ts";
 import { oneByOne } from "../ledger/shared.ts";
-import { billCandidates, billsOverview, declareBill, editBill, occurrenceDetail } from "./bills.ts";
-import { addPayment, editOccurrence, skipOccurrence } from "./payments.ts";
+import {
+	allBills,
+	billCandidates,
+	billDetail,
+	billsOverview,
+	declareBill,
+	editBill,
+	occurrenceDetail,
+	upcomingRecurring,
+} from "./bills.ts";
+import { addPayment, editOccurrence, markPaid, skipOccurrence } from "./payments.ts";
 import { runRecurring } from "./pipeline.ts";
 import { addRecurringFromEntry, setRecurringStatus } from "./series.ts";
 
@@ -981,5 +991,357 @@ describe("occurrenceDetail", () => {
 		await expect(refusal(occurrenceDetail(deps(), "nope"))).resolves.toMatchObject({
 			code: "NOT_FOUND",
 		});
+	});
+});
+
+/** A recorded price change, as detection writes one. */
+async function priceChange(
+	seriesId: string,
+	effectiveOn: string,
+	previousAmount: number,
+	newAmount: number,
+) {
+	const now = Date.now();
+
+	await temp.db.insert(recurringPriceChanges).values({
+		id: `change-${seriesId}-${effectiveOn}`,
+		recurringTransactionId: seriesId,
+		effectiveOn,
+		previousAmount,
+		newAmount,
+		currency: "EUR",
+		createdAt: now,
+		updatedAt: now,
+	});
+}
+
+/** Ends a series and drops its occurrences, as a dismissed suggestion has none. */
+async function endWithoutOccurrences(seriesId: string) {
+	await temp.db
+		.update(recurringTransactions)
+		.set({ status: "ended" })
+		.where(eq(recurringTransactions.id, seriesId));
+	await temp.db
+		.delete(recurringOccurrences)
+		.where(eq(recurringOccurrences.recurringTransactionId, seriesId));
+}
+
+const names = (rows: readonly { name: string | null }[]) => rows.map((row) => row.name);
+
+const query = (overrides: Partial<Parameters<typeof allBills>[1]> = {}) => ({
+	sort: "due" as const,
+	...overrides,
+});
+
+describe("allBills", () => {
+	beforeEach(() => {
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+	});
+
+	it("lists every series but the suggestions, active, then paused, then ended, each by next date", async () => {
+		const accountId = await account();
+		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "LOYER", -80_000);
+		await runRecurring(deps(), { backfill: true });
+		const water = await declareBill(
+			deps(),
+			bill(accountId, { name: "Eau", amount: "90,00", firstDueOn: "2026-10-20" }),
+		);
+		await editBill(deps(), water.id, { frequency: { preset: "quarterly" } });
+		await declareBill(deps(), bill(accountId, { name: "Internet", firstDueOn: "2026-10-12" }));
+		const gas = await declareBill(
+			deps(),
+			bill(accountId, { name: "Gaz", firstDueOn: "2026-10-08" }),
+		);
+		await setRecurringStatus(deps(), gas.id, "inactive");
+		const old = await declareBill(
+			deps(),
+			bill(accountId, { name: "Ancien", firstDueOn: "2026-10-01" }),
+		);
+		await endWithoutOccurrences(old.id);
+
+		const { bills, subscriptions } = await allBills(deps(), query());
+
+		// The rent detection found is a suggestion, so not listed.
+		await expect(stored()).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ label: "LOYER", status: "suggested" })]),
+		);
+		expect(names(bills)).toEqual(["Internet", "Eau", "Gaz", "Ancien"]);
+		expect(subscriptions).toBeNull();
+		expect(bills[1]).toMatchObject({
+			amount: -9000,
+			monthlyEquivalent: 3000,
+			currentOccurrence: {
+				dueOn: "2026-10-20",
+				state: "upcoming",
+				expected: 9000,
+				confirmed: 0,
+				remaining: 9000,
+			},
+		});
+		expect(bills[3]).toMatchObject({ status: "ended", currentOccurrence: null });
+	});
+
+	it("files each bill under its current occurrence's payment state, or paused or ended", async () => {
+		const accountId = await account();
+		await declareBill(deps(), bill(accountId, { name: "Électricité", firstDueOn: "2026-09-28" }));
+		await declareBill(deps(), bill(accountId, { name: "Internet", firstDueOn: "2026-10-08" }));
+		const partial = await declareBill(
+			deps(),
+			bill(accountId, { name: "Eau", amount: "300,00", firstDueOn: "2026-10-20" }),
+		);
+		await addPayment(deps(), (await firstOf(partial.id)).id, {
+			amount: "180,00",
+			paidOn: "2026-10-06",
+		});
+		// Paid, then the next one is open and current: not « Payée ».
+		const moved = await declareBill(
+			deps(),
+			bill(accountId, { name: "Loyer", firstDueOn: "2026-10-01" }),
+		);
+		await markPaid(deps(), (await firstOf(moved.id)).id, "2026-10-01");
+		// Paused once paid: the paid one is its current occurrence.
+		const settled = await declareBill(
+			deps(),
+			bill(accountId, { name: "Assurance", firstDueOn: "2026-10-02" }),
+		);
+		await markPaid(deps(), (await firstOf(settled.id)).id, "2026-10-02");
+		await setRecurringStatus(deps(), settled.id, "inactive");
+		const ended = await declareBill(
+			deps(),
+			bill(accountId, { name: "Ancien", firstDueOn: "2026-10-01" }),
+		);
+		await endWithoutOccurrences(ended.id);
+		const filtered = async (status: Parameters<typeof allBills>[1]["status"]) =>
+			names((await allBills(deps(), query({ status }))).bills);
+
+		await expect(filtered("overdue")).resolves.toEqual(["Électricité"]);
+		await expect(filtered("due")).resolves.toEqual(["Internet"]);
+		await expect(filtered("partial")).resolves.toEqual(["Eau"]);
+		await expect(filtered("paid")).resolves.toEqual(["Assurance"]);
+		await expect(filtered("paused")).resolves.toEqual(["Assurance"]);
+		await expect(filtered("ended")).resolves.toEqual(["Ancien"]);
+	});
+
+	it("searches the name, the merchant's name and the label, whatever their case", async () => {
+		const accountId = await account();
+		await temp.db.insert(merchants).values({
+			id: "netflix",
+			name: "Netflix",
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const [entry = ""] = await addRows(accountId, ["2026-09-15"], "PRLV NFLX 4821", -1599);
+		await updateTransaction(deps(), entry, { merchantId: "netflix" }, { origin: "user" });
+		await addRecurringFromEntry(deps(), entry);
+		await declareBill(deps(), bill(accountId, { name: "Eau du Grand Lyon" }));
+		const searched = async (q: string) =>
+			(await allBills(deps(), query({ q }))).bills.map((row) => row.name ?? row.merchantName);
+
+		await expect(searched("NETFLIX")).resolves.toEqual(["Netflix"]);
+		await expect(searched("nflx")).resolves.toEqual(["Netflix"]);
+		await expect(searched("grand lyon")).resolves.toEqual(["Eau du Grand Lyon"]);
+		await expect(searched("rien")).resolves.toEqual([]);
+	});
+
+	it("sorts by name in French order, then by amount; or by amount, the largest outflow first and incomes last", async () => {
+		const accountId = await account();
+		await declareBill(deps(), bill(accountId, { name: "gaz", amount: "40,00" }));
+		await declareBill(deps(), bill(accountId, { name: "Électricité", amount: "60,00" }));
+		await declareBill(deps(), bill(accountId, { name: "Eau", amount: "20,00" }));
+		await declareBill(
+			deps(),
+			bill(accountId, { kind: "income", name: "Salaire", amount: "2 500,00" }),
+		);
+
+		await expect(allBills(deps(), query({ sort: "name" }))).resolves.toMatchObject({
+			bills: [{ name: "Eau" }, { name: "Électricité" }, { name: "gaz" }, { name: "Salaire" }],
+		});
+		await expect(allBills(deps(), query({ sort: "amount" }))).resolves.toMatchObject({
+			bills: [{ name: "Électricité" }, { name: "gaz" }, { name: "Eau" }, { name: "Salaire" }],
+		});
+	});
+
+	it("adds Sure's subscription rollup with the type: the active ones per month and per year, another currency named", async () => {
+		const accountId = await account();
+		const dollars = await account("USD", "Compte USD");
+		const subscribe = async (accountOf: string, name: string, amount: string) => {
+			const created = await declareBill(deps(), bill(accountOf, { name, amount }));
+			await editBill(deps(), created.id, { billType: "subscription" });
+
+			return created;
+		};
+		const netflix = await subscribe(accountId, "Netflix", "15,99");
+		await subscribe(accountId, "Spotify", "9,99");
+		const paused = await subscribe(accountId, "Disney", "8,99");
+		await setRecurringStatus(deps(), paused.id, "inactive");
+		const hosting = await subscribe(dollars, "Hébergement", "5,00");
+		// Any series' change counts, a year back at most.
+		const water = await declareBill(deps(), bill(accountId, { name: "Eau" }));
+		await priceChange(netflix.id, "2026-09-15", 1349, 1599);
+		await priceChange(water.id, "2026-03-10", 3000, 2500);
+		await priceChange(water.id, "2025-09-10", 2000, 3000);
+
+		const { bills, subscriptions } = await allBills(deps(), query({ type: "subscription" }));
+
+		expect(names(bills)).toHaveLength(4);
+		expect(subscriptions).toEqual({
+			currency: "EUR",
+			count: 3,
+			monthly: 2598,
+			annual: 31_176,
+			leftOut: [{ id: hosting.id, name: "Hébergement" }],
+			priceChanges: [
+				{
+					id: `change-${netflix.id}-2026-09-15`,
+					seriesId: netflix.id,
+					name: "Netflix",
+					effectiveOn: "2026-09-15",
+					previousAmount: 1349,
+					newAmount: 1599,
+					currency: "EUR",
+					percent: 185,
+				},
+				expect.objectContaining({ name: "Eau", percent: -167 }),
+			],
+		});
+
+		await expect(
+			allBills(deps(), query({ type: "subscription", q: "rien" })),
+		).resolves.toMatchObject({
+			bills: [],
+			subscriptions: { count: 0, monthly: null, annual: null },
+		});
+	});
+});
+
+describe("billDetail", () => {
+	beforeEach(() => {
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+	});
+
+	it("says what each paid occurrence cost, its range and the last account, and files each payment under its due month", async () => {
+		const accountId = await account("EUR", "Compte joint");
+		const mortgage = await declareBill(
+			deps(),
+			bill(accountId, { name: "Prêt immobilier", amount: "571,29", firstDueOn: "2026-09-30" }),
+		);
+		// August's, paid by hand before the bill was declared.
+		const now = Date.now();
+		await temp.db.insert(recurringOccurrences).values({
+			id: "august",
+			recurringTransactionId: mortgage.id,
+			originalDueOn: "2026-08-30",
+			dueOn: "2026-08-30",
+			currency: "EUR",
+			expectedAmount: 57_130,
+			status: "paid",
+			closedAt: now,
+			closedSource: "user",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await temp.db.insert(recurringAllocations).values({
+			id: "august-payment",
+			recurringOccurrenceId: "august",
+			allocatedAmount: 57_130,
+			state: "confirmed",
+			source: "user_created",
+			paidOn: "2026-08-30",
+			createdAt: now,
+			updatedAt: now,
+		});
+		const [paid = ""] = await addRows(accountId, ["2026-10-05"], "PRLV CREDIT AGRICOLE", -57_129);
+		const september = (await occurrencesOf(mortgage.id)).find((one) => one.dueOn === "2026-09-30");
+		await addPayment(deps(), september!.id, { entryId: paid });
+
+		const detail = await billDetail(deps(), mortgage.id);
+
+		expect(detail.record).toMatchObject({
+			id: mortgage.id,
+			name: "Prêt immobilier",
+			monthlyEquivalent: 57_129,
+			currentOccurrence: { dueOn: "2026-10-30", confirmed: 0, remaining: 57_129 },
+		});
+		// (57 130 + 57 129) / 2 = 57 129,5, half up.
+		expect(detail.averagePaid).toEqual({ average: 57_130, lowest: 57_129, highest: 57_130 });
+		expect(detail.lastAccount).toEqual({ id: accountId, name: "Compte joint" });
+		expect(detail.installment).toBeNull();
+		expect(detail.priceChanges).toEqual([]);
+		expect(detail.months).toHaveLength(12);
+		expect(detail.months[0]).toEqual({ month: "2025-11", paid: 0 });
+		// Paid on 5 October for the occurrence due 30 September.
+		expect(detail.months.slice(-3)).toEqual([
+			{ month: "2026-08", paid: 57_130 },
+			{ month: "2026-09", paid: 57_129 },
+			{ month: "2026-10", paid: 0 },
+		]);
+	});
+
+	it("has no average before a payment, counts an installment's payments and lists the five latest price changes", async () => {
+		const accountId = await account();
+		const car = await declareBill(
+			deps(),
+			bill(accountId, { name: "Voiture", amount: "250,00", firstDueOn: "2026-09-01" }),
+		);
+		await editBill(deps(), car.id, { billType: "installment", endAfterCount: "12" });
+		await markPaid(deps(), (await firstOf(car.id)).id, "2026-09-01");
+		await oneByOne(
+			["2022-01-01", "2023-01-01", "2024-01-01", "2025-01-01", "2026-01-01", "2026-06-01"],
+			(date) => priceChange(car.id, date, 1599, 1349),
+		);
+		const fresh = await declareBill(deps(), bill(accountId, { name: "Neuve" }));
+
+		const detail = await billDetail(deps(), car.id);
+
+		expect(detail.installment).toEqual({ paid: 1, total: 12 });
+		expect(detail.priceChanges.map((change) => change.effectiveOn)).toEqual([
+			"2026-06-01",
+			"2026-01-01",
+			"2025-01-01",
+			"2024-01-01",
+			"2023-01-01",
+		]);
+		expect(detail.priceChanges[0]).toMatchObject({
+			previousAmount: 1599,
+			newAmount: 1349,
+			percent: -156,
+		});
+		// A payment made by hand has no transaction, so no account.
+		expect(detail.lastAccount).toBeNull();
+		await expect(billDetail(deps(), fresh.id)).resolves.toMatchObject({
+			averagePaid: null,
+			lastAccount: null,
+			installment: null,
+		});
+		await expect(refusal(billDetail(deps(), "nope"))).resolves.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+describe("upcomingRecurring", () => {
+	it("lists the active series, bills and incomes, expected from today to ten days on, by date", async () => {
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+		const accountId = await account();
+		await declareBill(deps(), bill(accountId, { name: "Après", firstDueOn: "2026-10-17" }));
+		await declareBill(deps(), bill(accountId, { name: "Dernier jour", firstDueOn: "2026-10-16" }));
+		await declareBill(
+			deps(),
+			bill(accountId, {
+				kind: "income",
+				name: "Salaire",
+				amount: "2 500,00",
+				firstDueOn: "2026-10-06",
+			}),
+		);
+		const paused = await declareBill(
+			deps(),
+			bill(accountId, { name: "En pause", firstDueOn: "2026-10-07" }),
+		);
+		await setRecurringStatus(deps(), paused.id, "inactive");
+		await declareBill(deps(), bill(accountId, { name: "Hier", firstDueOn: "2026-10-05" }));
+
+		await expect(upcomingRecurring(deps())).resolves.toMatchObject([
+			{ name: "Salaire", nextExpectedDate: "2026-10-06", amount: 250_000 },
+			{ name: "Dernier jour", nextExpectedDate: "2026-10-16" },
+		]);
 	});
 });

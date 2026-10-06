@@ -93,6 +93,13 @@ export const queryKeys = {
 		candidates: (kind: string) => ["recurring", "candidates", kind] as const,
 		/** Under `all`: every recurring write moves the bills page. */
 		bills: ["recurring", "bills"] as const,
+		/** Under `all`, « Toutes les factures » by its search, filters and sort. */
+		allBills: (query: Record<string, string | undefined>) =>
+			["recurring", "bills", "all", query] as const,
+		/** Under `all`, one bill's drawer. */
+		bill: (id: string) => ["recurring", "bill", id] as const,
+		/** Under `all`: the « À venir » tab of `/transactions`. */
+		upcoming: ["recurring", "upcoming"] as const,
 		/** Under `all`, one occurrence's sheet. */
 		occurrence: (id: string) => ["recurring", "occurrence", id] as const,
 		/** Under `all`: a payment added or removed changes what a transaction has left. */

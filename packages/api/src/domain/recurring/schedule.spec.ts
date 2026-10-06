@@ -2,11 +2,14 @@ import type { RecurrenceRule, Schedule } from "./schedule.ts";
 
 import { describe, expect, it } from "vitest";
 
+import { toMinorUnits } from "@archant/data/money";
+
 import {
 	cycleFor,
 	dueFrom,
 	firstOccurrenceAfter,
 	matchesDay,
+	monthlyEquivalent,
 	monthlyOn,
 	nextExpectedAfter,
 	nextOccurrenceAfter,
@@ -199,6 +202,30 @@ describe("occurrencesPerYear", () => {
 		expect(occurrencesPerYear(schedule([weekly(MONDAY, 2)]))).toBeCloseTo(26.09, 2);
 		expect(occurrencesPerYear(schedule([yearly(1, 1)]))).toBe(1);
 		expect(occurrencesPerYear(schedule([yearly(1, 1, 2)]))).toBe(0.5);
+	});
+});
+
+const euros = (amount: number) => toMinorUnits(amount);
+
+describe("monthlyEquivalent", () => {
+	it("counts a weekly rule 1461 / 28 times a month's twelfth, exactly", () => {
+		// 10 × 1461 / 336 = 43,482…
+		expect(monthlyEquivalent([weekly(MONDAY)], euros(-1000))).toBe(4348);
+		expect(monthlyEquivalent([weekly(MONDAY, 2)], euros(-1000))).toBe(2174);
+	});
+
+	it("divides an every-N cadence and sums several rules", () => {
+		expect(monthlyEquivalent([monthly(10, 3)], euros(-9000))).toBe(3000);
+		expect(monthlyEquivalent([monthly(1), monthly(15)], euros(-5000))).toBe(10_000);
+		expect(monthlyEquivalent([monthly(5)], euros(57_129))).toBe(57_129);
+		expect(monthlyEquivalent([yearly(1, 1)], euros(12_000))).toBe(1000);
+		expect(monthlyEquivalent([yearly(1, 1, 2)], euros(12_000))).toBe(500);
+	});
+
+	it("rounds an exact half up, as Sure's `number_to_currency`", () => {
+		// 0,06 € a year is half a cent a month.
+		expect(monthlyEquivalent([yearly(1, 1)], euros(6))).toBe(1);
+		expect(monthlyEquivalent([yearly(1, 1)], euros(5))).toBe(0);
 	});
 });
 

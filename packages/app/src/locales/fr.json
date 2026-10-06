@@ -387,7 +387,7 @@
 			"added": "Opération ajoutée aux récurrences",
 			"member": "Cette opération fait partie de la récurrence « {{name}} ».",
 			"pays": "Paie l'échéance du {{date}} de {{name}}",
-			"open": "Voir les récurrences",
+			"open": "Voir la facture",
 			"none": "Cette opération ne fait partie d'aucune récurrence."
 		},
 		"split": {
@@ -444,6 +444,17 @@
 		"title": "Opérations",
 		"search": "Rechercher",
 		"searchPlaceholder": "Rechercher dans les libellés et les notes",
+		"tabs": {
+			"label": "Vues des opérations",
+			"transactions": "Opérations",
+			"upcoming": "À venir"
+		},
+		"upcoming": {
+			"empty": "Aucun paiement récurrent attendu dans les dix prochains jours.",
+			"today": "Attendue aujourd'hui",
+			"inDays_one": "Attendue dans {{count}} jour",
+			"inDays_other": "Attendue dans {{count}} jours"
+		},
 		"filter": "Filtrer",
 		"kinds": {
 			"account": "Compte",
@@ -1369,6 +1380,7 @@
 		"title": "Factures",
 		"description": "Ce qui est en retard, ce qui tombe ce mois-ci et ce qui est déjà payé. Ouvrez une échéance pour la marquer comme payée, l'ignorer, la reporter ou changer son montant.",
 		"all": "Toutes les factures",
+		"overview": "Vue d'ensemble",
 		"totals": {
 			"title": "Ce mois-ci en chiffres",
 			"remaining": "Restant ce mois-ci",
@@ -1472,18 +1484,63 @@
 			"skippedToast": "Échéance ignorée",
 			"reopen": "Rouvrir",
 			"reopened": "Échéance rouverte"
+		},
+		"priceChange": "{{from}} → {{to}} ({{percent}})",
+		"allView": {
+			"description": "Chaque facture et chaque revenu suivis, avec ce qu'ils coûtent par mois. Ouvrez-en un pour voir ses paiements et ses changements de prix.",
+			"search": "Rechercher une facture",
+			"status": "Statut",
+			"anyStatus": "Tous les statuts",
+			"statuses": {
+				"overdue": "En retard",
+				"due": "Bientôt due",
+				"partial": "Partiellement payée",
+				"paid": "Payée",
+				"paused": "En pause",
+				"ended": "Terminée"
+			},
+			"type": "Type",
+			"anyType": "Tous les types",
+			"sort": "Tri",
+			"sorts": {
+				"due": "Par prochaine échéance",
+				"name": "Par nom",
+				"amount": "Par montant"
+			},
+			"columns": {
+				"name": "Nom",
+				"type": "Type",
+				"frequency": "Fréquence",
+				"amount": "Montant",
+				"next": "Prochaine échéance",
+				"status": "Statut",
+				"actions": "Actions"
+			},
+			"perMonth": "{{amount}}/mois",
+			"noMatch": "Aucun résultat",
+			"noMatchDescription": "Essayez de retirer un filtre ou de modifier la recherche.",
+			"rollup": "Abonnements",
+			"monthly": "Par mois",
+			"annual": "Par an",
+			"active": "Actifs",
+			"priceChanges": "Changements de prix cette année"
+		},
+		"detail": {
+			"kicker": "Facture",
+			"nextPayment": "Prochain paiement",
+			"around": "vers le {{date}}",
+			"average": "Moyenne payée",
+			"range": "de {{min}} à {{max}}",
+			"months": "12 derniers mois",
+			"monthPaid": "{{month}} : {{amount}}",
+			"priceChanges": "Changements de prix",
+			"installment": "Paiement {{current}} sur {{total}}",
+			"lastAccount": "Dernier compte utilisé",
+			"notes": "Remarques",
+			"openSite": "Ouvrir le site de la facture"
 		}
 	},
 	"recurring": {
-		"title": "Récurrences",
-		"description": "Les abonnements, factures et revenus qui reviennent à leur rythme, à quelques centimes près, détectés sur les trois derniers mois d'opérations ou ajoutés à la main. Ajoutez les factures possibles que vous voulez suivre, écartez les autres. Une récurrence sans paiement depuis deux de ses échéances devient inactive, au plus tôt après deux mois, six pour une récurrence ajoutée à la main.",
-		"list": "Toutes les récurrences",
-		"empty": {
-			"title": "Aucune récurrence pour l'instant",
-			"description": "Lancez la détection ou ajoutez-en une depuis une opération.",
-			"action": "Détecter les récurrences"
-		},
-		"detect": "Détecter",
 		"detected_zero": "Aucune récurrence détectée",
 		"detected_one": "{{count}} récurrence détectée",
 		"detected_other": "{{count}} récurrences détectées",
@@ -1493,10 +1550,7 @@
 		"cleaned_other": "{{count}} récurrences devenues inactives",
 		"columns": {
 			"name": "Nom",
-			"account": "Compte",
 			"amount": "Montant",
-			"next": "Prochaine échéance",
-			"status": "Statut",
 			"actions": "Actions"
 		},
 		"amountRange": "varie de {{min}} à {{max}}",
@@ -1510,7 +1564,8 @@
 		},
 		"statuses": {
 			"active": "Active",
-			"inactive": "Inactive"
+			"inactive": "En pause",
+			"ended": "Terminée"
 		},
 		"manual": "Ajoutée à la main",
 		"suggested": {
@@ -1771,6 +1826,7 @@
 			"categories": "Catégories",
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
+			"recurring": "Transactions récurrentes",
 			"assistants": "Assistants IA",
 			"data": "Données",
 			"members": "Membres",
@@ -1778,7 +1834,28 @@
 			"security": "Sécurité"
 		},
 		"version": "Version {{version}}",
-		"developmentVersion": "Version de développement"
+		"developmentVersion": "Version de développement",
+		"recurring": {
+			"title": "Transactions récurrentes",
+			"description": "Les abonnements, factures et revenus qui reviennent à leur rythme, à quelques centimes près. Archant les trouve sur les trois derniers mois d'opérations et vous les propose comme factures possibles.",
+			"detect": "Identifier les modèles",
+			"info": {
+				"title": "Détection automatique des modèles",
+				"manual": "Vous pouvez identifier les modèles ou nettoyer les transactions récurrentes obsolètes avec les boutons ci-dessus.",
+				"cleanup": "« Nettoyer les obsolètes » rend inactive une récurrence sans paiement depuis deux de ses échéances, au plus tôt après deux mois, six pour une récurrence ajoutée à la main.",
+				"automatic": "L'identification automatique s'exécute aussi :",
+				"triggers": {
+					"import": "après un import ou son annulation ;",
+					"sync": "après la synchronisation d'une banque ;",
+					"daily": "et chaque jour, à la première visite, Archant crée les échéances du jour."
+				}
+			},
+			"manage": {
+				"title": "Vos factures se trouvent sur la page Factures",
+				"description": "Déclarez, modifiez, mettez en pause et suivez chaque facture depuis cette page.",
+				"action": "Ouvrir toutes les factures"
+			}
+		}
 	},
 	"assistants": {
 		"title": "Assistants IA",

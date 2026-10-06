@@ -106,7 +106,7 @@ export async function hasTransactions(db: Reader): Promise<boolean> {
 }
 
 /** What the bills page shows of a payment's transaction. */
-export type PaymentEntry = { label: string; amount: MinorUnits; date: IsoDate };
+export type PaymentEntry = { label: string; amount: MinorUnits; date: IsoDate; accountId: string };
 
 /** The transactions of `ids` the bills page names its payments by, by id. */
 export async function paymentEntries(
@@ -122,6 +122,7 @@ export async function paymentEntries(
 				label: transactions.label,
 				amount: entries.amount,
 				date: entries.date,
+				accountId: entries.accountId,
 			})
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))

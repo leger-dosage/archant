@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { CurrencyCode } from "@archant/data/money";
 import {
+	BILL_TYPES,
 	LAST_DAY_OF_MONTH,
 	MAX_END_AFTER_COUNT,
 	RECURRENCE_FREQUENCIES,
@@ -297,3 +298,38 @@ export function editBillSchema(currency: CurrencyCode) {
 
 /** What the edit dialog holds: the text typed, before the schema parses it. */
 export type EditFormInput = z.input<ReturnType<typeof editBillSchema>>;
+
+/**
+ * Sure's `BillsController::STATUS_FILTERS`: the current occurrence's payment
+ * state, then the two lifecycle values, `paused` reading `inactive`.
+ */
+export const BILL_STATUS_FILTERS = [
+	"overdue",
+	"due",
+	"partial",
+	"paid",
+	"paused",
+	"ended",
+] as const;
+
+export type BillStatusFilter = (typeof BILL_STATUS_FILTERS)[number];
+
+/** Sure's `bills/all` sorts: by next due date, the default, by name or by amount. */
+export const BILL_SORTS = ["due", "name", "amount"] as const;
+
+export type BillSort = (typeof BILL_SORTS)[number];
+
+/** `GET /api/recurring/bills/all`: Sure's `q[search]`, `q[status]`, `q[bill_type]` and `q[sort]`. */
+export const allBillsQuerySchema = z.object({
+	q: z
+		.string()
+		.trim()
+		.max(200)
+		.transform((value) => (value === "" ? undefined : value))
+		.optional(),
+	status: z.enum(BILL_STATUS_FILTERS).optional(),
+	type: z.enum(BILL_TYPES).optional(),
+	sort: z.enum(BILL_SORTS).default("due"),
+});
+
+export type AllBillsQuery = z.output<typeof allBillsQuerySchema>;

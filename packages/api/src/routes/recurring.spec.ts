@@ -672,6 +672,92 @@ describe("GET /api/recurring/bills", () => {
 	});
 });
 
+describe("GET /api/recurring/bills/all", () => {
+	it("lists the bills with their monthly equivalent, filtered, and refuses a filter it does not know", async () => {
+		const { app, seriesId } = await suggestedMortgage();
+		const client = testClient(app).api.recurring.bills.all;
+
+		const all = await client.$get({ query: {} });
+		const overdue = await client.$get({ query: { status: "overdue", q: "prêt" } });
+		const paid = await client.$get({ query: { status: "paid" } });
+		const subscriptions = await client.$get({ query: { type: "subscription" } });
+		const unknown = await app.request("/api/recurring/bills/all?status=late&sort=date");
+
+		expect(all.status).toBe(200);
+		expect(await all.json()).toMatchObject({
+			data: {
+				bills: [
+					{
+						id: seriesId,
+						monthlyEquivalent: 57_129,
+						currentOccurrence: { dueOn: "2026-09-05", confirmed: 0, remaining: 57_129 },
+					},
+				],
+				subscriptions: null,
+			},
+		});
+		expect(await overdue.json()).toMatchObject({ data: { bills: [{ id: seriesId }] } });
+		expect(await paid.json()).toMatchObject({ data: { bills: [] } });
+		expect(await subscriptions.json()).toMatchObject({
+			data: {
+				bills: [],
+				subscriptions: { count: 0, monthly: null, annual: null, priceChanges: [] },
+			},
+		});
+		expect(unknown.status).toBe(400);
+		const refused = errorBody.parse(await unknown.json()).error;
+		expect(refused.code).toBe("VALIDATION_ERROR");
+		expect(refused.fields?.map((field) => field.path).toSorted()).toEqual(["sort", "status"]);
+	});
+});
+
+describe("GET /api/recurring/upcoming", () => {
+	it("answers the active series expected within ten days", async () => {
+		const { app, account } = await suggestedMortgage();
+		await testClient(app).api.recurring.declare.$post({
+			json: {
+				kind: "bill",
+				name: "Internet",
+				amount: "39,99",
+				accountId: account.id,
+				firstDueOn: "2026-09-25",
+				frequency: { preset: "monthly" },
+			},
+		});
+
+		const response = await testClient(app).api.recurring.upcoming.$get();
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			data: [{ name: "Internet", nextExpectedDate: "2026-09-25", amount: -3999 }],
+		});
+	});
+});
+
+describe("GET /api/recurring/:id", () => {
+	it("answers a bill's story, NOT_FOUND for an unknown id", async () => {
+		const { app, seriesId } = await suggestedMortgage();
+		const client = testClient(app).api.recurring[":id"];
+
+		const found = await client.$get({ param: { id: seriesId } });
+		const unknown = await client.$get({ param: { id: "nope" } });
+
+		expect(found.status).toBe(200);
+		expect(await found.json()).toMatchObject({
+			data: {
+				record: { id: seriesId, name: "Prêt immobilier", monthlyEquivalent: 57_129 },
+				months: { 11: { month: "2026-09", paid: 0 } },
+				averagePaid: null,
+				priceChanges: [],
+				installment: null,
+				lastAccount: null,
+			},
+		});
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(await unknown.json()).error).toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
 describe("GET /api/recurring/occurrences/:id", () => {
 	it("answers the occurrence, its payments and its suggestion, NOT_FOUND for an unknown id", async () => {
 		const { app, payment, occurrences } = await suggestedMortgage();

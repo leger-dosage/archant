@@ -82,8 +82,10 @@ test("the rail's « Factures » opens the bills page, which links to every bill"
 	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
 
 	await page.getByRole("link", { name: "Toutes les factures" }).click();
-	await expect(page).toHaveURL(/\/recurring$/u);
-	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
+	await expect(page).toHaveURL(/\/bills\?view=all$/u);
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	await page.getByRole("link", { name: "Vue d'ensemble" }).click();
+	await expect(page).toHaveURL(/\/bills$/u);
 });
 
 test("each occurrence sits in its section and reads its due date as Sure's", async ({
@@ -436,4 +438,260 @@ test("an income alone is no bill: the page still says it has none", async ({ pag
 		}),
 	).toBeVisible();
 	await expect(page.getByRole("button", { name: "Ajouter une facture" })).toHaveCount(1);
+});
+
+// Story 23.5: « Toutes les factures » at `/bills?view=all`, and a bill's
+// drawer at `/bills/:id`. Each test narrows the table to its own bills by a
+// search on a prefix no other test uses.
+
+const ALL = "/bills?view=all";
+
+const allTable = (page: Page) => page.getByRole("table", { name: "Toutes les factures" });
+
+const allRow = (page: Page, name: string) =>
+	allTable(page).getByRole("row").filter({ hasText: name });
+
+/** « Toutes les factures » narrowed to `prefix`, and more search params. */
+async function visitAll(page: Page, prefix: string, more = "") {
+	await page.goto(`${ALL}&q=${encodeURIComponent(prefix)}${more}`);
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+}
+
+/** Picks `option` in the table's select labelled `label`. */
+async function pick(page: Page, label: string, option: string) {
+	await page.getByRole("combobox", { name: label }).click();
+	await page.getByRole("option", { name: option, exact: true }).click();
+}
+
+const names = async (page: Page) => allTable(page).getByRole("link").allInnerTexts();
+
+test("« Toutes les factures » lists every bill with its type, frequency, monthly equivalent and state, filtered and sorted from the URL", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const prefix = uniqueName("Tout");
+	const water = `${prefix} Eau`;
+	const late = `${prefix} Électricité`;
+	const partial = `${prefix} Gaz`;
+	const paused = `${prefix} Assurance`;
+	const salary = `${prefix} Salaire`;
+	await api.declareBill({
+		name: water,
+		amount: "90,00",
+		accountId: account.id,
+		firstDueOn: daysAgo(-20),
+		frequency: { preset: "quarterly" },
+	});
+	await declare(api, account.id, late, "84,20", 10);
+	const gas = await declare(api, account.id, partial, "300,00", -15);
+	await api.addPayment(await api.currentOccurrence(gas), { amount: "180,00", paidOn: daysAgo(0) });
+	await api.setRecurringStatus(await declare(api, account.id, paused, "45,00", -5), "inactive");
+	await api.declareBill({
+		name: salary,
+		amount: "2 500,00",
+		accountId: account.id,
+		firstDueOn: daysAgo(-25),
+		kind: "income",
+	});
+
+	await visitAll(page, prefix);
+
+	await expect(allTable(page).getByRole("columnheader")).toHaveText([
+		"Nom",
+		"Type",
+		"Fréquence",
+		"Montant",
+		"Prochaine échéance",
+		"Statut",
+		"Actions",
+	]);
+	await expect(allRow(page, water)).toContainText("Facture");
+	await expect(allRow(page, water)).toContainText("Trimestrielle");
+	await expect(allRow(page, water)).toContainText(`${euros(3000)}/mois`);
+	await expect(allRow(page, salary)).toContainText("Revenu");
+	await expect(allRow(page, salary)).toContainText(`+${euros(250_000)}`);
+	await expect(allRow(page, late)).toContainText("10 jours de retard");
+	await expect(allRow(page, paused)).toContainText("En pause");
+	// Active by due date, then paused.
+	expect(await names(page)).toEqual([late, partial, water, salary, paused]);
+
+	await pick(page, "Statut", "Partiellement payée");
+	await expect(page).toHaveURL(/status=partial/u);
+	await expect.poll(() => names(page)).toEqual([partial]);
+	await pick(page, "Statut", "En retard");
+	await expect.poll(() => names(page)).toEqual([late]);
+	await pick(page, "Statut", "En pause");
+	await expect.poll(() => names(page)).toEqual([paused]);
+	await pick(page, "Statut", "Payée");
+	await expect(page.getByRole("heading", { name: "Aucun résultat" })).toBeVisible();
+	await pick(page, "Statut", "Tous les statuts");
+
+	await pick(page, "Type", "Revenu");
+	await expect(page).toHaveURL(/type=income/u);
+	await expect.poll(() => names(page)).toEqual([salary]);
+	await pick(page, "Type", "Tous les types");
+
+	await pick(page, "Tri", "Par nom");
+	await expect(page).toHaveURL(/sort=name/u);
+	await expect.poll(() => names(page)).toEqual([paused, water, late, partial, salary]);
+	// The largest outflow first, incomes last.
+	await pick(page, "Tri", "Par montant");
+	await expect.poll(() => names(page)).toEqual([partial, water, late, paused, salary]);
+
+	const search = page.getByRole("searchbox", { name: "Rechercher une facture" });
+	await search.fill(`${prefix} ga`);
+	await expect(page).toHaveURL(/q=/u);
+	await expect.poll(() => names(page)).toEqual([partial]);
+	await search.fill(`${prefix} rien`);
+	await expect(page.getByRole("heading", { name: "Aucun résultat" })).toBeVisible();
+});
+
+/** A subscription of `amount` due today, paid twice at `paid`, so detection records its new price. */
+async function repriced(api: Api, accountId: string, name: string, amount: string, paid: string) {
+	const id = await declare(api, accountId, name, amount, 1);
+	await api.editBill(id, { billType: "subscription" });
+	const entryId = await api.addTransaction(accountId, {
+		date: daysAgo(1),
+		label: `${name} prélèvement`,
+		amount: `-${paid}`,
+	});
+	await api.addPayment(await api.currentOccurrence(id), { entryId, amount: paid });
+	await api.addPayment(await api.currentOccurrence(id), { amount: paid, paidOn: daysAgo(0) });
+	await api.detectRecurring();
+
+	return id;
+}
+
+test("the type « Abonnement » adds what the active ones cost a month and a year, and the year's price changes", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const dollars = await openAccount(api, "USD");
+	const prefix = uniqueName("Abo");
+	const netflix = `${prefix} Netflix`;
+	const music = await declare(api, account.id, `${prefix} Musique`, "9,99", -3);
+	await api.editBill(music, { billType: "subscription" });
+	const paused = await declare(api, account.id, `${prefix} Presse`, "8,99", -3);
+	await api.editBill(paused, { billType: "subscription" });
+	await api.setRecurringStatus(paused, "inactive");
+	const hosting = await declare(api, dollars.id, `${prefix} Hébergement`, "5,00", -3);
+	await api.editBill(hosting, { billType: "subscription" });
+	await repriced(api, account.id, netflix, "13,49", "15,99");
+
+	await visitAll(page, prefix, "&type=subscription");
+
+	const rollup = page.getByRole("region", { name: "Abonnements" });
+	// 9,99 € and 13,49 €, Netflix's stated amount; the dollars left out and named.
+	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText(euros(2348));
+	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText(euros(28_176));
+	await expect(rollup.getByRole("group", { name: "Actifs" })).toContainText("3");
+	await expect(rollup).toContainText(`${prefix} Hébergement`);
+	const changes = page.getByRole("list", { name: "Changements de prix cette année" });
+	const line = changes.getByRole("listitem").filter({ hasText: netflix });
+	await expect(line).toContainText(`${euros(1349)} → ${euros(1599)} (+18,5\u202f%)`);
+	await expect(line.locator(".text-warning")).toBeVisible();
+
+	await visitAll(page, `${prefix} rien`, "&type=subscription");
+	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText("–");
+	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText("–");
+});
+
+test("a bill opens as a drawer with its next payment, average, twelve months, price changes and link; closing keeps the search", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const prefix = uniqueName("Tiroir");
+	const name = `${prefix} Netflix`;
+	const id = await repriced(api, account.id, name, "13,49", "15,99");
+	await api.editBill(id, { notes: "Contrat 4821", paymentUrl: "netflix.example/compte" });
+
+	await visitAll(page, prefix);
+	await allRow(page, name).getByRole("link", { name }).click();
+
+	await expect(page).toHaveURL(new RegExp(`/bills/${id}\\?view=all&q=`, "u"));
+	const drawer = page.getByRole("dialog", { name });
+	await expect(drawer.getByRole("region", { name: "Prochain paiement" })).toContainText(
+		euros(1349),
+	);
+	await expect(drawer.getByRole("region", { name: "Moyenne payée" })).toContainText(
+		`de ${euros(1599)} à ${euros(1599)}`,
+	);
+	const months = drawer.getByRole("list", { name: "12 derniers mois" });
+	await expect(months.getByRole("listitem")).toHaveCount(12);
+	// Paid yesterday for the occurrence due yesterday: its month holds 15,99 €.
+	await expect(months.getByRole("listitem", { name: /: 15,99\s€$/u })).toHaveCount(1);
+	await expect(drawer.getByRole("region", { name: "Changements de prix" })).toContainText(
+		`${euros(1349)} → ${euros(1599)} (+18,5\u202f%)`,
+	);
+	await expect(drawer.getByRole("region", { name: "Dernier compte utilisé" })).toContainText(
+		account.name,
+	);
+	await expect(drawer.getByRole("region", { name: "Remarques" })).toContainText("Contrat 4821");
+	const link = drawer.getByRole("link", { name: "Ouvrir le site de la facture" });
+	await expect(link).toHaveAttribute("href", "https://netflix.example/compte");
+	await expect(link).toHaveAttribute("target", "_blank");
+	await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+
+	await drawer.getByRole("button", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: `Modifier ${name}` });
+	await expect(edit.getByLabel("Nom")).toHaveValue(name);
+	await page.keyboard.press("Escape");
+	await expect(edit).toBeHidden();
+
+	await drawer.getByRole("button", { name: "Mettre en pause" }).click();
+	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
+	await expect(drawer.getByRole("button", { name: "Reprendre" })).toBeVisible();
+
+	await page.keyboard.press("Escape");
+	await expect(drawer).toBeHidden();
+	await expect(page).toHaveURL(new RegExp(`/bills\\?view=all&q=`, "u"));
+	await expect(allRow(page, name)).toContainText("En pause");
+});
+
+test("an installment reads which payment is next, and deleting a bill from its drawer goes back to the table", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const prefix = uniqueName("Plan");
+	const name = `${prefix} Voiture`;
+	const id = await declare(api, account.id, name, "250,00", -5);
+	await api.editBill(id, { billType: "installment", endAfterCount: "12" });
+
+	await page.goto(`/bills/${id}?view=all&q=${encodeURIComponent(prefix)}&sort=name`);
+	const drawer = page.getByRole("dialog", { name });
+	await expect(drawer).toContainText("Paiement 1 sur 12");
+	// Nothing paid yet: no average.
+	await expect(drawer.getByRole("region", { name: "Moyenne payée" })).toHaveCount(0);
+
+	await drawer.getByRole("button", { name: "Supprimer" }).click();
+	const confirm = page.getByRole("alertdialog");
+	await expect(confirm).toContainText(`Supprimer « ${name} » ?`);
+	await confirm.getByRole("button", { name: "Supprimer" }).click();
+
+	await expect(toast(page, "Récurrence supprimée")).toBeVisible();
+	await expect(drawer).toBeHidden();
+	// The deleted bill's drawer read answers NOT_FOUND without a toast.
+	await expect(toast(page, "Cette ressource n'existe pas.")).toHaveCount(0);
+	await expect(page).toHaveURL(/\/bills\?view=all&q=[^&]+&sort=name$/u);
+	await expect(page.getByRole("heading", { name: "Aucun résultat" })).toBeVisible();
+});
+
+test("a search of digits alone, which the router reads as a number, still filters the table", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const digits = String(Math.floor(Math.random() * 9e11) + 1e11);
+	const name = `${uniqueName("Contrat")} ${digits}`;
+	await declare(api, account.id, name, "12,00", -3);
+	await declare(api, account.id, uniqueName("Contrat"), "12,00", -3);
+
+	await page.goto(`${ALL}&q=${digits}`);
+
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	await expect.poll(() => names(page)).toEqual([name]);
 });

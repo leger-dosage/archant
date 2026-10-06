@@ -1,11 +1,12 @@
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
 import type { TransactionData } from "@/hooks/useTransactions";
-import type { FilterKind } from "@/lib/transaction-filters";
+import type { FilterKind, OperationsSearch } from "@/lib/transaction-filters";
 
 import { createFileRoute } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -25,6 +26,8 @@ import { TransactionSheet } from "@/components/TransactionSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UpcomingRecurring } from "@/components/UpcomingRecurring";
 import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
@@ -43,8 +46,22 @@ import {
 	withoutFilter,
 } from "@/lib/transaction-filters";
 
+// Absent means the transactions; « À venir » is Sure's `transactions/_upcoming`.
+const tabSchema = z.literal("upcoming").optional().catch(undefined);
+
+const TABS = ["transactions", "upcoming"] as const;
+
+// DESIGN.md keeps shadows for popovers, menus, sheets and dialogs; shadcn's
+// active tab has one, taken off here rather than in the copied component.
+const FLAT_TAB = "group-data-[variant=default]/tabs-list:data-active:shadow-none";
+
 export const Route = createFileRoute("/_authed/transactions")({
-	validateSearch: operationsSearchSchema,
+	validateSearch: (search: Record<string, unknown>): OperationsSearch & { tab?: "upcoming" } => {
+		const operations = operationsSearchSchema.parse(search);
+		const tab = tabSchema.parse(search["tab"]);
+
+		return tab === undefined ? operations : { ...operations, tab };
+	},
 	component: OperationsPage,
 });
 
@@ -143,7 +160,7 @@ function OperationSheet({
 
 function OperationsPage() {
 	const { t } = useTranslation();
-	const search = Route.useSearch();
+	const { tab, ...search } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const page = search.page ?? 1;
 	const filters = useMemo(() => filtersOf(search), [search]);
@@ -216,130 +233,162 @@ function OperationsPage() {
 	const remove = (kind: FilterKind) =>
 		void navigate({ search: (previous) => withoutFilter(previous, kind) });
 	const clear = () => void navigate({ search: {} });
+	const changeTab = (next: string) => {
+		const value = TABS.find((candidate) => candidate === next);
+
+		if (value !== undefined) {
+			void navigate({
+				search: ({ tab: _tab, ...previous }) =>
+					value === "upcoming" ? { ...previous, tab: value } : previous,
+			});
+		}
+	};
 
 	return (
 		<Page title={t("operations.title")}>
-			{/* The strip's own shape, so the list card does not jump when the figures land. */}
-			{totals.isPending && (
-				<div aria-hidden="true">
-					<SummaryStrip
-						className="rounded-xl border bg-card"
-						cells={(["count", "income", "expense"] as const).map((cell) => ({
-							label: t(`operations.summary.${cell}`),
-							value: <Skeleton className="h-7 w-24" />,
-						}))}
-					/>
-				</div>
-			)}
-			{figures !== undefined && (
-				<div className="flex flex-col gap-2">
-					{/* Sure's summary: the count, then the income and the expenses of every matching row. */}
-					<div aria-live="polite">
-						<SummaryStrip
-							className="rounded-xl border bg-card"
-							cells={[
-								{ label: t("operations.summary.count"), value: countFormat.format(figures.total) },
-								{
-									label: t("operations.summary.income"),
-									value: (
-										<Money
-											amount={figures.sum.income}
-											currency={figures.sum.currency}
-											signed
-											plusSign
-										/>
-									),
-								},
-								{
-									label: t("operations.summary.expense"),
-									value: (
-										<Money amount={figures.sum.expense} currency={figures.sum.currency} signed />
-									),
-								},
-							]}
-						/>
-					</div>
-					{figures.sum.skippedCount > 0 && (
-						<p className="text-xs text-muted-foreground">
-							{t("operations.skipped", { count: figures.sum.skippedCount })}
-						</p>
+			<Tabs value={tab ?? "transactions"} onValueChange={changeTab} className="gap-3">
+				<TabsList aria-label={t("operations.tabs.label")}>
+					<TabsTrigger value="transactions" className={FLAT_TAB}>
+						{t("operations.tabs.transactions")}
+					</TabsTrigger>
+					<TabsTrigger value="upcoming" className={FLAT_TAB}>
+						{t("operations.tabs.upcoming")}
+					</TabsTrigger>
+				</TabsList>
+				<TabsContent value="upcoming">
+					<UpcomingRecurring />
+				</TabsContent>
+				<TabsContent value="transactions" className="flex flex-col gap-6">
+					{/* The strip's own shape, so the list card does not jump when the figures land. */}
+					{totals.isPending && (
+						<div aria-hidden="true">
+							<SummaryStrip
+								className="rounded-xl border bg-card"
+								cells={(["count", "income", "expense"] as const).map((cell) => ({
+									label: t(`operations.summary.${cell}`),
+									value: <Skeleton className="h-7 w-24" />,
+								}))}
+							/>
+						</div>
 					)}
-				</div>
-			)}
+					{figures !== undefined && (
+						<div className="flex flex-col gap-2">
+							{/* Sure's summary: the count, then the income and the expenses of every matching row. */}
+							<div aria-live="polite">
+								<SummaryStrip
+									className="rounded-xl border bg-card"
+									cells={[
+										{
+											label: t("operations.summary.count"),
+											value: countFormat.format(figures.total),
+										},
+										{
+											label: t("operations.summary.income"),
+											value: (
+												<Money
+													amount={figures.sum.income}
+													currency={figures.sum.currency}
+													signed
+													plusSign
+												/>
+											),
+										},
+										{
+											label: t("operations.summary.expense"),
+											value: (
+												<Money
+													amount={figures.sum.expense}
+													currency={figures.sum.currency}
+													signed
+												/>
+											),
+										},
+									]}
+								/>
+							</div>
+							{figures.sum.skippedCount > 0 && (
+								<p className="text-xs text-muted-foreground">
+									{t("operations.skipped", { count: figures.sum.skippedCount })}
+								</p>
+							)}
+						</div>
+					)}
 
-			<TransactionListCard>
-				<div className="flex flex-wrap items-center gap-2">
-					<SearchField q={search.q} />
-					<TransactionFilters
-						filters={filters}
-						accounts={accountOptions}
-						categories={categories.data ?? []}
-						merchants={merchants.data ?? []}
-						tags={tags.data ?? []}
-						onChange={change}
-						onRemove={remove}
-					/>
-				</div>
+					<TransactionListCard>
+						<div className="flex flex-wrap items-center gap-2">
+							<SearchField q={search.q} />
+							<TransactionFilters
+								filters={filters}
+								accounts={accountOptions}
+								categories={categories.data ?? []}
+								merchants={merchants.data ?? []}
+								tags={tags.data ?? []}
+								onChange={change}
+								onRemove={remove}
+							/>
+						</div>
 
-				{transactions.isPending && <TransactionListSkeleton />}
+						{transactions.isPending && <TransactionListSkeleton />}
 
-				{failed !== null && (
-					<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
-						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
-						<div className="flex gap-2">
-							<Button variant="outline" onClick={() => void failed.refetch()}>
-								{t("common.retry")}
-							</Button>
-							{/* A filter the API refuses fails every retry; this is the way out. */}
-							{filtered && (
+						{failed !== null && (
+							<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border p-8">
+								<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
+								<div className="flex gap-2">
+									<Button variant="outline" onClick={() => void failed.refetch()}>
+										{t("common.retry")}
+									</Button>
+									{/* A filter the API refuses fails every retry; this is the way out. */}
+									{filtered && (
+										<Button variant="outline" onClick={clear}>
+											{t("operations.clearFilters")}
+										</Button>
+									)}
+								</div>
+							</div>
+						)}
+
+						{data !== undefined && data.items.length === 0 && settled?.total === 0 && !filtered && (
+							// Inside the list's card, which frames it already.
+							<EmptyNote flush className="py-6 text-center">
+								{t("operations.empty")}
+							</EmptyNote>
+						)}
+
+						{data !== undefined && data.items.length === 0 && settled?.total === 0 && filtered && (
+							<EmptyNote flush className="flex flex-col items-center gap-3 py-6 text-center">
+								<p>{t("operations.noMatch")}</p>
 								<Button variant="outline" onClick={clear}>
 									{t("operations.clearFilters")}
 								</Button>
-							)}
-						</div>
-					</div>
-				)}
+							</EmptyNote>
+						)}
 
-				{data !== undefined && data.items.length === 0 && settled?.total === 0 && !filtered && (
-					// Inside the list's card, which frames it already.
-					<EmptyNote flush className="py-6 text-center">
-						{t("operations.empty")}
-					</EmptyNote>
-				)}
+						{data !== undefined && data.items.length > 0 && (
+							<TransactionList
+								items={data.items}
+								splitParents={data.splitParents}
+								showAccount
+								headingLevel={2}
+								onOpen={(transaction) => setSheet({ open: true, transaction })}
+								// The previous page's rows, shown while the next loads, cannot be ticked
+								// under the new filters. A viewer has no bulk action to tick rows for.
+								{...(transactions.isPlaceholderData || !admin ? {} : { selection })}
+							/>
+						)}
 
-				{data !== undefined && data.items.length === 0 && settled?.total === 0 && filtered && (
-					<EmptyNote flush className="flex flex-col items-center gap-3 py-6 text-center">
-						<p>{t("operations.noMatch")}</p>
-						<Button variant="outline" onClick={clear}>
-							{t("operations.clearFilters")}
-						</Button>
-					</EmptyNote>
-				)}
+						{data !== undefined && pageCount > 1 && (
+							<Pagination
+								target={{ to: "/transactions" }}
+								page={page}
+								pageCount={pageCount}
+								label={t("transactions.paginationLabel")}
+							/>
+						)}
+					</TransactionListCard>
+				</TabsContent>
+			</Tabs>
 
-				{data !== undefined && data.items.length > 0 && (
-					<TransactionList
-						items={data.items}
-						splitParents={data.splitParents}
-						showAccount
-						headingLevel={2}
-						onOpen={(transaction) => setSheet({ open: true, transaction })}
-						// The previous page's rows, shown while the next loads, cannot be ticked
-						// under the new filters. A viewer has no bulk action to tick rows for.
-						{...(transactions.isPlaceholderData || !admin ? {} : { selection })}
-					/>
-				)}
-
-				{data !== undefined && pageCount > 1 && (
-					<Pagination
-						target={{ to: "/transactions" }}
-						page={page}
-						pageCount={pageCount}
-						label={t("transactions.paginationLabel")}
-					/>
-				)}
-			</TransactionListCard>
-
-			{admin && settled !== undefined && selection.target !== null && (
+			{tab === undefined && admin && settled !== undefined && selection.target !== null && (
 				<BulkBar
 					selection={selection}
 					target={selection.target}

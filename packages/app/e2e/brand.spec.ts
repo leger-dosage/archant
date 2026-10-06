@@ -94,20 +94,11 @@ test("each settings entry has its icon", async ({ page }) => {
 	);
 });
 
-test("the page header holds its h1 and its actions", async ({ page, api }) => {
-	// A series to list: an empty list moves « Détecter » into its empty state.
-	const account = await api.openAccount({ openingDate: daysAgo(5) });
-	await api.addRecurring(
-		await api.addTransaction(account.id, {
-			date: daysAgo(1),
-			label: "Abonnement",
-			amount: "-9,99",
-		}),
-	);
-	await page.goto("/recurring");
-	const header = pageHeader(page, "Récurrences");
+test("the page header holds its h1 and its actions", async ({ page }) => {
+	await page.goto("/bills?view=all");
+	const header = pageHeader(page, "Factures");
 
-	await expect(header.getByRole("button", { name: "Détecter" })).toBeVisible();
+	await expect(header.getByRole("button", { name: "Ajouter une facture" })).toBeVisible();
 	await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 
 	// A settings section is its own page: its name is the `h1`, as in Sure.

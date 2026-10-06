@@ -50,7 +50,7 @@ async function expectRowAtLeast56(row: Locator) {
 	expect(box?.height).toBeGreaterThanOrEqual(56);
 }
 
-test("recurring: the introduction heads the page, and the series sit in a table on a tray", async ({
+test("every bill: the introduction heads the page, and the bills sit in a table on a tray", async ({
 	page,
 	api,
 }) => {
@@ -60,13 +60,11 @@ test("recurring: the introduction heads the page, and the series sit in a table 
 		await api.addTransaction(account.id, { date: daysAgo(1), label, amount: "-9,99" }),
 	);
 
-	await page.goto("/recurring");
+	await page.goto(`/bills?view=all&q=${encodeURIComponent(label)}`);
 
-	await expect(pageHeader(page)).toContainText(
-		"Les abonnements, factures et revenus qui reviennent",
-	);
-	const group = await expectListGroup(page, "Toutes les récurrences");
-	const table = group.getByRole("table", { name: "Récurrences" });
+	await expect(pageHeader(page)).toContainText("Chaque facture et chaque revenu suivis");
+	const group = await expectListGroup(page, "Toutes les factures");
+	const table = group.getByRole("table", { name: "Toutes les factures" });
 	await expect(table.getByRole("columnheader", { name: "Prochaine échéance" })).toHaveCSS(
 		"text-transform",
 		"uppercase",
@@ -76,7 +74,6 @@ test("recurring: the introduction heads the page, and the series sit in a table 
 	const row = table.getByRole("row").filter({ hasText: label });
 	await expectRowAtLeast56(row);
 	await expect(row.locator('[data-slot="tinted-icon"]').first()).toHaveCSS("width", "28px");
-	await expect(row.locator('[data-slot="tinted-icon"]').nth(1)).toHaveCSS("width", "20px");
 	await expect(row.locator('[data-slot="status-badge"]').first()).toHaveCSS("height", "22px");
 });
 
@@ -252,7 +249,6 @@ test("security: the forms fill the 896 px column, their buttons at their content
 // Every list emptied as the API would answer it: the shared database holds
 // other tests' rows.
 const EMPTY_LISTS = [
-	{ path: "/recurring", api: "/api/recurring", heading: "Aucune récurrence pour l'instant" },
 	{ path: "/rules", api: "/api/rules", heading: "Aucune règle pour l'instant" },
 	{
 		path: "/settings/merchants",
@@ -605,7 +601,9 @@ test("no signed-in screen drops text under 12 px or a control under 28 px", asyn
 		"/accounts",
 		`/accounts/${account.id}`,
 		"/bills",
-		"/recurring",
+		"/bills?view=all",
+		"/transactions?tab=upcoming",
+		"/settings/recurring",
 		"/rules",
 		"/settings/categories",
 		"/settings/merchants",

@@ -199,6 +199,21 @@ export function priceChangeOf(
 }
 
 /**
+ * A price change in tenths of a percent, `(next − previous) / previous`
+ * rounded half away from zero as Ruby's `round(1)`, so 13,49 € → 15,99 € is
+ * 185 and back is −156; `0` when the previous amount is, as Sure's.
+ */
+export function changePercent(previous: MinorUnits, next: MinorUnits): number {
+	if (previous === 0) {
+		return 0;
+	}
+
+	const tenths = roundHalfUp(Math.abs(next - previous) * 1000, previous);
+
+	return next < previous ? -tenths : tenths;
+}
+
+/**
  * Sure's `default_horizon`: 90 days ahead, stretched to the next due date for
  * a yearly bill, and to an installment's last payment.
  */
