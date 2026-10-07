@@ -16,14 +16,14 @@ import type {
 } from "../schemas/transactions.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { DuplicateCandidate } from "./ledger/duplicates.ts";
-import type { BulkSelection } from "./ledger/edits.ts";
+import type { BulkSelection, ShownTransaction } from "./ledger/edits.ts";
 import type { TransactionFilter } from "./ledger/filter.ts";
 import type { EntryOrigin, TransactionListRecord, TransactionRecord } from "./ledger/queries.ts";
 import type { Split } from "./ledger/splits.ts";
 import type { TradeData } from "./trades.ts";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { isCurrencyCode, parseAmount, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import type { FileSourceId } from "@archant/data/schema/imports";
@@ -472,17 +472,43 @@ export async function groupTransactionsByLabel(
 	return { groups: groups.slice(0, MAX_LABEL_GROUPS), groupCount: groups.length };
 }
 
+/**
+ * What an assistant's `create_transaction` adds to the sheet's fields, as
+ * Sure's: a currency, which must be the account's; a category, a merchant
+ * and tags, set and locked in the same write; and its own id for the line,
+ * under which a retry finds the line instead of recording it twice.
+ */
+export type CreateTransactionOptions = {
+	currency?: string | undefined;
+	categoryId?: string | null | undefined;
+	merchantId?: string | null | undefined;
+	tagIds?: readonly string[] | undefined;
+	externalId?: { source: string; id: string } | undefined;
+};
+
+/** A transaction recorded, or for an assistant's id already used, the one it names. */
+export type CreatedTransaction = TransactionItem & { created: boolean };
+
 /** Records a transaction typed by the user, in its account's currency. */
 export async function createTransaction(
 	deps: ServiceDeps,
 	accountId: string,
 	input: TransactionInput,
-): Promise<TransactionItem> {
+	options: CreateTransactionOptions = {},
+): Promise<CreatedTransaction> {
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createTransactionSchema(currency).safeParse(input);
 
 	if (!parsed.success) {
 		throw validationError(parsed.error);
+	}
+
+	// Sure falls back to the account's currency and upcases what it is given;
+	// a line in another one needs an exchange rate Archant does not have (AD-6).
+	if (options.currency !== undefined && options.currency.trim().toUpperCase() !== currency) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+			{ path: "currency", code: "currency_mismatch" },
+		]);
 	}
 
 	const result = await ingest(
@@ -495,21 +521,37 @@ export async function createTransaction(
 			balance: null,
 			rejected: [],
 		},
-		{ manual: true },
+		{
+			manual: true,
+			classification: {
+				categoryId: options.categoryId ?? null,
+				merchantId: options.merchantId ?? null,
+				tagIds: options.tagIds ?? [],
+			},
+			assistantKey:
+				options.externalId === undefined
+					? undefined
+					: `ext:${options.externalId.source}:${options.externalId.id}`,
+		},
 		{ origin: "user" },
 	);
 	const [id] = result.created;
+	const [present] = result.groups.present;
 	const [rejected] = result.rejected;
 
 	if (rejected !== undefined) {
 		throw rejectionError(rejected.reason);
 	}
 
+	if (present !== undefined && present.entryId !== null) {
+		return { ...(await getTransaction(deps, present.entryId)), created: false };
+	}
+
 	if (id === undefined) {
 		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 	}
 
-	return getTransaction(deps, id);
+	return { ...(await getTransaction(deps, id)), created: true };
 }
 
 /** Edits a transaction on the user's behalf. */
@@ -535,11 +577,66 @@ export async function updateTransaction(
 	return getTransaction(deps, id);
 }
 
-/** Deletes a transaction for good. */
-export async function deleteTransaction(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	await deleteLedgerTransaction(deps, id, { origin: "user" });
+/** The account, date and amount an assistant showed the owner, the amount as typed. */
+export type ShownValues = { accountId: string; date: IsoDate; amount: string };
 
-	return { id };
+/**
+ * A deleted transaction as it stood just before, with the rows that went, a
+ * split's lines included, and whether its bank keys stay as tombstones.
+ */
+export type DeletedTransaction = {
+	transaction: TransactionItem;
+	deletedCount: number;
+	bankWillNotResend: boolean;
+};
+
+/**
+ * Deletes a transaction for good. With `shown`, which an assistant passes and
+ * the sheet never does, a transaction whose account, date or amount is no
+ * longer the one shown is kept, and `TRANSACTION_CHANGED` names what differs.
+ */
+export async function deleteTransaction(
+	deps: ServiceDeps,
+	id: string,
+	shown?: ShownValues,
+): Promise<DeletedTransaction> {
+	const transaction = await getTransaction(deps, id);
+	let expected: ShownTransaction | undefined;
+
+	if (shown !== undefined) {
+		const amount = isCurrencyCode(transaction.currency)
+			? parseAmount(shown.amount, transaction.currency)
+			: null;
+
+		if (amount === null) {
+			throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+				{ path: "amount", code: "invalid_amount" },
+			]);
+		}
+
+		expected = { accountId: shown.accountId, date: shown.date, amount };
+	}
+
+	const { row, deletedCount, tombstoned } = await deleteLedgerTransaction(deps, id, {
+		origin: "user",
+		shown: expected,
+	});
+
+	// Its fields as the deletion read them: an edit between the first read and
+	// the write would otherwise answer what the owner no longer had.
+	return {
+		transaction: {
+			...transaction,
+			label: row.label,
+			notes: row.notes,
+			excluded: row.excluded,
+			categoryId: row.categoryId,
+			merchantId: row.merchantId,
+			tagIds: row.tagIds,
+		},
+		deletedCount,
+		bankWillNotResend: tombstoned,
+	};
 }
 
 /** What « Fusionner avec… » lists for a possible duplicate, nearest date first. */

@@ -624,6 +624,78 @@ describe("deleteTransaction", () => {
 			code: "NOT_FOUND",
 		});
 	});
+
+	it("counts the rows it deleted and says whether a bank will not resend it", async () => {
+		const account = await openChecking();
+		const typed = await add(account.id);
+		const { parent } = await splitInTwo(account.id);
+		const { account: linked, bank } = await linkedChecking();
+		const [synced = ""] = (
+			await sync(linked.id, bank.connectionId, [
+				newBankLine({ externalId: "COUNT1", amount: toMinorUnits(-transferAmount()) }),
+			])
+		).created;
+
+		await expect(deleteTransaction(deps(), typed, asUser)).resolves.toMatchObject({
+			deletedCount: 1,
+			tombstoned: false,
+		});
+		await expect(deleteTransaction(deps(), parent, asUser)).resolves.toMatchObject({
+			deletedCount: 3,
+			tombstoned: false,
+		});
+		await expect(deleteTransaction(deps(), synced, asUser)).resolves.toMatchObject({
+			deletedCount: 1,
+			tombstoned: true,
+		});
+	});
+});
+
+/** What an assistant showed of `add`'s default line. */
+const shownOf = (accountId: string) => ({
+	accountId,
+	date: "2026-09-10",
+	amount: toMinorUnits(-4290),
+});
+
+describe("deleteTransaction with the values an assistant showed", () => {
+	it("deletes the transaction while its account, date and amount are the ones shown", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+
+		await deleteTransaction(deps(), id, { ...asUser, shown: shownOf(account.id) });
+
+		await expect(findTransaction(deps(), id)).resolves.toBeNull();
+	});
+
+	it.each([
+		["amount", { amount: toMinorUnits(-4291) }, "amount"],
+		["date", { date: "2026-09-11" }, "date"],
+		["account", { accountId: "another" }, "accountId"],
+		[
+			"every field",
+			{ accountId: "another", date: "2026-09-11", amount: toMinorUnits(1) },
+			"accountId,date,amount",
+		],
+	] as const)("keeps it when the %s differs, naming what changed", async (_, change, changed) => {
+		const account = await openChecking();
+		const id = await add(account.id);
+
+		await expect(
+			deleteTransaction(deps(), id, { ...asUser, shown: { ...shownOf(account.id), ...change } }),
+		).rejects.toMatchObject({ code: "TRANSACTION_CHANGED", params: { changed } });
+		await expect(findTransaction(deps(), id)).resolves.not.toBeNull();
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("compares before refusing a split's line, so a changed line answers TRANSACTION_CHANGED", async () => {
+		const account = await openChecking();
+		const { food } = await splitInTwo(account.id);
+
+		await expect(
+			deleteTransaction(deps(), food, { ...asUser, shown: shownOf(account.id) }),
+		).rejects.toMatchObject({ code: "TRANSACTION_CHANGED" });
+	});
 });
 
 describe("recategorise", () => {

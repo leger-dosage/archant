@@ -9,6 +9,8 @@ import { TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
 import {
 	bulkUpdateTransactionsInput,
+	createTransactionInput,
+	deleteTransactionInput,
 	getTransactionsInput,
 	groupTransactionsInput,
 	transactionIdInput,
@@ -17,12 +19,14 @@ import {
 import { MAX_BULK_IDS } from "../schemas/transactions.ts";
 import {
 	bulkUpdateTransactions,
+	createTransaction,
+	deleteTransaction,
 	findTransactions,
 	getTransaction,
 	groupTransactionsByLabel,
 	updateTransaction,
 } from "../services/transactions.ts";
-import { BANK_TEXT, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
+import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
 
 const transferFields = {
 	id: z.string().describe("The transfer's id, which unpair_transfer takes."),
@@ -248,5 +252,103 @@ export const bulkUpdateTransactionsTool = defineTool({
 		);
 
 		return { result: { matched: updated, changed }, changedRows: changed };
+	},
+});
+
+/**
+ * The amount as the ledger reads it: Sure's `type` sets the sign of the
+ * magnitude, money out negative as every Archant amount; without it the
+ * amount is taken as signed.
+ */
+function signedAmount(
+	amount: string,
+	type: z.output<typeof createTransactionInput>["type"],
+): string {
+	if (type === undefined) {
+		return amount;
+	}
+
+	const magnitude = amount.trim().replace(/^[+-]\s*/, "");
+
+	return type === "expense" || type === "outflow" ? `-${magnitude}` : magnitude;
+}
+
+export const createTransactionTool = defineTool({
+	name: "create_transaction",
+	title: "Record a transaction",
+	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns it as get_transaction does, with created. Calling it twice records two lines, unless externalId is given: then the second call records nothing and returns the line with created false. A refused field answers VALIDATION_ERROR with its path and code; an unknown accountId, NOT_FOUND.`,
+	scope: "archant:write",
+	annotations: CREATES,
+	input: createTransactionInput,
+	output: transactionDetail.extend({
+		created: z
+			.boolean()
+			.describe("false when externalId named a line already recorded, which is unchanged."),
+	}),
+	run: async (deps, input) => {
+		const {
+			accountId,
+			date,
+			label,
+			amount,
+			type,
+			notes,
+			externalId,
+			source: keySource,
+			...options
+		} = input;
+		const created = await createTransaction(
+			deps,
+			accountId,
+			{ date, label, amount: signedAmount(amount, type), notes },
+			{
+				...options,
+				externalId: externalId === undefined ? undefined : { source: keySource, id: externalId },
+			},
+		);
+
+		return {
+			result: { ...detailOf(created), created: created.created },
+			changedRows: created.created ? 1 : 0,
+		};
+	},
+});
+
+export const deleteTransactionTool = defineTool({
+	name: "delete_transaction",
+	title: "Delete a transaction",
+	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the accountId, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A transaction a bank synced is never synced again. Returns the transaction as it was, how many rows went and bankWillNotResend.`,
+	scope: "archant:write",
+	annotations: DESTROYS,
+	input: deleteTransactionInput,
+	output: z.object({
+		deleted: z.literal(true),
+		transaction: transactionDetail.describe(
+			"The transaction as it was, to type it again if need be.",
+		),
+		deletedCount: z
+			.number()
+			.int()
+			.describe(
+				"Entries deleted: the transaction, with a split's lines or the order it was converted into.",
+			),
+		bankWillNotResend: z
+			.boolean()
+			.describe(
+				"A bank synced it: no sync brings it back. A file's line comes back when the file is imported again.",
+			),
+	}),
+	run: async (deps, { id, ...shown }) => {
+		const deleted = await deleteTransaction(deps, id, shown);
+
+		return {
+			result: {
+				deleted: true as const,
+				transaction: detailOf(deleted.transaction),
+				deletedCount: deleted.deletedCount,
+				bankWillNotResend: deleted.bankWillNotResend,
+			},
+			changedRows: deleted.deletedCount,
+		};
 	},
 });

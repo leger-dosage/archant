@@ -242,7 +242,7 @@ async function connectThenDisconnect(
 		),
 	).toBeChecked();
 	const write = page.getByLabel(
-		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
+		"Créer et modifier vos règles, saisir, classer et supprimer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
 	);
 	await expect(write).toBeChecked();
 	await write.uncheck();

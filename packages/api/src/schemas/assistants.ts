@@ -20,6 +20,7 @@ import { tagSchema } from "./tags.ts";
 import {
 	DEFAULT_PAGE_SIZE,
 	MAX_BULK_IDS,
+	MAX_TAGS_PER_TRANSACTION,
 	MAX_TAG_FILTER,
 	bulkIds,
 	bulkPatchSchema,
@@ -837,3 +838,76 @@ export const createGoalInput = z
 			context.addIssue({ code: "custom", path: ["targetMonths"], message: "reserve_only" });
 		}
 	});
+
+/** Sure's `type`: the sign of a magnitude, money in or money out. */
+const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
+
+/**
+ * `create_transaction`: the transaction sheet's fields, passed raw to
+ * `createTransaction`, which parses them as it parses the sheet's, and
+ * Sure's: a type deriving the sign, a currency, a category, a merchant and
+ * tags, set and locked, and an id of the assistant's own that makes a retry
+ * find the line instead of recording it twice.
+ */
+export const createTransactionInput = z.strictObject({
+	accountId,
+	date: z.iso
+		.date()
+		.describe("YYYY-MM-DD, after the account's opening date and at most a year from today."),
+	label: z.string().describe("The label the line shows, such as « Marché du samedi »."),
+	amount: z
+		.string()
+		.describe(
+			'A decimal string such as "-12.50" in the account\'s currency: negative is money out, positive money in, as get_transactions gives them. With type, its sign is ignored.',
+		),
+	type: z
+		.enum(TRANSACTION_TYPES)
+		.optional()
+		.describe(
+			'"expense" or "outflow": money out; "income" or "inflow": money in. Given, it sets the sign, and amount gives the size.',
+		),
+	currency: z
+		.string()
+		.optional()
+		.describe("The account's ISO 4217 currency, which a line always has; another one is refused."),
+	notes: z.string().nullable().optional(),
+	categoryId: categoryId.nullable().optional(),
+	merchantId: merchantId.nullable().optional(),
+	// Repeats are dropped before the cap counts, as the sheet's.
+	tagIds: z
+		.array(tagId)
+		.transform((ids) => [...new Set(ids)])
+		.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
+		.optional(),
+	externalId: z
+		.string()
+		.min(1)
+		.max(200)
+		.optional()
+		.describe(
+			"An id of your own for the line, such as a statement row's: called again with the same externalId and source on this account, it records nothing and returns the line with created false.",
+		),
+	source: z
+		.string()
+		.trim()
+		.min(1)
+		.max(50)
+		// The key joins it to externalId with a colon: one inside would let two
+		// pairs name the same line.
+		.regex(/^[^:]*$/u)
+		.default("mcp")
+		.describe('Where externalId comes from, "mcp" by default; ignored without externalId.'),
+});
+
+/**
+ * `delete_transaction`: the transaction and what the owner was shown of it,
+ * every field required: the ledger deletes it only while they still hold.
+ */
+export const deleteTransactionInput = z.strictObject({
+	id: transactionIdInput.shape.id,
+	accountId: accountId.describe("Its account id, as get_transaction gave it."),
+	date: z.iso.date().describe("Its date, YYYY-MM-DD, as get_transaction gave it."),
+	amount: z
+		.string()
+		.describe('Its signed amount, a decimal string such as "-12.50", as get_transaction gave it.'),
+});

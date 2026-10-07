@@ -7,6 +7,7 @@ import type { SQL } from "drizzle-orm";
 
 import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
+import type { MinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -21,7 +22,7 @@ import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { tombstoneBankKeys } from "./entry-keys.ts";
+import { hasBankKeys, tombstoneBankKeys } from "./entry-keys.ts";
 import { correlatedTransferSide, filterCondition } from "./filter.ts";
 import {
 	categoryExists,
@@ -169,26 +170,65 @@ export async function updateTransaction(
 }
 
 /**
+ * What an assistant showed the owner of a transaction it deletes: the
+ * deletion goes ahead only while the row still holds them.
+ */
+export type ShownTransaction = { accountId: string; date: IsoDate; amount: MinorUnits };
+
+/**
+ * The row as the deletion read it, the entries it removed, a split's lines
+ * included, and whether a bank will not resend it.
+ */
+export type DeleteResult = { row: EditableRow; deletedCount: number; tombstoned: boolean };
+
+/** The fields of `shown` the row no longer holds, in the order an assistant names them. */
+function changedFrom(current: EditableRow, shown: ShownTransaction): string[] {
+	return [
+		current.accountId === shown.accountId ? null : "accountId",
+		current.date === shown.date ? null : "date",
+		current.amount === shown.amount ? null : "amount",
+	].filter((field) => field !== null);
+}
+
+/**
  * Deletes a transaction for good, as Sure does, and recomputes its account's
  * balances from its date. The rows past the new end go with it. Its bank keys
  * stay as tombstones, so the next sync, which rereads the last week, does not
  * bring it back; its file keys go, so re-importing the file does. A split
  * parent goes with its children; a child alone throws `TRANSACTION_SPLIT`.
+ * With `shown`, a row whose account, date or amount differs throws
+ * `TRANSACTION_CHANGED` first, read in the same transaction as the delete so
+ * a sync booking it at another amount cannot slip between them.
  */
 export async function deleteTransaction(
 	deps: ServiceDeps,
 	entryId: string,
-	_options: { origin: Origin },
-): Promise<void> {
-	await deps.db.transaction(
+	options: { origin: Origin; shown?: ShownTransaction | undefined },
+): Promise<DeleteResult> {
+	return deps.db.transaction(
 		async (tx) => {
 			const current = await transactionRow(tx, entryId);
+			const changed = options.shown === undefined ? [] : changedFrom(current, options.shown);
+
+			if (changed.length > 0) {
+				throw new AppError(
+					"TRANSACTION_CHANGED",
+					"The transaction changed since it was shown.",
+					undefined,
+					{ changed: changed.join(",") },
+				);
+			}
+
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
 			await refuseSplit(tx, [entryId], isSplitChild);
+			const lines = await tx.$count(entries, eq(entries.parentEntryId, entryId));
+			const tombstoned = await hasBankKeys(tx, entryId);
 			await tombstoneBankKeys(tx, [entryId], Date.now());
 			await deleteTransactionRows(tx, [entryId]);
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
+
+			return { row: current, deletedCount: 1 + lines, tombstoned };
 		},
 		{ behavior: "immediate" },
 	);

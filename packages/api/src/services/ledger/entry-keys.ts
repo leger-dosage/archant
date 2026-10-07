@@ -88,6 +88,17 @@ export async function tombstonedKeys(
 	return found;
 }
 
+/** Whether a bank synced the entry: a key of a bank connector is on it. */
+export async function hasBankKeys(tx: Transaction, entryId: string): Promise<boolean> {
+	const row = await tx
+		.select({ key: entryKeys.key })
+		.from(entryKeys)
+		.where(and(eq(entryKeys.entryId, entryId), inArray(entryKeys.source, BANK_CONNECTOR_IDS)))
+		.get();
+
+	return row !== undefined;
+}
+
 /**
  * Keeps the bank keys of the entries `ids` as tombstones, so a sync never
  * brings back a transaction the user deleted. File keys are not kept:

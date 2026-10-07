@@ -9,8 +9,20 @@ import { inList } from "./check.ts";
 import { entries } from "./entries.ts";
 import { FILE_SOURCE_IDS, imports } from "./imports.ts";
 
-/** Every source that writes keys: a file connector or a bank connector. */
-export const ENTRY_KEY_SOURCES = [...FILE_SOURCE_IDS, ...BANK_CONNECTOR_IDS] as const;
+/**
+ * The source of the key an assistant's `create_transaction` gives a line with
+ * its own id, as Sure's `external_id`: a retry finds the line instead of
+ * recording it twice. Never a file's nor a bank's, so no import or sync
+ * recognises a line by it.
+ */
+export const ASSISTANT_KEY_SOURCE = "assistant";
+
+/** Every source that writes keys: a file connector, a bank connector or an assistant. */
+export const ENTRY_KEY_SOURCES = [
+	...FILE_SOURCE_IDS,
+	...BANK_CONNECTOR_IDS,
+	ASSISTANT_KEY_SOURCE,
+] as const;
 
 export type EntryKeySource = (typeof ENTRY_KEY_SOURCES)[number];
 
@@ -18,7 +30,8 @@ export type EntryKeySource = (typeof ENTRY_KEY_SOURCES)[number];
  * The keys under which a source recognises an entry it already wrote (AD-7):
  * `fp:<sha256>` for every line, plus `ext:<id>` when the source has its own
  * id. Written at ingest and never recomputed, so editing an imported
- * transaction never breaks its recognition. Manual entries have none. A key
+ * transaction never breaks its recognition. Manual entries have none, but
+ * for the `ext:` key an assistant gives the line it records. A key
  * written by a bank sync carries the connection it came from instead of an
  * import.
  */

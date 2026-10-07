@@ -2105,7 +2105,7 @@
 		"returnsTo": "Il recevra votre réponse sur {{host}}.",
 		"scopes": "Il pourra :",
 		"read": "Lire vos comptes, vos opérations, vos règles, vos budgets, vos factures et vos objectifs",
-		"write": "Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
+		"write": "Créer et modifier vos règles, saisir, classer et supprimer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
 		"revoke": "Vous pourrez le déconnecter à tout moment dans Réglages › Assistants IA.",
 		"allow": "Autoriser",
 		"deny": "Refuser"
@@ -2315,6 +2315,7 @@
 		"NOT_SPLITTABLE": "Cette opération ne peut pas être divisée : un virement, une opération en attente, exclue, signalée comme doublon possible ou déjà divisée ne se divise pas.",
 		"NOT_CONVERTIBLE": "Cette opération ne peut pas être convertie en ordre : un virement, une opération en attente, exclue, signalée comme doublon possible, divisée ou déjà convertie ne se convertit pas.",
 		"TRANSACTION_SPLIT": "Cette opération fait partie d'une division. Modifiez la division, ou annulez-la d'abord.",
+		"TRANSACTION_CHANGED": "Cette opération a changé depuis qu'elle vous a été montrée. Elle n'a pas été supprimée.",
 		"BUDGET_NOT_SET_UP": "Définissez d'abord les dépenses prévues de ce mois.",
 		"BUDGET_ALREADY_SET_UP": "Ce mois a déjà un budget. Il n'a pas été modifié.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",

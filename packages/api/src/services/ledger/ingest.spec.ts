@@ -1515,3 +1515,84 @@ describe("ingest and a split", () => {
 		await expect(history(account.id)).resolves.toEqual(days);
 	});
 });
+
+/** A line recorded by hand, with what an assistant adds to it. */
+const manual = (
+	accountId: string,
+	source: Omit<Extract<Parameters<typeof ingest>[3], { manual: true }>, "manual">,
+	overrides: Parameters<typeof line>[0] = {},
+) =>
+	ingest(
+		deps(),
+		accountId,
+		statementOf(line(overrides)),
+		{ manual: true, ...source },
+		{
+			origin: "user",
+		},
+	);
+
+describe("ingest of a line an assistant records", () => {
+	it("sets and locks the category, the merchant and the tags it is given", async () => {
+		const account = await openChecking();
+		const gifts = await newCategory("Cadeaux assistant");
+		const florist = await newMerchant("Fleuriste assistant");
+		const birthday = await newTag("Anniversaire assistant");
+
+		const {
+			created: [id = ""],
+		} = await manual(account.id, {
+			classification: { categoryId: gifts, merchantId: florist, tagIds: [birthday] },
+		});
+
+		await expect(categoryOf(id)).resolves.toBe(gifts);
+		await expect(categoryOriginOf(id)).resolves.toBe("user");
+		await expect(merchantOf(id)).resolves.toBe(florist);
+		await expect(tagsOf(id)).resolves.toEqual([birthday]);
+		await expect(lockedFields(id)).resolves.toEqual([
+			"date",
+			"amount",
+			"label",
+			"category",
+			"merchant",
+			"tags",
+		]);
+		await expect(entryOrigins(deps(), [id])).resolves.toEqual(new Map());
+	});
+
+	it.each([
+		["categoryId", { categoryId: "nope", merchantId: null, tagIds: [] }],
+		["merchantId", { categoryId: null, merchantId: "nope", tagIds: [] }],
+		["tagIds", { categoryId: null, merchantId: null, tagIds: ["nope"] }],
+	] as const)("refuses an unknown %s, writing nothing", async (path, classification) => {
+		const account = await openChecking();
+
+		await expect(manual(account.id, { classification })).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path, code: "invalid_value" }],
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+	});
+
+	it("records a line once per assistant key, the second time present and unwritten", async () => {
+		const account = await openChecking();
+
+		const first = await manual(account.id, { assistantKey: "ext:mcp:row-1" });
+		const second = await manual(
+			account.id,
+			{
+				assistantKey: "ext:mcp:row-1",
+				classification: { categoryId: "gone", merchantId: null, tagIds: [] },
+			},
+			{ amount: toMinorUnits(-1) },
+		);
+
+		const [id = ""] = first.created;
+		expect(second.created).toEqual([]);
+		expect(second.groups.present).toEqual([expect.objectContaining({ entryId: id })]);
+		await expect(keyRows(id)).resolves.toEqual([
+			{ source: "assistant", importId: null, connectionId: null },
+		]);
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+});

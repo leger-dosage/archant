@@ -88,8 +88,11 @@ export function transactionsRoutes(deps: ServiceDeps) {
 					200,
 				),
 			)
-			.delete("/:id", async (c) =>
-				c.json({ data: await deleteTransaction(deps, c.req.param("id")) }, 200),
-			)
+			.delete("/:id", async (c) => {
+				const id = c.req.param("id");
+				await deleteTransaction(deps, id);
+
+				return c.json({ data: { id } }, 200);
+			})
 	);
 }
