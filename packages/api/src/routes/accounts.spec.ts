@@ -2240,20 +2240,36 @@ describe("GET /api/accounts/:id/schedule", () => {
 		expect(data?.payments.at(-1)?.date).toBe("2040-12-05");
 	});
 
-	it("answers null for a loan without a schedule, and for another account", async () => {
-		const withoutAmount = await openAccount({
+	it("amortises the opening balance from the opening date without an amount borrowed, as Sure's", async () => {
+		const loan = await openAccount({
 			...mortgage,
-			details: { ...ingTerms, originalAmount: "" },
+			openingBalance: "130 000,00",
+			openingDate: "2020-12-05",
+			details: { ...ingTerms, originalAmount: "", startDate: "" },
 		});
+
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			originationDate: "2020-12-05",
+			periodicPayment: 53_969,
+			totalInterest: 3_190_696,
+			totalPaid: 16_190_696,
+		});
+	});
+
+	it("answers null for a loan without a schedule, and for another account", async () => {
 		const withoutRate = await openAccount({
 			...mortgage,
 			details: { ...ingTerms, rateType: "", interestRate: "" },
+		});
+		const withoutTerm = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, originalAmount: "", termMonths: "" },
 		});
 		const withoutTerms = await openAccount(mortgage);
 		const checking = await openAccount();
 
 		const answers = await Promise.all(
-			[withoutAmount, withoutRate, withoutTerms, checking].map((account) => scheduleOf(account.id)),
+			[withoutRate, withoutTerm, withoutTerms, checking].map((account) => scheduleOf(account.id)),
 		);
 
 		expect(answers).toEqual([null, null, null, null]);
@@ -2356,25 +2372,47 @@ describe("GET /api/accounts/:id/overview", () => {
 	it("names an insurance rate with no schedule to apply it to", async () => {
 		const loan = await openAccount({
 			...mortgage,
-			details: { ...ingTerms, originalAmount: "" },
+			details: { ...ingTerms, termMonths: "" },
 		});
 
 		await expect(overviewOf(loan.id)).resolves.toMatchObject({
-			originalAmount: null,
+			originalAmount: 13_000_000,
 			insured: false,
 			insurance: { rate: 2_917 },
 			totalCost: null,
-			repaidPercent: null,
+			repaidPercent: 0,
 			instalment: null,
 		});
 	});
 
-	it("answers every figure null for a loan without details, and null for another account", async () => {
+	it("measures a loan without an amount borrowed by its opening balance, as Sure's", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "130 000,00",
+			openingDate: "2020-12-05",
+			details: { ...ingTerms, originalAmount: "", startDate: "" },
+		});
+		await postSnapshot(loan.id, { date: "2026-09-05", balance: "105 104,82" });
+		vi.setSystemTime(new Date("2026-10-04T10:00:00Z"));
+
+		await expect(overviewOf(loan.id)).resolves.toMatchObject({
+			originalAmount: 13_000_000,
+			remainingBalance: 10_510_482,
+			monthlyPayment: 53_969,
+			payoffDate: "2045-12-05",
+			insured: true,
+			insurance: { total: 948_000 },
+			repaidPercent: 19,
+			instalment: { number: 70, date: "2026-10-05", total: 57_129 },
+		});
+	});
+
+	it("answers every unknown figure null for a loan without details, and null for another account", async () => {
 		const withoutTerms = await openAccount(mortgage);
 		const checking = await openAccount();
 
 		await expect(overviewOf(withoutTerms.id)).resolves.toMatchObject({
-			originalAmount: null,
+			originalAmount: 18_000_000,
 			remainingBalance: 18_000_000,
 			interestRate: null,
 			monthlyPayment: null,
@@ -2385,7 +2423,7 @@ describe("GET /api/accounts/:id/overview", () => {
 			totalCost: null,
 			insurance: null,
 			leverage: null,
-			repaidPercent: null,
+			repaidPercent: 0,
 			instalment: null,
 		});
 		await expect(overviewOf(checking.id)).resolves.toBeNull();
@@ -2566,16 +2604,37 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		});
 	});
 
-	it("answers null for a loan without a schedule, and for another account", async () => {
-		const withoutAmount = await openAccount({
+	it("charts a loan without an amount borrowed from its opening balance, as Sure's", async () => {
+		const loan = await openAccount({
 			...mortgage,
-			details: { ...ingTerms, originalAmount: "" },
+			openingBalance: "130 000,00",
+			openingDate: "2020-12-05",
+			details: { ...ingTerms, originalAmount: "", startDate: "" },
+		});
+		await postSnapshot(loan.id, { date: "2026-09-05", balance: "105 104,82" });
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		const data = await payoffChartOf(loan.id);
+
+		expect(data).toMatchObject({
+			from: "2020-12-05",
+			scheduledPayoffDate: "2045-12-05",
+			balance: 10_510_482,
+		});
+		expect(data?.scheduled[0]).toEqual({ date: "2020-12-05", balance: 13_000_000 });
+		expect(data?.change).toMatchObject({ amount: -2_489_518 });
+	});
+
+	it("answers null for a loan without a schedule, and for another account", async () => {
+		const withoutTerm = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, originalAmount: "", termMonths: "" },
 		});
 		const withoutTerms = await openAccount(mortgage);
 		const checking = await openAccount();
 
 		const answers = await Promise.all(
-			[withoutAmount, withoutTerms, checking].map((account) => payoffChartOf(account.id)),
+			[withoutTerm, withoutTerms, checking].map((account) => payoffChartOf(account.id)),
 		);
 
 		expect(answers).toEqual([null, null, null]);

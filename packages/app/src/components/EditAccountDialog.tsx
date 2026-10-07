@@ -127,7 +127,7 @@ export function EditAccountDialog({ account, open, onOpenChange }: EditAccountDi
 
 	return (
 		<Dialog open={open} onOpenChange={close}>
-			<DialogContent showCloseButton={false}>
+			<DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>{t("accountActions.form.title")}</DialogTitle>
 					<DialogDescription>{t("accountActions.form.description")}</DialogDescription>

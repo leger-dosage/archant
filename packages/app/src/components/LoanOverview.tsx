@@ -1,4 +1,3 @@
-import type { SummaryCell } from "@/components/SummaryStrip";
 import type { LoanOverviewData } from "@/hooks/useLoanOverview";
 import type { ReactNode } from "react";
 
@@ -9,7 +8,7 @@ import { formatMoney } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { ProgressRing } from "@/components/ProgressRing";
-import { SummaryStrip } from "@/components/SummaryStrip";
+import { SummaryCard } from "@/components/SummaryCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { longDate } from "@/lib/dates";
@@ -22,9 +21,6 @@ const ratioFormat = new Intl.NumberFormat("fr-FR", {
 	minimumFractionDigits: 1,
 	maximumFractionDigits: 1,
 });
-
-// Sure's `grid-cols-3`: three figures to a row, so ten never crowd one line.
-const CELLS_PER_ROW = 3;
 
 // Sure's `loan_leverage_band_class`: success, warning and destructive. Sure's
 // success green has no token here; the income green is the closest that keeps
@@ -54,8 +50,11 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 	const money = (amount: MinorUnits | null): ReactNode =>
 		amount === null ? unknown : <Money amount={amount} currency={currency} />;
 	const term = overview.termMonths === null ? null : truncatedTermOf(overview.termMonths);
-	const cells: SummaryCell[] = [
-		{ label: t("loanOverview.originalAmount"), value: money(overview.originalAmount) },
+	const cells: { label: string; value: ReactNode }[] = [
+		{
+			label: t("loanOverview.originalAmount"),
+			value: <Money amount={overview.originalAmount} currency={currency} />,
+		},
 		{ label: t("loanOverview.remainingBalance"), value: money(overview.remainingBalance) },
 		{
 			label: t("loanOverview.interestRate"),
@@ -130,11 +129,8 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 		});
 	}
 
-	const rows = Array.from({ length: Math.ceil(cells.length / CELLS_PER_ROW) }, (_, index) =>
-		cells.slice(index * CELLS_PER_ROW, (index + 1) * CELLS_PER_ROW),
-	);
 	const repaid =
-		overview.repaidPercent === null || overview.originalAmount === null
+		overview.repaidPercent === null
 			? null
 			: {
 					percent: overview.repaidPercent,
@@ -143,9 +139,12 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex flex-col divide-y divide-line rounded-xl border bg-card">
-				{rows.map((row) => (
-					<SummaryStrip key={row[0]?.label} cells={row} />
+			{/* Sure's `grid-cols-3`; two columns on a phone, where three 20 px amounts overflow (WCAG 1.4.10). */}
+			<div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+				{cells.map((cell) => (
+					<SummaryCard key={cell.label} title={cell.label}>
+						{cell.value}
+					</SummaryCard>
 				))}
 			</div>
 

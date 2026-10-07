@@ -3,11 +3,13 @@ import type { AmortizationSchedule } from "./amortization-schedule.ts";
 import type { Insurance } from "./insurance.ts";
 
 import type { LoanDetails, LoanRateType } from "@archant/data/account-types";
+import { toMinorUnits } from "@archant/data/money";
 
 import { addMonths } from "../dates.ts";
 import { roundHalfUp } from "./amortization-math.ts";
 import { amortizationSchedule } from "./amortization-schedule.ts";
 import { insurance as insuranceOf } from "./insurance.ts";
+import { originalBalance } from "./original-balance.ts";
 import { rateResolver } from "./rate-resolver.ts";
 
 /** Sure's `Loan::LEVERAGE_BANDS`, inclusive and searched in this order. */
@@ -34,7 +36,8 @@ export type Instalment = {
 };
 
 export type LoanOverview = {
-	originalAmount: bigint | null;
+	/** Sure's `original_balance`: the amount borrowed, else the opening balance. */
+	originalAmount: bigint;
 	/** The account's balance: what happened, where the schedule says what was promised. */
 	remainingBalance: bigint;
 	/** In millionths, the rate in force on the day asked. */
@@ -79,16 +82,8 @@ export function monthsElapsed(origination: IsoDate, asOf: IsoDate, termMonths: n
  * without a down payment, since a loan with none recorded is not infinitely
  * leveraged, only one whose leverage nobody has told us.
  */
-export function leverage(
-	originalAmount: bigint | null,
-	downPayment: bigint | null,
-): Leverage | null {
-	if (
-		originalAmount === null ||
-		downPayment === null ||
-		downPayment <= 0n ||
-		originalAmount <= 0n
-	) {
+export function leverage(originalAmount: bigint, downPayment: bigint | null): Leverage | null {
+	if (downPayment === null || downPayment <= 0n || originalAmount <= 0n) {
 		return null;
 	}
 
@@ -105,11 +100,11 @@ export function leverage(
 /**
  * Sure's `balance_paid_ratio` as a whole percent: measured against the
  * account's balance rather than the schedule, so an early repayment shows.
- * The balance counts by its size, as Sure's `abs`. `null` without an amount
- * borrowed, which leaves the ring out.
+ * The balance counts by its size, as Sure's `abs`. `null` when nothing above
+ * zero was borrowed, which leaves the ring out.
  */
-export function repaidPercent(originalAmount: bigint | null, balance: bigint): number | null {
-	if (originalAmount === null || originalAmount <= 0n) {
+export function repaidPercent(originalAmount: bigint, balance: bigint): number | null {
+	if (originalAmount <= 0n) {
 		return null;
 	}
 
@@ -163,10 +158,27 @@ export function paymentBreakdown(
 export type OverviewInput = {
 	details: LoanDetails | null;
 	balance: bigint;
-	/** The account's opening date, origination when no start date is recorded. */
-	openingDate: IsoDate;
+	/**
+	 * The account's opening anchor, Sure's first valuation: origination when no
+	 * start date is recorded, the principal when no amount borrowed is.
+	 */
+	opening: { date: IsoDate; balance: bigint };
 	/** One day for every figure, as Sure's `_overview` passes one `as_of`. */
 	asOf: IsoDate;
+};
+
+/** A loan whose terms nobody has told: Sure's `Loan` with every column blank. */
+const UNKNOWN_TERMS: LoanDetails = {
+	originalAmount: null,
+	downPayment: null,
+	startDate: null,
+	termMonths: null,
+	rateType: null,
+	interestRate: null,
+	insuranceRate: null,
+	insuranceRateType: null,
+	rateChanges: [],
+	endDate: null,
 };
 
 /**
@@ -174,75 +186,58 @@ export type OverviewInput = {
  * The schedule and the premiums are read off `amortizationSchedule` and
  * `insurance`, never re-derived, so the two tabs cannot disagree.
  */
-export function loanOverview({ details, balance, openingDate, asOf }: OverviewInput): LoanOverview {
-	if (details === null) {
-		return {
-			originalAmount: null,
-			remainingBalance: balance,
-			interestRate: null,
-			monthlyPayment: null,
-			termMonths: null,
-			rateType: null,
-			payoffDate: null,
-			insured: false,
-			totalCost: null,
-			insurance: null,
-			leverage: null,
-			repaidPercent: null,
-			instalment: null,
-		};
-	}
-
-	const originalAmount = details.originalAmount === null ? null : BigInt(details.originalAmount);
-	const downPayment = details.downPayment === null ? null : BigInt(details.downPayment);
+export function loanOverview({ details, balance, opening, asOf }: OverviewInput): LoanOverview {
+	const terms = details ?? UNKNOWN_TERMS;
+	const originalAmount = originalBalance(terms.originalAmount, opening.balance);
+	const downPayment = terms.downPayment === null ? null : BigInt(terms.downPayment);
 	const schedule = amortizationSchedule({
-		...details,
-		originationDate: details.startDate ?? openingDate,
+		...terms,
+		originalAmount: toMinorUnits(Number(originalAmount)),
+		originationDate: terms.startDate ?? opening.date,
 	});
-	// A schedule has an amount borrowed, which a level premium is charged on.
 	const policy =
-		schedule === null || originalAmount === null
-			? null
-			: insuranceOf(schedule, { ...details, principal: originalAmount });
+		schedule === null ? null : insuranceOf(schedule, { ...terms, principal: originalAmount });
 
 	return {
 		originalAmount,
 		remainingBalance: balance,
 		interestRate:
-			details.interestRate === null
+			terms.interestRate === null
 				? null
 				: rateResolver({
-						rateType: details.rateType ?? "fixed",
-						interestRate: details.interestRate,
-						rateChanges: details.rateChanges,
+						rateType: terms.rateType ?? "fixed",
+						interestRate: terms.interestRate,
+						rateChanges: terms.rateChanges,
 					}).accrualRateFor(asOf),
-		monthlyPayment: monthlyPaymentOf(details.rateType, schedule, asOf),
-		termMonths: details.termMonths,
-		rateType: details.rateType,
+		monthlyPayment: monthlyPaymentOf(terms, originalAmount, schedule, asOf),
+		termMonths: terms.termMonths,
+		rateType: terms.rateType,
 		payoffDate: schedule?.payments.at(-1)?.date ?? null,
 		insured: policy !== null,
 		totalCost: schedule === null ? null : schedule.totalPaid + (policy?.total ?? 0n),
 		insurance:
 			policy !== null
 				? { total: policy.total }
-				: details.insuranceRate !== null && details.insuranceRate > 0
-					? { rate: details.insuranceRate }
+				: terms.insuranceRate !== null && terms.insuranceRate > 0
+					? { rate: terms.insuranceRate }
 					: null,
 		leverage: leverage(originalAmount, downPayment),
 		repaidPercent: repaidPercent(originalAmount, balance),
 		instalment:
-			schedule === null || details.termMonths === null
+			schedule === null || terms.termMonths === null
 				? null
-				: paymentBreakdown(schedule, policy, details.termMonths, asOf),
+				: paymentBreakdown(schedule, policy, terms.termMonths, asOf),
 	};
 }
 
 /**
- * A variable loan has no single payment, so it quotes the one in force, Sure's
- * `payment_in_force`: the next on or after the day asked.
+ * Sure's `monthly_payment` and `payment_in_force`. A variable loan has no
+ * single payment, so it quotes the one in force: the next on or after the day
+ * asked. A fixed loan with nothing above zero borrowed pays zero.
  */
 function monthlyPaymentOf(
-	rateType: LoanRateType | null,
+	{ rateType, interestRate, termMonths }: LoanDetails,
+	originalAmount: bigint,
 	schedule: AmortizationSchedule | null,
 	asOf: IsoDate,
 ): LoanOverview["monthlyPayment"] {
@@ -251,7 +246,11 @@ function monthlyPaymentOf(
 	}
 
 	if (rateType === "fixed") {
-		return schedule?.periodicPayment ?? null;
+		if (interestRate === null || termMonths === null) {
+			return null;
+		}
+
+		return originalAmount <= 0n ? 0n : (schedule?.periodicPayment ?? null);
 	}
 
 	return schedule?.payments.find((payment) => payment.date >= asOf)?.payment ?? "not_applicable";

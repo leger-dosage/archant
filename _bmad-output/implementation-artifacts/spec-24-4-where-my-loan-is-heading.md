@@ -84,6 +84,8 @@ context:
 ## Spec Change Log
 
 - 2026-10-07, owner's rule « no divergence from Sure »: the interface follows Sure's chart and cards rather than the epic's sentences and DESIGN.md's accent. Colours and dashes are Sure's; the outcome reads in Sure's two cards and its notice instead of « 25 mois et 3 906,00 € d'intérêts économisés » and « 1 234,56 € restants à l'échéance »; the today line has no label, as Sure's; the summary carries Sure's change « since the loan started ». `visible` lists the series in Sure's `SERIES` order. `projectedPayoff` is `{ status, date }`, a bare date beside the two strings failing the lint's redundant union rule.
+- 2026-10-07, after Epic 24 merged, the owner: « Je ne vois vraiment pas l'intérêt de s'éloigner de Sure à ce stade ». An Archant document is no reason to depart from Sure; only integer money, French through i18next with Sure's own `fr.yml` wording, WCAG 2.2 AA contrast, security, Recharts and Archant's period selector are. A loan without an amount borrowed charts from its opening balance, Sure's `original_balance`. Sure's change line « depuis le début du prêt » shows above Sure's cards, which are separate `summary_card`s; the description is for screen readers only and the « Voir le tableau » table is gone, as Sure's: the « Échéancier » tab carries the figures. The rise or fall takes the income green or the destructive red, Sure's trend colours at 4.5:1. Kept: every Archant period, the period selector being Archant's, and the recorded line not greying past the cursor, Recharts.
+
 
 ## Review Triage Log
 

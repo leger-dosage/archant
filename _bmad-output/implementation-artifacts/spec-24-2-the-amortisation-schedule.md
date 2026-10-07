@@ -91,6 +91,8 @@ context:
 ## Spec Change Log
 
 - Implementation found the matrix's « #7 » wrong: payments from 2026-01-01 put the 2026-07-01 payment at number 6, the one whose period straddles the 2026-06-20 change. The row was corrected to « #6, on 2026-07-01 » before any human approval; the test asserts the payment by its date. KEEP: the assertion by date.
+- 2026-10-07, after Epic 24 merged, the owner: « Je ne vois vraiment pas l'intérêt de s'éloigner de Sure à ce stade ». An Archant document is no reason to depart from Sure; only integer money, French through i18next with Sure's own `fr.yml` wording, WCAG 2.2 AA contrast, security, Recharts and Archant's period selector are. A loan without an amount borrowed is amortised from its opening balance, Sure's `original_balance` falling back to the first valuation (`domain/loans/original-balance.ts`), so it has the tab; « never a fallback principal » is withdrawn. The cards are Sure's separate `summary_card`s in its `grid-cols-2 md:grid-cols-4`, not a summary strip. « Mensualité » becomes « Paiement mensuel », the wording of Sure's `fr.yml` for « Monthly Payment », « Première mensualité » « Paiement initial » and the column « Paiement ».
+
 
 ## Review Triage Log
 

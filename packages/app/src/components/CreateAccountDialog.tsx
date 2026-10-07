@@ -140,7 +140,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 
 	return (
 		<Dialog open={open} onOpenChange={close}>
-			<DialogContent showCloseButton={false}>
+			<DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>{t("accounts.form.title")}</DialogTitle>
 					<DialogDescription>{t("accounts.form.description")}</DialogDescription>

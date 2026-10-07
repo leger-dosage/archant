@@ -15,6 +15,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { balanceChange, sampleSeries } from "../domain/balances/history.ts";
 import { minDate, today } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
+import { originalBalance } from "../domain/loans/original-balance.ts";
 import { loanOverview as overviewOf } from "../domain/loans/overview.ts";
 import {
 	chartDomain,
@@ -26,7 +27,7 @@ import { payoffProjection } from "../domain/loans/payoff-projection.ts";
 import { rateResolver } from "../domain/loans/rate-resolver.ts";
 import { getAccount } from "./accounts.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
-import { balancesBetween } from "./ledger/balances.ts";
+import { balancesBetween, openingAnchorOf } from "./ledger/balances.ts";
 
 type LoanSchedulePayment = {
 	number: number;
@@ -74,27 +75,43 @@ type Contract = {
 	originalAmount: bigint;
 };
 
+type Opening = { date: IsoDate; balance: bigint };
+
 /**
- * A loan's schedule, the rates it runs on and its amount borrowed; `null` for
- * another type of account, or a loan that cannot be amortised, as Sure's
- * `amortizable?`. Origination is the start date, else the account's opening
- * date, as Sure's `origination_date`.
+ * The account's opening anchor, Sure's first valuation: a loan's origination
+ * without a start date, and its principal without an amount borrowed.
  */
-function contractOf(account: AccountDetail): Contract | null {
+async function openingOf(deps: ServiceDeps, accountId: string): Promise<Opening> {
+	// `getAccount` already refused an account without one.
+	const anchor = (await openingAnchorOf(deps, accountId))!;
+
+	return { date: anchor.date, balance: BigInt(anchor.balance) };
+}
+
+/**
+ * A loan's schedule, the rates it runs on and its principal; `null` for
+ * another type of account, or a loan that cannot be amortised, as Sure's
+ * `amortizable?`. The principal is Sure's `original_balance`, the amount
+ * borrowed else the opening balance; origination is the start date, else the
+ * opening date, as Sure's `origination_date`.
+ */
+function contractOf(account: AccountDetail, opening: Opening): Contract | null {
 	const { details } = account;
 
 	if (account.type !== "loan" || details === null) {
 		return null;
 	}
 
-	const { originalAmount, rateType, interestRate, rateChanges } = details;
+	const { rateType, interestRate, rateChanges } = details;
+	const originalAmount = originalBalance(details.originalAmount, opening.balance);
 	const schedule = amortizationSchedule({
 		...details,
-		originationDate: details.startDate ?? account.openingDate,
+		originalAmount: toMinorUnits(Number(originalAmount)),
+		originationDate: details.startDate ?? opening.date,
 	});
 
 	// `amortizationSchedule` has none without these; asked again for their types.
-	if (schedule === null || originalAmount === null || rateType === null || interestRate === null) {
+	if (schedule === null || rateType === null || interestRate === null) {
 		return null;
 	}
 
@@ -102,7 +119,7 @@ function contractOf(account: AccountDetail): Contract | null {
 		schedule,
 		variable: rateType !== "fixed",
 		rates: rateResolver({ rateType, interestRate, rateChanges }),
-		originalAmount: BigInt(originalAmount),
+		originalAmount,
 	};
 }
 
@@ -132,7 +149,8 @@ export async function loanSchedule(
 	accountId: string,
 ): Promise<LoanScheduleData | null> {
 	const account = await getAccount(deps, accountId);
-	const contract = contractOf(account);
+	const contract =
+		account.type === "loan" ? contractOf(account, await openingOf(deps, accountId)) : null;
 
 	if (contract === null) {
 		return null;
@@ -186,7 +204,8 @@ export type LoanOverviewData = Pick<
 	/** Today in `APP_TIMEZONE`, the one day every figure answers for. */
 	asOf: IsoDate;
 	currency: string;
-	originalAmount: MinorUnits | null;
+	/** Sure's `original_balance`: the amount borrowed, else the opening balance. */
+	originalAmount: MinorUnits;
 	remainingBalance: MinorUnits;
 	monthlyPayment: MinorUnits | "not_applicable" | null;
 	totalCost: MinorUnits | null;
@@ -199,7 +218,8 @@ const minorOrNull = (value: bigint | null) => (value === null ? null : minor(val
 /**
  * A loan's overview, computed on read from its terms and its balance: nothing
  * is stored. `null` for another type of account; a loan without details
- * answers every figure it cannot know as `null`.
+ * answers every figure it cannot know as `null`, and measures what it
+ * borrowed by its opening balance.
  */
 export async function loanOverview(
 	deps: ServiceDeps,
@@ -215,7 +235,7 @@ export async function loanOverview(
 	const overview = overviewOf({
 		details: account.details,
 		balance: BigInt(account.balance),
-		openingDate: account.openingDate,
+		opening: await openingOf(deps, accountId),
 		asOf,
 	});
 	const { instalment, insurance, monthlyPayment } = overview;
@@ -223,7 +243,7 @@ export async function loanOverview(
 	return {
 		asOf,
 		currency: account.currency,
-		originalAmount: minorOrNull(overview.originalAmount),
+		originalAmount: minor(overview.originalAmount),
 		remainingBalance: minor(overview.remainingBalance),
 		interestRate: overview.interestRate,
 		monthlyPayment: typeof monthlyPayment === "bigint" ? minor(monthlyPayment) : monthlyPayment,
@@ -294,7 +314,8 @@ export async function loanPayoffChart(
 	period: BalancePeriod,
 ): Promise<LoanPayoffChartData | null> {
 	const account = await getAccount(deps, accountId);
-	const contract = contractOf(account);
+	const contract =
+		account.type === "loan" ? contractOf(account, await openingOf(deps, accountId)) : null;
 
 	if (contract === null) {
 		return null;

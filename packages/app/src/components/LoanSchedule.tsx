@@ -4,7 +4,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import { Money } from "@/components/Money";
-import { SummaryStrip } from "@/components/SummaryStrip";
+import { SummaryCard } from "@/components/SummaryCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
@@ -42,32 +42,28 @@ export function LoanSchedule({ schedule }: { schedule: LoanScheduleData }) {
 
 	return (
 		<div className="flex flex-col gap-4">
-			<SummaryStrip
-				className="rounded-xl border bg-card"
-				cells={[
-					{
-						// A re-sized loan has no single monthly payment: the card says which one this is.
-						label: schedule.reAmortising
+			<div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+				{/* A re-sized loan has no single monthly payment: the card says which one this is. */}
+				<SummaryCard
+					title={
+						schedule.reAmortising
 							? t("loanSchedule.openingPayment")
-							: t("loanSchedule.monthlyPayment"),
-						value: <Money amount={schedule.periodicPayment} currency={currency} />,
-					},
-					{
-						label: t("loanSchedule.totalInterest"),
-						value: <Money amount={schedule.totalInterest} currency={currency} />,
-					},
-					{
-						label: t("loanSchedule.totalCost"),
-						value: <Money amount={schedule.totalPaid} currency={currency} />,
-					},
-					{
-						// Where today's balance leads, as the chart above draws it; the
-						// overview has the contract's own date.
-						label: t("loanSchedule.projectedPayoff"),
-						value: projectedPayoffText(t, schedule.projectedPayoff),
-					},
-				]}
-			/>
+							: t("loanSchedule.monthlyPayment")
+					}
+				>
+					<Money amount={schedule.periodicPayment} currency={currency} />
+				</SummaryCard>
+				<SummaryCard title={t("loanSchedule.totalInterest")}>
+					<Money amount={schedule.totalInterest} currency={currency} />
+				</SummaryCard>
+				<SummaryCard title={t("loanSchedule.totalCost")}>
+					<Money amount={schedule.totalPaid} currency={currency} />
+				</SummaryCard>
+				{/* Where today's balance leads, as the chart above draws it; the overview has the contract's own date. */}
+				<SummaryCard title={t("loanSchedule.projectedPayoff")}>
+					{projectedPayoffText(t, schedule.projectedPayoff)}
+				</SummaryCard>
+			</div>
 
 			<p className="text-sm text-muted-foreground">
 				{t("loanSchedule.description", { startDate: longDate(schedule.originationDate) })}
