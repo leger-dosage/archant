@@ -7,7 +7,7 @@ import type { ExportedTransactionRow } from "./ledger/export.ts";
 import { Zip, ZipDeflate } from "fflate";
 import Papa from "papaparse";
 
-import type { AccountType } from "@archant/data/account-types";
+import type { AccountType, LoanDetails } from "@archant/data/account-types";
 import type { Database, ReadSnapshot } from "@archant/data/client";
 import { readSnapshot } from "@archant/data/client";
 import { formatMicros } from "@archant/data/micros";
@@ -150,9 +150,44 @@ function bandAmount(amount: number | null, currency: string): string | null {
 	return amount === null ? null : sureAmount(toMinorUnits(amount), currency);
 }
 
-/** A rate in basis points as Sure's percentage: 345 is `3.45`. */
-function percent(basisPoints: number): string {
-	return `${Math.trunc(basisPoints / 100)}.${String(basisPoints % 100).padStart(2, "0")}`;
+/**
+ * A rate in millionths as Sure's decimal percentage, as Rails writes a
+ * `BigDecimal`: 18200 is `1.82`, 2917 is `0.2917`, 30000 is `3.0`.
+ */
+function percent(millionths: number): string {
+	const fraction = String(millionths % 10_000)
+		.padStart(4, "0")
+		.replace(/0+$/u, "");
+
+	return `${Math.trunc(millionths / 10_000)}.${fraction === "" ? "0" : fraction}`;
+}
+
+function percentOrNull(millionths: number | null): string | null {
+	return millionths === null ? null : percent(millionths);
+}
+
+/**
+ * Sure's `Loan` columns of a loan's terms, each null when unknown (AD-23). A
+ * loan linked to a bank has no details at all.
+ */
+function loanAccountable(details: LoanDetails | null, currency: string) {
+	const amount = (value: MinorUnits | null | undefined) =>
+		value === null || value === undefined ? null : decimal(value, currency);
+
+	return {
+		initial_balance: amount(details?.originalAmount),
+		down_payment: amount(details?.downPayment),
+		start_date: details?.startDate ?? null,
+		term_months: details?.termMonths ?? null,
+		rate_type: details?.rateType ?? null,
+		interest_rate: percentOrNull(details?.interestRate ?? null),
+		// Sure's `variable_rate_schedule`, a rate per effective date.
+		variable_rate_schedule: Object.fromEntries(
+			(details?.rateChanges ?? []).map((change) => [change.effectiveDate, percent(change.rate)]),
+		),
+		insurance_rate: percentOrNull(details?.insuranceRate ?? null),
+		insurance_rate_type: details?.insuranceRateType ?? null,
+	};
 }
 
 /** A timestamp as Rails writes one in JSON. */
@@ -771,18 +806,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					updated_at: timestamp(account.updatedAt),
 					accountable: {
 						subtype,
-						...(account.type === "loan"
-							? {
-									initial_balance:
-										loan?.originalAmount === null || loan?.originalAmount === undefined
-											? null
-											: decimal(toMinorUnits(loan.originalAmount), account.currency),
-									interest_rate:
-										loan?.interestRate === null || loan?.interestRate === undefined
-											? null
-											: percent(loan.interestRate),
-								}
-							: {}),
+						...(account.type === "loan" ? loanAccountable(loan, account.currency) : {}),
 					},
 					archant: {
 						type: account.type,

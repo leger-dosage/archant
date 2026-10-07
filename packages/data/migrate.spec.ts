@@ -39,6 +39,10 @@ const insertAccount = (database: Database, id: string, type: string, subtype: st
 		sql`insert into accounts (id, name, type, subtype, currency, created_at, updated_at) values (${id}, 'A', ${type}, ${subtype}, 'EUR', 0, 0)`,
 	);
 
+// A loan written before 0058, as every migration since leaves it.
+const LEGACY_LOAN_AFTER_0058 =
+	'{"originalAmount":20000000,"interestRate":34500,"endDate":"2045-01-01","downPayment":null,"startDate":null,"termMonths":null,"rateType":null,"insuranceRate":null,"insuranceRateType":null,"rateChanges":[]}';
+
 const insertEntry = (
 	database: Database,
 	id: string,
@@ -927,7 +931,7 @@ describe("investment accounts", () => {
 				id: "a3",
 				type: "loan",
 				subtype: "mortgage",
-				details: '{"originalAmount":20000000,"interestRate":345,"endDate":"2045-01-01"}',
+				details: LEGACY_LOAN_AFTER_0058,
 			},
 		]);
 		await expect(database.all(sql`select id from entries order by id`)).resolves.toEqual([
@@ -974,7 +978,7 @@ describe("property and vehicle accounts", () => {
 				id: "a3",
 				type: "loan",
 				subtype: "mortgage",
-				details: '{"originalAmount":20000000,"interestRate":345,"endDate":"2045-01-01"}',
+				details: LEGACY_LOAN_AFTER_0058,
 			},
 		]);
 		await expect(database.all(sql`select id from entries order by id`)).resolves.toEqual([
@@ -2737,5 +2741,60 @@ describe("holdings", () => {
 
 		await expect(database.all(sql`select * from cost_basis_locks`)).resolves.toEqual([]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+const parseJson = (text: string): unknown => JSON.parse(text);
+
+describe("loan terms", () => {
+	it("moves a loan's rate to millionths and adds Sure's terms when 0058 runs, its end date kept", async () => {
+		const before = await migratedBefore("0058");
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, created_at, updated_at) values ('a1', 'A', 'loan', 'mortgage', 'EUR', '{"originalAmount":20000000,"interestRate":345,"endDate":"2045-12-05"}', 0, 0)`,
+		);
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, created_at, updated_at) values ('a2', 'A', 'loan', 'consumer', 'EUR', '{"originalAmount":null,"interestRate":null,"endDate":null}', 0, 0)`,
+		);
+		await insertAccount(before, "a3", "depository", "checking");
+		// A loan linked to a bank has no details at all.
+		await insertAccount(before, "a4", "loan", "mortgage");
+		before.$client.close();
+
+		const database = await migrated();
+		const rows = await database.all<{ id: string; details: string | null }>(
+			sql`select id, details from accounts order by id`,
+		);
+		const terms = {
+			downPayment: null,
+			startDate: null,
+			termMonths: null,
+			rateType: null,
+			insuranceRate: null,
+			insuranceRateType: null,
+			rateChanges: [],
+		};
+
+		expect(
+			rows.map((row) => ({
+				id: row.id,
+				details: row.details === null ? null : parseJson(row.details),
+			})),
+		).toEqual([
+			{
+				id: "a1",
+				details: {
+					originalAmount: 20000000,
+					interestRate: 34500,
+					endDate: "2045-12-05",
+					...terms,
+				},
+			},
+			{
+				id: "a2",
+				details: { originalAmount: null, interestRate: null, endDate: null, ...terms },
+			},
+			{ id: "a3", details: null },
+			{ id: "a4", details: null },
+		]);
 	});
 });

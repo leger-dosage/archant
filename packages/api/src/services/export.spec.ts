@@ -188,7 +188,20 @@ async function household() {
 			type: "loan",
 			subtype: "consumer",
 			openingBalance: "12 000",
-			details: { originalAmount: "15 000", interestRate: "3,45", endDate: "2030-01-01" },
+			details: {
+				originalAmount: "15 000",
+				downPayment: "1 500,50",
+				startDate: "2025-01-15",
+				termMonths: "60",
+				rateType: "variable",
+				interestRate: "3,45",
+				insuranceRate: "0,2917",
+				insuranceRateType: "decreasing_life",
+				rateChanges: [
+					{ effectiveDate: "2026-01-15", rate: "3" },
+					{ effectiveDate: "2025-07-15", rate: "3,125" },
+				],
+			},
 		}),
 		mortgage: await account({
 			name: "Prêt immobilier",
@@ -218,6 +231,10 @@ async function household() {
 	};
 	await sendOwn("PATCH", `/api/accounts/${ids.car}`, { active: false });
 	await sendOwn("PATCH", `/api/accounts/${ids.home}`, { excludedFromReports: true });
+	// A loan migrated from Story 7.1 keeps its end date until its details are saved.
+	await database().run(
+		sql`update accounts set details = json_set(details, '$.endDate', '2030-01-01') where id = ${ids.consumer}`,
+	);
 
 	const food = await ownCategory("Alimentation");
 	const bakery = await ownCategory("Boulangerie", { parentId: food });
@@ -758,11 +775,33 @@ describe("exportArchive", () => {
 			accountable_type: "Loan",
 			subtype: "other",
 			balance: "11700.00",
-			accountable: { subtype: "other", initial_balance: "15000.00", interest_rate: "3.45" },
+			accountable: {
+				subtype: "other",
+				initial_balance: "15000.00",
+				down_payment: "1500.50",
+				start_date: "2025-01-15",
+				term_months: 60,
+				rate_type: "variable",
+				interest_rate: "3.45",
+				variable_rate_schedule: { "2025-07-15": "3.125", "2026-01-15": "3.0" },
+				insurance_rate: "0.2917",
+				insurance_rate_type: "decreasing_life",
+			},
 			archant: { type: "loan", subtype: "consumer", loan_end_date: "2030-01-01" },
 		});
 		expect(accounts.get(ids.mortgage)).toMatchObject({
-			accountable: { subtype: "mortgage", initial_balance: null, interest_rate: null },
+			accountable: {
+				subtype: "mortgage",
+				initial_balance: null,
+				down_payment: null,
+				start_date: null,
+				term_months: null,
+				rate_type: null,
+				interest_rate: null,
+				variable_rate_schedule: {},
+				insurance_rate: null,
+				insurance_rate_type: null,
+			},
 			archant: { loan_end_date: null },
 		});
 		expect(accounts.get(ids.pea)).toMatchObject({ accountable_type: "Investment", subtype: "pea" });

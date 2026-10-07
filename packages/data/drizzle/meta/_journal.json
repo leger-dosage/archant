@@ -407,6 +407,13 @@
       "when": 1791277626522,
       "tag": "0057_add_recurring_occurrences",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1791358116000,
+      "tag": "0058_loan_terms",
+      "breakpoints": true
     }
   ]
 }

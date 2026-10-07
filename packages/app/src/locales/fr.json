@@ -189,11 +189,43 @@
 	"loanDetails": {
 		"label": "Détails du prêt",
 		"originalAmount": "Montant emprunté",
-		"interestRate": "Taux (%)",
-		"endDate": "Date de fin",
+		"downPayment": "Apport personnel",
+		"startDate": "Date d'origine",
+		"startDateHint": "Laissez vide pour prendre la date d'ouverture du compte",
+		"termMonths": "Durée (mois)",
+		"interestRate": "Taux d'intérêt (%)",
+		"rateType": "Type de taux",
+		"rateTypes": {
+			"fixed": "Fixe",
+			"variable": "Variable",
+			"adjustable": "Révisable"
+		},
+		"insuranceRate": "Taux d'assurance (%)",
+		"insuranceRateType": "Type d'assurance",
+		"insuranceRateTypes": {
+			"none": "Aucune",
+			"level_term": "Constante",
+			"decreasing_life": "Dégressive"
+		},
+		"insuranceHint": "Un taux annuel, prélevé chaque mois en complément de la mensualité. L'assurance constante porte sur le capital initial, l'assurance dégressive sur le capital restant dû.",
+		"rateChanges": "Changements de taux",
+		"rateChangeDate": "Date d'effet",
+		"rateChangeRate": "Taux (%)",
+		"ofRateChange": "du changement {{index}}",
+		"addRateChange": "Ajouter un changement",
 		"summary": {
 			"originalAmount": "Emprunté : {{amount}}",
 			"interestRate": "Taux : {{rate}}",
+			"interestRateTyped": "Taux : {{rate}} {{type}}",
+			"rateTypes": {
+				"fixed": "fixe",
+				"variable": "variable",
+				"adjustable": "révisable"
+			},
+			"termYears_one": "Durée : {{count}} an",
+			"termYears_other": "Durée : {{count}} ans",
+			"termMonths_one": "Durée : {{count}} mois",
+			"termMonths_other": "Durée : {{count}} mois",
 			"endDate": "Fin : {{date}}"
 		}
 	},
@@ -2243,8 +2275,11 @@
 			"negative_amount": "Le montant ne peut pas être négatif.",
 			"invalid_currency": "Devise inconnue.",
 			"invalid_subtype": "Type de compte invalide.",
-			"invalid_rate": "Taux invalide. Exemple : 3,45, entre 0 et 100.",
-			"invalid_date": "Date invalide.",
+			"invalid_rate": "Taux invalide : entre 0 et 100, trois décimales au plus, quatre pour l'assurance.",
+			"invalid_term": "Durée invalide : un nombre entier de mois, de 1 à 1 200.",
+			"invalid_rate_change": "Chaque changement de taux demande une date et un taux entre 0 et 100, trois décimales au plus.",
+			"rate_change_before_origination": "Un changement de taux ne peut pas précéder la date d'origine du prêt.",
+			"invalid_date": "Date invalide, ou postérieure à aujourd'hui.",
 			"invalid_details": "Ces détails ne concernent que les prêts.",
 			"invalid_format": "Date invalide.",
 			"invalid_value": "Valeur invalide.",

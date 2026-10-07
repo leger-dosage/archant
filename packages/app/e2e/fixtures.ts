@@ -4,6 +4,7 @@ import { test as base, expect } from "@playwright/test";
 import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import type { LoanDetailsInput } from "@archant/api/schemas/accounts";
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { CategoryIcon } from "@archant/data/category-presets";
@@ -29,7 +30,7 @@ export type OpenAccountOptions = {
 	/** ISO 4217; EUR by default. */
 	currency?: string;
 	/** A loan's details, as typed in the form. */
-	details?: { originalAmount?: string; interestRate?: string; endDate?: string };
+	details?: LoanDetailsInput;
 };
 
 export type Created = { id: string; name: string };

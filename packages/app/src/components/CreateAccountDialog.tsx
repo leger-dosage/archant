@@ -36,7 +36,8 @@ import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { yearsAgo } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors } from "@/lib/form-errors";
+import { applyFieldErrors, errorAt } from "@/lib/form-errors";
+import { LOAN_FIELD_NAMES, completeLoanInput } from "@/lib/loan-details";
 
 const TOP_FIELD_NAMES = [
 	"name",
@@ -47,12 +48,7 @@ const TOP_FIELD_NAMES = [
 	"openingDate",
 ] as const;
 
-const FIELD_NAMES = [
-	...TOP_FIELD_NAMES,
-	"details.originalAmount",
-	"details.interestRate",
-	"details.endDate",
-] as const;
+const FIELD_NAMES = [...TOP_FIELD_NAMES, ...LOAN_FIELD_NAMES] as const;
 
 const defaults = (): CreateAccountInput => ({
 	name: "",
@@ -63,7 +59,7 @@ const defaults = (): CreateAccountInput => ({
 	// Sure's `OpeningBalanceManager#default_date`: a line dated today must land
 	// after the opening balance, which is an end-of-day balance.
 	openingDate: yearsAgo(2),
-	details: { originalAmount: "", interestRate: "", endDate: "" },
+	details: completeLoanInput(undefined),
 });
 
 // What the amount is, where « Solde initial » would mislead: what a loan still
@@ -109,7 +105,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 	const { errors, isSubmitting } = form.formState;
 	const currency = useController({ control: form.control, name: "currency" });
 	const openingDate = useController({ control: form.control, name: "openingDate" });
-	const endDate = useController({ control: form.control, name: "details.endDate" });
+	const details = useController({ control: form.control, name: "details" });
 	const type = form.watch("type");
 	const kind = kindOf(type, form.watch("subtype"));
 
@@ -261,10 +257,9 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 
 					{type === "loan" && (
 						<LoanDetailsFields
-							originalAmount={form.register("details.originalAmount")}
-							interestRate={form.register("details.interestRate")}
-							endDate={endDate.field}
-							errors={errors.details}
+							value={completeLoanInput(details.field.value)}
+							onChange={details.field.onChange}
+							errorOf={(field) => errorAt(errors, `details.${field}`)}
 						/>
 					)}
 				</form>

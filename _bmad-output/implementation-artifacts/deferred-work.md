@@ -325,3 +325,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-23-4-the-bills-page.md`
   summary: A bill declared with a future first due date shows an overdue occurrence a cycle before it once « Détecter » runs.
   evidence: medium, seen in QA. A monthly bill declared on 6 October with its first due date on 8 October showed « 28 jours de retard, échéance le 8 septembre » on `/bills`. `backfillOccurrences` inserts six months back without the anchor clamp, and the prune keeps the current cycle, which starts on 8 September. Sure's `HistoryBackfiller` and `prune_uncovered_past!` at `14638a701` do the same, since `occurrence_pairs_between` clamps to the anchor only for a rule repeating every two or more periods. Clamping the backfill of a manual series at its anchor departs from Sure and needs the owner's call.
+- source_spec: `_bmad-output/implementation-artifacts/spec-24-1-record-a-loans-terms-as-sure-does.md`
+  summary: A « Retirer » button on each rate-change row, as Sure's `_rate_change_row`.
+  evidence: Story 24.1 lets an emptied row be skipped on save, but it stays on screen; removing rows needs stable keys in `LoanDetailsFields.tsx`, which indexes them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-24-1-record-a-loans-terms-as-sure-does.md`
+  summary: Test the term proposed to a migrated loan through « Modifier le compte », not only `loanDetailsToInput`.
+  evidence: The API no longer accepts `endDate`, so Playwright cannot seed such a loan; `EditAccountDialog` passing the wrong opening date would go unnoticed. Needs a component test or a database seed for e2e.

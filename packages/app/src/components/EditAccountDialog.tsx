@@ -35,28 +35,20 @@ import { useUpdateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
-import { applyFieldErrors } from "@/lib/form-errors";
-import { loanDetailsToInput } from "@/lib/loan-details";
+import { applyFieldErrors, errorAt } from "@/lib/form-errors";
+import { LOAN_FIELD_NAMES, completeLoanInput, loanDetailsToInput } from "@/lib/loan-details";
 
-const FIELD_NAMES = [
-	"name",
-	"subtype",
-	"excludedFromReports",
-	"details.originalAmount",
-	"details.interestRate",
-	"details.endDate",
-] as const;
+const FIELD_NAMES = ["name", "subtype", "excludedFromReports", ...LOAN_FIELD_NAMES] as const;
 
 /** Rendered for a loan only, so no other account's form ever holds `details`. */
 function LoanFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
-	const endDate = useController({ control: form.control, name: "details.endDate" });
+	const details = useController({ control: form.control, name: "details" });
 
 	return (
 		<LoanDetailsFields
-			originalAmount={form.register("details.originalAmount")}
-			interestRate={form.register("details.interestRate")}
-			endDate={endDate.field}
-			errors={form.formState.errors.details}
+			value={completeLoanInput(details.field.value)}
+			onChange={details.field.onChange}
+			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
 		/>
 	);
 }
@@ -80,12 +72,17 @@ export function EditAccountDialog({ account, open, onOpenChange }: EditAccountDi
 		name: account.name,
 		subtype: account.subtype,
 		excludedFromReports: account.excludedFromReports,
-		...(isLoan ? { details: loanDetailsToInput(account.details, account.currency) } : {}),
+		...(isLoan
+			? { details: loanDetailsToInput(account.details, account.currency, account.openingDate) }
+			: {}),
 	};
 	const resolver = useMemo(
 		// `raw` sends the name as typed; the API trims it with the same schema.
-		() => zodResolver(accountSettingsFormSchema(account.currency), undefined, { raw: true }),
-		[account.currency],
+		() =>
+			zodResolver(accountSettingsFormSchema(account.currency, account.openingDate), undefined, {
+				raw: true,
+			}),
+		[account.currency, account.openingDate],
 	);
 	const form = useForm<AccountSettingsFormInput>({
 		resolver,
@@ -108,18 +105,9 @@ export function EditAccountDialog({ account, open, onOpenChange }: EditAccountDi
 
 	const submit = form.handleSubmit(async ({ details, ...input }) => {
 		try {
-			// The API replaces the details whole, so all three always go.
+			// The API replaces the details whole, so every field always goes.
 			const saved = await updateAccount.mutateAsync(
-				isLoan
-					? {
-							...input,
-							details: {
-								originalAmount: details?.originalAmount ?? "",
-								interestRate: details?.interestRate ?? "",
-								endDate: details?.endDate ?? "",
-							},
-						}
-					: input,
+				isLoan ? { ...input, details: completeLoanInput(details) } : input,
 			);
 			toast.success(t("accountActions.form.saved", { name: saved.name }));
 			onOpenChange(false);

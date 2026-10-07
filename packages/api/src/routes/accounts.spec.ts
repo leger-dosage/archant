@@ -1,8 +1,12 @@
+import type { LoanDetailsInput } from "../schemas/accounts.ts";
+import type { Auth } from "../services/auth.ts";
+
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createLogger } from "../lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "../schemas/imports.ts";
 import {
 	balanceOf,
@@ -36,6 +40,7 @@ import {
 	valid,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -48,6 +53,65 @@ async function postRaw(body: unknown) {
 	});
 
 	return { status: response.status, body: errorBody.parse(await response.json()) };
+}
+
+// A loan whose terms are all unknown, as created without details.
+const noTerms = {
+	originalAmount: null,
+	downPayment: null,
+	startDate: null,
+	termMonths: null,
+	rateType: null,
+	interestRate: null,
+	insuranceRate: null,
+	insuranceRateType: null,
+	rateChanges: [],
+	endDate: null,
+};
+
+// Every field of a PATCH's details, blank: it replaces them whole.
+const blankTerms = {
+	originalAmount: "",
+	downPayment: "",
+	startDate: "",
+	termMonths: "",
+	rateType: "",
+	interestRate: "",
+	insuranceRate: "",
+	insuranceRateType: "",
+	rateChanges: [],
+} satisfies LoanDetailsInput;
+
+// The owner's ING mortgage, as typed in the form (Epic 24's reference case).
+const ingTerms = {
+	originalAmount: "130 000,00",
+	downPayment: "0",
+	startDate: "2020-12-05",
+	termMonths: "300",
+	rateType: "fixed",
+	interestRate: "1,82",
+	insuranceRate: "0,2917",
+	insuranceRateType: "level_term",
+	rateChanges: [],
+} satisfies LoanDetailsInput;
+
+async function accountCount() {
+	const list = z
+		.object({ data: z.object({ groups: z.array(z.object({ accounts: z.array(z.unknown()) })) }) })
+		.parse((await request("GET", "/api/accounts")).body);
+
+	return list.data.groups.flatMap((group) => group.accounts).length;
+}
+
+/** The status of a creation the typed client would refuse to compile. */
+async function postStatus(body: unknown) {
+	const response = await buildApp().request("/api/accounts", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+
+	return response.status;
 }
 
 describe("POST /api/accounts", () => {
@@ -128,53 +192,61 @@ describe("POST /api/accounts", () => {
 		expect(data).toMatchObject({ type: "loan", subtype: "mortgage", balance: 18000000 });
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 		expect(detail.body).toMatchObject({
-			data: {
-				classification: "liability",
-				balance: 18000000,
-				details: { originalAmount: null, interestRate: null, endDate: null },
-			},
+			data: { classification: "liability", balance: 18000000, details: noTerms },
 		});
 	});
 
-	it("stores a loan's amount borrowed, rate in basis points and end date", async () => {
+	it("stores the ING mortgage's terms, rates in millionths", async () => {
 		const response = await testClient(buildApp()).api.accounts.$post({
-			json: {
-				...valid,
-				...mortgage,
-				details: { originalAmount: "200 000,00", interestRate: "3,45", endDate: "2045-06-30" },
-			},
+			json: { ...valid, ...mortgage, details: ingTerms },
 		});
 		const { data } = await response.json();
 
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 
-		expect(detail.body).toMatchObject({
-			data: { details: { originalAmount: 20000000, interestRate: 345, endDate: "2045-06-30" } },
+		expect(
+			z.object({ data: z.object({ details: z.unknown() }) }).parse(detail.body).data.details,
+		).toEqual({
+			originalAmount: 13000000,
+			downPayment: 0,
+			startDate: "2020-12-05",
+			termMonths: 300,
+			rateType: "fixed",
+			interestRate: 18200,
+			insuranceRate: 2917,
+			insuranceRateType: "level_term",
+			rateChanges: [],
+			endDate: null,
 		});
 	});
 
-	it.each(["3,45 %", "3,45%", "3.45 %"])(
-		"reads the rate %j with its percent sign",
-		async (interestRate) => {
-			const response = await testClient(buildApp()).api.accounts.$post({
-				json: { ...valid, ...mortgage, details: { interestRate } },
-			});
-			const { data } = await response.json();
+	it.each([
+		["3,45 %", 34500],
+		["3,45%", 34500],
+		["3.45 %", 34500],
+		["4.1", 41000],
+		["1,820", 18200],
+		["0", 0],
+		["100", 1000000],
+	])("reads the interest rate %j as %i millionths", async (interestRate, millionths) => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { interestRate } },
+		});
+		const { data } = await response.json();
 
-			const detail = await request("GET", `/api/accounts/${data.id}`);
+		const detail = await request("GET", `/api/accounts/${data.id}`);
 
-			expect(detail.body).toMatchObject({ data: { details: { interestRate: 345 } } });
-		},
-	);
+		expect(detail.body).toMatchObject({ data: { details: { interestRate: millionths } } });
+	});
 
-	it("reads the amount borrowed in the loan's own currency", async () => {
+	it("reads the amounts in the loan's own currency", async () => {
 		const response = await testClient(buildApp()).api.accounts.$post({
 			json: {
 				...valid,
 				...mortgage,
 				currency: "JPY",
 				openingBalance: "150 000",
-				details: { originalAmount: "200 000" },
+				details: { originalAmount: "200 000", downPayment: "50 000" },
 			},
 		});
 		const { data } = await response.json();
@@ -183,42 +255,81 @@ describe("POST /api/accounts", () => {
 			...mortgage,
 			currency: "JPY",
 			openingBalance: "150 000",
-			details: { originalAmount: "1,5" },
+			details: { originalAmount: "1,5", downPayment: "0,5" },
 		});
 
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 
-		expect(detail.body).toMatchObject({ data: { details: { originalAmount: 200000 } } });
+		expect(detail.body).toMatchObject({
+			data: { details: { originalAmount: 200000, downPayment: 50000 } },
+		});
 		expect(refused.body.error.fields).toEqual([
 			{ path: "details.originalAmount", code: "invalid_amount" },
+			{ path: "details.downPayment", code: "invalid_amount" },
 		]);
 	});
 
-	it("reads a rate with a dot, and leaves blank details empty", async () => {
+	it("leaves blank details unknown", async () => {
 		const response = await testClient(buildApp()).api.accounts.$post({
 			json: {
 				...valid,
 				...mortgage,
-				details: { originalAmount: " ", interestRate: "4.1", endDate: "" },
+				details: {
+					originalAmount: " ",
+					downPayment: "",
+					startDate: "",
+					termMonths: " ",
+					rateType: "",
+					interestRate: "",
+					insuranceRate: "",
+					insuranceRateType: "",
+					rateChanges: [{ effectiveDate: "", rate: " " }],
+				},
 			},
 		});
 		const { data } = await response.json();
 
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 
-		expect(detail.body).toMatchObject({
-			data: { details: { originalAmount: null, interestRate: 410, endDate: null } },
-		});
+		expect(detail.body).toMatchObject({ data: { details: noTerms } });
 	});
 
-	it.each(["3,456", "-1", "101", "100,01", "abc"])("refuses the rate %j", async (interestRate) => {
-		const { status, body } = await postRaw({ ...valid, ...mortgage, details: { interestRate } });
+	it("ignores an end date, which the term replaces", async () => {
+		const status = await postStatus({ ...valid, ...mortgage, details: { endDate: "2045-12-05" } });
 
-		expect(status).toBe(400);
-		expect(body.error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "details.interestRate", code: "invalid_rate" }],
+		expect(status).toBe(201);
+	});
+
+	it.each(["1,8205", "3,4567", "-1", "101", "100,001", "abc", "1,2,3"])(
+		"refuses the interest rate %j",
+		async (interestRate) => {
+			const { status, body } = await postRaw({ ...valid, ...mortgage, details: { interestRate } });
+
+			expect(status).toBe(400);
+			expect(body.error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "details.interestRate", code: "invalid_rate" }],
+			});
+		},
+	);
+
+	it("reads an insurance rate to four decimals, and refuses a fifth", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { insuranceRate: "0,2917 %" } },
 		});
+		const { data } = await response.json();
+		const refused = await postRaw({
+			...valid,
+			...mortgage,
+			details: { insuranceRate: "0,29175" },
+		});
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({ data: { details: { insuranceRate: 2917 } } });
+		expect(refused.body.error.fields).toEqual([
+			{ path: "details.insuranceRate", code: "invalid_rate" },
+		]);
 	});
 
 	it.each(["0", "-5", "abc", "1,234"])("refuses the amount borrowed %j", async (originalAmount) => {
@@ -228,10 +339,238 @@ describe("POST /api/accounts", () => {
 		expect(body.error.fields).toEqual([{ path: "details.originalAmount", code: "invalid_amount" }]);
 	});
 
-	it("refuses an end date that is not a date", async () => {
-		const { body } = await postRaw({ ...valid, ...mortgage, details: { endDate: "2045-02-30" } });
+	it("accepts no down payment, and refuses a negative one", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { downPayment: "0" } },
+		});
+		const refused = await postRaw({ ...valid, ...mortgage, details: { downPayment: "-1" } });
 
-		expect(body.error.fields).toEqual([{ path: "details.endDate", code: "invalid_date" }]);
+		expect(response.status).toBe(201);
+		expect(refused.body.error.fields).toEqual([
+			{ path: "details.downPayment", code: "invalid_amount" },
+		]);
+	});
+
+	it.each(["1", "1200", " 300 "])("accepts the term %j", async (termMonths) => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { termMonths } },
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({ data: { details: { termMonths: Number(termMonths) } } });
+	});
+
+	it.each(["0", "1201", "12,5", "12.5", "-3", "abc", "00000"])(
+		"refuses the term %j",
+		async (termMonths) => {
+			const { status, body } = await postRaw({ ...valid, ...mortgage, details: { termMonths } });
+
+			expect(status).toBe(400);
+			expect(body.error.fields).toEqual([{ path: "details.termMonths", code: "invalid_term" }]);
+		},
+	);
+
+	it("refuses a start date that is not a date", async () => {
+		const { body } = await postRaw({ ...valid, ...mortgage, details: { startDate: "2045-02-30" } });
+
+		expect(body.error.fields).toEqual([{ path: "details.startDate", code: "invalid_date" }]);
+	});
+
+	it("refuses a start date after today in the household's time zone, nothing created", async () => {
+		const before = await accountCount();
+		const refused = await postRaw({ ...valid, ...mortgage, details: { startDate: "2026-09-22" } });
+		const today = await postStatus({ ...valid, ...mortgage, details: { startDate: "2026-09-21" } });
+		// 23:30 UTC is already the 22nd in Paris.
+		vi.setSystemTime(new Date("2026-09-21T23:30:00Z"));
+		const parisTomorrow = await postStatus({
+			...valid,
+			...mortgage,
+			details: { startDate: "2026-09-22" },
+		});
+
+		expect(refused).toEqual({
+			status: 400,
+			body: {
+				error: {
+					code: "VALIDATION_ERROR",
+					message: "The request is invalid.",
+					fields: [{ path: "details.startDate", code: "invalid_date" }],
+				},
+			},
+		});
+		expect(today).toBe(201);
+		expect(parisTomorrow).toBe(201);
+		await expect(accountCount()).resolves.toBe(before + 2);
+	});
+
+	it("stores the rate changes sorted, skipping an empty row and keeping a date's last rate", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				details: {
+					startDate: "2020-12-05",
+					rateType: "variable",
+					interestRate: "1,5",
+					rateChanges: [
+						{ effectiveDate: "2025-01-01", rate: "2" },
+						{ effectiveDate: "", rate: "" },
+						{ effectiveDate: "2023-06-01", rate: "1,75 %" },
+						{ effectiveDate: "2025-01-01", rate: "3" },
+					],
+				},
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({
+			data: {
+				details: {
+					rateType: "variable",
+					rateChanges: [
+						{ effectiveDate: "2023-06-01", rate: 17500 },
+						{ effectiveDate: "2025-01-01", rate: 30000 },
+					],
+				},
+			},
+		});
+	});
+
+	it.each([
+		{ effectiveDate: "2025-01-01", rate: "" },
+		{ effectiveDate: "", rate: "2" },
+		{ effectiveDate: "2025-02-30", rate: "2" },
+		{ effectiveDate: "2025-01-01", rate: "101" },
+		{ effectiveDate: "2025-01-01", rate: "2,0001" },
+	])("refuses the rate change %j", async (row) => {
+		const { status, body } = await postRaw({
+			...valid,
+			...mortgage,
+			details: {
+				startDate: "2020-12-05",
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2024-01-01", rate: "2" }, row],
+			},
+		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([
+			{ path: "details.rateChanges", code: "invalid_rate_change" },
+		]);
+	});
+
+	it("refuses a rate change before the start date, or before the opening date without one", async () => {
+		const beforeStart = await postRaw({
+			...valid,
+			...mortgage,
+			details: {
+				startDate: "2020-12-05",
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2020-01-01", rate: "2" }],
+			},
+		});
+		const beforeOpening = await postRaw({
+			...valid,
+			...mortgage,
+			details: {
+				rateType: "adjustable",
+				rateChanges: [{ effectiveDate: "2026-08-31", rate: "2" }],
+			},
+		});
+		const onOrigination = await postStatus({
+			...valid,
+			...mortgage,
+			details: {
+				startDate: "2020-12-05",
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2020-12-05", rate: "2" }],
+			},
+		});
+
+		for (const refused of [beforeStart, beforeOpening]) {
+			expect(refused.body.error.fields).toEqual([
+				{ path: "details.rateChanges", code: "rate_change_before_origination" },
+			]);
+		}
+		expect(onOrigination).toBe(201);
+	});
+
+	it("keeps a fixed loan's rate changes without checking them against origination", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				details: {
+					startDate: "2020-12-05",
+					rateType: "fixed",
+					rateChanges: [{ effectiveDate: "2020-01-01", rate: "2" }],
+				},
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({
+			data: { details: { rateChanges: [{ effectiveDate: "2020-01-01", rate: 20000 }] } },
+		});
+	});
+
+	it.each(["fixed", ""] as const)(
+		"drops an invalid rate change of a %j rate, whose rows are hidden, and keeps the valid one",
+		async (rateType) => {
+			const response = await testClient(buildApp()).api.accounts.$post({
+				json: {
+					...valid,
+					...mortgage,
+					details: {
+						rateType,
+						rateChanges: [
+							{ effectiveDate: "2025-01-01", rate: "" },
+							{ effectiveDate: "2024-01-01", rate: "2" },
+						],
+					},
+				},
+			});
+
+			expect(response.status).toBe(201);
+			const { data } = await response.json();
+			const detail = await request("GET", `/api/accounts/${data.id}`);
+			expect(detail.body).toMatchObject({
+				data: { details: { rateChanges: [{ effectiveDate: "2024-01-01", rate: 20000 }] } },
+			});
+		},
+	);
+
+	it("refuses more rate changes than a schedule has months", async () => {
+		const { status, body } = await postRaw({
+			...valid,
+			...mortgage,
+			details: {
+				rateChanges: Array.from({ length: 1201 }, () => ({ effectiveDate: "", rate: "" })),
+			},
+		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([{ path: "details.rateChanges", code: "too_big" }]);
+	});
+
+	it("refuses an unknown rate type or insurance type", async () => {
+		const { status, body } = await postRaw({
+			...valid,
+			...mortgage,
+			details: { rateType: "floating", insuranceRateType: "flat" },
+		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([
+			{ path: "details.rateType", code: "invalid_value" },
+			{ path: "details.insuranceRateType", code: "invalid_value" },
+		]);
 	});
 
 	it("refuses loan details on a card", async () => {
@@ -1111,18 +1450,99 @@ describe("PATCH /api/accounts/:id", () => {
 	});
 
 	it("replaces a loan's details, a blank field clearing its value", async () => {
-		const loan = await openAccount({
-			...mortgage,
-			details: { originalAmount: "200 000,00", interestRate: "3,45", endDate: "2045-06-30" },
-		});
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
 
 		const { status, body } = await patchAccount(loan.id, {
-			details: { originalAmount: "200 000,00", interestRate: "3,10", endDate: "" },
+			details: { ...blankTerms, originalAmount: "130 000,00", interestRate: "1,9" },
 		});
 
 		expect(status).toBe(200);
 		expect(body).toMatchObject({
-			data: { details: { originalAmount: 20000000, interestRate: 310, endDate: null } },
+			data: { details: { ...noTerms, originalAmount: 13000000, interestRate: 19000 } },
+		});
+	});
+
+	it("drops a migrated loan's end date when its details are saved", async () => {
+		const loan = await openAccount({ ...mortgage });
+		await temp.db.run(
+			sql`update accounts set details = json_set(details, '$.interestRate', 34500, '$.endDate', '2045-12-05') where id = ${loan.id}`,
+		);
+
+		const before = await request("GET", `/api/accounts/${loan.id}`);
+		const { body } = await patchAccount(loan.id, {
+			details: { ...blankTerms, termMonths: "300", interestRate: "3,45" },
+		});
+
+		expect(before.body).toMatchObject({ data: { details: { endDate: "2045-12-05" } } });
+		expect(body).toMatchObject({
+			data: { details: { termMonths: 300, interestRate: 34500, endDate: null } },
+		});
+	});
+
+	it("keeps a variable loan's rate changes when it is saved as fixed", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: {
+				...ingTerms,
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2024-01-05", rate: "2,5" }],
+			},
+		});
+
+		const { body } = await patchAccount(loan.id, {
+			details: {
+				...ingTerms,
+				rateType: "fixed",
+				rateChanges: [{ effectiveDate: "2024-01-05", rate: "2,5" }],
+			},
+		});
+
+		expect(body).toMatchObject({
+			data: {
+				details: { rateType: "fixed", rateChanges: [{ effectiveDate: "2024-01-05", rate: 25000 }] },
+			},
+		});
+	});
+
+	it("checks a rate change against the account's opening date when no start date is given", async () => {
+		const loan = await openAccount({ ...mortgage, openingDate: "2020-12-05" });
+
+		const refused = await patchAccount(loan.id, {
+			details: {
+				...blankTerms,
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2020-12-04", rate: "2" }],
+			},
+		});
+		const saved = await patchAccount(loan.id, {
+			details: {
+				...blankTerms,
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2020-12-05", rate: "2" }],
+			},
+		});
+
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "details.rateChanges", code: "rate_change_before_origination" },
+		]);
+		expect(saved.status).toBe(200);
+	});
+
+	it("refuses a start date after today, saving nothing", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const { status, body } = await patchAccount(loan.id, {
+			details: { ...ingTerms, startDate: "2026-09-22", termMonths: "0" },
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "details.termMonths", code: "invalid_term" },
+			{ path: "details.startDate", code: "invalid_date" },
+		]);
+		const detail = await request("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({
+			data: { details: { startDate: "2020-12-05", termMonths: 300 } },
 		});
 	});
 
@@ -1131,11 +1551,11 @@ describe("PATCH /api/accounts/:id", () => {
 		const loan = await openAccount({ ...mortgage, details: { interestRate: "3,45" } });
 
 		const onChecking = await patchAccount(account.id, {
-			details: { originalAmount: "", interestRate: "3", endDate: "" },
+			details: { ...blankTerms, interestRate: "3" },
 		});
 		const onLoan = await patchAccount(loan.id, {
 			name: "Autre",
-			details: { interestRate: "3,456", originalAmount: "0", endDate: "" },
+			details: { ...blankTerms, interestRate: "3,4567", originalAmount: "0" },
 		});
 
 		expect(onChecking.status).toBe(400);
@@ -1149,7 +1569,7 @@ describe("PATCH /api/accounts/:id", () => {
 		]);
 		const detail = await request("GET", `/api/accounts/${loan.id}`);
 		expect(detail.body).toMatchObject({
-			data: { name: "Prêt immobilier", details: { interestRate: 345 } },
+			data: { name: "Prêt immobilier", details: { interestRate: 34500 } },
 		});
 	});
 
@@ -1168,10 +1588,10 @@ describe("PATCH /api/accounts/:id", () => {
 		const loan = await openAccount({ ...mortgage, currency: "JPY", openingBalance: "150 000" });
 
 		const saved = await patchAccount(loan.id, {
-			details: { originalAmount: "200 000", interestRate: "", endDate: "" },
+			details: { ...blankTerms, originalAmount: "200 000" },
 		});
 		const refused = await patchAccount(loan.id, {
-			details: { originalAmount: "1,5", interestRate: "", endDate: "" },
+			details: { ...blankTerms, originalAmount: "1,5" },
 		});
 
 		expect(saved.body).toMatchObject({ data: { details: { originalAmount: 200000 } } });
@@ -1186,6 +1606,37 @@ describe("PATCH /api/accounts/:id", () => {
 
 		expect(status).toBe(404);
 		expect(errorBody.parse(body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("a viewer on a loan", () => {
+	let viewerCookie: string;
+	let auth: Auth;
+	const silent = createLogger("silent");
+
+	// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+	beforeAll(async () => {
+		auth = createTestAuth(temp.db, silent);
+		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	});
+
+	it("reads its terms, and is refused FORBIDDEN on an edit, nothing written", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${loan.id}`);
+		const edit = await viewer.request(`/api/accounts/${loan.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ details: { ...ingTerms, interestRate: "2" } }),
+		});
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({ data: { details: { interestRate: 18200 } } });
+		expect(edit.status).toBe(403);
+		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
+		const detail = await request("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { interestRate: 18200 } } });
 	});
 });
 

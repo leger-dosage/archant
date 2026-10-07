@@ -246,9 +246,9 @@ test("each group is a section whose accounts carry their type icon, as the accou
 	).toBeVisible();
 });
 
-// Story 7.1: loan accounts.
+// Story 7.1: loan accounts, with Story 24.1's terms.
 
-test("a mortgage created through the form is listed under « Passifs », its page showing its details", async ({
+test("the owner's ING mortgage created through the form is listed under « Passifs », its header naming its terms", async ({
 	page,
 }) => {
 	const name = uniqueName("Prêt immobilier");
@@ -257,20 +257,38 @@ test("a mortgage created through the form is listed under « Passifs », its pag
 	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
-	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await dialog.getByRole("combobox", { name: "Type", exact: true }).click();
 	await page.getByRole("option", { name: "Prêt immobilier" }).click();
 	await expect(dialog.getByLabel("Solde initial")).toHaveCount(0);
-	await dialog.getByLabel("Capital restant dû").fill("180 000,00");
-	await dialog.getByLabel("Montant emprunté").fill("200 000,00");
-	await dialog.getByLabel("Taux (%)").fill("3,45");
-	await dialog.getByLabel("Date de fin").fill("30/06/2045");
+	await dialog.getByLabel("Capital restant dû").fill("104 724,54");
+	await dialog.getByLabel("Montant emprunté").fill("130 000,00");
+	await dialog.getByLabel("Apport personnel").fill("0");
+	await expect(dialog.getByLabel("Date d'origine")).toHaveAccessibleDescription(
+		"Laissez vide pour prendre la date d'ouverture du compte",
+	);
+	await dialog.getByLabel("Date d'origine").fill("05/12/2020");
+	await dialog.getByLabel("Durée (mois)").fill("300");
+	await dialog.getByLabel("Taux d'intérêt (%)").fill("1,82");
+	// A typed rate is fixed until said otherwise.
+	await expect(dialog.getByRole("combobox", { name: "Type de taux" })).toHaveText("Fixe");
+	await expect(dialog.getByRole("group", { name: "Changements de taux" })).toHaveCount(0);
+	await dialog.getByLabel("Taux d'assurance (%)").fill("0,2917");
+	await expect(dialog.getByRole("combobox", { name: "Type d'assurance" })).toHaveText("Aucune");
+	await expect(
+		dialog.getByRole("combobox", { name: "Type d'assurance" }),
+	).toHaveAccessibleDescription(
+		"Un taux annuel, prélevé chaque mois en complément de la mensualité. L'assurance constante porte sur le capital initial, l'assurance dégressive sur le capital restant dû.",
+	);
+	await dialog.getByRole("combobox", { name: "Type d'assurance" }).click();
+	await expect(page.getByRole("option")).toHaveText(["Aucune", "Constante", "Dégressive"]);
+	await page.getByRole("option", { name: "Constante" }).click();
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog).toBeHidden();
 	const liabilities = page.getByRole("region", { name: "Passifs" });
 	const row = liabilities.getByRole("link", { name: new RegExp(name) });
 	await expect(row).toContainText("Prêt immobilier");
-	await expect(row).toContainText(euros(18_000_000));
+	await expect(row).toContainText(euros(10_472_454));
 	await expect(
 		page.getByRole("region", { name: "Actifs" }).getByRole("link", { name: new RegExp(name) }),
 	).toHaveCount(0);
@@ -278,42 +296,120 @@ test("a mortgage created through the form is listed under « Passifs », its pag
 	await row.click();
 	const details = page.getByRole("list", { name: "Détails du prêt" });
 	await expect(details.getByRole("listitem")).toHaveText([
-		`Emprunté : ${euros(20_000_000)}`,
-		"Taux : 3,45 %",
-		"Fin : 30/06/2045",
+		`Emprunté : ${euros(13_000_000)}`,
+		"Taux : 1,820 % fixe",
+		"Durée : 25 ans",
 	]);
+
+	// What the header does not name still reached the server.
+	await page.getByRole("button", { name: `Actions du compte ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(edit.getByLabel("Apport personnel")).toHaveValue("0,00");
+	await expect(edit.getByLabel("Date d'origine")).toHaveValue("05/12/2020");
+	await expect(edit.getByLabel("Taux d'assurance (%)")).toHaveValue("0,2917");
+	await expect(edit.getByRole("combobox", { name: "Type d'assurance" })).toHaveText("Constante");
 });
 
-test("a loan's new rate in the edit dialog shows in its header", async ({ page, api }) => {
+test("a loan's rate and term edited in the dialog show in its header", async ({ page, api }) => {
 	const loan = await api.openAccount({
 		name: uniqueName("Prêt"),
 		kind: "consumer",
 		openingBalance: "8 000,00",
-		details: { interestRate: "4,9" },
+		details: { interestRate: "4,9", termMonths: "30" },
 	});
 
 	await page.goto(`/accounts/${loan.id}`);
 	const details = page.getByRole("list", { name: "Détails du prêt" });
-	await expect(details).toHaveText("Taux : 4,90 %");
+	await expect(details.getByRole("listitem")).toHaveText(["Taux : 4,900 %", "Durée : 30 mois"]);
 	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
 	await page.getByRole("menuitem", { name: "Modifier" }).click();
 	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
-	await expect(dialog.getByLabel("Taux (%)")).toHaveValue("4,90");
+	const rate = dialog.getByLabel("Taux d'intérêt (%)");
+	await expect(rate).toHaveValue("4,90");
 	await expect(dialog.getByLabel("Montant emprunté")).toHaveValue("");
-	await dialog.getByLabel("Taux (%)").fill("3,456");
+	await rate.fill("1,8205");
+	await dialog.getByLabel("Durée (mois)").fill("12,5");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(dialog.getByLabel("Taux (%)")).toHaveAccessibleDescription(
-		"Taux invalide. Exemple : 3,45, entre 0 et 100.",
+	await expect(rate).toHaveAccessibleDescription(
+		"Taux invalide : entre 0 et 100, trois décimales au plus, quatre pour l'assurance.",
+	);
+	await expect(dialog.getByLabel("Durée (mois)")).toHaveAccessibleDescription(
+		"Durée invalide : un nombre entier de mois, de 1 à 1 200.",
 	);
 
-	await dialog.getByLabel("Taux (%)").fill("3,75");
+	await rate.fill("3,75");
+	await dialog.getByLabel("Durée (mois)").fill("48");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(page.getByText(`Compte « ${loan.name} » enregistré.`)).toBeVisible();
 	await expect(dialog).toBeHidden();
-	await expect(details).toHaveText("Taux : 3,75 %");
+	// A rate typed without a rate type is fixed, as Sure's default.
+	await expect(details.getByRole("listitem")).toHaveText(["Taux : 3,750 % fixe", "Durée : 4 ans"]);
 	await page.reload();
-	await expect(details).toHaveText("Taux : 3,75 %");
+	await expect(details.getByRole("listitem")).toHaveText(["Taux : 3,750 % fixe", "Durée : 4 ans"]);
+});
+
+test("a variable loan's rate changes are added, refused before origination, and kept hidden once fixed", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "100 000,00",
+		openingDate: "2022-01-01",
+		details: {
+			startDate: "2020-12-05",
+			rateType: "variable",
+			interestRate: "1,5",
+			rateChanges: [{ effectiveDate: "2023-06-05", rate: "2" }],
+		},
+	});
+
+	await page.goto(`/accounts/${loan.id}`);
+	const details = page.getByRole("list", { name: "Détails du prêt" });
+	await expect(details).toHaveText("Taux : 1,500 % variable");
+	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	const changes = dialog.getByRole("group", { name: "Changements de taux" });
+	await expect(changes.getByLabel("Date d'effet du changement 1")).toHaveValue("05/06/2023");
+	await expect(changes.getByLabel("Taux (%) du changement 1", { exact: true })).toHaveValue("2,00");
+
+	// A row with a date and no rate is incomplete.
+	await changes.getByRole("button", { name: "Ajouter un changement" }).click();
+	await changes.getByLabel("Date d'effet du changement 2").fill("05/01/2025");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	const refusal = dialog.getByText(
+		"Chaque changement de taux demande une date et un taux entre 0 et 100, trois décimales au plus.",
+	);
+	await expect(refusal).toBeVisible();
+
+	// Before origination, the start date.
+	await changes.getByLabel("Date d'effet du changement 2").fill("05/01/2020");
+	await changes.getByLabel("Taux (%) du changement 2", { exact: true }).fill("2,5");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(
+		dialog.getByText("Un changement de taux ne peut pas précéder la date d'origine du prêt."),
+	).toBeVisible();
+
+	await changes.getByLabel("Date d'effet du changement 2").fill("05/01/2025");
+	await dialog.getByRole("combobox", { name: "Type de taux" }).click();
+	await page.getByRole("option", { name: "Fixe" }).click();
+	await expect(changes).toHaveCount(0);
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(details).toHaveText("Taux : 1,500 % fixe");
+	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(changes).toHaveCount(0);
+	await dialog.getByRole("combobox", { name: "Type de taux" }).click();
+	await page.getByRole("option", { name: "Révisable" }).click();
+	await expect(changes.getByLabel("Date d'effet du changement 1")).toHaveValue("05/06/2023");
+	await expect(changes.getByLabel("Date d'effet du changement 2")).toHaveValue("05/01/2025");
+	await expect(changes.getByLabel("Taux (%) du changement 2", { exact: true })).toHaveValue("2,50");
 });
 
 // Story 7.2: investment accounts.
