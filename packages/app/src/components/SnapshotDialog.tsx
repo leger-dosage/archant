@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useCreateSnapshot, useDeleteSnapshot, useUpdateSnapshot } from "@/hooks/useSnapshots";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
@@ -32,14 +33,18 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
-const FIELD_NAMES = ["date", "balance"] as const;
+const FIELD_NAMES = ["date", "balance", "notes"] as const;
 
 type SnapshotAccount = { id: string; currency: CurrencyCode };
 
 function valuesOf(snapshot: SnapshotData | null): SnapshotFormInput {
 	return snapshot === null
 		? { date: toIsoDate(), balance: "" }
-		: { date: snapshot.date, balance: amountToText(snapshot.balance, snapshot.currency) };
+		: {
+				date: snapshot.date,
+				balance: amountToText(snapshot.balance, snapshot.currency),
+				notes: snapshot.notes ?? "",
+			};
 }
 
 type SnapshotFormProps = {
@@ -143,6 +148,24 @@ function SnapshotForm({ account, snapshot, onClose }: SnapshotFormProps) {
 					/>
 					<FieldMessage id="snapshot-balance-error" error={errors.balance} />
 				</div>
+
+				{snapshot !== null && (
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="snapshot-notes">{t("snapshots.form.notes")}</Label>
+						<Textarea
+							id="snapshot-notes"
+							// A pasted reference without spaces would widen the dialog past the screen.
+							className="wrap-anywhere"
+							placeholder={t("snapshots.form.notesPlaceholder")}
+							aria-invalid={errors.notes !== undefined}
+							{...(errors.notes === undefined
+								? {}
+								: { "aria-describedby": "snapshot-notes-error" })}
+							{...form.register("notes")}
+						/>
+						<FieldMessage id="snapshot-notes-error" error={errors.notes} />
+					</div>
+				)}
 			</form>
 
 			<DialogFooter className="flex-row items-center justify-between sm:justify-between">
@@ -213,6 +236,9 @@ export function SnapshotDialog({ account, open, snapshot, onOpenChange }: Snapsh
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				showCloseButton={false}
+				// Long notes grow the field; the dialog scrolls rather than push
+				// « Enregistrer » off the screen.
+				className="max-h-[90vh] overflow-y-auto"
 				onOpenAutoFocus={() => {
 					opener.current =
 						document.activeElement instanceof HTMLElement ? document.activeElement : null;

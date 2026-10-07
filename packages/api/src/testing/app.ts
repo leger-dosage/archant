@@ -277,6 +277,7 @@ const snapshotItem = z.object({
 	computed: z.number(),
 	gap: z.number(),
 	currency: z.string(),
+	notes: z.string().nullable(),
 });
 
 const snapshotPage = z.object({

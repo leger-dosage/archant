@@ -91,11 +91,16 @@ export async function listValuations(
 /** What recording a snapshot answers: whether it replaced one already on its date. */
 type RecordedSnapshot = SnapshotRecord & { replacedExisting: boolean };
 
-/** Records the balance the user read at the bank; replaces one on the same date. */
+/**
+ * Records the balance the user read at the bank; replaces one on the same
+ * date, keeping its notes. `source`, an assistant's parsed citation, is
+ * appended to them, as Sure's `record_valuation` does.
+ */
 export async function createSnapshot(
 	deps: ServiceDeps,
 	accountId: string,
 	input: SnapshotInput,
+	cited: { source?: string } = {},
 ): Promise<RecordedSnapshot> {
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createSnapshotSchema(currency).safeParse(input);
@@ -104,7 +109,12 @@ export async function createSnapshot(
 		throw validationError(parsed.error);
 	}
 
-	const result = await recordSnapshot(deps, accountId, parsed.data, { origin: "user" });
+	const result = await recordSnapshot(
+		deps,
+		accountId,
+		{ ...parsed.data, source: cited.source },
+		{ origin: "user" },
+	);
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);

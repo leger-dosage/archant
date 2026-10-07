@@ -365,7 +365,7 @@ describe("the request", () => {
 			"5. Call confirm_import with those counts as expectedCounts. If it answers IMPORT_PREVIEW_STALE, call preview_import again and show the owner.",
 		);
 		expect(result.instructions).toContain(
-			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement. Never record a figure the owner or a document did not give.",
+			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement; pass that document as source, in the tool's citation grammar. Never record a figure the owner or a document did not give, and never invent a source.",
 		);
 	});
 });
