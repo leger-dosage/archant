@@ -30,6 +30,7 @@ import {
 	declareBill,
 	editBill,
 	occurrenceDetail,
+	updateBill,
 	upcomingRecurring,
 } from "./bills.ts";
 import { addPayment, editOccurrence, markPaid, skipOccurrence } from "./payments.ts";
@@ -168,6 +169,43 @@ describe("declareBill", () => {
 		await expect(stored()).resolves.toMatchObject([
 			{ labelKey: "eau du grand lyon", dedupScope: "-8420", schedulePinnedAt: null },
 		]);
+	});
+
+	it("stores the type and category asked, and an income always as one, uncategorised", async () => {
+		const accountId = await account();
+		await temp.db.insert(categories).values({
+			id: "streaming",
+			name: "Streaming",
+			kind: "expense",
+			color: "#e99537",
+			icon: "tv",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+
+		await expect(
+			declareBill(
+				deps(),
+				bill(accountId, { name: "Netflix", billType: "subscription", categoryId: "streaming" }),
+			),
+		).resolves.toMatchObject({ billType: "subscription", categoryId: "streaming" });
+		await expect(
+			declareBill(
+				deps(),
+				bill(accountId, {
+					kind: "income",
+					name: "Salaire",
+					billType: "subscription",
+					categoryId: "nope",
+				}),
+			),
+		).resolves.toMatchObject({ billType: "income", categoryId: null });
+		await expect(
+			refusal(declareBill(deps(), bill(accountId, { name: "Box", categoryId: "nope" }))),
+		).resolves.toMatchObject({ fields: [{ path: "categoryId", code: "invalid_value" }] });
+		await expect(
+			refusal(declareBill(deps(), bill(accountId, { name: "Gaz", billType: "income" }))),
+		).resolves.toMatchObject({ fields: [{ path: "billType" }] });
 	});
 
 	it("stores an income positive, with no autopay unless asked", async () => {
@@ -546,6 +584,36 @@ describe("editBill", () => {
 		await expect(
 			refusal(editBill(deps(), first!.id, { accountId: second!.accountId })),
 		).resolves.toMatchObject({ code: "RECURRING_ALREADY_EXISTS" });
+	});
+});
+
+describe("updateBill", () => {
+	it("edits and moves the status in one write, a status already held left as it is", async () => {
+		const { series } = await declared();
+
+		await expect(
+			updateBill(deps(), series.id, { name: "Eau", status: "inactive" }),
+		).resolves.toMatchObject({ name: "Eau", status: "inactive" });
+		await expect(updateBill(deps(), series.id, { status: "inactive" })).resolves.toMatchObject({
+			status: "inactive",
+		});
+		await expect(updateBill(deps(), series.id, { status: "active" })).resolves.toMatchObject({
+			status: "active",
+		});
+	});
+
+	it("writes nothing when the status move is refused", async () => {
+		const { series } = await declared();
+		// Only an active series pauses.
+		await temp.db
+			.update(recurringTransactions)
+			.set({ status: "suggested" })
+			.where(eq(recurringTransactions.id, series.id));
+
+		await expect(
+			refusal(updateBill(deps(), series.id, { name: "Eau", status: "inactive" })),
+		).resolves.toMatchObject({ fields: [{ path: "status" }] });
+		await expect(stored()).resolves.toMatchObject([{ name: "Eau du Grand Lyon" }]);
 	});
 });
 

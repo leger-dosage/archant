@@ -81,6 +81,7 @@ import {
 	notFound,
 	selectRecords,
 	setRecurringStatus,
+	setStatusWithin,
 	toRecords,
 } from "./series.ts";
 
@@ -130,6 +131,19 @@ async function currencyOfAccount(
 	return row.currency;
 }
 
+/** A `VALIDATION_ERROR` on `categoryId` when there is no such category. */
+async function mustBeCategory(db: Pick<Transaction, "select">, categoryId: string): Promise<void> {
+	const found = await db
+		.select({ id: categories.id })
+		.from(categories)
+		.where(eq(categories.id, categoryId))
+		.get();
+
+	if (found === undefined) {
+		throw invalid("categoryId");
+	}
+}
+
 /**
  * Whether another series holds what the unique indexes key on: account, key,
  * amount, currency and dedup scope. Checked inside the write transaction, so
@@ -171,7 +185,8 @@ export async function taken(
 /**
  * Sure's `DeclaredBill`: an active manual series, anchored, last seen and due
  * on its first due date, with no payment yet, its amount negative for a bill
- * and positive for an income (AD-5), its rules those of the frequency picked
+ * and positive for an income (AD-5), typed and categorised as asked, an
+ * income always `income` and uncategorised, its rules those of the frequency picked
  * on that date's day, weekday and month. Its key is the merchant or label of
  * the transaction it started from, so 23.3's matcher still finds it, else its
  * normalised name. Its amount is its `dedup_scope`, as Sure's: the same
@@ -219,11 +234,18 @@ export async function declareBill(
 	};
 
 	const date = today(deps.timeZone);
+	const income = bill.kind === "income";
+	// An income carries no category, as detection writes one (Sure's `create_suggested_series`).
+	const categoryId = income ? null : bill.categoryId;
 
 	return deps.db.transaction(
 		async (tx) => {
 			if (await taken(tx, row)) {
 				throw alreadyExists();
+			}
+
+			if (categoryId !== null) {
+				await mustBeCategory(tx, categoryId);
 			}
 
 			const id = crypto.randomUUID();
@@ -241,7 +263,8 @@ export async function declareBill(
 				occurrenceCount: 0,
 				status: "active",
 				manual: true,
-				billType: bill.kind === "income" ? "income" : "bill",
+				billType: income ? "income" : bill.billType,
+				categoryId,
 				autopay: bill.autopay,
 				notes: bill.notes,
 				paymentUrl: bill.paymentUrl,
@@ -284,118 +307,146 @@ export async function editBill(
 
 	return deps.db.transaction(
 		async (tx) => {
-			const current = await getRecord(tx, id, day);
-			const currency = await currencyOfAccount(tx, input.accountId ?? current.accountId);
-			const parsed = editBillSchema(currency).safeParse(input);
+			await editWithin(tx, id, input, day);
 
-			if (!parsed.success) {
-				throw validationError(parsed.error);
+			return getRecord(tx, id, day);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * The assistant's `update_bill`: the edit dialog's fields and a status move,
+ * in one transaction, so a refusal of either writes nothing. The edit comes
+ * first, so a bill resumed on a new cadence gets that cadence's occurrences.
+ * A status the series already has is left as it is.
+ */
+export async function updateBill(
+	deps: ServiceDeps,
+	id: string,
+	{ status, ...edit }: EditInput & { status?: "active" | "inactive" | undefined },
+): Promise<RecurringRecord> {
+	const day = today(deps.timeZone);
+
+	return deps.db.transaction(
+		async (tx) => {
+			if (Object.values(edit).some((value) => value !== undefined)) {
+				await editWithin(tx, id, edit, day);
 			}
 
-			const edit = parsed.data;
-
-			if (edit.billType !== undefined && current.billType === "income") {
-				throw invalid("billType");
-			}
-
-			if (
-				edit.categoryId !== undefined &&
-				edit.categoryId !== null &&
-				(await tx
-					.select({ id: categories.id })
-					.from(categories)
-					.where(eq(categories.id, edit.categoryId))
-					.get()) === undefined
-			) {
-				throw invalid("categoryId");
-			}
-
-			const billType = edit.billType ?? current.billType;
-			const amount =
-				edit.amount === undefined
-					? current.amount
-					: toMinorUnits(current.amount > 0 ? edit.amount : -Math.abs(edit.amount));
-			const change = edit.frequency === undefined ? null : applyFrequency(current, edit.frequency);
-			const endAfterCount =
-				billType === "installment"
-					? edit.endAfterCount === undefined
-						? current.endAfterCount
-						: edit.endAfterCount
-					: null;
-			// An installment counts its payments from an anchor, as Sure's update.
-			const anchorDate =
-				(change === null ? current.anchorDate : change.anchorDate) ??
-				(endAfterCount === null ? null : current.lastOccurrenceDate);
-			const schedule = {
-				rules: change?.rules ?? current.rules,
-				anchorDate,
-				lastOccurrenceDate: current.lastOccurrenceDate,
-				endAfterCount,
-				expectedDayOfMonth: change?.expectedDayOfMonth ?? current.expectedDayOfMonth,
-			};
-			const rescheduled =
-				change !== null ||
-				endAfterCount !== current.endAfterCount ||
-				anchorDate !== current.anchorDate;
-			// A bill declared ahead of its first payment is due from that date on.
-			const from = current.occurrenceCount === 0 ? maxDate(day, current.lastOccurrenceDate) : day;
-			const next = !rescheduled
-				? current.nextExpectedDate
-				: isKept(current)
-					? (nextDateFrom(schedule, from) ?? current.nextExpectedDate)
-					: nextExpectedDate(schedule, current.lastOccurrenceDate);
-			const accountId = edit.accountId ?? current.accountId;
-			const moved = currency !== current.currency;
-			if (
-				(accountId !== current.accountId || amount !== current.amount || moved) &&
-				(await taken(tx, { ...(await storedKeyOf(tx, id)), accountId, amount, currency }, id))
-			) {
-				throw alreadyExists();
-			}
-
-			await tx
-				.update(recurringTransactions)
-				.set({
-					...(edit.name === undefined ? {} : { name: edit.name }),
-					accountId,
-					amount,
-					currency,
-					// A band in another currency means nothing in this one.
-					...(moved
-						? { expectedAmountMin: null, expectedAmountMax: null, expectedAmountAvg: null }
-						: {}),
-					billType,
-					...(edit.categoryId === undefined ? {} : { categoryId: edit.categoryId }),
-					...(edit.autopay === undefined ? {} : { autopay: edit.autopay }),
-					...(edit.notes === undefined ? {} : { notes: edit.notes }),
-					...(edit.paymentUrl === undefined ? {} : { paymentUrl: edit.paymentUrl }),
-					anchorDate,
-					endAfterCount,
-					expectedDayOfMonth: schedule.expectedDayOfMonth,
-					nextExpectedDate: next,
-					...(change === null ? {} : { schedulePinnedAt: Date.now() }),
-					updatedAt: Date.now(),
-				})
-				.where(eq(recurringTransactions.id, id));
-
-			if (change !== null) {
-				await replaceRules(tx, id, change.rules);
-			}
-
-			// Sure's `SCHEDULE_SHAPING_ATTRIBUTES`: the occurrences to come follow
-			// a new cadence, day, anchor, number of payments or currency.
-			if (rescheduled || schedule.expectedDayOfMonth !== current.expectedDayOfMonth || moved) {
-				await regenerateFuture(tx, [id], day);
-			}
-
-			if (amount !== current.amount) {
-				await pinAmountsAlreadyDue(tx, id, current.amount, day);
+			if (status !== undefined && (await getRecord(tx, id, day)).status !== status) {
+				await setStatusWithin(tx, id, status, day);
 			}
 
 			return getRecord(tx, id, day);
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+async function editWithin(
+	tx: Transaction,
+	id: string,
+	input: EditInput,
+	day: IsoDate,
+): Promise<void> {
+	const current = await getRecord(tx, id, day);
+	const currency = await currencyOfAccount(tx, input.accountId ?? current.accountId);
+	const parsed = editBillSchema(currency).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const edit = parsed.data;
+
+	if (edit.billType !== undefined && current.billType === "income") {
+		throw invalid("billType");
+	}
+
+	if (edit.categoryId !== undefined && edit.categoryId !== null) {
+		await mustBeCategory(tx, edit.categoryId);
+	}
+
+	const billType = edit.billType ?? current.billType;
+	const amount =
+		edit.amount === undefined
+			? current.amount
+			: toMinorUnits(current.amount > 0 ? edit.amount : -Math.abs(edit.amount));
+	const change = edit.frequency === undefined ? null : applyFrequency(current, edit.frequency);
+	const endAfterCount =
+		billType === "installment"
+			? edit.endAfterCount === undefined
+				? current.endAfterCount
+				: edit.endAfterCount
+			: null;
+	// An installment counts its payments from an anchor, as Sure's update.
+	const anchorDate =
+		(change === null ? current.anchorDate : change.anchorDate) ??
+		(endAfterCount === null ? null : current.lastOccurrenceDate);
+	const schedule = {
+		rules: change?.rules ?? current.rules,
+		anchorDate,
+		lastOccurrenceDate: current.lastOccurrenceDate,
+		endAfterCount,
+		expectedDayOfMonth: change?.expectedDayOfMonth ?? current.expectedDayOfMonth,
+	};
+	const rescheduled =
+		change !== null || endAfterCount !== current.endAfterCount || anchorDate !== current.anchorDate;
+	// A bill declared ahead of its first payment is due from that date on.
+	const from = current.occurrenceCount === 0 ? maxDate(day, current.lastOccurrenceDate) : day;
+	const next = !rescheduled
+		? current.nextExpectedDate
+		: isKept(current)
+			? (nextDateFrom(schedule, from) ?? current.nextExpectedDate)
+			: nextExpectedDate(schedule, current.lastOccurrenceDate);
+	const accountId = edit.accountId ?? current.accountId;
+	const moved = currency !== current.currency;
+	if (
+		(accountId !== current.accountId || amount !== current.amount || moved) &&
+		(await taken(tx, { ...(await storedKeyOf(tx, id)), accountId, amount, currency }, id))
+	) {
+		throw alreadyExists();
+	}
+
+	await tx
+		.update(recurringTransactions)
+		.set({
+			...(edit.name === undefined ? {} : { name: edit.name }),
+			accountId,
+			amount,
+			currency,
+			// A band in another currency means nothing in this one.
+			...(moved
+				? { expectedAmountMin: null, expectedAmountMax: null, expectedAmountAvg: null }
+				: {}),
+			billType,
+			...(edit.categoryId === undefined ? {} : { categoryId: edit.categoryId }),
+			...(edit.autopay === undefined ? {} : { autopay: edit.autopay }),
+			...(edit.notes === undefined ? {} : { notes: edit.notes }),
+			...(edit.paymentUrl === undefined ? {} : { paymentUrl: edit.paymentUrl }),
+			anchorDate,
+			endAfterCount,
+			expectedDayOfMonth: schedule.expectedDayOfMonth,
+			nextExpectedDate: next,
+			...(change === null ? {} : { schedulePinnedAt: Date.now() }),
+			updatedAt: Date.now(),
+		})
+		.where(eq(recurringTransactions.id, id));
+
+	if (change !== null) {
+		await replaceRules(tx, id, change.rules);
+	}
+
+	// Sure's `SCHEDULE_SHAPING_ATTRIBUTES`: the occurrences to come follow
+	// a new cadence, day, anchor, number of payments or currency.
+	if (rescheduled || schedule.expectedDayOfMonth !== current.expectedDayOfMonth || moved) {
+		await regenerateFuture(tx, [id], day);
+	}
+
+	if (amount !== current.amount) {
+		await pinAmountsAlreadyDue(tx, id, current.amount, day);
+	}
 }
 
 /** The key and dedup scope a series is stored under, which an edit keeps. */
@@ -417,15 +468,23 @@ async function storedKeyOf(tx: Pick<Transaction, "select">, id: string) {
 	return row;
 }
 
-/**
- * The declare dialog's starting points, eight at most, on active accounts
- * only, the ones it offers. For a bill, Sure's
- * `candidate_patterns`; for an income, Sure's `income_source_candidates`:
- * deposits of the last 90 days grouped by account, key and currency, two or
- * more whose mean is one major unit at least, that no income series of that
- * account, key and currency follows, the largest total first.
- */
+/** The declare dialog's starting points: `candidatePatterns`' first eight. */
 export async function billCandidates(deps: ServiceDeps, kind: BillKind): Promise<BillCandidate[]> {
+	return (await candidatePatterns(deps, kind)).slice(0, MAX_CANDIDATES);
+}
+
+/**
+ * What no series follows yet, on active accounts only, the ones the declare
+ * dialog offers. For a bill, Sure's `candidate_patterns`, latest first; for
+ * an income, Sure's `income_source_candidates`: deposits of the last 90 days
+ * grouped by account, key and currency, two or more whose mean is one major
+ * unit at least, that no income series of that account, key and currency
+ * follows, the largest total first. Every one: the audit lists them all.
+ */
+export async function candidatePatterns(
+	deps: ServiceDeps,
+	kind: BillKind,
+): Promise<BillCandidate[]> {
 	const day = today(deps.timeZone);
 	const { detectable: all } = await loadCandidates(deps.db, day);
 	// The dialog offers active accounts only, as the account it would fill.
@@ -463,7 +522,6 @@ export async function billCandidates(deps: ServiceDeps, kind: BillKind): Promise
 					claimOf(pattern, series) === undefined,
 			)
 			.toSorted((a, b) => b.lastOccurrenceDate.localeCompare(a.lastOccurrenceDate))
-			.slice(0, MAX_CANDIDATES)
 			.map((pattern) => ({
 				entryId: pattern.latest.id,
 				name: nameOf(pattern.latest),
@@ -526,7 +584,6 @@ export async function billCandidates(deps: ServiceDeps, kind: BillKind): Promise
 			];
 		})
 		.toSorted((a, b) => b.total - a.total)
-		.slice(0, MAX_CANDIDATES)
 		.map(({ total: _total, ...candidate }) => candidate);
 }
 
@@ -630,7 +687,7 @@ type LoadedRow = BillRow & {
  * the sums of its confirmed payments and its first suggestion, and every
  * payment of them.
  */
-async function loadBills(
+export async function loadBills(
 	db: Reader,
 	where: SQL | undefined,
 	day: IsoDate,
@@ -914,7 +971,7 @@ export async function occurrenceDetail(deps: ServiceDeps, id: string): Promise<O
 }
 
 /** A series' current occurrence, with what its confirmed payments settle. */
-type BillOccurrence = CurrentOccurrence & {
+export type BillOccurrence = CurrentOccurrence & {
 	/** Positive magnitudes in the series' currency. */
 	expected: MinorUnits;
 	confirmed: MinorUnits;
@@ -922,14 +979,14 @@ type BillOccurrence = CurrentOccurrence & {
 };
 
 /** A series as « Toutes les factures » lists it. */
-type BillRecord = Omit<RecurringRecord, "currentOccurrence"> & {
+export type BillRecord = Omit<RecurringRecord, "currentOccurrence"> & {
 	/** Sure's `monthly_equivalent_amount`, a positive magnitude in `currency`. */
 	monthlyEquivalent: MinorUnits;
 	currentOccurrence: BillOccurrence | null;
 };
 
 /** A recorded price change, its amounts positive magnitudes. */
-type PriceChange = {
+export type PriceChange = {
 	id: string;
 	seriesId: string;
 	/** The series' name, else its merchant's, else its label. */
@@ -975,8 +1032,11 @@ const UPCOMING_DAYS = 10;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
-const displayName = (row: { name: string | null; merchantName: string | null; label: string }) =>
-	row.name ?? row.merchantName ?? row.label;
+export const displayName = (row: {
+	name: string | null;
+	merchantName: string | null;
+	label: string;
+}) => row.name ?? row.merchantName ?? row.label;
 
 const sumOf = (amounts: readonly MinorUnits[]) =>
 	toMinorUnits(amounts.reduce((total, amount) => total + amount, 0));
@@ -985,7 +1045,10 @@ const sumOf = (amounts: readonly MinorUnits[]) =>
  * `records` with their monthly equivalent, and their current occurrence's
  * expected amount, the sum of its confirmed payments and what they leave.
  */
-async function withAmounts(db: Reader, records: readonly RecurringRecord[]): Promise<BillRecord[]> {
+export async function withAmounts(
+	db: Reader,
+	records: readonly RecurringRecord[],
+): Promise<BillRecord[]> {
 	const ids = records.flatMap((record) =>
 		record.currentOccurrence === null ? [] : [record.currentOccurrence.id],
 	);
@@ -1106,13 +1169,13 @@ const SORTS: Record<BillSort, (a: BillRecord, b: BillRecord) => number> = {
 	amount: (a, b) => a.amount - b.amount || a.id.localeCompare(b.id),
 };
 
-/** The price changes `where` keeps, latest first, `limit` at most, named by their series. */
-async function priceChangesWhere(
+/** The price changes `where` keeps, latest first, `limit` at most when given, named by their series. */
+export async function priceChangesWhere(
 	db: Reader,
 	where: SQL | undefined,
-	limit: number,
+	limit?: number,
 ): Promise<PriceChange[]> {
-	const rows = await db
+	const query = db
 		.select({
 			id: recurringPriceChanges.id,
 			seriesId: recurringPriceChanges.recurringTransactionId,
@@ -1132,7 +1195,8 @@ async function priceChangesWhere(
 		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
 		.where(where)
 		.orderBy(desc(recurringPriceChanges.effectiveOn), recurringPriceChanges.id)
-		.limit(limit);
+		.$dynamic();
+	const rows = await (limit === undefined ? query : query.limit(limit));
 
 	return rows.map(({ seriesName, merchantName, label, ...row }) => {
 		const previousAmount = toMinorUnits(row.previousAmount);

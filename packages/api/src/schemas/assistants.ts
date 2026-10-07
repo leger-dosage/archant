@@ -1,8 +1,15 @@
 import { z } from "zod";
 
+import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
 import { BALANCE_PERIODS } from "./balances.ts";
+import {
+	BILL_LIFECYCLES,
+	BILL_PAYMENT_STATES,
+	EDITABLE_BILL_TYPES,
+	FREQUENCY_PRESETS,
+} from "./bills.ts";
 import { createCategorySchema } from "./categories.ts";
 import { merchantSchema } from "./merchants.ts";
 import { RECURRING_VIEWS } from "./recurring.ts";
@@ -516,4 +523,188 @@ export const updateBudgetInput = z.strictObject({
 		.describe(
 			"Category amounts, each category once; the month must be set up, by this call or before.",
 		),
+});
+
+const billId = z.string().min(1).describe("A bill id from get_bills.");
+
+/** `get_bills`: Sure's `GetBills` filters. */
+export const getBillsInput = z.strictObject({
+	status: z
+		.enum(BILL_LIFECYCLES)
+		.default("active")
+		.describe(
+			'"active": followed by the owner; "suggested": found by Archant, awaiting the owner, not a bill yet; "paused": set aside; "ended": dismissed or finished; "all": every one.',
+		),
+	paymentState: z
+		.enum(BILL_PAYMENT_STATES)
+		.optional()
+		.describe(
+			"The current occurrence's state: overdue, due (within three days of its date), upcoming, partial (partly paid) or paid.",
+		),
+	billType: z
+		.enum(BILL_TYPES)
+		.optional()
+		.describe('"income" is a declared income, not something to pay.'),
+	search: z
+		.string()
+		.trim()
+		.min(1)
+		.max(200)
+		.optional()
+		.describe("Text searched in the name, the merchant and the label, case aside."),
+	dueWithinDays: z
+		.number()
+		.int()
+		.min(1)
+		.max(365)
+		.optional()
+		.describe(
+			"Keeps the bills whose next due date falls within this many days, overdue ones included.",
+		),
+});
+
+export const billIdInput = z.strictObject({ billId });
+
+/** `get_bill_audit`: how far back price changes reach. */
+export const billAuditInput = z.strictObject({
+	lookbackMonths: z
+		.number()
+		.int()
+		.min(1)
+		.max(24)
+		.default(12)
+		.describe("How many months of price changes to report, 12 by default."),
+});
+
+const billAmount = (what: string) =>
+	z
+		.string()
+		.describe(
+			`${what}, a positive decimal string such as "13.49" in the account's currency, never negative: the type carries the direction.`,
+		);
+
+const frequencyPreset = z.enum(FREQUENCY_PRESETS);
+
+const accountId = z.string().min(1).describe("An account id from get_accounts.");
+
+const billTypeInput = z
+	.enum(EDITABLE_BILL_TYPES)
+	.describe("The kind of bill; an income is never one of them.");
+
+const paymentUrlInput = z
+	.string()
+	.describe("Where the bill gets paid, an http or https link; a bare host gets https://.");
+
+/**
+ * `create_bill`: the declare dialog's fields, by id, passed raw to
+ * `declareBill`, which parses them as it parses the dialog's.
+ */
+export const createBillInput = z.strictObject({
+	name: z.string().describe("What the owner calls the bill."),
+	amount: billAmount("The amount of each occurrence"),
+	firstDueOn: z.iso
+		.date()
+		.describe("YYYY-MM-DD: the first due date; its day, weekday and month set the schedule's."),
+	accountId,
+	frequency: frequencyPreset.default("monthly").describe("How often, monthly by default."),
+	isIncome: z
+		.boolean()
+		.default(false)
+		.describe("true for an income such as a salary: money coming in, with no type or category."),
+	billType: billTypeInput.optional().describe('"bill" by default; ignored for an income.'),
+	categoryId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe("A category id from get_categories; ignored for an income."),
+	entryId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"The transaction an undeclared candidate came from, as get_bill_audit gives it: the bill then matches its bank lines.",
+		),
+	autopay: z.boolean().optional().describe("Paid by direct debit, without the owner acting."),
+	paymentUrl: paymentUrlInput.optional(),
+	notes: z.string().optional(),
+});
+
+const DAY_FIELDS = ["dueDayOfMonth", "weekday", "monthOfYear"] as const;
+
+/**
+ * `update_bill`: the edit dialog's fields and a status, by id. A day without
+ * the cadence it belongs to is refused rather than dropped, and so is a call
+ * that changes nothing.
+ */
+export const updateBillInput = z
+	.strictObject({
+		billId,
+		name: z.string().optional().describe("The new name; empty shows the merchant or label again."),
+		amount: billAmount(
+			"The new amount, from now on: occurrences already due keep the one they had",
+		).optional(),
+		accountId: accountId.optional(),
+		categoryId: z
+			.string()
+			.min(1)
+			.nullable()
+			.optional()
+			.describe("A category id from get_categories; null clears it."),
+		billType: billTypeInput.optional().describe("Never to or from an income."),
+		status: z
+			.enum(["active", "paused"])
+			.optional()
+			.describe('"paused" sets the bill aside, with no new occurrences; "active" resumes it.'),
+		frequency: frequencyPreset
+			.optional()
+			.describe(
+				"A new cadence, pinned against detection; dueDayOfMonth, weekday or monthOfYear set its day.",
+			),
+		dueDayOfMonth: z
+			.number()
+			.int()
+			.min(-1)
+			.max(31)
+			.refine((day) => day !== 0, "invalid_value")
+			.optional()
+			.describe("1 to 31, or -1 for the month's last day; only with frequency."),
+		weekday: z
+			.number()
+			.int()
+			.min(0)
+			.max(6)
+			.optional()
+			.describe("0 is Sunday; only with frequency."),
+		monthOfYear: z.number().int().min(1).max(12).optional().describe("Only with frequency."),
+		autopay: z.boolean().optional(),
+		paymentUrl: paymentUrlInput.nullable().optional().describe("null or empty removes it."),
+		notes: z.string().nullable().optional().describe("null or empty removes them."),
+	})
+	.superRefine((value, context) => {
+		if (Object.entries(value).every(([key, field]) => key === "billId" || field === undefined)) {
+			context.addIssue({ code: "custom", message: "empty_patch" });
+		}
+
+		if (value.frequency === undefined) {
+			for (const field of DAY_FIELDS.filter((key) => value[key] !== undefined)) {
+				context.addIssue({ code: "custom", path: [field], message: "requires_frequency" });
+			}
+		}
+	});
+
+/** `record_bill_payment`: an open occurrence, the current one by default, in full or in part. */
+export const recordBillPaymentInput = z.strictObject({
+	billId,
+	occurrenceDueOn: z.iso
+		.date()
+		.optional()
+		.describe(
+			"YYYY-MM-DD: the due date of the open occurrence to pay, as get_bill_details lists it; the current one when absent.",
+		),
+	amount: billAmount("A partial payment, at most what remains")
+		.optional()
+		.describe(
+			'A partial payment, a positive decimal string such as "100.00", at most what remains; absent settles what remains.',
+		),
+	paidOn: z.iso.date().optional().describe("YYYY-MM-DD: when it was paid; today when absent."),
 });

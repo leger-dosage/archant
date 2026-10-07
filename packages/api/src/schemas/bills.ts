@@ -80,6 +80,9 @@ export const declareBodySchema = z.object({
 	accountId: z.string(),
 	firstDueOn: z.string(),
 	frequency: frequencyBody,
+	// The dialog sends neither: a bill is a `bill`, uncategorised, until edited.
+	billType: z.string().optional(),
+	categoryId: z.string().nullable().optional(),
 	autopay: z.boolean().optional(),
 	notes: z.string().nullable().optional(),
 	paymentUrl: z.string().nullable().optional(),
@@ -240,8 +243,8 @@ function frequencySchema(presets: readonly [string, ...string[]]) {
 
 /**
  * Sure's `DeclaredBill`: a name, a positive amount in the account's currency,
- * the account, the first due date and how often, optionally autopay, notes
- * and a payment link. Built per currency and shared with the dialog's
+ * the account, the first due date and how often, optionally its type and
+ * category, autopay, notes and a payment link. Built per currency and shared with the dialog's
  * resolver, so both report the same field codes. Whether the account and the
  * transaction exist needs the database: the service checks it.
  */
@@ -253,6 +256,8 @@ export function declareBillSchema(currency: CurrencyCode) {
 		accountId: z.string().min(1),
 		firstDueOn: z.iso.date(),
 		frequency: frequencySchema([...FREQUENCY_PRESETS, INTERVAL_PRESET]),
+		billType: z.enum(EDITABLE_BILL_TYPES).default("bill"),
+		categoryId: z.string().min(1).nullable().default(null),
 		autopay: z.boolean().default(false),
 		notes: notes.default(null),
 		paymentUrl: paymentUrl.default(null),
@@ -333,3 +338,21 @@ export const allBillsQuerySchema = z.object({
 });
 
 export type AllBillsQuery = z.output<typeof allBillsQuerySchema>;
+
+/**
+ * Sure's `GetBills` lifecycle words: `paused` reads the stored `inactive`,
+ * and `all` every status, suggestions included.
+ */
+export const BILL_LIFECYCLES = ["active", "suggested", "paused", "ended", "all"] as const;
+
+export type BillLifecycle = (typeof BILL_LIFECYCLES)[number];
+
+/** A bill's status in those words: every lifecycle but `all`. */
+export const billStatusSchema = z.enum(BILL_LIFECYCLES).exclude(["all"]);
+
+export type BillStatus = z.infer<typeof billStatusSchema>;
+
+/** Sure's `GetBills` payment states, read on the current occurrence. */
+export const BILL_PAYMENT_STATES = ["overdue", "due", "upcoming", "partial", "paid"] as const;
+
+export type BillPaymentState = (typeof BILL_PAYMENT_STATES)[number];

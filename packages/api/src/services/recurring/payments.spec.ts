@@ -17,6 +17,7 @@ import {
 	useRecurringDatabase,
 } from "../../testing/recurring.ts";
 import { deleteTransaction } from "../ledger/edits.ts";
+import { oneByOne } from "../ledger/shared.ts";
 import { splitTransaction } from "../ledger/splits.ts";
 import { declareBill, editBill } from "./bills.ts";
 import {
@@ -25,6 +26,7 @@ import {
 	editOccurrence,
 	markPaid,
 	paymentCandidates,
+	recordBillPayment,
 	rejectPayment,
 	removePayment,
 	reopenOccurrence,
@@ -629,3 +631,56 @@ describe("paymentCandidates", () => {
 		});
 	});
 });
+
+describe("recordBillPayment", () => {
+	it("settles the current occurrence through markPaid's write, dated today", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+
+		await expect(recordBillPayment(deps(), series.id, {})).resolves.toMatchObject({
+			dueOn: "2026-08-05",
+			status: "paid",
+			state: "paid",
+			paid: 57_129,
+			remaining: 0,
+		});
+		await expect(august(series.id)).resolves.toMatchObject({ closedSource: "user" });
+		await expect(payments()).resolves.toMatchObject([
+			{ dueOn: "2026-08-05", amount: 57_129, source: "user_created", paidOn: "2026-08-10" },
+		]);
+	});
+
+	it("closes an occurrence a partial payment settles, as addPayment's write does", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+
+		await recordBillPayment(deps(), series.id, { amount: "500,00", paidOn: "2026-08-07" });
+
+		await expect(recordBillPayment(deps(), series.id, { amount: "71,29" })).resolves.toMatchObject({
+			status: "paid",
+			remaining: 0,
+		});
+		await expect(august(series.id)).resolves.toMatchObject({ closedSource: "auto" });
+	});
+
+	it("answers NOT_FOUND for an unknown bill, and for a bill with no open occurrence", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		await skipAll(series.id);
+
+		await expect(codeOf(recordBillPayment(deps(), "nope", {}))).resolves.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(codeOf(recordBillPayment(deps(), series.id, {}))).resolves.toMatchObject({
+			code: "NOT_FOUND",
+			message: "This bill has no open occurrence.",
+		});
+	});
+});
+
+/** Skips every open occurrence of a series, so none is left to pay. */
+async function skipAll(id: string) {
+	const open = (await occurrencesOf(id)).filter((row) => row.status === "scheduled");
+
+	await oneByOne(open, (row) => skipOccurrence(deps(), row.id));
+}
