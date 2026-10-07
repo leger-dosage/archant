@@ -866,6 +866,35 @@ describe("rejected transfers", () => {
 	});
 });
 
+describe("loan subtypes", () => {
+	it("takes Sure's seven at 0064, a consumer loan becoming Sure's other loan with its details", async () => {
+		const before = await migratedBefore("0064");
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, created_at, updated_at) values ('a1', 'Crédit auto', 'loan', 'consumer', 'EUR', ${LEGACY_LOAN_AFTER_0058}, 0, 0)`,
+		);
+		await insertAccount(before, "a2", "loan", "mortgage");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, subtype, details from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", subtype: "other", details: LEGACY_LOAN_AFTER_0058 },
+			{ id: "a2", subtype: "mortgage", details: null },
+		]);
+		await expect(
+			Promise.all(
+				["student", "auto", "home_equity", "line_of_credit", "business"].map((subtype) =>
+					insertAccount(database, subtype, "loan", subtype),
+				),
+			),
+		).resolves.toHaveLength(5);
+		await expect(insertAccount(database, "s6", "loan", "consumer")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("loan accounts", () => {
 	it("keeps every account, entry and CSV mapping when 0018 rebuilds accounts", async () => {
 		const before = await migratedBefore("0018");
@@ -897,7 +926,7 @@ describe("loan accounts", () => {
 			database.all(sql`select account_id as accountId, mapping from import_mappings`),
 		).resolves.toEqual([{ accountId: "a1", mapping: '{"skipRows":2}' }]);
 		await expect(database.all(sql`select id from imports`)).resolves.toEqual([{ id: "i1" }]);
-		await expect(insertAccount(database, "a3", "loan", "consumer")).resolves.toBeDefined();
+		await expect(insertAccount(database, "a3", "loan", "auto")).resolves.toBeDefined();
 		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});

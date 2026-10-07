@@ -33,7 +33,11 @@ describe("account types", () => {
 			"checking",
 			"savings",
 			"mortgage",
-			"consumer",
+			"student",
+			"auto",
+			"home_equity",
+			"line_of_credit",
+			"business",
 			"other",
 			"pea",
 			"assurance_vie",
@@ -56,6 +60,7 @@ describe("account types", () => {
 		expect(isSubtypeOf("loan", "mortgage")).toBe(true);
 		expect(isSubtypeOf("loan", null)).toBe(false);
 		expect(isSubtypeOf("loan", "savings")).toBe(false);
+		expect(isSubtypeOf("loan", "consumer")).toBe(false);
 		expect(isSubtypeOf("investment", "pea")).toBe(true);
 		expect(isSubtypeOf("investment", "other")).toBe(true);
 		expect(isSubtypeOf("investment", null)).toBe(false);
@@ -84,10 +89,10 @@ describe("bank account targets", () => {
 		}
 	});
 
-	it("hold a bank's cash, never an investment or a consumer loan", () => {
+	it("hold a bank's cash, never an investment or a student loan", () => {
 		expect(isBankAccountTarget("depository", "savings")).toBe(true);
 		expect(isBankAccountTarget("credit_card", null)).toBe(true);
-		expect(isBankAccountTarget("loan", "consumer")).toBe(false);
+		expect(isBankAccountTarget("loan", "student")).toBe(false);
 		expect(isBankAccountTarget("investment", "pea")).toBe(false);
 	});
 });

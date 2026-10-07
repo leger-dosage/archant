@@ -183,10 +183,10 @@ async function household() {
 			openingBalance: "500",
 		}),
 		card: await account({ name: "Carte", type: "credit_card", openingBalance: "100" }),
-		consumer: await account({
+		autoLoan: await account({
 			name: "Crédit auto",
 			type: "loan",
-			subtype: "consumer",
+			subtype: "auto",
 			openingBalance: "12 000",
 			details: {
 				originalAmount: "15 000",
@@ -233,7 +233,7 @@ async function household() {
 	await sendOwn("PATCH", `/api/accounts/${ids.home}`, { excludedFromReports: true });
 	// A loan migrated from Story 7.1 keeps its end date until its details are saved.
 	await database().run(
-		sql`update accounts set details = json_set(details, '$.endDate', '2030-01-01') where id = ${ids.consumer}`,
+		sql`update accounts set details = json_set(details, '$.endDate', '2030-01-01') where id = ${ids.autoLoan}`,
 	);
 
 	const food = await ownCategory("Alimentation");
@@ -261,7 +261,7 @@ async function household() {
 
 	const toSavings = await moved(ids.checking, ids.savings, "2026-09-02", "100,00");
 	const toCard = await moved(ids.checking, ids.card, "2026-09-03", "80,00");
-	const toLoan = await moved(ids.checking, ids.consumer, "2026-09-04", "300,00");
+	const toLoan = await moved(ids.checking, ids.autoLoan, "2026-09-04", "300,00");
 	const toPea = await moved(ids.checking, ids.pea, "2026-09-05", "200,00");
 	const refused = await moved(ids.checking, ids.savings, "2026-09-06", "33,00");
 	await sendOwn("POST", `/api/transfers/${refused.transfer}/reject`);
@@ -771,12 +771,12 @@ describe("exportArchive", () => {
 			accountable: { subtype: "credit_card" },
 			archant: { type: "credit_card", subtype: null },
 		});
-		expect(accounts.get(ids.consumer)).toMatchObject({
+		expect(accounts.get(ids.autoLoan)).toMatchObject({
 			accountable_type: "Loan",
-			subtype: "other",
+			subtype: "auto",
 			balance: "11700.00",
 			accountable: {
-				subtype: "other",
+				subtype: "auto",
 				initial_balance: "15000.00",
 				down_payment: "1500.50",
 				start_date: "2025-01-15",
@@ -787,7 +787,7 @@ describe("exportArchive", () => {
 				insurance_rate: "0.2917",
 				insurance_rate_type: "decreasing_life",
 			},
-			archant: { type: "loan", subtype: "consumer", loan_end_date: "2030-01-01" },
+			archant: { type: "loan", subtype: "auto", loan_end_date: "2030-01-01" },
 		});
 		expect(accounts.get(ids.mortgage)).toMatchObject({
 			accountable: {
@@ -818,10 +818,10 @@ describe("exportArchive", () => {
 		});
 		expect(accounts.get(ids.checking)).not.toHaveProperty("archant.loan_end_date");
 		expect(archive.csv("accounts.csv")).toContainEqual([
-			ids.consumer,
+			ids.autoLoan,
 			"Crédit auto",
 			"Loan",
-			"other",
+			"auto",
 			"11700.00",
 			"EUR",
 			expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u),
@@ -868,13 +868,13 @@ describe("exportArchive", () => {
 		]);
 		expect(archive.of("Valuation")).toContainEqual(
 			expect.objectContaining({
-				account_id: ids.consumer,
+				account_id: ids.autoLoan,
 				name: "Original principal",
 				amount: "12000.00",
 			}),
 		);
 		expect(archive.of("Balance")).toContainEqual({
-			account_id: ids.consumer,
+			account_id: ids.autoLoan,
 			date: "2026-04-01",
 			balance: "12000.00",
 			cash_balance: "12000.00",

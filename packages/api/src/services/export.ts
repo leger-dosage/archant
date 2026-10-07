@@ -229,12 +229,7 @@ function csv(rows: readonly (readonly unknown[])[]): string {
 
 /** Sure's subtype of an account; the original goes under `archant.subtype`. */
 function sureSubtype(type: AccountType, subtype: string | null): string | null {
-	if (type === "credit_card") {
-		return "credit_card";
-	}
-
-	// Sure's loans have no consumer subtype; `other` is its catch-all.
-	return type === "loan" && subtype === "consumer" ? "other" : subtype;
+	return type === "credit_card" ? "credit_card" : subtype;
 }
 
 type Counts = Record<string, number>;

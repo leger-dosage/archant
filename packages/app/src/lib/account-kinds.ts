@@ -10,7 +10,11 @@ export const ACCOUNT_KINDS = [
 	{ id: "savings", type: "depository", subtype: "savings" },
 	{ id: "credit_card", type: "credit_card", subtype: null },
 	{ id: "mortgage", type: "loan", subtype: "mortgage" },
-	{ id: "consumer", type: "loan", subtype: "consumer" },
+	{ id: "student", type: "loan", subtype: "student" },
+	{ id: "auto", type: "loan", subtype: "auto" },
+	{ id: "home_equity", type: "loan", subtype: "home_equity" },
+	{ id: "line_of_credit", type: "loan", subtype: "line_of_credit" },
+	{ id: "business", type: "loan", subtype: "business" },
 	// `other` alone would read as any account, not a loan.
 	{ id: "other_loan", type: "loan", subtype: "other" },
 	{ id: "pea", type: "investment", subtype: "pea" },

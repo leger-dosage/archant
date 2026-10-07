@@ -12,7 +12,11 @@ export type Classification = (typeof CLASSIFICATIONS)[number];
 export const ACCOUNT_TYPES = {
 	depository: { classification: "asset", subtypes: ["checking", "savings"] },
 	credit_card: { classification: "liability", subtypes: [] },
-	loan: { classification: "liability", subtypes: ["mortgage", "consumer", "other"] },
+	// Sure's `Loan::SUBTYPES` keys, in its order.
+	loan: {
+		classification: "liability",
+		subtypes: ["mortgage", "student", "auto", "home_equity", "line_of_credit", "business", "other"],
+	},
 	// Sure's `Investment::SUBTYPES` keys: `brokerage` is the compte-titres.
 	investment: {
 		classification: "asset",

@@ -625,7 +625,7 @@ test("a new connection shows each bank account with its masked IBAN, its currenc
 
 	await choice(page, FAKE_ACCOUNTS.card.name).click();
 	await expect(page.getByRole("option", { name: "Ignorer" })).toBeVisible();
-	await expect(page.getByRole("option", { name: "Nouveau : Prêt immobilier" })).toBeVisible();
+	await expect(page.getByRole("option", { name: "Nouveau : Hypothèque" })).toBeVisible();
 	await page.keyboard.press("Escape");
 });
 

@@ -92,7 +92,7 @@ async function fixedAccounts(page: Page) {
 							classification: "liability",
 							accounts: [
 								summary("l1", "Carte Visa", "credit_card", null, 30_000),
-								summary("l2", "Prêt auto", "loan", "consumer", 500_000),
+								summary("l2", "Prêt auto", "loan", "auto", 500_000),
 							],
 							total: 530_000,
 							excludedCount: 0,
