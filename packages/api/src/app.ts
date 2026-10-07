@@ -113,7 +113,9 @@ export type AppDeps = ServiceDeps &
  * Far above any JSON body the interface sends, such as a rule with many
  * conditions, and small enough that no caller, signed in or not, makes the
  * server hold much. The two uploads, a statement and an attachment, have
- * their own, larger limits.
+ * their own, larger limits, checked once the session is, and so has
+ * `/api/mcp`, where a statement arrives inside an assistant's tool call,
+ * checked once its token is.
  */
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -392,7 +394,7 @@ export function createApp(deps: AppDeps) {
 		.use(
 			"/api/*",
 			except(
-				["/api/accounts/:id/imports", "/api/transactions/:id/attachments"],
+				["/api/accounts/:id/imports", "/api/transactions/:id/attachments", "/api/mcp"],
 				bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }),
 			),
 		)

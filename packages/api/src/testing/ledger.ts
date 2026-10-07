@@ -13,7 +13,7 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
-import type { FileSourceId } from "@archant/data/schema/imports";
+import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -185,14 +185,18 @@ export async function confirm(
 	accountId: string,
 	importId: string,
 	statement: ParsedStatement,
-	options: ImportOptions = {},
+	options: ImportOptions & { expectedCounts?: ImportCounts } = {},
 ) {
 	return ingest(
 		{ db: options.db ?? temp.db, timeZone: "Europe/Paris" },
 		accountId,
 		statement,
 		{ importId },
-		{ origin: "sync", moveOpeningDate: options.moveOpeningDate },
+		{
+			origin: "sync",
+			moveOpeningDate: options.moveOpeningDate,
+			expectedCounts: options.expectedCounts,
+		},
 	);
 }
 

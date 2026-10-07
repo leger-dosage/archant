@@ -84,6 +84,8 @@ export type ImportPreview = {
 	id: string;
 	fileName: string;
 	source: FileSourceId;
+	/** The account's currency, which every amount here is in. */
+	currency: CurrencyCode;
 	groups: IngestGroups;
 	/** The opening date the Rejetées tab offers, the day before the earliest refused line. */
 	openingSuggestion: IsoDate | null;
@@ -151,13 +153,7 @@ async function previewedImport(deps: ServiceDeps, id: string): Promise<Import> {
 }
 
 /** Parses the stored bytes again, with the account's currency of today. */
-async function statementOf(
-	deps: ServiceDeps,
-	row: Import,
-	options: ImportOptions,
-): Promise<ParsedStatement> {
-	const currency = await currencyOf(deps, row.accountId);
-
+function statementOf(row: Import, options: ImportOptions, currency: CurrencyCode): ParsedStatement {
 	return fileSource(row.source).parse(new Uint8Array(row.content), {
 		currency,
 		csv: options.csv,
@@ -218,6 +214,7 @@ async function unmappedPreview(
 	deps: ImportDeps,
 	row: Import,
 	options: ImportOptions,
+	currency: CurrencyCode,
 ): Promise<ImportPreview> {
 	await deps.db
 		.update(imports)
@@ -228,6 +225,7 @@ async function unmappedPreview(
 		id: row.id,
 		fileName: row.fileName,
 		source: row.source,
+		currency,
 		groups: { created: [], present: [], matched: [], duplicates: [], rejected: [] },
 		openingSuggestion: null,
 		opening: null,
@@ -253,6 +251,7 @@ async function runPreview(
 	row: Import,
 	statement: ParsedStatement,
 	options: ImportOptions,
+	currency: CurrencyCode,
 ): Promise<ImportPreview> {
 	const result: IngestResult = await ingest(
 		deps,
@@ -273,6 +272,7 @@ async function runPreview(
 		id: row.id,
 		fileName: row.fileName,
 		source: row.source,
+		currency,
 		groups: result.groups,
 		openingSuggestion: result.openingSuggestion,
 		opening: result.opening,
@@ -285,18 +285,19 @@ async function runPreview(
 /**
  * Reads an uploaded file into the account's preview. The file is kept with
  * status `previewed`; nothing reaches the ledger's tables until confirm.
+ * `maxBytes` lowers the dialog's limit, for a file an assistant sends.
  */
 export async function createImport(
 	deps: ImportDeps,
 	accountId: string,
 	file: { name: string; bytes: Uint8Array },
+	{ maxBytes = MAX_IMPORT_BYTES }: { maxBytes?: number } = {},
 ): Promise<ImportPreview> {
 	// Each preview holds up to 5 MB of bank data; a server that runs for weeks
 	// would otherwise keep every abandoned one until its next start.
 	await purgeStalePreviews(deps);
 	const currency = await currencyOf(deps, accountId);
-	const source =
-		file.bytes.length > MAX_IMPORT_BYTES ? null : detectFileSource(file.bytes, file.name);
+	const source = file.bytes.length > maxBytes ? null : detectFileSource(file.bytes, file.name);
 
 	if (source === null) {
 		deps.logger.info({ accountId, code: "INVALID_IMPORT_FILE" }, "import refused");
@@ -349,8 +350,8 @@ export async function createImport(
 	await deps.db.insert(imports).values(row);
 
 	return statement === null
-		? unmappedPreview(deps, row, options)
-		: runPreview(deps, row, statement, options);
+		? unmappedPreview(deps, row, options, currency)
+		: runPreview(deps, row, statement, options, currency);
 }
 
 /** Previews a stored import again, with the options the user just chose. */
@@ -368,19 +369,26 @@ export async function previewImport(
 		...(qif === undefined ? {} : { qif }),
 	};
 
+	const currency = await currencyOf(deps, row.accountId);
+
 	if (row.source === "csv" && csv === undefined) {
-		return unmappedPreview(deps, row, options);
+		return unmappedPreview(deps, row, options, currency);
 	}
 
-	return runPreview(deps, row, await statementOf(deps, row, options), options);
+	return runPreview(deps, row, statementOf(row, options, currency), options, currency);
 }
 
 /**
  * Writes a previewed import. The ledger re-runs the preview under its write
- * lock and refuses with `IMPORT_PREVIEW_STALE` when the groups changed; the
+ * lock and refuses with `IMPORT_PREVIEW_STALE` when the groups changed, or
+ * differ from `expectedCounts`, the counts an assistant showed the owner; the
  * interface then asks for a new preview.
  */
-export async function confirmImport(deps: ImportDeps, id: string): Promise<ConfirmedImport> {
+export async function confirmImport(
+	deps: ImportDeps,
+	id: string,
+	expectedCounts?: ImportCounts,
+): Promise<ConfirmedImport> {
 	const row = await previewedImport(deps, id);
 	const mapping = row.options.csv;
 
@@ -388,7 +396,7 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 		throw new AppError("VALIDATION_ERROR", "The import has no column mapping yet.");
 	}
 
-	const statement = await statementOf(deps, row, row.options);
+	const statement = statementOf(row, row.options, await currencyOf(deps, row.accountId));
 
 	try {
 		const result = await deps.db.transaction(
@@ -402,7 +410,7 @@ export async function confirmImport(deps: ImportDeps, id: string): Promise<Confi
 					row.accountId,
 					statement,
 					{ importId: row.id },
-					{ origin: ORIGIN, moveOpeningDate: row.options.moveOpeningDate },
+					{ origin: ORIGIN, moveOpeningDate: row.options.moveOpeningDate, expectedCounts },
 				);
 
 				if (mapping !== undefined) {

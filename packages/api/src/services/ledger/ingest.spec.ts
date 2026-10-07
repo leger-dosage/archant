@@ -889,6 +889,25 @@ describe("ingest the statement balance", () => {
 		});
 	});
 
+	it("refuses a confirm whose expected counts differ from the groups, naming the counts now", async () => {
+		const account = await openChecking();
+		const { importId } = await preview(account.id, statementOf(cafe, salary));
+		const shown = { created: 2, present: 0, matched: 0, duplicates: 0, rejected: 0 };
+
+		await expect(
+			confirm(account.id, importId, statementOf(cafe, salary), {
+				expectedCounts: { ...shown, created: 1, present: 1 },
+			}),
+		).rejects.toMatchObject({
+			code: "IMPORT_PREVIEW_STALE",
+			params: { created: "2", present: "0", matched: "0", duplicates: "0", rejected: "0" },
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+
+		await confirm(account.id, importId, statementOf(cafe, salary), { expectedCounts: shown });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
 	it("refuses a confirm when the user entered a snapshot on that date since the preview", async () => {
 		const account = await openChecking();
 		const { importId } = await preview(account.id, closingOn(240861));

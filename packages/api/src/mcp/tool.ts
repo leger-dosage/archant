@@ -1,6 +1,6 @@
 import type { SampledSeries } from "../domain/balances/history.ts";
 import type { ArchantScope } from "../services/assistants.ts";
-import type { ServiceDeps } from "../services/deps.ts";
+import type { ImportDeps } from "../services/imports.ts";
 import type { ToolAnnotations } from "@modelcontextprotocol/server";
 import type { ZodObject, ZodType } from "zod";
 
@@ -11,11 +11,11 @@ import { toDecimalString } from "@archant/data/money";
 import { SERIES_INTERVALS } from "../domain/balances/history.ts";
 
 /**
- * What a tool's `run` receives: the route's `deps`, and `BETTER_AUTH_URL`,
- * from which a tool builds the link to what it created, as Sure's tools answer
- * a URL.
+ * What a tool's `run` receives: the route's `deps`, the import routes' among
+ * them, and `BETTER_AUTH_URL`, from which a tool builds the link to what it
+ * created, as Sure's tools answer a URL.
  */
-type ToolDeps = ServiceDeps & { trustedOrigin: string };
+type ToolDeps = ImportDeps & { trustedOrigin: string };
 
 /**
  * One MCP tool (AD-19). `run` follows AD-1 as a route handler does: the

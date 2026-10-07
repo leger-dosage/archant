@@ -198,7 +198,11 @@ describe("POST /api/imports/:id/confirm", () => {
 		expect(stale).toEqual({
 			status: 409,
 			body: {
-				error: { code: "IMPORT_PREVIEW_STALE", message: "The account changed since the preview." },
+				error: {
+					code: "IMPORT_PREVIEW_STALE",
+					message: "The account changed since the preview.",
+					params: { created: "4", present: "0", matched: "1", duplicates: "0", rejected: "0" },
+				},
 			},
 		});
 		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 1 });
