@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
 import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
@@ -767,3 +768,72 @@ export const recordValuationInput = z.strictObject({
 			'The stored balance, a decimal string such as "175000.00" in the account\'s currency: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.',
 		),
 });
+
+/**
+ * `create_goal`: « Nouvel objectif »'s fields, accounts by id, every amount a
+ * decimal string the service parses in the goal's currency, as it parses the
+ * dialog's. One target: an amount, or for a reserve a number of months of
+ * expenses, the dialog's two modes.
+ */
+export const createGoalInput = z
+	.strictObject({
+		name: z.string().describe("What the owner calls the goal, such as « Vacances en Grèce »."),
+		kind: z
+			.enum(GOAL_KINDS)
+			.default("one_off")
+			.describe(
+				'"one_off" saves toward a target, by a date if one is given; "maintained" is a reserve kept full, such as an emergency fund, with no date.',
+			),
+		targetAmount: z
+			.string()
+			.optional()
+			.describe(
+				'The target, a positive decimal string such as "5000.00" in the accounts\' currency. Give it, or targetMonths, not both.',
+			),
+		targetMonths: z
+			.number()
+			.int()
+			.optional()
+			.describe(
+				`A reserve only: its target is that many months of the household's median monthly expenses, 1 to ${GOAL_TARGET_MONTHS_MAX}, followed as they move, and only for accounts in the reporting currency.`,
+			),
+		targetDate: z.iso
+			.date()
+			.optional()
+			.describe("YYYY-MM-DD: when the owner wants to reach the target; refused for a reserve."),
+		notes: z.string().optional(),
+		accounts: z
+			.array(
+				z.strictObject({
+					accountId: accountId.describe(
+						"An active current, savings or investment account id from get_accounts, all in one currency, which becomes the goal's.",
+					),
+					allocatedAmount: z
+						.string()
+						.optional()
+						.describe(
+							'A fixed amount of the account held for this goal, a positive decimal string such as "300.00"; left out, the goal takes the whole balance, which an account allows one goal at a time.',
+						),
+				}),
+			)
+			.describe("The accounts that hold the money, at least one."),
+	})
+	.superRefine((value, context) => {
+		if (value.targetAmount === undefined && value.targetMonths === undefined) {
+			context.addIssue({ code: "custom", path: ["targetAmount"], message: "target_required" });
+		}
+
+		if (value.targetAmount !== undefined && value.targetMonths !== undefined) {
+			context.addIssue({ code: "custom", path: ["targetMonths"], message: "one_target_only" });
+		}
+
+		// The dialog hides the date of a reserve and the service drops it: the
+		// owner would agree to a date nothing keeps.
+		if (value.targetDate !== undefined && value.kind === "maintained") {
+			context.addIssue({ code: "custom", path: ["targetDate"], message: "reserve_has_no_date" });
+		}
+
+		if (value.targetMonths !== undefined && value.kind !== "maintained") {
+			context.addIssue({ code: "custom", path: ["targetMonths"], message: "reserve_only" });
+		}
+	});

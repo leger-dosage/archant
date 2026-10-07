@@ -74,6 +74,7 @@ const READ_TOOLS = [
 	"get_bill_audit",
 	"get_holdings",
 	"get_valuations",
+	"get_goals",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",
@@ -93,6 +94,7 @@ const WRITE_TOOLS = [
 	"pair_transfer",
 	"unpair_transfer",
 	"record_valuation",
+	"create_goal",
 	"rename_category",
 	"rename_merchant",
 	"rename_tag",
@@ -336,6 +338,12 @@ describe("the request", () => {
 			"Before create_bill, update_bill or record_bill_payment, tell the owner what will change and wait for their agreement.",
 		);
 		expect(result.instructions).toContain(
+			"Before create_goal, paraphrase the name, the target, the date and each account with the amount it holds for the goal, and wait for the owner's agreement. get_accounts gives the account ids.",
+		);
+		expect(result.instructions).toContain(
+			"- In get_goals, a link with allocatedAmount null on an active or paused goal takes its account whole: another goal can only hold a fixed amount of it. A completed or archived goal holds nothing.",
+		);
+		expect(result.instructions).toContain(
 			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement. Never record a figure the owner or a document did not give.",
 		);
 	});
@@ -419,6 +427,7 @@ describe("tools/list", () => {
 			pair_transfer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			unpair_transfer: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
 			record_valuation: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			create_goal: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			rename_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_tag: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },

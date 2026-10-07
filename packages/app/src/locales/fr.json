@@ -2083,8 +2083,8 @@
 		"asking": "{{name}} demande l'accès à Archant.",
 		"returnsTo": "Il recevra votre réponse sur {{host}}.",
 		"scopes": "Il pourra :",
-		"read": "Lire vos comptes, vos opérations, vos règles, vos budgets et vos factures",
-		"write": "Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets et vos soldes, gérer vos factures",
+		"read": "Lire vos comptes, vos opérations, vos règles, vos budgets, vos factures et vos objectifs",
+		"write": "Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
 		"revoke": "Vous pourrez le déconnecter à tout moment dans Réglages › Assistants IA.",
 		"allow": "Autoriser",
 		"deny": "Refuser"

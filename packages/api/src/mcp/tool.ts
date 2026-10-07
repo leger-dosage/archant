@@ -11,6 +11,13 @@ import { toDecimalString } from "@archant/data/money";
 import { SERIES_INTERVALS } from "../domain/balances/history.ts";
 
 /**
+ * What a tool's `run` receives: the route's `deps`, and `BETTER_AUTH_URL`,
+ * from which a tool builds the link to what it created, as Sure's tools answer
+ * a URL.
+ */
+type ToolDeps = ServiceDeps & { trustedOrigin: string };
+
+/**
  * One MCP tool (AD-19). `run` follows AD-1 as a route handler does: the
  * input arrives parsed by `input`, it calls one service function with the
  * route's `deps`, and it never reaches `db` itself. Its result is checked
@@ -32,7 +39,7 @@ export type Tool<Input extends ZodType, Output extends ZodObject> = {
 	 * themselves. A method, so the registry holds tools of every input.
 	 */
 	run(
-		deps: ServiceDeps,
+		deps: ToolDeps,
 		input: z.output<Input>,
 	): Promise<{ result: z.input<Output>; changedRows: number }>;
 };

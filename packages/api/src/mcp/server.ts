@@ -42,6 +42,7 @@ import {
 } from "./bills.ts";
 import { getBudgetTool, updateBudgetTool } from "./budgets.ts";
 import { createCategoryTool, getCategories, renameCategoryTool } from "./categories.ts";
+import { createGoalTool, getGoals } from "./goals.ts";
 import { getHoldings } from "./holdings.ts";
 import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
 import { getRecurringTransactions } from "./recurring.ts";
@@ -96,6 +97,7 @@ const TOOLS: AnyTool[] = [
 	getBillAudit,
 	getHoldings,
 	getValuations,
+	getGoals,
 	getRules,
 	getRuleRuns,
 	previewRule,
@@ -112,6 +114,7 @@ const TOOLS: AnyTool[] = [
 	pairTransferTool,
 	unpairTransferTool,
 	recordValuationTool,
+	createGoalTool,
 	renameCategoryTool,
 	renameMerchantTool,
 	renameTagTool,
@@ -156,6 +159,9 @@ const INSTRUCTIONS = [
 	"- record_valuation sets an account's balance on a date, from which the balance follows it, then the transactions after it; on an account a bank syncs, today's balance stays the bank's, and the snapshot sets its day and the days before it. The balance is what an asset holds or is worth, or what a liability still owes, both positive; an overdraft is negative.",
 	"- Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement. Never record a figure the owner or a document did not give.",
 	"- get_valuations lists the snapshots already recorded: when one holds that date, tell the owner record_valuation replaces it.",
+	"To set up a savings goal:",
+	"- Before create_goal, paraphrase the name, the target, the date and each account with the amount it holds for the goal, and wait for the owner's agreement. get_accounts gives the account ids.",
+	"- In get_goals, a link with allocatedAmount null on an active or paused goal takes its account whole: another goal can only hold a fixed amount of it. A completed or archived goal holds nothing.",
 	"To plan a month's budget:",
 	"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
 	"- Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",
