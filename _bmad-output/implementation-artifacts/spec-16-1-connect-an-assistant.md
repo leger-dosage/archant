@@ -113,6 +113,7 @@ Reading the key set over `http://127.0.0.1:${PORT}` fails when `HOST` names one 
 - Manual QA on a throwaway server (port 8791): password sign-in from an authorisation reached `/oauth/consent`, write unticked gave `archant:read offline_access` with a refresh token, `tools/list` and `get_categories` answered, « Déconnecter » then refused the access token (`401`) and the refresh token (`invalid_grant`). The `401` challenge named `archant:read archant:write` only; since a client requests the scopes the challenge names, `offline_access` was added to it.
 
 ## Spec Change Log
+- Owner rule of 2026-10-08, the shapes: every assistant tool takes and answers the structure of Sure's assistant function, checked against Sure at `56140319d`; a referenced row is Sure's `{ id, name }`, a paged list gives Sure's `total_results`, `page`, `page_size` and `total_pages`. A read takes Sure's names beside ids. KEEP: a write takes ids where Sure takes a name a bank writes, an account's (AD-19: a connection names an account after the bank, and names repeat); amounts as signed decimal strings (money); a refusal as its code (error contract). Here: nothing in this story's tools changed; the server instructions say which writes take names.
 
 ## Review Triage Log
 

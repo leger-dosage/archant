@@ -1,3 +1,5 @@
+import type { ServiceDeps } from "../services/deps.ts";
+import type { NameBook } from "../services/names.ts";
 import type { BillView, OccurrenceView } from "../services/recurring/bill-reads.ts";
 import type { PriceChange } from "../services/recurring/bills.ts";
 import type { RecordedOccurrence } from "../services/recurring/payments.ts";
@@ -27,6 +29,7 @@ import {
 	updateBillInput,
 } from "../schemas/assistants.ts";
 import { billStatusSchema } from "../schemas/bills.ts";
+import { categoryIdsOf, namesOf, refOf } from "../services/names.ts";
 import { billAudit } from "../services/recurring/audit.ts";
 import {
 	billHistory,
@@ -44,6 +47,7 @@ import {
 	defineTool,
 	leftOutFields,
 	leftOutOf,
+	namedRef,
 } from "./tool.ts";
 
 /** A household has a few dozen bills; past this many, the assistant narrows its filter. */
@@ -88,9 +92,8 @@ const billOutput = z.object({
 		.describe("YYYY-MM-DD: the current open occurrence's, else the next expected one."),
 	autopay: z.boolean(),
 	detected_automatically: z.boolean().describe("false when the owner declared it."),
-	account_id: z.string(),
-	account_name: z.string(),
-	category_id: z.string().nullable(),
+	account: namedRef,
+	category: namedRef.nullable(),
 	monthly_equivalent: magnitude("Its cost a month, whatever its cadence"),
 	payment_url: z.string().nullable(),
 });
@@ -116,7 +119,7 @@ const occurrenceOutput = z.object(occurrenceFields);
  * from a read: its name, next due date and monthly equivalent computed as
  * « Toutes les factures » computes them.
  */
-function billOf(bill: RecurringRecord): z.input<typeof billOutput> {
+function billOf(bill: RecurringRecord, names: NameBook): z.input<typeof billOutput> {
 	const band =
 		bill.expectedAmountMin !== null &&
 		bill.expectedAmountMax !== null &&
@@ -143,12 +146,37 @@ function billOf(bill: RecurringRecord): z.input<typeof billOutput> {
 		next_due_date: nextDueDateOf(bill),
 		autopay: bill.autopay,
 		detected_automatically: !bill.manual,
-		account_id: bill.accountId,
-		account_name: bill.accountName,
-		category_id: bill.categoryId,
+		account: { id: bill.accountId, name: bill.accountName },
+		category: refOf(names.categories, bill.categoryId),
 		monthly_equivalent: positive(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
 		payment_url: bill.paymentUrl,
 	};
+}
+
+/** The names of the bills' categories, read once for all of them. */
+async function categoryNames(
+	deps: ServiceDeps,
+	bills: readonly Pick<RecurringRecord, "categoryId">[],
+): Promise<NameBook> {
+	return namesOf(deps, {
+		categories: bills.flatMap((bill) => (bill.categoryId === null ? [] : [bill.categoryId])),
+	});
+}
+
+/**
+ * Sure's `category_name`: the category this exact name names, `null` for
+ * "Uncategorized", `undefined` when none was given. Only the owner names a
+ * category, and no two share a name (AD-19).
+ */
+async function categoryOf(
+	deps: ServiceDeps,
+	name: string | undefined,
+): Promise<string | null | undefined> {
+	if (name === undefined) {
+		return undefined;
+	}
+
+	return (await categoryIdsOf(deps, [name], { caseInsensitive: false })).get(name);
 }
 
 /** Sure's `serialize_occurrence`. */
@@ -216,6 +244,7 @@ export const getBills = defineTool({
 	annotations: READ_ONLY,
 	input: getBillsInput,
 	output: z.object({
+		as_of_date: z.string().describe("Today, YYYY-MM-DD."),
 		bills: z.array(
 			billOutput.extend({
 				current_occurrence: occurrenceOutput
@@ -250,12 +279,16 @@ export const getBills = defineTool({
 			search: input.search,
 			dueWithinDays: input.due_within_days,
 		});
+		const shown = found.bills.slice(0, MAX_BILLS);
+		const names = await categoryNames(deps, shown);
 
 		return {
 			result: {
-				bills: found.bills
-					.slice(0, MAX_BILLS)
-					.map((bill) => ({ ...billOf(bill), current_occurrence: currentOf(bill) })),
+				as_of_date: today(deps.timeZone),
+				bills: shown.map((bill) => ({
+					...billOf(bill, names),
+					current_occurrence: currentOf(bill),
+				})),
 				total_results: found.bills.length,
 				truncated: found.bills.length > MAX_BILLS,
 				totals: {
@@ -318,11 +351,12 @@ export const getBillDetails = defineTool({
 	run: async (deps, { bill_id: billId }) => {
 		const history = await billHistory(deps, billId);
 		const { bill } = history;
+		const names = await categoryNames(deps, [bill]);
 
 		return {
 			result: {
 				bill: {
-					...billOf(bill),
+					...billOf(bill, names),
 					anchor_date: bill.anchorDate,
 					end_after_count: bill.endAfterCount,
 					notes: bill.notes,
@@ -362,15 +396,13 @@ const sectionOf = <Item extends z.ZodType>(item: Item, what: string) =>
 const billRef = {
 	bill_id: z.string(),
 	name: z.string(),
-	account_id: z.string(),
-	account_name: z.string(),
+	account: namedRef,
 };
 
-const refOf = (bill: BillView) => ({
+const billRefOf = (bill: BillView) => ({
 	bill_id: bill.id,
 	name: bill.displayName,
-	account_id: bill.accountId,
-	account_name: bill.accountName,
+	account: { id: bill.accountId, name: bill.accountName },
 });
 
 /** An audit section with each of its items as the tool writes it. */
@@ -427,7 +459,7 @@ export const getBillAudit = defineTool({
 				name: z.string(),
 				average_amount: magnitude("The mean of its charges"),
 				currency: z.string(),
-				account_id: z.string(),
+				account: namedRef,
 				occurrence_count: z.number().int(),
 				last_seen: z.string(),
 				entry_id: z
@@ -441,6 +473,9 @@ export const getBillAudit = defineTool({
 	}),
 	run: async (deps, { lookback_months: lookbackMonths }) => {
 		const audit = await billAudit(deps, lookbackMonths);
+		const { accounts } = await namesOf(deps, {
+			accounts: audit.undeclaredCandidates.items.map((candidate) => candidate.accountId),
+		});
 
 		return {
 			result: {
@@ -449,22 +484,22 @@ export const getBillAudit = defineTool({
 					amount: positive(group.amount, group.currency),
 					currency: group.currency,
 					due_day: group.expectedDayOfMonth,
-					bills: group.bills.map(refOf),
+					bills: group.bills.map(billRefOf),
 				})),
 				price_changes: mapSection(audit.priceChanges, priceChangeOf),
 				long_overdue: mapSection(audit.longOverdue, ({ bill, cyclesOverdue }) => ({
-					...refOf(bill),
+					...billRefOf(bill),
 					cycles_overdue: cyclesOverdue,
 					next_due_date: bill.nextDueDate,
 					amount: positive(bill.amount, bill.currency),
 					currency: bill.currency,
 				})),
 				dormant: mapSection(audit.dormant, (bill) => ({
-					...refOf(bill),
+					...billRefOf(bill),
 					next_due_date: bill.nextDueDate,
 				})),
 				awaiting_confirmation: mapSection(audit.awaitingConfirmation, (bill) => ({
-					...refOf(bill),
+					...billRefOf(bill),
 					amount: positive(bill.amount, bill.currency),
 					currency: bill.currency,
 				})),
@@ -472,7 +507,10 @@ export const getBillAudit = defineTool({
 					name: candidate.name,
 					average_amount: positive(candidate.amount, candidate.currency),
 					currency: candidate.currency,
-					account_id: candidate.accountId,
+					account: {
+						id: candidate.accountId,
+						name: accounts.get(candidate.accountId) ?? candidate.accountId,
+					},
 					occurrence_count: candidate.occurrenceCount,
 					last_seen: candidate.lastOccurrenceDate,
 					entry_id: candidate.entryId,
@@ -490,12 +528,15 @@ export const createBillTool = defineTool({
 		"Declares a bill, a subscription, an installment plan or an income, as « Ajouter une facture » does: active at once, due on first_due_on and then on its cadence. The amount is positive; is_income makes it money coming in. The same account, name and amount twice answers RECURRING_ALREADY_EXISTS. It answers the bill and its next three due dates. Tell the owner what you are about to create and wait for their agreement first.",
 	scope: "archant:write",
 	annotations: CREATES,
+	fieldPaths: { categoryId: "category_name" },
 	input: createBillInput,
 	output: z.object({
+		created: z.literal(true),
 		bill: billOutput,
 		upcoming_due_dates: z.array(z.string()).describe("The next three from today."),
 	}),
 	run: async (deps, input) => {
+		const category = await categoryOf(deps, input.category_name);
 		const created = await declareBill(deps, {
 			name: input.name,
 			amount: input.amount,
@@ -504,7 +545,7 @@ export const createBillTool = defineTool({
 			kind: input.is_income ? "income" : "bill",
 			frequency: { preset: input.frequency },
 			billType: input.bill_type,
-			categoryId: input.category_id,
+			categoryId: category ?? undefined,
 			entryId: input.entry_id,
 			autopay: input.autopay,
 			paymentUrl: input.payment_url,
@@ -513,7 +554,8 @@ export const createBillTool = defineTool({
 
 		return {
 			result: {
-				bill: billOf(created),
+				created: true as const,
+				bill: billOf(created, await categoryNames(deps, [created])),
 				upcoming_due_dates: nextDueDates(created, today(deps.timeZone)),
 			},
 			changedRows: 1,
@@ -530,8 +572,10 @@ export const updateBillTool = defineTool({
 		"Changes a bill as its edit dialog does, and pauses or resumes it, in one write: a refusal anywhere changes nothing. Only the fields given change. A new amount applies from now on: occurrences already due keep theirs. A new frequency pins the schedule, so detection never moves its day. It answers the fields it set and the bill. Tell the owner what you are about to change and wait for their agreement first.",
 	scope: "archant:write",
 	annotations: SETS,
+	fieldPaths: { categoryId: "category_name" },
 	input: updateBillInput,
 	output: z.object({
+		updated: z.literal(true),
 		changed_fields: z
 			.array(z.string())
 			.describe("The fields this call gave, a status the bill already had included."),
@@ -550,7 +594,7 @@ export const updateBillTool = defineTool({
 			name: input.name,
 			amount: input.amount,
 			accountId: input.account_id,
-			categoryId: input.category_id,
+			categoryId: await categoryOf(deps, input.category_name),
 			billType: input.bill_type,
 			autopay: input.autopay,
 			paymentUrl: input.payment_url,
@@ -574,10 +618,11 @@ export const updateBillTool = defineTool({
 
 		return {
 			result: {
+				updated: true as const,
 				changed_fields: Object.entries(given)
 					.filter(([, value]) => value !== undefined)
 					.map(([key]) => key),
-				bill: billOf(updated),
+				bill: billOf(updated, await categoryNames(deps, [updated])),
 			},
 			changedRows: 1,
 		};
@@ -593,6 +638,7 @@ export const recordBillPaymentTool = defineTool({
 	annotations: CREATES,
 	input: recordBillPaymentInput,
 	output: z.object({
+		recorded: z.literal(true),
 		bill_id: z.string(),
 		occurrence: occurrenceOutput.extend({ status: z.enum(OCCURRENCE_STATUSES) }),
 	}),
@@ -608,6 +654,7 @@ export const recordBillPaymentTool = defineTool({
 
 		return {
 			result: {
+				recorded: true as const,
 				bill_id: billId,
 				occurrence: {
 					...occurrenceOf({ ...occurrence, open: occurrence.status === "scheduled" }),

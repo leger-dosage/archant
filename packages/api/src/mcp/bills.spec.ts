@@ -135,11 +135,13 @@ const bill = z
 		frequency: z.string(),
 		next_due_date: z.string(),
 		monthly_equivalent: z.string(),
-		category_id: z.string().nullable(),
+		account: z.object({ id: z.string(), name: z.string() }),
+		category: z.object({ id: z.string(), name: z.string() }).nullable(),
 	})
 	.loose();
 
 const bills = z.object({
+	as_of_date: z.string(),
 	bills: z.array(bill.extend({ current_occurrence: occurrence.nullable() })),
 	total_results: z.number(),
 	truncated: z.boolean(),
@@ -192,13 +194,18 @@ const audit = z.object({
 });
 
 const recorded = z.object({
+	recorded: z.literal(true),
 	bill_id: z.string(),
 	occurrence: occurrence.extend({ status: z.string() }),
 });
 
-const updated = z.object({ changed_fields: z.array(z.string()), bill });
+const updated = z.object({ updated: z.literal(true), changed_fields: z.array(z.string()), bill });
 
-const created = z.object({ bill, upcoming_due_dates: z.array(z.string()) });
+const created = z.object({
+	created: z.literal(true),
+	bill,
+	upcoming_due_dates: z.array(z.string()),
+});
 
 const euros = (amount: number) =>
 	toDecimalString({ amount: toMinorUnits(amount), currency: "EUR" });
@@ -275,9 +282,8 @@ describe("get_bills", () => {
 			next_due_date: "2026-10-02",
 			autopay: false,
 			detected_automatically: false,
-			account_id: accountId,
-			account_name: "Courant",
-			category_id: null,
+			account: { id: accountId, name: "Courant" },
+			category: null,
 			monthly_equivalent: "20.00",
 			payment_url: null,
 			current_occurrence: {
@@ -591,8 +597,8 @@ describe("get_bill_audit", () => {
 		const result = audit.parse((await tools.read("get_bill_audit")).structuredContent);
 		// Two bills due the same day come by id, and the group takes the first one's name.
 		const group = [
-			{ bill_id: first.id, name: "Netflix", account_id: accountId, account_name: "Courant" },
-			{ bill_id: second.id, name: "netflix", account_id: other, account_name: "Joint" },
+			{ bill_id: first.id, name: "Netflix", account: { id: accountId, name: "Courant" } },
+			{ bill_id: second.id, name: "netflix", account: { id: other, name: "Joint" } },
 		].toSorted((a, b) => a.bill_id.localeCompare(b.bill_id));
 
 		expect(result.possible_duplicates).toEqual({
@@ -652,8 +658,7 @@ describe("get_bill_audit", () => {
 			{
 				bill_id: late.id,
 				name: "Internet",
-				account_id: accountId,
-				account_name: "Courant",
+				account: { id: accountId, name: "Courant" },
 				cycles_overdue: 1,
 				next_due_date: "2026-08-12",
 				amount: "29.99",
@@ -679,7 +684,7 @@ describe("get_bill_audit", () => {
 				name: "DEEZER PREMIUM",
 				average_amount: "10.99",
 				currency: "EUR",
-				account_id: accountId,
+				account: { id: accountId, name: "Courant" },
 				occurrence_count: 3,
 				last_seen: "2026-09-08",
 				entry_id: z.string().parse(year.undeclared_candidates.items[0]?.entry_id),
@@ -692,7 +697,7 @@ describe("get_bill_audit", () => {
 });
 
 describe("create_bill", () => {
-	it("creates a bill by ids, typed and categorised, and an income without category", async () => {
+	it("creates a bill on an account by id and a category by name, typed, and an income without category", async () => {
 		const accountId = await household();
 		const streaming = await ownCategory("Abonnements");
 		const tools = await assistants();
@@ -705,7 +710,7 @@ describe("create_bill", () => {
 					first_due_on: "2026-10-05",
 					account_id: accountId,
 					bill_type: "subscription",
-					category_id: streaming,
+					category_name: "Abonnements",
 					autopay: true,
 					payment_url: "netflix.com",
 				})
@@ -720,7 +725,7 @@ describe("create_bill", () => {
 					account_id: accountId,
 					is_income: true,
 					bill_type: "subscription",
-					category_id: streaming,
+					category_name: "Abonnements",
 				})
 			).structuredContent,
 		);
@@ -731,7 +736,7 @@ describe("create_bill", () => {
 				bill_type: "subscription",
 				status: "active",
 				amount: "13.49",
-				category_id: streaming,
+				category: { id: streaming, name: "Abonnements" },
 				autopay: true,
 				payment_url: "https://netflix.com",
 				detected_automatically: false,
@@ -742,7 +747,7 @@ describe("create_bill", () => {
 		expect(salary.bill).toMatchObject({
 			bill_type: "income",
 			amount: "2500.00",
-			category_id: null,
+			category: null,
 		});
 		expect(await stored(salary.bill.id)).toMatchObject({
 			amount: 250_000,
@@ -806,9 +811,9 @@ describe("create_bill", () => {
 		);
 		expect(
 			failure(
-				await tools.write("create_bill", { ...netflix, amount: "9.99", category_id: "nope" }),
+				await tools.write("create_bill", { ...netflix, amount: "9.99", category_name: "Nope" }),
 			),
-		).toContain('"path":"category_id"');
+		).toContain('"path":"category_name"');
 		expect(
 			failure(
 				await tools.write("create_bill", { ...netflix, amount: "9.99", frequency: "yearly" }),
@@ -826,6 +831,35 @@ describe("create_bill", () => {
 });
 
 describe("update_bill", () => {
+	it('sets a category by its exact name, and clears it with Sure\'s "Uncategorized"', async () => {
+		const accountId = await household();
+		const streaming = await ownCategory("Abonnements");
+		const netflix = await declare(accountId, "Netflix", "13,49", "2026-10-05");
+		const tools = await assistants();
+
+		const set = updated.parse(
+			(await tools.write("update_bill", { bill_id: netflix.id, category_name: "Abonnements" }))
+				.structuredContent,
+		);
+		const otherCase = await tools.write("update_bill", {
+			bill_id: netflix.id,
+			category_name: "abonnements",
+		});
+		const cleared = updated.parse(
+			(await tools.write("update_bill", { bill_id: netflix.id, category_name: "Uncategorized" }))
+				.structuredContent,
+		);
+
+		expect(set).toMatchObject({
+			updated: true,
+			changed_fields: ["category_name"],
+			bill: { category: { id: streaming, name: "Abonnements" } },
+		});
+		expect(failure(otherCase)).toContain('"path":"category_name"');
+		expect(cleared.bill.category).toBeNull();
+		expect(await stored(netflix.id)).toMatchObject({ categoryId: null });
+	});
+
 	it("raises the amount from now on: the overdue occurrence keeps the old one", async () => {
 		const accountId = await household();
 		setToday("2026-08-30");
@@ -943,6 +977,7 @@ describe("record_bill_payment", () => {
 		);
 
 		expect(result).toEqual({
+			recorded: true,
 			bill_id: mortgage.id,
 			occurrence: {
 				due_on: "2026-09-05",

@@ -68,19 +68,18 @@ const snapshot = z.object({
 	amount: z.string(),
 	computed: z.string(),
 	gap: z.string(),
-	currency: z.string(),
 });
+
+const accountRef = z.object({ id: z.string(), name: z.string(), currency: z.string() });
 
 const valuation = z.object({
 	entry_id: z.string(),
-	account_id: z.string(),
-	account_name: z.string(),
+	account: accountRef,
 	date: z.string(),
 	kind: z.enum(["opening_anchor", "reconciliation", "current_anchor"]),
 	amount: z.string(),
 	computed: z.string().nullable(),
 	gap: z.string().nullable(),
-	currency: z.string(),
 	notes: z.string().nullable(),
 });
 
@@ -93,7 +92,7 @@ const valuations = z.object({
 });
 
 const recordedValuation = snapshot.extend({
-	account_id: z.string(),
+	account: accountRef,
 	replaced_existing: z.boolean(),
 	provenance: z.object({
 		source: z.string(),
@@ -166,7 +165,7 @@ describe("get_valuations", () => {
 
 		const { valuations: items, ...paging } = valuations.parse(first.structuredContent);
 
-		const of = { account_id: account.id, account_name: "Compte courant", currency: "EUR" };
+		const of = { account: { id: account.id, name: "Compte courant", currency: "EUR" } };
 
 		expect(items.map(({ entry_id: _id, ...item }) => item)).toEqual([
 			{
@@ -229,7 +228,9 @@ describe("get_valuations", () => {
 				.structuredContent,
 		);
 
-		expect(all.valuations.map(({ account_name, kind }) => ({ account_name, kind }))).toEqual(
+		expect(
+			all.valuations.map((item) => ({ account_name: item.account.name, kind: item.kind })),
+		).toEqual(
 			expect.arrayContaining([
 				{ account_name: "Compte courant", kind: "reconciliation" },
 				{ account_name: "Compte courant", kind: "opening_anchor" },
@@ -242,7 +243,7 @@ describe("get_valuations", () => {
 				.toSorted()
 				.toReversed(),
 		);
-		expect(all.valuations.some(({ account_id }) => account_id === loan.id)).toBe(true);
+		expect(all.valuations.some((item) => item.account.id === loan.id)).toBe(true);
 		expect(march.valuations.map(({ date, kind }) => ({ date, kind }))).toEqual([
 			{ date: "2026-03-05", kind: "reconciliation" },
 		]);
@@ -282,12 +283,11 @@ describe("record_valuation", () => {
 		const { entry_id: _id, ...recorded } = recordedValuation.parse(result.structuredContent);
 
 		expect(recorded).toEqual({
-			account_id: account.id,
+			account: { id: account.id, name: "Compte courant", currency: "EUR" },
 			date: "2026-08-15",
 			amount: "2500.00",
 			computed: "1380.00",
 			gap: "1120.00",
-			currency: "EUR",
 			replaced_existing: false,
 			provenance: {
 				source: "Relevé de compte (grade: A)",

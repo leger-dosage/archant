@@ -70,6 +70,7 @@ import {
 	unsplitTransaction as unsplitLedgerTransaction,
 } from "./ledger/splits.ts";
 import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.ts";
+import { categoryFilterNamed, idsNamed } from "./names.ts";
 import { recurringEntryIds } from "./recurring/series.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { getTrade, investmentCurrency } from "./trades.ts";
@@ -315,18 +316,45 @@ async function categoryFilterOf(
  * The list's filter as the ledger reads it, shared by the list and the bulk
  * actions so « Tout sélectionner » acts on exactly the rows the list counts.
  */
-async function filterOf(deps: ServiceDeps, query: BulkFilterRequest): Promise<TransactionFilter> {
+async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<TransactionFilter> {
+	const { names = {} } = query;
+	const [account, category, merchant, tag] = await Promise.all([
+		idsNamed(deps, "accounts", names.accounts),
+		categoryFilterNamed(deps, names.categories),
+		idsNamed(deps, "merchants", names.merchants),
+		idsNamed(deps, "tags", names.tags),
+	]);
+
 	return {
-		accountIds: query.account,
+		accountIds: both(query.account, account),
 		from: query.from,
 		to: query.to,
 		amounts: await amountsFor(deps, query),
 		q: query.q,
-		...(await categoryFilterOf(deps, query.category)),
-		merchantIds: query.merchant,
-		tagIds: query.tag,
+		...(await categoryFilterOf(deps, both(query.category, category))),
+		merchantIds: both(query.merchant, merchant),
+		tagIds: both(query.tag, tag),
 		direction: query.direction,
 	};
+}
+
+/**
+ * Sure's filters by exact name, beside Archant's by id: an assistant names
+ * what it read in a list. Given both, a row must match both, as Sure's
+ * `accounts` and `account_ids` narrow each other; a name nothing holds
+ * matches nothing, as in Sure, rather than leaving the filter open.
+ */
+type FilterNames = Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[]>>;
+
+type NamedFilterRequest = BulkFilterRequest & { names?: FilterNames | undefined };
+
+/** The ids both narrow to; `undefined` when neither was given. */
+function both(ids: string[] | undefined, named: string[] | undefined): string[] | undefined {
+	if (ids === undefined || named === undefined) {
+		return ids ?? named;
+	}
+
+	return ids.filter((id) => named.includes(id));
 }
 
 /**
@@ -336,7 +364,7 @@ async function filterOf(deps: ServiceDeps, query: BulkFilterRequest): Promise<Tr
  */
 export async function listAllTransactions(
 	deps: ServiceDeps,
-	query: TransactionFilterRequest,
+	query: TransactionFilterRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<FilteredTransactionPage> {
 	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
@@ -348,7 +376,7 @@ export async function listAllTransactions(
 /** The count and the signed total of every transaction matching the filter. */
 export async function transactionTotals(
 	deps: ServiceDeps,
-	query: TransactionTotalsRequest,
+	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<TransactionTotals> {
 	const currency = getReportingCurrency();
 	const sums = await sumTransactions(deps, await filterOf(deps, query));
@@ -374,7 +402,7 @@ export async function transactionTotals(
  */
 export async function findTransactions(
 	deps: ServiceDeps,
-	query: TransactionFilterRequest,
+	query: TransactionFilterRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<FilteredTransactionPage & TransactionTotals> {
 	const [page, totals] = await Promise.all([
 		listAllTransactions(deps, query),
@@ -431,7 +459,7 @@ const nullFirst = (a: string | null, b: string | null) =>
  */
 export async function groupTransactionsByLabel(
 	deps: ServiceDeps,
-	query: TransactionTotalsRequest,
+	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<{ groups: LabelGroup[]; groupCount: number }> {
 	const rows = await sumTransactionsByLabel(deps, await filterOf(deps, query));
 	const drafts = new Map<string, GroupDraft>();

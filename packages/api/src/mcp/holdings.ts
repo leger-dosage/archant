@@ -5,7 +5,8 @@ import { toDecimalString } from "@archant/data/money";
 
 import { holdingsInput } from "../schemas/assistants.ts";
 import { listPositions } from "../services/holdings.ts";
-import { READ_ONLY, decimal, defineTool } from "./tool.ts";
+import { namesOf } from "../services/names.ts";
+import { READ_ONLY, decimal, defineTool, namedRef } from "./tool.ts";
 
 const percent = (what: string) =>
 	z.string().nullable().describe(`${what}, in percent, a decimal string such as "12.5".`);
@@ -22,7 +23,7 @@ export const getHoldings = defineTool({
 	annotations: READ_ONLY,
 	input: holdingsInput,
 	output: z.object({
-		account_id: z.string(),
+		account: namedRef,
 		currency: z.string().describe("The account's: every amount and price here is in it."),
 		date: z
 			.string()
@@ -62,11 +63,15 @@ export const getHoldings = defineTool({
 	}),
 	run: async (deps, input) => {
 		const holdings = await listPositions(deps, input.account_id);
+		const { accounts } = await namesOf(deps, { accounts: [holdings.accountId] });
 		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: holdings.currency });
 
 		return {
 			result: {
-				account_id: holdings.accountId,
+				account: {
+					id: holdings.accountId,
+					name: accounts.get(holdings.accountId) ?? holdings.accountId,
+				},
 				currency: holdings.currency,
 				date: holdings.date,
 				holdings: holdings.positions.map((position) => ({

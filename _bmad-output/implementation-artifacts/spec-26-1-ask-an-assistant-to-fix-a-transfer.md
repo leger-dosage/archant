@@ -103,6 +103,7 @@ Inputs name `transactionId` and `counterpartId`, the body of `POST /api/transfer
 
 - Owner rule of 2026-10-07, checked against Sure at `56140319d`: Sure still has no transfer tool, so nothing here departs from one; no change.
 - Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `transaction_id`, `counterpart_id`, `transfer_id`, `never_propose`, `outflow_transaction_id`, `inflow_transaction_id`; a candidate's label is `name`.
+- Owner rule of 2026-10-08, the shapes: every assistant tool takes and answers the structure of Sure's assistant function, checked against Sure at `56140319d`; a referenced row is Sure's `{ id, name }`, a paged list gives Sure's `total_results`, `page`, `page_size` and `total_pages`. A read takes Sure's names beside ids. KEEP: a write takes ids where Sure takes a name a bank writes, an account's (AD-19: a connection names an account after the bank, and names repeat); amounts as signed decimal strings (money); a refusal as its code (error contract). Here: `get_transfer_candidates` names each candidate's `account` as `{ id, name }`, and a line's transfer its `counterpart_account`.
 
 ## Review Triage Log
 

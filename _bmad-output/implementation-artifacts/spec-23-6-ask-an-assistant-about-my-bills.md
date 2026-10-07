@@ -124,6 +124,7 @@ Totals use the reporting currency with the left-out fields, as every other Archa
 
 ## Spec Change Log
 - Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: the bill tools take and answer Sure's snake case names, `bill_id`, `bill_type`, `payment_state`, `due_within_days`, `first_due_on`, `is_income`, `occurrence_due_on`, `paid_on`, `lookback_months`, `current_occurrence`, `next_due_date`, Sure's `percent_change` and `upcoming_due_dates`, and `get_bills` answers `total_results`.
+- Owner rule of 2026-10-08, the shapes: the bill tools take and answer the structure of Sure's, checked against Sure at `56140319d`. `create_bill` and `update_bill` take Sure's `category_name`, "Uncategorized" clearing it, since only the owner names a category and no two share a name; KEEP: `account_id`, where Sure takes `account_name`, since a bank names an account and names repeat (AD-19). Answers name each `account` and `category` as `{ id, name }`; `get_bills` adds `as_of_date`, `create_bill` Sure's `created`, `update_bill` `updated`, `record_bill_payment` `recorded`.
 
 ## Review Triage Log
 

@@ -55,9 +55,10 @@ export const recurringPatchSchema = editBodySchema
 export type RecurringPatch = z.output<typeof recurringPatchSchema>;
 
 /**
- * Which series an assistant asks for: `current` is suggested or active, `all`
- * every status « Récurrents » lists, ended ones never.
+ * Which series an assistant asks for, as Sure's `get_recurring_transactions`:
+ * `active` the ones followed, `all` every status « Récurrents » lists, the
+ * suggestions included, ended ones never.
  */
-export const RECURRING_VIEWS = ["current", "inactive", "all"] as const;
+export const RECURRING_VIEWS = ["active", "inactive", "all"] as const;
 
 export type RecurringView = (typeof RECURRING_VIEWS)[number];
