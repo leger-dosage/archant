@@ -57,7 +57,7 @@ test("an account created through the form is listed under its group, in the acco
 	await dialog.getByLabel("Nom").fill(name);
 	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveText("Compte courant");
 	await expect(dialog.getByRole("combobox", { name: "Devise" })).toHaveText("EUR");
-	await dialog.getByLabel("Solde initial").fill("1 234,56");
+	await dialog.getByLabel("Solde à la date :").fill("1 234,56");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog).toBeHidden();
@@ -92,8 +92,8 @@ test("an account created with the form's default opening date accepts a transact
 	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
-	await dialog.getByLabel("Solde initial").fill("1 000,00");
-	await expect(dialog.getByLabel("Date du solde")).toHaveValue(typed(twoYearsAgo));
+	await dialog.getByLabel("Solde à la date :").fill("1 000,00");
+	await expect(dialog.getByLabel("Date du solde d'ouverture")).toHaveValue(typed(twoYearsAgo));
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 	await expect(dialog).toBeHidden();
 
@@ -259,8 +259,8 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type", exact: true }).click();
 	await page.getByRole("option", { name: "Hypothèque" }).click();
-	await expect(dialog.getByLabel("Solde initial", { exact: true })).toHaveCount(0);
-	await dialog.getByLabel("Capital restant dû").fill("104 724,54");
+	// Sure's one label for every type, a loan's included.
+	await dialog.getByLabel("Solde à la date :").fill("104 724,54");
 	// Sure's order: the amount, the rate and its type, the down payment, the start, the term, the insurance.
 	const fieldIds = await dialog
 		.locator("[id^='loan-']:is(input, button)")
@@ -976,7 +976,7 @@ test("a PEA created through the form is listed under « Actifs » with its value
 	await dialog.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "PEA", exact: true }).click();
 	await expect(dialog.getByLabel("Solde initial du prêt")).toHaveCount(0);
-	await dialog.getByLabel("Solde initial").fill("25 000,00");
+	await dialog.getByLabel("Solde à la date :").fill("25 000,00");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog).toBeHidden();
@@ -1011,12 +1011,12 @@ test("a home created through the form with its estimated value is listed under �
 	await addAccount(page).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
-	await expect(dialog.getByLabel("Valeur estimée")).toHaveCount(0);
+	// Sure's dialog has a title and no description.
+	await expect(dialog).not.toHaveAttribute("aria-describedby");
 	await dialog.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "Maison", exact: true }).click();
-	await expect(dialog.getByLabel("Solde initial")).toHaveCount(0);
-	await dialog.getByLabel("Valeur estimée").fill("320 000,00");
-	await dialog.getByLabel("Date du solde").fill(typed(daysAgo(10)));
+	await dialog.getByLabel("Solde à la date :").fill("320 000,00");
+	await dialog.getByLabel("Date du solde d'ouverture").fill(typed(daysAgo(10)));
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog).toBeHidden();
@@ -1048,7 +1048,7 @@ test("a vehicle created through the form with its estimated value is listed unde
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "Véhicule", exact: true }).click();
-	await dialog.getByLabel("Valeur estimée").fill("18 500,00");
+	await dialog.getByLabel("Solde à la date :").fill("18 500,00");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog).toBeHidden();
@@ -1067,11 +1067,11 @@ test("invalid fields show their message next to the field", async ({ page }) => 
 	await addAccount(page).click();
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
-	await dialog.getByLabel("Solde initial").fill("douze");
+	await dialog.getByLabel("Solde à la date :").fill("douze");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
-	await expect(dialog.getByLabel("Solde initial")).toHaveAccessibleDescription(
+	await expect(dialog.getByLabel("Solde à la date :")).toHaveAccessibleDescription(
 		"Montant invalide. Exemple : 1 234,56.",
 	);
 	await expect(dialog).toBeVisible();
@@ -1102,7 +1102,7 @@ test("a field error from the API is shown next to its field", async ({ page }) =
 
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(uniqueName("Refusé"));
-	await dialog.getByLabel("Solde initial").fill("10");
+	await dialog.getByLabel("Solde à la date :").fill("10");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 
 	await expect(dialog.getByRole("combobox", { name: "Devise" })).toHaveAccessibleDescription(

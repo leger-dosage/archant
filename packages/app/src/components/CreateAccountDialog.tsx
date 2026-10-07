@@ -7,7 +7,6 @@ import { toast } from "sonner";
 
 import type { CreateAccountInput } from "@archant/api/schemas/accounts";
 import { createAccountSchema } from "@archant/api/schemas/accounts";
-import type { AccountType } from "@archant/data/account-types";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { DateField } from "@/components/DateField";
@@ -17,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
-	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
@@ -61,23 +59,6 @@ const defaults = (): CreateAccountInput => ({
 	openingDate: yearsAgo(2),
 	details: completeLoanInput(undefined),
 });
-
-// What the amount is, where « Solde initial » would mislead: what a loan still
-// owes, what a home or a car would sell for, as Sure labels them. A record, so
-// a new account type does not compile until it names its label.
-const openingBalanceLabel: Record<
-	AccountType,
-	| "accounts.form.openingBalance"
-	| "accounts.form.outstandingBalance"
-	| "accounts.form.estimatedValue"
-> = {
-	depository: "accounts.form.openingBalance",
-	credit_card: "accounts.form.openingBalance",
-	loan: "accounts.form.outstandingBalance",
-	investment: "accounts.form.openingBalance",
-	property: "accounts.form.estimatedValue",
-	vehicle: "accounts.form.estimatedValue",
-};
 
 const schemaResolver = zodResolver(createAccountSchema, undefined, { raw: true });
 
@@ -140,10 +121,14 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 
 	return (
 		<Dialog open={open} onOpenChange={close}>
-			<DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto">
+			{/* Sure's dialog has a title and no description. */}
+			<DialogContent
+				showCloseButton={false}
+				aria-describedby={undefined}
+				className="max-h-[90vh] overflow-y-auto"
+			>
 				<DialogHeader>
 					<DialogTitle>{t("accounts.form.title")}</DialogTitle>
-					<DialogDescription>{t("accounts.form.description")}</DialogDescription>
 				</DialogHeader>
 				<form
 					id="create-account"
@@ -228,7 +213,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 							<FieldMessage id="currency-error" error={errors.currency} />
 						</div>
 						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="openingBalance">{t(openingBalanceLabel[type])}</Label>
+							<Label htmlFor="openingBalance">{t("accounts.form.balance")}</Label>
 							<Input
 								id="openingBalance"
 								inputMode="decimal"
