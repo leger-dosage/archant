@@ -36,6 +36,7 @@ const READ_TOOLS = [
 	"get_bill_details",
 	"get_bill_audit",
 	"get_holdings",
+	"get_valuations",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",
@@ -238,7 +239,7 @@ async function connectThenDisconnect(
 		page.getByLabel("Lire vos comptes, vos opérations, vos règles, vos budgets et vos factures"),
 	).toBeChecked();
 	const write = page.getByLabel(
-		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, gérer vos factures",
+		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets et vos soldes, gérer vos factures",
 	);
 	await expect(write).toBeChecked();
 	await write.uncheck();

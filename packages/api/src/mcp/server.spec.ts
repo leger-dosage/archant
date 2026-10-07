@@ -73,6 +73,7 @@ const READ_TOOLS = [
 	"get_bill_details",
 	"get_bill_audit",
 	"get_holdings",
+	"get_valuations",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",
@@ -91,6 +92,7 @@ const WRITE_TOOLS = [
 	"bulk_update_transactions",
 	"pair_transfer",
 	"unpair_transfer",
+	"record_valuation",
 	"rename_category",
 	"rename_merchant",
 	"rename_tag",
@@ -333,6 +335,9 @@ describe("the request", () => {
 		expect(result.instructions).toContain(
 			"Before create_bill, update_bill or record_bill_payment, tell the owner what will change and wait for their agreement.",
 		);
+		expect(result.instructions).toContain(
+			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement. Never record a figure the owner or a document did not give.",
+		);
 	});
 });
 
@@ -413,6 +418,7 @@ describe("tools/list", () => {
 			},
 			pair_transfer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			unpair_transfer: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+			record_valuation: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_tag: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },

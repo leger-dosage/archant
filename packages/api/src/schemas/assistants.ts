@@ -17,6 +17,7 @@ import { monthSchema } from "./reports.ts";
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "./rules.ts";
 import { tagSchema } from "./tags.ts";
 import {
+	DEFAULT_PAGE_SIZE,
 	MAX_BULK_IDS,
 	MAX_TAG_FILTER,
 	bulkIds,
@@ -737,5 +738,32 @@ export const unpairTransferInput = z.strictObject({
 		.default(false)
 		.describe(
 			"true also refuses the pair for good: no search, by hand, by an import or by a sync, offers it again, and nothing undoes the refusal. Pass it only when the owner said so.",
+		),
+});
+
+/** `get_valuations`: a page of one account's snapshots, as its « Soldes » tab lists them. */
+export const valuationsInput = z.strictObject({
+	accountId,
+	page: pageFields.page.describe(
+		`${DEFAULT_PAGE_SIZE} snapshots a page, most recent first; 1 by default.`,
+	),
+});
+
+/**
+ * `record_valuation`: the « Soldes » dialog's fields, passed raw to
+ * `createSnapshot`, which parses the balance in the account's currency as
+ * it parses the dialog's.
+ */
+export const recordValuationInput = z.strictObject({
+	accountId,
+	date: z.iso
+		.date()
+		.describe(
+			"YYYY-MM-DD: the day whose end-of-day balance this is, after the opening date and not after today.",
+		),
+	balance: z
+		.string()
+		.describe(
+			'The stored balance, a decimal string such as "175000.00" in the account\'s currency: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.',
 		),
 });
