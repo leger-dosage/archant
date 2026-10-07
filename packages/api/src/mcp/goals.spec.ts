@@ -88,8 +88,7 @@ const goal = z.object({
 	notes: z.string().nullable(),
 	accounts: z.array(
 		z.object({
-			account_id: z.string(),
-			name: z.string(),
+			account: z.object({ id: z.string(), name: z.string() }),
 			allocated_amount: z.string().nullable(),
 			share: z.string(),
 		}),
@@ -97,7 +96,11 @@ const goal = z.object({
 });
 
 /** What create_goal answers: the goal, its id named as Sure's, and its page. */
-const createdGoal = goal.omit({ id: true }).extend({ goal_id: z.string(), url: z.string() });
+const createdGoal = goal.omit({ id: true }).extend({
+	goal_id: z.string(),
+	url: z.string(),
+	linked_account_names: z.array(z.string()),
+});
 
 const overview = z.object({
 	goals: z.array(goal),
@@ -180,11 +183,11 @@ describe("get_goals", () => {
 			monthly_needed: "800.00",
 			notes: null,
 			accounts: [
-				{ account_id: first.id, name: "Livret A", allocated_amount: null, share: "200.00" },
+				{ account: { id: first.id, name: "Livret A" }, allocated_amount: null, share: "200.00" },
 			],
 		});
 		expect(read.goals.find((item) => item.name === "Vélo")?.accounts).toEqual([
-			{ account_id: second.id, name: "LDDS", allocated_amount: "120.00", share: "120.00" },
+			{ account: { id: second.id, name: "LDDS" }, allocated_amount: "120.00", share: "120.00" },
 		]);
 		expect(read.goals.find((item) => item.name === "Fini")).toMatchObject({
 			state: "completed",
@@ -245,11 +248,12 @@ describe("create_goal", () => {
 			remaining: "500.00",
 			notes: "Grèce",
 			accounts: [
-				{ account_id: account.id, name: "Livret A", allocated_amount: null, share: "1500.00" },
+				{ account: { id: account.id, name: "Livret A" }, allocated_amount: null, share: "1500.00" },
 			],
 		});
 		expect(result.structuredContent).toMatchObject({
 			url: `${TEST_ORIGIN}/goals/${created.goal_id}`,
+			linked_account_names: ["Livret A"],
 		});
 		const stored = z
 			.object({ color: z.string(), icon: z.string().nullable() })
@@ -257,7 +261,7 @@ describe("create_goal", () => {
 
 		expect(CATEGORY_COLORS).toContain(stored.color);
 		expect(stored.icon).toBeNull();
-		const { goal_id: id, url: _url, ...listed } = created;
+		const { goal_id: id, url: _url, linked_account_names: _names, ...listed } = created;
 
 		expect((await goalsOf(tools)).goals).toEqual([{ id, ...listed }]);
 		expect(await calls()).toEqual([
@@ -282,7 +286,11 @@ describe("create_goal", () => {
 		);
 
 		expect(created.accounts).toEqual([
-			{ account_id: account.id, name: "Livret A", allocated_amount: "300.00", share: "300.00" },
+			{
+				account: { id: account.id, name: "Livret A" },
+				allocated_amount: "300.00",
+				share: "300.00",
+			},
 		]);
 	});
 

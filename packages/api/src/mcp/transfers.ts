@@ -15,7 +15,7 @@ import {
 	listTransferCandidates,
 	rejectTransfer,
 } from "../services/transfers.ts";
-import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, decimal, defineTool } from "./tool.ts";
+import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, decimal, defineTool, namedRef } from "./tool.ts";
 
 export const getTransferCandidates = defineTool({
 	name: "get_transfer_candidates",
@@ -32,8 +32,7 @@ export const getTransferCandidates = defineTool({
 				name: z.string().describe("The label the line shows."),
 				amount: decimal("Signed: negative is money out"),
 				currency: z.string(),
-				account_id: z.string(),
-				account_name: z.string(),
+				account: namedRef,
 			}),
 		),
 	}),
@@ -48,8 +47,7 @@ export const getTransferCandidates = defineTool({
 					name: candidate.label,
 					amount: toDecimalString(candidate),
 					currency: candidate.currency,
-					account_id: candidate.accountId,
-					account_name: candidate.accountName,
+					account: { id: candidate.accountId, name: candidate.accountName },
 				})),
 			},
 			changedRows: 0,

@@ -8,8 +8,21 @@ import { toDecimalString } from "@archant/data/money";
 import { CITATION_GRADES, ESTIMATED_PREFIX } from "../domain/balances/citation.ts";
 import { recordValuationInput, valuationsInput } from "../schemas/assistants.ts";
 import { DEFAULT_PAGE_SIZE } from "../schemas/transactions.ts";
+import { namesOf } from "../services/names.ts";
 import { createSnapshot, listValuations } from "../services/snapshots.ts";
-import { BANK_TEXT, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
+import {
+	BANK_TEXT,
+	READ_ONLY,
+	REPLACES,
+	decimal,
+	defineTool,
+	namedRef,
+	pageFieldsOf,
+	pageOutput,
+} from "./tool.ts";
+
+/** Sure's `{ id, name, currency }` of the account a valuation is on: every amount is in it. */
+const accountRef = namedRef.extend({ currency: z.string() });
 
 const snapshotFields = {
 	entry_id: z.string(),
@@ -17,7 +30,6 @@ const snapshotFields = {
 	amount: decimal("The recorded stored balance"),
 	computed: decimal("The balance the transactions alone give for that day"),
 	gap: decimal("amount minus computed"),
-	currency: z.string(),
 };
 
 function snapshotOf(record: SnapshotRecord) {
@@ -29,7 +41,6 @@ function snapshotOf(record: SnapshotRecord) {
 		amount: toDecimalString({ amount: record.balance, currency }),
 		computed: toDecimalString({ amount: record.computed, currency }),
 		gap: toDecimalString({ amount: record.gap, currency }),
-		currency,
 	};
 }
 
@@ -42,8 +53,7 @@ const VALUATION_KINDS = [
 
 const valuation = z.object({
 	entry_id: z.string(),
-	account_id: z.string(),
-	account_name: z.string(),
+	account: accountRef,
 	date: z.string(),
 	kind: z
 		.enum(VALUATION_KINDS)
@@ -55,7 +65,6 @@ const valuation = z.object({
 		.nullable()
 		.describe("null for an anchor, which sets the balance itself."),
 	gap: decimal("amount minus computed").nullable().describe("null for an anchor."),
-	currency: z.string(),
 	notes: z
 		.string()
 		.nullable()
@@ -71,14 +80,12 @@ function valuationOf(record: ValuationRecord): z.input<typeof valuation> {
 
 	return {
 		entry_id: record.id,
-		account_id: record.accountId,
-		account_name: record.accountName,
+		account: { id: record.accountId, name: record.accountName, currency },
 		date: record.date,
 		kind: record.kind,
 		amount: toDecimalString({ amount: record.balance, currency }),
 		computed: amount(record.computed),
 		gap: amount(record.gap),
-		currency,
 		notes: record.notes,
 	};
 }
@@ -90,13 +97,7 @@ export const getValuations = defineTool({
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: valuationsInput,
-	output: z.object({
-		valuations: z.array(valuation),
-		page: z.number().int(),
-		page_size: z.number().int(),
-		total_results: z.number().int(),
-		total_pages: z.number().int(),
-	}),
+	output: z.object({ valuations: z.array(valuation), ...pageOutput }),
 	run: async (deps, { account_id: accountId, start_date: from, end_date: to, page }) => {
 		const found = await listValuations(
 			deps,
@@ -107,10 +108,7 @@ export const getValuations = defineTool({
 		return {
 			result: {
 				valuations: found.items.map(valuationOf),
-				page: found.page,
-				page_size: found.pageSize,
-				total_results: found.total,
-				total_pages: Math.ceil(found.total / found.pageSize),
+				...pageFieldsOf(found.total, found.page, found.pageSize),
 			},
 			changedRows: 0,
 		};
@@ -133,7 +131,7 @@ export const recordValuationTool = defineTool({
 	input: recordValuationInput,
 	output: z.object({
 		...snapshotFields,
-		account_id: z.string(),
+		account: accountRef,
 		replaced_existing: z
 			.boolean()
 			.describe(
@@ -155,11 +153,16 @@ export const recordValuationTool = defineTool({
 			{ date, balance: amount },
 			{ source: source.source },
 		);
+		const { accounts } = await namesOf(deps, { accounts: [recorded.accountId] });
 
 		return {
 			result: {
 				...snapshotOf(recorded),
-				account_id: recorded.accountId,
+				account: {
+					id: recorded.accountId,
+					name: accounts.get(recorded.accountId) ?? recorded.accountId,
+					currency: recorded.currency,
+				},
 				replaced_existing: recorded.replacedExisting,
 				provenance: source,
 			},

@@ -1,4 +1,6 @@
+import type { ServiceDeps } from "../services/deps.ts";
 import type { TransactionRecord } from "../services/ledger/queries.ts";
+import type { NameBook } from "../services/names.ts";
 import type { TransactionItem } from "../services/transactions.ts";
 
 import { z } from "zod";
@@ -17,6 +19,7 @@ import {
 	updateTransactionInput,
 } from "../schemas/assistants.ts";
 import { MAX_BULK_IDS } from "../schemas/transactions.ts";
+import { namesOf, refOf } from "../services/names.ts";
 import {
 	bulkUpdateTransactions,
 	createTransaction,
@@ -26,25 +29,44 @@ import {
 	groupTransactionsByLabel,
 	updateTransaction,
 } from "../services/transactions.ts";
-import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
+import {
+	BANK_TEXT,
+	CREATES,
+	DESTROYS,
+	READ_ONLY,
+	REPLACES,
+	decimal,
+	defineTool,
+	namedRef,
+	pageFieldsOf,
+	pageOutput,
+} from "./tool.ts";
 
 const transferFields = {
 	id: z.string().describe("The transfer's id, which unpair_transfer takes."),
 	kind: z.enum(TRANSFER_KINDS),
 	counterpart_transaction_id: z.string().describe("The other side's transaction id."),
-	counterpart_account_id: z.string(),
+	counterpart_account: namedRef.describe("The other side's account."),
 };
 
+/**
+ * A transaction as Sure's `create_transaction` and `update_transaction`
+ * answer it: its account, category, merchant and tags as `{ id, name }`,
+ * the names Sure's `get_transactions` gives beside the ids the write tools take.
+ */
 const transaction = z.object({
 	id: z.string(),
 	date: z.string(),
 	name: z.string().describe("The label the line shows."),
 	amount: decimal("Signed: negative is money out"),
 	currency: z.string(),
-	account_id: z.string(),
-	category_id: z.string().nullable(),
-	merchant_id: z.string().nullable(),
-	tag_ids: z.array(z.string()),
+	classification: z
+		.enum(["income", "expense"])
+		.describe("From the sign, as Sure's: money in is income, money out an expense."),
+	account: namedRef,
+	category: namedRef.nullable(),
+	merchant: namedRef.nullable(),
+	tags: z.array(namedRef),
 	notes: z.string().nullable(),
 	excluded: z.boolean().describe("Left out of reports, still in the balance."),
 	transfer: z
@@ -59,18 +81,29 @@ const transaction = z.object({
 	pending: z.boolean().describe("Not booked by the bank yet."),
 });
 
+/** The names every transaction of an answer points to, read once for all of them. */
+async function namesFor(deps: ServiceDeps, items: readonly TransactionRecord[]): Promise<NameBook> {
+	return namesOf(deps, {
+		accounts: items.map((item) => item.accountId),
+		categories: items.flatMap((item) => (item.categoryId === null ? [] : [item.categoryId])),
+		merchants: items.flatMap((item) => (item.merchantId === null ? [] : [item.merchantId])),
+		tags: items.flatMap((item) => item.tagIds),
+	});
+}
+
 /** A transaction as get_transactions lists it. */
-function itemOf(item: TransactionRecord): z.input<typeof transaction> {
+function itemOf(item: TransactionRecord, names: NameBook): z.input<typeof transaction> {
 	return {
 		id: item.id,
 		date: item.date,
 		name: item.label,
 		amount: toDecimalString(item),
 		currency: item.currency,
-		account_id: item.accountId,
-		category_id: item.categoryId,
-		merchant_id: item.merchantId,
-		tag_ids: item.tagIds,
+		classification: item.amount > 0 ? "income" : "expense",
+		account: { id: item.accountId, name: names.accounts.get(item.accountId) ?? item.accountId },
+		category: refOf(names.categories, item.categoryId),
+		merchant: refOf(names.merchants, item.merchantId),
+		tags: item.tagIds.map((id) => ({ id, name: names.tags.get(id) ?? id })),
 		notes: item.notes,
 		excluded: item.excluded,
 		transfer:
@@ -80,7 +113,10 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 						id: item.transfer.id,
 						kind: item.transfer.kind,
 						counterpart_transaction_id: item.transfer.counterpartTransactionId,
-						counterpart_account_id: item.transfer.counterpartAccountId,
+						counterpart_account: {
+							id: item.transfer.counterpartAccountId,
+							name: item.transfer.counterpartAccountName,
+						},
 					},
 		transfer_suggested: item.transferSuggested,
 		pending: item.pending,
@@ -96,8 +132,7 @@ export const getTransactions = defineTool({
 	input: getTransactionsInput,
 	output: z.object({
 		transactions: z.array(transaction),
-		page: z.number().int(),
-		page_size: z.number().int(),
+		...pageOutput,
 		total_results: z.number().int().describe("Every matching transaction, whatever its currency."),
 		total_income: decimal("Money in"),
 		total_expenses: decimal("Money out"),
@@ -106,13 +141,12 @@ export const getTransactions = defineTool({
 	}),
 	run: async (deps, input) => {
 		const found = await findTransactions(deps, input);
+		const names = await namesFor(deps, found.items);
 
 		return {
 			result: {
-				transactions: found.items.map(itemOf),
-				page: found.page,
-				page_size: found.pageSize,
-				total_results: found.total,
+				transactions: found.items.map((item) => itemOf(item, names)),
+				...pageFieldsOf(found.total, found.page, found.pageSize),
 				total_income: toDecimalString({ amount: found.sum.income, currency: found.sum.currency }),
 				total_expenses: toDecimalString({
 					amount: found.sum.expense,
@@ -129,7 +163,7 @@ export const getTransactions = defineTool({
 export const groupTransactionLabels = defineTool({
 	name: "group_transactions_by_label",
 	title: "Transactions grouped by label",
-	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category_ids ["none"] keeps the uncategorised ones. ${BANK_TEXT}`,
+	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category_ids ["none"], or categories ["Uncategorized"], keeps the uncategorised ones. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: groupTransactionsInput,
@@ -141,13 +175,16 @@ export const groupTransactionLabels = defineTool({
 				total: decimal("Signed"),
 				currency: z.string(),
 				last_date: z.string(),
-				category_ids: z.array(z.string().nullable()),
+				categories: z.array(namedRef.nullable()).describe("null for uncategorised."),
 			}),
 		),
 		group_count: z.number().int(),
 	}),
 	run: async (deps, input) => {
 		const { groups, groupCount } = await groupTransactionsByLabel(deps, input);
+		const names = await namesOf(deps, {
+			categories: groups.flatMap((group) => group.categoryIds.filter((id) => id !== null)),
+		});
 
 		return {
 			result: {
@@ -157,7 +194,7 @@ export const groupTransactionLabels = defineTool({
 					total: toDecimalString({ amount: group.total, currency: group.currency }),
 					currency: group.currency,
 					last_date: group.lastDate,
-					category_ids: group.categoryIds,
+					categories: group.categoryIds.map((id) => refOf(names.categories, id)),
 				})),
 				group_count: groupCount,
 			},
@@ -182,27 +219,17 @@ const source = z
 /** A transaction in full, as its sheet shows it. */
 const transactionDetail = transaction.extend({
 	reference: z.string().nullable().describe("A cheque or QIF number from the file it came in."),
-	transfer: z
-		.object({ ...transferFields, counterpart_account_name: z.string() })
-		.nullable()
-		.describe("The transfer it is a side of, with the other side and its account; null for none."),
 	source,
 });
 
-function detailOf(item: TransactionItem): z.input<typeof transactionDetail> {
+/** A transaction in full, its references named. */
+async function detailOf(
+	deps: ServiceDeps,
+	item: TransactionItem,
+): Promise<z.input<typeof transactionDetail>> {
 	return {
-		...itemOf(item),
+		...itemOf(item, await namesFor(deps, [item])),
 		reference: item.reference,
-		transfer:
-			item.transfer === null
-				? null
-				: {
-						id: item.transfer.id,
-						kind: item.transfer.kind,
-						counterpart_transaction_id: item.transfer.counterpartTransactionId,
-						counterpart_account_id: item.transfer.counterpartAccountId,
-						counterpart_account_name: item.transfer.counterpartAccountName,
-					},
 		source: item.source,
 	};
 }
@@ -210,13 +237,13 @@ function detailOf(item: TransactionItem): z.input<typeof transactionDetail> {
 export const getTransactionTool = defineTool({
 	name: "get_transaction",
 	title: "Transaction",
-	description: `One transaction in full, as its sheet shows it: get_transactions' fields, its reference, the other side of its transfer with that account's name, and where it came from. ${BANK_TEXT}`,
+	description: `One transaction in full, as its sheet shows it: get_transactions' fields, its reference and where it came from. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: transactionIdInput,
 	output: transactionDetail,
 	run: async (deps, input) => ({
-		result: detailOf(await getTransaction(deps, input.id)),
+		result: await detailOf(deps, await getTransaction(deps, input.id)),
 		changedRows: 0,
 	}),
 });
@@ -224,14 +251,14 @@ export const getTransactionTool = defineTool({
 export const updateTransactionTool = defineTool({
 	name: "update_transaction",
 	title: "Classify a transaction",
-	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it as get_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers TRANSACTION_SPLIT. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
+	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it under transaction, as get_transaction gives it, as Sure's update_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers TRANSACTION_SPLIT. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	fieldPaths: { label: "name" },
 	input: updateTransactionInput,
-	output: transactionDetail,
+	output: z.object({ transaction: transactionDetail }),
 	run: async (deps, { id, patch }) => ({
-		result: detailOf(await updateTransaction(deps, id, patch)),
+		result: { transaction: await detailOf(deps, await updateTransaction(deps, id, patch)) },
 		changedRows: 1,
 	}),
 });
@@ -280,15 +307,16 @@ function signedAmount(
 export const createTransactionTool = defineTool({
 	name: "create_transaction",
 	title: "Record a transaction",
-	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns it as get_transaction does, with created. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. A refused field answers VALIDATION_ERROR with its path and code; an unknown account_id, NOT_FOUND.`,
+	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns created and the line under transaction, as get_transaction gives it, as Sure's create_transaction does. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. A refused field answers VALIDATION_ERROR with its path and code; an unknown account_id, NOT_FOUND.`,
 	scope: "archant:write",
 	annotations: CREATES,
 	fieldPaths: { label: "name" },
 	input: createTransactionInput,
-	output: transactionDetail.extend({
+	output: z.object({
 		created: z
 			.boolean()
 			.describe("false when external_id named a line already recorded, which is unchanged."),
+		transaction: transactionDetail,
 	}),
 	run: async (deps, input) => {
 		const created = await createTransaction(
@@ -313,7 +341,7 @@ export const createTransactionTool = defineTool({
 		);
 
 		return {
-			result: { ...detailOf(created), created: created.created },
+			result: { created: created.created, transaction: await detailOf(deps, created) },
 			changedRows: created.created ? 1 : 0,
 		};
 	},
@@ -344,7 +372,7 @@ export const deleteTransactionTool = defineTool({
 		return {
 			result: {
 				deleted: true as const,
-				transaction: detailOf(deleted.transaction),
+				transaction: await detailOf(deps, deleted.transaction),
 				deleted_count: deleted.deletedCount,
 			},
 			changedRows: deleted.deletedCount,

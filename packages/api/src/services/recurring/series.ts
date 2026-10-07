@@ -580,7 +580,7 @@ type RecurringFilter = {
 };
 
 const VIEW_STATUSES: Record<RecurringView, readonly RecurringStatus[]> = {
-	current: ["suggested", "active"],
+	active: ["active"],
 	inactive: ["inactive"],
 	all: ["suggested", "active", "inactive"],
 };

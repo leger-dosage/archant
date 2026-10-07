@@ -63,22 +63,28 @@ function calls() {
 		.from(assistantCalls);
 }
 
+const ref = z.object({ id: z.string(), name: z.string() });
+
 const detail = z.object({
 	id: z.string(),
 	date: z.string(),
 	name: z.string(),
 	amount: z.string(),
 	currency: z.string(),
-	account_id: z.string(),
-	category_id: z.string().nullable(),
-	merchant_id: z.string().nullable(),
-	tag_ids: z.array(z.string()),
+	classification: z.enum(["income", "expense"]),
+	account: ref,
+	category: ref.nullable(),
+	merchant: ref.nullable(),
+	tags: z.array(ref),
 	notes: z.string().nullable(),
 	transfer: z.object({ id: z.string() }).loose().nullable(),
 	source: z.object({ kind: z.string() }).loose(),
 });
 
-const created = detail.extend({ created: z.boolean() });
+/** Sure's `{ created, transaction }`, read as the line with its flag. */
+const created = z
+	.strictObject({ created: z.boolean(), transaction: detail })
+	.transform(({ created: flag, transaction }) => ({ ...transaction, created: flag }));
 
 const deleted = z.object({
 	deleted: z.literal(true),
@@ -180,14 +186,15 @@ describe("create_transaction", () => {
 			name: "Marché du samedi",
 			amount: "-23.40",
 			currency: "EUR",
-			account_id: account.id,
-			category_id: market,
+			classification: "expense",
+			account: { id: account.id, name: account.name },
+			category: { id: market, name: "Marché" },
 			notes: "Espèces",
 			source: { kind: "manual" },
 			created: true,
 		});
 		await expect(tools.read("get_transaction", { id: line.id })).resolves.toMatchObject({
-			structuredContent: { id: line.id, category_id: market },
+			structuredContent: { id: line.id, category: { id: market } },
 		});
 		await expect(balanceOf(tools, account.id)).resolves.toBe("1476.60");
 		await expect(calls()).resolves.toEqual([
@@ -218,11 +225,14 @@ describe("create_transaction", () => {
 		});
 
 		const line = created.parse(result.structuredContent);
-		expect(line).toMatchObject({ category_id: gifts, tag_ids: [birthday] });
+		expect(line).toMatchObject({
+			category: { id: gifts, name: "Cadeaux" },
+			tags: [{ id: birthday, name: "Anniversaire" }],
+		});
 		// Locked as an edit by the owner: applying the rule leaves it alone too.
 		await sendOwn("POST", "/api/rules/apply", {});
 		await expect(tools.read("get_transaction", { id: line.id })).resolves.toMatchObject({
-			structuredContent: { category_id: gifts },
+			structuredContent: { category: { id: gifts } },
 		});
 	});
 
@@ -456,7 +466,7 @@ describe("delete_transaction", () => {
 				name: "Courses",
 				amount: "-120.00",
 				currency: "EUR",
-				account_id: account.id,
+				account: { id: account.id },
 				source: { kind: "manual" },
 			},
 			deleted_count: 1,
@@ -648,5 +658,98 @@ describe("delete_transaction", () => {
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "INSUFFICIENT_SCOPE", changedRows: 0 },
 		]);
+	});
+});
+
+describe("get_transactions by Sure's names", () => {
+	const names = z.object({ transactions: z.array(z.object({ name: z.string() }).loose()) });
+	const labelsOf = async (tools: Awaited<ReturnType<typeof assistants>>, args: object) => {
+		const result = await tools.read("get_transactions", args);
+
+		expect(result.isError, errorText(result)).toBeUndefined();
+
+		return names
+			.parse(result.structuredContent)
+			.transactions.map((item) => item.name)
+			.toSorted();
+	};
+
+	it("filters by exact account, category, merchant and tag names, as Sure's filters do", async () => {
+		const account = await checking();
+		const savings = await openOwn({ ...pinned, name: "Livret A", subtype: "savings" });
+		const food = await ownCategory("Alimentation");
+		const bakery = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse(await sendOwn("POST", "/api/merchants", { name: "Boulangerie Dupain" })).data.id;
+		const holidays = await idOf("Vacances");
+		const bread = await postOwn(account.id, { date: "2026-09-10", label: "Pain", amount: "-2,40" });
+		const hotel = await postOwn(account.id, {
+			date: "2026-09-11",
+			label: "Hôtel",
+			amount: "-90,00",
+		});
+		await postOwn(account.id, { date: "2026-09-12", label: "Divers", amount: "-5,00" });
+		await postOwn(savings.id, { date: "2026-09-13", label: "Intérêts", amount: "3,00" });
+		await sendOwn("PATCH", `/api/transactions/${bread}`, {
+			categoryId: food,
+			merchantId: bakery,
+		});
+		await sendOwn("PATCH", `/api/transactions/${hotel}`, { tagIds: [holidays] });
+		const tools = await assistants();
+
+		await expect(labelsOf(tools, { accounts: ["Livret A"] })).resolves.toEqual(["Intérêts"]);
+		await expect(labelsOf(tools, { categories: ["Alimentation"] })).resolves.toEqual(["Pain"]);
+		await expect(labelsOf(tools, { merchants: ["Boulangerie Dupain"] })).resolves.toEqual(["Pain"]);
+		await expect(labelsOf(tools, { tags: ["Vacances"] })).resolves.toEqual(["Hôtel"]);
+		// Sure's sentinel and the name Archant shows both stand for uncategorised.
+		await expect(
+			labelsOf(tools, { accounts: ["Compte courant"], categories: ["Uncategorized"] }),
+		).resolves.toEqual(["Divers", "Hôtel"]);
+		await expect(labelsOf(tools, { categories: ["Sans catégorie"] })).resolves.toEqual([
+			"Divers",
+			"Hôtel",
+			"Intérêts",
+		]);
+	});
+
+	it("matches nothing for a name nothing holds, and narrows an id filter by a name", async () => {
+		const account = await checking();
+		const savings = await openOwn({ ...pinned, name: "Livret A", subtype: "savings" });
+		await postOwn(account.id, { date: "2026-09-10", label: "Pain", amount: "-2,40" });
+		await postOwn(savings.id, { date: "2026-09-13", label: "Intérêts", amount: "3,00" });
+		const tools = await assistants();
+
+		await expect(labelsOf(tools, { accounts: ["Compte joint"] })).resolves.toEqual([]);
+		await expect(labelsOf(tools, { categories: ["alimentation"] })).resolves.toEqual([]);
+		await expect(
+			labelsOf(tools, { account_ids: [account.id, savings.id], accounts: ["Livret A"] }),
+		).resolves.toEqual(["Intérêts"]);
+		await expect(
+			labelsOf(tools, { account_ids: [account.id], accounts: ["Livret A"] }),
+		).resolves.toEqual([]);
+	});
+
+	it("groups by label under the same names, and keeps the bulk filter to ids", async () => {
+		const account = await checking();
+		const food = await ownCategory("Alimentation");
+		const bread = await postOwn(account.id, { date: "2026-09-10", label: "Pain", amount: "-2,40" });
+		await postOwn(account.id, { date: "2026-09-11", label: "Divers", amount: "-5,00" });
+		await sendOwn("PATCH", `/api/transactions/${bread}`, { categoryId: food });
+		const tools = await assistants();
+
+		const grouped = await tools.read("group_transactions_by_label", {
+			categories: ["Alimentation"],
+		});
+		const bulk = await tools.write("bulk_update_transactions", {
+			filter: { accounts: ["Compte courant"] },
+			expected_count: 2,
+			patch: { excluded: true },
+		});
+
+		expect(grouped.structuredContent).toMatchObject({
+			groups: [{ label: "Pain", categories: [{ id: food, name: "Alimentation" }] }],
+			group_count: 1,
+		});
+		expect(errorText(bulk)).toContain('"path":"filter.accounts","code":"unrecognized_keys"');
 	});
 });

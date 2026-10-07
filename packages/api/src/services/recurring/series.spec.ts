@@ -885,10 +885,10 @@ const labelsOf = (filter: Parameters<typeof listRecurring>[1]) =>
 	listRecurring(deps(), filter).then((rows) => rows.map((row) => row.label));
 
 describe("listRecurring with a filter", () => {
-	it("keeps suggested and active series for current, inactive ones for inactive, both for all", async () => {
+	it("keeps active series for active, inactive ones for inactive, those and the suggestions for all", async () => {
 		await fiveSeries();
 
-		await expect(labelsOf({ status: "current" })).resolves.toEqual(["OVERDUE", "SOON", "LATER"]);
+		await expect(labelsOf({ status: "active" })).resolves.toEqual(["LATER"]);
 		await expect(labelsOf({ status: "inactive" })).resolves.toEqual(["STOPPED"]);
 		await expect(labelsOf({ status: "all" })).resolves.toEqual([
 			"OVERDUE",
@@ -908,9 +908,11 @@ describe("listRecurring with a filter", () => {
 		expect(nextOf.get("SOON")).toBe("2026-09-24");
 		expect(nextOf.get("LATER")).toBe("2026-10-10");
 		expect(nextOf.get("OVERDUE")).toBe("2026-09-15");
-		await expect(labelsOf({ status: "current", withinDays: 7 })).resolves.toEqual(["SOON"]);
-		await expect(labelsOf({ status: "current", withinDays: 3 })).resolves.toEqual(["SOON"]);
-		await expect(labelsOf({ status: "current", withinDays: 2 })).resolves.toEqual([]);
+		await expect(labelsOf({ status: "all", withinDays: 7 })).resolves.toEqual(["SOON", "STOPPED"]);
+		await expect(labelsOf({ status: "all", withinDays: 3 })).resolves.toEqual(["SOON"]);
+		await expect(labelsOf({ status: "all", withinDays: 2 })).resolves.toEqual([]);
+		await expect(labelsOf({ status: "active", withinDays: 7 })).resolves.toEqual([]);
+		await expect(labelsOf({ status: "active", withinDays: 19 })).resolves.toEqual(["LATER"]);
 		await expect(labelsOf({ status: "all", withinDays: 19 })).resolves.toEqual([
 			"SOON",
 			"LATER",
@@ -926,7 +928,7 @@ describe("listRecurring with a filter", () => {
 			.set({ nextExpectedDate: "2026-09-21" })
 			.where(eq(recurringTransactions.label, "SOON"));
 
-		await expect(labelsOf({ status: "current", withinDays: 1 })).resolves.toEqual(["SOON"]);
+		await expect(labelsOf({ status: "all", withinDays: 1 })).resolves.toEqual(["SOON"]);
 	});
 });
 

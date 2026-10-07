@@ -19,41 +19,49 @@ import {
 	seriesOutput,
 } from "./tool.ts";
 
+/** One side of the sheet as Sure's `get_balance_sheet` gives it: today's figure and its history. */
+const sheetSide = (what: string) =>
+	z.object({ current: decimal(what), monthly_history: seriesOutput });
+
+const percentOf = (part: number, whole: number) => Math.round((part / whole) * 1000) / 10;
+
 export const getBalanceSheetTool = defineTool({
 	name: "get_balance_sheet",
 	title: "Balance sheet",
 	description:
-		"The household's net worth today, its assets and its liabilities in the reporting currency, how net worth moved over the period, and the three series, as the dashboard shows them. It counts the active accounts included in reports and held in the reporting currency.",
+		"The household's net worth today, its assets and its liabilities in the reporting currency, each with its history over the period, and how net worth moved over it, as the dashboard shows them and in Sure's get_balance_sheet shape. It counts the active accounts included in reports and held in the reporting currency.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: balanceSheetInput,
 	output: z.object({
+		as_of_date: z.string().describe("Today."),
 		period: z.enum(BALANCE_PERIODS),
-		from: z
+		start_date: z
 			.string()
 			.nullable()
 			.describe("The period's first day; null when no counted account has opened yet."),
-		to: z.string().describe("Today."),
 		currency: z.string(),
-		net_worth: decimal("Assets minus liabilities"),
-		assets: decimal("Today's total"),
-		liabilities: decimal("What is owed today, positive"),
-		change: z
-			.object({
-				amount: decimal("Net worth's last point minus its first"),
-				percent: z
-					.number()
-					.nullable()
-					.describe(
-						"Percent of the first point's size, one decimal; null when the period starts at zero.",
-					),
-			})
-			.nullable()
-			.describe("null for an empty series."),
-		series: z.object({
-			net_worth: seriesOutput,
-			assets: seriesOutput,
-			liabilities: seriesOutput.describe("What is owed, positive. Oldest first."),
+		net_worth: sheetSide("Assets minus liabilities").extend({
+			change: z
+				.object({
+					amount: decimal("Net worth's last point minus its first"),
+					percent: z
+						.number()
+						.nullable()
+						.describe(
+							"Percent of the first point's size, one decimal; null when the period starts at zero.",
+						),
+				})
+				.nullable()
+				.describe("null for an empty series."),
+		}),
+		assets: sheetSide("Today's total"),
+		liabilities: sheetSide("What is owed today, positive"),
+		insights: z.object({
+			debt_to_asset_ratio: z
+				.number()
+				.nullable()
+				.describe("Liabilities over assets, in percent, one decimal; null without assets."),
 		}),
 		...leftOutFields,
 	}),
@@ -63,21 +71,28 @@ export const getBalanceSheetTool = defineTool({
 
 		return {
 			result: {
+				as_of_date: sheet.to,
 				period: sheet.period,
-				from: sheet.from,
-				to: sheet.to,
+				start_date: sheet.from,
 				currency: sheet.currency,
-				net_worth: money(sheet.netWorth),
-				assets: money(sheet.assets),
-				liabilities: money(sheet.liabilities),
-				change:
-					sheet.change === null
-						? null
-						: { amount: money(sheet.change.amount), percent: sheet.change.percent },
-				series: {
-					net_worth: seriesOf(sheet.series.netWorth, sheet.currency),
-					assets: seriesOf(sheet.series.assets, sheet.currency),
-					liabilities: seriesOf(sheet.series.liabilities, sheet.currency),
+				net_worth: {
+					current: money(sheet.netWorth),
+					monthly_history: seriesOf(sheet.series.netWorth, sheet.currency),
+					change:
+						sheet.change === null
+							? null
+							: { amount: money(sheet.change.amount), percent: sheet.change.percent },
+				},
+				assets: {
+					current: money(sheet.assets),
+					monthly_history: seriesOf(sheet.series.assets, sheet.currency),
+				},
+				liabilities: {
+					current: money(sheet.liabilities),
+					monthly_history: seriesOf(sheet.series.liabilities, sheet.currency),
+				},
+				insights: {
+					debt_to_asset_ratio: sheet.assets > 0 ? percentOf(sheet.liabilities, sheet.assets) : null,
 				},
 				...leftOutOf(sheet.leftOut),
 			},
@@ -86,61 +101,71 @@ export const getBalanceSheetTool = defineTool({
 	},
 });
 
-const line = z.object({
-	category_id: z.string().nullable().describe("A top-level category; null for uncategorised."),
-	name: z.string().nullable(),
-	amount: decimal("Signed: a refund lowers an expense line"),
-	share: z
-		.number()
-		.nullable()
-		.describe("The line over its side's total, 0 to 1; null when that total is zero."),
+const side = z.object({
+	total: decimal("Signed, the sum of its lines"),
+	by_category: z.array(
+		z.object({
+			category_id: z.string().nullable().describe("A top-level category; null for uncategorised."),
+			name: z.string().nullable().describe("null for uncategorised."),
+			total: decimal("Signed: a refund lowers an expense line"),
+			percentage_of_total: z
+				.number()
+				.nullable()
+				.describe(
+					"The line over its side's total, in percent, one decimal; null when that total is zero.",
+				),
+		}),
+	),
 });
 
 export const getIncomeStatement = defineTool({
 	name: "get_income_statement",
 	title: "Income statement",
 	description:
-		"One calendar month's income and expenses in the reporting currency, by top-level category, largest first, as the dashboard shows them: a sub-category counts in its parent, transfers between accounts, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency.",
+		"One calendar month's income and expenses in the reporting currency, by top-level category, largest first, as the dashboard shows them and in Sure's get_income_statement shape: a sub-category counts in its parent, transfers between accounts, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: incomeStatementInput,
 	output: z.object({
 		month: z.string(),
-		from: z.string(),
-		to: z.string(),
 		currency: z.string(),
-		income: decimal("Signed, the sum of the income lines"),
-		expenses: decimal("Signed, negative, the sum of the expense lines"),
-		lines: z.object({ income: z.array(line), expense: z.array(line) }),
-		uncategorised_income: decimal("Money in without a category, its line among lines.income"),
-		uncategorised_expense: decimal("Money out without a category, its line among lines.expense"),
+		period: z.object({ start_date: z.string(), end_date: z.string() }),
+		income: side,
+		expense: side.describe("Its total and lines negative, money out."),
+		insights: z.object({
+			net_income: decimal("Income plus the negative expenses"),
+			savings_rate: z
+				.number()
+				.describe("net_income over income, in percent, one decimal; 0 without income."),
+		}),
 		...leftOutFields,
 	}),
 	run: async (deps, input) => {
 		const month = input.month ?? today(deps.timeZone).slice(0, 7);
 		const cashFlow = await getCashFlow(deps, month);
 		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: cashFlow.currency });
-		const linesOf = (lines: readonly CashFlowLine[]) =>
-			lines.map((entry) => ({
+		const sideOf = (total: MinorUnits, lines: readonly CashFlowLine[]) => ({
+			total: money(total),
+			by_category: lines.map((entry) => ({
 				category_id: entry.categoryId,
 				name: entry.name,
-				amount: money(entry.amount),
-				share: entry.share,
-			}));
-		const uncategorised = (lines: readonly CashFlowLine[]) =>
-			money(lines.find((entry) => entry.categoryId === null)?.amount ?? toMinorUnits(0));
+				total: money(entry.amount),
+				percentage_of_total: entry.share === null ? null : Math.round(entry.share * 1000) / 10,
+			})),
+		});
+		const net = toMinorUnits(cashFlow.income + cashFlow.expenses);
 
 		return {
 			result: {
 				month: cashFlow.month,
-				from: cashFlow.from,
-				to: cashFlow.to,
 				currency: cashFlow.currency,
-				income: money(cashFlow.income),
-				expenses: money(cashFlow.expenses),
-				lines: { income: linesOf(cashFlow.lines.income), expense: linesOf(cashFlow.lines.expense) },
-				uncategorised_income: uncategorised(cashFlow.lines.income),
-				uncategorised_expense: uncategorised(cashFlow.lines.expense),
+				period: { start_date: cashFlow.from, end_date: cashFlow.to },
+				income: sideOf(cashFlow.income, cashFlow.lines.income),
+				expense: sideOf(cashFlow.expenses, cashFlow.lines.expense),
+				insights: {
+					net_income: money(net),
+					savings_rate: cashFlow.income > 0 ? percentOf(net, cashFlow.income) : 0,
+				},
 				...leftOutOf(cashFlow.leftOut),
 			},
 			changedRows: 0,

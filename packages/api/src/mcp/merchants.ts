@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { createMerchantInput, noToolInput, renameMerchantInput } from "../schemas/assistants.ts";
+import { createMerchantInput, merchantsInput, renameMerchantInput } from "../schemas/assistants.ts";
 import { createMerchant, listMerchants, renameMerchant } from "../services/merchants.ts";
-import { BANK_TEXT, CREATES, READ_ONLY, REPLACES, defineTool } from "./tool.ts";
+import { BANK_TEXT, CREATES, READ_ONLY, REPLACES, defineTool, pageOf, pageOutput } from "./tool.ts";
 
 const merchant = z.object({
 	id: z.string(),
@@ -13,21 +13,30 @@ const merchant = z.object({
 export const getMerchants = defineTool({
 	name: "get_merchants",
 	title: "Merchants",
-	description: `Every merchant, with how many transactions it holds. ${BANK_TEXT}`,
+	description: `The merchants, sorted by name, a page at a time as Sure's get_merchants, each with how many transactions it holds: the id update_transaction's merchant_id takes, and the exact name get_transactions' merchants filter takes. Pass search to narrow by name rather than paging through them all. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
-	input: noToolInput,
-	output: z.object({ merchants: z.array(merchant) }),
-	run: async (deps) => ({
-		result: {
-			merchants: (await listMerchants(deps)).map(({ id, name, transactionCount }) => ({
-				id,
-				name,
-				transaction_count: transactionCount,
-			})),
-		},
-		changedRows: 0,
-	}),
+	input: merchantsInput,
+	output: z.object({ merchants: z.array(merchant), ...pageOutput }),
+	run: async (deps, { page, page_size: pageSize, search }) => {
+		const folded = search?.toLocaleLowerCase("fr");
+		const listed = (await listMerchants(deps)).filter(
+			({ name }) => folded === undefined || name.toLocaleLowerCase("fr").includes(folded),
+		);
+		const { items, ...fields } = pageOf(listed, page, pageSize);
+
+		return {
+			result: {
+				merchants: items.map(({ id, name, transactionCount }) => ({
+					id,
+					name,
+					transaction_count: transactionCount,
+				})),
+				...fields,
+			},
+			changedRows: 0,
+		};
+	},
 });
 
 export const createMerchantTool = defineTool({

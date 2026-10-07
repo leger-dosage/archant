@@ -101,8 +101,7 @@ const candidates = z.object({
 			name: z.string(),
 			amount: z.string(),
 			currency: z.string(),
-			account_id: z.string(),
-			account_name: z.string(),
+			account: z.object({ id: z.string(), name: z.string() }),
 		}),
 	),
 });
@@ -159,7 +158,7 @@ describe("the read tools", () => {
 			transfer: {
 				id: transferId,
 				counterpart_transaction_id: outflow,
-				counterpart_account_name: "Compte courant",
+				counterpart_account: { name: "Compte courant" },
 			},
 			transfer_suggested: false,
 		});
@@ -207,8 +206,7 @@ describe("get_transfer_candidates", () => {
 				name: "VIR COMPTE COURANT",
 				amount: "500.00",
 				currency: "EUR",
-				account_id: livret.id,
-				account_name: "Livret A",
+				account: { id: livret.id, name: "Livret A" },
 			},
 		]);
 	});

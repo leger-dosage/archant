@@ -2,6 +2,7 @@ import type { RuleInput } from "./rules.ts";
 
 import { z } from "zod";
 
+import { CATEGORY_ICONS } from "@archant/data/category-presets";
 import { CSV_COLUMN_ROLES } from "@archant/data/csv-mapping";
 import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
@@ -48,6 +49,62 @@ import {
 /** The input of a tool that takes none: an assistant may send `{}`, nothing more. */
 export const noToolInput = z.strictObject({});
 
+/** The page an assistant reads at once: a list page of the interface, no more. */
+const MAX_TOOL_PAGE_SIZE = 100;
+
+/** Sure's `page` and `page_size`, 50 a page by default. */
+const pageFields = {
+	page: z.number().int().min(1).default(1).describe("Page number, 1 by default."),
+	page_size: z
+		.number()
+		.int()
+		.min(1)
+		.max(MAX_TOOL_PAGE_SIZE)
+		.default(50)
+		.describe(`Results per page, 50 by default, ${MAX_TOOL_PAGE_SIZE} at most.`),
+};
+
+/** `get_categories` and `get_tags`: a page of the list, as Sure's. */
+export const listPageInput = z.strictObject(pageFields);
+
+/** `get_merchants`: a page of the list, narrowed by Sure's `search`. */
+export const merchantsInput = z.strictObject({
+	...pageFields,
+	search: z
+		.string()
+		.trim()
+		.max(200)
+		.optional()
+		.describe("Text searched in the merchant's name, case aside."),
+});
+
+const MONTH_ABBREVIATIONS = [
+	"jan",
+	"feb",
+	"mar",
+	"apr",
+	"may",
+	"jun",
+	"jul",
+	"aug",
+	"sep",
+	"oct",
+	"nov",
+	"dec",
+] as const;
+
+/** Sure's month slug: "YYYY-MM", or "MMM-YYYY" such as "Aug-2026", read as "2026-08". */
+const toolMonth = z
+	.string()
+	.transform((value) => {
+		const match = /^([A-Za-z]{3})-(\d{4})$/u.exec(value);
+		const abbreviation = match?.[1]?.toLowerCase();
+		const index = MONTH_ABBREVIATIONS.findIndex((month) => month === abbreviation);
+
+		return index === -1 ? value : `${match?.[2]}-${String(index + 1).padStart(2, "0")}`;
+	})
+	.pipe(monthSchema);
+
 /**
  * A period ending today, as the dashboard's and an account page's charts
  * offer them. A year by default, as Sure's tools default to the last 365 days.
@@ -82,9 +139,9 @@ export const incomeStatementInput = z.strictObject({
 export const recurringInput = z.strictObject({
 	status: z
 		.enum(RECURRING_VIEWS)
-		.default("current")
+		.default("active")
 		.describe(
-			'"current": suggested or active; "inactive": paused or retired; "all": both, ended ones never.',
+			'"active": followed by the owner, "active" by default; "inactive": paused or retired; "all": those and the suggestions awaiting the owner, ended ones never.',
 		),
 	upcoming_within_days: z
 		.number()
@@ -110,19 +167,18 @@ export const transactionIdInput = z.strictObject({
 	id: z.string().min(1).describe("A transaction id from get_transactions."),
 });
 
-/** The page an assistant reads at once: a list page of the interface, no more. */
-const MAX_TOOL_PAGE_SIZE = 100;
-
 // Every repeated key of the list's query takes as many ids as its tag filter.
 const idsOf = (what: string) =>
 	z.array(z.string().min(1)).max(MAX_TAG_FILTER).optional().describe(what);
 
+const namesOf = idsOf;
+
 /**
- * The cross-account list's filter, each repeated key as an array: an
+ * The cross-account list's filter by id, each repeated key as an array: an
  * assistant sends JSON, never a query string. Named as Sure's
- * `get_transactions` names them, the ids Archant's own.
+ * `get_transactions` names them where it has the field, `account_ids`.
  */
-const toolFilterFields = {
+const idFilterFields = {
 	account_ids: idsOf("Account ids from get_accounts; any of them."),
 	types: z
 		.array(directionSchema)
@@ -147,7 +203,24 @@ const toolFilterFields = {
 	search: filterFields.q.describe("Text searched in the label and the notes, case aside."),
 };
 
-type ToolFilter = z.output<z.ZodObject<typeof toolFilterFields>>;
+/**
+ * The filter a read takes: by id, and by exact name as Sure's
+ * `get_transactions` takes them, names any assistant reads in the lists.
+ * A name and an id of one kind narrow each other; a name nothing holds
+ * matches nothing.
+ */
+const toolFilterFields = {
+	...idFilterFields,
+	accounts: namesOf("Exact account names, as get_accounts gives them; any of them."),
+	categories: namesOf(
+		'Exact category names, as get_categories gives them, "Uncategorized" or « Sans catégorie » standing for uncategorised; any of them. A parent stands for its children too.',
+	),
+	merchants: namesOf("Exact merchant names, as get_merchants gives them; any of them."),
+	tags: namesOf("Exact tag names, as get_tags gives them; transactions carrying any of them."),
+};
+
+type ToolFilter = z.output<z.ZodObject<typeof idFilterFields>> &
+	Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[] | undefined>>;
 
 /** The list's filter as the services read it, from the tool's names. */
 function listFilterOf({
@@ -161,8 +234,15 @@ function listFilterOf({
 	amount_min: amountMin,
 	amount_max: amountMax,
 	search: q,
+	accounts,
+	categories,
+	merchants,
+	tags,
 }: ToolFilter) {
-	return { account, direction, category, merchant, tag, from, to, amountMin, amountMax, q };
+	const filter = { account, direction, category, merchant, tag, from, to, amountMin, amountMax, q };
+	const names = { accounts, categories, merchants, tags };
+
+	return Object.values(names).every((value) => value === undefined) ? filter : { ...filter, names };
 }
 
 const checkWithToolPaths = filterCheck({
@@ -175,11 +255,6 @@ const checkWithToolPaths = filterCheck({
 function checkToolFilter(value: ToolFilter, context: z.core.$RefinementCtx) {
 	checkWithToolPaths(listFilterOf(value), context);
 }
-
-const pageFields = {
-	page: z.number().int().min(1).default(1),
-	page_size: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(50),
-};
 
 /** `get_transactions`: the list's filter and a page of it. */
 export const getTransactionsInput = z
@@ -194,6 +269,15 @@ export const getTransactionsInput = z
 /** `group_transactions_by_label`: the list's filter, every matching transaction grouped. */
 export const groupTransactionsInput = z
 	.strictObject(toolFilterFields)
+	.superRefine(checkToolFilter)
+	.transform((filter) => parseBounds(listFilterOf(filter)));
+
+/**
+ * The filter `bulk_update_transactions` writes through: by id only. A bank
+ * writes account names, and a write never selects by a text a bank wrote (AD-19).
+ */
+const bulkFilterInput = z
+	.strictObject(idFilterFields)
 	.superRefine(checkToolFilter)
 	.transform((filter) => parseBounds(listFilterOf(filter)));
 
@@ -440,16 +524,41 @@ export const applyRulesInput = z.strictObject({
 		),
 });
 
-export const createCategoryInput = createCategorySchema
-	.pick({ name: true, kind: true })
-	.extend({
-		parent_id: z
-			.string()
-			.min(1)
-			.optional()
-			.describe("A top-level category's id; the new one then takes its kind and colour."),
-	})
-	.strict();
+const categoryField = createCategorySchema.shape;
+
+const categoryColor = categoryField.color.describe(
+	'A hex colour such as "#e99537"; a subcategory takes its parent\'s whatever it is given.',
+);
+
+const categoryIcon = categoryField.icon.describe(
+	`A Lucide icon name, one of: ${CATEGORY_ICONS.join(", ")}.`,
+);
+
+/**
+ * `create_category`: Sure's fields, and the kind Archant's categories carry,
+ * an expense by default as the picker creates one.
+ */
+export const createCategoryInput = z.strictObject({
+	name: categoryField.name.describe("A name no other category holds, case aside."),
+	kind: categoryField.kind
+		.default("expense")
+		.describe('"income" or "expense", "expense" by default; a subcategory takes its parent\'s.'),
+	color: categoryColor
+		.optional()
+		.describe(
+			"A hex colour such as \"#e99537\", the picker's first one by default; a subcategory takes its parent's.",
+		),
+	icon: categoryIcon
+		.optional()
+		.describe(`A Lucide icon name, "tag" by default, one of: ${CATEGORY_ICONS.join(", ")}.`),
+	parent_id: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"A top-level category's id from get_categories; the new one then takes its kind and colour.",
+		),
+});
 
 export const createMerchantInput = merchantSchema.strict();
 
@@ -528,9 +637,9 @@ export const bulkUpdateTransactionsInput = z
 			.describe(
 				`Up to ${MAX_BULK_IDS} transaction ids from get_transactions; without filter. Every id must exist, or nothing is written.`,
 			),
-		filter: groupTransactionsInput
+		filter: bulkFilterInput
 			.optional()
-			.describe("get_transactions' filter, without page or page_size; without ids."),
+			.describe("get_transactions' filter by id, without names, page or page_size; without ids."),
 		expected_count: z
 			.number()
 			.int()
@@ -576,25 +685,40 @@ export const bulkUpdateTransactionsInput = z
 	});
 
 /**
- * The names « Réglages » takes: one rule for creating and renaming. Sure's
- * `update_category` and `update_tag` name their fields so; a tag is found by
- * its id here, where Sure finds it by `name`.
+ * `update_category`: Sure's name, colour and icon, at least one, through the
+ * edit « Réglages » makes. Its kind and parent stay, as Sure's function moves
+ * no category.
  */
-export const updateCategoryInput = z.strictObject({
-	id: categoryId,
-	name: createCategorySchema.shape.name,
-});
+export const updateCategoryInput = z
+	.strictObject({
+		id: categoryId,
+		name: categoryField.name.optional().describe("A name no other category holds, case aside."),
+		color: categoryColor.optional(),
+		icon: categoryIcon.optional(),
+	})
+	.refine((value) => [value.name, value.color, value.icon].some((field) => field !== undefined), {
+		message: "empty_patch",
+	});
 
 export const renameMerchantInput = z.strictObject({
 	merchant_id: merchantId,
 	...merchantSchema.shape,
 });
 
-export const updateTagInput = z.strictObject({ id: tagId, new_name: tagSchema.shape.name });
+/**
+ * `update_tag`: the tag by its current name, as Sure's. Only the owner names
+ * a tag, never a bank or a file, and no two tags share a name (AD-19).
+ */
+export const updateTagInput = z.strictObject({
+	name: tagSchema.shape.name.describe("The tag's current name, exactly as get_tags gives it."),
+	new_name: tagSchema.shape.name.describe("Its new name, which no other tag holds, case aside."),
+});
 
 /** `get_budget`: a month's budget, and up to eleven months before it, as Sure's `GetBudget`. */
 export const budgetInput = z.strictObject({
-	month: monthSchema.optional().describe("YYYY-MM; the current month when absent."),
+	month: toolMonth
+		.optional()
+		.describe('"YYYY-MM" or "MMM-YYYY" such as "Aug-2026"; the current month when absent.'),
 	prior_months: z
 		.number()
 		.int()
@@ -620,16 +744,21 @@ const budgetAmount = (what: string) =>
  * and refuses an empty call, a category twice and « Sans catégorie ».
  */
 export const updateBudgetInput = z.strictObject({
-	month: monthSchema.describe("YYYY-MM: the month to set."),
+	month: toolMonth
+		.optional()
+		.describe(
+			'"YYYY-MM" or "MMM-YYYY" such as "Aug-2026": the month to set; the current month when absent.',
+		),
 	budgeted_spending: budgetAmount("The month's planned spending"),
 	expected_income: budgetAmount("The month's expected income"),
 	categories: z
 		.array(
 			z.strictObject({
-				category_id: categoryId
-					.nullable()
+				category: z
+					.string()
+					.min(1)
 					.describe(
-						"An expense category id from get_categories or get_budget. null, « Sans catégorie », is refused: it holds what budgeted_spending leaves unallocated.",
+						"An expense category's name, case aside, or its id, from get_categories or get_budget. « Sans catégorie » is refused: it holds what budgeted_spending leaves unallocated.",
 					),
 				amount: z
 					.string()
@@ -731,11 +860,11 @@ export const createBillInput = z.strictObject({
 		.default(false)
 		.describe("true for an income such as a salary: money coming in, with no type or category."),
 	bill_type: billTypeInput.optional().describe('"bill" by default; ignored for an income.'),
-	category_id: z
+	category_name: z
 		.string()
 		.min(1)
 		.optional()
-		.describe("A category id from get_categories; ignored for an income."),
+		.describe("An exact category name from get_categories; ignored for an income."),
 	entry_id: z
 		.string()
 		.min(1)
@@ -763,12 +892,11 @@ export const updateBillInput = z
 			"The new amount, from now on: occurrences already due keep the one they had",
 		).optional(),
 		account_id: accountId.optional(),
-		category_id: z
+		category_name: z
 			.string()
 			.min(1)
-			.nullable()
 			.optional()
-			.describe("A category id from get_categories; null clears it."),
+			.describe('An exact category name from get_categories; "Uncategorized" clears it.'),
 		bill_type: billTypeInput.optional().describe("Never to or from an income."),
 		status: z
 			.enum(["active", "paused"])

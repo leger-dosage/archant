@@ -6,6 +6,7 @@ import type { Classification } from "@archant/data/account-types";
 import { CLASSIFICATIONS } from "@archant/data/account-types";
 import { toDecimalString } from "@archant/data/money";
 
+import { today } from "../domain/dates.ts";
 import { getAccountsInput } from "../schemas/assistants.ts";
 import { listAccounts } from "../services/accounts.ts";
 import { listAccountsWithHistory } from "../services/balances.ts";
@@ -54,13 +55,17 @@ export const getAccounts = defineTool({
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getAccountsInput,
-	output: z.object({ accounts: z.array(account) }),
+	output: z.object({
+		as_of_date: z.string().describe("Today, YYYY-MM-DD: the day of every balance."),
+		accounts: z.array(account),
+	}),
 	run: async (deps, input) => {
 		if (!input.include_balance_series) {
 			const { groups } = await listAccounts(deps);
 
 			return {
 				result: {
+					as_of_date: today(deps.timeZone),
 					accounts: groups.flatMap((group) =>
 						group.accounts.map((summary) => accountOf(summary, group.classification)),
 					),
@@ -73,6 +78,7 @@ export const getAccounts = defineTool({
 
 		return {
 			result: {
+				as_of_date: today(deps.timeZone),
 				accounts: groups.flatMap((group) =>
 					group.accounts.map((summary) => ({
 						...accountOf(summary, group.classification),

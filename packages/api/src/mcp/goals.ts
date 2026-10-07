@@ -8,7 +8,7 @@ import { toDecimalString } from "@archant/data/money";
 
 import { createGoalInput, noToolInput } from "../schemas/assistants.ts";
 import { createGoal, getGoalsOverview } from "../services/goals.ts";
-import { BANK_TEXT, CREATES, READ_ONLY, decimal, defineTool } from "./tool.ts";
+import { BANK_TEXT, CREATES, READ_ONLY, decimal, defineTool, namedRef } from "./tool.ts";
 
 const goalOutput = z.object({
 	id: z.string(),
@@ -41,8 +41,7 @@ const goalOutput = z.object({
 	notes: z.string().nullable(),
 	accounts: z.array(
 		z.object({
-			account_id: z.string(),
-			name: z.string(),
+			account: namedRef,
 			allocated_amount: decimal("The fixed amount held for this goal")
 				.nullable()
 				.describe(
@@ -77,8 +76,7 @@ function goalOf(goal: GoalSummary): z.input<typeof goalOutput> {
 		monthly_needed: goal.monthlyNeeded === null ? null : money(goal.monthlyNeeded),
 		notes: goal.notes,
 		accounts: goal.accounts.map((account) => ({
-			account_id: account.accountId,
-			name: account.name,
+			account: { id: account.accountId, name: account.name },
 			allocated_amount: account.allocatedAmount === null ? null : money(account.allocatedAmount),
 			share: money(account.share),
 		})),
@@ -138,6 +136,9 @@ export const createGoalTool = defineTool({
 	output: goalOutput.omit({ id: true }).extend({
 		goal_id: z.string().describe("Its id, as Sure's create_goal names it."),
 		url: z.string().describe("The goal's page in Archant, as Sure's create_goal answers it."),
+		linked_account_names: z
+			.array(z.string())
+			.describe("Its accounts' names, as Sure's create_goal answers them."),
 	}),
 	run: async (deps, input) => {
 		const created = await createGoal(deps, {
@@ -162,6 +163,7 @@ export const createGoalTool = defineTool({
 				goal_id: id,
 				...goal,
 				url: `${new URL(deps.trustedOrigin).origin}/goals/${created.id}`,
+				linked_account_names: created.accounts.map((account) => account.name),
 			},
 			changedRows: 1,
 		};
