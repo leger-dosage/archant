@@ -1,40 +1,35 @@
 import type { TintSubject } from "@/lib/tint";
 
-import { useTranslation } from "react-i18next";
-
+import { formatWholePercent } from "@/lib/percent";
 import { useResolvedTheme } from "@/lib/theme";
 import { resolveTint } from "@/lib/tint";
 import { cn } from "@/lib/utils";
 
 const STROKE = 6;
 
-// `42 %`, the narrow no-break space French typography puts before the sign.
-const percentFormat = new Intl.NumberFormat("fr-FR", {
-	style: "percent",
-	maximumFractionDigits: 0,
-});
-
 /**
- * A goal's progress as Sure's ring: the share reached drawn round a circle in
- * the goal's colour, the percentage inside. An image named by a sentence,
- * so a screen reader hears what the ring shows; the arc's colour meets 3:1
- * as an icon's does.
+ * A share as Sure's ring, a goal's progress or a loan's repayment: the share
+ * drawn round a circle in its subject's colour, the percentage inside. An
+ * image named by a sentence, so a screen reader hears what the ring shows;
+ * the arc's colour meets 3:1 as an icon's does.
  */
 export function ProgressRing({
 	percent,
 	subject,
+	label,
 	size = 64,
 	className,
 }: {
 	/** 0 to 100. */
 	percent: number;
 	subject: TintSubject;
+	/** The sentence the ring is named by, which states the percentage. */
+	label: string;
 	size?: number;
 	className?: string;
 }) {
-	const { t } = useTranslation();
 	const mode = useResolvedTheme();
-	const text = percentFormat.format(percent / 100);
+	const text = formatWholePercent(percent);
 	const radius = (size - STROKE) / 2;
 	const circumference = 2 * Math.PI * radius;
 	const filled = Math.min(Math.max(percent, 0), 100) / 100;
@@ -42,7 +37,7 @@ export function ProgressRing({
 	return (
 		<div
 			role="img"
-			aria-label={t("goals.ring", { percent: text })}
+			aria-label={label}
 			data-slot="progress-ring"
 			className={cn("relative grid shrink-0 place-items-center", className)}
 			style={{ width: size, height: size }}

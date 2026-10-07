@@ -38,6 +38,7 @@ import { formatShortDate } from "@/lib/balance-change";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatWholePercent } from "@/lib/percent";
 
 // Recharts weighs more than the rest of the page: it downloads with the chart.
 const GoalChart = lazy(async () => ({
@@ -96,6 +97,7 @@ function Progress({ goal }: { goal: GoalData }) {
 					size={96}
 					percent={goal.percent}
 					subject={{ kind: "category", color: goal.color, icon: goal.icon }}
+					label={t("goals.ring", { percent: formatWholePercent(goal.percent) })}
 				/>
 				<div className="flex min-w-0 flex-1 flex-col gap-3">
 					<div className="flex flex-wrap items-center gap-2">

@@ -181,6 +181,7 @@
 			"label": "Vues du compte",
 			"transactions": "Opérations",
 			"snapshots": "Soldes",
+			"overview": "Vue d'ensemble",
 			"trades": "Ordres",
 			"positions": "Positions",
 			"schedule": "Échéancier",
@@ -685,6 +686,40 @@
 			"save": "Convertir",
 			"done": "Opération convertie en ordre."
 		}
+	},
+	"loanOverview": {
+		"originalAmount": "Capital d'origine",
+		"remainingBalance": "Capital restant",
+		"interestRate": "Taux d'intérêt",
+		"monthlyPayment": "Mensualité",
+		"notApplicable": "N/D",
+		"term": "Durée",
+		"termYears_one": "{{count}} an",
+		"termYears_other": "{{count}} ans",
+		"termMonths_one": "{{count}} mois",
+		"termMonths_other": "{{count}} mois",
+		"payoffDate": "Date de fin prévue",
+		"rateType": "Type",
+		"totalCost": "Coût total",
+		"totalCostWithInsurance": "Coût total assurance comprise",
+		"insurance": "Assurance",
+		"insuranceRateOnly": "{{rate}} % par an",
+		"leverage": "Effet de levier",
+		"leverageMultiple": "{{ratio}}x",
+		"leverageBands": {
+			"conservative": "Prudent",
+			"moderate": "Modéré",
+			"high": "Élevé"
+		},
+		"unknown": "Inconnu",
+		"repaid": "Remboursé",
+		"ring": "{{percent}} remboursé sur {{amount}}",
+		"ofOriginal": "sur {{amount}}",
+		"instalment": "Échéance {{number}} · {{date}}",
+		"principal": "Capital",
+		"interest": "Intérêts",
+		"total": "Total",
+		"edit": "Modifier les détails du prêt"
 	},
 	"loanSchedule": {
 		"label": "Échéancier",

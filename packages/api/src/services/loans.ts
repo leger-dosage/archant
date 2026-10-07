@@ -1,4 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
+import type { Instalment, LoanOverview } from "../domain/loans/overview.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { MinorUnits } from "@archant/data/money";
@@ -6,6 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 
 import { today } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
+import { loanOverview as overviewOf } from "../domain/loans/overview.ts";
 import { getAccount } from "./accounts.ts";
 
 type LoanSchedulePayment = {
@@ -77,5 +79,92 @@ export async function loanSchedule(
 			interest: minor(row.interest),
 			endingBalance: minor(row.endingBalance),
 		})),
+	};
+}
+
+type LoanInstalment = Omit<Instalment, "principal" | "interest" | "insurance" | "total"> & {
+	principal: MinorUnits;
+	interest: MinorUnits;
+	insurance: MinorUnits;
+	total: MinorUnits;
+};
+
+/**
+ * Sure's `loans/tabs/_overview` and `_repayment_progress`, amounts in minor
+ * units of the account's currency; a figure that cannot be computed is `null`.
+ */
+export type LoanOverviewData = Pick<
+	LoanOverview,
+	| "interestRate"
+	| "termMonths"
+	| "rateType"
+	| "payoffDate"
+	| "insured"
+	| "leverage"
+	| "repaidPercent"
+> & {
+	/** Today in `APP_TIMEZONE`, the one day every figure answers for. */
+	asOf: IsoDate;
+	currency: string;
+	originalAmount: MinorUnits | null;
+	remainingBalance: MinorUnits;
+	monthlyPayment: MinorUnits | "not_applicable" | null;
+	totalCost: MinorUnits | null;
+	insurance: { total: MinorUnits } | { rate: number } | null;
+	instalment: LoanInstalment | null;
+};
+
+const minorOrNull = (value: bigint | null) => (value === null ? null : minor(value));
+
+/**
+ * A loan's overview, computed on read from its terms and its balance: nothing
+ * is stored. `null` for another type of account; a loan without details
+ * answers every figure it cannot know as `null`.
+ */
+export async function loanOverview(
+	deps: ServiceDeps,
+	accountId: string,
+): Promise<LoanOverviewData | null> {
+	const account = await getAccount(deps, accountId);
+
+	if (account.type !== "loan") {
+		return null;
+	}
+
+	const asOf = today(deps.timeZone);
+	const overview = overviewOf({
+		details: account.details,
+		balance: BigInt(account.balance),
+		openingDate: account.openingDate,
+		asOf,
+	});
+	const { instalment, insurance, monthlyPayment } = overview;
+
+	return {
+		asOf,
+		currency: account.currency,
+		originalAmount: minorOrNull(overview.originalAmount),
+		remainingBalance: minor(overview.remainingBalance),
+		interestRate: overview.interestRate,
+		monthlyPayment: typeof monthlyPayment === "bigint" ? minor(monthlyPayment) : monthlyPayment,
+		termMonths: overview.termMonths,
+		rateType: overview.rateType,
+		payoffDate: overview.payoffDate,
+		insured: overview.insured,
+		totalCost: minorOrNull(overview.totalCost),
+		insurance:
+			insurance !== null && "total" in insurance ? { total: minor(insurance.total) } : insurance,
+		leverage: overview.leverage,
+		repaidPercent: overview.repaidPercent,
+		instalment:
+			instalment === null
+				? null
+				: {
+						...instalment,
+						principal: minor(instalment.principal),
+						interest: minor(instalment.interest),
+						insurance: minor(instalment.insurance),
+						total: minor(instalment.total),
+					},
 	};
 }
