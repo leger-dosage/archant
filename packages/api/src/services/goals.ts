@@ -259,11 +259,22 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
 }
 
 /**
+ * Every goal as `/goals` lists them, and the dashboard's card summed from
+ * that same read, so an assistant never sees totals that disagree with the
+ * goals beside them. Reads only.
+ */
+export async function getGoalsOverview(deps: ServiceDeps) {
+	const all = await listGoals(deps);
+
+	return { goals: all, summary: goalsSummary(all, getReportingCurrency()) };
+}
+
+/**
  * The dashboard's card: the goals that hold their money, summed in the
  * reporting currency, as Sure's Plan card. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
-	return goalsSummary(await listGoals(deps), getReportingCurrency());
+	return (await getGoalsOverview(deps)).summary;
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };

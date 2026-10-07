@@ -10,9 +10,13 @@ import { toast } from "sonner";
 
 import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
-import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
-import { GOAL_KINDS, GOAL_TARGET_MODES } from "@archant/data/goals";
+import {
+	DEFAULT_GOAL_COLOR,
+	DEFAULT_GOAL_ICON,
+	GOAL_KINDS,
+	GOAL_TARGET_MODES,
+} from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -76,8 +80,8 @@ function blank(): GoalFormInput {
 		targetAmount: "",
 		targetMonths: "",
 		targetDate: "",
-		color: CATEGORY_COLORS[0],
-		icon: "piggy-bank",
+		color: DEFAULT_GOAL_COLOR,
+		icon: DEFAULT_GOAL_ICON,
 		notes: "",
 		accounts: [],
 	};

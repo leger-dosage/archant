@@ -37,6 +37,7 @@ const READ_TOOLS = [
 	"get_bill_audit",
 	"get_holdings",
 	"get_valuations",
+	"get_goals",
 	"get_rules",
 	"get_rule_runs",
 	"preview_rule",
@@ -236,10 +237,12 @@ async function connectThenDisconnect(
 	await expect(page.getByText("Agent de test demande l'accès à Archant.")).toBeVisible();
 	await expect(page.getByText(/sur 127\.0\.0\.1:33418\./u)).toBeVisible();
 	await expect(
-		page.getByLabel("Lire vos comptes, vos opérations, vos règles, vos budgets et vos factures"),
+		page.getByLabel(
+			"Lire vos comptes, vos opérations, vos règles, vos budgets, vos factures et vos objectifs",
+		),
 	).toBeChecked();
 	const write = page.getByLabel(
-		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets et vos soldes, gérer vos factures",
+		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures",
 	);
 	await expect(write).toBeChecked();
 	await write.uncheck();

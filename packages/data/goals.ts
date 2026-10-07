@@ -2,6 +2,9 @@
 // values without bundling Drizzle.
 
 import type { AccountType } from "./account-types.ts";
+import type { CategoryColor, CategoryIcon } from "./category-presets.ts";
+
+import { CATEGORY_COLORS } from "./category-presets.ts";
 
 /**
  * Sure's goal states. A goal is created `active`, then moves through
@@ -77,6 +80,15 @@ export function goalTransition(
 export const GOAL_NAME_MAX_LENGTH = 100;
 
 export const GOAL_NOTES_MAX_LENGTH = 1000;
+
+/**
+ * What « Nouvel objectif » starts from, and what a goal an assistant creates
+ * keeps: Sure's tool picks a random colour, which the owner would not
+ * recognise on the card they never set up.
+ */
+export const DEFAULT_GOAL_COLOR: CategoryColor = CATEGORY_COLORS[0];
+
+export const DEFAULT_GOAL_ICON: CategoryIcon = "piggy-bank";
 
 /**
  * Sure's `FUNDABLE_ACCOUNT_TYPES`: the accounts that hold savings. A card or
