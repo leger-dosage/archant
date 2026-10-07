@@ -258,7 +258,7 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type", exact: true }).click();
-	await page.getByRole("option", { name: "Prêt immobilier" }).click();
+	await page.getByRole("option", { name: "Hypothèque" }).click();
 	await expect(dialog.getByLabel("Solde initial", { exact: true })).toHaveCount(0);
 	await dialog.getByLabel("Capital restant dû").fill("104 724,54");
 	// Sure's order: the amount, the rate and its type, the down payment, the start, the term, the insurance.
@@ -303,7 +303,7 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	await expect(dialog).toBeHidden();
 	const liabilities = page.getByRole("region", { name: "Passifs" });
 	const row = liabilities.getByRole("link", { name: new RegExp(name) });
-	await expect(row).toContainText("Prêt immobilier");
+	await expect(row).toContainText("Hypothèque");
 	await expect(row).toContainText(euros(10_472_454));
 	await expect(
 		page.getByRole("region", { name: "Actifs" }).getByRole("link", { name: new RegExp(name) }),
@@ -332,7 +332,7 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 test("a loan's rate and term edited in the dialog show in its overview", async ({ page, api }) => {
 	const loan = await api.openAccount({
 		name: uniqueName("Prêt"),
-		kind: "consumer",
+		kind: "auto",
 		openingBalance: "8 000,00",
 		details: { interestRate: "4,9", termMonths: "30" },
 	});
@@ -892,7 +892,7 @@ test("a loan without a term has no « Échéancier » tab, and a link to it open
 }) => {
 	const loan = await api.openAccount({
 		name: uniqueName("Prêt"),
-		kind: "consumer",
+		kind: "auto",
 		openingBalance: "8 000,00",
 		details: {
 			rateType: "fixed",

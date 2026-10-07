@@ -165,7 +165,7 @@ test("« Bilan » splits each group by account type, and lists its active accoun
 			excludedCount: 0,
 			accounts: [
 				summary({ name: "Carte Visa", type: "credit_card", balance: 1_000_000 }),
-				summary({ name: "Prêt auto", type: "loan", subtype: "consumer", balance: 3_000_000 }),
+				summary({ name: "Prêt auto", type: "loan", subtype: "auto", balance: 3_000_000 }),
 			],
 		},
 	]);

@@ -449,6 +449,13 @@
       "when": 1791400856190,
       "tag": "0063_drop_deleted_entry_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1791409378592,
+      "tag": "0064_loan_subtypes_as_sure",
+      "breakpoints": true
     }
   ]
 }
