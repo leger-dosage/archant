@@ -9,7 +9,7 @@ import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
-import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
+import { entryKeys } from "@archant/data/schema/entry-keys";
 import { holdings } from "@archant/data/schema/holdings";
 import { imports } from "@archant/data/schema/imports";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -84,11 +84,10 @@ export async function createAccount(
 
 /**
  * Deletes an account and everything it holds, as one write: its entries'
- * keys and the tombstones of the ones the user deleted, its transactions'
- * taggings, attachments, transfers and rejected pairs, its transactions
- * and trades, all its entries, split lines before their parents, snapshots
- * and opening anchor included, its holdings and daily balances, its imports,
- * then the account.
+ * keys, its transactions' taggings, attachments, transfers and rejected
+ * pairs, its transactions and trades, all its entries, split lines before
+ * their parents, snapshots and opening anchor included, its holdings and
+ * daily balances, its imports, then the account.
  * Children go first, since their foreign keys restrict. A transfer's other
  * side, on another account, stays as a standard transaction, as Sure's
  * `cleanup_transfers` leaves it. Every delete selects by `account_id`
@@ -105,7 +104,6 @@ export async function deleteAccount(
 			await accountWithOpeningDate(tx, accountId);
 
 			await tx.delete(entryKeys).where(eq(entryKeys.accountId, accountId));
-			await tx.delete(deletedEntryKeys).where(eq(deletedEntryKeys.accountId, accountId));
 			await tx
 				.delete(taggings)
 				.where(

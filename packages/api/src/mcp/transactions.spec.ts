@@ -84,7 +84,6 @@ const deleted = z.object({
 	deleted: z.literal(true),
 	transaction: detail,
 	deleted_count: z.number(),
-	bank_will_not_resend: z.boolean(),
 });
 
 const errorText = (result: Awaited<ReturnType<typeof callTool>>) =>
@@ -461,7 +460,6 @@ describe("delete_transaction", () => {
 				source: { kind: "manual" },
 			},
 			deleted_count: 1,
-			bank_will_not_resend: false,
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(balanceOf(tools, account.id)).resolves.toBe("1500.00");
@@ -604,7 +602,7 @@ describe("delete_transaction", () => {
 		]);
 	});
 
-	it("keeps a bank line deleted: its keys become tombstones and the next sync creates nothing", async () => {
+	it("deletes a bank line that the next sync listing it brings back, as Sure does", async () => {
 		const account = await checking();
 		const { id, resync } = await bankLine(account.id);
 		const tools = await assistants();
@@ -619,10 +617,11 @@ describe("delete_transaction", () => {
 		expect(deleted.parse(result.structuredContent)).toMatchObject({
 			transaction: { id, source: { kind: "bank", connector: "enable-banking" } },
 			deleted_count: 1,
-			bank_will_not_resend: true,
 		});
-		await expect(resync()).resolves.toMatchObject({ created: [] });
+		expect(result.structuredContent).not.toHaveProperty("bank_will_not_resend");
 		await expect(transactionCount(account.id)).resolves.toBe(0);
+		await expect(resync()).resolves.toMatchObject({ created: [expect.any(String)] });
+		await expect(transactionCount(account.id)).resolves.toBe(1);
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "OK", changedRows: 1 },
 		]);

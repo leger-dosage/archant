@@ -41,14 +41,7 @@ import { loadEnabledRules } from "../rule-reader.ts";
 import { getReportingCurrency } from "../settings.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { anchorDate, rotateCurrentAnchor } from "./bank-link.ts";
-import {
-	attachKeys,
-	entriesByKey,
-	isBankConnector,
-	pairCandidates,
-	tombstoneLookupKey,
-	tombstonedKeys,
-} from "./entry-keys.ts";
+import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
@@ -303,10 +296,9 @@ function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): Prev
  * recognised within their group of identical lines (`assignIdentical`), and
  * booked lines no key found take a pending entry of the connection by amount
  * and date. A pending line never pairs by amount and date: it is recognised,
- * present on the entry its fingerprint names, or created. A line no live key
- * resolves is dropped when its reference, or its fingerprint when it has
- * none, is a tombstone: the user deleted its entry, so it is neither
- * recognised in its group, paired, absorbed by amount, nor created. The keys
+ * present on the entry its fingerprint names, or created. A line whose entry
+ * the user deleted has no key left, so it goes through the same steps as a
+ * new one, as Sure's importer creates what its reference no longer finds. The keys
  * of the lines step 1 refused are looked up too, for the entries they name.
  */
 async function groupLines(
@@ -365,17 +357,6 @@ async function groupLines(
 		}
 	}
 
-	const tombstoned = isBankConnector(target.source)
-		? await tombstonedKeys(
-				tx,
-				accountId,
-				target.source,
-				[...remaining, ...[...identical.values()].flat()].map(({ keys }) =>
-					tombstoneLookupKey(keys),
-				),
-			)
-		: new Set<string>();
-	const isTombstoned = ({ keys }: Keyed) => tombstoned.has(tombstoneLookupKey(keys));
 	const pendingEntries =
 		target.connectionId === null
 			? []
@@ -389,9 +370,7 @@ async function groupLines(
 	);
 	const unattributed = new Set(held.keys());
 
-	for (const [triple, listed] of identical) {
-		// A deleted reference never reaches the group: it could take a live twin.
-		const lines = listed.filter((item) => item.keys.external === null || !isTombstoned(item));
+	for (const [triple, lines] of identical) {
 		// Each held key belongs to one triple: once all are placed, no index is left to try.
 		const lowest = new Map<string, GroupCandidate>();
 
@@ -435,7 +414,7 @@ async function groupLines(
 				// Booked, or refreshed by another line of this statement: that entry
 				// listed again. Creating it would store the key twice.
 				groups.present.push({ ...item, entryId: named.entryId });
-			} else if (!isTombstoned(item)) {
+			} else {
 				groups.created.push(item);
 
 				if (named !== undefined) {
@@ -458,10 +437,7 @@ async function groupLines(
 		}));
 	const unpaired: typeof remaining = [];
 
-	for (const { line: item, survivorId } of absorbPending(
-		remaining.filter((listed) => !isTombstoned(listed)),
-		survivors,
-	)) {
+	for (const { line: item, survivorId } of absorbPending(remaining, survivors)) {
 		if (survivorId === null) {
 			unpaired.push(item);
 		} else {

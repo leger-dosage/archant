@@ -1,14 +1,12 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type { LineKeys, PairCandidate } from "../../domain/keys.ts";
+import type { PairCandidate } from "../../domain/keys.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
+import { and, between, eq, inArray, isNull, notExists } from "drizzle-orm";
 
 import { toMinorUnits } from "@archant/data/money";
-import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
-import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import { entries } from "@archant/data/schema/entries";
-import { deletedEntryKeys, entryKeys } from "@archant/data/schema/entry-keys";
+import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { EntryKeySource } from "@archant/data/schema/entry-keys";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -47,83 +45,6 @@ export async function entriesByKey(
 }
 
 type KnownEntry = { entryId: string; pending: boolean };
-
-/**
- * The key a tombstone is judged by: the reference when the line has one,
- * since a new line's fingerprint may shift onto a deleted one's index, else
- * the fingerprint.
- */
-export const tombstoneLookupKey = (keys: LineKeys) => keys.external ?? keys.fingerprint;
-
-/** Only a bank connector's keys are ever tombstoned: a file's lines come back on re-import. */
-export const isBankConnector = (source: EntryKeySource): source is BankConnectorId =>
-	BANK_CONNECTOR_IDS.some((id) => id === source);
-
-/** The keys among `keys` the user deleted an entry under, looked up 500 keys per query. */
-export async function tombstonedKeys(
-	tx: Transaction,
-	accountId: string,
-	source: BankConnectorId,
-	keys: readonly string[],
-): Promise<Set<string>> {
-	const found = new Set<string>();
-
-	await inSequence(keys, KEYS_PER_LOOKUP, async (chunk) => {
-		const rows = await tx
-			.select({ key: deletedEntryKeys.key })
-			.from(deletedEntryKeys)
-			.where(
-				and(
-					eq(deletedEntryKeys.accountId, accountId),
-					eq(deletedEntryKeys.source, source),
-					inArray(deletedEntryKeys.key, chunk),
-				),
-			);
-
-		for (const row of rows) {
-			found.add(row.key);
-		}
-	});
-
-	return found;
-}
-
-/** Whether a bank synced the entry: a key of a bank connector is on it. */
-export async function hasBankKeys(tx: Transaction, entryId: string): Promise<boolean> {
-	const row = await tx
-		.select({ key: entryKeys.key })
-		.from(entryKeys)
-		.where(and(eq(entryKeys.entryId, entryId), inArray(entryKeys.source, BANK_CONNECTOR_IDS)))
-		.get();
-
-	return row !== undefined;
-}
-
-/**
- * Keeps the bank keys of the entries `ids` as tombstones, so a sync never
- * brings back a transaction the user deleted. File keys are not kept:
- * re-importing a file brings its lines back, as in Sure.
- */
-export async function tombstoneBankKeys(
-	tx: Transaction,
-	ids: readonly string[],
-	now: number,
-): Promise<void> {
-	await tx
-		.insert(deletedEntryKeys)
-		.select(
-			tx
-				.select({
-					accountId: entryKeys.accountId,
-					source: entryKeys.source,
-					key: entryKeys.key,
-					deletedAt: sql<number>`${now}`.as("deleted_at"),
-				})
-				.from(entryKeys)
-				.where(and(inArray(entryKeys.entryId, ids), inArray(entryKeys.source, BANK_CONNECTOR_IDS))),
-		)
-		.onConflictDoNothing();
-}
 
 /**
  * The account's transactions a line may pair with (AD-7): dated within the

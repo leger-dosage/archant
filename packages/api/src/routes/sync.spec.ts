@@ -106,7 +106,7 @@ describe("bank sync routes", () => {
 		expect(errorBody.parse(await second.json()).error.code).toBe("SYNC_TOO_RECENT");
 	});
 
-	it("never lists again a synced transaction deleted since the last sync", async () => {
+	it("lists again a synced transaction deleted since the last sync, as Sure does", async () => {
 		const { app } = await syncApp();
 		const { client, connection, accountId } = await linkedConnection(app);
 		const api = testClient(withSession(app, template.cookie)).api;
@@ -122,9 +122,7 @@ describe("bank sync routes", () => {
 
 		expect(deleted.status).toBe(200);
 		expect(synced.status).toBe(200);
-		expect((await labels()).map((item) => item.label)).not.toContainEqual(
-			expect.stringContaining("NETFLIX"),
-		);
+		expect((await labels()).filter((item) => item.label.includes("NETFLIX"))).toHaveLength(1);
 	});
 
 	it("answers CONSENT_EXPIRED from the button, and reports it to the cron", async () => {

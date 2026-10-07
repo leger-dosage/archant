@@ -976,9 +976,9 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	await expect(rows.getByRole("cell").nth(1)).toHaveText(euros(120_000));
 });
 
-// Story 11.6: the next sync rereads the last week, and must not bring back
-// what the user deleted.
-test("a synced transaction deleted from its sheet stays deleted after the next sync", async ({
+// As in Sure, whose importer creates what its reference no longer finds: the
+// next sync, which rereads the last week, brings back what the user deleted.
+test("a synced transaction deleted from its sheet comes back at the next sync", async ({
 	page,
 }) => {
 	const connectionId = await connect(page);
@@ -1004,7 +1004,7 @@ test("a synced transaction deleted from its sheet stays deleted after the next s
 
 	await page.goto(`/accounts/${accountId}`);
 	await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
-	await expect(transactionRow(page, label)).toHaveCount(0);
+	await expect(transactionRow(page, label)).toHaveCount(1);
 });
 
 // Story 10.5. A banner shows on every page, so each test below puts its

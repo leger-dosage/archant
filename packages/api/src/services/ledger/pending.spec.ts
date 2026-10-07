@@ -696,7 +696,7 @@ describe("identical pending lines", () => {
 		]);
 	});
 
-	it("keeps one fingerprint per group once an index shifted, so a twin bought since goes in", async () => {
+	it("keeps one fingerprint per group once an index shifted, so the deleted twin and one bought since go in", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [first = "", second = ""] = await createdBySync(account.id, bank.connectionId, [
@@ -708,16 +708,16 @@ describe("identical pending lines", () => {
 		await sync(account.id, bank.connectionId, [twin(amount)]);
 		await expect(keysOf(second)).resolves.toHaveLength(1);
 
-		// The deleted twin's line stays out (Story 11.6); a third one is new.
+		// The deleted twin's line comes back, as in Sure; a third one is new.
 		const synced = await sync(account.id, bank.connectionId, [
 			twin(amount),
 			twin(amount),
 			twin(amount),
 		]);
 
-		expect(synced.created).toHaveLength(1);
+		expect(synced.created).toHaveLength(2);
 		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
-		await expect(transactionCount(account.id)).resolves.toBe(2);
+		await expect(transactionCount(account.id)).resolves.toBe(3);
 	});
 
 	it("still recognises the third of three twins once the first two are deleted", async () => {

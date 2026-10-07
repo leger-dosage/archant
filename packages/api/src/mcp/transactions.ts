@@ -322,7 +322,7 @@ export const createTransactionTool = defineTool({
 export const deleteTransactionTool = defineTool({
 	name: "delete_transaction",
 	title: "Delete a transaction",
-	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the account_id, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A transaction a bank synced is never synced again. Returns the transaction as it was, how many rows went and bank_will_not_resend.`,
+	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the account_id, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A line a bank or a file brought comes back at the next sync or import still listing it. Returns the transaction as it was and how many rows went.`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: deleteTransactionInput,
@@ -337,11 +337,6 @@ export const deleteTransactionTool = defineTool({
 			.describe(
 				"Entries deleted: the transaction, with a split's lines or the order it was converted into.",
 			),
-		bank_will_not_resend: z
-			.boolean()
-			.describe(
-				"A bank synced it: no sync brings it back. A file's line comes back when the file is imported again.",
-			),
 	}),
 	run: async (deps, { id, account_id: accountId, date, amount }) => {
 		const deleted = await deleteTransaction(deps, id, { accountId, date, amount });
@@ -351,7 +346,6 @@ export const deleteTransactionTool = defineTool({
 				deleted: true as const,
 				transaction: detailOf(deleted.transaction),
 				deleted_count: deleted.deletedCount,
-				bank_will_not_resend: deleted.bankWillNotResend,
 			},
 			changedRows: deleted.deletedCount,
 		};

@@ -1,0 +1,1 @@
+DROP TABLE `deleted_entry_keys`;

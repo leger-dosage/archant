@@ -512,7 +512,7 @@ describe("syncConnection", () => {
 		expect(after.netWorth).toBe(120000);
 	});
 
-	it("never brings back a line the user deleted when the next sync rereads it", async () => {
+	it("brings back a line the user deleted when the next sync rereads it, as Sure does", async () => {
 		mockProvider();
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -529,9 +529,9 @@ describe("syncConnection", () => {
 
 		await syncConnection(deps(), connectionId);
 
-		await expect(transactionCount(accountId)).resolves.toBe(count - 1);
+		await expect(transactionCount(accountId)).resolves.toBe(count);
 		expect(deleted).not.toEqual(before);
-		await expect(balanceOn(deps(), accountId, dayBefore)).resolves.toEqual(deleted);
+		await expect(balanceOn(deps(), accountId, dayBefore)).resolves.toEqual(before);
 	});
 
 	it("commits the accounts that sync and rolls back the one that fails", async () => {
