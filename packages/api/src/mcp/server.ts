@@ -32,6 +32,14 @@ import { recordAssistantCall } from "../services/assistant-calls.ts";
 import { ARCHANT_SCOPES, grantedScopes } from "../services/assistants.ts";
 import { mcpIssuer, mcpResource } from "../services/auth.ts";
 import { getAccounts } from "./accounts.ts";
+import {
+	createBillTool,
+	getBillAudit,
+	getBillDetails,
+	getBills,
+	recordBillPaymentTool,
+	updateBillTool,
+} from "./bills.ts";
 import { getBudgetTool, updateBudgetTool } from "./budgets.ts";
 import { createCategoryTool, getCategories, renameCategoryTool } from "./categories.ts";
 import { getHoldings } from "./holdings.ts";
@@ -80,6 +88,9 @@ const TOOLS: AnyTool[] = [
 	getIncomeStatement,
 	getBudgetTool,
 	getRecurringTransactions,
+	getBills,
+	getBillDetails,
+	getBillAudit,
 	getHoldings,
 	getRules,
 	getRuleRuns,
@@ -98,6 +109,9 @@ const TOOLS: AnyTool[] = [
 	renameMerchantTool,
 	renameTagTool,
 	updateBudgetTool,
+	createBillTool,
+	updateBillTool,
+	recordBillPaymentTool,
 ];
 
 /** The 64 KB of every other `/api` route; `bodyLimit` has refused anything larger by now. */
@@ -130,6 +144,9 @@ const INSTRUCTIONS = [
 	"To plan a month's budget:",
 	"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
 	"- Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",
+	"To go through the bills:",
+	"- A suggested bill is a pattern Archant found, not a bill yet: never count it as one until the owner adds it.",
+	"- Before create_bill, update_bill or record_bill_payment, tell the owner what will change and wait for their agreement.",
 ].join("\n");
 
 /** The claims `/api/mcp` relies on, once the signature, issuer, audience and expiry are checked. */

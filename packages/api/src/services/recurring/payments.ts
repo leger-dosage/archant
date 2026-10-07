@@ -1,5 +1,6 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchDecision } from "../../domain/recurring/matcher.ts";
+import type { DerivedState } from "../../domain/recurring/occurrences.ts";
 import type { AddPaymentInput, OccurrencePatch } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
@@ -26,6 +27,8 @@ import { today } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
 import { explain, knownNames, windowOf } from "../../domain/recurring/matcher.ts";
 import {
+	derivedState,
+	effectiveDueOn,
 	isCloseWorthy,
 	learnedTolerance,
 	remainingOf,
@@ -501,6 +504,69 @@ function amountOf(text: string | undefined, currency: string, path = "amount"): 
 	return amount;
 }
 
+/** An occurrence as `occurrenceOf` reads it. */
+type LoadedOccurrence = NonNullable<Awaited<ReturnType<typeof occurrenceOf>>>;
+
+/**
+ * The write of « Ajouter un paiement » without a transaction: a confirmed
+ * `user_created` payment, the amount frozen, then the close state follows.
+ * Answers the payment's id.
+ */
+async function addManualPayment(
+	tx: Writer,
+	occurrence: LoadedOccurrence,
+	amount: MinorUnits,
+	paidOn: IsoDate,
+): Promise<string> {
+	const now = Date.now();
+	const id = crypto.randomUUID();
+
+	await freezeExpected(tx, occurrence, now);
+	await tx.insert(recurringAllocations).values({
+		id,
+		recurringOccurrenceId: occurrence.id,
+		allocatedAmount: amount,
+		state: "confirmed",
+		source: "user_created",
+		paidOn,
+		createdAt: now,
+		updatedAt: now,
+	});
+	await refreshCloseState(tx, occurrence.id, now);
+
+	return id;
+}
+
+/**
+ * The write of « Marquer comme payée »: the amount frozen, what remains
+ * settled by a confirmed `user_created` payment with no transaction, and the
+ * occurrence closed paid by the owner.
+ */
+async function settle(tx: Writer, occurrence: LoadedOccurrence, paidOn: IsoDate): Promise<void> {
+	const now = Date.now();
+	const remaining = remainingOf(occurrence.expected, await confirmedOf(tx, occurrence.id));
+
+	await freezeExpected(tx, occurrence, now);
+
+	if (remaining > 0) {
+		await tx.insert(recurringAllocations).values({
+			id: crypto.randomUUID(),
+			recurringOccurrenceId: occurrence.id,
+			allocatedAmount: remaining,
+			state: "confirmed",
+			source: "user_created",
+			paidOn,
+			createdAt: now,
+			updatedAt: now,
+		});
+	}
+
+	await tx
+		.update(recurringOccurrences)
+		.set({ status: "paid", closedAt: now, closedSource: "user", updatedAt: now })
+		.where(eq(recurringOccurrences.id, occurrence.id));
+}
+
 /**
  * Sure's `RecurringAllocationsController#create`: with a transaction, its
  * payment as `attachEntry` makes it; without one, an amount and a date the
@@ -530,23 +596,125 @@ export async function addPayment(
 				throw invalidField("paidOn", "invalid_type");
 			}
 
-			const now = Date.now();
-			const id = crypto.randomUUID();
+			return paymentOf(tx, await addManualPayment(tx, occurrence, amount, input.paidOn));
+		},
+		{ behavior: "immediate" },
+	);
+}
 
-			await freezeExpected(tx, occurrence, now);
-			await tx.insert(recurringAllocations).values({
-				id,
-				recurringOccurrenceId: occurrenceId,
-				allocatedAmount: amount,
-				state: "confirmed",
-				source: "user_created",
-				paidOn: input.paidOn,
-				createdAt: now,
-				updatedAt: now,
-			});
-			await refreshCloseState(tx, occurrenceId, now);
+/** An occurrence after an assistant paid toward it. */
+export type RecordedOccurrence = {
+	dueOn: IsoDate;
+	effectiveDueOn: IsoDate;
+	status: OccurrenceStatus;
+	state: DerivedState;
+	/** Positive magnitudes in `currency`. */
+	expected: MinorUnits;
+	paid: MinorUnits;
+	remaining: MinorUnits;
+	currency: string;
+};
 
-			return paymentOf(tx, id);
+/** What `recordBillPayment` takes: the occurrence's due date, an amount as decimal text, a date. */
+export type BillPaymentInput = {
+	occurrenceDueOn?: IsoDate | undefined;
+	amount?: string | undefined;
+	paidOn?: IsoDate | undefined;
+};
+
+/**
+ * Sure's `RecordBillPayment` through the interface's writes: the open
+ * occurrence due on `occurrenceDueOn`, else the earliest open one. Without
+ * an amount it settles what remains as « Marquer comme payée » does, and
+ * refuses an occurrence named by no date that is still `upcoming`, Sure's
+ * guard against a retried settle paying next month too. With an amount it
+ * adds a payment as « Ajouter un paiement » does without a transaction,
+ * never past what remains, since nothing caps a payment with no transaction.
+ * Dated today in `APP_TIMEZONE` unless `paidOn` says otherwise. It never
+ * links a transaction: the matcher and the review queue do.
+ */
+export async function recordBillPayment(
+	deps: ServiceDeps,
+	seriesId: string,
+	input: BillPaymentInput,
+): Promise<RecordedOccurrence> {
+	const day = today(deps.timeZone);
+
+	return deps.db.transaction(
+		async (tx) => {
+			const series = await tx
+				.select({ id: recurringTransactions.id })
+				.from(recurringTransactions)
+				.where(eq(recurringTransactions.id, seriesId))
+				.get();
+
+			if (series === undefined) {
+				throw notFound("recurring transaction");
+			}
+
+			const open = await tx
+				.select({
+					id: recurringOccurrences.id,
+					dueOn: recurringOccurrences.dueOn,
+					snoozedUntil: recurringOccurrences.snoozedUntil,
+				})
+				.from(recurringOccurrences)
+				.where(
+					and(
+						eq(recurringOccurrences.recurringTransactionId, seriesId),
+						eq(recurringOccurrences.status, "scheduled"),
+						input.occurrenceDueOn === undefined
+							? undefined
+							: eq(recurringOccurrences.dueOn, input.occurrenceDueOn),
+					),
+				)
+				.orderBy(recurringOccurrences.dueOn, recurringOccurrences.id)
+				.get();
+
+			if (open === undefined) {
+				throw new AppError(
+					"NOT_FOUND",
+					input.occurrenceDueOn === undefined
+						? "This bill has no open occurrence."
+						: "No open occurrence of this bill is due on this date.",
+				);
+			}
+
+			const occurrence = (await occurrenceOf(tx, open.id))!;
+			const paidOn = input.paidOn ?? day;
+
+			if (input.amount === undefined) {
+				if (
+					input.occurrenceDueOn === undefined &&
+					derivedState({ ...open, status: "scheduled" }, day) === "upcoming"
+				) {
+					throw invalidField("occurrenceDueOn", "not_due");
+				}
+
+				await settle(tx, occurrence, paidOn);
+			} else {
+				const amount = amountOf(input.amount, occurrence.currency);
+
+				if (amount > remainingOf(occurrence.expected, await confirmedOf(tx, occurrence.id))) {
+					throw invalidField("amount", "exceeds_remaining");
+				}
+
+				await addManualPayment(tx, occurrence, amount, paidOn);
+			}
+
+			const after = (await occurrenceOf(tx, open.id))!;
+			const confirmed = await confirmedOf(tx, open.id);
+
+			return {
+				dueOn: open.dueOn,
+				effectiveDueOn: effectiveDueOn(open),
+				status: after.status,
+				state: derivedState({ ...open, status: after.status }, day),
+				expected: after.expected,
+				paid: toMinorUnits(confirmed.reduce((total, amount) => total + amount, 0)),
+				remaining: remainingOf(after.expected, confirmed),
+				currency: after.currency,
+			};
 		},
 		{ behavior: "immediate" },
 	);
@@ -618,28 +786,7 @@ export async function markPaid(
 		async (tx) => {
 			const occurrence = await existingOccurrence(tx, id);
 			mustBeOpen(occurrence);
-			const now = Date.now();
-			const remaining = remainingOf(occurrence.expected, await confirmedOf(tx, id));
-
-			await freezeExpected(tx, occurrence, now);
-
-			if (remaining > 0) {
-				await tx.insert(recurringAllocations).values({
-					id: crypto.randomUUID(),
-					recurringOccurrenceId: id,
-					allocatedAmount: remaining,
-					state: "confirmed",
-					source: "user_created",
-					paidOn: paidOn ?? day,
-					createdAt: now,
-					updatedAt: now,
-				});
-			}
-
-			await tx
-				.update(recurringOccurrences)
-				.set({ status: "paid", closedAt: now, closedSource: "user", updatedAt: now })
-				.where(eq(recurringOccurrences.id, id));
+			await settle(tx, occurrence, paidOn ?? day);
 
 			return occurrenceRecord(tx, id);
 		},

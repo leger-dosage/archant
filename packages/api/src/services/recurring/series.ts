@@ -635,31 +635,41 @@ export async function setRecurringStatus(
 
 	return deps.db.transaction(
 		async (tx) => {
-			const current = await getRecord(tx, id, day);
-
-			if (!ALLOWED_FROM[status].includes(current.status)) {
-				throw invalid("status");
-			}
-
-			const nextDate =
-				status === "active"
-					? currentNextDate(current, current.nextExpectedDate, day)
-					: current.nextExpectedDate;
-
-			await tx
-				.update(recurringTransactions)
-				.set({ status, nextExpectedDate: nextDate, updatedAt: Date.now() })
-				.where(eq(recurringTransactions.id, id));
-			await regenerateFuture(tx, [id], day);
-
-			if (current.status === "suggested" && status === "active") {
-				await backfillOccurrences(tx, day, [id]);
-			}
+			await setStatusWithin(tx, id, status, day);
 
 			return getRecord(tx, id, day);
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/** `setRecurringStatus` inside the caller's transaction. */
+export async function setStatusWithin(
+	tx: Transaction,
+	id: string,
+	status: RecurringStatus,
+	day: IsoDate,
+): Promise<void> {
+	const current = await getRecord(tx, id, day);
+
+	if (!ALLOWED_FROM[status].includes(current.status)) {
+		throw invalid("status");
+	}
+
+	const nextDate =
+		status === "active"
+			? currentNextDate(current, current.nextExpectedDate, day)
+			: current.nextExpectedDate;
+
+	await tx
+		.update(recurringTransactions)
+		.set({ status, nextExpectedDate: nextDate, updatedAt: Date.now() })
+		.where(eq(recurringTransactions.id, id));
+	await regenerateFuture(tx, [id], day);
+
+	if (current.status === "suggested" && status === "active") {
+		await backfillOccurrences(tx, day, [id]);
+	}
 }
 
 /**
