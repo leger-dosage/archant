@@ -230,6 +230,12 @@ test("a viewer reads every page with no control that writes, and the server refu
 				page.getByRole("list", { name: "Détails du prêt" }).getByRole("listitem"),
 			).toHaveText([`Emprunté : ${euros(13_000_000)}`, "Taux : 1,820 % fixe", "Durée : 25 ans"]);
 			await expectNone(page, [{ role: "button", name: `Actions du compte ${loan.name}` }]);
+			await page.getByRole("tab", { name: "Échéancier" }).click();
+			await expect(
+				page
+					.getByRole("tabpanel", { name: "Échéancier" })
+					.getByRole("group", { name: "Mensualité", exact: true }),
+			).toContainText(euros(53_969));
 
 			await page.goto(`/accounts/${pea.id}`);
 			await page

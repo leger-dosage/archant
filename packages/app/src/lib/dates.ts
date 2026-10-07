@@ -83,6 +83,11 @@ const otherYear = new Intl.DateTimeFormat("fr-FR", {
 	timeZone: "UTC",
 });
 
+/** `2020-12-05` as « 5 décembre 2020 », Sure's `l(date, format: :long)`. */
+export function longDate(iso: string): string {
+	return otherYear.format(new Date(`${iso}T00:00:00Z`));
+}
+
 export type DayHeading = { kind: "today" } | { kind: "yesterday" } | { kind: "date"; text: string };
 
 /**

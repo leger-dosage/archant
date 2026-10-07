@@ -334,3 +334,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-25-1-choose-the-start-date-of-the-first-sync.md`
   summary: Linking a bank account to an existing account opened after the chosen start date refuses the synced lines on or before its opening date, silently.
   evidence: Unverified as a problem in use, low if true. `ingest` refuses such lines for every link since Story 10.2; a longer start date only makes it likelier. Offering to move the opening date, as a file import does, would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-24-2-the-amortisation-schedule.md`
+  summary: Test that a payment falling on the server's today is shaded as past in the « Échéancier » tab.
+  evidence: `LoanSchedule.tsx` shades `date <= asOf`; the e2e test checks payments 69 and 300 only, and only an e2e test with a pinned server clock and a start date landing a payment on that day reaches the boundary.
