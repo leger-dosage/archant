@@ -31,27 +31,27 @@ import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, REPLACES, decimal, defineTool 
 const transferFields = {
 	id: z.string().describe("The transfer's id, which unpair_transfer takes."),
 	kind: z.enum(TRANSFER_KINDS),
-	counterpartTransactionId: z.string().describe("The other side's transaction id."),
-	counterpartAccountId: z.string(),
+	counterpart_transaction_id: z.string().describe("The other side's transaction id."),
+	counterpart_account_id: z.string(),
 };
 
 const transaction = z.object({
 	id: z.string(),
 	date: z.string(),
-	label: z.string(),
+	name: z.string().describe("The label the line shows."),
 	amount: decimal("Signed: negative is money out"),
 	currency: z.string(),
-	accountId: z.string(),
-	categoryId: z.string().nullable(),
-	merchantId: z.string().nullable(),
-	tagIds: z.array(z.string()),
+	account_id: z.string(),
+	category_id: z.string().nullable(),
+	merchant_id: z.string().nullable(),
+	tag_ids: z.array(z.string()),
 	notes: z.string().nullable(),
 	excluded: z.boolean().describe("Left out of reports, still in the balance."),
 	transfer: z
 		.object(transferFields)
 		.nullable()
 		.describe("The transfer it is a side of, with the other side and its account; null for none."),
-	transferSuggested: z
+	transfer_suggested: z
 		.boolean()
 		.describe(
 			"In no transfer, with several candidates: matching left it for the owner to pair, through get_transfer_candidates.",
@@ -64,13 +64,13 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 	return {
 		id: item.id,
 		date: item.date,
-		label: item.label,
+		name: item.label,
 		amount: toDecimalString(item),
 		currency: item.currency,
-		accountId: item.accountId,
-		categoryId: item.categoryId,
-		merchantId: item.merchantId,
-		tagIds: item.tagIds,
+		account_id: item.accountId,
+		category_id: item.categoryId,
+		merchant_id: item.merchantId,
+		tag_ids: item.tagIds,
 		notes: item.notes,
 		excluded: item.excluded,
 		transfer:
@@ -79,10 +79,10 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 				: {
 						id: item.transfer.id,
 						kind: item.transfer.kind,
-						counterpartTransactionId: item.transfer.counterpartTransactionId,
-						counterpartAccountId: item.transfer.counterpartAccountId,
+						counterpart_transaction_id: item.transfer.counterpartTransactionId,
+						counterpart_account_id: item.transfer.counterpartAccountId,
 					},
-		transferSuggested: item.transferSuggested,
+		transfer_suggested: item.transferSuggested,
 		pending: item.pending,
 	};
 }
@@ -90,33 +90,36 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 export const getTransactions = defineTool({
 	name: "get_transactions",
 	title: "Transactions",
-	description: `A page of the transactions of every active account matching the filter; a deactivated account's are left out even when named, as in Archant's list; most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skippedCount. ${BANK_TEXT}`,
+	description: `A page of the transactions of every active account matching the filter; a deactivated account's are left out even when named, as in Archant's list; most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skipped_count. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getTransactionsInput,
 	output: z.object({
-		items: z.array(transaction),
+		transactions: z.array(transaction),
 		page: z.number().int(),
-		pageSize: z.number().int(),
-		total: z.number().int().describe("Every matching transaction, whatever its currency."),
-		income: decimal("Money in"),
-		expense: decimal("Money out"),
+		page_size: z.number().int(),
+		total_results: z.number().int().describe("Every matching transaction, whatever its currency."),
+		total_income: decimal("Money in"),
+		total_expenses: decimal("Money out"),
 		currency: z.string(),
-		skippedCount: z.number().int(),
+		skipped_count: z.number().int(),
 	}),
 	run: async (deps, input) => {
 		const found = await findTransactions(deps, input);
 
 		return {
 			result: {
-				items: found.items.map(itemOf),
+				transactions: found.items.map(itemOf),
 				page: found.page,
-				pageSize: found.pageSize,
-				total: found.total,
-				income: toDecimalString({ amount: found.sum.income, currency: found.sum.currency }),
-				expense: toDecimalString({ amount: found.sum.expense, currency: found.sum.currency }),
+				page_size: found.pageSize,
+				total_results: found.total,
+				total_income: toDecimalString({ amount: found.sum.income, currency: found.sum.currency }),
+				total_expenses: toDecimalString({
+					amount: found.sum.expense,
+					currency: found.sum.currency,
+				}),
 				currency: found.sum.currency,
-				skippedCount: found.sum.skippedCount,
+				skipped_count: found.sum.skippedCount,
 			},
 			changedRows: 0,
 		};
@@ -126,7 +129,7 @@ export const getTransactions = defineTool({
 export const groupTransactionLabels = defineTool({
 	name: "group_transactions_by_label",
 	title: "Transactions grouped by label",
-	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category ["none"] keeps the uncategorised ones. ${BANK_TEXT}`,
+	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category_ids ["none"] keeps the uncategorised ones. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: groupTransactionsInput,
@@ -137,11 +140,11 @@ export const groupTransactionLabels = defineTool({
 				count: z.number().int(),
 				total: decimal("Signed"),
 				currency: z.string(),
-				lastDate: z.string(),
-				categoryIds: z.array(z.string().nullable()),
+				last_date: z.string(),
+				category_ids: z.array(z.string().nullable()),
 			}),
 		),
-		groupCount: z.number().int(),
+		group_count: z.number().int(),
 	}),
 	run: async (deps, input) => {
 		const { groups, groupCount } = await groupTransactionsByLabel(deps, input);
@@ -153,10 +156,10 @@ export const groupTransactionLabels = defineTool({
 					count: group.count,
 					total: toDecimalString({ amount: group.total, currency: group.currency }),
 					currency: group.currency,
-					lastDate: group.lastDate,
-					categoryIds: group.categoryIds,
+					last_date: group.lastDate,
+					category_ids: group.categoryIds,
 				})),
-				groupCount,
+				group_count: groupCount,
 			},
 			changedRows: 0,
 		};
@@ -180,7 +183,7 @@ const source = z
 const transactionDetail = transaction.extend({
 	reference: z.string().nullable().describe("A cheque or QIF number from the file it came in."),
 	transfer: z
-		.object({ ...transferFields, counterpartAccountName: z.string() })
+		.object({ ...transferFields, counterpart_account_name: z.string() })
 		.nullable()
 		.describe("The transfer it is a side of, with the other side and its account; null for none."),
 	source,
@@ -196,9 +199,9 @@ function detailOf(item: TransactionItem): z.input<typeof transactionDetail> {
 				: {
 						id: item.transfer.id,
 						kind: item.transfer.kind,
-						counterpartTransactionId: item.transfer.counterpartTransactionId,
-						counterpartAccountId: item.transfer.counterpartAccountId,
-						counterpartAccountName: item.transfer.counterpartAccountName,
+						counterpart_transaction_id: item.transfer.counterpartTransactionId,
+						counterpart_account_id: item.transfer.counterpartAccountId,
+						counterpart_account_name: item.transfer.counterpartAccountName,
 					},
 		source: item.source,
 	};
@@ -224,10 +227,11 @@ export const updateTransactionTool = defineTool({
 	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it as get_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers TRANSACTION_SPLIT. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
+	fieldPaths: { label: "name" },
 	input: updateTransactionInput,
 	output: transactionDetail,
-	run: async (deps, { id, ...fields }) => ({
-		result: detailOf(await updateTransaction(deps, id, fields)),
+	run: async (deps, { id, patch }) => ({
+		result: detailOf(await updateTransaction(deps, id, patch)),
 		changedRows: 1,
 	}),
 });
@@ -235,7 +239,7 @@ export const updateTransactionTool = defineTool({
 export const bulkUpdateTransactionsTool = defineTool({
 	name: "bulk_update_transactions",
 	title: "Classify transactions in bulk",
-	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total and pass that total as expectedCount: when the filter matches another count now, nothing is written and it answers BULK_COUNT_STALE with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
+	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers BULK_COUNT_STALE with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: bulkUpdateTransactionsInput,
@@ -243,7 +247,7 @@ export const bulkUpdateTransactionsTool = defineTool({
 		matched: z.number().int().describe("Transactions selected, unchanged ones included."),
 		changed: z.number().int().describe("Transactions whose fields changed."),
 	}),
-	run: async (deps, { ids, filter, expectedCount, patch }) => {
+	run: async (deps, { ids, filter, expected_count: expectedCount, patch }) => {
 		const selection = ids === undefined ? { filter: filter ?? {} } : { ids };
 		const { updated, changed } = await bulkUpdateTransactions(
 			deps,
@@ -276,34 +280,35 @@ function signedAmount(
 export const createTransactionTool = defineTool({
 	name: "create_transaction",
 	title: "Record a transaction",
-	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns it as get_transaction does, with created. Calling it twice records two lines, unless externalId is given: then the second call records nothing and returns the line with created false. A refused field answers VALIDATION_ERROR with its path and code; an unknown accountId, NOT_FOUND.`,
+	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns it as get_transaction does, with created. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. A refused field answers VALIDATION_ERROR with its path and code; an unknown account_id, NOT_FOUND.`,
 	scope: "archant:write",
 	annotations: CREATES,
+	fieldPaths: { label: "name" },
 	input: createTransactionInput,
 	output: transactionDetail.extend({
 		created: z
 			.boolean()
-			.describe("false when externalId named a line already recorded, which is unchanged."),
+			.describe("false when external_id named a line already recorded, which is unchanged."),
 	}),
 	run: async (deps, input) => {
-		const {
-			accountId,
-			date,
-			label,
-			amount,
-			type,
-			notes,
-			externalId,
-			source: keySource,
-			...options
-		} = input;
 		const created = await createTransaction(
 			deps,
-			accountId,
-			{ date, label, amount: signedAmount(amount, type), notes },
+			input.account_id,
 			{
-				...options,
-				externalId: externalId === undefined ? undefined : { source: keySource, id: externalId },
+				date: input.date,
+				label: input.name,
+				amount: signedAmount(input.amount, input.type),
+				notes: input.notes,
+			},
+			{
+				currency: input.currency,
+				categoryId: input.category_id,
+				merchantId: input.merchant_id,
+				tagIds: input.tag_ids,
+				externalId:
+					input.external_id === undefined
+						? undefined
+						: { source: input.source, id: input.external_id },
 			},
 		);
 
@@ -317,7 +322,7 @@ export const createTransactionTool = defineTool({
 export const deleteTransactionTool = defineTool({
 	name: "delete_transaction",
 	title: "Delete a transaction",
-	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the accountId, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A transaction a bank synced is never synced again. Returns the transaction as it was, how many rows went and bankWillNotResend.`,
+	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the account_id, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A transaction a bank synced is never synced again. Returns the transaction as it was, how many rows went and bank_will_not_resend.`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: deleteTransactionInput,
@@ -326,27 +331,27 @@ export const deleteTransactionTool = defineTool({
 		transaction: transactionDetail.describe(
 			"The transaction as it was, to type it again if need be.",
 		),
-		deletedCount: z
+		deleted_count: z
 			.number()
 			.int()
 			.describe(
 				"Entries deleted: the transaction, with a split's lines or the order it was converted into.",
 			),
-		bankWillNotResend: z
+		bank_will_not_resend: z
 			.boolean()
 			.describe(
 				"A bank synced it: no sync brings it back. A file's line comes back when the file is imported again.",
 			),
 	}),
-	run: async (deps, { id, ...shown }) => {
-		const deleted = await deleteTransaction(deps, id, shown);
+	run: async (deps, { id, account_id: accountId, date, amount }) => {
+		const deleted = await deleteTransaction(deps, id, { accountId, date, amount });
 
 		return {
 			result: {
 				deleted: true as const,
 				transaction: detailOf(deleted.transaction),
-				deletedCount: deleted.deletedCount,
-				bankWillNotResend: deleted.bankWillNotResend,
+				deleted_count: deleted.deletedCount,
+				bank_will_not_resend: deleted.bankWillNotResend,
 			},
 			changedRows: deleted.deletedCount,
 		};

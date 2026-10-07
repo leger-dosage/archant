@@ -51,37 +51,37 @@ const countsOutput = z.object({
 
 const lineOutput = z.object({
 	date: z.string(),
-	label: z.string(),
+	name: z.string().describe("The line's label."),
 	amount: decimal("The line's amount, negative for money out,"),
 });
 
 const rejectedOutput = z.object({
 	date: z.string().nullable().describe("null when the file could not read the line."),
-	label: z.string().nullable(),
+	name: z.string().nullable(),
 	amount: decimal("The line's amount,").nullable(),
 	reason: z
 		.string()
 		.describe(
-			"BEFORE_OPENING_DATE: on or before the account's opening date, see openingSuggestion; DATE_TOO_LATE: more than a year from today; CURRENCY_MISMATCH: another currency than the account's; INVALID_DATE, INVALID_AMOUNT, MISSING_LABEL: unreadable; OPENING_BALANCE: an opening balance line, not imported.",
+			"BEFORE_OPENING_DATE: on or before the account's opening date, see opening_suggestion; DATE_TOO_LATE: more than a year from today; CURRENCY_MISMATCH: another currency than the account's; INVALID_DATE, INVALID_AMOUNT, MISSING_LABEL: unreadable; OPENING_BALANCE: an opening balance line, not imported.",
 		),
 });
 
 const mappingOutput = z.object({
 	delimiter: z.enum(CSV_DELIMITERS),
-	skipRows: z.number().int(),
-	hasHeader: z.boolean(),
-	dateFormat: z.enum(CSV_DATE_FORMATS),
+	skip_rows: z.number().int(),
+	has_header: z.boolean(),
+	date_format: z.enum(CSV_DATE_FORMATS),
 	decimal: z.enum(CSV_DECIMALS),
 	sign: z.enum(CSV_SIGNS),
 	columns: z.array(z.enum(CSV_COLUMN_ROLES)),
 });
 
 const previewOutput = z.object({
-	importId: z.string(),
+	import_id: z.string(),
 	filename: z.string(),
 	source: z.string().describe('The format read: "ofx", "qif" or "csv".'),
 	currency: z.string().describe("The account's currency, every amount here is in it."),
-	counts: countsOutput.describe("What confirm_import takes as expectedCounts."),
+	counts: countsOutput.describe("What confirm_import takes as expected_counts."),
 	lines: z
 		.object({
 			created: z.array(lineOutput),
@@ -91,11 +91,11 @@ const previewOutput = z.object({
 			rejected: z.array(rejectedOutput),
 		})
 		.describe(`Up to ${LINES_PER_GROUP} lines of each group, in the file's order.`),
-	openingSuggestion: z
+	opening_suggestion: z
 		.string()
 		.nullable()
 		.describe(
-			"The opening date that would let in the lines refused as BEFORE_OPENING_DATE, to pass to preview_import as moveOpeningDate if the owner agrees; null when none is.",
+			"The opening date that would let in the lines refused as BEFORE_OPENING_DATE, to pass to preview_import as move_opening_date if the owner agrees; null when none is.",
 		),
 	opening: z
 		.object({ date: z.string(), balance: decimal("The opening balance then") })
@@ -103,7 +103,7 @@ const previewOutput = z.object({
 		.describe(
 			"The opening date and balance confirm sets, the balance on the current opening date unchanged; null when it stays.",
 		),
-	statementBalance: z
+	statement_balance: z
 		.object({
 			status: z
 				.enum(["recorded", "present", "kept", "skipped"])
@@ -144,7 +144,7 @@ const previewOutput = z.object({
 		.describe("null for every source but CSV."),
 	qif: z
 		.object({
-			dateOrder: z.enum(QIF_DATE_ORDERS),
+			date_order: z.enum(QIF_DATE_ORDERS),
 			ambiguous: z
 				.boolean()
 				.describe("Every date reads both ways: ask the owner which order the bank uses."),
@@ -155,16 +155,31 @@ const previewOutput = z.object({
 
 type PreviewOutput = z.input<typeof previewOutput>;
 
+type CsvMapping = NonNullable<ImportPreview["csv"]>["prefill"];
+
+/** A CSV mapping in the tools' names. */
+function mappingOf(mapping: CsvMapping): z.input<typeof mappingOutput> {
+	return {
+		delimiter: mapping.delimiter,
+		skip_rows: mapping.skipRows,
+		has_header: mapping.hasHeader,
+		date_format: mapping.dateFormat,
+		decimal: mapping.decimal,
+		sign: mapping.sign,
+		columns: mapping.columns,
+	};
+}
+
 function previewOf(preview: ImportPreview): PreviewOutput {
 	const { currency, groups, statementBalance } = preview;
 	const money = (amount: MinorUnits) => toDecimalString({ amount, currency });
 	const lines = (group: ImportPreview["groups"]["created"]) =>
 		group
 			.slice(0, LINES_PER_GROUP)
-			.map((line) => ({ date: line.date, label: line.label, amount: money(line.amount) }));
+			.map((line) => ({ date: line.date, name: line.label, amount: money(line.amount) }));
 
 	return {
-		importId: preview.id,
+		import_id: preview.id,
 		filename: preview.fileName,
 		source: preview.source,
 		currency,
@@ -182,17 +197,17 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 			duplicates: lines(groups.duplicates),
 			rejected: groups.rejected.slice(0, LINES_PER_GROUP).map(({ line, reason }) => ({
 				date: line?.date ?? null,
-				label: line?.label ?? null,
+				name: line?.label ?? null,
 				amount: line === null ? null : money(line.amount),
 				reason,
 			})),
 		},
-		openingSuggestion: preview.openingSuggestion,
+		opening_suggestion: preview.openingSuggestion,
 		opening:
 			preview.opening === null
 				? null
 				: { date: preview.opening.date, balance: money(preview.opening.balance) },
-		statementBalance:
+		statement_balance:
 			statementBalance === null
 				? null
 				: {
@@ -208,15 +223,20 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 			preview.csv === null
 				? null
 				: {
-						...preview.csv,
 						sample: preview.csv.sample.slice(
 							0,
 							preview.csv.prefill.skipRows +
 								(preview.csv.prefill.hasHeader ? 1 : 0) +
 								SAMPLE_RECORDS,
 						),
+						mapping: preview.csv.mapping === null ? null : mappingOf(preview.csv.mapping),
+						saved: preview.csv.saved,
+						prefill: mappingOf(preview.csv.prefill),
 					},
-		qif: preview.qif,
+		qif:
+			preview.qif === null
+				? null
+				: { date_order: preview.qif.dateOrder, ambiguous: preview.qif.ambiguous },
 	};
 }
 
@@ -230,11 +250,11 @@ export const importBankStatementTool = defineTool({
 	annotations: CREATES,
 	input: importBankStatementInput,
 	output: previewOutput,
-	run: async (deps, { accountId, filename, contentBase64 }) => {
+	run: async (deps, { account_id: accountId, filename, content_base64: bytes }) => {
 		const preview = await createImport(
 			deps,
 			accountId,
-			{ name: filename, bytes: contentBase64 },
+			{ name: filename, bytes },
 			{ maxBytes: MAX_ASSISTANT_FILE_BYTES },
 		);
 
@@ -246,13 +266,31 @@ export const importBankStatementTool = defineTool({
 export const previewImportTool = defineTool({
 	name: "preview_import",
 	title: "Preview an import again",
-	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping, a QIF file's date order, or moving the account's opening date back to openingSuggestion. ${PREVIEW} A mapping without one date, a label and an amount answers VALIDATION_ERROR on csv.columns; an import already confirmed or unknown, NOT_FOUND. ${BANK_TEXT}`,
+	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping, a QIF file's date order, or moving the account's opening date back to opening_suggestion. ${PREVIEW} A mapping without one date, a label and an amount answers VALIDATION_ERROR on csv.columns; an import already confirmed or unknown, NOT_FOUND. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: previewImportInput,
 	output: previewOutput,
-	run: async (deps, { importId, ...choices }) => ({
-		result: previewOf(await previewImport(deps, importId, choices)),
+	run: async (deps, { import_id: importId, csv, qif, move_opening_date: moveOpeningDate }) => ({
+		result: previewOf(
+			await previewImport(deps, importId, {
+				moveOpeningDate,
+				...(csv === undefined
+					? {}
+					: {
+							csv: {
+								delimiter: csv.delimiter,
+								skipRows: csv.skip_rows,
+								hasHeader: csv.has_header,
+								dateFormat: csv.date_format,
+								decimal: csv.decimal,
+								sign: csv.sign,
+								columns: csv.columns,
+							},
+						}),
+				...(qif === undefined ? {} : { qif: { dateOrder: qif.date_order } }),
+			}),
+		),
 		changedRows: 0,
 	}),
 });
@@ -261,16 +299,16 @@ export const confirmImportTool = defineTool({
 	name: "confirm_import",
 	title: "Confirm an import",
 	description:
-		"Writes a previewed import into its account, as the dialog's « Importer » does: the new lines and the possible duplicates are created, matched lines linked to the file, the closing balance recorded as the preview said, a CSV mapping saved for the account's next CSV file, and recurring payments detected again. expectedCounts are the counts of the last preview, as the owner saw them: when the account now gives other groups, it answers IMPORT_PREVIEW_STALE with the counts now and writes nothing; preview again and show the owner. A CSV file with no mapping yet answers VALIDATION_ERROR. The owner can revert the import from the account's « Imports » tab; no tool does.",
+		"Writes a previewed import into its account, as the dialog's « Importer » does: the new lines and the possible duplicates are created, matched lines linked to the file, the closing balance recorded as the preview said, a CSV mapping saved for the account's next CSV file, and recurring payments detected again. expected_counts are the counts of the last preview, as the owner saw them: when the account now gives other groups, it answers IMPORT_PREVIEW_STALE with the counts now and writes nothing; preview again and show the owner. A CSV file with no mapping yet answers VALIDATION_ERROR. The owner can revert the import from the account's « Imports » tab; no tool does.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: confirmImportInput,
-	output: z.object({ importId: z.string(), counts: countsOutput }),
-	run: async (deps, { importId, expectedCounts }) => {
+	output: z.object({ import_id: z.string(), counts: countsOutput }),
+	run: async (deps, { import_id: importId, expected_counts: expectedCounts }) => {
 		const { id, counts } = await confirmImport(deps, importId, expectedCounts);
 
 		return {
-			result: { importId: id, counts },
+			result: { import_id: id, counts },
 			// Rows written or linked to the file; the lines already present change nothing.
 			changedRows: counts.created + counts.duplicates + counts.matched,
 		};

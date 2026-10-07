@@ -35,7 +35,7 @@ export const getBalanceSheetTool = defineTool({
 			.describe("The period's first day; null when no counted account has opened yet."),
 		to: z.string().describe("Today."),
 		currency: z.string(),
-		netWorth: decimal("Assets minus liabilities"),
+		net_worth: decimal("Assets minus liabilities"),
 		assets: decimal("Today's total"),
 		liabilities: decimal("What is owed today, positive"),
 		change: z
@@ -51,7 +51,7 @@ export const getBalanceSheetTool = defineTool({
 			.nullable()
 			.describe("null for an empty series."),
 		series: z.object({
-			netWorth: seriesOutput,
+			net_worth: seriesOutput,
 			assets: seriesOutput,
 			liabilities: seriesOutput.describe("What is owed, positive. Oldest first."),
 		}),
@@ -67,7 +67,7 @@ export const getBalanceSheetTool = defineTool({
 				from: sheet.from,
 				to: sheet.to,
 				currency: sheet.currency,
-				netWorth: money(sheet.netWorth),
+				net_worth: money(sheet.netWorth),
 				assets: money(sheet.assets),
 				liabilities: money(sheet.liabilities),
 				change:
@@ -75,7 +75,7 @@ export const getBalanceSheetTool = defineTool({
 						? null
 						: { amount: money(sheet.change.amount), percent: sheet.change.percent },
 				series: {
-					netWorth: seriesOf(sheet.series.netWorth, sheet.currency),
+					net_worth: seriesOf(sheet.series.netWorth, sheet.currency),
 					assets: seriesOf(sheet.series.assets, sheet.currency),
 					liabilities: seriesOf(sheet.series.liabilities, sheet.currency),
 				},
@@ -87,7 +87,7 @@ export const getBalanceSheetTool = defineTool({
 });
 
 const line = z.object({
-	categoryId: z.string().nullable().describe("A top-level category; null for uncategorised."),
+	category_id: z.string().nullable().describe("A top-level category; null for uncategorised."),
 	name: z.string().nullable(),
 	amount: decimal("Signed: a refund lowers an expense line"),
 	share: z
@@ -112,8 +112,8 @@ export const getIncomeStatement = defineTool({
 		income: decimal("Signed, the sum of the income lines"),
 		expenses: decimal("Signed, negative, the sum of the expense lines"),
 		lines: z.object({ income: z.array(line), expense: z.array(line) }),
-		uncategorisedIncome: decimal("Money in without a category, its line among lines.income"),
-		uncategorisedExpense: decimal("Money out without a category, its line among lines.expense"),
+		uncategorised_income: decimal("Money in without a category, its line among lines.income"),
+		uncategorised_expense: decimal("Money out without a category, its line among lines.expense"),
 		...leftOutFields,
 	}),
 	run: async (deps, input) => {
@@ -122,7 +122,7 @@ export const getIncomeStatement = defineTool({
 		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: cashFlow.currency });
 		const linesOf = (lines: readonly CashFlowLine[]) =>
 			lines.map((entry) => ({
-				categoryId: entry.categoryId,
+				category_id: entry.categoryId,
 				name: entry.name,
 				amount: money(entry.amount),
 				share: entry.share,
@@ -139,8 +139,8 @@ export const getIncomeStatement = defineTool({
 				income: money(cashFlow.income),
 				expenses: money(cashFlow.expenses),
 				lines: { income: linesOf(cashFlow.lines.income), expense: linesOf(cashFlow.lines.expense) },
-				uncategorisedIncome: uncategorised(cashFlow.lines.income),
-				uncategorisedExpense: uncategorised(cashFlow.lines.expense),
+				uncategorised_income: uncategorised(cashFlow.lines.income),
+				uncategorised_expense: uncategorised(cashFlow.lines.expense),
 				...leftOutOf(cashFlow.leftOut),
 			},
 			changedRows: 0,

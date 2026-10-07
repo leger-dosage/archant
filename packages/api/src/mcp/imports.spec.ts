@@ -79,20 +79,20 @@ const counts = z.object({
 	rejected: z.number(),
 });
 
-const line = z.object({ date: z.string(), label: z.string(), amount: z.string() });
+const line = z.object({ date: z.string(), name: z.string(), amount: z.string() });
 
 const mapping = z.object({
 	delimiter: z.string(),
-	skipRows: z.number(),
-	hasHeader: z.boolean(),
-	dateFormat: z.string(),
+	skip_rows: z.number(),
+	has_header: z.boolean(),
+	date_format: z.string(),
 	decimal: z.string(),
 	sign: z.string(),
 	columns: z.array(z.string()),
 });
 
 const preview = z.object({
-	importId: z.string(),
+	import_id: z.string(),
 	filename: z.string(),
 	source: z.string(),
 	currency: z.string(),
@@ -105,15 +105,15 @@ const preview = z.object({
 		rejected: z.array(
 			z.object({
 				date: z.string().nullable(),
-				label: z.string().nullable(),
+				name: z.string().nullable(),
 				amount: z.string().nullable(),
 				reason: z.string(),
 			}),
 		),
 	}),
-	openingSuggestion: z.string().nullable(),
+	opening_suggestion: z.string().nullable(),
 	opening: z.object({ date: z.string(), balance: z.string() }).nullable(),
-	statementBalance: z
+	statement_balance: z
 		.object({ status: z.string(), date: z.string(), balance: z.string() })
 		.loose()
 		.nullable(),
@@ -125,10 +125,10 @@ const preview = z.object({
 			prefill: mapping,
 		})
 		.nullable(),
-	qif: z.object({ dateOrder: z.string(), ambiguous: z.boolean() }).nullable(),
+	qif: z.object({ date_order: z.string(), ambiguous: z.boolean() }).nullable(),
 });
 
-const confirmed = z.object({ importId: z.string(), counts });
+const confirmed = z.object({ import_id: z.string(), counts });
 
 const NO_LINES = { created: 0, present: 0, matched: 0, duplicates: 0, rejected: 0 };
 
@@ -142,10 +142,22 @@ async function transactionCount(accountId: string) {
 		.total;
 }
 
+/** The mapping the account saved, in the tools' names. */
 async function mappingOf(accountId: string) {
 	const rows = await db.select().from(importMappings);
+	const saved = rows.find((row) => row.accountId === accountId)?.mapping;
 
-	return rows.find((row) => row.accountId === accountId)?.mapping;
+	return (
+		saved && {
+			delimiter: saved.delimiter,
+			skip_rows: saved.skipRows,
+			has_header: saved.hasHeader,
+			date_format: saved.dateFormat,
+			decimal: saved.decimal,
+			sign: saved.sign,
+			columns: saved.columns,
+		}
+	);
 }
 
 // A bank's CSV export: a header, then two lines, amounts with a decimal comma.
@@ -157,9 +169,9 @@ const BANK_CSV = [
 
 const BANK_MAPPING = {
 	delimiter: ";",
-	skipRows: 0,
-	hasHeader: true,
-	dateFormat: "DD/MM/YYYY",
+	skip_rows: 0,
+	has_header: true,
+	date_format: "DD/MM/YYYY",
 	decimal: ",",
 	sign: "inflows-positive",
 	columns: ["date", "label", "amount"],
@@ -172,9 +184,9 @@ describe("import_bank_statement and confirm_import", () => {
 		const content = base64(await creditAgricole());
 
 		const read = await tools.write("import_bank_statement", {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: content,
+			content_base64: content,
 		});
 		const shown = preview.parse(read.structuredContent);
 
@@ -188,16 +200,16 @@ describe("import_bank_statement and confirm_import", () => {
 		});
 		expect(shown.lines.created).toHaveLength(5);
 		expect(shown.lines.created[0]?.amount).toMatch(/^-?\d+\.\d{2}$/u);
-		expect(shown.statementBalance).toMatchObject({ status: "recorded", balance: "1234.56" });
+		expect(shown.statement_balance).toMatchObject({ status: "recorded", balance: "1234.56" });
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 
 		const written = await tools.write("confirm_import", {
-			importId: shown.importId,
-			expectedCounts: shown.counts,
+			import_id: shown.import_id,
+			expected_counts: shown.counts,
 		});
 
 		expect(confirmed.parse(written.structuredContent)).toEqual({
-			importId: shown.importId,
+			import_id: shown.import_id,
 			counts: shown.counts,
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(5);
@@ -211,8 +223,8 @@ describe("import_bank_statement and confirm_import", () => {
 
 		expect(everything).not.toContain("releve.ofx");
 		expect(everything).not.toContain(content.slice(0, 40));
-		for (const { label } of shown.lines.created) {
-			expect(everything).not.toContain(label);
+		for (const { name } of shown.lines.created) {
+			expect(everything).not.toContain(name);
 		}
 	});
 
@@ -220,21 +232,24 @@ describe("import_bank_statement and confirm_import", () => {
 		const tools = await assistants();
 		const account = await openOwn();
 		const args = {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: base64(await creditAgricole()),
+			content_base64: base64(await creditAgricole()),
 		};
 		const first = preview.parse(
 			(await tools.write("import_bank_statement", args)).structuredContent,
 		);
-		await tools.write("confirm_import", { importId: first.importId, expectedCounts: first.counts });
+		await tools.write("confirm_import", {
+			import_id: first.import_id,
+			expected_counts: first.counts,
+		});
 
 		const again = preview.parse(
 			(await tools.write("import_bank_statement", args)).structuredContent,
 		);
 		const written = await tools.write("confirm_import", {
-			importId: again.importId,
-			expectedCounts: again.counts,
+			import_id: again.import_id,
+			expected_counts: again.counts,
 		});
 
 		expect(again.counts).toEqual({ ...NO_LINES, present: 5 });
@@ -254,16 +269,16 @@ describe("import_bank_statement and confirm_import", () => {
 		const shown = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "releve.ofx",
-					contentBase64: base64(await creditAgricole()),
+					content_base64: base64(await creditAgricole()),
 				})
 			).structuredContent,
 		);
 
 		const stale = await tools.write("confirm_import", {
-			importId: shown.importId,
-			expectedCounts: { ...shown.counts, created: 4 },
+			import_id: shown.import_id,
+			expected_counts: { ...shown.counts, created: 4 },
 		});
 
 		expect(stale.isError).toBe(true);
@@ -274,8 +289,8 @@ describe("import_bank_statement and confirm_import", () => {
 
 		// The import stays a preview: the right counts confirm it.
 		const written = await tools.write("confirm_import", {
-			importId: shown.importId,
-			expectedCounts: shown.counts,
+			import_id: shown.import_id,
+			expected_counts: shown.counts,
 		});
 
 		expect(written.isError).toBeUndefined();
@@ -292,31 +307,31 @@ describe("the closing balance", () => {
 		const tools = await assistants();
 		const account = await openOwn();
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-09-15",
-			balance: "1200.00",
+			amount: "1200.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		const late = await openOwn({ name: "Ouvert tard", openingDate: "2026-09-16" });
-		const args = { filename: "releve.ofx", contentBase64: base64(await creditAgricole()) };
+		const args = { filename: "releve.ofx", content_base64: base64(await creditAgricole()) };
 
 		const kept = preview.parse(
-			(await tools.write("import_bank_statement", { ...args, accountId: account.id }))
+			(await tools.write("import_bank_statement", { ...args, account_id: account.id }))
 				.structuredContent,
 		);
 		const skipped = preview.parse(
-			(await tools.write("import_bank_statement", { ...args, accountId: late.id }))
+			(await tools.write("import_bank_statement", { ...args, account_id: late.id }))
 				.structuredContent,
 		);
 
-		expect(kept.statementBalance).toEqual({
+		expect(kept.statement_balance).toEqual({
 			status: "kept",
 			date: "2026-09-15",
 			balance: "1234.56",
 			recorded: "1200.00",
 			gap: "34.56",
 		});
-		expect(skipped.statementBalance).toEqual({
+		expect(skipped.statement_balance).toEqual({
 			status: "skipped",
 			date: "2026-09-15",
 			balance: "1234.56",
@@ -329,7 +344,11 @@ describe("CSV files", () => {
 	it("waits for a mapping, previews with the one given, saves it on confirm, then applies it at once", async () => {
 		const tools = await assistants();
 		const account = await openOwn();
-		const args = { accountId: account.id, filename: "export.csv", contentBase64: base64(BANK_CSV) };
+		const args = {
+			account_id: account.id,
+			filename: "export.csv",
+			content_base64: base64(BANK_CSV),
+		};
 
 		const first = preview.parse(
 			(await tools.write("import_bank_statement", args)).structuredContent,
@@ -337,7 +356,7 @@ describe("CSV files", () => {
 
 		expect(first.counts).toEqual(NO_LINES);
 		expect(first.csv).toMatchObject({ mapping: null, saved: false });
-		expect(first.csv?.prefill).toMatchObject({ delimiter: ";", hasHeader: true });
+		expect(first.csv?.prefill).toMatchObject({ delimiter: ";", has_header: true });
 		expect(first.csv?.sample).toEqual([
 			["Date", "Libellé", "Montant"],
 			["05/09/2026", "CARTE BOULANGERIE", "-4,20"],
@@ -345,27 +364,27 @@ describe("CSV files", () => {
 		]);
 
 		const unmapped = await tools.write("confirm_import", {
-			importId: first.importId,
-			expectedCounts: NO_LINES,
+			import_id: first.import_id,
+			expected_counts: NO_LINES,
 		});
 
 		expect(unmapped.content[0]?.text).toMatch(/^VALIDATION_ERROR:/u);
 
 		const mapped = preview.parse(
-			(await tools.write("preview_import", { importId: first.importId, csv: BANK_MAPPING }))
+			(await tools.write("preview_import", { import_id: first.import_id, csv: BANK_MAPPING }))
 				.structuredContent,
 		);
 
 		expect(mapped.counts).toEqual({ ...NO_LINES, created: 2 });
 		expect(mapped.lines.created).toEqual([
-			{ date: "2026-09-05", label: "CARTE BOULANGERIE", amount: "-4.20" },
-			{ date: "2026-09-12", label: "VIREMENT SALAIRE", amount: "2100.00" },
+			{ date: "2026-09-05", name: "CARTE BOULANGERIE", amount: "-4.20" },
+			{ date: "2026-09-12", name: "VIREMENT SALAIRE", amount: "2100.00" },
 		]);
 		expect(mapped.csv).toMatchObject({ mapping: BANK_MAPPING, saved: false });
 
 		await tools.write("confirm_import", {
-			importId: first.importId,
-			expectedCounts: mapped.counts,
+			import_id: first.import_id,
+			expected_counts: mapped.counts,
 		});
 
 		await expect(mappingOf(account.id)).resolves.toEqual(BANK_MAPPING);
@@ -377,7 +396,7 @@ describe("CSV files", () => {
 				await tools.write("import_bank_statement", {
 					...args,
 					filename: "export-2.csv",
-					contentBase64: base64(next),
+					content_base64: base64(next),
 				})
 			).structuredContent,
 		);
@@ -399,15 +418,15 @@ describe("CSV files", () => {
 		const first = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "export.csv",
-					contentBase64: base64(BANK_CSV),
+					content_base64: base64(BANK_CSV),
 				})
 			).structuredContent,
 		);
 
 		const refused = await tools.write("preview_import", {
-			importId: first.importId,
+			import_id: first.import_id,
 			csv: { ...BANK_MAPPING, columns: ["date", "label", "ignore"] },
 		});
 
@@ -425,9 +444,9 @@ describe("CSV files", () => {
 		const read = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "export.csv",
-					contentBase64: base64(["Compte 123", "Date;Libellé;Montant", ...records].join("\n")),
+					content_base64: base64(["Compte 123", "Date;Libellé;Montant", ...records].join("\n")),
 				})
 			).structuredContent,
 		);
@@ -443,24 +462,24 @@ describe("CSV files", () => {
 		const read = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "export.csv",
-					contentBase64: base64(["Date;Libellé;Montant", ...records].join("\n")),
+					content_base64: base64(["Date;Libellé;Montant", ...records].join("\n")),
 				})
 			).structuredContent,
 		);
 		const mapped = preview.parse(
 			(
 				await tools.write("preview_import", {
-					importId: read.importId,
+					import_id: read.import_id,
 					csv: BANK_MAPPING,
-					moveOpeningDate: null,
+					move_opening_date: null,
 				})
 			).structuredContent,
 		);
 
 		expect(mapped.counts).toEqual({ ...NO_LINES, created: 8 });
-		expect(mapped.lines.created.map(({ label }) => label)).toEqual([
+		expect(mapped.lines.created.map(({ name }) => name)).toEqual([
 			"Ligne 0",
 			"Ligne 1",
 			"Ligne 2",
@@ -489,19 +508,19 @@ describe("QIF files", () => {
 		const read = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "releve.qif",
-					contentBase64: base64(qif),
+					content_base64: base64(qif),
 				})
 			).structuredContent,
 		);
 
 		// Day first, 9 February and 9 March are before the opening date.
-		expect(read.qif).toEqual({ dateOrder: "day-first", ambiguous: true });
+		expect(read.qif).toEqual({ date_order: "day-first", ambiguous: true });
 		expect(read.counts).toEqual({ ...NO_LINES, rejected: 2 });
 		expect(read.lines.rejected[0]).toEqual({
 			date: "2026-02-09",
-			label: "A",
+			name: "A",
 			amount: "-10.00",
 			reason: "BEFORE_OPENING_DATE",
 		});
@@ -509,13 +528,13 @@ describe("QIF files", () => {
 		const monthFirst = preview.parse(
 			(
 				await tools.write("preview_import", {
-					importId: read.importId,
-					qif: { dateOrder: "month-first" },
+					import_id: read.import_id,
+					qif: { date_order: "month-first" },
 				})
 			).structuredContent,
 		);
 
-		expect(monthFirst.qif).toEqual({ dateOrder: "month-first", ambiguous: true });
+		expect(monthFirst.qif).toEqual({ date_order: "month-first", ambiguous: true });
 		expect(monthFirst.lines.created.map(({ date }) => date)).toEqual(["2026-09-02", "2026-09-03"]);
 	});
 
@@ -526,9 +545,9 @@ describe("QIF files", () => {
 		const read = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "releve.qif",
-					contentBase64: base64(qif),
+					content_base64: base64(qif),
 				})
 			).structuredContent,
 		);
@@ -536,13 +555,13 @@ describe("QIF files", () => {
 		const moved = preview.parse(
 			(
 				await tools.write("preview_import", {
-					importId: read.importId,
-					moveOpeningDate: read.openingSuggestion,
+					import_id: read.import_id,
+					move_opening_date: read.opening_suggestion,
 				})
 			).structuredContent,
 		);
 
-		expect(read.openingSuggestion).toBe("2026-08-19");
+		expect(read.opening_suggestion).toBe("2026-08-19");
 		expect(moved.counts).toEqual({ ...NO_LINES, created: 1 });
 		expect(moved.opening).toEqual({ date: "2026-08-19", balance: "1244.56" });
 	});
@@ -554,19 +573,19 @@ describe("refusals", () => {
 		const account = await openOwn();
 
 		const big = await tools.write("import_bank_statement", {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: base64(paddedOfx(1024 * 1024 + 1)),
+			content_base64: base64(paddedOfx(1024 * 1024 + 1)),
 		});
 		const unreadable = await tools.write("import_bank_statement", {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "notes.txt",
-			contentBase64: base64("Liste de courses : pain, lait"),
+			content_base64: base64("Liste de courses : pain, lait"),
 		});
 		const atLimit = await tools.write("import_bank_statement", {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: base64(paddedOfx(1024 * 1024)),
+			content_base64: base64(paddedOfx(1024 * 1024)),
 		});
 
 		expect(big.content[0]?.text).toMatch(/^INVALID_IMPORT_FILE:/u);
@@ -584,13 +603,13 @@ describe("refusals", () => {
 		const account = await openOwn();
 
 		const refused = await tools.write("import_bank_statement", {
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: "%%%",
+			content_base64: "%%%",
 		});
 
 		expect(refused.content[0]?.text).toMatch(/^VALIDATION_ERROR:/u);
-		expect(refused.content[0]?.text).toContain('"path":"contentBase64"');
+		expect(refused.content[0]?.text).toContain('"path":"content_base64"');
 		expect(await calls()).toEqual([
 			{ tool: "import_bank_statement", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);
@@ -601,9 +620,9 @@ describe("refusals", () => {
 		const account = await openOwn();
 
 		const response = await tools.raw({
-			accountId: account.id,
+			account_id: account.id,
 			filename: "releve.ofx",
-			contentBase64: "A".repeat(1.5 * 1024 * 1024),
+			content_base64: "A".repeat(1.5 * 1024 * 1024),
 		});
 
 		expect(response.status).toBe(413);
@@ -644,9 +663,9 @@ describe("refusals", () => {
 	});
 
 	it.each([
-		["import_bank_statement", { accountId: "a", filename: "releve.ofx", contentBase64: "" }],
-		["preview_import", { importId: "i" }],
-		["confirm_import", { importId: "i", expectedCounts: NO_LINES }],
+		["import_bank_statement", { account_id: "a", filename: "releve.ofx", content_base64: "" }],
+		["preview_import", { import_id: "i" }],
+		["confirm_import", { import_id: "i", expected_counts: NO_LINES }],
 	])("refuses %s to a read-only token, and records it", async (name, args) => {
 		const tools = await assistants();
 
@@ -682,22 +701,25 @@ describe("an import an assistant confirmed", () => {
 		const shown = preview.parse(
 			(
 				await tools.write("import_bank_statement", {
-					accountId: account.id,
+					account_id: account.id,
 					filename: "releve.ofx",
-					contentBase64: base64(await creditAgricole()),
+					content_base64: base64(await creditAgricole()),
 				})
 			).structuredContent,
 		);
-		await tools.write("confirm_import", { importId: shown.importId, expectedCounts: shown.counts });
+		await tools.write("confirm_import", {
+			import_id: shown.import_id,
+			expected_counts: shown.counts,
+		});
 		const session = withSession(buildTestApp(db), template.cookie);
 
 		const listed = await session.request(`/api/accounts/${account.id}/imports`);
-		const reverted = await session.request(`/api/imports/${shown.importId}/revert`, {
+		const reverted = await session.request(`/api/imports/${shown.import_id}/revert`, {
 			method: "POST",
 		});
 
 		expect(await listed.json()).toMatchObject({
-			data: { items: [{ id: shown.importId, fileName: "releve.ofx", source: "ofx" }], total: 1 },
+			data: { items: [{ id: shown.import_id, fileName: "releve.ofx", source: "ofx" }], total: 1 },
 		});
 		expect(reverted.status).toBe(200);
 		await expect(transactionCount(account.id)).resolves.toBe(0);

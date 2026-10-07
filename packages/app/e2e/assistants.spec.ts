@@ -287,7 +287,7 @@ async function connectThenDisconnect(
 			method: "tools/call",
 			params: {
 				name: "create_rule",
-				arguments: { conditions: [], actions: [{ actionType: "exclude_transaction" }] },
+				arguments: { conditions: [], actions: [{ action_type: "exclude_transaction" }] },
 			},
 		},
 	});

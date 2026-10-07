@@ -76,25 +76,28 @@ const goal = z.object({
 	state: z.string(),
 	status: z.string(),
 	currency: z.string(),
-	targetAmount: z.string(),
-	targetMode: z.string(),
-	targetMonths: z.number().nullable(),
-	monthlyExpenses: z.string().nullable(),
-	targetDate: z.string().nullable(),
+	target_amount: z.string(),
+	target_mode: z.string(),
+	target_months: z.number().nullable(),
+	monthly_expenses: z.string().nullable(),
+	target_date: z.string().nullable(),
 	saved: z.string(),
 	remaining: z.string(),
 	percent: z.number(),
-	monthlyNeeded: z.string().nullable(),
+	monthly_needed: z.string().nullable(),
 	notes: z.string().nullable(),
 	accounts: z.array(
 		z.object({
-			accountId: z.string(),
+			account_id: z.string(),
 			name: z.string(),
-			allocatedAmount: z.string().nullable(),
+			allocated_amount: z.string().nullable(),
 			share: z.string(),
 		}),
 	),
 });
+
+/** What create_goal answers: the goal, its id named as Sure's, and its page. */
+const createdGoal = goal.omit({ id: true }).extend({ goal_id: z.string(), url: z.string() });
 
 const overview = z.object({
 	goals: z.array(goal),
@@ -104,7 +107,7 @@ const overview = z.object({
 		saved: z.string(),
 		target: z.string(),
 		behind: z.number(),
-		leftOut: z.array(z.object({ id: z.string(), name: z.string() })),
+		left_out: z.array(z.object({ id: z.string(), name: z.string() })),
 	}),
 });
 
@@ -132,29 +135,29 @@ describe("get_goals", () => {
 		const done = await savings("50", { name: "Livret jeune" });
 		const tools = await assistants();
 		const create = async (args: Record<string, unknown>) =>
-			goal.parse((await tools.write("create_goal", args)).structuredContent);
+			createdGoal.parse((await tools.write("create_goal", args)).structuredContent);
 		await create({
 			name: "Vacances",
-			targetAmount: "1000.00",
-			targetDate: "2026-10-21",
-			accounts: [{ accountId: first.id }],
+			target_amount: "1000.00",
+			target_date: "2026-10-21",
+			accounts: [{ account_id: first.id }],
 		});
 		await create({
 			name: "Vélo",
-			targetAmount: "500.00",
-			accounts: [{ accountId: second.id, allocatedAmount: "120.00" }],
+			target_amount: "500.00",
+			accounts: [{ account_id: second.id, allocated_amount: "120.00" }],
 		});
 		const voyage = await create({
 			name: "Voyage",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: dollars.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: dollars.id }],
 		});
 		const finished = await create({
 			name: "Fini",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: done.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: done.id }],
 		});
-		await buildApp(db).request(`/api/goals/${finished.id}/complete`, { method: "POST" });
+		await buildApp(db).request(`/api/goals/${finished.goal_id}/complete`, { method: "POST" });
 		await db.delete(assistantCalls);
 
 		const read = await goalsOf(tools);
@@ -166,20 +169,22 @@ describe("get_goals", () => {
 			state: "active",
 			status: "behind",
 			currency: "EUR",
-			targetAmount: "1000.00",
-			targetMode: "fixed",
-			targetMonths: null,
-			monthlyExpenses: null,
-			targetDate: "2026-10-21",
+			target_amount: "1000.00",
+			target_mode: "fixed",
+			target_months: null,
+			monthly_expenses: null,
+			target_date: "2026-10-21",
 			saved: "200.00",
 			remaining: "800.00",
 			percent: 20,
-			monthlyNeeded: "800.00",
+			monthly_needed: "800.00",
 			notes: null,
-			accounts: [{ accountId: first.id, name: "Livret A", allocatedAmount: null, share: "200.00" }],
+			accounts: [
+				{ account_id: first.id, name: "Livret A", allocated_amount: null, share: "200.00" },
+			],
 		});
 		expect(read.goals.find((item) => item.name === "Vélo")?.accounts).toEqual([
-			{ accountId: second.id, name: "LDDS", allocatedAmount: "120.00", share: "120.00" },
+			{ account_id: second.id, name: "LDDS", allocated_amount: "120.00", share: "120.00" },
 		]);
 		expect(read.goals.find((item) => item.name === "Fini")).toMatchObject({
 			state: "completed",
@@ -191,7 +196,7 @@ describe("get_goals", () => {
 			saved: "320.00",
 			target: "1500.00",
 			behind: 1,
-			leftOut: [{ id: voyage.id, name: "Voyage" }],
+			left_out: [{ id: voyage.goal_id, name: "Voyage" }],
 		});
 		const card = z
 			.object({ count: z.number(), saved: z.number(), target: z.number(), behind: z.number() })
@@ -207,7 +212,7 @@ describe("get_goals", () => {
 
 		await expect(goalsOf(tools)).resolves.toEqual({
 			goals: [],
-			totals: { currency: "EUR", count: 0, saved: "0.00", target: "0.00", behind: 0, leftOut: [] },
+			totals: { currency: "EUR", count: 0, saved: "0.00", target: "0.00", behind: 0, left_out: [] },
 		});
 	});
 });
@@ -220,39 +225,41 @@ describe("create_goal", () => {
 
 		const result = await tools.write("create_goal", {
 			name: " Vacances ",
-			targetAmount: "2000.00",
-			targetDate: "2027-06-30",
+			target_amount: "2000.00",
+			target_date: "2027-06-30",
 			notes: "Grèce",
-			accounts: [{ accountId: account.id }],
+			accounts: [{ account_id: account.id }],
 		});
 
-		const created = goal.parse(result.structuredContent);
+		const created = createdGoal.parse(result.structuredContent);
 
 		expect(created).toMatchObject({
 			name: "Vacances",
 			kind: "one_off",
 			state: "active",
 			currency: "EUR",
-			targetAmount: "2000.00",
-			targetMode: "fixed",
-			targetDate: "2027-06-30",
+			target_amount: "2000.00",
+			target_mode: "fixed",
+			target_date: "2027-06-30",
 			saved: "1500.00",
 			remaining: "500.00",
 			notes: "Grèce",
 			accounts: [
-				{ accountId: account.id, name: "Livret A", allocatedAmount: null, share: "1500.00" },
+				{ account_id: account.id, name: "Livret A", allocated_amount: null, share: "1500.00" },
 			],
 		});
 		expect(result.structuredContent).toMatchObject({
-			url: `${TEST_ORIGIN}/goals/${created.id}`,
+			url: `${TEST_ORIGIN}/goals/${created.goal_id}`,
 		});
 		const stored = z
 			.object({ color: z.string(), icon: z.string().nullable() })
-			.parse(await fromRoutes(`/api/goals/${created.id}`));
+			.parse(await fromRoutes(`/api/goals/${created.goal_id}`));
 
 		expect(CATEGORY_COLORS).toContain(stored.color);
 		expect(stored.icon).toBeNull();
-		expect((await goalsOf(tools)).goals).toEqual([created]);
+		const { goal_id: id, url: _url, ...listed } = created;
+
+		expect((await goalsOf(tools)).goals).toEqual([{ id, ...listed }]);
 		expect(await calls()).toEqual([
 			{ tool: "create_goal", outcome: "OK", changedRows: 1 },
 			{ tool: "get_goals", outcome: "OK", changedRows: 0 },
@@ -264,18 +271,18 @@ describe("create_goal", () => {
 		const account = await savings("1 000");
 		const tools = await assistants();
 
-		const created = goal.parse(
+		const created = createdGoal.parse(
 			(
 				await tools.write("create_goal", {
 					name: "Voiture",
-					targetAmount: "5000.00",
-					accounts: [{ accountId: account.id, allocatedAmount: "300.00" }],
+					target_amount: "5000.00",
+					accounts: [{ account_id: account.id, allocated_amount: "300.00" }],
 				})
 			).structuredContent,
 		);
 
 		expect(created.accounts).toEqual([
-			{ accountId: account.id, name: "Livret A", allocatedAmount: "300.00", share: "300.00" },
+			{ account_id: account.id, name: "Livret A", allocated_amount: "300.00", share: "300.00" },
 		]);
 	});
 
@@ -291,19 +298,19 @@ describe("create_goal", () => {
 		const result = await tools.write("create_goal", {
 			name: "Urgences",
 			kind: "maintained",
-			targetMonths: 6,
-			accounts: [{ accountId: account.id }],
+			target_months: 6,
+			accounts: [{ account_id: account.id }],
 		});
 
-		expect(goal.parse(result.structuredContent)).toMatchObject({
+		expect(createdGoal.parse(result.structuredContent)).toMatchObject({
 			kind: "maintained",
-			targetMode: "months_of_expenses",
-			targetMonths: 6,
-			monthlyExpenses: "2000.00",
-			targetAmount: "12000.00",
-			targetDate: null,
+			target_mode: "months_of_expenses",
+			target_months: 6,
+			monthly_expenses: "2000.00",
+			target_amount: "12000.00",
+			target_date: null,
 			saved: "3000.00",
-			monthlyNeeded: null,
+			monthly_needed: null,
 			status: "depleted",
 		});
 	});
@@ -316,30 +323,30 @@ describe("create_goal", () => {
 		const tools = await assistants();
 		await tools.write("create_goal", {
 			name: "Travaux",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: taken.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: taken.id }],
 		});
 		await db.delete(assistantCalls);
 		const before = await goalRows();
 
 		const currency = await tools.write("create_goal", {
 			name: "Vacances",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: euros.id }, { accountId: dollars.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: euros.id }, { account_id: dollars.id }],
 		});
 		const whole = await tools.write("create_goal", {
 			name: "Vacances",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: taken.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: taken.id }],
 		});
 
 		expect(currency.isError).toBe(true);
 		expect(currency.content[0]?.text).toMatch(/^VALIDATION_ERROR:/);
 		expect(currency.content[0]?.text).toContain(
-			'"path":"accounts.1.accountId","code":"currency_mismatch"',
+			'"path":"accounts.1.account_id","code":"currency_mismatch"',
 		);
 		expect(whole.content[0]?.text).toContain(
-			'"path":"accounts.0.allocatedAmount","code":"whole_balance_taken"',
+			'"path":"accounts.0.allocated_amount","code":"whole_balance_taken"',
 		);
 		await expect(goalRows()).resolves.toEqual(before);
 		expect(await calls()).toEqual([
@@ -356,25 +363,25 @@ describe("create_goal", () => {
 
 		const debt = await tools.write("create_goal", {
 			name: "Vacances",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: loan.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: loan.id }],
 		});
 		const empty = await tools.write("create_goal", {
 			name: "Vacances",
-			targetAmount: "1000.00",
+			target_amount: "1000.00",
 			accounts: [],
 		});
 		const foreign = await tools.write("create_goal", {
 			name: "Urgences",
 			kind: "maintained",
-			targetMonths: 6,
-			accounts: [{ accountId: dollars.id }],
+			target_months: 6,
+			accounts: [{ account_id: dollars.id }],
 		});
 
-		expect(debt.content[0]?.text).toContain('"path":"accounts.0.accountId","code":"not_fundable"');
+		expect(debt.content[0]?.text).toContain('"path":"accounts.0.account_id","code":"not_fundable"');
 		expect(empty.content[0]?.text).toContain('"path":"accounts","code":"no_account"');
 		expect(foreign.content[0]?.text).toContain(
-			'"path":"targetMonths","code":"not_reporting_currency"',
+			'"path":"target_months","code":"not_reporting_currency"',
 		);
 		await expect(goalRows()).resolves.toEqual([]);
 	});
@@ -383,40 +390,40 @@ describe("create_goal", () => {
 		await household();
 		const account = await savings("1 000");
 		const tools = await assistants();
-		const accounts = [{ accountId: account.id }];
+		const accounts = [{ account_id: account.id }];
 
 		const both = await tools.write("create_goal", {
 			name: "Vacances",
 			kind: "maintained",
-			targetAmount: "1000.00",
-			targetMonths: 3,
+			target_amount: "1000.00",
+			target_months: 3,
 			accounts,
 		});
 		const none = await tools.write("create_goal", { name: "Vacances", accounts });
 		const months = await tools.write("create_goal", {
 			name: "Vacances",
-			targetMonths: 3,
+			target_months: 3,
 			accounts,
 		});
 		const dated = await tools.write("create_goal", {
 			name: "Urgences",
 			kind: "maintained",
-			targetAmount: "1000.00",
-			targetDate: "2027-06-30",
+			target_amount: "1000.00",
+			target_date: "2027-06-30",
 			accounts,
 		});
 		const sureShaped = await tools.write("create_goal", {
 			name: "Vacances",
-			targetAmount: 1000,
+			target_amount: 1000,
 			linked_account_names: ["Livret A"],
 			accounts,
 		});
 
-		expect(both.content[0]?.text).toContain('"path":"targetMonths","code":"one_target_only"');
-		expect(none.content[0]?.text).toContain('"path":"targetAmount","code":"target_required"');
-		expect(months.content[0]?.text).toContain('"path":"targetMonths","code":"reserve_only"');
-		expect(dated.content[0]?.text).toContain('"path":"targetDate","code":"reserve_has_no_date"');
-		expect(sureShaped.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"targetAmount"/);
+		expect(both.content[0]?.text).toContain('"path":"target_months","code":"one_target_only"');
+		expect(none.content[0]?.text).toContain('"path":"target_amount","code":"target_required"');
+		expect(months.content[0]?.text).toContain('"path":"target_months","code":"reserve_only"');
+		expect(dated.content[0]?.text).toContain('"path":"target_date","code":"reserve_has_no_date"');
+		expect(sureShaped.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"target_amount"/);
 		expect(sureShaped.content[0]?.text).toContain('"path":"linked_account_names"');
 		await expect(goalRows()).resolves.toEqual([]);
 	});
@@ -430,8 +437,8 @@ describe("a read token", () => {
 
 		const response = await tools.refused("create_goal", {
 			name: "Vacances",
-			targetAmount: "1000.00",
-			accounts: [{ accountId: account.id }],
+			target_amount: "1000.00",
+			accounts: [{ account_id: account.id }],
 		});
 
 		expect(response.status).toBe(403);
