@@ -1,4 +1,5 @@
 import type { LoanScheduleData } from "@/hooks/useLoanSchedule";
+import type { TFunction } from "i18next";
 
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +16,19 @@ import {
 } from "@/components/ui/table";
 import { longDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
+
+function projectedPayoffText(
+	t: TFunction,
+	projectedPayoff: LoanScheduleData["projectedPayoff"],
+): string {
+	if (projectedPayoff.status === "paid_off") {
+		return longDate(projectedPayoff.date);
+	}
+
+	return projectedPayoff.status === "not_converged"
+		? t("loanSchedule.notConverged")
+		: t("loanSchedule.notApplicable");
+}
 
 /**
  * Sure's `loans/tabs/_schedule`: the payment, the interest and the cost of a
@@ -45,6 +59,12 @@ export function LoanSchedule({ schedule }: { schedule: LoanScheduleData }) {
 					{
 						label: t("loanSchedule.totalCost"),
 						value: <Money amount={schedule.totalPaid} currency={currency} />,
+					},
+					{
+						// Where today's balance leads, as the chart above draws it; the
+						// overview has the contract's own date.
+						label: t("loanSchedule.projectedPayoff"),
+						value: projectedPayoffText(t, schedule.projectedPayoff),
 					},
 				]}
 			/>

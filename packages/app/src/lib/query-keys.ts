@@ -43,6 +43,12 @@ export const queryKeys = {
 		 * and every write to either invalidates the account.
 		 */
 		overview: (id: string) => ["accounts", "detail", id, "overview"] as const,
+		/**
+		 * Under `detail(id)` too: the chart reads the terms and the balances,
+		 * and every write to either invalidates the account.
+		 */
+		payoffChart: (id: string, period: BalancePeriod) =>
+			["accounts", "detail", id, "payoff-chart", period] as const,
 		/** A position sheet's trades, under `detail(id)` with the account's other trades. */
 		positionTrades: (id: string, securityId: string) =>
 			["accounts", "detail", id, "position-trades", securityId] as const,

@@ -22,7 +22,7 @@ import {
 import { getBalanceHistory } from "../services/balances.ts";
 import { listPositions, setCostBasis, unlockCostBasis } from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
-import { loanOverview, loanSchedule } from "../services/loans.ts";
+import { loanOverview, loanPayoffChart, loanSchedule } from "../services/loans.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
@@ -82,6 +82,12 @@ export function accountsRoutes(deps: ImportDeps) {
 		)
 		.get("/:id/overview", async (c) =>
 			c.json({ data: await loanOverview(deps, c.req.param("id")) }, 200),
+		)
+		.get("/:id/payoff-chart", validated("query", balanceQuerySchema), async (c) =>
+			c.json(
+				{ data: await loanPayoffChart(deps, c.req.param("id"), c.req.valid("query").period) },
+				200,
+			),
 		)
 		.put(
 			"/:id/holdings/:securityId/cost-basis",

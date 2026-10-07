@@ -631,6 +631,150 @@ test("a variable loan's schedule names its first payment and warns that its rate
 	).toBeVisible();
 });
 
+// Story 24.4: where the loan is heading. The suite cannot pin the server's
+// clock, so these assert the figures that hold on any day; the route spec
+// pins 6 October 2026 for the rest.
+
+/** The owner's ING mortgage terms, as Story 24.2 records them. */
+const ingTerms = {
+	originalAmount: "130 000,00",
+	startDate: "2020-12-05",
+	termMonths: "300",
+	rateType: "fixed",
+	interestRate: "1,82",
+} as const;
+
+test("the ING mortgage repaid early charts its balance, its contract and where it leads, and the schedule names its payoff", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "94 724,54",
+		details: ingTerms,
+	});
+
+	await page.goto(`/accounts/${loan.id}`);
+	const card = page.getByRole("region", { name: "Historique du solde" });
+	const legend = card.getByRole("list", { name: "Séries du graphique" });
+
+	// A loan's chart opens on its whole life, as Sure's.
+	await expect(card.getByRole("radio", { name: "Tout" })).toBeChecked();
+	await expect(legend.getByRole("listitem")).toHaveText([
+		"Solde enregistré",
+		"Échéancier du contrat",
+		"Projection",
+	]);
+	await expect(card.locator(".recharts-line")).toHaveCount(2);
+	await expect(card.locator(".recharts-area")).toHaveCount(1);
+	await expect(card.locator(".recharts-reference-line")).toHaveCount(1);
+
+	// 10 000,00 € ahead of the contract, it finishes years early.
+	const payoff = card.getByRole("group", { name: "Fin prévue" });
+	await expect(payoff).toContainText(/\d{4}\d+ mois plus tôt que prévu$/u);
+	await expect(card.getByRole("group", { name: "Intérêts économisés" })).toContainText(/€$/u);
+	await expect(
+		card.getByText(/^Compare le solde enregistré aujourd'hui au solde de l'échéancier/u),
+	).toBeVisible();
+	await expect(
+		card.getByText(
+			new RegExp(
+				`^Solde enregistré : ${euros(9_472_454)}, ${euros(-3_527_546)} \\(−27,1.%\\) depuis le début du prêt\\. Fin prévue au contrat : 5 décembre 2045\\. Fin projetée depuis le solde d'aujourd'hui : \\d+ \\p{L}+ 20\\d\\d\\.`,
+				"u",
+			),
+		),
+	).toBeVisible();
+
+	await card.getByRole("button", { name: "Voir le tableau" }).click();
+	const table = card.getByRole("table");
+	await expect(table.getByRole("columnheader")).toHaveText([
+		"Date",
+		"Solde enregistré",
+		"Échéancier du contrat",
+		"Projection",
+	]);
+	await expect(table.getByRole("row").nth(1).getByRole("cell")).toHaveText([
+		"5 décembre 2020",
+		"—",
+		euros(13_000_000),
+		"—",
+	]);
+	await card.getByRole("button", { name: "Voir le tableau" }).click();
+
+	// A window ends today, where the projection draws no line.
+	await card.getByRole("radio", { name: "1 A" }).click();
+	await expect(page).toHaveURL(/period=1Y/u);
+	await expect(legend.getByRole("listitem")).toHaveText([
+		"Solde enregistré",
+		"Échéancier du contrat",
+	]);
+	await expect(payoff).toContainText(/mois plus tôt que prévu$/u);
+
+	await page.getByRole("tab", { name: "Échéancier" }).click();
+	const scheduled = page
+		.getByRole("tabpanel", { name: "Échéancier" })
+		.getByRole("group", { name: "Fin prévue" });
+	await expect(scheduled).toContainText(/^Fin prévue\d+ \p{L}+ 20\d\d$/u);
+
+	// Shorter terms repay more each month, so both follow at once.
+	const before = await payoff.textContent();
+	const scheduledBefore = await scheduled.textContent();
+	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await dialog.getByLabel("Durée (mois)").fill("240");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(payoff).not.toHaveText(before ?? "");
+	await expect(scheduled).not.toHaveText(scheduledBefore ?? "");
+});
+
+test("a loan its contract no longer clears names what is left at maturity, and the schedule says it is not paid off", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "130 000,00",
+		details: ingTerms,
+	});
+
+	await page.goto(`/accounts/${loan.id}`);
+	const card = page.getByRole("region", { name: "Historique du solde" });
+
+	await expect(
+		card.getByText(
+			/^Au remboursement actuel, ce solde n'est pas soldé à l'échéance du contrat : .+\s€ resteraient dus\.$/u,
+		),
+	).toBeVisible();
+	await expect(card.getByRole("group", { name: "Fin prévue" })).toHaveCount(0);
+	await expect(
+		card.getByText(
+			/Fin projetée depuis le solde d'aujourd'hui : aucune au remboursement actuel\./u,
+		),
+	).toBeVisible();
+
+	await page.getByRole("tab", { name: "Échéancier" }).click();
+	await expect(
+		page.getByRole("tabpanel", { name: "Échéancier" }).getByRole("group", { name: "Fin prévue" }),
+	).toContainText("Non soldé à l'échéance");
+
+	// Nothing owed: nothing to project.
+	const repaid = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "0",
+		details: ingTerms,
+	});
+	await page.goto(`/accounts/${repaid.id}?tab=schedule`);
+	await expect(
+		page.getByRole("tabpanel", { name: "Échéancier" }).getByRole("group", { name: "Fin prévue" }),
+	).toContainText("N/D");
+	await expect(card.getByRole("group", { name: "Fin prévue" })).toHaveCount(0);
+});
+
 test("a loan without an amount borrowed has no « Échéancier » tab, and a link to it opens « Opérations »", async ({
 	page,
 	api,
@@ -655,6 +799,12 @@ test("a loan without an amount borrowed has no « Échéancier » tab, and a lin
 		"Vue d'ensemble",
 		"Imports",
 	]);
+
+	// Without a schedule, it keeps the account's balance chart and its month.
+	const chart = page.getByRole("region", { name: "Historique du solde" });
+	await expect(chart.getByRole("radio", { name: "1 M" })).toBeChecked();
+	await expect(chart.getByText(`Solde : ${euros(800_000)}`)).toBeVisible();
+	await expect(chart.getByRole("list", { name: "Séries du graphique" })).toHaveCount(0);
 
 	// Its overview names what it cannot compute « Inconnu », and draws no ring.
 	await tabs.getByRole("tab", { name: "Vue d'ensemble" }).click();

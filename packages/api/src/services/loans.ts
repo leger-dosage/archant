@@ -1,14 +1,32 @@
+import type { DailyBalance } from "../domain/balances/forward.ts";
+import type { BalanceChange } from "../domain/balances/history.ts";
 import type { IsoDate } from "../domain/dates.ts";
+import type { AmortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import type { Instalment, LoanOverview } from "../domain/loans/overview.ts";
+import type { PayoffProjection } from "../domain/loans/payoff-projection.ts";
+import type { RateResolver } from "../domain/loans/rate-resolver.ts";
+import type { BalancePeriod } from "../schemas/balances.ts";
+import type { AccountDetail } from "./accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { today } from "../domain/dates.ts";
+import { balanceChange, sampleSeries } from "../domain/balances/history.ts";
+import { minDate, today } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import { loanOverview as overviewOf } from "../domain/loans/overview.ts";
+import {
+	chartDomain,
+	payoffChartSeries,
+	projectedSeries,
+	scheduledSeries,
+} from "../domain/loans/payoff-chart.ts";
+import { payoffProjection } from "../domain/loans/payoff-projection.ts";
+import { rateResolver } from "../domain/loans/rate-resolver.ts";
 import { getAccount } from "./accounts.ts";
+import { PERIOD_MONTHS } from "./balances.ts";
+import { balancesBetween } from "./ledger/balances.ts";
 
 type LoanSchedulePayment = {
 	number: number;
@@ -32,9 +50,76 @@ export type LoanScheduleData = {
 	totalInterest: MinorUnits;
 	totalPaid: MinorUnits;
 	payments: LoanSchedulePayment[];
+	/** Where today's balance leads, Sure's « Forecasted Payoff Date ». */
+	projectedPayoff: ProjectedPayoff;
 };
 
+/**
+ * The projection's payoff date; `not_converged` when the contract's payments
+ * no longer clear the balance by maturity, `not_applicable` with nothing to
+ * project.
+ */
+type ProjectedPayoff =
+	| { status: "paid_off"; date: IsoDate }
+	| { status: "not_converged" }
+	| { status: "not_applicable" };
+
 const minor = (value: bigint) => toMinorUnits(Number(value));
+
+type Contract = {
+	schedule: AmortizationSchedule;
+	/** A variable or adjustable rate, which the schedule warns about. */
+	variable: boolean;
+	rates: RateResolver;
+	originalAmount: bigint;
+};
+
+/**
+ * A loan's schedule, the rates it runs on and its amount borrowed; `null` for
+ * another type of account, or a loan that cannot be amortised, as Sure's
+ * `amortizable?`. Origination is the start date, else the account's opening
+ * date, as Sure's `origination_date`.
+ */
+function contractOf(account: AccountDetail): Contract | null {
+	const { details } = account;
+
+	if (account.type !== "loan" || details === null) {
+		return null;
+	}
+
+	const { originalAmount, rateType, interestRate, rateChanges } = details;
+	const schedule = amortizationSchedule({
+		...details,
+		originationDate: details.startDate ?? account.openingDate,
+	});
+
+	// `amortizationSchedule` has none without these; asked again for their types.
+	if (schedule === null || originalAmount === null || rateType === null || interestRate === null) {
+		return null;
+	}
+
+	return {
+		schedule,
+		variable: rateType !== "fixed",
+		rates: rateResolver({ rateType, interestRate, rateChanges }),
+		originalAmount: BigInt(originalAmount),
+	};
+}
+
+/** Sure's `Loan::PayoffProjection` for today's balance (AD-5). */
+function projectionOf({ schedule, rates }: Contract, balance: MinorUnits, asOf: IsoDate) {
+	return payoffProjection({ schedule, rates, balance: BigInt(balance), asOf });
+}
+
+function projectedPayoffOf(projection: PayoffProjection | null): ProjectedPayoff {
+	if (projection === null) {
+		return { status: "not_applicable" };
+	}
+
+	return projection.converged
+		? { status: "paid_off", date: projection.payoffDate }
+		: { status: "not_converged" };
+}
 
 /**
  * A loan's amortisation schedule, computed on read from its terms: nothing
@@ -47,26 +132,20 @@ export async function loanSchedule(
 	accountId: string,
 ): Promise<LoanScheduleData | null> {
 	const account = await getAccount(deps, accountId);
-	const { details } = account;
+	const contract = contractOf(account);
 
-	if (account.type !== "loan" || details === null) {
+	if (contract === null) {
 		return null;
 	}
 
-	const schedule = amortizationSchedule({
-		...details,
-		originationDate: details.startDate ?? account.openingDate,
-	});
-
-	if (schedule === null) {
-		return null;
-	}
+	const { schedule } = contract;
+	const asOf = today(deps.timeZone);
 
 	return {
-		asOf: today(deps.timeZone),
+		asOf,
 		currency: account.currency,
 		originationDate: schedule.originationDate,
-		variable: details.rateType !== "fixed",
+		variable: contract.variable,
 		reAmortising: schedule.reAmortising,
 		periodicPayment: minor(schedule.periodicPayment),
 		totalInterest: minor(schedule.totalInterest),
@@ -79,6 +158,7 @@ export async function loanSchedule(
 			interest: minor(row.interest),
 			endingBalance: minor(row.endingBalance),
 		})),
+		projectedPayoff: projectedPayoffOf(projectionOf(contract, account.balance, asOf)),
 	};
 }
 
@@ -166,5 +246,102 @@ export async function loanOverview(
 						insurance: minor(instalment.insurance),
 						total: minor(instalment.total),
 					},
+	};
+}
+
+/** Sure's `Loan::PayoffChart` payload, amounts in minor units of the account's currency. */
+export type LoanPayoffChartData = {
+	/** Today in `APP_TIMEZONE`, where the « Aujourd'hui » marker stands. */
+	asOf: IsoDate;
+	currency: string;
+	period: BalancePeriod;
+	/** The dates the chart spans. */
+	from: IsoDate;
+	to: IsoDate;
+	/** What the account owes today, where the projection starts. */
+	balance: MinorUnits;
+	/**
+	 * Today's balance against the amount borrowed, Sure's change line « since
+	 * the loan started », whatever the period.
+	 */
+	change: BalanceChange;
+	/** The recorded balances, thinned as the account chart's `sampleSeries`. */
+	actual: DailyBalance[];
+	scheduled: DailyBalance[];
+	projected: DailyBalance[];
+	/** The series that draw a line between `from` and `to`, in the legend's order. */
+	visible: ("actual" | "scheduled" | "projected")[];
+	scheduledPayoffDate: IsoDate;
+	projectedPayoff: ProjectedPayoff;
+	/** Both `null` unless the projection converges. */
+	monthsSaved: number | null;
+	interestSaved: MinorUnits | null;
+	/** What the contract's payments leave owed at maturity; `null` unless the projection runs short. */
+	balloon: MinorUnits | null;
+};
+
+/**
+ * A loan's chart, as Sure's `Loan::PayoffChart`: the recorded balance, the
+ * contract and the projection from today, over the account chart's period
+ * clamped to the loan's life; computed on read, nothing stored. `null` for
+ * another type of account or a loan without a schedule, whose page keeps the
+ * balance chart. Recorded balances are never read past today: carried
+ * forward, they would draw a balance that never moves again.
+ */
+export async function loanPayoffChart(
+	deps: ServiceDeps,
+	accountId: string,
+	period: BalancePeriod,
+): Promise<LoanPayoffChartData | null> {
+	const account = await getAccount(deps, accountId);
+	const contract = contractOf(account);
+
+	if (contract === null) {
+		return null;
+	}
+
+	const { schedule, originalAmount } = contract;
+	const asOf = today(deps.timeZone);
+	const projection = projectionOf(contract, account.balance, asOf);
+	const projectedPayoff = projectedPayoffOf(projection);
+	const converged = projection?.converged === true ? projection : null;
+	// `amortizationSchedule` has none without a payment.
+	const scheduledPayoffDate = schedule.payments.at(-1)!.date;
+	const domain = chartDomain({
+		months: PERIOD_MONTHS[period],
+		asOf,
+		originationDate: schedule.originationDate,
+		scheduledPayoffDate,
+		projectedPayoffDate: converged?.payoffDate ?? null,
+	});
+	const recorded = sampleSeries(
+		await balancesBetween(deps, accountId, domain.from, minDate(domain.to, asOf)),
+	).points;
+	const series = payoffChartSeries(
+		{
+			actual: recorded,
+			scheduled: scheduledSeries(schedule, originalAmount),
+			projected: projectedSeries(asOf, BigInt(account.balance), projection),
+		},
+		domain,
+	);
+
+	return {
+		asOf,
+		currency: account.currency,
+		period,
+		...domain,
+		balance: account.balance,
+		// Two points always give a change.
+		change: balanceChange([
+			{ date: schedule.originationDate, balance: minor(originalAmount) },
+			{ date: asOf, balance: account.balance },
+		])!,
+		...series,
+		scheduledPayoffDate,
+		projectedPayoff,
+		monthsSaved: converged?.monthsSaved ?? null,
+		interestSaved: converged === null ? null : minor(converged.interestSaved),
+		balloon: projection?.converged === false ? minor(projection.balloon) : null,
 	};
 }

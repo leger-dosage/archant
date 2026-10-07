@@ -230,6 +230,10 @@ test("a viewer reads every page with no control that writes, and the server refu
 				page.getByRole("list", { name: "Détails du prêt" }).getByRole("listitem"),
 			).toHaveText([`Emprunté : ${euros(13_000_000)}`, "Taux : 1,820 % fixe", "Durée : 25 ans"]);
 			await expectNone(page, [{ role: "button", name: `Actions du compte ${loan.name}` }]);
+			// Its chart, where the loan is heading.
+			await expect(
+				page.getByRole("list", { name: "Séries du graphique" }).getByRole("listitem"),
+			).toHaveText(["Solde enregistré", "Échéancier du contrat", "Projection"]);
 			await page.getByRole("tab", { name: "Vue d'ensemble" }).click();
 			const overview = page.getByRole("tabpanel", { name: "Vue d'ensemble" });
 			await expect(overview.getByRole("group", { name: "Capital d'origine" })).toContainText(
