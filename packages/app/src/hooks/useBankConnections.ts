@@ -22,9 +22,9 @@ export type BankAccountData = InferResponseType<
 	200
 >["data"][number];
 
-export type BankAccountLink = InferRequestType<
-	(typeof bank)[":id"]["accounts"]["$post"]
->["json"]["links"][number];
+type LinkRequest = InferRequestType<(typeof bank)[":id"]["accounts"]["$post"]>["json"];
+
+export type BankAccountLink = LinkRequest["links"][number];
 
 export type BankSetupData = InferResponseType<typeof bank.setup.$get, 200>["data"];
 
@@ -153,7 +153,8 @@ export function useBankAccounts(connectionId: string) {
 }
 
 /**
- * Creates or links the chosen bank accounts. The answer is the new list;
+ * Creates or links the chosen bank accounts, with the first sync's start
+ * date when the page offered one. The answer is the new list;
  * every account query goes stale, since a new account or a new balance
  * shows in the accounts column.
  */
@@ -161,9 +162,8 @@ export function useLinkBankAccounts(connectionId: string) {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async (links: BankAccountLink[]) =>
-			(await unwrap(bank[":id"].accounts.$post({ param: { id: connectionId }, json: { links } })))
-				.data,
+		mutationFn: async (json: LinkRequest) =>
+			(await unwrap(bank[":id"].accounts.$post({ param: { id: connectionId }, json }))).data,
 		onSuccess: async (list) => {
 			queryClient.setQueryData(queryKeys.bankConnections.accounts(connectionId), list);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });

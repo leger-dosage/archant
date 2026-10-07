@@ -22,7 +22,7 @@ import { runRecurring } from "./recurring/pipeline.ts";
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
-/** Sure's first window: three months of history for an account never synced. */
+/** The first window of an account never synced, when its connection names no start date. */
 const FIRST_WINDOW_DAYS = 90;
 
 /** Each window starts this far before the last sync, for lines a bank books late. */
@@ -41,21 +41,24 @@ export type SyncStatus = { lastSyncedAt: number | null; lastError: string | null
 
 /**
  * The first day a bank account's window reads: its own last sync minus the
- * overlap, or three months back when it never synced. Per bank account, not
- * per connection: an account that keeps failing would otherwise come back
- * with a gap once the others moved on. Never after its oldest pending entry:
- * a line the window leaves out would count as missed, and a hotel
- * pre-authorisation older than the overlap would go while still pending.
+ * overlap or, when it never synced, its connection's start date, 90 days
+ * back without one. Sure's `determine_sync_start_date`: a start date chosen
+ * later never re-reads a synced account's past. Per bank account, not per
+ * connection: an account that keeps failing would otherwise come back with a
+ * gap once the others moved on. Never after its oldest pending entry: a line
+ * the window leaves out would count as missed, and a hotel pre-authorisation
+ * older than the overlap would go while still pending.
  */
 export function windowStart(
 	lastSyncedAt: number | null,
 	day: IsoDate,
 	timeZone: string,
 	oldestPending: IsoDate | null,
+	syncStartDate: IsoDate | null,
 ): IsoDate {
 	const start =
 		lastSyncedAt === null
-			? addDays(day, -FIRST_WINDOW_DAYS)
+			? (syncStartDate ?? addDays(day, -FIRST_WINDOW_DAYS))
 			: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
 
 	return oldestPending === null ? start : minDate(start, oldestPending);
@@ -136,6 +139,11 @@ async function runSync(
 	startedAt: number,
 ): Promise<{ failed: number; created: number; synced: number }> {
 	const day = today(deps.timeZone, new Date(startedAt));
+	const connection = await deps.db
+		.select({ syncStartDate: bankConnections.syncStartDate })
+		.from(bankConnections)
+		.where(eq(bankConnections.id, connectionId))
+		.get();
 	const linked = await deps.db
 		.select({
 			bankAccountId: bankAccounts.id,
@@ -193,6 +201,7 @@ async function runSync(
 				day,
 				deps.timeZone,
 				await oldestPendingDate(deps, item.accountId, connectionId),
+				connection?.syncStartDate ?? null,
 			);
 			const statement = await connector.fetchStatement(item.providerUid, since, day);
 			const { interrupted } = statement;

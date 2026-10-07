@@ -4,6 +4,7 @@ import type {
 	BankConnectionData,
 } from "@/hooks/useBankConnections";
 import type { AccountKindId } from "@/lib/account-kinds";
+import type { ShownError } from "@/lib/form-errors";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -16,11 +17,14 @@ import { z } from "zod";
 import { BANK_ACCOUNT_TARGETS } from "@archant/data/account-types";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DateField } from "@/components/DateField";
+import { FieldMessage } from "@/components/FieldMessage";
 import { InsetGroup } from "@/components/InsetGroup";
 import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
 	Select,
 	SelectContent,
@@ -40,7 +44,8 @@ import {
 	useSyncBankConnection,
 } from "@/hooks/useBankConnections";
 import { kindOf } from "@/lib/account-kinds";
-import { errorCodeOf, isErrorCode } from "@/lib/api";
+import { ApiError, errorCodeOf, isErrorCode } from "@/lib/api";
+import { monthsAgo, toIsoDate } from "@/lib/dates";
 import { showFailureToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -84,6 +89,47 @@ function linkOf(row: BankAccountData, choice: Choice): BankAccountLink | null {
 }
 
 const JUST_NOW_MS = 60_000;
+
+/** Sure's `2.years.ago`: the oldest start date the server accepts. */
+const HISTORY_MONTHS = 24;
+
+/**
+ * Sure's « Start syncing transactions from »: how far back the first sync of
+ * each bank account reads, two years back to today. Offered until an
+ * account is linked; later links read from the date saved then.
+ */
+function SyncStartDateField({
+	value,
+	onChange,
+	error,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	error: ShownError | undefined;
+}) {
+	const { t } = useTranslation();
+	const describedBy =
+		error === undefined ? "syncStartDate-hint" : "syncStartDate-hint syncStartDate-error";
+
+	return (
+		<div className="flex flex-col gap-2 sm:max-w-xs">
+			<Label htmlFor="syncStartDate">{t("banks.accounts.syncStartDate")}</Label>
+			<DateField
+				id="syncStartDate"
+				value={value}
+				onChange={onChange}
+				min={monthsAgo(HISTORY_MONTHS)}
+				max={toIsoDate()}
+				invalid={error !== undefined}
+				describedBy={describedBy}
+			/>
+			<p id="syncStartDate-hint" className="text-xs text-muted-foreground">
+				{t("banks.accounts.syncStartDateHint")}
+			</p>
+			<FieldMessage id="syncStartDate-error" error={error} />
+		</div>
+	);
+}
 
 // The lines synced and only the balance is missing: a warning, not a failure.
 const BALANCE_UNAVAILABLE = "BANK_BALANCE_UNAVAILABLE";
@@ -330,6 +376,9 @@ function BankConnectionPage() {
 	const queryClient = useQueryClient();
 	// Only the rows the user changed: the others follow their suggestion.
 	const [choices, setChoices] = useState<Record<string, Choice>>({});
+	// What the user typed; until then the saved date, else Sure's three months.
+	const [typedStartDate, setTypedStartDate] = useState<string | undefined>(undefined);
+	const [startDateError, setStartDateError] = useState<ShownError | undefined>(undefined);
 	const connection = connections.data?.find((item) => item.id === connectionId);
 	const title = connection?.institutionName ?? t("banks.title");
 	const rows = accounts.data ?? [];
@@ -343,6 +392,8 @@ function BankConnectionPage() {
 		});
 
 	const linkedCount = rows.filter((row) => row.account !== null).length;
+	const offersStartDate = connection !== undefined && rows.length > 0 && linkedCount === 0;
+	const syncStartDate = typedStartDate ?? connection?.syncStartDate ?? monthsAgo(3);
 	// Once per arrival: strict mode's second effect must not sync again.
 	const arrived = useRef(false);
 	const { mutate: syncNow } = sync;
@@ -393,23 +444,40 @@ function BankConnectionPage() {
 	};
 
 	const submit = () => {
-		link.mutate(links, {
-			onSuccess: () => {
-				setChoices({});
-				toast.success(t("banks.accounts.linked", { count: links.length }));
-				// Sure's `complete_account_setup`: the new links bring their history
-				// at once. Quiet on success, and when a sync ran within the hour:
-				// the new link then waits for the next one, as the page shows.
-				sync.mutate(undefined, {
-					onError: (error) => {
-						if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
-							showFailureToast(error);
-						}
-					},
-				});
+		setStartDateError(undefined);
+		link.mutate(
+			{ links, ...(offersStartDate ? { syncStartDate } : {}) },
+			{
+				onSuccess: () => {
+					setChoices({});
+					setTypedStartDate(undefined);
+					toast.success(t("banks.accounts.linked", { count: links.length }));
+					// Sure's `complete_account_setup`: the new links bring their history
+					// at once. Quiet on success, and when a sync ran within the hour:
+					// the new link then waits for the next one, as the page shows.
+					sync.mutate(undefined, {
+						onError: (error) => {
+							if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
+								showFailureToast(error);
+							}
+						},
+					});
+				},
+				onError: (error) => {
+					const fields = error instanceof ApiError ? error.fields : [];
+					const field = fields.find(({ path }) => path === "syncStartDate");
+
+					if (field !== undefined) {
+						setStartDateError({ type: field.code });
+					}
+
+					// The rows have no message of their own: any other refusal is a toast.
+					if (field === undefined || fields.length > 1) {
+						showFailureToast(error);
+					}
+				},
 			},
-			onError: showFailureToast,
-		});
+		);
 	};
 
 	return (
@@ -436,6 +504,16 @@ function BankConnectionPage() {
 				}}
 			>
 				<ListCard>
+					{offersStartDate && (
+						<SyncStartDateField
+							value={syncStartDate}
+							onChange={(value) => {
+								setTypedStartDate(value);
+								setStartDateError(undefined);
+							}}
+							error={startDateError}
+						/>
+					)}
 					<InsetGroup
 						level={2}
 						title={t("banks.accounts.list")}

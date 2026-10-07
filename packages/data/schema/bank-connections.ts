@@ -58,6 +58,10 @@ export const bankConnections = sqliteTable(
 		// only when no run started since that day's midnight, so a bank that
 		// failed this morning is not asked again on every page.
 		syncAttemptedAt: integer("sync_attempted_at"),
+		// Sure's `sync_start_date`, `YYYY-MM-DD`: the day a bank account's first
+		// sync reads from, chosen when linking. `null` reads 90 days back. A
+		// request to the bank, which may answer with less.
+		syncStartDate: text("sync_start_date"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

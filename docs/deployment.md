@@ -351,7 +351,7 @@ The answer names each connection and what happened to it:
 
 `synced` means every linked account synced. `failed` means at least one did not: the others are committed, the connection page shows the error, and the next run retries the failed account from where it last succeeded. `skipped` means a sync ran less than an hour ago or one is still running. `consent_expired` means the consent has ended and nothing was read until it is renewed.
 
-Once a day is enough, whether from the first visit or the cron: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads three months back; each later one reads from seven days before its last success, so a line the bank books late still arrives, once.
+Once a day is enough, whether from the first visit or the cron: banks post transactions in batches, and a PSD2 consent allows a limited number of calls per account per day. The first sync of an account reads from the date « Synchroniser l'historique depuis le » that its connection's page offers until a first account is linked: three months back by default, two years at most. A bank may still return less, often 90 days. Each later sync reads from seven days before its last success, so a line the bank books late still arrives, once. Changing the date never re-reads an account that already synced: import a file for its older history, and the lines the bank already brought are recognised.
 
 ## Passwords
 

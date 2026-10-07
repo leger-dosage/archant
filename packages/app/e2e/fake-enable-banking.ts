@@ -54,6 +54,20 @@ export const UNREADABLE_BANK = "Banque Illisible";
  */
 export const SLOW_BANK = "Banque Lente";
 
+/**
+ * The bank that keeps `OLD_LINE`, 400 days back, and nothing older: a
+ * statement lists it only when `date_from` reaches its day, so it shows
+ * which start date the first sync asked for.
+ */
+export const HISTORY_BANK = "Banque Historique";
+
+/** The oldest line `HISTORY_BANK` holds. */
+export const OLD_LINE = {
+	label: "Virement ancien Historique",
+	amount: "-75.00",
+	daysAgo: 400,
+} as const;
+
 /** How long `SLOW_BANK` takes to answer the first page of a statement. */
 const SLOW_MS = 2000;
 
@@ -73,6 +87,7 @@ export const FAKE_BANKS = [
 	NO_CURRENCY_BANK,
 	UNREADABLE_BANK,
 	SLOW_BANK,
+	HISTORY_BANK,
 ] as const;
 
 /**
@@ -115,9 +130,14 @@ const direction = (value: string) => (value.startsWith("-") ? "DBIT" : "CRDT");
 
 /**
  * One page of `uid`'s statement: the first without a key, the second on
- * `page-2`. `withSlowLine` adds `SLOW_LINE`, booked today, to the second.
+ * `page-2`. `withSlowLine` adds `SLOW_LINE`, booked today, to the second;
+ * `withOldLine` adds `OLD_LINE` to the first.
  */
-function transactionsPage(uid: string, continuationKey: string | null, withSlowLine = false) {
+function transactionsPage(
+	uid: string,
+	continuationKey: string | null,
+	{ withSlowLine = false, withOldLine = false } = {},
+) {
 	const { groceries, salary, subscription, pending } = FAKE_LINES;
 
 	if (continuationKey === "page-2") {
@@ -158,6 +178,18 @@ function transactionsPage(uid: string, continuationKey: string | null, withSlowL
 
 	return {
 		transactions: [
+			...(withOldLine
+				? [
+						{
+							entry_reference: `${uid}-old`,
+							transaction_amount: unsigned(OLD_LINE.amount),
+							creditor: { name: OLD_LINE.label },
+							credit_debit_indicator: direction(OLD_LINE.amount),
+							status: "BOOK",
+							booking_date: daysAgo(OLD_LINE.daysAgo),
+						},
+					]
+				: []),
 			{
 				entry_reference: `${uid}-1`,
 				transaction_id: randomUUID(),
@@ -274,6 +306,8 @@ export async function startFakeEnableBanking(options: {
 	const datedReads = new Map<string, number>();
 	// The accounts of each `SLOW_BANK` session, with the number of statements read.
 	const slowReads = new Map<string, number>();
+	// The accounts of each `HISTORY_BANK` session.
+	const history = new Set<string>();
 	// Every session opened and not revoked yet.
 	const sessions = new Set<string>();
 	let origin = "";
@@ -398,6 +432,11 @@ export async function startFakeEnableBanking(options: {
 					slowReads.set(cardUid, 0);
 				}
 
+				if (attempt.bank === HISTORY_BANK) {
+					history.add(checkingUid);
+					history.add(cardUid);
+				}
+
 				const sessionId = randomUUID();
 				sessions.add(sessionId);
 
@@ -516,7 +555,19 @@ export async function startFakeEnableBanking(options: {
 					slowReads.set(uid, slowRead + 1);
 				}
 
-				json(response, 200, transactionsPage(uid, continuationKey, (slowRead ?? 0) > 0));
+				const withOldLine =
+					history.has(uid) &&
+					continuationKey === null &&
+					(url.searchParams.get("date_from") ?? "") <= daysAgo(OLD_LINE.daysAgo);
+
+				json(
+					response,
+					200,
+					transactionsPage(uid, continuationKey, {
+						withSlowLine: (slowRead ?? 0) > 0,
+						withOldLine,
+					}),
+				);
 				return;
 			}
 

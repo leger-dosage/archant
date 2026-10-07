@@ -1893,6 +1893,18 @@ describe("bank sync", () => {
 		).resolves.toEqual({ lastSyncedAt: null });
 	});
 
+	it("leaves an existing connection without a start date when 0059 adds it", async () => {
+		const before = await migratedBefore("0059");
+		await insertConnection(before, "c1", { status: "active" });
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, sync_start_date as syncStartDate from bank_connections`),
+		).resolves.toEqual([{ id: "c1", syncStartDate: null }]);
+	});
+
 	it("keeps every key when 0028 rebuilds entry_keys", async () => {
 		const before = await migratedBefore("0028");
 		await insertAccount(before, "a1", "depository", "checking");

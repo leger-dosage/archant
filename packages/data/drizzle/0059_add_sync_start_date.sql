@@ -1,0 +1,1 @@
+ALTER TABLE `bank_connections` ADD `sync_start_date` text;

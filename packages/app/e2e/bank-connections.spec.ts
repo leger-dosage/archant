@@ -5,6 +5,7 @@ import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { createDb } from "@archant/data/client";
 
 import { formatTableDate } from "../src/lib/balance-change.ts";
+import { monthsAgo } from "../src/lib/dates.ts";
 import {
 	BALANCELESS_BANK,
 	DATED_BANK,
@@ -12,12 +13,14 @@ import {
 	FAKE_ACCOUNTS,
 	FAKE_BANKS,
 	FAKE_LINES,
+	HISTORY_BANK,
 	NO_CURRENCY_BANK,
+	OLD_LINE,
 	SLOW_BANK,
 	SLOW_LINE,
 	UNREADABLE_BANK,
 } from "./fake-enable-banking.ts";
-import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 import {
 	BANK_APPLICATION_ID,
 	BANK_KEY_FILE,
@@ -766,6 +769,64 @@ test("an unknown connection says so and links back to Banques", async ({ page })
 /** A transaction row of the account page, by its label. */
 const transactionRow = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
+
+/** `months` calendar months before today in the suite's zone, as the page computes it. */
+function monthsBack(months: number): string {
+	const [year = 0, month = 1, day = 1] = daysAgo(0).split("-").map(Number);
+
+	return monthsAgo(months, new Date(year, month - 1, day));
+}
+
+const startDate = (page: Page) =>
+	page.getByRole("textbox", { name: "Synchroniser l'historique depuis le" });
+
+test("a new connection offers the first sync's start date, three months back, and refuses one beyond two years", async ({
+	page,
+}) => {
+	await connect(page, HISTORY_BANK);
+
+	await expect(startDate(page)).toHaveValue(typed(monthsBack(3)));
+	await expect(startDate(page)).toHaveAccessibleDescription(
+		"Jusqu'à deux ans en arrière. Votre banque peut fournir un historique plus court.",
+	);
+
+	await startDate(page).fill(typed(monthsBack(36)));
+	await validate(page).click();
+
+	await expect(startDate(page)).toHaveAccessibleDescription(
+		/La date ne peut pas remonter à plus de deux ans\.$/u,
+	);
+	await expect(startDate(page)).toHaveAttribute("aria-invalid", "true");
+	// Nothing linked: the date is still offered, and both rows their choice.
+	await expect(startDate(page)).toBeVisible();
+	await page.reload();
+	await expect(startDate(page)).toHaveValue(typed(monthsBack(3)));
+	await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toBeVisible();
+	await expect(choice(page, FAKE_ACCOUNTS.card.name)).toBeVisible();
+});
+
+test("the first sync reads from the date chosen two years back, keeps what the bank holds, and the date is then gone", async ({
+	page,
+}) => {
+	await connect(page, HISTORY_BANK);
+
+	await startDate(page).fill(typed(monthsBack(24)));
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+	// The bank holds 400 days, less than asked: no error, as in Sure.
+	await expect(page.getByText(/La dernière synchronisation a échoué/u)).toBeHidden();
+	await expect(toast(page, "Synchronisation terminée avec une erreur.")).toBeHidden();
+	// Linked: later links read from the saved date, which the page no longer offers.
+	await expect(startDate(page)).toBeHidden();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+
+	await page.goto(`/accounts/${accountId}`);
+	await expect(transactionRow(page, OLD_LINE.label)).toContainText(euros(-7500));
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toBeVisible();
+});
 
 test("linking an account syncs the bank's lines, once, and the pages show the last sync", async ({
 	page,

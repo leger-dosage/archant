@@ -19,6 +19,10 @@ type DateFieldProps = {
 	/** Id of the element holding this field's error message, when there is one. */
 	describedBy?: string;
 	disabled?: boolean;
+	/** `YYYY-MM-DD`: the calendar offers no day before it. */
+	min?: string;
+	/** `YYYY-MM-DD`: the calendar offers no day after it. */
+	max?: string;
 };
 
 /**
@@ -33,11 +37,19 @@ export function DateField({
 	invalid = false,
 	describedBy,
 	disabled = false,
+	min,
+	max,
 }: DateFieldProps) {
 	const { t } = useTranslation();
 	const [text, setText] = useState(() => isoToFrench(value));
 	const [open, setOpen] = useState(false);
 	const selected = isoToDate(value);
+	const first = min === undefined ? undefined : isoToDate(min);
+	const last = max === undefined ? undefined : isoToDate(max);
+	const outside = [
+		...(first === undefined ? [] : [{ before: first }]),
+		...(last === undefined ? [] : [{ after: last }]),
+	];
 
 	return (
 		<div className="flex gap-2">
@@ -74,6 +86,9 @@ export function DateField({
 						weekStartsOn={1}
 						selected={selected}
 						{...(selected === undefined ? {} : { defaultMonth: selected })}
+						{...(first === undefined ? {} : { startMonth: first })}
+						{...(last === undefined ? {} : { endMonth: last })}
+						{...(outside.length === 0 ? {} : { disabled: outside })}
 						onSelect={(date) => {
 							if (date !== undefined) {
 								const iso = toIsoDate(date);

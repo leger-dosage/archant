@@ -6,15 +6,26 @@ export function toIsoDate(now: Date = new Date()): string {
 }
 
 /**
+ * The same calendar day `months` months before `now`, in the browser's time
+ * zone. A day the target month lacks falls back to its last, as Rails'
+ * `months.ago` does for Sure's default sync start date.
+ */
+export function monthsAgo(months: number, now: Date = new Date()): string {
+	const first = new Date(now.getFullYear(), now.getMonth() - months, 1);
+	const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+
+	return toIsoDate(
+		new Date(first.getFullYear(), first.getMonth(), Math.min(now.getDate(), lastDay)),
+	);
+}
+
+/**
  * The same calendar day `years` years before `now`, in the browser's time
  * zone. 29 February falls back to the 28th, as Rails' `years.ago` does for
  * Sure's default opening date.
  */
 export function yearsAgo(years: number, now: Date = new Date()): string {
-	const year = now.getFullYear() - years;
-	const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-
-	return toIsoDate(new Date(year, now.getMonth(), Math.min(now.getDate(), lastDay)));
+	return monthsAgo(years * 12, now);
 }
 
 export function isoToDate(iso: string): Date | undefined {

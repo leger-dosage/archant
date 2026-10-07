@@ -2113,6 +2113,8 @@
 			"linkTo": "Associer à",
 			"linkedTo": "Associé à",
 			"submit": "Valider",
+			"syncStartDate": "Synchroniser l'historique depuis le",
+			"syncStartDateHint": "Jusqu'à deux ans en arrière. Votre banque peut fournir un historique plus court.",
 			"linked_one": "{{count}} compte relié à la banque.",
 			"linked_other": "{{count}} comptes reliés à la banque."
 		},
@@ -2289,6 +2291,7 @@
 			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
 			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",
+			"sync_start_too_early": "La date ne peut pas remonter à plus de deux ans.",
 			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord.",
 			"before_from": "La date de fin doit suivre la date de début.",
 			"below_min": "Le maximum doit être supérieur ou égal au minimum.",

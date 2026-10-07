@@ -9,6 +9,7 @@ import {
 	monthLabel,
 	ofMonth,
 	toIsoMonth,
+	monthsAgo,
 	yearsAgo,
 } from "./dates.ts";
 
@@ -62,6 +63,17 @@ describe("yearsAgo", () => {
 	it("clamps 29 February to the 28th", () => {
 		expect(yearsAgo(2, new Date(2028, 1, 29))).toBe("2026-02-28");
 		expect(yearsAgo(4, new Date(2028, 1, 29))).toBe("2024-02-29");
+	});
+});
+
+describe("monthsAgo", () => {
+	it("is the same local day, months back, across a year", () => {
+		expect(monthsAgo(3, new Date(2026, 9, 7, 23, 59))).toBe("2026-07-07");
+		expect(monthsAgo(3, new Date(2026, 1, 15))).toBe("2025-11-15");
+	});
+
+	it("clamps a day the target month lacks to its last, as Rails' `months.ago`", () => {
+		expect(monthsAgo(3, new Date(2026, 4, 31))).toBe("2026-02-28");
 	});
 });
 
