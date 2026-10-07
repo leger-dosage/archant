@@ -359,11 +359,11 @@ describe("transfers", () => {
 	});
 
 	it("unmatches a transfer, both sides becoming standard again", async () => {
-		const { transferId: id } = await household();
+		const { outflow, inflow, transferId: id } = await household();
 
 		await expect(ownRequest("DELETE", `/api/transfers/${id}`)).resolves.toEqual({
 			status: 200,
-			body: { data: { id } },
+			body: { data: { id, outflowTransactionId: outflow, inflowTransactionId: inflow } },
 		});
 		const data = await listed("?direction=transfer");
 		expect(data.items).toEqual([]);
@@ -384,7 +384,9 @@ describe("transfers", () => {
 
 		await expect(ownRequest("POST", `/api/transfers/${transferId}/reject`)).resolves.toEqual({
 			status: 200,
-			body: { data: { id: transferId } },
+			body: {
+				data: { id: transferId, outflowTransactionId: outflow, inflowTransactionId: inflow },
+			},
 		});
 		expect((await listed("?direction=transfer")).items).toEqual([]);
 		const { body } = await ownRequest("GET", `/api/transactions/${outflow}/transfer-candidates`);

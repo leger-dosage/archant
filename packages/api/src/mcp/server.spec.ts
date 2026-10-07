@@ -64,6 +64,7 @@ const READ_TOOLS = [
 	"get_transactions",
 	"get_transaction",
 	"group_transactions_by_label",
+	"get_transfer_candidates",
 	"get_balance_sheet",
 	"get_income_statement",
 	"get_budget",
@@ -88,6 +89,8 @@ const WRITE_TOOLS = [
 	"create_tag",
 	"update_transaction",
 	"bulk_update_transactions",
+	"pair_transfer",
+	"unpair_transfer",
 	"rename_category",
 	"rename_merchant",
 	"rename_tag",
@@ -408,6 +411,8 @@ describe("tools/list", () => {
 				destructiveHint: true,
 				idempotentHint: true,
 			},
+			pair_transfer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+			unpair_transfer: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
 			rename_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_tag: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
@@ -1283,7 +1288,7 @@ describe("reading accounts, recurring series and one transaction", () => {
 		const tag = await createTag(`Détail ${crypto.randomUUID().slice(0, 8)}`);
 		const outflow = await spend(checking, "DETAIL1 Virement", -50000, "2026-09-12");
 		// The import pairs the two sides as a transfer by itself.
-		await spend(savings, "DETAIL1 Virement recu", 50000, "2026-09-12");
+		const inflow = await spend(savings, "DETAIL1 Virement recu", 50000, "2026-09-12");
 		const patched = await apiRequest("PATCH", `/api/transactions/${outflow}`, {
 			notes: "Épargne de septembre",
 			tagIds: [tag.id],
@@ -1291,6 +1296,10 @@ describe("reading accounts, recurring series and one transaction", () => {
 		expect(patched.status).toBe(200);
 
 		const result = await callTool(bare, tokens.access_token, "get_transaction", { id: outflow });
+		// The transfer's id is checked against the list's in `transfers.spec.ts`.
+		const { transfer } = z
+			.object({ transfer: z.object({ id: z.string() }) })
+			.parse(result.structuredContent);
 
 		expect(result.structuredContent).toEqual({
 			id: outflow,
@@ -1307,10 +1316,13 @@ describe("reading accounts, recurring series and one transaction", () => {
 			pending: false,
 			reference: null,
 			transfer: {
+				id: transfer.id,
 				kind: "internal_move",
+				counterpartTransactionId: inflow,
 				counterpartAccountId: savings.id,
 				counterpartAccountName: "Livret détail",
 			},
+			transferSuggested: false,
 			source: { kind: "manual" },
 		});
 	});

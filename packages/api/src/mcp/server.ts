@@ -64,6 +64,7 @@ import {
 	groupTransactionLabels,
 	updateTransactionTool,
 } from "./transactions.ts";
+import { getTransferCandidates, pairTransferTool, unpairTransferTool } from "./transfers.ts";
 
 export type McpDeps = ServiceDeps & {
 	/** `getJwks`, whose key set signs every access token. */
@@ -84,6 +85,7 @@ const TOOLS: AnyTool[] = [
 	getTransactions,
 	getTransactionTool,
 	groupTransactionLabels,
+	getTransferCandidates,
 	getBalanceSheetTool,
 	getIncomeStatement,
 	getBudgetTool,
@@ -105,6 +107,8 @@ const TOOLS: AnyTool[] = [
 	createTagTool,
 	updateTransactionTool,
 	bulkUpdateTransactionsTool,
+	pairTransferTool,
+	unpairTransferTool,
 	renameCategoryTool,
 	renameMerchantTool,
 	renameTagTool,
@@ -141,6 +145,10 @@ const INSTRUCTIONS = [
 	"- update_transaction and bulk_update_transactions lock each field they change, as an edit by the owner does: no rule changes it afterwards.",
 	"- Before update_transaction, or bulk_update_transactions by ids, tell the owner what you are about to change.",
 	"- Before bulk_update_transactions with a filter, call get_transactions with that filter, show the owner its total and pass it as expectedCount. If it answers BULK_COUNT_STALE, read again and show the owner.",
+	"To fix a transfer:",
+	"- A transfer joins two transactions of the household's own accounts, which then count in neither income nor expenses. Matching pairs two lines of opposite amounts a few days apart when each is the other's only candidate, so it may pair two unrelated lines; transferSuggested marks a line it left for the owner to pair.",
+	"- Before pair_transfer or unpair_transfer, show the owner both sides with get_transaction and wait for their agreement.",
+	"- Before passing neverPropose, ask the owner whether this pair should never be proposed again: the refusal cannot be undone.",
 	"To plan a month's budget:",
 	"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
 	"- Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",

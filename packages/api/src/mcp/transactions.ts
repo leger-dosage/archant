@@ -24,6 +24,13 @@ import {
 } from "../services/transactions.ts";
 import { BANK_TEXT, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
 
+const transferFields = {
+	id: z.string().describe("The transfer's id, which unpair_transfer takes."),
+	kind: z.enum(TRANSFER_KINDS),
+	counterpartTransactionId: z.string().describe("The other side's transaction id."),
+	counterpartAccountId: z.string(),
+};
+
 const transaction = z.object({
 	id: z.string(),
 	date: z.string(),
@@ -37,9 +44,14 @@ const transaction = z.object({
 	notes: z.string().nullable(),
 	excluded: z.boolean().describe("Left out of reports, still in the balance."),
 	transfer: z
-		.object({ kind: z.enum(TRANSFER_KINDS), counterpartAccountId: z.string() })
+		.object(transferFields)
 		.nullable()
-		.describe("The transfer it is a side of, with the other side's account; null for none."),
+		.describe("The transfer it is a side of, with the other side and its account; null for none."),
+	transferSuggested: z
+		.boolean()
+		.describe(
+			"In no transfer, with several candidates: matching left it for the owner to pair, through get_transfer_candidates.",
+		),
 	pending: z.boolean().describe("Not booked by the bank yet."),
 });
 
@@ -60,7 +72,13 @@ function itemOf(item: TransactionRecord): z.input<typeof transaction> {
 		transfer:
 			item.transfer === null
 				? null
-				: { kind: item.transfer.kind, counterpartAccountId: item.transfer.counterpartAccountId },
+				: {
+						id: item.transfer.id,
+						kind: item.transfer.kind,
+						counterpartTransactionId: item.transfer.counterpartTransactionId,
+						counterpartAccountId: item.transfer.counterpartAccountId,
+					},
+		transferSuggested: item.transferSuggested,
 		pending: item.pending,
 	};
 }
@@ -158,13 +176,9 @@ const source = z
 const transactionDetail = transaction.extend({
 	reference: z.string().nullable().describe("A cheque or QIF number from the file it came in."),
 	transfer: z
-		.object({
-			kind: z.enum(TRANSFER_KINDS),
-			counterpartAccountId: z.string(),
-			counterpartAccountName: z.string(),
-		})
+		.object({ ...transferFields, counterpartAccountName: z.string() })
 		.nullable()
-		.describe("The transfer it is a side of, with the other side's account; null for none."),
+		.describe("The transfer it is a side of, with the other side and its account; null for none."),
 	source,
 });
 
@@ -176,7 +190,9 @@ function detailOf(item: TransactionItem): z.input<typeof transactionDetail> {
 			item.transfer === null
 				? null
 				: {
+						id: item.transfer.id,
 						kind: item.transfer.kind,
+						counterpartTransactionId: item.transfer.counterpartTransactionId,
 						counterpartAccountId: item.transfer.counterpartAccountId,
 						counterpartAccountName: item.transfer.counterpartAccountName,
 					},

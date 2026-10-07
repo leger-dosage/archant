@@ -86,6 +86,7 @@ export type TransactionRecord = {
 type TransferLink = {
 	id: string;
 	kind: TransferKind;
+	counterpartTransactionId: string;
 	counterpartAccountId: string;
 	counterpartAccountName: string;
 };
@@ -156,17 +157,31 @@ const unmatchedIds = (rows: readonly { id: string; transferId: string | null }[]
 function withTransferLink<Row extends TransferColumns>(
 	row: Row,
 ): Omit<Row, keyof TransferColumns> & { transfer: TransferLink | null } {
-	const { transferId, transferKind, counterpartAccountId, counterpartAccountName, ...rest } = row;
+	const {
+		transferId,
+		transferKind,
+		counterpartTransactionId,
+		counterpartAccountId,
+		counterpartAccountName,
+		...rest
+	} = row;
 
 	return {
 		...rest,
 		transfer:
 			transferId === null ||
 			transferKind === null ||
+			counterpartTransactionId === null ||
 			counterpartAccountId === null ||
 			counterpartAccountName === null
 				? null
-				: { id: transferId, kind: transferKind, counterpartAccountId, counterpartAccountName },
+				: {
+						id: transferId,
+						kind: transferKind,
+						counterpartTransactionId,
+						counterpartAccountId,
+						counterpartAccountName,
+					},
 	};
 }
 
