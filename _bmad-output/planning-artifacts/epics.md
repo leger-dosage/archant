@@ -4500,7 +4500,7 @@ So that I read my mortgage without opening the bank's table.
 
 **Given** a loan account
 **When** the owner opens its « Vue d'ensemble » tab
-**Then** it shows « Capital d'origine », « Capital restant » (the account's balance), « Taux d'intérêt » in force today with three decimals, « Mensualité » (a fixed loan's level payment, a variable loan's payment in force, « N/D » once the schedule has run out), « Durée » in years or months, « Date de fin prévue » (the schedule's last payment), « Type », « Coût total » or « Coût total assurance comprise », « Assurance » (the total, or « 0,2917 % par an » for a rate with no schedule to apply it to), and « Effet de levier » when a down payment is recorded; any figure it cannot compute reads « Inconnu », as Sure's `loans/tabs/_overview`
+**Then** it shows « Capital d'origine », « Capital restant » (the account's balance), « Taux d'intérêt » in force today with three decimals, « Mensualité » (a fixed loan's level payment, a variable loan's payment in force, « N/D » once the schedule has run out), « Durée » in months under a year, else whole years, « Date de fin d'origine » (the schedule's last payment), « Type », « Coût total » or « Coût total assurance comprise », « Assurance » (the total, or « 0,292 % par an » for a rate with no schedule to apply it to), and « Effet de levier » when a down payment is recorded; any figure it cannot compute reads « Inconnu », as Sure's `loans/tabs/_overview`
 
 **Given** a down payment
 **When** leverage is computed
@@ -4508,7 +4508,7 @@ So that I read my mortgage without opening the bank's table.
 
 **Given** the owner's ING mortgage on 4 October 2026, its recorded balance 105 104,82 €
 **When** the overview opens
-**Then** a ring reads « 19 % remboursé sur 130 000,00 € », and « Échéance 70 · 5 octobre 2026 » lists « Capital 380,28 € 67 % », « Intérêts 159,41 € 28 % », « Assurance 31,60 € 6 % » and « Total 571,29 € »; « Date de fin prévue » reads 5 décembre 2045 and « Coût total assurance comprise » 171 386,96 €
+**Then** a ring reads « 19 % remboursé sur 130 000,00 € », and « Échéance 70 · 5 octobre 2026 » lists « Capital 380,28 € 67 % », « Intérêts 159,41 € 28 % », « Assurance 31,60 € 6 % » and « Total 571,29 € »; « Date de fin d'origine » reads 5 décembre 2045 and « Coût total assurance comprise » 171 386,96 €
 
 **Given** the instalment shown
 **When** it is chosen

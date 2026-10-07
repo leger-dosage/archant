@@ -568,18 +568,21 @@ test("the owner's ING mortgage shows its overview, and « Modifier les détails 
 	await expect(card("Taux d'intérêt")).toContainText("1,820 %");
 	await expect(card("Mensualité")).toContainText(euros(53_969));
 	await expect(card("Durée")).toContainText("25 ans");
-	await expect(card("Date de fin prévue")).toContainText("5 décembre 2045");
+	await expect(card("Date de fin d'origine")).toContainText("5 décembre 2045");
 	await expect(card("Type")).toContainText("Fixe");
 	await expect(card("Coût total assurance comprise")).toContainText(euros(17_138_696));
 	await expect(card("Coût total")).toHaveCount(0);
 	await expect(card("Assurance")).toContainText(euros(948_000));
 	await expect(card("Effet de levier")).toContainText("4,0x");
 	await expect(card("Effet de levier")).toContainText("Prudent");
+	// Sure's `text-success`, in the green that keeps 4.5:1 on a card.
+	await expect(card("Effet de levier").getByText("4,0x")).toHaveCSS("color", "rgb(29, 127, 52)");
 
 	await expect(panel.getByText("Remboursé", { exact: true })).toBeVisible();
-	await expect(
-		panel.getByRole("img", { name: `19 % remboursé sur ${euros(13_000_000)}` }),
-	).toBeVisible();
+	const ring = panel.getByRole("img", { name: `19 % remboursé sur ${euros(13_000_000)}` });
+	await expect(ring).toBeVisible();
+	// Sure's ring draws the share repaid in its warning colour.
+	await expect(ring.locator("circle").nth(1)).toHaveCSS("stroke", "rgb(166, 79, 42)");
 
 	const { number, date } = ingInstalmentToday();
 	await expect(panel.getByText(`Échéance ${number} · ${date}`)).toBeVisible();
@@ -598,6 +601,35 @@ test("the owner's ING mortgage shows its overview, and « Modifier les détails 
 	await expect(card("Coût total")).toContainText(euros(16_190_696));
 	await expect(card("Assurance")).toHaveCount(0);
 	await expect(panel.getByRole("term")).toHaveText(["Capital", "Intérêts", "Total"]);
+});
+
+test("an overpaid, highly leveraged loan reads its balance by its size and its band in red, as Sure", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "-32 500,00",
+		details: {
+			originalAmount: "130 000,00",
+			downPayment: "10 000,00",
+			startDate: "2020-12-05",
+			termMonths: "300",
+			rateType: "fixed",
+			interestRate: "1,82",
+		},
+	});
+
+	await page.goto(`/accounts/${loan.id}?tab=overview`);
+	const panel = page.getByRole("tabpanel", { name: "Vue d'ensemble" });
+	const leverage = panel.getByRole("group", { name: "Effet de levier", exact: true });
+	await expect(leverage).toContainText("13,0x");
+	await expect(leverage).toContainText("Élevé");
+	await expect(leverage.getByText("13,0x")).toHaveCSS("color", "rgb(201, 19, 19)");
+	await expect(
+		panel.getByRole("img", { name: `75 % remboursé sur ${euros(13_000_000)}` }),
+	).toBeVisible();
 });
 
 test("a variable loan's schedule names its first payment and warns that its rate moves", async ({
@@ -783,7 +815,13 @@ test("a loan without an amount borrowed has no « Échéancier » tab, and a lin
 		name: uniqueName("Prêt"),
 		kind: "consumer",
 		openingBalance: "8 000,00",
-		details: { rateType: "fixed", interestRate: "4,9", termMonths: "30" },
+		details: {
+			rateType: "fixed",
+			interestRate: "4,9",
+			termMonths: "30",
+			insuranceRate: "0,2917",
+			insuranceRateType: "level_term",
+		},
 	});
 
 	await page.goto(`/accounts/${loan.id}?tab=schedule`);
@@ -814,11 +852,12 @@ test("a loan without an amount borrowed has no « Échéancier » tab, and a lin
 	await expect(card("Capital restant")).toContainText(euros(800_000));
 	await expect(card("Taux d'intérêt")).toContainText("4,900 %");
 	await expect(card("Mensualité")).toContainText("Inconnu");
-	await expect(card("Durée")).toContainText("30 mois");
-	await expect(card("Date de fin prévue")).toContainText("Inconnu");
+	// Sure's overview drops the months left over, where the header reads « 30 mois ».
+	await expect(card("Durée")).toHaveText("Durée2 ans");
+	await expect(card("Date de fin d'origine")).toContainText("Inconnu");
 	await expect(card("Coût total")).toContainText("Inconnu");
 	await expect(card("Effet de levier")).toHaveCount(0);
-	await expect(card("Assurance")).toHaveCount(0);
+	await expect(card("Assurance")).toContainText("0,292 % par an");
 	await expect(panel.getByRole("img")).toHaveCount(0);
 	await expect(panel.getByText(/^Échéance /u)).toHaveCount(0);
 });

@@ -13,8 +13,9 @@ import { SummaryStrip } from "@/components/SummaryStrip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { longDate } from "@/lib/dates";
-import { formatRate, rateToText, termOf } from "@/lib/loan-details";
+import { formatInsuranceRate, formatRate, truncatedTermOf } from "@/lib/loan-details";
 import { formatWholePercent } from "@/lib/percent";
+import { cn } from "@/lib/utils";
 
 // Sure's `number_with_precision(ratio, precision: 1)`: 4,0x, never 4x.
 const ratioFormat = new Intl.NumberFormat("fr-FR", {
@@ -24,6 +25,15 @@ const ratioFormat = new Intl.NumberFormat("fr-FR", {
 
 // Sure's `grid-cols-3`: three figures to a row, so ten never crowd one line.
 const CELLS_PER_ROW = 3;
+
+// Sure's `loan_leverage_band_class`: success, warning and destructive. Sure's
+// success green has no token here; the income green is the closest that keeps
+// 4.5:1 on a card, where `--trend-up` reaches 3.2:1.
+const LEVERAGE_BAND_CLASSES = {
+	conservative: "text-money-income",
+	moderate: "text-warning",
+	high: "text-destructive",
+} as const;
 
 type LoanOverviewProps = {
 	overview: LoanOverviewData;
@@ -43,7 +53,7 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 	const unknown = t("loanOverview.unknown");
 	const money = (amount: MinorUnits | null): ReactNode =>
 		amount === null ? unknown : <Money amount={amount} currency={currency} />;
-	const term = overview.termMonths === null ? null : termOf(overview.termMonths);
+	const term = overview.termMonths === null ? null : truncatedTermOf(overview.termMonths);
 	const cells: SummaryCell[] = [
 		{ label: t("loanOverview.originalAmount"), value: money(overview.originalAmount) },
 		{ label: t("loanOverview.remainingBalance"), value: money(overview.remainingBalance) },
@@ -91,7 +101,9 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 			value:
 				"total" in overview.insurance
 					? money(overview.insurance.total)
-					: t("loanOverview.insuranceRateOnly", { rate: rateToText(overview.insurance.rate) }),
+					: t("loanOverview.insuranceRateOnly", {
+							rate: formatInsuranceRate(overview.insurance.rate),
+						}),
 		});
 	}
 
@@ -99,9 +111,14 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 	if (overview.leverage !== null) {
 		cells.push({
 			label: t("loanOverview.leverage"),
-			// The band is named, never coloured: DESIGN.md keeps warning and destructive for other uses.
+			// Named as well as coloured, so the band never rests on its colour alone.
 			value: (
-				<span className="flex flex-wrap items-baseline gap-x-2">
+				<span
+					className={cn(
+						"flex flex-wrap items-baseline gap-x-2",
+						LEVERAGE_BAND_CLASSES[overview.leverage.band],
+					)}
+				>
 					{t("loanOverview.leverageMultiple", {
 						ratio: ratioFormat.format(overview.leverage.tenths / 10),
 					})}
@@ -137,19 +154,23 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 					{repaid !== null && (
 						<div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
 							<p className="text-sm text-muted-foreground">{t("loanOverview.repaid")}</p>
-							<div className="flex items-center gap-4">
+							<div className="flex justify-center">
 								<ProgressRing
-									size={96}
+									size={160}
 									percent={repaid.percent}
-									subject={{ kind: "account", type: "loan" }}
+									color="var(--warning)"
 									label={t("loanOverview.ring", {
 										percent: formatWholePercent(repaid.percent),
 										amount: repaid.amount,
 									})}
-								/>
-								<p aria-hidden="true" className="text-sm text-muted-foreground tabular-nums">
-									{t("loanOverview.ofOriginal", { amount: repaid.amount })}
-								</p>
+								>
+									<span className="text-3xl font-medium tabular-nums">
+										{formatWholePercent(repaid.percent)}
+									</span>
+									<span className="text-sm text-muted-foreground tabular-nums">
+										{t("loanOverview.ofOriginal", { amount: repaid.amount })}
+									</span>
+								</ProgressRing>
 							</div>
 						</div>
 					)}
@@ -185,7 +206,7 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 								)}
 								<div className="flex items-center justify-between gap-2 border-t pt-2">
 									<dt className="text-sm text-muted-foreground">{t("loanOverview.total")}</dt>
-									<dd className="text-sm">
+									<dd className="text-sm font-medium tabular-nums">
 										<Money amount={instalment.total} currency={currency} />
 									</dd>
 								</div>
@@ -196,7 +217,7 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 			)}
 
 			{onEdit !== null && (
-				<div className="flex justify-center py-4">
+				<div className="flex justify-center py-8">
 					<Button variant="ghost" onClick={onEdit}>
 						{t("loanOverview.edit")}
 					</Button>

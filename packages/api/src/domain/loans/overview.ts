@@ -105,16 +105,15 @@ export function leverage(
 /**
  * Sure's `balance_paid_ratio` as a whole percent: measured against the
  * account's balance rather than the schedule, so an early repayment shows.
- * A liability's balance is the amount owed (AD-5), so a negative one owes
- * nothing: it reads as fully repaid, where Sure's `abs` would read it as
- * owed. `null` without an amount borrowed, which leaves the ring out.
+ * The balance counts by its size, as Sure's `abs`. `null` without an amount
+ * borrowed, which leaves the ring out.
  */
 export function repaidPercent(originalAmount: bigint | null, balance: bigint): number | null {
 	if (originalAmount === null || originalAmount <= 0n) {
 		return null;
 	}
 
-	const owed = balance < 0n ? 0n : balance;
+	const owed = balance < 0n ? -balance : balance;
 	const percent = Number(roundHalfUp(100n * (originalAmount - owed), originalAmount));
 
 	return Math.min(Math.max(percent, 0), 100);

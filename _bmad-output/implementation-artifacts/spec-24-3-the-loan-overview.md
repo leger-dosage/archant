@@ -25,15 +25,15 @@ context:
 - `originalAmount`: the details' amount, else null; `remainingBalance`: the account's balance. `interestRate`: null without `interestRate`, else `rateResolver` (a null rate type read as fixed) at `asOf`. `monthlyPayment`: a variable or adjustable loan's first payment dated on or after `asOf`, else `"not_applicable"`; a fixed loan's `periodicPayment`; null otherwise (no rate type, or a fixed loan without schedule). `termMonths`, `rateType` as recorded. `payoffDate`: the schedule's last payment date, else null.
 - `insured` when a schedule exists and `insuranceRate > 0`, as Sure's `Insurance.for`. `totalCost`: `totalPaid` plus the premiums' total, null without schedule. `insurance`: `{ total }` when insured, else `{ rate }` when `insuranceRate > 0`, else null.
 - `leverage` when `downPayment > 0` and `originalAmount > 0`: `tenths` = amount × 10 / down payment rounded half up; band `conservative` when amount ≤ 4 × down payment, `moderate` when ≤ 8 ×, else `high`, in integers, as Ruby's inclusive `LEVERAGE_BANDS` and `find`.
-- `repaidPercent` when `originalAmount > 0`: 100 × (amount − |balance|) / amount rounded half up, clamped to 0–100.
+- `repaidPercent` when `originalAmount > 0`: 100 × (amount − |balance|) / amount rounded half up, clamped to 0–100, as Sure's `balance_paid_ratio`.
 - `instalment`: months elapsed = calendar months from origination to `asOf`, minus one when `addMonths(origination, months) > asOf`, clamped to [0, term], 0 before origination. None without schedule or when elapsed ≥ term or ≥ the payments' count; otherwise payment elapsed + 1 with its principal, interest, premium (0 without insurance), total, and each part's share of the total as an integer percent rounded half up, zeros for a zero total.
 - `{ data: null }` for an account that is not a loan; `NOT_FOUND` for an unknown one; a loan without details answers every figure null. A viewer reads it.
 - Tab `overview`, « Vue d'ensemble », on every loan, after « Soldes » and before « Échéancier », Sure's order; a link to it on another account opens « Opérations ». Read only while the tab is open; key `queryKeys.accounts.overview(id)`, under `detail(id)`.
-- Cards via `SummaryStrip`: « Capital d'origine », « Capital restant », « Taux d'intérêt » (`formatRate`), « Mensualité » (« N/D » for `"not_applicable"`), « Durée » (`termOf`, as `LoanSummary`), « Date de fin prévue » (`longDate`), « Type » (« Fixe », « Variable », « Révisable »), « Coût total assurance comprise » when `insured` else « Coût total », « Assurance » (the total, or « 0,2917 % par an » through `rateToText`), « Effet de levier » (« 4,0x » and « Prudent », « Modéré » or « Élevé »). A null figure reads « Inconnu ».
-- Ring: `ProgressRing` with the loan's tint, named « 19 % remboursé sur 130 000,00 € », under « Remboursé ». Instalment card: « Échéance 70 · 5 octobre 2026 », a list of « Capital », « Intérêts », « Assurance » (left out at zero), each with amount and share, and « Total ».
+- Cards via `SummaryStrip`: « Capital d'origine », « Capital restant », « Taux d'intérêt » (`formatRate`), « Mensualité » (« N/D » for `"not_applicable"`), « Durée » (`truncatedTermOf`: months under a year, else whole years, as Sure), « Date de fin d'origine » (`longDate`, Sure's « Original Payoff Date »), « Type » (« Fixe », « Variable », « Révisable »), « Coût total assurance comprise » when `insured` else « Coût total », « Assurance » (the total, or « 0,292 % par an » through `formatInsuranceRate`, Sure's three decimals stripped), « Effet de levier » (« 4,0x » and « Prudent », « Modéré » or « Élevé », coloured as Sure's `loan_leverage_band_class`: the income green, warning, destructive). A null figure reads « Inconnu ».
+- Ring: `ProgressRing` in `--warning`, Sure's colour, 160 px with the percentage and « sur 130 000,00 € » inside, named « 19 % remboursé sur 130 000,00 € », under « Remboursé ». Instalment card: « Échéance 70 · 5 octobre 2026 », a list of « Capital », « Intérêts », « Assurance » (left out at zero), each with amount and share, and « Total ».
 - « Modifier les détails du prêt », a ghost button for an administrator only, opens `EditAccountDialog`.
 
-**Never:** no stored figure, migration or new error code; no projection, « Fin prévue » or chart (Story 24.4); no MCP tool or export change; no fallback principal; no colour on the leverage band (DESIGN.md keeps warning and destructive for other uses; the band is named in text).
+**Never:** no stored figure, migration or new error code; no projection, « Fin prévue » or chart (Story 24.4); no MCP tool or export change; no fallback principal.
 
 ## I/O & Edge-Case Matrix
 
@@ -46,7 +46,7 @@ context:
 | Variable | change to 3 % on 2023-06-05 | rate 30 000; payment = first payment on or after asOf; none after the last → `"not_applicable"` |
 | Rate only | insuranceRate, no amount | `insurance: { rate }`, totalCost null, not insured |
 | Leverage | 400 000 / 100 000; 400 001; 800 000; 800 001 | 40 conservative; 40 moderate; 80 moderate; 80 high |
-| Overpaid | balance above amount, or negative | repaid 0, or 100 |
+| Overpaid | balance above amount; −32 500,00; −140 000,00 | repaid 0; 75; 0 |
 | No details | loan, details null | every figure null, no ring, no instalment |
 
 </frozen-after-approval>
@@ -83,6 +83,8 @@ context:
 
 ## Spec Change Log
 
+- 2026-10-07, after merge, the owner: « Je ne vois pas de raison de s'éloigner de Sure sur cette suite de tâches ». Every departure that only an Archant document justified is aligned on Sure: a negative balance counts by its size (`abs`), not as fully repaid (AD-5 dropped here); the leverage band is coloured as `loan_leverage_band_class`, the income green standing for Sure's success, which no token carries at 4.5:1; « Durée » truncates to years; the ring takes `--warning` and Sure's size, the percentage and « sur … » inside; the insurance rate alone prints with Sure's three decimals, « 0,292 % par an »; « Date de fin prévue » becomes « Date de fin d'origine », Sure's « Original Payoff Date », which Story 24.4's « Fin prévue » no longer echoes; the instalment's total is medium weight and the edit button has Sure's `py-8`. Kept, forced or outside this story: French labels and rate types through i18next; the summary strip of DESIGN.md in place of Sure's separate cards, as every Archant summary; no fallback principal (Spec 7.1).
+
 ## Review Triage Log
 
 | Finding | Verdict | Evidence | Route |
@@ -106,7 +108,7 @@ context:
 
 ## Design Notes
 
-Assumptions decided by Sure, the owner being unavailable. Leverage bands follow Sure's code, where `0..4` is inclusive and found first: exactly 4,0x reads « Prudent » and 8,0x « Modéré », although the epic's wording says « from 4 » and « from 8 ». The tab sits after « Soldes », a tab Sure lacks, so that « Vue d'ensemble » and « Échéancier » keep Sure's order side by side. « Durée » reuses `termOf` (whole years, else months) for agreement with the header, where Sure truncates to years. The insurance rate prints through `rateToText`, two decimals at least. The ring uses the loan's tint, Archant's ring colour, where Sure uses its warning colour. The end-to-end test cannot pin the server's clock, so it asserts the instalment whose number it derives from today and the figures that stay level; the route spec pins 4 October 2026.
+Assumptions decided by Sure, the owner being unavailable. Leverage bands follow Sure's code, where `0..4` is inclusive and found first: exactly 4,0x reads « Prudent » and 8,0x « Modéré », although the epic's wording says « from 4 » and « from 8 ». The tab sits after « Soldes », a tab Sure lacks, so that « Vue d'ensemble » and « Échéancier » keep Sure's order side by side. « Durée » truncates to years as Sure's overview, so 30 months reads « 2 ans » there and « 30 mois » in the header. The insurance rate prints as Sure's `number_to_percentage`, three decimals rounded half up and stripped. The ring is Sure's warning colour, and the leverage band Sure's colours; Sure's success green has no token, so « Prudent » takes the income green, the closest at 4.5:1, `--trend-up` reaching 3.2:1 on a card. The end-to-end test cannot pin the server's clock, so it asserts the instalment whose number it derives from today and the figures that stay level; the route spec pins 4 October 2026.
 
 ## Verification
 

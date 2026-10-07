@@ -5,11 +5,13 @@ import { toMinorUnits } from "@archant/data/money";
 
 import {
 	completeLoanInput,
+	formatInsuranceRate,
 	formatRate,
 	loanDetailsToInput,
 	proposedTerm,
 	rateToText,
 	termOf,
+	truncatedTermOf,
 } from "./loan-details.ts";
 
 const unknownTerms: LoanDetails = {
@@ -43,6 +45,28 @@ describe("formatRate", () => {
 		expect(formatRate(18_200)).toBe("1,820 %");
 		expect(formatRate(31_250)).toBe("3,125 %");
 		expect(formatRate(1_000_000)).toBe("100,000 %");
+	});
+});
+
+describe("formatInsuranceRate", () => {
+	it("rounds half up to Sure's three decimals and strips the zeros that follow", () => {
+		expect(formatInsuranceRate(2917)).toBe("0,292 %");
+		expect(formatInsuranceRate(2915)).toBe("0,292 %");
+		expect(formatInsuranceRate(2914)).toBe("0,291 %");
+		expect(formatInsuranceRate(3600)).toBe("0,36 %");
+		expect(formatInsuranceRate(5000)).toBe("0,5 %");
+		expect(formatInsuranceRate(10_000)).toBe("1 %");
+		expect(formatInsuranceRate(9996)).toBe("1 %");
+	});
+});
+
+describe("truncatedTermOf", () => {
+	it("names whole years from a year up, the months left over dropped, as Sure's overview", () => {
+		expect(truncatedTermOf(300)).toEqual({ unit: "years", count: 25 });
+		expect(truncatedTermOf(30)).toEqual({ unit: "years", count: 2 });
+		expect(truncatedTermOf(12)).toEqual({ unit: "years", count: 1 });
+		expect(truncatedTermOf(11)).toEqual({ unit: "months", count: 11 });
+		expect(truncatedTermOf(1)).toEqual({ unit: "months", count: 1 });
 	});
 });
 
