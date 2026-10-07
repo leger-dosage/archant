@@ -22,7 +22,6 @@ import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { hasBankKeys, tombstoneBankKeys } from "./entry-keys.ts";
 import { correlatedTransferSide, filterCondition } from "./filter.ts";
 import {
 	categoryExists,
@@ -175,11 +174,8 @@ export async function updateTransaction(
  */
 export type ShownTransaction = { accountId: string; date: IsoDate; amount: MinorUnits };
 
-/**
- * The row as the deletion read it, the entries it removed, a split's lines
- * included, and whether a bank will not resend it.
- */
-export type DeleteResult = { row: EditableRow; deletedCount: number; tombstoned: boolean };
+/** The row as the deletion read it, and the entries it removed, a split's lines included. */
+export type DeleteResult = { row: EditableRow; deletedCount: number };
 
 /** The fields of `shown` the row no longer holds, in the order an assistant names them. */
 function changedFrom(current: EditableRow, shown: ShownTransaction): string[] {
@@ -192,10 +188,9 @@ function changedFrom(current: EditableRow, shown: ShownTransaction): string[] {
 
 /**
  * Deletes a transaction for good, as Sure does, and recomputes its account's
- * balances from its date. The rows past the new end go with it. Its bank keys
- * stay as tombstones, so the next sync, which rereads the last week, does not
- * bring it back; its file keys go, so re-importing the file does. A split
- * parent goes with its children; a child alone throws `TRANSACTION_SPLIT`.
+ * balances from its date. The rows past the new end go with it, and so do its
+ * keys: as in Sure, a sync or an import still listing the line brings it
+ * back. A split parent goes with its children; a child alone throws `TRANSACTION_SPLIT`.
  * With `shown`, a row whose account, date or amount differs throws
  * `TRANSACTION_CHANGED` first, read in the same transaction as the delete so
  * a sync booking it at another amount cannot slip between them.
@@ -223,12 +218,10 @@ export async function deleteTransaction(
 
 			await refuseSplit(tx, [entryId], isSplitChild);
 			const lines = await tx.$count(entries, eq(entries.parentEntryId, entryId));
-			const tombstoned = await hasBankKeys(tx, entryId);
-			await tombstoneBankKeys(tx, [entryId], Date.now());
 			await deleteTransactionRows(tx, [entryId]);
 			await recomputeBalances(tx, account, current.date, deps.timeZone);
 
-			return { row: current, deletedCount: 1 + lines, tombstoned };
+			return { row: current, deletedCount: 1 + lines };
 		},
 		{ behavior: "immediate" },
 	);
@@ -430,7 +423,7 @@ export async function bulkUpdateTransactions(
 
 /**
  * Deletes every selected transaction for good, all or nothing, as
- * `deleteTransaction` does one, bank keys kept as tombstones, and returns
+ * `deleteTransaction` does one, and returns
  * how many went. A selected split parent goes with its children, and a
  * selected child is skipped, as Sure's `bulk_deletions_controller`; neither
  * child counts. Recomputes each affected account once, from its earliest
@@ -452,9 +445,6 @@ export async function bulkDeleteTransactions(
 				earliest.set(row.accountId, known === undefined ? row.date : minDate(known, row.date));
 			}
 
-			const now = Date.now();
-
-			await inSequence(ids, ROWS_PER_INSERT, (chunk) => tombstoneBankKeys(tx, chunk, now));
 			const moved: TradedPosition[] = [];
 			await inSequence(ids, ROWS_PER_INSERT, async (chunk) =>
 				moved.push(...(await deleteSplitChildren(tx, chunk))),

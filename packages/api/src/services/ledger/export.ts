@@ -344,7 +344,6 @@ export const LEFT_OUT = {
 		rolledOverAmount:
 			"What the last budget write carried in, which a recategorised transaction leaves stale: the archive computes the chain again.",
 	},
-	deleted_entry_keys: "Deduplication keys of deleted lines, meaningful to this instance only.",
 	entries: {
 		importId: "The import that wrote the entry; imports and their raw files never leave.",
 		notes:

@@ -5,7 +5,6 @@ import { toMinorUnits } from "@archant/data/money";
 import { balances } from "@archant/data/schema/balances";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
-import { deletedEntryKeys } from "@archant/data/schema/entry-keys";
 import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -580,7 +579,7 @@ describe("deleteTransaction", () => {
 		await expect(temp.db.select().from(tags).where(eq(tags.id, holidays))).resolves.toHaveLength(1);
 	});
 
-	it("deletes a split parent with its children, tombstoning its bank keys", async () => {
+	it("deletes a split parent with its children, and the next sync brings the bank line back whole", async () => {
 		const { account, bank } = await linkedChecking();
 		const line = newBankLine({ externalId: "SPLIT1", amount: toMinorUnits(-transferAmount()) });
 		const [parent = ""] = (await sync(account.id, bank.connectionId, [line])).created;
@@ -600,12 +599,10 @@ describe("deleteTransaction", () => {
 		await expect(
 			temp.db.select().from(entries).where(inArray(entries.id, split.childIds)),
 		).resolves.toEqual([]);
-		await expect(
-			temp.db.select().from(deletedEntryKeys).where(eq(deletedEntryKeys.accountId, account.id)),
-		).resolves.toHaveLength(2);
 		await expect(sync(account.id, bank.connectionId, [line])).resolves.toMatchObject({
-			created: [],
+			created: [expect.any(String)],
 		});
+		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
 	it("refuses to delete a child alone with TRANSACTION_SPLIT", async () => {
@@ -625,28 +622,16 @@ describe("deleteTransaction", () => {
 		});
 	});
 
-	it("counts the rows it deleted and says whether a bank will not resend it", async () => {
+	it("counts the rows it deleted", async () => {
 		const account = await openChecking();
 		const typed = await add(account.id);
 		const { parent } = await splitInTwo(account.id);
-		const { account: linked, bank } = await linkedChecking();
-		const [synced = ""] = (
-			await sync(linked.id, bank.connectionId, [
-				newBankLine({ externalId: "COUNT1", amount: toMinorUnits(-transferAmount()) }),
-			])
-		).created;
 
 		await expect(deleteTransaction(deps(), typed, asUser)).resolves.toMatchObject({
 			deletedCount: 1,
-			tombstoned: false,
 		});
 		await expect(deleteTransaction(deps(), parent, asUser)).resolves.toMatchObject({
 			deletedCount: 3,
-			tombstoned: false,
-		});
-		await expect(deleteTransaction(deps(), synced, asUser)).resolves.toMatchObject({
-			deletedCount: 1,
-			tombstoned: true,
 		});
 	});
 });

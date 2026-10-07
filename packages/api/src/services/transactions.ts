@@ -582,13 +582,9 @@ export type ShownValues = { accountId: string; date: IsoDate; amount: string };
 
 /**
  * A deleted transaction as it stood just before, with the rows that went, a
- * split's lines included, and whether its bank keys stay as tombstones.
+ * split's lines included.
  */
-export type DeletedTransaction = {
-	transaction: TransactionItem;
-	deletedCount: number;
-	bankWillNotResend: boolean;
-};
+export type DeletedTransaction = { transaction: TransactionItem; deletedCount: number };
 
 /**
  * Deletes a transaction for good. With `shown`, which an assistant passes and
@@ -617,7 +613,7 @@ export async function deleteTransaction(
 		expected = { accountId: shown.accountId, date: shown.date, amount };
 	}
 
-	const { row, deletedCount, tombstoned } = await deleteLedgerTransaction(deps, id, {
+	const { row, deletedCount } = await deleteLedgerTransaction(deps, id, {
 		origin: "user",
 		shown: expected,
 	});
@@ -635,7 +631,6 @@ export async function deleteTransaction(
 			tagIds: row.tagIds,
 		},
 		deletedCount,
-		bankWillNotResend: tombstoned,
 	};
 }
 
