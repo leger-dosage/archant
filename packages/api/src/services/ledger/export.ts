@@ -347,6 +347,8 @@ export const LEFT_OUT = {
 	deleted_entry_keys: "Deduplication keys of deleted lines, meaningful to this instance only.",
 	entries: {
 		importId: "The import that wrote the entry; imports and their raw files never leave.",
+		notes:
+			"A valuation's notes, which Sure's `Family::DataExporter` leaves out of its Valuation lines and its importer never reads.",
 	},
 	entry_keys: "Deduplication keys, meaningful to this instance only.",
 	import_mappings: "A saved CSV column mapping, a setting.",

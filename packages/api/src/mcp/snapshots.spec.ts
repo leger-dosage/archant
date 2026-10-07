@@ -7,6 +7,7 @@ import { assistantCalls } from "@archant/data/schema/assistant-calls";
 
 import { createLogger } from "../lib/logger.ts";
 import {
+	buildApp,
 	mortgage,
 	openOwn,
 	ownDatabase,
@@ -80,6 +81,7 @@ const valuation = z.object({
 	computed: z.string().nullable(),
 	gap: z.string().nullable(),
 	currency: z.string(),
+	notes: z.string().nullable(),
 });
 
 const valuations = z.object({
@@ -90,7 +92,16 @@ const valuations = z.object({
 	totalPages: z.number(),
 });
 
-const recordedValuation = snapshot.extend({ accountId: z.string(), replacedExisting: z.boolean() });
+const recordedValuation = snapshot.extend({
+	accountId: z.string(),
+	replacedExisting: z.boolean(),
+	provenance: z.object({
+		source: z.string(),
+		citation: z.string(),
+		estimated: z.boolean(),
+		grade: z.enum(["A", "B", "C"]).nullable(),
+	}),
+});
 
 const accountsWithSeries = z.object({
 	accounts: z.array(
@@ -137,11 +148,13 @@ describe("get_valuations", () => {
 			accountId: account.id,
 			date: "2026-03-05",
 			balance: "2000.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		await tools.write("record_valuation", {
 			accountId: account.id,
 			date: "2026-04-01",
 			balance: "1990.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		await db.delete(assistantCalls);
 
@@ -160,6 +173,7 @@ describe("get_valuations", () => {
 				balance: "1990.00",
 				computed: "2000.00",
 				gap: "-10.00",
+				notes: "Relevé de compte (grade: A)",
 			},
 			{
 				...of,
@@ -168,6 +182,7 @@ describe("get_valuations", () => {
 				balance: "2000.00",
 				computed: "1380.00",
 				gap: "620.00",
+				notes: "Relevé de compte (grade: A)",
 			},
 			{
 				...of,
@@ -176,6 +191,7 @@ describe("get_valuations", () => {
 				balance: "1500.00",
 				computed: null,
 				gap: null,
+				notes: null,
 			},
 		]);
 		expect(paging).toEqual({ page: 1, pageSize: 50, total: 3, totalPages: 1 });
@@ -200,6 +216,7 @@ describe("get_valuations", () => {
 			accountId: account.id,
 			date: "2026-03-05",
 			balance: "2000.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		await db.delete(assistantCalls);
 
@@ -256,6 +273,7 @@ describe("record_valuation", () => {
 			accountId: account.id,
 			date: "2026-08-15",
 			balance: "2500.00",
+			source: "Relevé de compte (grade: A)",
 		});
 
 		const { id: _id, ...recorded } = recordedValuation.parse(result.structuredContent);
@@ -268,6 +286,12 @@ describe("record_valuation", () => {
 			gap: "1120.00",
 			currency: "EUR",
 			replacedExisting: false,
+			provenance: {
+				source: "Relevé de compte (grade: A)",
+				citation: "Relevé de compte",
+				estimated: false,
+				grade: "A",
+			},
 		});
 		await expect(balancesOf(tools, account.id, "2026-08-15")).resolves.toEqual({
 			today: "2480.00",
@@ -289,6 +313,7 @@ describe("record_valuation", () => {
 					accountId: account.id,
 					date: "2026-08-15",
 					balance: "2500.00",
+					source: "Relevé de compte (grade: A)",
 				})
 			).structuredContent,
 		);
@@ -299,6 +324,7 @@ describe("record_valuation", () => {
 					accountId: account.id,
 					date: "2026-08-15",
 					balance: "2450.00",
+					source: "Relevé de compte (grade: A)",
 				})
 			).structuredContent,
 		);
@@ -323,16 +349,19 @@ describe("record_valuation", () => {
 			accountId: account.id,
 			date: "2026-01-10",
 			balance: "1.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		const tomorrow = await tools.write("record_valuation", {
 			accountId: account.id,
 			date: "2026-09-22",
 			balance: "1.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		const badAmount = await tools.write("record_valuation", {
 			accountId: account.id,
 			date: "2026-08-15",
 			balance: "12,345",
+			source: "Relevé de compte (grade: A)",
 		});
 
 		expect(opening.isError).toBe(true);
@@ -349,24 +378,104 @@ describe("record_valuation", () => {
 		]);
 	});
 
-	it("refuses Sure's shape, a number as amount and a source citation, writing nothing", async () => {
+	it("refuses a number as balance, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
-		const sureShaped = await tools.write("record_valuation", {
-			accountId: account.id,
-			date: "2026-08-15",
-			balance: "2500.00",
-			source: "Statement 2026-08-15 (grade: A)",
-		});
 		const numeric = await tools.write("record_valuation", {
 			accountId: account.id,
 			date: "2026-08-15",
 			balance: 2500,
+			source: "Relevé de compte (grade: A)",
 		});
 
-		expect(sureShaped.content[0]?.text).toMatch(/^VALIDATION_ERROR:/);
 		expect(numeric.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"balance"/);
+		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
+	});
+
+	it("stores the cited source in the snapshot's notes and answers its provenance, as Sure's", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = await tools.write("record_valuation", {
+			accountId: account.id,
+			date: "2026-08-15",
+			balance: "2500.00",
+			source: "estimated: linear interpolation over 2026-07 / 2026-09 statements (grade: C)",
+		});
+
+		expect(recordedValuation.parse(result.structuredContent).provenance).toEqual({
+			source: "estimated: linear interpolation over 2026-07 / 2026-09 statements (grade: C)",
+			citation: "linear interpolation over 2026-07 / 2026-09 statements",
+			estimated: true,
+			grade: "C",
+		});
+		expect((await snapshotsOf(tools, account.id)).items).toMatchObject([
+			{ notes: "estimated: linear interpolation over 2026-07 / 2026-09 statements (grade: C)" },
+		]);
+	});
+
+	it("keeps the owner's note and appends a changed source on a replace, never stacking the same one", async () => {
+		const account = await checking();
+		const tools = await assistants();
+		const first = recordedValuation.parse(
+			(
+				await tools.write("record_valuation", {
+					accountId: account.id,
+					date: "2026-08-15",
+					balance: "2500.00",
+					source: "Relevé d'août (grade: A)",
+				})
+			).structuredContent,
+		);
+		// The owner's edit in the « Soldes » dialog.
+		await buildApp(db).request(`/api/snapshots/${first.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ notes: "Vérifié avec le conseiller\n\nRelevé d'août (grade: A)" }),
+		});
+
+		await tools.write("record_valuation", {
+			accountId: account.id,
+			date: "2026-08-15",
+			balance: "2450.00",
+			source: "Relevé d'août (grade: A)",
+		});
+		const same = (await snapshotsOf(tools, account.id)).items[0]?.notes;
+		await tools.write("record_valuation", {
+			accountId: account.id,
+			date: "2026-08-15",
+			balance: "2460.00",
+			source: "Relevé rectifié d'août (grade: A)",
+		});
+		const revised = (await snapshotsOf(tools, account.id)).items[0]?.notes;
+
+		expect(same).toBe("Vérifié avec le conseiller\n\nRelevé d'août (grade: A)");
+		expect(revised).toBe(
+			"Vérifié avec le conseiller\n\nRelevé d'août (grade: A)\n\nRelevé rectifié d'août (grade: A)",
+		);
+	});
+
+	it("refuses a missing, blank or ungraded estimated source on source, writing nothing", async () => {
+		const account = await checking();
+		const tools = await assistants();
+		const base = { accountId: account.id, date: "2026-08-15", balance: "2500.00" };
+
+		const missing = await tools.write("record_valuation", base);
+		const blank = await tools.write("record_valuation", { ...base, source: "  " });
+		const ungraded = await tools.write("record_valuation", {
+			...base,
+			source: "estimated: from a spreadsheet",
+		});
+		const unknown = await tools.write("record_valuation", {
+			...base,
+			source: "Relevé (grade: D)",
+		});
+
+		expect(missing.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"source"/);
+		expect(blank.content[0]?.text).toContain('"path":"source","code":"source_required"');
+		expect(ungraded.content[0]?.text).toContain('"path":"source","code":"estimate_without_grade"');
+		expect(unknown.content[0]?.text).toContain('"path":"source","code":"unknown_grade"');
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 	});
 
@@ -379,6 +488,7 @@ describe("record_valuation", () => {
 			accountId: loan.id,
 			date: "2026-09-01",
 			balance: "175000.00",
+			source: "Relevé de compte (grade: A)",
 		});
 
 		const result = await tools.read("get_accounts");
@@ -407,6 +517,7 @@ describe("an unknown account", () => {
 			accountId: "nothing",
 			date: "2026-08-15",
 			balance: "1.00",
+			source: "Relevé de compte (grade: A)",
 		});
 
 		expect(read.content[0]?.text).toMatch(/^NOT_FOUND:/);

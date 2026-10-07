@@ -86,6 +86,7 @@ context:
 ## Spec Change Log
 
 - Owner rule of 2026-10-07, no divergence from Sure unless forced by money, French text, accessibility, security or the API error contract. Amended Boundaries and the matrix: `get_valuations` lists every active account's valuations, opening and current anchors included, with each one's `kind` and account, an optional `accountId`, Sure's `startDate` and `endDate`, and `totalPages`, as Sure's tool. KEEP: decimal strings (money). OPEN for the owner: Sure's required `source` citation needs notes on a snapshot, which Archant's snapshots lack (AD-8); and Sure's snake_case field names (`account_id`, `amount`) against the camelCase every Archant tool uses.
+- Owner rule of 2026-10-07, settled for the citation: a snapshot has notes, `entries.notes`, as Sure's valuation does (migration 0062, AD-8 amended), shown and edited in « Modifier le solde » with Sure's wording. Supersedes the « no citation or `source` field » Never and the « no new screen » boundary for this field. `record_valuation` requires Sure's `source`, parsed by `parseCitation` in `domain/balances/citation.ts` (Sure's `Provenance::Citation`) and appended to the notes by `mergedNotes` (Sure's `merged_notes`); it answers Sure's `provenance`, and `get_valuations` each valuation's `notes`. KEEP: a refused source answers `VALIDATION_ERROR` on `source` with its reason as the field code (API error contract), where Sure answers `invalid_source_citation`. The export leaves the notes out, as Sure's `Family::DataExporter` does.
 
 ## Review Triage Log
 

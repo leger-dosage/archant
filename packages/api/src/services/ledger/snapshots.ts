@@ -17,6 +17,7 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import { holdings } from "@archant/data/schema/holdings";
 import { transactions } from "@archant/data/schema/transactions";
 
+import { mergedNotes } from "../../domain/balances/citation.ts";
 import {
 	snapshotGap,
 	snapshotGapBackward,
@@ -35,12 +36,20 @@ export type SnapshotInput = {
 	date: IsoDate;
 	/** A stored balance (AD-5): an asset's value, a liability's amount owed. */
 	balance: MinorUnits;
+	/** Replaces the notes; absent, a replaced snapshot keeps its own. */
+	notes?: string | null | undefined;
+	/**
+	 * The source an assistant cites, appended to the notes as Sure's
+	 * `record_valuation` does.
+	 */
+	source?: string | undefined;
 };
 
-/** An absent or `undefined` field is left as it is. */
+/** An absent or `undefined` field is left as it is; `notes: null` clears them. */
 export type SnapshotPatch = {
 	date?: IsoDate | undefined;
 	balance?: MinorUnits | undefined;
+	notes?: string | null | undefined;
 };
 
 export type RecordSnapshotResult =
@@ -68,7 +77,12 @@ export async function snapshotOn(
 	except?: string,
 ) {
 	return tx
-		.select({ id: entries.id, balance: entries.amount, importId: entries.importId })
+		.select({
+			id: entries.id,
+			balance: entries.amount,
+			importId: entries.importId,
+			notes: entries.notes,
+		})
 		.from(entries)
 		.where(
 			and(
@@ -117,8 +131,16 @@ export async function recordSnapshot(
 			}
 
 			const now = Date.now();
-			const existing = (await snapshotOn(tx, accountId, input.date))?.id;
+			const held = await snapshotOn(tx, accountId, input.date);
+			const existing = held?.id;
 			const id = existing ?? crypto.randomUUID();
+			const written = input.notes === undefined ? (held?.notes ?? null) : input.notes;
+			const notes =
+				input.source !== undefined
+					? { notes: mergedNotes(written, input.source) }
+					: input.notes === undefined
+						? {}
+						: { notes: input.notes };
 
 			if (existing === undefined) {
 				await tx.insert(entries).values({
@@ -129,6 +151,7 @@ export async function recordSnapshot(
 					date: input.date,
 					amount: input.balance,
 					currency: account.currency,
+					...notes,
 					createdAt: now,
 					updatedAt: now,
 				});
@@ -137,7 +160,7 @@ export async function recordSnapshot(
 				// import that wrote it leaves it.
 				await tx
 					.update(entries)
-					.set({ amount: input.balance, importId: null, updatedAt: now })
+					.set({ amount: input.balance, importId: null, ...notes, updatedAt: now })
 					.where(eq(entries.id, existing));
 			}
 
@@ -179,7 +202,13 @@ export async function updateSnapshot(
 			// As in `recordSnapshot`, an edited snapshot is the user's.
 			await tx
 				.update(entries)
-				.set({ date, amount: balance, importId: null, updatedAt: Date.now() })
+				.set({
+					date,
+					amount: balance,
+					importId: null,
+					...(patch.notes === undefined ? {} : { notes: patch.notes }),
+					updatedAt: Date.now(),
+				})
 				.where(eq(entries.id, id));
 			await recomputeBalances(tx, account, minDate(current.date, date), deps.timeZone);
 
@@ -218,6 +247,8 @@ export type SnapshotRecord = {
 	/** `balance - computed`, derived here and never stored. */
 	gap: MinorUnits;
 	currency: string;
+	/** What the owner wrote, and the sources an assistant cited; never logged. */
+	notes: string | null;
 };
 
 const snapshotColumns = {
@@ -226,6 +257,7 @@ const snapshotColumns = {
 	date: entries.date,
 	balance: entries.amount,
 	currency: entries.currency,
+	notes: entries.notes,
 	type: accounts.type,
 };
 
@@ -235,6 +267,7 @@ type SnapshotRow = {
 	date: string;
 	balance: number;
 	currency: string;
+	notes: string | null;
 	type: AccountType;
 };
 
@@ -410,6 +443,8 @@ export type ValuationRecord = {
 	computed: MinorUnits | null;
 	gap: MinorUnits | null;
 	currency: string;
+	/** Sure's `get_valuations` answers each entry's notes, the citation among them. */
+	notes: string | null;
 };
 
 /**
@@ -480,6 +515,7 @@ export async function listValuations(
 				computed: snapshot?.computed ?? null,
 				gap: snapshot?.gap ?? null,
 				currency: row.currency,
+				notes: row.notes,
 			};
 		}),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),

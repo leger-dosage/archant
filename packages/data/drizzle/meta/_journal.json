@@ -435,6 +435,13 @@
       "when": 1791387290758,
       "tag": "0061_goal_icon_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1791391893459,
+      "tag": "0062_valuation_notes",
+      "breakpoints": true
     }
   ]
 }

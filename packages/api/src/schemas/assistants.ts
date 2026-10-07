@@ -6,6 +6,11 @@ import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
+import {
+	CITATION_MAX_LENGTH,
+	ESTIMATED_PREFIX,
+	parseCitation,
+} from "../domain/balances/citation.ts";
 import { BALANCE_PERIODS } from "./balances.ts";
 import {
 	BILL_LIFECYCLES,
@@ -785,7 +790,8 @@ export const valuationsInput = z
 /**
  * `record_valuation`: the « Soldes » dialog's fields, passed raw to
  * `createSnapshot`, which parses the balance in the account's currency as
- * it parses the dialog's.
+ * it parses the dialog's, and Sure's required `source`, parsed here into
+ * its citation.
  */
 export const recordValuationInput = z.strictObject({
 	accountId,
@@ -798,6 +804,22 @@ export const recordValuationInput = z.strictObject({
 		.string()
 		.describe(
 			'The stored balance, a decimal string such as "175000.00" in the account\'s currency: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.',
+		),
+	source: z
+		.string()
+		.transform((value, context) => {
+			const parsed = parseCitation(value);
+
+			if (!parsed.ok) {
+				context.addIssue({ code: "custom", message: parsed.code });
+
+				return z.NEVER;
+			}
+
+			return parsed.citation;
+		})
+		.describe(
+			`Required citation naming the document this balance came from, in the grammar: ["${ESTIMATED_PREFIX}"] citation [" (grade: A|B|C)"], ${CITATION_MAX_LENGTH} characters at most, on one line.`,
 		),
 });
 

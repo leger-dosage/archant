@@ -53,6 +53,68 @@ describe("PATCH /api/snapshots/:id", () => {
 		await expect(balanceOf(account.id)).resolves.toBe(-8000);
 	});
 
+	it("writes notes, trimmed, lists them, and clears them when blank, as Sure's valuation does", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		expect(snapshot).toMatchObject({ notes: null });
+
+		const written = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			notes: "  Relevé de mars, page 2 ",
+		});
+
+		expect(written.status).toBe(200);
+		expect(written.body).toMatchObject({
+			data: { notes: "Relevé de mars, page 2", balance: 200000 },
+		});
+		expect((await snapshotsOf(account.id)).items[0]).toMatchObject({
+			notes: "Relevé de mars, page 2",
+		});
+
+		const moved = await request("PATCH", `/api/snapshots/${snapshot.id}`, { balance: "1 990,00" });
+
+		expect(moved.body).toMatchObject({ data: { notes: "Relevé de mars, page 2" } });
+
+		const cleared = await request("PATCH", `/api/snapshots/${snapshot.id}`, { notes: "  " });
+
+		expect(cleared.body).toMatchObject({ data: { notes: null } });
+	});
+
+	it("takes notes on a new snapshot too, as Sure's API does", async () => {
+		const account = await openPinned();
+
+		const snapshot = await recorded(account.id, {
+			date: "2026-03-05",
+			balance: "2 000,00",
+			notes: "Relevé de mars",
+		});
+
+		expect(snapshot).toMatchObject({ notes: "Relevé de mars" });
+	});
+
+	it("keeps the notes when the dialog records the same date again", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+		await request("PATCH", `/api/snapshots/${snapshot.id}`, { notes: "Relevé de mars" });
+
+		const again = await recorded(account.id, { date: "2026-03-05", balance: "2 100,00" });
+
+		expect(again).toMatchObject({ id: snapshot.id, balance: 210000, notes: "Relevé de mars" });
+	});
+
+	it("refuses notes over 2,000 characters and writes nothing", async () => {
+		const account = await openPinned();
+		const snapshot = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+
+		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
+			notes: "x".repeat(2001),
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "notes", code: "too_big" }]);
+		expect((await snapshotsOf(account.id)).items[0]).toMatchObject({ notes: null });
+	});
+
 	it("refuses a date another snapshot holds and writes nothing", async () => {
 		const account = await openPinned();
 		await recorded(account.id, { date: "2026-02-20", balance: "1 900,00" });

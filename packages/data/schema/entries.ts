@@ -55,6 +55,11 @@ export const entries = sqliteTable(
 		parentEntryId: text("parent_entry_id").references((): AnySQLiteColumn => entries.id, {
 			onDelete: "restrict",
 		}),
+		// A valuation's notes, Sure's `Entry#notes`: what the owner wrote in the
+		// snapshot's dialog, and the source an assistant's `record_valuation`
+		// cites. Here beside `valuation_kind`, as a valuation has no table of its
+		// own; a transaction's notes stay in `transactions` (AD-8).
+		notes: text("notes"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

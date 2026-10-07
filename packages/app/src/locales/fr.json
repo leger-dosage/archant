@@ -586,6 +586,8 @@
 			"description": "Le solde affiché par votre banque à la fin de cette journée, ou le montant dû pour une carte. Il remplace le solde calculé à partir de cette date.",
 			"date": "Date",
 			"balance": "Solde",
+			"notes": "Notes",
+			"notesPlaceholder": "Ajoutez tout détail supplémentaire à ce bilan",
 			"save": "Enregistrer"
 		},
 		"delete": {

@@ -204,6 +204,43 @@ test("a snapshot is edited, then deleted after confirmation", async ({ page, api
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
+test("a snapshot's notes are written in its dialog, kept, and cleared, as Sure's valuation", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	const date = daysAgo(5);
+	await api.recordSnapshot(account.id, { date, balance: "2 000,00" });
+
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
+	await page.getByRole("button", { name: "Ajouter un solde" }).click();
+	await expect(
+		page.getByRole("dialog", { name: "Ajouter un solde" }).getByLabel("Notes"),
+	).toHaveCount(0);
+	await page.getByRole("button", { name: "Annuler" }).click();
+
+	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le solde" });
+	const notes = dialog.getByLabel("Notes");
+	await expect(notes).toHaveValue("");
+	await expect(notes).toHaveAttribute(
+		"placeholder",
+		"Ajoutez tout détail supplémentaire à ce bilan",
+	);
+	await notes.fill("Relevé de fin de mois, page 2");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
+	await expect(notes).toHaveValue("Relevé de fin de mois, page 2");
+	await notes.fill("");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
+	await expect(notes).toHaveValue("");
+});
+
 test("a transaction on a snapshot day moves the gap, not the balance", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
 	const date = daysAgo(5);

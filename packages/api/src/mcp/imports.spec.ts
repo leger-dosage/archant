@@ -295,6 +295,7 @@ describe("the closing balance", () => {
 			accountId: account.id,
 			date: "2026-09-15",
 			balance: "1200.00",
+			source: "Relevé de compte (grade: A)",
 		});
 		const late = await openOwn({ name: "Ouvert tard", openingDate: "2026-09-16" });
 		const args = { filename: "releve.ofx", contentBase64: base64(await creditAgricole()) };

@@ -291,6 +291,7 @@ describe("listSnapshots", () => {
 					computed: 138000,
 					gap: 62000,
 					currency: "EUR",
+					notes: null,
 				},
 			],
 			total: 1,
