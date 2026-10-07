@@ -1,5 +1,7 @@
 import type { IsoDate } from "../dates.ts";
 
+import type { MinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import { daysInMonth } from "@archant/data/months";
 import { LAST_DAY_OF_MONTH } from "@archant/data/recurring";
 
@@ -245,6 +247,39 @@ export function occurrencesPerYear(schedule: Schedule): number {
 				return sum + 1 / rule.interval;
 		}
 	}, 0);
+}
+
+/**
+ * Sure's `monthly_equivalent_amount`: `|amount| × occurrencesPerYear / 12`,
+ * rounded half up to the minor unit as Sure's `number_to_currency` shows it.
+ * Computed as an exact fraction, a weekly rule counting 1461 / (28 ×
+ * interval) a year, so the float of `occurrencesPerYear` never touches money.
+ */
+export function monthlyEquivalent(
+	rules: readonly RecurrenceRule[],
+	amount: MinorUnits,
+): MinorUnits {
+	const [numerator, denominator] = rules.reduce<[bigint, bigint]>(
+		([sumNumerator, sumDenominator], rule) => {
+			const interval = BigInt(rule.interval);
+			const [ruleNumerator, ruleDenominator] =
+				rule.frequency === "weekly"
+					? [1461n, 28n * interval]
+					: rule.frequency === "monthly"
+						? [12n, interval]
+						: [1n, interval];
+
+			return [
+				sumNumerator * ruleDenominator + ruleNumerator * sumDenominator,
+				sumDenominator * ruleDenominator,
+			];
+		},
+		[0n, 1n],
+	);
+	const scaled = BigInt(Math.abs(amount)) * numerator;
+	const twelfths = 12n * denominator;
+
+	return toMinorUnits(Number((2n * scaled + twelfths) / (2n * twelfths)));
 }
 
 /**

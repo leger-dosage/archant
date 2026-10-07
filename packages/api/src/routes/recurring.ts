@@ -3,7 +3,7 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { candidatesQuerySchema, declareBodySchema } from "../schemas/bills.ts";
+import { allBillsQuerySchema, candidatesQuerySchema, declareBodySchema } from "../schemas/bills.ts";
 import {
 	addPaymentSchema,
 	addRecurringSchema,
@@ -12,11 +12,14 @@ import {
 	recurringPatchSchema,
 } from "../schemas/recurring.ts";
 import {
+	allBills,
 	billCandidates,
+	billDetail,
 	billsOverview,
 	declareBill,
 	occurrenceDetail,
 	patchRecurring,
+	upcomingRecurring,
 } from "../services/recurring/bills.ts";
 import {
 	addPayment,
@@ -38,6 +41,8 @@ import {
 	recurringOfEntry,
 } from "../services/recurring/series.ts";
 
+// `GET /:id` comes last: registered before them, it would answer `/bills`
+// and `/upcoming`.
 export function recurringRoutes(deps: ServiceDeps) {
 	return new Hono()
 		.get("/", async (c) => c.json({ data: await listRecurring(deps) }, 200))
@@ -75,6 +80,10 @@ export function recurringRoutes(deps: ServiceDeps) {
 			c.json({ data: await removePayment(deps, c.req.param("id")) }, 200),
 		)
 		.get("/bills", async (c) => c.json({ data: await billsOverview(deps) }, 200))
+		.get("/bills/all", validated("query", allBillsQuerySchema), async (c) =>
+			c.json({ data: await allBills(deps, c.req.valid("query")) }, 200),
+		)
+		.get("/upcoming", async (c) => c.json({ data: await upcomingRecurring(deps) }, 200))
 		.get("/occurrences/:id", async (c) =>
 			c.json({ data: await occurrenceDetail(deps, c.req.param("id")) }, 200),
 		)
@@ -95,5 +104,6 @@ export function recurringRoutes(deps: ServiceDeps) {
 		)
 		.post("/occurrences/:id/payments", validated("json", addPaymentSchema), async (c) =>
 			c.json({ data: await addPayment(deps, c.req.param("id"), c.req.valid("json")) }, 201),
-		);
+		)
+		.get("/:id", async (c) => c.json({ data: await billDetail(deps, c.req.param("id")) }, 200));
 }

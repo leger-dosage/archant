@@ -142,3 +142,9 @@ const monthOnly = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "U
 export const MONTH_NAMES: readonly string[] = Array.from({ length: 12 }, (_, index) =>
 	monthOnly.format(new Date(Date.UTC(2026, index, 1))),
 );
+
+const DAY_MS = 86_400_000;
+
+/** Days from `from` to `to`, both `YYYY-MM-DD`. */
+export const daysFrom = (from: string, to: string) =>
+	Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);

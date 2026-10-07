@@ -26,31 +26,6 @@ async function expectEmptyState(scope: Page | Locator, heading: string): Promise
 	return empty;
 }
 
-test("recurring: « Détecter les récurrences » runs the detection", async ({ page }) => {
-	await emptyList(page, "/api/recurring");
-	await page.goto("/recurring");
-
-	const empty = await expectEmptyState(page, "Aucune récurrence pour l'instant");
-	await expect(
-		empty.getByText("Lancez la détection ou ajoutez-en une depuis une opération."),
-	).toBeVisible();
-	await expect(empty.locator("svg.lucide-repeat")).toBeVisible();
-	// The page header's « Détecter » steps aside for it.
-	await expect(page.getByRole("button", { name: /^Détecter/u })).toHaveCount(1);
-
-	const detection = page.waitForResponse(
-		(response) =>
-			response.url().endsWith("/api/recurring/detect") && response.request().method() === "POST",
-	);
-	await empty.getByRole("button", { name: "Détecter les récurrences" }).click();
-	expect((await detection).status()).toBe(200);
-	await expect(
-		page
-			.locator("[data-sonner-toast]")
-			.filter({ hasText: /récurrences? détectées?$|^Aucune récurrence détectée$/u }),
-	).toBeVisible();
-});
-
 test("rules: « Ajouter une règle » opens the form, the only one on the page", async ({ page }) => {
 	await emptyList(page, "/api/rules");
 	await page.goto("/rules");

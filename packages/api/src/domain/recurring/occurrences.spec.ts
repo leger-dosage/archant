@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import {
+	changePercent,
 	derivedState,
 	effectiveDueOn,
 	horizonOf,
@@ -172,6 +173,23 @@ describe("priceChangeOf", () => {
 				{ effectiveOn: "2026-01-05", newAmount: toMinorUnits(1599) },
 			]),
 		).toMatchObject({ effectiveOn: "2026-10-05" });
+	});
+});
+
+describe("changePercent", () => {
+	it("counts a rise and a fall in tenths of a percent, half away from zero", () => {
+		const [low, high] = minor(1349, 1599);
+
+		expect(changePercent(low!, high!)).toBe(185);
+		expect(changePercent(high!, low!)).toBe(-156);
+		// 1/8 is 125 tenths exactly; 1/16 is 62,5, which rounds to 63 either way.
+		expect(changePercent(toMinorUnits(800), toMinorUnits(900))).toBe(125);
+		expect(changePercent(toMinorUnits(1600), toMinorUnits(1700))).toBe(63);
+		expect(changePercent(toMinorUnits(1600), toMinorUnits(1500))).toBe(-63);
+	});
+
+	it("is 0 from nothing", () => {
+		expect(changePercent(toMinorUnits(0), toMinorUnits(999))).toBe(0);
 	});
 });
 

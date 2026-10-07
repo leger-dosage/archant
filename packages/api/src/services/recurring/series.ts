@@ -514,7 +514,7 @@ const recordColumns = {
 	endAfterCount: recurringTransactions.endAfterCount,
 };
 
-function selectRecords(db: Pick<ServiceDeps["db"], "select">) {
+export function selectRecords(db: Pick<ServiceDeps["db"], "select">) {
 	return db
 		.select(recordColumns)
 		.from(recurringTransactions)
@@ -536,7 +536,7 @@ type RecordRow = Omit<
  * `toMinorUnits`, with their rules, the frequency the picker reads them as,
  * and their current occurrence on `day`.
  */
-async function toRecords(
+export async function toRecords(
 	db: Pick<ServiceDeps["db"], "select">,
 	rows: readonly RecordRow[],
 	day: IsoDate,

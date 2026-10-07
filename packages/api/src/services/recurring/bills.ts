@@ -1,17 +1,26 @@
-import type { IsoDate } from "../../domain/dates.ts";
+import type { IsoDate, IsoMonth } from "../../domain/dates.ts";
 import type { SeriesKey } from "../../domain/recurring/identifier.ts";
 import type { DerivedState } from "../../domain/recurring/occurrences.ts";
-import type { BillKind, DeclareInput, EditInput } from "../../schemas/bills.ts";
+import type {
+	AllBillsQuery,
+	BillKind,
+	BillSort,
+	BillStatusFilter,
+	DeclareInput,
+	EditInput,
+} from "../../schemas/bills.ts";
 import type { RecurringPatch } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
+import type { CurrentOccurrence } from "./occurrences.ts";
 import type { RecurringRecord } from "./series.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, eq, gte, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { shiftMonth } from "@archant/data/months";
 import type { AllocationSource } from "@archant/data/recurring";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
@@ -20,11 +29,20 @@ import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 import {
 	recurringAllocations,
 	recurringOccurrences,
+	recurringPriceChanges,
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { direction } from "../../domain/cash-flow.ts";
-import { addDays, daysBetween, maxDate, monthRange, today, weekdayOf } from "../../domain/dates.ts";
+import {
+	addDays,
+	addMonths,
+	daysBetween,
+	maxDate,
+	monthRange,
+	today,
+	weekdayOf,
+} from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
 import { majorUnitOf } from "../../domain/recurring/classifier.ts";
 import { applyFrequency } from "../../domain/recurring/frequency.ts";
@@ -36,12 +54,14 @@ import {
 	seriesKeyOf,
 } from "../../domain/recurring/identifier.ts";
 import {
+	changePercent,
 	derivedState,
 	effectiveDueOn,
 	remainingOf,
 	resolvedExpected,
+	roundHalfUp,
 } from "../../domain/recurring/occurrences.ts";
-import { monthlyOn } from "../../domain/recurring/schedule.ts";
+import { monthlyEquivalent, monthlyOn } from "../../domain/recurring/schedule.ts";
 import { isKept, nextDateFrom, nextExpectedDate } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
@@ -59,7 +79,9 @@ import {
 	loadCandidates,
 	merchantNames,
 	notFound,
+	selectRecords,
 	setRecurringStatus,
+	toRecords,
 } from "./series.ts";
 
 // Sure's `first(8)`: the dialog offers a few starting points, never a list to page.
@@ -889,4 +911,450 @@ export async function occurrenceDetail(deps: ServiceDeps, id: string): Promise<O
 		})),
 		suggestion,
 	};
+}
+
+/** A series' current occurrence, with what its confirmed payments settle. */
+type BillOccurrence = CurrentOccurrence & {
+	/** Positive magnitudes in the series' currency. */
+	expected: MinorUnits;
+	confirmed: MinorUnits;
+	remaining: MinorUnits;
+};
+
+/** A series as « Toutes les factures » lists it. */
+type BillRecord = Omit<RecurringRecord, "currentOccurrence"> & {
+	/** Sure's `monthly_equivalent_amount`, a positive magnitude in `currency`. */
+	monthlyEquivalent: MinorUnits;
+	currentOccurrence: BillOccurrence | null;
+};
+
+/** A recorded price change, its amounts positive magnitudes. */
+type PriceChange = {
+	id: string;
+	seriesId: string;
+	/** The series' name, else its merchant's, else its label. */
+	name: string;
+	effectiveOn: IsoDate;
+	previousAmount: MinorUnits;
+	newAmount: MinorUnits;
+	currency: string;
+	/** Tenths of a percent, negative for a fall. */
+	percent: number;
+};
+
+/** Sure's `load_subscription_rollup`, in the reporting currency. */
+type SubscriptionRollup = {
+	currency: CurrencyCode;
+	/** The active subscriptions listed, whatever their currency. */
+	count: number;
+	/** `null` when no subscription listed is active. */
+	monthly: MinorUnits | null;
+	annual: MinorUnits | null;
+	/** The active ones in another currency, which the sums leave out (NFR2). */
+	leftOut: { id: string; name: string }[];
+	/** Any series' ten latest changes within a year. */
+	priceChanges: PriceChange[];
+};
+
+export type AllBills = {
+	bills: BillRecord[];
+	/** Only with `type = subscription`. */
+	subscriptions: SubscriptionRollup | null;
+};
+
+// Sure's `recent_price_changes(5)` and the rollup's `limit(10)`.
+const DETAIL_PRICE_CHANGES = 5;
+const ROLLUP_PRICE_CHANGES = 10;
+const ROLLUP_PRICE_CHANGE_MONTHS = 12;
+
+// Sure's sparkline: this month and the eleven before it.
+const HISTORY_MONTHS = 12;
+
+// Sure's `upcoming_window_days` of `transactions/_upcoming`.
+const UPCOMING_DAYS = 10;
+
+const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+
+const displayName = (row: { name: string | null; merchantName: string | null; label: string }) =>
+	row.name ?? row.merchantName ?? row.label;
+
+const sumOf = (amounts: readonly MinorUnits[]) =>
+	toMinorUnits(amounts.reduce((total, amount) => total + amount, 0));
+
+/**
+ * `records` with their monthly equivalent, and their current occurrence's
+ * expected amount, the sum of its confirmed payments and what they leave.
+ */
+async function withAmounts(db: Reader, records: readonly RecurringRecord[]): Promise<BillRecord[]> {
+	const ids = records.flatMap((record) =>
+		record.currentOccurrence === null ? [] : [record.currentOccurrence.id],
+	);
+	const frozen = new Map<string, number | null>();
+	const paid = new Map<string, MinorUnits[]>();
+
+	await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+		const occurrences = await db
+			.select({ id: recurringOccurrences.id, expectedAmount: recurringOccurrences.expectedAmount })
+			.from(recurringOccurrences)
+			.where(inArray(recurringOccurrences.id, chunk));
+		const payments = await db
+			.select({
+				occurrenceId: recurringAllocations.recurringOccurrenceId,
+				amount: recurringAllocations.allocatedAmount,
+			})
+			.from(recurringAllocations)
+			.where(
+				and(
+					inArray(recurringAllocations.recurringOccurrenceId, chunk),
+					eq(recurringAllocations.state, "confirmed"),
+				),
+			);
+
+		for (const occurrence of occurrences) {
+			frozen.set(occurrence.id, occurrence.expectedAmount);
+		}
+
+		for (const payment of payments) {
+			paid.set(payment.occurrenceId, [
+				...(paid.get(payment.occurrenceId) ?? []),
+				toMinorUnits(payment.amount),
+			]);
+		}
+	});
+
+	return records.map(({ currentOccurrence: occurrence, ...record }) => {
+		const monthly = monthlyEquivalent(record.rules, record.amount);
+
+		if (occurrence === null) {
+			return { ...record, monthlyEquivalent: monthly, currentOccurrence: null };
+		}
+
+		const stored = frozen.get(occurrence.id) ?? null;
+		const expected = resolvedExpected(
+			{ expectedAmount: stored === null ? null : toMinorUnits(stored) },
+			record.amount,
+		);
+		const confirmed = paid.get(occurrence.id) ?? [];
+
+		return {
+			...record,
+			monthlyEquivalent: monthly,
+			currentOccurrence: {
+				...occurrence,
+				expected,
+				confirmed: sumOf(confirmed),
+				remaining: remainingOf(expected, confirmed),
+			},
+		};
+	});
+}
+
+/**
+ * Sure's `filter_by_payment_state` and lifecycle filters: the payment
+ * filters read the current occurrence, so a series with none fails them.
+ */
+function inStatus(row: BillRecord, filter: BillStatusFilter): boolean {
+	if (filter === "paused") {
+		return row.status === "inactive";
+	}
+
+	if (filter === "ended") {
+		return row.status === "ended";
+	}
+
+	const occurrence = row.currentOccurrence;
+
+	if (occurrence === null) {
+		return false;
+	}
+
+	switch (filter) {
+		case "overdue":
+		case "due":
+			return occurrence.state === filter;
+		case "partial":
+			return (
+				occurrence.status === "scheduled" &&
+				occurrence.confirmed > 0 &&
+				occurrence.confirmed < occurrence.expected
+			);
+		default:
+			return occurrence.status === "paid";
+	}
+}
+
+// Sure orders its string enum alphabetically, `ended` before `inactive`;
+// paused bills come before ended ones here.
+const STATUS_RANK: Record<RecurringRecord["status"], number> = {
+	suggested: 0,
+	active: 0,
+	inactive: 1,
+	ended: 2,
+};
+
+const SORTS: Record<BillSort, (a: BillRecord, b: BillRecord) => number> = {
+	due: (a, b) =>
+		STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
+		a.nextExpectedDate.localeCompare(b.nextExpectedDate) ||
+		a.id.localeCompare(b.id),
+	name: (a, b) =>
+		byName.compare(displayName(a), displayName(b)) ||
+		a.amount - b.amount ||
+		a.id.localeCompare(b.id),
+	// Sure's `amount: :desc` on its outflow-positive amounts: the largest
+	// outflow first, incomes last (AD-5).
+	amount: (a, b) => a.amount - b.amount || a.id.localeCompare(b.id),
+};
+
+/** The price changes `where` keeps, latest first, `limit` at most, named by their series. */
+async function priceChangesWhere(
+	db: Reader,
+	where: SQL | undefined,
+	limit: number,
+): Promise<PriceChange[]> {
+	const rows = await db
+		.select({
+			id: recurringPriceChanges.id,
+			seriesId: recurringPriceChanges.recurringTransactionId,
+			seriesName: recurringTransactions.name,
+			merchantName: merchants.name,
+			label: recurringTransactions.label,
+			effectiveOn: recurringPriceChanges.effectiveOn,
+			previousAmount: recurringPriceChanges.previousAmount,
+			newAmount: recurringPriceChanges.newAmount,
+			currency: recurringPriceChanges.currency,
+		})
+		.from(recurringPriceChanges)
+		.innerJoin(
+			recurringTransactions,
+			eq(recurringTransactions.id, recurringPriceChanges.recurringTransactionId),
+		)
+		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
+		.where(where)
+		.orderBy(desc(recurringPriceChanges.effectiveOn), recurringPriceChanges.id)
+		.limit(limit);
+
+	return rows.map(({ seriesName, merchantName, label, ...row }) => {
+		const previousAmount = toMinorUnits(row.previousAmount);
+		const newAmount = toMinorUnits(row.newAmount);
+
+		return {
+			...row,
+			name: displayName({ name: seriesName, merchantName, label }),
+			previousAmount,
+			newAmount,
+			percent: changePercent(previousAmount, newAmount),
+		};
+	});
+}
+
+/**
+ * Sure's `load_subscription_rollup` over `rows`: the active ones counted,
+ * their monthly equivalents summed in the reporting currency, those in
+ * another one left out and named, and any series' ten latest price changes
+ * of the past year.
+ */
+async function subscriptionRollup(
+	db: Reader,
+	rows: readonly BillRecord[],
+	day: IsoDate,
+): Promise<SubscriptionRollup> {
+	const currency = getReportingCurrency();
+	const active = rows.filter((row) => row.status === "active");
+	const counted = active.filter((row) => row.currency === currency);
+	const monthly = active.length === 0 ? null : sumOf(counted.map((row) => row.monthlyEquivalent));
+
+	return {
+		currency,
+		count: active.length,
+		monthly,
+		annual: monthly === null ? null : toMinorUnits(monthly * 12),
+		leftOut: active
+			.filter((row) => row.currency !== currency)
+			.map((row) => ({ id: row.id, name: displayName(row) })),
+		priceChanges: await priceChangesWhere(
+			db,
+			gte(recurringPriceChanges.effectiveOn, addMonths(day, -ROLLUP_PRICE_CHANGE_MONTHS)),
+			ROLLUP_PRICE_CHANGES,
+		),
+	};
+}
+
+/**
+ * Sure's `load_all_series`: every series but the suggestions, ended ones
+ * included, each with its monthly equivalent and its current occurrence's
+ * payments. `q` searches the name, the merchant's name and the label; the
+ * status filters read the current occurrence's payment state, or `paused`
+ * and `ended`. Sorted by status then next date, by name, or by amount.
+ * With `type = subscription`, Sure's subscription rollup comes beside.
+ */
+export async function allBills(deps: ServiceDeps, query: AllBillsQuery): Promise<AllBills> {
+	const day = today(deps.timeZone);
+	const rows = await withAmounts(
+		deps.db,
+		await toRecords(
+			deps.db,
+			await selectRecords(deps.db).where(ne(recurringTransactions.status, "suggested")),
+			day,
+		),
+	);
+	const needle = query.q?.toLocaleLowerCase("fr");
+	const bills = rows
+		.filter(
+			(row) =>
+				(needle === undefined ||
+					[row.name, row.merchantName, row.label].some(
+						(text) => text?.toLocaleLowerCase("fr").includes(needle) ?? false,
+					)) &&
+				(query.status === undefined || inStatus(row, query.status)) &&
+				(query.type === undefined || row.billType === query.type),
+		)
+		.toSorted(SORTS[query.sort]);
+
+	return {
+		bills,
+		subscriptions:
+			query.type === "subscription" ? await subscriptionRollup(deps.db, bills, day) : null,
+	};
+}
+
+/** Sure's `bills#show`, as the drawer reads it. */
+export type BillDetail = {
+	record: BillRecord;
+	/** Over the paid occurrences' confirmed sums; `null` when none is paid. */
+	averagePaid: { average: MinorUnits; lowest: MinorUnits; highest: MinorUnits } | null;
+	/** The five latest. */
+	priceChanges: PriceChange[];
+	/** How many occurrences are paid, of the plan's payments. */
+	installment: { paid: number; total: number } | null;
+	/** The account of the latest confirmed payment with a transaction. */
+	lastAccount: { id: string; name: string } | null;
+	/** Twelve months to this one, what was paid toward the occurrences due in each. */
+	months: { month: IsoMonth; paid: MinorUnits }[];
+};
+
+/**
+ * Sure's `bills#show` without its matching rules, yearly table, upcoming
+ * dates, recent payments and history: the series with its current
+ * occurrence, Sure's `@analytics` average and range, its price changes, an
+ * installment's progress, the last account used and Sure's twelve-month
+ * sparkline, each month summing the confirmed payments of the occurrences
+ * due in it, whatever their status.
+ */
+export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDetail> {
+	const day = today(deps.timeZone);
+	const [record] = await withAmounts(deps.db, [await getRecord(deps.db, id, day)]);
+	const occurrences = await deps.db
+		.select({
+			id: recurringOccurrences.id,
+			dueOn: recurringOccurrences.dueOn,
+			status: recurringOccurrences.status,
+		})
+		.from(recurringOccurrences)
+		.where(eq(recurringOccurrences.recurringTransactionId, id));
+	const payments = (
+		await deps.db
+			.select({
+				occurrenceId: recurringAllocations.recurringOccurrenceId,
+				amount: recurringAllocations.allocatedAmount,
+				entryId: recurringAllocations.entryId,
+				paidOn: recurringAllocations.paidOn,
+				createdAt: recurringAllocations.createdAt,
+			})
+			.from(recurringAllocations)
+			.innerJoin(
+				recurringOccurrences,
+				eq(recurringOccurrences.id, recurringAllocations.recurringOccurrenceId),
+			)
+			.where(
+				and(
+					eq(recurringOccurrences.recurringTransactionId, id),
+					eq(recurringAllocations.state, "confirmed"),
+				),
+			)
+	).map((payment) => ({ ...payment, amount: toMinorUnits(payment.amount) }));
+	const paidIds = new Set(
+		occurrences.filter((occurrence) => occurrence.status === "paid").map((one) => one.id),
+	);
+	// Sure groups the payments by occurrence, so a paid one without any has no sum.
+	const sums = [...paidIds].flatMap((occurrenceId) => {
+		const own = payments.filter((payment) => payment.occurrenceId === occurrenceId);
+
+		return own.length === 0 ? [] : [sumOf(own.map((payment) => payment.amount))];
+	});
+	const latest = payments
+		.filter((payment) => payment.entryId !== null)
+		.toSorted(
+			(a, b) =>
+				(b.paidOn ?? "").localeCompare(a.paidOn ?? "") ||
+				b.createdAt - a.createdAt ||
+				a.occurrenceId.localeCompare(b.occurrenceId),
+		)[0];
+	const entry =
+		latest === undefined || latest.entryId === null
+			? undefined
+			: (await paymentEntries(deps.db, [latest.entryId])).get(latest.entryId);
+	const account =
+		entry === undefined
+			? undefined
+			: await deps.db
+					.select({ id: accounts.id, name: accounts.name })
+					.from(accounts)
+					.where(eq(accounts.id, entry.accountId))
+					.get();
+	const dueOf = new Map(occurrences.map((occurrence) => [occurrence.id, occurrence.dueOn]));
+	const first = shiftMonth(day.slice(0, 7), 1 - HISTORY_MONTHS);
+
+	return {
+		record: record!,
+		averagePaid:
+			sums.length === 0
+				? null
+				: {
+						average: toMinorUnits(roundHalfUp(sumOf(sums), sums.length)),
+						lowest: toMinorUnits(Math.min(...sums)),
+						highest: toMinorUnits(Math.max(...sums)),
+					},
+		priceChanges: await priceChangesWhere(
+			deps.db,
+			eq(recurringPriceChanges.recurringTransactionId, id),
+			DETAIL_PRICE_CHANGES,
+		),
+		installment:
+			record!.billType === "installment" && record!.endAfterCount !== null
+				? { paid: paidIds.size, total: record!.endAfterCount }
+				: null,
+		lastAccount: account ?? null,
+		months: Array.from({ length: HISTORY_MONTHS }, (_, index) => {
+			const month = shiftMonth(first, index);
+
+			return {
+				month,
+				paid: sumOf(
+					payments
+						.filter((payment) => dueOf.get(payment.occurrenceId)?.startsWith(month) ?? false)
+						.map((payment) => payment.amount),
+				),
+			};
+		}),
+	};
+}
+
+/**
+ * Sure's `transactions/_upcoming`: the active series, money in or out,
+ * expected from today to ten days on in `APP_TIMEZONE`, by date.
+ */
+export async function upcomingRecurring(deps: ServiceDeps): Promise<RecurringRecord[]> {
+	const day = today(deps.timeZone);
+	const rows = await selectRecords(deps.db)
+		.where(
+			and(
+				eq(recurringTransactions.status, "active"),
+				gte(recurringTransactions.nextExpectedDate, day),
+				lte(recurringTransactions.nextExpectedDate, addDays(day, UPCOMING_DAYS)),
+			),
+		)
+		.orderBy(recurringTransactions.nextExpectedDate, recurringTransactions.id);
+
+	return toRecords(deps.db, rows, day);
 }

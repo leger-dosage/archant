@@ -3,13 +3,17 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
-// Stories 9.2 and 23.1: recurring transactions at `/recurring`. One database
-// serves the whole run and detection reads every account, so each test finds
-// its rows by a label no other test uses.
+// Stories 9.2, 23.1 and 23.5: recurring transactions, listed since Story
+// 23.5 in « Toutes les factures » at `/bills?view=all`, detected and cleaned
+// from « Réglages › Transactions récurrentes ». One database serves the whole
+// run and detection reads every account, so each test finds its rows by a
+// label no other test uses.
 
-const PAGE = "/recurring";
+const PAGE = "/bills?view=all";
 
-const table = (page: Page) => page.getByRole("table", { name: "Récurrences" });
+const SETTINGS = "/settings/recurring";
+
+const table = (page: Page) => page.getByRole("table", { name: "Toutes les factures" });
 
 const row = (page: Page, label: string) => table(page).getByRole("row").filter({ hasText: label });
 
@@ -97,15 +101,27 @@ const openMenu = (page: Page, label: string) =>
 		.getByRole("button", { name: `Actions pour ${label}` })
 		.click();
 
+/** Runs detection from the settings page, which lists the suggestions it found. */
 async function detect(page: Page) {
-	// An empty list offers « Détecter les récurrences » in place of the page header's.
-	await page.getByRole("button", { name: /^Détecter( les récurrences)?$/u }).click();
+	await settings(page);
+	await page.getByRole("button", { name: "Identifier les modèles" }).click();
 	await expect(toast(page, /récurrences? détectées?/u).first()).toBeVisible();
+}
+
+async function settings(page: Page) {
+	if (!page.url().endsWith(SETTINGS)) {
+		await page.goto(SETTINGS);
+	}
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Transactions récurrentes" }),
+	).toBeVisible();
 }
 
 async function visit(page: Page) {
 	await page.goto(PAGE);
-	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	await expect(table(page).or(page.getByText("Aucun résultat")).first()).toBeVisible();
 }
 
 test("« Détecter » offers monthly rows as possible bills, with their amount and how often they were seen", async ({
@@ -116,7 +132,6 @@ test("« Détecter » offers monthly rows as possible bills, with their amount a
 	const label = uniqueName("Abonnement");
 	await addMonthly(api, account.id, label, "-13,99", 5);
 
-	await visit(page);
 	await detect(page);
 
 	const strip = page.getByRole("region", { name: "Nouvelles factures possibles" });
@@ -128,10 +143,11 @@ test("« Détecter » offers monthly rows as possible bills, with their amount a
 		"Ajouter la facture",
 	]);
 	// A suggestion is no followed series yet.
+	await visit(page);
 	await expect(row(page, label)).toHaveCount(0);
 });
 
-test("« Ajouter la facture » lists a suggestion with its account, amount and next date, by next date", async ({
+test("« Ajouter la facture » lists a suggestion with its type, frequency, amount and next date, by next date", async ({
 	page,
 	api,
 }) => {
@@ -141,25 +157,26 @@ test("« Ajouter la facture » lists a suggestion with its account, amount and n
 	const earlyNext = await addMonthly(api, account.id, early, "-13,99", 5);
 	const lateNext = await addMonthly(api, account.id, late, "-65,00", 20);
 
-	await visit(page);
 	await detect(page);
 	await addSuggestion(page, early);
 	await addSuggestion(page, late);
+	await visit(page);
 
 	const first = row(page, early);
-	await expect(first).toContainText(account.name);
+	await expect(first).toContainText("Mensuelle");
 	await expect(first).toContainText(euros(-1399));
+	// A monthly bill's equivalent is its own amount: not said twice.
+	await expect(first).not.toContainText("/mois");
 	// History paid by its rows, the next date is the open occurrence to come.
 	await expect(first).toContainText(`À payer le ${spelled(earlyNext)}`);
 	await expect(first).toContainText("Active");
 	await expect(
 		badge(page, early, "recurringActive").locator("svg.lucide-circle-check"),
 	).toBeVisible();
-	// The name's letter icon, then the account's type icon.
+	// The name's letter icon.
 	const icons = first.locator('[data-slot="tinted-icon"]');
-	await expect(icons).toHaveCount(2);
+	await expect(icons).toHaveCount(1);
 	await expect(icons.first()).toHaveText(early.charAt(0).toLocaleUpperCase("fr"));
-	await expect(icons.nth(1).locator("svg.lucide-landmark")).toBeVisible();
 	await expect(row(page, late)).toContainText(euros(-6500));
 	await expect(row(page, late)).toContainText(`À payer le ${spelled(lateNext)}`);
 
@@ -178,13 +195,13 @@ test("an amount that moves by a few cents reads as the range it varies within", 
 	const label = uniqueName("Prêt");
 	await addMonthly(api, account.id, label, ["-571,29", "-571,36", "-571,22"], 7);
 
-	await visit(page);
 	await detect(page);
 
 	const range = `varie de ${euros(57_122)} à ${euros(57_136)}`;
 	await expect(suggestion(page, label)).toContainText(range);
 
 	await addSuggestion(page, label);
+	await visit(page);
 
 	await expect(row(page, label)).toContainText(range);
 });
@@ -194,7 +211,6 @@ test("« Ce n'est pas une facture » removes a suggestion for good", async ({ pa
 	const label = uniqueName("Salle de sport");
 	await addMonthly(api, account.id, label, "-29,90", 8);
 
-	await visit(page);
 	await detect(page);
 	await suggestion(page, label).getByRole("button", { name: "Ce n'est pas une facture" }).click();
 
@@ -203,18 +219,16 @@ test("« Ce n'est pas une facture » removes a suggestion for good", async ({ pa
 
 	await detect(page);
 	await page.reload();
-	await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
-	await expect(
-		table(page)
-			.or(suggestions(page))
-			.or(page.getByText(/Aucune récurrence/u))
-			.first(),
-	).toBeVisible();
+	await settings(page);
 	await expect(suggestion(page, label)).toHaveCount(0);
-	await expect(row(page, label)).toHaveCount(0);
+	// Dismissed, it is ended: « Terminée » lists it, never as a bill to pay.
+	await page.goto(`${PAGE}&status=ended&q=${encodeURIComponent(label)}`);
+	await expect(row(page, label)).toContainText("Terminée");
+	await page.goto(`${PAGE}&status=overdue&q=${encodeURIComponent(label)}`);
+	await expect(page.getByText("Aucun résultat")).toBeVisible();
 });
 
-test("« Mettre en pause » shows « Inactive », and « Reprendre » « Active » again", async ({
+test("« Mettre en pause » shows « En pause », and « Reprendre » « Active » again", async ({
 	page,
 	api,
 }) => {
@@ -222,15 +236,15 @@ test("« Mettre en pause » shows « Inactive », and « Reprendre » « Active 
 	const label = uniqueName("Assurance");
 	await addMonthly(api, account.id, label, "-32,50", 12);
 
-	await visit(page);
 	await detect(page);
 	await addSuggestion(page, label);
+	await visit(page);
 
 	await openMenu(page, label);
 	await page.getByRole("menuitem", { name: "Mettre en pause" }).click();
 
 	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
-	await expect(row(page, label)).toContainText("Inactive");
+	await expect(row(page, label)).toContainText("En pause");
 	await expect(
 		badge(page, label, "recurringInactive").locator("svg.lucide-circle-pause"),
 	).toBeVisible();
@@ -240,7 +254,7 @@ test("« Mettre en pause » shows « Inactive », and « Reprendre » « Active 
 
 	await expect(toast(page, "Récurrence reprise")).toBeVisible();
 	await expect(row(page, label)).toContainText("Active");
-	await expect(row(page, label)).not.toContainText("Inactive");
+	await expect(row(page, label)).not.toContainText("En pause");
 });
 
 test("« Supprimer » asks first, then the series is gone and detection never offers it again", async ({
@@ -251,9 +265,9 @@ test("« Supprimer » asks first, then the series is gone and detection never of
 	const label = uniqueName("Musique");
 	await addMonthly(api, account.id, label, "-10,99", 9);
 
-	await visit(page);
 	await detect(page);
 	await addSuggestion(page, label);
+	await visit(page);
 	await openMenu(page, label);
 	await page.getByRole("menuitem", { name: "Supprimer" }).click();
 
@@ -264,15 +278,17 @@ test("« Supprimer » asks first, then the series is gone and detection never of
 
 	await expect(dialog).toBeHidden();
 	await expect(toast(page, "Récurrence supprimée")).toBeVisible();
-	await expect(row(page, label)).toHaveCount(0);
+	// A detected series is ended, so « Terminée » holds it, and no other status.
+	await expect(row(page, label)).toContainText("Terminée");
 
 	await detect(page);
 
-	await expect(row(page, label)).toHaveCount(0);
 	await expect(suggestion(page, label)).toHaveCount(0);
+	await visit(page);
+	await expect(row(page, label)).toContainText("Terminée");
 });
 
-test("« Nettoyer les obsolètes » sits beside « Détecter » and says what it retired", async ({
+test("« Nettoyer les obsolètes » sits beside « Identifier les modèles » and says what it retired", async ({
 	page,
 	api,
 }) => {
@@ -285,13 +301,13 @@ test("« Nettoyer les obsolètes » sits beside « Détecter » and says what it
 		}),
 	);
 
-	await visit(page);
+	await settings(page);
 	await page.getByRole("button", { name: "Nettoyer les obsolètes" }).click();
 
 	await expect(
 		toast(page, /^Aucune récurrence obsolète$|récurrences? devenues? inactives?$/u),
 	).toBeVisible();
-	await expect(page.getByRole("button", { name: "Détecter" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Identifier les modèles" })).toBeVisible();
 });
 
 test("« Nettoyer les obsolètes » marks a manual series unpaid for six months inactive", async ({
@@ -304,10 +320,11 @@ test("« Nettoyer les obsolètes » marks a manual series unpaid for six months 
 		await api.addTransaction(account.id, { date: daysAgo(200), label, amount: "-7,00" }),
 	);
 
-	await visit(page);
+	await settings(page);
 	await page.getByRole("button", { name: "Nettoyer les obsolètes" }).click();
 
 	await expect(toast(page, /^\d+ récurrences? devenues? inactives?$/u)).toBeVisible();
+	await visit(page);
 	await expect(badge(page, label, "recurringInactive")).toBeVisible();
 });
 
@@ -343,7 +360,7 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as activ
 	await visit(page);
 	await expect(row(page, label)).toContainText("Active");
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
-	await expect(row(page, label)).toContainText(account.name);
+	await expect(row(page, label)).toContainText("Mensuelle");
 	// Two neutral badges: a manual series is no alarm.
 	await expect(row(page, label).locator('[data-slot="status-badge"]')).toHaveCount(2);
 	await expect(badge(page, label, "recurringManual").locator("svg.lucide-hand")).toBeVisible();
@@ -354,6 +371,7 @@ test("« Ajouter aux récurrences » in the sheet lists the transaction as activ
 	);
 
 	await detect(page);
+	await visit(page);
 	await expect(row(page, label)).toContainText("Active");
 	await expect(row(page, label)).toContainText("Ajoutée à la main");
 });
@@ -371,7 +389,7 @@ async function openSheet(page: Page, label: string) {
 	return page.getByRole("dialog", { name: "Modifier l'opération" });
 }
 
-test("the sheet names a transaction's suggested series and links to it, and offers to add one otherwise", async ({
+test("the sheet names a transaction's suggested series and links to its drawer, and offers to add one otherwise", async ({
 	page,
 	api,
 }) => {
@@ -381,15 +399,25 @@ test("the sheet names a transaction's suggested series and links to it, and offe
 	await addMonthly(api, account.id, label, "-9,99", 7);
 	await api.addTransaction(account.id, { date: daysAgo(2), label: single, amount: "-24,00" });
 
-	await visit(page);
 	await detect(page);
 
 	const sheet = await openSheet(page, label);
 	await expect(sheet).toContainText(`Cette opération fait partie de la récurrence « ${label} ».`);
 	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toHaveCount(0);
-	await sheet.getByRole("link", { name: "Voir les récurrences" }).click();
-	await expect(page).toHaveURL(/\/recurring$/u);
-	await expect(suggestion(page, label)).toContainText("Vue 3 fois");
+	await sheet.getByRole("link", { name: "Voir la facture" }).click();
+	await expect(page).toHaveURL(/\/bills\/[^/?]+$/u);
+	const drawer = page.getByRole("dialog", { name: label });
+	await expect(drawer).toContainText("Prochain paiement");
+	// A suggestion is added or dismissed there, never edited, paused or deleted.
+	await expect(drawer.getByRole("button", { name: "Ajouter la facture" })).toBeVisible();
+	await expect(drawer.getByRole("button", { name: "Modifier" })).toHaveCount(0);
+	await drawer.getByRole("button", { name: "Ce n'est pas une facture" }).click();
+	await expect(toast(page, "Écartée. Elle ne sera plus proposée.")).toBeVisible();
+	// Ended, a detected series has nothing left to delete.
+	await expect(drawer.getByRole("button", { name: "Reprendre" })).toBeVisible();
+	await expect(drawer.getByRole("button", { name: "Supprimer" })).toHaveCount(0);
+	await page.keyboard.press("Escape");
+	await expect(drawer).toBeHidden();
 
 	const other = await openSheet(page, single);
 	await expect(other.getByRole("button", { name: "Ajouter aux récurrences" })).toBeVisible();
@@ -433,7 +461,9 @@ test("« Ajouter une facture » declares a quarterly bill, listed active and man
 	await expect(toast(page, "Facture ajoutée")).toBeVisible();
 	await expect(dialog).toBeHidden();
 	await expect(row(page, name)).toContainText(euros(-8420));
-	await expect(row(page, name)).toContainText(account.name);
+	// 84,20 € four times a year, a month's twelfth of it.
+	await expect(row(page, name)).toContainText(`${euros(2807)}/mois`);
+	await expect(row(page, name)).toContainText("Trimestrielle");
 	await expect(row(page, name)).toContainText(`À payer le ${spelled(due)}`);
 	await expect(row(page, name)).toContainText("Active");
 	await expect(row(page, name)).toContainText("Ajoutée à la main");
@@ -634,12 +664,18 @@ test("a paid transaction's sheet names the occurrence it pays, and the list show
 
 	await visit(page);
 	await expect(row(page, name)).toContainText(`À payer le ${spelled(nextMonth(due))}`);
+	// Its next one is open, so it is not « Payée ».
+	await page.goto(`${PAGE}&status=paid&q=${encodeURIComponent(name)}`);
+	await expect(page.getByText("Aucun résultat")).toBeVisible();
+	await visit(page);
 
 	// Paused, it keeps only the occurrence it paid.
 	await openMenu(page, name);
 	await page.getByRole("menuitem", { name: "Mettre en pause" }).click();
 	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
 	await expect(row(page, name)).toContainText("Payée");
+	await page.goto(`${PAGE}&status=paid&q=${encodeURIComponent(name)}`);
+	await expect(row(page, name)).toBeVisible();
 });
 
 test("an occurrence nothing pays reads how many days late it is past its grace days", async ({
@@ -656,10 +692,45 @@ test("an occurrence nothing pays reads how many days late it is past its grace d
 	await expect(row(page, name)).toContainText("10 jours de retard");
 	await expect(table(page).getByRole("columnheader")).toHaveText([
 		"Nom",
-		"Compte",
+		"Type",
+		"Fréquence",
 		"Montant",
 		"Prochaine échéance",
 		"Statut",
 		"Actions",
 	]);
+	await page.goto(`${PAGE}&status=overdue&q=${encodeURIComponent(name)}`);
+	await expect(row(page, name)).toBeVisible();
+});
+
+// Story 23.5: « Réglages › Transactions récurrentes », and the old address.
+
+test("« Transactions récurrentes » in the settings says when detection runs, and leads to every bill", async ({
+	page,
+}) => {
+	await page.goto("/settings/categories");
+	await page
+		.getByRole("navigation", { name: "Réglages" })
+		.getByRole("link", { name: "Transactions récurrentes" })
+		.click();
+	await expect(page).toHaveURL(/\/settings\/recurring$/u);
+	await settings(page);
+
+	const info = page.getByRole("region", { name: "Détection automatique des modèles" });
+	await expect(info).toContainText("après un import ou son annulation");
+	await expect(info).toContainText("après la synchronisation d'une banque");
+	await expect(info).toContainText("à la première visite");
+	await expect(page.getByRole("button", { name: "Identifier les modèles" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Nettoyer les obsolètes" })).toBeVisible();
+
+	await page.getByRole("link", { name: "Ouvrir toutes les factures" }).click();
+	await expect(page).toHaveURL(/\/bills\?view=all$/u);
+	await expect(table(page).or(page.getByText("Aucun résultat")).first()).toBeVisible();
+});
+
+test("the old `/recurring` lands on every bill", async ({ page }) => {
+	await page.goto("/recurring");
+
+	await expect(page).toHaveURL(/\/bills\?view=all$/u);
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
 });

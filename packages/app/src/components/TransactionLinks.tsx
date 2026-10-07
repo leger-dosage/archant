@@ -331,7 +331,9 @@ export function RecurringBlock({
 								})}
 					</p>
 					<Button variant="outline" asChild>
-						<Link to="/recurring">{t("transactions.recurring.open")}</Link>
+						<Link to="/bills/$billId" params={{ billId: series.data.id }} search={{}}>
+							{t("transactions.recurring.open")}
+						</Link>
 					</Button>
 				</div>
 			) : !admin ? (

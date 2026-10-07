@@ -1,14 +1,24 @@
 import type { BillDialogSubject } from "@/components/BillDialog";
-import type { BillRowData, BillsData, SuggestedPaymentData } from "@/hooks/useRecurring";
+import type {
+	AllBillsQuery,
+	BillRowData,
+	BillsData,
+	SuggestedPaymentData,
+} from "@/hooks/useRecurring";
 import type { TFunction } from "i18next";
 
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { ReceiptIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { BILL_SORTS, BILL_STATUS_FILTERS } from "@archant/api/schemas/bills";
+import { BILL_TYPES } from "@archant/data/recurring";
+
+import { AllBills } from "@/components/AllBills";
+import { useBillActions } from "@/components/BillActions";
 import { BillDialog } from "@/components/BillDialog";
 import {
 	MatchReasons,
@@ -39,9 +49,28 @@ import { dayAndMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 
-// The occurrence whose sheet is open, as Sure's `?occurrence=`.
+// The router reads `?q=2024` as JSON, so a number, while a value set by the
+// page is a string: both mean the same text.
+const text = z.union([z.string(), z.number()]).transform(String);
+
+// The occurrence whose sheet is open, as Sure's `?occurrence=`; with
+// `view=all`, « Toutes les factures » and its search, filters and sort, as
+// Sure's `bills?view=all&q[...]`. A value an old or hand-edited link holds
+// that no longer exists is dropped rather than failing the page.
 const searchSchema = z.object({
 	occurrence: z.string().min(1).optional().catch(undefined),
+	view: z.literal("all").optional().catch(undefined),
+	// The API's own cap: a longer value is dropped rather than failing the table.
+	q: text
+		.transform((value) => value.trim())
+		.pipe(z.string().min(1).max(200))
+		.optional()
+		.catch(undefined),
+	status: z.enum(BILL_STATUS_FILTERS).optional().catch(undefined),
+	type: z.enum(BILL_TYPES).optional().catch(undefined),
+	// By due date when absent, the default.
+	// `due` is the default, so the URL never carries it.
+	sort: z.enum(BILL_SORTS).exclude(["due"]).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_authed/bills")({
@@ -234,14 +263,79 @@ function ReviewQueue({ items, admin }: { items: readonly SuggestedPaymentData[];
 	);
 }
 
+/** `/bills`, or with `view=all` Sure's `bills/all`. */
+function BillsPage() {
+	const { view } = Route.useSearch();
+
+	return view === "all" ? <AllBillsPage /> : <OverviewPage />;
+}
+
+/**
+ * Sure's `bills/all`: every bill, its filters, search and sort in the URL,
+ * « Ajouter une facture » and « Ajouter un revenu » for an administrator. A
+ * bill's drawer, `/bills/$billId`, opens over it and keeps the search.
+ */
+function AllBillsPage() {
+	const { t } = useTranslation();
+	const admin = useIsAdmin();
+	const search = Route.useSearch();
+	const navigate = Route.useNavigate();
+	const actions = useBillActions();
+	const changeQuery = useCallback(
+		(next: AllBillsQuery) =>
+			void navigate({
+				search: (previous) => ({ ...previous, ...next }),
+				replace: true,
+				resetScroll: false,
+			}),
+		[navigate],
+	);
+
+	useEffect(() => {
+		document.title = t("app.pageTitle", { page: t("bills.all"), app: t("app.name") });
+	}, [t]);
+
+	return (
+		<Page
+			title={t("bills.title")}
+			description={t("bills.allView.description")}
+			actions={
+				<>
+					<Button variant="outline" asChild>
+						<Link to="/bills">{t("bills.overview")}</Link>
+					</Button>
+					{admin && (
+						<>
+							<Button variant="outline" onClick={() => actions.declare("income")}>
+								{t("recurring.addIncome")}
+							</Button>
+							<Button onClick={() => actions.declare("bill")}>{t("recurring.addBill")}</Button>
+						</>
+					)}
+				</>
+			}
+		>
+			<AllBills
+				query={{ q: search.q, status: search.status, type: search.type, sort: search.sort }}
+				onQuery={changeQuery}
+				admin={admin}
+				actions={actions}
+			/>
+			{actions.dialogs}
+			<Outlet />
+		</Page>
+	);
+}
+
 /**
  * Sure's `bills#index`, in its order: the month's totals and « Prochaine »,
  * the series the totals leave out, the review queue, the possible bills
  * detection found, then « Requiert votre attention », « Ce mois-ci »,
  * « Après ce mois-ci » and « Inactive ». A row opens its occurrence's sheet.
- * A viewer reads it all without any action.
+ * A viewer reads it all without any action. A bill's drawer,
+ * `/bills/$billId`, opens over it.
  */
-function BillsPage() {
+function OverviewPage() {
 	const { t } = useTranslation();
 	const admin = useIsAdmin();
 	const { occurrence } = Route.useSearch();
@@ -300,7 +394,9 @@ function BillsPage() {
 			actions={
 				<>
 					<Button variant="outline" asChild>
-						<Link to="/recurring">{t("bills.all")}</Link>
+						<Link to="/bills" search={{ view: "all" }}>
+							{t("bills.all")}
+						</Link>
 					</Button>
 					{/* An empty page offers its own « Ajouter une facture ». */}
 					{admin && ready && !empty && <Button onClick={declare}>{t("recurring.addBill")}</Button>}
@@ -386,6 +482,8 @@ function BillsPage() {
 					accounts={offered}
 				/>
 			)}
+
+			<Outlet />
 		</Page>
 	);
 }

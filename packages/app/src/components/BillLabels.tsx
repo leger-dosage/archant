@@ -1,4 +1,4 @@
-import type { BillRowData } from "@/hooks/useRecurring";
+import type { BillRowData, RecurringData } from "@/hooks/useRecurring";
 import type { TFunction } from "i18next";
 
 import { useTranslation } from "react-i18next";
@@ -6,15 +6,11 @@ import { useTranslation } from "react-i18next";
 import type { MinorUnits } from "@archant/data/money";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
-import { dayAndMonth } from "@/lib/dates";
-
-const DAY_MS = 86_400_000;
+import { formatSignedPercent } from "@/lib/balance-change";
+import { dayAndMonth, daysFrom } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 
 const percent = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 });
-
-/** Days from `from` to `to`, both `YYYY-MM-DD`. */
-const daysFrom = (from: string, to: string) =>
-	Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 
 /** An occurrence paid, skipped or missed: its status, never its dates, says what it is. */
 export const isClosed = (row: Pick<BillRowData, "state">) =>
@@ -145,5 +141,59 @@ export function MatchReasons({
 				</li>
 			))}
 		</ul>
+	);
+}
+
+/**
+ * A series' current occurrence: « Payée » once closed, « 3 jours de retard »
+ * past its grace days, else « À payer le 5 novembre ».
+ */
+export function CurrentOccurrence({
+	occurrence,
+}: {
+	occurrence: NonNullable<RecurringData["currentOccurrence"]>;
+}) {
+	const { t } = useTranslation();
+
+	if (occurrence.status !== "scheduled") {
+		return <span>{t(`recurring.occurrence.${occurrence.status}`)}</span>;
+	}
+
+	return occurrence.state === "overdue" ? (
+		<span className="text-destructive">
+			{t("recurring.occurrence.overdue", { count: occurrence.daysLate ?? 0 })}
+		</span>
+	) : (
+		<span>{t("recurring.occurrence.due", { date: dayAndMonth(occurrence.effectiveDueOn) })}</span>
+	);
+}
+
+/**
+ * Sure's price change line, « 13,49 € → 15,99 € (+18,5 %) », a rise in the
+ * warning tone and a fall in the income one. `percent` is in tenths.
+ */
+export function PriceChangeAmounts({
+	change,
+	className,
+}: {
+	change: { previousAmount: MinorUnits; newAmount: MinorUnits; currency: string; percent: number };
+	className?: string;
+}) {
+	const { t } = useTranslation();
+
+	return (
+		<span
+			className={cn(
+				"text-sm whitespace-nowrap tabular-nums",
+				change.newAmount > change.previousAmount ? "text-warning" : "text-money-income",
+				className,
+			)}
+		>
+			{t("bills.priceChange", {
+				from: formatMoney({ amount: change.previousAmount, currency: change.currency }),
+				to: formatMoney({ amount: change.newAmount, currency: change.currency }),
+				percent: formatSignedPercent(change.percent / 10),
+			})}
+		</span>
 	);
 }

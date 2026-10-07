@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -89,6 +89,13 @@ test("a viewer reads every page with no control that writes, and the server refu
 		),
 	);
 	await api.detectRecurring();
+	// A bill due in two days, for « À venir ».
+	await api.declareBill({
+		name: `${prefix} facture proche`,
+		amount: "20,00",
+		accountId: account.id,
+		firstDueOn: daysAgo(-2),
+	});
 	// A transfer, linked on creation, and a split, each with actions a viewer never sees.
 	const savings = await api.openAccount({ name: `${prefix} épargne`, openingDate: "2022-02-01" });
 	const transfer = await api.addTransaction(account.id, {
@@ -362,26 +369,52 @@ test("a viewer reads every page with no control that writes, and the server refu
 			]);
 		});
 
-		await test.step("recurring and rules: read, never changed", async () => {
-			await page.goto("/recurring");
-			await expect(page.getByRole("heading", { level: 1, name: "Récurrences" })).toBeVisible();
-			await expect(page.getByRole("cell", { name: `${prefix} boulangerie` })).toBeVisible();
+		await test.step("every bill, a bill's drawer and « À venir »: read, with no action and no write", async () => {
+			const writes: string[] = [];
+			const onRequest = (request: Request) => {
+				if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
+					writes.push(`${request.method()} ${request.url()}`);
+				}
+			};
+			page.on("request", onRequest);
+
+			await page.goto(`/bills?view=all&q=${encodeURIComponent(prefix)}`);
+			await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+			const table = page.getByRole("table", { name: "Toutes les factures" });
 			await expect(
-				page
-					.getByRole("table", { name: "Nouvelles factures possibles" })
-					.getByRole("row")
-					.filter({ hasText: `${prefix} abonnement` }),
-			).toContainText("Vue 3 fois");
+				table.getByRole("row").filter({ hasText: `${prefix} boulangerie` }),
+			).toBeVisible();
+			// No column for a menu a viewer never has.
+			await expect(table.getByRole("columnheader")).toHaveCount(6);
 			await expectNone(page, [
-				{ role: "button", name: "Détecter" },
-				{ role: "button", name: "Nettoyer les obsolètes" },
 				{ role: "button", name: "Ajouter une facture" },
 				{ role: "button", name: "Ajouter un revenu" },
-				{ role: "button", name: "Ajouter la facture" },
-				{ role: "button", name: "Ce n'est pas une facture" },
 				{ role: "button", name: `Actions pour ${prefix} boulangerie` },
 			]);
 
+			await table.getByRole("link", { name: `${prefix} boulangerie` }).click();
+			const drawer = page.getByRole("dialog", { name: `${prefix} boulangerie` });
+			await expect(drawer).toContainText("Prochain paiement");
+			await expect(drawer.getByRole("list", { name: "12 derniers mois" })).toBeVisible();
+			await expectNone(drawer, [
+				{ role: "button", name: "Modifier" },
+				{ role: "button", name: "Mettre en pause" },
+				{ role: "button", name: "Reprendre" },
+				{ role: "button", name: "Supprimer" },
+			]);
+			await page.keyboard.press("Escape");
+			await expect(drawer).toBeHidden();
+
+			await page.goto("/transactions?tab=upcoming");
+			await expect(
+				page.getByRole("listitem").filter({ hasText: `${prefix} facture proche` }),
+			).toContainText("Attendue dans 2 jours");
+
+			page.off("request", onRequest);
+			expect(writes).toEqual([]);
+		});
+
+		await test.step("recurring and rules: read, never changed", async () => {
 			// Story 23.4: the bills page and an occurrence's sheet, without any action.
 			const candidatesRead: string[] = [];
 			page.on("request", (request) => {
@@ -448,12 +481,18 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
 			await expectNone(
 				sections,
-				["Banques", "Placements", "Catégories", "Assistants IA", "Données", "Membres"].map(
-					(section) => ({
-						role: "link",
-						name: section,
-					}),
-				),
+				[
+					"Banques",
+					"Placements",
+					"Catégories",
+					"Transactions récurrentes",
+					"Assistants IA",
+					"Données",
+					"Membres",
+				].map((section) => ({
+					role: "link",
+					name: section,
+				})),
 			);
 
 			await page.goto("/settings/categories");
@@ -461,6 +500,8 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.goto("/settings/banks");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 			await page.goto("/settings/investments");
+			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+			await page.goto("/settings/recurring");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 		});
 

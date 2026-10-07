@@ -61,6 +61,10 @@ const splitBody = z.object({
 
 const ruleListBody = z.object({ data: z.array(z.object({ id: z.string() })) });
 
+const currentBody = z.object({
+	data: z.object({ record: z.object({ currentOccurrence: z.object({ id: z.string() }) }) }),
+});
+
 const accountListBody = z.object({
 	data: z.object({
 		groups: z.array(z.object({ classification: z.string(), total: z.number() })),
@@ -513,6 +517,8 @@ export function apiHelpers(request: APIRequestContext) {
 			accountId: string;
 			firstDueOn: string;
 			entryId?: string;
+			kind?: "bill" | "income";
+			frequency?: { preset: string };
 		}): Promise<string> {
 			return created(
 				await request.post("/api/recurring/declare", {
@@ -524,6 +530,33 @@ export function apiHelpers(request: APIRequestContext) {
 		/** Pauses or resumes a series, as its menu's « Mettre en pause » and « Reprendre » do. */
 		async setRecurringStatus(id: string, status: "active" | "inactive"): Promise<void> {
 			const response = await request.patch(`/api/recurring/${id}`, { data: { status } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Edits a series, as « Modifier »'s dialog does. */
+		async editBill(id: string, input: Record<string, string | boolean | null>): Promise<void> {
+			const response = await request.patch(`/api/recurring/${id}`, { data: input });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** A series' current occurrence, as its drawer reads it. */
+		async currentOccurrence(id: string): Promise<string> {
+			const response = await request.get(`/api/recurring/${id}`);
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+
+			return currentBody.parse(await response.json()).data.record.currentOccurrence.id;
+		},
+
+		/** Records a payment toward an occurrence, as its sheet's « Ajouter un paiement » does. */
+		async addPayment(
+			occurrenceId: string,
+			input: { entryId: string; amount?: string } | { amount: string; paidOn: string },
+		): Promise<void> {
+			const response = await request.post(`/api/recurring/occurrences/${occurrenceId}/payments`, {
+				data: input,
+			});
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},

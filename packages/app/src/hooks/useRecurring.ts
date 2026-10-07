@@ -1,10 +1,17 @@
 import type { InferResponseType } from "hono/client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { BillKind, DeclareInput, EditInput } from "@archant/api/schemas/bills";
+import type {
+	BillKind,
+	BillSort,
+	BillStatusFilter,
+	DeclareInput,
+	EditInput,
+} from "@archant/api/schemas/bills";
+import type { BillType } from "@archant/data/recurring";
 
-import { api, unwrap } from "@/lib/api";
+import { api, errorCodeOf, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
 export type RecurringData = InferResponseType<typeof api.recurring.$get, 200>["data"][number];
@@ -15,6 +22,17 @@ export type BillRowData = BillsData["month"][number];
 
 export type SuggestedPaymentData = BillsData["review"][number];
 
+export type AllBillsData = InferResponseType<typeof api.recurring.bills.all.$get, 200>["data"];
+
+export type BillRecordData = AllBillsData["bills"][number];
+
+export type BillDetailData = InferResponseType<(typeof api.recurring)[":id"]["$get"], 200>["data"];
+
+export type UpcomingData = InferResponseType<
+	typeof api.recurring.upcoming.$get,
+	200
+>["data"][number];
+
 export type BillCandidateData = InferResponseType<
 	typeof api.recurring.candidates.$get,
 	200
@@ -23,6 +41,15 @@ export type BillCandidateData = InferResponseType<
 /** What a series is called: its typed name, else its merchant's, else its label, as Sure's `display_name`. */
 export const recurringName = (item: Pick<RecurringData, "name" | "merchantName" | "label">) =>
 	item.name ?? item.merchantName ?? item.label;
+
+/** The URL's search, filters and sort, as `GET /api/recurring/bills/all` reads them. */
+export type AllBillsQuery = {
+	q?: string | undefined;
+	status?: BillStatusFilter | undefined;
+	type?: BillType | undefined;
+	/** By due date when absent, the default. */
+	sort?: Exclude<BillSort, "due"> | undefined;
+};
 
 /** What the user can move a pattern to; `suggested` is detection's alone. */
 export type RecurringMove = Exclude<RecurringData["status"], "suggested">;
@@ -141,6 +168,35 @@ export function useBills() {
 	return useQuery({
 		queryKey: queryKeys.recurring.bills,
 		queryFn: async () => (await unwrap(api.recurring.bills.$get())).data,
+	});
+}
+
+/** « Toutes les factures »: `query` holds the URL's search, filters and sort. */
+export function useAllBills(query: AllBillsQuery) {
+	return useQuery({
+		queryKey: queryKeys.recurring.allBills(query),
+		queryFn: async () => (await unwrap(api.recurring.bills.all.$get({ query }))).data,
+		placeholderData: keepPreviousData,
+	});
+}
+
+/** A bill's drawer: the series, what it cost and its price changes. */
+export function useBill(id: string) {
+	return useQuery({
+		queryKey: queryKeys.recurring.bill(id),
+		queryFn: async () => (await unwrap(api.recurring[":id"].$get({ param: { id } }))).data,
+		// A deleted bill stays deleted, and its drawer says so in place.
+		retry: (failureCount, error) =>
+			!["NOT_FOUND", "UNAUTHORIZED"].includes(errorCodeOf(error)) && failureCount < 3,
+		meta: { notFoundInline: true },
+	});
+}
+
+/** The « À venir » tab: the active series expected within ten days. */
+export function useUpcomingRecurring() {
+	return useQuery({
+		queryKey: queryKeys.recurring.upcoming,
+		queryFn: async () => (await unwrap(api.recurring.upcoming.$get())).data,
 	});
 }
 

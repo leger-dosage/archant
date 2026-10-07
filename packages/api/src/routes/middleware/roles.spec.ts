@@ -280,6 +280,9 @@ describe("a viewer's reads", () => {
 				"/api/goals/summary 200",
 				`/api/accounts/${account.id}/trades 200`,
 				`/api/accounts/${account.id}/holdings 200`,
+				"/api/recurring/bills/all 200",
+				"/api/recurring/upcoming 200",
+				"/api/recurring/x 404",
 			]),
 		);
 		expect(viewerStatuses).toEqual(await statuses(admin));
