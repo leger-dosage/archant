@@ -113,7 +113,7 @@ function SyncStartDateField({
 		error === undefined ? "syncStartDate-hint" : "syncStartDate-hint syncStartDate-error";
 
 	return (
-		<div className="flex flex-col gap-2 sm:max-w-xs">
+		<div className="flex flex-col gap-2 sm:max-w-md">
 			<Label htmlFor="syncStartDate">{t("banks.accounts.syncStartDate")}</Label>
 			<DateField
 				id="syncStartDate"
