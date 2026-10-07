@@ -16,8 +16,8 @@
 	"devDependencies": {
 		"@shadcn/lint": "^0.2.0",
 		"knip": "^6.39.0",
-		"oxfmt": "^0.70.0",
-		"oxlint": "^1.85.0",
+		"oxfmt": "^0.71.0",
+		"oxlint": "^1.86.0",
 		"oxlint-tsgolint": "^7.0.2003",
 		"typescript": "^7.0.2"
 	},
