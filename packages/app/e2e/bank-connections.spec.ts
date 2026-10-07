@@ -778,7 +778,7 @@ function monthsBack(months: number): string {
 }
 
 const startDate = (page: Page) =>
-	page.getByRole("textbox", { name: "Synchroniser l'historique depuis le" });
+	page.getByRole("textbox", { name: "Commencez à synchroniser les transactions à partir de" });
 
 test("a new connection offers the first sync's start date, three months back, and refuses one beyond two years", async ({
 	page,
@@ -787,7 +787,7 @@ test("a new connection offers the first sync's start date, three months back, an
 
 	await expect(startDate(page)).toHaveValue(typed(monthsBack(3)));
 	await expect(startDate(page)).toHaveAccessibleDescription(
-		"Jusqu'à deux ans en arrière. Votre banque peut fournir un historique plus court.",
+		"Sélectionnez jusqu'où vous souhaitez synchroniser l'historique des transactions. Maximum 2 ans d'historique disponible.",
 	);
 
 	await startDate(page).fill(typed(monthsBack(36)));
@@ -805,7 +805,7 @@ test("a new connection offers the first sync's start date, three months back, an
 	await expect(choice(page, FAKE_ACCOUNTS.card.name)).toBeVisible();
 });
 
-test("the first sync reads from the date chosen two years back, keeps what the bank holds, and the date is then gone", async ({
+test("the first sync reads from the date chosen two years back, keeps what the bank holds, and the date stays offered while an account is left", async ({
 	page,
 }) => {
 	await connect(page, HISTORY_BANK);
@@ -819,8 +819,8 @@ test("the first sync reads from the date chosen two years back, keeps what the b
 	// The bank holds 400 days, less than asked: no error, as in Sure.
 	await expect(page.getByText(/La dernière synchronisation a échoué/u)).toBeHidden();
 	await expect(toast(page, "Synchronisation terminée avec une erreur.")).toBeHidden();
-	// Linked: later links read from the saved date, which the page no longer offers.
-	await expect(startDate(page)).toBeHidden();
+	// The card is left to link: the page offers the saved date again, as Sure's setup.
+	await expect(startDate(page)).toHaveValue(typed(monthsBack(24)));
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 
 	await page.goto(`/accounts/${accountId}`);

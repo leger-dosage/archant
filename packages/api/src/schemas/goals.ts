@@ -24,7 +24,7 @@ export const goalBodySchema = z.object({
 	targetMonths: z.string().optional(),
 	targetDate: z.string().nullable(),
 	color: z.string(),
-	icon: z.string(),
+	icon: z.string().nullable(),
 	notes: z.string().nullable(),
 	accounts: z.array(z.object({ accountId: z.string(), allocatedAmount: z.string() })),
 });
@@ -137,7 +137,8 @@ export function goalSchema(currency: CurrencyCode) {
 					.transform(blankAsNull)
 					.pipe(z.iso.date().nullable()),
 				color: z.enum(CATEGORY_COLORS),
-				icon: z.enum(CATEGORY_ICONS),
+				// None until one is picked: the cards then show the goal's initial, as Sure's.
+				icon: z.enum(CATEGORY_ICONS).nullable(),
 				notes: z
 					.string()
 					.trim()

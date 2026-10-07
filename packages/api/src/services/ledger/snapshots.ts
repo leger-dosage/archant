@@ -3,7 +3,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, count, desc, eq, exists, inArray, ne, sum } from "drizzle-orm";
+import { and, count, desc, eq, exists, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import { classificationOf } from "@archant/data/account-types";
@@ -11,6 +11,7 @@ import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import type { ValuationKind } from "@archant/data/schema/entries";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { holdings } from "@archant/data/schema/holdings";
@@ -385,6 +386,102 @@ export async function listSnapshots(
 
 	return {
 		items: rows.map(withGap),
+		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
+	};
+}
+
+/** Which valuations `listValuations` reads; every bound optional. */
+export type ValuationFilter = {
+	accountId?: string | undefined;
+	from?: IsoDate | undefined;
+	to?: IsoDate | undefined;
+};
+
+/** A valuation as Sure's `get_valuations` lists it: a snapshot with its gap, or an anchor. */
+export type ValuationRecord = {
+	id: string;
+	accountId: string;
+	accountName: string;
+	date: IsoDate;
+	kind: ValuationKind;
+	/** The stored balance (AD-5). */
+	balance: MinorUnits;
+	/** A snapshot's computed balance and gap; `null` for an anchor, which sets the balance itself. */
+	computed: MinorUnits | null;
+	gap: MinorUnits | null;
+	currency: string;
+};
+
+/**
+ * A page of the valuations of active accounts, anchors included, most recent
+ * first, as Sure's `get_valuations` reads `family.entries` of visible
+ * accounts. A deactivated account's are left out even when named.
+ */
+export async function listValuations(
+	deps: ServiceDeps,
+	filter: ValuationFilter,
+	page: { page: number; pageSize: number },
+): Promise<{ items: ValuationRecord[]; total: number }> {
+	const where = and(
+		eq(entries.kind, "valuation"),
+		eq(accounts.active, true),
+		filter.accountId === undefined ? undefined : eq(entries.accountId, filter.accountId),
+		filter.from === undefined ? undefined : gte(entries.date, filter.from),
+		filter.to === undefined ? undefined : lte(entries.date, filter.to),
+	);
+	const rows = await deps.db
+		.select({
+			...snapshotColumns,
+			accountName: accounts.name,
+			// Never null on a valuation: the entries check says so, the column's type cannot.
+			kind: sql<ValuationKind>`${entries.valuationKind}`,
+		})
+		.from(entries)
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(where)
+		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
+		.limit(page.pageSize)
+		.offset((page.page - 1) * page.pageSize);
+	const totals = await deps.db
+		.select({ total: count() })
+		.from(entries)
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.where(where);
+	// The page's snapshots with their gaps, read once per account as the tab reads them.
+	const snapshots = rows.filter((row) => row.kind === "reconciliation");
+	const gapped = new Map<string, SnapshotRecord>();
+
+	await Promise.all(
+		[...new Set(snapshots.map((row) => row.accountId))].map(async (accountId) => {
+			const ofAccount = snapshots.filter((row) => row.accountId === accountId);
+			const withGap = await gapReader(
+				deps.db,
+				accountId,
+				ofAccount.map((row) => row.date),
+			);
+
+			for (const row of ofAccount) {
+				gapped.set(row.id, withGap(row));
+			}
+		}),
+	);
+
+	return {
+		items: rows.map(({ accountName, kind, ...row }) => {
+			const snapshot = gapped.get(row.id);
+
+			return {
+				id: row.id,
+				accountId: row.accountId,
+				accountName,
+				date: row.date,
+				kind,
+				balance: toMinorUnits(row.balance),
+				computed: snapshot?.computed ?? null,
+				gap: snapshot?.gap ?? null,
+				currency: row.currency,
+			};
+		}),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
 }

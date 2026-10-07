@@ -2201,6 +2201,32 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("keeps every goal, its icon and its links when 0061 lets a goal go without an icon", async () => {
+		const before = await migratedBefore("0061");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1");
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', null)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, icon from goals`)).resolves.toEqual([
+			{ id: "g1", icon: "piggy-bank" },
+		]);
+		await expect(
+			database.all(sql`select goal_id as goalId, account_id as accountId from goal_accounts`),
+		).resolves.toEqual([{ goalId: "g1", accountId: "a1" }]);
+		// Sure's `goals.icon` is nullable: a goal without one shows its initial.
+		await expect(
+			database.run(
+				sql`insert into goals (id, name, target_amount, currency, color, icon, created_at, updated_at) values ('g2', 'Vacances', 100000, 'EUR', '#fc7840', null, 0, 0)`,
+			),
+		).resolves.toBeDefined();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("holds a fixed target, or a reserve's months of expenses between 1 and 120", async () => {
 		const database = await migrated();
 		await insertGoal(database, "g1");

@@ -8,6 +8,7 @@ import {
 	HandCoinsIcon,
 	HouseIcon,
 	LandmarkIcon,
+	TargetIcon,
 } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
@@ -85,6 +86,22 @@ describe.each(MODES)("in %s mode", (mode) => {
 		expect(tint.fill).toBe(`color-mix(in oklab, #f0bf00 ${share}, transparent)`);
 		expect(contrastRatio(tint.icon, HOVER_ROW[mode])).toBeGreaterThanOrEqual(3);
 		expect(contrastRatio(tint.text, HOVER_ROW[mode])).toBeGreaterThanOrEqual(textTarget);
+	});
+
+	it("draws a goal with its icon, or its initial in its colour without one, as Sure's avatar", () => {
+		const subject = { kind: "goal", color: "#f0bf00", name: " épargne" } as const;
+		const initial = resolveTint({ ...subject, icon: null }, mode);
+
+		expect(resolveTint({ ...subject, icon: "dog" }, mode).glyph).toEqual({ icon: DogIcon });
+		expect(initial.glyph).toEqual({ letter: "É" });
+		expect(initial.fill).toBe(`color-mix(in oklab, #f0bf00 ${share}, transparent)`);
+		expect(contrastRatio(initial.text, HOVER_ROW[mode])).toBeGreaterThanOrEqual(textTarget);
+	});
+
+	it("draws Sure's target for a goal without an icon or a name yet", () => {
+		expect(
+			resolveTint({ kind: "goal", color: "#f0bf00", icon: null, name: " " }, mode).glyph,
+		).toEqual({ icon: TargetIcon });
 	});
 });
 

@@ -751,13 +751,36 @@ export const unpairTransferInput = z.strictObject({
 		),
 });
 
-/** `get_valuations`: a page of one account's snapshots, as its « Soldes » tab lists them. */
-export const valuationsInput = z.strictObject({
-	accountId,
-	page: pageFields.page.describe(
-		`${DEFAULT_PAGE_SIZE} snapshots a page, most recent first; 1 by default.`,
-	),
-});
+/**
+ * `get_valuations`: a page of valuations, as Sure's: every active account's
+ * unless one is named, between two optional dates.
+ */
+export const valuationsInput = z
+	.strictObject({
+		accountId: accountId
+			.optional()
+			.describe("Only this account's; every active account's without it."),
+		startDate: z.iso
+			.date()
+			.optional()
+			.describe("Only valuations on or after this date, YYYY-MM-DD."),
+		endDate: z.iso
+			.date()
+			.optional()
+			.describe("Only valuations on or before this date, YYYY-MM-DD."),
+		page: pageFields.page.describe(
+			`${DEFAULT_PAGE_SIZE} valuations a page, most recent first; 1 by default.`,
+		),
+	})
+	.superRefine((value, context) => {
+		if (
+			value.startDate !== undefined &&
+			value.endDate !== undefined &&
+			value.endDate < value.startDate
+		) {
+			context.addIssue({ code: "custom", path: ["endDate"], message: "before_start_date" });
+		}
+	});
 
 /**
  * `record_valuation`: the « Soldes » dialog's fields, passed raw to

@@ -63,7 +63,11 @@ test("a goal created from the dialog shows its card, its page and each account's
 	const name = uniqueName("Vacances");
 
 	const dialog = await openNewGoal(page);
+	const preview = dialog.getByRole("img", { name: "Aperçu de l'objectif" });
+	// No icon picked yet: Sure's avatar shows the name's initial once one is typed.
+	await expect(preview.locator("svg")).toHaveCount(1);
 	await dialog.getByLabel("Nom").fill(name);
+	await expect(preview).toHaveText("V");
 	await dialog.getByLabel("Montant visé").fill("2 000");
 	// Sixty days ahead: the 800 left asks for 400 a month.
 	await dialog.getByLabel("Échéance (facultative)").fill(typed(daysAgo(-60)));
@@ -71,6 +75,7 @@ test("a goal created from the dialog shows its card, its page and each account's
 	await dialog.getByRole("checkbox", { name: other.name }).check();
 	await dialog.getByLabel(`Montant affecté depuis ${other.name}`).fill("200");
 	await dialog.getByRole("radio", { name: "Avion" }).check({ force: true });
+	await expect(preview).toHaveText("");
 	await dialog.getByRole("button", { name: "Créer l'objectif" }).click();
 
 	await expect(dialog).toBeHidden();

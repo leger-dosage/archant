@@ -101,6 +101,8 @@ Inputs name `transactionId` and `counterpartId`, the body of `POST /api/transfer
 
 ## Spec Change Log
 
+- Owner rule of 2026-10-07, checked against Sure at `56140319d`: Sure still has no transfer tool, so nothing here departs from one; no change.
+
 ## Review Triage Log
 
 | Layer | Finding | Verdict | Evidence | Route |

@@ -21,7 +21,7 @@ context:
 ## Boundaries & Constraints
 
 **Always:**
-- `get_valuations`: `accountId`, `page` (default 1); 50 a page, the tab's `DEFAULT_PAGE_SIZE`, no `pageSize`. Returns `items`, each `id`, `date`, `balance`, `computed`, `gap` (decimal strings), `currency`, then `page`, `pageSize`, `total`, most recent first. Unknown account: `NOT_FOUND`. `READ_ONLY`; no `BANK_TEXT`, since nothing there is text.
+- `get_valuations`, as Sure's: optional `accountId`, `startDate`, `endDate` (an end before the start is `VALIDATION_ERROR` `endDate` `before_start_date`), `page` (default 1); 50 a page, no `pageSize`. Every active account's valuations, anchors included, unless one is named; a deactivated account's left out. Returns `items`, each `id`, `accountId`, `accountName`, `date`, `kind`, `balance`, `computed` and `gap` (decimal strings, `null` for an anchor), `currency`, then `page`, `pageSize`, `total`, `totalPages`, most recent first. Unknown account: `NOT_FOUND`. `READ_ONLY`; `BANK_TEXT`, for the account names.
 - `record_valuation`: `accountId`, `date` (YYYY-MM-DD), `balance` (decimal string, parsed in the account's currency as the dialog's field). Passed raw to `createSnapshot`. Returns the snapshot as `get_valuations` gives it, plus `accountId` and `replacedExisting`. `REPLACES`; `changedRows` 1, new or replaced.
 - `replacedExisting` is known inside the ledger's write: `recordSnapshot` in `services/ledger/snapshots.ts` returns `replaced` beside `id`, and `createSnapshot` returns `replacedExisting` beside the record, so `POST /api/accounts/:id/snapshots` answers it too.
 - The description says the balance is the stored one (AD-5): what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative. From its date the balance follows the snapshot, then the transactions after it.
@@ -35,7 +35,8 @@ context:
 
 | Scenario | Input / State | Expected |
 |---|---|---|
-| Page | checking with two snapshots | both, latest first, each with computed and gap; page 2 empty, total 2 |
+| Page | checking with two snapshots | both, latest first, each with computed and gap, then the opening balance; page 2 empty, total 3 |
+| Every account | no `accountId`; March only | every active account's valuations; March's snapshot alone |
 | Record | checking, a past date after opening | the balance follows the figure from that date; `replacedExisting: false` |
 | Replace | same date again | same id, new balance, one snapshot, `replacedExisting: true` |
 | Before opening | the opening date | `VALIDATION_ERROR` `date` `not_after_opening_date`, nothing written |
@@ -83,6 +84,8 @@ context:
 - Standards review: the sign sentence repeated in the description, the input and `INSTRUCTIONS` is kept, each read by the assistant in its own place; `replaced` in the ledger and `replacedExisting` at the service follow the ledger's terse result and Sure's answer name.
 
 ## Spec Change Log
+
+- Owner rule of 2026-10-07, no divergence from Sure unless forced by money, French text, accessibility, security or the API error contract. Amended Boundaries and the matrix: `get_valuations` lists every active account's valuations, opening and current anchors included, with each one's `kind` and account, an optional `accountId`, Sure's `startDate` and `endDate`, and `totalPages`, as Sure's tool. KEEP: decimal strings (money). OPEN for the owner: Sure's required `source` citation needs notes on a snapshot, which Archant's snapshots lack (AD-8); and Sure's snake_case field names (`account_id`, `amount`) against the camelCase every Archant tool uses.
 
 ## Review Triage Log
 

@@ -2188,8 +2188,8 @@
 			"linkTo": "Associer à",
 			"linkedTo": "Associé à",
 			"submit": "Valider",
-			"syncStartDate": "Synchroniser l'historique depuis le",
-			"syncStartDateHint": "Jusqu'à deux ans en arrière. Votre banque peut fournir un historique plus court.",
+			"syncStartDate": "Commencez à synchroniser les transactions à partir de",
+			"syncStartDateHint": "Sélectionnez jusqu'où vous souhaitez synchroniser l'historique des transactions. Maximum 2 ans d'historique disponible.",
 			"linked_one": "{{count}} compte relié à la banque.",
 			"linked_other": "{{count}} comptes reliés à la banque."
 		},

@@ -10,6 +10,7 @@ import {
 	HandCoinsIcon,
 	HouseIcon,
 	LandmarkIcon,
+	TargetIcon,
 } from "lucide-react";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -28,7 +29,9 @@ export type TintSubject =
 	| { kind: "transfer"; icon?: LucideIcon }
 	| { kind: "uncategorised" }
 	| { kind: "merchant"; name: string }
-	| { kind: "category"; color: string; icon: CategoryIcon };
+	| { kind: "category"; color: string; icon: CategoryIcon }
+	/** Sure's goal avatar: its icon, else its name's initial, else Sure's target. */
+	| { kind: "goal"; color: string; icon: CategoryIcon | null; name: string };
 
 export type Tint = {
 	/** A lucide icon, or a merchant's first letter. */
@@ -93,6 +96,17 @@ function muted(glyph: Tint["glyph"], mode: ResolvedTheme): Tint {
 	return { glyph, fill: tintFill(MUTED, mode), icon: MUTED, text: MUTED };
 }
 
+/**
+ * A name's first letter, uppercased. NFC first, so a decomposed « É » is one
+ * code point; one code point after uppercasing too, since « ß » uppercases
+ * to « SS ».
+ */
+function initialOf(name: string): string | undefined {
+	const first = Array.from(name.normalize("NFC").trim())[0];
+
+	return first === undefined ? undefined : Array.from(first.toLocaleUpperCase("fr"))[0];
+}
+
 /** What to draw, and in which colours, for a subject in the current mode. */
 export function resolveTint(subject: TintSubject, mode: ResolvedTheme): Tint {
 	switch (subject.kind) {
@@ -106,14 +120,20 @@ export function resolveTint(subject: TintSubject, mode: ResolvedTheme): Tint {
 		case "uncategorised":
 			return muted({ icon: CircleDashedIcon }, mode);
 		case "merchant": {
-			// NFC first, so a decomposed « É » is one code point; one code point after
-			// uppercasing too, since « ß » uppercases to « SS ».
-			const first = Array.from(subject.name.normalize("NFC").trim())[0];
-			const letter = first === undefined ? undefined : Array.from(first.toLocaleUpperCase("fr"))[0];
+			const letter = initialOf(subject.name);
 
 			return letter === undefined
 				? muted({ icon: CircleDashedIcon }, mode)
 				: muted({ letter }, mode);
+		}
+		case "goal": {
+			if (subject.icon !== null) {
+				return colored(subject.color, { icon: CATEGORY_ICON_COMPONENTS[subject.icon] }, mode);
+			}
+
+			const letter = initialOf(subject.name);
+
+			return colored(subject.color, letter === undefined ? { icon: TargetIcon } : { letter }, mode);
 		}
 	}
 

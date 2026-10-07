@@ -30,7 +30,8 @@ export const goals = sqliteTable(
 		// by the API, not here, as a category's: a swatch added later needs no
 		// rebuilt table.
 		color: text("color").$type<CategoryColor>().notNull(),
-		icon: text("icon").$type<CategoryIcon>().notNull(),
+		// Sure leaves a goal's icon empty until one is picked, and shows its initial.
+		icon: text("icon").$type<CategoryIcon>(),
 		notes: text("notes"),
 		state: text("state").$type<GoalState>().notNull().default("active"),
 		kind: text("kind").$type<GoalKind>().notNull().default("one_off"),

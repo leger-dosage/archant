@@ -1,13 +1,14 @@
-import type { SnapshotRecord } from "../services/ledger/snapshots.ts";
+import type { SnapshotRecord, ValuationRecord } from "../services/ledger/snapshots.ts";
 
 import { z } from "zod";
 
+import type { MinorUnits } from "@archant/data/money";
 import { toDecimalString } from "@archant/data/money";
 
 import { recordValuationInput, valuationsInput } from "../schemas/assistants.ts";
 import { DEFAULT_PAGE_SIZE } from "../schemas/transactions.ts";
-import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
-import { READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
+import { createSnapshot, listValuations } from "../services/snapshots.ts";
+import { BANK_TEXT, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
 
 const snapshotFields = {
 	id: z.string(),
@@ -31,31 +32,77 @@ function snapshotOf(record: SnapshotRecord) {
 	};
 }
 
+// The ledger's kinds, spelt here: only the ledger imports the entries table (AD-2).
+const VALUATION_KINDS = [
+	"opening_anchor",
+	"reconciliation",
+	"current_anchor",
+] as const satisfies readonly ValuationRecord["kind"][];
+
+const valuation = z.object({
+	id: z.string(),
+	accountId: z.string(),
+	accountName: z.string(),
+	date: z.string(),
+	kind: z
+		.enum(VALUATION_KINDS)
+		.describe(
+			'"opening_anchor": the opening balance; "reconciliation": a snapshot, as the « Soldes » tab lists it; "current_anchor": the balance a bank last gave.',
+		),
+	balance: decimal("The recorded stored balance"),
+	computed: decimal("A snapshot's balance its transactions alone give for that day")
+		.nullable()
+		.describe("null for an anchor, which sets the balance itself."),
+	gap: decimal("balance minus computed").nullable().describe("null for an anchor."),
+	currency: z.string(),
+});
+
+function valuationOf(record: ValuationRecord): z.input<typeof valuation> {
+	const { currency } = record;
+	const amount = (value: MinorUnits | null) =>
+		value === null ? null : toDecimalString({ amount: value, currency });
+
+	return {
+		id: record.id,
+		accountId: record.accountId,
+		accountName: record.accountName,
+		date: record.date,
+		kind: record.kind,
+		balance: toDecimalString({ amount: record.balance, currency }),
+		computed: amount(record.computed),
+		gap: amount(record.gap),
+		currency,
+	};
+}
+
 export const getValuations = defineTool({
 	name: "get_valuations",
-	title: "Balance snapshots",
-	description: `One account's balance snapshots, as its « Soldes » tab lists them in Archant, most recent first, ${DEFAULT_PAGE_SIZE} a page: each recorded balance beside the one its transactions alone give for that day, and the gap between them. The opening balance and a bank's current balance are in get_accounts, not here.`,
+	title: "Valuations",
+	description: `Recorded valuations, as Sure's get_valuations, most recent first, ${DEFAULT_PAGE_SIZE} a page: every active account's opening balance, its snapshots, the « Soldes » tab's, and the balance a bank last gave, unless accountId names one account, between two optional dates. Each snapshot comes with the balance its transactions alone give for that day and the gap between them. Use it to find the dates that already carry a value before record_valuation. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: valuationsInput,
 	output: z.object({
-		items: z.array(z.object(snapshotFields)),
+		items: z.array(valuation),
 		page: z.number().int(),
 		pageSize: z.number().int(),
 		total: z.number().int(),
+		totalPages: z.number().int(),
 	}),
-	run: async (deps, { accountId, page }) => {
-		const found = await listAccountSnapshots(deps, accountId, {
-			page,
-			pageSize: DEFAULT_PAGE_SIZE,
-		});
+	run: async (deps, { accountId, startDate, endDate, page }) => {
+		const found = await listValuations(
+			deps,
+			{ accountId, from: startDate, to: endDate },
+			{ page, pageSize: DEFAULT_PAGE_SIZE },
+		);
 
 		return {
 			result: {
-				items: found.items.map(snapshotOf),
+				items: found.items.map(valuationOf),
 				page: found.page,
 				pageSize: found.pageSize,
 				total: found.total,
+				totalPages: Math.ceil(found.total / found.pageSize),
 			},
 			changedRows: 0,
 		};

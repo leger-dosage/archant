@@ -71,7 +71,7 @@ export type GoalSummary = GoalProgress & {
 	currency: string;
 	targetDate: IsoDate | null;
 	color: CategoryColor;
-	icon: CategoryIcon;
+	icon: CategoryIcon | null;
 	notes: string | null;
 	state: GoalState;
 	kind: GoalKind;

@@ -67,7 +67,9 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 				<ul aria-labelledby={listId} className="flex flex-col divide-y divide-line">
 					{summary.goals.map((goal) => (
 						<li key={goal.id} className="flex items-center gap-3 py-2.5">
-							<TintedIcon subject={{ kind: "category", color: goal.color, icon: goal.icon }} />
+							<TintedIcon
+								subject={{ kind: "goal", color: goal.color, icon: goal.icon, name: goal.name }}
+							/>
 							<div className="flex min-w-0 flex-1 flex-col gap-1">
 								<div className="flex min-w-0 items-center gap-2">
 									<Link

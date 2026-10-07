@@ -70,11 +70,24 @@ const snapshot = z.object({
 	currency: z.string(),
 });
 
+const valuation = z.object({
+	id: z.string(),
+	accountId: z.string(),
+	accountName: z.string(),
+	date: z.string(),
+	kind: z.enum(["opening_anchor", "reconciliation", "current_anchor"]),
+	balance: z.string(),
+	computed: z.string().nullable(),
+	gap: z.string().nullable(),
+	currency: z.string(),
+});
+
 const valuations = z.object({
-	items: z.array(snapshot),
+	items: z.array(valuation),
 	page: z.number(),
 	pageSize: z.number(),
 	total: z.number(),
+	totalPages: z.number(),
 });
 
 const recordedValuation = snapshot.extend({ accountId: z.string(), replacedExisting: z.boolean() });
@@ -106,12 +119,18 @@ async function balancesOf(tools: Awaited<ReturnType<typeof assistants>>, id: str
 	};
 }
 
+/** The account's snapshots, the « Soldes » tab's, without its opening balance. */
 async function snapshotsOf(tools: Awaited<ReturnType<typeof assistants>>, accountId: string) {
-	return valuations.parse((await tools.read("get_valuations", { accountId })).structuredContent);
+	const { items } = valuations.parse(
+		(await tools.read("get_valuations", { accountId })).structuredContent,
+	);
+	const snapshots = items.filter((item) => item.kind === "reconciliation");
+
+	return { items: snapshots, total: snapshots.length };
 }
 
 describe("get_valuations", () => {
-	it("lists the « Soldes » tab's snapshots, latest first, with computed balance and gap", async () => {
+	it("lists an account's valuations, its opening balance included, latest first, with each snapshot's computed balance and gap", async () => {
 		const account = await checking();
 		const tools = await assistants();
 		await tools.write("record_valuation", {
@@ -131,33 +150,99 @@ describe("get_valuations", () => {
 
 		const { items, ...paging } = valuations.parse(first.structuredContent);
 
+		const of = { accountId: account.id, accountName: "Compte courant", currency: "EUR" };
+
 		expect(items.map(({ id: _id, ...item }) => item)).toEqual([
 			{
+				...of,
 				date: "2026-04-01",
+				kind: "reconciliation",
 				balance: "1990.00",
 				computed: "2000.00",
 				gap: "-10.00",
-				currency: "EUR",
 			},
 			{
+				...of,
 				date: "2026-03-05",
+				kind: "reconciliation",
 				balance: "2000.00",
 				computed: "1380.00",
 				gap: "620.00",
-				currency: "EUR",
+			},
+			{
+				...of,
+				date: "2026-01-10",
+				kind: "opening_anchor",
+				balance: "1500.00",
+				computed: null,
+				gap: null,
 			},
 		]);
-		expect(paging).toEqual({ page: 1, pageSize: 50, total: 2 });
+		expect(paging).toEqual({ page: 1, pageSize: 50, total: 3, totalPages: 1 });
 		expect(valuations.parse(second.structuredContent)).toEqual({
 			items: [],
 			page: 2,
 			pageSize: 50,
-			total: 2,
+			total: 3,
+			totalPages: 1,
 		});
 		expect(await calls()).toEqual([
 			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
 			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
 		]);
+	});
+
+	it("lists every active account's valuations without an account, as Sure's, between two dates", async () => {
+		const account = await checking();
+		const loan = await openOwn({ ...mortgage, name: "Prêt immobilier" });
+		const tools = await assistants();
+		await tools.write("record_valuation", {
+			accountId: account.id,
+			date: "2026-03-05",
+			balance: "2000.00",
+		});
+		await db.delete(assistantCalls);
+
+		const all = valuations.parse((await tools.read("get_valuations")).structuredContent);
+		const march = valuations.parse(
+			(await tools.read("get_valuations", { startDate: "2026-03-01", endDate: "2026-03-31" }))
+				.structuredContent,
+		);
+
+		expect(all.items.map(({ accountName, kind }) => ({ accountName, kind }))).toEqual(
+			expect.arrayContaining([
+				{ accountName: "Compte courant", kind: "reconciliation" },
+				{ accountName: "Compte courant", kind: "opening_anchor" },
+				{ accountName: "Prêt immobilier", kind: "opening_anchor" },
+			]),
+		);
+		expect(all.items.map(({ date }) => date)).toEqual(
+			all.items
+				.map(({ date }) => date)
+				.toSorted()
+				.toReversed(),
+		);
+		expect(all.items.some(({ accountId }) => accountId === loan.id)).toBe(true);
+		expect(march.items.map(({ date, kind }) => ({ date, kind }))).toEqual([
+			{ date: "2026-03-05", kind: "reconciliation" },
+		]);
+		expect(await calls()).toEqual([
+			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
+			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
+		]);
+	});
+
+	it("refuses an end date before the start date", async () => {
+		await checking();
+		const tools = await assistants();
+
+		const refused = await tools.read("get_valuations", {
+			startDate: "2026-04-01",
+			endDate: "2026-03-01",
+		});
+
+		expect(refused.isError).toBe(true);
+		expect(refused.content[0]?.text).toContain('"path":"endDate","code":"before_start_date"');
 	});
 });
 

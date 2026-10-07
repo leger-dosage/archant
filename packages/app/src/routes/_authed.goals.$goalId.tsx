@@ -96,7 +96,7 @@ function Progress({ goal }: { goal: GoalData }) {
 				<ProgressRing
 					size={96}
 					percent={goal.percent}
-					subject={{ kind: "category", color: goal.color, icon: goal.icon }}
+					subject={{ kind: "goal", color: goal.color, icon: goal.icon, name: goal.name }}
 					label={t("goals.ring", { percent: formatWholePercent(goal.percent) })}
 				/>
 				<div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -302,7 +302,7 @@ function GoalPage() {
 				: {
 						icon: (
 							<TintedIcon
-								subject={{ kind: "category", color: data.color, icon: data.icon }}
+								subject={{ kind: "goal", color: data.color, icon: data.icon, name: data.name }}
 								size="lg"
 							/>
 						),
