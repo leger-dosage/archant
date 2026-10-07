@@ -95,8 +95,9 @@ const HISTORY_MONTHS = 24;
 
 /**
  * Sure's « Start syncing transactions from »: how far back the first sync of
- * each bank account reads, two years back to today. Offered until an
- * account is linked; later links read from the date saved then.
+ * each bank account reads, two years back to today. Offered on every visit
+ * while a bank account is left to link, as Sure's `setup_accounts`; an
+ * account that synced keeps its window whatever the date says.
  */
 function SyncStartDateField({
 	value,
@@ -112,7 +113,7 @@ function SyncStartDateField({
 		error === undefined ? "syncStartDate-hint" : "syncStartDate-hint syncStartDate-error";
 
 	return (
-		<div className="flex flex-col gap-2 sm:max-w-xs">
+		<div className="flex flex-col gap-2 sm:max-w-md">
 			<Label htmlFor="syncStartDate">{t("banks.accounts.syncStartDate")}</Label>
 			<DateField
 				id="syncStartDate"
@@ -392,7 +393,7 @@ function BankConnectionPage() {
 		});
 
 	const linkedCount = rows.filter((row) => row.account !== null).length;
-	const offersStartDate = connection !== undefined && rows.length > 0 && linkedCount === 0;
+	const offersStartDate = connection !== undefined && rows.some((row) => row.account === null);
 	const syncStartDate = typedStartDate ?? connection?.syncStartDate ?? monthsAgo(3);
 	// Once per arrival: strict mode's second effect must not sync again.
 	const arrived = useRef(false);
@@ -446,7 +447,14 @@ function BankConnectionPage() {
 	const submit = () => {
 		setStartDateError(undefined);
 		link.mutate(
-			{ links, ...(offersStartDate ? { syncStartDate } : {}) },
+			// The saved date unchanged stays out: two years after it was chosen,
+			// it would be refused as too early.
+			{
+				links,
+				...(offersStartDate && syncStartDate !== connection?.syncStartDate
+					? { syncStartDate }
+					: {}),
+			},
 			{
 				onSuccess: () => {
 					setChoices({});

@@ -77,7 +77,7 @@ export type BankConnectionRecord = {
 	syncing: boolean;
 	/** The banner the connection shows, `null` for none. */
 	alert: ConnectionAlert | null;
-	/** The day a bank account's first sync reads from, `null` for 90 days back. */
+	/** The day a bank account's first sync reads from, `null` for three months back. */
 	syncStartDate: IsoDate | null;
 	createdAt: number;
 };

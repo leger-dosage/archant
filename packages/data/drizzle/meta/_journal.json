@@ -428,6 +428,13 @@
       "when": 1791380713686,
       "tag": "0060_assistant_entry_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1791387290758,
+      "tag": "0061_goal_icon_optional",
+      "breakpoints": true
     }
   ]
 }

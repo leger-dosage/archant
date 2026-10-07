@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { CATEGORY_COLORS } from "@archant/data/category-presets";
-import { DEFAULT_GOAL_ICON } from "@archant/data/goals";
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
 import { goals } from "@archant/data/schema/goals";
 
@@ -214,7 +213,7 @@ describe("get_goals", () => {
 });
 
 describe("create_goal", () => {
-	it("creates an active one-off goal as « Nouvel objectif » does, with a swatch drawn as the dialog draws it and its icon", async () => {
+	it("creates an active one-off goal as « Nouvel objectif » does, with a swatch drawn as the dialog draws it and no icon, as Sure's", async () => {
 		await household();
 		const account = await savings("1 500,00");
 		const tools = await assistants();
@@ -248,11 +247,11 @@ describe("create_goal", () => {
 			url: `${TEST_ORIGIN}/goals/${created.id}`,
 		});
 		const stored = z
-			.object({ color: z.string(), icon: z.string() })
+			.object({ color: z.string(), icon: z.string().nullable() })
 			.parse(await fromRoutes(`/api/goals/${created.id}`));
 
 		expect(CATEGORY_COLORS).toContain(stored.color);
-		expect(stored.icon).toBe(DEFAULT_GOAL_ICON);
+		expect(stored.icon).toBeNull();
 		expect((await goalsOf(tools)).goals).toEqual([created]);
 		expect(await calls()).toEqual([
 			{ tool: "create_goal", outcome: "OK", changedRows: 1 },

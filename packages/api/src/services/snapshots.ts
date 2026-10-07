@@ -2,7 +2,7 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { SnapshotInput, SnapshotPatchInput } from "../schemas/snapshots.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { SnapshotRecord } from "./ledger/snapshots.ts";
+import type { SnapshotRecord, ValuationFilter, ValuationRecord } from "./ledger/snapshots.ts";
 
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
@@ -15,6 +15,7 @@ import {
 	deleteSnapshot as deleteLedgerSnapshot,
 	findSnapshot,
 	listSnapshots,
+	listValuations as listLedgerValuations,
 	recordSnapshot,
 	updateSnapshot as updateLedgerSnapshot,
 } from "./ledger/snapshots.ts";
@@ -65,6 +66,24 @@ export async function listAccountSnapshots(
 ): Promise<SnapshotPage> {
 	await getAccount(deps, accountId);
 	const { items, total } = await listSnapshots(deps, accountId, page);
+
+	return { items, page: page.page, pageSize: page.pageSize, total };
+}
+
+/**
+ * A page of valuations, anchors included, of every active account or the one
+ * named, as Sure's `get_valuations`: an unknown account is `NOT_FOUND`.
+ */
+export async function listValuations(
+	deps: ServiceDeps,
+	filter: ValuationFilter,
+	page: { page: number; pageSize: number },
+): Promise<{ items: ValuationRecord[]; page: number; pageSize: number; total: number }> {
+	if (filter.accountId !== undefined) {
+		await getAccount(deps, filter.accountId);
+	}
+
+	const { items, total } = await listLedgerValuations(deps, filter, page);
 
 	return { items, page: page.page, pageSize: page.pageSize, total };
 }

@@ -2,13 +2,7 @@ import type { GoalSummary } from "../services/goals.ts";
 
 import { z } from "zod";
 
-import {
-	DEFAULT_GOAL_ICON,
-	GOAL_KINDS,
-	GOAL_STATES,
-	GOAL_TARGET_MODES,
-	sampleGoalColor,
-} from "@archant/data/goals";
+import { GOAL_KINDS, GOAL_STATES, GOAL_TARGET_MODES, sampleGoalColor } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 import { toDecimalString } from "@archant/data/money";
 
@@ -151,7 +145,7 @@ export const createGoalTool = defineTool({
 			targetMonths: input.targetMonths === undefined ? "" : String(input.targetMonths),
 			targetDate: input.targetDate ?? null,
 			color: sampleGoalColor(),
-			icon: DEFAULT_GOAL_ICON,
+			icon: null,
 			notes: input.notes ?? null,
 			accounts: input.accounts.map((account) => ({
 				accountId: account.accountId,

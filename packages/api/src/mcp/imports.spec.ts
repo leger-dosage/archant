@@ -434,6 +434,39 @@ describe("CSV files", () => {
 		expect(read.csv?.sample).toHaveLength(11);
 		expect(read.csv?.sample[0]).toEqual(["Compte 123"]);
 	});
+
+	it("shows five lines of a group, as Sure's preview, and counts them all", async () => {
+		const tools = await assistants();
+		const account = await openOwn();
+		const records = Array.from({ length: 8 }, (_, day) => `0${day + 2}/09/2026;Ligne ${day};-1,00`);
+		const read = preview.parse(
+			(
+				await tools.write("import_bank_statement", {
+					accountId: account.id,
+					filename: "export.csv",
+					contentBase64: base64(["Date;Libellé;Montant", ...records].join("\n")),
+				})
+			).structuredContent,
+		);
+		const mapped = preview.parse(
+			(
+				await tools.write("preview_import", {
+					importId: read.importId,
+					csv: BANK_MAPPING,
+					moveOpeningDate: null,
+				})
+			).structuredContent,
+		);
+
+		expect(mapped.counts).toEqual({ ...NO_LINES, created: 8 });
+		expect(mapped.lines.created.map(({ label }) => label)).toEqual([
+			"Ligne 0",
+			"Ligne 1",
+			"Ligne 2",
+			"Ligne 3",
+			"Ligne 4",
+		]);
+	});
 });
 
 describe("QIF files", () => {

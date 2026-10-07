@@ -11,7 +11,7 @@ import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
-import { addDays, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
+import { addDays, addMonths, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
@@ -22,8 +22,11 @@ import { runRecurring } from "./recurring/pipeline.ts";
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
 const MIN_INTERVAL_MS = 60 * 60 * 1000;
 
-/** The first window of an account never synced, when its connection names no start date. */
-const FIRST_WINDOW_DAYS = 90;
+/**
+ * The first window of an account never synced, when its connection names no
+ * start date: Sure's `3.months.ago`, the default its setup page offers too.
+ */
+const FIRST_WINDOW_MONTHS = 3;
 
 /** Each window starts this far before the last sync, for lines a bank books late. */
 const OVERLAP_DAYS = 7;
@@ -41,8 +44,8 @@ export type SyncStatus = { lastSyncedAt: number | null; lastError: string | null
 
 /**
  * The first day a bank account's window reads: its own last sync minus the
- * overlap or, when it never synced, its connection's start date, 90 days
- * back without one. Sure's `determine_sync_start_date`: a start date chosen
+ * overlap or, when it never synced, its connection's start date, three
+ * months back without one. Sure's `determine_sync_start_date`: a start date chosen
  * later never re-reads a synced account's past. Per bank account, not per
  * connection: an account that keeps failing would otherwise come back with a
  * gap once the others moved on. Never after its oldest pending entry: a line
@@ -58,7 +61,7 @@ export function windowStart(
 ): IsoDate {
 	const start =
 		lastSyncedAt === null
-			? (syncStartDate ?? addDays(day, -FIRST_WINDOW_DAYS))
+			? (syncStartDate ?? addMonths(day, -FIRST_WINDOW_MONTHS))
 			: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
 
 	return oldestPending === null ? start : minDate(start, oldestPending);

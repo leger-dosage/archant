@@ -86,6 +86,10 @@ context:
 - REST `POST /api/accounts/:id/transactions` answers `created: true` too; the interface ignores it, as `replacedExisting` in Story 26.2.
 - Visual QA on the built bundle: the consent page with the new write label, the account list with the assistant's line categorised and the deleted one gone, and its sheet reading « Saisie manuelle ».
 
+## Spec Change Log
+
+- Owner rule of 2026-10-07, second pass, checked against Sure at `56140319d`. KEEP: the signed decimal string, negative for money out, as `get_transaction` gives the amount the deletion compares (money, and the owner's confirmation of what they were shown); a currency other than the account's refused, since the ledger has no exchange rate to hold it (money); account, date and amount required to delete, compared inside the write (security). OPEN for the owner, nothing changed: a deleted bank line staying deleted (AD-7 tombstones), where Sure's next sync brings it back, since aligning would bring back lines the owner already deleted; Sure's `user_modified` and its snake_case names (`account_id`, `name`, `category_id`, `external_id`) against the camelCase and `label` of every Archant tool.
+
 ## Review Triage Log
 
 | Layer | Finding | Verdict | Route |

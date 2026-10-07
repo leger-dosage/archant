@@ -2,7 +2,7 @@
 // values without bundling Drizzle.
 
 import type { AccountType } from "./account-types.ts";
-import type { CategoryColor, CategoryIcon } from "./category-presets.ts";
+import type { CategoryColor } from "./category-presets.ts";
 
 import { CATEGORY_COLORS } from "./category-presets.ts";
 
@@ -89,12 +89,6 @@ export const GOAL_NOTES_MAX_LENGTH = 1000;
 export function sampleGoalColor(random: () => number = Math.random): CategoryColor {
 	return CATEGORY_COLORS[Math.floor(random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
 }
-
-/**
- * The icon « Nouvel objectif » starts from. Sure leaves a new goal's icon
- * empty and shows its initial; Archant's `goals.icon` is required.
- */
-export const DEFAULT_GOAL_ICON: CategoryIcon = "piggy-bank";
 
 /**
  * Sure's `FUNDABLE_ACCOUNT_TYPES`: the accounts that hold savings. A card or

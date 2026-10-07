@@ -67,7 +67,14 @@ export function ColorPicker({ form, legend, value, onChange, error }: PickerProp
 }
 
 /** The icons a category or a goal may carry, as radio buttons named for assistive technology. */
-export function IconPicker({ form, legend, value, onChange, error }: PickerProps<CategoryIcon>) {
+/** A goal's starts with none checked, as Sure's: its cards show its initial until one is. */
+export function IconPicker({
+	form,
+	legend,
+	value,
+	onChange,
+	error,
+}: Omit<PickerProps<CategoryIcon>, "value"> & { value: CategoryIcon | null }) {
 	const { t } = useTranslation();
 	const errorId = `${form}-icon-error`;
 

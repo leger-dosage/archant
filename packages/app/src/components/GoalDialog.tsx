@@ -11,12 +11,7 @@ import { toast } from "sonner";
 import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
 import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
-import {
-	DEFAULT_GOAL_ICON,
-	GOAL_KINDS,
-	GOAL_TARGET_MODES,
-	sampleGoalColor,
-} from "@archant/data/goals";
+import { GOAL_KINDS, GOAL_TARGET_MODES, sampleGoalColor } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -81,7 +76,7 @@ function blank(): GoalFormInput {
 		targetMonths: "",
 		targetDate: "",
 		color: sampleGoalColor(),
-		icon: DEFAULT_GOAL_ICON,
+		icon: null,
 		notes: "",
 		accounts: [],
 	};
@@ -224,6 +219,8 @@ export function GoalDialog({
 	const color = useController({ control: form.control, name: "color" });
 	const icon = useController({ control: form.control, name: "icon" });
 	const targetDate = useController({ control: form.control, name: "targetDate" });
+	// The preview's initial follows the name as it is typed, as Sure's form.
+	const name = form.watch("name");
 	const kind = useController({ control: form.control, name: "kind" });
 	const targetMode = useController({ control: form.control, name: "targetMode" });
 	const reserve = kind.field.value === "maintained";
@@ -339,7 +336,7 @@ export function GoalDialog({
 						{/* Sure's form previews the goal as the cards will draw it. */}
 						<div role="img" aria-label={t("goals.form.preview")} className="py-0.5">
 							<TintedIcon
-								subject={{ kind: "category", color: color.field.value, icon: icon.field.value }}
+								subject={{ kind: "goal", color: color.field.value, icon: icon.field.value, name }}
 								size="lg"
 							/>
 						</div>

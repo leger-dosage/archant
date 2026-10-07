@@ -22,8 +22,8 @@ import {
 import { confirmImport, createImport, previewImport } from "../services/imports.ts";
 import { BANK_TEXT, CREATES, DESTROYS, SETS, decimal, defineTool } from "./tool.ts";
 
-/** As many lines of each group as `preview_rule` gives samples: enough to show the owner. */
-const LINES_PER_GROUP = 20;
+/** As many lines as Sure's `import_bank_statement` previews, in each group here. */
+const LINES_PER_GROUP = 5;
 
 /** The records after a mapping's skipped lines and header that a CSV sample shows. */
 const SAMPLE_RECORDS = 10;

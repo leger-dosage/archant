@@ -329,7 +329,9 @@ const balanceRequests = (requests: ReturnType<typeof mockProvider>) =>
 
 describe("windowStart", () => {
 	it("reads three months back for an account never synced", () => {
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, null)).toBe("2026-06-26");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, null)).toBe("2026-06-24");
+		// Rails' `3.months.ago` on the 31st of May: the last day of February.
+		expect(windowStart(null, "2026-05-31", "Europe/Paris", null, null)).toBe("2026-02-28");
 	});
 
 	it("reads from seven days before the last sync, on its day in the app's zone", () => {
@@ -381,7 +383,7 @@ describe("syncConnection", () => {
 
 		expect(status).toEqual({ lastSyncedAt: NOW, lastError: null });
 		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
-			["?date_from=2026-06-26", "?date_from=2026-06-26&continuation_key=page-2"],
+			["?date_from=2026-06-24", "?date_from=2026-06-24&continuation_key=page-2"],
 		);
 		// Five booked lines and the pending one; the informational one stays out.
 		await expect(transactionCount(accountId)).resolves.toBe(6);
@@ -568,7 +570,7 @@ describe("syncConnection", () => {
 		);
 		// The failed account starts from three months back, not from the others' sync.
 		expect(transactionRequests(requests, FIXTURE_CARD_UID)[0]?.search).toBe(
-			"?date_from=2026-06-27",
+			"?date_from=2026-06-25",
 		);
 		await expect(transactionCount(bad.accountId)).resolves.toBe(6);
 	});
@@ -1089,7 +1091,7 @@ describe("a bank read that fails part way", () => {
 		});
 		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
 			[
-				"?date_from=2026-06-26",
+				"?date_from=2026-06-24",
 				"?date_from=2026-06-27",
 				"?date_from=2026-06-27&continuation_key=page-2",
 			],
@@ -1202,7 +1204,7 @@ describe("a bank read that fails part way", () => {
 			lastError: null,
 		});
 		expect(transactionRequests(again, FIXTURE_CHECKING_UID)[0]?.search).toBe(
-			"?date_from=2026-06-26",
+			"?date_from=2026-06-24",
 		);
 		await expect(transactionCount(accountId)).resolves.toBe(6);
 	});
