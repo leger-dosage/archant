@@ -21,8 +21,10 @@ import { toMinorUnits } from "@archant/data/money";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 import { entries } from "@archant/data/schema/entries";
+import { ASSISTANT_KEY_SOURCE } from "@archant/data/schema/entry-keys";
 import type { ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { taggings } from "@archant/data/schema/taggings";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -47,9 +49,10 @@ import {
 	tombstoneLookupKey,
 	tombstonedKeys,
 } from "./entry-keys.ts";
+import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
-import { ROWS_PER_INSERT, inSequence, oneByOne } from "./shared.ts";
+import { ROWS_PER_INSERT, inSequence, invalidField, oneByOne } from "./shared.ts";
 import { snapshotOn } from "./snapshots.ts";
 import { matchNewTransfers } from "./transfers.ts";
 
@@ -61,9 +64,60 @@ import { matchNewTransfers } from "./transfers.ts";
  * when the read stopped part way and speaks for no pending entry.
  */
 export type IngestSource =
-	| { manual: true }
+	| {
+			manual: true;
+			/** Set and locked on the created line, as an edit by the user would (AD-10). */
+			classification?: ManualClassification | undefined;
+			/**
+			 * The `ext:` key an assistant gives the line: a line of the account
+			 * holding it already is `present`, and nothing is written.
+			 */
+			assistantKey?: string | undefined;
+	  }
 	| { importId: string }
 	| { connectionId: string; missesFrom: IsoDate | null };
+
+/**
+ * What an assistant's `create_transaction` sets on the line it records, as
+ * Sure's: each one given is locked, so no rule changes it afterwards.
+ */
+type ManualClassification = {
+	categoryId: string | null;
+	merchantId: string | null;
+	tagIds: readonly string[];
+};
+
+const NO_CLASSIFICATION: ManualClassification = { categoryId: null, merchantId: null, tagIds: [] };
+
+/** The fields a classification sets, locked beside the typed ones. */
+function classifiedFields(classification: ManualClassification): LockableField[] {
+	return [
+		classification.categoryId === null ? null : ("category" as const),
+		classification.merchantId === null ? null : ("merchant" as const),
+		classification.tagIds.length === 0 ? null : ("tags" as const),
+	].filter((field) => field !== null);
+}
+
+/** Refuses, on its field, a category, a merchant or a tag that does not exist, as an edit does. */
+async function refuseUnknown(tx: Transaction, classification: ManualClassification) {
+	if (
+		classification.categoryId !== null &&
+		!(await categoryExists(tx, classification.categoryId))
+	) {
+		throw invalidField("categoryId");
+	}
+
+	if (
+		classification.merchantId !== null &&
+		!(await merchantExists(tx, classification.merchantId))
+	) {
+		throw invalidField("merchantId");
+	}
+
+	if (classification.tagIds.length > 0 && !(await tagsExist(tx, classification.tagIds))) {
+		throw invalidField("tagIds");
+	}
+}
 
 export type IngestOptions = {
 	origin: Origin;
@@ -630,12 +684,24 @@ export async function ingest(
 				}
 			}
 
-			// 2. Key matching, batched per statement (AD-7). A manual line has no key.
+			// 2. Key matching, batched per statement (AD-7). A manual line has no
+			// key, but for the one an assistant gives it: holding it, the line is
+			// already there.
+			const assistantKey = "manual" in source ? source.assistantKey : undefined;
+			const known =
+				assistantKey === undefined
+					? undefined
+					: (await entriesByKey(tx, accountId, ASSISTANT_KEY_SOURCE, [assistantKey])).get(
+							assistantKey,
+						);
 			const grouped: Groups =
 				keyTarget === null
 					? {
-							created: accepted,
-							present: [],
+							created: known === undefined ? accepted : [],
+							present:
+								known === undefined
+									? []
+									: accepted.map((item) => ({ ...item, entryId: known.entryId })),
 							matched: [],
 							duplicates: [],
 							absorbed: [],
@@ -725,6 +791,13 @@ export async function ingest(
 				throw new AppError("IMPORT_PREVIEW_STALE", "The account changed since the preview.");
 			}
 
+			const classification =
+				"manual" in source ? (source.classification ?? NO_CLASSIFICATION) : NO_CLASSIFICATION;
+
+			if (written.length > 0) {
+				await refuseUnknown(tx, classification);
+			}
+
 			// 3. Pending reconciliation (AD-17): each absorbed line updates its
 			// entry in place, keeping its id and everything the user set.
 			const now = Date.now();
@@ -764,7 +837,9 @@ export async function ingest(
 				),
 			);
 			const locksOf = (line: NormalizedTransaction) =>
-				options.origin === "user" ? filledFields(line) : [];
+				options.origin === "user"
+					? [...filledFields(line), ...classifiedFields(classification)]
+					: [];
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(transactions).values(
@@ -776,9 +851,32 @@ export async function ingest(
 						possibleDuplicate: duplicate,
 						pending: line.pending,
 						lockedFields: locksOf(line),
+						categoryId: classification.categoryId,
+						categoryOrigin:
+							classification.categoryId === null ? null : categoryOriginOf(options.origin),
+						merchantId: classification.merchantId,
 					})),
 				),
 			);
+			await inSequence(
+				rows.flatMap(({ id }) =>
+					classification.tagIds.map((tagId) => ({ transactionId: id, tagId })),
+				),
+				ROWS_PER_INSERT,
+				(chunk) => tx.insert(taggings).values(chunk),
+			);
+
+			if (assistantKey !== undefined) {
+				await attachKeys(
+					tx,
+					accountId,
+					{ source: ASSISTANT_KEY_SOURCE, importId: null, connectionId: null },
+					rows.map(({ id }) => ({
+						entryId: id,
+						keys: { fingerprint: null, external: assistantKey },
+					})),
+				);
+			}
 
 			if (keyTarget !== null) {
 				const sharing = rows.filter(({ ref }) => grouped.sharing.has(ref));
@@ -843,7 +941,8 @@ export async function ingest(
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
 			// included. Loaded once per call, inside this transaction. A new row
-			// carries no merchant, category, tag or transfer yet.
+			// carries no transfer yet, nor a merchant, category or tag but an
+			// assistant's, locked.
 			if (rows.length > 0) {
 				const { plan } = planActions(
 					await loadEnabledRules(tx),
@@ -855,9 +954,9 @@ export async function ingest(
 						currency: line.currency,
 						label: line.label,
 						notes: line.notes,
-						merchantId: null,
-						categoryId: null,
-						tagIds: [],
+						merchantId: classification.merchantId,
+						categoryId: classification.categoryId,
+						tagIds: [...classification.tagIds],
 						excluded: false,
 						transfer: null,
 						expectedTransferAccountId: null,

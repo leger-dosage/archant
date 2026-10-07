@@ -72,6 +72,13 @@ export const ERROR_STATUSES = {
 	 */
 	TRANSACTION_SPLIT: 409,
 	/**
+	 * An assistant's deletion naming an account, a date or an amount the
+	 * transaction no longer has: the owner agreed to delete the line they were
+	 * shown, not the one it became. `params.changed` names the fields that
+	 * differ, never their values (AD-14). Nothing is deleted.
+	 */
+	TRANSACTION_CHANGED: 409,
+	/**
 	 * A conversion into a trade of a transfer side, a pending, excluded or
 	 * possibly duplicated transaction, or a split's parent or child, a
 	 * converted one included (AD-20, AD-22). Nothing is written.

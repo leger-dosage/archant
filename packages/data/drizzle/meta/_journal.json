@@ -421,6 +421,13 @@
       "when": 1791367716754,
       "tag": "0059_add_sync_start_date",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1791380713686,
+      "tag": "0060_assistant_entry_keys",
+      "breakpoints": true
     }
   ]
 }
