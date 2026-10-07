@@ -1648,6 +1648,16 @@ describe("a viewer on a loan", () => {
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { periodicPayment: 53_969 } });
 	});
+
+	it("reads its overview", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${loan.id}/overview`);
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({ data: { monthlyPayment: 53_969, insured: true } });
+	});
 });
 
 describe("GET /api/accounts with inactive and excluded accounts", () => {
@@ -2239,6 +2249,138 @@ describe("GET /api/accounts/:id/schedule", () => {
 
 	it("answers NOT_FOUND for an unknown account", async () => {
 		const response = await schedule("nope");
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+const overview = (accountId: string) =>
+	testClient(buildApp()).api.accounts[":id"].overview.$get({ param: { id: accountId } });
+
+async function overviewOf(accountId: string) {
+	const response = await overview(accountId);
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+describe("GET /api/accounts/:id/overview", () => {
+	it("reads the owner's ING mortgage on 4 October 2026", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "105 104,82",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-04T10:00:00Z"));
+
+		const data = await overviewOf(loan.id);
+
+		expect(data).toEqual({
+			asOf: "2026-10-04",
+			currency: "EUR",
+			originalAmount: 13_000_000,
+			remainingBalance: 10_510_482,
+			interestRate: 18_200,
+			monthlyPayment: 53_969,
+			termMonths: 300,
+			rateType: "fixed",
+			payoffDate: "2045-12-05",
+			insured: true,
+			totalCost: 17_138_696,
+			insurance: { total: 948_000 },
+			leverage: null,
+			repaidPercent: 19,
+			instalment: {
+				number: 70,
+				date: "2026-10-05",
+				principal: 38_028,
+				interest: 15_941,
+				insurance: 3_160,
+				total: 57_129,
+				shares: { principal: 67, interest: 28, insurance: 6 },
+			},
+		});
+	});
+
+	it("quotes a variable loan's rate and payment in force, and its leverage", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: {
+				...ingTerms,
+				downPayment: "32 500,00",
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2023-06-05", rate: "3" }],
+			},
+		});
+		const payments = (await scheduleOf(loan.id))?.payments ?? [];
+
+		const data = await overviewOf(loan.id);
+
+		expect(data).toMatchObject({
+			interestRate: 30_000,
+			monthlyPayment: payments.find((payment) => payment.date >= "2026-09-21")?.payment,
+			leverage: { tenths: 40, band: "conservative" },
+		});
+		expect(data?.monthlyPayment).not.toBe(53_969);
+	});
+
+	it("follows the terms once they are saved", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const { status } = await patchAccount(loan.id, {
+			details: { ...ingTerms, insuranceRate: "" },
+		});
+
+		expect(status).toBe(200);
+		await expect(overviewOf(loan.id)).resolves.toMatchObject({
+			insured: false,
+			insurance: null,
+			totalCost: 16_190_696,
+		});
+	});
+
+	it("names an insurance rate with no schedule to apply it to", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, originalAmount: "" },
+		});
+
+		await expect(overviewOf(loan.id)).resolves.toMatchObject({
+			originalAmount: null,
+			insured: false,
+			insurance: { rate: 2_917 },
+			totalCost: null,
+			repaidPercent: null,
+			instalment: null,
+		});
+	});
+
+	it("answers every figure null for a loan without details, and null for another account", async () => {
+		const withoutTerms = await openAccount(mortgage);
+		const checking = await openAccount();
+
+		await expect(overviewOf(withoutTerms.id)).resolves.toMatchObject({
+			originalAmount: null,
+			remainingBalance: 18_000_000,
+			interestRate: null,
+			monthlyPayment: null,
+			termMonths: null,
+			rateType: null,
+			insured: false,
+			payoffDate: null,
+			totalCost: null,
+			insurance: null,
+			leverage: null,
+			repaidPercent: null,
+			instalment: null,
+		});
+		await expect(overviewOf(checking.id)).resolves.toBeNull();
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const response = await overview("nope");
 
 		expect(response.status).toBe(404);
 		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");

@@ -22,7 +22,7 @@ import {
 import { getBalanceHistory } from "../services/balances.ts";
 import { listPositions, setCostBasis, unlockCostBasis } from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
-import { loanSchedule } from "../services/loans.ts";
+import { loanOverview, loanSchedule } from "../services/loans.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
@@ -79,6 +79,9 @@ export function accountsRoutes(deps: ImportDeps) {
 		)
 		.get("/:id/schedule", async (c) =>
 			c.json({ data: await loanSchedule(deps, c.req.param("id")) }, 200),
+		)
+		.get("/:id/overview", async (c) =>
+			c.json({ data: await loanOverview(deps, c.req.param("id")) }, 200),
 		)
 		.put(
 			"/:id/holdings/:securityId/cost-basis",

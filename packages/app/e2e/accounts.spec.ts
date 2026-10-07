@@ -435,7 +435,13 @@ test("the owner's ING mortgage shows its schedule as his bank's table, and follo
 
 	await page.goto(`/accounts/${loan.id}`);
 	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
-	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Échéancier", "Imports"]);
+	await expect(tabs.getByRole("tab")).toHaveText([
+		"Opérations",
+		"Soldes",
+		"Vue d'ensemble",
+		"Échéancier",
+		"Imports",
+	]);
 	await tabs.getByRole("tab", { name: "Échéancier" }).click();
 	await expect(page).toHaveURL(/tab=schedule/u);
 
@@ -504,6 +510,96 @@ test("the owner's ING mortgage shows its schedule as his bank's table, and follo
 	await expect(rows.last().getByRole("cell").nth(1)).toHaveText("5 décembre 2040");
 });
 
+// Story 24.3: the loan overview.
+
+/**
+ * The instalment the ING mortgage is on today in the suite's zone, as Sure's
+ * `months_elapsed`: the one after the months fully served since 5 December
+ * 2020, its payments falling on the 5th.
+ */
+function ingInstalmentToday(): { number: number; date: string } {
+	const [year = 0, month = 0, day = 0] = daysAgo(0).split("-").map(Number);
+	const elapsed = year * 12 + month - (2020 * 12 + 12) - (day < 5 ? 1 : 0);
+	const number = elapsed + 1;
+	const due = new Date(Date.UTC(2020, 11 + number, 5));
+
+	return {
+		number,
+		date: new Intl.DateTimeFormat("fr-FR", {
+			day: "numeric",
+			month: "long",
+			year: "numeric",
+			timeZone: "UTC",
+		}).format(due),
+	};
+}
+
+test("the owner's ING mortgage shows its overview, and « Modifier les détails du prêt » opens its dialog", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "104 724,54",
+		details: {
+			originalAmount: "130 000,00",
+			downPayment: "32 500,00",
+			startDate: "2020-12-05",
+			termMonths: "300",
+			rateType: "fixed",
+			interestRate: "1,82",
+			insuranceRate: "0,2917",
+			insuranceRateType: "level_term",
+		},
+	});
+
+	await page.goto(`/accounts/${loan.id}`);
+	await page
+		.getByRole("tablist", { name: "Vues du compte" })
+		.getByRole("tab", { name: "Vue d'ensemble" })
+		.click();
+	await expect(page).toHaveURL(/tab=overview/u);
+
+	const panel = page.getByRole("tabpanel", { name: "Vue d'ensemble" });
+	const card = (name: string) => panel.getByRole("group", { name, exact: true });
+	await expect(card("Capital d'origine")).toContainText(euros(13_000_000));
+	await expect(card("Capital restant")).toContainText(euros(10_472_454));
+	await expect(card("Taux d'intérêt")).toContainText("1,820 %");
+	await expect(card("Mensualité")).toContainText(euros(53_969));
+	await expect(card("Durée")).toContainText("25 ans");
+	await expect(card("Date de fin prévue")).toContainText("5 décembre 2045");
+	await expect(card("Type")).toContainText("Fixe");
+	await expect(card("Coût total assurance comprise")).toContainText(euros(17_138_696));
+	await expect(card("Coût total")).toHaveCount(0);
+	await expect(card("Assurance")).toContainText(euros(948_000));
+	await expect(card("Effet de levier")).toContainText("4,0x");
+	await expect(card("Effet de levier")).toContainText("Prudent");
+
+	await expect(panel.getByText("Remboursé", { exact: true })).toBeVisible();
+	await expect(
+		panel.getByRole("img", { name: `19 % remboursé sur ${euros(13_000_000)}` }),
+	).toBeVisible();
+
+	const { number, date } = ingInstalmentToday();
+	await expect(panel.getByText(`Échéance ${number} · ${date}`)).toBeVisible();
+	const parts = panel.getByRole("definition");
+	await expect(panel.getByRole("term")).toHaveText(["Capital", "Intérêts", "Assurance", "Total"]);
+	await expect(parts.nth(2)).toHaveText(`${euros(3_160)}6 %`);
+	await expect(parts.nth(3)).toHaveText(euros(57_129));
+
+	await panel.getByRole("button", { name: "Modifier les détails du prêt" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(dialog.getByLabel("Montant emprunté")).toHaveValue("130000,00");
+	await dialog.getByLabel("Taux d'assurance (%)").fill("");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await expect(card("Coût total")).toContainText(euros(16_190_696));
+	await expect(card("Assurance")).toHaveCount(0);
+	await expect(panel.getByRole("term")).toHaveText(["Capital", "Intérêts", "Total"]);
+});
+
 test("a variable loan's schedule names its first payment and warns that its rate moves", async ({
 	page,
 	api,
@@ -553,10 +649,31 @@ test("a loan without an amount borrowed has no « Échéancier » tab, and a lin
 		"aria-selected",
 		"true",
 	);
-	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+	await expect(tabs.getByRole("tab")).toHaveText([
+		"Opérations",
+		"Soldes",
+		"Vue d'ensemble",
+		"Imports",
+	]);
+
+	// Its overview names what it cannot compute « Inconnu », and draws no ring.
+	await tabs.getByRole("tab", { name: "Vue d'ensemble" }).click();
+	const panel = page.getByRole("tabpanel", { name: "Vue d'ensemble" });
+	const card = (name: string) => panel.getByRole("group", { name, exact: true });
+	await expect(card("Capital d'origine")).toContainText("Inconnu");
+	await expect(card("Capital restant")).toContainText(euros(800_000));
+	await expect(card("Taux d'intérêt")).toContainText("4,900 %");
+	await expect(card("Mensualité")).toContainText("Inconnu");
+	await expect(card("Durée")).toContainText("30 mois");
+	await expect(card("Date de fin prévue")).toContainText("Inconnu");
+	await expect(card("Coût total")).toContainText("Inconnu");
+	await expect(card("Effet de levier")).toHaveCount(0);
+	await expect(card("Assurance")).toHaveCount(0);
+	await expect(panel.getByRole("img")).toHaveCount(0);
+	await expect(panel.getByText(/^Échéance /u)).toHaveCount(0);
 });
 
-test("an account that is not a loan has no « Échéancier » tab, and a link to it opens « Opérations »", async ({
+test("an account that is not a loan has no « Échéancier » nor « Vue d'ensemble » tab, and a link to either opens « Opérations »", async ({
 	page,
 	api,
 }) => {
@@ -570,6 +687,13 @@ test("an account that is not a loan has no « Échéancier » tab, and a link to
 		"true",
 	);
 	await expect(tabs.getByRole("tab", { name: "Échéancier" })).toHaveCount(0);
+
+	await page.goto(`/accounts/${account.id}?tab=overview`);
+	await expect(tabs.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+	await expect(tabs.getByRole("tab", { name: "Vue d'ensemble" })).toHaveCount(0);
 });
 
 // Story 7.2: investment accounts.

@@ -38,6 +38,11 @@ export const queryKeys = {
 		 * account, and the schedule is computed from them.
 		 */
 		schedule: (id: string) => ["accounts", "detail", id, "schedule"] as const,
+		/**
+		 * Under `detail(id)` too: the overview reads the terms and the balance,
+		 * and every write to either invalidates the account.
+		 */
+		overview: (id: string) => ["accounts", "detail", id, "overview"] as const,
 		/** A position sheet's trades, under `detail(id)` with the account's other trades. */
 		positionTrades: (id: string, securityId: string) =>
 			["accounts", "detail", id, "position-trades", securityId] as const,

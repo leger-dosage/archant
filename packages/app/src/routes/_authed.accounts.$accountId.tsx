@@ -16,10 +16,12 @@ import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/ba
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { EditAccountDialog } from "@/components/EditAccountDialog";
 import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
+import { LoanOverview, LoanOverviewSkeleton } from "@/components/LoanOverview";
 import { LoanSchedule, LoanScheduleSkeleton } from "@/components/LoanSchedule";
 import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
@@ -51,6 +53,7 @@ import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useLoanOverview } from "@/hooks/useLoanOverview";
 import { useLoanSchedule } from "@/hooks/useLoanSchedule";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTrades } from "@/hooks/useTrades";
@@ -63,6 +66,7 @@ import { pageSearch } from "@/lib/page-search";
 const ACCOUNT_TABS = [
 	"transactions",
 	"snapshots",
+	"overview",
 	"schedule",
 	"positions",
 	"trades",
@@ -334,6 +338,27 @@ function PositionsPanel({ holdings, onOpen }: PositionsPanelProps) {
 	);
 }
 
+type OverviewPanelProps = {
+	overview: ReturnType<typeof useLoanOverview>;
+	onEdit: (() => void) | null;
+};
+
+function OverviewPanel({ overview, onEdit }: OverviewPanelProps) {
+	return (
+		<div className="flex flex-col gap-3">
+			{overview.isPending && <LoanOverviewSkeleton />}
+
+			{overview.isError && (
+				<ListError error={overview.error} onRetry={() => void overview.refetch()} />
+			)}
+
+			{overview.data !== undefined && overview.data !== null && (
+				<LoanOverview overview={overview.data} onEdit={onEdit} />
+			)}
+		</div>
+	);
+}
+
 function SchedulePanel({ schedule }: { schedule: ReturnType<typeof useLoanSchedule> }) {
 	return (
 		<div className="flex flex-col gap-3">
@@ -416,6 +441,7 @@ function AccountPage() {
 		securityId: null,
 	});
 	const [importing, setImporting] = useState(false);
+	const [editingLoan, setEditingLoan] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
 	const navigate = Route.useNavigate();
@@ -449,10 +475,13 @@ function AccountPage() {
 			(schedule.data === undefined ? requestedTab === "schedule" : schedule.data !== null));
 	const tab =
 		(requestedTab === "trades" && account.data !== undefined && !investment) ||
+		(requestedTab === "overview" && account.data !== undefined && !loan) ||
 		(requestedTab === "positions" && account.data !== undefined && !traded) ||
 		(requestedTab === "schedule" && account.data !== undefined && !scheduled)
 			? DEFAULT_TAB
 			: requestedTab;
+	// « Vue d'ensemble » shows on every loan, as Sure's, and is read only while open.
+	const overview = useLoanOverview(accountId, loan && tab === "overview");
 	// The sheet reads the position afresh, so a lock or a typed price shows at once.
 	const openPosition =
 		holdings.data?.positions.find(
@@ -588,6 +617,11 @@ function AccountPage() {
 					<TabsTrigger value="snapshots" className={FLAT_TAB}>
 						{t("accountDetail.tabs.snapshots")}
 					</TabsTrigger>
+					{loan && (
+						<TabsTrigger value="overview" className={FLAT_TAB}>
+							{t("accountDetail.tabs.overview")}
+						</TabsTrigger>
+					)}
 					{scheduled && (
 						<TabsTrigger value="schedule" className={FLAT_TAB}>
 							{t("accountDetail.tabs.schedule")}
@@ -625,6 +659,11 @@ function AccountPage() {
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 					/>
 				</TabsContent>
+				{loan && (
+					<TabsContent value="overview">
+						<OverviewPanel overview={overview} onEdit={admin ? () => setEditingLoan(true) : null} />
+					</TabsContent>
+				)}
 				{scheduled && (
 					<TabsContent value="schedule">
 						<SchedulePanel schedule={schedule} />
@@ -655,6 +694,14 @@ function AccountPage() {
 					<ImportsPanel accountId={accountId} page={importsPage} />
 				</TabsContent>
 			</Tabs>
+
+			{account.data !== undefined && loan && admin && (
+				<EditAccountDialog
+					account={account.data}
+					open={editingLoan}
+					onOpenChange={setEditingLoan}
+				/>
+			)}
 
 			{writable !== undefined && (
 				<>

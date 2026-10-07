@@ -10,6 +10,7 @@ import { formatMoney } from "@archant/data/money";
 import { ProgressRing } from "@/components/ProgressRing";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatShortDate } from "@/lib/balance-change";
+import { formatWholePercent } from "@/lib/percent";
 
 const GOAL_BADGES = {
 	behind: "goalBehind",
@@ -61,6 +62,7 @@ export function GoalCard({ goal }: { goal: GoalData }) {
 			<ProgressRing
 				percent={goal.percent}
 				subject={{ kind: "category", color: goal.color, icon: goal.icon }}
+				label={t("goals.ring", { percent: formatWholePercent(goal.percent) })}
 			/>
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<h2 className="truncate card-title">{goal.name}</h2>
