@@ -117,11 +117,32 @@ export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
 	return { reportingCurrency, groups };
 }
 
+/**
+ * Sure's `start_date` validation: a loan cannot have started after today, in
+ * the household's time zone, which the shared schema does not know.
+ */
+function futureStartIssues(
+	deps: ServiceDeps,
+	details: LoanDetails | null | undefined,
+): FieldError[] {
+	return details?.startDate !== null &&
+		details?.startDate !== undefined &&
+		details.startDate > today(deps.timeZone)
+		? [{ path: "details.startDate", code: "invalid_date" }]
+		: [];
+}
+
 /** Creates an account on the user's behalf and returns it as the list shows it. */
 export async function createAccount(
 	deps: ServiceDeps,
 	input: NewAccountInput,
 ): Promise<AccountSummary> {
+	const fields = futureStartIssues(deps, input.details);
+
+	if (fields.length > 0) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", fields);
+	}
+
 	const account = await createLedgerAccount(deps, input, { origin: "user" });
 
 	return summarise(deps, account, today(deps.timeZone));
@@ -131,7 +152,7 @@ export type AccountDetail = AccountSummary & {
 	classification: Classification;
 	/** The opening anchor's date; a transaction must be dated after it. */
 	openingDate: IsoDate;
-	/** A loan's original amount, rate and end date, each null when not given; null for other types. */
+	/** A loan's terms, each null when not given; null for other types. */
 	details: LoanDetails | null;
 	/** The bank connection that feeds it, null for a manual account. */
 	bankConnection: { id: string; institutionName: string } | null;
@@ -191,10 +212,15 @@ export async function updateAccount(
 
 	if (patch.details !== undefined) {
 		if (account.type === "loan") {
-			const parsed = parseLoanDetails(patch.details, account.currency);
+			const parsed = parseLoanDetails(
+				patch.details,
+				account.currency,
+				await openingDateOf(deps, id),
+			);
 			details = parsed.details;
 			fields.push(
 				...parsed.issues.map((issue) => ({ path: `details.${issue.field}`, code: issue.code })),
+				...futureStartIssues(deps, parsed.details),
 			);
 		} else {
 			fields.push({ path: "details", code: "invalid_details" });

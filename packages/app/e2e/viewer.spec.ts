@@ -7,6 +7,7 @@ import {
 	acceptInvitation,
 	apiHelpers,
 	daysAgo,
+	euros,
 	expect,
 	sgml,
 	test,
@@ -168,6 +169,20 @@ test("a viewer reads every page with no control that writes, and the server refu
 		label: `${prefix} achat courtier`,
 		amount: "-51,37",
 	});
+	// A loan with its terms, which a viewer reads without « Modifier ».
+	const loan = await api.openAccount({
+		name: `${prefix} prêt`,
+		kind: "mortgage",
+		openingBalance: "104 724,54",
+		openingDate: "2022-02-01",
+		details: {
+			originalAmount: "130 000,00",
+			startDate: "2020-12-05",
+			termMonths: "300",
+			rateType: "fixed",
+			interestRate: "1,82",
+		},
+	});
 	const { url } = await api.invite(`lecteur-${randomUUID().slice(0, 8)}@archant.test`);
 	await acceptInvitation(page.request, url, { name, password: "mot de passe du lecteur" });
 
@@ -209,6 +224,12 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.getByRole("tab", { name: "Imports" }).click();
 			await expect(page.getByRole("cell", { name: "releve-lecteur.ofx" })).toBeVisible();
 			await expect(page.getByRole("button", { name: /Annuler l'import/u })).toHaveCount(0);
+
+			await page.goto(`/accounts/${loan.id}`);
+			await expect(
+				page.getByRole("list", { name: "Détails du prêt" }).getByRole("listitem"),
+			).toHaveText([`Emprunté : ${euros(13_000_000)}`, "Taux : 1,820 % fixe", "Durée : 25 ans"]);
+			await expectNone(page, [{ role: "button", name: `Actions du compte ${loan.name}` }]);
 
 			await page.goto(`/accounts/${pea.id}`);
 			await page
@@ -526,6 +547,16 @@ test("a viewer reads every page with no control that writes, and the server refu
 			return { status: response.status, body: (await response.json()) as unknown };
 		});
 		expect(written.status).toBe(403);
+		const edited = await page.evaluate(async (loanId) => {
+			const response = await fetch(`/api/accounts/${loanId}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ details: { interestRate: "2" } }),
+			});
+
+			return response.status;
+		}, loan.id);
+		expect(edited).toBe(403);
 		const skipped = await page.evaluate(async () => {
 			const response = await fetch("/api/recurring/occurrences/any/skip", { method: "POST" });
 

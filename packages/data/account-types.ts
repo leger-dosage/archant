@@ -87,14 +87,44 @@ export function isBankAccountTarget(type: AccountType, subtype: string | null): 
 	return BANK_ACCOUNT_TARGETS.some((target) => target.type === type && target.subtype === subtype);
 }
 
+/** Sure's `Loan.rate_types`: a variable or adjustable rate follows its dated changes. */
+export const LOAN_RATE_TYPES = ["fixed", "variable", "adjustable"] as const;
+
+export type LoanRateType = (typeof LOAN_RATE_TYPES)[number];
+
 /**
- * What a loan carries besides its balance, in `accounts.details`. Every field
- * is optional: the outstanding balance is all a loan needs. The rate is in
- * basis points (3,45 % is 345), so the two decimals lenders quote stay exact
- * without a float. `endDate` is an ISO date.
+ * Sure's `Loan.insurance_rate_types`: a level premium is charged on the amount
+ * borrowed, a decreasing one on the balance still owed.
+ */
+export const LOAN_INSURANCE_TYPES = ["level_term", "decreasing_life"] as const;
+
+export type LoanInsuranceType = (typeof LOAN_INSURANCE_TYPES)[number];
+
+/** Sure's `AmortizationMath::MAX_PERIODS`: a hundred years of monthly payments. */
+export const MAX_LOAN_TERM_MONTHS = 1200;
+
+/** A dated rate change of a variable or adjustable loan, its rate in millionths. */
+export type LoanRateChange = { effectiveDate: string; rate: number };
+
+/**
+ * What a loan carries besides its balance, in `accounts.details`, as Sure's
+ * `Loan` columns. Every scalar is nullable: the outstanding balance is all a
+ * loan needs. Rates are integers in millionths of one (AD-25): 1,82 % is
+ * 18200, 0,2917 % is 2917, so the four decimals an insurance rate is quoted
+ * with stay exact without a float. Dates are ISO dates. `rateChanges` is
+ * sorted by date, one row per date, and kept whatever the rate type, as
+ * Sure's `rate_changes=`. `endDate` survives only on a loan not saved since
+ * Story 24.1 replaced it with `termMonths`; every save writes it null.
  */
 export type LoanDetails = {
 	originalAmount: MinorUnits | null;
+	downPayment: MinorUnits | null;
+	startDate: string | null;
+	termMonths: number | null;
+	rateType: LoanRateType | null;
 	interestRate: number | null;
+	insuranceRate: number | null;
+	insuranceRateType: LoanInsuranceType | null;
+	rateChanges: LoanRateChange[];
 	endDate: string | null;
 };
