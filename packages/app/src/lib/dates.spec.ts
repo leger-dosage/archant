@@ -6,6 +6,7 @@ import {
 	dayHeading,
 	frenchToIso,
 	isoToFrench,
+	longDate,
 	monthLabel,
 	ofMonth,
 	toIsoMonth,
@@ -51,6 +52,13 @@ describe("dayHeading", () => {
 			kind: "date",
 			text: "15 septembre 2025",
 		});
+	});
+});
+
+describe("longDate", () => {
+	it("names the day, the month and the year, whatever the browser's zone", () => {
+		expect(longDate("2020-12-05")).toBe("5 décembre 2020");
+		expect(longDate("2045-01-31")).toBe("31 janvier 2045");
 	});
 });
 

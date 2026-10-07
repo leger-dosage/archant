@@ -412,6 +412,166 @@ test("a variable loan's rate changes are added, refused before origination, and 
 	await expect(changes.getByLabel("Taux (%) du changement 2", { exact: true })).toHaveValue("2,50");
 });
 
+// Story 24.2: the amortisation schedule.
+
+test("the owner's ING mortgage shows its schedule as his bank's table, and follows its saved terms", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "104 724,54",
+		details: {
+			originalAmount: "130 000,00",
+			startDate: "2020-12-05",
+			termMonths: "300",
+			rateType: "fixed",
+			interestRate: "1,82",
+			insuranceRate: "0,2917",
+			insuranceRateType: "level_term",
+		},
+	});
+
+	await page.goto(`/accounts/${loan.id}`);
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Échéancier", "Imports"]);
+	await tabs.getByRole("tab", { name: "Échéancier" }).click();
+	await expect(page).toHaveURL(/tab=schedule/u);
+
+	const panel = page.getByRole("tabpanel", { name: "Échéancier" });
+	await expect(panel.getByRole("group", { name: "Mensualité", exact: true })).toContainText(
+		euros(53_969),
+	);
+	await expect(panel.getByRole("group", { name: "Intérêts totaux" })).toContainText(
+		euros(3_190_696),
+	);
+	await expect(panel.getByRole("group", { name: "Coût total" })).toContainText(euros(16_190_696));
+	await expect(panel.getByRole("group", { name: "Première mensualité" })).toHaveCount(0);
+	await expect(
+		panel.getByText(
+			"Calculé à partir du montant emprunté, du taux et de la durée, depuis le 5 décembre 2020. Les remboursements anticipés n'y figurent pas.",
+		),
+	).toBeVisible();
+	await expect(panel.getByText(/Le taux de ce prêt varie/u)).toHaveCount(0);
+
+	const table = panel.getByRole("table", { name: "Échéancier" });
+	await expect(table.getByRole("columnheader")).toHaveText([
+		"N°",
+		"Date",
+		"Mensualité",
+		"Capital",
+		"Intérêts",
+		"Capital restant dû",
+	]);
+	const rows = table.getByRole("row");
+	// The header row, then the 300 payments.
+	await expect(rows).toHaveCount(301);
+	await expect(rows.nth(69).getByRole("cell").nth(1)).toHaveText(
+		"5 septembre 2026, échéance passée",
+	);
+	await expect(rows.nth(69).getByRole("cell").last()).toHaveText(euros(10_510_482));
+	await expect(rows.nth(70).getByRole("cell")).toHaveText([
+		"70",
+		"5 octobre 2026, échéance passée",
+		euros(53_969),
+		euros(38_028),
+		euros(15_941),
+		euros(10_472_454),
+	]);
+	await expect(rows.nth(300).getByRole("cell")).toHaveText([
+		"300",
+		"5 décembre 2045",
+		euros(53_965),
+		/./u,
+		/./u,
+		euros(0),
+	]);
+	// Shaded up to today: payment 69 fell in September 2026, payment 300 falls in 2045.
+	await expect(rows.nth(69)).toHaveAttribute("data-past");
+	await expect(rows.nth(300)).not.toHaveAttribute("data-past");
+	// DESIGN.md's `inset`, Sure's `bg-container-inset`: `muted` is the page's own grey.
+	await expect(table.locator("tr[data-past]").last()).toHaveCSS("background-color", rgb("#f2f2f3"));
+
+	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await dialog.getByLabel("Durée (mois)").fill("240");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await expect(rows).toHaveCount(241);
+	await expect(rows.last().getByRole("cell").nth(1)).toHaveText("5 décembre 2040");
+});
+
+test("a variable loan's schedule names its first payment and warns that its rate moves", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "100 000,00",
+		details: {
+			originalAmount: "130 000,00",
+			startDate: "2020-12-05",
+			termMonths: "300",
+			rateType: "variable",
+			interestRate: "1,82",
+			rateChanges: [{ effectiveDate: "2023-06-05", rate: "3" }],
+		},
+	});
+
+	await page.goto(`/accounts/${loan.id}?tab=schedule`);
+	const panel = page.getByRole("tabpanel", { name: "Échéancier" });
+	await expect(panel.getByRole("group", { name: "Première mensualité" })).toContainText(
+		euros(53_969),
+	);
+	await expect(panel.getByRole("group", { name: "Mensualité", exact: true })).toHaveCount(0);
+	await expect(
+		panel.getByText(
+			"Le taux de ce prêt varie dans le temps. L'échéancier est recalculé à chaque changement enregistré : la date de fin reste la même et la mensualité est ajustée. Un changement pas encore enregistré modifiera ces chiffres.",
+		),
+	).toBeVisible();
+});
+
+test("a loan without an amount borrowed has no « Échéancier » tab, and a link to it opens « Opérations »", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "consumer",
+		openingBalance: "8 000,00",
+		details: { rateType: "fixed", interestRate: "4,9", termMonths: "30" },
+	});
+
+	await page.goto(`/accounts/${loan.id}?tab=schedule`);
+
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Soldes", "Imports"]);
+});
+
+test("an account that is not a loan has no « Échéancier » tab, and a link to it opens « Opérations »", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+
+	await page.goto(`/accounts/${account.id}?tab=schedule`);
+
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+	await expect(tabs.getByRole("tab", { name: "Échéancier" })).toHaveCount(0);
+});
+
 // Story 7.2: investment accounts.
 
 test("a PEA created through the form is listed under « Actifs » with its value and caption, and in the accounts column", async ({

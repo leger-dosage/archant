@@ -20,6 +20,7 @@ import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
+import { LoanSchedule, LoanScheduleSkeleton } from "@/components/LoanSchedule";
 import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
@@ -50,6 +51,7 @@ import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useLoanSchedule } from "@/hooks/useLoanSchedule";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTrades } from "@/hooks/useTrades";
 import { useAccountTransactions } from "@/hooks/useTransactions";
@@ -58,7 +60,14 @@ import { errorCodeOf } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
-const ACCOUNT_TABS = ["transactions", "snapshots", "positions", "trades", "imports"] as const;
+const ACCOUNT_TABS = [
+	"transactions",
+	"snapshots",
+	"schedule",
+	"positions",
+	"trades",
+	"imports",
+] as const;
 
 type AccountTab = (typeof ACCOUNT_TABS)[number];
 
@@ -325,6 +334,22 @@ function PositionsPanel({ holdings, onOpen }: PositionsPanelProps) {
 	);
 }
 
+function SchedulePanel({ schedule }: { schedule: ReturnType<typeof useLoanSchedule> }) {
+	return (
+		<div className="flex flex-col gap-3">
+			{schedule.isPending && <LoanScheduleSkeleton />}
+
+			{schedule.isError && (
+				<ListError error={schedule.error} onRetry={() => void schedule.refetch()} />
+			)}
+
+			{schedule.data !== undefined && schedule.data !== null && (
+				<LoanSchedule schedule={schedule.data} />
+			)}
+		</div>
+	);
+}
+
 function ImportsPanel({ accountId, page }: { accountId: string; page: number }) {
 	const { t } = useTranslation();
 	const imports = useAccountImports(accountId, page);
@@ -413,9 +438,19 @@ function AccountPage() {
 	const traded =
 		investment &&
 		(holdings.data === undefined ? requestedTab === "positions" : holdings.data.date !== null);
+	// « Échéancier » shows for a loan with a schedule, as Sure's `amortizable?`;
+	// a link to it otherwise opens « Opérations », as « Positions » does.
+	const loan = account.data?.type === "loan";
+	const schedule = useLoanSchedule(accountId, loan);
+	// A failed read shows the tab too, so its error and retry are reachable.
+	const scheduled =
+		loan &&
+		(schedule.isError ||
+			(schedule.data === undefined ? requestedTab === "schedule" : schedule.data !== null));
 	const tab =
 		(requestedTab === "trades" && account.data !== undefined && !investment) ||
-		(requestedTab === "positions" && account.data !== undefined && !traded)
+		(requestedTab === "positions" && account.data !== undefined && !traded) ||
+		(requestedTab === "schedule" && account.data !== undefined && !scheduled)
 			? DEFAULT_TAB
 			: requestedTab;
 	// The sheet reads the position afresh, so a lock or a typed price shows at once.
@@ -553,6 +588,11 @@ function AccountPage() {
 					<TabsTrigger value="snapshots" className={FLAT_TAB}>
 						{t("accountDetail.tabs.snapshots")}
 					</TabsTrigger>
+					{scheduled && (
+						<TabsTrigger value="schedule" className={FLAT_TAB}>
+							{t("accountDetail.tabs.schedule")}
+						</TabsTrigger>
+					)}
 					{traded && (
 						<TabsTrigger value="positions" className={FLAT_TAB}>
 							{t("accountDetail.tabs.positions")}
@@ -585,6 +625,11 @@ function AccountPage() {
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 					/>
 				</TabsContent>
+				{scheduled && (
+					<TabsContent value="schedule">
+						<SchedulePanel schedule={schedule} />
+					</TabsContent>
+				)}
 				{traded && (
 					<TabsContent value="positions">
 						<PositionsPanel

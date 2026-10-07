@@ -183,6 +183,7 @@
 			"snapshots": "Soldes",
 			"trades": "Ordres",
 			"positions": "Positions",
+			"schedule": "Échéancier",
 			"imports": "Imports"
 		}
 	},
@@ -683,6 +684,24 @@
 			"feesUnknown": "—",
 			"save": "Convertir",
 			"done": "Opération convertie en ordre."
+		}
+	},
+	"loanSchedule": {
+		"label": "Échéancier",
+		"monthlyPayment": "Mensualité",
+		"openingPayment": "Première mensualité",
+		"totalInterest": "Intérêts totaux",
+		"totalCost": "Coût total",
+		"past": "échéance passée",
+		"description": "Calculé à partir du montant emprunté, du taux et de la durée, depuis le {{startDate}}. Les remboursements anticipés n'y figurent pas.",
+		"variableRateNotice": "Le taux de ce prêt varie dans le temps. L'échéancier est recalculé à chaque changement enregistré : la date de fin reste la même et la mensualité est ajustée. Un changement pas encore enregistré modifiera ces chiffres.",
+		"columns": {
+			"number": "N°",
+			"date": "Date",
+			"payment": "Mensualité",
+			"principal": "Capital",
+			"interest": "Intérêts",
+			"remainingBalance": "Capital restant dû"
 		}
 	},
 	"positions": {

@@ -1638,6 +1638,16 @@ describe("a viewer on a loan", () => {
 		const detail = await request("GET", `/api/accounts/${loan.id}`);
 		expect(detail.body).toMatchObject({ data: { details: { interestRate: 18200 } } });
 	});
+
+	it("reads its schedule", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${loan.id}/schedule`);
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({ data: { periodicPayment: 53_969 } });
+	});
 });
 
 describe("GET /api/accounts with inactive and excluded accounts", () => {
@@ -2110,5 +2120,127 @@ describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
 		expect(errorBody.parse(await notInvestment.json()).error.code).toBe(
 			"NOT_AN_INVESTMENT_ACCOUNT",
 		);
+	});
+});
+
+const schedule = (accountId: string) =>
+	testClient(buildApp()).api.accounts[":id"].schedule.$get({ param: { id: accountId } });
+
+async function scheduleOf(accountId: string) {
+	const response = await schedule(accountId);
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+describe("GET /api/accounts/:id/schedule", () => {
+	it("computes the owner's ING mortgage as his bank's table", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const data = await scheduleOf(loan.id);
+
+		expect(data).toMatchObject({
+			asOf: "2026-09-21",
+			currency: "EUR",
+			originationDate: "2020-12-05",
+			variable: false,
+			reAmortising: false,
+			periodicPayment: 53_969,
+			totalInterest: 3_190_696,
+			totalPaid: 16_190_696,
+		});
+		expect(data?.payments).toHaveLength(300);
+		expect(data?.payments[68]).toMatchObject({ date: "2026-09-05", endingBalance: 10_510_482 });
+		expect(data?.payments[69]).toEqual({
+			number: 70,
+			date: "2026-10-05",
+			payment: 53_969,
+			principal: 38_028,
+			interest: 15_941,
+			endingBalance: 10_472_454,
+		});
+		expect(data?.payments[299]).toMatchObject({
+			number: 300,
+			date: "2045-12-05",
+			payment: 53_965,
+			endingBalance: 0,
+		});
+		// The premium is Story 24.3's to show.
+		expect(data).not.toHaveProperty("insurance");
+	});
+
+	it("starts at the opening date without a start date", async () => {
+		const loan = await openAccount({ ...mortgage, details: { ...ingTerms, startDate: "" } });
+
+		const data = await scheduleOf(loan.id);
+
+		expect(data?.originationDate).toBe("2026-09-01");
+		expect(data?.payments[0]?.date).toBe("2026-10-01");
+	});
+
+	it("re-amortises a variable loan at its rate changes", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: {
+				...ingTerms,
+				rateType: "variable",
+				rateChanges: [{ effectiveDate: "2023-06-05", rate: "3" }],
+			},
+		});
+
+		const data = await scheduleOf(loan.id);
+
+		expect(data).toMatchObject({ variable: true, reAmortising: true, periodicPayment: 53_969 });
+		expect(data?.payments[30]?.payment).toBeGreaterThan(53_969);
+	});
+
+	it("warns of an adjustable rate as of a variable one", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, rateType: "adjustable" },
+		});
+
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			variable: true,
+			reAmortising: false,
+		});
+	});
+
+	it("follows the terms once they are saved", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const { status } = await patchAccount(loan.id, { details: { ...ingTerms, termMonths: "240" } });
+
+		expect(status).toBe(200);
+		const data = await scheduleOf(loan.id);
+		expect(data?.payments).toHaveLength(240);
+		expect(data?.payments.at(-1)?.date).toBe("2040-12-05");
+	});
+
+	it("answers null for a loan without a schedule, and for another account", async () => {
+		const withoutAmount = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, originalAmount: "" },
+		});
+		const withoutRate = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, rateType: "", interestRate: "" },
+		});
+		const withoutTerms = await openAccount(mortgage);
+		const checking = await openAccount();
+
+		const answers = await Promise.all(
+			[withoutAmount, withoutRate, withoutTerms, checking].map((account) => scheduleOf(account.id)),
+		);
+
+		expect(answers).toEqual([null, null, null, null]);
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const response = await schedule("nope");
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
 	});
 });

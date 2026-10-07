@@ -33,6 +33,11 @@ export const queryKeys = {
 		 * what the account holds, and a lock its cost basis alone.
 		 */
 		holdings: (id: string) => ["accounts", "detail", id, "holdings"] as const,
+		/**
+		 * Under `detail(id)` too: saving a loan's terms invalidates the
+		 * account, and the schedule is computed from them.
+		 */
+		schedule: (id: string) => ["accounts", "detail", id, "schedule"] as const,
 		/** A position sheet's trades, under `detail(id)` with the account's other trades. */
 		positionTrades: (id: string, securityId: string) =>
 			["accounts", "detail", id, "position-trades", securityId] as const,
