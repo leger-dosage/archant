@@ -12,10 +12,10 @@ import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
 import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
 import {
-	DEFAULT_GOAL_COLOR,
 	DEFAULT_GOAL_ICON,
 	GOAL_KINDS,
 	GOAL_TARGET_MODES,
+	sampleGoalColor,
 } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
@@ -80,7 +80,7 @@ function blank(): GoalFormInput {
 		targetAmount: "",
 		targetMonths: "",
 		targetDate: "",
-		color: DEFAULT_GOAL_COLOR,
+		color: sampleGoalColor(),
 		icon: DEFAULT_GOAL_ICON,
 		notes: "",
 		accounts: [],

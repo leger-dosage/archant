@@ -3,7 +3,8 @@ import type { TempDatabase } from "../testing/temp-database.ts";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { DEFAULT_GOAL_COLOR, DEFAULT_GOAL_ICON } from "@archant/data/goals";
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
+import { DEFAULT_GOAL_ICON } from "@archant/data/goals";
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
 import { goals } from "@archant/data/schema/goals";
 
@@ -18,7 +19,7 @@ import {
 	useSignedInApp,
 } from "../testing/app.ts";
 import { READ_WRITE, callTool, connect, mcp, registerClient } from "../testing/assistant.ts";
-import { buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { TEST_ORIGIN, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -213,7 +214,7 @@ describe("get_goals", () => {
 });
 
 describe("create_goal", () => {
-	it("creates an active one-off goal as « Nouvel objectif » does, with the dialog's colour and icon", async () => {
+	it("creates an active one-off goal as « Nouvel objectif » does, with a swatch drawn as the dialog draws it and its icon", async () => {
 		await household();
 		const account = await savings("1 500,00");
 		const tools = await assistants();
@@ -243,10 +244,15 @@ describe("create_goal", () => {
 				{ accountId: account.id, name: "Livret A", allocatedAmount: null, share: "1500.00" },
 			],
 		});
-		expect(await fromRoutes(`/api/goals/${created.id}`)).toMatchObject({
-			color: DEFAULT_GOAL_COLOR,
-			icon: DEFAULT_GOAL_ICON,
+		expect(result.structuredContent).toMatchObject({
+			url: `${TEST_ORIGIN}/goals/${created.id}`,
 		});
+		const stored = z
+			.object({ color: z.string(), icon: z.string() })
+			.parse(await fromRoutes(`/api/goals/${created.id}`));
+
+		expect(CATEGORY_COLORS).toContain(stored.color);
+		expect(stored.icon).toBe(DEFAULT_GOAL_ICON);
 		expect((await goalsOf(tools)).goals).toEqual([created]);
 		expect(await calls()).toEqual([
 			{ tool: "create_goal", outcome: "OK", changedRows: 1 },

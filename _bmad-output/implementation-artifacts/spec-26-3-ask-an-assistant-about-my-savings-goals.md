@@ -23,20 +23,20 @@ context:
 **Always:**
 - `get_goals`: no input. Returns `goals`, every goal in `listGoals`' order, each `id`, `name`, `kind`, `state`, `status`, `currency`, `targetAmount`, `targetMode`, `targetMonths`, `monthlyExpenses`, `targetDate`, `saved`, `remaining`, `percent`, `monthlyNeeded`, `notes`, and `accounts`, each `accountId`, `name`, `allocatedAmount` (decimal string, `null` for the whole balance), `share`; then `totals`, the dashboard card's `currency`, `count`, `saved`, `target`, `behind` and `leftOut` (`id`, `name`). Amounts are decimal strings in the goal's currency, totals in the reporting one. Description carries `BANK_TEXT`; `READ_ONLY`.
 - One service call: a new `getGoalsOverview` in `services/goals.ts` reads `listGoals` once and sums it with `goalsSummary`, so the list and its totals come from one read; `getGoalsSummary` returns its `summary`.
-- `create_goal`: `name`, `kind` (`one_off` by default, or `maintained`), exactly one of `targetAmount` (decimal string) or `targetMonths` (integer, a reserve only), optional `targetDate` and `notes`, and `accounts` by id, each with an optional `allocatedAmount` (decimal string; absent takes the whole balance). Built into `createGoal`'s body with the dialog's default colour and icon, `targetMode` derived from which target is given. Returns the goal as `get_goals` gives it. `CREATES`; `changedRows` 1.
-- The dialog's default colour and icon move to `@archant/data/goals` as `DEFAULT_GOAL_COLOR` and `DEFAULT_GOAL_ICON`; `GoalDialog.tsx` reads them there.
+- `create_goal`: `name`, `kind` (`one_off` by default, or `maintained`), exactly one of `targetAmount` (decimal string) or `targetMonths` (integer, a reserve only), optional `targetDate` and `notes`, and `accounts` by id, each with an optional `allocatedAmount` (decimal string; absent takes the whole balance). Built into `createGoal`'s body with a colour drawn at random and the dialog's default icon, `targetMode` derived from which target is given. Returns the goal as `get_goals` gives it, plus `url`, its page under `BETTER_AUTH_URL`'s origin, as Sure answers one. `CREATES`; `changedRows` 1.
+- `@archant/data/goals` gains `sampleGoalColor`, a category swatch drawn at random as Sure's `COLORS.sample` in `GoalsController#new` and `create_goal`, and `DEFAULT_GOAL_ICON`; `GoalDialog.tsx` starts from both, and `mcp/goals.ts` uses both.
 - Refusals are the service's: `VALIDATION_ERROR` with each field's path and code (`not_fundable`, `currency_mismatch`, `whole_balance_taken`, `duplicate_account`, `no_account`, `invalid_amount`, `invalid_months`, `no_expenses`, `not_reporting_currency`); the tool input itself refuses neither target (`target_required` on `targetAmount`), both (`one_target_only` on `targetMonths`), `targetMonths` with a one-off kind (`reserve_only` on `targetMonths`) and a date on a reserve (`reserve_has_no_date` on `targetDate`).
 - `INSTRUCTIONS` gains: before `create_goal`, paraphrase the name, the target, the date and each account with the amount it holds for the goal, and wait for the owner's agreement; `get_accounts` gives the ids, and `get_goals` which accounts another goal already takes whole.
 - Consent labels: read « Lire vos comptes, vos opérations, vos règles, vos budgets, vos factures et vos objectifs »; write « Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, vos soldes et vos objectifs, gérer vos factures ».
 
-**Never:** no tool edits, pauses, completes, archives, restores or deletes a goal; no goal history tool; no URL in the answer; no random colour (Sure's `COLORS.sample`); no new route, screen or error code reaching the interface.
+**Never:** no tool edits, pauses, completes, archives, restores or deletes a goal; no goal history tool; no new route, screen or error code reaching the interface.
 
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected |
 |---|---|---|
 | Read | two EUR goals, one USD, one completed | every goal in `/goals`' order, shares as decimal strings; totals in EUR count 3, the USD one in `leftOut` |
-| Create | savings 1 500, target `"2000.00"`, a date | active one-off, `saved` `"1500.00"`, dialog colour and icon, one row recorded |
+| Create | savings 1 500, target `"2000.00"`, a date | active one-off, `saved` `"1500.00"`, a category swatch, the dialog's icon, its `url`, one row recorded |
 | Fixed amount | `allocatedAmount` `"300.00"` | the link holds 300, `share` `"300.00"` |
 | Reserve | `kind` `maintained`, `targetMonths` 6, median 2 000 | `months_of_expenses`, target `"12000.00"`, no date |
 | Currency | EUR then USD account | `VALIDATION_ERROR` `accounts.1.accountId` `currency_mismatch`, nothing written |
@@ -77,7 +77,7 @@ context:
 
 ## Implementation Notes
 
-- Sure, read at `afdac0a8c` in the local clone, settles the write: `create_goal` keeps its name, its paraphrase-then-confirm instruction and its refusals (currency mismatch, an account claimed in full); the departures are the epic's (ids, decimal strings, reserves, any fundable account, the goal rather than a URL) and the dialog's colour where Sure picks one at random.
+- Sure, read at `afdac0a8c` in the local clone, settles the write: `create_goal` keeps its name, its paraphrase-then-confirm instruction and its refusals (currency mismatch, an account claimed in full); it also keeps Sure's random colour and its URL in the answer. The departures are the epic's: ids, decimal strings, reserves, any fundable account as Sure's own form allows, and the goal itself beside the URL.
 - `get_goals` adds `percent` and `monthlyExpenses` to the epic's list: the card shows the first, and the second explains a reserve's target in months.
 - `changedRows` stays 1 for a goal and its links, as the epic says: it counts what the owner asked for, one goal.
 - `get_goals` sits after `get_valuations`, `create_goal` after `record_valuation`, in `TOOLS` and both tool lists.
@@ -85,6 +85,8 @@ context:
 ## Spec Change Log
 
 - Review (blind, edge): a reserve's date was dropped silently and both targets answered `target_required`. Amended Boundaries and the matrix: `reserve_has_no_date` and `one_target_only` refuse them in the tool input. Avoids the owner agreeing to a date nothing keeps. KEEP: `target_required` for neither, `reserve_only`, every service code unchanged.
+
+- Owner rule, no divergence from Sure: the dialog's fixed colour and the answer without a URL were not forced by money, language or security. Sure's `GoalsController#new` and `create_goal` both take `COLORS.sample`, and `create_goal` answers the goal's URL. Amended Boundaries, Never and the matrix: `sampleGoalColor` replaces `DEFAULT_GOAL_COLOR` in the dialog and the tool, and `create_goal` adds `url`. KEEP: the refusals `reserve_has_no_date` and `one_target_only`, which guard the paraphrase the owner agrees to, where Sure's model drops a reserve's date silently and Sure's tool has no reserve.
 
 ## Review Triage Log
 
@@ -112,7 +114,7 @@ context:
 
 ## Design Notes
 
-Sure's `create_goal` takes depository accounts by name, `target_amount` as a JSON number and `earmarks` keyed by account name, picks a random colour, and answers a URL. Archant takes ids (Epic 16), decimal strings, an `allocatedAmount` per account as the dialog does, any active depository or investment account (`canBackGoal`), a reserve as well, the dialog's colour and icon, and answers the goal. Sure's soft failures listing the available accounts become `VALIDATION_ERROR` fields; `get_goals` tells which accounts are already taken whole, where Sure's error payload lists `claimed_in_full`.
+Sure's `create_goal` takes depository accounts by name, `target_amount` as a JSON number and `earmarks` keyed by account name, picks a random colour, and answers a URL. Archant takes ids (Epic 16), decimal strings, an `allocatedAmount` per account as the dialog does, any active depository or investment account (`canBackGoal`), a reserve as well, picks a random colour as Sure, and answers the goal with its URL. The icon is the dialog's piggy bank, since `goals.icon` is required where Sure leaves it empty. Sure's soft failures listing the available accounts become `VALIDATION_ERROR` fields; `get_goals` tells which accounts are already taken whole, where Sure's error payload lists `claimed_in_full`.
 
 The read label names goals as well: reading them is new to `archant:read`, and the consent page lists what each scope reads (Story 23.6 added « vos factures » the same way).
 

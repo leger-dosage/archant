@@ -3,11 +3,11 @@ import type { GoalSummary } from "../services/goals.ts";
 import { z } from "zod";
 
 import {
-	DEFAULT_GOAL_COLOR,
 	DEFAULT_GOAL_ICON,
 	GOAL_KINDS,
 	GOAL_STATES,
 	GOAL_TARGET_MODES,
+	sampleGoalColor,
 } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 import { toDecimalString } from "@archant/data/money";
@@ -135,11 +135,13 @@ export const getGoals = defineTool({
 export const createGoalTool = defineTool({
 	name: "create_goal",
 	title: "Create a savings goal",
-	description: `Creates an active savings goal or a reserve, as « Nouvel objectif » does in Archant, held in its accounts' currency. Each account is an active current, savings or investment account, all in one currency; it holds a fixed amount for the goal, or its whole balance, which only one goal holding its money may take. A refused field answers VALIDATION_ERROR with its path and code. It answers the goal as get_goals gives it. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
+	description: `Creates an active savings goal or a reserve, as « Nouvel objectif » does in Archant, held in its accounts' currency. Each account is an active current, savings or investment account, all in one currency; it holds a fixed amount for the goal, or its whole balance, which only one goal holding its money may take. A refused field answers VALIDATION_ERROR with its path and code. It answers the goal as get_goals gives it, and the url of its page in Archant to point the owner to. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createGoalInput,
-	output: goalOutput,
+	output: goalOutput.extend({
+		url: z.string().describe("The goal's page in Archant, as Sure's create_goal answers it."),
+	}),
 	run: async (deps, input) => {
 		const created = await createGoal(deps, {
 			name: input.name,
@@ -148,7 +150,7 @@ export const createGoalTool = defineTool({
 			targetAmount: input.targetAmount ?? "",
 			targetMonths: input.targetMonths === undefined ? "" : String(input.targetMonths),
 			targetDate: input.targetDate ?? null,
-			color: DEFAULT_GOAL_COLOR,
+			color: sampleGoalColor(),
 			icon: DEFAULT_GOAL_ICON,
 			notes: input.notes ?? null,
 			accounts: input.accounts.map((account) => ({
@@ -157,6 +159,12 @@ export const createGoalTool = defineTool({
 			})),
 		});
 
-		return { result: goalOf(created), changedRows: 1 };
+		return {
+			result: {
+				...goalOf(created),
+				url: `${new URL(deps.trustedOrigin).origin}/goals/${created.id}`,
+			},
+			changedRows: 1,
+		};
 	},
 });

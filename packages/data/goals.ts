@@ -82,12 +82,18 @@ export const GOAL_NAME_MAX_LENGTH = 100;
 export const GOAL_NOTES_MAX_LENGTH = 1000;
 
 /**
- * What « Nouvel objectif » starts from, and what a goal an assistant creates
- * keeps: Sure's tool picks a random colour, which the owner would not
- * recognise on the card they never set up.
+ * The colour « Nouvel objectif » starts from, and the one a goal an assistant
+ * creates keeps: a swatch drawn at random, as Sure's `GoalsController#new`
+ * and its `create_goal` both take `COLORS.sample`.
  */
-export const DEFAULT_GOAL_COLOR: CategoryColor = CATEGORY_COLORS[0];
+export function sampleGoalColor(random: () => number = Math.random): CategoryColor {
+	return CATEGORY_COLORS[Math.floor(random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
+}
 
+/**
+ * The icon « Nouvel objectif » starts from. Sure leaves a new goal's icon
+ * empty and shows its initial; Archant's `goals.icon` is required.
+ */
 export const DEFAULT_GOAL_ICON: CategoryIcon = "piggy-bank";
 
 /**
