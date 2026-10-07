@@ -81,11 +81,12 @@ describe("repaidPercent", () => {
 		expect(repaidPercent(200n, 99n)).toBe(51);
 	});
 
-	it("clamps a balance above the amount to 0, and reads a negative one as nothing owed", () => {
+	it("clamps a balance above the amount to 0, and reads a negative one by its size, as Sure's `abs`", () => {
 		expect(repaidPercent(13_000_000n, 14_000_000n)).toBe(0);
+		expect(repaidPercent(13_000_000n, -14_000_000n)).toBe(0);
 		expect(repaidPercent(13_000_000n, 0n)).toBe(100);
 		expect(repaidPercent(13_000_000n, -1n)).toBe(100);
-		expect(repaidPercent(13_000_000n, -3_250_000n)).toBe(100);
+		expect(repaidPercent(13_000_000n, -3_250_000n)).toBe(75);
 	});
 
 	it("cannot be measured without an amount borrowed above zero", () => {

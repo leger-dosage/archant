@@ -32,6 +32,31 @@ export function formatRate(millionths: number): string {
 }
 
 /**
+ * An insurance rate as Sure's overview prints it, `number_to_percentage` with
+ * its three decimals rounded half up and the zeros after them stripped:
+ * 2917 is `0,292 %`, 5000 is `0,5 %`.
+ */
+export function formatInsuranceRate(millionths: number): string {
+	const thousandths = Math.round(millionths / 10);
+	const units = Math.trunc(thousandths / 1000);
+	const fraction = String(thousandths % 1000)
+		.padStart(3, "0")
+		.replace(/0+$/u, "");
+
+	return `${units}${fraction === "" ? "" : `,${fraction}`} %`;
+}
+
+/**
+ * A term as Sure's overview names it: months under a year, else the whole
+ * years, the months left over dropped, so 30 months reads as two years.
+ */
+export function truncatedTermOf(months: number): { unit: "years" | "months"; count: number } {
+	return months < 12
+		? { unit: "months", count: months }
+		: { unit: "years", count: Math.trunc(months / 12) };
+}
+
+/**
  * A term as the account header names it: whole years when it has no months
  * left over, months otherwise, so 30 months never reads as two years.
  */

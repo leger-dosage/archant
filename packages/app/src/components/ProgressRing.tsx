@@ -1,4 +1,5 @@
 import type { TintSubject } from "@/lib/tint";
+import type { ReactNode } from "react";
 
 import { formatWholePercent } from "@/lib/percent";
 import { useResolvedTheme } from "@/lib/theme";
@@ -7,29 +8,34 @@ import { cn } from "@/lib/utils";
 
 const STROKE = 6;
 
+/** The arc's colour: its subject's tint, or a token Sure names, such as its warning colour. */
+type Tone = { subject: TintSubject; color?: never } | { color: string; subject?: never };
+
 /**
  * A share as Sure's ring, a goal's progress or a loan's repayment: the share
- * drawn round a circle in its subject's colour, the percentage inside. An
- * image named by a sentence, so a screen reader hears what the ring shows;
- * the arc's colour meets 3:1 as an icon's does.
+ * drawn round a circle, the percentage inside. An image named by a sentence,
+ * so a screen reader hears what the ring shows; the arc's colour meets 3:1 as
+ * an icon's does.
  */
 export function ProgressRing({
 	percent,
-	subject,
 	label,
 	size = 64,
 	className,
-}: {
+	children,
+	...tone
+}: Tone & {
 	/** 0 to 100. */
 	percent: number;
-	subject: TintSubject;
 	/** The sentence the ring is named by, which states the percentage. */
 	label: string;
 	size?: number;
 	className?: string;
+	/** What the ring holds in place of the bare percentage; hidden, the label saying it. */
+	children?: ReactNode;
 }) {
 	const mode = useResolvedTheme();
-	const text = formatWholePercent(percent);
+	const stroke = tone.subject === undefined ? tone.color : resolveTint(tone.subject, mode).icon;
 	const radius = (size - STROKE) / 2;
 	const circumference = 2 * Math.PI * radius;
 	const filled = Math.min(Math.max(percent, 0), 100) / 100;
@@ -57,7 +63,7 @@ export function ProgressRing({
 						cy={size / 2}
 						r={radius}
 						fill="none"
-						stroke={resolveTint(subject, mode).icon}
+						stroke={stroke}
 						strokeWidth={STROKE}
 						strokeLinecap="round"
 						strokeDasharray={circumference}
@@ -65,9 +71,11 @@ export function ProgressRing({
 					/>
 				)}
 			</svg>
-			<span aria-hidden="true" className="absolute text-xs font-medium tabular-nums">
-				{text}
-			</span>
+			<div aria-hidden="true" className="absolute flex flex-col items-center">
+				{children ?? (
+					<span className="text-xs font-medium tabular-nums">{formatWholePercent(percent)}</span>
+				)}
+			</div>
 		</div>
 	);
 }

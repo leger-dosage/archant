@@ -47,6 +47,8 @@ const pairs: [string, string][] = [
 	// preview's tab counters: the badge is opaque, so the surface under it
 	// does not change the pair.
 	["foreground-secondary", "badge"],
+	// A loan's moderate leverage band, Sure's `text-warning`, on its overview card.
+	["warning", "card"],
 ];
 
 describe.each([
