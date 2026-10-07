@@ -128,6 +128,11 @@ export type IngestOptions = {
 	 * current one go in. Ignored unless it is earlier.
 	 */
 	moveOpeningDate?: IsoDate | undefined;
+	/**
+	 * The counts of the preview the owner agreed to, from an assistant's
+	 * confirm: compared with the groups under the write lock, beside the digest.
+	 */
+	expectedCounts?: ImportCounts | undefined;
 };
 
 /** A line as the preview shows it; `entryId` names the entry it is or pairs with. */
@@ -589,6 +594,33 @@ async function writeStatementBalance(
 }
 
 /**
+ * Confirm writes only what the preview showed: the same groups, and for an
+ * assistant the counts the owner agreed to. The counts now go in `params`, so
+ * the assistant can show them; they are counts, never amounts (AD-14).
+ */
+function assertPreviewHolds(
+	stored: string | null,
+	digest: string,
+	expected: ImportCounts | undefined,
+	counts: ImportCounts,
+): void {
+	const groups = ["created", "present", "matched", "duplicates", "rejected"] as const;
+	const sameCounts =
+		expected === undefined || groups.every((group) => expected[group] === counts[group]);
+
+	if (stored !== digest || !sameCounts) {
+		throw new AppError(
+			"IMPORT_PREVIEW_STALE",
+			stored === digest
+				? "The counts given are not the preview's."
+				: "The account changed since the preview.",
+			undefined,
+			Object.fromEntries(groups.map((group) => [group, String(counts[group])])),
+		);
+	}
+}
+
+/**
  * Step 7 for a sync, planned: the bank's balance becomes the account's
  * `current_anchor` (AD-8), dated the day it describes and never after today;
  * the one it supersedes stays as a reconciliation (`rotateCurrentAnchor`).
@@ -787,8 +819,8 @@ export async function ingest(
 				return result;
 			}
 
-			if (target !== null && target.digest !== digest) {
-				throw new AppError("IMPORT_PREVIEW_STALE", "The account changed since the preview.");
+			if (target !== null) {
+				assertPreviewHolds(target.digest, digest, options.expectedCounts, countsOf(groups));
 			}
 
 			const classification =

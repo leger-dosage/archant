@@ -337,10 +337,25 @@ describe("the body limit", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("VALIDATION_ERROR");
 	});
 
+	it("leaves /api/mcp out of the 64 KB: its token is checked first, its 1.5 MB after", async () => {
+		const response = await postBody(buildTestApp(temp.db), "/api/mcp", jsonOfSize(64 * 1024 + 1));
+
+		expect(response.status).toBe(401);
+	});
+
+	it("leaves the body of /api/mcp unread until the token is checked", async () => {
+		const { stream, read } = chunkedBody(1024, 1024);
+
+		const response = await postBody(buildTestApp(temp.db), "/api/mcp", stream);
+
+		expect(response.status).toBe(401);
+		// An anonymous caller makes the server hold no more than the 64 KB of any route.
+		expect(read.bytes).toBeLessThan(64 * 1024);
+	});
+
 	it.each([
 		"/api/auth/sign-in/email",
 		"/api/setup",
-		"/api/mcp",
 		"/api/auth/oauth2/token",
 		// Only the upload itself takes a file's size.
 		"/api/transactions/t1/attachments/a1",

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-07-2026 16:03
+last_updated: 10-07-2026 17:05
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -224,10 +224,10 @@ development_status:
   25-1-choose-the-start-date-of-the-first-sync: done
   epic-25-retrospective: optional
 
-  epic-26: in-progress
+  epic-26: done
   26-1-ask-an-assistant-to-fix-a-transfer: done
   26-2-ask-an-assistant-to-record-a-balance: done
   26-3-ask-an-assistant-about-my-savings-goals: done
   26-4-ask-an-assistant-to-record-or-delete-a-transaction: done
-  26-5-ask-an-assistant-to-import-a-bank-file: backlog
+  26-5-ask-an-assistant-to-import-a-bank-file: done
   epic-26-retrospective: optional

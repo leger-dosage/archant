@@ -34,11 +34,18 @@ export const ERROR_STATUSES = {
 	 * sign-in while too many failed across every address. The body is not read.
 	 */
 	TOO_MANY_REQUESTS: 429,
-	/** A body over 64 KB on any `/api` route but the two uploads. Refused before or while reading it. */
+	/**
+	 * A body over 64 KB on any `/api` route but the two uploads, or over 1.5 MB
+	 * on `/api/mcp`. Refused before or while reading it.
+	 */
 	PAYLOAD_TOO_LARGE: 413,
-	/** A file no source can read, or larger than 5 MB. Nothing is written. */
+	/** A file no source can read, or larger than 5 MB, 1 MB from an assistant. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,
-	/** The account changed between an import's preview and its confirmation. */
+	/**
+	 * The account changed between an import's preview and its confirmation, or
+	 * gives other counts than an assistant's `expectedCounts`; `params` holds the
+	 * five counts now. Nothing is written.
+	 */
 	IMPORT_PREVIEW_STALE: 409,
 	/**
 	 * An application of rules whose count of rows to change differs from the
