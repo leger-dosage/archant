@@ -69,12 +69,15 @@ export async function listAccountSnapshots(
 	return { items, page: page.page, pageSize: page.pageSize, total };
 }
 
+/** What recording a snapshot answers: whether it replaced one already on its date. */
+type RecordedSnapshot = SnapshotRecord & { replacedExisting: boolean };
+
 /** Records the balance the user read at the bank; replaces one on the same date. */
 export async function createSnapshot(
 	deps: ServiceDeps,
 	accountId: string,
 	input: SnapshotInput,
-): Promise<SnapshotRecord> {
+): Promise<RecordedSnapshot> {
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createSnapshotSchema(currency).safeParse(input);
 
@@ -88,7 +91,7 @@ export async function createSnapshot(
 		throw rejectionError(result.reason);
 	}
 
-	return found(deps, result.id);
+	return { ...(await found(deps, result.id)), replacedExisting: result.replaced };
 }
 
 /** Moves or changes a snapshot on the user's behalf. */

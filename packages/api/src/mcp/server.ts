@@ -56,6 +56,7 @@ import {
 	setRuleEnabledTool,
 	updateRuleTool,
 } from "./rules.ts";
+import { getValuations, recordValuationTool } from "./snapshots.ts";
 import { createTagTool, getTags, renameTagTool } from "./tags.ts";
 import {
 	bulkUpdateTransactionsTool,
@@ -94,6 +95,7 @@ const TOOLS: AnyTool[] = [
 	getBillDetails,
 	getBillAudit,
 	getHoldings,
+	getValuations,
 	getRules,
 	getRuleRuns,
 	previewRule,
@@ -109,6 +111,7 @@ const TOOLS: AnyTool[] = [
 	bulkUpdateTransactionsTool,
 	pairTransferTool,
 	unpairTransferTool,
+	recordValuationTool,
 	renameCategoryTool,
 	renameMerchantTool,
 	renameTagTool,
@@ -149,6 +152,10 @@ const INSTRUCTIONS = [
 	"- A transfer joins two transactions of the household's own accounts, which then count in neither income nor expenses. Matching pairs two lines of opposite amounts a few days apart when each is the other's only candidate, so it may pair two unrelated lines; transferSuggested marks a line it left for the owner to pair.",
 	"- Before pair_transfer or unpair_transfer, show the owner both sides with get_transaction and wait for their agreement.",
 	"- Before passing neverPropose, ask the owner whether this pair should never be proposed again: the refusal cannot be undone.",
+	"To record a balance:",
+	"- record_valuation sets an account's balance on a date, from which the balance follows it, then the transactions after it; on an account a bank syncs, today's balance stays the bank's, and the snapshot sets its day and the days before it. The balance is what an asset holds or is worth, or what a liability still owes, both positive; an overdraft is negative.",
+	"- Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement. Never record a figure the owner or a document did not give.",
+	"- get_valuations lists the snapshots already recorded: when one holds that date, tell the owner record_valuation replaces it.",
 	"To plan a month's budget:",
 	"- In get_budget, « Sans catégorie » (uncategorised) is what budgetedSpending leaves unallocated: change it through budgetedSpending or the category amounts, never directly.",
 	"- Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",

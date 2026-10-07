@@ -1198,11 +1198,13 @@ describe("POST /api/accounts/:id/snapshots", () => {
 
 	it("replaces the snapshot of the same date, keeping its id", async () => {
 		const account = await openPinned();
-		const first = await recorded(account.id, { date: "2026-03-05", balance: "2 000,00" });
+		const first = await postSnapshot(account.id, { date: "2026-03-05", balance: "2 000,00" });
+		const { id } = z.object({ data: z.object({ id: z.string() }) }).parse(first.body).data;
 
-		const second = await recorded(account.id, { date: "2026-03-05", balance: "1 990,00" });
+		const second = await postSnapshot(account.id, { date: "2026-03-05", balance: "1 990,00" });
 
-		expect(second).toMatchObject({ id: first.id, balance: 199000 });
+		expect(first.body).toMatchObject({ data: { replacedExisting: false } });
+		expect(second.body).toMatchObject({ data: { id, balance: 199000, replacedExisting: true } });
 		const list = await snapshotsOf(account.id);
 		expect(list.total).toBe(1);
 		expect(list.items).toHaveLength(1);

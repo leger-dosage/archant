@@ -43,7 +43,8 @@ export type SnapshotPatch = {
 };
 
 export type RecordSnapshotResult =
-	| { status: "recorded"; id: string }
+	/** `replaced`: a snapshot already held the date, and now holds this balance. */
+	| { status: "recorded"; id: string; replaced: boolean }
 	| { status: "rejected"; reason: SnapshotRejectionCode };
 
 export type SnapshotUpdateResult =
@@ -141,7 +142,7 @@ export async function recordSnapshot(
 
 			await recomputeBalances(tx, account, input.date, deps.timeZone);
 
-			return { status: "recorded", id };
+			return { status: "recorded", id, replaced: existing !== undefined };
 		},
 		{ behavior: "immediate" },
 	);
