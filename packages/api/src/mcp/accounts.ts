@@ -22,11 +22,11 @@ const account = z.object({
 		.string()
 		.describe("Today's balance as a decimal string in the account's currency, such as \"-12.50\"."),
 	active: z.boolean(),
-	excludedFromReports: z.boolean(),
-	balanceSeries: seriesOutput
+	excluded_from_reports: z.boolean(),
+	historical_balances: seriesOutput
 		.optional()
 		.describe(
-			"With includeBalanceSeries: the end-of-day balance in the account's currency over the period, oldest first, today last; empty for an account opening after today.",
+			"With include_balance_series: the end-of-day balance in the account's currency over the period, oldest first, today last; empty for an account opening after today.",
 		),
 });
 
@@ -43,20 +43,20 @@ function accountOf(
 		currency: summary.currency,
 		balance: toDecimalString({ amount: summary.balance, currency: summary.currency }),
 		active: summary.active,
-		excludedFromReports: summary.excludedFromReports,
+		excluded_from_reports: summary.excludedFromReports,
 	};
 }
 
 export const getAccounts = defineTool({
 	name: "get_accounts",
 	title: "Accounts",
-	description: `Every account with today's balance, assets then liabilities, inactive ones included. With includeBalanceSeries, each also gives its balance over the period, as its page charts it. ${BANK_TEXT}`,
+	description: `Every account with today's balance, assets then liabilities, inactive ones included. With include_balance_series, each also gives its balance over the period, as its page charts it. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getAccountsInput,
 	output: z.object({ accounts: z.array(account) }),
 	run: async (deps, input) => {
-		if (!input.includeBalanceSeries) {
+		if (!input.include_balance_series) {
 			const { groups } = await listAccounts(deps);
 
 			return {
@@ -69,14 +69,14 @@ export const getAccounts = defineTool({
 			};
 		}
 
-		const { groups } = await listAccountsWithHistory(deps, input.period);
+		const { groups } = await listAccountsWithHistory(deps, input.series_period);
 
 		return {
 			result: {
 				accounts: groups.flatMap((group) =>
 					group.accounts.map((summary) => ({
 						...accountOf(summary, group.classification),
-						balanceSeries: seriesOf(summary.balanceSeries, summary.currency),
+						historical_balances: seriesOf(summary.balanceSeries, summary.currency),
 					})),
 				),
 			},

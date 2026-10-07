@@ -115,65 +115,65 @@ function detected(
 }
 
 const occurrence = z.object({
-	dueOn: z.string(),
-	effectiveDueOn: z.string(),
+	due_on: z.string(),
+	effective_due_on: z.string(),
 	state: z.string(),
 	expected: z.string(),
 	paid: z.string(),
 	remaining: z.string(),
-	partiallyPaid: z.boolean(),
+	partially_paid: z.boolean(),
 });
 
 const bill = z
 	.object({
 		id: z.string(),
 		name: z.string(),
-		billType: z.string(),
+		bill_type: z.string(),
 		status: z.string(),
 		amount: z.string(),
 		currency: z.string(),
 		frequency: z.string(),
-		nextDueDate: z.string(),
-		monthlyEquivalent: z.string(),
-		categoryId: z.string().nullable(),
+		next_due_date: z.string(),
+		monthly_equivalent: z.string(),
+		category_id: z.string().nullable(),
 	})
 	.loose();
 
 const bills = z.object({
-	bills: z.array(bill.extend({ currentOccurrence: occurrence.nullable() })),
-	total: z.number(),
+	bills: z.array(bill.extend({ current_occurrence: occurrence.nullable() })),
+	total_results: z.number(),
 	truncated: z.boolean(),
 	totals: z.object({
 		currency: z.string(),
-		activeCount: z.number(),
-		overdueCount: z.number(),
-		activeMonthlyEquivalent: z.string(),
-		leftOutCount: z.number(),
-		leftOutAccountIds: z.array(z.string()),
+		active_count: z.number(),
+		overdue_count: z.number(),
+		active_monthly_equivalent: z.string(),
+		left_out_count: z.number(),
+		left_out_account_ids: z.array(z.string()),
 	}),
 });
 
 const details = z.object({
-	bill: bill.extend({ schedulePinned: z.boolean(), anchorDate: z.string().nullable() }),
-	openOccurrences: z.array(occurrence),
-	closedOccurrences: z.array(
+	bill: bill.extend({ schedule_pinned: z.boolean(), anchor_date: z.string().nullable() }),
+	open_occurrences: z.array(occurrence),
+	closed_occurrences: z.array(
 		occurrence.extend({
 			status: z.string(),
 			payments: z.array(
 				z.object({
 					amount: z.string(),
-					paidOn: z.string().nullable(),
+					paid_on: z.string().nullable(),
 					source: z.string(),
 					state: z.string(),
-					transactionId: z.string().nullable(),
-					transactionLabel: z.string().nullable(),
+					transaction_id: z.string().nullable(),
+					transaction_label: z.string().nullable(),
 				}),
 			),
 		}),
 	),
-	closedCount: z.number(),
-	nextDueDates: z.array(z.string()),
-	priceChanges: z.array(z.record(z.string(), z.unknown())),
+	closed_count: z.number(),
+	upcoming_due_dates: z.array(z.string()),
+	price_changes: z.array(z.record(z.string(), z.unknown())),
 });
 
 const section = z.object({
@@ -183,22 +183,22 @@ const section = z.object({
 });
 
 const audit = z.object({
-	possibleDuplicates: section,
-	priceChanges: section,
-	longOverdue: section,
+	possible_duplicates: section,
+	price_changes: section,
+	long_overdue: section,
 	dormant: section,
-	awaitingConfirmation: section,
-	undeclaredCandidates: section,
+	awaiting_confirmation: section,
+	undeclared_candidates: section,
 });
 
 const recorded = z.object({
-	billId: z.string(),
+	bill_id: z.string(),
 	occurrence: occurrence.extend({ status: z.string() }),
 });
 
-const updated = z.object({ changedFields: z.array(z.string()), bill });
+const updated = z.object({ changed_fields: z.array(z.string()), bill });
 
-const created = z.object({ bill, nextDueDates: z.array(z.string()) });
+const created = z.object({ bill, upcoming_due_dates: z.array(z.string()) });
 
 const euros = (amount: number) =>
 	toDecimalString({ amount: toMinorUnits(amount), currency: "EUR" });
@@ -267,34 +267,34 @@ describe("get_bills", () => {
 		expect(active.bills.map((row) => row.id)).toEqual([sooner.id, later.id]);
 		expect(active.bills[0]).toMatchObject({
 			name: "Eau",
-			billType: "bill",
+			bill_type: "bill",
 			status: "active",
 			amount: "20.00",
 			currency: "EUR",
 			frequency: "monthly",
-			nextDueDate: "2026-10-02",
+			next_due_date: "2026-10-02",
 			autopay: false,
-			detectedAutomatically: false,
-			accountId,
-			accountName: "Courant",
-			categoryId: null,
-			monthlyEquivalent: "20.00",
-			paymentUrl: null,
-			currentOccurrence: {
-				dueOn: "2026-10-02",
-				effectiveDueOn: "2026-10-02",
+			detected_automatically: false,
+			account_id: accountId,
+			account_name: "Courant",
+			category_id: null,
+			monthly_equivalent: "20.00",
+			payment_url: null,
+			current_occurrence: {
+				due_on: "2026-10-02",
+				effective_due_on: "2026-10-02",
 				state: "upcoming",
 				expected: "20.00",
 				paid: "0.00",
 				remaining: "20.00",
-				partiallyPaid: false,
+				partially_paid: false,
 			},
 		});
 		expect(pausedOnes.bills.map((row) => [row.id, row.status])).toEqual([[paused.id, "paused"]]);
 		expect((await stored(paused.id))?.status).toBe("inactive");
 		expect(suggested.bills.map((row) => row.id)).toEqual([suggestion.id]);
 		expect(endedOnes.bills.map((row) => row.id)).toEqual([ended.id]);
-		expect(all.total).toBe(5);
+		expect(all.total_results).toBe(5);
 		expect(await calls()).toEqual(
 			Array.from({ length: 5 }, () => ({ tool: "get_bills", outcome: "OK", changedRows: 0 })),
 		);
@@ -328,14 +328,14 @@ describe("get_bills", () => {
 			id: water.id,
 			amount: euros(Math.abs(route.amount)),
 			frequency: "quarterly",
-			monthlyEquivalent: euros(route.monthlyEquivalent),
-			currentOccurrence: {
+			monthly_equivalent: euros(route.monthlyEquivalent),
+			current_occurrence: {
 				state: "overdue",
 				expected: euros(route.currentOccurrence.expected),
 				remaining: euros(route.currentOccurrence.remaining),
 			},
 		});
-		expect(listed?.monthlyEquivalent).toBe("28.07");
+		expect(listed?.monthly_equivalent).toBe("28.07");
 	});
 
 	it("keeps the bills due within the days, by payment state, type and search", async () => {
@@ -350,20 +350,20 @@ describe("get_bills", () => {
 				.parse((await tools.read("get_bills", args)).structuredContent)
 				.bills.map((row) => row.name);
 
-		await expect(ids({ dueWithinDays: 10 })).resolves.toEqual(["Eau du Grand Lyon"]);
-		await expect(ids({ paymentState: "due" })).resolves.toEqual(["Eau du Grand Lyon"]);
-		await expect(ids({ paymentState: "upcoming" })).resolves.toEqual(["Électricité"]);
-		await expect(ids({ paymentState: "paid" })).resolves.toEqual([]);
-		await expect(ids({ billType: "subscription" })).resolves.toEqual(["Électricité"]);
+		await expect(ids({ due_within_days: 10 })).resolves.toEqual(["Eau du Grand Lyon"]);
+		await expect(ids({ payment_state: "due" })).resolves.toEqual(["Eau du Grand Lyon"]);
+		await expect(ids({ payment_state: "upcoming" })).resolves.toEqual(["Électricité"]);
+		await expect(ids({ payment_state: "paid" })).resolves.toEqual([]);
+		await expect(ids({ bill_type: "subscription" })).resolves.toEqual(["Électricité"]);
 		await expect(ids({ search: "GRAND lyon" })).resolves.toEqual(["Eau du Grand Lyon"]);
 
 		await tools.write("record_bill_payment", {
-			billId: soon.id,
-			occurrenceDueOn: "2026-09-23",
+			bill_id: soon.id,
+			occurrence_due_on: "2026-09-23",
 			amount: "5.00",
 		});
 
-		await expect(ids({ paymentState: "partial" })).resolves.toEqual(["Eau du Grand Lyon"]);
+		await expect(ids({ payment_state: "partial" })).resolves.toEqual(["Eau du Grand Lyon"]);
 	});
 
 	it("leaves incomes out of the monthly total, and names a bill in another currency", async () => {
@@ -382,11 +382,11 @@ describe("get_bills", () => {
 
 		expect(totals).toEqual({
 			currency: "EUR",
-			activeCount: 4,
-			overdueCount: 0,
-			activeMonthlyEquivalent: "825.00",
-			leftOutCount: 1,
-			leftOutAccountIds: [dollars],
+			active_count: 4,
+			overdue_count: 0,
+			active_monthly_equivalent: "825.00",
+			left_out_count: 1,
+			left_out_account_ids: [dollars],
 		});
 	});
 
@@ -402,8 +402,12 @@ describe("get_bills", () => {
 		const result = bills.parse((await tools.read("get_bills")).structuredContent);
 
 		expect(result.bills).toHaveLength(100);
-		expect(result).toMatchObject({ total: 101, truncated: true, totals: { activeCount: 101 } });
-		expect(result.totals.activeMonthlyEquivalent).toBe("1010.00");
+		expect(result).toMatchObject({
+			total_results: 101,
+			truncated: true,
+			totals: { active_count: 101 },
+		});
+		expect(result.totals.active_monthly_equivalent).toBe("1010.00");
 	});
 
 	it("gives the amount band only when it spreads, and an every-N cadence as custom", async () => {
@@ -428,9 +432,9 @@ describe("get_bills", () => {
 		const listed = bills.parse((await tools.read("get_bills")).structuredContent).bills;
 		const named = (name: string) => listed.find((row) => row.name === name)!;
 
-		expect(named("BANDE")).toMatchObject({ amountMin: "9.00", amountMax: "12.00" });
-		expect(named("FIXE")).not.toHaveProperty("amountMin");
-		expect(named("FIXE")).not.toHaveProperty("amountMax");
+		expect(named("BANDE")).toMatchObject({ amount_min: "9.00", amount_max: "12.00" });
+		expect(named("FIXE")).not.toHaveProperty("amount_min");
+		expect(named("FIXE")).not.toHaveProperty("amount_max");
 		expect(named("Tous les cinq").frequency).toBe("custom");
 	});
 
@@ -441,29 +445,29 @@ describe("get_bills", () => {
 		const tools = await assistants();
 
 		const within = bills.parse(
-			(await tools.read("get_bills", { dueWithinDays: 10 })).structuredContent,
+			(await tools.read("get_bills", { due_within_days: 10 })).structuredContent,
 		);
 		await tools.write("record_bill_payment", {
-			billId: edge.id,
-			occurrenceDueOn: "2026-10-01",
+			bill_id: edge.id,
+			occurrence_due_on: "2026-10-01",
 			amount: "30.00",
 		});
 		const partial = bills.parse(
-			(await tools.read("get_bills", { paymentState: "partial" })).structuredContent,
+			(await tools.read("get_bills", { payment_state: "partial" })).structuredContent,
 		);
 
 		expect(within.bills.map((row) => row.name)).toEqual(["Bord"]);
-		expect(partial.bills.map((row) => [row.id, row.currentOccurrence])).toEqual([
+		expect(partial.bills.map((row) => [row.id, row.current_occurrence])).toEqual([
 			[
 				edge.id,
 				{
-					dueOn: "2026-10-01",
-					effectiveDueOn: "2026-10-01",
+					due_on: "2026-10-01",
+					effective_due_on: "2026-10-01",
 					state: "upcoming",
 					expected: "100.00",
 					paid: "30.00",
 					remaining: "70.00",
-					partiallyPaid: true,
+					partially_paid: true,
 				},
 			],
 		]);
@@ -473,10 +477,10 @@ describe("get_bills", () => {
 		await household();
 		const tools = await assistants();
 
-		const text = failure(await tools.read("get_bills", { dueWithinDays: 0 }));
+		const text = failure(await tools.read("get_bills", { due_within_days: 0 }));
 
 		expect(text).toMatch(/^VALIDATION_ERROR/u);
-		expect(text).toContain('"path":"dueWithinDays"');
+		expect(text).toContain('"path":"due_within_days"');
 		expect(await calls()).toEqual([
 			{ tool: "get_bills", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);
@@ -513,54 +517,54 @@ describe("get_bill_details", () => {
 		const tools = await assistants();
 
 		const result = details.parse(
-			(await tools.read("get_bill_details", { billId: mortgage.id })).structuredContent,
+			(await tools.read("get_bill_details", { bill_id: mortgage.id })).structuredContent,
 		);
 
 		expect(result.bill).toMatchObject({
 			id: mortgage.id,
 			name: "Prêt immobilier",
 			amount: "571.29",
-			anchorDate: "2026-05-05",
-			endAfterCount: null,
+			anchor_date: "2026-05-05",
+			end_after_count: null,
 			notes: null,
-			schedulePinned: false,
-			nextDueDate: "2026-09-05",
+			schedule_pinned: false,
+			next_due_date: "2026-09-05",
 		});
-		expect(result.closedOccurrences.map((row) => [row.dueOn, row.status])).toEqual([
+		expect(result.closed_occurrences.map((row) => [row.due_on, row.status])).toEqual([
 			["2026-08-05", "paid"],
 			["2026-07-05", "paid"],
 			["2026-06-05", "paid"],
 			["2026-05-05", "paid"],
 		]);
-		expect(result.closedOccurrences[0]).toMatchObject({
+		expect(result.closed_occurrences[0]).toMatchObject({
 			state: "paid",
 			expected: "571.29",
 			paid: "571.29",
 			remaining: "0.00",
-			partiallyPaid: false,
+			partially_paid: false,
 			payments: [
 				{
 					amount: "571.29",
-					paidOn: "2026-08-06",
+					paid_on: "2026-08-06",
 					source: "user_created",
 					state: "confirmed",
-					transactionId: null,
-					transactionLabel: null,
+					transaction_id: null,
+					transaction_label: null,
 				},
 			],
 		});
-		expect(result.closedCount).toBe(4);
-		expect(result.openOccurrences[0]).toMatchObject({ dueOn: "2026-09-05", state: "overdue" });
-		expect(result.nextDueDates).toEqual(["2026-10-05", "2026-11-05", "2026-12-05"]);
-		expect(result.priceChanges).toEqual([
+		expect(result.closed_count).toBe(4);
+		expect(result.open_occurrences[0]).toMatchObject({ due_on: "2026-09-05", state: "overdue" });
+		expect(result.upcoming_due_dates).toEqual(["2026-10-05", "2026-11-05", "2026-12-05"]);
+		expect(result.price_changes).toEqual([
 			{
-				billId: mortgage.id,
+				bill_id: mortgage.id,
 				name: "Prêt immobilier",
-				effectiveOn: "2026-08-05",
-				previousAmount: "570.00",
-				newAmount: "571.29",
+				effective_on: "2026-08-05",
+				previous_amount: "570.00",
+				new_amount: "571.29",
 				currency: "EUR",
-				changePercent: 0.2,
+				percent_change: 0.2,
 			},
 		]);
 	});
@@ -569,7 +573,7 @@ describe("get_bill_details", () => {
 		await household();
 		const tools = await assistants();
 
-		expect(failure(await tools.read("get_bill_details", { billId: "nope" }))).toMatch(
+		expect(failure(await tools.read("get_bill_details", { bill_id: "nope" }))).toMatch(
 			/^NOT_FOUND/u,
 		);
 	});
@@ -587,12 +591,12 @@ describe("get_bill_audit", () => {
 		const result = audit.parse((await tools.read("get_bill_audit")).structuredContent);
 		// Two bills due the same day come by id, and the group takes the first one's name.
 		const group = [
-			{ billId: first.id, name: "Netflix", accountId, accountName: "Courant" },
-			{ billId: second.id, name: "netflix", accountId: other, accountName: "Joint" },
-		].toSorted((a, b) => a.billId.localeCompare(b.billId));
+			{ bill_id: first.id, name: "Netflix", account_id: accountId, account_name: "Courant" },
+			{ bill_id: second.id, name: "netflix", account_id: other, account_name: "Joint" },
+		].toSorted((a, b) => a.bill_id.localeCompare(b.bill_id));
 
-		expect(result.possibleDuplicates).toEqual({
-			items: [{ name: group[0]!.name, amount: "13.49", currency: "EUR", dueDay: 5, bills: group }],
+		expect(result.possible_duplicates).toEqual({
+			items: [{ name: group[0]!.name, amount: "13.49", currency: "EUR", due_day: 5, bills: group }],
 			count: 1,
 			truncated: false,
 		});
@@ -641,47 +645,47 @@ describe("get_bill_audit", () => {
 
 		const year = audit.parse((await tools.read("get_bill_audit")).structuredContent);
 		const twoYears = audit.parse(
-			(await tools.read("get_bill_audit", { lookbackMonths: 24 })).structuredContent,
+			(await tools.read("get_bill_audit", { lookback_months: 24 })).structuredContent,
 		);
 
-		expect(year.longOverdue.items).toEqual([
+		expect(year.long_overdue.items).toEqual([
 			{
-				billId: late.id,
+				bill_id: late.id,
 				name: "Internet",
-				accountId,
-				accountName: "Courant",
-				cyclesOverdue: 1,
-				nextDueDate: "2026-08-12",
+				account_id: accountId,
+				account_name: "Courant",
+				cycles_overdue: 1,
+				next_due_date: "2026-08-12",
 				amount: "29.99",
 				currency: "EUR",
 			},
 		]);
-		expect(year.dormant.items.map((item) => item.billId)).toEqual([dormant.id]);
-		expect(year.awaitingConfirmation.items.map((item) => item.billId)).toEqual([suggestion.id]);
-		expect(year.priceChanges.items).toEqual([
+		expect(year.dormant.items.map((item) => item.bill_id)).toEqual([dormant.id]);
+		expect(year.awaiting_confirmation.items.map((item) => item.bill_id)).toEqual([suggestion.id]);
+		expect(year.price_changes.items).toEqual([
 			{
-				billId: late.id,
+				bill_id: late.id,
 				name: "Internet",
-				effectiveOn: "2026-06-12",
-				previousAmount: "26.99",
-				newAmount: "29.99",
+				effective_on: "2026-06-12",
+				previous_amount: "26.99",
+				new_amount: "29.99",
 				currency: "EUR",
-				changePercent: 11.1,
+				percent_change: 11.1,
 			},
 		]);
-		expect(twoYears.priceChanges.count).toBe(2);
-		expect(year.undeclaredCandidates.items).toEqual([
+		expect(twoYears.price_changes.count).toBe(2);
+		expect(year.undeclared_candidates.items).toEqual([
 			{
 				name: "DEEZER PREMIUM",
-				averageAmount: "10.99",
+				average_amount: "10.99",
 				currency: "EUR",
-				accountId,
-				occurrenceCount: 3,
-				lastSeen: "2026-09-08",
-				entryId: z.string().parse(year.undeclaredCandidates.items[0]?.entryId),
+				account_id: accountId,
+				occurrence_count: 3,
+				last_seen: "2026-09-08",
+				entry_id: z.string().parse(year.undeclared_candidates.items[0]?.entry_id),
 			},
 		]);
-		expect(failure(await tools.read("get_bill_audit", { lookbackMonths: 25 }))).toMatch(
+		expect(failure(await tools.read("get_bill_audit", { lookback_months: 25 }))).toMatch(
 			/^VALIDATION_ERROR/u,
 		);
 	});
@@ -698,12 +702,12 @@ describe("create_bill", () => {
 				await tools.write("create_bill", {
 					name: "Netflix",
 					amount: "13.49",
-					firstDueOn: "2026-10-05",
-					accountId,
-					billType: "subscription",
-					categoryId: streaming,
+					first_due_on: "2026-10-05",
+					account_id: accountId,
+					bill_type: "subscription",
+					category_id: streaming,
 					autopay: true,
-					paymentUrl: "netflix.com",
+					payment_url: "netflix.com",
 				})
 			).structuredContent,
 		);
@@ -712,11 +716,11 @@ describe("create_bill", () => {
 				await tools.write("create_bill", {
 					name: "Salaire",
 					amount: "2500.00",
-					firstDueOn: "2026-09-28",
-					accountId,
-					isIncome: true,
-					billType: "subscription",
-					categoryId: streaming,
+					first_due_on: "2026-09-28",
+					account_id: accountId,
+					is_income: true,
+					bill_type: "subscription",
+					category_id: streaming,
 				})
 			).structuredContent,
 		);
@@ -724,24 +728,28 @@ describe("create_bill", () => {
 		expect(subscription).toMatchObject({
 			bill: {
 				name: "Netflix",
-				billType: "subscription",
+				bill_type: "subscription",
 				status: "active",
 				amount: "13.49",
-				categoryId: streaming,
+				category_id: streaming,
 				autopay: true,
-				paymentUrl: "https://netflix.com",
-				detectedAutomatically: false,
+				payment_url: "https://netflix.com",
+				detected_automatically: false,
 			},
-			nextDueDates: ["2026-10-05", "2026-11-05", "2026-12-05"],
+			upcoming_due_dates: ["2026-10-05", "2026-11-05", "2026-12-05"],
 		});
 		expect(await stored(subscription.bill.id)).toMatchObject({ amount: -1349, manual: true });
-		expect(salary.bill).toMatchObject({ billType: "income", amount: "2500.00", categoryId: null });
+		expect(salary.bill).toMatchObject({
+			bill_type: "income",
+			amount: "2500.00",
+			category_id: null,
+		});
 		expect(await stored(salary.bill.id)).toMatchObject({
 			amount: 250_000,
 			billType: "income",
 			categoryId: null,
 		});
-		expect(salary.nextDueDates).toEqual(["2026-09-28", "2026-10-28", "2026-11-28"]);
+		expect(salary.upcoming_due_dates).toEqual(["2026-09-28", "2026-10-28", "2026-11-28"]);
 		expect(await calls()).toEqual([
 			{ tool: "create_bill", outcome: "OK", changedRows: 1 },
 			{ tool: "create_bill", outcome: "OK", changedRows: 1 },
@@ -755,21 +763,21 @@ describe("create_bill", () => {
 		);
 		const tools = await assistants();
 		const [candidate] = audit.parse((await tools.read("get_bill_audit")).structuredContent)
-			.undeclaredCandidates.items;
+			.undeclared_candidates.items;
 
 		const result = created.parse(
 			(
 				await tools.write("create_bill", {
 					name: "Deezer",
 					amount: "10.99",
-					firstDueOn: "2026-10-08",
-					accountId,
-					entryId: candidate?.entryId,
+					first_due_on: "2026-10-08",
+					account_id: accountId,
+					entry_id: candidate?.entry_id,
 				})
 			).structuredContent,
 		);
 
-		expect(candidate?.entryId).toBeTypeOf("string");
+		expect(candidate?.entry_id).toBeTypeOf("string");
 		expect(await stored(result.bill.id)).toMatchObject({
 			name: "Deezer",
 			label: "DEEZER PREMIUM",
@@ -784,8 +792,8 @@ describe("create_bill", () => {
 		const netflix = {
 			name: "Netflix",
 			amount: "13.49",
-			firstDueOn: "2026-10-05",
-			accountId,
+			first_due_on: "2026-10-05",
+			account_id: accountId,
 		};
 
 		await tools.write("create_bill", netflix);
@@ -797,8 +805,10 @@ describe("create_bill", () => {
 			'"code":"not_positive"',
 		);
 		expect(
-			failure(await tools.write("create_bill", { ...netflix, amount: "9.99", categoryId: "nope" })),
-		).toContain('"path":"categoryId"');
+			failure(
+				await tools.write("create_bill", { ...netflix, amount: "9.99", category_id: "nope" }),
+			),
+		).toContain('"path":"category_id"');
 		expect(
 			failure(
 				await tools.write("create_bill", { ...netflix, amount: "9.99", frequency: "yearly" }),
@@ -823,14 +833,15 @@ describe("update_bill", () => {
 		const tools = await assistants();
 
 		const result = updated.parse(
-			(await tools.write("update_bill", { billId: netflix.id, amount: "15.99" })).structuredContent,
+			(await tools.write("update_bill", { bill_id: netflix.id, amount: "15.99" }))
+				.structuredContent,
 		);
 		const history = details.parse(
-			(await tools.read("get_bill_details", { billId: netflix.id })).structuredContent,
+			(await tools.read("get_bill_details", { bill_id: netflix.id })).structuredContent,
 		);
 
-		expect(result).toMatchObject({ changedFields: ["amount"], bill: { amount: "15.99" } });
-		expect(history.openOccurrences.map((row) => [row.dueOn, row.state, row.expected])).toEqual([
+		expect(result).toMatchObject({ changed_fields: ["amount"], bill: { amount: "15.99" } });
+		expect(history.open_occurrences.map((row) => [row.due_on, row.state, row.expected])).toEqual([
 			["2026-09-05", "overdue", "13.49"],
 			["2026-10-05", "upcoming", "15.99"],
 			["2026-11-05", "upcoming", "15.99"],
@@ -845,7 +856,7 @@ describe("update_bill", () => {
 		const paused = updated.parse(
 			(
 				await tools.write("update_bill", {
-					billId: gym.id,
+					bill_id: gym.id,
 					status: "paused",
 					name: "Salle de sport",
 				})
@@ -854,28 +865,28 @@ describe("update_bill", () => {
 		// Stored as the interface's « En pause » stores it, before any resume.
 		expect(await stored(gym.id)).toMatchObject({ status: "inactive" });
 		const again = updated.parse(
-			(await tools.write("update_bill", { billId: gym.id, status: "paused" })).structuredContent,
+			(await tools.write("update_bill", { bill_id: gym.id, status: "paused" })).structuredContent,
 		);
 		const resumed = updated.parse(
 			(
 				await tools.write("update_bill", {
-					billId: gym.id,
+					bill_id: gym.id,
 					status: "active",
 					frequency: "monthly",
-					dueDayOfMonth: 15,
+					due_day_of_month: 15,
 				})
 			).structuredContent,
 		);
 
 		expect(paused).toMatchObject({
-			changedFields: ["name", "status"],
+			changed_fields: ["name", "status"],
 			bill: { name: "Salle de sport", status: "paused" },
 		});
 		expect(await stored(gym.id)).toMatchObject({ name: "Salle de sport", status: "active" });
 		expect(again.bill.status).toBe("paused");
 		expect(resumed).toMatchObject({
-			changedFields: ["status", "frequency", "dueDayOfMonth"],
-			bill: { status: "active", nextDueDate: "2026-10-15" },
+			changed_fields: ["status", "frequency", "due_day_of_month"],
+			bill: { status: "active", next_due_date: "2026-10-15" },
 		});
 		expect((await stored(gym.id))?.schedulePinnedAt).not.toBeNull();
 		expect(await calls()).toEqual(
@@ -894,25 +905,25 @@ describe("update_bill", () => {
 
 		expect(
 			failure(
-				await tools.write("update_bill", { billId: salary.id, name: "Paie", billType: "bill" }),
+				await tools.write("update_bill", { bill_id: salary.id, name: "Paie", bill_type: "bill" }),
 			),
-		).toContain('"path":"billType"');
+		).toContain('"path":"bill_type"');
 		expect(
 			failure(
 				await tools.write("update_bill", {
-					billId: suggestion.id,
+					bill_id: suggestion.id,
 					name: "Spotify",
 					status: "paused",
 				}),
 			),
 		).toContain('"path":"status"');
-		expect(failure(await tools.write("update_bill", { billId: salary.id, weekday: 1 }))).toContain(
+		expect(failure(await tools.write("update_bill", { bill_id: salary.id, weekday: 1 }))).toContain(
 			'{"path":"weekday","code":"requires_frequency"}',
 		);
-		expect(failure(await tools.write("update_bill", { billId: salary.id }))).toContain(
+		expect(failure(await tools.write("update_bill", { bill_id: salary.id }))).toContain(
 			'"code":"empty_patch"',
 		);
-		expect(failure(await tools.write("update_bill", { billId: "nope", name: "X" }))).toMatch(
+		expect(failure(await tools.write("update_bill", { bill_id: "nope", name: "X" }))).toMatch(
 			/^NOT_FOUND/u,
 		);
 		expect(await stored(salary.id)).toMatchObject({ name: "Salaire", billType: "income" });
@@ -928,20 +939,20 @@ describe("record_bill_payment", () => {
 		const tools = await assistants();
 
 		const result = recorded.parse(
-			(await tools.write("record_bill_payment", { billId: mortgage.id })).structuredContent,
+			(await tools.write("record_bill_payment", { bill_id: mortgage.id })).structuredContent,
 		);
 
 		expect(result).toEqual({
-			billId: mortgage.id,
+			bill_id: mortgage.id,
 			occurrence: {
-				dueOn: "2026-09-05",
-				effectiveDueOn: "2026-09-05",
+				due_on: "2026-09-05",
+				effective_due_on: "2026-09-05",
 				state: "paid",
 				status: "paid",
 				expected: "571.29",
 				paid: "571.29",
 				remaining: "0.00",
-				partiallyPaid: false,
+				partially_paid: false,
 			},
 		});
 		expect(await calls()).toEqual([{ tool: "record_bill_payment", outcome: "OK", changedRows: 1 }]);
@@ -952,8 +963,8 @@ describe("record_bill_payment", () => {
 		const mortgage = await declare(accountId, "Prêt immobilier", "571,29", "2026-10-05");
 		const tools = await assistants();
 
-		expect(failure(await tools.write("record_bill_payment", { billId: mortgage.id }))).toContain(
-			'{"path":"occurrenceDueOn","code":"not_due"}',
+		expect(failure(await tools.write("record_bill_payment", { bill_id: mortgage.id }))).toContain(
+			'{"path":"occurrence_due_on","code":"not_due"}',
 		);
 		expect((await occurrencesOf(mortgage.id)).every((row) => row.status === "scheduled")).toBe(
 			true,
@@ -962,14 +973,14 @@ describe("record_bill_payment", () => {
 		const ahead = recorded.parse(
 			(
 				await tools.write("record_bill_payment", {
-					billId: mortgage.id,
-					occurrenceDueOn: "2026-10-05",
-					paidOn: "2026-09-20",
+					bill_id: mortgage.id,
+					occurrence_due_on: "2026-10-05",
+					paid_on: "2026-09-20",
 				})
 			).structuredContent,
 		);
 
-		expect(ahead.occurrence).toMatchObject({ dueOn: "2026-10-05", status: "paid" });
+		expect(ahead.occurrence).toMatchObject({ due_on: "2026-10-05", status: "paid" });
 	});
 
 	it("adds a partial payment, refuses one above what remains and a date with no open occurrence", async () => {
@@ -979,31 +990,31 @@ describe("record_bill_payment", () => {
 		const tools = await assistants();
 
 		const partial = recorded.parse(
-			(await tools.write("record_bill_payment", { billId: mortgage.id, amount: "100.00" }))
+			(await tools.write("record_bill_payment", { bill_id: mortgage.id, amount: "100.00" }))
 				.structuredContent,
 		);
 
 		expect(partial.occurrence).toMatchObject({
-			dueOn: "2026-09-05",
+			due_on: "2026-09-05",
 			status: "scheduled",
 			state: "overdue",
 			paid: "100.00",
 			remaining: "471.29",
-			partiallyPaid: true,
+			partially_paid: true,
 		});
 		expect(
-			failure(await tools.write("record_bill_payment", { billId: mortgage.id, amount: "471.30" })),
+			failure(await tools.write("record_bill_payment", { bill_id: mortgage.id, amount: "471.30" })),
 		).toContain('{"path":"amount","code":"exceeds_remaining"}');
 		expect(
 			failure(
 				await tools.write("record_bill_payment", {
-					billId: mortgage.id,
-					occurrenceDueOn: "2026-09-06",
+					bill_id: mortgage.id,
+					occurrence_due_on: "2026-09-06",
 				}),
 			),
 		).toMatch(/^NOT_FOUND/u);
 		expect(
-			failure(await tools.write("record_bill_payment", { billId: mortgage.id, amount: "-1.00" })),
+			failure(await tools.write("record_bill_payment", { bill_id: mortgage.id, amount: "-1.00" })),
 		).toContain('"code":"not_positive"');
 		expect((await calls()).map((call) => [call.outcome, call.changedRows])).toEqual([
 			["OK", 1],
@@ -1022,9 +1033,9 @@ describe("a read token", () => {
 		const tools = await assistants();
 
 		const writes = [
-			["create_bill", { name: "Eau", amount: "20.00", firstDueOn: "2026-10-02", accountId }],
-			["update_bill", { billId: mortgage.id, name: "Crédit" }],
-			["record_bill_payment", { billId: mortgage.id }],
+			["create_bill", { name: "Eau", amount: "20.00", first_due_on: "2026-10-02", accountId }],
+			["update_bill", { bill_id: mortgage.id, name: "Crédit" }],
+			["record_bill_payment", { bill_id: mortgage.id }],
 		] as const;
 
 		await oneByOne(writes, async ([name, args]) => {

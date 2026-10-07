@@ -101,6 +101,7 @@ Sampling departs from « as the dashboard does » on purpose: the tool text and 
 - Not done: the manual check with Claude Code on a throwaway server.
 
 ## Spec Change Log
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `get_accounts` takes Sure's `include_balance_series` and `series_period` and answers `historical_balances`; `get_transactions` takes Sure's `account_ids`, `types`, `start_date`, `end_date`, `search` and `page_size`, and `category_ids`, `merchant_ids`, `tag_ids`, `amount_min`, `amount_max`, ids where Sure takes names, and answers Sure's `transactions`, `total_results`, `total_income`, `total_expenses`, each line's label as `name`; `get_recurring_transactions` takes `upcoming_within_days` and answers `recurring_transactions`, `total_results`, `name`, `is_manual`; the reports give `net_worth`, `left_out_count` and `left_out_account_ids`.
 
 ## Review Triage Log
 

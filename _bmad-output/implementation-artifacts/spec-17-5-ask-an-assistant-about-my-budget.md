@@ -103,6 +103,7 @@ Decisions taken alone:
 - `prettier` realigned the whole parity table of `docs/sure-parity.md` for one changed row.
 
 ## Spec Change Log
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `get_budget` takes `prior_months` and answers `budgeted_spending`, `expected_income`, `actual_spending`, `actual_income`, `percent_spent`, `rollover_enabled` and Sure's `initialized` for a month set up; `update_budget` takes `budgeted_spending`, `expected_income` and categories as `{ category_id, amount }`, Sure's `amount`.
 
 ## Review Triage Log
 

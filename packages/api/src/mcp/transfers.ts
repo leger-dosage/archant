@@ -29,27 +29,27 @@ export const getTransferCandidates = defineTool({
 			z.object({
 				id: z.string(),
 				date: z.string(),
-				label: z.string(),
+				name: z.string().describe("The label the line shows."),
 				amount: decimal("Signed: negative is money out"),
 				currency: z.string(),
-				accountId: z.string(),
-				accountName: z.string(),
+				account_id: z.string(),
+				account_name: z.string(),
 			}),
 		),
 	}),
 	run: async (deps, input) => {
-		const found = await listTransferCandidates(deps, input.transactionId);
+		const found = await listTransferCandidates(deps, input.transaction_id);
 
 		return {
 			result: {
 				candidates: found.map((candidate) => ({
 					id: candidate.id,
 					date: candidate.date,
-					label: candidate.label,
+					name: candidate.label,
 					amount: toDecimalString(candidate),
 					currency: candidate.currency,
-					accountId: candidate.accountId,
-					accountName: candidate.accountName,
+					account_id: candidate.accountId,
+					account_name: candidate.accountName,
 				})),
 			},
 			changedRows: 0,
@@ -61,25 +61,28 @@ export const pairTransferTool = defineTool({
 	name: "pair_transfer",
 	title: "Pair a transfer",
 	description:
-		"Pairs a transaction with one of its candidates as one transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transactionId answers NOT_FOUND; a counterpart get_transfer_candidates does not list, a refused pair included, answers VALIDATION_ERROR on counterpartId.",
+		"Pairs a transaction with one of its candidates as one transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transaction_id answers NOT_FOUND; a counterpart get_transfer_candidates does not list, a refused pair included, answers VALIDATION_ERROR on counterpart_id.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: pairTransferInput,
 	output: z.object({
 		id: z.string().describe("The transfer's id, which unpair_transfer takes."),
 		kind: z.enum(TRANSFER_KINDS),
-		outflowTransactionId: z.string(),
-		inflowTransactionId: z.string(),
+		outflow_transaction_id: z.string(),
+		inflow_transaction_id: z.string(),
 	}),
 	run: async (deps, input) => {
-		const transfer = await createTransfer(deps, input);
+		const transfer = await createTransfer(deps, {
+			transactionId: input.transaction_id,
+			counterpartId: input.counterpart_id,
+		});
 
 		return {
 			result: {
 				id: transfer.id,
 				kind: transfer.kind,
-				outflowTransactionId: transfer.outflowTransactionId,
-				inflowTransactionId: transfer.inflowTransactionId,
+				outflow_transaction_id: transfer.outflowTransactionId,
+				inflow_transaction_id: transfer.inflowTransactionId,
 			},
 			changedRows: 1,
 		};
@@ -90,25 +93,25 @@ export const unpairTransferTool = defineTool({
 	name: "unpair_transfer",
 	title: "Unpair a transfer",
 	description:
-		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses. With neverPropose, as « Ne plus proposer », the pair is also refused for good: no candidate list, import or sync pairs these two again, and the refusal cannot be undone.",
+		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses. With never_propose, as « Ne plus proposer », the pair is also refused for good: no candidate list, import or sync pairs these two again, and the refusal cannot be undone.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: unpairTransferInput,
 	output: z.object({
-		transferId: z.string(),
-		outflowTransactionId: z.string(),
-		inflowTransactionId: z.string(),
-		neverPropose: z.boolean().describe("Whether the pair is now refused for good."),
+		transfer_id: z.string(),
+		outflow_transaction_id: z.string(),
+		inflow_transaction_id: z.string(),
+		never_propose: z.boolean().describe("Whether the pair is now refused for good."),
 	}),
-	run: async (deps, { transferId, neverPropose }) => {
+	run: async (deps, { transfer_id: transferId, never_propose: neverPropose }) => {
 		const undone = await (neverPropose ? rejectTransfer : deleteTransfer)(deps, transferId);
 
 		return {
 			result: {
-				transferId: undone.id,
-				outflowTransactionId: undone.outflowTransactionId,
-				inflowTransactionId: undone.inflowTransactionId,
-				neverPropose,
+				transfer_id: undone.id,
+				outflow_transaction_id: undone.outflowTransactionId,
+				inflow_transaction_id: undone.inflowTransactionId,
+				never_propose: neverPropose,
 			},
 			changedRows: 1,
 		};

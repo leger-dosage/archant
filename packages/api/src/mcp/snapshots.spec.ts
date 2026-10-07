@@ -63,21 +63,21 @@ function calls() {
 }
 
 const snapshot = z.object({
-	id: z.string(),
+	entry_id: z.string(),
 	date: z.string(),
-	balance: z.string(),
+	amount: z.string(),
 	computed: z.string(),
 	gap: z.string(),
 	currency: z.string(),
 });
 
 const valuation = z.object({
-	id: z.string(),
-	accountId: z.string(),
-	accountName: z.string(),
+	entry_id: z.string(),
+	account_id: z.string(),
+	account_name: z.string(),
 	date: z.string(),
 	kind: z.enum(["opening_anchor", "reconciliation", "current_anchor"]),
-	balance: z.string(),
+	amount: z.string(),
 	computed: z.string().nullable(),
 	gap: z.string().nullable(),
 	currency: z.string(),
@@ -85,16 +85,16 @@ const valuation = z.object({
 });
 
 const valuations = z.object({
-	items: z.array(valuation),
+	valuations: z.array(valuation),
 	page: z.number(),
-	pageSize: z.number(),
-	total: z.number(),
-	totalPages: z.number(),
+	page_size: z.number(),
+	total_results: z.number(),
+	total_pages: z.number(),
 });
 
 const recordedValuation = snapshot.extend({
-	accountId: z.string(),
-	replacedExisting: z.boolean(),
+	account_id: z.string(),
+	replaced_existing: z.boolean(),
 	provenance: z.object({
 		source: z.string(),
 		citation: z.string(),
@@ -109,7 +109,7 @@ const accountsWithSeries = z.object({
 			.object({
 				id: z.string(),
 				balance: z.string(),
-				balanceSeries: z.object({
+				historical_balances: z.object({
 					points: z.array(z.object({ date: z.string(), balance: z.string() })),
 				}),
 			})
@@ -119,21 +119,24 @@ const accountsWithSeries = z.object({
 
 /** The account's balance today and on `date`, as get_accounts' series gives them. */
 async function balancesOf(tools: Awaited<ReturnType<typeof assistants>>, id: string, date: string) {
-	const result = await tools.read("get_accounts", { includeBalanceSeries: true, period: "3M" });
+	const result = await tools.read("get_accounts", {
+		include_balance_series: true,
+		series_period: "3M",
+	});
 	const account = accountsWithSeries
 		.parse(result.structuredContent)
 		.accounts.find((candidate) => candidate.id === id);
 
 	return {
 		today: account?.balance,
-		onDate: account?.balanceSeries.points.find((point) => point.date === date)?.balance,
+		onDate: account?.historical_balances.points.find((point) => point.date === date)?.balance,
 	};
 }
 
 /** The account's snapshots, the « Soldes » tab's, without its opening balance. */
 async function snapshotsOf(tools: Awaited<ReturnType<typeof assistants>>, accountId: string) {
-	const { items } = valuations.parse(
-		(await tools.read("get_valuations", { accountId })).structuredContent,
+	const { valuations: items } = valuations.parse(
+		(await tools.read("get_valuations", { account_id: accountId })).structuredContent,
 	);
 	const snapshots = items.filter((item) => item.kind === "reconciliation");
 
@@ -145,32 +148,32 @@ describe("get_valuations", () => {
 		const account = await checking();
 		const tools = await assistants();
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-03-05",
-			balance: "2000.00",
+			amount: "2000.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-04-01",
-			balance: "1990.00",
+			amount: "1990.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		await db.delete(assistantCalls);
 
-		const first = await tools.read("get_valuations", { accountId: account.id });
-		const second = await tools.read("get_valuations", { accountId: account.id, page: 2 });
+		const first = await tools.read("get_valuations", { account_id: account.id });
+		const second = await tools.read("get_valuations", { account_id: account.id, page: 2 });
 
-		const { items, ...paging } = valuations.parse(first.structuredContent);
+		const { valuations: items, ...paging } = valuations.parse(first.structuredContent);
 
-		const of = { accountId: account.id, accountName: "Compte courant", currency: "EUR" };
+		const of = { account_id: account.id, account_name: "Compte courant", currency: "EUR" };
 
-		expect(items.map(({ id: _id, ...item }) => item)).toEqual([
+		expect(items.map(({ entry_id: _id, ...item }) => item)).toEqual([
 			{
 				...of,
 				date: "2026-04-01",
 				kind: "reconciliation",
-				balance: "1990.00",
+				amount: "1990.00",
 				computed: "2000.00",
 				gap: "-10.00",
 				notes: "Relevé de compte (grade: A)",
@@ -179,7 +182,7 @@ describe("get_valuations", () => {
 				...of,
 				date: "2026-03-05",
 				kind: "reconciliation",
-				balance: "2000.00",
+				amount: "2000.00",
 				computed: "1380.00",
 				gap: "620.00",
 				notes: "Relevé de compte (grade: A)",
@@ -188,19 +191,19 @@ describe("get_valuations", () => {
 				...of,
 				date: "2026-01-10",
 				kind: "opening_anchor",
-				balance: "1500.00",
+				amount: "1500.00",
 				computed: null,
 				gap: null,
 				notes: null,
 			},
 		]);
-		expect(paging).toEqual({ page: 1, pageSize: 50, total: 3, totalPages: 1 });
+		expect(paging).toEqual({ page: 1, page_size: 50, total_results: 3, total_pages: 1 });
 		expect(valuations.parse(second.structuredContent)).toEqual({
-			items: [],
+			valuations: [],
 			page: 2,
-			pageSize: 50,
-			total: 3,
-			totalPages: 1,
+			page_size: 50,
+			total_results: 3,
+			total_pages: 1,
 		});
 		expect(await calls()).toEqual([
 			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
@@ -213,34 +216,34 @@ describe("get_valuations", () => {
 		const loan = await openOwn({ ...mortgage, name: "Prêt immobilier" });
 		const tools = await assistants();
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-03-05",
-			balance: "2000.00",
+			amount: "2000.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		await db.delete(assistantCalls);
 
 		const all = valuations.parse((await tools.read("get_valuations")).structuredContent);
 		const march = valuations.parse(
-			(await tools.read("get_valuations", { startDate: "2026-03-01", endDate: "2026-03-31" }))
+			(await tools.read("get_valuations", { start_date: "2026-03-01", end_date: "2026-03-31" }))
 				.structuredContent,
 		);
 
-		expect(all.items.map(({ accountName, kind }) => ({ accountName, kind }))).toEqual(
+		expect(all.valuations.map(({ account_name, kind }) => ({ account_name, kind }))).toEqual(
 			expect.arrayContaining([
-				{ accountName: "Compte courant", kind: "reconciliation" },
-				{ accountName: "Compte courant", kind: "opening_anchor" },
-				{ accountName: "Prêt immobilier", kind: "opening_anchor" },
+				{ account_name: "Compte courant", kind: "reconciliation" },
+				{ account_name: "Compte courant", kind: "opening_anchor" },
+				{ account_name: "Prêt immobilier", kind: "opening_anchor" },
 			]),
 		);
-		expect(all.items.map(({ date }) => date)).toEqual(
-			all.items
+		expect(all.valuations.map(({ date }) => date)).toEqual(
+			all.valuations
 				.map(({ date }) => date)
 				.toSorted()
 				.toReversed(),
 		);
-		expect(all.items.some(({ accountId }) => accountId === loan.id)).toBe(true);
-		expect(march.items.map(({ date, kind }) => ({ date, kind }))).toEqual([
+		expect(all.valuations.some(({ account_id }) => account_id === loan.id)).toBe(true);
+		expect(march.valuations.map(({ date, kind }) => ({ date, kind }))).toEqual([
 			{ date: "2026-03-05", kind: "reconciliation" },
 		]);
 		expect(await calls()).toEqual([
@@ -254,12 +257,12 @@ describe("get_valuations", () => {
 		const tools = await assistants();
 
 		const refused = await tools.read("get_valuations", {
-			startDate: "2026-04-01",
-			endDate: "2026-03-01",
+			start_date: "2026-04-01",
+			end_date: "2026-03-01",
 		});
 
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain('"path":"endDate","code":"before_start_date"');
+		expect(refused.content[0]?.text).toContain('"path":"end_date","code":"before_start_date"');
 	});
 });
 
@@ -270,22 +273,22 @@ describe("record_valuation", () => {
 		const tools = await assistants();
 
 		const result = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2500.00",
+			amount: "2500.00",
 			source: "Relevé de compte (grade: A)",
 		});
 
-		const { id: _id, ...recorded } = recordedValuation.parse(result.structuredContent);
+		const { entry_id: _id, ...recorded } = recordedValuation.parse(result.structuredContent);
 
 		expect(recorded).toEqual({
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2500.00",
+			amount: "2500.00",
 			computed: "1380.00",
 			gap: "1120.00",
 			currency: "EUR",
-			replacedExisting: false,
+			replaced_existing: false,
 			provenance: {
 				source: "Relevé de compte (grade: A)",
 				citation: "Relevé de compte",
@@ -310,9 +313,9 @@ describe("record_valuation", () => {
 		const first = recordedValuation.parse(
 			(
 				await tools.write("record_valuation", {
-					accountId: account.id,
+					account_id: account.id,
 					date: "2026-08-15",
-					balance: "2500.00",
+					amount: "2500.00",
 					source: "Relevé de compte (grade: A)",
 				})
 			).structuredContent,
@@ -321,17 +324,21 @@ describe("record_valuation", () => {
 		const second = recordedValuation.parse(
 			(
 				await tools.write("record_valuation", {
-					accountId: account.id,
+					account_id: account.id,
 					date: "2026-08-15",
-					balance: "2450.00",
+					amount: "2450.00",
 					source: "Relevé de compte (grade: A)",
 				})
 			).structuredContent,
 		);
 
-		expect(second).toMatchObject({ id: first.id, balance: "2450.00", replacedExisting: true });
+		expect(second).toMatchObject({
+			entry_id: first.entry_id,
+			amount: "2450.00",
+			replaced_existing: true,
+		});
 		expect(await snapshotsOf(tools, account.id)).toMatchObject({
-			items: [{ id: first.id, balance: "2450.00" }],
+			items: [{ entry_id: first.entry_id, amount: "2450.00" }],
 			total: 1,
 		});
 		expect(await calls()).toEqual([
@@ -346,21 +353,21 @@ describe("record_valuation", () => {
 		const tools = await assistants();
 
 		const opening = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-01-10",
-			balance: "1.00",
+			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		const tomorrow = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-09-22",
-			balance: "1.00",
+			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
 		const badAmount = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "12,345",
+			amount: "12,345",
 			source: "Relevé de compte (grade: A)",
 		});
 
@@ -368,7 +375,7 @@ describe("record_valuation", () => {
 		expect(opening.content[0]?.text).toMatch(/^VALIDATION_ERROR:/);
 		expect(opening.content[0]?.text).toContain('"path":"date","code":"not_after_opening_date"');
 		expect(tomorrow.content[0]?.text).toContain('"path":"date","code":"date_in_future"');
-		expect(badAmount.content[0]?.text).toContain('"path":"balance","code":"invalid_amount"');
+		expect(badAmount.content[0]?.text).toContain('"path":"amount","code":"invalid_amount"');
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 		expect(await calls()).toEqual([
 			{ tool: "record_valuation", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -378,18 +385,18 @@ describe("record_valuation", () => {
 		]);
 	});
 
-	it("refuses a number as balance, writing nothing", async () => {
+	it("refuses a number as amount, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
 		const numeric = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: 2500,
+			amount: 2500,
 			source: "Relevé de compte (grade: A)",
 		});
 
-		expect(numeric.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"balance"/);
+		expect(numeric.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"amount"/);
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 	});
 
@@ -398,9 +405,9 @@ describe("record_valuation", () => {
 		const tools = await assistants();
 
 		const result = await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2500.00",
+			amount: "2500.00",
 			source: "estimated: linear interpolation over 2026-07 / 2026-09 statements (grade: C)",
 		});
 
@@ -421,31 +428,31 @@ describe("record_valuation", () => {
 		const first = recordedValuation.parse(
 			(
 				await tools.write("record_valuation", {
-					accountId: account.id,
+					account_id: account.id,
 					date: "2026-08-15",
-					balance: "2500.00",
+					amount: "2500.00",
 					source: "Relevé d'août (grade: A)",
 				})
 			).structuredContent,
 		);
 		// The owner's edit in the « Soldes » dialog.
-		await buildApp(db).request(`/api/snapshots/${first.id}`, {
+		await buildApp(db).request(`/api/snapshots/${first.entry_id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ notes: "Vérifié avec le conseiller\n\nRelevé d'août (grade: A)" }),
 		});
 
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2450.00",
+			amount: "2450.00",
 			source: "Relevé d'août (grade: A)",
 		});
 		const same = (await snapshotsOf(tools, account.id)).items[0]?.notes;
 		await tools.write("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2460.00",
+			amount: "2460.00",
 			source: "Relevé rectifié d'août (grade: A)",
 		});
 		const revised = (await snapshotsOf(tools, account.id)).items[0]?.notes;
@@ -459,7 +466,7 @@ describe("record_valuation", () => {
 	it("refuses a missing, blank or ungraded estimated source on source, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
-		const base = { accountId: account.id, date: "2026-08-15", balance: "2500.00" };
+		const base = { account_id: account.id, date: "2026-08-15", amount: "2500.00" };
 
 		const missing = await tools.write("record_valuation", base);
 		const blank = await tools.write("record_valuation", { ...base, source: "  " });
@@ -485,9 +492,9 @@ describe("record_valuation", () => {
 		const tools = await assistants();
 
 		await tools.write("record_valuation", {
-			accountId: loan.id,
+			account_id: loan.id,
 			date: "2026-09-01",
-			balance: "175000.00",
+			amount: "175000.00",
 			source: "Relevé de compte (grade: A)",
 		});
 
@@ -512,11 +519,11 @@ describe("an unknown account", () => {
 		await checking();
 		const tools = await assistants();
 
-		const read = await tools.read("get_valuations", { accountId: "nothing" });
+		const read = await tools.read("get_valuations", { account_id: "nothing" });
 		const written = await tools.write("record_valuation", {
-			accountId: "nothing",
+			account_id: "nothing",
 			date: "2026-08-15",
-			balance: "1.00",
+			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
 
@@ -535,9 +542,9 @@ describe("a read token", () => {
 		const tools = await assistants();
 
 		const response = await tools.refused("record_valuation", {
-			accountId: account.id,
+			account_id: account.id,
 			date: "2026-08-15",
-			balance: "2500.00",
+			amount: "2500.00",
 		});
 
 		expect(response.status).toBe(403);

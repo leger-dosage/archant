@@ -18,14 +18,14 @@ export const getRecurringTransactions = defineTool({
 	annotations: READ_ONLY,
 	input: recurringInput,
 	output: z.object({
-		items: z.array(
+		recurring_transactions: z.array(
 			z.object({
 				id: z.string(),
-				label: z.string(),
-				merchantId: z.string().nullable(),
-				merchantName: z.string().nullable(),
-				accountId: z.string(),
-				accountName: z.string(),
+				name: z.string().describe("The label its transactions carry."),
+				merchant_id: z.string().nullable(),
+				merchant_name: z.string().nullable(),
+				account_id: z.string(),
+				account_name: z.string(),
 				amount: decimal("Signed: negative is money out"),
 				currency: z.string(),
 				status: z
@@ -33,38 +33,41 @@ export const getRecurringTransactions = defineTool({
 					.describe(
 						'"suggested": found by Archant, awaiting the owner; "active": followed by the owner; "inactive": paused or retired.',
 					),
-				expectedDayOfMonth: z.number().int(),
-				nextExpectedDate: z.string(),
-				lastOccurrenceDate: z.string(),
-				occurrenceCount: z.number().int(),
-				manual: z.boolean().describe("Added by the owner from a transaction."),
+				expected_day_of_month: z.number().int(),
+				next_expected_date: z.string(),
+				last_occurrence_date: z.string(),
+				occurrence_count: z.number().int(),
+				is_manual: z.boolean().describe("Added by the owner from a transaction."),
 			}),
 		),
-		total: z.number().int().describe("Every matching series."),
+		total_results: z.number().int().describe("Every matching series."),
 		truncated: z.boolean().describe(`true when more than ${MAX_RECURRING} match.`),
 	}),
 	run: async (deps, input) => {
-		const records = await listRecurring(deps, input);
+		const records = await listRecurring(deps, {
+			status: input.status,
+			withinDays: input.upcoming_within_days,
+		});
 
 		return {
 			result: {
-				items: records.slice(0, MAX_RECURRING).map((record) => ({
+				recurring_transactions: records.slice(0, MAX_RECURRING).map((record) => ({
 					id: record.id,
-					label: record.label,
-					merchantId: record.merchantId,
-					merchantName: record.merchantName,
-					accountId: record.accountId,
-					accountName: record.accountName,
+					name: record.label,
+					merchant_id: record.merchantId,
+					merchant_name: record.merchantName,
+					account_id: record.accountId,
+					account_name: record.accountName,
 					amount: toDecimalString(record),
 					currency: record.currency,
 					status: record.status,
-					expectedDayOfMonth: record.expectedDayOfMonth,
-					nextExpectedDate: record.nextExpectedDate,
-					lastOccurrenceDate: record.lastOccurrenceDate,
-					occurrenceCount: record.occurrenceCount,
-					manual: record.manual,
+					expected_day_of_month: record.expectedDayOfMonth,
+					next_expected_date: record.nextExpectedDate,
+					last_occurrence_date: record.lastOccurrenceDate,
+					occurrence_count: record.occurrenceCount,
+					is_manual: record.manual,
 				})),
-				total: records.length,
+				total_results: records.length,
 				truncated: records.length > MAX_RECURRING,
 			},
 			changedRows: 0,

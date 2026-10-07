@@ -108,6 +108,7 @@ The 403 follows the MCP specification. A read-only grant means the owner refused
 - Not done: the manual check with Claude Code on a throwaway server.
 
 ## Spec Change Log
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `rule_id`, `condition_type`, `action_type`, `effective_date`, `expected_changed`; `get_rule_runs` answers `page_size`, `total_results`, `matched_count`, `changed_count`, `executed_at`; `preview_rule`'s samples give `name` and `account_id`, a renaming change under `name`.
 
 ## Review Triage Log
 

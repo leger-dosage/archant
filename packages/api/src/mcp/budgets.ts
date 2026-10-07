@@ -35,8 +35,8 @@ const envelopeFields = {
 };
 
 const categoryOutput = z.object({
-	categoryId: z.string(),
-	parentId: z.string().nullable().describe("The parent category's id; null for a top-level one."),
+	category_id: z.string(),
+	parent_id: z.string().nullable().describe("The parent category's id; null for a top-level one."),
 	name: z.string(),
 	budgeted: decimal(
 		"The amount set for the month; a parent's includes what its own-amount subcategories hold",
@@ -46,8 +46,8 @@ const categoryOutput = z.object({
 		.describe("A subcategory without an amount of its own, spending from its parent's."),
 	carried: decimal("What the month before left it, counted in available but not in budgeted"),
 	...envelopeFields,
-	percentSpent: z.number().describe("actual over what it received, in percent, one decimal."),
-	rolloverEnabled: z
+	percent_spent: z.number().describe("actual over what it received, in percent, one decimal."),
+	rollover_enabled: z
 		.boolean()
 		.describe("What it leaves at the month's end carries into the next month set up."),
 });
@@ -57,26 +57,26 @@ const monthOutput = z.object({
 	from: z.string(),
 	to: z.string(),
 	currency: z.string(),
-	setUp: z
+	initialized: z
 		.boolean()
 		.describe("false until the month has its planned spending and expected income."),
-	budgetedSpending: decimal("The month's planned spending")
+	budgeted_spending: decimal("The month's planned spending")
 		.nullable()
 		.describe("null until set up."),
-	expectedIncome: decimal("The month's expected income").nullable().describe("null until set up."),
+	expected_income: decimal("The month's expected income").nullable().describe("null until set up."),
 	allocated: decimal("The top-level categories' amounts, summed"),
-	actualSpending: decimal("What the month spent, as get_income_statement counts it, positive"),
-	actualIncome: decimal("What the month earned, as get_income_statement counts it"),
+	actual_spending: decimal("What the month spent, as get_income_statement counts it, positive"),
+	actual_income: decimal("What the month earned, as get_income_statement counts it"),
 	categories: z
 		.array(categoryOutput)
 		.describe("Every expense category, each parent followed by its subcategories."),
 	uncategorised: z
 		.object({
-			budgeted: decimal("What budgetedSpending leaves unallocated, never stored"),
+			budgeted: decimal("What budgeted_spending leaves unallocated, never stored"),
 			...envelopeFields,
 		})
 		.describe(
-			"« Sans catégorie »: the unallocated money against the spending without a category. It has no id: set it through budgetedSpending or the category amounts.",
+			"« Sans catégorie »: the unallocated money against the spending without a category. It has no id: set it through budgeted_spending or the category amounts.",
 		),
 });
 
@@ -102,8 +102,8 @@ function statusOf(envelope: Envelope): BudgetStatus {
 function monthOf(budget: BudgetMonth): z.input<typeof monthOutput> {
 	const money = (amount: MinorUnits) => toDecimalString({ amount, currency: budget.currency });
 	const categoryOf = (line: BudgetCategoryLine): z.input<typeof categoryOutput> => ({
-		categoryId: line.categoryId,
-		parentId: line.parentId,
+		category_id: line.categoryId,
+		parent_id: line.parentId,
 		name: line.name,
 		budgeted: money(line.budgetedSpending),
 		shared: line.shared,
@@ -111,8 +111,8 @@ function monthOf(budget: BudgetMonth): z.input<typeof monthOutput> {
 		actual: money(line.spent),
 		available: money(line.available),
 		status: statusOf(line),
-		percentSpent: Math.round(line.percentSpent * 10) / 10,
-		rolloverEnabled: line.rolloverEnabled,
+		percent_spent: Math.round(line.percentSpent * 10) / 10,
+		rollover_enabled: line.rolloverEnabled,
 	});
 
 	return {
@@ -120,12 +120,12 @@ function monthOf(budget: BudgetMonth): z.input<typeof monthOutput> {
 		from: budget.from,
 		to: budget.to,
 		currency: budget.currency,
-		setUp: budget.setUp,
-		budgetedSpending: budget.budgetedSpending === null ? null : money(budget.budgetedSpending),
-		expectedIncome: budget.expectedIncome === null ? null : money(budget.expectedIncome),
+		initialized: budget.setUp,
+		budgeted_spending: budget.budgetedSpending === null ? null : money(budget.budgetedSpending),
+		expected_income: budget.expectedIncome === null ? null : money(budget.expectedIncome),
 		allocated: money(budget.allocated),
-		actualSpending: money(budget.actual.spending),
-		actualIncome: money(budget.actual.income),
+		actual_spending: money(budget.actual.spending),
+		actual_income: money(budget.actual.income),
 		categories: budget.categories.map(categoryOf),
 		uncategorised: {
 			budgeted: money(budget.uncategorised.budgetedSpending),
@@ -151,8 +151,8 @@ export const getBudgetTool = defineTool({
 	run: async (deps, input) => {
 		const month = input.month ?? today(deps.timeZone).slice(0, 7);
 		const target = await getBudget(deps, month);
-		const earlier = Array.from({ length: input.priorMonths }, (_, index) =>
-			shiftMonth(month, index - input.priorMonths),
+		const earlier = Array.from({ length: input.prior_months }, (_, index) =>
+			shiftMonth(month, index - input.prior_months),
 		).filter((item) => isBudgetMonth(item, target.bounds));
 		const prior = await Promise.all(earlier.map(async (item) => getBudget(deps, item)));
 
@@ -170,14 +170,22 @@ export const updateBudgetTool = defineTool({
 	name: "update_budget",
 	title: "Set a budget",
 	description:
-		"Sets a month's planned spending, expected income and expense category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. A field absent keeps its value; a month not set up needs both budgetedSpending and expectedIncome, and its categories need the month set up. It answers the month as get_budget gives it.",
+		"Sets a month's planned spending, expected income and expense category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. A field absent keeps its value; a month not set up needs both budgeted_spending and expected_income, and its categories need the month set up. It answers the month as get_budget gives it.",
 	scope: "archant:write",
 	annotations: REPLACES,
+	fieldPaths: { budgeted: "amount" },
 	input: updateBudgetInput,
 	output: monthOutput.extend(leftOutFields),
-	run: async (deps, { month, ...input }) => {
-		const budget = await updateBudget(deps, month, input);
-		const totals = input.budgetedSpending !== undefined || input.expectedIncome !== undefined;
+	run: async (deps, input) => {
+		const budget = await updateBudget(deps, input.month, {
+			budgetedSpending: input.budgeted_spending,
+			expectedIncome: input.expected_income,
+			categories: input.categories?.map((line) => ({
+				categoryId: line.category_id,
+				budgeted: line.amount,
+			})),
+		});
+		const totals = input.budgeted_spending !== undefined || input.expected_income !== undefined;
 
 		return {
 			result: { ...monthOf(budget), ...leftOutOf(budget.leftOut) },

@@ -1,3 +1,5 @@
+import type { RuleInput } from "./rules.ts";
+
 import { z } from "zod";
 
 import { CSV_COLUMN_ROLES } from "@archant/data/csv-mapping";
@@ -33,12 +35,12 @@ import { tagSchema } from "./tags.ts";
 import {
 	DEFAULT_PAGE_SIZE,
 	MAX_BULK_IDS,
+	bulkPatchSchema,
 	MAX_TAGS_PER_TRANSACTION,
 	MAX_TAG_FILTER,
 	bulkIds,
-	bulkPatchSchema,
-	checkFilter,
 	directionSchema,
+	filterCheck,
 	filterFields,
 	parseBounds,
 } from "./transactions.ts";
@@ -57,14 +59,14 @@ const toolPeriod = z
 		'"1M", "3M", "6M" or "1Y": that many months ending today; "all": since the first account opened.',
 	);
 
-/** `get_accounts`: today's balances, and with `includeBalanceSeries` their history. */
+/** `get_accounts`: today's balances, and with `include_balance_series` their history. */
 export const getAccountsInput = z.strictObject({
-	includeBalanceSeries: z
+	include_balance_series: z
 		.boolean()
 		.default(false)
 		.describe("Adds each account's balance over the period, as its page charts it."),
-	period: toolPeriod.describe(
-		'Only with includeBalanceSeries. "1M", "3M", "6M" or "1Y": that many months ending today; "all": since the account opened.',
+	series_period: toolPeriod.describe(
+		'Only with include_balance_series. "1M", "3M", "6M" or "1Y": that many months ending today; "all": since the account opened.',
 	),
 });
 
@@ -84,7 +86,7 @@ export const recurringInput = z.strictObject({
 		.describe(
 			'"current": suggested or active; "inactive": paused or retired; "all": both, ended ones never.',
 		),
-	withinDays: z
+	upcoming_within_days: z
 		.number()
 		.int()
 		.min(1)
@@ -97,7 +99,7 @@ export const recurringInput = z.strictObject({
 
 /** `get_holdings`: one account's positions today. */
 export const holdingsInput = z.strictObject({
-	accountId: z
+	account_id: z
 		.string()
 		.min(1)
 		.describe("An account id from get_accounts; an investment account holds positions."),
@@ -117,54 +119,88 @@ const idsOf = (what: string) =>
 
 /**
  * The cross-account list's filter, each repeated key as an array: an
- * assistant sends JSON, never a query string.
+ * assistant sends JSON, never a query string. Named as Sure's
+ * `get_transactions` names them, the ids Archant's own.
  */
 const toolFilterFields = {
-	account: idsOf("Account ids from get_accounts; any of them."),
-	direction: z
+	account_ids: idsOf("Account ids from get_accounts; any of them."),
+	types: z
 		.array(directionSchema)
 		.transform((values) => [...new Set(values)])
 		.optional()
 		.describe(
 			"income, expense or transfer, as the list's type filter; any of them. A transfer between two accounts is neither income nor expense.",
 		),
-	category: idsOf(
+	category_ids: idsOf(
 		'Category ids from get_categories, "none" standing for uncategorised; any of them. A parent stands for its children too.',
 	),
-	merchant: idsOf("Merchant ids from get_merchants; any of them."),
-	tag: idsOf("Tag ids from get_tags; transactions carrying any of them."),
-	from: filterFields.from.describe("The first date, YYYY-MM-DD, inclusive."),
-	to: filterFields.to.describe("The last date, YYYY-MM-DD, inclusive."),
-	amountMin: filterFields.amountMin.describe(
+	merchant_ids: idsOf("Merchant ids from get_merchants; any of them."),
+	tag_ids: idsOf("Tag ids from get_tags; transactions carrying any of them."),
+	start_date: filterFields.from.describe("The first date, YYYY-MM-DD, inclusive."),
+	end_date: filterFields.to.describe("The last date, YYYY-MM-DD, inclusive."),
+	amount_min: filterFields.amountMin.describe(
 		'The smallest absolute amount, a decimal string such as "12.50".',
 	),
-	amountMax: filterFields.amountMax.describe(
+	amount_max: filterFields.amountMax.describe(
 		'The largest absolute amount, a decimal string such as "120".',
 	),
-	q: filterFields.q.describe("Text searched in the label and the notes, case aside."),
+	search: filterFields.q.describe("Text searched in the label and the notes, case aside."),
 };
+
+type ToolFilter = z.output<z.ZodObject<typeof toolFilterFields>>;
+
+/** The list's filter as the services read it, from the tool's names. */
+function listFilterOf({
+	account_ids: account,
+	types: direction,
+	category_ids: category,
+	merchant_ids: merchant,
+	tag_ids: tag,
+	start_date: from,
+	end_date: to,
+	amount_min: amountMin,
+	amount_max: amountMax,
+	search: q,
+}: ToolFilter) {
+	return { account, direction, category, merchant, tag, from, to, amountMin, amountMax, q };
+}
+
+const checkWithToolPaths = filterCheck({
+	to: "end_date",
+	amountMin: "amount_min",
+	amountMax: "amount_max",
+});
+
+/** The list's checks, on the tool's names, each refusal under the tool's name for the field. */
+function checkToolFilter(value: ToolFilter, context: z.core.$RefinementCtx) {
+	checkWithToolPaths(listFilterOf(value), context);
+}
 
 const pageFields = {
 	page: z.number().int().min(1).default(1),
-	pageSize: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(50),
+	page_size: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(50),
 };
 
 /** `get_transactions`: the list's filter and a page of it. */
 export const getTransactionsInput = z
 	.strictObject({ ...toolFilterFields, ...pageFields })
-	.superRefine(checkFilter)
-	.transform(parseBounds);
+	.superRefine(checkToolFilter)
+	.transform(({ page, page_size: pageSize, ...filter }) => ({
+		...parseBounds(listFilterOf(filter)),
+		page,
+		pageSize,
+	}));
 
 /** `group_transactions_by_label`: the list's filter, every matching transaction grouped. */
 export const groupTransactionsInput = z
 	.strictObject(toolFilterFields)
-	.superRefine(checkFilter)
-	.transform(parseBounds);
+	.superRefine(checkToolFilter)
+	.transform((filter) => parseBounds(listFilterOf(filter)));
 
 /** `get_rule_runs`: a page of past applications. */
 export const ruleRunsInput = z.strictObject({
 	page: pageFields.page,
-	pageSize: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(20),
+	page_size: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(20),
 });
 
 const operatorsOf = <Type extends keyof typeof RULE_OPERATORS_BY_TYPE>(type: Type, what: string) =>
@@ -182,12 +218,12 @@ const TEXT_OPERATORS =
  */
 const leafConditions = [
 	z.strictObject({
-		conditionType: z.literal("transaction_name"),
+		condition_type: z.literal("transaction_name"),
 		operator: operatorsOf("transaction_name", TEXT_OPERATORS),
 		value: z.string().describe("Text compared with the label as the bank wrote it."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_amount"),
+		condition_type: z.literal("transaction_amount"),
 		operator: operatorsOf(
 			"transaction_amount",
 			"Compares the transaction's absolute amount with the value.",
@@ -199,12 +235,12 @@ const leafConditions = [
 			),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_account"),
+		condition_type: z.literal("transaction_account"),
 		operator: operatorsOf("transaction_account", '"=": the transaction is in this account.'),
 		value: z.string().describe("An account id from get_accounts."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_merchant"),
+		condition_type: z.literal("transaction_merchant"),
 		operator: operatorsOf(
 			"transaction_merchant",
 			'"=": this merchant; "is_null": no merchant, without a value.',
@@ -212,7 +248,7 @@ const leafConditions = [
 		value: optionalValue("A merchant id from get_merchants or create_merchant."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_category"),
+		condition_type: z.literal("transaction_category"),
 		operator: operatorsOf(
 			"transaction_category",
 			'"=": exactly this category, never one of its children; "is_null": uncategorised, without a value.',
@@ -220,7 +256,7 @@ const leafConditions = [
 		value: optionalValue("A category id from get_categories or create_category."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_tag"),
+		condition_type: z.literal("transaction_tag"),
 		operator: operatorsOf(
 			"transaction_tag",
 			'"=": carries this tag among others; "is_null": carries no tag, without a value.',
@@ -228,7 +264,7 @@ const leafConditions = [
 		value: optionalValue("A tag id from get_tags or create_tag."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_notes"),
+		condition_type: z.literal("transaction_notes"),
 		operator: operatorsOf(
 			"transaction_notes",
 			`${TEXT_OPERATORS} "is_null": no notes, without a value.`,
@@ -236,7 +272,7 @@ const leafConditions = [
 		value: optionalValue("Text compared with the notes."),
 	}),
 	z.strictObject({
-		conditionType: z.literal("transaction_type"),
+		condition_type: z.literal("transaction_type"),
 		operator: operatorsOf("transaction_type", '"=": the transaction is of this type.'),
 		value: z
 			.enum(RULE_TYPE_VALUES)
@@ -244,12 +280,12 @@ const leafConditions = [
 	}),
 ] as const;
 
-const leafCondition = z.discriminatedUnion("conditionType", leafConditions);
+const leafCondition = z.discriminatedUnion("condition_type", leafConditions);
 
-const condition = z.discriminatedUnion("conditionType", [
+const condition = z.discriminatedUnion("condition_type", [
 	...leafConditions,
 	z.strictObject({
-		conditionType: z.literal("compound"),
+		condition_type: z.literal("compound"),
 		operator: operatorsOf(
 			"compound",
 			'"and": every condition of the group holds; "or": any of them. An empty group matches every transaction.',
@@ -261,27 +297,27 @@ const condition = z.discriminatedUnion("conditionType", [
 	}),
 ]);
 
-const action = z.discriminatedUnion("actionType", [
+const action = z.discriminatedUnion("action_type", [
 	z.strictObject({
-		actionType: z.literal("set_transaction_category"),
+		action_type: z.literal("set_transaction_category"),
 		value: z.string().describe("A category id from get_categories or create_category."),
 	}),
 	z.strictObject({
-		actionType: z.literal("set_transaction_merchant"),
+		action_type: z.literal("set_transaction_merchant"),
 		value: z.string().describe("A merchant id from get_merchants or create_merchant."),
 	}),
 	z.strictObject({
-		actionType: z.literal("set_transaction_tags"),
+		action_type: z.literal("set_transaction_tags"),
 		value: z
 			.string()
 			.describe("One tag id from get_tags or create_tag, added to the tags the transaction keeps."),
 	}),
 	z.strictObject({
-		actionType: z.literal("set_transaction_name"),
+		action_type: z.literal("set_transaction_name"),
 		value: z.string().describe("The new label, replacing the whole label."),
 	}),
 	z.strictObject({
-		actionType: z.literal("replace_in_transaction_name"),
+		action_type: z.literal("replace_in_transaction_name"),
 		value: z
 			.string()
 			.describe(
@@ -294,11 +330,11 @@ const action = z.discriminatedUnion("actionType", [
 			),
 	}),
 	z.strictObject({
-		actionType: z.literal("exclude_transaction"),
+		action_type: z.literal("exclude_transaction"),
 		value: z.null().optional().describe("None: the transaction is left out of reports."),
 	}),
 	z.strictObject({
-		actionType: z.literal("set_as_transfer_or_payment"),
+		action_type: z.literal("set_as_transfer_or_payment"),
 		value: z
 			.string()
 			.describe(
@@ -317,7 +353,7 @@ const ruleFields = {
 		.nullable()
 		.optional()
 		.describe("A short name; without one, the list shows the conditions."),
-	effectiveDate: z
+	effective_date: z
 		.string()
 		.nullable()
 		.optional()
@@ -334,48 +370,80 @@ const ruleFields = {
 		.describe("One at least, each type once, applied in order to every matching transaction."),
 };
 
-export const ruleToolInput = z.strictObject(ruleFields);
+type ToolRule = z.output<z.ZodObject<typeof ruleFields>>;
+type ToolCondition = ToolRule["conditions"][number];
+
+/** A condition as the rule form sends it. */
+function conditionInputOf(drafted: ToolCondition): RuleInput["conditions"][number] {
+	if (drafted.condition_type === "compound") {
+		return {
+			conditionType: drafted.condition_type,
+			operator: drafted.operator,
+			conditions: drafted.conditions.map(conditionInputOf),
+		};
+	}
+
+	return {
+		conditionType: drafted.condition_type,
+		operator: drafted.operator,
+		value: drafted.value,
+	};
+}
+
+/** The rule form's shape, which `createRule` and `updateRule` parse, from the tool's names. */
+function ruleInputOf({ name, effective_date, conditions, actions }: ToolRule): RuleInput {
+	return {
+		name,
+		effectiveDate: effective_date,
+		conditions: conditions.map(conditionInputOf),
+		actions: actions.map(({ action_type, ...rest }) => ({ actionType: action_type, ...rest })),
+	};
+}
+
+export const ruleToolInput = z.strictObject(ruleFields).transform(ruleInputOf);
 
 const ruleId = z.string().min(1).describe("A rule id from get_rules or create_rule.");
 
-export const updateRuleInput = z.strictObject({ ruleId, ...ruleFields });
+export const updateRuleInput = z
+	.strictObject({ rule_id: ruleId, ...ruleFields })
+	.transform(({ rule_id, ...rule }) => ({ ruleId: rule_id, rule: ruleInputOf(rule) }));
 
-export const ruleIdInput = z.strictObject({ ruleId });
+export const ruleIdInput = z.strictObject({ rule_id: ruleId });
 
 export const setRuleEnabledInput = z.strictObject({
-	ruleId,
+	rule_id: ruleId,
 	enabled: z.boolean().describe("false stops the rule; what it wrote stays."),
 });
 
 /** `preview_rule`: a saved rule, a draft, or every enabled rule when neither is given. */
 export const previewRuleInput = z
 	.strictObject({
-		ruleId: ruleId.optional(),
+		rule_id: ruleId.optional(),
 		rule: ruleToolInput.optional().describe("A draft in create_rule's shape, not saved."),
 	})
 	.superRefine((value, context) => {
-		if (value.ruleId !== undefined && value.rule !== undefined) {
+		if (value.rule_id !== undefined && value.rule !== undefined) {
 			context.addIssue({ code: "custom", path: ["rule"], message: "rule_id_or_rule" });
 		}
 	});
 
 export const applyRulesInput = z.strictObject({
-	ruleId: ruleId
+	rule_id: ruleId
 		.optional()
 		.describe("The rule to apply, enabled or not; absent for every enabled rule."),
-	expectedChanged: z
+	expected_changed: z
 		.number()
 		.int()
 		.min(0)
 		.describe(
-			"The changed count preview_rule gave for the same ruleId: nothing is written if it differs now.",
+			"The changed count preview_rule gave for the same rule_id: nothing is written if it differs now.",
 		),
 });
 
 export const createCategoryInput = createCategorySchema
 	.pick({ name: true, kind: true })
 	.extend({
-		parentId: z
+		parent_id: z
 			.string()
 			.min(1)
 			.optional()
@@ -406,15 +474,15 @@ const tagId = z.string().min(1).describe("A tag id from get_tags or create_tag."
 export const updateTransactionInput = z
 	.strictObject({
 		id: transactionIdInput.shape.id,
-		categoryId: categoryId
+		category_id: categoryId
 			.nullable()
 			.optional()
 			.describe("A category id; null leaves it uncategorised."),
-		merchantId: merchantId
+		merchant_id: merchantId
 			.nullable()
 			.optional()
 			.describe("A merchant id; null removes the merchant."),
-		tagIds: z
+		tag_ids: z
 			.array(tagId)
 			.optional()
 			.describe("The whole set of tag ids, replacing the tags it carries; [] removes them all."),
@@ -423,7 +491,7 @@ export const updateTransactionInput = z
 			.nullable()
 			.optional()
 			.describe("The notes, replacing them; null or empty removes them."),
-		label: z.string().optional().describe("The new label, replacing the whole label."),
+		name: z.string().optional().describe("The new label, replacing the whole label."),
 		excluded: z
 			.boolean()
 			.optional()
@@ -432,7 +500,20 @@ export const updateTransactionInput = z
 	.refine(
 		(value) => Object.entries(value).some(([key, field]) => key !== "id" && field !== undefined),
 		{ message: "empty_patch" },
-	);
+	)
+	.transform(({ id, category_id, merchant_id, tag_ids, notes, name, excluded }) => ({
+		id,
+		patch: {
+			categoryId: category_id,
+			merchantId: merchant_id,
+			tagIds: tag_ids,
+			notes,
+			label: name,
+			excluded,
+		},
+	}));
+
+const bulkPatch = bulkPatchSchema.shape;
 
 /**
  * `bulk_update_transactions`: the bulk bar's patch on up to 200 ids, or on
@@ -449,8 +530,8 @@ export const bulkUpdateTransactionsInput = z
 			),
 		filter: groupTransactionsInput
 			.optional()
-			.describe("get_transactions' filter, without page or pageSize; without ids."),
-		expectedCount: z
+			.describe("get_transactions' filter, without page or page_size; without ids."),
+		expected_count: z
 			.number()
 			.int()
 			.min(0)
@@ -459,40 +540,62 @@ export const bulkUpdateTransactionsInput = z
 				"Required with filter, refused with ids: the total get_transactions gave for the same filter, shown to the owner. Nothing is written if the filter matches another count now.",
 			),
 		// Strict: a misspelt key would otherwise be dropped, and the patch would change less than asked.
-		patch: bulkPatchSchema
-			.strict()
+		patch: z
+			.strictObject({
+				category_id: bulkPatch.categoryId,
+				merchant_id: bulkPatch.merchantId,
+				add_tag_ids: bulkPatch.addTagIds,
+				excluded: bulkPatch.excluded,
+			})
+			// The bulk bar's checks, under the same codes.
+			.refine((patch) => Object.values(patch).some((value) => value !== undefined), {
+				message: "empty_patch",
+			})
 			.describe(
-				"At least one of: categoryId (null leaves them uncategorised), merchantId (null removes it), addTagIds (tag ids added beside those each carries, never removing one), excluded.",
-			),
+				"At least one of: category_id (null leaves them uncategorised), merchant_id (null removes it), add_tag_ids (tag ids added beside those each carries, never removing one), excluded.",
+			)
+			.transform(({ category_id, merchant_id, add_tag_ids, excluded }) => ({
+				...(category_id === undefined ? {} : { categoryId: category_id }),
+				...(merchant_id === undefined ? {} : { merchantId: merchant_id }),
+				...(add_tag_ids === undefined ? {} : { addTagIds: add_tag_ids }),
+				...(excluded === undefined ? {} : { excluded }),
+			})),
 	})
 	.superRefine((value, context) => {
 		if ((value.ids === undefined) === (value.filter === undefined)) {
 			context.addIssue({ code: "custom", path: ["ids"], message: "ids_or_filter" });
 		}
 
-		if (value.filter !== undefined && value.expectedCount === undefined) {
-			context.addIssue({ code: "custom", path: ["expectedCount"], message: "required" });
+		if (value.filter !== undefined && value.expected_count === undefined) {
+			context.addIssue({ code: "custom", path: ["expected_count"], message: "required" });
 		}
 
-		if (value.ids !== undefined && value.expectedCount !== undefined) {
-			context.addIssue({ code: "custom", path: ["expectedCount"], message: "filter_only" });
+		if (value.ids !== undefined && value.expected_count !== undefined) {
+			context.addIssue({ code: "custom", path: ["expected_count"], message: "filter_only" });
 		}
 	});
 
-/** The names « Réglages » takes: one rule for creating and renaming. */
-export const renameCategoryInput = z.strictObject({
-	categoryId,
+/**
+ * The names « Réglages » takes: one rule for creating and renaming. Sure's
+ * `update_category` and `update_tag` name their fields so; a tag is found by
+ * its id here, where Sure finds it by `name`.
+ */
+export const updateCategoryInput = z.strictObject({
+	id: categoryId,
 	name: createCategorySchema.shape.name,
 });
 
-export const renameMerchantInput = z.strictObject({ merchantId, ...merchantSchema.shape });
+export const renameMerchantInput = z.strictObject({
+	merchant_id: merchantId,
+	...merchantSchema.shape,
+});
 
-export const renameTagInput = z.strictObject({ tagId, ...tagSchema.shape });
+export const updateTagInput = z.strictObject({ id: tagId, new_name: tagSchema.shape.name });
 
 /** `get_budget`: a month's budget, and up to eleven months before it, as Sure's `GetBudget`. */
 export const budgetInput = z.strictObject({
 	month: monthSchema.optional().describe("YYYY-MM; the current month when absent."),
-	priorMonths: z
+	prior_months: z
 		.number()
 		.int()
 		.min(0)
@@ -518,17 +621,17 @@ const budgetAmount = (what: string) =>
  */
 export const updateBudgetInput = z.strictObject({
 	month: monthSchema.describe("YYYY-MM: the month to set."),
-	budgetedSpending: budgetAmount("The month's planned spending"),
-	expectedIncome: budgetAmount("The month's expected income"),
+	budgeted_spending: budgetAmount("The month's planned spending"),
+	expected_income: budgetAmount("The month's expected income"),
 	categories: z
 		.array(
 			z.strictObject({
-				categoryId: categoryId
+				category_id: categoryId
 					.nullable()
 					.describe(
-						"An expense category id from get_categories or get_budget. null, « Sans catégorie », is refused: it holds what budgetedSpending leaves unallocated.",
+						"An expense category id from get_categories or get_budget. null, « Sans catégorie », is refused: it holds what budgeted_spending leaves unallocated.",
 					),
-				budgeted: z
+				amount: z
 					.string()
 					.describe(
 						'The amount, a decimal string such as "250.00"; "" or "0" lets a subcategory share its parent\'s. A parent\'s amount is never below what its subcategories hold.',
@@ -551,13 +654,13 @@ export const getBillsInput = z.strictObject({
 		.describe(
 			'"active": followed by the owner; "suggested": found by Archant, awaiting the owner, not a bill yet; "paused": set aside; "ended": dismissed or finished; "all": every one.',
 		),
-	paymentState: z
+	payment_state: z
 		.enum(BILL_PAYMENT_STATES)
 		.optional()
 		.describe(
 			"The current occurrence's state: overdue, due (within three days of its date), upcoming, partial (partly paid) or paid.",
 		),
-	billType: z
+	bill_type: z
 		.enum(BILL_TYPES)
 		.optional()
 		.describe('"income" is a declared income, not something to pay.'),
@@ -568,7 +671,7 @@ export const getBillsInput = z.strictObject({
 		.max(200)
 		.optional()
 		.describe("Text searched in the name, the merchant and the label, case aside."),
-	dueWithinDays: z
+	due_within_days: z
 		.number()
 		.int()
 		.min(1)
@@ -579,11 +682,11 @@ export const getBillsInput = z.strictObject({
 		),
 });
 
-export const billIdInput = z.strictObject({ billId });
+export const billIdInput = z.strictObject({ bill_id: billId });
 
 /** `get_bill_audit`: how far back price changes reach. */
 export const billAuditInput = z.strictObject({
-	lookbackMonths: z
+	lookback_months: z
 		.number()
 		.int()
 		.min(1)
@@ -618,22 +721,22 @@ const paymentUrlInput = z
 export const createBillInput = z.strictObject({
 	name: z.string().describe("What the owner calls the bill."),
 	amount: billAmount("The amount of each occurrence"),
-	firstDueOn: z.iso
+	first_due_on: z.iso
 		.date()
 		.describe("YYYY-MM-DD: the first due date; its day, weekday and month set the schedule's."),
-	accountId,
+	account_id: accountId,
 	frequency: frequencyPreset.default("monthly").describe("How often, monthly by default."),
-	isIncome: z
+	is_income: z
 		.boolean()
 		.default(false)
 		.describe("true for an income such as a salary: money coming in, with no type or category."),
-	billType: billTypeInput.optional().describe('"bill" by default; ignored for an income.'),
-	categoryId: z
+	bill_type: billTypeInput.optional().describe('"bill" by default; ignored for an income.'),
+	category_id: z
 		.string()
 		.min(1)
 		.optional()
 		.describe("A category id from get_categories; ignored for an income."),
-	entryId: z
+	entry_id: z
 		.string()
 		.min(1)
 		.optional()
@@ -641,11 +744,11 @@ export const createBillInput = z.strictObject({
 			"The transaction an undeclared candidate came from, as get_bill_audit gives it: the bill then matches its bank lines.",
 		),
 	autopay: z.boolean().optional().describe("Paid by direct debit, without the owner acting."),
-	paymentUrl: paymentUrlInput.optional(),
+	payment_url: paymentUrlInput.optional(),
 	notes: z.string().optional(),
 });
 
-const DAY_FIELDS = ["dueDayOfMonth", "weekday", "monthOfYear"] as const;
+const DAY_FIELDS = ["due_day_of_month", "weekday", "month_of_year"] as const;
 
 /**
  * `update_bill`: the edit dialog's fields and a status, by id. A day without
@@ -654,19 +757,19 @@ const DAY_FIELDS = ["dueDayOfMonth", "weekday", "monthOfYear"] as const;
  */
 export const updateBillInput = z
 	.strictObject({
-		billId,
+		bill_id: billId,
 		name: z.string().optional().describe("The new name; empty shows the merchant or label again."),
 		amount: billAmount(
 			"The new amount, from now on: occurrences already due keep the one they had",
 		).optional(),
-		accountId: accountId.optional(),
-		categoryId: z
+		account_id: accountId.optional(),
+		category_id: z
 			.string()
 			.min(1)
 			.nullable()
 			.optional()
 			.describe("A category id from get_categories; null clears it."),
-		billType: billTypeInput.optional().describe("Never to or from an income."),
+		bill_type: billTypeInput.optional().describe("Never to or from an income."),
 		status: z
 			.enum(["active", "paused"])
 			.optional()
@@ -674,9 +777,9 @@ export const updateBillInput = z
 		frequency: frequencyPreset
 			.optional()
 			.describe(
-				"A new cadence, pinned against detection; dueDayOfMonth, weekday or monthOfYear set its day.",
+				"A new cadence, pinned against detection; due_day_of_month, weekday or month_of_year set its day.",
 			),
-		dueDayOfMonth: z
+		due_day_of_month: z
 			.number()
 			.int()
 			.min(-1)
@@ -691,13 +794,13 @@ export const updateBillInput = z
 			.max(6)
 			.optional()
 			.describe("0 is Sunday; only with frequency."),
-		monthOfYear: z.number().int().min(1).max(12).optional().describe("Only with frequency."),
+		month_of_year: z.number().int().min(1).max(12).optional().describe("Only with frequency."),
 		autopay: z.boolean().optional(),
-		paymentUrl: paymentUrlInput.nullable().optional().describe("null or empty removes it."),
+		payment_url: paymentUrlInput.nullable().optional().describe("null or empty removes it."),
 		notes: z.string().nullable().optional().describe("null or empty removes them."),
 	})
 	.superRefine((value, context) => {
-		if (Object.entries(value).every(([key, field]) => key === "billId" || field === undefined)) {
+		if (Object.entries(value).every(([key, field]) => key === "bill_id" || field === undefined)) {
 			context.addIssue({ code: "custom", message: "empty_patch" });
 		}
 
@@ -710,8 +813,8 @@ export const updateBillInput = z
 
 /** `record_bill_payment`: an open occurrence, the current one by default, in full or in part. */
 export const recordBillPaymentInput = z.strictObject({
-	billId,
-	occurrenceDueOn: z.iso
+	bill_id: billId,
+	occurrence_due_on: z.iso
 		.date()
 		.optional()
 		.describe(
@@ -722,7 +825,7 @@ export const recordBillPaymentInput = z.strictObject({
 		.describe(
 			'A partial payment, a positive decimal string such as "100.00", at most what remains; absent settles what remains.',
 		),
-	paidOn: z.iso.date().optional().describe("YYYY-MM-DD: when it was paid; today when absent."),
+	paid_on: z.iso.date().optional().describe("YYYY-MM-DD: when it was paid; today when absent."),
 });
 
 const transferTransactionId = z
@@ -731,24 +834,24 @@ const transferTransactionId = z
 	.describe("A transaction id from get_transactions, in no transfer.");
 
 /** `get_transfer_candidates`: what « Rapprocher un virement » lists for a transaction. */
-export const transferCandidatesInput = z.strictObject({ transactionId: transferTransactionId });
+export const transferCandidatesInput = z.strictObject({ transaction_id: transferTransactionId });
 
 /** `pair_transfer`: the body of `POST /api/transfers`, as the picker sends it. */
 export const pairTransferInput = z.strictObject({
-	transactionId: transferTransactionId,
-	counterpartId: z
+	transaction_id: transferTransactionId,
+	counterpart_id: z
 		.string()
 		.min(1)
-		.describe("A candidate's id, as get_transfer_candidates lists it for transactionId."),
+		.describe("A candidate's id, as get_transfer_candidates lists it for transaction_id."),
 });
 
-/** `unpair_transfer`: « Dissocier », or « Ne plus proposer » with `neverPropose`. */
+/** `unpair_transfer`: « Dissocier », or « Ne plus proposer » with `never_propose`. */
 export const unpairTransferInput = z.strictObject({
-	transferId: z
+	transfer_id: z
 		.string()
 		.min(1)
 		.describe("A transfer's id, as get_transactions or get_transaction gives it in transfer.id."),
-	neverPropose: z
+	never_propose: z
 		.boolean()
 		.default(false)
 		.describe(
@@ -762,14 +865,14 @@ export const unpairTransferInput = z.strictObject({
  */
 export const valuationsInput = z
 	.strictObject({
-		accountId: accountId
+		account_id: accountId
 			.optional()
 			.describe("Only this account's; every active account's without it."),
-		startDate: z.iso
+		start_date: z.iso
 			.date()
 			.optional()
 			.describe("Only valuations on or after this date, YYYY-MM-DD."),
-		endDate: z.iso
+		end_date: z.iso
 			.date()
 			.optional()
 			.describe("Only valuations on or before this date, YYYY-MM-DD."),
@@ -779,11 +882,11 @@ export const valuationsInput = z
 	})
 	.superRefine((value, context) => {
 		if (
-			value.startDate !== undefined &&
-			value.endDate !== undefined &&
-			value.endDate < value.startDate
+			value.start_date !== undefined &&
+			value.end_date !== undefined &&
+			value.end_date < value.start_date
 		) {
-			context.addIssue({ code: "custom", path: ["endDate"], message: "before_start_date" });
+			context.addIssue({ code: "custom", path: ["end_date"], message: "before_start_date" });
 		}
 	});
 
@@ -794,13 +897,13 @@ export const valuationsInput = z
  * its citation.
  */
 export const recordValuationInput = z.strictObject({
-	accountId,
+	account_id: accountId,
 	date: z.iso
 		.date()
 		.describe(
 			"YYYY-MM-DD: the day whose end-of-day balance this is, after the opening date and not after today.",
 		),
-	balance: z
+	amount: z
 		.string()
 		.describe(
 			'The stored balance, a decimal string such as "175000.00" in the account\'s currency: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.',
@@ -838,20 +941,20 @@ export const createGoalInput = z
 			.describe(
 				'"one_off" saves toward a target, by a date if one is given; "maintained" is a reserve kept full, such as an emergency fund, with no date.',
 			),
-		targetAmount: z
+		target_amount: z
 			.string()
 			.optional()
 			.describe(
-				'The target, a positive decimal string such as "5000.00" in the accounts\' currency. Give it, or targetMonths, not both.',
+				'The target, a positive decimal string such as "5000.00" in the accounts\' currency. Give it, or target_months, not both.',
 			),
-		targetMonths: z
+		target_months: z
 			.number()
 			.int()
 			.optional()
 			.describe(
 				`A reserve only: its target is that many months of the household's median monthly expenses, 1 to ${GOAL_TARGET_MONTHS_MAX}, followed as they move, and only for accounts in the reporting currency.`,
 			),
-		targetDate: z.iso
+		target_date: z.iso
 			.date()
 			.optional()
 			.describe("YYYY-MM-DD: when the owner wants to reach the target; refused for a reserve."),
@@ -859,10 +962,10 @@ export const createGoalInput = z
 		accounts: z
 			.array(
 				z.strictObject({
-					accountId: accountId.describe(
+					account_id: accountId.describe(
 						"An active current, savings or investment account id from get_accounts, all in one currency, which becomes the goal's.",
 					),
-					allocatedAmount: z
+					allocated_amount: z
 						.string()
 						.optional()
 						.describe(
@@ -873,22 +976,22 @@ export const createGoalInput = z
 			.describe("The accounts that hold the money, at least one."),
 	})
 	.superRefine((value, context) => {
-		if (value.targetAmount === undefined && value.targetMonths === undefined) {
-			context.addIssue({ code: "custom", path: ["targetAmount"], message: "target_required" });
+		if (value.target_amount === undefined && value.target_months === undefined) {
+			context.addIssue({ code: "custom", path: ["target_amount"], message: "target_required" });
 		}
 
-		if (value.targetAmount !== undefined && value.targetMonths !== undefined) {
-			context.addIssue({ code: "custom", path: ["targetMonths"], message: "one_target_only" });
+		if (value.target_amount !== undefined && value.target_months !== undefined) {
+			context.addIssue({ code: "custom", path: ["target_months"], message: "one_target_only" });
 		}
 
 		// The dialog hides the date of a reserve and the service drops it: the
 		// owner would agree to a date nothing keeps.
-		if (value.targetDate !== undefined && value.kind === "maintained") {
-			context.addIssue({ code: "custom", path: ["targetDate"], message: "reserve_has_no_date" });
+		if (value.target_date !== undefined && value.kind === "maintained") {
+			context.addIssue({ code: "custom", path: ["target_date"], message: "reserve_has_no_date" });
 		}
 
-		if (value.targetMonths !== undefined && value.kind !== "maintained") {
-			context.addIssue({ code: "custom", path: ["targetMonths"], message: "reserve_only" });
+		if (value.target_months !== undefined && value.kind !== "maintained") {
+			context.addIssue({ code: "custom", path: ["target_months"], message: "reserve_only" });
 		}
 	});
 
@@ -903,11 +1006,11 @@ const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
  * find the line instead of recording it twice.
  */
 export const createTransactionInput = z.strictObject({
-	accountId,
+	account_id: accountId,
 	date: z.iso
 		.date()
 		.describe("YYYY-MM-DD, after the account's opening date and at most a year from today."),
-	label: z.string().describe("The label the line shows, such as « Marché du samedi »."),
+	name: z.string().describe("The label the line shows, such as « Marché du samedi »."),
 	amount: z
 		.string()
 		.describe(
@@ -924,21 +1027,21 @@ export const createTransactionInput = z.strictObject({
 		.optional()
 		.describe("The account's ISO 4217 currency, which a line always has; another one is refused."),
 	notes: z.string().nullable().optional(),
-	categoryId: categoryId.nullable().optional(),
-	merchantId: merchantId.nullable().optional(),
+	category_id: categoryId.nullable().optional(),
+	merchant_id: merchantId.nullable().optional(),
 	// Repeats are dropped before the cap counts, as the sheet's.
-	tagIds: z
+	tag_ids: z
 		.array(tagId)
 		.transform((ids) => [...new Set(ids)])
 		.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
 		.optional(),
-	externalId: z
+	external_id: z
 		.string()
 		.min(1)
 		.max(200)
 		.optional()
 		.describe(
-			"An id of your own for the line, such as a statement row's: called again with the same externalId and source on this account, it records nothing and returns the line with created false.",
+			"An id of your own for the line, such as a statement row's: called again with the same external_id and source on this account, it records nothing and returns the line with created false.",
 		),
 	source: z
 		.string()
@@ -949,7 +1052,13 @@ export const createTransactionInput = z.strictObject({
 		// pairs name the same line.
 		.regex(/^[^:]*$/u)
 		.default("mcp")
-		.describe('Where externalId comes from, "mcp" by default; ignored without externalId.'),
+		.describe('Where external_id comes from, "mcp" by default; ignored without external_id.'),
+	user_modified: z
+		.boolean()
+		.optional()
+		.describe(
+			"Sure's flag keeping a later bank sync from overwriting the line. Accepted and changes nothing: a sync never rewrites a line it did not bring, and every field given here is locked.",
+		),
 });
 
 /**
@@ -958,7 +1067,7 @@ export const createTransactionInput = z.strictObject({
  */
 export const deleteTransactionInput = z.strictObject({
 	id: transactionIdInput.shape.id,
-	accountId: accountId.describe("Its account id, as get_transaction gave it."),
+	account_id: accountId.describe("Its account id, as get_transaction gave it."),
 	date: z.iso.date().describe("Its date, YYYY-MM-DD, as get_transaction gave it."),
 	amount: z
 		.string()
@@ -979,7 +1088,7 @@ export const MAX_ASSISTANT_FILE_BYTES = 1024 * 1024;
  * would lose the encoding of a Windows-1252 export.
  */
 export const importBankStatementInput = z.strictObject({
-	accountId: accountId.describe("The account the statement is for, an id from get_accounts."),
+	account_id: accountId.describe("The account the statement is for, an id from get_accounts."),
 	filename: z
 		.string()
 		.trim()
@@ -988,7 +1097,7 @@ export const importBankStatementInput = z.strictObject({
 		.describe(
 			'The file\'s name with its extension, such as "releve.ofx": .ofx, .qfx, .qif or .csv, which helps tell the format.',
 		),
-	contentBase64: z
+	content_base64: z
 		.base64()
 		.transform((content) => new Uint8Array(Buffer.from(content, "base64")))
 		.describe(
@@ -999,7 +1108,7 @@ export const importBankStatementInput = z.strictObject({
 const importId = z
 	.string()
 	.min(1)
-	.describe("The importId import_bank_statement gave, of an import not confirmed yet.");
+	.describe("The import_id import_bank_statement gave, of an import not confirmed yet.");
 
 /**
  * A CSV column mapping as `preview_import` takes it: the dialog's « Colonnes »
@@ -1010,13 +1119,13 @@ const mappingField = csvMappingSchema.shape;
 const csvMappingInput = z
 	.strictObject({
 		delimiter: mappingField.delimiter.describe('The character between fields: ";", "," or a tab.'),
-		skipRows: mappingField.skipRows.describe(
+		skip_rows: mappingField.skipRows.describe(
 			"Lines dropped at the top before the header or the first record: an account preamble.",
 		),
-		hasHeader: mappingField.hasHeader.describe(
+		has_header: mappingField.hasHeader.describe(
 			"Whether the first record after the skipped lines names the columns.",
 		),
-		dateFormat: mappingField.dateFormat.describe(
+		date_format: mappingField.dateFormat.describe(
 			"How the date column reads: DD day, MM month, YY or YYYY year.",
 		),
 		decimal: mappingField.decimal.describe(
@@ -1046,29 +1155,29 @@ const csvMappingInput = z
 
 /** `preview_import`: the dialog's « Colonnes » and « Aperçu » choices, through `previewImport`. */
 export const previewImportInput = z.strictObject({
-	importId,
+	import_id: importId,
 	csv: csvMappingInput
 		.optional()
 		.describe("A CSV file's column mapping; absent, the one in use stays."),
 	qif: z
 		.strictObject({
-			dateOrder: z
+			date_order: z
 				.enum(QIF_DATE_ORDERS)
 				.describe('"day-first" reads 03/04/2026 as 3 April, "month-first" as 4 March.'),
 		})
 		.optional()
 		.describe("A QIF file's date order; absent, the one in use stays."),
-	moveOpeningDate: importPreviewSchema.shape.moveOpeningDate
+	move_opening_date: importPreviewSchema.shape.moveOpeningDate
 		.default(null)
 		.describe(
-			"YYYY-MM-DD, the openingSuggestion a preview gave: moves the account's opening date back so the lines refused before it go in. null or absent keeps the opening date.",
+			"YYYY-MM-DD, the opening_suggestion a preview gave: moves the account's opening date back so the lines refused before it go in. null or absent keeps the opening date.",
 		),
 });
 
 /** `confirm_import`: the import and the counts of the preview the owner agreed to. */
 export const confirmImportInput = z.strictObject({
-	importId,
-	expectedCounts: z
+	import_id: importId,
+	expected_counts: z
 		.strictObject({
 			created: z.number().int().min(0),
 			present: z.number().int().min(0),
