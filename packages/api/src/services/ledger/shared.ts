@@ -274,6 +274,7 @@ export const counterpartIdOf = sql`coalesce(${asOutflow.inflowTransactionId}, ${
 export const transferColumns = {
 	transferId: sql<string | null>`coalesce(${asOutflow.id}, ${asInflow.id})`,
 	transferKind: sql<TransferKind | null>`coalesce(${asOutflow.kind}, ${asInflow.kind})`,
+	counterpartTransactionId: counterpartEntry.id,
 	counterpartAccountId: counterpartAccount.id,
 	counterpartAccountName: counterpartAccount.name,
 };
@@ -281,6 +282,7 @@ export const transferColumns = {
 export type TransferColumns = {
 	transferId: string | null;
 	transferKind: TransferKind | null;
+	counterpartTransactionId: string | null;
 	counterpartAccountId: string | null;
 	counterpartAccountName: string | null;
 };

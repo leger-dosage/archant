@@ -27,6 +27,7 @@ const READ_TOOLS = [
 	"get_transactions",
 	"get_transaction",
 	"group_transactions_by_label",
+	"get_transfer_candidates",
 	"get_balance_sheet",
 	"get_income_statement",
 	"get_budget",
@@ -237,7 +238,7 @@ async function connectThenDisconnect(
 		page.getByLabel("Lire vos comptes, vos opérations, vos règles, vos budgets et vos factures"),
 	).toBeChecked();
 	const write = page.getByLabel(
-		"Créer et modifier vos règles, classer vos opérations, définir vos budgets, gérer vos factures",
+		"Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, gérer vos factures",
 	);
 	await expect(write).toBeChecked();
 	await write.uncheck();

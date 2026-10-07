@@ -389,25 +389,36 @@ export async function matchTransfer(
 	);
 }
 
+/** The two sides a transfer joined, as an unpair gives them back. */
+export type TransferSides = Pick<Transfer, "outflowTransactionId" | "inflowTransactionId">;
+
+const sidesColumns = {
+	outflowTransactionId: transfers.outflowTransactionId,
+	inflowTransactionId: transfers.inflowTransactionId,
+};
+
 /**
  * Deletes a transfer, both sides becoming standard transactions again, their
- * category, locks and tags as they were. Throws `NOT_FOUND` for an unknown id.
+ * category, locks and tags as they were, and returns the two sides. Throws
+ * `NOT_FOUND` for an unknown id.
  */
 export async function unmatchTransfer(
 	deps: ServiceDeps,
 	transferId: string,
 	_options: { origin: Origin },
-): Promise<void> {
-	await deps.db.transaction(
+): Promise<TransferSides> {
+	return deps.db.transaction(
 		async (tx) => {
-			const deleted = await tx
+			const [deleted] = await tx
 				.delete(transfers)
 				.where(eq(transfers.id, transferId))
-				.returning({ id: transfers.id });
+				.returning(sidesColumns);
 
-			if (deleted.length === 0) {
+			if (deleted === undefined) {
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
 			}
+
+			return deleted;
 		},
 		{ behavior: "immediate" },
 	);
@@ -416,20 +427,20 @@ export async function unmatchTransfer(
 /**
  * Undoes a transfer, as `unmatchTransfer`, and records its pair so that no
  * candidate search, by hand or automatic, offers it again. There is no way
- * back: the pair stays refused until one side is deleted. Throws `NOT_FOUND`
- * for an unknown id.
+ * back: the pair stays refused until one side is deleted. Returns the two
+ * sides; throws `NOT_FOUND` for an unknown id.
  */
 export async function rejectTransfer(
 	deps: ServiceDeps,
 	transferId: string,
 	_options: { origin: Origin },
-): Promise<void> {
-	await deps.db.transaction(
+): Promise<TransferSides> {
+	return deps.db.transaction(
 		async (tx) => {
-			const [deleted] = await tx.delete(transfers).where(eq(transfers.id, transferId)).returning({
-				outflowTransactionId: transfers.outflowTransactionId,
-				inflowTransactionId: transfers.inflowTransactionId,
-			});
+			const [deleted] = await tx
+				.delete(transfers)
+				.where(eq(transfers.id, transferId))
+				.returning(sidesColumns);
 
 			if (deleted === undefined) {
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
@@ -440,6 +451,8 @@ export async function rejectTransfer(
 				...deleted,
 				createdAt: Date.now(),
 			});
+
+			return deleted;
 		},
 		{ behavior: "immediate" },
 	);

@@ -60,6 +60,7 @@ export function TransferBlock({
 					onChange({
 						id: saved.id,
 						kind: saved.kind,
+						counterpartTransactionId: candidate.id,
 						counterpartAccountId: candidate.accountId,
 						counterpartAccountName: candidate.accountName,
 					});

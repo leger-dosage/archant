@@ -2030,7 +2030,7 @@
 		"returnsTo": "Il recevra votre réponse sur {{host}}.",
 		"scopes": "Il pourra :",
 		"read": "Lire vos comptes, vos opérations, vos règles, vos budgets et vos factures",
-		"write": "Créer et modifier vos règles, classer vos opérations, définir vos budgets, gérer vos factures",
+		"write": "Créer et modifier vos règles, classer vos opérations, rapprocher vos virements, définir vos budgets, gérer vos factures",
 		"revoke": "Vous pourrez le déconnecter à tout moment dans Réglages › Assistants IA.",
 		"allow": "Autoriser",
 		"deny": "Refuser"

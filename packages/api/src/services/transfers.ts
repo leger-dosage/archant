@@ -1,6 +1,6 @@
 import type { TransferRequest } from "../schemas/transfers.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { TransferCandidate } from "./ledger/transfers.ts";
+import type { TransferCandidate, TransferSides } from "./ledger/transfers.ts";
 
 import type { Transfer } from "@archant/data/types";
 
@@ -24,16 +24,15 @@ export async function createTransfer(deps: ServiceDeps, body: TransferRequest): 
 	return matchTransfer(deps, body.transactionId, body.counterpartId, { origin: "user" });
 }
 
-/** Undoes a transfer, both sides becoming standard transactions again. */
-export async function deleteTransfer(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	await unmatchTransfer(deps, id, { origin: "user" });
+/** A transfer undone, with the two sides it joined. */
+type UndoneTransfer = TransferSides & { id: string };
 
-	return { id };
+/** Undoes a transfer, both sides becoming standard transactions again. */
+export async function deleteTransfer(deps: ServiceDeps, id: string): Promise<UndoneTransfer> {
+	return { id, ...(await unmatchTransfer(deps, id, { origin: "user" })) };
 }
 
 /** Undoes a transfer and refuses its pair for good, on the user's behalf. */
-export async function rejectTransfer(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	await rejectLedgerTransfer(deps, id, { origin: "user" });
-
-	return { id };
+export async function rejectTransfer(deps: ServiceDeps, id: string): Promise<UndoneTransfer> {
+	return { id, ...(await rejectLedgerTransfer(deps, id, { origin: "user" })) };
 }
