@@ -98,6 +98,7 @@ context:
 - The bulk route's payload is now `{ updated, changed }`; the bulk bar still reads `updated` only.
 
 ## Spec Change Log
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `update_transaction` takes Sure's `name`, `category_id`, `merchant_id` and `tag_ids`; `bulk_update_transactions` takes `expected_count` and a `patch` of `category_id`, `merchant_id`, `add_tag_ids`; `rename_category` and `rename_tag` became Sure's `update_category`, by `id` and `name`, and `update_tag`, by `id` and `new_name` where Sure finds the tag by its current `name`; `rename_merchant`, which Sure lacks, takes `merchant_id`.
 
 ## Review Triage Log
 

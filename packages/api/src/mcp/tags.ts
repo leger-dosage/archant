@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { createTagInput, noToolInput, renameTagInput } from "../schemas/assistants.ts";
+import { createTagInput, noToolInput, updateTagInput } from "../schemas/assistants.ts";
 import { createTag, listTags, renameTag } from "../services/tags.ts";
 import { CREATES, READ_ONLY, REPLACES, defineTool } from "./tool.ts";
 
-const tag = z.object({ id: z.string(), name: z.string(), transactionCount: z.number().int() });
+const tag = z.object({ id: z.string(), name: z.string(), transaction_count: z.number().int() });
 
 export const getTags = defineTool({
 	name: "get_tags",
@@ -14,7 +14,16 @@ export const getTags = defineTool({
 	annotations: READ_ONLY,
 	input: noToolInput,
 	output: z.object({ tags: z.array(tag) }),
-	run: async (deps) => ({ result: { tags: await listTags(deps) }, changedRows: 0 }),
+	run: async (deps) => ({
+		result: {
+			tags: (await listTags(deps)).map(({ id, name, transactionCount }) => ({
+				id,
+				name,
+				transaction_count: transactionCount,
+			})),
+		},
+		changedRows: 0,
+	}),
 });
 
 export const createTagTool = defineTool({
@@ -33,16 +42,17 @@ export const createTagTool = defineTool({
 	},
 });
 
-export const renameTagTool = defineTool({
-	name: "rename_tag",
+export const updateTagTool = defineTool({
+	name: "update_tag",
 	title: "Rename a tag",
 	description:
-		"Renames a tag as « Réglages » does; every transaction carrying it shows the new name. A name another tag holds, case aside, answers VALIDATION_ERROR with name_taken.",
+		"Renames a tag as « Réglages » does, as Sure's update_tag, the tag named by its id from get_tags where Sure takes its current name; every transaction carrying it shows the new name. A name another tag holds, case aside, answers VALIDATION_ERROR on new_name with name_taken.",
 	scope: "archant:write",
 	annotations: REPLACES,
-	input: renameTagInput,
+	fieldPaths: { name: "new_name" },
+	input: updateTagInput,
 	output: z.object({ tag: z.object({ id: z.string(), name: z.string() }) }),
-	run: async (deps, { tagId, name }) => {
+	run: async (deps, { id: tagId, new_name: name }) => {
 		const { id, name: renamed } = await renameTag(deps, tagId, { name });
 
 		return { result: { tag: { id, name: renamed } }, changedRows: 1 };

@@ -25,23 +25,25 @@ const goalOutput = z.object({
 			'For a goal: "behind" its date at the pace of the last 90 days, "on_track", "no_target_date" or "reached"; for a reserve: "funded" or "depleted".',
 		),
 	currency: z.string().describe("Its accounts' currency, that of every amount of the goal."),
-	targetAmount: decimal("The target; for a reserve in months, the months times monthlyExpenses"),
-	targetMode: z.enum(GOAL_TARGET_MODES),
-	targetMonths: z.number().int().nullable().describe("A reserve's months of expenses."),
-	monthlyExpenses: decimal(
+	target_amount: decimal("The target; for a reserve in months, the months times monthly_expenses"),
+	target_mode: z.enum(GOAL_TARGET_MODES),
+	target_months: z.number().int().nullable().describe("A reserve's months of expenses."),
+	monthly_expenses: decimal(
 		"The household's median monthly expenses a reserve in months multiplies",
 	).nullable(),
-	targetDate: z.string().nullable(),
+	target_date: z.string().nullable(),
 	saved: decimal("What its accounts hold for it; for a completed goal, what it held then"),
 	remaining: decimal("What is left to save"),
 	percent: z.number().int(),
-	monthlyNeeded: decimal("What to put aside each month to reach the target by its date").nullable(),
+	monthly_needed: decimal(
+		"What to put aside each month to reach the target by its date",
+	).nullable(),
 	notes: z.string().nullable(),
 	accounts: z.array(
 		z.object({
-			accountId: z.string(),
+			account_id: z.string(),
 			name: z.string(),
-			allocatedAmount: decimal("The fixed amount held for this goal")
+			allocated_amount: decimal("The fixed amount held for this goal")
 				.nullable()
 				.describe(
 					"null: the goal takes the account's whole balance; while it is active or paused, no other goal may.",
@@ -62,22 +64,22 @@ function goalOf(goal: GoalSummary): z.input<typeof goalOutput> {
 		state: goal.state,
 		status: goal.status,
 		currency,
-		targetAmount: money(goal.targetAmount),
-		targetMode: goal.targetMode,
-		targetMonths: goal.targetMonths,
+		target_amount: money(goal.targetAmount),
+		target_mode: goal.targetMode,
+		target_months: goal.targetMonths,
 		// In the reporting currency, which is the goal's: months of expenses are
 		// refused for a goal in any other.
-		monthlyExpenses: goal.monthlyExpenses === null ? null : money(goal.monthlyExpenses),
-		targetDate: goal.targetDate,
+		monthly_expenses: goal.monthlyExpenses === null ? null : money(goal.monthlyExpenses),
+		target_date: goal.targetDate,
 		saved: money(goal.saved),
 		remaining: money(goal.remaining),
 		percent: goal.percent,
-		monthlyNeeded: goal.monthlyNeeded === null ? null : money(goal.monthlyNeeded),
+		monthly_needed: goal.monthlyNeeded === null ? null : money(goal.monthlyNeeded),
 		notes: goal.notes,
 		accounts: goal.accounts.map((account) => ({
-			accountId: account.accountId,
+			account_id: account.accountId,
 			name: account.name,
-			allocatedAmount: account.allocatedAmount === null ? null : money(account.allocatedAmount),
+			allocated_amount: account.allocatedAmount === null ? null : money(account.allocatedAmount),
 			share: money(account.share),
 		})),
 	};
@@ -98,7 +100,7 @@ export const getGoals = defineTool({
 			saved: decimal("What those in the reporting currency hold"),
 			target: decimal("What those in the reporting currency aim for"),
 			behind: z.number().int().describe("The active goals behind their date."),
-			leftOut: z
+			left_out: z
 				.array(z.object({ id: z.string(), name: z.string() }))
 				.describe(
 					"Goals in another currency, left out of saved and target until exchange rates exist: say so to the owner.",
@@ -118,7 +120,7 @@ export const getGoals = defineTool({
 					saved: money(summary.saved),
 					target: money(summary.target),
 					behind: summary.behind,
-					leftOut: summary.leftOut,
+					left_out: summary.leftOut,
 				},
 			},
 			changedRows: 0,
@@ -133,29 +135,32 @@ export const createGoalTool = defineTool({
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createGoalInput,
-	output: goalOutput.extend({
+	output: goalOutput.omit({ id: true }).extend({
+		goal_id: z.string().describe("Its id, as Sure's create_goal names it."),
 		url: z.string().describe("The goal's page in Archant, as Sure's create_goal answers it."),
 	}),
 	run: async (deps, input) => {
 		const created = await createGoal(deps, {
 			name: input.name,
 			kind: input.kind,
-			targetMode: input.targetMonths === undefined ? "fixed" : "months_of_expenses",
-			targetAmount: input.targetAmount ?? "",
-			targetMonths: input.targetMonths === undefined ? "" : String(input.targetMonths),
-			targetDate: input.targetDate ?? null,
+			targetMode: input.target_months === undefined ? "fixed" : "months_of_expenses",
+			targetAmount: input.target_amount ?? "",
+			targetMonths: input.target_months === undefined ? "" : String(input.target_months),
+			targetDate: input.target_date ?? null,
 			color: sampleGoalColor(),
 			icon: null,
 			notes: input.notes ?? null,
 			accounts: input.accounts.map((account) => ({
-				accountId: account.accountId,
-				allocatedAmount: account.allocatedAmount ?? "",
+				accountId: account.account_id,
+				allocatedAmount: account.allocated_amount ?? "",
 			})),
 		});
+		const { id, ...goal } = goalOf(created);
 
 		return {
 			result: {
-				...goalOf(created),
+				goal_id: id,
+				...goal,
 				url: `${new URL(deps.trustedOrigin).origin}/goals/${created.id}`,
 			},
 			changedRows: 1,

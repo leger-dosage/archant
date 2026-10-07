@@ -22,70 +22,72 @@ export const getHoldings = defineTool({
 	annotations: READ_ONLY,
 	input: holdingsInput,
 	output: z.object({
-		accountId: z.string(),
+		account_id: z.string(),
 		currency: z.string().describe("The account's: every amount and price here is in it."),
 		date: z
 			.string()
 			.nullable()
 			.describe("The holdings' day, today once traded; null for an account that never traded."),
-		positions: z.array(
+		holdings: z.array(
 			z.object({
-				securityId: z.string(),
+				security_id: z.string(),
 				name: z.string(),
 				ticker: z.string().nullable(),
 				isin: z.string().nullable(),
-				exchangeMic: z.string().nullable().describe("The venue's ISO 10383 operating MIC."),
+				exchange_mic: z.string().nullable().describe("The venue's ISO 10383 operating MIC."),
 				quantity: z.string().describe('Units held, a decimal string such as "12.5".'),
 				price: unit("The last price"),
-				priceDate: z
+				price_date: z
 					.string()
 					.describe("The day that price was set, by a provider, a trade or the owner."),
 				amount: decimal("The value: quantity × price"),
-				costBasis: z
+				average_cost: z
 					.string()
 					.nullable()
 					.describe(
 						"The average cost (« PRU ») per unit, fees out, a decimal string in the account's currency; null when unknown.",
 					),
-				costBasisLocked: z.boolean().describe("true when the owner set the average cost by hand."),
-				bookValue: decimal("quantity × costBasis").nullable(),
-				gain: decimal("The unrealised gain: amount less bookValue").nullable(),
-				gainPercent: percent("The gain over bookValue; null without a book value"),
+				average_cost_locked: z
+					.boolean()
+					.describe("true when the owner set the average cost by hand."),
+				book_value: decimal("quantity × average_cost").nullable(),
+				gain: decimal("The unrealised gain: amount less book_value").nullable(),
+				gain_percent: percent("The gain over book_value; null without a book value"),
 				weight: percent("The share of total; null when total is not above zero"),
 			}),
 		),
 		cash: decimal("The account's cash"),
-		cashWeight: percent("The cash's share of total; null when total is not above zero"),
+		cash_weight: percent("The cash's share of total; null when total is not above zero"),
 		total: decimal("cash plus every position's amount: the account's balance"),
 	}),
 	run: async (deps, input) => {
-		const holdings = await listPositions(deps, input.accountId);
+		const holdings = await listPositions(deps, input.account_id);
 		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: holdings.currency });
 
 		return {
 			result: {
-				accountId: holdings.accountId,
+				account_id: holdings.accountId,
 				currency: holdings.currency,
 				date: holdings.date,
-				positions: holdings.positions.map((position) => ({
-					securityId: position.security.id,
+				holdings: holdings.positions.map((position) => ({
+					security_id: position.security.id,
 					name: position.security.name,
 					ticker: position.security.ticker,
 					isin: position.security.isin,
-					exchangeMic: position.security.mic,
+					exchange_mic: position.security.mic,
 					quantity: position.quantity,
 					price: position.price,
-					priceDate: position.priceDate,
+					price_date: position.priceDate,
 					amount: money(position.amount),
-					costBasis: position.costBasis,
-					costBasisLocked: position.costBasisLocked,
-					bookValue: position.bookValue === null ? null : money(position.bookValue),
+					average_cost: position.costBasis,
+					average_cost_locked: position.costBasisLocked,
+					book_value: position.bookValue === null ? null : money(position.bookValue),
 					gain: position.gain === null ? null : money(position.gain),
-					gainPercent: position.gainPercent,
+					gain_percent: position.gainPercent,
 					weight: position.weight,
 				})),
 				cash: money(holdings.cash),
-				cashWeight: holdings.cashWeight,
+				cash_weight: holdings.cashWeight,
 				total: money(holdings.total),
 			},
 			changedRows: 0,

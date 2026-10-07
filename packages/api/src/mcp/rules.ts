@@ -30,7 +30,7 @@ import { getReportingCurrency } from "../services/settings.ts";
 import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, REPLACES, SETS, defineTool } from "./tool.ts";
 
 const leafOutput = z.object({
-	conditionType: z.enum(RULE_CONDITION_TYPES),
+	condition_type: z.enum(RULE_CONDITION_TYPES),
 	operator: z.enum(RULE_OPERATORS),
 	value: z.string().nullable(),
 });
@@ -41,7 +41,7 @@ const conditionOutput = leafOutput.extend({
 });
 
 const actionOutput = z.object({
-	actionType: z.enum(RULE_ACTION_TYPES),
+	action_type: z.enum(RULE_ACTION_TYPES),
 	value: z.string().nullable(),
 	replacement: z.string().nullable().optional(),
 });
@@ -55,7 +55,7 @@ const snapshotFields = {
 const ruleOutput = z.object({
 	id: z.string(),
 	enabled: z.boolean(),
-	effectiveDate: z.string().nullable(),
+	effective_date: z.string().nullable(),
 	...snapshotFields,
 });
 
@@ -82,14 +82,14 @@ function conditionOf(condition: RuleConditionSnapshot, currency: CurrencyCode): 
 	const { conditionType, operator } = condition;
 
 	if (conditionType !== "compound") {
-		return { conditionType, operator, value: valueOf(condition, currency) };
+		return { condition_type: conditionType, operator, value: valueOf(condition, currency) };
 	}
 
 	return {
-		conditionType,
+		condition_type: conditionType,
 		operator,
 		conditions: condition.conditions.map((child) => ({
-			conditionType: child.conditionType,
+			condition_type: child.conditionType,
 			operator: child.operator,
 			value: valueOf(child, currency),
 		})),
@@ -100,7 +100,11 @@ function snapshotOf(rule: RuleSnapshot, currency: CurrencyCode) {
 	return {
 		name: rule.name,
 		conditions: rule.conditions.map((condition) => conditionOf(condition, currency)),
-		actions: rule.actions,
+		actions: rule.actions.map(({ actionType, value, replacement }) => ({
+			action_type: actionType,
+			value,
+			...(replacement === undefined ? {} : { replacement }),
+		})),
 	};
 }
 
@@ -110,7 +114,7 @@ function ruleOf(rule: RuleData, currency: CurrencyCode) {
 	return {
 		id: rule.id,
 		enabled: rule.enabled,
-		effectiveDate: rule.effectiveDate,
+		effective_date: rule.effectiveDate,
 		...snapshotOf(rule, currency),
 	};
 }
@@ -149,35 +153,35 @@ export const getRuleRuns = defineTool({
 		items: z.array(
 			z.object({
 				id: z.string(),
-				ruleId: z.string().nullable().describe("null once the rule is deleted."),
+				rule_id: z.string().nullable().describe("null once the rule is deleted."),
 				rule: z.object(snapshotFields),
-				matchedCount: z.number().int(),
-				changedCount: z.number().int(),
-				executedAt: z.string().describe("When it ran, an ISO 8601 UTC timestamp."),
+				matched_count: z.number().int(),
+				changed_count: z.number().int(),
+				executed_at: z.string().describe("When it ran, an ISO 8601 UTC timestamp."),
 			}),
 		),
 		page: z.number().int(),
-		pageSize: z.number().int(),
-		total: z.number().int(),
+		page_size: z.number().int(),
+		total_results: z.number().int(),
 	}),
 	run: async (deps, input) => {
 		const currency = getReportingCurrency();
-		const runs = await listRuleRuns(deps, input);
+		const runs = await listRuleRuns(deps, { page: input.page, pageSize: input.page_size });
 
 		return {
 			result: {
 				currency,
 				items: runs.items.map((run) => ({
 					id: run.id,
-					ruleId: run.ruleId,
+					rule_id: run.ruleId,
 					rule: snapshotOf(run.rule, currency),
-					matchedCount: run.matchedCount,
-					changedCount: run.changedCount,
-					executedAt: new Date(run.executedAt).toISOString(),
+					matched_count: run.matchedCount,
+					changed_count: run.changedCount,
+					executed_at: new Date(run.executedAt).toISOString(),
 				})),
 				page: runs.page,
-				pageSize: runs.pageSize,
-				total: runs.total,
+				page_size: runs.pageSize,
+				total_results: runs.total,
 			},
 			changedRows: 0,
 		};
@@ -187,7 +191,7 @@ export const getRuleRuns = defineTool({
 const change = <Value extends z.ZodType>(value: Value) =>
 	z.object({ from: value, to: value }).optional();
 
-/** A draft's field errors under `rule`, where the assistant sent them. */
+/** A draft's field errors under `rule`, where the assistant sent them, in its names. */
 async function asDraft<Result>(preview: Promise<Result>): Promise<Result> {
 	try {
 		return await preview;
@@ -208,7 +212,7 @@ async function asDraft<Result>(preview: Promise<Result>): Promise<Result> {
 export const previewRule = defineTool({
 	name: "preview_rule",
 	title: "Preview a rule",
-	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by ruleId, a draft in create_rule's shape as rule, or every enabled rule when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expectedChanged, and up to 20 of those, most recent first, each changed field with its current and new value. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
+	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every enabled rule when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each changed field with its current and new value. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: previewRuleInput,
@@ -219,24 +223,24 @@ export const previewRule = defineTool({
 			z.object({
 				id: z.string(),
 				date: z.string(),
-				label: z.string().describe("The label as it stands."),
+				name: z.string().describe("The label as it stands."),
 				amount: z.string().describe('A decimal string such as "-12.50" in the currency beside it.'),
 				currency: z.string(),
-				accountId: z.string(),
+				account_id: z.string(),
 				changes: z.object({
 					category: change(z.string().nullable()),
 					merchant: change(z.string().nullable()),
 					tags: change(z.array(z.string())),
-					label: change(z.string()),
+					name: change(z.string()),
 					excluded: change(z.boolean()),
-					expectedTransferAccount: change(z.string().nullable()),
+					expected_transfer_account: change(z.string().nullable()),
 				}),
 			}),
 		),
 	}),
 	run: async (deps, input) => {
 		const preview = await (input.rule === undefined
-			? previewRules(deps, input.ruleId)
+			? previewRules(deps, input.rule_id)
 			: asDraft(previewRules(deps, input.rule)));
 
 		return {
@@ -244,8 +248,22 @@ export const previewRule = defineTool({
 				matched: preview.matched,
 				changed: preview.changed,
 				samples: preview.samples.map((sample) => ({
-					...sample,
+					id: sample.id,
+					date: sample.date,
+					name: sample.label,
 					amount: toDecimalString(sample),
+					currency: sample.currency,
+					account_id: sample.accountId,
+					changes: {
+						...(sample.changes.category === undefined ? {} : { category: sample.changes.category }),
+						...(sample.changes.merchant === undefined ? {} : { merchant: sample.changes.merchant }),
+						...(sample.changes.tags === undefined ? {} : { tags: sample.changes.tags }),
+						...(sample.changes.label === undefined ? {} : { name: sample.changes.label }),
+						...(sample.changes.excluded === undefined ? {} : { excluded: sample.changes.excluded }),
+						...(sample.changes.expectedTransferAccount === undefined
+							? {}
+							: { expected_transfer_account: sample.changes.expectedTransferAccount }),
+					},
 				})),
 			},
 			changedRows: 0,
@@ -284,7 +302,7 @@ export const updateRuleTool = defineTool({
 	annotations: REPLACES,
 	input: updateRuleInput,
 	output: savedRule,
-	run: async (deps, { ruleId, ...rule }) => {
+	run: async (deps, { ruleId, rule }) => {
 		const currency = getReportingCurrency();
 
 		return {
@@ -302,7 +320,7 @@ export const setRuleEnabledTool = defineTool({
 	annotations: SETS,
 	input: setRuleEnabledInput,
 	output: savedRule,
-	run: async (deps, { ruleId, enabled }) => {
+	run: async (deps, { rule_id: ruleId, enabled }) => {
 		const currency = getReportingCurrency();
 
 		return {
@@ -320,14 +338,17 @@ export const deleteRuleTool = defineTool({
 	annotations: DESTROYS,
 	input: ruleIdInput,
 	output: z.object({ id: z.string() }),
-	run: async (deps, { ruleId }) => ({ result: await deleteRule(deps, ruleId), changedRows: 1 }),
+	run: async (deps, { rule_id: ruleId }) => ({
+		result: await deleteRule(deps, ruleId),
+		changedRows: 1,
+	}),
 });
 
 export const applyRulesTool = defineTool({
 	name: "apply_rules",
 	title: "Apply rules to existing transactions",
 	description:
-		"Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same ruleId: when the transactions to change now number otherwise, it writes nothing and answers RULE_PREVIEW_STALE with the count now; preview again and show the owner. Fields the owner set by hand never change.",
+		"Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers RULE_PREVIEW_STALE with the count now; preview again and show the owner. Fields the owner set by hand never change.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: applyRulesInput,
@@ -335,22 +356,22 @@ export const applyRulesTool = defineTool({
 		changed: z.number().int().describe("Transactions changed, each once."),
 		runs: z.array(
 			z.object({
-				ruleId: z.string().nullable(),
-				matchedCount: z.number().int(),
-				changedCount: z.number().int(),
+				rule_id: z.string().nullable(),
+				matched_count: z.number().int(),
+				changed_count: z.number().int(),
 			}),
 		),
 	}),
-	run: async (deps, { ruleId, expectedChanged }) => {
+	run: async (deps, { rule_id: ruleId, expected_changed: expectedChanged }) => {
 		const { changed, runs } = await applyRules(deps, ruleId, expectedChanged);
 
 		return {
 			result: {
 				changed,
-				runs: runs.map(({ ruleId: id, matchedCount, changedCount }) => ({
-					ruleId: id,
-					matchedCount,
-					changedCount,
+				runs: runs.map((run) => ({
+					rule_id: run.ruleId,
+					matched_count: run.matchedCount,
+					changed_count: run.changedCount,
 				})),
 			},
 			changedRows: changed,

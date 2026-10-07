@@ -315,26 +315,34 @@ type FilterFields = {
 	amountMax?: string | undefined;
 };
 
-export function checkFilter(value: FilterFields, context: z.core.$RefinementCtx) {
-	if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
-		context.addIssue({ code: "custom", path: ["to"], message: "before_from" });
-	}
+/** Where a refused bound is reported: the query's key, or an assistant tool's. */
+export type FilterPaths = Record<"to" | "amountMin" | "amountMax", string>;
 
-	const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
-	const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
+/** The filter's checks, each refusal under `paths`' name for its field. */
+export function filterCheck(paths: FilterPaths) {
+	return (value: FilterFields, context: z.core.$RefinementCtx) => {
+		if (value.from !== undefined && value.to !== undefined && value.to < value.from) {
+			context.addIssue({ code: "custom", path: [paths.to], message: "before_from" });
+		}
 
-	if (min === null) {
-		context.addIssue({ code: "custom", path: ["amountMin"], message: "invalid_amount" });
-	}
+		const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
+		const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
 
-	if (max === null) {
-		context.addIssue({ code: "custom", path: ["amountMax"], message: "invalid_amount" });
-	}
+		if (min === null) {
+			context.addIssue({ code: "custom", path: [paths.amountMin], message: "invalid_amount" });
+		}
 
-	if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
-		context.addIssue({ code: "custom", path: ["amountMax"], message: "below_min" });
-	}
+		if (max === null) {
+			context.addIssue({ code: "custom", path: [paths.amountMax], message: "invalid_amount" });
+		}
+
+		if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
+			context.addIssue({ code: "custom", path: [paths.amountMax], message: "below_min" });
+		}
+	};
 }
+
+const checkFilter = filterCheck({ to: "to", amountMin: "amountMin", amountMax: "amountMax" });
 
 export function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest }: Value) {
 	const min = amountMin === undefined ? null : parseAmountBound(amountMin);

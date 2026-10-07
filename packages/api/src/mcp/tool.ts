@@ -35,6 +35,11 @@ export type Tool<Input extends ZodType, Output extends ZodObject> = {
 	/** What a client may tell its user before the call: read-only, destructive, repeatable. */
 	annotations: ToolAnnotations;
 	/**
+	 * The field a service's refusal names, by the tool's name for it where it
+	 * is not only the snake case of the service's, such as `label` for `name`.
+	 */
+	fieldPaths?: Readonly<Record<string, string>>;
+	/**
 	 * Rows written: 0 for a read. Reported in the call record, never the rows
 	 * themselves. A method, so the registry holds tools of every input.
 	 */
@@ -112,17 +117,17 @@ export function seriesOf(series: SampledSeries, currency: string): z.input<typeo
 
 /** What a figure counted in the reporting currency says of the accounts it left out. */
 export const leftOutFields = {
-	leftOutCount: z
+	left_out_count: z
 		.number()
 		.int()
 		.describe(
 			"Active accounts in another currency, left out of every figure here until exchange rates exist: say so to the owner when above zero.",
 		),
-	leftOutAccountIds: z.array(z.string()).describe("Their ids, as get_accounts gives them."),
+	left_out_account_ids: z.array(z.string()).describe("Their ids, as get_accounts gives them."),
 };
 
 /** The left-out fields of the accounts a service named. */
 export const leftOutOf = (leftOut: readonly { id: string }[]) => ({
-	leftOutCount: leftOut.length,
-	leftOutAccountIds: leftOut.map((account) => account.id),
+	left_out_count: leftOut.length,
+	left_out_account_ids: leftOut.map((account) => account.id),
 });

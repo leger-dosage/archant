@@ -87,22 +87,22 @@ function calls() {
 }
 
 const transferOf = z.object({
-	transfer: z.object({ id: z.string(), counterpartTransactionId: z.string() }).loose().nullable(),
-	transferSuggested: z.boolean(),
+	transfer: z.object({ id: z.string(), counterpart_transaction_id: z.string() }).loose().nullable(),
+	transfer_suggested: z.boolean(),
 });
 
-const page = z.object({ items: z.array(transferOf.extend({ id: z.string() }).loose()) });
+const page = z.object({ transactions: z.array(transferOf.extend({ id: z.string() }).loose()) });
 
 const candidates = z.object({
 	candidates: z.array(
 		z.object({
 			id: z.string(),
 			date: z.string(),
-			label: z.string(),
+			name: z.string(),
 			amount: z.string(),
 			currency: z.string(),
-			accountId: z.string(),
-			accountName: z.string(),
+			account_id: z.string(),
+			account_name: z.string(),
 		}),
 	),
 });
@@ -110,15 +110,15 @@ const candidates = z.object({
 const paired = z.object({
 	id: z.string(),
 	kind: z.string(),
-	outflowTransactionId: z.string(),
-	inflowTransactionId: z.string(),
+	outflow_transaction_id: z.string(),
+	inflow_transaction_id: z.string(),
 });
 
 const unpaired = z.object({
-	transferId: z.string(),
-	outflowTransactionId: z.string(),
-	inflowTransactionId: z.string(),
-	neverPropose: z.boolean(),
+	transfer_id: z.string(),
+	outflow_transaction_id: z.string(),
+	inflow_transaction_id: z.string(),
+	never_propose: z.boolean(),
 });
 
 /** The transfers of the household, as the transaction list shows them, one per pair. */
@@ -145,23 +145,23 @@ describe("the read tools", () => {
 		const tools = await assistants();
 
 		const found = page.parse(
-			(await tools.read("get_transactions", { direction: ["transfer"] })).structuredContent,
+			(await tools.read("get_transactions", { types: ["transfer"] })).structuredContent,
 		);
 		const detail = transferOf.parse(
 			(await tools.read("get_transaction", { id: inflow })).structuredContent,
 		);
 
-		expect(found.items.find((item) => item.id === outflow)).toMatchObject({
-			transfer: { id: transferId, kind: "internal_move", counterpartTransactionId: inflow },
-			transferSuggested: false,
+		expect(found.transactions.find((item) => item.id === outflow)).toMatchObject({
+			transfer: { id: transferId, kind: "internal_move", counterpart_transaction_id: inflow },
+			transfer_suggested: false,
 		});
 		expect(detail).toMatchObject({
 			transfer: {
 				id: transferId,
-				counterpartTransactionId: outflow,
-				counterpartAccountName: "Compte courant",
+				counterpart_transaction_id: outflow,
+				counterpart_account_name: "Compte courant",
 			},
-			transferSuggested: false,
+			transfer_suggested: false,
 		});
 	});
 
@@ -181,13 +181,13 @@ describe("the read tools", () => {
 
 		const found = page.parse((await tools.read("get_transactions")).structuredContent);
 
-		expect(found.items.find((item) => item.id === source)).toMatchObject({
+		expect(found.transactions.find((item) => item.id === source)).toMatchObject({
 			transfer: null,
-			transferSuggested: true,
+			transfer_suggested: true,
 		});
 		// One candidate is no suggestion: « Dissocier » leaves a pair with one.
-		expect(found.items.find((item) => item.id === inflow)).toMatchObject({
-			transferSuggested: false,
+		expect(found.transactions.find((item) => item.id === inflow)).toMatchObject({
+			transfer_suggested: false,
 		});
 	});
 });
@@ -196,19 +196,19 @@ describe("get_transfer_candidates", () => {
 	it("lists what « Rapprocher un virement » lists, amounts as decimal strings", async () => {
 		const { livret, outflow, inflow, transferId } = await household();
 		const tools = await assistants();
-		await tools.write("unpair_transfer", { transferId });
+		await tools.write("unpair_transfer", { transfer_id: transferId });
 
-		const result = await tools.read("get_transfer_candidates", { transactionId: outflow });
+		const result = await tools.read("get_transfer_candidates", { transaction_id: outflow });
 
 		expect(candidates.parse(result.structuredContent).candidates).toEqual([
 			{
 				id: inflow,
 				date: "2026-09-13",
-				label: "VIR COMPTE COURANT",
+				name: "VIR COMPTE COURANT",
 				amount: "500.00",
 				currency: "EUR",
-				accountId: livret.id,
-				accountName: "Livret A",
+				account_id: livret.id,
+				account_name: "Livret A",
 			},
 		]);
 	});
@@ -217,8 +217,8 @@ describe("get_transfer_candidates", () => {
 		const { outflow } = await household();
 		const tools = await assistants();
 
-		const linked = await tools.read("get_transfer_candidates", { transactionId: outflow });
-		const unknown = await tools.read("get_transfer_candidates", { transactionId: "nothing" });
+		const linked = await tools.read("get_transfer_candidates", { transaction_id: outflow });
+		const unknown = await tools.read("get_transfer_candidates", { transaction_id: "nothing" });
 
 		expect(candidates.parse(linked.structuredContent).candidates).toEqual([]);
 		expect(unknown.isError).toBe(true);
@@ -234,19 +234,19 @@ describe("pair_transfer", () => {
 	it("pairs a line and its candidate as « Rapprocher un virement », recorded with one row", async () => {
 		const { outflow, inflow, transferId } = await household();
 		const tools = await assistants();
-		await tools.write("unpair_transfer", { transferId });
+		await tools.write("unpair_transfer", { transfer_id: transferId });
 		await db.delete(assistantCalls);
 
 		const result = await tools.write("pair_transfer", {
-			transactionId: inflow,
-			counterpartId: outflow,
+			transaction_id: inflow,
+			counterpart_id: outflow,
 		});
 		const created = paired.parse(result.structuredContent);
 
 		expect(created).toMatchObject({
 			kind: "internal_move",
-			outflowTransactionId: outflow,
-			inflowTransactionId: inflow,
+			outflow_transaction_id: outflow,
+			inflow_transaction_id: inflow,
 		});
 		expect(await transfersNow()).toEqual([{ id: created.id }]);
 		expect(await calls()).toEqual([{ tool: "pair_transfer", outcome: "OK", changedRows: 1 }]);
@@ -255,20 +255,20 @@ describe("pair_transfer", () => {
 	it("refuses a counterpart that is no candidate, writing nothing", async () => {
 		const { outflow, later, transferId } = await household();
 		const tools = await assistants();
-		await tools.write("unpair_transfer", { transferId });
+		await tools.write("unpair_transfer", { transfer_id: transferId });
 		await db.delete(assistantCalls);
 
 		const tooFar = await tools.write("pair_transfer", {
-			transactionId: outflow,
-			counterpartId: later,
+			transaction_id: outflow,
+			counterpart_id: later,
 		});
 		const unknown = await tools.write("pair_transfer", {
-			transactionId: "nothing",
-			counterpartId: later,
+			transaction_id: "nothing",
+			counterpart_id: later,
 		});
 
 		expect(tooFar.isError).toBe(true);
-		expect(tooFar.content[0]?.text).toContain('"path":"counterpartId","code":"not_a_candidate"');
+		expect(tooFar.content[0]?.text).toContain('"path":"counterpart_id","code":"not_a_candidate"');
 		expect(unknown.content[0]?.text).toMatch(/^NOT_FOUND:/);
 		expect(await transfersNow()).toEqual([]);
 		expect(await calls()).toEqual([
@@ -289,13 +289,13 @@ describe("unpair_transfer", () => {
 		const before = await sidesOf([outflow, inflow]);
 		const tools = await assistants();
 
-		const result = await tools.write("unpair_transfer", { transferId });
+		const result = await tools.write("unpair_transfer", { transfer_id: transferId });
 
 		expect(unpaired.parse(result.structuredContent)).toEqual({
-			transferId,
-			outflowTransactionId: outflow,
-			inflowTransactionId: inflow,
-			neverPropose: false,
+			transfer_id: transferId,
+			outflow_transaction_id: outflow,
+			inflow_transaction_id: inflow,
+			never_propose: false,
 		});
 		expect(await transfersNow()).toEqual([]);
 		expect(await sidesOf([outflow, inflow])).toEqual(before);
@@ -304,7 +304,7 @@ describe("unpair_transfer", () => {
 			categoryId,
 			tagIds: [tag],
 		});
-		const again = await tools.read("get_transfer_candidates", { transactionId: outflow });
+		const again = await tools.read("get_transfer_candidates", { transaction_id: outflow });
 		expect(candidates.parse(again.structuredContent).candidates.map((row) => row.id)).toEqual([
 			inflow,
 		]);
@@ -314,18 +314,21 @@ describe("unpair_transfer", () => {
 		]);
 	});
 
-	it("with neverPropose refuses the pair for good, as « Ne plus proposer »", async () => {
+	it("with never_propose refuses the pair for good, as « Ne plus proposer »", async () => {
 		const { outflow, inflow, transferId } = await household();
 		const tools = await assistants();
 
-		const result = await tools.write("unpair_transfer", { transferId, neverPropose: true });
-		const offered = await tools.read("get_transfer_candidates", { transactionId: outflow });
+		const result = await tools.write("unpair_transfer", {
+			transfer_id: transferId,
+			never_propose: true,
+		});
+		const offered = await tools.read("get_transfer_candidates", { transaction_id: outflow });
 		const repaired = await tools.write("pair_transfer", {
-			transactionId: outflow,
-			counterpartId: inflow,
+			transaction_id: outflow,
+			counterpart_id: inflow,
 		});
 
-		expect(unpaired.parse(result.structuredContent)).toMatchObject({ neverPropose: true });
+		expect(unpaired.parse(result.structuredContent)).toMatchObject({ never_propose: true });
 		expect(candidates.parse(offered.structuredContent).candidates).toEqual([]);
 		expect(repaired.content[0]?.text).toContain('"code":"not_a_candidate"');
 		expect(await transfersNow()).toEqual([]);
@@ -340,10 +343,10 @@ describe("unpair_transfer", () => {
 		await household();
 		const tools = await assistants();
 
-		const plain = await tools.write("unpair_transfer", { transferId: "nothing" });
+		const plain = await tools.write("unpair_transfer", { transfer_id: "nothing" });
 		const refused = await tools.write("unpair_transfer", {
-			transferId: "nothing",
-			neverPropose: true,
+			transfer_id: "nothing",
+			never_propose: true,
 		});
 
 		expect(plain.content[0]?.text).toMatch(/^NOT_FOUND:/);
@@ -362,8 +365,8 @@ describe("a read token", () => {
 		const tools = await assistants();
 
 		const writes = [
-			["pair_transfer", { transactionId: outflow, counterpartId: later }],
-			["unpair_transfer", { transferId, neverPropose: true }],
+			["pair_transfer", { transaction_id: outflow, counterpart_id: later }],
+			["unpair_transfer", { transfer_id: transferId, never_propose: true }],
 		] as const;
 
 		await oneByOne(writes, async ([name, args]) => {

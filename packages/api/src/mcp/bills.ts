@@ -68,7 +68,7 @@ const DERIVED_STATES = [
 const billOutput = z.object({
 	id: z.string(),
 	name: z.string().describe("The owner's name for it, else the merchant's, else the bank label."),
-	billType: z
+	bill_type: z
 		.enum(BILL_TYPES)
 		.describe(
 			'The direction comes from it: "income" is money coming in, any other money going out.',
@@ -77,27 +77,27 @@ const billOutput = z.object({
 		'"suggested": found by Archant, awaiting the owner, not a bill yet.',
 	),
 	amount: magnitude("Each occurrence's amount"),
-	amountMin: magnitude("The lowest amount seen, only when they vary").optional(),
-	amountMax: magnitude("The highest amount seen, only when they vary").optional(),
+	amount_min: magnitude("The lowest amount seen, only when they vary").optional(),
+	amount_max: magnitude("The highest amount seen, only when they vary").optional(),
 	currency: z.string(),
 	frequency: z
 		.enum([...FREQUENCY_PRESETS, CUSTOM_PRESET])
 		.describe('"custom": a cadence no preset names, such as every 5 weeks.'),
-	nextDueDate: z
+	next_due_date: z
 		.string()
 		.describe("YYYY-MM-DD: the current open occurrence's, else the next expected one."),
 	autopay: z.boolean(),
-	detectedAutomatically: z.boolean().describe("false when the owner declared it."),
-	accountId: z.string(),
-	accountName: z.string(),
-	categoryId: z.string().nullable(),
-	monthlyEquivalent: magnitude("Its cost a month, whatever its cadence"),
-	paymentUrl: z.string().nullable(),
+	detected_automatically: z.boolean().describe("false when the owner declared it."),
+	account_id: z.string(),
+	account_name: z.string(),
+	category_id: z.string().nullable(),
+	monthly_equivalent: magnitude("Its cost a month, whatever its cadence"),
+	payment_url: z.string().nullable(),
 });
 
 const occurrenceFields = {
-	dueOn: z.string(),
-	effectiveDueOn: z.string().describe("The due date, or a later one the owner postponed it to."),
+	due_on: z.string(),
+	effective_due_on: z.string().describe("The due date, or a later one the owner postponed it to."),
 	state: z
 		.enum(DERIVED_STATES)
 		.describe(
@@ -106,7 +106,7 @@ const occurrenceFields = {
 	expected: magnitude("What it expects"),
 	paid: magnitude("What its confirmed payments sum to"),
 	remaining: magnitude("What is left to pay"),
-	partiallyPaid: z.boolean(),
+	partially_paid: z.boolean(),
 };
 
 const occurrenceOutput = z.object(occurrenceFields);
@@ -129,25 +129,25 @@ function billOf(bill: RecurringRecord): z.input<typeof billOutput> {
 	return {
 		id: bill.id,
 		name: displayName(bill),
-		billType: bill.billType,
+		bill_type: bill.billType,
 		status: lifecycleOf(bill.status),
 		amount: positive(bill.amount, bill.currency),
 		...(band === null
 			? {}
 			: {
-					amountMin: positive(toMinorUnits(band[0]!), bill.currency),
-					amountMax: positive(toMinorUnits(band[1]!), bill.currency),
+					amount_min: positive(toMinorUnits(band[0]!), bill.currency),
+					amount_max: positive(toMinorUnits(band[1]!), bill.currency),
 				}),
 		currency: bill.currency,
 		frequency: bill.frequency.key === "interval" ? CUSTOM_PRESET : bill.frequency.key,
-		nextDueDate: nextDueDateOf(bill),
+		next_due_date: nextDueDateOf(bill),
 		autopay: bill.autopay,
-		detectedAutomatically: !bill.manual,
-		accountId: bill.accountId,
-		accountName: bill.accountName,
-		categoryId: bill.categoryId,
-		monthlyEquivalent: positive(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
-		paymentUrl: bill.paymentUrl,
+		detected_automatically: !bill.manual,
+		account_id: bill.accountId,
+		account_name: bill.accountName,
+		category_id: bill.categoryId,
+		monthly_equivalent: positive(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
+		payment_url: bill.paymentUrl,
 	};
 }
 
@@ -158,13 +158,13 @@ function occurrenceOf(
 	const { currency } = occurrence;
 
 	return {
-		dueOn: occurrence.dueOn,
-		effectiveDueOn: occurrence.effectiveDueOn,
+		due_on: occurrence.dueOn,
+		effective_due_on: occurrence.effectiveDueOn,
 		state: occurrence.state,
 		expected: positive(occurrence.expected, currency),
 		paid: positive(occurrence.paid, currency),
 		remaining: positive(occurrence.remaining, currency),
-		partiallyPaid: occurrence.open && occurrence.paid > 0 && occurrence.paid < occurrence.expected,
+		partially_paid: occurrence.open && occurrence.paid > 0 && occurrence.paid < occurrence.expected,
 	};
 }
 
@@ -187,76 +187,82 @@ function currentOf(bill: BillView): z.input<typeof occurrenceOutput> | null {
 }
 
 const priceChangeOutput = z.object({
-	billId: z.string(),
+	bill_id: z.string(),
 	name: z.string(),
-	effectiveOn: z.string(),
-	previousAmount: magnitude("The amount before"),
-	newAmount: magnitude("The amount after"),
+	effective_on: z.string(),
+	previous_amount: magnitude("The amount before"),
+	new_amount: magnitude("The amount after"),
 	currency: z.string(),
-	changePercent: z.number().describe("Signed, to one decimal: 18.5 is a rise of 18.5 %."),
+	percent_change: z.number().describe("Signed, to one decimal: 18.5 is a rise of 18.5 %."),
 });
 
 function priceChangeOf(change: PriceChange): z.input<typeof priceChangeOutput> {
 	return {
-		billId: change.seriesId,
+		bill_id: change.seriesId,
 		name: change.name,
-		effectiveOn: change.effectiveOn,
-		previousAmount: positive(change.previousAmount, change.currency),
-		newAmount: positive(change.newAmount, change.currency),
+		effective_on: change.effectiveOn,
+		previous_amount: positive(change.previousAmount, change.currency),
+		new_amount: positive(change.newAmount, change.currency),
 		currency: change.currency,
-		changePercent: change.percent / 10,
+		percent_change: change.percent / 10,
 	};
 }
 
 export const getBills = defineTool({
 	name: "get_bills",
 	title: "Bills",
-	description: `The bills, subscriptions and incomes the owner follows, as « Factures » lists them, by next due date, each with its current occurrence's payment state and monthly equivalent. Amounts are positive: billType carries the direction. A suggested bill is a pattern Archant found, not a bill until the owner adds it. The totals cover every match, not only the bills shown, and leave out the incomes. Use get_bill_details for one bill's history. ${BANK_TEXT}`,
+	description: `The bills, subscriptions and incomes the owner follows, as « Factures » lists them, by next due date, each with its current occurrence's payment state and monthly equivalent. Amounts are positive: bill_type carries the direction. A suggested bill is a pattern Archant found, not a bill until the owner adds it. The totals cover every match, not only the bills shown, and leave out the incomes. Use get_bill_details for one bill's history. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getBillsInput,
 	output: z.object({
 		bills: z.array(
 			billOutput.extend({
-				currentOccurrence: occurrenceOutput
+				current_occurrence: occurrenceOutput
 					.nullable()
 					.describe("The earliest open occurrence, else the latest; null before the first."),
 			}),
 		),
-		total: z.number().int().describe("Every matching bill."),
+		total_results: z.number().int().describe("Every matching bill."),
 		truncated: z.boolean().describe(`true when more than ${MAX_BILLS} match.`),
 		totals: z
 			.object({
 				currency: z.string().describe("The reporting currency of the sum."),
-				activeCount: z.number().int(),
-				overdueCount: z
+				active_count: z.number().int(),
+				overdue_count: z
 					.number()
 					.int()
 					.describe("Matching bills whose current occurrence is overdue."),
-				activeMonthlyEquivalent: magnitude(
+				active_monthly_equivalent: magnitude(
 					"What the active bills but the incomes cost a month, in the reporting currency",
 				),
 				...leftOutFields,
 			})
 			.describe(
-				"leftOutCount and leftOutAccountIds concern activeMonthlyEquivalent only: the counts include bills in every currency.",
+				"left_out_count and left_out_account_ids concern active_monthly_equivalent only: the counts include bills in every currency.",
 			),
 	}),
 	run: async (deps, input) => {
-		const found = await findBills(deps, input);
+		const found = await findBills(deps, {
+			status: input.status,
+			paymentState: input.payment_state,
+			billType: input.bill_type,
+			search: input.search,
+			dueWithinDays: input.due_within_days,
+		});
 
 		return {
 			result: {
 				bills: found.bills
 					.slice(0, MAX_BILLS)
-					.map((bill) => ({ ...billOf(bill), currentOccurrence: currentOf(bill) })),
-				total: found.bills.length,
+					.map((bill) => ({ ...billOf(bill), current_occurrence: currentOf(bill) })),
+				total_results: found.bills.length,
 				truncated: found.bills.length > MAX_BILLS,
 				totals: {
 					currency: found.totals.currency,
-					activeCount: found.totals.activeCount,
-					overdueCount: found.totals.overdueCount,
-					activeMonthlyEquivalent: positive(found.totals.activeMonthly, found.totals.currency),
+					active_count: found.totals.activeCount,
+					overdue_count: found.totals.overdueCount,
+					active_monthly_equivalent: positive(found.totals.activeMonthly, found.totals.currency),
 					...leftOutOf(found.totals.leftOut),
 				},
 			},
@@ -268,28 +274,28 @@ export const getBills = defineTool({
 export const getBillDetails = defineTool({
 	name: "get_bill_details",
 	title: "One bill",
-	description: `One bill's whole story, as its page tells it: its configuration and schedule, its open occurrences, its twelve latest closed occurrences with their payments, its next three due dates and its price changes of the last 24 months. closedCount says how many closed occurrences there are in all: do not present the twelve as a lifetime total. ${BANK_TEXT}`,
+	description: `One bill's whole story, as its page tells it: its configuration and schedule, its open occurrences, its twelve latest closed occurrences with their payments, its next three due dates and its price changes of the last 24 months. closed_count says how many closed occurrences there are in all: do not present the twelve as a lifetime total. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: billIdInput,
 	output: z.object({
 		bill: billOutput.extend({
-			anchorDate: z.string().nullable().describe("The date the schedule counts from."),
-			endAfterCount: z.number().int().nullable().describe("An installment's number of payments."),
+			anchor_date: z.string().nullable().describe("The date the schedule counts from."),
+			end_after_count: z.number().int().nullable().describe("An installment's number of payments."),
 			notes: z.string().nullable(),
-			schedulePinned: z
+			schedule_pinned: z
 				.boolean()
 				.describe("true once the owner set the cadence: detection never moves its day."),
 		}),
-		openOccurrences: z.array(occurrenceOutput),
-		closedOccurrences: z
+		open_occurrences: z.array(occurrenceOutput),
+		closed_occurrences: z
 			.array(
 				occurrenceOutput.extend({
 					status: z.enum(OCCURRENCE_STATUSES),
 					payments: z.array(
 						z.object({
 							amount: magnitude("What it pays"),
-							paidOn: z.string().nullable(),
+							paid_on: z.string().nullable(),
 							source: z
 								.enum(ALLOCATION_SOURCES)
 								.describe(
@@ -298,18 +304,18 @@ export const getBillDetails = defineTool({
 							state: z
 								.enum(ALLOCATION_STATES)
 								.describe('"suggested" awaits the owner and does not count.'),
-							transactionId: z.string().nullable(),
-							transactionLabel: z.string().nullable(),
+							transaction_id: z.string().nullable(),
+							transaction_label: z.string().nullable(),
 						}),
 					),
 				}),
 			)
 			.describe("The latest first, twelve at most."),
-		closedCount: z.number().int(),
-		nextDueDates: z.array(z.string()).describe("The next three after today."),
-		priceChanges: z.array(priceChangeOutput).describe("The latest first."),
+		closed_count: z.number().int(),
+		upcoming_due_dates: z.array(z.string()).describe("The next three after today."),
+		price_changes: z.array(priceChangeOutput).describe("The latest first."),
 	}),
-	run: async (deps, { billId }) => {
+	run: async (deps, { bill_id: billId }) => {
 		const history = await billHistory(deps, billId);
 		const { bill } = history;
 
@@ -317,23 +323,27 @@ export const getBillDetails = defineTool({
 			result: {
 				bill: {
 					...billOf(bill),
-					anchorDate: bill.anchorDate,
-					endAfterCount: bill.endAfterCount,
+					anchor_date: bill.anchorDate,
+					end_after_count: bill.endAfterCount,
 					notes: bill.notes,
-					schedulePinned: bill.schedulePinned,
+					schedule_pinned: bill.schedulePinned,
 				},
-				openOccurrences: history.open.map((row) => occurrenceOf({ ...row, open: true })),
-				closedOccurrences: history.closed.map((row) => ({
+				open_occurrences: history.open.map((row) => occurrenceOf({ ...row, open: true })),
+				closed_occurrences: history.closed.map((row) => ({
 					...occurrenceOf({ ...row, open: false }),
 					status: row.status,
 					payments: row.payments.map((payment) => ({
-						...payment,
 						amount: positive(payment.amount, row.currency),
+						paid_on: payment.paidOn,
+						source: payment.source,
+						state: payment.state,
+						transaction_id: payment.transactionId,
+						transaction_label: payment.transactionLabel,
 					})),
 				})),
-				closedCount: history.closedCount,
-				nextDueDates: history.nextDueDates,
-				priceChanges: history.priceChanges.map(priceChangeOf),
+				closed_count: history.closedCount,
+				upcoming_due_dates: history.nextDueDates,
+				price_changes: history.priceChanges.map(priceChangeOf),
 			},
 			changedRows: 0,
 		};
@@ -350,17 +360,17 @@ const sectionOf = <Item extends z.ZodType>(item: Item, what: string) =>
 		.describe(what);
 
 const billRef = {
-	billId: z.string(),
+	bill_id: z.string(),
 	name: z.string(),
-	accountId: z.string(),
-	accountName: z.string(),
+	account_id: z.string(),
+	account_name: z.string(),
 };
 
 const refOf = (bill: BillView) => ({
-	billId: bill.id,
+	bill_id: bill.id,
 	name: bill.displayName,
-	accountId: bill.accountId,
-	accountName: bill.accountName,
+	account_id: bill.accountId,
+	account_name: bill.accountName,
 });
 
 /** An audit section with each of its items as the tool writes it. */
@@ -377,50 +387,50 @@ export const getBillAudit = defineTool({
 	annotations: READ_ONLY,
 	input: billAuditInput,
 	output: z.object({
-		possibleDuplicates: sectionOf(
+		possible_duplicates: sectionOf(
 			z.object({
 				name: z.string(),
 				amount: magnitude("Their amount"),
 				currency: z.string(),
-				dueDay: z.number().int().describe("Their expected day of the month."),
+				due_day: z.number().int().describe("Their expected day of the month."),
 				bills: z.array(z.object(billRef)),
 			}),
 			"Groups of active bills sharing a name, an amount and a due day.",
 		),
-		priceChanges: sectionOf(
+		price_changes: sectionOf(
 			priceChangeOutput,
-			"Of any bill since lookbackMonths, the latest first.",
+			"Of any bill since lookback_months, the latest first.",
 		),
-		longOverdue: sectionOf(
+		long_overdue: sectionOf(
 			z.object({
 				...billRef,
-				cyclesOverdue: z
+				cycles_overdue: z
 					.number()
 					.int()
 					.describe("Whole cycles of its own cadence since its due date."),
-				nextDueDate: z.string(),
+				next_due_date: z.string(),
 				amount: magnitude("Its amount"),
 				currency: z.string(),
 			}),
 			"Active bills but incomes a whole cycle or more past due, the most cycles first.",
 		),
 		dormant: sectionOf(
-			z.object({ ...billRef, nextDueDate: z.string() }),
+			z.object({ ...billRef, next_due_date: z.string() }),
 			"Paused bills still holding an open occurrence.",
 		),
-		awaitingConfirmation: sectionOf(
+		awaiting_confirmation: sectionOf(
 			z.object({ ...billRef, amount: magnitude("Its amount"), currency: z.string() }),
 			"Suggestions: patterns Archant found, not bills until the owner adds them.",
 		),
-		undeclaredCandidates: sectionOf(
+		undeclared_candidates: sectionOf(
 			z.object({
 				name: z.string(),
-				averageAmount: magnitude("The mean of its charges"),
+				average_amount: magnitude("The mean of its charges"),
 				currency: z.string(),
-				accountId: z.string(),
-				occurrenceCount: z.number().int(),
-				lastSeen: z.string(),
-				entryId: z
+				account_id: z.string(),
+				occurrence_count: z.number().int(),
+				last_seen: z.string(),
+				entry_id: z
 					.string()
 					.describe(
 						"Its latest transaction: pass it to create_bill so the bill matches its bank lines.",
@@ -429,43 +439,43 @@ export const getBillAudit = defineTool({
 			"Recurring charges no bill follows, as « Ajouter une facture » offers them, the latest first.",
 		),
 	}),
-	run: async (deps, { lookbackMonths }) => {
+	run: async (deps, { lookback_months: lookbackMonths }) => {
 		const audit = await billAudit(deps, lookbackMonths);
 
 		return {
 			result: {
-				possibleDuplicates: mapSection(audit.possibleDuplicates, (group) => ({
+				possible_duplicates: mapSection(audit.possibleDuplicates, (group) => ({
 					name: group.name,
 					amount: positive(group.amount, group.currency),
 					currency: group.currency,
-					dueDay: group.expectedDayOfMonth,
+					due_day: group.expectedDayOfMonth,
 					bills: group.bills.map(refOf),
 				})),
-				priceChanges: mapSection(audit.priceChanges, priceChangeOf),
-				longOverdue: mapSection(audit.longOverdue, ({ bill, cyclesOverdue }) => ({
+				price_changes: mapSection(audit.priceChanges, priceChangeOf),
+				long_overdue: mapSection(audit.longOverdue, ({ bill, cyclesOverdue }) => ({
 					...refOf(bill),
-					cyclesOverdue,
-					nextDueDate: bill.nextDueDate,
+					cycles_overdue: cyclesOverdue,
+					next_due_date: bill.nextDueDate,
 					amount: positive(bill.amount, bill.currency),
 					currency: bill.currency,
 				})),
 				dormant: mapSection(audit.dormant, (bill) => ({
 					...refOf(bill),
-					nextDueDate: bill.nextDueDate,
+					next_due_date: bill.nextDueDate,
 				})),
-				awaitingConfirmation: mapSection(audit.awaitingConfirmation, (bill) => ({
+				awaiting_confirmation: mapSection(audit.awaitingConfirmation, (bill) => ({
 					...refOf(bill),
 					amount: positive(bill.amount, bill.currency),
 					currency: bill.currency,
 				})),
-				undeclaredCandidates: mapSection(audit.undeclaredCandidates, (candidate) => ({
+				undeclared_candidates: mapSection(audit.undeclaredCandidates, (candidate) => ({
 					name: candidate.name,
-					averageAmount: positive(candidate.amount, candidate.currency),
+					average_amount: positive(candidate.amount, candidate.currency),
 					currency: candidate.currency,
-					accountId: candidate.accountId,
-					occurrenceCount: candidate.occurrenceCount,
-					lastSeen: candidate.lastOccurrenceDate,
-					entryId: candidate.entryId,
+					account_id: candidate.accountId,
+					occurrence_count: candidate.occurrenceCount,
+					last_seen: candidate.lastOccurrenceDate,
+					entry_id: candidate.entryId,
 				})),
 			},
 			changedRows: 0,
@@ -477,25 +487,34 @@ export const createBillTool = defineTool({
 	name: "create_bill",
 	title: "Create a bill",
 	description:
-		"Declares a bill, a subscription, an installment plan or an income, as « Ajouter une facture » does: active at once, due on firstDueOn and then on its cadence. The amount is positive; isIncome makes it money coming in. The same account, name and amount twice answers RECURRING_ALREADY_EXISTS. It answers the bill and its next three due dates. Tell the owner what you are about to create and wait for their agreement first.",
+		"Declares a bill, a subscription, an installment plan or an income, as « Ajouter une facture » does: active at once, due on first_due_on and then on its cadence. The amount is positive; is_income makes it money coming in. The same account, name and amount twice answers RECURRING_ALREADY_EXISTS. It answers the bill and its next three due dates. Tell the owner what you are about to create and wait for their agreement first.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createBillInput,
 	output: z.object({
 		bill: billOutput,
-		nextDueDates: z.array(z.string()).describe("The next three from today."),
+		upcoming_due_dates: z.array(z.string()).describe("The next three from today."),
 	}),
-	run: async (deps, { isIncome, frequency, ...input }) => {
+	run: async (deps, input) => {
 		const created = await declareBill(deps, {
-			...input,
-			kind: isIncome ? "income" : "bill",
-			frequency: { preset: frequency },
+			name: input.name,
+			amount: input.amount,
+			firstDueOn: input.first_due_on,
+			accountId: input.account_id,
+			kind: input.is_income ? "income" : "bill",
+			frequency: { preset: input.frequency },
+			billType: input.bill_type,
+			categoryId: input.category_id,
+			entryId: input.entry_id,
+			autopay: input.autopay,
+			paymentUrl: input.payment_url,
+			notes: input.notes,
 		});
 
 		return {
 			result: {
 				bill: billOf(created),
-				nextDueDates: nextDueDates(created, today(deps.timeZone)),
+				upcoming_due_dates: nextDueDates(created, today(deps.timeZone)),
 			},
 			changedRows: 1,
 		};
@@ -513,15 +532,30 @@ export const updateBillTool = defineTool({
 	annotations: SETS,
 	input: updateBillInput,
 	output: z.object({
-		changedFields: z
+		changed_fields: z
 			.array(z.string())
 			.describe("The fields this call gave, a status the bill already had included."),
 		bill: billOutput,
 	}),
-	run: async (
-		deps,
-		{ billId, status, frequency, dueDayOfMonth, weekday, monthOfYear, ...edit },
-	) => {
+	run: async (deps, input) => {
+		const {
+			bill_id: billId,
+			status,
+			frequency,
+			due_day_of_month: dueDayOfMonth,
+			weekday,
+			month_of_year: monthOfYear,
+		} = input;
+		const edit = {
+			name: input.name,
+			amount: input.amount,
+			accountId: input.account_id,
+			categoryId: input.category_id,
+			billType: input.bill_type,
+			autopay: input.autopay,
+			paymentUrl: input.payment_url,
+			notes: input.notes,
+		};
 		const updated = await updateBill(deps, billId, {
 			...edit,
 			...(frequency === undefined
@@ -536,11 +570,11 @@ export const updateBillTool = defineTool({
 					}),
 			...(status === undefined ? {} : { status: STORED_STATUS[status] }),
 		});
-		const given = { ...edit, status, frequency, dueDayOfMonth, weekday, monthOfYear };
+		const { bill_id: _billId, ...given } = input;
 
 		return {
 			result: {
-				changedFields: Object.entries(given)
+				changed_fields: Object.entries(given)
 					.filter(([, value]) => value !== undefined)
 					.map(([key]) => key),
 				bill: billOf(updated),
@@ -554,20 +588,27 @@ export const recordBillPaymentTool = defineTool({
 	name: "record_bill_payment",
 	title: "Record a bill payment",
 	description:
-		"Records a payment toward one of a bill's open occurrences, the current one unless occurrenceDueOn names another. Without amount it settles what remains, as « Marquer comme payée » does, and refuses an occurrence not yet due unless occurrenceDueOn names it, so a retry never pays next month; with amount it adds a partial payment, at most what remains. It never links a bank transaction: Archant's matching and the review queue on « Factures » do. Tell the owner what you are about to record and wait for their agreement first; if it was recorded already, do not retry.",
+		"Records a payment toward one of a bill's open occurrences, the current one unless occurrence_due_on names another. Without amount it settles what remains, as « Marquer comme payée » does, and refuses an occurrence not yet due unless occurrence_due_on names it, so a retry never pays next month; with amount it adds a partial payment, at most what remains. It never links a bank transaction: Archant's matching and the review queue on « Factures » do. Tell the owner what you are about to record and wait for their agreement first; if it was recorded already, do not retry.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: recordBillPaymentInput,
 	output: z.object({
-		billId: z.string(),
+		bill_id: z.string(),
 		occurrence: occurrenceOutput.extend({ status: z.enum(OCCURRENCE_STATUSES) }),
 	}),
-	run: async (deps, { billId, ...input }) => {
-		const occurrence: RecordedOccurrence = await recordBillPayment(deps, billId, input);
+	run: async (
+		deps,
+		{ bill_id: billId, occurrence_due_on: occurrenceDueOn, amount, paid_on: paidOn },
+	) => {
+		const occurrence: RecordedOccurrence = await recordBillPayment(deps, billId, {
+			occurrenceDueOn,
+			amount,
+			paidOn,
+		});
 
 		return {
 			result: {
-				billId,
+				bill_id: billId,
 				occurrence: {
 					...occurrenceOf({ ...occurrence, open: occurrence.status === "scheduled" }),
 					status: occurrence.status,

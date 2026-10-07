@@ -123,6 +123,7 @@ Totals use the reporting currency with the left-out fields, as every other Archa
 - `declareBodySchema` accepts optional `billType` and `categoryId`; the declare dialog sends neither.
 
 ## Spec Change Log
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: the bill tools take and answer Sure's snake case names, `bill_id`, `bill_type`, `payment_state`, `due_within_days`, `first_due_on`, `is_income`, `occurrence_due_on`, `paid_on`, `lookback_months`, `current_occurrence`, `next_due_date`, Sure's `percent_change` and `upcoming_due_dates`, and `get_bills` answers `total_results`.
 
 ## Review Triage Log
 

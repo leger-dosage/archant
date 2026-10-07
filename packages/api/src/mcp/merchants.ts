@@ -4,7 +4,11 @@ import { createMerchantInput, noToolInput, renameMerchantInput } from "../schema
 import { createMerchant, listMerchants, renameMerchant } from "../services/merchants.ts";
 import { BANK_TEXT, CREATES, READ_ONLY, REPLACES, defineTool } from "./tool.ts";
 
-const merchant = z.object({ id: z.string(), name: z.string(), transactionCount: z.number().int() });
+const merchant = z.object({
+	id: z.string(),
+	name: z.string(),
+	transaction_count: z.number().int(),
+});
 
 export const getMerchants = defineTool({
 	name: "get_merchants",
@@ -14,7 +18,16 @@ export const getMerchants = defineTool({
 	annotations: READ_ONLY,
 	input: noToolInput,
 	output: z.object({ merchants: z.array(merchant) }),
-	run: async (deps) => ({ result: { merchants: await listMerchants(deps) }, changedRows: 0 }),
+	run: async (deps) => ({
+		result: {
+			merchants: (await listMerchants(deps)).map(({ id, name, transactionCount }) => ({
+				id,
+				name,
+				transaction_count: transactionCount,
+			})),
+		},
+		changedRows: 0,
+	}),
 });
 
 export const createMerchantTool = defineTool({
@@ -42,7 +55,7 @@ export const renameMerchantTool = defineTool({
 	annotations: REPLACES,
 	input: renameMerchantInput,
 	output: z.object({ merchant: z.object({ id: z.string(), name: z.string() }) }),
-	run: async (deps, { merchantId, name }) => {
+	run: async (deps, { merchant_id: merchantId, name }) => {
 		const { id, name: renamed } = await renameMerchant(deps, merchantId, { name });
 
 		return { result: { merchant: { id, name: renamed } }, changedRows: 1 };

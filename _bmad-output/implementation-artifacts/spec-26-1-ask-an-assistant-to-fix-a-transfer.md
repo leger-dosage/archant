@@ -102,6 +102,7 @@ Inputs name `transactionId` and `counterpartId`, the body of `POST /api/transfer
 ## Spec Change Log
 
 - Owner rule of 2026-10-07, checked against Sure at `56140319d`: Sure still has no transfer tool, so nothing here departs from one; no change.
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `transaction_id`, `counterpart_id`, `transfer_id`, `never_propose`, `outflow_transaction_id`, `inflow_transaction_id`; a candidate's label is `name`.
 
 ## Review Triage Log
 

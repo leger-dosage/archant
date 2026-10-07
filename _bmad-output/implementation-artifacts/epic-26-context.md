@@ -20,7 +20,7 @@ Let an assistant connected through `/api/mcp` correct the household's accounts, 
 - Read tools need `archant:read`, write tools `archant:write`. A token counts only while the user who consented is an administrator; a viewer connects no assistant. A write called with a read-only token answers `403 insufficient_scope` before any tool runs, and is recorded.
 - Each call is recorded in `assistant_calls` with its client, tool, time, outcome and changed count, never its arguments or answer; a file sent to a tool is never logged nor recorded.
 - No preview flag: Archant has none, so every tool is listed for every token holding its scope.
-- Every input is parsed by a Zod schema in `schemas/assistants.ts`; amounts cross as decimal strings beside their currency, references as ids from a list tool, never names.
+- Every input is parsed by a Zod schema in `schemas/assistants.ts`; every field is named in snake case, Sure's name where Sure's function has the field; amounts cross as decimal strings beside their currency, references as ids from a list tool, never names.
 - Each read tool returning bank-written text carries `BANK_TEXT` in its description.
 - The server's `INSTRUCTIONS` gain one paragraph per tool group, each ending on the owner's agreement before the write.
 - Vitest covers each tool through the MCP handler, a read-only token refused and each write recorded with its count.

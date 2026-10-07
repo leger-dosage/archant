@@ -100,6 +100,7 @@ Sure, `origin/main` at `56140319d` (7 October 2026): `import_bank_statement` tak
 ## Spec Change Log
 
 - Owner rule of 2026-10-07, no divergence from Sure unless forced by money, French text, accessibility, security or the API error contract. Amended Boundaries: 5 lines of each group, as Sure's `import_bank_statement` previews five, not 20. KEEP: the 1 MB and 1.5 MB limits and the counts `confirm_import` compares (security); `VALIDATION_ERROR` and `INVALID_IMPORT_FILE`, and a refused field for a missing `accountId` rather than Sure's account list (API error contract); `preview_import` and `confirm_import`, which Sure leaves to its import page, Archant having none to resume a preview.
+- Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `import_bank_statement` takes `account_id` and Sure's `content_base64`; `preview_import` and `confirm_import` take `import_id`, `move_opening_date`, `expected_counts`, a mapping's `skip_rows`, `has_header`, `date_format` and a QIF `date_order`, and the preview answers `opening_suggestion`, `statement_balance`, each line's label as `name`.
 
 ## Review Triage Log
 

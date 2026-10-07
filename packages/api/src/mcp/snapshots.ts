@@ -12,11 +12,11 @@ import { createSnapshot, listValuations } from "../services/snapshots.ts";
 import { BANK_TEXT, READ_ONLY, REPLACES, decimal, defineTool } from "./tool.ts";
 
 const snapshotFields = {
-	id: z.string(),
+	entry_id: z.string(),
 	date: z.string(),
-	balance: decimal("The recorded stored balance"),
+	amount: decimal("The recorded stored balance"),
 	computed: decimal("The balance the transactions alone give for that day"),
-	gap: decimal("balance minus computed"),
+	gap: decimal("amount minus computed"),
 	currency: z.string(),
 };
 
@@ -24,9 +24,9 @@ function snapshotOf(record: SnapshotRecord) {
 	const { currency } = record;
 
 	return {
-		id: record.id,
+		entry_id: record.id,
 		date: record.date,
-		balance: toDecimalString({ amount: record.balance, currency }),
+		amount: toDecimalString({ amount: record.balance, currency }),
 		computed: toDecimalString({ amount: record.computed, currency }),
 		gap: toDecimalString({ amount: record.gap, currency }),
 		currency,
@@ -41,20 +41,20 @@ const VALUATION_KINDS = [
 ] as const satisfies readonly ValuationRecord["kind"][];
 
 const valuation = z.object({
-	id: z.string(),
-	accountId: z.string(),
-	accountName: z.string(),
+	entry_id: z.string(),
+	account_id: z.string(),
+	account_name: z.string(),
 	date: z.string(),
 	kind: z
 		.enum(VALUATION_KINDS)
 		.describe(
 			'"opening_anchor": the opening balance; "reconciliation": a snapshot, as the « Soldes » tab lists it; "current_anchor": the balance a bank last gave.',
 		),
-	balance: decimal("The recorded stored balance"),
+	amount: decimal("The recorded stored balance"),
 	computed: decimal("A snapshot's balance its transactions alone give for that day")
 		.nullable()
 		.describe("null for an anchor, which sets the balance itself."),
-	gap: decimal("balance minus computed").nullable().describe("null for an anchor."),
+	gap: decimal("amount minus computed").nullable().describe("null for an anchor."),
 	currency: z.string(),
 	notes: z
 		.string()
@@ -70,12 +70,12 @@ function valuationOf(record: ValuationRecord): z.input<typeof valuation> {
 		value === null ? null : toDecimalString({ amount: value, currency });
 
 	return {
-		id: record.id,
-		accountId: record.accountId,
-		accountName: record.accountName,
+		entry_id: record.id,
+		account_id: record.accountId,
+		account_name: record.accountName,
 		date: record.date,
 		kind: record.kind,
-		balance: toDecimalString({ amount: record.balance, currency }),
+		amount: toDecimalString({ amount: record.balance, currency }),
 		computed: amount(record.computed),
 		gap: amount(record.gap),
 		currency,
@@ -86,31 +86,31 @@ function valuationOf(record: ValuationRecord): z.input<typeof valuation> {
 export const getValuations = defineTool({
 	name: "get_valuations",
 	title: "Valuations",
-	description: `Recorded valuations, as Sure's get_valuations, most recent first, ${DEFAULT_PAGE_SIZE} a page: every active account's opening balance, its snapshots, the « Soldes » tab's, and the balance a bank last gave, unless accountId names one account, between two optional dates. Each snapshot comes with the balance its transactions alone give for that day, the gap between them, and its notes, where record_valuation stores the source it cites. Use it to audit what record_valuation wrote, to find the dates that already carry a value, or to trace where a balance came from. ${BANK_TEXT}`,
+	description: `Recorded valuations, as Sure's get_valuations, most recent first, ${DEFAULT_PAGE_SIZE} a page: every active account's opening balance, its snapshots, the « Soldes » tab's, and the balance a bank last gave, unless account_id names one account, between two optional dates. Each snapshot comes with the balance its transactions alone give for that day, the gap between them, and its notes, where record_valuation stores the source it cites. Use it to audit what record_valuation wrote, to find the dates that already carry a value, or to trace where a balance came from. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: valuationsInput,
 	output: z.object({
-		items: z.array(valuation),
+		valuations: z.array(valuation),
 		page: z.number().int(),
-		pageSize: z.number().int(),
-		total: z.number().int(),
-		totalPages: z.number().int(),
+		page_size: z.number().int(),
+		total_results: z.number().int(),
+		total_pages: z.number().int(),
 	}),
-	run: async (deps, { accountId, startDate, endDate, page }) => {
+	run: async (deps, { account_id: accountId, start_date: from, end_date: to, page }) => {
 		const found = await listValuations(
 			deps,
-			{ accountId, from: startDate, to: endDate },
+			{ accountId, from, to },
 			{ page, pageSize: DEFAULT_PAGE_SIZE },
 		);
 
 		return {
 			result: {
-				items: found.items.map(valuationOf),
+				valuations: found.items.map(valuationOf),
 				page: found.page,
-				pageSize: found.pageSize,
-				total: found.total,
-				totalPages: Math.ceil(found.total / found.pageSize),
+				page_size: found.pageSize,
+				total_results: found.total,
+				total_pages: Math.ceil(found.total / found.pageSize),
 			},
 			changedRows: 0,
 		};
@@ -125,17 +125,20 @@ export const recordValuationTool = defineTool({
 		`The source citation is required, as in Sure, and checked against this grammar: ["${ESTIMATED_PREFIX}"] citation [" (grade: A|B|C)"]. The "${ESTIMATED_PREFIX}" prefix says the value was interpolated or proxied, not read off a document; an estimate must carry a grade. Grade A is an official document for that exact date, such as a statement or a loan table; B is derived with a document; C is a proxy or an assumption, to derive again from the real source. For example "Relevé Boursorama 2026-03-31, solde de fin de mois (grade: A)" or "estimated: linear interpolation over 2026-02 / 2026-04 statements (grade: C)".`,
 		"If you have no document to cite, do not invent one and do not call this tool: ask the owner for the source. A value with no provenance is worse than a missing one, because it looks authoritative.",
 		"The citation is stored in the snapshot's notes; what the owner wrote there is kept and the new citation appended below it, and a citation already there is not added again.",
-		"A date on or before the opening date, or after today, answers VALIDATION_ERROR on date; a balance the account's currency cannot hold, VALIDATION_ERROR on balance; a source outside the grammar, VALIDATION_ERROR on source with the reason as its code: source_required, source_too_long, source_invalid, estimated_prefix, unknown_grade, no_document_named or estimate_without_grade; an unknown accountId, NOT_FOUND.",
+		"A date on or before the opening date, or after today, answers VALIDATION_ERROR on date; an amount the account's currency cannot hold, VALIDATION_ERROR on amount; a source outside the grammar, VALIDATION_ERROR on source with the reason as its code: source_required, source_too_long, source_invalid, estimated_prefix, unknown_grade, no_document_named or estimate_without_grade; an unknown account_id, NOT_FOUND.",
 	].join("\n\n"),
 	scope: "archant:write",
 	annotations: REPLACES,
+	fieldPaths: { balance: "amount" },
 	input: recordValuationInput,
 	output: z.object({
 		...snapshotFields,
-		accountId: z.string(),
-		replacedExisting: z
+		account_id: z.string(),
+		replaced_existing: z
 			.boolean()
-			.describe("Whether a snapshot already held the date: it keeps its id, with this balance."),
+			.describe(
+				"Whether a snapshot already held the date: it keeps its entry_id, with this amount.",
+			),
 		provenance: z
 			.object({
 				source: z.string(),
@@ -145,14 +148,19 @@ export const recordValuationTool = defineTool({
 			})
 			.describe("The source as parsed, Sure's provenance."),
 	}),
-	run: async (deps, { accountId, source, ...input }) => {
-		const recorded = await createSnapshot(deps, accountId, input, { source: source.source });
+	run: async (deps, { account_id: accountId, date, amount, source }) => {
+		const recorded = await createSnapshot(
+			deps,
+			accountId,
+			{ date, balance: amount },
+			{ source: source.source },
+		);
 
 		return {
 			result: {
 				...snapshotOf(recorded),
-				accountId: recorded.accountId,
-				replacedExisting: recorded.replacedExisting,
+				account_id: recorded.accountId,
+				replaced_existing: recorded.replacedExisting,
 				provenance: source,
 			},
 			changedRows: 1,
