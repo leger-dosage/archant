@@ -1660,6 +1660,16 @@ describe("a viewer on a loan", () => {
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { monthlyPayment: 53_969, insured: true } });
 	});
+
+	it("reads its payoff chart", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${loan.id}/payoff-chart?period=all`);
+
+		expect(read.status).toBe(200);
+		expect(await read.json()).toMatchObject({ data: { scheduledPayoffDate: "2045-12-05" } });
+	});
 });
 
 describe("GET /api/accounts with inactive and excluded accounts", () => {
@@ -2386,5 +2396,200 @@ describe("GET /api/accounts/:id/overview", () => {
 
 		expect(response.status).toBe(404);
 		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+const payoffChart = (accountId: string, period: "1M" | "3M" | "6M" | "1Y" | "all") =>
+	testClient(buildApp()).api.accounts[":id"]["payoff-chart"].$get({
+		param: { id: accountId },
+		query: { period },
+	});
+
+async function payoffChartOf(accountId: string, period: "1M" | "1Y" | "all" = "all") {
+	const response = await payoffChart(accountId, period);
+
+	expect(response.status).toBe(200);
+
+	return (await response.json()).data;
+}
+
+describe("GET /api/accounts/:id/payoff-chart", () => {
+	it("charts the owner's ING mortgage on contract on 6 October 2026", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "104 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		const data = await payoffChartOf(loan.id);
+
+		expect(data).toMatchObject({
+			asOf: "2026-10-06",
+			currency: "EUR",
+			period: "all",
+			from: "2020-12-05",
+			to: "2045-12-05",
+			balance: 10_472_454,
+			// Sure's change line « since the loan started ».
+			change: { amount: -2_527_546, percent: -19.4 },
+			visible: ["actual", "scheduled", "projected"],
+			scheduledPayoffDate: "2045-12-05",
+			projectedPayoff: { status: "paid_off", date: "2045-12-05" },
+			monthsSaved: 0,
+			interestSaved: 0,
+			balloon: null,
+		});
+		expect(data?.scheduled).toHaveLength(301);
+		expect(data?.scheduled[0]).toEqual({ date: "2020-12-05", balance: 13_000_000 });
+		expect(data?.scheduled[70]).toEqual({ date: "2026-10-05", balance: 10_472_454 });
+		expect(data?.projected).toHaveLength(231);
+		expect(data?.projected[0]).toEqual({ date: "2026-10-06", balance: 10_472_454 });
+		expect(data?.projected.at(-1)).toEqual({ date: "2045-12-05", balance: 0 });
+		// Recorded from the opening date, never past today.
+		expect(data?.actual[0]).toEqual({ date: "2026-09-01", balance: 10_472_454 });
+		expect(data?.actual.at(-1)).toEqual({ date: "2026-10-06", balance: 10_472_454 });
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			projectedPayoff: { status: "paid_off", date: "2045-12-05" },
+		});
+	});
+
+	it("ends a period today, where the projection draws no line", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "104 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		const data = await payoffChartOf(loan.id, "1Y");
+
+		expect(data).toMatchObject({
+			period: "1Y",
+			from: "2025-10-06",
+			to: "2026-10-06",
+			visible: ["actual", "scheduled"],
+			projectedPayoff: { status: "paid_off", date: "2045-12-05" },
+		});
+		expect(data?.scheduled.at(0)?.date).toBe("2025-10-05");
+		expect(data?.scheduled.at(-1)?.date).toBe("2026-11-05");
+		expect(data?.projected.map((point) => point.date)).toEqual(["2026-10-06", "2026-11-05"]);
+	});
+
+	it("thins years of recorded balances as the account chart does", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingDate: "2023-10-01",
+			openingBalance: "104 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		const actual = (await payoffChartOf(loan.id))?.actual ?? [];
+
+		// Weekly past a year: each week's last day, today last.
+		expect(actual.length).toBeLessThan(200);
+		expect(actual.at(-1)?.date).toBe("2026-10-06");
+	});
+
+	it("finishes 25 months early after 10 000,00 € repaid early", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "94 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		await expect(payoffChartOf(loan.id)).resolves.toMatchObject({
+			to: "2045-12-05",
+			projectedPayoff: { status: "paid_off", date: "2043-11-05" },
+			monthsSaved: 25,
+			interestSaved: 390_600,
+			balloon: null,
+		});
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			projectedPayoff: { status: "paid_off", date: "2043-11-05" },
+		});
+	});
+
+	it("names what is left at maturity for a balance the contract no longer clears", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "105 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		await expect(payoffChartOf(loan.id)).resolves.toMatchObject({
+			projectedPayoff: { status: "not_converged" },
+			monthsSaved: null,
+			interestSaved: null,
+			balloon: 141_701,
+		});
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			projectedPayoff: { status: "not_converged" },
+		});
+	});
+
+	it("projects nothing for a loan that owes nothing", async () => {
+		const loan = await openAccount({ ...mortgage, openingBalance: "0", details: ingTerms });
+
+		const data = await payoffChartOf(loan.id);
+
+		expect(data).toMatchObject({
+			projectedPayoff: { status: "not_applicable" },
+			projected: [],
+			visible: ["actual", "scheduled"],
+			monthsSaved: null,
+			interestSaved: null,
+			balloon: null,
+		});
+		await expect(scheduleOf(loan.id)).resolves.toMatchObject({
+			projectedPayoff: { status: "not_applicable" },
+		});
+	});
+
+	it("follows the balance once a snapshot records it", async () => {
+		const loan = await openAccount({
+			...mortgage,
+			openingBalance: "104 724,54",
+			details: ingTerms,
+		});
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		const { status } = await postSnapshot(loan.id, { date: "2026-10-06", balance: "94 724,54" });
+
+		expect(status).toBe(201);
+		await expect(payoffChartOf(loan.id)).resolves.toMatchObject({
+			balance: 9_472_454,
+			projectedPayoff: { status: "paid_off", date: "2043-11-05" },
+		});
+	});
+
+	it("answers null for a loan without a schedule, and for another account", async () => {
+		const withoutAmount = await openAccount({
+			...mortgage,
+			details: { ...ingTerms, originalAmount: "" },
+		});
+		const withoutTerms = await openAccount(mortgage);
+		const checking = await openAccount();
+
+		const answers = await Promise.all(
+			[withoutAmount, withoutTerms, checking].map((account) => payoffChartOf(account.id)),
+		);
+
+		expect(answers).toEqual([null, null, null]);
+	});
+
+	it("refuses an unknown period, and answers NOT_FOUND for an unknown account", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const refused = await buildApp().request(`/api/accounts/${loan.id}/payoff-chart?period=2Y`);
+		const unknown = await payoffChart("nope", "all");
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("VALIDATION_ERROR");
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
 	});
 });

@@ -721,12 +721,33 @@
 		"total": "Total",
 		"edit": "Modifier les détails du prêt"
 	},
+	"loanChart": {
+		"series": {
+			"actual": "Solde enregistré",
+			"scheduled": "Échéancier du contrat",
+			"projected": "Projection"
+		},
+		"legend": "Séries du graphique",
+		"summary": "Solde enregistré : {{balance}}, {{change}} depuis le début du prêt. Fin prévue au contrat : {{scheduledPayoff}}. Fin projetée depuis le solde d'aujourd'hui : {{projectedPayoff}}.",
+		"noPayoff": "aucune au remboursement actuel",
+		"historyStarts": "Soldes enregistrés à partir du {{date}}.",
+		"projectedPayoff": "Fin prévue",
+		"monthsSaved_one": "{{count}} mois plus tôt que prévu",
+		"monthsSaved_other": "{{count}} mois plus tôt que prévu",
+		"onSchedule": "Conforme à l'échéancier",
+		"interestSaved": "Intérêts économisés",
+		"notConverged": "Au remboursement actuel, ce solde n'est pas soldé à l'échéance du contrat : {{balloon}} resteraient dus.",
+		"basis": "Compare le solde enregistré aujourd'hui au solde de l'échéancier à la même date. Une mensualité prélevée avant sa date d'échéance paraît en avance jusqu'à cette date, une mensualité prélevée après paraît en retard."
+	},
 	"loanSchedule": {
 		"label": "Échéancier",
 		"monthlyPayment": "Mensualité",
 		"openingPayment": "Première mensualité",
 		"totalInterest": "Intérêts totaux",
 		"totalCost": "Coût total",
+		"projectedPayoff": "Fin prévue",
+		"notConverged": "Non soldé à l'échéance",
+		"notApplicable": "N/D",
 		"past": "échéance passée",
 		"description": "Calculé à partir du montant emprunté, du taux et de la durée, depuis le {{startDate}}. Les remboursements anticipés n'y figurent pas.",
 		"variableRateNotice": "Le taux de ce prêt varie dans le temps. L'échéancier est recalculé à chaque changement enregistré : la date de fin reste la même et la mensualité est ajustée. Un changement pas encore enregistré modifiera ces chiffres.",

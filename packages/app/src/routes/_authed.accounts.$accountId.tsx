@@ -21,6 +21,7 @@ import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
 import { ImportHistory, ImportHistorySkeleton } from "@/components/ImportHistory";
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
+import { LazyLoanChart } from "@/components/LazyLoanChart";
 import { LoanOverview, LoanOverviewSkeleton } from "@/components/LoanOverview";
 import { LoanSchedule, LoanScheduleSkeleton } from "@/components/LoanSchedule";
 import { LoanSummary } from "@/components/LoanSummary";
@@ -54,12 +55,14 @@ import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useLoanOverview } from "@/hooks/useLoanOverview";
+import { useLoanPayoffChart } from "@/hooks/useLoanPayoffChart";
 import { useLoanSchedule } from "@/hooks/useLoanSchedule";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTrades } from "@/hooks/useTrades";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf } from "@/lib/api";
+import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
@@ -421,7 +424,7 @@ function AccountPage() {
 	const { accountId } = Route.useParams();
 	const {
 		page = 1,
-		period = DEFAULT_BALANCE_PERIOD,
+		period: requestedPeriod,
 		tab: requestedTab = DEFAULT_TAB,
 		snapshotsPage = 1,
 		tradesPage = 1,
@@ -429,7 +432,6 @@ function AccountPage() {
 	} = Route.useSearch();
 	const account = useAccount(accountId);
 	const admin = useIsAdmin();
-	const balanceHistory = useBalanceHistory(accountId, period);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	const [snapshotDialog, setSnapshotDialog] = useState<SnapshotDialogState>({
 		open: false,
@@ -473,6 +475,16 @@ function AccountPage() {
 		loan &&
 		(schedule.isError ||
 			(schedule.data === undefined ? requestedTab === "schedule" : schedule.data !== null));
+	// A loan with a schedule charts where it is heading instead of its balance,
+	// as Sure's account page, and opens on its whole life, as Sure's loan chart
+	// does for any period it does not offer, its default among them. Until the
+	// schedule answers, neither chart is drawn.
+	const charted = loan && schedule.data !== undefined && schedule.data !== null;
+	const deciding = loan && schedule.isPending;
+	const defaultPeriod: BalancePeriod = charted ? "all" : DEFAULT_BALANCE_PERIOD;
+	const period = requestedPeriod ?? defaultPeriod;
+	const balanceHistory = useBalanceHistory(accountId, period, !charted && !deciding);
+	const payoffChart = useLoanPayoffChart(accountId, period, charted);
 	const tab =
 		(requestedTab === "trades" && account.data !== undefined && !investment) ||
 		(requestedTab === "overview" && account.data !== undefined && !loan) ||
@@ -521,7 +533,7 @@ function AccountPage() {
 		void navigate({
 			search: (previous) => ({
 				...previous,
-				period: next === DEFAULT_BALANCE_PERIOD ? undefined : next,
+				period: next === defaultPeriod ? undefined : next,
 			}),
 			replace: true,
 		});
@@ -601,11 +613,20 @@ function AccountPage() {
 				action={<PeriodToggle period={period} onPeriodChange={changePeriod} />}
 			>
 				<div className="flex flex-col gap-4 p-4">
-					<LazyBalanceChart
-						history={balanceHistory}
-						summaryKey="balances.summary"
-						valueLabel={t("balances.balance")}
-					/>
+					{deciding && (
+						<Skeleton
+							className={`${CHART_HEIGHTS[DEFAULT_CHART_HEIGHT]} w-full`}
+							aria-hidden="true"
+						/>
+					)}
+					{charted && <LazyLoanChart chart={payoffChart} />}
+					{!charted && !deciding && (
+						<LazyBalanceChart
+							history={balanceHistory}
+							summaryKey="balances.summary"
+							valueLabel={t("balances.balance")}
+						/>
+					)}
 				</div>
 			</Section>
 
