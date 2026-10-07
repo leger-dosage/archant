@@ -414,6 +414,13 @@
       "when": 1791358116000,
       "tag": "0058_loan_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1791367716754,
+      "tag": "0059_add_sync_start_date",
+      "breakpoints": true
     }
   ]
 }

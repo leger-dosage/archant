@@ -67,13 +67,16 @@ const existingLinkSchema = z.object({
 
 /**
  * The rows the user did not skip. A skipped row is simply absent: nothing
- * is written for it, and it stays linkable later.
+ * is written for it, and it stays linkable later. `syncStartDate` is Sure's
+ * `sync_start_date`, absent to keep the stored one; the service checks its
+ * range, which depends on today in the app's zone.
  */
 export const linkBankAccountsSchema = z.object({
 	links: z
 		.array(z.discriminatedUnion("action", [createLinkSchema, existingLinkSchema]))
 		.min(1)
 		.max(100),
+	syncStartDate: z.iso.date().optional(),
 });
 
 export type LinkBankAccountsInput = z.infer<typeof linkBankAccountsSchema>;

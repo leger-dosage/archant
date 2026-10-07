@@ -331,3 +331,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-24-1-record-a-loans-terms-as-sure-does.md`
   summary: Test the term proposed to a migrated loan through « Modifier le compte », not only `loanDetailsToInput`.
   evidence: The API no longer accepts `endDate`, so Playwright cannot seed such a loan; `EditAccountDialog` passing the wrong opening date would go unnoticed. Needs a component test or a database seed for e2e.
+- source_spec: `_bmad-output/implementation-artifacts/spec-25-1-choose-the-start-date-of-the-first-sync.md`
+  summary: Linking a bank account to an existing account opened after the chosen start date refuses the synced lines on or before its opening date, silently.
+  evidence: Unverified as a problem in use, low if true. `ingest` refuses such lines for every link since Story 10.2; a longer start date only makes it likelier. Offering to move the opening date, as a file import does, would settle it.

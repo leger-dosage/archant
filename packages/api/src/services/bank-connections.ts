@@ -1,5 +1,6 @@
 import type { BankConnector } from "../connectors/bank-connector.ts";
 import type { ConnectionAlert } from "../domain/bank-connection-alert.ts";
+import type { IsoDate } from "../domain/dates.ts";
 import type { Env } from "../env.ts";
 import type { ErrorCode, FieldError } from "../lib/errors.ts";
 import type {
@@ -28,7 +29,7 @@ import { BankProviderError } from "../connectors/bank-connector.ts";
 import { toStoredBankBalance } from "../domain/balances/stored-balance.ts";
 import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
 import { connectionAlert } from "../domain/bank-connection-alert.ts";
-import { addMonths, today } from "../domain/dates.ts";
+import { addDays, addMonths, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { decrypt, encrypt } from "./crypto.ts";
@@ -76,6 +77,8 @@ export type BankConnectionRecord = {
 	syncing: boolean;
 	/** The banner the connection shows, `null` for none. */
 	alert: ConnectionAlert | null;
+	/** The day a bank account's first sync reads from, `null` for 90 days back. */
+	syncStartDate: IsoDate | null;
 	createdAt: number;
 };
 
@@ -140,6 +143,7 @@ function toRecord(row: typeof bankConnections.$inferSelect, now: number): BankCo
 		lastError: row.lastError,
 		syncing: row.syncStartedAt !== null && row.syncStartedAt >= now - LEASE_MS,
 		alert: connectionAlert(row, now),
+		syncStartDate: row.syncStartDate,
 		createdAt: row.createdAt,
 	};
 }
@@ -536,6 +540,7 @@ async function activeConnection(deps: BankConnectionDeps, connectionId: string) 
 			country: bankConnections.country,
 			institutionName: bankConnections.institutionName,
 			sessionId: bankConnections.sessionId,
+			syncStartDate: bankConnections.syncStartDate,
 		})
 		.from(bankConnections)
 		.where(and(eq(bankConnections.id, connectionId), eq(bankConnections.status, "active")))
@@ -599,6 +604,12 @@ export async function listBankAccounts(
 
 const invalidLink = (path: string): FieldError => ({ path, code: "invalid_value" });
 
+/**
+ * How far back the first sync may read, Sure's `2.years.ago`, which is also
+ * the default opening date of an account a link creates.
+ */
+const HISTORY_MONTHS = 24;
+
 /** A stored bank account's currency, which the connector checked on the way in. */
 function currencyOf(bankAccount: BankAccount): CurrencyCode {
 	if (!isCurrencyCode(bankAccount.currency)) {
@@ -620,7 +631,7 @@ export async function linkBankAccounts(
 	input: LinkBankAccountsInput,
 ): Promise<BankAccountRecord[]> {
 	const { connector } = await resolveBankConnector(deps);
-	await activeConnection(deps, connectionId);
+	const connection = await activeConnection(deps, connectionId);
 
 	const ids = input.links.map((link) => link.bankAccountId);
 	const rows = await deps.db
@@ -667,6 +678,17 @@ export async function linkBankAccounts(
 		planned.push({ link, bankAccount });
 	}
 
+	const day = today(deps.timeZone);
+	const { syncStartDate } = input;
+
+	// Sure's setup screen offers two years back to today; a bank may still
+	// answer with less.
+	if (syncStartDate !== undefined && syncStartDate > day) {
+		errors.push({ path: "syncStartDate", code: "date_in_future" });
+	} else if (syncStartDate !== undefined && syncStartDate < addMonths(day, -HISTORY_MONTHS)) {
+		errors.push({ path: "syncStartDate", code: "sync_start_too_early" });
+	}
+
 	if (errors.length > 0) {
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", errors);
 	}
@@ -691,10 +713,24 @@ export async function linkBankAccounts(
 		throw error;
 	}
 
-	const openingDate = addMonths(today(deps.timeZone), -24);
+	const firstDay = syncStartDate ?? connection.syncStartDate;
+	// Sure's `OpeningBalanceManager.default_date`, two years back, but before
+	// the first day the sync reads: a line on the opening date is refused.
+	const openingDate =
+		firstDay === null
+			? addMonths(day, -HISTORY_MONTHS)
+			: minDate(addMonths(day, -HISTORY_MONTHS), addDays(firstDay, -1));
 
 	await deps.db.transaction(async (tx) => {
 		const inner: ServiceDeps = { ...deps, db: tx };
+
+		if (syncStartDate !== undefined) {
+			await tx
+				.update(bankConnections)
+				.set({ syncStartDate, updatedAt: Date.now() })
+				.where(eq(bankConnections.id, connectionId));
+		}
+
 		const write = async ({ link, bankAccount }: (typeof planned)[number], index: number) => {
 			const balance = balances[index] ?? null;
 			const accountId =

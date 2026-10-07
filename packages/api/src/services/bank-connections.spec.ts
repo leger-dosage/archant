@@ -1155,6 +1155,70 @@ describe("linkBankAccounts", () => {
 		});
 	});
 
+	it("stores the first sync's start date with the links, and keeps it when a later link names none", async () => {
+		const connection = await connected();
+		const { checking, card } = await bankAccountsOf(connection.id);
+		mockProvider();
+
+		await linkBankAccounts(deps(), connection.id, {
+			links: [
+				{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+			],
+			syncStartDate: "2025-01-15",
+		});
+		await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: card.id, action: "create", type: "credit_card", subtype: null }],
+		});
+
+		await expect(listConnections(deps())).resolves.toContainEqual(
+			expect.objectContaining({ id: connection.id, syncStartDate: "2025-01-15" }),
+		);
+	});
+
+	it("opens a new account the day before the oldest start date, so that day's lines fit", async () => {
+		const connection = await connected();
+		const { checking } = await bankAccountsOf(connection.id);
+		mockProvider();
+
+		const list = await linkBankAccounts(deps(), connection.id, {
+			links: [
+				{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+			],
+			syncStartDate: "2024-09-24",
+		});
+
+		const accountId = list.find((row) => row.id === checking.id)?.account?.id ?? "";
+		await expect(valuations(accountId)).resolves.toContainEqual({
+			kind: "opening_anchor",
+			date: "2024-09-23",
+			amount: 123456,
+		});
+	});
+
+	it("refuses a start date more than two years back or after today, writing nothing", async () => {
+		const connection = await connected();
+		const { checking } = await bankAccountsOf(connection.id);
+		const links = [
+			{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+		] as const;
+
+		await expect(
+			refusedLink({ links: [...links], syncStartDate: "2024-09-23" }, connection.id),
+		).resolves.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "syncStartDate", code: "sync_start_too_early" }],
+		});
+		await expect(
+			refusedLink({ links: [...links], syncStartDate: "2026-09-25" }, connection.id),
+		).resolves.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "syncStartDate", code: "date_in_future" }],
+		});
+		await expect(listConnections(deps())).resolves.toContainEqual(
+			expect.objectContaining({ id: connection.id, syncStartDate: null }),
+		);
+	});
+
 	it("answers NOT_FOUND for an unknown connection", async () => {
 		await expect(
 			refusedLink(

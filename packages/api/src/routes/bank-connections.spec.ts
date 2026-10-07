@@ -433,6 +433,39 @@ describe("/api/bank-connections", () => {
 		expect(await account.json()).toMatchObject({ data: { balance: 123456 } });
 	});
 
+	it("refuses a start date that is not a day, naming the field, and links nothing", async () => {
+		const { client, connection } = await connectedApp();
+		const rows = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data;
+		const checking = rows.find((row) => row.name === "Compte courant");
+
+		const response = await client[":id"].accounts.$post({
+			param: { id: connection.id },
+			json: {
+				links: [
+					{
+						bankAccountId: checking?.id ?? "",
+						action: "create",
+						type: "depository",
+						subtype: "checking",
+					},
+				],
+				syncStartDate: "2025-02-30",
+			},
+		});
+
+		expect(response.status).toBe(400);
+		expect(errorBody.parse(await response.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "syncStartDate", code: "invalid_format" }],
+		});
+		const after = (
+			await (await client[":id"].accounts.$get({ param: { id: connection.id } })).json()
+		).data;
+		expect(after.find((row) => row.id === checking?.id)?.account).toBeNull();
+	});
+
 	it("names a linked account's connection, and refuses to delete it until disconnected", async () => {
 		const { app, client, connection } = await connectedApp();
 		const rows = (

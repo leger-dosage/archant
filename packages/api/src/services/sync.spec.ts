@@ -329,22 +329,45 @@ const balanceRequests = (requests: ReturnType<typeof mockProvider>) =>
 
 describe("windowStart", () => {
 	it("reads three months back for an account never synced", () => {
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", null)).toBe("2026-06-26");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, null)).toBe("2026-06-26");
 	});
 
 	it("reads from seven days before the last sync, on its day in the app's zone", () => {
 		// 23:30 UTC on the 20th is the 21st in Paris.
 		expect(
-			windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris", null),
+			windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris", null, null),
 		).toBe("2026-09-14");
 	});
 
 	it("starts no later than the oldest pending entry, so its absence means something", () => {
 		const yesterday = Date.parse("2026-09-23T10:00:00Z");
 
-		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-04")).toBe("2026-09-04");
-		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-20")).toBe("2026-09-16");
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2026-06-01")).toBe("2026-06-01");
+		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-04", null)).toBe(
+			"2026-09-04",
+		);
+		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-20", null)).toBe(
+			"2026-09-16",
+		);
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2026-06-01", null)).toBe("2026-06-01");
+	});
+
+	it("reads from the connection's start date for an account never synced", () => {
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, "2025-01-15")).toBe("2025-01-15");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2024-12-01", "2025-01-15")).toBe(
+			"2024-12-01",
+		);
+	});
+
+	it("keeps a synced account's window whatever the start date", () => {
+		expect(
+			windowStart(
+				Date.parse("2026-09-23T10:00:00Z"),
+				"2026-09-24",
+				"Europe/Paris",
+				null,
+				"2025-01-15",
+			),
+		).toBe("2026-09-16");
 	});
 });
 
@@ -377,6 +400,70 @@ describe("syncConnection", () => {
 			),
 		).resolves.toEqual([{ source: "enable-banking", connectionId, importId: null }]);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: null });
+	});
+
+	it("reads an account's first statement from the connection's start date", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ syncStartDate: "2025-01-15" });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
+			["?date_from=2025-01-15", "?date_from=2025-01-15&continuation_key=page-2"],
+		);
+	});
+
+	it("keeps a synced account's window when the start date moves", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ syncStartDate: "2026-06-01" });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartDate: "2025-01-15" })
+			.where(eq(bankConnections.id, connectionId));
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).at(-2)?.search).toBe(
+			"?date_from=2026-09-17",
+		);
+	});
+
+	it("reads an account linked later from the stored start date, the synced one from its last sync", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ syncStartDate: "2025-01-15" });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		vi.setSystemTime(NOW + 7 * DAY);
+		await linkedAccount(connectionId, FIXTURE_CARD_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).at(-2)?.search).toBe(
+			"?date_from=2026-09-17",
+		);
+		expect(transactionRequests(requests, FIXTURE_CARD_UID)[0]?.search).toBe(
+			"?date_from=2025-01-15",
+		);
+	});
+
+	it("keeps what a bank returns when it holds less history than asked, without an error", async () => {
+		// Asked two years back, the bank answers with its recent lines only, as
+		// PSD2 lets it.
+		const requests = mockProvider();
+		const connectionId = await newConnection({ syncStartDate: "2024-09-24" });
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		const status = await syncConnection(deps(), connectionId);
+
+		expect(status).toEqual({ lastSyncedAt: NOW, lastError: null });
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID)[0]?.search).toBe(
+			"?date_from=2024-09-24",
+		);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
 	});
 
 	it("creates nothing a day later, reading from seven days before the last sync", async () => {
