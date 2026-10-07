@@ -49,7 +49,8 @@ export type AmortizationSchedule = {
  * the month's end as Ruby's `>>`. `null` when the loan is not amortizable, as
  * Sure's `amortizable?`: no amount borrowed above zero, no rate type, no rate,
  * no term within the simulator's 1 200 periods, or no origination date. The
- * down payment is not subtracted, and there is never a fallback principal.
+ * principal is Sure's `original_balance`, which `originalBalance` resolves
+ * for the caller, and the down payment is not subtracted.
  */
 export function amortizationSchedule(terms: ScheduleTerms): AmortizationSchedule | null {
 	const { originalAmount, termMonths, rateType, interestRate, rateChanges, originationDate } =

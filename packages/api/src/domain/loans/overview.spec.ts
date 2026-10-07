@@ -27,8 +27,12 @@ const ing: LoanDetails = {
 	endDate: null,
 };
 
-const overviewOf = (details: LoanDetails | null, asOf = "2026-10-04", balance = 10_510_482n) =>
-	loanOverview({ details, balance, openingDate: "2026-09-01", asOf });
+const overviewOf = (
+	details: LoanDetails | null,
+	asOf = "2026-10-04",
+	balance = 10_510_482n,
+	opening = { date: "2026-09-01", balance: 0n },
+) => loanOverview({ details, balance, opening, asOf });
 
 describe("monthsElapsed", () => {
 	it("counts a month once it is served in full", () => {
@@ -68,7 +72,6 @@ describe("leverage", () => {
 	it("has none without a down payment or an amount borrowed above zero", () => {
 		expect(leverage(40_000_000n, null)).toBeNull();
 		expect(leverage(40_000_000n, 0n)).toBeNull();
-		expect(leverage(null, 10_000_000n)).toBeNull();
 		expect(leverage(-1n, 10_000_000n)).toBeNull();
 		expect(leverage(0n, 10_000_000n)).toBeNull();
 	});
@@ -90,7 +93,6 @@ describe("repaidPercent", () => {
 	});
 
 	it("cannot be measured without an amount borrowed above zero", () => {
-		expect(repaidPercent(null, 100n)).toBeNull();
 		expect(repaidPercent(0n, 100n)).toBeNull();
 	});
 });
@@ -243,9 +245,7 @@ describe("loanOverview", () => {
 
 		it("answers N/A once its schedule has run out, and without one", () => {
 			expect(overviewOf(variable, "2046-01-01").monthlyPayment).toBe("not_applicable");
-			expect(overviewOf({ ...variable, originalAmount: null }).monthlyPayment).toBe(
-				"not_applicable",
-			);
+			expect(overviewOf({ ...variable, termMonths: null }).monthlyPayment).toBe("not_applicable");
 			expect(overviewOf({ ...variable, rateType: "adjustable" }).monthlyPayment).not.toBe(
 				"not_applicable",
 			);
@@ -267,20 +267,55 @@ describe("loanOverview", () => {
 		});
 	});
 
-	it("quotes no payment for a fixed loan without a schedule", () => {
-		expect(overviewOf({ ...ing, originalAmount: null }).monthlyPayment).toBeNull();
+	it("quotes no payment for a fixed loan without a term or a schedule", () => {
+		expect(overviewOf({ ...ing, termMonths: null }).monthlyPayment).toBeNull();
+		expect(overviewOf({ ...ing, interestRate: null }).monthlyPayment).toBeNull();
+		// A term past the simulator's bound, which only a hand-edited row holds.
+		expect(overviewOf({ ...ing, termMonths: 1_201 }).monthlyPayment).toBeNull();
+	});
+
+	it("quotes a zero payment for a fixed loan with nothing borrowed, as Sure's", () => {
+		expect(overviewOf({ ...ing, originalAmount: null }, "2026-10-04", 0n)).toMatchObject({
+			originalAmount: 0n,
+			monthlyPayment: 0n,
+			payoffDate: null,
+			repaidPercent: null,
+		});
 	});
 
 	it("names an insurance rate it has no schedule to apply to", () => {
-		expect(overviewOf({ ...ing, originalAmount: null })).toMatchObject({
-			originalAmount: null,
+		expect(overviewOf({ ...ing, termMonths: null })).toMatchObject({
+			originalAmount: 13_000_000n,
 			insured: false,
 			insurance: { rate: 2_917 },
 			totalCost: null,
 			payoffDate: null,
-			repaidPercent: null,
+			repaidPercent: 19,
 			instalment: null,
-			termMonths: 300,
+			termMonths: null,
+		});
+	});
+
+	it("falls back to the opening balance and date without an amount borrowed, as Sure's", () => {
+		const recorded = overviewOf(ing);
+		const fallback = overviewOf(
+			{ ...ing, originalAmount: null, startDate: null },
+			"2026-10-04",
+			10_510_482n,
+			{
+				date: "2020-12-05",
+				balance: 13_000_000n,
+			},
+		);
+
+		expect(fallback).toEqual(recorded);
+		expect(fallback).toMatchObject({
+			originalAmount: 13_000_000n,
+			monthlyPayment: 53_969n,
+			payoffDate: "2045-12-05",
+			insured: true,
+			insurance: { total: 948_000n },
+			repaidPercent: 19,
 		});
 	});
 
@@ -292,9 +327,11 @@ describe("loanOverview", () => {
 		expect(overviewOf({ ...ing, downPayment: null }).leverage).toBeNull();
 	});
 
-	it("knows no figure of a loan without details but its balance", () => {
-		expect(overviewOf(null)).toEqual({
-			originalAmount: null,
+	it("knows no figure of a loan without details but its balances", () => {
+		expect(
+			overviewOf(null, "2026-10-04", 10_510_482n, { date: "2026-09-01", balance: 18_000_000n }),
+		).toEqual({
+			originalAmount: 18_000_000n,
 			remainingBalance: 10_510_482n,
 			interestRate: null,
 			monthlyPayment: null,
@@ -305,7 +342,7 @@ describe("loanOverview", () => {
 			totalCost: null,
 			insurance: null,
 			leverage: null,
-			repaidPercent: null,
+			repaidPercent: 42,
 			instalment: null,
 		});
 		expect(overviewOf({ ...ing, interestRate: null }).interestRate).toBeNull();

@@ -3,7 +3,8 @@ import type { LoanPayoffChartData } from "@/hooks/useLoanPayoffChart";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { TooltipContentProps } from "recharts";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
 
@@ -11,23 +12,21 @@ import type { MinorUnits } from "@archant/data/money";
 import { formatMoney, isCurrencyCode, minorUnitsOf, toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
-import { SummaryStrip } from "@/components/SummaryStrip";
+import { SummaryCard } from "@/components/SummaryCard";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
 import { errorCodeOf } from "@/lib/api";
-import { changeText, formatCompactMoney, formatTableDate, formatTick } from "@/lib/balance-change";
+import {
+	formatCompactMoney,
+	formatSignedMoney,
+	formatSignedPercent,
+	formatTick,
+} from "@/lib/balance-change";
 import { axisTicks } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { longDate } from "@/lib/dates";
+import { cn } from "@/lib/utils";
 
 const HEIGHT = CHART_HEIGHTS[DEFAULT_CHART_HEIGHT];
 
@@ -366,36 +365,61 @@ function Outcome({ chart }: { chart: LoanPayoffChartData }) {
 	}
 
 	return (
-		<div className="flex flex-col gap-2">
-			<SummaryStrip
-				className="rounded-xl border bg-card"
-				cells={[
-					{
-						label: t("loanChart.projectedPayoff"),
-						value: (
-							<>
-								{longDate(projectedPayoff.date)}
-								<span className="mt-1 block text-xs font-normal text-muted-foreground">
-									{monthsSaved === 0
-										? t("loanChart.onSchedule")
-										: t("loanChart.monthsSaved", { count: monthsSaved })}
-								</span>
-							</>
-						),
-					},
-					{
-						label: t("loanChart.interestSaved"),
-						value: <Money amount={interestSaved} currency={chart.currency} />,
-					},
-				]}
-			/>
-			<p className="text-xs text-muted-foreground">{t("loanChart.basis")}</p>
+		<div className="grid grid-cols-2 gap-2">
+			<SummaryCard title={t("loanChart.projectedPayoff")}>
+				{longDate(projectedPayoff.date)}
+				<span className="mt-1 block text-xs font-normal text-muted-foreground">
+					{monthsSaved === 0
+						? t("loanChart.onSchedule")
+						: t("loanChart.monthsSaved", { count: monthsSaved })}
+				</span>
+			</SummaryCard>
+			<SummaryCard title={t("loanChart.interestSaved")}>
+				<Money amount={interestSaved} currency={chart.currency} />
+			</SummaryCard>
+			<p className="col-span-2 text-xs text-muted-foreground">{t("loanChart.basis")}</p>
 		</div>
 	);
 }
 
-/** Sure's accessible description, shown: Archant's charts carry their summary in text. */
-function Summary({ chart }: { chart: LoanPayoffChartData }) {
+/**
+ * Sure's change line on a loan: today's balance against the amount borrowed,
+ * whatever the period. A loan is a liability, so a fall is the good news, in
+ * the income green that keeps 4.5:1 where Sure's success colour has no token.
+ */
+function Trend({ chart }: { chart: LoanPayoffChartData }) {
+	const { t } = useTranslation();
+	const { amount, percent } = chart.change;
+
+	if (amount === 0) {
+		return (
+			<p className="text-sm text-muted-foreground">
+				{t("loanChart.noChange")} {t("loanChart.sinceStart")}
+			</p>
+		);
+	}
+
+	const Arrow = amount < 0 ? ArrowDownIcon : ArrowUpIcon;
+
+	return (
+		<p className="text-sm">
+			<span className={cn("tabular-nums", amount < 0 ? "text-money-income" : "text-destructive")}>
+				{formatSignedMoney(amount, chart.currency)}
+				{percent !== null && (
+					<>
+						{" ("}
+						<Arrow aria-hidden="true" className="mb-0.5 inline size-3.5" />
+						{formatSignedPercent(percent)})
+					</>
+				)}
+			</span>{" "}
+			<span className="text-muted-foreground">{t("loanChart.sinceStart")}</span>
+		</p>
+	);
+}
+
+/** Sure's description for screen readers: the Échéancier tab carries the figures. */
+function Description({ chart }: { chart: LoanPayoffChartData }) {
 	const { t } = useTranslation();
 	const firstRecorded = chart.actual.find((point) => point.date >= chart.from);
 	const projectedPayoff =
@@ -404,10 +428,9 @@ function Summary({ chart }: { chart: LoanPayoffChartData }) {
 			: t("loanChart.noPayoff");
 
 	return (
-		<p className="text-sm text-muted-foreground">
-			{t("loanChart.summary", {
+		<p className="sr-only">
+			{t("loanChart.description", {
 				balance: formatMoney({ amount: chart.balance, currency: chart.currency }),
-				change: changeText(t, chart.change, chart.currency),
 				scheduledPayoff: longDate(chart.scheduledPayoffDate),
 				projectedPayoff,
 			})}
@@ -418,59 +441,14 @@ function Summary({ chart }: { chart: LoanPayoffChartData }) {
 	);
 }
 
-/** Exactly the points the chart plots inside its dates, a column per line. */
-function DataTable({ chart, id }: { chart: LoanPayoffChartData; id: string }) {
-	const { t } = useTranslation();
-	const rows = rowsOf(chart).filter((row) => inDomain(row.date, chart));
-
-	return (
-		<div id={id} className={`${HEIGHT} overflow-y-auto rounded-lg border`}>
-			<Table>
-				<TableHeader className="sticky top-0 bg-card">
-					<TableRow>
-						<TableHead scope="col">{t("balances.date")}</TableHead>
-						{chart.visible.map((key) => (
-							<TableHead key={key} scope="col" className="text-right">
-								{t(`loanChart.series.${key}`)}
-							</TableHead>
-						))}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{rows.map((row) => (
-						<TableRow key={row.date}>
-							<TableCell>{formatTableDate(row.date)}</TableCell>
-							{chart.visible.map((key) => {
-								const balance = row[key];
-
-								return (
-									<TableCell key={key} className="text-right">
-										{balance === undefined ? (
-											<span className="text-muted-foreground">—</span>
-										) : (
-											<Money amount={balance} currency={chart.currency} />
-										)}
-									</TableCell>
-								);
-							})}
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</div>
-	);
-}
-
 /**
  * Sure's loan chart: the recorded balance, the contract and the projection
  * from today, over the account chart's period clamped to the loan's life,
- * with Sure's cards above it, a sentence naming both payoff dates and the
- * plotted points as a table on demand (EXPERIENCE.md, accessibility floor).
+ * under Sure's change line and cards, with its legend and a description for
+ * screen readers.
  */
 export function LoanChart({ chart }: { chart: UseQueryResult<LoanPayoffChartData | null> }) {
 	const { t } = useTranslation();
-	const [showTable, setShowTable] = useState(false);
-	const tableId = useId();
 	const data = chart.data;
 
 	return (
@@ -488,21 +466,11 @@ export function LoanChart({ chart }: { chart: UseQueryResult<LoanPayoffChartData
 
 			{data !== undefined && data !== null && (
 				<>
+					<Trend chart={data} />
 					<Outcome chart={data} />
-					{showTable ? <DataTable chart={data} id={tableId} /> : <Chart chart={data} />}
+					<Chart chart={data} />
 					<Legend chart={data} />
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<Summary chart={data} />
-						<Button
-							variant="ghost"
-							size="sm"
-							aria-expanded={showTable}
-							aria-controls={showTable ? tableId : undefined}
-							onClick={() => setShowTable((shown) => !shown)}
-						>
-							{t("balances.showData")}
-						</Button>
-					</div>
+					<Description chart={data} />
 				</>
 			)}
 		</>

@@ -103,6 +103,9 @@ context:
 
 ## Spec Change Log
 
+- 2026-10-07, after Epic 24 merged, the owner: « Je ne vois vraiment pas l'intérêt de s'éloigner de Sure à ce stade ». An Archant document is no reason to depart from Sure; only integer money, French through i18next with Sure's own `fr.yml` wording, WCAG 2.2 AA contrast, security, Recharts and Archant's period selector are. The form follows Sure's `loans/_form`: its order (amount, rate beside its type, down payment, start date with Sure's hint, term, insurance beside its type, rate changes last), Sure's French labels « Solde initial du prêt », « Taux d'intérêt », « Taux d'assurance » and « Aucun », Sure's placeholders, « Type de taux » « Fixe » by default as Sure's select has no blank, and the rate changes in Sure's closed disclosure with its hint, its empty line and « Retirer ». `LoanSummary` is gone: Sure's header names no term, « Aperçu » does. Kept, as security: the term and rates are refused out of bounds on save, where Sure only declines to amortise them.
+
+
 ## Review Triage Log
 
 | Finding | Verdict | Evidence | Route |

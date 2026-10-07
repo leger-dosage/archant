@@ -10,7 +10,6 @@ import {
 	loanDetailsToInput,
 	proposedTerm,
 	rateToText,
-	termOf,
 	truncatedTermOf,
 } from "./loan-details.ts";
 
@@ -70,15 +69,6 @@ describe("truncatedTermOf", () => {
 	});
 });
 
-describe("termOf", () => {
-	it("names whole years, and months when years are not whole", () => {
-		expect(termOf(300)).toEqual({ unit: "years", count: 25 });
-		expect(termOf(12)).toEqual({ unit: "years", count: 1 });
-		expect(termOf(30)).toEqual({ unit: "months", count: 30 });
-		expect(termOf(1)).toEqual({ unit: "months", count: 1 });
-	});
-});
-
 describe("proposedTerm", () => {
 	it("counts whole calendar months, days ignored, within 1 to 1 200", () => {
 		expect(proposedTerm("2020-12-05", "2045-12-05")).toBe(300);
@@ -120,6 +110,9 @@ describe("loanDetailsToInput", () => {
 			rateChanges: [{ effectiveDate: "2024-01-05", rate: "2,50" }],
 		});
 		expect(loanDetailsToInput(null, "EUR", "2026-01-01")).toEqual(completeLoanInput(undefined));
+		// Sure's rate type select has no blank: an untold rate type saves as fixed.
+		expect(completeLoanInput(undefined).rateType).toBe("fixed");
+		expect(completeLoanInput({ rateType: "" }).rateType).toBe("fixed");
 		expect(loanDetailsToInput(unknownTerms, "EUR", "2026-01-01")).toEqual(
 			completeLoanInput(undefined),
 		);

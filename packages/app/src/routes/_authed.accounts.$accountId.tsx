@@ -24,7 +24,6 @@ import { LazyBalanceChart } from "@/components/LazyBalanceChart";
 import { LazyLoanChart } from "@/components/LazyLoanChart";
 import { LoanOverview, LoanOverviewSkeleton } from "@/components/LoanOverview";
 import { LoanSchedule, LoanScheduleSkeleton } from "@/components/LoanSchedule";
-import { LoanSummary } from "@/components/LoanSummary";
 import { Money } from "@/components/Money";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
@@ -492,7 +491,7 @@ function AccountPage() {
 		(requestedTab === "schedule" && account.data !== undefined && !scheduled)
 			? DEFAULT_TAB
 			: requestedTab;
-	// « Vue d'ensemble » shows on every loan, as Sure's, and is read only while open.
+	// « Aperçu » shows on every loan, as Sure's, and is read only while open.
 	const overview = useLoanOverview(accountId, loan && tab === "overview");
 	// The sheet reads the position afresh, so a lock or a typed price shows at once.
 	const openPosition =
@@ -596,9 +595,6 @@ function AccountPage() {
 						{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
 						{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
 					</p>
-					{account.data.details !== null && (
-						<LoanSummary details={account.data.details} currency={account.data.currency} />
-					)}
 					<Money
 						amount={account.data.balance}
 						currency={account.data.currency}
@@ -635,9 +631,7 @@ function AccountPage() {
 					<TabsTrigger value="transactions" className={FLAT_TAB}>
 						{t("accountDetail.tabs.transactions")}
 					</TabsTrigger>
-					<TabsTrigger value="snapshots" className={FLAT_TAB}>
-						{t("accountDetail.tabs.snapshots")}
-					</TabsTrigger>
+					{/* Sure's order: a loan's own tabs right after its activity. */}
 					{loan && (
 						<TabsTrigger value="overview" className={FLAT_TAB}>
 							{t("accountDetail.tabs.overview")}
@@ -648,6 +642,9 @@ function AccountPage() {
 							{t("accountDetail.tabs.schedule")}
 						</TabsTrigger>
 					)}
+					<TabsTrigger value="snapshots" className={FLAT_TAB}>
+						{t("accountDetail.tabs.snapshots")}
+					</TabsTrigger>
 					{traded && (
 						<TabsTrigger value="positions" className={FLAT_TAB}>
 							{t("accountDetail.tabs.positions")}

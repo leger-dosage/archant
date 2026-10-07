@@ -57,16 +57,6 @@ export function truncatedTermOf(months: number): { unit: "years" | "months"; cou
 }
 
 /**
- * A term as the account header names it: whole years when it has no months
- * left over, months otherwise, so 30 months never reads as two years.
- */
-export function termOf(months: number): { unit: "years" | "months"; count: number } {
-	return months % 12 === 0
-		? { unit: "years", count: months / 12 }
-		: { unit: "months", count: months };
-}
-
-/**
  * The term a loan saved before Story 24.1 is proposed: the whole calendar
  * months from origination to its end date, days ignored, clamped to Sure's
  * bounds.
@@ -95,6 +85,7 @@ export const LOAN_FIELD_NAMES = [
 /**
  * Typed details with every field present, a missing one blank: a PATCH
  * replaces them whole, and a new loan starts from `completeLoanInput(undefined)`.
+ * The rate type starts « Fixe », as Sure's select, which has no blank.
  */
 export function completeLoanInput(details: LoanDetailsInput | undefined): CompleteLoanInput {
 	return {
@@ -102,7 +93,7 @@ export function completeLoanInput(details: LoanDetailsInput | undefined): Comple
 		downPayment: details?.downPayment ?? "",
 		startDate: details?.startDate ?? "",
 		termMonths: details?.termMonths ?? "",
-		rateType: details?.rateType ?? "",
+		rateType: details?.rateType || "fixed",
 		interestRate: details?.interestRate ?? "",
 		insuranceRate: details?.insuranceRate ?? "",
 		insuranceRateType: details?.insuranceRateType ?? "",
@@ -142,7 +133,7 @@ export function loanDetailsToInput(
 		downPayment: amount(details.downPayment),
 		startDate: details.startDate ?? "",
 		termMonths: termMonths === null ? "" : String(termMonths),
-		rateType: details.rateType ?? "",
+		rateType: details.rateType ?? "fixed",
 		interestRate: rateOrBlank(details.interestRate),
 		insuranceRate: rateOrBlank(details.insuranceRate),
 		insuranceRateType: details.insuranceRateType ?? "",

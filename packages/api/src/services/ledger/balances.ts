@@ -23,7 +23,7 @@ import {
 import { alias } from "drizzle-orm/sqlite-core";
 
 import { classificationOf } from "@archant/data/account-types";
-import type { Money } from "@archant/data/money";
+import type { MinorUnits, Money } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
@@ -416,11 +416,22 @@ export async function balancesBetween(
 
 /** The date of the account's opening anchor, `null` for an unknown account. */
 export async function openingDateOf(deps: ServiceDeps, accountId: string): Promise<IsoDate | null> {
+	return (await openingAnchorOf(deps, accountId))?.date ?? null;
+}
+
+/**
+ * The account's opening anchor, its first valuation since no snapshot may
+ * precede it; `null` for an unknown account.
+ */
+export async function openingAnchorOf(
+	deps: ServiceDeps,
+	accountId: string,
+): Promise<{ date: IsoDate; balance: MinorUnits } | null> {
 	const row = await deps.db
-		.select({ date: entries.date })
+		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
 		.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "opening_anchor")))
 		.get();
 
-	return row?.date ?? null;
+	return row === undefined ? null : { date: row.date, balance: toMinorUnits(row.balance) };
 }

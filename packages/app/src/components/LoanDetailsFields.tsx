@@ -1,6 +1,7 @@
 import type { ShownError } from "@/lib/form-errors";
 
-import { PlusIcon } from "lucide-react";
+import { ChevronRightIcon, PlusIcon } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { LoanDetailsInput } from "@archant/api/schemas/accounts";
@@ -44,7 +45,7 @@ const isInsuranceType = (value: string): value is LoanInsuranceType =>
  * typed without knowing either form. Rate changes show for a variable or
  * adjustable rate only, and stay in the value when hidden, as Sure's
  * `rate_changes=` keeps them.
- * A row is never removed: emptied, it is skipped on save, as in Sure.
+ * A row emptied and left is skipped on save, as in Sure.
  */
 export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsFieldsProps) {
 	const { t } = useTranslation();
@@ -73,66 +74,24 @@ export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsField
 		value: value[field] ?? "",
 		"aria-invalid": errors[field] !== undefined,
 	});
+	const [changesOpen, setChangesOpen] = useState(false);
 	const rateChanges = value.rateChanges ?? [];
+	// A date field keeps the text being typed, so a row keeps its key when one above it is removed.
+	const [rowKeys, setRowKeys] = useState(() => rateChanges.map((_, index) => index));
 	const followsChanges = value.rateType === "variable" || value.rateType === "adjustable";
 
 	return (
 		<>
-			<div className="grid grid-cols-2 gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="loan-originalAmount">{t("loanDetails.originalAmount")}</Label>
-					<Input
-						{...text("originalAmount")}
-						inputMode="decimal"
-						className="text-right tabular-nums"
-						{...described("originalAmount")}
-						onChange={(event) => set({ originalAmount: event.target.value })}
-					/>
-					<FieldMessage id="loan-originalAmount-error" error={errors.originalAmount} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="loan-downPayment">{t("loanDetails.downPayment")}</Label>
-					<Input
-						{...text("downPayment")}
-						inputMode="decimal"
-						className="text-right tabular-nums"
-						{...described("downPayment")}
-						onChange={(event) => set({ downPayment: event.target.value })}
-					/>
-					<FieldMessage id="loan-downPayment-error" error={errors.downPayment} />
-				</div>
-			</div>
-
-			<div className="grid grid-cols-[1fr_7rem] gap-3">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="loan-startDate">{t("loanDetails.startDate")}</Label>
-					<DateField
-						id="loan-startDate"
-						value={value.startDate ?? ""}
-						onChange={(startDate) => set({ startDate })}
-						invalid={errors.startDate !== undefined}
-						describedBy={
-							errors.startDate === undefined
-								? "loan-startDate-hint"
-								: "loan-startDate-hint loan-startDate-error"
-						}
-					/>
-					<p id="loan-startDate-hint" className="text-xs text-muted-foreground">
-						{t("loanDetails.startDateHint")}
-					</p>
-					<FieldMessage id="loan-startDate-error" error={errors.startDate} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="loan-termMonths">{t("loanDetails.termMonths")}</Label>
-					<Input
-						{...text("termMonths")}
-						inputMode="numeric"
-						className="text-right tabular-nums"
-						{...described("termMonths")}
-						onChange={(event) => set({ termMonths: event.target.value })}
-					/>
-					<FieldMessage id="loan-termMonths-error" error={errors.termMonths} />
-				</div>
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="loan-originalAmount">{t("loanDetails.originalAmount")}</Label>
+				<Input
+					{...text("originalAmount")}
+					inputMode="decimal"
+					className="text-right tabular-nums"
+					{...described("originalAmount")}
+					onChange={(event) => set({ originalAmount: event.target.value })}
+				/>
+				<FieldMessage id="loan-originalAmount-error" error={errors.originalAmount} />
 			</div>
 
 			<div className="grid grid-cols-2 gap-3">
@@ -141,24 +100,17 @@ export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsField
 					<Input
 						{...text("interestRate")}
 						inputMode="decimal"
+						placeholder={t("loanDetails.interestRatePlaceholder")}
 						className="text-right tabular-nums"
 						{...described("interestRate")}
-						onChange={(event) =>
-							set({
-								interestRate: event.target.value,
-								// A typed rate is fixed until said otherwise, as Sure's default.
-								...(value.rateType === "" || value.rateType === undefined
-									? { rateType: event.target.value.trim() === "" ? "" : "fixed" }
-									: {}),
-							})
-						}
+						onChange={(event) => set({ interestRate: event.target.value })}
 					/>
 					<FieldMessage id="loan-interestRate-error" error={errors.interestRate} />
 				</div>
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="loan-rateType">{t("loanDetails.rateType")}</Label>
 					<Select
-						value={value.rateType ?? ""}
+						value={value.rateType || "fixed"}
 						onValueChange={(rateType) => {
 							if (isRateType(rateType)) {
 								set({ rateType });
@@ -185,74 +137,49 @@ export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsField
 				</div>
 			</div>
 
-			{followsChanges && (
-				<fieldset
-					className="flex flex-col gap-3"
-					{...(errors.rateChanges === undefined
-						? {}
-						: { "aria-describedby": "loan-rateChanges-error" })}
-				>
-					<legend className="mb-2 text-sm font-medium">{t("loanDetails.rateChanges")}</legend>
-					{rateChanges.map((change, index) => {
-						const of = t("loanDetails.ofRateChange", { index: index + 1 });
-						const update = (patch: Partial<typeof change>) =>
-							set({
-								rateChanges: rateChanges.map((row, at) =>
-									at === index ? { ...row, ...patch } : row,
-								),
-							});
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="loan-downPayment">{t("loanDetails.downPayment")}</Label>
+				<Input
+					{...text("downPayment")}
+					inputMode="decimal"
+					className="text-right tabular-nums"
+					{...described("downPayment")}
+					onChange={(event) => set({ downPayment: event.target.value })}
+				/>
+				<FieldMessage id="loan-downPayment-error" error={errors.downPayment} />
+			</div>
 
-						return (
-							// Rows are only ever appended, so an index names one row for its lifetime.
-							<div key={index} className="grid grid-cols-[1fr_7rem] gap-3">
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor={`loan-rateChange-${index}-date`}>
-										{t("loanDetails.rateChangeDate")}
-										<span className="sr-only"> {of}</span>
-									</Label>
-									<DateField
-										id={`loan-rateChange-${index}-date`}
-										value={change.effectiveDate}
-										onChange={(effectiveDate) => update({ effectiveDate })}
-										invalid={errors.rateChanges !== undefined}
-										{...(errors.rateChanges === undefined
-											? {}
-											: { describedBy: "loan-rateChanges-error" })}
-									/>
-								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor={`loan-rateChange-${index}-rate`}>
-										{t("loanDetails.rateChangeRate")}
-										<span className="sr-only"> {of}</span>
-									</Label>
-									<Input
-										id={`loan-rateChange-${index}-rate`}
-										autoComplete="off"
-										inputMode="decimal"
-										className="text-right tabular-nums"
-										value={change.rate}
-										aria-invalid={errors.rateChanges !== undefined}
-										{...(errors.rateChanges === undefined
-											? {}
-											: { "aria-describedby": "loan-rateChanges-error" })}
-										onChange={(event) => update({ rate: event.target.value })}
-									/>
-								</div>
-							</div>
-						);
-					})}
-					<FieldMessage id="loan-rateChanges-error" error={errors.rateChanges} />
-					<Button
-						type="button"
-						variant="outline"
-						className="border-dashed"
-						onClick={() => set({ rateChanges: [...rateChanges, { effectiveDate: "", rate: "" }] })}
-					>
-						<PlusIcon aria-hidden="true" />
-						{t("loanDetails.addRateChange")}
-					</Button>
-				</fieldset>
-			)}
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="loan-startDate">{t("loanDetails.startDate")}</Label>
+				<DateField
+					id="loan-startDate"
+					value={value.startDate ?? ""}
+					onChange={(startDate) => set({ startDate })}
+					invalid={errors.startDate !== undefined}
+					describedBy={
+						errors.startDate === undefined
+							? "loan-startDate-hint"
+							: "loan-startDate-hint loan-startDate-error"
+					}
+				/>
+				<p id="loan-startDate-hint" className="text-xs text-muted-foreground">
+					{t("loanDetails.startDateHint")}
+				</p>
+				<FieldMessage id="loan-startDate-error" error={errors.startDate} />
+			</div>
+
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="loan-termMonths">{t("loanDetails.termMonths")}</Label>
+				<Input
+					{...text("termMonths")}
+					inputMode="numeric"
+					placeholder={t("loanDetails.termMonthsPlaceholder")}
+					className="text-right tabular-nums"
+					{...described("termMonths")}
+					onChange={(event) => set({ termMonths: event.target.value })}
+				/>
+				<FieldMessage id="loan-termMonths-error" error={errors.termMonths} />
+			</div>
 
 			<div className="grid grid-cols-2 gap-3">
 				<div className="flex flex-col gap-1.5">
@@ -260,6 +187,7 @@ export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsField
 					<Input
 						{...text("insuranceRate")}
 						inputMode="decimal"
+						placeholder={t("loanDetails.insuranceRatePlaceholder")}
 						className="text-right tabular-nums"
 						{...described("insuranceRate", "loan-insurance-hint")}
 						onChange={(event) => set({ insuranceRate: event.target.value })}
@@ -301,6 +229,113 @@ export function LoanDetailsFields({ value, onChange, errorOf }: LoanDetailsField
 			<p id="loan-insurance-hint" className="text-xs text-muted-foreground">
 				{t("loanDetails.insuranceHint")}
 			</p>
+
+			{followsChanges && (
+				// Sure's disclosure, closed until asked for, and opened when one of its rows is refused.
+				<details
+					className="group"
+					open={changesOpen || errors.rateChanges !== undefined}
+					onToggle={(event) => setChangesOpen(event.currentTarget.open)}
+				>
+					<summary className="flex cursor-pointer items-center gap-1 py-2 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+						<ChevronRightIcon
+							aria-hidden="true"
+							className="size-4 transition-transform group-open:rotate-90"
+						/>
+						{t("loanDetails.rateChanges")}
+					</summary>
+					<fieldset
+						className="mt-2 flex flex-col gap-3 border-l pl-4"
+						aria-label={t("loanDetails.rateChanges")}
+						aria-describedby={
+							errors.rateChanges === undefined
+								? "loan-rateChanges-hint"
+								: "loan-rateChanges-hint loan-rateChanges-error"
+						}
+					>
+						<p id="loan-rateChanges-hint" className="text-xs text-muted-foreground">
+							{t("loanDetails.rateChangesHint")}
+						</p>
+						{rateChanges.length === 0 && (
+							<p className="text-sm text-muted-foreground">{t("loanDetails.rateChangesEmpty")}</p>
+						)}
+						{rateChanges.map((change, index) => {
+							const of = t("loanDetails.ofRateChange", { index: index + 1 });
+							const update = (patch: Partial<typeof change>) =>
+								set({
+									rateChanges: rateChanges.map((row, at) =>
+										at === index ? { ...row, ...patch } : row,
+									),
+								});
+
+							return (
+								<div
+									key={rowKeys[index] ?? `new-${index}`}
+									className="grid grid-cols-[1fr_7rem_auto] items-end gap-3"
+								>
+									<div className="flex flex-col gap-1.5">
+										<Label htmlFor={`loan-rateChange-${index}-date`}>
+											{t("loanDetails.rateChangeDate")}
+											<span className="sr-only"> {of}</span>
+										</Label>
+										<DateField
+											id={`loan-rateChange-${index}-date`}
+											value={change.effectiveDate}
+											onChange={(effectiveDate) => update({ effectiveDate })}
+											invalid={errors.rateChanges !== undefined}
+											{...(errors.rateChanges === undefined
+												? {}
+												: { describedBy: "loan-rateChanges-error" })}
+										/>
+									</div>
+									<div className="flex flex-col gap-1.5">
+										<Label htmlFor={`loan-rateChange-${index}-rate`}>
+											{t("loanDetails.rateChangeRate")}
+											<span className="sr-only"> {of}</span>
+										</Label>
+										<Input
+											id={`loan-rateChange-${index}-rate`}
+											autoComplete="off"
+											inputMode="decimal"
+											className="text-right tabular-nums"
+											value={change.rate}
+											aria-invalid={errors.rateChanges !== undefined}
+											{...(errors.rateChanges === undefined
+												? {}
+												: { "aria-describedby": "loan-rateChanges-error" })}
+											onChange={(event) => update({ rate: event.target.value })}
+										/>
+									</div>
+									<Button
+										type="button"
+										variant="ghost"
+										onClick={() => {
+											setRowKeys((keys) => keys.filter((_, at) => at !== index));
+											set({ rateChanges: rateChanges.filter((_, at) => at !== index) });
+										}}
+									>
+										{t("loanDetails.removeRateChange")}
+										<span className="sr-only"> {of}</span>
+									</Button>
+								</div>
+							);
+						})}
+						<FieldMessage id="loan-rateChanges-error" error={errors.rateChanges} />
+						<Button
+							type="button"
+							variant="outline"
+							className="border-dashed"
+							onClick={() => {
+								setRowKeys((keys) => [...keys, Math.max(-1, ...keys) + 1]);
+								set({ rateChanges: [...rateChanges, { effectiveDate: "", rate: "" }] });
+							}}
+						>
+							<PlusIcon aria-hidden="true" />
+							{t("loanDetails.addRateChange")}
+						</Button>
+					</fieldset>
+				</details>
+			)}
 		</>
 	);
 }

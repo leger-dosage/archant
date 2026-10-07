@@ -226,16 +226,13 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page.getByRole("button", { name: /Annuler l'import/u })).toHaveCount(0);
 
 			await page.goto(`/accounts/${loan.id}`);
-			await expect(
-				page.getByRole("list", { name: "Détails du prêt" }).getByRole("listitem"),
-			).toHaveText([`Emprunté : ${euros(13_000_000)}`, "Taux : 1,820 % fixe", "Durée : 25 ans"]);
 			await expectNone(page, [{ role: "button", name: `Actions du compte ${loan.name}` }]);
 			// Its chart, where the loan is heading.
 			await expect(
 				page.getByRole("list", { name: "Séries du graphique" }).getByRole("listitem"),
 			).toHaveText(["Solde enregistré", "Échéancier du contrat", "Projection"]);
-			await page.getByRole("tab", { name: "Vue d'ensemble" }).click();
-			const overview = page.getByRole("tabpanel", { name: "Vue d'ensemble" });
+			await page.getByRole("tab", { name: "Aperçu" }).click();
+			const overview = page.getByRole("tabpanel", { name: "Aperçu" });
 			await expect(overview.getByRole("group", { name: "Capital d'origine" })).toContainText(
 				euros(13_000_000),
 			);
@@ -244,7 +241,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(
 				page
 					.getByRole("tabpanel", { name: "Échéancier" })
-					.getByRole("group", { name: "Mensualité", exact: true }),
+					.getByRole("group", { name: "Paiement mensuel", exact: true }),
 			).toContainText(euros(53_969));
 
 			await page.goto(`/accounts/${pea.id}`);
