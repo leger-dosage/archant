@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { cashFlowBreakdown, countsInCashFlow, direction } from "./cash-flow.ts";
+import { cashFlowBreakdown, countsInCashFlow, direction, subcategoryLines } from "./cash-flow.ts";
 
 const tx = (
 	amount: number,
@@ -207,5 +207,40 @@ describe("cashFlowBreakdown", () => {
 			expenses: 0,
 			lines: { income: [], expense: [] },
 		});
+	});
+});
+
+describe("subcategoryLines", () => {
+	const maison = category("Maison");
+	const courses = category("Courses", "expense", "Maison");
+	const bio = category("Bio", "expense", "Maison");
+	const travaux = category("Travaux", "expense", "Maison");
+	const orphan = category("Orphelin", "expense", "gone");
+	const all = [maison, courses, bio, travaux, orphan];
+
+	it("gives each parent its sub-categories' own sums, largest first, never the parent's rows", () => {
+		const result = subcategoryLines(
+			[
+				row("Maison", -80000),
+				row("Courses", -3000),
+				row("Courses", 500),
+				row("Bio", -9000),
+				row("Travaux", -2000),
+				row("Travaux", 2000),
+				row("Orphelin", -100),
+				row(null, -700),
+			],
+			all,
+		);
+
+		expect([...result]).toEqual([
+			[
+				"Maison",
+				[
+					{ categoryId: "Bio", name: "Bio", amount: -9000 },
+					{ categoryId: "Courses", name: "Courses", amount: -2500 },
+				],
+			],
+		]);
 	});
 });

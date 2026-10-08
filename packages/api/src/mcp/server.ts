@@ -47,7 +47,7 @@ import { getHoldings } from "./holdings.ts";
 import { confirmImportTool, importBankStatementTool, previewImportTool } from "./imports.ts";
 import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
 import { getRecurringTransactions } from "./recurring.ts";
-import { getBalanceSheetTool, getIncomeStatement } from "./reports.ts";
+import { getBalanceSheetTool, getIncomeStatementTool } from "./reports.ts";
 import {
 	applyRulesTool,
 	createRuleTool,
@@ -91,7 +91,7 @@ const TOOLS: AnyTool[] = [
 	groupTransactionLabels,
 	getTransferCandidates,
 	getBalanceSheetTool,
-	getIncomeStatement,
+	getIncomeStatementTool,
 	getBudgetTool,
 	getRecurringTransactions,
 	getBills,

@@ -25,6 +25,7 @@ import { createAccount } from "./ledger/accounts.ts";
 import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
+import { getIncomeStatement } from "./reports.ts";
 import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 
@@ -32,6 +33,10 @@ import { listTransferCandidates } from "./transfers.ts";
 // noisier than the small server the target names, so they get twice the time.
 const MARGIN = process.env["CI"] === undefined ? 1 : 2;
 const PAGE_MS = 150 * MARGIN;
+// NFR10 names no report. A report over the whole history reads all 100,000
+// rows once, where a page reads 50: a bare join of entries and transactions,
+// grouped, already took 110 ms of the 150 its first read did on 2026-10-08.
+const REPORT_MS = 2 * PAGE_MS;
 const IMPORT_MS = 3000 * MARGIN;
 const EXPORT_MS = 10_000 * MARGIN;
 const REVALUE_MS = 1000 * MARGIN;
@@ -445,6 +450,23 @@ describe("NFR10 at 100,000 transactions", () => {
 		await expect(
 			timed(async () => listAccountTransactions(deps(), jointId, listQuery)),
 		).resolves.toBeLessThan(PAGE_MS);
+	});
+
+	// One read of the whole history each, which the medians need.
+	it("answers the assistant's income statement over ten years and 36 months by month in under 300 ms each", async () => {
+		const decade = { from: dayOf(0), to: dayOf(DAYS - 1), byMonth: false, comparePrevious: true };
+		const months = { from: "2023-10-01", to: "2026-09-30", byMonth: true, comparePrevious: true };
+		const statement = await getIncomeStatement(deps(), decade);
+
+		expect(statement.expenses).toBeLessThan(0);
+		expect(statement.breakdown?.medianMonthlyExpenses).toBeLessThan(0);
+		expect((await getIncomeStatement(deps(), months)).months).toHaveLength(36);
+		await expect(timed(async () => getIncomeStatement(deps(), decade))).resolves.toBeLessThan(
+			REPORT_MS,
+		);
+		await expect(timed(async () => getIncomeStatement(deps(), months))).resolves.toBeLessThan(
+			REPORT_MS,
+		);
 	});
 
 	// Before the import below, which adds its own lines.

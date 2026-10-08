@@ -160,9 +160,9 @@ function transferSideOf(is: SQL): TransferSideSql {
 }
 
 /**
- * For a query that joins no `transfers`: the bulk selection and the cash flow.
- * A correlated subquery per row, which the list, its count and its sum cannot
- * afford at 100,000 rows.
+ * For a query that joins no `transfers`: the bulk selection. A correlated
+ * subquery per row, which the list, its count, its sum and the cash flow
+ * cannot afford at 100,000 rows.
  */
 export const correlatedTransferSide = transferSideOf(
 	sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
@@ -170,7 +170,8 @@ export const correlatedTransferSide = transferSideOf(
 
 /**
  * For a query that left-joins `asOutflow` and `asInflow` on the row's id: the
- * list, its count and its sum. Each join is on a unique index, so no row
+ * list, its count, its sum and the cash flow, a fifth faster over ten years
+ * than the correlated subquery. Each join is on a unique index, so no row
  * doubles, and SQLite drops either join when nothing reads it.
  */
 export const joinedTransferSide = transferSideOf(

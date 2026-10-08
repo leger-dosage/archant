@@ -21,12 +21,7 @@ import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
-import {
-	correlatedTransferSide,
-	filterCondition,
-	joinedTransferSide,
-	needsTransactionColumns,
-} from "./filter.ts";
+import { filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
 import { tagIdsByEntry, tagIdsOf } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -572,10 +567,7 @@ export async function sumTransactionsByLabel(
  * nothing can match.
  */
 function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
-	const where = filterCondition(
-		{ ...range, direction: ["income", "expense"] },
-		correlatedTransferSide,
-	);
+	const where = filterCondition({ ...range, direction: ["income", "expense"] }, joinedTransferSide);
 
 	return where === null
 		? null
@@ -626,6 +618,8 @@ export async function cashFlowByCategory(
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.where(where)
 		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
 	const income = await deps.db
@@ -641,6 +635,41 @@ export async function cashFlowByCategory(
 	return [...rows, ...income].map(toRecord);
 }
 
+/** `cashFlowByCategory`'s rows, each group also keyed by `key`, an expression of the entry's date. */
+async function cashFlowKeyed(
+	deps: ServiceDeps,
+	range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] },
+	key: SQL<string>,
+): Promise<(CashFlowRow & { key: string })[]> {
+	const where = countedInCashFlow(range);
+
+	if (where === null) {
+		return [];
+	}
+
+	const select = {
+		key,
+		categoryId: transactions.categoryId,
+		amount: sum(entries.amount).mapWith(Number),
+	};
+	const rows = await deps.db
+		.select(select)
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(where)
+		.groupBy(key, transactions.categoryId, sql`${entries.amount} > 0`);
+	const income = await deps.db
+		.select({ key, categoryId: sql<null>`null`, amount: sum(entries.amount).mapWith(Number) })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(incomeTradesIn(range))
+		.groupBy(key, sql`${entries.amount} > 0`);
+
+	return [...rows, ...income].map(toRecord);
+}
+
 /**
  * `cashFlowByCategory`'s rows over every month up to `to`, inclusive, each
  * group also keyed by its calendar month: the same counted rows, so a month's
@@ -651,35 +680,25 @@ export async function cashFlowByMonth(
 	deps: ServiceDeps,
 	range: { to: IsoDate; accountIds: readonly string[] },
 ): Promise<(CashFlowRow & { month: IsoMonth })[]> {
-	const where = countedInCashFlow(range);
+	const rows = await cashFlowKeyed(deps, range, sql<IsoMonth>`substr(${entries.date}, 1, 7)`);
 
-	if (where === null) {
-		return [];
-	}
+	return rows.map(({ key, ...row }) => ({ ...row, month: key }));
+}
 
-	const month = sql<IsoMonth>`substr(${entries.date}, 1, 7)`;
-	const rows = await deps.db
-		.select({
-			month,
-			categoryId: transactions.categoryId,
-			amount: sum(entries.amount).mapWith(Number),
-		})
-		.from(entries)
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(where)
-		.groupBy(month, transactions.categoryId, sql`${entries.amount} > 0`);
-	const income = await deps.db
-		.select({
-			month,
-			categoryId: sql<null>`null`,
-			amount: sum(entries.amount).mapWith(Number),
-		})
-		.from(trades)
-		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(incomeTradesIn(range))
-		.groupBy(month, sql`${entries.amount} > 0`);
+/**
+ * `cashFlowByCategory`'s rows from `from`, or the first day, to `to`, each
+ * group also keyed by its day: one read from which the assistant's income
+ * statement sums any period, the one before it, its months and the
+ * history's monthly medians, where a read per figure would scan the history
+ * again for each.
+ */
+export async function cashFlowByDay(
+	deps: ServiceDeps,
+	range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] },
+): Promise<(CashFlowRow & { date: IsoDate })[]> {
+	const rows = await cashFlowKeyed(deps, range, sql<IsoDate>`${entries.date}`);
 
-	return [...rows, ...income].map(toRecord);
+	return rows.map(({ key, ...row }) => ({ ...row, date: key }));
 }
 
 /**

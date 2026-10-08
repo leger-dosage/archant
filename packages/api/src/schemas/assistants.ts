@@ -133,10 +133,44 @@ export const getAccountsInput = z.strictObject({
 /** `get_balance_sheet`: net worth over a period. */
 export const balanceSheetInput = z.strictObject({ period: toolPeriod });
 
-/** `get_income_statement`: one calendar month's income and expenses. */
-export const incomeStatementInput = z.strictObject({
-	month: monthSchema.optional().describe("YYYY-MM; the current month when absent."),
-});
+/** `get_income_statement`: Sure's period, account filter, monthly series and comparison. */
+export const incomeStatementInput = z
+	.strictObject({
+		start_date: z.iso.date().describe("The period's first day, YYYY-MM-DD, inclusive."),
+		end_date: z.iso.date().describe("The period's last day, YYYY-MM-DD, inclusive."),
+		account_ids: z
+			.array(z.string().min(1))
+			.min(1)
+			.max(MAX_TAG_FILTER)
+			.optional()
+			.describe(
+				"Account ids from get_accounts: totals of those accounts alone, without the category breakdown or the insights. An inactive account, one excluded from reports or in another currency is refused.",
+			),
+		group_by: z
+			.enum(["none", "month"])
+			.default("none")
+			.describe(
+				'"month" adds monthly_series: income, expenses and net per calendar month, the first and last cut to the period, 36 months at most.',
+			),
+		compare_previous_period: z
+			.boolean()
+			.default(false)
+			.describe(
+				"Adds previous_period: the totals of the equal-length period just before start_date, with the changes.",
+			),
+	})
+	.superRefine((value, context) => {
+		if (value.end_date < value.start_date) {
+			context.addIssue({ code: "custom", path: ["end_date"], message: "before_from" });
+		}
+	})
+	.transform((value) => ({
+		from: value.start_date,
+		to: value.end_date,
+		accountIds: value.account_ids,
+		byMonth: value.group_by === "month",
+		comparePrevious: value.compare_previous_period,
+	}));
 
 /** `get_recurring_transactions`: the series « Récurrents » lists, narrowed. */
 export const recurringInput = z.strictObject({
