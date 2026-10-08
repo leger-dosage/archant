@@ -337,6 +337,3 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-24-2-the-amortisation-schedule.md`
   summary: Test that a payment falling on the server's today is shaded as past in the « Échéancier » tab.
   evidence: `LoanSchedule.tsx` shades `date <= asOf`; the e2e test checks payments 69 and 300 only, and only an e2e test with a pinned server clock and a start date landing a payment on that day reaches the boundary.
-- source_spec: `_bmad-output/implementation-artifacts/spec-26-5-ask-an-assistant-to-import-a-bank-file.md`
-  summary: At a 1280-pixel-wide window, the « Imports » tab's « Annuler l'import » button is cut at the table's right edge.
-  evidence: Seen during Story 26.5's visual check, on an import an assistant confirmed; at 1440 pixels it shows whole. The tab is unchanged by the story.

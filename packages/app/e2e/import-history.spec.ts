@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { formatShortDate, formatTableDate } from "../src/lib/balance-change.ts";
 import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Story 2.5: the account's Imports tab lists its imports and reverts one.
 // Imports go through the API; the tab is what is under test.
@@ -78,8 +79,14 @@ test("the Imports tab shows the file name, OFX, the date and the four counts", a
 		"1",
 		"3",
 		"1",
-		"Annuler l'import",
+		"",
 	]);
+	// Sure's icon, named by the file and the day.
+	await expect(
+		rows
+			.nth(1)
+			.getByRole("button", { name: `Annuler l'import de releve-septembre.ofx du ${today()}` }),
+	).toBeVisible();
 	await expect(rows.nth(2).getByRole("cell")).toHaveText([
 		today(),
 		"releve.ofx",
@@ -88,8 +95,11 @@ test("the Imports tab shows the file name, OFX, the date and the four counts", a
 		"0",
 		"0",
 		"0",
-		"Annuler l'import",
+		"",
 	]);
+	await expect(
+		rows.nth(2).getByRole("button", { name: `Annuler l'import de releve.ofx du ${today()}` }),
+	).toBeVisible();
 });
 
 test("reverting an import removes its transactions, puts the balance back and marks the row", async ({
@@ -225,4 +235,35 @@ test("reverting an import that only matched manual transactions deletes nothing"
 	await expect(header(page, account.name)).toContainText(euros(100_000 - 4290));
 	await page.getByRole("tab", { name: "Opérations" }).click();
 	await expect(page.getByRole("main").getByRole("button", { name: /Café/u })).toBeVisible();
+});
+
+test("at 1,280 pixels the table fits the tab, a long file name and a reverted import included", async ({
+	page,
+	api,
+}) => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	const account = await api.openAccount();
+	const reverted = await api.importFile(account.id, sgml(threeLines()));
+	await api.importFile(account.id, sgml(threeLines()), "releve-compte-courant-septembre-2026.ofx");
+	const response = await page.request.post(`/api/imports/${reverted}/revert`, {
+		headers: { origin: WEB_URL },
+	});
+	expect(response.ok()).toBe(true);
+
+	await openImportsTab(page, account);
+
+	const panel = page.getByRole("tabpanel", { name: "Imports" });
+	await expect(panel.getByRole("row").nth(2)).toContainText(`Annulé le ${today()}`);
+	// The spec 26.5 visual check found « Annuler l'import » cut at the right edge.
+	const container = panel.locator("[data-slot='table-container']");
+	const { client, scroll } = await container.evaluate((element) => ({
+		client: element.clientWidth,
+		scroll: element.scrollWidth,
+	}));
+	expect(scroll).toBeLessThanOrEqual(client);
+	await expect(
+		panel.getByRole("button", {
+			name: `Annuler l'import de releve-compte-courant-septembre-2026.ofx du ${today()}`,
+		}),
+	).toBeInViewport({ ratio: 1 });
 });

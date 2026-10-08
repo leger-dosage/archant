@@ -1,6 +1,7 @@
 import type { ImportHistoryItemData } from "@/hooks/useImports";
 import type { TFunction } from "i18next";
 
+import { RotateCcwIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRevertImport } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
@@ -148,7 +150,16 @@ export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 						return (
 							<TableRow key={item.id} className="h-9">
 								<TableCell className="whitespace-nowrap">{date}</TableCell>
-								<TableCell className="max-w-64 truncate">{item.fileName}</TableCell>
+								<TableCell className="max-w-48">
+									<div className="truncate">{item.fileName}</div>
+									{/* Under the file rather than in a column of its own, so the
+									    table still fits the tab at 1,280 pixels. */}
+									{item.revertedAt !== null && (
+										<div className="text-xs text-muted-foreground">
+											{t("imports.history.revertedOn", { date: dayOf(item.revertedAt) })}
+										</div>
+									)}
+								</TableCell>
 								<TableCell>{item.source.toUpperCase()}</TableCell>
 								<TableCell className="text-right tabular-nums">
 									{item.counts.created + item.counts.duplicates}
@@ -156,25 +167,27 @@ export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 								<TableCell className="text-right tabular-nums">{item.counts.matched}</TableCell>
 								<TableCell className="text-right tabular-nums">{item.counts.present}</TableCell>
 								<TableCell className="text-right tabular-nums">{item.counts.rejected}</TableCell>
-								<TableCell className="text-right whitespace-nowrap">
-									{item.revertedAt === null ? (
-										admin && (
-											<Button
-												variant="outline"
-												size="sm"
-												aria-label={t("imports.history.revertLabel", {
-													fileName: item.fileName,
-													date,
-												})}
-												onClick={() => open(item)}
-											>
-												{t("imports.history.revert")}
-											</Button>
-										)
-									) : (
-										<span className="text-sm text-muted-foreground">
-											{t("imports.history.revertedOn", { date: dayOf(item.revertedAt) })}
-										</span>
+								<TableCell className="text-right">
+									{item.revertedAt === null && admin && (
+										// Sure's icon, in its destructive colour: a labelled button
+										// made the table wider than the tab at 1,280 pixels.
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													className="text-destructive hover:text-destructive"
+													aria-label={t("imports.history.revertLabel", {
+														fileName: item.fileName,
+														date,
+													})}
+													onClick={() => open(item)}
+												>
+													<RotateCcwIcon aria-hidden="true" />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>{t("imports.history.revert")}</TooltipContent>
+										</Tooltip>
 									)}
 								</TableCell>
 							</TableRow>
