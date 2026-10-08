@@ -108,6 +108,7 @@ context:
 
 - Review, iteration 0. Finding: a lock left after a full sale came back on a rebuy, and the purge added against it wiped every lock when a recompute started past its end; the export also stamped a later lock on an earlier, closed position. Amended (Implementation Notes, outside the frozen block): a lock is scoped to the position it was set on, read through `locked_on` instead of purged. Known-bad state avoided: a lock silently lost after an unrelated write, or written on days it never covered. KEEP: holdings stay derived with the calculated cost basis; no recompute on a lock or an unlock.
 - Owner rule of 2026-10-07, settled for the field names: every assistant tool names its input and output fields in snake case, Sure's names where Sure's function has the field, the snake case of Archant's own otherwise, so the server uses one style throughout; a refusal names the tool's field. The HTTP API keeps camel case. KEEP: amounts as decimal strings (money). Here: `get_holdings` takes `account_id` and answers Sure's `holdings`, each with Sure's `average_cost` for the « PRU », `average_cost_locked`, `book_value`, `gain_percent`, `price_date`, `exchange_mic`, then `cash_weight`.
+- Owner rule of 2026-10-08, the missing functions: `get_holdings` reads every active investment account through `listHoldings`, which calls `listPositions` for each, as Sure's function reads its investment accounts; see Spec 16.3's change log.
 
 ## Review Triage Log
 
