@@ -155,7 +155,7 @@ const INSTRUCTIONS = [
 	"- Prefer a rule when a label repeats: it also sorts the transactions still to come.",
 	"- update_transaction and bulk_update_transactions lock each field they change, as an edit by the owner does: no rule changes it afterwards.",
 	"- Before update_transaction, or bulk_update_transactions by ids, tell the owner what you are about to change.",
-	"- Before bulk_update_transactions with a filter, call get_transactions with that filter, show the owner its total_results and pass it as expected_count. If it answers BULK_COUNT_STALE, read again and show the owner.",
+	"- Before bulk_update_transactions with a filter, call get_transactions with that filter, show the owner its total_results and pass it as expected_count. bulk_update_transactions takes neither statuses nor amount with amount_operator: leave them out of that read. If it answers BULK_COUNT_STALE, read again and show the owner.",
 	"To record or delete a transaction:",
 	"- Before create_transaction, tell the owner the line you are about to record: the account, the date, the label, the amount, and any category, merchant or tags.",
 	"- For the lines of a statement file the bank exported, use import_bank_statement instead: it recognises the lines already there.",

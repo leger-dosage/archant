@@ -419,6 +419,25 @@ describe("NFR10 at 100,000 transactions", () => {
 		).resolves.toBeLessThan(PAGE_MS);
 	});
 
+	it.each([
+		["the largest", { sort: { by: "amount", order: "desc" } }, {}],
+		["the oldest", { sort: { by: "date", order: "asc" } }, {}],
+		["the booked lines'", { pending: false }, { pending: false }],
+	] as const)(
+		"answers the assistant's first page of %s transactions and its totals in under 150 ms",
+		async (_name, extra, totalsQuery) => {
+			const query = { ...listQuery, ...extra };
+			const page = await listAllTransactions(deps(), query);
+
+			expect(page.items).toHaveLength(50);
+			await expect(
+				timed(async () =>
+					Promise.all([listAllTransactions(deps(), query), transactionTotals(deps(), totalsQuery)]),
+				),
+			).resolves.toBeLessThan(PAGE_MS);
+		},
+	);
+
 	it("answers the first page of an account in under 150 ms", async () => {
 		const page = await listAccountTransactions(deps(), jointId, listQuery);
 

@@ -5,7 +5,7 @@ import type { TransactionFilter } from "./filter.ts";
 import type { Transaction, TransferColumns } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -294,6 +294,62 @@ const listOrder = [
 	desc(entries.id),
 ];
 
+/** Sure's `get_transactions` sort: by date or by absolute amount, either way. */
+export type ListSort = { by: "date" | "amount"; order: "asc" | "desc" };
+
+/** The list's order reversed, oldest first. */
+const oldestFirst = [
+	asc(entries.date),
+	asc(transactions.pending),
+	asc(entries.createdAt),
+	asc(entries.id),
+];
+
+/**
+ * Sure's `ABS(entries.amount)`, then the most recent first. No column of
+ * `transactions`: `largestIds` sorts the entries alone.
+ */
+function bySize(order: ListSort["order"]) {
+	const size = sql`abs(${entries.amount})`;
+
+	return [
+		order === "asc" ? asc(size) : desc(size),
+		desc(entries.date),
+		desc(entries.createdAt),
+		desc(entries.id),
+	];
+}
+
+/**
+ * A page of the ids `where` matches, by absolute amount. Every row is read to
+ * sort by a computed size, so the joins of `listSelect` would run on each of
+ * them; here only those `where` reads do, and `listSelect` reads the page.
+ */
+async function idsBySize(
+	deps: ServiceDeps,
+	filter: TransactionFilter,
+	where: SQL | undefined,
+	page: { page: number; pageSize: number; order: ListSort["order"] },
+): Promise<string[]> {
+	const query = deps.db
+		.select({ id: entries.id })
+		.from(entries)
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.$dynamic();
+	const rows = await (
+		needsTransactionColumns(filter)
+			? query.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			: query
+	)
+		.where(where)
+		.orderBy(...bySize(page.order))
+		.limit(page.pageSize)
+		.offset((page.page - 1) * page.pageSize);
+
+	return rows.map((row) => row.id);
+}
+
 /** The rows of `listSelect` as records, with their tags and suggestions, in two queries. */
 async function listRecordsOf(
 	db: Pick<Transaction, "select">,
@@ -320,7 +376,7 @@ async function listRecordsOf(
 export async function listTransactionPage(
 	deps: ServiceDeps,
 	filter: TransactionFilter,
-	page: { page: number; pageSize: number },
+	page: { page: number; pageSize: number; sort?: ListSort | undefined },
 ): Promise<TransactionListRecord[]> {
 	const where = filterCondition(filter, joinedTransferSide);
 
@@ -328,9 +384,18 @@ export async function listTransactionPage(
 		return [];
 	}
 
+	if (page.sort?.by === "amount") {
+		const ids = await idsBySize(deps, filter, where, { ...page, order: page.sort.order });
+		const rows = await listSelect(deps.db)
+			.where(inArray(entries.id, ids))
+			.orderBy(...bySize(page.sort.order));
+
+		return listRecordsOf(deps.db, rows);
+	}
+
 	const rows = await listSelect(deps.db)
 		.where(where)
-		.orderBy(...listOrder)
+		.orderBy(...(page.sort?.order === "asc" ? oldestFirst : listOrder))
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
 

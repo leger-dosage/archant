@@ -753,3 +753,153 @@ describe("get_transactions by Sure's names", () => {
 		expect(errorText(bulk)).toContain('"path":"filter.accounts","code":"unrecognized_keys"');
 	});
 });
+
+describe("get_transactions sorted and filtered as Sure's", () => {
+	const listed = z.object({
+		transactions: z.array(z.object({ name: z.string(), pending: z.boolean() }).loose()),
+		total_results: z.number(),
+	});
+
+	/**
+	 * Six booked lines and one the bank has not booked yet, on 2026-09-15:
+	 * three of them within a cent of 12,50.
+	 */
+	async function household() {
+		const account = await checking();
+		const lines: [string, string, string][] = [
+			["2026-09-01", "LOYER", "-800,00"],
+			["2026-09-05", "SALAIRE", "2 500,00"],
+			["2026-09-10", "CAFE", "-3,50"],
+			["2026-09-12", "COURSES", "-12,50"],
+			["2026-09-13", "COURSES BIS", "-12,51"],
+			["2026-09-14", "REMBOURSEMENT", "12,49"],
+		];
+
+		await lines.reduce(async (previous, [date, label, amount]) => {
+			await previous;
+			await postOwn(account.id, { date, label, amount });
+		}, Promise.resolve());
+
+		const connectionId = crypto.randomUUID();
+		await db.insert(bankConnections).values({
+			id: connectionId,
+			connector: "enable-banking",
+			institutionName: "Banque Test",
+			country: "FR",
+			status: "active",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		await ingest(
+			{ db, timeZone: "Europe/Paris" },
+			account.id,
+			{
+				transactions: [
+					{
+						externalId: "EB-PENDING",
+						date: "2026-09-15",
+						amount: toMinorUnits(-4_000),
+						currency: "EUR",
+						label: "CB EN ATTENTE",
+						reference: null,
+						notes: null,
+						pending: true,
+					},
+				],
+				balance: null,
+				rejected: [],
+			},
+			{ connectionId, missesFrom: null },
+			{ origin: "sync" },
+		);
+
+		const tools = await assistants();
+
+		return async (args: object) => {
+			const result = await tools.read("get_transactions", args);
+
+			expect(result.isError, errorText(result)).toBeUndefined();
+
+			const page = listed.parse(result.structuredContent);
+
+			return { names: page.transactions.map((item) => item.name), total: page.total_results };
+		};
+	}
+
+	it("orders by date either way, and by absolute amount, ties by date, as Sure's", async () => {
+		const list = await household();
+
+		const newest = await list({});
+		const oldest = await list({ order: "asc" });
+		const largest = await list({ sort_by: "amount" });
+		const smallest = await list({ sort_by: "amount", order: "asc" });
+
+		expect(newest.names).toEqual([
+			"CB EN ATTENTE",
+			"REMBOURSEMENT",
+			"COURSES BIS",
+			"COURSES",
+			"CAFE",
+			"SALAIRE",
+			"LOYER",
+		]);
+		expect(oldest.names).toEqual(newest.names.toReversed());
+		expect(largest.names).toEqual([
+			"SALAIRE",
+			"LOYER",
+			"CB EN ATTENTE",
+			"COURSES BIS",
+			"COURSES",
+			"REMBOURSEMENT",
+			"CAFE",
+		]);
+		expect(smallest.names).toEqual(largest.names.toReversed());
+	});
+
+	it("compares the absolute amount as Sure's amount_operator does, within a cent for equal", async () => {
+		const list = await household();
+
+		const equal = await list({ amount: "12.50", amount_operator: "equal" });
+		const signed = await list({ amount: "-12,50", amount_operator: "equal" });
+		const less = await list({ amount: "12.50", amount_operator: "less" });
+		const greater = await list({ amount: "12.50", amount_operator: "greater" });
+		const bounded = await list({ amount: "12.50", amount_operator: "greater", amount_max: "100" });
+
+		expect(equal.names.toSorted()).toEqual(["COURSES", "COURSES BIS", "REMBOURSEMENT"]);
+		expect(equal.total).toBe(3);
+		expect(signed.names).toEqual(equal.names);
+		expect(less.names.toSorted()).toEqual(["CAFE", "REMBOURSEMENT"]);
+		expect(greater.names.toSorted()).toEqual(["CB EN ATTENTE", "COURSES BIS", "LOYER", "SALAIRE"]);
+		expect(bounded.names.toSorted()).toEqual(["CB EN ATTENTE", "COURSES BIS"]);
+	});
+
+	it("keeps pending or confirmed lines by Sure's statuses, both meaning every line", async () => {
+		const list = await household();
+
+		const pending = await list({ statuses: ["pending"] });
+		const confirmed = await list({ statuses: ["confirmed"] });
+		const both = await list({ statuses: ["confirmed", "pending"] });
+		const largestBooked = await list({ statuses: ["confirmed"], sort_by: "amount", page_size: 2 });
+
+		expect(pending).toEqual({ names: ["CB EN ATTENTE"], total: 1 });
+		expect(confirmed.total).toBe(6);
+		expect(confirmed.names).not.toContain("CB EN ATTENTE");
+		expect(both.total).toBe(7);
+		expect(largestBooked).toEqual({ names: ["SALAIRE", "LOYER"], total: 6 });
+	});
+
+	it("refuses an amount without its operator, an operator without its amount, and a bad amount", async () => {
+		await checking();
+		const tools = await assistants();
+
+		const alone = await tools.read("get_transactions", { amount: "12.50" });
+		const operator = await tools.read("get_transactions", { amount_operator: "less" });
+		const bad = await tools.read("get_transactions", { amount: "douze", amount_operator: "less" });
+		const status = await tools.read("get_transactions", { statuses: ["booked"] });
+
+		expect(errorText(alone)).toContain('{"path":"amount_operator","code":"required"}');
+		expect(errorText(operator)).toContain('{"path":"amount","code":"required"}');
+		expect(errorText(bad)).toContain('{"path":"amount","code":"invalid_amount"}');
+		expect(errorText(status)).toContain('"path":"statuses.0"');
+	});
+});

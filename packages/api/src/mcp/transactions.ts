@@ -126,7 +126,7 @@ function itemOf(item: TransactionRecord, names: NameBook): z.input<typeof transa
 export const getTransactions = defineTool({
 	name: "get_transactions",
 	title: "Transactions",
-	description: `A page of the transactions of every active account matching the filter; a deactivated account's are left out even when named, as in Archant's list; most recent first, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skipped_count. ${BANK_TEXT}`,
+	description: `A page of the transactions of every active account matching the filter; a deactivated account's are left out even when named, as in Archant's list; most recent first, or as Sure's sort_by and order say, a split transaction listed as its lines, with the count of every matching transaction and the income and expenses among them in the reporting currency; transactions in another currency are left out of those sums and counted in skipped_count. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getTransactionsInput,

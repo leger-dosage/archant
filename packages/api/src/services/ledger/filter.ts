@@ -68,6 +68,8 @@ export type TransactionFilter = {
 	tagIds?: readonly string[] | undefined;
 	/** Income, expense or transfer as `direction` decides, ORed. */
 	direction?: readonly Direction[] | undefined;
+	/** Only the lines a bank has not booked yet when `true`, only booked ones when `false`. */
+	pending?: boolean | undefined;
 };
 
 /** Whether the filter reads `transactions`, so the count and the sum must join it. */
@@ -76,7 +78,8 @@ export function needsTransactionColumns(filter: TransactionFilter): boolean {
 		filter.q !== undefined ||
 		filter.categoryIds !== undefined ||
 		filter.uncategorised === true ||
-		filter.merchantIds !== undefined
+		filter.merchantIds !== undefined ||
+		filter.pending !== undefined
 	);
 }
 
@@ -226,6 +229,7 @@ export function filterCondition(
 			: or(contains(transactions.label, q), contains(transactions.notes, q)),
 		category,
 		merchantIds === undefined ? undefined : inArray(transactions.merchantId, [...merchantIds]),
+		filter.pending === undefined ? undefined : eq(transactions.pending, filter.pending),
 		// `exists` rather than a join: a row with two of the tags would be listed,
 		// counted and summed twice.
 		tagIds === undefined
