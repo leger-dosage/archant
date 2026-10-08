@@ -1,4 +1,5 @@
 import type { AccountDetailData } from "@/hooks/useAccount";
+import type { RefObject } from "react";
 import type { UseFormReturn } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,6 +58,13 @@ type EditAccountDialogProps = {
 	account: AccountDetailData;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	/**
+	 * Where focus goes once the dialog has closed, when it was opened from a
+	 * menu item: Radix returns it to whatever held focus as the dialog
+	 * opened, and the menu, closing at the same moment, may still hold it
+	 * with an item about to unmount, which leaves focus on the page's body.
+	 */
+	returnFocusTo?: RefObject<HTMLElement | null> | undefined;
 };
 
 /**
@@ -64,7 +72,12 @@ type EditAccountDialogProps = {
  * type, a loan's details and the exclusion switch. Type, currency and the
  * opening balance stay as the account was created.
  */
-export function EditAccountDialog({ account, open, onOpenChange }: EditAccountDialogProps) {
+export function EditAccountDialog({
+	account,
+	open,
+	onOpenChange,
+	returnFocusTo,
+}: EditAccountDialogProps) {
 	const { t } = useTranslation();
 	const updateAccount = useUpdateAccount(account.id);
 	const isLoan = account.type === "loan";
@@ -127,7 +140,18 @@ export function EditAccountDialog({ account, open, onOpenChange }: EditAccountDi
 
 	return (
 		<Dialog open={open} onOpenChange={close}>
-			<DialogContent showCloseButton={false} className="max-h-[90vh] overflow-y-auto">
+			<DialogContent
+				showCloseButton={false}
+				className="max-h-[90vh] overflow-y-auto"
+				onCloseAutoFocus={(event) => {
+					const target = returnFocusTo?.current;
+
+					if (target?.isConnected === true) {
+						event.preventDefault();
+						target.focus();
+					}
+				}}
+			>
 				<DialogHeader>
 					<DialogTitle>{t("accountActions.form.title")}</DialogTitle>
 					<DialogDescription>{t("accountActions.form.description")}</DialogDescription>

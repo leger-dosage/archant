@@ -425,6 +425,71 @@ async function connect(page: Page, bank = "Banque Démo"): Promise<string> {
 	return CONNECTION_URL.exec(page.url())?.[1] ?? "";
 }
 
+// On 2026-10-04 the return page's first read of the list left the server
+// before the connection existed and reached the page after it: the
+// connection's page then named no bank. Held here so that order is certain.
+test("the connection's page names its bank when the list read before the connection answers last", async ({
+	page,
+	request,
+}) => {
+	await visit(page);
+	await openPicker(page);
+
+	let answer: (() => void) | undefined;
+	const listAnswered = new Promise<void>((resolve) => {
+		answer = resolve;
+	});
+	let release: (() => void) | undefined;
+	const listReleased = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let listHeld = false;
+	let callbackDone = false;
+
+	// The same path starts the consent with a POST: only the first read is held.
+	await page.route("**/api/bank-connections", async (route) => {
+		if (route.request().method() !== "GET" || listHeld) {
+			await route.fallback();
+			return;
+		}
+		listHeld = true;
+		const response = await route.fetch();
+		answer?.();
+		await listReleased;
+		await route.fulfill({ response });
+	});
+	await page.route(
+		"**/api/bank-connections/callback",
+		async (route) => {
+			await listAnswered;
+			await route.fulfill({ response: await route.fetch() });
+			callbackDone = true;
+		},
+		{ times: 1 },
+	);
+	// The setup is read again once the callback has answered: the old list
+	// then arrives after the page has learnt of the connection.
+	await page.route("**/api/bank-connections/setup", async (route) => {
+		if (callbackDone) {
+			release?.();
+		}
+		await route.fallback();
+	});
+
+	await banks(page).getByRole("button", { name: "Connecter Banque Démo" }).click();
+	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
+	await expect(page).toHaveURL(CONNECTION_URL);
+	const connectionId = CONNECTION_URL.exec(page.url())?.[1] ?? "";
+
+	try {
+		await expect(page.getByRole("heading", { level: 1, name: "Banque Démo" })).toBeVisible();
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
 const bankAccountRows = (page: Page) => page.getByRole("list", { name: "Comptes de la banque" });
 
 const choice = (page: Page, name: string) =>

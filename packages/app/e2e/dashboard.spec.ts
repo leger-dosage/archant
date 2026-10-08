@@ -670,9 +670,20 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 		.toBe(true);
 
 	// The balance sheet climbs under the net worth, beside the month's flow.
-	const [top, climbed] = await Promise.all([card(page).boundingBox(), bilan(page).boundingBox()]);
-	expect(climbed?.x).toBe(top?.x);
-	expect(climbed?.y).toBe((top?.y ?? 0) + (top?.height ?? 0) + 24);
+	// Polled: read once, right after the resize, the charts were still redrawing
+	// at their new width, and on 2026-10-06 the grid's rows had not settled.
+	await expect
+		.poll(async () => {
+			const [top, climbed] = await Promise.all([
+				card(page).boundingBox(),
+				bilan(page).boundingBox(),
+			]);
+
+			return top === null || climbed === null
+				? null
+				: { x: climbed.x - top.x, gap: climbed.y - (top.y + top.height) };
+		})
+		.toEqual({ x: 0, gap: 24 });
 
 	// In a half-width card, the month's three figures stack rather than overflow.
 	const cells = await Promise.all(

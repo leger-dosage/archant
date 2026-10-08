@@ -36,9 +36,15 @@ async function expectNoCategoryField(page: Page, label: string) {
 const categorySearch = (page: Page) =>
 	page.getByRole("combobox", { name: "Rechercher une catégorie" });
 
-/** An amount in euros no other test uses, as typed: `517,23`. */
+/**
+ * An amount in euros no other test uses, as typed: `51723,45`. Drawn from
+ * 80,000 values of 100 to 900 euros, the range other specs draw from too, a
+ * leftover row of the same amount within four days turned a pair into two
+ * candidates on 2026-10-07: the second row got a suggestion instead of a
+ * link. Tens of thousands of euros, to the cent, no spec writes otherwise.
+ */
 function uniqueAmount(): string {
-	return `${randomInt(100, 900)},${String(randomInt(100)).padStart(2, "0")}`;
+	return `${randomInt(10_000, 100_000)},${String(randomInt(100)).padStart(2, "0")}`;
 }
 
 /** Opens `/transactions` on the rows labelled with `q`, and waits for them. */

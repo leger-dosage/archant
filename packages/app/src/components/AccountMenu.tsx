@@ -11,7 +11,7 @@ import {
 	Trash2Icon,
 	UnplugIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -44,6 +44,7 @@ function toastError(error: unknown) {
 export function AccountMenu({ account }: { account: AccountDetailData }) {
 	const { t } = useTranslation();
 	const [editing, setEditing] = useState(false);
+	const trigger = useRef<HTMLButtonElement>(null);
 	const [confirming, setConfirming] = useState(false);
 	const updateAccount = useUpdateAccount(account.id);
 	const deleteAccount = useDeleteAccount(account.id);
@@ -103,6 +104,7 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<Button
+						ref={trigger}
 						variant="ghost"
 						size="icon"
 						aria-label={t("accountActions.menu", { name: account.name })}
@@ -161,7 +163,12 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 				</DropdownMenuContent>
 			</DropdownMenu>
 
-			<EditAccountDialog account={account} open={editing} onOpenChange={setEditing} />
+			<EditAccountDialog
+				account={account}
+				open={editing}
+				onOpenChange={setEditing}
+				returnFocusTo={trigger}
+			/>
 
 			<ConfirmDialog
 				open={confirming}
