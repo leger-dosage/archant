@@ -130,12 +130,17 @@ export function useCompleteBankConnection() {
 	return useMutation({
 		mutationFn: async (input: { code: string; state: string }) =>
 			(await unwrap(bank.callback.$post({ json: input }))).data,
-		// A first active connection locks the credentials.
-		onSuccess: () =>
-			Promise.all([
-				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup }),
-			]),
+		// A first active connection locks the credentials. A first read still
+		// under way is cancelled before the invalidation: TanStack Query only
+		// restarts a read that already has data, and would otherwise keep the
+		// answer the server gave before the connection existed, fresh for
+		// thirty seconds, so the connection's page named no bank.
+		onSuccess: async () => {
+			const keys = [queryKeys.bankConnections.list, queryKeys.bankConnections.setup];
+
+			await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+			await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+		},
 	});
 }
 

@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
-import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { BackupError, copyBeforeMigrating } from "./backup.ts";
 import { createDb } from "./client.ts";
@@ -12,8 +12,30 @@ import { migrateAllButLast } from "./testing/migrations.ts";
 let directory: string;
 let url: string;
 let backups: string;
+let template: string;
 
 const NOW = new Date("2026-09-27T08:30:05.123Z");
+
+// Migrated once and copied into each test. Migrating per test cost a second
+// or more on a CI runner sharing its cores with migrate.spec.ts, and the
+// first test, paying cold module loads on top, ran past the 5 s timeout on
+// 2026-10-07 while measuring nothing about the copy.
+beforeAll(async () => {
+	template = await mkdtemp(join(tmpdir(), "archant-backup-template-"));
+	const templateUrl = `file:${join(template, "archant.db")}`;
+	await migrateAllButLast(templateUrl);
+	const db = await createDb(templateUrl);
+	await db.run(
+		sql`insert into accounts (id, name, type, subtype, currency, created_at, updated_at) values ('a1', 'A', 'depository', 'checking', 'EUR', 0, 0)`,
+	);
+	// The copy takes the main file alone: what still sits in the WAL would be lost.
+	await db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`);
+	db.$client.close();
+}, 30_000);
+
+afterAll(async () => {
+	await rm(template, { recursive: true, force: true });
+});
 
 beforeEach(async () => {
 	directory = await mkdtemp(join(tmpdir(), "archant-backup-"));
@@ -26,14 +48,9 @@ afterEach(async () => {
 	await rm(directory, { recursive: true, force: true });
 });
 
-/** A database one migration behind, holding one account. */
-async function upgradable(): Promise<void> {
-	await migrateAllButLast(url);
-	const db = await createDb(url);
-	await db.run(
-		sql`insert into accounts (id, name, type, subtype, currency, created_at, updated_at) values ('a1', 'A', 'depository', 'checking', 'EUR', 0, 0)`,
-	);
-	db.$client.close();
+/** A database one migration behind, holding one account, at `path`. */
+async function upgradable(path = join(directory, "archant.db")): Promise<void> {
+	await copyFile(join(template, "archant.db"), path);
 }
 
 const listBackups = async () => (await readdir(backups)).toSorted();
@@ -118,7 +135,7 @@ describe("copyBeforeMigrating", () => {
 		const spaced = join(directory, "my db");
 		await mkdir(spaced);
 		const encoded = `file:${join(directory, "my%20db", "archant.db")}`;
-		await migrateAllButLast(encoded);
+		await upgradable(join(spaced, "archant.db"));
 
 		const outcome = await copyBeforeMigrating({ url: encoded, version: null, now: NOW });
 
@@ -129,6 +146,7 @@ describe("copyBeforeMigrating", () => {
 	});
 
 	it("copies nothing when every migration is applied", async () => {
+		await upgradable();
 		await runMigrations(url);
 
 		const outcome = await copyBeforeMigrating({ url, version: "1.2.0", now: NOW });
