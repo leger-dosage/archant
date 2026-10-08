@@ -1361,18 +1361,10 @@ describe("reading accounts, recurring series and one transaction", () => {
 		const route = z
 			.object({
 				date: z.string(),
-				cash: z.number(),
-				cashWeight: z.string(),
-				total: z.number(),
 				positions: z.array(
 					z.object({
-						quantity: z.string(),
-						price: z.string(),
-						priceDate: z.string(),
 						amount: z.number(),
-						costBasis: z.string(),
 						bookValue: z.number(),
-						gain: z.number(),
 						gainPercent: z.string(),
 						weight: z.string(),
 					}),
@@ -1382,40 +1374,36 @@ describe("reading accounts, recurring series and one transaction", () => {
 		const [position] = route.positions;
 
 		const result = await callTool(bare, tokens.access_token, "get_holdings", {
-			account_id: account.id,
-		});
-		const missing = await callTool(bare, tokens.access_token, "get_holdings", {
-			account_id: "nope",
+			page: 1,
+			account_ids: [account.id],
 		});
 
-		expect(result.structuredContent).toEqual({
-			account: { id: account.id, name: "PEA outil" },
-			currency: "EUR",
-			date: route.date,
+		expect(result.structuredContent).toMatchObject({
 			holdings: [
 				{
-					security_id: securityId,
-					name: "Fonds outil",
 					ticker: null,
-					isin: "FR0000121014",
-					exchange_mic: null,
+					name: "Fonds outil",
 					quantity: "10",
 					price: "612.4",
-					price_date: "2026-09-10",
+					currency: "EUR",
 					amount: money(position?.amount),
+					weight: position?.weight,
 					average_cost: "600",
+					account: { id: account.id, name: "PEA outil" },
+					date: route.date,
+					security_id: securityId,
+					isin: "FR0000121014",
+					exchange_mic: null,
+					price_date: "2026-09-10",
 					average_cost_locked: true,
 					book_value: money(position?.bookValue),
 					gain: "124.00",
 					gain_percent: position?.gainPercent,
-					weight: position?.weight,
 				},
 			],
-			cash: money(route.cash),
-			cash_weight: route.cashWeight,
-			total: "24997.50",
+			total_results: 1,
+			total_value: "6124.00",
 		});
-		expect(missing.isError).toBe(true);
 	});
 
 	it("get_transaction gives its notes, tags, reference, transfer and source", async () => {

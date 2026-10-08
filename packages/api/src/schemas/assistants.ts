@@ -154,12 +154,35 @@ export const recurringInput = z.strictObject({
 		),
 });
 
-/** `get_holdings`: one account's positions today. */
+/**
+ * `get_holdings`: Sure's `page`, required as Sure's, and its `accounts` and
+ * `securities` filters, beside `account_ids`. Sure's page is 50 rows, with no
+ * `page_size`.
+ */
 export const holdingsInput = z.strictObject({
-	account_id: z
-		.string()
+	page: z.number().int().min(1).describe("Page number; 50 holdings a page."),
+	accounts: z
+		.array(z.string().min(1))
 		.min(1)
-		.describe("An account id from get_accounts; an investment account holds positions."),
+		.max(MAX_TAG_FILTER)
+		.optional()
+		.describe(
+			"Exact names of investment accounts, as get_accounts gives them; any of them. A name no active investment account holds matches nothing.",
+		),
+	account_ids: z
+		.array(z.string().min(1))
+		.min(1)
+		.max(MAX_TAG_FILTER)
+		.optional()
+		.describe("Investment account ids from get_accounts; any of them. With accounts, both narrow."),
+	securities: z
+		.array(z.string().trim().min(1))
+		.min(1)
+		.max(MAX_TAG_FILTER)
+		.optional()
+		.describe(
+			'Ticker symbols such as "AI.PA", case aside; any of them. A security without a ticker, such as a fund typed by hand, matches none.',
+		),
 });
 
 /** `get_transaction`: one transaction in full. */
