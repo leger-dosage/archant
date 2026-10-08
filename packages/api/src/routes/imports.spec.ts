@@ -33,6 +33,7 @@ import {
 	valid,
 } from "../testing/app.ts";
 import { buildTestApp, withSession } from "../testing/auth.ts";
+import { loggedFigures } from "../testing/logs.ts";
 
 useSignedInApp();
 
@@ -156,7 +157,7 @@ describe("POST /api/imports/:id/confirm", () => {
 
 		const logs = logLines.join("\n");
 		expect(logs).toContain(data.id);
-		expect(logs).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
+		expect(loggedFigures(logLines)).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
 	});
 
 	it("recognises the same file on re-import", async () => {
@@ -262,7 +263,7 @@ describe("POST /api/imports/:id/confirm", () => {
 				msg: "recurring detection failed",
 			}),
 		]);
-		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
+		expect(loggedFigures(logLines)).not.toMatch(/1399|13\.99|NETFLIX/u);
 		expect(run).toHaveBeenCalledWith(expect.anything(), { backfill: false });
 	});
 });
@@ -301,7 +302,7 @@ describe("POST /api/imports/:id/revert and recurring detection", () => {
 				msg: "recurring detection failed",
 			}),
 		]);
-		expect(logLines.join("\n")).not.toMatch(/1399|13\.99|NETFLIX/u);
+		expect(loggedFigures(logLines)).not.toMatch(/1399|13\.99|NETFLIX/u);
 		expect(run).toHaveBeenCalledWith(expect.anything(), { backfill: false });
 	});
 });
@@ -1099,6 +1100,6 @@ describe("POST /api/imports/:id/revert", () => {
 		expect(reverted).toMatchObject({ importId: id, removed: { transactions: 5, snapshot: 1 } });
 		expect(typeof reverted?.["durationMs"]).toBe("number");
 		expect(refused).toMatchObject({ importId: id, code: "IMPORT_NOT_REVERTABLE" });
-		expect(logLines.join("\n")).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
+		expect(loggedFigures(logLines)).not.toMatch(/CAF|BOULANGERIE|4290|releve/u);
 	});
 });

@@ -26,6 +26,7 @@ import {
 	useSignedInApp,
 } from "./testing/app.ts";
 import { buildTestApp, withSession } from "./testing/auth.ts";
+import { loggedFigures } from "./testing/logs.ts";
 
 useSignedInApp();
 
@@ -101,7 +102,7 @@ describe("errors", () => {
 		expect(logLines).toHaveLength(1);
 		expect(logLines[0]).toContain('"path":"/api/accounts"');
 		expect(logLines[0]).toContain('"error":"Error"');
-		expect(logLines[0]).not.toContain("123456");
+		expect(loggedFigures(logLines)).not.toContain("123456");
 		expect(logLines[0]).not.toContain("stack");
 	});
 

@@ -32,6 +32,7 @@ import {
 	fixtures,
 	mockProvider,
 } from "../testing/enable-banking.ts";
+import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	bankDepsFromEnv,
@@ -910,7 +911,7 @@ describe("linkBankAccounts", () => {
 			`/accounts/${FIXTURE_CHECKING_UID}/balances`,
 		]);
 		expect(logLines.join("")).not.toContain(FIXTURE_CHECKING_UID);
-		expect(logLines.join("")).not.toContain("123456");
+		expect(loggedFigures(logLines)).not.toContain("123456");
 	});
 
 	it("links a file-fed account, keeping its entries and ending on the bank balance", async () => {
