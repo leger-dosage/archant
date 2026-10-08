@@ -6,22 +6,28 @@ import { z } from "zod";
 import type { MinorUnits } from "@archant/data/money";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 
+import { SURE_INTERVALS } from "../domain/balances/sure-periods.ts";
 import { balanceSheetInput, incomeStatementInput } from "../schemas/assistants.ts";
-import { BALANCE_PERIODS } from "../schemas/balances.ts";
 import { getBalanceSheet, getIncomeStatement } from "../services/reports.ts";
-import {
-	READ_ONLY,
-	decimal,
-	defineTool,
-	leftOutFields,
-	leftOutOf,
-	seriesOf,
-	seriesOutput,
-} from "./tool.ts";
+import { READ_ONLY, decimal, defineTool, leftOutFields, leftOutOf } from "./tool.ts";
+
+/** Sure's `to_ai_time_series`: the series' range, step and currency, then its values. */
+const history = z
+	.object({
+		start_date: z.string(),
+		end_date: z.string(),
+		interval: z.enum(SURE_INTERVALS),
+		currency: z.string(),
+		values: z
+			.array(decimal("The end-of-day figure"))
+			.describe(
+				"Oldest first: start_date, then each interval added to the previous day, then end_date. Empty for a range starting today.",
+			),
+	})
+	.describe("Over the period asked; the name is Sure's, whatever the interval.");
 
 /** One side of the sheet as Sure's `get_balance_sheet` gives it: today's figure and its history. */
-const sheetSide = (what: string) =>
-	z.object({ current: decimal(what), monthly_history: seriesOutput });
+const sheetSide = (what: string) => z.object({ current: decimal(what), monthly_history: history });
 
 const percentOf = (part: number, whole: number) => Math.round((part / whole) * 1000) / 10;
 
@@ -29,34 +35,32 @@ export const getBalanceSheetTool = defineTool({
 	name: "get_balance_sheet",
 	title: "Balance sheet",
 	description:
-		"The household's net worth today, its assets and its liabilities in the reporting currency, each with its history over the period, and how net worth moved over it, as the dashboard shows them and in Sure's get_balance_sheet shape. It counts the active accounts included in reports and held in the reporting currency.",
+		"Sure's get_balance_sheet: the household's net worth, assets and liabilities today in the reporting currency, as the dashboard counts them, each with its history over a named period, or between start_date and end_date, at one point per day, week or month. The default is the last five years at one month. It counts the active accounts included in reports and held in the reporting currency.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: balanceSheetInput,
 	output: z.object({
-		as_of_date: z.string().describe("Today."),
-		period: z.enum(BALANCE_PERIODS),
-		start_date: z
+		as_of_date: z.string().describe("Today: the day of every current figure."),
+		oldest_account_start_date: z
 			.string()
-			.nullable()
-			.describe("The period's first day; null when no counted account has opened yet."),
+			.describe("The oldest entry's day, an opening balance included; today without one."),
 		currency: z.string(),
 		net_worth: sheetSide("Assets minus liabilities").extend({
 			change: z
 				.object({
-					amount: decimal("Net worth's last point minus its first"),
+					amount: decimal("Net worth's last day of the period minus its first counted day"),
 					percent: z
 						.number()
 						.nullable()
 						.describe(
-							"Percent of the first point's size, one decimal; null when the period starts at zero.",
+							"Percent of the first day's size, one decimal; null when the period starts at zero.",
 						),
 				})
 				.nullable()
-				.describe("null for an empty series."),
+				.describe("null for a period without a counted day."),
 		}),
 		assets: sheetSide("Today's total"),
-		liabilities: sheetSide("What is owed today, positive"),
+		liabilities: sheetSide("What is owed today, positive; its history positive too"),
 		insights: z.object({
 			debt_to_asset_ratio: z
 				.number()
@@ -66,30 +70,33 @@ export const getBalanceSheetTool = defineTool({
 		...leftOutFields,
 	}),
 	run: async (deps, input) => {
-		const sheet = await getBalanceSheet(deps, input.period);
+		const sheet = await getBalanceSheet(deps, input);
 		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: sheet.currency });
+		const historyOf = (values: readonly MinorUnits[]) => ({
+			start_date: sheet.range.from,
+			end_date: sheet.range.to,
+			interval: sheet.interval,
+			currency: sheet.currency,
+			values: values.map(money),
+		});
 
 		return {
 			result: {
-				as_of_date: sheet.to,
-				period: sheet.period,
-				start_date: sheet.from,
+				as_of_date: sheet.asOf,
+				oldest_account_start_date: sheet.oldestEntryDate,
 				currency: sheet.currency,
 				net_worth: {
 					current: money(sheet.netWorth),
-					monthly_history: seriesOf(sheet.series.netWorth, sheet.currency),
+					monthly_history: historyOf(sheet.series.netWorth),
 					change:
 						sheet.change === null
 							? null
 							: { amount: money(sheet.change.amount), percent: sheet.change.percent },
 				},
-				assets: {
-					current: money(sheet.assets),
-					monthly_history: seriesOf(sheet.series.assets, sheet.currency),
-				},
+				assets: { current: money(sheet.assets), monthly_history: historyOf(sheet.series.assets) },
 				liabilities: {
 					current: money(sheet.liabilities),
-					monthly_history: seriesOf(sheet.series.liabilities, sheet.currency),
+					monthly_history: historyOf(sheet.series.liabilities),
 				},
 				insights: {
 					debt_to_asset_ratio: sheet.assets > 0 ? percentOf(sheet.liabilities, sheet.assets) : null,

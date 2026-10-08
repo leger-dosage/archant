@@ -75,7 +75,7 @@ async function spend(accountId: string, date: string, amount: number, currency =
 }
 
 describe("getBalanceSheet", () => {
-	it("gives getNetWorth's figures, with the assets' and liabilities' series beside", async () => {
+	it("gives getNetWorth's figures today and its daily balances on each of Sure's dates", async () => {
 		const checking = await account();
 		await account({
 			name: "Carte",
@@ -87,66 +87,66 @@ describe("getBalanceSheet", () => {
 		await spend(checking, "2026-09-15", -20_000);
 
 		const netWorth = await getNetWorth(deps(), "1M");
-		const sheet = await getBalanceSheet(deps(), "1M");
+		const sheet = await getBalanceSheet(deps(), {
+			from: "2026-08-25",
+			to: "2026-09-21",
+			interval: "1 week",
+		});
 
 		expect(sheet).toMatchObject({
-			period: "1M",
-			from: netWorth.from,
-			to: "2026-09-21",
+			asOf: "2026-09-21",
+			oldestEntryDate: "2026-09-01",
 			currency: "EUR",
 			netWorth: netWorth.netWorth,
 			assets: 80_000,
 			liabilities: 30_000,
+			range: { from: "2026-08-25", to: "2026-09-21" },
+			interval: "1 week",
 			change: netWorth.change,
 			leftOut: [],
 		});
-		expect(sheet.netWorth).toBe(50_000);
-		expect(sheet.series.netWorth).toEqual({ interval: "day", points: netWorth.points });
-		expect(sheet.series.assets.points.at(0)).toEqual({ date: "2026-09-01", balance: 100_000 });
-		expect(sheet.series.assets.points.at(-1)).toEqual({ date: "2026-09-21", balance: 80_000 });
-		// The card owes from its own opening, positive, as the dashboard counts it.
-		expect(sheet.series.liabilities.points.at(0)).toEqual({ date: "2026-09-10", balance: 30_000 });
-		expect(sheet.series.liabilities.points.at(-1)).toEqual({
-			date: "2026-09-21",
-			balance: 30_000,
+		// 25 August, before any opening, then 1, 8 and 15 September, then today.
+		expect(sheet.series).toEqual({
+			netWorth: [0, 100_000, 100_000, 50_000, 50_000],
+			assets: [0, 100_000, 100_000, 80_000, 80_000],
+			// The card owes from its own opening, positive, as the dashboard counts it.
+			liabilities: [0, 0, 0, 30_000, 30_000],
 		});
 	});
 
-	it("samples ten years monthly, every series at net worth's interval, its last point today's net worth", async () => {
+	it("samples ten years monthly, its last value today's net worth", async () => {
 		const checking = await account({ openingDate: "2016-09-21" });
 		await spend(checking, "2021-03-04", -12_345);
-		// Under two years: alone, it would be sampled by week.
-		await account({
-			name: "Carte",
-			type: "credit_card",
-			subtype: null,
-			openingBalance: toMinorUnits(30_000),
-			openingDate: "2025-03-01",
-		});
 
-		const sheet = await getBalanceSheet(deps(), "all");
+		const sheet = await getBalanceSheet(deps(), { period: "last_10_years", interval: "1 month" });
 
-		expect(sheet.series.netWorth.interval).toBe("month");
-		expect(sheet.series.netWorth.points).toHaveLength(121);
-		expect(sheet.series.netWorth.points.at(-1)).toEqual({
-			date: "2026-09-21",
-			balance: sheet.netWorth,
+		expect(sheet.range).toEqual({ from: "2016-09-21", to: "2026-09-21" });
+		expect(sheet.series.netWorth).toHaveLength(121);
+		expect(sheet.series.netWorth.at(0)).toBe(100_000);
+		expect(sheet.series.netWorth.at(-1)).toBe(sheet.netWorth);
+	});
+
+	it("answers no series for a range starting today, and refuses more than 400 points", async () => {
+		await account();
+
+		const today = await getBalanceSheet(deps(), { period: "current_week", interval: "1 day" });
+
+		expect(today.series).toEqual({ netWorth: [], assets: [], liabilities: [] });
+		expect(today.change).toBeNull();
+		expect(today.netWorth).toBe(100_000);
+		await expect(
+			getBalanceSheet(deps(), { period: "last_5_years", interval: "1 day" }),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "interval", code: "too_many_points" }],
 		});
-		// Net worth's interval, so each point falls on one of its dates.
-		expect(sheet.series.liabilities.interval).toBe("month");
-		expect(sheet.series.liabilities.points).toHaveLength(19);
-		expect(sheet.series.liabilities.points.at(0)).toEqual({ date: "2025-03-31", balance: 30_000 });
-		expect(sheet.series.assets.interval).toBe("month");
-		expect(sheet.series.assets.points.map((point) => point.date)).toEqual(
-			sheet.series.netWorth.points.map((point) => point.date),
-		);
 	});
 
 	it("leaves an account in another currency out of every total and names it", async () => {
 		await account();
 		const dollars = await account({ name: "Dollars", currency: "USD" });
 
-		const sheet = await getBalanceSheet(deps(), "1M");
+		const sheet = await getBalanceSheet(deps(), { period: "last_30_days", interval: "1 day" });
 
 		expect(sheet).toMatchObject({ netWorth: 100_000, assets: 100_000 });
 		expect(sheet.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);

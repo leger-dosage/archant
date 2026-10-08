@@ -6,6 +6,7 @@ import {
 	openOwn,
 	ownCategory,
 	ownDatabase,
+	pinned,
 	postOwn,
 	sendOwn,
 	template,
@@ -16,7 +17,7 @@ import { buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
-// The clock stands at 2026-09-21; each test has a household of its own.
+// The clock stands at 2026-09-21, a Monday; each test has a household of its own.
 
 const line = z.strictObject({
 	category_id: z.string().nullable(),
@@ -313,5 +314,180 @@ describe("get_income_statement", () => {
 		expect(reversed.content[0]?.text).toContain('"path":"end_date","code":"before_from"');
 		expect(badDate.content[0]?.text).toContain('"path":"start_date"');
 		expect(missing.content[0]?.text).toContain('"path":"end_date"');
+	});
+});
+
+const history = z.strictObject({
+	start_date: z.string(),
+	end_date: z.string(),
+	interval: z.enum(["1 day", "1 week", "1 month"]),
+	currency: z.string(),
+	values: z.array(z.string()),
+});
+
+const sheetSide = z.strictObject({ current: z.string(), monthly_history: history });
+
+const balanceSheet = z.strictObject({
+	as_of_date: z.string(),
+	oldest_account_start_date: z.string(),
+	currency: z.string(),
+	net_worth: sheetSide.extend({
+		change: z.strictObject({ amount: z.string(), percent: z.number().nullable() }).nullable(),
+	}),
+	assets: sheetSide,
+	liabilities: sheetSide,
+	insights: z.strictObject({ debt_to_asset_ratio: z.number().nullable() }),
+	left_out_count: z.number(),
+	left_out_account_ids: z.array(z.string()),
+});
+
+/**
+ * A checking account opened on 2026-01-10 at 1 500,00 with −120,00 on
+ * 2026-03-02, a card owing 300,00 from 2026-06-01, and an account in dollars
+ * every figure leaves out.
+ */
+async function sheetHousehold() {
+	const { db } = await ownDatabase();
+	const checking = await openOwn({ ...pinned, name: "Courant" });
+	await postOwn(checking.id, { date: "2026-03-02", label: "Courses", amount: "-120,00" });
+	await openOwn({
+		name: "Carte",
+		type: "credit_card",
+		subtype: null,
+		openingBalance: "300,00",
+		openingDate: "2026-06-01",
+	});
+	const dollars = await openOwn({ ...pinned, name: "Dollars", currency: "USD" });
+
+	const auth = createTestAuth(db);
+	const app = buildTestApp(db, createLogger("silent"), auth);
+	const session = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
+	const token = (await connect(session, app, await registerClient(app))).access_token;
+
+	return {
+		dollars,
+		call: (args: unknown) => callTool(app, token, "get_balance_sheet", args),
+		read: async (args: unknown) =>
+			balanceSheet.parse((await callTool(app, token, "get_balance_sheet", args)).structuredContent),
+	};
+}
+
+describe("get_balance_sheet", () => {
+	it("samples any dates at Sure's interval, as Sure's chart series reads them", async () => {
+		const tools = await sheetHousehold();
+
+		const result = await tools.read({
+			start_date: "2026-01-01",
+			end_date: "2026-09-21",
+			interval: "1 month",
+		});
+		const monthly = {
+			start_date: "2026-01-01",
+			end_date: "2026-09-21",
+			interval: "1 month",
+			currency: "EUR",
+		};
+		const assets = ["0.00", "1500.00", "1500.00", ...Array.from({ length: 7 }, () => "1380.00")];
+		const liabilities = [
+			...Array.from({ length: 5 }, () => "0.00"),
+			...Array.from({ length: 5 }, () => "300.00"),
+		];
+
+		expect(result).toEqual({
+			as_of_date: "2026-09-21",
+			oldest_account_start_date: "2026-01-10",
+			currency: "EUR",
+			net_worth: {
+				current: "1080.00",
+				// The first of each month, then the last day; nothing before the opening.
+				monthly_history: {
+					start_date: "2026-01-01",
+					end_date: "2026-09-21",
+					interval: "1 month",
+					currency: "EUR",
+					values: [
+						"0.00",
+						"1500.00",
+						"1500.00",
+						"1380.00",
+						"1380.00",
+						"1080.00",
+						"1080.00",
+						"1080.00",
+						"1080.00",
+						"1080.00",
+					],
+				},
+				change: { amount: "-420.00", percent: -28 },
+			},
+			assets: { current: "1380.00", monthly_history: { ...monthly, values: assets } },
+			liabilities: { current: "300.00", monthly_history: { ...monthly, values: liabilities } },
+			insights: { debt_to_asset_ratio: 21.7 },
+			left_out_count: 1,
+			left_out_account_ids: [tools.dollars.id],
+		});
+	});
+
+	it("defaults to the last five years from the oldest entry, at one month", async () => {
+		const tools = await sheetHousehold();
+
+		const result = await tools.read({});
+
+		expect(result.net_worth.monthly_history).toMatchObject({
+			start_date: "2026-01-10",
+			end_date: "2026-09-21",
+			interval: "1 month",
+		});
+		// The tenth of each month, then today.
+		expect(result.net_worth.monthly_history.values).toHaveLength(10);
+		expect(result.net_worth.monthly_history.values.at(-1)).toBe(result.net_worth.current);
+	});
+
+	it("reads Sure's named periods, a custom range winning only with both dates", async () => {
+		const tools = await sheetHousehold();
+
+		const weeks = await tools.read({ period: "last_30_days", interval: "1 week" });
+		const lastMonth = await tools.read({ period: "last_month", interval: "1 day" });
+		const thisWeek = await tools.read({ period: "current_week" });
+		const halfCustom = await tools.read({ period: "last_month", start_date: "2026-01-01" });
+
+		expect(weeks.net_worth.monthly_history).toMatchObject({
+			start_date: "2026-08-22",
+			end_date: "2026-09-21",
+			interval: "1 week",
+		});
+		expect(weeks.net_worth.monthly_history.values).toHaveLength(6);
+		expect(lastMonth.net_worth.monthly_history).toMatchObject({
+			start_date: "2026-08-01",
+			end_date: "2026-08-31",
+		});
+		expect(lastMonth.net_worth.monthly_history.values).toHaveLength(31);
+		// A period starting today has no history, as Sure's.
+		expect(thisWeek.net_worth.monthly_history.values).toEqual([]);
+		expect(thisWeek.net_worth.change).toBeNull();
+		expect(halfCustom.net_worth.monthly_history.start_date).toBe("2026-08-01");
+	});
+
+	it("refuses more than 400 points, a reversed range and a period Sure lacks", async () => {
+		const tools = await sheetHousehold();
+
+		const most = await tools.read({
+			start_date: "2025-08-17",
+			end_date: "2026-09-20",
+			interval: "1 day",
+		});
+		const tooMany = await tools.call({
+			start_date: "2025-08-16",
+			end_date: "2026-09-20",
+			interval: "1 day",
+		});
+		const reversed = await tools.call({ start_date: "2026-09-21", end_date: "2026-01-01" });
+		const unknown = await tools.call({ period: "1Y" });
+
+		expect(most.net_worth.monthly_history.values).toHaveLength(400);
+		expect(tooMany.isError).toBe(true);
+		expect(tooMany.content[0]?.text).toContain('{"path":"interval","code":"too_many_points"}');
+		expect(reversed.content[0]?.text).toContain('"path":"end_date","code":"before_from"');
+		expect(unknown.content[0]?.text).toContain('"path":"period"');
 	});
 });

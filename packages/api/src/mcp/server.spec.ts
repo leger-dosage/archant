@@ -930,12 +930,19 @@ const series = z.object({
 	points: z.array(z.object({ date: z.string(), balance: z.string().regex(decimalString) })),
 });
 
-const sheetSide = z.object({ current: z.string().regex(decimalString), monthly_history: series });
+const history = z.object({
+	start_date: z.string(),
+	end_date: z.string(),
+	interval: z.enum(["1 day", "1 week", "1 month"]),
+	currency: z.string(),
+	values: z.array(z.string().regex(decimalString)),
+});
+
+const sheetSide = z.object({ current: z.string().regex(decimalString), monthly_history: history });
 
 const balanceSheet = z.object({
 	as_of_date: z.string(),
-	period: z.string(),
-	start_date: z.string().nullable(),
+	oldest_account_start_date: z.string(),
 	currency: z.string(),
 	net_worth: sheetSide.extend({
 		change: z
@@ -997,15 +1004,17 @@ describe("reading reports", () => {
 		});
 		await spend(checking, "SHEET1 Courses", -4250, "2026-09-15");
 
-		const result = await callTool(bare, tokens.access_token, "get_balance_sheet", { period: "1M" });
+		const result = await callTool(bare, tokens.access_token, "get_balance_sheet", {
+			start_date: "2026-08-21",
+			end_date: "2026-09-21",
+			interval: "1 day",
+		});
 		const sheet = balanceSheet.parse(result.structuredContent);
 		const route = await routeData("/api/reports/net-worth?period=1M");
 		const points = z.array(z.object({ date: z.string(), balance: z.number() })).parse(route.points);
 
 		expect(sheet).toMatchObject({
 			as_of_date: "2026-09-21",
-			period: "1M",
-			start_date: route.from,
 			currency: "EUR",
 			net_worth: { current: money(route.netWorth) },
 			assets: { current: money(route.assets) },
@@ -1013,18 +1022,19 @@ describe("reading reports", () => {
 			left_out_count: leftOutIds(route.leftOut).length,
 			left_out_account_ids: leftOutIds(route.leftOut),
 		});
-		expect(sheet.net_worth.monthly_history).toEqual({
-			interval: "day",
-			points: points.map((point) => ({ date: point.date, balance: money(point.balance) })),
+		// A value a day, the dashboard's balance of each day it charts.
+		expect(sheet.net_worth.monthly_history).toMatchObject({
+			start_date: "2026-08-21",
+			end_date: "2026-09-21",
+			interval: "1 day",
+			currency: "EUR",
 		});
-		expect(sheet.net_worth.monthly_history.points.at(-1)?.balance).toBe(sheet.net_worth.current);
-		expect(sheet.assets.monthly_history.points.at(-1)?.balance).toBe(sheet.assets.current);
-		expect(sheet.liabilities.monthly_history.points.at(-1)?.balance).toBe(
-			sheet.liabilities.current,
+		expect(sheet.net_worth.monthly_history.values.slice(-points.length)).toEqual(
+			points.map((point) => money(point.balance)),
 		);
-		expect(sheet.net_worth.change?.amount).toBe(
-			money(z.object({ amount: z.number() }).parse(route.change).amount),
-		);
+		expect(sheet.net_worth.monthly_history.values.at(-1)).toBe(sheet.net_worth.current);
+		expect(sheet.assets.monthly_history.values.at(-1)).toBe(sheet.assets.current);
+		expect(sheet.liabilities.monthly_history.values.at(-1)).toBe(sheet.liabilities.current);
 		// Sure's ratio, liabilities over assets in percent.
 		const assets = z.number().parse(route.assets);
 		expect(sheet.insights.debt_to_asset_ratio).toBe(
@@ -1050,7 +1060,7 @@ describe("reading reports", () => {
 			(await routeData("/api/reports/net-worth?period=1Y")).leftOut,
 		);
 
-		expect(sheet.period).toBe("1Y");
+		expect(sheet.net_worth.monthly_history.interval).toBe("1 month");
 		expect(sheet.left_out_account_ids).toContain(dollars.id);
 		expect(sheet.left_out_account_ids).toEqual(netWorthLeftOut);
 		expect(sheet.left_out_count).toBe(netWorthLeftOut.length);
@@ -1058,51 +1068,55 @@ describe("reading reports", () => {
 		expect(statement.left_out_count).toBe(netWorthLeftOut.length);
 	});
 
-	it("get_balance_sheet samples ten years by month, its last point today's net worth", async () => {
+	it("get_balance_sheet reads ten years by month, its last value today's net worth", async () => {
 		await openAccount({ name: "Ancien", openingDate: "2016-09-21", openingBalance: "50,00" });
 
 		const sheet = balanceSheet.parse(
-			(await callTool(bare, tokens.access_token, "get_balance_sheet", { period: "all" }))
+			(await callTool(bare, tokens.access_token, "get_balance_sheet", { period: "last_10_years" }))
 				.structuredContent,
 		);
 
-		expect(sheet.start_date).toBe("2016-09-21");
-		expect(sheet.net_worth.monthly_history.interval).toBe("month");
-		expect(sheet.net_worth.monthly_history.points).toHaveLength(121);
-		expect(sheet.net_worth.monthly_history.points.at(-1)).toEqual({
-			date: "2026-09-21",
-			balance: sheet.net_worth.current,
+		expect(sheet.net_worth.monthly_history).toMatchObject({
+			start_date: "2016-09-21",
+			end_date: "2026-09-21",
+			interval: "1 month",
 		});
+		expect(sheet.net_worth.monthly_history.values).toHaveLength(121);
+		expect(sheet.net_worth.monthly_history.values.at(-1)).toBe(sheet.net_worth.current);
 		expect(sheet.net_worth.current).toBe(
 			money((await routeData("/api/reports/net-worth?period=all")).netWorth),
 		);
 	});
 
-	it("get_balance_sheet gives no change and empty series for a household without accounts", async () => {
+	it("get_balance_sheet gives no change and zero values for a household without accounts", async () => {
 		const empty = await freshDatabase();
 		const { getBalanceSheet } = reportsService;
-		vi.spyOn(reportsService, "getBalanceSheet").mockImplementation(async (serviceDeps, period) =>
-			getBalanceSheet({ ...serviceDeps, db: empty.db }, period),
+		vi.spyOn(reportsService, "getBalanceSheet").mockImplementation(async (serviceDeps, query) =>
+			getBalanceSheet({ ...serviceDeps, db: empty.db }, query),
 		);
 
 		try {
 			const sheet = balanceSheet.parse(
-				(await callTool(bare, tokens.access_token, "get_balance_sheet")).structuredContent,
+				(
+					await callTool(bare, tokens.access_token, "get_balance_sheet", {
+						period: "last_7_days",
+						interval: "1 day",
+					})
+				).structuredContent,
 			);
 
 			expect(sheet).toMatchObject({
-				start_date: null,
-				net_worth: {
-					current: "0.00",
-					change: null,
-					monthly_history: { interval: "day", points: [] },
-				},
-				assets: { current: "0.00", monthly_history: { interval: "day", points: [] } },
-				liabilities: { current: "0.00", monthly_history: { interval: "day", points: [] } },
+				oldest_account_start_date: "2026-09-21",
+				net_worth: { current: "0.00", change: null },
+				assets: { current: "0.00" },
+				liabilities: { current: "0.00" },
 				insights: { debt_to_asset_ratio: null },
 				left_out_count: 0,
 				left_out_account_ids: [],
 			});
+			expect(sheet.net_worth.monthly_history.values).toEqual(
+				Array.from({ length: 8 }, () => "0.00"),
+			);
 		} finally {
 			await empty.dispose();
 		}

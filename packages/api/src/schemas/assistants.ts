@@ -15,6 +15,7 @@ import {
 	ESTIMATED_PREFIX,
 	parseCitation,
 } from "../domain/balances/citation.ts";
+import { SURE_INTERVALS, SURE_PERIODS } from "../domain/balances/sure-periods.ts";
 import { BALANCE_PERIODS } from "./balances.ts";
 import {
 	BILL_LIFECYCLES,
@@ -130,8 +131,48 @@ export const getAccountsInput = z.strictObject({
 	),
 });
 
-/** `get_balance_sheet`: net worth over a period. */
-export const balanceSheetInput = z.strictObject({ period: toolPeriod });
+/**
+ * `get_balance_sheet`: Sure's named period, or its custom range when both
+ * dates are given, and its series interval.
+ */
+export const balanceSheetInput = z
+	.strictObject({
+		period: z
+			.enum(SURE_PERIODS)
+			.optional()
+			.describe("A named period for the history series; the last five years when absent."),
+		start_date: z.iso
+			.date()
+			.optional()
+			.describe(
+				"A custom range's first day, YYYY-MM-DD; overrides period when end_date is also given.",
+			),
+		end_date: z.iso
+			.date()
+			.optional()
+			.describe(
+				"A custom range's last day, YYYY-MM-DD; overrides period when start_date is also given.",
+			),
+		interval: z
+			.enum(SURE_INTERVALS)
+			.default("1 month")
+			.describe('The series\' step, "1 month" by default; 400 points at most.'),
+	})
+	.superRefine((value, context) => {
+		if (
+			value.start_date !== undefined &&
+			value.end_date !== undefined &&
+			value.end_date < value.start_date
+		) {
+			context.addIssue({ code: "custom", path: ["end_date"], message: "before_from" });
+		}
+	})
+	.transform((value) => ({
+		from: value.start_date,
+		to: value.end_date,
+		period: value.period,
+		interval: value.interval,
+	}));
 
 /** `get_income_statement`: Sure's period, account filter, monthly series and comparison. */
 export const incomeStatementInput = z
