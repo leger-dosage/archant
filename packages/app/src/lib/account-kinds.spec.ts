@@ -20,15 +20,15 @@ describe("kindOf", () => {
 });
 
 describe("ACCOUNT_KINDS", () => {
-	it("offers Sure's seven loans in Sure's order, with Sure's French where it has some", () => {
+	it("offers Sure's seven loans in Sure's order, named as a bank in France names them", () => {
 		const loans = ACCOUNT_KINDS.filter((kind) => kind.type === "loan");
 
 		expect(loans.map((kind) => fr.accounts.subtypes[kind.id])).toEqual([
-			"Hypothèque",
+			"Prêt immobilier",
 			"Prêt étudiant",
 			"Prêt auto",
-			"Prêt sur valeur domiciliaire",
-			"Ligne de crédit",
+			"Prêt hypothécaire",
+			"Crédit renouvelable",
 			"Prêt professionnel",
 			"Autre prêt",
 		]);
