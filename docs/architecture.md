@@ -4,10 +4,10 @@ type: architecture-spine
 purpose: build-substrate
 altitude: initiative
 paradigm: "modular monolith, ports and adapters"
-scope: "Archant, the ten epics of epics.md"
+scope: "Archant, Epics 1 to 26 of epics.md"
 status: final
 created: "2026-09-21"
-updated: "2026-10-03"
+updated: "2026-10-08"
 binds: [FR1-FR56, FR61-FR100, NFR1-NFR12, NFR14, NFR19, NFR20]
 sources:
   - ../_bmad-output/planning-artifacts/feature-inventory.md

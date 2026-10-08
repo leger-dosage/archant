@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-07-2026 17:05
+last_updated: 10-08-2026 18:00
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -231,3 +231,32 @@ development_status:
   26-4-ask-an-assistant-to-record-or-delete-a-transaction: done
   26-5-ask-an-assistant-to-import-a-bank-file: done
   epic-26-retrospective: optional
+
+  epic-27: backlog
+  27-1-confirm-the-transfers-the-matcher-proposes: backlog
+  27-2-a-paused-bill-is-never-overdue: backlog
+  27-3-bill-totals-order-and-amounts-as-sure-shows-them: backlog
+  27-4-a-recurring-series-is-never-deleted-by-detection: backlog
+  27-5-a-purchases-fee-in-its-cost-basis: backlog
+  27-6-count-income-and-expenses-as-sure-does: backlog
+  27-7-one-time-transactions-and-sures-monthly-medians: backlog
+  27-8-a-two-factor-code-works-once: backlog
+  27-9-assistant-answers-in-sures-formats-and-sures-accounts-and-lists: backlog
+  27-10-assistant-transactions-as-sures: backlog
+  27-11-assistant-holdings-and-balance-snapshots-as-sures: backlog
+  27-12-assistant-reports-and-budgets-as-sures: backlog
+  27-13-assistant-bills-and-recurring-payments-as-sures: backlog
+  27-14-archants-own-assistant-tools-in-sures-shapes: backlog
+  27-15-principal-and-interest-in-the-loan-chart-and-sures-chart-axis: backlog
+  27-16-categories-as-sure-in-the-transaction-list: backlog
+  27-17-edit-an-accounts-opening-balance: backlog
+  27-18-let-a-sync-update-a-transaction-again: backlog
+  27-19-every-balance-a-bank-sends-and-a-revoked-consent-at-once: backlog
+  27-20-a-renewal-that-keeps-every-account-and-a-disconnection-without-the-key: backlog
+  27-21-revert-imports-in-any-order: backlog
+  27-22-a-new-pending-purchase-is-never-taken-for-a-booked-line: backlog
+  27-23-a-tab-left-open-across-an-upgrade-reloads: backlog
+  27-24-recurring-transfers-as-sure-follows-them: backlog
+  27-25-every-remaining-departure-from-sure-reviewed: backlog
+  27-26-split-the-largest-files-and-remove-duplicates: backlog
+  epic-27-retrospective: optional

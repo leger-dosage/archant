@@ -12,7 +12,7 @@ Know its limits before you install it:
 
 - The interface is in French only.
 - Totals and reports are in euros, the one reporting currency. An account in another currency keeps its own balance but stays out of the totals, with no exchange rates.
-- One household, one administrator account: there is no sign-up and no sharing between users.
+- One household. There is no public sign-up: an administrator invites each other member by a link, as an administrator or as a read-only viewer, and every member sees the whole household, with no per-account sharing.
 - Bank synchronisation goes through [Enable Banking](https://enablebanking.com) only, which covers European banks and needs an application registered with it. File import works without it.
 
 ![The dashboard: accounts in the sidebar, net worth over six months, and the month's income and expenses by category, all made-up data](docs/images/dashboard.png)
@@ -39,14 +39,20 @@ Why these, and what was rejected: [docs/adr/0001-technology-stack.md](docs/adr/0
 Everything below works without a bank connection except the last line. [docs/sure-parity.md](docs/sure-parity.md) compares each area with Sure, and says what Archant does differently and why.
 
 - Accounts: checking, savings, credit card, loan, investment (PEA, assurance vie, compte-titres), property and vehicle, with a daily balance history and dated balance snapshots.
-- Transactions entered by hand, filtered across accounts, and edited in bulk.
+- Loans with their terms, rates and insurance, an amortisation schedule, and where the recorded balance is heading against the contract.
+- Investments: securities, trades, dividends and interest, and holdings with their average cost and gain, valued from prices typed by hand or fetched daily from Yahoo Finance once allowed.
+- Transactions entered by hand, filtered across accounts, edited in bulk, split into lines with their own categories, and with receipts attached.
 - Import of OFX, CSV (with a saved column mapping) and QIF files, with a preview, deduplication, an import history and revert.
 - Categories, merchants and tags, and rules that categorise, tag, rename or exclude new and existing transactions.
 - Transfers between accounts, marked by hand or matched automatically.
-- Recurring transactions, detected from history and listed with their next date.
+- Monthly budgets by category, with a copy from the last month, money moved between categories, and what is left carried over.
+- Savings goals and reserves funded by account balances, with what to put aside each month.
+- Bills: recurring payments detected from history or declared by hand, with a schedule, due dates settled by the payments that match them, and a page of what is overdue, due and paid.
 - A dashboard with net worth over time and monthly income and expenses by category.
-- One administrator account, created on first launch, with a password reset from the server's shell.
-- Bank synchronisation through Enable Banking: connect a bank, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
+- An export of every figure as one ZIP, in Sure's export format.
+- Members: an administrator created on first launch, others invited by a link as administrators or read-only viewers, two-factor sign-in, and a password reset from the server's shell.
+- An AI assistant connected over MCP, the Model Context Protocol, which reads your finances and, if you allow it, writes rules, classifies, records, imports or deletes transactions, records balances, pairs transfers, and sets budgets, goals and bills.
+- Bank synchronisation through Enable Banking: connect a bank, choose how far back the first sync reads, up to two years, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
 
 ## Structure
 

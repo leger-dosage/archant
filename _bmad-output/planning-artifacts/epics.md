@@ -73,14 +73,14 @@ FR30: The user can create, rename and delete tags, and put several tags on a tra
 
 #### Internal transfers
 
-FR31: The system matches two transactions of opposite amounts, in two different accounts, within a date window (default 4 days), as a transfer. A transaction with more than one candidate is not matched automatically.
-FR32: The user can match two transactions as a transfer by hand, undo a match, and reject a proposed match. A rejected pair is never proposed again.
+FR31: The system matches two transactions of opposite amounts, in two different accounts, within a date window (default 4 days), as a transfer. A transaction with more than one candidate is not matched automatically. Revised by Epic 27: a match is a proposal the user confirms, chosen as Sure ranks candidates (FR101).
+FR32: The user can match two transactions as a transfer by hand, undo a match, and reject a proposed match. A rejected pair is never proposed again. Revised by Epic 27: a pair made by hand is confirmed and may span 30 days (FR101).
 FR33: A transfer has a kind: internal move, credit card payment, loan payment, investment contribution. Internal moves and credit card payments are left out of income and expense totals.
 
 #### Dashboard
 
 FR34: The user sees net worth, assets minus liabilities over accounts not excluded, with its history over a chosen period (1 month, 3 months, 6 months, 1 year, all).
-FR35: The user sees income and expenses for a chosen month, broken down by category, leaving out excluded transactions and internal moves. The uncategorised total is shown separately.
+FR35: The user sees income and expenses for a chosen month, broken down by category, leaving out excluded transactions and internal moves. The uncategorised total is shown separately. Revised by Epic 27: each line counts on the side of its sign, no trade counts, tax-advantaged accounts and one-time lines are left out, as Sure's income statement (FR102).
 
 #### Rules
 
@@ -198,10 +198,19 @@ FR98: An assistant can read an account's balance snapshots with their gap to the
 FR99: An assistant can read the savings goals with their progress, and create a goal or a reserve funded by accounts.
 FR100: An assistant can list the transactions a transaction can be paired with as a transfer, pair two of them, and unpair a transfer, refusing the pair for good when the owner asks.
 
+#### Consolidation
+
+FR101: A transfer the matcher finds is a proposal the user confirms or rejects; a pair the user makes by hand is confirmed at once and its sides may lie 30 days apart, as in Sure.
+FR102: The user marks a transaction as one-time: it stays in its account's balance, its category and the list, and leaves income and expense totals, budgets and monthly medians, as Sure's `one_time` kind.
+FR103: The user edits an account's opening balance and its date, and an assistant sets a manual account's opening balance, as in Sure.
+FR104: The user unlocks the fields they set by hand on a transaction, so rules and a sync update it again, as Sure's protection indicator does.
+FR105: Every assistant tool Sure has takes Sure's parameters and answers Sure's fields, names, signs and formats; a tool Sure lacks answers in the shape of Sure's closest function.
+FR106: The system follows a recurring transfer between two of the household's accounts, paid by the transfers into its destination account, and never pays an ordinary bill with a transfer, as Sure does.
+
 ### NonFunctional Requirements
 
 NFR1: Money is never a float. Every amount is an integer in minor units with an ISO 4217 currency code.
-NFR2: No code path assumes EUR. Totals are computed in one reporting currency; an account in another currency is left out of totals with a visible notice until conversion exists.
+NFR2: No code path assumes EUR. Totals are computed in one reporting currency; an account in another currency is left out of totals with a visible notice until conversion exists. Revised by Epic 27: an assistant's answer names no left-out account, as Sure's; converting other currencies stays Later.
 NFR3: Every input crossing a boundary is parsed by a Zod schema: request bodies, uploaded files, provider responses, environment variables.
 NFR4: Provider tokens and keys are encrypted at rest, never logged, never returned by an endpoint.
 NFR5: Logs and error reports never contain an amount tied to an identity, an IBAN, or a token.
@@ -218,7 +227,7 @@ NFR15: A request cannot exhaust the server: every route has a body size limit, s
 NFR16: The default deployment exposes nothing it does not need: the container publishes its port on loopback only, runs on a read-only filesystem without Linux capabilities, and the interface is served with a Content-Security-Policy. Outside a container, the server listens on loopback only unless told otherwise.
 NFR17: The build, its dependencies and its published images are pinned, kept current by a bot, and attested: actions by commit SHA, base images by digest, the package manager by hash, and every release image with an SBOM and a build provenance attestation.
 NFR18: A vulnerability can be reported privately, GitHub's secret scanning and code scanning run on the repository, and the default branch and release tags are protected by rulesets.
-NFR19: An assistant holds only a token bound to `/api/mcp`, short-lived, scoped to read or write, and revocable from the interface; every tool parses its input with Zod and calls the same service function as the interface; no tool deletes a transaction; every write an assistant makes is recorded without its amounts or labels. Revised by Epic 26: a tool deletes one transaction per call, and only while its account, date and amount still equal the ones the call names (FR96).
+NFR19: An assistant holds only a token bound to `/api/mcp`, short-lived, scoped to read or write, and revocable from the interface; every tool parses its input with Zod and calls the same service function as the interface; no tool deletes a transaction; every write an assistant makes is recorded without its amounts or labels. Revised by Epic 26: a tool deletes one transaction per call, and only while its account, date and amount still equal the ones the call names (FR96). Revised by Epic 27: every tool takes Sure's parameters, names included where Sure takes names, and answers Sure's shape (FR105).
 NFR20: An outbound call that tells a third party something about the household, such as a price request naming a security held, is off until the user turns it on, says which host it reaches, and sends identifiers only, never an amount or a quantity.
 
 ### Additional Requirements
@@ -357,6 +366,12 @@ FR97: Epic 26 - Import a file through an assistant
 FR98: Epic 26 - Balance snapshots through an assistant
 FR99: Epic 26 - Savings goals through an assistant
 FR100: Epic 26 - Pair and unpair transfers through an assistant
+FR101: Epic 27 - Transfers proposed and confirmed
+FR102: Epic 27 - One-time transactions
+FR103: Epic 27 - Opening balance edited
+FR104: Epic 27 - Unlocked fields
+FR105: Epic 27 - Assistant tools in Sure's shapes
+FR106: Epic 27 - Recurring transfers
 
 Epic 11 adds no requirement. It fixes shipped behaviour that breaks FR1, FR18, FR31, FR33, FR35, FR40, FR41, FR50, FR51, FR52, FR56 and NFR8, and acts on the owner's manual QA: FR3, FR29, FR30, FR36, FR48, NFR4 and NFR12 get easier to reach, and UX-DR7 is withdrawn. Epic 12 revises UX-DR1. Epic 13 adds FR57 to FR60, NFR15 and NFR16, revises FR50 and NFR9, and revises the additional requirements on backups and on `POST /api/sync`. Epic 14 revises UX-DR1, UX-DR3 and UX-DR11. Epic 15 adds NFR17 and NFR18 and revises NFR10. Epic 16 adds FR61 to FR65 and NFR19. Epics 17 to 22, chosen by the owner on 2026-10-03, add FR66 to FR83 and NFR20; Epic 20 revises FR44, and Epic 22 revises FR10 and withdraws the overview's non-goal on investment tracking. Epic 23, asked by the owner on 2026-10-03 after a mortgage debit went undetected, adds FR84 to FR90 and revises FR40 and FR41. Epic 24, asked by the owner on 2026-10-03 to catch up with Sure's loans, adds FR91 to FR94 and revises FR9. Epic 25, asked by the owner on 2026-10-03 after a first sync stopped at three months, adds FR95. Epic 26, asked by the owner on 2026-10-04 to let an assistant correct the accounts, adds FR96 to FR100, revises NFR19, and revises Epic 16's exclusion of `create_transaction`, `delete_transaction`, imports, balance snapshots and transfers.
 
@@ -491,6 +506,11 @@ When the owner links a bank's accounts, they choose the date the first sync read
 
 The owner asks their assistant to fix what a bank, a file or the transfer matcher got wrong: record or delete a transaction, import a statement file, record a balance, set up a savings goal, and pair or unpair a transfer, each through the service the interface calls, once the owner has agreed.
 **FRs covered:** FR96, FR97, FR98, FR99, FR100; revises NFR19
+
+### Epic 27: Consolidate before new features
+
+Archant fixes the figures it gets wrong, makes a two-factor code work once, answers the assistant field by field as Sure does, mirrors the Sure commits it missed, makes bank sync and import revert robust, and reviews every remaining departure from Sure, before any new feature.
+**FRs covered:** FR101, FR102, FR103, FR104, FR105, FR106; revises FR31, FR32, FR35, FR38, FR41, FR64, FR90, FR96 to FR100, NFR2, NFR19
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -4842,3 +4862,764 @@ So that I feed an account without opening the import dialog, and without a dupli
 **Given** the finished story
 **When** `pnpm test` runs
 **Then** Vitest covers each tool through the MCP handler: an OFX file in base64 previewed and confirmed, the same file again confirmed with every line present, a CSV in text mapped then confirmed and its mapping saved, a second CSV of that account previewed with it at once, a QIF with ambiguous dates, counts that differ refused with `IMPORT_PREVIEW_STALE`, a file above 1 MB refused, a body above 1.5 MB refused before any tool, a read-only token refused, and every call recorded without its file
+
+## Epic 27: Consolidate before new features
+
+On 2026-10-08 the owner had the project audited before any new feature. The audit found figures Archant gets wrong, assistant answers that are not Sure's, a two-factor code that works twice, Sure commits not yet mirrored, bank sync failures and open bugs. The owner's rules for this epic: follow Sure exactly; only money as integer minor units, French text a French user expects, accessibility contrast and security justify a departure; an Archant planning document, an AD-n decision or the API error contract is no reason, and where a story is hard because of an old Archant divergence, the story aligns with Sure. For the assistant, the owner decided « Aligner tout »: every tool answers Sure's function field by field, with Sure's names, signs and formats, and takes Sure's parameters. Sure was read on `origin/main` at `00dd977fb` (8 October 2026).
+
+What Sure does, by area:
+
+- Transfers: `app/models/family/auto_transfer_matchable.rb` matches over the whole family at each sync, on amount, currency, a 4-day window and active accounts, never on the label, ranks candidates by `match_rank` then date difference and lets the first free one win; `app/models/transfer.rb` gives each transfer a `status`, `pending` when the matcher made it and `confirmed` once the user confirms it or pairs it by hand, and allows 30 days between the sides of a confirmed transfer and 4 for a pending one. The audit's guess that Sure weighs the label is wrong: the owner's false pairs come from the amount and date test both apps share, and Sure's answer is that the owner confirms or rejects each proposal.
+- Bills: commit `809c7f82e` (#3971) makes `RecurringOccurrence#overdue?` and `#due?` require an active series, so a paused bill is never overdue, due or upcoming, and `bills_support.rb` gives its open occurrence the state `"paused"`. `bills_controller.rb` `load_subscription_rollup` sums exact monthly equivalents and multiplies by 12 before rounding, `load_all_series` sorts by the status string, `active`, `ended`, `inactive`, and by name then amount, and `bills/all.html.erb` shows a bill's amount, a range only in `_detail`, `_summary` and the wide occurrence line.
+- Recurring series: Sure's identifier never deletes a series; a series that stops matching ages out through `cleaner.rb`. Sure's `HistoryBackfiller` backfills a declared bill before its anchor as Archant does, so that behaviour stays. Commit `00dd977fb` (#3932) keeps every transfer side away from an ordinary series and pays a recurring transfer, a series with a `destination_account_id`, with the outflow of a transfer into that account.
+- Holdings: commit `56140319d` adds `effective_trade_price` in `app/models/holding/trade_calculator_helpers.rb`: a buy's fee divided by its quantity joins its price in the cost basis; a sale's fee does not.
+- Income statement: `app/models/income_statement/scoped_transactions_query.rb` classifies each line by its sign, a loan payment or an investment contribution always as an expense; `totals.rb` counts no trade and takes `ABS(SUM)` per category and side; `net_category_totals` in `income_statement.rb` nets each top-level category and files it by its net sign for the dashboard's cash flow; `Family#tax_advantaged_account_ids` leaves out investment accounts whose subtype is tax-advantaged, `pea` and `assurance_vie` among them; `Transaction#kind` `one_time` leaves a line out of every total; `family_stats.rb` takes each side's median over every month that has a line of that side.
+- Two-factor: `app/models/user.rb` verifies a code `after: otp_last_used_at` and claims its time step with a conditional update, so a code works once.
+- Assistant: `app/models/assistant/function/*.rb` answer money as `Money#format` strings, which for the French locale write `1 234,56 €` with non-breaking spaces (`lib/money/formatting.rb`), percentages as `number_to_percentage` strings, references as names where a read returns names, expenses as positive amounts, and refusals as a result `{ error, message }` or `{ error, hint }`. `set_opening_balance.rb` (commit `6b6a27e1c`) sets a manual account's opening balance.
+- Interface: commit `cd7cb2197` adds principal and interest to the loan chart's tooltip; `7dc33b990` and `e8e142db6` create a category, or a subcategory under a chosen parent, from the transaction's category pickers; `a92dec1e6` lets both sides of a loan payment or an investment contribution take a category; `c3afc31fe` floors the chart's vertical axis at 1.5 % of the mean; `application_helper.rb` `calculate_total` leaves transfers out of a day's total; `valuations/show.html.erb` edits the opening balance and its date; `entries/_protection_indicator.html.erb` unlocks a transaction's locked fields.
+- Enable Banking: `enable_banking_item/importer.rb` takes balances in the order `CLBD`, `ITBD`, `OPBD`, `PRCD`, `XPCD`, `CLAV`, `ITAV`, then the first one sent, reads the session first and asks for a new consent when the bank answers 401 or 404 for the session, keeps syncing an account a renewal no longer lists, and `enable_banking_item.rb` `revoke_session` lets a connection be deleted when no provider is configured.
+
+Commits `44b776180` and `bf18e8c91` concern balances and holdings from Plaid, which Archant has no equivalent of: nothing to mirror.
+
+Departures, each for one of the four admitted reasons:
+
+- Money stays integer minor units (NFR1). A `Money#format` string is built from the integer, and an amount Sure takes as a JSON number is read through its decimal text, never as a float.
+- French text: where Sure's `fr.yml` has no key, such as `category.dropdowns.*` or `loans.tabs.schedule`, and Sure falls back to English, Archant writes the word a French user expects: « Capital », « Intérêts ».
+
+Not built, and recorded as Later: converting an account in another currency into the reporting currency, as Sure's totals do. Archant holds no exchange rate (AD-6); its totals keep counting the reporting currency's accounts only, and the interface keeps its notice. The assistant's `left_out_count` and `left_out_account_ids`, which Sure lacks, go.
+
+AD decisions that stories overturn, each edited by the story that builds it, never before: AD-11 (Story 27.1), AD-22 (Stories 27.5 and 27.6), AD-9 (Stories 27.6 and 27.7), AD-19 and NFR19 (Story 27.9, then Stories 27.10 to 27.14 as each tool changes), AD-8 (Story 27.17), AD-10 (Story 27.18), AD-18 (Story 27.19), AD-9 and AD-24 again (Story 27.24). `docs/sure-parity.md` marks every row these stories change as Later, citing Epic 27; each story sets its rows to Parity.
+
+Stories 27.1 to 27.8 come first, in any order, except that 27.7 follows 27.6. Stories 27.9 to 27.14 follow: 27.9 first, since it brings the shared formats; 27.12 after 27.6 and 27.7; 27.13 after 27.2 and 27.3. Stories 27.15 to 27.24 follow in any order; 27.17 after 27.9, 27.24 after 27.6. Story 27.25, a pass over the parity page, follows them, and Story 27.26 comes last, after 27.14.
+
+### Story 27.1: Confirm the transfers the matcher proposes
+
+As the household's administrator,
+I want a transfer the matcher finds to wait for my confirmation, as in Sure,
+So that two unrelated lines of the same amount never count as a transfer without my say.
+
+**Requirements:** FR101, FR31, FR32, NFR11
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `transfers` gains `status`, `pending` or `confirmed`, as Sure's `Transfer#status`; a migration sets every existing transfer `pending`, since Archant never recorded which ones the matcher made, so the owner's eight false pairs of 3 October become proposals they reject, and every transfer keeps counting as one until rejected
+
+**Given** an import, a sync or a line typed by hand
+**When** matching runs
+**Then** it reads every unmatched transaction of the household, not only the new lines, as Sure's `auto_match_transfers!`; candidates are Sure's: opposite equal amounts, same currency, different active accounts, 4 days apart at most, neither side excluded nor in a transfer, the pair never rejected; they are ranked by Sure's `match_rank` then date difference and the first free candidate wins, replacing mutual uniqueness; the transfer is created `pending`
+
+**Given** a pending transfer
+**When** the owner opens either side
+**Then** the sheet and the list show Sure's proposal with « Confirmer » and « Rejeter », Sure's `_transfer_match` actions in `fr.yml`; confirming sets `confirmed`; rejecting deletes the transfer and records the pair in `rejected_transfers`, as « Ne plus proposer » does
+
+**Given** « Rapprocher un virement »
+**When** the owner pairs two lines by hand
+**Then** the transfer is `confirmed` at once and its sides may lie 30 days apart, as Sure's `transfer_within_date_range`; the picker lists candidates within 30 days
+
+**Given** the documents
+**When** this story ships
+**Then** AD-11 says what Sure does: a status, greedy ranking, matching over every unmatched line, 4 days for a proposal and 30 for a confirmed transfer; `docs/sure-parity.md` « Automatic window », « Manual picker window », « Several candidates » and « When matching runs » read Parity; the cross-currency branch stays Later with exchange rates
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the ranking with two candidates, matching over old lines, a proposal confirmed and one rejected and never proposed again, a hand pair 20 days apart, and the migration; Playwright confirms and rejects a proposal
+
+### Story 27.2: A paused bill is never overdue
+
+As the household's administrator,
+I want a bill I paused to stop showing as overdue, due or upcoming,
+So that the bills page shows only what I still have to pay, as Sure since #3971.
+
+**Requirements:** FR88, FR90
+
+**Acceptance Criteria:**
+
+**Given** a series that is not `active` and an open occurrence of it
+**When** any read asks whether it is overdue or due
+**Then** it is neither: one helper in `domain/recurring/occurrences.ts` answers `overdue` or `due` only for an active series, as Sure's `overdue?` and `due?`; `derivedState` stays the raw schedule state the matcher reads (`matcher.ts`)
+
+**Given** that helper
+**When** this story ships
+**Then** `inPaymentState` and `overdueCount` in `services/recurring/bill-reads.ts`, `inStatus` in `services/recurring/bills.ts`, the « upcoming » filter, `CurrentOccurrence`, `dueLabel` and the overdue colour in `BillLabels.tsx`, `_authed.bills.tsx` and `OccurrenceSheet.tsx` all use it
+
+**Given** `get_bills` or `get_bill_details`
+**When** they serialise an open occurrence of a series that is not active
+**Then** its `state` is Sure's `display_status`: `"paused"` for `inactive`, `"ended"` or `"suggested"` otherwise, and `overdue_count` leaves it out; the tool descriptions say so
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a paused bill past its due date left out of the overdue count, the « Overdue » and « Due » filters and `get_bills`, and its state `"paused"`; Playwright shows a paused bill without the overdue colour
+
+### Story 27.3: Bill totals, order and amounts as Sure shows them
+
+As the household's administrator,
+I want the bills totals, their order and their amounts to read as Sure's,
+So that a yearly total is right to the cent and a list sorts as I expect.
+
+**Requirements:** FR88, NFR1
+
+**Acceptance Criteria:**
+
+**Given** active subscriptions
+**When** the bills page computes « Par mois » and « Par an »
+**Then** it sums each series' exact monthly equivalent as a fraction of minor units, multiplies by 12 before rounding, and rounds each total once, half up to the cent, as Sure's `load_subscription_rollup`; `activeMonthly` of `findBills` does the same; a 10 € weekly bill gives 521,79 € a year, not 521,76 €
+
+**Given** « Toutes les factures » in its default order
+**When** it lists series of every status
+**Then** they sort `active`, `ended`, `inactive`, as Sure's string column sorts them, then by next due date
+
+**Given** the name order
+**When** the list sorts by name
+**Then** it sorts by the series' own name, series without one last, then by amount ascending in Sure's sign, the smallest outflow first, as Sure's `order(:name, :amount)`
+
+**Given** a series whose amount moves
+**When** « Toutes les factures » and the « upcoming » tab show it
+**Then** they show its amount, with « ≈ X/mois » when its monthly equivalent differs, as `bills/all.html.erb`; the range « de … à … » shows only in the bill's detail panel, its summary and, from the wide breakpoint, the occurrence line, as `_detail`, `_summary` and `_occurrence`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the weekly total, the status order, the name order with an unnamed series and two of one name; Playwright reads a moving bill's amount in the list and its range in the panel; `docs/sure-parity.md` « Bills page, all bills, bill drawer » and « Upcoming tab on transactions » read Parity, foreign currencies Later
+
+### Story 27.4: A recurring series is never deleted by detection
+
+As the household's administrator,
+I want detection to leave a series and its history in place when another one takes its key,
+So that a bill I declared, with its payments, never disappears after a rename.
+
+**Requirements:** FR84, FR87
+
+**Acceptance Criteria:**
+
+**Given** a series whose key another stored series already holds
+**When** detection re-keys it
+**Then** neither series is deleted: `rekey` in `domain/recurring/series.ts` loses its `delete` step, the series keeps its key, occurrences, payments and price changes, and Sure's cleaner rules make it `inactive` once no transaction comes, as Sure's identifier, which never deletes a series
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers a declared bill with payments renamed onto a key a suggestion holds, both series kept with their payments, and the old one inactive after two cycles; `docs/sure-parity.md` « Renamed series » says the re-key never deletes
+
+### Story 27.5: A purchase's fee in its cost basis
+
+As the household's administrator,
+I want a buy's fee to count in what each share cost me, as Sure since `56140319d`,
+So that my gain on a position is not overstated by the fees I paid.
+
+**Requirements:** FR82, NFR1
+
+**Acceptance Criteria:**
+
+**Given** a buy with a fee
+**When** holdings are computed
+**Then** `HoldingTrade` in `domain/holdings/forward.ts` carries the trade's `fee`, `recomputeHoldings` selects it, and a buy enters the average cost at Sure's effective price, its price plus its fee divided by its quantity, in millionths, rounded half to even; a sale leaves the average cost as it is and its fee does not enter it
+
+**Given** existing investment accounts with fees
+**When** the story ships
+**Then** their holdings are computed again once, so every `cost_basis` includes buy fees; no balance moves
+
+**Given** a cost basis lock
+**When** `liveCostBasisLocks` in `services/ledger/holdings.ts` finds each lock's last day at quantity zero
+**Then** it reads it through a partial index on `holdings (account_id, security_id, date) WHERE quantity = 0`, not a scan of every holdings row of the account or, for the export, of every account
+
+**Given** the documents
+**When** this story ships
+**Then** AD-22 drops « fees out » for buys, the comments of `forward.ts` and `packages/data/schema/holdings.ts` follow, and `docs/sure-parity.md` « Investment » reads Parity for the cost basis
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers a buy with a fee, two buys averaged with their fees, a sale with a fee leaving the average cost, the recompute of an existing account, and the query plan of the lock read in `history-volume.spec.ts`
+
+### Story 27.6: Count income and expenses as Sure does
+
+As the household's administrator,
+I want income and expenses counted line by line as Sure counts them,
+So that a refund, a dividend or my PEA never changes my figures differently from Sure.
+
+**Requirements:** FR35, FR33, NFR1
+
+**Acceptance Criteria:**
+
+**Given** a counted transaction
+**When** the income statement classifies it
+**Then** it is income when money comes in and an expense when money goes out, whatever its category's kind, and a loan payment or investment contribution outflow is always an expense, as `classification_sql`; each category's total per side is the absolute sum of its lines on that side, as `IncomeStatement::Totals`, so a refund counts as income in its category
+
+**Given** the dashboard's cash flow
+**When** it breaks a period down by category
+**Then** it uses Sure's net view, `net_category_totals`: each top-level category's expenses minus its income, filed on the side of its net sign, its kind ignored, as Sure's cash flow diagram
+
+**Given** a trade, a dividend or interest included
+**When** any total, budget, history or the income statement is computed
+**Then** it does not count, as Sure's `trades_subquery_sql` (`WHERE false`); « Ordres » still lists dividends and interest
+
+**Given** an investment account of subtype `pea` or `assurance_vie`
+**When** any of these totals is computed
+**Then** its lines are left out, as Sure's `tax_advantaged_account_ids` leaves `pea` and `assurance_vie`; the transfer into it from a checking account still counts as an investment contribution expense
+
+**Given** the services that share `domain/cash-flow.ts`
+**When** this story ships
+**Then** the dashboard's « Flux de trésorerie », `services/budgets.ts` and the budget page, the goal suggestions of `services/goals.ts`, `getIncomeStatement` and the transaction list's direction filter all read the new rules, and the story's tests name the figures each one changes on the owner's seed
+
+**Given** the documents
+**When** this story ships
+**Then** AD-9 says each line is classified by its sign and no trade counts, AD-22 drops dividends and interest counted as income, and `docs/sure-parity.md` « Cash flow » reads Parity for the classification, the trades and the tax-advantaged accounts
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a refund in an expense category counted as income, a category whose net is income filed as income in the net view, a dividend counted nowhere, a PEA line left out, and a loan payment counted as an expense; Playwright reads the dashboard over a month holding each case
+
+### Story 27.7: One-time transactions and Sure's monthly medians
+
+As the household's administrator,
+I want to mark a transaction as one-time and read Sure's monthly medians,
+So that a rare purchase does not skew my averages, my budget or my reports.
+
+**Requirements:** FR102, FR35, FR67
+
+**Acceptance Criteria:**
+
+**Given** the transaction sheet
+**When** the owner ticks Sure's one-time box, with Sure's French label from `transactions/show.html.erb`
+**Then** the transaction is stored as one-time, stays in its account's balance, its category and the list, and leaves the income statement, the dashboard, budgets and medians, as Sure's `one_time` kind among `BUDGET_EXCLUDED_KINDS`; a viewer sees the box disabled
+
+**Given** the monthly medians and averages
+**When** they are computed
+**Then** they follow `IncomeStatement::FamilyStats`: every counted transaction with no date bound, grouped by month and by Sure's sign classification, the absolute median and mean over the months holding a line of that side; `monthlyStatistics` in `services/reports.ts` follows, with and without an account filter
+
+**Given** the documents
+**When** this story ships
+**Then** AD-9 names the one-time kind, the export carries it as Sure's `kind`, and `docs/sure-parity.md` « `one_time` kind » reads Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a one-time expense left out of totals, budget actuals and medians and kept in the balance, and medians over months with and without a side's lines; Playwright ticks the box and reads the dashboard without the line
+
+### Story 27.8: A two-factor code works once
+
+As the household's administrator,
+I want a two-factor code to be refused once it has signed me in,
+So that a code read over my shoulder or relayed by a phishing page cannot sign in again, as in Sure.
+
+**Requirements:** FR42, NFR6
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** Better Auth's `two_factors` table gains a nullable `last_used_step`, declared through the plugin's `schema` option, so Better Auth keeps owning the table
+
+**Given** a correct code
+**When** `/two-factor/verify-totp` runs
+**Then** a Better Auth `before` hook decrypts the secret with Better Auth's own helper, finds the step the code matches in the window Better Auth accepts, and claims it with one conditional update, `last_used_step IS NULL OR last_used_step < step`, as Sure's `claim_otp_time_step!`; a claim that changes no row refuses the code as Better Auth refuses a wrong one, counting as a failed attempt
+
+**Given** two-factor turned on or off
+**When** the setting changes
+**Then** `last_used_step` is cleared, as Sure clears `otp_last_used_at`; backup codes keep Better Auth's single use
+
+**Given** the documents
+**When** this story ships
+**Then** `docs/security-model.md` « Sign-in limits » replaces the paragraph on a code accepted more than once with the check
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a code accepted then refused at once, a code of the next step accepted, two simultaneous verifications of one code with one success, and the reset on turning two-factor off; the `two-factor` Playwright project signs in twice with two codes from `e2e/totp.ts`
+
+### Story 27.9: Assistant answers in Sure's formats, and Sure's accounts and lists
+
+As the household's administrator,
+I want every assistant answer to use Sure's money and percentage formats and Sure's refusals, and the account and reference lists to be Sure's,
+So that an assistant written for Sure reads Archant without surprise.
+
+**Requirements:** FR105, FR64, NFR1, NFR19
+
+**Acceptance Criteria:**
+
+**Given** `mcp/tool.ts`
+**When** this story ships
+**Then** it gives one `formatMoney` writing Sure's `Money#format` for the French locale, `1 234,56 €` with non-breaking spaces and Sure's symbol rule, from minor units; one `percentage` writing Sure's `number_to_percentage` with a given precision; one `decimalOf` writing a `BigDecimal` as Rails serialises it, without trailing zeros; and `decimal()` and `leftOutFields` go once no tool uses them
+
+**Given** a refusal a tool decides, an unknown id, a refused value or a stale count
+**When** the tool answers
+**Then** it answers a normal result `{ "success": false, "error": "<code>", "message": "..." }`, or `{ error, hint }` where Sure's function answers a hint, with Sure's code where Sure's function has one and Archant's code in lower snake case otherwise; an invalid argument answers Sure's shape too; a `403 insufficient_scope` stays an HTTP answer before any tool runs
+
+**Given** `get_accounts`
+**When** it answers
+**Then** each account has exactly Sure's fields: `id`, `name`, `balance`, `currency`, `balance_formatted`, `classification`, `type` as Sure's class name (`Depository`, `CreditCard`, `Loan`, `Investment`, `Property`, `Vehicle`), `start_date`, `is_linked`, `provider`, `status`, and `historical_balances` as Sure's `{ start_date, end_date, interval, currency, values }`; `series_period` takes Sure's `Period` keys; only visible accounts are listed, with `as_of_date`
+
+**Given** `get_categories`, `get_merchants` and `get_tags`
+**When** they answer
+**Then** their items carry Sure's fields only: a category's `id`, `name`, `name_with_parent`, `color`, `icon`, `parent_id`, `is_subcategory`; a merchant's `id`, `name`, `source` `"family"`; a tag's `id`, `name`, `color` `null`, since Archant's tags have no colour; `kind` and `transaction_count` go
+
+**Given** `create_category`, `update_category`, `create_tag` and `update_tag`
+**When** they write
+**Then** they take Sure's parameters, `update_tag` with an optional `new_name` and an ignored `color`, and answer Sure's `{ success, category | tag, message }` with Sure's messages
+
+**Given** the documents
+**When** this story ships
+**Then** AD-19 and NFR19 say each tool takes and answers its Sure function's shape, names where Sure takes names, numbers read through their decimal text, Sure's refusals; the server's `INSTRUCTIONS` drop `left_out_count`; `docs/security-model.md` « Assistants » drops « a write names what it changes by id » for the tools that now take names, and says what a name a bank wrote can then reach
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest pins `formatMoney` on 0, a negative amount, thousands and a zero-decimal currency, `percentage` at each precision, and each tool's exact keys through the MCP handler, `server.spec.ts`, `categories.spec.ts`, `merchants.spec.ts` and `tags.spec.ts` following
+
+### Story 27.10: Assistant transactions as Sure's
+
+As the household's administrator,
+I want the assistant's transaction tools to read and write exactly as Sure's,
+So that an expense an assistant records is never stored as income.
+
+**Requirements:** FR105, FR96, FR65, NFR1
+
+**Acceptance Criteria:**
+
+**Given** `get_transactions`
+**When** it answers
+**Then** each item has Sure's fields only: `id`, `name`, `date`, `amount` as the absolute amount, `currency`, `formatted_amount`, `classification`, `account`, `category` and `merchant` as names or `null`, `notes`, `tags` as names, `is_transfer`; the page gives `transactions`, `total_results`, `page`, `page_size`, `total_pages`, and `total_income` and `total_expenses` formatted, transfers and tax-advantaged accounts left out as Story 27.6 counts; `excluded`, `transfer`, `transfer_suggested`, `pending`, `currency` and `skipped_count` go
+
+**Given** its parameters
+**When** an assistant filters
+**Then** they are Sure's: `search`, `amount` with `amount_operator`, either alone ignored as Sure ignores it, `start_date`, `end_date`, `types`, `statuses`, `account_ids`, `accounts`, `categories` with « Uncategorized », `merchants`, `tags`, `order`, `sort_by`; `page_size` above 100 is brought to 100 and a page below 1 to 1, as Sure; `category_ids`, `merchant_ids`, `tag_ids`, `amount_min` and `amount_max` go
+
+**Given** `get_transaction`, which Sure lacks
+**When** it answers
+**Then** it gives a `get_transactions` item plus the transfer's id, kind and counterpart, `transfer_suggested` and `excluded`, which `unpair_transfer` and `pair_transfer` callers need
+
+**Given** `create_transaction`
+**When** an assistant records a line
+**Then** it takes Sure's parameters: `amount` as a JSON number or a decimal string, positive for an expense, an optional `type` deriving the sign, as Sure's, converted to Archant's sign at the tool's boundary (AD-5 inside), and Sure's other fields; a currency other than the account's answers Sure's error; it answers Sure's `{ success, created, transaction, message }`, the `transaction` with Sure's fields, `amount` in Sure's sign
+
+**Given** `update_transaction` and `delete_transaction`
+**When** they answer
+**Then** they answer Sure's shapes; `delete_transaction` takes the amount in Sure's sign beside the account and date it compares (FR96)
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers an expense recorded from a positive number, an income through `type`, a deletion compared in Sure's sign, each filter, the clamped page size, and each tool's exact keys; `transactions.spec.ts`, `transfers.spec.ts` and `server.spec.ts` follow
+
+### Story 27.11: Assistant holdings and balance snapshots as Sure's
+
+As the household's administrator,
+I want the assistant's holdings and snapshot tools to answer as Sure's,
+So that a position reads the same in Archant and in Sure.
+
+**Requirements:** FR105, FR82, FR98
+
+**Acceptance Criteria:**
+
+**Given** `get_holdings`
+**When** it answers
+**Then** each item has Sure's fields only: `ticker`, `name`, `quantity`, `price`, `amount` and `average_cost` as JSON numbers, `currency`, `formatted_amount`, `formatted_average_cost`, `weight` rounded to 2 decimals, `account` as a name, `date`; the page gives Sure's pagination, 50 a page, and `total_value` formatted; the eight fields Archant added and `left_out_*` go
+
+**Given** an account's holdings
+**When** they are listed
+**Then** each security gives its last row of non-zero quantity, with that row's date, as Sure's `DISTINCT ON (account_id, security_id)`; `weight` follows Sure's `Holding#weight`: 0 for a zero amount, 1 when the account's balance is zero, negative when it is
+
+**Given** `get_valuations` and `record_valuation`
+**When** they answer
+**Then** they give Sure's fields, `amount_formatted` added and `computed` and `gap` gone, and `record_valuation` takes `amount` as a number and answers Sure's `success` and `message`
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers a security sold out listed at its last quantity, each weight edge case and the exact keys; `holdings.spec.ts` and `snapshots.spec.ts` follow
+
+### Story 27.12: Assistant reports and budgets as Sure's
+
+As the household's administrator,
+I want the income statement, balance sheet and budget tools to answer as Sure's,
+So that an assistant reads my figures with Sure's signs and formats.
+
+**Requirements:** FR105, FR64, FR66
+
+**Acceptance Criteria:**
+
+**Given** `get_income_statement`
+**When** it answers
+**Then** totals, categories, medians, averages, monthly series and the previous period are formatted and positive, `net` and `net_income` are income minus expenses, `percentage_of_total` is `number_to_percentage` at precision 1, `savings_rate` at Sure's default precision 3, the uncategorised line is named « Uncategorized », every category of the household is listed on both sides, zero included, as Sure's, and `category_id` goes; figures come from Story 27.6's gross view
+
+**Given** `get_balance_sheet`
+**When** it answers
+**Then** `current` figures are formatted, `monthly_history.values` are JSON numbers, liabilities' history negative as Sure's builder gives it, `debt_to_asset_ratio` is `number_to_percentage` at precision 0, « Inf% » without assets, and `net_worth.change` goes
+
+**Given** `get_budget`
+**When** it answers
+**Then** `month` is Sure's `to_param`, `aug-2026`, totals and income are formatted and never `null`, percentages are strings, `overage_percent` is Sure's `abs(available_to_spend) / actual_spending × 100`, categories carry Sure's fields only, without `category_id`, `carried`, `rollover_enabled` and the `uncategorised` block
+
+**Given** `update_budget`
+**When** it writes
+**Then** it takes numbers as Sure's and answers Sure's `{ success, month, totals, updated_categories, message }`, `message` reading as Sure's « Budget for August 2026 updated. »
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest pins each tool's exact keys and formats, the « Inf% » and zero cases and the overage formula; `reports.spec.ts` and the budget cases of `server.spec.ts` follow
+
+### Story 27.13: Assistant bills and recurring payments as Sure's
+
+As the household's administrator,
+I want the bill and recurring tools to answer as Sure's,
+So that an assistant reads and edits my bills in Sure's words.
+
+**Requirements:** FR105, FR90
+
+**Acceptance Criteria:**
+
+**Given** a bill in any tool's answer
+**When** it is serialised
+**Then** it follows `bills_support.rb`: amounts formatted, `category` as a name and left out when absent, `payment_url` left out when absent, `amount_min` and `amount_max` gone; an occurrence's `expected`, `paid` and `remaining` formatted and its `state` as Story 27.2 says
+
+**Given** `get_bills`
+**When** it answers
+**Then** it gives Sure's `as_of_date`, `total_results`, `truncated`, `family_currency`, `bills`, `totals` with `active_count`, `overdue_count` and `active_monthly_equivalent_by_currency`, and Sure's `hint` when nothing matches
+
+**Given** `get_bill_details` and `get_bill_audit`
+**When** they answer
+**Then** they give Sure's sections and names: the configuration fields Sure lists, from the constants of `domain/recurring/` where Archant stores none and `null` for subscription dates, which are Later; `analytics`; `history` and `history_window`; payments with `transaction_name`; price changes with `source` and `price_change_window`; the audit with `as_of_date`, empty `upcoming_trials` and `upcoming_renewals`, and each section's fields as Sure's
+
+**Given** `create_bill`, `update_bill` and `record_bill_payment`
+**When** they write
+**Then** they take Sure's parameters, an account by its exact name, optional for `create_bill`, a name two accounts share answering Sure's error, amounts as numbers; `update_bill` answers Sure's `changed_fields` attribute names; `record_bill_payment` names its `bill`
+
+**Given** `get_recurring_transactions`
+**When** it answers
+**Then** amounts are formatted in Sure's sign, an expense positive, `expected_amount_range` formatted, `totals_by_currency` without transfers, `merchant` gone, and `status` `"all"` filters nothing, as Sure's
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest pins each tool's exact keys; `bills.spec.ts` and the recurring cases of `server.spec.ts` follow
+
+### Story 27.14: Archant's own assistant tools in Sure's shapes
+
+As the household's administrator,
+I want the tools Sure lacks to answer like Sure's closest function, and Sure's goal tool to take Sure's parameters,
+So that every answer an assistant reads follows one convention.
+
+**Requirements:** FR105, FR63, FR97, FR99, FR100
+
+**Acceptance Criteria:**
+
+**Given** `create_goal`
+**When** an assistant creates a goal
+**Then** it takes Sure's `name`, `target_amount` as a number, `target_date`, `linked_account_names`, `earmarks` by account name and `notes`, a name two accounts share answering Sure's error, and answers Sure's `{ success, goal_id, name, target_amount_formatted, currency, target_date, url, linked_account_names, message }`; a reserve keeps Archant's `kind` and `target_months`, which Sure's goal lacks
+
+**Given** `get_goals`
+**When** it answers
+**Then** each goal carries the fields `create_goal` answers plus the progress Sure's goal page shows, formatted
+
+**Given** `import_bank_statement`, whose input is Sure's `upload_account_statement` and whose contract is not Sure's `import_bank_statement`
+**When** this story ships
+**Then** it is renamed `import_statement_file`, so no Archant tool shares a name with a Sure function of another contract; its answer and `preview_import`'s follow Sure's `import_bank_statement`: `success`, `import_id`, `transaction_count`, `transactions_preview`, `statement_period`, `message`, with Archant's counts the confirmation needs; `confirm_import` answers `{ success, message }` with them
+
+**Given** the rule, transfer, merchant, label-grouping and bulk tools
+**When** they answer
+**Then** each follows Sure's closest function: a write `{ success, <row>, message }` as `create_category`, a list Sure's pagination as `get_categories`, amounts formatted and in Sure's sign, references as names where a read returns rows
+
+**Given** the documents
+**When** this story ships
+**Then** `docs/deployment.md` « Connecting an assistant » and `docs/security-model.md` name `import_statement_file`, and `docs/sure-parity.md` « Assistant tools » and « Assistant tools for bills » read Parity, Archant's own tools listed with the Sure function each follows
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest pins each tool's exact keys; `goals.spec.ts`, `imports.spec.ts`, `transfers.spec.ts` and the rule cases of `server.spec.ts` follow
+
+### Story 27.15: Principal and interest in the loan chart, and Sure's chart axis
+
+As the household's administrator,
+I want the loan chart's tooltip to split a scheduled payment, and every balance chart to scale as Sure's,
+So that I read what each instalment repays and see a small move on a large balance as Sure shows it.
+
+**Requirements:** FR94, FR7, NFR13
+
+**Acceptance Criteria:**
+
+**Given** the payoff chart
+**When** the owner points at a scheduled payment
+**Then** `scheduledSeries` in `domain/loans/payoff-chart.ts` carries its principal and interest in minor units, the origin point none, and `PayoffTooltip` in `LoanChart.tsx` adds under the schedule's balance a muted line « Capital : X · Intérêts : Y » in the currency's decimals, as Sure's `cd7cb2197`, the words those of « Échéancier »
+
+**Given** a balance, loan or goal chart
+**When** `axisTicks` in `lib/chart-axis.ts` sets its vertical domain
+**Then** it follows Sure's `_d3YScale` of `c3afc31fe`: a span of at least 1.5 % of the mean, 12 % padding, a bound pulled to zero when the data lie within 10 % of it, a flat series given ±50 %, or 100 at zero; Archant's round ticks then apply
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the domain for 50 € moving on 5 000 € and on 100 000 €, a flat series and one near zero; Playwright reads the tooltip of a scheduled payment; `docs/sure-parity.md` « Loan » names the tooltip
+
+### Story 27.16: Categories as Sure in the transaction list
+
+As the household's administrator,
+I want to create a category where I pick one, categorise both sides of a loan payment, and read day totals without transfers,
+So that classifying my transactions works as in Sure.
+
+**Requirements:** FR21, FR26, FR33, UX-DR6
+
+**Acceptance Criteria:**
+
+**Given** the sheet's category picker and the list's row picker
+**When** the owner types a name no category has
+**Then** they offer Sure's « Créer « nom » », which creates a top-level category and sets it, and « Ajouter comme sous-catégorie… », which lists top-level categories under « Créer « nom » dans : » with « Retour », creates the subcategory under the chosen parent, its kind and colour inherited, and sets it, as Sure's `7dc33b990` and `e8e142db6`; a failure reads « Impossible de créer la catégorie », and a category created but not set reads « Catégorie créée, mais impossible de l'attribuer. Choisissez « Créer » à nouveau pour réessayer. »; the « Never » of Spec 11.12 on these pickers goes
+
+**Given** a loan payment or an investment contribution
+**When** the owner opens either side
+**Then** its category shows and is editable, the inflow included, as Sure's `Transfer#categorizable?` since `a92dec1e6`; merchant and tags stay hidden on every transfer side; what counts follows Story 27.6
+
+**Given** a day in the transaction list
+**When** its header shows the day's total
+**Then** transfer sides of every kind are left out of it, as Sure's `calculate_total`, and a transfer whose two sides are on the page shows once, its outflow, as Sure's `entries_by_date`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers `groupByDay` with a transfer; Playwright creates a category and a subcategory from the sheet, categorises a loan payment's inflow, and reads a day total without a transfer; `docs/sure-parity.md` « Category of a transfer side » reads Parity, its Sure column corrected, and the Transactions section gains a row for creating from the picker
+
+### Story 27.17: Edit an account's opening balance
+
+As the household's administrator,
+I want to change an account's opening balance and its date, and let an assistant set it,
+So that a manual account starts from the right figure, as in Sure.
+
+**Requirements:** FR103, FR6, FR7, NFR1
+
+**Acceptance Criteria:**
+
+**Given** the « Soldes » tab of an account
+**When** the owner opens its opening balance
+**Then** a sheet titled « Solde d'ouverture » edits its date and amount, « Date » and « Valeur du compte à ce jour », saved by « Mettre à jour la valeur », as Sure's valuation drawer; a date on or after the account's oldest entry is refused; balances are computed again from the earlier of the two dates
+
+**Given** a snapshot recorded on the opening date
+**When** it is saved
+**Then** it rewrites the opening balance, as Sure's, instead of being refused
+
+**Given** a write token
+**When** the assistant calls `set_opening_balance` with Sure's `account_id`, `balance`, optional `date` and `dry_run`
+**Then** it follows Sure's function: a linked account answers `linked_account`, an empty date `invalid_date`, a dry run writes nothing, and the answer says whether the current balance moves, in Story 27.9's formats
+
+**Given** the documents
+**When** this story ships
+**Then** AD-8 says the opening anchor is edited as Sure's, and `docs/sure-parity.md` « Editing the opening balance » and « Snapshot on the opening date » read Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the route, a date refused after the oldest entry, the balances moved, the snapshot on the opening date and each tool case; Playwright edits an opening balance
+
+### Story 27.18: Let a sync update a transaction again
+
+As the household's administrator,
+I want to unlock the fields I set by hand on a transaction,
+So that rules and the bank can update it again, as Sure's protection indicator allows.
+
+**Requirements:** FR104, FR38
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `transactions.locked_fields` keeps each field's lock time, as Sure's `locked_attributes`, existing locks migrated without a time
+
+**Given** a transaction with locked fields that is not excluded
+**When** the owner opens its sheet
+**Then** a folded block titled « Protégée contre la synchronisation » reads « Vos modifications sur cette entrée ne seront pas écrasées par la synchronisation du fournisseur. », lists « Champs verrouillés : » with each lock's date when known, and offers « Autoriser la mise à jour par la synchronisation », confirmed by Sure's sentence; a viewer sees the block without the button
+
+**Given** the confirmation
+**When** the owner confirms
+**Then** `POST /api/transactions/:id/unlock` clears every lock at once, as Sure's `unlock_for_sync!`, and the toast reads « Entrée déverrouillée. Elle pourra être mise à jour lors de la prochaine synchronisation. »
+
+**Given** the documents
+**When** this story ships
+**Then** AD-10 says the owner unlocks a transaction, and `docs/sure-parity.md` « Locked fields » reads Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the route, a viewer refused, and a rule reaching the field after the unlock; Playwright unlocks a transaction
+
+### Story 27.19: Every balance a bank sends, and a revoked consent at once
+
+As the household's administrator,
+I want Archant to read the balance types Sure reads and to ask me to renew as soon as my bank revokes access,
+So that a bank sending other balances shows its figure, and I never wait two days to learn I must reconnect.
+
+**Requirements:** FR50, FR53, FR54
+
+**Acceptance Criteria:**
+
+**Given** a statement's balances
+**When** the connector picks one
+**Then** it follows Sure's `select_current_balance`: `CLBD`, `ITBD`, `OPBD`, `PRCD`, `XPCD`, `CLAV`, `ITAV`, then the first sent; for `OPBD` and `PRCD`, an `XPCD`, `CLAV` or `ITAV` with a strictly newer `reference_date` wins; long names such as `closingBooked` are read as their codes; AD-18 changes with it
+
+**Given** a sync
+**When** it starts
+**Then** it reads the session first, as Sure's `session_valid?`; a 401 or 404 for the session marks the connection to renew, so « Renouveler » shows at once, and a valid session updates the stored expiry from `access.valid_until`; a 401 or 404 for one account stays that account's error
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers a bank sending only `OPBD`, an `OPBD` beaten by a newer `ITAV`, `CLBD` before `ITBD`, a revoked session asking for renewal at once and an account's 404 that does not
+
+### Story 27.20: A renewal that keeps every account, and a disconnection without the key
+
+As the household's administrator,
+I want a renewal to keep syncing every linked account and a lost key never to lock my banks,
+So that no account stops silently and I can always disconnect.
+
+**Requirements:** FR53, FR55, NFR4
+
+**Acceptance Criteria:**
+
+**Given** a renewal whose session leaves out an account, unreadable or absent
+**When** the connection completes
+**Then** the linked account stays listed and keeps syncing, as Sure's `linked_accounts_query`, and its failure shows in its last error
+
+**Given** an `ENCRYPTION_KEY` lost or changed, or credentials that no longer resolve
+**When** the owner disconnects a bank
+**Then** `disconnectConnection` skips revoking the session at Enable Banking and logs `BANK_CONNECTOR_UNAVAILABLE`, as Sure's `return unless provider`, then unlinks and deletes as usual; the page keeps « Déconnecter » enabled while the connector is unavailable, and once the last connection goes new credentials can be saved
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers an unreadable account kept at renewal and synced, and a disconnection without a key; Playwright disconnects with the connector unavailable
+
+### Story 27.21: Revert imports in any order
+
+As the household's administrator,
+I want reverting an import to restore exactly what it moved, whatever the order and my edits,
+So that re-importing a file never counts it twice.
+
+**Requirements:** FR18, NFR8
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `imports` gains the opening shift and the moved-to opening date, written at confirm
+
+**Given** an import that moved the opening date
+**When** it is reverted
+**Then** the opening anchor gets back the stored shift, not the sum of its lines' current amounts, so an edited amount changes nothing; a newer confirmed import of the account whose previous opening date is this import's moved-to date takes this import's previous opening date, so reverting the older first restores fully
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers two moving imports reverted oldest first then re-imported without double counting, and a moved-in line edited before the revert
+
+### Story 27.22: A new pending purchase is never taken for a booked line
+
+As the household's administrator,
+I want a new pending purchase to count even when its content looks like an earlier booked line,
+So that no purchase goes missing from my balance.
+
+**Requirements:** FR51, FR52
+
+**Acceptance Criteria:**
+
+**Given** a pending line with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference
+**When** it is ingested
+**Then** it is created beside that entry, sharing its fingerprint, as `ingest.ts` already does for a pending entry, since Sure keys a line by its transaction id or reference before its content
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers that line created, and a pending line without a reference still recognised as the booked one
+
+### Story 27.23: A tab left open across an upgrade reloads
+
+As the household's administrator,
+I want a page left open while the image was upgraded to reload by itself,
+So that I never land on the error page for a file that no longer exists.
+
+**Requirements:** NFR16
+
+**Acceptance Criteria:**
+
+**Given** a lazy chunk that no longer exists
+**When** the interface fails to load it
+**Then** a `vite:preloadError` listener in `main.tsx` reloads the page once, a `sessionStorage` mark letting a second failure reach `RootError`
+
+**Given** the finished story
+**When** `pnpm test:e2e` runs
+**Then** Playwright removes a chunk's route, opens the page that needs it and sees the reload
+
+### Story 27.24: Recurring transfers as Sure follows them
+
+As the household's administrator,
+I want a standing transfer to be followed as a recurring transfer, and an ordinary bill never paid by a transfer,
+So that my loan payments and savings orders are settled by the transfers that pay them, as in Sure since #3932.
+
+**Requirements:** FR106, FR84, FR87, FR41
+
+**Acceptance Criteria:**
+
+**Given** detection and matching
+**When** they read transactions
+**Then** a transfer side of any kind, loan payment and investment contribution included, is never a candidate of an ordinary series, as Sure's identifier and `identity_matches?` (`return false if entry.entryable.transfer?`); `identityMatches` in `domain/recurring/matcher.ts` and detection stop treating a loan payment or contribution outflow as an ordinary line
+
+**Given** the schema
+**When** this story ships
+**Then** `recurring_transactions` gains a nullable `destination_account_id`, as Sure's, and a series with one is a recurring transfer
+
+**Given** a transfer
+**When** the owner chooses Sure's « Marquer comme récurrent » on either side
+**Then** a recurring transfer is created from its outflow, as Sure's `RecurringTransaction.create_from_transfer`: its account the outflow's, its destination the inflow's, its amount and day the outflow's
+
+**Given** a recurring transfer and its open occurrences
+**When** matching runs, live, in the backfill or in the payment picker's explanation
+**Then** a transaction is a candidate only when it is the outflow of a transfer from the series' account into its destination account, its identity scored 0.40 « Transfer to the same account », as Sure's matcher since `00dd977fb`; amount and date tolerances stay those of any series
+
+**Given** the bills page
+**When** it lists recurring transfers
+**Then** it shows those into a credit card or a loan, as Sure's
+
+**Given** the documents
+**When** this story ships
+**Then** AD-9 and AD-24 drop the loan payment and contribution outflow as a candidate, Epic 23's departure on it is marked revised, and `docs/sure-parity.md` « Transfers and accounts » and « Recurring transfers » read Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a loan payment outflow never detected as an ordinary series, a recurring transfer created from a transfer and paid by the next transfer into the same account, and an unrelated transfer of the same amount into another account left unmatched; Playwright marks a transfer as recurring and sees its occurrence paid
+
+### Story 27.25: Every remaining departure from Sure reviewed
+
+As the household's owner,
+I want every row of `docs/sure-parity.md` that departs from Sure checked against the four admitted reasons,
+So that each departure left either has a reason I accept or is planned away.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `docs/sure-parity.md` after Stories 27.1 to 27.24
+**When** this story runs
+**Then** every row marked Different, mixed or « No decision recorded » is read against the four admitted reasons: money as integer minor units, French text, accessibility contrast, security; a row with one of them cites it; a row citing only an AD-n, a spec, the error contract, scope or no reason, such as passkeys, OIDC, bulk edit, merchants, tags and rule operators, becomes a story in a later epic of `epics.md` or a decision listed for the owner, never both
+
+**Given** the bills' French labels
+**When** they are compared with Sure's `fr.yml`
+**Then** « Libellé reconnu », « À la date prévue », « Une opération supprimée » and « Actifs », which depart from Sure's « Le nom correspond », « Correspondance de date d'échéance », « Une transaction » and « Actif » with no written reason, are listed with the owner's choice of word or planned back to Sure's
+
+**Given** `services/recurring/price-changes.ts`
+**When** the pass reads it
+**Then** the case where a price change is not recorded when the series takes the new amount, lines 73-74 and 129-131, is compared with Sure's `price_change_detector.rb` and planned as a fix or recorded as Sure's behaviour
+
+**Given** the finished story
+**When** `pnpm format` and `pnpm lint:format` run
+**Then** they pass; the story changes documents only
+
+### Story 27.26: Split the largest files and remove duplicates
+
+As a contributor,
+I want the assistant schemas and the bill service split, shared helpers written once, and the README's screenshots current,
+So that the next feature finds code it can read.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `schemas/assistants.ts`, over 1,500 lines
+**When** this story ships
+**Then** it becomes one file per resource under `schemas/assistants/`, mirroring `mcp/`, each tool importing its own; no barrel file
+
+**Given** `services/recurring/bills.ts`, over 1,400 lines
+**When** this story ships
+**Then** its reads join `bill-reads.ts` or a new reads module and its writes stay, each file under 800 lines
+
+**Given** the duplicates
+**When** this story ships
+**Then** `currencyOf` of `services/imports.ts`, `snapshots.ts` and `transactions.ts` is one function; `isDecimalString` is exported once from `@archant/data` and used by `lib/balance-change.ts` and `lib/trade-format.ts`; `assertNameFree` of categories, merchants and tags is one; `filterByName` of the three comboboxes is one
+
+**Given** the README
+**When** this story ships
+**Then** `docs/images/dashboard.png` and `transactions.png` are taken again from the running application, since the sidebar still shows « Récurrent »
+
+**Given** the finished story
+**When** the verification gate runs
+**Then** it passes with no behaviour changed; the loan service needs no new spec, since `routes/accounts.spec.ts` covers `/schedule`, `/overview` and `/payoff-chart`
