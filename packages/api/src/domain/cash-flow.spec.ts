@@ -215,15 +215,17 @@ describe("subcategoryLines", () => {
 	const courses = category("Courses", "expense", "Maison");
 	const bio = category("Bio", "expense", "Maison");
 	const travaux = category("Travaux", "expense", "Maison");
+	const jardin = category("Jardin", "expense", "Maison");
 	const orphan = category("Orphelin", "expense", "gone");
-	const all = [maison, courses, bio, travaux, orphan];
+	const all = [maison, courses, bio, travaux, jardin, orphan];
 
-	it("gives each parent its sub-categories' own sums, largest first, never the parent's rows", () => {
+	it("gives each parent its sub-categories' own sums, largest first then by name, never the parent's rows", () => {
 		const result = subcategoryLines(
 			[
 				row("Maison", -80000),
 				row("Courses", -3000),
 				row("Courses", 500),
+				row("Jardin", -9000),
 				row("Bio", -9000),
 				row("Travaux", -2000),
 				row("Travaux", 2000),
@@ -238,6 +240,7 @@ describe("subcategoryLines", () => {
 				"Maison",
 				[
 					{ categoryId: "Bio", name: "Bio", amount: -9000 },
+					{ categoryId: "Jardin", name: "Jardin", amount: -9000 },
 					{ categoryId: "Courses", name: "Courses", amount: -2500 },
 				],
 			],

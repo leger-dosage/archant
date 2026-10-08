@@ -172,25 +172,28 @@ export function subcategoryLines(
 	categories: readonly CashFlowCategory[],
 ): ReadonlyMap<string, SubcategoryLine[]> {
 	const byId = new Map(categories.map((category) => [category.id, category]));
-	const sums = new Map<string, number>();
+	const sums = new Map<string, { category: CashFlowCategory; parentId: string; amount: number }>();
 
 	for (const row of rows) {
 		const own = row.categoryId === null ? undefined : byId.get(row.categoryId);
 
 		if (own !== undefined && own.parentId !== null && byId.has(own.parentId)) {
-			sums.set(own.id, (sums.get(own.id) ?? 0) + row.amount);
+			const current = sums.get(own.id);
+			sums.set(own.id, {
+				category: own,
+				parentId: own.parentId,
+				amount: (current?.amount ?? 0) + row.amount,
+			});
 		}
 	}
 
 	const lines = new Map<string, SubcategoryLine[]>();
 
-	for (const [id, amount] of sums) {
-		const own = byId.get(id);
-
-		if (own !== undefined && own.parentId !== null && amount !== 0) {
-			lines.set(own.parentId, [
-				...(lines.get(own.parentId) ?? []),
-				{ categoryId: id, name: own.name, amount: toMinorUnits(amount) },
+	for (const { category, parentId, amount } of sums.values()) {
+		if (amount !== 0) {
+			lines.set(parentId, [
+				...(lines.get(parentId) ?? []),
+				{ categoryId: category.id, name: category.name, amount: toMinorUnits(amount) },
 			]);
 		}
 	}
