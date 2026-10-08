@@ -18,7 +18,12 @@ import type { ServiceDeps } from "./deps.ts";
 import type { DuplicateCandidate } from "./ledger/duplicates.ts";
 import type { BulkSelection, ShownTransaction } from "./ledger/edits.ts";
 import type { TransactionFilter } from "./ledger/filter.ts";
-import type { EntryOrigin, TransactionListRecord, TransactionRecord } from "./ledger/queries.ts";
+import type {
+	EntryOrigin,
+	ListSort,
+	TransactionListRecord,
+	TransactionRecord,
+} from "./ledger/queries.ts";
 import type { Split } from "./ledger/splits.ts";
 import type { TradeData } from "./trades.ts";
 
@@ -335,6 +340,7 @@ async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<T
 		merchantIds: both(query.merchant, merchant),
 		tagIds: both(query.tag, tag),
 		direction: query.direction,
+		pending: query.pending,
 	};
 }
 
@@ -346,7 +352,18 @@ async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<T
  */
 type FilterNames = Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[]>>;
 
-type NamedFilterRequest = BulkFilterRequest & { names?: FilterNames | undefined };
+/**
+ * What an assistant's filter adds to the list's: Sure's names, and Sure's
+ * `statuses`, pending or booked lines alone, which the list does not offer.
+ */
+type NamedFilterRequest = BulkFilterRequest & {
+	names?: FilterNames | undefined;
+	pending?: boolean | undefined;
+};
+
+/** The list's query, with an assistant's additions and Sure's sort, oldest or largest first. */
+type AssistantListRequest = TransactionFilterRequest &
+	Pick<NamedFilterRequest, "names" | "pending"> & { sort?: ListSort | undefined };
 
 /** The ids both narrow to; `undefined` when neither was given. */
 function both(ids: string[] | undefined, named: string[] | undefined): string[] | undefined {
@@ -364,11 +381,11 @@ function both(ids: string[] | undefined, named: string[] | undefined): string[] 
  */
 export async function listAllTransactions(
 	deps: ServiceDeps,
-	query: TransactionFilterRequest & Pick<NamedFilterRequest, "names">,
+	query: AssistantListRequest,
 ): Promise<FilteredTransactionPage> {
 	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
-	const items = await listTransactionPage(deps, filter, page);
+	const items = await listTransactionPage(deps, filter, { ...page, sort: query.sort });
 
 	return { ...(await pageItemsOf(deps, items)), ...page };
 }
@@ -376,7 +393,7 @@ export async function listAllTransactions(
 /** The count and the signed total of every transaction matching the filter. */
 export async function transactionTotals(
 	deps: ServiceDeps,
-	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
+	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names" | "pending">,
 ): Promise<TransactionTotals> {
 	const currency = getReportingCurrency();
 	const sums = await sumTransactions(deps, await filterOf(deps, query));
@@ -402,7 +419,7 @@ export async function transactionTotals(
  */
 export async function findTransactions(
 	deps: ServiceDeps,
-	query: TransactionFilterRequest & Pick<NamedFilterRequest, "names">,
+	query: AssistantListRequest,
 ): Promise<FilteredTransactionPage & TransactionTotals> {
 	const [page, totals] = await Promise.all([
 		listAllTransactions(deps, query),

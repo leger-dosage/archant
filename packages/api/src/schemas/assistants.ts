@@ -1,4 +1,5 @@
 import type { RuleInput } from "./rules.ts";
+import type { AmountBound } from "./transactions.ts";
 
 import { z } from "zod";
 
@@ -40,9 +41,11 @@ import {
 	MAX_TAGS_PER_TRANSACTION,
 	MAX_TAG_FILTER,
 	bulkIds,
+	compareAmountBounds,
 	directionSchema,
 	filterCheck,
 	filterFields,
+	parseAmountBound,
 	parseBounds,
 } from "./transactions.ts";
 
@@ -279,15 +282,139 @@ function checkToolFilter(value: ToolFilter, context: z.core.$RefinementCtx) {
 	checkWithToolPaths(listFilterOf(value), context);
 }
 
-/** `get_transactions`: the list's filter and a page of it. */
+/** Sure's `amount_operator`, on the absolute amount. */
+const AMOUNT_OPERATORS = ["equal", "less", "greater"] as const;
+
+/** Sure's `statuses`: booked lines are `confirmed`. */
+const STATUSES = ["pending", "confirmed"] as const;
+
+/** Past any currency's minor unit: `less` and `greater` are strict at every scale. */
+const STRICT_SCALE = 5;
+
+/** `bound` at `scale`, at least its own. */
+function rescaled(bound: AmountBound, scale: number): AmountBound {
+	return { units: bound.units * 10n ** BigInt(scale - bound.scale), scale };
+}
+
+/**
+ * Sure's `amount` and `amount_operator` as the list's inclusive bounds on the
+ * absolute amount: `equal` within 0.01, as Sure's `ABS(ABS(amount) - ?) <=
+ * 0.01`; `less` and `greater` strict, one unit below any currency's minor
+ * unit away from the amount, which each currency then rounds inward.
+ */
+function operatorBounds(
+	operator: (typeof AMOUNT_OPERATORS)[number],
+	amount: AmountBound,
+): { min?: AmountBound; max?: AmountBound } {
+	if (operator === "equal") {
+		const exact = rescaled(amount, Math.max(amount.scale, 2));
+		const cent = 10n ** BigInt(exact.scale - 2);
+		const low = exact.units - cent;
+
+		return {
+			min: { units: low < 0n ? 0n : low, scale: exact.scale },
+			max: { units: exact.units + cent, scale: exact.scale },
+		};
+	}
+
+	const fine = rescaled(amount, Math.max(amount.scale, STRICT_SCALE));
+
+	return operator === "less"
+		? { max: { units: fine.units - 1n, scale: fine.scale } }
+		: { min: { units: fine.units + 1n, scale: fine.scale } };
+}
+
+/** The larger of two lower bounds, or the smaller of two upper ones; either alone. */
+function tighter(
+	a: AmountBound | undefined,
+	b: AmountBound | undefined,
+	keep: (comparison: number) => boolean,
+): AmountBound | undefined {
+	if (a === undefined || b === undefined) {
+		return a ?? b;
+	}
+
+	return keep(compareAmountBounds(a, b)) ? a : b;
+}
+
+/** Sure's `amount`: a decimal string, its sign ignored as Sure's `abs`. */
+const sureAmount = z.string().trim().max(40);
+
+/** `get_transactions`: the list's filter and a page of it, with Sure's sort, status and amount operator. */
 export const getTransactionsInput = z
-	.strictObject({ ...toolFilterFields, ...pageFields })
-	.superRefine(checkToolFilter)
-	.transform(({ page, page_size: pageSize, ...filter }) => ({
-		...parseBounds(listFilterOf(filter)),
-		page,
-		pageSize,
-	}));
+	.strictObject({
+		...toolFilterFields,
+		...pageFields,
+		order: z.enum(["asc", "desc"]).default("desc").describe("Sort direction, desc by default."),
+		sort_by: z
+			.enum(["date", "amount"])
+			.default("date")
+			.describe("By date, by default, or by absolute amount, then most recent first."),
+		amount: sureAmount
+			.optional()
+			.describe(
+				'An amount such as "12.50", compared with each absolute amount by amount_operator, which it needs.',
+			),
+		amount_operator: z
+			.enum(AMOUNT_OPERATORS)
+			.optional()
+			.describe('"equal": within 0.01; "less" or "greater": strictly. It needs amount.'),
+		statuses: z
+			.array(z.enum(STATUSES))
+			.min(1)
+			.optional()
+			.describe(
+				'"pending": lines the bank has not booked yet; "confirmed": booked ones; both, every line.',
+			),
+	})
+	.superRefine((value, context) => {
+		checkToolFilter(value, context);
+
+		if (value.amount !== undefined && value.amount_operator === undefined) {
+			context.addIssue({ code: "custom", path: ["amount_operator"], message: "required" });
+		}
+
+		if (value.amount === undefined && value.amount_operator !== undefined) {
+			context.addIssue({ code: "custom", path: ["amount"], message: "required" });
+		}
+
+		if (value.amount !== undefined && parseAmountBound(value.amount.replace(/^-/u, "")) === null) {
+			context.addIssue({ code: "custom", path: ["amount"], message: "invalid_amount" });
+		}
+	})
+	.transform(
+		({
+			page,
+			page_size: pageSize,
+			order,
+			sort_by: by,
+			amount,
+			amount_operator: operator,
+			statuses,
+			...filter
+		}) => {
+			const bounds = parseBounds(listFilterOf(filter));
+			const parsed = amount === undefined ? null : parseAmountBound(amount.replace(/^-/u, ""));
+			const operated =
+				parsed === null || operator === undefined ? {} : operatorBounds(operator, parsed);
+			const amountMin = tighter(bounds.amountMin, operated.min, (comparison) => comparison >= 0);
+			const amountMax = tighter(bounds.amountMax, operated.max, (comparison) => comparison <= 0);
+			const pending =
+				statuses === undefined || new Set(statuses).size === 2
+					? undefined
+					: statuses[0] === "pending";
+
+			return {
+				...bounds,
+				...(amountMin === undefined ? {} : { amountMin }),
+				...(amountMax === undefined ? {} : { amountMax }),
+				...(pending === undefined ? {} : { pending }),
+				page,
+				pageSize,
+				sort: { by, order },
+			};
+		},
+	);
 
 /** `group_transactions_by_label`: the list's filter, every matching transaction grouped. */
 export const groupTransactionsInput = z
