@@ -1,14 +1,14 @@
 import type { CashFlowLine } from "../domain/cash-flow.ts";
+import type { PeriodTotals } from "../services/reports.ts";
 
 import { z } from "zod";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 
-import { today } from "../domain/dates.ts";
 import { balanceSheetInput, incomeStatementInput } from "../schemas/assistants.ts";
 import { BALANCE_PERIODS } from "../schemas/balances.ts";
-import { getBalanceSheet, getCashFlow } from "../services/reports.ts";
+import { getBalanceSheet, getIncomeStatement } from "../services/reports.ts";
 import {
 	READ_ONLY,
 	decimal,
@@ -101,72 +101,177 @@ export const getBalanceSheetTool = defineTool({
 	},
 });
 
+const lineFields = {
+	category_id: z.string().nullable().describe("null for uncategorised."),
+	name: z.string().nullable().describe("null for uncategorised."),
+	total: decimal("Signed: a refund lowers an expense line"),
+	percentage_of_total: z
+		.number()
+		.nullable()
+		.describe(
+			"The line over its side's total, in percent, one decimal; null when that total is zero.",
+		),
+};
+
 const side = z.object({
 	total: decimal("Signed, the sum of its lines"),
-	by_category: z.array(
-		z.object({
-			category_id: z.string().nullable().describe("A top-level category; null for uncategorised."),
-			name: z.string().nullable().describe("null for uncategorised."),
-			total: decimal("Signed: a refund lowers an expense line"),
-			percentage_of_total: z
-				.number()
-				.nullable()
-				.describe(
-					"The line over its side's total, in percent, one decimal; null when that total is zero.",
+	by_category: z
+		.array(
+			z.object({
+				...lineFields,
+				category_id: lineFields.category_id.describe(
+					"A top-level category, its sub-categories counted in it; null for uncategorised.",
 				),
-		}),
-	),
+				subcategory_totals: z
+					.array(z.object(lineFields))
+					.describe(
+						"Its sub-categories' own lines, already in its total, each over the side's total as Sure's.",
+					),
+			}),
+		)
+		.nullable()
+		.describe("Largest first; null with account_ids, as Sure's."),
 });
 
-export const getIncomeStatement = defineTool({
+const periodTotals = {
+	start_date: z.string(),
+	end_date: z.string(),
+	income: decimal("Money in"),
+	expenses: decimal("Money out, negative"),
+	net: decimal("income plus expenses"),
+};
+
+const changeOf = (what: string) =>
+	z.object({
+		amount: decimal(`This period's ${what} minus the previous period's`),
+		percent: z
+			.number()
+			.nullable()
+			.describe(
+				"amount over the previous figure, in percent, one decimal; null when the previous figure is zero.",
+			),
+	});
+
+const shareOf = (amount: MinorUnits, total: MinorUnits) =>
+	total === 0 ? null : Math.round((amount / total) * 1000) / 10;
+
+const OMITTED_REASON = "category breakdown is not available with an account filter";
+
+export const getIncomeStatementTool = defineTool({
 	name: "get_income_statement",
 	title: "Income statement",
 	description:
-		"One calendar month's income and expenses in the reporting currency, by top-level category, largest first, as the dashboard shows them and in Sure's get_income_statement shape: a sub-category counts in its parent, transfers between accounts, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency.",
+		"Sure's get_income_statement: income and expenses between start_date and end_date in the reporting currency, by top-level category with its sub-categories, largest first, as the dashboard counts them: transfers between accounts, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency. Month over month: group_by \"month\" adds monthly_series. Against the period before: compare_previous_period. Per account: account_ids gives totals only, as Sure's.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: incomeStatementInput,
 	output: z.object({
-		month: z.string(),
 		currency: z.string(),
 		period: z.object({ start_date: z.string(), end_date: z.string() }),
+		account_ids: z.array(z.string()).optional().describe("Only with account_ids: those asked."),
 		income: side,
 		expense: side.describe("Its total and lines negative, money out."),
-		insights: z.object({
-			net_income: decimal("Income plus the negative expenses"),
-			savings_rate: z
-				.number()
-				.describe("net_income over income, in percent, one decimal; 0 without income."),
-		}),
+		net: decimal("Only with account_ids: income plus expenses").optional(),
+		breakdown_omitted_reason: z.string().optional().describe("Only with account_ids."),
+		insights: z
+			.object({
+				net_income: decimal("Income plus the negative expenses"),
+				savings_rate: z
+					.number()
+					.describe("net_income over income, in percent, one decimal; 0 without income."),
+				median_monthly_income: decimal(
+					"The median of every month's income, the history's months with income up to this one",
+				),
+				median_monthly_expenses: decimal(
+					"The median of every month's expenses, negative, the history's months with expenses up to this one",
+				),
+				avg_monthly_expenses: decimal("The mean of those months' expenses, negative"),
+			})
+			.optional()
+			.describe("Without account_ids only, as Sure's."),
+		monthly_series: z
+			.array(z.object(periodTotals))
+			.optional()
+			.describe('With group_by "month": each calendar month, oldest first, cut to the period.'),
+		previous_period: z
+			.object({
+				...periodTotals,
+				income_change: changeOf("income"),
+				expenses_change: changeOf("expenses"),
+			})
+			.optional()
+			.describe("With compare_previous_period: the as many days just before start_date."),
 		...leftOutFields,
 	}),
 	run: async (deps, input) => {
-		const month = input.month ?? today(deps.timeZone).slice(0, 7);
-		const cashFlow = await getCashFlow(deps, month);
-		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: cashFlow.currency });
-		const sideOf = (total: MinorUnits, lines: readonly CashFlowLine[]) => ({
-			total: money(total),
-			by_category: lines.map((entry) => ({
-				category_id: entry.categoryId,
-				name: entry.name,
-				total: money(entry.amount),
-				percentage_of_total: entry.share === null ? null : Math.round(entry.share * 1000) / 10,
-			})),
+		const statement = await getIncomeStatement(deps, input);
+		const money = (amount: MinorUnits) => toDecimalString({ amount, currency: statement.currency });
+		const totalsOf = (period: PeriodTotals) => ({
+			start_date: period.from,
+			end_date: period.to,
+			income: money(period.income),
+			expenses: money(period.expenses),
+			net: money(toMinorUnits(period.income + period.expenses)),
 		});
-		const net = toMinorUnits(cashFlow.income + cashFlow.expenses);
+		const changeBetween = (previous: MinorUnits, current: MinorUnits) => ({
+			amount: money(toMinorUnits(current - previous)),
+			percent: previous === 0 ? null : percentOf(current - previous, previous),
+		});
+		const { breakdown } = statement;
+		const sideOf = (total: MinorUnits, lines: readonly CashFlowLine[] | null) => ({
+			total: money(total),
+			by_category:
+				lines === null || breakdown === null
+					? null
+					: lines.map((entry) => ({
+							category_id: entry.categoryId,
+							name: entry.name,
+							total: money(entry.amount),
+							percentage_of_total:
+								entry.share === null ? null : Math.round(entry.share * 1000) / 10,
+							subcategory_totals: (entry.categoryId === null
+								? []
+								: (breakdown.subcategories.get(entry.categoryId) ?? [])
+							).map((child) => ({
+								category_id: child.categoryId,
+								name: child.name,
+								total: money(child.amount),
+								percentage_of_total: shareOf(child.amount, total),
+							})),
+						})),
+		});
+		const net = toMinorUnits(statement.income + statement.expenses);
+		const { previous } = statement;
 
 		return {
 			result: {
-				month: cashFlow.month,
-				currency: cashFlow.currency,
-				period: { start_date: cashFlow.from, end_date: cashFlow.to },
-				income: sideOf(cashFlow.income, cashFlow.lines.income),
-				expense: sideOf(cashFlow.expenses, cashFlow.lines.expense),
-				insights: {
-					net_income: money(net),
-					savings_rate: cashFlow.income > 0 ? percentOf(net, cashFlow.income) : 0,
-				},
-				...leftOutOf(cashFlow.leftOut),
+				currency: statement.currency,
+				period: { start_date: statement.from, end_date: statement.to },
+				...(statement.accountIds === null ? {} : { account_ids: statement.accountIds }),
+				income: sideOf(statement.income, breakdown?.lines.income ?? null),
+				expense: sideOf(statement.expenses, breakdown?.lines.expense ?? null),
+				...(breakdown === null
+					? { net: money(net), breakdown_omitted_reason: OMITTED_REASON }
+					: {
+							insights: {
+								net_income: money(net),
+								savings_rate: statement.income > 0 ? percentOf(net, statement.income) : 0,
+								median_monthly_income: money(breakdown.medianMonthlyIncome),
+								median_monthly_expenses: money(breakdown.medianMonthlyExpenses),
+								avg_monthly_expenses: money(breakdown.avgMonthlyExpenses),
+							},
+						}),
+				...(statement.months === null ? {} : { monthly_series: statement.months.map(totalsOf) }),
+				...(previous === null
+					? {}
+					: {
+							previous_period: {
+								...totalsOf(previous),
+								income_change: changeBetween(previous.income, statement.income),
+								expenses_change: changeBetween(previous.expenses, statement.expenses),
+							},
+						}),
+				...leftOutOf(statement.leftOut),
 			},
 			changedRows: 0,
 		};

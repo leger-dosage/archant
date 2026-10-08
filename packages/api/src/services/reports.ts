@@ -1,10 +1,11 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
-import type { BalanceChange, SampledSeries } from "../domain/balances/history.ts";
+import type { BalanceChange, DateRange, SampledSeries } from "../domain/balances/history.ts";
 import type {
 	CashFlowCategory,
 	CashFlowLine,
 	CashFlowRow,
 	MonthBreakdown,
+	SubcategoryLine,
 } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
@@ -21,12 +22,14 @@ import { categories } from "@archant/data/schema/categories";
 import type { Account } from "@archant/data/types";
 
 import { balanceChange, periodRange, sampleSeries } from "../domain/balances/history.ts";
-import { cashFlowBreakdown } from "../domain/cash-flow.ts";
-import { monthRange, today } from "../domain/dates.ts";
+import { medianOf } from "../domain/budgets/actuals.ts";
+import { cashFlowBreakdown, subcategoryLines } from "../domain/cash-flow.ts";
+import { addDays, daysBetween, maxDate, minDate, monthRange, today } from "../domain/dates.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
+import { AppError } from "../lib/errors.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
-import { cashFlowByCategory, cashFlowByMonth } from "./ledger/queries.ts";
+import { cashFlowByCategory, cashFlowByDay, cashFlowByMonth } from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** An account left out of the totals because no rate converts its currency. */
@@ -264,4 +267,185 @@ export async function getCashFlowHistory(
 
 			return { month, income, lines, rows: monthRows };
 		});
+}
+
+/** Sure's `MAX_MONTH_BUCKETS`: the monthly series of a period holds 36 months at most. */
+const MAX_MONTH_BUCKETS = 36;
+
+export type IncomeStatementQuery = {
+	from: IsoDate;
+	to: IsoDate;
+	/** Sure's `account_ids`: totals of these accounts alone, without the category breakdown. */
+	accountIds?: readonly string[] | undefined;
+	/** Sure's `group_by: "month"`: a monthly series beside the totals. */
+	byMonth: boolean;
+	/** Sure's `compare_previous_period`: the equal-length period just before `from`. */
+	comparePrevious: boolean;
+};
+
+/** Income and expenses between two days, both inclusive, as `CashFlow` signs them. */
+export type PeriodTotals = { from: IsoDate; to: IsoDate; income: MinorUnits; expenses: MinorUnits };
+
+/** The breakdown Sure's statement gives without an account filter. */
+type StatementBreakdown = {
+	lines: CashFlow["lines"];
+	/** Each top-level line's sub-categories, by the line's category id. */
+	subcategories: ReadonlyMap<string, SubcategoryLine[]>;
+	/**
+	 * Sure's `median_monthly_income`, `median_monthly_expenses` and
+	 * `avg_monthly_expenses`: over every month of the history up to this one
+	 * with a line on that side, whatever the period.
+	 */
+	medianMonthlyIncome: MinorUnits;
+	medianMonthlyExpenses: MinorUnits;
+	avgMonthlyExpenses: MinorUnits;
+};
+
+export type IncomeStatement = PeriodTotals & {
+	currency: string;
+	/** The accounts asked for; `null` for every counted account. */
+	accountIds: string[] | null;
+	/** `null` with `accountIds`, as Sure's: its category rollups are household-wide. */
+	breakdown: StatementBreakdown | null;
+	/** Each calendar month the period touches, cut to it; `null` unless asked. */
+	months: PeriodTotals[] | null;
+	previous: PeriodTotals | null;
+	/** Accounts in another currency left out; none with `accountIds`, which refuses them. */
+	leftOut: LeftOutAccount[];
+};
+
+/** Each calendar month from `from` to `to`, its first and last days cut to them. */
+function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
+	const buckets: DateRange[] = [];
+
+	for (let cursor = from; cursor <= to;) {
+		const end = minDate(monthRange(cursor.slice(0, 7)).to, to);
+		buckets.push({ from: cursor, to: end });
+		cursor = addDays(end, 1);
+	}
+
+	return buckets;
+}
+
+function sumOf(values: readonly MinorUnits[]): MinorUnits {
+	return toMinorUnits(values.reduce((sum, value) => sum + value, 0));
+}
+
+/**
+ * Sure's `get_income_statement` over any period, from the dashboard's
+ * counted rows (AD-9): `getCashFlow`'s accounts, categories and signs, over
+ * days rather than a month. An account outside those, inactive, excluded
+ * from reports, in another currency or unknown, is refused, as Sure refuses
+ * one its totals would silently report as zero.
+ */
+export async function getIncomeStatement(
+	deps: ServiceDeps,
+	query: IncomeStatementQuery,
+): Promise<IncomeStatement> {
+	const { currency, counted, leftOut } = await reportedAccounts(deps);
+	const countedIds = new Set(counted.map((row) => row.id));
+	const refused = (query.accountIds ?? []).flatMap((id, index) =>
+		countedIds.has(id) ? [] : [{ path: `accountIds.${index}`, code: "unknown_account" }],
+	);
+
+	if (refused.length > 0) {
+		throw new AppError(
+			"VALIDATION_ERROR",
+			"Some accounts are not counted in income and expenses: inactive, excluded from reports, in another currency or unknown.",
+			refused,
+		);
+	}
+
+	const buckets = query.byMonth ? monthBuckets(query.from, query.to) : null;
+
+	if (buckets !== null && buckets.length > MAX_MONTH_BUCKETS) {
+		throw new AppError(
+			"VALIDATION_ERROR",
+			`That range produces more than ${MAX_MONTH_BUCKETS} monthly buckets. Use a shorter range.`,
+			[{ path: "groupBy", code: "too_many_periods" }],
+		);
+	}
+
+	const accountIds = query.accountIds === undefined ? null : [...new Set(query.accountIds)];
+	const days = daysBetween(query.from, query.to) + 1;
+	const previousRange = { from: addDays(query.from, -days), to: addDays(query.from, -1) };
+	const thisMonthEnd = monthRange(today(deps.timeZone).slice(0, 7)).to;
+	// One read for every figure: the medians need the whole history up to
+	// this month, so without an account filter it starts at the first day.
+	const [dayRows, allCategories] = await Promise.all([
+		cashFlowByDay(deps, {
+			...(accountIds === null
+				? {}
+				: { from: query.comparePrevious ? previousRange.from : query.from }),
+			to: accountIds === null ? maxDate(query.to, thisMonthEnd) : query.to,
+			accountIds: accountIds ?? [...countedIds],
+		}),
+		breakdownCategories(deps),
+	]);
+	const rowsIn = (range: DateRange) =>
+		dayRows.filter((row) => row.date >= range.from && row.date <= range.to);
+	const totalsOf = (range: DateRange): PeriodTotals => {
+		const { income, expenses } = cashFlowBreakdown(rowsIn(range), allCategories);
+
+		return { ...range, income, expenses };
+	};
+	const rows = rowsIn(query);
+	const { income, expenses, lines } = cashFlowBreakdown(rows, allCategories);
+
+	return {
+		from: query.from,
+		to: query.to,
+		income,
+		expenses,
+		currency,
+		accountIds,
+		breakdown:
+			accountIds === null
+				? {
+						lines,
+						subcategories: subcategoryLines(rows, allCategories),
+						...monthlyStatistics(
+							dayRows.filter((row) => row.date <= thisMonthEnd),
+							allCategories,
+						),
+					}
+				: null,
+		months: buckets?.map(totalsOf) ?? null,
+		previous: query.comparePrevious ? totalsOf(previousRange) : null,
+		leftOut: accountIds === null ? leftOut : [],
+	};
+}
+
+/**
+ * Sure's family statistics: each calendar month's income and expenses, as
+ * `cashFlowBreakdown` sums them, and their median and mean over the months
+ * with a line on that side.
+ */
+function monthlyStatistics(
+	rows: readonly (CashFlowRow & { date: IsoDate })[],
+	allCategories: readonly CashFlowCategory[],
+) {
+	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
+
+	for (const row of rows) {
+		byMonth.set(row.date.slice(0, 7), [...(byMonth.get(row.date.slice(0, 7)) ?? []), row]);
+	}
+
+	const months = [...byMonth.values()].map((monthRows) =>
+		cashFlowBreakdown(monthRows, allCategories),
+	);
+	const incomes = months
+		.filter((month) => month.lines.income.length > 0)
+		.map((month) => month.income);
+	const spent = months
+		.filter((month) => month.lines.expense.length > 0)
+		.map((month) => month.expenses);
+
+	return {
+		medianMonthlyIncome: medianOf(incomes) ?? toMinorUnits(0),
+		medianMonthlyExpenses: medianOf(spent) ?? toMinorUnits(0),
+		avgMonthlyExpenses: toMinorUnits(
+			spent.length === 0 ? 0 : Math.round(sumOf(spent) / spent.length),
+		),
+	};
 }

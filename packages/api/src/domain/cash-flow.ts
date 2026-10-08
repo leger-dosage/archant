@@ -157,3 +157,53 @@ export function cashFlowBreakdown(
 		lines: { income: income.lines, expense: expense.lines },
 	};
 }
+
+/** A sub-category's own counted rows, beside its parent's line. */
+export type SubcategoryLine = { categoryId: string; name: string; amount: MinorUnits };
+
+/**
+ * Each top-level category's sub-categories with counted rows, as Sure's
+ * `subcategory_totals`: a sub-category's own signed sum, which its parent's
+ * line in `cashFlowBreakdown` already holds, largest first, by name among
+ * equals. A sub-category whose rows cancel out is left out, as a line is.
+ */
+export function subcategoryLines(
+	rows: readonly CashFlowRow[],
+	categories: readonly CashFlowCategory[],
+): ReadonlyMap<string, SubcategoryLine[]> {
+	const byId = new Map(categories.map((category) => [category.id, category]));
+	const sums = new Map<string, { category: CashFlowCategory; parentId: string; amount: number }>();
+
+	for (const row of rows) {
+		const own = row.categoryId === null ? undefined : byId.get(row.categoryId);
+
+		if (own !== undefined && own.parentId !== null && byId.has(own.parentId)) {
+			const current = sums.get(own.id);
+			sums.set(own.id, {
+				category: own,
+				parentId: own.parentId,
+				amount: (current?.amount ?? 0) + row.amount,
+			});
+		}
+	}
+
+	const lines = new Map<string, SubcategoryLine[]>();
+
+	for (const { category, parentId, amount } of sums.values()) {
+		if (amount !== 0) {
+			lines.set(parentId, [
+				...(lines.get(parentId) ?? []),
+				{ categoryId: category.id, name: category.name, amount: toMinorUnits(amount) },
+			]);
+		}
+	}
+
+	return new Map(
+		[...lines].map(([parentId, children]) => [
+			parentId,
+			children.toSorted(
+				(a, b) => Math.abs(b.amount) - Math.abs(a.amount) || byName.compare(a.name, b.name),
+			),
+		]),
+	);
+}

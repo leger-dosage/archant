@@ -958,11 +958,10 @@ const statementLine = z.object({
 
 const statementSide = z.object({
 	total: z.string().regex(decimalString),
-	by_category: z.array(statementLine),
+	by_category: z.array(statementLine.extend({ subcategory_totals: z.array(statementLine) })),
 });
 
 const incomeStatement = z.object({
-	month: z.string(),
 	currency: z.string(),
 	period: z.object({ start_date: z.string(), end_date: z.string() }),
 	income: statementSide,
@@ -1040,7 +1039,12 @@ describe("reading reports", () => {
 			(await callTool(bare, tokens.access_token, "get_balance_sheet")).structuredContent,
 		);
 		const statement = incomeStatement.parse(
-			(await callTool(bare, tokens.access_token, "get_income_statement")).structuredContent,
+			(
+				await callTool(bare, tokens.access_token, "get_income_statement", {
+					start_date: "2026-09-01",
+					end_date: "2026-09-30",
+				})
+			).structuredContent,
 		);
 		const netWorthLeftOut = leftOutIds(
 			(await routeData("/api/reports/net-worth?period=1Y")).leftOut,
@@ -1050,8 +1054,6 @@ describe("reading reports", () => {
 		expect(sheet.left_out_account_ids).toContain(dollars.id);
 		expect(sheet.left_out_account_ids).toEqual(netWorthLeftOut);
 		expect(sheet.left_out_count).toBe(netWorthLeftOut.length);
-		// The current month, in the server's time zone.
-		expect(statement.month).toBe("2026-09");
 		expect(statement.left_out_account_ids).toEqual(netWorthLeftOut);
 		expect(statement.left_out_count).toBe(netWorthLeftOut.length);
 	});
@@ -1106,7 +1108,7 @@ describe("reading reports", () => {
 		}
 	});
 
-	it("get_income_statement gives the dashboard's month, line by line", async () => {
+	it("get_income_statement gives the dashboard's month over its days, line by line", async () => {
 		const account = await openAccount({ name: "Mois", openingDate: "2026-07-01" });
 		const food = await createCategory(uniqueCategory("STATEMENT Alimentation"));
 		const groceries = await spend(account, "STATEMENT Courses", -6420, "2026-08-12");
@@ -1118,7 +1120,8 @@ describe("reading reports", () => {
 		expect(status).toBe(200);
 
 		const result = await callTool(bare, tokens.access_token, "get_income_statement", {
-			month: "2026-08",
+			start_date: "2026-08-01",
+			end_date: "2026-08-31",
 		});
 		const statement = incomeStatement.parse(result.structuredContent);
 		const route = await routeData("/api/reports/cash-flow?month=2026-08");
@@ -1129,11 +1132,11 @@ describe("reading reports", () => {
 				name,
 				total: money(amount),
 				percentage_of_total: share === null ? null : Math.round(share * 1000) / 10,
+				subcategory_totals: [],
 			}));
 		const net = z.number().parse(route.income) + z.number().parse(route.expenses);
 
 		expect(statement).toMatchObject({
-			month: "2026-08",
 			currency: "EUR",
 			period: { start_date: "2026-08-01", end_date: "2026-08-31" },
 			income: { total: money(route.income), by_category: decimals(lines.income) },
@@ -1148,13 +1151,18 @@ describe("reading reports", () => {
 		);
 	});
 
-	it("get_income_statement gives 0.00 and no lines for an empty month, and refuses a bad month", async () => {
+	it("get_income_statement gives 0.00 and no lines for an empty period, and refuses a bad date", async () => {
 		const empty = incomeStatement.parse(
-			(await callTool(bare, tokens.access_token, "get_income_statement", { month: "2019-02" }))
-				.structuredContent,
+			(
+				await callTool(bare, tokens.access_token, "get_income_statement", {
+					start_date: "2019-02-01",
+					end_date: "2019-02-28",
+				})
+			).structuredContent,
 		);
 		const refused = await callTool(bare, tokens.access_token, "get_income_statement", {
-			month: "2026-13",
+			start_date: "2026-13-01",
+			end_date: "2026-12-31",
 		});
 
 		expect(empty).toMatchObject({
@@ -1163,7 +1171,7 @@ describe("reading reports", () => {
 			insights: { net_income: "0.00", savings_rate: 0 },
 		});
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain('"path":"month"');
+		expect(refused.content[0]?.text).toContain('"path":"start_date"');
 	});
 });
 
