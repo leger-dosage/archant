@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import { createLogger } from "../lib/logger.ts";
+import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { STATISTICS_REFRESH_LINES, confirmImport, createImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
@@ -87,7 +88,7 @@ describe("confirmImport and the planner's statistics", () => {
 		expect(confirmed.counts.created).toBe(STATISTICS_REFRESH_LINES + 1);
 		const warning = logLines.find((line) => line.includes("statistics refresh failed"));
 		expect(JSON.parse(warning ?? "{}")).toMatchObject({ level: 40, code: "SQLITE_AUTH" });
-		expect(warning).not.toContain("1234");
+		expect(loggedFigures(logLines)).not.toContain("1234");
 		expect(logLines.some((line) => line.includes("import confirmed"))).toBe(true);
 	}, 30_000);
 });

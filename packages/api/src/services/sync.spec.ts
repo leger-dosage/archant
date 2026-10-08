@@ -29,6 +29,7 @@ import {
 	mockProvider,
 	transactionsPage,
 } from "../testing/enable-banking.ts";
+import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
 import { encrypt } from "./crypto.ts";
@@ -237,7 +238,7 @@ function failingThirdUpdate(): BankConnectionDeps {
 
 const logLine = z.record(z.string(), z.unknown());
 
-/** Every log line, without the timestamps, process and duration any figure may hide in. */
+/** Every log line, without pino's envelope and the duration, which change from run to run. */
 function logged(): Record<string, unknown>[] {
 	return logLines.map((line) => {
 		const {
@@ -256,12 +257,17 @@ function logged(): Record<string, unknown>[] {
 const FIXTURE_SECRETS = ["4290", "42.90", "250000", "123456", "1234.56", "1200", "Carrefour"];
 
 function expectNoSecretLogged() {
-	const text = logged()
-		.map((line) => JSON.stringify(line))
-		.join("\n");
+	const figures = loggedFigures(logLines);
 
-	for (const secret of [...FIXTURE_SECRETS, FIXTURE_CHECKING_UID, FIXTURE_CARD_UID]) {
-		expect(text).not.toContain(secret);
+	for (const secret of FIXTURE_SECRETS) {
+		expect(figures).not.toContain(secret);
+	}
+
+	// A uid is a UUID, which `loggedFigures` masks: searched in the lines themselves.
+	const text = logLines.join("\n");
+
+	for (const uid of [FIXTURE_CHECKING_UID, FIXTURE_CARD_UID]) {
+		expect(text).not.toContain(uid);
 	}
 }
 
@@ -957,7 +963,7 @@ describe("syncConnection", () => {
 			.map((line) => logLine.parse(JSON.parse(line)))
 			.find((line) => line["msg"] === "recurring detection failed");
 		expect(failure).toMatchObject({ connectionId, code: "INTERNAL_ERROR" });
-		expect(logLines.join("")).not.toContain("4290");
+		expect(loggedFigures(logLines)).not.toContain("4290");
 		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
 	});
 

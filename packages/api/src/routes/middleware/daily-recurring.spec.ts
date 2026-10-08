@@ -8,6 +8,7 @@ import { createLogger } from "../../lib/logger.ts";
 import * as occurrences from "../../services/recurring/occurrences.ts";
 import { ownRecurringAccount, template, useSignedInApp } from "../../testing/app.ts";
 import { buildTestApp, withSession } from "../../testing/auth.ts";
+import { loggedFigures } from "../../testing/logs.ts";
 
 useSignedInApp();
 
@@ -80,6 +81,6 @@ describe("the first read of the day", () => {
 		await app.request("/api/accounts");
 
 		await vi.waitFor(() => expect(lines.join("\n")).toContain("daily occurrences failed"));
-		expect(lines.join("\n")).not.toContain("8420");
+		expect(loggedFigures(lines)).not.toContain("8420");
 	});
 });

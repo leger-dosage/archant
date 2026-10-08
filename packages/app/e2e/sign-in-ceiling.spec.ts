@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { APIRequest, Browser, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures.ts";
 import { ADMIN, NEW_PASSWORD, WEB_URL } from "./settings.ts";
@@ -48,6 +48,60 @@ async function signOut(page: Page) {
 	await expect(page).toHaveURL(/\/sign-in$/u);
 }
 
+/**
+ * Twenty strangers fail, each from an address of its own, as a guesser with
+ * many addresses would; failures from earlier projects may already have filled
+ * part of the window, so a refusal here is a full ceiling too. TEST-NET-1
+ * addresses, which the `clientAddress` fixture never draws.
+ */
+async function fillCeiling(request: APIRequest) {
+	const strangers = await request.newContext({
+		baseURL: WEB_URL,
+		extraHTTPHeaders: { origin: WEB_URL },
+	});
+	const statuses = await Promise.all(
+		Array.from({ length: 20 }, async (_, index) => {
+			const response = await strangers.post("/api/auth/sign-in/email", {
+				headers: { "x-forwarded-for": `192.0.2.${index + 1}` },
+				data: { email: ADMIN.email, password: "pas le bon mot de passe" },
+			});
+
+			return response.status();
+		}),
+	);
+	await strangers.dispose();
+	expect(statuses.every((status) => status === 401 || status === 429)).toBe(true);
+}
+
+/**
+ * Whether a browser that never signed in, with the right password, is refused.
+ * Let through, it meets the code step instead.
+ */
+async function newBrowserRefused(browser: Browser, round: number): Promise<boolean> {
+	// Its own address: three sign-ins from one address in ten seconds would
+	// meet Better Auth's own limit, which also answers 429.
+	const fresh = await browser.newContext({
+		baseURL: WEB_URL,
+		locale: "fr-FR",
+		extraHTTPHeaders: { "x-forwarded-for": `192.0.2.${100 + round}` },
+	});
+	const stranger = await fresh.newPage();
+	await passwordStep(stranger);
+	const refusal = stranger.getByRole("alert");
+	const codeStepShown = stranger.getByLabel("Code de vérification");
+	await expect(refusal.or(codeStepShown)).toBeVisible();
+	const refused = await refusal.isVisible();
+
+	if (refused) {
+		await expect(refusal).toHaveText("Trop de tentatives. Réessayez un peu plus tard.");
+		await expect(stranger).toHaveURL(/\/sign-in$/u);
+	}
+
+	await fresh.close();
+
+	return refused;
+}
+
 test("a browser that signed in before passes a full ceiling, a new one is refused", async ({
 	page,
 	browser,
@@ -63,44 +117,23 @@ test("a browser that signed in before passes a full ceiling, a new one is refuse
 	await codeStep(page, totp(secret));
 	await expect(greeting(page)).toBeVisible();
 
-	// Twenty strangers fail, each from an address of its own, as a guesser
-	// with many addresses would; failures from earlier projects may already
-	// have filled part of the window, so a refusal here is a full ceiling too.
-	const strangers = await playwright.request.newContext({
-		baseURL: WEB_URL,
-		extraHTTPHeaders: { origin: WEB_URL },
-	});
-	const statuses = await Promise.all(
-		Array.from({ length: 20 }, async (_, index) => {
-			const response = await strangers.post("/api/auth/sign-in/email", {
-				headers: { "x-forwarded-for": `10.250.0.${index + 1}` },
-				data: { email: ADMIN.email, password: "pas le bon mot de passe" },
-			});
+	// A window runs ten minutes from the sign-in that opened it, which an
+	// earlier project may have sent nine minutes ago, so it can end between the
+	// strangers and the new browser. The next sign-in then opened a window
+	// within this test, and a second round fills one that outlasts it.
+	const round = async (index: number) => {
+		await fillCeiling(playwright.request);
+		await signOut(page);
+		// An address per round: Better Auth allows one address three sign-ins
+		// per ten seconds, and this browser has had two.
+		await page.context().setExtraHTTPHeaders({ "x-forwarded-for": `192.0.2.${200 + index}` });
+		await passwordStep(page);
+		await codeStep(page, totp(secret));
+		await expect(greeting(page)).toBeVisible();
 
-			return response.status();
-		}),
-	);
-	await strangers.dispose();
-	expect(statuses.every((status) => status === 401 || status === 429)).toBe(true);
+		return newBrowserRefused(browser, index);
+	};
+	const refused = (await round(1)) || (await round(2));
 
-	await signOut(page);
-	await passwordStep(page);
-	await codeStep(page, totp(secret));
-	await expect(greeting(page)).toBeVisible();
-
-	// Its own address too: three sign-ins from one address in ten seconds
-	// would meet Better Auth's own limit, which also answers 429.
-	const fresh = await browser.newContext({
-		baseURL: WEB_URL,
-		locale: "fr-FR",
-		extraHTTPHeaders: { "x-forwarded-for": "10.251.0.1" },
-	});
-	const stranger = await fresh.newPage();
-	await passwordStep(stranger);
-
-	await expect(stranger.getByRole("alert")).toHaveText(
-		"Trop de tentatives. Réessayez un peu plus tard.",
-	);
-	await expect(stranger).toHaveURL(/\/sign-in$/u);
-	await fresh.close();
+	expect(refused).toBe(true);
 });
