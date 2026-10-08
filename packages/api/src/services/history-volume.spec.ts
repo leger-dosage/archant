@@ -25,7 +25,7 @@ import { createAccount } from "./ledger/accounts.ts";
 import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
-import { getIncomeStatement } from "./reports.ts";
+import { getBalanceSheet, getIncomeStatement } from "./reports.ts";
 import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 
@@ -467,6 +467,20 @@ describe("NFR10 at 100,000 transactions", () => {
 		await expect(timed(async () => getIncomeStatement(deps(), months))).resolves.toBeLessThan(
 			REPORT_MS,
 		);
+	});
+
+	it("answers the assistant's balance sheet over ten years by month and 400 days by day in under 150 ms each", async () => {
+		const decade = { period: "last_10_years", interval: "1 month" } as const;
+		const days = {
+			from: addDays(today(TIME_ZONE), -399),
+			to: today(TIME_ZONE),
+			interval: "1 day",
+		} as const;
+
+		expect((await getBalanceSheet(deps(), decade)).series.netWorth).toHaveLength(121);
+		expect((await getBalanceSheet(deps(), days)).series.netWorth).toHaveLength(400);
+		await expect(timed(async () => getBalanceSheet(deps(), decade))).resolves.toBeLessThan(PAGE_MS);
+		await expect(timed(async () => getBalanceSheet(deps(), days))).resolves.toBeLessThan(PAGE_MS);
 	});
 
 	// Before the import below, which adds its own lines.

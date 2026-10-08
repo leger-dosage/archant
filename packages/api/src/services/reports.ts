@@ -1,5 +1,6 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
-import type { BalanceChange, DateRange, SampledSeries } from "../domain/balances/history.ts";
+import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
+import type { SureInterval, SurePeriod } from "../domain/balances/sure-periods.ts";
 import type {
 	CashFlowCategory,
 	CashFlowLine,
@@ -21,15 +22,29 @@ import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import type { Account } from "@archant/data/types";
 
-import { balanceChange, periodRange, sampleSeries } from "../domain/balances/history.ts";
+import { balanceChange, periodRange } from "../domain/balances/history.ts";
+import { seriesDates, seriesPointCount, surePeriodRange } from "../domain/balances/sure-periods.ts";
 import { medianOf } from "../domain/budgets/actuals.ts";
 import { cashFlowBreakdown, subcategoryLines } from "../domain/cash-flow.ts";
-import { addDays, daysBetween, maxDate, minDate, monthRange, today } from "../domain/dates.ts";
+import {
+	addDays,
+	addMonths,
+	daysBetween,
+	maxDate,
+	minDate,
+	monthRange,
+	today,
+} from "../domain/dates.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { AppError } from "../lib/errors.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
-import { cashFlowByCategory, cashFlowByDay, cashFlowByMonth } from "./ledger/queries.ts";
+import {
+	cashFlowByCategory,
+	cashFlowByDay,
+	cashFlowByMonth,
+	oldestEntryDate,
+} from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** An account left out of the totals because no rate converts its currency. */
@@ -83,12 +98,26 @@ async function reportedAccounts(deps: ServiceDeps) {
 }
 
 /**
- * Every counted account's daily balances over a period ending today, over
- * the accounts of `reportedAccounts`. Today's set counts for every day, since
- * an account keeps no deactivation date, so a headline always equals the
- * last point. Shared by the dashboard's net worth and the assistant's balance
- * sheet, so the two never disagree.
+ * Every counted account's daily balances over `range`, over the accounts of
+ * `reportedAccounts`. Today's set counts for every day, since an account
+ * keeps no deactivation date, so a headline always equals the last point.
+ * Shared by the dashboard's net worth and the assistant's balance sheet, so
+ * the two never disagree.
  */
+async function countedBetween(
+	deps: ServiceDeps,
+	counted: readonly Account[],
+	range: DateRange,
+): Promise<CountedAccount[]> {
+	return Promise.all(
+		counted.map(async (row) => ({
+			classification: classificationOf(row.type),
+			points: await balancesBetween(deps, row.id, range.from, range.to),
+		})),
+	);
+}
+
+/** The dashboard's daily balances over a period ending today, never before the first counted account opened. */
 async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
 	const to = today(deps.timeZone);
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
@@ -99,15 +128,7 @@ async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
 		.reduce<IsoDate | null>((min, date) => (min === null || date < min ? date : min), null);
 	const range = earliest === null ? null : periodRange(PERIOD_MONTHS[period], to, earliest);
 
-	const series: CountedAccount[] =
-		range === null
-			? []
-			: await Promise.all(
-					counted.map(async (row) => ({
-						classification: classificationOf(row.type),
-						points: await balancesBetween(deps, row.id, range.from, range.to),
-					})),
-				);
+	const series = range === null ? [] : await countedBetween(deps, counted, range);
 	const assets = totalOf(series, "asset");
 	const liabilities = totalOf(series, "liability");
 
@@ -131,35 +152,98 @@ export async function getNetWorth(deps: ServiceDeps, period: BalancePeriod): Pro
 	return { period, ...totals, points, change: balanceChange(points) };
 }
 
-type BalanceSheet = Omit<NetWorth, "points"> & {
-	/** Net worth, assets and liabilities (positive), sampled by `sampleSeries`. */
-	series: { netWorth: SampledSeries; assets: SampledSeries; liabilities: SampledSeries };
+/**
+ * Sure's balance sheet range: both dates, else a named period, else the
+ * last five years from the oldest entry. Each figure at each of `dates`.
+ */
+export type BalanceSheetQuery = {
+	from?: IsoDate | undefined;
+	to?: IsoDate | undefined;
+	period?: SurePeriod | undefined;
+	interval: SureInterval;
 };
 
+/** Sure's `MAX_SERIES_POINTS`. */
+const MAX_SERIES_POINTS = 400;
+
+type BalanceSheet = {
+	asOf: IsoDate;
+	/** Sure's `oldest_entry_date`: today when the ledger holds no entry. */
+	oldestEntryDate: IsoDate;
+	currency: string;
+	/** Today's figures, whatever the range, as Sure's `current`. */
+	netWorth: MinorUnits;
+	assets: MinorUnits;
+	/** The amount owed, positive (AD-5). */
+	liabilities: MinorUnits;
+	range: DateRange;
+	interval: SureInterval;
+	/** Each figure at each of Sure's series dates; empty for a range starting today, as Sure's. */
+	series: { netWorth: MinorUnits[]; assets: MinorUnits[]; liabilities: MinorUnits[] };
+	/** Net worth's last day of the range minus its first counted day. */
+	change: BalanceChange | null;
+	leftOut: LeftOutAccount[];
+};
+
+/** Each figure of `points` on `dates`, zero on a day before any account opened. */
+function valuesAt(points: readonly DailyBalance[], dates: readonly IsoDate[]): MinorUnits[] {
+	const byDate = new Map(points.map((point) => [point.date, point.balance]));
+
+	return dates.map((date) => byDate.get(date) ?? toMinorUnits(0));
+}
+
 /**
- * `getNetWorth`'s figures with the assets' and liabilities' series beside the
- * net worth's, as Sure's balance sheet tool gives them, each sampled so ten
- * years stay about 120 points. The change is the daily series', the
- * dashboard's.
+ * Sure's `get_balance_sheet` over any range, from the dashboard's counted
+ * accounts and their stored daily balances (AD-8): today's figures, then
+ * each at the days Sure's chart series reads, `seriesDates`.
  */
 export async function getBalanceSheet(
 	deps: ServiceDeps,
-	period: BalancePeriod,
+	query: BalanceSheetQuery,
 ): Promise<BalanceSheet> {
-	const { series, ...totals } = await countedSeries(deps, period);
+	const asOf = today(deps.timeZone);
+	const oldest = (await oldestEntryDate(deps)) ?? asOf;
+	const range: DateRange =
+		query.from !== undefined && query.to !== undefined
+			? { from: query.from, to: query.to }
+			: query.period === undefined
+				? { from: maxDate(addMonths(asOf, -60), oldest), to: asOf }
+				: surePeriodRange(query.period, asOf, oldest);
+
+	if (seriesPointCount(range, query.interval) > MAX_SERIES_POINTS) {
+		throw new AppError(
+			"VALIDATION_ERROR",
+			"That period and interval combination produces too many data points. Use a coarser interval or a shorter period.",
+			[{ path: "interval", code: "too_many_points" }],
+		);
+	}
+
+	const { currency, counted, leftOut } = await reportedAccounts(deps);
+	const [current, series] = await Promise.all([
+		countedBetween(deps, counted, { from: asOf, to: asOf }),
+		range.from === asOf ? [] : countedBetween(deps, counted, range),
+	]);
+	const dates = range.from === asOf ? [] : seriesDates(range, query.interval);
 	const points = netWorthSeries(series);
-	const netWorth = sampleSeries(points);
+	const assets = totalOf(current, "asset");
+	const liabilities = totalOf(current, "liability");
 
 	return {
-		period,
-		...totals,
-		change: balanceChange(points),
-		// At net worth's interval, so the three series line up point for point.
+		asOf,
+		oldestEntryDate: oldest,
+		currency,
+		netWorth: toMinorUnits(assets - liabilities),
+		assets,
+		liabilities,
+		range,
+		interval: query.interval,
 		series: {
-			netWorth,
-			assets: sampleSeries(classificationSeries(series, "asset"), netWorth.interval),
-			liabilities: sampleSeries(classificationSeries(series, "liability"), netWorth.interval),
+			netWorth: valuesAt(points, dates),
+			assets: valuesAt(classificationSeries(series, "asset"), dates),
+			liabilities: valuesAt(classificationSeries(series, "liability"), dates),
 		},
+		change: balanceChange(points),
+		leftOut,
 	};
 }
 
