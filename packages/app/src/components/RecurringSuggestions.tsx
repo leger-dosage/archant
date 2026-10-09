@@ -29,7 +29,7 @@ const nameOf = recurringName;
  * The amount, or the band it moved within once it varies, magnitudes
  * ascending: Sure's « varie de 571,22 € à 571,36 € ».
  */
-export function RecurringAmount({ item }: { item: RecurringData }) {
+function RecurringAmount({ item }: { item: RecurringData }) {
 	const { t } = useTranslation();
 	const { expectedAmountMin: min, expectedAmountMax: max } = item;
 

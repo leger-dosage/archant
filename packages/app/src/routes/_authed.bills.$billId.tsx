@@ -6,11 +6,10 @@ import { ExternalLinkIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { formatMoney } from "@archant/data/money";
+import { formatMoney, toMinorUnits } from "@archant/data/money";
 
 import { canDelete, useBillActions } from "@/components/BillActions";
-import { CurrentOccurrence, PriceChangeAmounts } from "@/components/BillLabels";
-import { RecurringAmount } from "@/components/RecurringSuggestions";
+import { AmountRange, CurrentOccurrence, PriceChangeAmounts } from "@/components/BillLabels";
 import { Button } from "@/components/ui/button";
 import {
 	Sheet,
@@ -92,23 +91,32 @@ function Months({ months, currency }: { months: BillDetailData["months"]; curren
 	);
 }
 
-/** What comes next: the current occurrence's remaining amount and date, else the series'. */
+/**
+ * Sure's `_summary`: what comes next, the current occurrence's remaining
+ * amount and date with the band when its amount is an estimate, else the
+ * series' amount, « ~ » before it when its amounts spread.
+ */
 function NextPayment({ detail }: { detail: BillDetailData }) {
 	const { t } = useTranslation();
 	const { record } = detail;
 	const occurrence = record.currentOccurrence;
+	const scheduled = occurrence !== null && occurrence.status === "scheduled";
+	const varies =
+		record.expectedAmountMin !== null &&
+		record.expectedAmountMax !== null &&
+		record.expectedAmountMin < record.expectedAmountMax;
+	const range = scheduled ? occurrence.amountRange : null;
 
 	return (
 		<Block title={t("bills.detail.nextPayment")}>
 			<div className="flex flex-col gap-0.5 rounded-lg border bg-card p-3">
-				<span className="text-lg">
-					{occurrence !== null && occurrence.status === "scheduled" ? (
-						<span className="font-medium tabular-nums">
-							{formatMoney({ amount: occurrence.remaining, currency: record.currency })}
-						</span>
-					) : (
-						<RecurringAmount item={record} />
-					)}
+				<span className="text-lg font-medium tabular-nums">
+					{scheduled
+						? formatMoney({ amount: occurrence.remaining, currency: record.currency })
+						: `${varies ? "~" : ""}${formatMoney({
+								amount: toMinorUnits(Math.abs(record.amount)),
+								currency: record.currency,
+							})}`}
 				</span>
 				<span className="text-sm text-muted-foreground">
 					{occurrence === null ? (
@@ -121,6 +129,8 @@ function NextPayment({ detail }: { detail: BillDetailData }) {
 						<CurrentOccurrence occurrence={occurrence} />
 					)}
 				</span>
+				{/* The list shows the band only from `@lg`: on a phone, this is where an estimate says how far it swings. */}
+				{range !== null && <AmountRange range={range} currency={record.currency} />}
 			</div>
 		</Block>
 	);

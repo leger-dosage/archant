@@ -61,7 +61,7 @@ import {
 	resolvedExpected,
 	roundHalfUp,
 } from "../../domain/recurring/occurrences.ts";
-import { monthlyEquivalent, monthlyOn } from "../../domain/recurring/schedule.ts";
+import { monthlyEquivalent, monthlyOn, monthlyRollup } from "../../domain/recurring/schedule.ts";
 import { isKept, nextDateFrom, nextExpectedDate } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
@@ -79,6 +79,7 @@ import {
 	loadCandidates,
 	merchantNames,
 	notFound,
+	nullableMinor,
 	selectRecords,
 	setRecurringStatus,
 	setStatusWithin,
@@ -619,7 +620,34 @@ type BillRow = {
 	currency: string;
 	/** The matcher's payment waiting for the owner's answer, if any. */
 	suggestionId: string | null;
+	/** The series' band, magnitudes ascending, only when `expected` is an estimate. */
+	amountRange: AmountRange | null;
 };
+
+/** Positive magnitudes, `min` below `max`. */
+type AmountRange = { min: MinorUnits; max: MinorUnits };
+
+/**
+ * Sure's `occurrence_amount_estimated?` with `has_amount_variance?` for a
+ * `fixed` series, Archant having no other strategy: the occurrence has no
+ * expected amount of its own and the series' amounts spread. The band, as
+ * magnitudes ascending, else `null`.
+ */
+function estimatedRange(
+	ownExpected: MinorUnits | null,
+	series: { expectedAmountMin: MinorUnits | null; expectedAmountMax: MinorUnits | null },
+): AmountRange | null {
+	const { expectedAmountMin: min, expectedAmountMax: max } = series;
+
+	if (ownExpected !== null || min === null || max === null || min >= max) {
+		return null;
+	}
+
+	return {
+		min: toMinorUnits(Math.min(Math.abs(min), Math.abs(max))),
+		max: toMinorUnits(Math.max(Math.abs(min), Math.abs(max))),
+	};
+}
 
 /** A suggested payment, as the review queue and the sheet show it. */
 type SuggestedPayment = {
@@ -702,6 +730,8 @@ export async function loadBills(
 			expectedAmount: recurringOccurrences.expectedAmount,
 			currency: recurringOccurrences.currency,
 			seriesAmount: recurringTransactions.amount,
+			expectedAmountMin: recurringTransactions.expectedAmountMin,
+			expectedAmountMax: recurringTransactions.expectedAmountMax,
 			seriesStatus: recurringTransactions.status,
 			seriesName: recurringTransactions.name,
 			label: recurringTransactions.label,
@@ -759,11 +789,20 @@ export async function loadBills(
 	);
 
 	const rows = found.map(
-		({ expectedAmount, seriesAmount, seriesName, label, ...row }): LoadedRow => {
+		({
+			expectedAmount,
+			seriesAmount,
+			expectedAmountMin,
+			expectedAmountMax,
+			seriesName,
+			label,
+			...row
+		}): LoadedRow => {
 			const own = allocations.filter((one) => one.occurrenceId === row.occurrenceId);
 			const confirmed = own.filter((one) => one.state === "confirmed").map((one) => one.amount);
+			const ownExpected = nullableMinor(expectedAmount);
 			const expected = resolvedExpected(
-				{ expectedAmount: expectedAmount === null ? null : toMinorUnits(expectedAmount) },
+				{ expectedAmount: ownExpected },
 				toMinorUnits(seriesAmount),
 			);
 			const effective = effectiveDueOn(row);
@@ -778,6 +817,10 @@ export async function loadBills(
 				confirmed: toMinorUnits(confirmed.reduce((total, amount) => total + amount, 0)),
 				remaining: remainingOf(expected, confirmed),
 				suggestionId: own.find((one) => one.state === "suggested")?.id ?? null,
+				amountRange: estimatedRange(ownExpected, {
+					expectedAmountMin: nullableMinor(expectedAmountMin),
+					expectedAmountMax: nullableMinor(expectedAmountMax),
+				}),
 			};
 		},
 	);
@@ -976,6 +1019,8 @@ export type BillOccurrence = CurrentOccurrence & {
 	expected: MinorUnits;
 	confirmed: MinorUnits;
 	remaining: MinorUnits;
+	/** The series' band, magnitudes ascending, only when `expected` is an estimate. */
+	amountRange: AmountRange | null;
 };
 
 /** A series as « Toutes les factures » lists it. */
@@ -1092,11 +1137,8 @@ export async function withAmounts(
 			return { ...record, monthlyEquivalent: monthly, currentOccurrence: null };
 		}
 
-		const stored = frozen.get(occurrence.id) ?? null;
-		const expected = resolvedExpected(
-			{ expectedAmount: stored === null ? null : toMinorUnits(stored) },
-			record.amount,
-		);
+		const stored = nullableMinor(frozen.get(occurrence.id) ?? null);
+		const expected = resolvedExpected({ expectedAmount: stored }, record.amount);
 		const confirmed = paid.get(occurrence.id) ?? [];
 
 		return {
@@ -1107,6 +1149,7 @@ export async function withAmounts(
 				expected,
 				confirmed: sumOf(confirmed),
 				remaining: remainingOf(expected, confirmed),
+				amountRange: estimatedRange(stored, record),
 			},
 		};
 	});
@@ -1146,24 +1189,35 @@ function inStatus(row: BillRecord, filter: BillStatusFilter): boolean {
 	}
 }
 
-// Sure orders its string enum alphabetically, `ended` before `inactive`;
-// paused bills come before ended ones here.
+// Sure's `order(:status, :next_expected_date)` on its string column: `active`,
+// `ended`, `inactive`.
 const STATUS_RANK: Record<RecurringRecord["status"], number> = {
 	suggested: 0,
 	active: 0,
-	inactive: 1,
-	ended: 2,
+	ended: 1,
+	inactive: 2,
 };
+
+/**
+ * Sure's `order(:name, :amount)`: the stored name, a series without one
+ * last as SQL sorts a null name, then Sure's outflow-positive amount
+ * ascending, which is Archant's descending (AD-5): an income first, then
+ * the smallest outflow.
+ */
+function byStoredName(a: BillRecord, b: BillRecord): number {
+	if (a.name === null || b.name === null) {
+		return Number(a.name === null) - Number(b.name === null);
+	}
+
+	return byName.compare(a.name, b.name);
+}
 
 const SORTS: Record<BillSort, (a: BillRecord, b: BillRecord) => number> = {
 	due: (a, b) =>
 		STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
 		a.nextExpectedDate.localeCompare(b.nextExpectedDate) ||
 		a.id.localeCompare(b.id),
-	name: (a, b) =>
-		byName.compare(displayName(a), displayName(b)) ||
-		a.amount - b.amount ||
-		a.id.localeCompare(b.id),
+	name: (a, b) => byStoredName(a, b) || b.amount - a.amount || a.id.localeCompare(b.id),
 	// Sure's `amount: :desc` on its outflow-positive amounts: the largest
 	// outflow first, incomes last (AD-5).
 	amount: (a, b) => a.amount - b.amount || a.id.localeCompare(b.id),
@@ -1226,13 +1280,13 @@ async function subscriptionRollup(
 	const currency = getReportingCurrency();
 	const active = rows.filter((row) => row.status === "active");
 	const counted = active.filter((row) => row.currency === currency);
-	const monthly = active.length === 0 ? null : sumOf(counted.map((row) => row.monthlyEquivalent));
+	const sums = active.length === 0 ? null : monthlyRollup(counted);
 
 	return {
 		currency,
 		count: active.length,
-		monthly,
-		annual: monthly === null ? null : toMinorUnits(monthly * 12),
+		monthly: sums?.monthly ?? null,
+		annual: sums?.annual ?? null,
 		leftOut: active
 			.filter((row) => row.currency !== currency)
 			.map((row) => ({ id: row.id, name: displayName(row) })),
@@ -1404,21 +1458,42 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 	};
 }
 
+/** A series « À venir » lists. */
+export type UpcomingRecord = RecurringRecord & {
+	/** Signed like `amount`: a manual series' average when it has one, else `amount`. */
+	projectedAmount: MinorUnits;
+};
+
 /**
  * Sure's `transactions/_upcoming`: the active series, money in or out,
- * expected from today to ten days on in `APP_TIMEZONE`, by date.
+ * expected from today to ten days on in `APP_TIMEZONE`, by date, each with
+ * the one amount `_projected_transaction` shows.
  */
-export async function upcomingRecurring(deps: ServiceDeps): Promise<RecurringRecord[]> {
+export async function upcomingRecurring(deps: ServiceDeps): Promise<UpcomingRecord[]> {
 	const day = today(deps.timeZone);
+	const window = and(
+		eq(recurringTransactions.status, "active"),
+		gte(recurringTransactions.nextExpectedDate, day),
+		lte(recurringTransactions.nextExpectedDate, addDays(day, UPCOMING_DAYS)),
+	);
 	const rows = await selectRecords(deps.db)
-		.where(
-			and(
-				eq(recurringTransactions.status, "active"),
-				gte(recurringTransactions.nextExpectedDate, day),
-				lte(recurringTransactions.nextExpectedDate, addDays(day, UPCOMING_DAYS)),
-			),
-		)
+		.where(window)
 		.orderBy(recurringTransactions.nextExpectedDate, recurringTransactions.id);
+	const averages = new Map(
+		(
+			await deps.db
+				.select({ id: recurringTransactions.id, average: recurringTransactions.expectedAmountAvg })
+				.from(recurringTransactions)
+				.where(and(window, eq(recurringTransactions.manual, true)))
+		).map(({ id, average }) => [id, average]),
+	);
 
-	return toRecords(deps.db, rows, day);
+	return (await toRecords(deps.db, rows, day)).map((record) => {
+		const average = averages.get(record.id) ?? null;
+
+		return {
+			...record,
+			projectedAmount: average === null ? record.amount : toMinorUnits(average),
+		};
+	});
 }

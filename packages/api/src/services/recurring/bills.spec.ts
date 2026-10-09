@@ -1,7 +1,7 @@
 import type { DeclareInput } from "../../schemas/bills.ts";
 import type { TempDatabase } from "../../testing/temp-database.ts";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CurrencyCode } from "@archant/data/money";
@@ -796,6 +796,7 @@ describe("billsOverview", () => {
 				remaining: 8420,
 				currency: "EUR",
 				suggestionId: null,
+				amountRange: null,
 			},
 		]);
 		expect(shown(overview.month)).toEqual([
@@ -1111,7 +1112,7 @@ describe("allBills", () => {
 		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
 	});
 
-	it("lists every series but the suggestions, active, then paused, then ended, each by next date", async () => {
+	it("lists every series but the suggestions, active, then ended, then paused, each by next date", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "LOYER", -80_000);
 		await runRecurring(deps(), { backfill: true });
@@ -1138,7 +1139,8 @@ describe("allBills", () => {
 		await expect(stored()).resolves.toEqual(
 			expect.arrayContaining([expect.objectContaining({ label: "LOYER", status: "suggested" })]),
 		);
-		expect(names(bills)).toEqual(["Internet", "Eau", "Gaz", "Ancien"]);
+		// Sure orders its status strings: `active`, `ended`, `inactive`.
+		expect(names(bills)).toEqual(["Internet", "Eau", "Ancien", "Gaz"]);
 		expect(subscriptions).toBeNull();
 		expect(bills[1]).toMatchObject({
 			amount: -9000,
@@ -1151,7 +1153,7 @@ describe("allBills", () => {
 				remaining: 9000,
 			},
 		});
-		expect(bills[3]).toMatchObject({ status: "ended", currentOccurrence: null });
+		expect(bills[2]).toMatchObject({ status: "ended", currentOccurrence: null });
 	});
 
 	it("files each bill under its current occurrence's payment state, or paused or ended", async () => {
@@ -1265,6 +1267,81 @@ describe("allBills", () => {
 		});
 		await expect(allBills(deps(), query({ sort: "amount" }))).resolves.toMatchObject({
 			bills: [{ name: "Électricité" }, { name: "gaz" }, { name: "Eau" }, { name: "Salaire" }],
+		});
+	});
+
+	it("sorts by the stored name, unnamed last, then by Sure's amount ascending: the smallest outflow first", async () => {
+		const accountId = await account();
+		await temp.db.insert(merchants).values({
+			id: "free",
+			name: "Free",
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const [entry = ""] = await addRows(accountId, ["2026-09-15"], "PRLV FREE MOBILE", -1999);
+		await updateTransaction(deps(), entry, { merchantId: "free" }, { origin: "user" });
+		const free = await addRecurringFromEntry(deps(), entry);
+		await declareBill(deps(), bill(accountId, { name: "Gaz", amount: "40,00" }));
+		await declareBill(deps(), bill(accountId, { name: "Eau", amount: "30,00" }));
+		await declareBill(deps(), bill(accountId, { name: "Eau", amount: "12,00" }));
+		await declareBill(deps(), bill(accountId, { kind: "income", name: "Eau", amount: "25,00" }));
+
+		const { bills } = await allBills(deps(), query({ sort: "name" }));
+
+		expect(free.name).toBeNull();
+		// Sure's outflow-positive amount ascending: the income, negative there, first.
+		expect(bills.map((row) => [row.name ?? row.merchantName, row.amount])).toEqual([
+			["Eau", 2500],
+			["Eau", -1200],
+			["Eau", -3000],
+			["Gaz", -4000],
+			["Free", -1999],
+		]);
+	});
+
+	it("reads an amount that moves as an estimate only when its occurrence has none of its own", async () => {
+		const accountId = await account();
+		const moving = await declareBill(
+			deps(),
+			bill(accountId, { name: "Électricité", amount: "52,00", firstDueOn: "2026-10-20" }),
+		);
+		const fixed = await declareBill(
+			deps(),
+			bill(accountId, { name: "Gaz", amount: "52,00", firstDueOn: "2026-10-20" }),
+		);
+		await declareBill(deps(), bill(accountId, { name: "Eau", firstDueOn: "2026-10-20" }));
+		await temp.db
+			.update(recurringTransactions)
+			.set({ expectedAmountMin: -6000, expectedAmountMax: -4000 })
+			.where(inArray(recurringTransactions.id, [moving.id, fixed.id]));
+		await editOccurrence(deps(), (await firstOf(fixed.id)).id, { expectedAmount: "52,00" });
+
+		const { bills } = await allBills(deps(), query({ sort: "name" }));
+		const overview = await billsOverview(deps());
+
+		expect(bills.map((row) => [row.name, row.currentOccurrence?.amountRange])).toEqual([
+			["Eau", null],
+			["Électricité", { min: 4000, max: 6000 }],
+			["Gaz", null],
+		]);
+		expect(Object.fromEntries(overview.month.map((row) => [row.name, row.amountRange]))).toEqual({
+			Eau: null,
+			Gaz: null,
+			Électricité: { min: 4000, max: 6000 },
+		});
+	});
+
+	it("rounds a weekly subscription's month and year once each, as Sure's rollup", async () => {
+		const accountId = await account();
+		const weekly = await declareBill(deps(), bill(accountId, { name: "Panier", amount: "10,00" }));
+		await editBill(deps(), weekly.id, {
+			billType: "subscription",
+			frequency: { preset: "weekly", weekday: "1" },
+		});
+
+		await expect(allBills(deps(), query({ type: "subscription" }))).resolves.toMatchObject({
+			bills: [{ monthlyEquivalent: 4348 }],
+			subscriptions: { count: 1, monthly: 4348, annual: 52_179 },
 		});
 	});
 
@@ -1449,6 +1526,28 @@ describe("upcomingRecurring", () => {
 		await expect(upcomingRecurring(deps())).resolves.toMatchObject([
 			{ name: "Salaire", nextExpectedDate: "2026-10-06", amount: 250_000 },
 			{ name: "Dernier jour", nextExpectedDate: "2026-10-16" },
+		]);
+	});
+
+	it("projects a manual series' average when it has one, else its amount", async () => {
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+		const accountId = await account();
+		const averaged = await declareBill(
+			deps(),
+			bill(accountId, { name: "Électricité", amount: "52,00", firstDueOn: "2026-10-08" }),
+		);
+		await declareBill(
+			deps(),
+			bill(accountId, { name: "Eau", amount: "30,00", firstDueOn: "2026-10-09" }),
+		);
+		await temp.db
+			.update(recurringTransactions)
+			.set({ expectedAmountAvg: -5000 })
+			.where(eq(recurringTransactions.id, averaged.id));
+
+		await expect(upcomingRecurring(deps())).resolves.toMatchObject([
+			{ name: "Électricité", amount: -5200, projectedAmount: -5000 },
+			{ name: "Eau", amount: -3000, projectedAmount: -3000 },
 		]);
 	});
 });

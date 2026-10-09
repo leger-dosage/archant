@@ -18,7 +18,6 @@ import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { ListCard } from "@/components/ListCard";
 import { Money } from "@/components/Money";
-import { RecurringAmount } from "@/components/RecurringSuggestions";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SummaryStrip } from "@/components/SummaryStrip";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -333,7 +332,7 @@ export function AllBills({
 										</TableCell>
 										<TableCell className="text-right">
 											<span className="flex flex-col items-end">
-												<RecurringAmount item={bill} />
+												<Money amount={bill.amount} currency={bill.currency} signed />
 												{/* A monthly bill's equivalent is its own amount: said only when it differs. */}
 												{bill.monthlyEquivalent !== Math.abs(bill.amount) && (
 													<span className="text-xs text-muted-foreground tabular-nums">

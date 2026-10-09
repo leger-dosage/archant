@@ -249,16 +249,16 @@ export function occurrencesPerYear(schedule: Schedule): number {
 	}, 0);
 }
 
+/** A non-negative exact fraction of minor units: numerator over denominator. */
+type Fraction = readonly [bigint, bigint];
+
 /**
- * Sure's `monthly_equivalent_amount`: `|amount| × occurrencesPerYear / 12`,
- * rounded half up to the minor unit as Sure's `number_to_currency` shows it.
- * Computed as an exact fraction, a weekly rule counting 1461 / (28 ×
- * interval) a year, so the float of `occurrencesPerYear` never touches money.
+ * Sure's `monthly_equivalent_amount` before any rounding: `|amount| ×
+ * occurrencesPerYear / 12` as an exact fraction, a weekly rule counting
+ * 1461 / (28 × interval) a year, so the float of `occurrencesPerYear` never
+ * touches money.
  */
-export function monthlyEquivalent(
-	rules: readonly RecurrenceRule[],
-	amount: MinorUnits,
-): MinorUnits {
+function monthlyFraction(rules: readonly RecurrenceRule[], amount: MinorUnits): Fraction {
 	const [numerator, denominator] = rules.reduce<[bigint, bigint]>(
 		([sumNumerator, sumDenominator], rule) => {
 			const interval = BigInt(rule.interval);
@@ -276,10 +276,47 @@ export function monthlyEquivalent(
 		},
 		[0n, 1n],
 	);
-	const scaled = BigInt(Math.abs(amount)) * numerator;
-	const twelfths = 12n * denominator;
 
-	return toMinorUnits(Number((2n * scaled + twelfths) / (2n * twelfths)));
+	return [BigInt(Math.abs(amount)) * numerator, 12n * denominator];
+}
+
+/** Half up to the minor unit, as Sure's `number_to_currency` shows it. */
+function roundHalfUp([numerator, denominator]: Fraction): MinorUnits {
+	return toMinorUnits(Number((2n * numerator + denominator) / (2n * denominator)));
+}
+
+/**
+ * Sure's `monthly_equivalent_amount` for one series, rounded half up to the
+ * minor unit.
+ */
+export function monthlyEquivalent(
+	rules: readonly RecurrenceRule[],
+	amount: MinorUnits,
+): MinorUnits {
+	return roundHalfUp(monthlyFraction(rules, amount));
+}
+
+/**
+ * Sure's `load_subscription_rollup`: the unrounded monthly equivalents
+ * summed, then `monthly` and `annual = 12 × sum` each rounded once, so a 10 €
+ * weekly bill reads 521,79 € a year rather than 12 × 43,48 €.
+ */
+export function monthlyRollup(
+	series: readonly { rules: readonly RecurrenceRule[]; amount: MinorUnits }[],
+): { monthly: MinorUnits; annual: MinorUnits } {
+	const sum = series.reduce<Fraction>(
+		([sumNumerator, sumDenominator], { rules, amount }) => {
+			const [numerator, denominator] = monthlyFraction(rules, amount);
+
+			return [
+				sumNumerator * denominator + numerator * sumDenominator,
+				sumDenominator * denominator,
+			];
+		},
+		[0n, 1n],
+	);
+
+	return { monthly: roundHalfUp(sum), annual: roundHalfUp([12n * sum[0], sum[1]]) };
 }
 
 /**

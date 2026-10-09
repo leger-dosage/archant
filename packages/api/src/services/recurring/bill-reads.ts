@@ -9,7 +9,6 @@ import type { SQL } from "drizzle-orm";
 import { and, eq, gte } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
 import type {
 	AllocationSource,
 	AllocationState,
@@ -25,6 +24,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { nextDueDateOf, nextDueDates } from "../../domain/recurring/bills.ts";
+import { monthlyRollup } from "../../domain/recurring/schedule.ts";
 import { billStatusSchema } from "../../schemas/bills.ts";
 import { paymentEntries } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
@@ -172,11 +172,7 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 			currency,
 			activeCount: bills.filter((bill) => bill.status === "active").length,
 			overdueCount: bills.filter((bill) => bill.currentOccurrence?.state === "overdue").length,
-			activeMonthly: toMinorUnits(
-				spending
-					.filter((bill) => bill.currency === currency)
-					.reduce((total, bill) => total + bill.monthlyEquivalent, 0),
-			),
+			activeMonthly: monthlyRollup(spending.filter((bill) => bill.currency === currency)).monthly,
 			leftOut: [
 				...new Set(
 					spending.filter((bill) => bill.currency !== currency).map((bill) => bill.accountId),

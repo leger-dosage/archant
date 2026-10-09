@@ -129,7 +129,8 @@ function chunks<Item>(items: readonly Item[], size: number): Item[][] {
 	);
 }
 
-const nullableMinor = (amount: number | null) => (amount === null ? null : toMinorUnits(amount));
+export const nullableMinor = (amount: number | null) =>
+	amount === null ? null : toMinorUnits(amount);
 
 /** Every stored series, as the passes around detection read them. */
 async function loadSeries(tx: Pick<Transaction, "select">): Promise<StoredSeries[]> {
