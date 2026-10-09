@@ -239,7 +239,8 @@ async function clean(
  * Sure's `RecurringTransaction::Identifier` at `14638a701` run over the last
  * three months, between two passes. First, a stored row whose latest
  * transaction no longer carries its key follows it (`rekey`), so renaming a
- * series' rows or setting their merchant never leaves a twin. Then each
+ * series' rows or setting their merchant never leaves a twin, unless another
+ * series holds that key: then both stay, and none is ever deleted. Then each
  * pattern claims the stored series of its account, key and currency nearest
  * its mean within 7.5 %, whatever its status: an ended or manual one is left
  * untouched, so detection never recreates a bill the owner declared or
@@ -263,19 +264,17 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 	const now = Date.now();
 	const rekeyed = rekey(await loadSeries(tx), candidates, day);
 
-	// In order: a move may take a key a delete just freed.
+	// In order: a move may take a key an earlier move freed.
 	await oneByOne(rekeyed.steps, (step) =>
-		step.kind === "delete"
-			? tx.delete(recurringTransactions).where(eq(recurringTransactions.id, step.id))
-			: tx
-					.update(recurringTransactions)
-					.set({
-						merchantId: step.merchantId,
-						labelKey: step.labelKey,
-						label: step.label,
-						updatedAt: now,
-					})
-					.where(eq(recurringTransactions.id, step.id)),
+		tx
+			.update(recurringTransactions)
+			.set({
+				merchantId: step.merchantId,
+				labelKey: step.labelKey,
+				label: step.label,
+				updatedAt: now,
+			})
+			.where(eq(recurringTransactions.id, step.id)),
 	);
 
 	const patterns = detectPatterns(detectable, day);

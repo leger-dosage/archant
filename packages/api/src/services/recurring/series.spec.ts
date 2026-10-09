@@ -8,7 +8,11 @@ import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
 import { recurrenceRules } from "@archant/data/schema/recurrence-rules";
-import { recurringOccurrences } from "@archant/data/schema/recurring-occurrences";
+import {
+	recurringAllocations,
+	recurringOccurrences,
+	recurringPriceChanges,
+} from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
@@ -1251,7 +1255,7 @@ describe("addRecurringFromEntry", () => {
 	});
 });
 
-describe("detection keeps a renamed series single", () => {
+describe("detection follows a renamed series and never deletes one", () => {
 	it("follows its rows to the merchant a bulk edit set", async () => {
 		const accountId = await account();
 		const ids = await addRows(
@@ -1305,7 +1309,7 @@ describe("detection keeps a renamed series single", () => {
 		]);
 	});
 
-	it("drops a suggested twin already on the new key and moves the active series", async () => {
+	it("keeps a suggested twin already on the new key and the active series on its own", async () => {
 		const accountId = await account();
 		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		const row = await detectedBill(accountId, ids);
@@ -1318,8 +1322,92 @@ describe("detection keeps a renamed series single", () => {
 		await runRecurring(deps(), { backfill: false });
 
 		await expect(stored()).resolves.toEqual([
-			{ ...row, status: "active", labelKey: "edf energie", label: "EDF ENERGIE" },
+			expect.objectContaining({ id: row.id, status: "active", labelKey: "prlv edf" }),
+			expect.objectContaining({ id: "twin", labelKey: "edf energie" }),
 		]);
+	});
+
+	it("keeps a declared bill and its payments when its rows take a suggestion's key, until it goes stale", async () => {
+		const accountId = await account();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		const bill = await declareBill(deps(), {
+			kind: "bill",
+			name: "EDF",
+			amount: "65,00",
+			accountId,
+			firstDueOn: "2026-07-10",
+			frequency: { preset: "monthly" },
+			entryId: ids[0]!,
+		});
+		await runRecurring(deps(), { backfill: true });
+		const paid = () =>
+			temp.db
+				.select({ id: recurringAllocations.id })
+				.from(recurringAllocations)
+				.innerJoin(
+					recurringOccurrences,
+					eq(recurringAllocations.recurringOccurrenceId, recurringOccurrences.id),
+				)
+				.where(eq(recurringOccurrences.recurringTransactionId, bill.id));
+		const due = () =>
+			temp.db
+				.select({ id: recurringOccurrences.id })
+				.from(recurringOccurrences)
+				.where(eq(recurringOccurrences.recurringTransactionId, bill.id));
+		await temp.db.insert(recurringPriceChanges).values({
+			id: "change",
+			recurringTransactionId: bill.id,
+			effectiveOn: "2026-08-10",
+			previousAmount: 6000,
+			newAmount: 6500,
+			currency: "EUR",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const changes = () =>
+			temp.db
+				.select({ id: recurringPriceChanges.id })
+				.from(recurringPriceChanges)
+				.where(eq(recurringPriceChanges.recurringTransactionId, bill.id));
+		const payments = await paid();
+		const occurrences = await due();
+		const [declared] = await stored();
+		await rename(ids, "EDF ENERGIE");
+		await temp.db.insert(recurringTransactions).values({
+			...declared!,
+			id: "suggestion",
+			status: "suggested",
+			manual: false,
+			labelKey: "edf energie",
+			label: "EDF ENERGIE",
+		});
+
+		await runRecurring(deps(), { backfill: false });
+
+		expect(payments).toHaveLength(3);
+		await expect(paid()).resolves.toEqual(payments);
+		await expect(due()).resolves.toEqual(expect.arrayContaining(occurrences));
+		await expect(stored()).resolves.toEqual([
+			expect.objectContaining({ id: bill.id, status: "active", labelKey: "prlv edf" }),
+			expect.objectContaining({ id: "suggestion", status: "suggested", labelKey: "edf energie" }),
+		]);
+		await expect(changes()).resolves.toEqual([{ id: "change" }]);
+
+		// Sure's threshold for a manual monthly bill: six months after its last payment.
+		vi.setSystemTime(new Date("2027-03-10T10:00:00Z"));
+		await runRecurring(deps(), { backfill: false });
+		await expect(listRecurring(deps())).resolves.toContainEqual(
+			expect.objectContaining({ id: bill.id, status: "active" }),
+		);
+
+		vi.setSystemTime(new Date("2027-03-11T10:00:00Z"));
+		await runRecurring(deps(), { backfill: false });
+		await expect(listRecurring(deps())).resolves.toContainEqual(
+			expect.objectContaining({ id: bill.id, status: "inactive" }),
+		);
+		await expect(paid()).resolves.toEqual(payments);
+		await expect(due()).resolves.toEqual(expect.arrayContaining(occurrences));
+		await expect(changes()).resolves.toEqual([{ id: "change" }]);
 	});
 
 	it("stays put when only its latest row was renamed, and no twin comes back", async () => {
