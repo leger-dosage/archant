@@ -127,6 +127,12 @@ test("each occurrence sits in its section and reads its due date as Sure's", asy
 	);
 	await expect(sectionRow(page, "Inactives", paused)).toHaveCount(1);
 	await expect(sectionRow(page, "Requiert votre attention", paused)).toHaveCount(0);
+	// Five days late, but nobody pays a paused bill: never red, as Sure since #3971.
+	await expect(sectionRow(page, "Inactives", paused)).toContainText(
+		`Échéance le ${spelled(daysAgo(5))}`,
+	);
+	await expect(sectionRow(page, "Inactives", paused)).not.toContainText("retard");
+	await expect(sectionRow(page, "Inactives", paused).locator(".text-destructive")).toHaveCount(0);
 });
 
 test("the totals are the month's in euros, « Prochaine » shows four at most, and another currency is named", async ({

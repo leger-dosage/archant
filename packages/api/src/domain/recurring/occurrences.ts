@@ -4,6 +4,7 @@ import type { Schedule } from "./schedule.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { OccurrenceStatus } from "@archant/data/recurring";
+import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
 import { addDays, maxDate } from "../dates.ts";
 import { firstOccurrenceAfter, planEnd } from "./schedule.ts";
@@ -31,6 +32,9 @@ export const BACKFILL_MONTHS = 6;
 
 /** What an open occurrence shows: Sure's `derived_state`, never stored. */
 export type DerivedState = "upcoming" | "due" | "overdue" | Exclude<OccurrenceStatus, "scheduled">;
+
+/** What every read shows: `DerivedState`, else an open occurrence's series status as Sure's `display_status`. */
+export type OccurrenceState = DerivedState | "paused" | "ended" | "suggested";
 
 /**
  * `numerator / denominator` rounded half up, as Ruby's `BigDecimal#round`,
@@ -84,6 +88,25 @@ export function derivedState(
 	}
 
 	return today >= addDays(effective, -NOTIFY_DAYS) ? "due" : "upcoming";
+}
+
+/**
+ * The state the bills page and the tools show. Nobody pays a series that is
+ * not active, so its open occurrence is neither overdue nor due nor upcoming,
+ * whatever the dates say, and reads the series' status instead, as Sure's
+ * `overdue?`, `due?` and `serialize_occurrence` since #3971. The matcher keeps
+ * `derivedState`, so a late payment can still settle the leftover.
+ */
+export function occurrenceState(
+	occurrence: { status: OccurrenceStatus; dueOn: IsoDate; snoozedUntil: IsoDate | null },
+	seriesStatus: RecurringStatus,
+	today: IsoDate,
+): OccurrenceState {
+	if (occurrence.status !== "scheduled" || seriesStatus === "active") {
+		return derivedState(occurrence, today);
+	}
+
+	return seriesStatus === "inactive" ? "paused" : seriesStatus;
 }
 
 /**

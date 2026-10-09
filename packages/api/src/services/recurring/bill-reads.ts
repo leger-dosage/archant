@@ -1,5 +1,5 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type { DerivedState } from "../../domain/recurring/occurrences.ts";
+import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { BillLifecycle, BillPaymentState, BillStatus } from "../../schemas/bills.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
@@ -190,7 +190,7 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 export type OccurrenceView = {
 	dueOn: IsoDate;
 	effectiveDueOn: IsoDate;
-	state: DerivedState;
+	state: OccurrenceState;
 	expected: MinorUnits;
 	paid: MinorUnits;
 	remaining: MinorUnits;

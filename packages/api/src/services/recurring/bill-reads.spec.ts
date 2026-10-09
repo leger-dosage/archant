@@ -105,6 +105,27 @@ describe("findBills", () => {
 		expect(late.status).toBe("active");
 	});
 
+	it("leaves a paused bill out of every schedule state and the overdue count, reading it paused", async () => {
+		const accountId = await openAccount();
+		const late = await bill(accountId, "Gaz", "2026-09-10");
+		// Pausing drops future occurrences: both left are past, the second within its grace days.
+		const near = await bill(accountId, "Box", "2026-09-19");
+		await oneByOne([late, near], (series) => setRecurringStatus(deps(), series.id, "inactive"));
+		const PAUSED = { status: "paused" } as const;
+
+		await expect(names({ ...PAUSED, paymentState: "overdue" })).resolves.toEqual([]);
+		await expect(names({ ...PAUSED, paymentState: "due" })).resolves.toEqual([]);
+		await expect(names({ ...PAUSED, paymentState: "upcoming" })).resolves.toEqual([]);
+
+		const found = await findBills(deps(), PAUSED);
+
+		expect(found.bills.map((one) => one.currentOccurrence?.state)).toEqual(["paused", "paused"]);
+		expect(found.totals.overdueCount).toBe(0);
+		await expect(billHistory(deps(), late.id)).resolves.toMatchObject({
+			open: [{ dueOn: "2026-09-10", state: "paused" }],
+		});
+	});
+
 	it("reads a paid occurrence when no open one follows, and a series without occurrences in no state", async () => {
 		const accountId = await openAccount();
 		const once = await bill(accountId, "Unique", "2026-09-19");

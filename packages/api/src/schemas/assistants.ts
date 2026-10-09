@@ -1012,7 +1012,7 @@ export const getBillsInput = z.strictObject({
 		.enum(BILL_PAYMENT_STATES)
 		.optional()
 		.describe(
-			"The current occurrence's state: overdue, due (within three days of its date), upcoming, partial (partly paid) or paid.",
+			"The current occurrence's state: overdue, due (within three days of its date), upcoming, partial (partly paid) or paid. Nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue, due or upcoming.",
 		),
 	bill_type: z
 		.enum(BILL_TYPES)
