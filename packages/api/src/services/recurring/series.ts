@@ -543,7 +543,7 @@ export async function toRecords(
 ): Promise<RecurringRecord[]> {
 	const ids = rows.map((row) => row.id);
 	const rules = await rulesBySeries(db, ids);
-	const occurrences = await currentOccurrences(db, ids, day);
+	const occurrences = await currentOccurrences(db, rows, day);
 
 	return rows.map((row) => {
 		// Sure's implicit rule, for a series that would have none.

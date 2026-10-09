@@ -902,6 +902,11 @@ describe("billsOverview", () => {
 		const overview = await billsOverview(deps());
 
 		expect(shown(overview.inactive)).toEqual(["Électricité 2026-10-01"]);
+		// Five days late, but nobody pays a paused bill: Sure's #3971.
+		expect(overview.inactive[0]).toMatchObject({ state: "paused", days: -5 });
+		await expect(
+			occurrenceDetail(deps(), overview.inactive[0]!.occurrenceId),
+		).resolves.toMatchObject({ occurrence: { state: "paused" } });
 		expect(overview.attention).toEqual([]);
 		expect(shown(overview.month)).toEqual(["Hébergement 2026-10-10"]);
 		expect(overview.month[0]).toMatchObject({ currency: "USD", remaining: 2000 });
@@ -1188,6 +1193,40 @@ describe("allBills", () => {
 		await expect(filtered("paid")).resolves.toEqual(["Assurance"]);
 		await expect(filtered("paused")).resolves.toEqual(["Assurance"]);
 		await expect(filtered("ended")).resolves.toEqual(["Ancien"]);
+	});
+
+	it("files a paused bill under neither overdue nor due, reading it paused, and overdue again once resumed", async () => {
+		const accountId = await account();
+		const late = await declareBill(
+			deps(),
+			bill(accountId, { name: "Gaz", firstDueOn: "2026-09-28" }),
+		);
+		const near = await declareBill(
+			deps(),
+			// Within its grace days: past, so pausing keeps it.
+			bill(accountId, { name: "Box", firstDueOn: "2026-10-04" }),
+		);
+		await setRecurringStatus(deps(), late.id, "inactive");
+		await setRecurringStatus(deps(), near.id, "inactive");
+
+		await expect(allBills(deps(), query({ status: "overdue" }))).resolves.toMatchObject({
+			bills: [],
+		});
+		await expect(allBills(deps(), query({ status: "due" }))).resolves.toMatchObject({
+			bills: [],
+		});
+		const { bills } = await allBills(deps(), query({ status: "paused" }));
+		expect(bills.map((row) => [row.name, row.currentOccurrence?.state])).toEqual([
+			["Gaz", "paused"],
+			["Box", "paused"],
+		]);
+		expect(bills[0]?.currentOccurrence?.daysLate).toBeNull();
+
+		await setRecurringStatus(deps(), late.id, "active");
+
+		await expect(allBills(deps(), query({ status: "overdue" }))).resolves.toMatchObject({
+			bills: [{ name: "Gaz", currentOccurrence: { state: "overdue", daysLate: 8 } }],
+		});
 	});
 
 	it("searches the name, the merchant's name and the label, whatever their case", async () => {

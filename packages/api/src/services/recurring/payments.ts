@@ -1,6 +1,6 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchDecision } from "../../domain/recurring/matcher.ts";
-import type { DerivedState } from "../../domain/recurring/occurrences.ts";
+import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { AddPaymentInput, OccurrencePatch } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
@@ -31,6 +31,7 @@ import {
 	effectiveDueOn,
 	isCloseWorthy,
 	learnedTolerance,
+	occurrenceState,
 	remainingOf,
 	resolvedExpected,
 } from "../../domain/recurring/occurrences.ts";
@@ -607,7 +608,7 @@ export type RecordedOccurrence = {
 	dueOn: IsoDate;
 	effectiveDueOn: IsoDate;
 	status: OccurrenceStatus;
-	state: DerivedState;
+	state: OccurrenceState;
 	/** Positive magnitudes in `currency`. */
 	expected: MinorUnits;
 	paid: MinorUnits;
@@ -643,7 +644,7 @@ export async function recordBillPayment(
 	return deps.db.transaction(
 		async (tx) => {
 			const series = await tx
-				.select({ id: recurringTransactions.id })
+				.select({ status: recurringTransactions.status })
 				.from(recurringTransactions)
 				.where(eq(recurringTransactions.id, seriesId))
 				.get();
@@ -709,7 +710,7 @@ export async function recordBillPayment(
 				dueOn: open.dueOn,
 				effectiveDueOn: effectiveDueOn(open),
 				status: after.status,
-				state: derivedState({ ...open, status: after.status }, day),
+				state: occurrenceState({ ...open, status: after.status }, series.status, day),
 				expected: after.expected,
 				paid: toMinorUnits(confirmed.reduce((total, amount) => total + amount, 0)),
 				remaining: remainingOf(after.expected, confirmed),

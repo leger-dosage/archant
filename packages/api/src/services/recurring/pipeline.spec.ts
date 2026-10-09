@@ -203,6 +203,25 @@ describe("runRecurring without history, as an import or a sync", () => {
 		);
 	});
 
+	it("still pays a paused series' late occurrence, its window open to today, as Sure's #3971", async () => {
+		setToday("2026-08-10");
+		const accountId = await openAccount();
+		const [first = ""] = await addRows(accountId, [{ date: "2026-07-05", amount: -57_129 }]);
+		const [late = ""] = await addRows(accountId, [{ date: "2026-08-10", amount: -57_136 }]);
+		await withMerchant([first, late]);
+		const series = await declareMortgage(accountId, { entryId: first });
+		await setRecurringStatus(deps(), series.id, "inactive");
+
+		await runRecurring(deps(), { backfill: false });
+
+		await expect(payments()).resolves.toEqual([
+			expect.objectContaining({ entryId: late, state: "confirmed", confidence: 8665 }),
+		]);
+		await expect(occurrencesOf(series.id)).resolves.toEqual([
+			expect.objectContaining({ dueOn: "2026-08-05", status: "paid" }),
+		]);
+	});
+
 	it("only suggests a pending payment, and never writes one in history", async () => {
 		const accountId = await openAccount();
 		const series = await declareMortgage(accountId, { firstDueOn: "2026-10-05" });

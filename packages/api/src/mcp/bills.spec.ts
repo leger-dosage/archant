@@ -479,6 +479,40 @@ describe("get_bills", () => {
 		]);
 	});
 
+	it("never calls a paused bill overdue, due or upcoming, and reads its leftover paused", async () => {
+		const accountId = await household();
+		setToday(TODAY);
+		const late = await declare(accountId, "Gaz", "60,00", "2026-09-10");
+		await setRecurringStatus(deps(), late.id, "inactive");
+		const tools = await assistants();
+		const read = async (args: unknown) =>
+			bills.parse((await tools.read("get_bills", args)).structuredContent);
+
+		await oneByOne(["overdue", "due", "upcoming"], (state) =>
+			expect(read({ status: "paused", payment_state: state })).resolves.toMatchObject({
+				bills: [],
+				totals: { overdue_count: 0 },
+			}),
+		);
+
+		await expect(read({ status: "paused" })).resolves.toMatchObject({
+			bills: [{ name: "Gaz", status: "paused", current_occurrence: { state: "paused" } }],
+			totals: { overdue_count: 0 },
+		});
+		await expect(
+			tools
+				.read("get_bill_details", { bill_id: late.id })
+				.then((result) => details.parse(result.structuredContent)),
+		).resolves.toMatchObject({ open_occurrences: [{ due_on: "2026-09-10", state: "paused" }] });
+
+		const paid = recorded.parse(
+			(await tools.write("record_bill_payment", { bill_id: late.id, amount: "10.00" }))
+				.structuredContent,
+		);
+
+		expect(paid.occurrence).toMatchObject({ status: "scheduled", state: "paused" });
+	});
+
 	it("refuses a range outside 1 to 365 days, and records it", async () => {
 		await household();
 		const tools = await assistants();

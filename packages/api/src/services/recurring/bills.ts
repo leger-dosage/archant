@@ -1,6 +1,6 @@
 import type { IsoDate, IsoMonth } from "../../domain/dates.ts";
 import type { SeriesKey } from "../../domain/recurring/identifier.ts";
-import type { DerivedState } from "../../domain/recurring/occurrences.ts";
+import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type {
 	AllBillsQuery,
 	BillKind,
@@ -55,8 +55,8 @@ import {
 } from "../../domain/recurring/identifier.ts";
 import {
 	changePercent,
-	derivedState,
 	effectiveDueOn,
+	occurrenceState,
 	remainingOf,
 	resolvedExpected,
 	roundHalfUp,
@@ -611,7 +611,7 @@ type BillRow = {
 	snoozedUntil: IsoDate | null;
 	/** The effective due date less today in `APP_TIMEZONE`, negative once past. */
 	days: number;
-	state: DerivedState;
+	state: OccurrenceState;
 	/** Positive magnitudes in `currency`. */
 	expected: MinorUnits;
 	confirmed: MinorUnits;
@@ -773,7 +773,7 @@ export async function loadBills(
 				name: seriesName ?? row.merchantName ?? label,
 				effectiveDueOn: effective,
 				days: daysBetween(day, effective),
-				state: derivedState(row, day),
+				state: occurrenceState(row, row.seriesStatus, day),
 				expected,
 				confirmed: toMinorUnits(confirmed.reduce((total, amount) => total + amount, 0)),
 				remaining: remainingOf(expected, confirmed),

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-09-2026 09:30
+last_updated: 10-09-2026 12:00
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -234,7 +234,7 @@ development_status:
 
   epic-27: in-progress
   27-1-confirm-the-transfers-the-matcher-proposes: done
-  27-2-a-paused-bill-is-never-overdue: backlog
+  27-2-a-paused-bill-is-never-overdue: done
   27-3-bill-totals-order-and-amounts-as-sure-shows-them: backlog
   27-4-a-recurring-series-is-never-deleted-by-detection: backlog
   27-5-a-purchases-fee-in-its-cost-basis: backlog

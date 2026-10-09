@@ -11,6 +11,7 @@ import {
 	horizonOf,
 	isCloseWorthy,
 	learnedTolerance,
+	occurrenceState,
 	priceChangeOf,
 	remainingOf,
 	resolvedExpected,
@@ -67,6 +68,31 @@ describe("derivedState", () => {
 		expect(derivedState({ ...open("2026-10-05"), status: "skipped" }, "2026-12-01")).toBe(
 			"skipped",
 		);
+	});
+});
+
+describe("occurrenceState", () => {
+	it("is the schedule state for an active series", () => {
+		expect(occurrenceState(open("2026-10-05"), "active", "2026-10-09")).toBe("overdue");
+		expect(occurrenceState(open("2026-10-05"), "active", "2026-10-02")).toBe("due");
+		expect(occurrenceState(open("2026-10-05"), "active", "2026-10-01")).toBe("upcoming");
+	});
+
+	it("is the series' status for an open occurrence of any other, as Sure's display_status", () => {
+		for (const today of ["2026-10-01", "2026-10-02", "2026-10-15"]) {
+			expect(occurrenceState(open("2026-10-05"), "inactive", today)).toBe("paused");
+			expect(occurrenceState(open("2026-10-05"), "ended", today)).toBe("ended");
+			expect(occurrenceState(open("2026-10-05"), "suggested", today)).toBe("suggested");
+		}
+	});
+
+	it("reads a closed occurrence's status whatever the series'", () => {
+		expect(
+			occurrenceState({ ...open("2026-10-05"), status: "paid" }, "inactive", "2026-12-01"),
+		).toBe("paid");
+		expect(
+			occurrenceState({ ...open("2026-10-05"), status: "missed" }, "ended", "2026-12-01"),
+		).toBe("missed");
 	});
 });
 

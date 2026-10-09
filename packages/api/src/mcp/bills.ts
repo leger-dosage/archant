@@ -62,11 +62,14 @@ const magnitude = (what: string) =>
 const positive = (amount: MinorUnits, currency: string) =>
 	toDecimalString({ amount: toMinorUnits(Math.abs(amount)), currency });
 
-const DERIVED_STATES = [
+const OCCURRENCE_STATES = [
 	"upcoming",
 	"due",
 	"overdue",
 	...OCCURRENCE_STATUSES.filter((status) => status !== "scheduled"),
+	"paused",
+	"ended",
+	"suggested",
 ] as const;
 
 const billOutput = z.object({
@@ -102,9 +105,9 @@ const occurrenceFields = {
 	due_on: z.string(),
 	effective_due_on: z.string().describe("The due date, or a later one the owner postponed it to."),
 	state: z
-		.enum(DERIVED_STATES)
+		.enum(OCCURRENCE_STATES)
 		.describe(
-			"upcoming, due (from three days before), overdue (three days after), or once closed paid, skipped or missed.",
+			"upcoming, due (from three days before), overdue (three days after), or once closed paid, skipped or missed. Nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue, due or upcoming: its state reads the bill's status instead: paused, ended or suggested.",
 		),
 	expected: magnitude("What it expects"),
 	paid: magnitude("What its confirmed payments sum to"),

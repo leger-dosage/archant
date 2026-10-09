@@ -1,5 +1,5 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type { DerivedState } from "../../domain/recurring/occurrences.ts";
+import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
 import type { LoadedSeries } from "./rules.ts";
@@ -14,15 +14,16 @@ import {
 	recurringMatchRejections,
 	recurringOccurrences,
 } from "@archant/data/schema/recurring-occurrences";
+import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 import { settings } from "@archant/data/schema/settings";
 
 import { addMonths, daysBetween, maxDate, today } from "../../domain/dates.ts";
 import { entryWindow, matchPayments, rejectionKey } from "../../domain/recurring/matcher.ts";
 import {
 	BACKFILL_MONTHS,
-	derivedState,
 	effectiveDueOn,
 	horizonOf,
+	occurrenceState,
 } from "../../domain/recurring/occurrences.ts";
 import { cycleFor, occurrencesBetween } from "../../domain/recurring/schedule.ts";
 import { matchableTransactions } from "../ledger/recurring.ts";
@@ -266,20 +267,21 @@ export type CurrentOccurrence = {
 	/** The due date, or a later snooze. */
 	effectiveDueOn: IsoDate;
 	status: OccurrenceStatus;
-	state: DerivedState;
+	state: OccurrenceState;
 	/** Days past the effective due date in `APP_TIMEZONE` once overdue, else `null`. */
 	daysLate: number | null;
 };
 
 /**
- * Each series' earliest open occurrence, else its latest, for `ids`. A
+ * Each series' earliest open occurrence, else its latest, for `series`. A
  * series with none is left out.
  */
 export async function currentOccurrences(
 	db: Pick<Transaction, "select">,
-	ids: readonly string[],
+	series: readonly { id: string; status: RecurringStatus }[],
 	day: IsoDate,
 ): Promise<Map<string, CurrentOccurrence>> {
+	const statuses = new Map(series.map((one) => [one.id, one.status]));
 	const rows: {
 		id: string;
 		seriesId: string;
@@ -288,7 +290,7 @@ export async function currentOccurrences(
 		status: OccurrenceStatus;
 	}[] = [];
 
-	await inSequence(ids, KEYS_PER_LOOKUP, async (chunk) => {
+	await inSequence([...statuses.keys()], KEYS_PER_LOOKUP, async (chunk) => {
 		rows.push(
 			...(await db
 				.select({
@@ -308,7 +310,7 @@ export async function currentOccurrences(
 
 	for (const row of rows) {
 		const held = found.get(row.seriesId);
-		const state = derivedState(row, day);
+		const state = occurrenceState(row, statuses.get(row.seriesId)!, day);
 		const current: CurrentOccurrence = {
 			id: row.id,
 			dueOn: row.dueOn,
