@@ -21,6 +21,7 @@ import { AllBills } from "@/components/AllBills";
 import { useBillActions } from "@/components/BillActions";
 import { BillDialog } from "@/components/BillDialog";
 import {
+	AmountRange,
 	MatchReasons,
 	PartialLabel,
 	confidenceText,
@@ -87,10 +88,29 @@ function rowAmount(row: BillRowData) {
 	return isPartial(row) ? row.remaining : row.expected;
 }
 
+/** The series' band when the row shows its expected amount and that amount is an estimate. */
+const estimateOf = (row: BillRowData) =>
+	row.state === "paid" || isPartial(row) ? null : row.amountRange;
+
+/** `rowAmount`, with Sure's « ~ » before an estimate. */
+function RowAmount({ row, className = "" }: { row: BillRowData; className?: string }) {
+	const money = <Money amount={rowAmount(row)} currency={row.currency} className={className} />;
+
+	return estimateOf(row) === null ? (
+		money
+	) : (
+		<span className="whitespace-nowrap">
+			<span className={cn("font-medium", className)}>~</span>
+			{money}
+		</span>
+	);
+}
+
 /** One occurrence, a link that opens its sheet. */
 function BillRow({ row }: { row: BillRowData }) {
 	const { t } = useTranslation();
 	const paid = row.state === "paid";
+	const range = estimateOf(row);
 
 	return (
 		<li>
@@ -121,7 +141,13 @@ function BillRow({ row }: { row: BillRowData }) {
 				<span className="flex shrink-0 items-center gap-2">
 					{row.state === "due" && <StatusBadge status="billDueSoon" />}
 					{paid && <StatusBadge status="billPaid" />}
-					<Money amount={rowAmount(row)} currency={row.currency} />
+					<span className="flex flex-col items-end">
+						<RowAmount row={row} />
+						{/* Sure shows the band only from `@lg`: on a phone it squeezes the name, and the drawer has it. */}
+						{range !== null && (
+							<AmountRange range={range} currency={row.currency} className="hidden @lg:block" />
+						)}
+					</span>
 				</span>
 			</Link>
 		</li>
@@ -138,7 +164,7 @@ function BillSection({ title, rows }: { title: string; rows: readonly BillRowDat
 		<InsetGroup level={2} title={title} count={rows.length}>
 			<ul
 				aria-label={title}
-				className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card"
+				className="@container flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card"
 			>
 				{rows.map((row) => (
 					<BillRow key={row.occurrenceId} row={row} />
@@ -196,7 +222,7 @@ function Totals({ bills }: { bills: BillsData }) {
 								>
 									<span className="truncate text-xs text-muted-foreground">{nextDate(row, t)}</span>
 									<span className="truncate text-sm">{row.name}</span>
-									<Money amount={rowAmount(row)} currency={row.currency} className="text-sm" />
+									<RowAmount row={row} className="text-sm" />
 								</Link>
 							</li>
 						))}

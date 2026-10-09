@@ -169,6 +169,24 @@ describe("findBills", () => {
 			totals: { activeCount: 0, activeMonthly: 0, leftOut: [] },
 		});
 	});
+
+	it("sums the active bills' monthly equivalents unrounded, then rounds once", async () => {
+		const accountId = await openAccount();
+		const weekly = async (name: string, amount: string) => {
+			const created = await bill(accountId, name, "2026-09-28", amount);
+			await editBill(deps(), created.id, { frequency: { preset: "weekly", weekday: "1" } });
+		};
+		await weekly("Panier", "10,00");
+		await weekly("Pain", "5,01");
+
+		// 43,482… + 21,784… = 65,266…: 65,27 €, where 43,48 + 21,78 would read 65,26 €.
+		const found = await findBills(deps(), ACTIVE);
+
+		expect(found.bills.map((one) => one.monthlyEquivalent).toSorted((a, b) => a - b)).toEqual([
+			2178, 4348,
+		]);
+		expect(found.totals.activeMonthly).toBe(6527);
+	});
 });
 
 describe("billHistory", () => {

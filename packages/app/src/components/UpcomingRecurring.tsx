@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { EmptyNote } from "@/components/EmptyState";
 import { InsetGroup } from "@/components/InsetGroup";
-import { RecurringAmount } from "@/components/RecurringSuggestions";
+import { Money } from "@/components/Money";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,8 +25,9 @@ function byDate(items: readonly UpcomingData[]): [string, UpcomingData[]][] {
 
 /**
  * Sure's `transactions/_upcoming`: the active series expected within ten
- * days, grouped by date, each with when it is expected and its signed amount
- * or band. Nothing to act on, for an administrator as for a viewer.
+ * days, grouped by date, each with when it is expected and the one signed
+ * amount `_projected_transaction` shows. Nothing to act on, for an
+ * administrator as for a viewer.
  */
 export function UpcomingRecurring() {
 	const { t } = useTranslation();
@@ -76,7 +77,7 @@ export function UpcomingRecurring() {
 												: t("operations.upcoming.inDays", { count: days })}
 										</span>
 									</span>
-									<RecurringAmount item={item} />
+									<Money amount={item.projectedAmount} currency={item.currency} signed />
 								</li>
 							);
 						})}

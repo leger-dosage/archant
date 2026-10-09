@@ -187,7 +187,7 @@ test("« Ajouter la facture » lists a suggestion with its type, frequency, amou
 	expect(at(early) < at(late)).toBe(earlyNext < lateNext);
 });
 
-test("an amount that moves by a few cents reads as the range it varies within", async ({
+test("an amount that moves by a few cents reads as its range in the suggestion, and as its amount once followed", async ({
 	page,
 	api,
 }) => {
@@ -203,7 +203,9 @@ test("an amount that moves by a few cents reads as the range it varies within", 
 	await addSuggestion(page, label);
 	await visit(page);
 
-	await expect(row(page, label)).toContainText(range);
+	// Sure's `all.html.erb` shows the latest amount; the band stays for the drawer.
+	await expect(row(page, label)).toContainText(euros(-57_122));
+	await expect(row(page, label)).not.toContainText("varie de");
 });
 
 test("« Ce n'est pas une facture » removes a suggestion for good", async ({ page, api }) => {

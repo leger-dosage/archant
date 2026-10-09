@@ -197,3 +197,25 @@ export function PriceChangeAmounts({
 		</span>
 	);
 }
+
+/** Sure's `bills.amount_range` below an estimate: « varie de 50,00 € à 53,00 € ». */
+export function AmountRange({
+	range,
+	currency,
+	className,
+}: {
+	range: { min: MinorUnits; max: MinorUnits };
+	currency: string;
+	className?: string;
+}) {
+	const { t } = useTranslation();
+
+	return (
+		<span className={cn("text-xs text-muted-foreground tabular-nums", className)}>
+			{t("recurring.amountRange", {
+				min: formatMoney({ amount: range.min, currency }),
+				max: formatMoney({ amount: range.max, currency }),
+			})}
+		</span>
+	);
+}

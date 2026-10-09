@@ -10,6 +10,7 @@ import {
 	firstOccurrenceAfter,
 	matchesDay,
 	monthlyEquivalent,
+	monthlyRollup,
 	monthlyOn,
 	nextExpectedAfter,
 	nextOccurrenceAfter,
@@ -226,6 +227,29 @@ describe("monthlyEquivalent", () => {
 		// 0,06 € a year is half a cent a month.
 		expect(monthlyEquivalent([yearly(1, 1)], euros(6))).toBe(1);
 		expect(monthlyEquivalent([yearly(1, 1)], euros(5))).toBe(0);
+	});
+});
+
+describe("monthlyRollup", () => {
+	it("rounds a weekly bill's month and year once each", () => {
+		// 10 × 1461 / 336 = 43,482… a month, 521,785… a year.
+		expect(monthlyRollup([{ rules: [weekly(MONDAY)], amount: euros(-1000) }])).toEqual({
+			monthly: 4348,
+			annual: 52_179,
+		});
+	});
+
+	it("sums the series unrounded before rounding", () => {
+		expect(
+			monthlyRollup([
+				{ rules: [weekly(MONDAY)], amount: euros(-1000) },
+				{ rules: [monthly(5)], amount: euros(-999) },
+			]),
+		).toEqual({ monthly: 5347, annual: 64_167 });
+	});
+
+	it("is zero without a series", () => {
+		expect(monthlyRollup([])).toEqual({ monthly: 0, annual: 0 });
 	});
 });
 

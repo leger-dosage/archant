@@ -585,14 +585,26 @@ test("the type « Abonnement » adds what the active ones cost a month and a yea
 	const hosting = await declare(api, dollars.id, `${prefix} Hébergement`, "5,00", -3);
 	await api.editBill(hosting, { billType: "subscription" });
 	await repriced(api, account.id, netflix, "13,49", "15,99");
+	const basket = await api.declareBill({
+		name: `${prefix} Panier`,
+		amount: "10,00",
+		accountId: account.id,
+		firstDueOn: daysAgo(-3),
+		frequency: { preset: "weekly" },
+	});
+	await api.editBill(basket, { billType: "subscription" });
 
 	await visitAll(page, prefix, "&type=subscription");
 
 	const rollup = page.getByRole("region", { name: "Abonnements" });
-	// 9,99 € and 13,49 €, Netflix's stated amount; the dollars left out and named.
-	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText(euros(2348));
-	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText(euros(28_176));
-	await expect(rollup.getByRole("group", { name: "Actifs" })).toContainText("3");
+	// 9,99 €, 13,49 €, Netflix's stated amount, and 10 € a week, 43,482… € a
+	// month: summed unrounded, then rounded once a month and once a year, as
+	// Sure's rollup, where 12 × 66,96 € would read 803,52 €. The dollars are
+	// left out and named.
+	await expect(allRow(page, `${prefix} Panier`)).toContainText(`${euros(4348)}/mois`);
+	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText(euros(6696));
+	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText(euros(80_355));
+	await expect(rollup.getByRole("group", { name: "Actifs" })).toContainText("4");
 	await expect(rollup).toContainText(`${prefix} Hébergement`);
 	const changes = page.getByRole("list", { name: "Changements de prix cette année" });
 	const line = changes.getByRole("listitem").filter({ hasText: netflix });
@@ -602,6 +614,76 @@ test("the type « Abonnement » adds what the active ones cost a month and a yea
 	await visitAll(page, `${prefix} rien`, "&type=subscription");
 	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText("–");
 	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText("–");
+});
+
+/** `iso` moved by `months` calendar months, on `day` of that month. */
+function onDay(iso: string, months: number, day: number): string {
+	const date = new Date(Date.parse(`${iso.slice(0, 7)}-01T00:00:00Z`));
+	date.setUTCMonth(date.getUTCMonth() + months);
+	date.setUTCDate(day);
+
+	return date.toISOString().slice(0, 10);
+}
+
+/**
+ * A bill detection found in three monthly rows of `amounts`, oldest first,
+ * on `day` of the three latest months that have had it, then followed: its
+ * amounts spread, so it carries Sure's band.
+ */
+async function movingBill(
+	api: Api,
+	accountId: string,
+	label: string,
+	amounts: string[],
+	day: number,
+) {
+	const today = daysAgo(0);
+	const latest = onDay(today, Number(today.slice(8, 10)) >= day ? 0 : -1, day);
+	const entries = await Promise.all(
+		[onDay(latest, -2, day), onDay(latest, -1, day), latest].map((date, index) =>
+			api.addTransaction(accountId, { date, label, amount: amounts[index]! }),
+		),
+	);
+	await api.detectRecurring();
+
+	return api.addRecurring(entries[2]!);
+}
+
+test("a moving bill reads one amount in the table, « ~ » on its line with its band from a wide list, and its band in the drawer", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Électricité variable");
+	const id = await movingBill(api, account.id, name, ["-50,00", "-53,00", "-52,00"], 5);
+	const band = `varie de ${euros(5000)} à ${euros(5300)}`;
+
+	await visitAll(page, name);
+	// Sure's `all.html.erb`: the latest amount, never the band.
+	await expect(allRow(page, name)).toContainText(euros(-5200));
+	await expect(allRow(page, name)).not.toContainText("varie de");
+
+	// Its history is paid by its rows, one of them perhaps this month: the open one.
+	const open = page
+		.locator('[data-slot="inset-group"]')
+		.getByRole("link")
+		.filter({ hasText: name })
+		.filter({ hasNot: page.locator('[data-status="billPaid"]') })
+		.first();
+	await visit(page);
+	await expect(open).toContainText(`~${euros(5200)}`);
+	await expect(open.getByText(band)).toBeVisible();
+
+	// Below Sure's `@lg` container width, the line keeps « ~ » and drops the band.
+	await page.setViewportSize({ width: 375, height: 800 });
+	await expect(open).toContainText(`~${euros(5200)}`);
+	await expect(open.getByText(band)).toBeHidden();
+
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.goto(`/bills/${id}`);
+	await expect(
+		page.getByRole("dialog", { name }).getByRole("region", { name: "Prochain paiement" }),
+	).toContainText(band);
 });
 
 test("a bill opens as a drawer with its next payment, average, twelve months, price changes and link; closing keeps the search", async ({
