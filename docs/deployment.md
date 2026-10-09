@@ -280,7 +280,9 @@ export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pe
 1. Open « Réglages » › « Banques », at `/settings/banks`.
 2. Pick the « Pays », press « Choisir une banque », then choose the bank in the dialog, where « Rechercher une banque » filters by name or BIC.
 3. Give your consent on the bank's site, or on the sandbox bank's page. The browser comes back to « Connexion à votre banque », then to the connection's page.
-4. For each account under « Comptes de la banque », choose « Nouveau : … » to create an Archant account, an existing account under « Associer à » to let the bank take over its balance, or « Ignorer ». Press « Valider »: the linked accounts sync at once.
+4. For each account under « Comptes de la banque », choose « Nouveau : … » to create an Archant account, an existing account under « Associer à » to let the bank take over its balance, or « Ignorer ».
+5. Under « Commencez à synchroniser les transactions à partir de », pick the date the first sync reads from: three months ago by default, two years ago at the earliest. Choose it now, because it is the only way to get more than three months of history from the bank: every later sync starts from the one before, and the date no longer changes an account that has synced. The field shows while an account is left to link.
+6. Press « Valider »: the linked accounts sync at once.
 
 The connection's page, reached from « Banques connectées », shows the last sync and its error, and holds « Synchroniser », « Renouveler le consentement » and « Déconnecter ». Disconnecting turns the linked accounts into manual ones and keeps their transactions.
 

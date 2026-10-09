@@ -12,17 +12,25 @@ For one household that is the wrong shape. Archant keeps the domain modelling, w
 
 ## Scope
 
-Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. The ten epics of `_bmad-output/planning-artifacts/epics.md` have shipped:
+Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. The 26 epics of `_bmad-output/planning-artifacts/epics.md` have shipped:
 
-- Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment (valued by snapshots, trades and holdings at daily prices), property and vehicle accounts
+- Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment, property and vehicle accounts
+- Loans with their terms, an amortisation schedule, an overview of what is repaid, and where the recorded balance is heading against the contract
+- Investments: securities, trades, dividends and interest, and holdings with their average cost and gain, valued from daily prices the owner allows Archant to fetch
 - Transaction import from CSV, QIF and OFX files, with preview, deduplication and revert
-- First-launch setup, sign-in, and a single container for deployment
+- First-launch setup, sign-in with optional two-factor, and a single container for deployment
+- Members invited by a link, as administrators or read-only viewers, whose writes the server refuses
 - Categories, merchants, tags and bulk edit
+- Split transactions and receipts attached to a transaction
 - Internal transfers, matched by hand or automatically
 - A dashboard with net worth over time and monthly income and expenses by category
 - A rules engine on Sure's rule model
-- Recurring transaction detection and a page listing them
-- Enable Banking synchronisation: consent, account linking, scheduled sync, pending transactions, renewal, disconnection and duplicate merging
+- Monthly budgets by category, with copy, money moved between categories and carry-over
+- Savings goals and reserves funded by account balances
+- Bills: recurring payments detected or declared by hand, with schedules and due dates settled by the payments that match them
+- An export of every figure in Sure's export format
+- An AI assistant over MCP that reads the household's finances and, with the owner's consent, corrects and classifies them
+- Enable Banking synchronisation: consent, account linking, a first sync reaching up to two years back, scheduled sync, pending transactions, renewal, disconnection and duplicate merging
 
 One running instance is one household. Amounts are in euros, but every amount carries its currency code.
 

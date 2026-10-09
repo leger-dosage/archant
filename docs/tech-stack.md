@@ -1,20 +1,21 @@
 # Tech stack
 
-Versions verified on 24 September 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
+Versions verified on 8 October 2026. The rationale behind each choice is in [adr/0001-technology-stack.md](adr/0001-technology-stack.md); this page is the inventory.
 
 The three packages exist since Story 1.1. A dependency is installed by the first feature that needs it, and one that no feature needs leaves the list.
 
 ## Toolchain
 
-| Tool           | Version | Note                                     |
-| -------------- | ------- | ---------------------------------------- |
-| Node.js        | 24      | Pinned in CI, not in `engines`           |
-| pnpm           | 10.34.5 | Pinned by `packageManager`               |
-| TypeScript     | 7.0.2   | Native Go compiler                       |
-| `@types/node`  | 24.x    | Follows the Node.js major, not `latest`  |
-| Oxlint         | 1.85.x  | Type-aware linting via `oxlint-tsgolint` |
-| `@shadcn/lint` | 0.2.x   | Design-system plugin loaded by Oxlint    |
-| Oxfmt          | 0.70.x  | Formatting and import sorting, tabs only |
+| Tool           | Version | Note                                                                                  |
+| -------------- | ------- | ------------------------------------------------------------------------------------- |
+| Node.js        | 24      | `.node-version` for CI, `engines.node` `>=24`, enforced at install by `engine-strict` |
+| pnpm           | 10.34.5 | Pinned by `packageManager`                                                            |
+| TypeScript     | 7.0.2   | Native Go compiler                                                                    |
+| `@types/node`  | 24.x    | Follows the Node.js major, not `latest`                                               |
+| Oxlint         | 1.85.x  | Type-aware linting via `oxlint-tsgolint`                                              |
+| `@shadcn/lint` | 0.2.x   | Design-system plugin loaded by Oxlint                                                 |
+| Oxfmt          | 0.70.x  | Formatting and import sorting, tabs only                                              |
+| Knip           | 6.39.x  | Fails `pnpm lint:code` on an unused file, export or dependency                        |
 
 ### Why Oxlint rather than ESLint
 
@@ -40,52 +41,59 @@ It is younger than the rest of the stack, announced as beta in February 2026 eve
 
 ## Interface — `@archant/app`
 
-| Package                                                         | Version               | Role                                                    |
-| --------------------------------------------------------------- | --------------------- | ------------------------------------------------------- |
-| `vite`                                                          | 8.3.x                 | Dev server, `/api` proxy and build, Rolldown            |
-| `@vitejs/plugin-react`                                          | 6.1.x                 | JSX and fast refresh                                    |
-| `react` / `react-dom`                                           | 19.3.0                | Rendering                                               |
-| `@tanstack/react-router`                                        | 1.170.x               | Typed routing                                           |
-| `@tanstack/router-plugin`                                       | 1.168.x               | File routes, generates `src/routeTree.gen.ts`           |
-| `@tanstack/react-query`                                         | 5.103.x               | Server state                                            |
-| `hono` (client)                                                 | 4.13.x                | Typed API client `hc<AppType>("/api")`                  |
-| `better-auth` (client)                                          | 1.7.6                 | Sign-in, sign-out and session from `lib/auth-client.ts` |
-| `zod`                                                           | 4.6.x                 | Runs the API's request schemas in forms                 |
-| `react-hook-form` / `@hookform/resolvers`                       | 7.88.x / 5.9.x        | Forms, validated by the shared Zod schema               |
-| `i18next` / `react-i18next`                                     | 26.4.x / 17.0.x       | French strings from `locales/fr.json`                   |
-| `tailwindcss` / `@tailwindcss/vite`                             | 4.3.x                 | Styling and the DESIGN.md tokens                        |
-| `shadcn` (CLI, and its `tailwind.css`)                          | 4.21.x                | Copies components into `src/components/ui/`             |
-| `radix-ui`                                                      | 1.6.x                 | Primitives behind the shadcn components                 |
-| `class-variance-authority` / `cn` / `tw-animate-css`            | 0.7.x / 0.4.x / 1.4.x | shadcn component variants, class merging, animations    |
-| `cmdk`                                                          | 1.1.x                 | Searchable pickers, through `ui/command.tsx`            |
-| `recharts` / `react-is`                                         | 3.10.1 / 19.3.x       | Balance chart; `react-is` is the peer recharts needs    |
-| `lucide-react`                                                  | 1.48.x                | Icons                                                   |
-| `sonner`                                                        | 2.0.x                 | Toasts                                                  |
-| `react-day-picker`                                              | 10.0.x                | French calendar in date fields                          |
-| `@fontsource-variable/inter`, `@fontsource-variable/geist-mono` | 5.3.x                 | Inter for text, Geist Mono for code, self-hosted        |
-| `@types/react` / `@types/react-dom`                             | 19.3.x                | React types                                             |
-| `vitest`                                                        | 5.0.x                 | Unit tests                                              |
-| `@playwright/test`                                              | 1.63.x                | End-to-end tests in `e2e/`                              |
+| Package                                                         | Version               | Role                                                       |
+| --------------------------------------------------------------- | --------------------- | ---------------------------------------------------------- |
+| `vite`                                                          | 8.3.x                 | Dev server, `/api` proxy and build, Rolldown               |
+| `@vitejs/plugin-react`                                          | 6.1.x                 | JSX and fast refresh                                       |
+| `react` / `react-dom`                                           | 19.3.0                | Rendering                                                  |
+| `@tanstack/react-router`                                        | 1.170.x               | Typed routing                                              |
+| `@tanstack/router-plugin`                                       | 1.168.x               | File routes, generates `src/routeTree.gen.ts`              |
+| `@tanstack/react-query`                                         | 5.103.x               | Server state                                               |
+| `hono` (client)                                                 | 4.13.x                | Typed API client `hc<AppType>("/api")`                     |
+| `better-auth` (client)                                          | 1.7.7                 | Sign-in, sign-out and session from `lib/auth-client.ts`    |
+| `zod`                                                           | 4.6.x                 | Runs the API's request schemas in forms                    |
+| `react-hook-form` / `@hookform/resolvers`                       | 7.88.x / 5.9.x        | Forms, validated by the shared Zod schema                  |
+| `i18next` / `react-i18next`                                     | 26.4.x / 17.0.x       | French strings from `locales/fr.json`                      |
+| `tailwindcss` / `@tailwindcss/vite`                             | 4.3.x                 | Styling and the DESIGN.md tokens                           |
+| `shadcn` (CLI, and its `tailwind.css`)                          | 4.21.x                | Copies components into `src/components/ui/`                |
+| `radix-ui`                                                      | 1.6.x                 | Primitives behind the shadcn components                    |
+| `class-variance-authority` / `cn` / `tw-animate-css`            | 0.7.x / 0.4.x / 1.4.x | shadcn component variants, class merging, animations       |
+| `cmdk`                                                          | 1.1.x                 | Searchable pickers, through `ui/command.tsx`               |
+| `qrcode.react`                                                  | 4.2.x                 | The QR code that sets up two-factor sign-in                |
+| `@better-auth/oauth-provider` (client)                          | 1.7.x                 | Carries an assistant's request through sign-in and consent |
+| `recharts` / `react-is`                                         | 3.10.1 / 19.3.x       | Balance chart; `react-is` is the peer recharts needs       |
+| `lucide-react`                                                  | 1.48.x                | Icons                                                      |
+| `sonner`                                                        | 2.0.x                 | Toasts                                                     |
+| `react-day-picker`                                              | 10.0.x                | French calendar in date fields                             |
+| `@fontsource-variable/inter`, `@fontsource-variable/geist-mono` | 5.3.x                 | Inter for text, Geist Mono for code, self-hosted           |
+| `@types/react` / `@types/react-dom`                             | 19.3.x                | React types                                                |
+| `vitest`                                                        | 5.0.x                 | Unit tests                                                 |
+| `@playwright/test`                                              | 1.63.x                | End-to-end tests in `e2e/`                                 |
 
 ## Server — `@archant/api`
 
-| Package                          | Version       | Role                                                          |
-| -------------------------------- | ------------- | ------------------------------------------------------------- |
-| `hono`                           | 4.13.x        | Routing and middleware                                        |
-| `@hono/node-server`              | 2.1.x         | Serves the app on Node, port 8787                             |
-| `@hono/zod-validator`            | 0.9.x         | Request validation, typed for the client                      |
-| `better-auth`                    | 1.7.6         | Sessions and accounts                                         |
-| `drizzle-orm`                    | 0.45.x        | Queries in `services/`                                        |
-| `pino`                           | 10.3.x        | The one logger, with header redaction                         |
-| `@t3-oss/env-core`               | 0.13.x        | Environment validation                                        |
-| `zod`                            | 4.6.x         | Schemas at every boundary                                     |
-| `jose`                           | 6.2.x         | Signs the JWT that authenticates to Enable Banking            |
-| `ofx-js`                         | 1.1.1         | OFX file parsing, patched in `patches/` to run in linear time |
-| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing, and the export's CSV files                  |
-| `fflate`                         | 0.8.x         | The export's ZIP, deflated entry by entry as it streams       |
-| `vitest`                         | 5.0.x         | Unit and integration tests                                    |
-| `@vitest/coverage-v8`            | 5.0.x         | Branch coverage thresholds on the money paths                 |
-| `msw`                            | 2.15.x        | Fails any test that reaches the network                       |
+| Package                          | Version       | Role                                                                                   |
+| -------------------------------- | ------------- | -------------------------------------------------------------------------------------- |
+| `hono`                           | 4.13.x        | Routing and middleware                                                                 |
+| `@hono/node-server`              | 2.1.x         | Serves the app on Node, port 8787                                                      |
+| `@hono/zod-validator`            | 0.9.x         | Request validation, typed for the client                                               |
+| `better-auth`                    | 1.7.7         | Sessions and accounts                                                                  |
+| `@better-auth/mcp`               | 1.7.x         | The OAuth server that signs an assistant in as the owner                               |
+| `@better-auth/oauth-provider`    | 1.7.x         | The challenge `/api/mcp` answers a request without a token                             |
+| `@better-auth/cimd`              | 1.7.x         | Accepts an assistant's Client ID Metadata Document, fetched only from a public address |
+| `@modelcontextprotocol/server`   | 2.2.x         | Serves the assistant tools over MCP at `/api/mcp`                                      |
+| `re2js`                          | 2.8.x         | Runs a rule's label pattern in linear time, never backtracking                         |
+| `drizzle-orm`                    | 0.45.x        | Queries in `services/`                                                                 |
+| `pino`                           | 10.3.x        | The one logger, with header redaction                                                  |
+| `@t3-oss/env-core`               | 0.13.x        | Environment validation                                                                 |
+| `zod`                            | 4.6.x         | Schemas at every boundary                                                              |
+| `jose`                           | 6.2.x         | Signs the JWT that authenticates to Enable Banking                                     |
+| `ofx-js`                         | 1.1.1         | OFX file parsing, patched in `patches/` to run in linear time                          |
+| `papaparse` / `@types/papaparse` | 5.7.0 / 5.5.x | CSV file parsing, and the export's CSV files                                           |
+| `fflate`                         | 0.8.x         | The export's ZIP, deflated entry by entry as it streams                                |
+| `vitest`                         | 5.0.x         | Unit and integration tests                                                             |
+| `@vitest/coverage-v8`            | 5.0.x         | Branch coverage thresholds on the money paths                                          |
+| `msw`                            | 2.15.x        | Fails any test that reaches the network                                                |
 
 ## Data — `@archant/data`
 
