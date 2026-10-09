@@ -73,7 +73,7 @@ describe("rekey", () => {
 		);
 
 		expect(moved.steps).toEqual([
-			{ kind: "move", id: "s1", merchantId: "netflix", labelKey: null, label: "Netflix Sept" },
+			{ id: "s1", merchantId: "netflix", labelKey: null, label: "Netflix Sept" },
 		]);
 		expect(moved.stored).toEqual([
 			series({ status: "ended", merchantId: "netflix", labelKey: null, label: "Netflix Sept" }),
@@ -92,9 +92,7 @@ describe("rekey", () => {
 				],
 				TODAY,
 			).steps,
-		).toEqual([
-			{ kind: "move", id: "s1", merchantId: null, labelKey: "netflix a", label: "netflix  a" },
-		]);
+		).toEqual([{ id: "s1", merchantId: null, labelKey: "netflix a", label: "netflix  a" }]);
 	});
 
 	it("stays while a transaction of its own key remains on its last date", () => {
@@ -146,9 +144,7 @@ describe("rekey", () => {
 		expect(rekey([series()], others, TODAY).steps).toEqual([]);
 		expect(
 			rekey([series()], [row("2026-09-05", { amount: toMinorUnits(-2798) })], TODAY).steps,
-		).toEqual([
-			{ kind: "move", id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" },
-		]);
+		).toEqual([{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }]);
 	});
 
 	it("never moves a bill declared with no payment yet onto a purchase of its due date", () => {
@@ -178,31 +174,31 @@ describe("rekey", () => {
 		).toEqual({ steps: [], stored: [declared] });
 	});
 
-	it("deletes a suggested holder of the new key and moves", () => {
+	it("keeps both series when a suggestion holds the new key", () => {
+		const moving = series({ status: "active" });
 		const holder = series({ id: "s2", merchantId: "netflix", labelKey: null, status: "suggested" });
 
-		expect(rekey([series({ status: "active" }), holder], [row("2026-09-05")], TODAY)).toEqual({
-			steps: [
-				{ kind: "delete", id: "s2" },
-				{ kind: "move", id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" },
-			],
-			stored: [
-				series({
-					status: "active",
-					merchantId: "netflix",
-					labelKey: null,
-					label: "NETFLIX.COM",
-				}),
-			],
+		expect(rekey([moving, holder], [row("2026-09-05")], TODAY)).toEqual({
+			steps: [],
+			stored: [moving, holder],
 		});
 	});
 
-	it("deletes the moving series when the holder of the new key is not suggested", () => {
+	it("keeps both series when a series the owner settled holds the new key", () => {
 		const holder = series({ id: "s2", merchantId: "netflix", labelKey: null, status: "active" });
 
 		expect(rekey([series(), holder], [row("2026-09-05")], TODAY)).toEqual({
-			steps: [{ kind: "delete", id: "s1" }],
-			stored: [holder],
+			steps: [],
+			stored: [series(), holder],
+		});
+	});
+
+	it("moves only the first of two series renamed onto one key", () => {
+		const other = series({ id: "s2", labelKey: "netflix sa", label: "NETFLIX SA" });
+
+		expect(rekey([series(), other], [row("2026-09-05")], TODAY)).toEqual({
+			steps: [{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }],
+			stored: [series({ merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }), other],
 		});
 	});
 
@@ -215,7 +211,7 @@ describe("rekey", () => {
 		];
 
 		expect(rekey([series(), ...others], [row("2026-09-05")], TODAY).steps).toEqual([
-			{ kind: "move", id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" },
+			{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" },
 		]);
 	});
 });

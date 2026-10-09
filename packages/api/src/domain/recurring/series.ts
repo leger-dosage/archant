@@ -159,10 +159,8 @@ export function occurrencesOf(
 		.toSorted(byDate);
 }
 
-/** One write of `rekey`, applied in order: a move may need a delete before it. */
-export type RekeyStep =
-	| { kind: "delete"; id: string }
-	| ({ kind: "move"; id: string; label: string } & SeriesKey);
+/** One write of `rekey`: a series takes a new key and label. */
+export type RekeyStep = { id: string; label: string } & SeriesKey;
 
 /**
  * A series whose latest transaction no longer carries its key follows that
@@ -174,10 +172,11 @@ export type RekeyStep =
  * that day. The transactions of its account and currency on
  * its last date, between half and twice its amount, must carry exactly one
  * other key; two identical payments renamed apart on one day leave it where it
- * is rather than guess. A `suggested` row already on the target key, amount,
- * currency and dedup scope gives way; any other holder stays and the moving
- * row goes, since the user settled that one. Returns the steps and the series
- * as they stand after them.
+ * is rather than guess. A series already on the target key, amount, currency
+ * and dedup scope, of any status, keeps it and the moving one stays where it
+ * is: Sure's identifier never deletes a series, and its cleaner retires the
+ * one no transaction comes to. Returns the steps and the series as they stand
+ * after them.
  */
 export function rekey(
 	stored: readonly StoredSeries[],
@@ -188,12 +187,11 @@ export function rekey(
 	const steps: RekeyStep[] = [];
 	let current = [...stored];
 
-	for (const { id } of stored) {
-		const row = current.find((series) => series.id === id);
-
-		// Deleted earlier as the holder of another row's new key, or a bill
-		// declared with no payment yet.
-		if (row === undefined || row.occurrenceCount === 0) {
+	// A series moves at most once, so its row in `stored` is still its own;
+	// `current` carries the earlier moves the key check must see.
+	for (const row of stored) {
+		// A bill declared with no payment yet.
+		if (row.occurrenceCount === 0) {
 			continue;
 		}
 
@@ -223,8 +221,8 @@ export function rekey(
 
 		const target = [...targets.values()][0]!;
 		const key = seriesKeyOf(target);
-		// The row the unique index would refuse the move beside.
-		const holder = current.find(
+		// The unique index would refuse the move beside this row.
+		const held = current.some(
 			(series) =>
 				series.accountId === row.accountId &&
 				series.amount === row.amount &&
@@ -233,18 +231,11 @@ export function rekey(
 				sameKey(series, key),
 		);
 
-		if (holder !== undefined && holder.status !== "suggested") {
-			steps.push({ kind: "delete", id: row.id });
-			current = current.filter((series) => series.id !== row.id);
+		if (held) {
 			continue;
 		}
 
-		if (holder !== undefined) {
-			steps.push({ kind: "delete", id: holder.id });
-			current = current.filter((series) => series.id !== holder.id);
-		}
-
-		steps.push({ kind: "move", id: row.id, ...key, label: target.label });
+		steps.push({ id: row.id, ...key, label: target.label });
 		current = current.map((series) =>
 			series.id === row.id ? { ...series, ...key, label: target.label } : series,
 		);
