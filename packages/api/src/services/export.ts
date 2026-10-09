@@ -18,6 +18,7 @@ import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { daysBetween, monthRange, today } from "../domain/dates.ts";
 import { typeOf } from "../domain/trades.ts";
+import { HAND_TRANSFER_WINDOW_DAYS, TRANSFER_WINDOW_DAYS } from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { rolloverAmounts } from "./budgets.ts";
 import { balanceOn } from "./ledger/balances.ts";
@@ -417,14 +418,15 @@ function sureFrom(timeZone: string): IsoDate {
 }
 
 /**
- * Whether Sure's `Transfer` validations accept the pair once confirmed: two
- * accounts, money leaving one side and reaching the other, the same amount
- * when the currency is the same, and 30 days apart at most. Sure's import
+ * Whether Sure's `Transfer` validations accept the pair: two accounts, money
+ * leaving one side and reaching the other, the same amount when the currency
+ * is the same, and at most 4 days apart for a pending transfer, 30 for a
+ * confirmed one, as `transfer_within_date_range`. Sure's import
  * fails whole on a transfer it refuses, and a side before `from` is not in
  * Sure's lines at all. A transfer refused here stays on its two transactions
  * as `archant.transfer`.
  */
-function sureAcceptsTransfer({ outflow, inflow }: Transfer, from: IsoDate): boolean {
+function sureAcceptsTransfer({ outflow, inflow, status }: Transfer, from: IsoDate): boolean {
 	const days = Math.abs(daysBetween(outflow.date, inflow.date));
 
 	return (
@@ -434,7 +436,7 @@ function sureAcceptsTransfer({ outflow, inflow }: Transfer, from: IsoDate): bool
 		outflow.amount < 0 &&
 		inflow.amount > 0 &&
 		(outflow.currency !== inflow.currency || outflow.amount + inflow.amount === 0) &&
-		days <= 30
+		days <= (status === "confirmed" ? HAND_TRANSFER_WINDOW_DAYS : TRANSFER_WINDOW_DAYS)
 	);
 }
 
@@ -997,7 +999,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				id: transfer.id,
 				inflow_transaction_id: transfer.inflowTransactionId,
 				outflow_transaction_id: transfer.outflowTransactionId,
-				status: "confirmed",
+				status: transfer.status,
 				notes: null,
 				created_at: timestamp(transfer.createdAt),
 				updated_at: timestamp(transfer.createdAt),

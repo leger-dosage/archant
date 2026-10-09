@@ -5,10 +5,10 @@ import { randomInt } from "node:crypto";
 
 import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
 
-// Stories 5.1 and 5.2: mark two transactions as a transfer, by hand or on
-// creation. One database serves the whole run and candidates are searched
-// across every account, so each test uses an amount of its own, and labels
-// sharing a unique prefix it lists by.
+// Stories 5.1, 5.2 and 27.1: mark two transactions as a transfer, by hand or
+// as the matcher proposes on creation. One database serves the whole run and
+// matching reads every unmatched line of it, so each test uses an amount of
+// its own, and labels sharing a unique prefix it lists by.
 
 const rowItem = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("listitem").filter({ hasText: label });
@@ -37,11 +37,12 @@ const categorySearch = (page: Page) =>
 	page.getByRole("combobox", { name: "Rechercher une catégorie" });
 
 /**
- * An amount in euros no other test uses, as typed: `51723,45`. Drawn from
- * 80,000 values of 100 to 900 euros, the range other specs draw from too, a
- * leftover row of the same amount within four days turned a pair into two
- * candidates on 2026-10-07: the second row got a suggestion instead of a
- * link. Tens of thousands of euros, to the cent, no spec writes otherwise.
+ * An amount in euros no other test uses, as typed: `51723,45`. Matching
+ * reads every unmatched line of the shared database, so a leftover row of the
+ * same amount within four days, from another spec drawing 100 to 900 euros,
+ * would be proposed in place of the test's own pair when closer or of a lower
+ * id, as one was on 2026-10-07. Tens of thousands of euros, to the cent, no
+ * spec writes otherwise.
  */
 function uniqueAmount(): string {
 	return `${randomInt(10_000, 100_000)},${String(randomInt(100)).padStart(2, "0")}`;
@@ -64,8 +65,10 @@ async function openHousehold(api: Api) {
 
 /**
  * −amount on the checking account, +amount on the Livret A three days later:
- * a unique pair, which the second row links on creation. `unlinked` undoes
- * that link, for the tests that match by hand.
+ * a unique pair, which the matcher proposes as the second row arrives.
+ * `unlinked` refuses that proposal, as « Ne plus proposer », for the tests
+ * that match by hand: a pair dissociated alone would be proposed again by the
+ * next line added.
  */
 async function moveToSavings(api: Api, prefix: string, options: { unlinked?: boolean } = {}) {
 	const household = await openHousehold(api);
@@ -84,43 +87,35 @@ async function moveToSavings(api: Api, prefix: string, options: { unlinked?: boo
 	});
 
 	if (options.unlinked === true) {
-		await api.unlinkTransfer(inflow);
+		await api.unlinkTransfer(inflow, { never: true });
 	}
 
 	return { ...household, amount, out, into, outflow, inflow };
 }
 
-test("« Rapprocher un virement » offers only the opposite amount within four days", async ({
+test("« Rapprocher un virement » offers the opposite amounts within 30 days, the closest first", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Épargne");
-	const { livret, amount, out, into } = await moveToSavings(api, prefix, { unlinked: true });
-	const late = `${prefix} trop tard`;
-	await api.addTransaction(livret.id, { date: daysAgo(4), label: late, amount });
+	const { checking, livret, amount, out, into } = await moveToSavings(api, prefix, {
+		unlinked: true,
+	});
+	const late = `${prefix} plus tard`;
+	const sameAccount = `${prefix} même compte`;
+	await api.addTransaction(livret.id, { date: daysAgo(0), label: late, amount });
+	await api.addTransaction(checking.id, { date: daysAgo(9), label: sameAccount, amount });
 
 	await visitOperations(page, prefix);
 	await rowButton(page, out).click();
 	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
 
 	const candidates = picker(page).getByRole("list", { name: "Opérations candidates" });
-	await expect(candidates.getByRole("listitem")).toHaveCount(1);
-	await expect(candidates).toContainText(into);
+	await expect(candidates.getByRole("listitem")).toHaveCount(2);
+	await expect(candidates.getByRole("listitem").first()).toContainText(into);
+	await expect(candidates.getByRole("listitem").last()).toContainText(late);
 	await expect(candidates).toContainText(livret.name);
-	await expect(candidates).not.toContainText(late);
-
-	// Six days from the outflow, and the other +amount shares its account: nothing to offer.
-	await page.keyboard.press("Escape");
-	await expect(picker(page)).toBeHidden();
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
-	await rowButton(page, late).click();
-	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
-	await expect(
-		picker(page).getByText(
-			"Aucune opération de montant opposé dans un autre compte à 4 jours près",
-		),
-	).toBeVisible();
+	await expect(candidates).not.toContainText(sameAccount);
 });
 
 // Story 11.2: as Sure's `Family::AutoTransferMatchable`, an excluded row or a
@@ -148,13 +143,13 @@ test("« Rapprocher un virement » offers neither an excluded row nor a row of a
 	await api.addTransaction(checking.id, { date: daysAgo(10), label: out, amount: `-${amount}` });
 
 	await visitOperations(page, prefix);
-	await expect(rowButton(page, out)).not.toContainText("Virement possible");
+	await expect(rowButton(page, out)).not.toContainText("Vers");
 	await rowButton(page, out).click();
 	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
 
 	await expect(
 		picker(page).getByText(
-			"Aucune opération de montant opposé dans un autre compte à 4 jours près",
+			"Aucune opération de montant opposé dans un autre compte à 30 jours près",
 		),
 	).toBeVisible();
 	await expect(picker(page).getByRole("list", { name: "Opérations candidates" })).toHaveCount(0);
@@ -168,7 +163,7 @@ test("« Rapprocher un virement » offers neither an excluded row nor a row of a
 	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
 	await expect(
 		picker(page).getByText(
-			"Aucune opération de montant opposé dans un autre compte à 4 jours près",
+			"Aucune opération de montant opposé dans un autre compte à 30 jours près",
 		),
 	).toBeVisible();
 });
@@ -196,7 +191,6 @@ test("an excluded twin does not keep the real pair from linking", async ({ page,
 	await visitOperations(page, prefix);
 
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
-	await expect(rowButton(page, out)).not.toContainText("Virement possible");
 });
 
 test("picking the candidate links both rows, each naming the other account", async ({
@@ -226,6 +220,39 @@ test("picking the candidate links both rows, each naming the other account", asy
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
 	await expect(rowItem(page, into).getByText("Virement", { exact: true })).toBeVisible();
 	await expect(rowItem(page, out).getByRole("button", { name: /^Catégorie/ })).toHaveCount(0);
+});
+
+test("two lines 20 days apart, paired by hand, make a confirmed transfer", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Chèque");
+	const { checking, livret } = await openHousehold(api);
+	const amount = uniqueAmount();
+	const out = `${prefix} départ`;
+	const into = `${prefix} arrivée`;
+	// Too far apart for the matcher's 4 days, within a pair by hand's 30.
+	await api.addTransaction(checking.id, { date: daysAgo(25), label: out, amount: `-${amount}` });
+	await api.addTransaction(livret.id, { date: daysAgo(5), label: into, amount });
+
+	await visitOperations(page, prefix);
+	await expect(rowButton(page, out)).not.toContainText("Vers");
+	await rowButton(page, out).click();
+	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
+	await picker(page)
+		.getByRole("button", { name: new RegExp(into) })
+		.click();
+	await expect(picker(page)).toBeHidden();
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
+
+	await Promise.all(
+		[out, into].map(async (label) => {
+			await expect(rowButton(page, label)).toContainText("Virement interne");
+			await expect(rowButton(page, label)).not.toContainText("Correspondance automatique");
+		}),
+	);
+	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
 });
 
 test("a payment into a credit card is linked on creation as « Remboursement de carte »", async ({
@@ -289,8 +316,8 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 		label: into,
 		amount: "1 200,00",
 	});
-	// Linked on creation; undone and matched again as « Rapprocher » would.
-	await api.unlinkTransfer(outId);
+	// Proposed on creation; refused and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(outId, { never: true });
 	await api.matchTransfer(outId, intoId);
 
 	const housing = await api.createCategory({ name: uniqueName("Logement") });
@@ -330,7 +357,8 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 			.getByRole("link", { name: housing.name }),
 	).toContainText(euros(-120_000));
 
-	// Dissociated, the outflow is a standard row that keeps its category.
+	// Dissociated, the outflow is a standard row that keeps its category; the
+	// pair refused above, no later line proposes it again.
 	await api.unlinkTransfer(outId);
 	await visitOperations(page, prefix);
 	await expect(
@@ -369,8 +397,8 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 		label: into,
 		amount: "500,00",
 	});
-	// Linked on creation; undone and matched again as « Rapprocher » would.
-	await api.unlinkTransfer(outId);
+	// Proposed on creation; refused and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(outId, { never: true });
 	await api.matchTransfer(outId, intoId);
 
 	const savings = await api.createCategory({ name: uniqueName("Épargne") });
@@ -411,7 +439,11 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 	api,
 }) => {
 	const prefix = uniqueName("Épargne");
-	const { checking, livret, out, into } = await moveToSavings(api, prefix);
+	// Paired by hand after a refusal, so no later line proposes it again once dissociated.
+	const { checking, livret, out, into, outflow, inflow } = await moveToSavings(api, prefix, {
+		unlinked: true,
+	});
+	await api.matchTransfer(outflow, inflow);
 
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
@@ -527,7 +559,7 @@ test("an OFX file adding the other side links both rows once confirmed", async (
 	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
 });
 
-test("a row with two candidates shows « Virement possible » and lists both", async ({
+test("a row with two candidates is proposed with the closer one, the other left alone", async ({
 	page,
 	api,
 }) => {
@@ -543,31 +575,75 @@ test("a row with two candidates shows « Virement possible » and lists both", a
 	const toLivret = `${prefix} livret`;
 	const toCard = `${prefix} carte`;
 	await api.addTransaction(livret.id, { date: daysAgo(5), label: toLivret, amount });
-	await api.addTransaction(card.id, { date: daysAgo(5), label: toCard, amount });
+	await api.addTransaction(card.id, { date: daysAgo(3), label: toCard, amount });
 	await api.addTransaction(checking.id, { date: daysAgo(6), label: out, amount: `-${amount}` });
 
 	await visitOperations(page, prefix);
 
-	await expect(rowButton(page, out)).toContainText("Virement possible");
-	await expect(rowButton(page, toLivret)).not.toContainText("Virement possible");
-	await expect(rowButton(page, out)).not.toContainText("Vers");
-	await rowButton(page, out).click();
+	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
+	await expect(rowButton(page, out)).toContainText("Correspondance automatique");
+	await expect(rowButton(page, toLivret)).toContainText(`Depuis ${checking.name}`);
+	await expect(rowButton(page, toCard)).not.toContainText("Depuis");
 	await expect(
-		sheet(page).getByText("Plusieurs opérations pourraient former l'autre côté de ce virement."),
-	).toBeVisible();
-	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
-	const candidates = picker(page).getByRole("list", { name: "Opérations candidates" });
-	await expect(candidates.getByRole("listitem")).toHaveCount(2);
-	await expect(candidates).toContainText(toLivret);
-	await expect(candidates).toContainText(toCard);
+		rowItem(page, toCard).getByRole("button", { name: "Confirmer la correspondance" }),
+	).toHaveCount(0);
 });
 
-test("« Ne plus proposer » undoes an automatic link, and neither picker offers the pair again", async ({
+test("a proposal is confirmed from the list, and another rejected, never proposed again", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Proposé");
+	const kept = await moveToSavings(api, `${prefix} gardé`);
+	const refused = await moveToSavings(api, `${prefix} refusé`);
+
+	await visitOperations(page, prefix);
+	await Promise.all(
+		[kept.out, kept.into, refused.out, refused.into].map(async (label) =>
+			expect(rowButton(page, label)).toContainText("Correspondance automatique"),
+		),
+	);
+
+	await rowItem(page, kept.out)
+		.getByRole("button", { name: "Confirmer la correspondance" })
+		.click();
+	await expect(page.getByText("Virement mis à jour")).toBeVisible();
+	await Promise.all(
+		[kept.out, kept.into].map(async (label) => {
+			await expect(rowButton(page, label)).not.toContainText("Correspondance automatique");
+			await expect(rowButton(page, label)).toContainText("Virement interne");
+			await expect(
+				rowItem(page, label).getByRole("button", { name: /la correspondance$/u }),
+			).toHaveCount(0);
+		}),
+	);
+	await expect(rowButton(page, kept.out)).toContainText(`Vers ${kept.livret.name}`);
+
+	await rowItem(page, refused.into)
+		.getByRole("button", { name: "Rejeter la correspondance" })
+		.click();
+	await expect(page.getByText("Virement dissocié, il ne sera plus proposé")).toBeVisible();
+	await expect(rowButton(page, refused.out)).not.toContainText("Vers");
+	await expect(rowButton(page, refused.into)).not.toContainText("Depuis");
+
+	// Any later line runs the matcher again; the refused pair stays apart.
+	await api.addTransaction(refused.checking.id, {
+		date: daysAgo(2),
+		label: `${prefix} café`,
+		amount: `-${uniqueAmount()}`,
+	});
+	await page.reload();
+	await expect(rowItem(page, refused.out)).toBeVisible();
+	await expect(rowButton(page, refused.out)).not.toContainText("Vers");
+	await expect(rowButton(page, kept.out)).toContainText(`Vers ${kept.livret.name}`);
+});
+
+test("« Ne plus proposer » undoes a proposal for good, and the picker still offers the pair", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Refus");
-	const { livret, out, into } = await moveToSavings(api, prefix);
+	const { checking, livret, out, into } = await moveToSavings(api, prefix);
 
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
@@ -578,26 +654,32 @@ test("« Ne plus proposer » undoes an automatic link, and neither picker offers
 	await page.keyboard.press("Escape");
 	await expect(sheet(page)).toBeHidden();
 
-	/** `label` is a standard row again, and its picker does not offer `other`. */
-	const standardWithout = async (label: string, other: string) => {
+	// Any later line runs the matcher again; the refused pair stays apart.
+	await api.addTransaction(checking.id, {
+		date: daysAgo(2),
+		label: `${prefix} café`,
+		amount: `-${uniqueAmount()}`,
+	});
+	await page.reload();
+	await expect(rowItem(page, out)).toBeVisible();
+
+	/** `label` is a standard row again, and its picker, as Sure's, still offers `other`. */
+	const standardOffering = async (label: string, other: string) => {
 		await expect(
 			rowItem(page, label).getByRole("button", { name: "Catégorie : Sans catégorie" }),
 		).toBeVisible();
 		await expect(rowItem(page, label).getByText("Virement", { exact: true })).toHaveCount(0);
 		await rowButton(page, label).click();
 		await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
-		await expect(
-			picker(page).getByText(
-				"Aucune opération de montant opposé dans un autre compte à 4 jours près",
-			),
-		).toBeVisible();
-		await expect(picker(page)).not.toContainText(other);
+		await expect(picker(page).getByRole("list", { name: "Opérations candidates" })).toContainText(
+			other,
+		);
 		await page.keyboard.press("Escape");
 		await expect(picker(page)).toBeHidden();
 		await page.keyboard.press("Escape");
 		await expect(sheet(page)).toBeHidden();
 	};
 
-	await standardWithout(out, into);
-	await standardWithout(into, out);
+	await standardOffering(out, into);
+	await standardOffering(into, out);
 });

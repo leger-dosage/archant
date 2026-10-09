@@ -184,6 +184,19 @@ export function apiHelpers(request: APIRequestContext) {
 		return created(await request.post(`/api/accounts/${accountId}/transactions`, { data: input }));
 	}
 
+	/** The id of the transfer `transactionId` sits in; fails the test when it sits in none. */
+	async function transferIdOf(transactionId: string): Promise<string> {
+		// An empty patch answers the row as it is, its transfer included.
+		const row = await request.patch(`/api/transactions/${transactionId}`, { data: {} });
+
+		expect(row.ok(), `${row.url()} answered ${await row.text()}`).toBe(true);
+		const { data } = linkedBody.parse(await row.json());
+
+		expect(data.transfer, `${transactionId} is in no transfer`).not.toBeNull();
+
+		return data.transfer?.id ?? "";
+	}
+
 	return {
 		async openAccount(options: OpenAccountOptions = {}): Promise<Created> {
 			const name = options.name ?? uniqueName("Compte");
@@ -609,21 +622,28 @@ export function apiHelpers(request: APIRequestContext) {
 			);
 		},
 
+		/** Confirms the transfer the matcher proposed for `transactionId`, as « Confirmer la correspondance ». */
+		async confirmTransfer(transactionId: string) {
+			const response = await request.post(
+				`/api/transfers/${await transferIdOf(transactionId)}/confirm`,
+				{ headers: sameOrigin },
+			);
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
 		/**
-		 * Undoes the transfer `transactionId` sits in, as « Dissocier » does: for
-		 * the pairs step 6 links on creation that a test needs apart.
+		 * Undoes the transfer `transactionId` sits in, as « Dissocier » does,
+		 * or as « Ne plus proposer » with `never`. Dissociated, a pair is
+		 * proposed again by the next line any test adds; refused, it stays
+		 * apart, and « Rapprocher un virement » still offers it.
 		 */
-		async unlinkTransfer(transactionId: string) {
-			// An empty patch answers the row as it is, its transfer included.
-			const row = await request.patch(`/api/transactions/${transactionId}`, { data: {} });
-
-			expect(row.ok(), `${row.url()} answered ${await row.text()}`).toBe(true);
-			const { data } = linkedBody.parse(await row.json());
-
-			expect(data.transfer, `${transactionId} is in no transfer`).not.toBeNull();
-			const response = await request.delete(`/api/transfers/${data.transfer?.id ?? ""}`, {
-				headers: sameOrigin,
-			});
+		async unlinkTransfer(transactionId: string, options: { never?: boolean } = {}) {
+			const id = await transferIdOf(transactionId);
+			const response =
+				options.never === true
+					? await request.post(`/api/transfers/${id}/reject`, { headers: sameOrigin })
+					: await request.delete(`/api/transfers/${id}`, { headers: sameOrigin });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},

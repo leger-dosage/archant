@@ -1,11 +1,11 @@
 import type { IsoDate } from "../../domain/dates.ts";
-import type { TransferSide } from "../../domain/transfer-matching.ts";
+import type { ExpectingSide, TransferSide } from "../../domain/transfer-matching.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { and, between, eq, inArray, isNotNull, isNull, ne, not, sql } from "drizzle-orm";
+import { and, between, eq, isNotNull, isNull, lt, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -16,19 +16,20 @@ import { entries } from "@archant/data/schema/entries";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
+import type { TransferStatus } from "@archant/data/transfer-kinds";
 import type { Transfer } from "@archant/data/types";
 
 import { daysBetween } from "../../domain/dates.ts";
 import {
+	HAND_TRANSFER_WINDOW_DAYS,
 	TRANSFER_WINDOW_DAYS,
+	greedyMatches,
 	isTransferCandidate,
-	mutualMatches,
 	narrowToExpected,
 	transferKindOf,
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
 import {
-	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
 	inAnyTransfer,
 	inSequence,
@@ -54,30 +55,41 @@ function isRejectedPair(a: SQLWrapper, b: SQLWrapper): SQL {
 }
 
 /** The columns of an `entries` row, or of an alias of it, the prefilter reads. */
-type SideRef = Record<"id" | "kind" | "accountId" | "date" | "amount" | "currency", SQLiteColumn>;
+type SideRef = Record<"id" | "accountId" | "date" | "amount" | "currency", SQLiteColumn>;
 
-// SQLite date modifiers, so the window can follow a column as well as a value.
-const WINDOW_BEFORE = `-${TRANSFER_WINDOW_DAYS} days`;
-const WINDOW_AFTER = `+${TRANSFER_WINDOW_DAYS} days`;
+/** How a search pairs: how many days apart, and whether a pair the owner rejected may come back. */
+type Search = { windowDays: number; rejected: "allowed" | "refused" };
+
+/** The matcher's proposals, as Sure's `auto_match_transfers!`. */
+const PROPOSAL: Search = { windowDays: TRANSFER_WINDOW_DAYS, rejected: "refused" };
 
 /**
- * The SQL prefilter of `isTransferCandidate`: `candidate` has the opposite,
- * non-zero amount of `source`, in another account of its currency, within
- * the window, neither is in a transfer, and the user never rejected the pair.
- * `candidatePairQuery` adds `matchableSide` on both sides, which reads the
- * transaction and account rows this condition does not join. One search
- * serves the picker, `matchTransfer`'s re-check, step 6 of `ingest`,
- * `applyRulePlanToHistory` and the list's suggestion, so none of them can
- * offer a pair another refuses.
+ * A pair by hand, as Sure's `transfer_match_candidates(date_window: 30)`,
+ * whose `include_rejected` defaults to true: the owner may pair by hand what
+ * they told the matcher never to propose.
  */
-function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
+const BY_HAND: Search = { windowDays: HAND_TRANSFER_WINDOW_DAYS, rejected: "allowed" };
+
+/**
+ * The SQL prefilter of `isTransferCandidate`: `candidate` is a transaction
+ * with the opposite, non-zero amount of `source`, in another account of its
+ * currency, within the window, neither is in a transfer, and, for a
+ * proposal, the user never rejected the pair. The query adds the source's
+ * kind and `matchableSide` on both sides, which reads the transaction and
+ * account rows this condition does not join. One search serves the picker,
+ * `matchTransfer`'s re-check, step 6 of `ingest` and
+ * `applyRulePlanToHistory`, so none of them can offer a pair another refuses.
+ */
+function candidateOf(
+	source: SideRef,
+	candidate: SideRef & Record<"kind", SQLiteColumn>,
+	search: Search,
+): SQL | undefined {
+	// SQLite date modifiers, so the window can follow a column as well as a value.
+	const before = `-${search.windowDays} days`;
+	const after = `+${search.windowDays} days`;
+
 	return and(
-		// `+` keeps SQLite from reading the sources through an index on `kind`.
-		// Sampled by `analysis_limit`, `kind` looks as selective as a key, and at
-		// 100,000 transactions the planner scanned every transaction for each
-		// chunk of 500 sources instead of looking each up by its id: a
-		// 24,000-line import took 17 s instead of 2.
-		eq(sql`+${source.kind}`, "transaction"),
 		eq(candidate.kind, "transaction"),
 		ne(source.amount, 0),
 		eq(candidate.amount, sql`-${source.amount}`),
@@ -85,12 +97,12 @@ function candidateOf(source: SideRef, candidate: SideRef): SQL | undefined {
 		eq(candidate.currency, source.currency),
 		between(
 			candidate.date,
-			sql`date(${source.date}, ${WINDOW_BEFORE})`,
-			sql`date(${source.date}, ${WINDOW_AFTER})`,
+			sql`date(${source.date}, ${before})`,
+			sql`date(${source.date}, ${after})`,
 		),
 		not(inTransferSql(source.id)),
 		not(inTransferSql(candidate.id)),
-		not(isRejectedPair(source.id, candidate.id)),
+		search.rejected === "refused" ? not(isRejectedPair(source.id, candidate.id)) : undefined,
 	);
 }
 
@@ -150,16 +162,19 @@ const sourceTransaction = alias(transactions, "source_transaction");
 /** A side of a candidate pair, with what a transfer's direction and kind need. */
 type PairSide = { id: string; amount: number; accountType: AccountType };
 
-/** The candidates of `sourceIds`, one query; see `candidatePairs`. */
+/**
+ * Every candidate pair whose source `where` keeps, the candidate's label and
+ * account name with it. Cross joins, conditions in `where`: SQLite keeps a
+ * cross join's tables in the order written, so each source is read once and
+ * its candidates looked up by `entries_kind_amount_date`. As inner joins,
+ * the planner looped over the few accounts first and looked every source up
+ * once per account, ten times the work of an import.
+ */
 function candidatePairQuery(
 	db: Pick<Transaction, "select">,
-	sourceIds: readonly string[],
-	counterpartId: string | undefined,
+	sources: SQL | undefined,
+	search: Search,
 ) {
-	// Cross joins, conditions in `where`: SQLite keeps a cross join's tables in
-	// the order written, so each source is looked up once by its id. As inner
-	// joins, the planner looped over the few accounts first and looked every
-	// source up once per account, ten times the work of an import.
 	return db
 		.select({
 			source: {
@@ -191,15 +206,14 @@ function candidatePairQuery(
 		.crossJoin(accounts)
 		.where(
 			and(
-				inArray(sourceEntry.id, [...sourceIds]),
+				sources,
 				eq(sourceAccount.id, sourceEntry.accountId),
 				eq(sourceTransaction.entryId, sourceEntry.id),
-				candidateOf(sourceEntry, entries),
+				candidateOf(sourceEntry, entries, search),
 				eq(transactions.entryId, entries.id),
 				eq(accounts.id, entries.accountId),
 				matchableSide(sourceEntry, sourceTransaction, sourceAccount),
 				matchableSide(entries, transactions, accounts),
-				counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
 			),
 		)
 		.orderBy(entries.date, entries.createdAt, entries.id);
@@ -207,37 +221,43 @@ function candidatePairQuery(
 
 type CandidatePair = Awaited<ReturnType<typeof candidatePairQuery>>[number];
 
+/** The rows `isTransferCandidate` accepts within `search`'s window: SQL narrows, the rule has the last word. */
+const accepted = (rows: readonly CandidatePair[], search: Search) =>
+	rows.filter(({ source, candidate }) =>
+		isTransferCandidate(asSide(source), asSide(candidate), search.windowDays),
+	);
+
 /**
- * Every candidate of each of `sourceIds`, 500 sources per query, ordered by
- * date, then the older entry. SQL narrows them with `candidateOf` and
- * `matchableSide`; `isTransferCandidate` then has the last word.
- * `counterpartId` keeps that one candidate only.
+ * The candidates of `entryId` a pair by hand may take, ordered by date, then
+ * the older entry; `counterpartId` keeps that one candidate only.
  */
-export async function candidatePairs(
+async function handCandidates(
 	db: Pick<Transaction, "select">,
-	sourceIds: readonly string[],
+	entryId: string,
 	counterpartId?: string,
 ): Promise<CandidatePair[]> {
-	const found: CandidatePair[] = [];
+	const rows = await candidatePairQuery(
+		db,
+		and(
+			eq(sourceEntry.id, entryId),
+			// `+` keeps SQLite from reading the source through an index on `kind`.
+			// Sampled by `analysis_limit`, `kind` looks as selective as a key, and at
+			// 100,000 transactions the planner scanned every transaction instead of
+			// looking the source up by its id.
+			eq(sql`+${sourceEntry.kind}`, "transaction"),
+			counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
+		),
+		BY_HAND,
+	);
 
-	await inSequence(sourceIds, KEYS_PER_LOOKUP, async (chunk) => {
-		const rows = await candidatePairQuery(db, chunk, counterpartId);
-
-		found.push(
-			...rows.filter(({ source, candidate }) =>
-				isTransferCandidate(asSide(source), asSide(candidate)),
-			),
-		);
-	});
-
-	return found;
+	return accepted(rows, BY_HAND);
 }
 
 /**
  * A transfer between `a` and `b`, the negative side as the outflow, its kind
  * from both accounts' types.
  */
-function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
+function transferBetween(a: PairSide, b: PairSide, status: TransferStatus, now: number): Transfer {
 	const [outflow, inflow] = a.amount < 0 ? [a, b] : [b, a];
 
 	return {
@@ -245,78 +265,89 @@ function transferBetween(a: PairSide, b: PairSide, now: number): Transfer {
 		outflowTransactionId: outflow.id,
 		inflowTransactionId: inflow.id,
 		kind: transferKindOf(inflow.accountType, outflow.accountType),
+		status,
 		createdAt: now,
 	};
 }
 
 /**
- * Step 6 of `ingest`: links each of `createdIds` that forms a mutually unique
- * pair (AD-11). `applyRulePlanToHistory` calls it on the rows whose expected
- * counterpart account a rule set, which need not be new. Every candidate list is read before the first link is
- * written, so a link made for one line never removes a candidate from the
- * next, and the result does not depend on line order. A rule's expected
- * counterpart account narrows each list first, through `narrowToExpected`.
- * No balance, category, lock or tag moves.
+ * Every candidate pair of the household the matcher weighs, one row per pair,
+ * the outflow as its source: Sure's `transfer_match_candidates` with
+ * `include_rejected: false`. Each unmatched outflow is read from
+ * `entries_kind_amount_date` by its sign, and its candidates from the same
+ * index by the opposite amount and the window.
  */
-export async function matchNewTransfers(
-	tx: Transaction,
-	createdIds: readonly string[],
+export function proposalCandidateQuery(db: Pick<Transaction, "select">) {
+	return candidatePairQuery(
+		db,
+		and(eq(sourceEntry.kind, "transaction"), lt(sourceEntry.amount, 0)),
+		PROPOSAL,
+	);
+}
+
+/** The side ranking reads of a pair: its id, its account and the account a rule expects. */
+const expecting = (side: { id: string; accountId: string; expectedAccountId: string | null }) => ({
+	id: side.id,
+	accountId: side.accountId,
+	expectedAccountId: side.expectedAccountId,
+});
+
+/**
+ * Step 6 of `ingest`, and the end of `applyRulePlanToHistory`: proposes a
+ * `pending` transfer for the pairs Sure's `auto_match_transfers!` would
+ * make, over every unmatched transaction of the household, so a line left
+ * free before is weighed again (AD-11). A rule's expected counterpart
+ * account narrows each line's candidates first, from both sides, through
+ * `narrowToExpected`; `greedyMatches` then takes the closest pairs. Every
+ * candidate is read before the first transfer is written, so the result
+ * depends neither on line order nor on which account synced first. No
+ * balance, category, lock or tag moves.
+ */
+export async function matchTransfers(
+	tx: Pick<Transaction, "select" | "insert">,
 	now: number,
 ): Promise<void> {
-	const candidatesOf = new Map<string, string[]>();
-	// Each source's list, narrowed once all of its candidates are known.
-	const record = (ids: readonly string[], pairs: readonly CandidatePair[]) => {
-		const bySource = new Map<string, CandidatePair[]>();
+	const rows = accepted(await proposalCandidateQuery(tx), PROPOSAL);
+	// Each line with what it sees of the other side of each of its pairs.
+	const lines = new Map<string, { side: ExpectingSide; candidates: ExpectingSide[] }>();
+	const meet = (side: ExpectingSide, other: ExpectingSide) => {
+		const line = lines.get(side.id) ?? { side, candidates: [] };
 
-		for (const pair of pairs) {
-			bySource.set(pair.source.id, [...(bySource.get(pair.source.id) ?? []), pair]);
-		}
-
-		for (const id of ids) {
-			const own = bySource.get(id) ?? [];
-			const [first] = own;
-
-			candidatesOf.set(
-				id,
-				first === undefined
-					? []
-					: narrowToExpected(
-							first.source,
-							own.map(({ candidate }) => candidate),
-						),
-			);
-		}
+		line.candidates.push(other);
+		lines.set(side.id, line);
 	};
 
-	const fromNew = await candidatePairs(tx, createdIds);
-	record(createdIds, fromNew);
+	for (const { source, candidate } of rows) {
+		meet(expecting(source), expecting(candidate));
+		meet(expecting(candidate), expecting(source));
+	}
 
-	// Only a unique candidate can complete a pair; its own candidates tell
-	// whether the choice is mutual. A new row's are known already.
-	const uniques = [
-		...new Set(
-			[...candidatesOf.values()]
-				.filter((ids) => ids.length === 1)
-				.flat()
-				.filter((id) => !candidatesOf.has(id)),
-		),
-	];
-
-	record(uniques, await candidatePairs(tx, uniques));
-
-	// Each pair is a row of the first read, the new side as its source.
-	const matched = new Set(mutualMatches(createdIds, candidatesOf).map((pair) => pair.join(" ")));
-	const links = fromNew
-		.filter(({ source, candidate }) => matched.has(`${source.id} ${candidate.id}`))
-		.map(({ source, candidate }) => transferBetween(source, candidate, now));
+	const kept = new Map(
+		[...lines].map(([id, line]) => [id, new Set(narrowToExpected(line.side, line.candidates))]),
+	);
+	const links = greedyMatches(
+		rows
+			.filter(
+				({ source, candidate }) =>
+					kept.get(source.id)?.has(candidate.id) === true &&
+					kept.get(candidate.id)?.has(source.id) === true,
+			)
+			.map((row) => ({
+				outflowId: row.source.id,
+				inflowId: row.candidate.id,
+				days: Math.abs(daysBetween(row.source.date, row.candidate.date)),
+				row,
+			})),
+	).map(({ row }) => transferBetween(row.source, row.candidate, "pending", now));
 
 	await inSequence(links, ROWS_PER_INSERT, (chunk) => tx.insert(transfers).values(chunk));
 }
 
 /**
- * The transactions `entryId` can be matched with, closest date first, then
- * the earlier, then the older entry: `candidatePairs` for this one source.
- * Throws `NOT_FOUND` for an unknown transaction; a transaction already in a
+ * The transactions `entryId` can be paired with by hand, within
+ * `HAND_TRANSFER_WINDOW_DAYS`, closest date first, then the earlier, then
+ * the older entry, a rejected pair included, as Sure's picker. Throws
+ * `NOT_FOUND` for an unknown transaction; a transaction already in a
  * transfer has no candidate.
  */
 export async function transferCandidates(
@@ -329,7 +360,7 @@ export async function transferCandidates(
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
 	}
 
-	const rows = await candidatePairs(deps.db, [entryId]);
+	const rows = await handCandidates(deps.db, entryId);
 
 	return (
 		rows
@@ -352,14 +383,16 @@ export async function transferCandidates(
 }
 
 /**
- * Links `entryId` and `counterpartId` as one transfer, the negative side as
- * the outflow, its kind from the inflow account's type. The candidate search
- * runs again inside the write, so a concurrent match cannot put a transaction
- * in two transfers, and a rejected pair stays refused. No balance moves and
- * no category, lock or tag changes: the two rows stay what they were, only
- * their direction changes. Throws `NOT_FOUND` for an unknown `entryId`,
- * `VALIDATION_ERROR` on `counterpartId` when it is no candidate, unknown,
- * already matched, rejected, excluded or on a deactivated account included.
+ * Links `entryId` and `counterpartId` as one `confirmed` transfer, the
+ * negative side as the outflow, its kind from the inflow account's type: the
+ * owner chose it, so there is nothing left to confirm. The candidate search
+ * runs again inside the write, so a concurrent match cannot put a
+ * transaction in two transfers. A pair the owner once rejected may be paired
+ * by hand. No balance moves and no category, lock or tag changes: the two
+ * rows stay what they were, only their direction changes. Throws `NOT_FOUND`
+ * for an unknown `entryId`, `VALIDATION_ERROR` on `counterpartId` when it is
+ * no candidate, unknown, more than 30 days away, already matched, excluded
+ * or on a deactivated account included.
  */
 export async function matchTransfer(
 	deps: ServiceDeps,
@@ -373,17 +406,45 @@ export async function matchTransfer(
 				throw new AppError("NOT_FOUND", "No transaction has this id.");
 			}
 
-			const [pair] = await candidatePairs(tx, [entryId], counterpartId);
+			const [pair] = await handCandidates(tx, entryId, counterpartId);
 
 			if (pair === undefined) {
 				throw invalidField("counterpartId", "not_a_candidate");
 			}
 
-			const transfer = transferBetween(pair.source, pair.candidate, Date.now());
+			const transfer = transferBetween(pair.source, pair.candidate, "confirmed", Date.now());
 
 			await tx.insert(transfers).values(transfer);
 
 			return transfer;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Confirms a transfer the matcher proposed, as Sure's `Transfer#confirm!`:
+ * only its status changes, and confirming a confirmed transfer changes
+ * nothing. Throws `NOT_FOUND` for an unknown id.
+ */
+export async function confirmTransfer(
+	deps: ServiceDeps,
+	transferId: string,
+	_options: { origin: Origin },
+): Promise<TransferSides> {
+	return deps.db.transaction(
+		async (tx) => {
+			const [confirmed] = await tx
+				.update(transfers)
+				.set({ status: "confirmed" })
+				.where(eq(transfers.id, transferId))
+				.returning(sidesColumns);
+
+			if (confirmed === undefined) {
+				throw new AppError("NOT_FOUND", "No transfer has this id.");
+			}
+
+			return confirmed;
 		},
 		{ behavior: "immediate" },
 	);
@@ -425,9 +486,10 @@ export async function unmatchTransfer(
 }
 
 /**
- * Undoes a transfer, as `unmatchTransfer`, and records its pair so that no
- * candidate search, by hand or automatic, offers it again. There is no way
- * back: the pair stays refused until one side is deleted. Returns the two
+ * Undoes a transfer, as `unmatchTransfer`, and records its pair so that the
+ * matcher never proposes it again, as Sure's `Transfer#reject!`; the owner
+ * may still pair it by hand. There is no way back: the pair stays refused
+ * until one side is deleted. Returns the two
  * sides; throws `NOT_FOUND` for an unknown id.
  */
 export async function rejectTransfer(

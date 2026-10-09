@@ -29,7 +29,8 @@ let db: TempDatabase["db"];
 
 /**
  * −500 on the checking account, +500 on the Livret A three days later, which
- * links them on creation, and +500 six days later, too far to be a candidate.
+ * the matcher proposes on creation, and +500 six days later, too far for a
+ * proposal but within a pair by hand's 30 days.
  */
 async function household() {
 	db = (await ownDatabase()).db;
@@ -88,7 +89,6 @@ function calls() {
 
 const transferOf = z.object({
 	transfer: z.object({ id: z.string(), counterpart_transaction_id: z.string() }).loose().nullable(),
-	transfer_suggested: z.boolean(),
 });
 
 const page = z.object({ transactions: z.array(transferOf.extend({ id: z.string() }).loose()) });
@@ -152,7 +152,6 @@ describe("the read tools", () => {
 
 		expect(found.transactions.find((item) => item.id === outflow)).toMatchObject({
 			transfer: { id: transferId, kind: "internal_move", counterpart_transaction_id: inflow },
-			transfer_suggested: false,
 		});
 		expect(detail).toMatchObject({
 			transfer: {
@@ -160,17 +159,19 @@ describe("the read tools", () => {
 				counterpart_transaction_id: outflow,
 				counterpart_account: { name: "Compte courant" },
 			},
-			transfer_suggested: false,
 		});
+		// Story 27.13 brings Sure's fields; no status and no suggestion until then.
+		expect(detail).not.toHaveProperty("transfer_suggested");
+		expect(detail.transfer).not.toHaveProperty("status");
 	});
 
-	it("flag a line the list suggests pairing", async () => {
+	it("show the closest candidate the matcher proposed, the other line left alone", async () => {
 		db = (await ownDatabase()).db;
 		const checking = await openOwn({ name: "Compte courant" });
 		const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
 		const ldds = await openOwn({ name: "LDDS", subtype: "savings", openingBalance: "0" });
 		const inflow = await postOwn(livret.id, { date: "2026-09-11", label: "VIR", amount: "500,00" });
-		await postOwn(ldds.id, { date: "2026-09-11", label: "VIR", amount: "500,00" });
+		const other = await postOwn(ldds.id, { date: "2026-09-12", label: "VIR", amount: "500,00" });
 		const source = await postOwn(checking.id, {
 			date: "2026-09-10",
 			label: "VIR EPARGNE",
@@ -181,19 +182,17 @@ describe("the read tools", () => {
 		const found = page.parse((await tools.read("get_transactions")).structuredContent);
 
 		expect(found.transactions.find((item) => item.id === source)).toMatchObject({
-			transfer: null,
-			transfer_suggested: true,
+			transfer: { counterpart_transaction_id: inflow },
 		});
-		// One candidate is no suggestion: « Dissocier » leaves a pair with one.
-		expect(found.transactions.find((item) => item.id === inflow)).toMatchObject({
-			transfer_suggested: false,
+		expect(found.transactions.find((item) => item.id === other)).toMatchObject({
+			transfer: null,
 		});
 	});
 });
 
 describe("get_transfer_candidates", () => {
-	it("lists what « Rapprocher un virement » lists, amounts as decimal strings", async () => {
-		const { livret, outflow, inflow, transferId } = await household();
+	it("lists what « Rapprocher un virement » lists, within 30 days, amounts as decimal strings", async () => {
+		const { livret, outflow, inflow, later, transferId } = await household();
 		const tools = await assistants();
 		await tools.write("unpair_transfer", { transfer_id: transferId });
 
@@ -204,6 +203,14 @@ describe("get_transfer_candidates", () => {
 				id: inflow,
 				date: "2026-09-13",
 				name: "VIR COMPTE COURANT",
+				amount: "500.00",
+				currency: "EUR",
+				account: { id: livret.id, name: "Livret A" },
+			},
+			{
+				id: later,
+				date: "2026-09-16",
+				name: "Plus tard",
 				amount: "500.00",
 				currency: "EUR",
 				account: { id: livret.id, name: "Livret A" },
@@ -246,23 +253,30 @@ describe("pair_transfer", () => {
 			outflow_transaction_id: outflow,
 			inflow_transaction_id: inflow,
 		});
+		// No status in the assistant's answer before Story 27.13.
+		expect(result.structuredContent).not.toHaveProperty("status");
 		expect(await transfersNow()).toEqual([{ id: created.id }]);
 		expect(await calls()).toEqual([{ tool: "pair_transfer", outcome: "OK", changedRows: 1 }]);
 	});
 
 	it("refuses a counterpart that is no candidate, writing nothing", async () => {
-		const { outflow, later, transferId } = await household();
+		const { outflow, livret, transferId } = await household();
+		const tooFarAway = await postOwn(livret.id, {
+			date: "2026-10-11",
+			label: "Bien plus tard",
+			amount: "500,00",
+		});
 		const tools = await assistants();
 		await tools.write("unpair_transfer", { transfer_id: transferId });
 		await db.delete(assistantCalls);
 
 		const tooFar = await tools.write("pair_transfer", {
 			transaction_id: outflow,
-			counterpart_id: later,
+			counterpart_id: tooFarAway,
 		});
 		const unknown = await tools.write("pair_transfer", {
 			transaction_id: "nothing",
-			counterpart_id: later,
+			counterpart_id: tooFarAway,
 		});
 
 		expect(tooFar.isError).toBe(true);
@@ -278,7 +292,7 @@ describe("pair_transfer", () => {
 
 describe("unpair_transfer", () => {
 	it("undoes a transfer as « Dissocier », both sides as they were, the pair a candidate again", async () => {
-		const { outflow, inflow, transferId } = await household();
+		const { outflow, inflow, later, transferId } = await household();
 		const categoryId = await ownCategory("Épargne");
 		const tag = z
 			.object({ data: z.object({ id: z.string() }) })
@@ -305,6 +319,7 @@ describe("unpair_transfer", () => {
 		const again = await tools.read("get_transfer_candidates", { transaction_id: outflow });
 		expect(candidates.parse(again.structuredContent).candidates.map((row) => row.id)).toEqual([
 			inflow,
+			later,
 		]);
 		expect(await calls()).toEqual([
 			{ tool: "unpair_transfer", outcome: "OK", changedRows: 1 },
@@ -312,14 +327,17 @@ describe("unpair_transfer", () => {
 		]);
 	});
 
-	it("with never_propose refuses the pair for good, as « Ne plus proposer »", async () => {
-		const { outflow, inflow, transferId } = await household();
+	it("with never_propose keeps the matcher from proposing the pair again, as « Ne plus proposer »", async () => {
+		const { checking, outflow, inflow, transferId } = await household();
 		const tools = await assistants();
 
 		const result = await tools.write("unpair_transfer", {
 			transfer_id: transferId,
 			never_propose: true,
 		});
+		// Any later line runs the matcher again.
+		await postOwn(checking.id, { date: "2026-09-14", label: "Café", amount: "-3,20" });
+		expect(await transfersNow()).toEqual([]);
 		const offered = await tools.read("get_transfer_candidates", { transaction_id: outflow });
 		const repaired = await tools.write("pair_transfer", {
 			transaction_id: outflow,
@@ -327,13 +345,18 @@ describe("unpair_transfer", () => {
 		});
 
 		expect(unpaired.parse(result.structuredContent)).toMatchObject({ never_propose: true });
-		expect(candidates.parse(offered.structuredContent).candidates).toEqual([]);
-		expect(repaired.content[0]?.text).toContain('"code":"not_a_candidate"');
-		expect(await transfersNow()).toEqual([]);
+		// By hand, as Sure's picker, a refused pair is still offered.
+		expect(candidates.parse(offered.structuredContent).candidates.map((row) => row.id)).toContain(
+			inflow,
+		);
+		expect(paired.parse(repaired.structuredContent)).toMatchObject({
+			outflow_transaction_id: outflow,
+			inflow_transaction_id: inflow,
+		});
 		expect(await calls()).toEqual([
 			{ tool: "unpair_transfer", outcome: "OK", changedRows: 1 },
 			{ tool: "get_transfer_candidates", outcome: "OK", changedRows: 0 },
-			{ tool: "pair_transfer", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "pair_transfer", outcome: "OK", changedRows: 1 },
 		]);
 	});
 

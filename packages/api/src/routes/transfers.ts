@@ -4,7 +4,12 @@ import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
 import { transferBodySchema } from "../schemas/transfers.ts";
-import { createTransfer, deleteTransfer, rejectTransfer } from "../services/transfers.ts";
+import {
+	confirmTransfer,
+	createTransfer,
+	deleteTransfer,
+	rejectTransfer,
+} from "../services/transfers.ts";
 
 export function transfersRoutes(deps: ServiceDeps) {
 	return (
@@ -14,6 +19,9 @@ export function transfersRoutes(deps: ServiceDeps) {
 			)
 			.delete("/:id", async (c) =>
 				c.json({ data: await deleteTransfer(deps, c.req.param("id")) }, 200),
+			)
+			.post("/:id/confirm", async (c) =>
+				c.json({ data: await confirmTransfer(deps, c.req.param("id")) }, 200),
 			)
 			// Answered as the delete: the pair is gone either way, and the interface
 			// refreshes the same rows.

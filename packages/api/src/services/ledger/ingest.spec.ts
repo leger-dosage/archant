@@ -95,7 +95,6 @@ describe("ingest", () => {
 			merchantId: null,
 			tagIds: [],
 			transfer: null,
-			transferSuggested: false,
 			possibleDuplicate: false,
 			parentEntryId: null,
 		});
@@ -1217,19 +1216,30 @@ describe("rules at ingestion", () => {
 		]);
 	});
 
-	it("leaves a line unpaired when the expected account holds two candidates", async () => {
-		const { checking: joint, livret } = await openHousehold();
+	it("pairs the closest of the expected account's candidates, though another account holds a closer one", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		await add(livret.id, { amount: toMinorUnits(amount), label: "A" });
-		await add(livret.id, { amount: toMinorUnits(amount), label: "B" });
+		const near = await add(livret.id, {
+			date: "2026-09-11",
+			amount: toMinorUnits(amount),
+			label: "A",
+		});
+		await add(livret.id, { date: "2026-09-13", amount: toMinorUnits(amount), label: "B" });
+		await add(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
 		await newRuleWith(
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
 
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		const outflow = await add(joint.id, {
+			date: "2026-09-10",
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
 
-		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: near, status: "pending" },
+		]);
 	});
 
 	it("stops a later rule from seeing a rename the locked label refused", async () => {
@@ -1247,16 +1257,20 @@ describe("rules at ingestion", () => {
 	it("narrows the candidate's own list too, so its line with two candidates still pairs", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		const onLivret = await add(livret.id, { amount: toMinorUnits(amount) });
-		// A second candidate for the Livret A line, unlinked from it: without
-		// narrowing its list, the choice would not be mutual.
-		await addStandard(card.id, { amount: toMinorUnits(-amount) });
+		const onLivret = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		// A second candidate for the Livret A line, the same day, unlinked from
+		// it: without narrowing the Livret A line's list, it would win as closer.
+		await addStandard(card.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
 		await newRuleWith(
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
 
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		const outflow = await add(joint.id, {
+			date: "2026-09-12",
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
 
 		await expect(transferRows(outflow)).resolves.toMatchObject([
 			{ outflowTransactionId: outflow, inflowTransactionId: onLivret },
@@ -1291,14 +1305,18 @@ describe("rules at ingestion", () => {
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
-		// A second candidate for the inflow, on another account: without the
-		// expectation, the inflow would have two and pair with neither.
-		await add(card.id, { amount: toMinorUnits(-amount), label: "Autre" });
+		const outflow = await add(joint.id, {
+			date: "2026-09-12",
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
+		// A second candidate for the inflow, on another account and the
+		// inflow's own day: without the expectation, it would win as closer.
+		await add(card.id, { date: "2026-09-10", amount: toMinorUnits(-amount), label: "Autre" });
 
 		const { result } = await importStatement(
 			livret.id,
-			statementOf(line({ amount: toMinorUnits(amount), label: "VIR RECU" })),
+			statementOf(line({ date: "2026-09-10", amount: toMinorUnits(amount), label: "VIR RECU" })),
 		);
 
 		await expect(transferRows(outflow)).resolves.toMatchObject([

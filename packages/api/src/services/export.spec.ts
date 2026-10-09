@@ -261,6 +261,7 @@ async function household() {
 
 	const toSavings = await moved(ids.checking, ids.savings, "2026-09-02", "100,00");
 	const toCard = await moved(ids.checking, ids.card, "2026-09-03", "80,00");
+	await sendOwn("POST", `/api/transfers/${toCard.transfer}/confirm`);
 	const toLoan = await moved(ids.checking, ids.autoLoan, "2026-09-04", "300,00");
 	const toPea = await moved(ids.checking, ids.pea, "2026-09-05", "200,00");
 	const refused = await moved(ids.checking, ids.savings, "2026-09-06", "33,00");
@@ -1099,11 +1100,46 @@ describe("exportArchive", () => {
 		expect(archive.of("Transfer")).toEqual([]);
 		expect(transactions.get(pair.outflow)).toMatchObject({
 			kind: "standard",
-			archant: { transfer: { id: pair.transfer, kind: "internal_move", side: "outflow" } },
+			archant: {
+				transfer: { id: pair.transfer, kind: "internal_move", status: "pending", side: "outflow" },
+			},
 		});
 		expect(transactions.get(pair.inflow)).toMatchObject({
 			kind: "standard",
 			archant: { transfer: { id: pair.transfer, kind: "internal_move", side: "inflow" } },
+		});
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
+	it("takes Sure's 4 days for a pending transfer and 30 for a confirmed one", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ openingDate: "2026-04-01" });
+		const savings = await account({ name: "Livret A", type: "depository", subtype: "savings" });
+		const pending = await moved(checking.id, savings, "2026-09-10", "75,00");
+		await sendOwn("PATCH", `/api/transactions/${pending.outflow}`, { date: "2026-09-05" });
+		const confirmed = await moved(checking.id, savings, "2026-09-20", "45,00");
+		await sendOwn("POST", `/api/transfers/${confirmed.transfer}/confirm`);
+		await sendOwn("PATCH", `/api/transactions/${confirmed.outflow}`, { date: "2026-08-21" });
+
+		const archive = await exported();
+
+		const transactions = new Map(archive.of("Transaction").map((row) => [row["id"], row]));
+
+		expect(archive.of("Transfer")).toEqual([
+			expect.objectContaining({ id: confirmed.transfer, status: "confirmed" }),
+		]);
+		// Refused by Sure, the pending pair keeps its link and status on both sides.
+		expect(transactions.get(pending.outflow)).toMatchObject({
+			kind: "standard",
+			archant: {
+				transfer: { id: pending.transfer, status: "pending", side: "outflow" },
+			},
+		});
+		expect(transactions.get(pending.inflow)).toMatchObject({
+			kind: "standard",
+			archant: {
+				transfer: { id: pending.transfer, status: "pending", side: "inflow" },
+			},
 		});
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
@@ -1337,6 +1373,7 @@ describe("exportArchive", () => {
 			status: "confirmed",
 			archant: { kind: "credit_card_payment" },
 		});
+		expect(transfers.get(toSavings.transfer)).toMatchObject({ status: "pending" });
 		expect(kinds.get(refused.outflow)).toBe("standard");
 		expect(archive.of("RejectedTransfer")).toEqual([
 			expect.objectContaining({

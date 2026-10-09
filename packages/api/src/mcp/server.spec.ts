@@ -1468,7 +1468,6 @@ describe("reading accounts, recurring series and one transaction", () => {
 				counterpart_transaction_id: inflow,
 				counterpart_account: { id: savings.id, name: "Livret détail" },
 			},
-			transfer_suggested: false,
 			source: { kind: "manual" },
 		});
 	});

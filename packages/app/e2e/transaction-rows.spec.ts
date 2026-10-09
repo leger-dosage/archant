@@ -86,7 +86,7 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 		amount: "-5,00",
 	});
 	await api.addTransaction(checking.id, { date, label: label.bare, amount: "-1,00" });
-	// Each pair is linked on creation: one candidate of the opposite amount.
+	// Each pair is proposed on creation: one candidate of the opposite amount.
 	await api.addTransaction(checking.id, { date, label: label.out, amount: `-${saved}` });
 	await api.addTransaction(livret.id, { date, label: label.into, amount: saved });
 	const instalmentId = await api.addTransaction(checking.id, {
@@ -101,6 +101,7 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 		amount: "-9,99",
 	});
 	await api.categorise([foodId, instalmentId], food.id);
+	await api.confirmTransfer(instalmentId);
 	await api.setMerchant([merchantId], merchant.id);
 	await api.addRecurring(subscriptionId);
 
@@ -182,21 +183,22 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	await expect(pill(page, label.bare)).toHaveText("Sans catégorie");
 	await expect(badges(page, label.bare)).toHaveCount(0);
 
-	// Both sides of a move between accounts.
+	// Both sides of a move between accounts, as the matcher proposed it.
 	await Promise.all(
 		[label.out, label.into].flatMap((side) => [
 			expect(rowIcon(page, side).locator("svg.lucide-arrow-left-right")).toBeVisible(),
 			expect(pill(page, side)).toHaveText("Virement"),
-			expect(badges(page, side)).toHaveText(["Virement interne"]),
-			expect(badges(page, side).locator("svg.lucide-arrow-left-right")).toBeVisible(),
+			expect(badges(page, side)).toHaveText(["Correspondance automatique"]),
+			expect(badges(page, side).locator("svg.lucide-wand-sparkles")).toBeVisible(),
 		]),
 	);
 	await expect(rowButton(page, label.out)).toContainText(`Vers ${livret.name}`);
 
-	// A spent loan payment keeps its category, and says it is a transfer.
+	// A spent loan payment, confirmed, keeps its category, and says it is a transfer.
 	await expect(rowIcon(page, label.instalment).locator("svg.lucide-utensils")).toBeVisible();
 	await expect(pill(page, label.instalment)).toHaveText(food.name);
 	await expect(badges(page, label.instalment)).toHaveText(["Virement interne"]);
+	await expect(badges(page, label.instalment).locator("svg.lucide-arrow-left-right")).toBeVisible();
 	await expect(rowButton(page, label.instalment)).toContainText(
 		`Remboursement de prêt · Vers ${loan.name}`,
 	);
@@ -320,7 +322,7 @@ test("the sheet is a 550 px drawer 12 px off the viewport's edges, and the whole
 	expect(await sheet.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
 });
 
-test("pending, possible duplicate and possible transfer rows each carry their badge", async ({
+test("pending, possible duplicate and proposed transfer rows each carry their badge", async ({
 	page,
 	api,
 }) => {
@@ -329,7 +331,7 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 	const label = {
 		pending: `${prefix} en attente`,
 		duplicate: `${prefix} doublon`,
-		suggested: `${prefix} virement`,
+		proposed: `${prefix} virement`,
 		both: `${prefix} attente et doublon`,
 	};
 	await Promise.all(
@@ -348,7 +350,19 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 				...item,
 				pending: item.label === label.pending || item.label === label.both,
 				possibleDuplicate: item.label === label.duplicate || item.label === label.both,
-				transferSuggested: item.label === label.suggested,
+				// A transfer the matcher proposed, as Sure's « Correspondance automatique ».
+				...(item.label === label.proposed
+					? {
+							transfer: {
+								id: "proposed",
+								kind: "internal_move",
+								status: "pending",
+								counterpartTransactionId: "other-side",
+								counterpartAccountId: "livret",
+								counterpartAccountName: "Livret A",
+							},
+						}
+					: {}),
 			}));
 
 			await route.fulfill({ response, json: { data: { ...body.data, items } } });
@@ -362,7 +376,7 @@ test("pending, possible duplicate and possible transfer rows each carry their ba
 			[
 				[label.pending, "En attente", "clock"],
 				[label.duplicate, "Doublon possible", "triangle-alert"],
-				[label.suggested, "Virement possible", "arrow-left-right"],
+				[label.proposed, "Correspondance automatique", "wand-sparkles"],
 			] as const
 		).flatMap(([row, text, icon]) => [
 			expect(badges(page, row)).toHaveText([text]),

@@ -4,8 +4,9 @@ import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-o
 import { transactions } from "./transactions.ts";
 
 /**
- * A pair of transactions the user refused as one transfer, so no candidate
- * search, by hand or automatic, offers it again. Only the ledger writes it.
+ * A pair of transactions the user refused as one transfer, so the matcher
+ * never proposes it again; the user may still pair it by hand, as in Sure.
+ * Only the ledger writes it.
  */
 export const rejectedTransfers = sqliteTable(
 	"rejected_transfers",

@@ -16,7 +16,7 @@ import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
-import type { TransferKind } from "@archant/data/transfer-kinds";
+import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
 import { firstShortfall } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
@@ -274,6 +274,7 @@ export const counterpartIdOf = sql`coalesce(${asOutflow.inflowTransactionId}, ${
 export const transferColumns = {
 	transferId: sql<string | null>`coalesce(${asOutflow.id}, ${asInflow.id})`,
 	transferKind: sql<TransferKind | null>`coalesce(${asOutflow.kind}, ${asInflow.kind})`,
+	transferStatus: sql<TransferStatus | null>`coalesce(${asOutflow.status}, ${asInflow.status})`,
 	counterpartTransactionId: counterpartEntry.id,
 	counterpartAccountId: counterpartAccount.id,
 	counterpartAccountName: counterpartAccount.name,
@@ -282,6 +283,7 @@ export const transferColumns = {
 export type TransferColumns = {
 	transferId: string | null;
 	transferKind: TransferKind | null;
+	transferStatus: TransferStatus | null;
 	counterpartTransactionId: string | null;
 	counterpartAccountId: string | null;
 	counterpartAccountName: string | null;
