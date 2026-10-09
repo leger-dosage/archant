@@ -3,8 +3,10 @@ import type { Selection } from "@/hooks/useSelection";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { ReactNode } from "react";
 
+import { CheckIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryPill, TransferPill } from "@/components/CategoryPill";
@@ -14,6 +16,7 @@ import { Money } from "@/components/Money";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,8 +26,11 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
+import { useConfirmTransfer, useRejectTransfer } from "@/hooks/useTransfers";
+import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayHeading } from "@/lib/dates";
+import { showErrorToast } from "@/lib/error-toast";
 import { rowSubject } from "@/lib/tint";
 import { groupByDay } from "@/lib/transaction-days";
 import { showsCategory, transferCaption } from "@/lib/transfers";
@@ -173,6 +179,71 @@ function TransferChip({ kind }: { kind: NonNullable<TransactionData["transfer"]>
 }
 
 /**
+ * The room after the row button where an administrator confirms or rejects a
+ * proposed transfer, kept on every row of a list that holds a proposal so the
+ * amounts stay in one column.
+ */
+const MATCH_ACTIONS_SLOT = "flex w-16 shrink-0 items-center justify-end gap-1 pr-1";
+
+const failed = (error: unknown) => showErrorToast(errorCodeOf(error));
+
+/**
+ * Sure's `_transfer_match` buttons on a side of a transfer the matcher
+ * proposed: beside the row button, never inside it, as the checkbox is.
+ * Rejecting refuses the pair for good, as the sheet's « Ne plus proposer ».
+ * The toast follows the promise, not `mutate`'s callbacks: the refreshed list
+ * unmounts these buttons first, and an unmounted observer calls none.
+ */
+function MatchActions({ transferId }: { transferId: string }) {
+	const { t } = useTranslation();
+	const confirmTransfer = useConfirmTransfer();
+	const rejectTransfer = useRejectTransfer();
+	const pending = confirmTransfer.isPending || rejectTransfer.isPending;
+	const actions = [
+		{
+			label: t("transactions.transfer.confirmMatch"),
+			icon: CheckIcon,
+			run: async () =>
+				confirmTransfer
+					.mutateAsync(transferId)
+					.then(() => toast.success(t("transactions.transfer.confirmed")), failed),
+		},
+		{
+			label: t("transactions.transfer.rejectMatch"),
+			icon: XIcon,
+			run: async () =>
+				rejectTransfer
+					.mutateAsync(transferId)
+					.then(() => toast.success(t("transactions.transfer.rejected")), failed),
+		},
+	];
+
+	return (
+		// On a phone, under the amount, on the row's second line: beside it they
+		// left the label a few letters and pushed the amount out of its column.
+		<span className={cn(MATCH_ACTIONS_SLOT, "max-md:absolute max-md:right-0 max-md:bottom-1")}>
+			{actions.map(({ label, icon: Icon, run }) => (
+				<Tooltip key={label}>
+					<TooltipTrigger asChild>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							aria-label={label}
+							disabled={pending}
+							onClick={() => void run()}
+						>
+							<Icon aria-hidden="true" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">{label}</TooltipContent>
+				</Tooltip>
+			))}
+		</span>
+	);
+}
+
+/**
  * The row's checkbox, before its label, always shown: a touch screen has no
  * hover to reveal it. `Shift`+click ticks the range from the last row toggled.
  */
@@ -222,6 +293,8 @@ type RowContext = {
 	selection: Selection | undefined;
 	/** Whether the category chip opens its picker; a viewer's is a plain pill. */
 	admin: boolean;
+	/** Whether rows keep room after them for confirming a proposed transfer. */
+	matchActions: boolean;
 	columns: string;
 	categories: readonly CategoryData[] | undefined;
 	categoryOf: ReadonlyMap<string, CategoryData>;
@@ -347,10 +420,11 @@ function RowLine({
 								<StatusBadge status="recurring" iconBelowMd className="shrink-0" />
 							)}
 							{item.transfer !== null && (
-								<StatusBadge status="transfer" iconBelowMd className="shrink-0" />
-							)}
-							{item.transfer === null && item.transferSuggested && (
-								<StatusBadge status="transferSuggested" iconBelowMd className="shrink-0" />
+								<StatusBadge
+									status={item.transfer.status === "pending" ? "autoMatched" : "transfer"}
+									iconBelowMd
+									className="shrink-0"
+								/>
 							)}
 							{item.possibleDuplicate && (
 								<StatusBadge status="duplicate" iconBelowMd className="shrink-0" />
@@ -429,6 +503,13 @@ function RowLine({
 					/>
 				)}
 			</div>
+			{context.matchActions &&
+				(!parent && item.transfer?.status === "pending" ? (
+					<MatchActions transferId={item.transfer.id} />
+				) : (
+					// From 768 px only: on a phone the buttons sit under the amount.
+					<span aria-hidden="true" className={cn(MATCH_ACTIONS_SLOT, "max-md:hidden")} />
+				))}
 		</Line>
 	);
 }
@@ -460,6 +541,7 @@ export function TransactionList({
 		showAccount,
 		selection,
 		admin,
+		matchActions: admin && items.some((item) => item.transfer?.status === "pending"),
 		columns,
 		categories: categories.data,
 		categoryOf: new Map((categories.data ?? []).map((category) => [category.id, category])),
@@ -496,6 +578,7 @@ export function TransactionList({
 							{t("transactions.columns.amount")}
 						</span>
 					</div>
+					{context.matchActions && <span className={MATCH_ACTIONS_SLOT} />}
 				</div>
 			</div>
 			{groupByDay(items, splitParents).map((day) => (

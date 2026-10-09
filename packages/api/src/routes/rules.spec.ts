@@ -69,6 +69,22 @@ async function pairedAccounts(entryId: string) {
 	);
 }
 
+const linkedBody = z.object({ data: z.object({ transfer: z.object({ id: z.string() }) }) });
+
+/**
+ * Undoes the transfer `entryId` sits in, as « Dissocier »: the row read
+ * through the edit route, as the sheet reads it with an empty patch.
+ */
+async function dissociate(entryId: string) {
+	const row = await request("PATCH", `/api/transactions/${entryId}`, {});
+	const { status } = await request(
+		"DELETE",
+		`/api/transfers/${linkedBody.parse(row.body).data.transfer.id}`,
+	);
+
+	expect(status).toBe(200);
+}
+
 const page = async (number: number) =>
 	(await request("GET", `/api/rules/runs?page=${number}&pageSize=1`)).body;
 
@@ -681,15 +697,23 @@ describe("rules", () => {
 		await expect(detailsOf(joint.id)).resolves.toMatchObject([{ tags: moved.id }]);
 	});
 
-	it("pairs an unmatched row with the one candidate on the account « Virement avec » names", async () => {
+	it("pairs an unmatched row with the candidate on the account « Virement avec » names, though another is closer", async () => {
 		const joint = await openAccount();
 		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
 		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
-		// Both inflows first: the outflow arrives with two candidates and stays alone.
 		await typed(card.id, { ...expense, label: "REMBOURSEMENT", amount: "521,09" });
-		await typed(livret.id, { ...expense, label: "VIR RECU", amount: "521,09" });
+		await typed(livret.id, {
+			...expense,
+			date: "2026-09-12",
+			label: "VIR RECU",
+			amount: "521,09",
+		});
 		const outflow = await typed(joint.id, { ...expense, label: "VIR ORION", amount: "-521,09" });
-		await expect(pairedAccounts(outflow)).resolves.toEqual([]);
+		// The matcher proposed the card's line, the same day; « Dissocier » undoes it.
+		await expect(pairedAccounts(outflow)).resolves.toEqual([
+			{ outflow: joint.id, inflow: card.id },
+		]);
+		await dissociate(outflow);
 		const rule = await createRule({
 			conditions: [ruleLeaf("transaction_name", "like", "orion")],
 			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
@@ -702,12 +726,23 @@ describe("rules", () => {
 		]);
 	});
 
-	it("leaves the row unpaired when the named account holds several candidates", async () => {
+	it("pairs the closest of the candidates on the named account", async () => {
 		const joint = await openAccount();
 		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
-		await typed(livret.id, { ...expense, label: "VIR RECU 1", amount: "433,51" });
-		await typed(livret.id, { ...expense, label: "VIR RECU 2", amount: "433,51" });
+		await typed(livret.id, {
+			...expense,
+			date: "2026-09-13",
+			label: "VIR RECU 1",
+			amount: "433,51",
+		});
+		const near = await typed(livret.id, {
+			...expense,
+			date: "2026-09-11",
+			label: "VIR RECU 2",
+			amount: "433,51",
+		});
 		const outflow = await typed(joint.id, { ...expense, label: "VIR LYRE", amount: "-433,51" });
+		await dissociate(outflow);
 		const rule = await createRule({
 			conditions: [ruleLeaf("transaction_name", "like", "lyre")],
 			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
@@ -716,7 +751,11 @@ describe("rules", () => {
 		await expect(applied(`/api/rules/${rule.id}/apply`)).resolves.toMatchObject([
 			{ changedCount: 1 },
 		]);
-		await expect(pairedAccounts(outflow)).resolves.toEqual([]);
+		await expect(
+			temp.db.all(
+				sql`select inflow_transaction_id as inflow from transfers where outflow_transaction_id = ${outflow}`,
+			),
+		).resolves.toEqual([{ inflow: near }]);
 	});
 
 	it("counts nothing and records no run without an enabled rule", async () => {

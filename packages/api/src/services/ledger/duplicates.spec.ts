@@ -40,6 +40,7 @@ import {
 	transactionCount,
 	transferAmount,
 	transferRows,
+	unpair,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { dismissDuplicate, duplicateCandidates, mergeDuplicate } from "./duplicates.ts";
@@ -281,6 +282,7 @@ describe("possible duplicates", () => {
 				date: "2026-09-04",
 				amount: opposite(amount),
 			});
+			await unpair(flagged, first, theirs, ours);
 			await insertTransfer(flagged, theirs, "internal_move");
 			await insertTransfer(first, ours, "internal_move");
 

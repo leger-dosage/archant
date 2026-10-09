@@ -49,6 +49,17 @@ export function useMatchTransfer() {
 	});
 }
 
+/** Confirms a transfer the matcher proposed, as Sure's « Confirmer la correspondance ». */
+export function useConfirmTransfer() {
+	const invalidate = useInvalidateTransactions();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.transfers[":id"].confirm.$post({ param: { id } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
 /** Undoes a transfer and refuses its pair for good: « Ne plus proposer ». */
 export function useRejectTransfer() {
 	const invalidate = useInvalidateTransactions();

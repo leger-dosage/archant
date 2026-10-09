@@ -248,6 +248,7 @@ export const EXPORTED_COLUMNS = {
 		outflowTransactionId: transfers.outflowTransactionId,
 		inflowTransactionId: transfers.inflowTransactionId,
 		kind: transfers.kind,
+		status: transfers.status,
 		createdAt: transfers.createdAt,
 	},
 	rejected_transfers: {
@@ -671,8 +672,8 @@ async function transactionPage(db: Reader, view: SplitView, size: number, after:
 			...EXPORTED_COLUMNS.entries,
 			transaction: EXPORTED_COLUMNS.transactions,
 			// `null` for a transaction outside a transfer, or on its other side.
-			outflowOf: { id: asOutflow.id, kind: asOutflow.kind },
-			inflowOf: { id: asInflow.id, kind: asInflow.kind },
+			outflowOf: { id: asOutflow.id, kind: asOutflow.kind, status: asOutflow.status },
+			inflowOf: { id: asInflow.id, kind: asInflow.kind, status: asInflow.status },
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))

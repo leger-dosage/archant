@@ -169,7 +169,7 @@ const INSTRUCTIONS = [
 	"5. Call confirm_import with those counts as expected_counts. If it answers IMPORT_PREVIEW_STALE, call preview_import again and show the owner.",
 	"An import is reverted from the account's « Imports » tab in Archant, not by a tool.",
 	"To fix a transfer:",
-	"- A transfer joins two transactions of the household's own accounts, which then count in neither income nor expenses. Matching pairs two lines of opposite amounts a few days apart when each is the other's only candidate, so it may pair two unrelated lines; transfer_suggested marks a line it left for the owner to pair.",
+	"- A transfer joins two transactions of the household's own accounts, which then count in neither income nor expenses. Matching proposes, for each line, the closest candidate of the opposite amount at most 4 days away, and the owner confirms or rejects the proposal in Archant's transaction list; until rejected, a proposal counts as a transfer, so it may join two unrelated lines.",
 	"- Before pair_transfer or unpair_transfer, show the owner both sides with get_transaction and wait for their agreement.",
 	"- Before passing never_propose, ask the owner whether this pair should never be proposed again: the refusal cannot be undone.",
 	"To record a balance:",

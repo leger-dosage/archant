@@ -30,10 +30,9 @@ export type TransferLink = TransactionData["transfer"];
 /**
  * The sheet's « Virement » block: the other side, « Ne plus proposer » and
  * « Dissocier » for a transfer side, « Rapprocher un virement » for a standard
- * transaction, under a suggestion when it has several candidates. It
- * saves at once, apart from the form, so it keeps the link it last saved
- * rather than the row the sheet was opened with. A viewer reads the link
- * without its actions.
+ * transaction. It saves at once, apart from the form, so it keeps the link
+ * it last saved rather than the row the sheet was opened with. A viewer
+ * reads the link without its actions.
  */
 export function TransferBlock({
 	transaction,
@@ -60,6 +59,7 @@ export function TransferBlock({
 					onChange({
 						id: saved.id,
 						kind: saved.kind,
+						status: saved.status,
 						counterpartTransactionId: candidate.id,
 						counterpartAccountId: candidate.accountId,
 						counterpartAccountName: candidate.accountName,
@@ -99,11 +99,7 @@ export function TransferBlock({
 			</h3>
 			{transfer === null || caption === null ? (
 				<div className="flex flex-col items-start gap-2">
-					<p className="text-sm text-muted-foreground">
-						{transaction.transfer === null && transaction.transferSuggested
-							? t("transactions.transfer.suggestion")
-							: t("transactions.transfer.none")}
-					</p>
+					<p className="text-sm text-muted-foreground">{t("transactions.transfer.none")}</p>
 					{admin && (
 						<>
 							<Button type="button" variant="outline" onClick={() => setPicking(true)}>

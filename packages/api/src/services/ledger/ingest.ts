@@ -47,7 +47,7 @@ import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from 
 import { applyRulePlan } from "./rule-plans.ts";
 import { ROWS_PER_INSERT, inSequence, invalidField, oneByOne } from "./shared.ts";
 import { snapshotOn } from "./snapshots.ts";
-import { matchNewTransfers } from "./transfers.ts";
+import { matchTransfers } from "./transfers.ts";
 
 /**
  * Where the statement comes from. A manual line carries no key; an import's
@@ -977,12 +977,9 @@ export async function ingest(
 				await applyRulePlan(tx, plan, { origin: "rule" });
 			}
 
-			// 6. Transfer matching, once every new row exists (AD-11).
-			await matchNewTransfers(
-				tx,
-				rows.map((row) => row.id),
-				now,
-			);
+			// 6. Transfer matching, once every new row exists, over every unmatched
+			// line of the household as Sure's family sync (AD-11).
+			await matchTransfers(tx, now);
 
 			// 7. The statement balance (AD-8). A sync's earlier bank figure stays
 			// as a reconciliation, so one missing line cannot shift the whole past.

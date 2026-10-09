@@ -315,6 +315,16 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await sheet.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(sheet).toBeHidden();
 
+			// Sure's pill on the proposal, without its « Confirmer » and « Rejeter ».
+			const transferRow = page
+				.getByRole("main")
+				.getByRole("listitem")
+				.filter({ has: page.locator(`[data-transaction-id="${transfer}"]`) });
+			await expect(transferRow.getByText("Correspondance automatique")).toBeVisible();
+			await expectNone(transferRow, [
+				{ role: "button", name: "Confirmer la correspondance" },
+				{ role: "button", name: "Rejeter la correspondance" },
+			]);
 			await page.locator(`[data-transaction-id="${transfer}"]`).click();
 			await expect(sheet).toBeVisible();
 			await expect(sheet.getByText(`Vers ${savings.name}`).first()).toBeVisible();

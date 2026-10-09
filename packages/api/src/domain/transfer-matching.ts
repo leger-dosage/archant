@@ -8,11 +8,19 @@ import type { TransferKind } from "@archant/data/transfer-kinds";
 import { daysBetween } from "./dates.ts";
 
 /**
- * How far apart the two sides of a transfer may be dated, inclusive: a
- * transfer between two banks can take a few working days to land. Not the
- * import's `MATCH_WINDOW_DAYS`, which pairs one line with itself.
+ * How far apart the two sides of a transfer the matcher proposes may be
+ * dated, inclusive, as Sure's `auto_match_transfers!`: a transfer between two
+ * banks can take a few working days to land. Not the import's
+ * `MATCH_WINDOW_DAYS`, which pairs one line with itself.
  */
 export const TRANSFER_WINDOW_DAYS = 4;
+
+/**
+ * The same for a pair the owner makes by hand, as Sure's
+ * `transfer_match_candidates(date_window: 30)`: the owner knows a cheque took
+ * three weeks to clear, the matcher cannot.
+ */
+export const HAND_TRANSFER_WINDOW_DAYS = 30;
 
 /** What the rule reads of each side. */
 export type TransferSide = {
@@ -37,14 +45,13 @@ export type TransferSide = {
 /**
  * Whether `a` and `b` can be the two sides of one transfer: two transactions
  * of opposite, non-zero amounts in two accounts of one currency, dated within
- * `TRANSFER_WINDOW_DAYS`, neither already matched, excluded nor a split
- * line, both accounts active, as Sure's `Family::AutoTransferMatchable`. A
- * split parent is excluded, so neither side of a split is ever a candidate.
- * Symmetric, so the manual picker and the automatic matcher of Story 5.2
- * agree whichever side they start from. No conversion: a cross-currency move
- * is two standard rows.
+ * `windowDays`, neither already matched, excluded nor a split line, both
+ * accounts active, as Sure's `Family::AutoTransferMatchable`. A split parent
+ * is excluded, so neither side of a split is ever a candidate. Symmetric, so
+ * the picker and the matcher agree whichever side they start from. No
+ * conversion: a cross-currency move is two standard rows.
  */
-export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
+export function isTransferCandidate(a: TransferSide, b: TransferSide, windowDays: number): boolean {
 	return (
 		a.kind === "transaction" &&
 		b.kind === "transaction" &&
@@ -52,7 +59,7 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide): boolean {
 		a.amount + b.amount === 0 &&
 		a.accountId !== b.accountId &&
 		a.currency === b.currency &&
-		Math.abs(daysBetween(a.date, b.date)) <= TRANSFER_WINDOW_DAYS &&
+		Math.abs(daysBetween(a.date, b.date)) <= windowDays &&
 		!a.inTransfer &&
 		!b.inTransfer &&
 		!a.excluded &&
@@ -90,37 +97,34 @@ export function transferKindOf(
 	return kinds[inflowAccountType];
 }
 
+/** A candidate pair as ranking reads it: its two sides and how many days apart they are. */
+export type RankedPair = { outflowId: string; inflowId: string; days: number };
+
+/** Code-unit order, as SQLite's `BINARY` collation sorts ids. */
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+const byRank = (a: RankedPair, b: RankedPair) =>
+	a.days - b.days || byText(a.outflowId, b.outflowId) || byText(a.inflowId, b.inflowId);
+
 /**
- * The pairs automatic matching links: `n`, one of `newIds`, and `c`, when `n`
- * has exactly one candidate `c` and `c` has exactly one candidate, `n`.
- * Mutual uniqueness keeps an outflow that two inflows compete for, or an
- * inflow two outflows compete for, unlinked, whatever order the rows arrived
- * in. Each pair comes once, in the order of `newIds`, the new side first; two
- * new rows that pick each other come once, as the earlier one's pair.
+ * The pairs the matcher proposes, as Sure's `auto_match_transfers!`: every
+ * candidate pair ranked by days apart, Sure's `match_rank` being 0 for every
+ * pair of one currency, then by outflow and inflow id so that the result
+ * never depends on the order the rows arrived in; walking them, a pair is
+ * taken when neither side is taken yet. Each line sits in one pair at most.
  */
-export function mutualMatches(
-	newIds: readonly string[],
-	candidatesOf: ReadonlyMap<string, readonly string[]>,
-): [string, string][] {
-	const paired = new Set<string>();
-	const pairs: [string, string][] = [];
+export function greedyMatches<Pair extends RankedPair>(pairs: readonly Pair[]): Pair[] {
+	const used = new Set<string>();
+	const taken: Pair[] = [];
 
-	for (const id of newIds) {
-		const [candidate, ...others] = candidatesOf.get(id) ?? [];
-
-		if (candidate === undefined || others.length > 0 || paired.has(id)) {
-			continue;
-		}
-
-		const back = candidatesOf.get(candidate) ?? [];
-
-		if (back.length === 1 && back[0] === id) {
-			paired.add(id).add(candidate);
-			pairs.push([id, candidate]);
+	for (const pair of pairs.toSorted(byRank)) {
+		if (!used.has(pair.outflowId) && !used.has(pair.inflowId)) {
+			used.add(pair.outflowId).add(pair.inflowId);
+			taken.push(pair);
 		}
 	}
 
-	return pairs;
+	return taken;
 }
 
 /** What narrowing reads of a side: its account and the account a rule expects its other side in. */
@@ -128,11 +132,11 @@ export type ExpectingSide = { id: string; accountId: string; expectedAccountId: 
 
 /**
  * The candidates of `source` that automatic matching weighs, before
- * `mutualMatches`. A source a rule expects in account X keeps only its
+ * `greedyMatches`. A source a rule expects in account X keeps only its
  * candidates on X. A source expecting nothing, one of whose candidates
  * expects the source's account, keeps only such candidates. Otherwise every
- * candidate stays. A unique candidate then pairs as before, so one candidate
- * on X pairs even when other accounts hold candidates too.
+ * candidate stays, so a candidate on X wins even when another account holds
+ * a closer one.
  */
 export function narrowToExpected(
 	source: ExpectingSide,

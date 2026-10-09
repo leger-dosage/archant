@@ -30,6 +30,7 @@ import {
 	temp,
 	transferAmount,
 	transferRows,
+	unpair,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { updateAccount } from "../accounts.ts";
@@ -41,27 +42,34 @@ import {
 	updateTransaction,
 } from "./edits.ts";
 import { findTransaction, listTransactions } from "./queries.ts";
-import { matchTransfer, rejectTransfer, transferCandidates, unmatchTransfer } from "./transfers.ts";
+import {
+	confirmTransfer,
+	matchTransfer,
+	rejectTransfer,
+	transferCandidates,
+	unmatchTransfer,
+} from "./transfers.ts";
 
 useLedgerDatabase();
 
 describe("transferCandidates", () => {
-	it("offers only the opposite amount in another account within four days", async () => {
+	it("offers only the opposite amount in another account within 30 days", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const source = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
-		const dayFour = await addStandard(livret.id, {
-			date: "2026-09-14",
+		const dayThirty = await add(livret.id, {
+			date: "2026-10-10",
 			amount: toMinorUnits(amount),
 		});
-		await add(livret.id, { date: "2026-09-15", amount: toMinorUnits(amount) });
+		await add(livret.id, { date: "2026-10-11", amount: toMinorUnits(amount) });
 		await add(joint.id, { date: "2026-09-11", amount: toMinorUnits(amount) });
 		await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(amount - 1) });
 
+		await expect(transferRows(source)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), source)).resolves.toEqual([
 			{
-				id: dayFour,
-				date: "2026-09-14",
+				id: dayThirty,
+				date: "2026-10-10",
 				label: "Boulangerie",
 				amount,
 				currency: "EUR",
@@ -71,12 +79,13 @@ describe("transferCandidates", () => {
 		]);
 	});
 
-	it("lists the closest date first, before or after", async () => {
+	it("lists the closest date first, before or after, as Sure's picker", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
 		const source = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
-		const far = await addStandard(livret.id, { date: "2026-09-13", amount: toMinorUnits(-amount) });
+		const far = await add(livret.id, { date: "2026-09-30", amount: toMinorUnits(-amount) });
 		const near = await add(card.id, { date: "2026-09-09", amount: toMinorUnits(-amount) });
+		await unpair(source);
 
 		const candidates = await transferCandidates(deps(), source);
 
@@ -95,12 +104,10 @@ describe("transferCandidates", () => {
 		await expect(transferCandidates(deps(), source)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), zero)).resolves.toEqual([]);
 
-		const taken = await addStandard(livret.id, {
-			date: "2026-09-10",
-			amount: toMinorUnits(amount),
-		});
-		const other = await add(joint.id, { date: "2026-09-11", amount: toMinorUnits(-amount) });
-		await matchTransfer(deps(), other, taken, { origin: "user" });
+		// The matcher pairs these two at once.
+		const taken = await add(livret.id, { date: "2026-09-25", amount: toMinorUnits(amount) });
+		const other = await add(joint.id, { date: "2026-09-25", amount: toMinorUnits(-amount) });
+		await expect(transferRows(taken)).resolves.toMatchObject([{ outflowTransactionId: other }]);
 
 		await expect(transferCandidates(deps(), source)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), other)).resolves.toEqual([]);
@@ -147,6 +154,7 @@ describe("matchTransfer", () => {
 			outflowTransactionId: outflow,
 			inflowTransactionId: inflow,
 			kind: "internal_move",
+			status: "confirmed",
 		});
 		await expect(transferRows(outflow)).resolves.toEqual([transfer]);
 		await expect(history(joint.id)).resolves.toEqual(before.joint);
@@ -158,6 +166,7 @@ describe("matchTransfer", () => {
 			transfer: {
 				id: transfer.id,
 				kind: "internal_move",
+				status: "confirmed",
 				counterpartAccountId: livret.id,
 				counterpartAccountName: "Livret A",
 			},
@@ -187,12 +196,30 @@ describe("matchTransfer", () => {
 		);
 	});
 
+	it("pairs by hand two lines 30 days apart, confirmed, and no further", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		const late = await add(livret.id, { date: "2026-10-11", amount: toMinorUnits(amount) });
+		const inflow = await add(livret.id, { date: "2026-09-30", amount: toMinorUnits(amount) });
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await refusedMatch(outflow, late);
+		await expect(matchTransfer(deps(), outflow, inflow, asUser)).resolves.toMatchObject({
+			outflowTransactionId: outflow,
+			inflowTransactionId: inflow,
+			status: "confirmed",
+		});
+	});
+
 	it("refuses a counterpart already matched, writing nothing", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const first = await add(joint.id, { amount: toMinorUnits(-amount) });
 		const second = await add(joint.id, { amount: toMinorUnits(-amount) });
 		const inflow = await add(livret.id, { amount: toMinorUnits(amount) });
+		// The matcher proposed one of the two; the owner pairs the other by hand.
+		await unpair(inflow);
 		await matchTransfer(deps(), first, inflow, { origin: "user" });
 
 		await expect(matchTransfer(deps(), second, inflow, { origin: "user" })).rejects.toMatchObject({
@@ -227,6 +254,35 @@ describe("matchTransfer", () => {
 		const id = await add(joint.id, { amount: toMinorUnits(-transferAmount()) });
 
 		await expect(matchTransfer(deps(), "nope", id, { origin: "user" })).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+});
+
+describe("confirmTransfer", () => {
+	it("confirms what the matcher proposed, moving nothing else, and again changes nothing", async () => {
+		const { outflow, inflow, transfer, checking: joint } = await matchedPair();
+		const before = await history(joint.id);
+		expect(transfer.status).toBe("pending");
+
+		await expect(confirmTransfer(deps(), transfer.id, asUser)).resolves.toEqual({
+			outflowTransactionId: outflow,
+			inflowTransactionId: inflow,
+		});
+		await expect(confirmTransfer(deps(), transfer.id, asUser)).resolves.toEqual({
+			outflowTransactionId: outflow,
+			inflowTransactionId: inflow,
+		});
+
+		await expect(transferRows(outflow)).resolves.toEqual([{ ...transfer, status: "confirmed" }]);
+		await expect(findTransaction(deps(), inflow)).resolves.toMatchObject({
+			transfer: { id: transfer.id, status: "confirmed" },
+		});
+		await expect(history(joint.id)).resolves.toEqual(before);
+	});
+
+	it("answers NOT_FOUND for an unknown transfer", async () => {
+		await expect(confirmTransfer(deps(), "nope", asUser)).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
 	});
@@ -340,9 +396,6 @@ describe("a transfer when a side goes", () => {
 	});
 });
 
-const suggested = async (entryId: string) =>
-	(await findTransaction(deps(), entryId))?.transferSuggested;
-
 // Story 11.2: neither an excluded row nor a row of a deactivated account is a
 // side, as Sure's `Family::AutoTransferMatchable`.
 
@@ -352,7 +405,7 @@ const exclude = (entryId: string) =>
 const deactivate = (accountId: string) => updateAccount(deps(), accountId, { active: false });
 
 describe("transfer matching and excluded or inactive sides", () => {
-	it("never offers, links or suggests an excluded candidate", async () => {
+	it("never offers nor links an excluded candidate", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
@@ -363,8 +416,6 @@ describe("transfer matching and excluded or inactive sides", () => {
 		await expect(transferRows(outflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
 		await refusedMatch(outflow, inflow);
 		await refusedMatch(inflow, outflow);
 	});
@@ -380,13 +431,11 @@ describe("transfer matching and excluded or inactive sides", () => {
 		await expect(transferRows(inflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
 		await refusedMatch(outflow, inflow);
 		await refusedMatch(inflow, outflow);
 	});
 
-	it("never offers, links or suggests a row of a deactivated account, either side", async () => {
+	it("never offers nor links a row of a deactivated account, either side", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		await deactivate(livret.id);
@@ -397,8 +446,6 @@ describe("transfer matching and excluded or inactive sides", () => {
 		await expect(transferRows(outflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
 		await refusedMatch(outflow, inflow);
 		await refusedMatch(inflow, outflow);
 	});
@@ -415,11 +462,9 @@ describe("transfer matching and excluded or inactive sides", () => {
 		const [transfer] = await transferRows(outflow);
 		expect(transfer).toMatchObject({ outflowTransactionId: outflow, inflowTransactionId: inflow });
 
-		// Unlinked, the outflow has one candidate left: no suggestion.
+		// Unlinked, the outflow has one candidate left.
 		await unmatchTransfer(deps(), transfer?.id ?? "", { origin: "user" });
 		await expect(transferCandidates(deps(), outflow)).resolves.toMatchObject([{ id: inflow }]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
 	});
 
 	it("links the real pair beside a twin on a deactivated account", async () => {
@@ -437,8 +482,6 @@ describe("transfer matching and excluded or inactive sides", () => {
 
 		await unmatchTransfer(deps(), transfer?.id ?? "", { origin: "user" });
 		await expect(transferCandidates(deps(), outflow)).resolves.toMatchObject([{ id: inflow }]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
 	});
 
 	it("keeps an existing transfer when a side is excluded or its account deactivated", async () => {
@@ -470,12 +513,11 @@ describe("automatic transfer matching", () => {
 		await expect(lockedFields(outflow)).resolves.toEqual(before.locks);
 		await expect(categoryOf(outflow)).resolves.toBe(groceries);
 		await expect(findTransaction(deps(), inflow)).resolves.toMatchObject({
-			transfer: { counterpartAccountName: "Compte courant" },
-			transferSuggested: false,
+			transfer: { counterpartAccountName: "Compte courant", status: "pending" },
 		});
 	});
 
-	it("leaves a row five days away alone, without a suggestion", async () => {
+	it("leaves a row five days away alone", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
@@ -483,8 +525,7 @@ describe("automatic transfer matching", () => {
 		const inflow = await add(livret.id, { date: "2026-09-15", amount: toMinorUnits(amount) });
 
 		await expect(transferRows(inflow)).resolves.toEqual([]);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(inflow)).resolves.toBe(false);
+		await expect(transferRows(outflow)).resolves.toEqual([]);
 	});
 
 	it("links a payment into a card as a card payment", async () => {
@@ -519,62 +560,69 @@ describe("automatic transfer matching", () => {
 		]);
 	});
 
-	it("links nothing when a row has two candidates, and suggests a match on it", async () => {
+	it("proposes the closest of two candidates and leaves the other free", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		await importStatement(livret.id, statementOf(line({ amount: toMinorUnits(amount) })));
-		await importStatement(card.id, statementOf(line({ amount: toMinorUnits(amount) })));
+		const near = await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(amount) });
+		const far = await add(card.id, { date: "2026-09-13", amount: toMinorUnits(amount) });
 
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount) });
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
 
-		await expect(transferRows(outflow)).resolves.toEqual([]);
-		await expect(suggested(outflow)).resolves.toBe(true);
-		await expect(transferCandidates(deps(), outflow)).resolves.toHaveLength(2);
-		const page = await listTransactions(
-			deps(),
-			{ accountIds: [joint.id, livret.id, card.id] },
-			firstPage,
-		);
-		expect(page.items.filter((item) => item.transferSuggested).map((item) => item.id)).toEqual([
-			outflow,
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: near, status: "pending" },
 		]);
+		await expect(transferRows(far)).resolves.toEqual([]);
 	});
 
-	it("links nothing when the candidate has another candidate, which it suggests", async () => {
+	it("gives a candidate two outflows share to the lower id when both are as close", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const other = await openChecking({ name: "Compte joint" });
 		const amount = transferAmount();
-		const savings = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
-		// Linked on creation, then unlinked with « Dissocier »: one candidate each.
-		const shared = await addStandard(other.id, {
-			date: "2026-09-06",
-			amount: toMinorUnits(-amount),
-		});
-		await expect(suggested(savings)).resolves.toBe(false);
+		const first = await add(joint.id, { date: "2026-09-02", amount: toMinorUnits(-amount) });
+		const second = await add(other.id, { date: "2026-09-04", amount: toMinorUnits(-amount) });
+		const [lower, higher] = [first, second].toSorted();
 
-		const outflow = await add(joint.id, { date: "2026-09-14", amount: toMinorUnits(-amount) });
+		const inflow = await add(livret.id, { date: "2026-09-03", amount: toMinorUnits(amount) });
 
-		await expect(transferRows(outflow)).resolves.toEqual([]);
-		await expect(transferRows(savings)).resolves.toEqual([]);
-		await expect(suggested(savings)).resolves.toBe(true);
-		await expect(suggested(outflow)).resolves.toBe(false);
-		await expect(suggested(shared)).resolves.toBe(false);
+		await expect(transferRows(inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: lower, inflowTransactionId: inflow },
+		]);
+		await expect(transferRows(higher ?? "")).resolves.toEqual([]);
 	});
 
-	it("leaves an outflow that two inflows of one file compete for unlinked", async () => {
+	it("proposes a pair of old unmatched lines on the next ingest, whatever account it touches", async () => {
+		const { checking: joint, livret, card } = await openHousehold();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		const inflow = await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(amount) });
+		// Left free, as a line written before matching read every unmatched one.
+		await unpair(outflow);
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+
+		await add(card.id, { date: "2026-09-20", amount: toMinorUnits(-(amount + 5)) });
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: inflow, status: "pending" },
+		]);
+	});
+
+	it("proposes one of two inflows of one file competing for an outflow", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const outflow = await add(joint.id, { amount: toMinorUnits(-amount) });
 
-		await importStatement(
+		const { result } = await importStatement(
 			livret.id,
 			statementOf(
 				line({ amount: toMinorUnits(amount), label: "A" }),
 				line({ amount: toMinorUnits(amount), label: "B" }),
 			),
 		);
+		const [lower] = result.created.toSorted();
 
-		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: lower },
+		]);
 	});
 
 	it("never links two opposite rows of one file on one account", async () => {
@@ -622,38 +670,34 @@ describe("rejectTransfer", () => {
 
 		await expect(transferRows(outflow)).resolves.toEqual([]);
 		await expect(rejectedRows(outflow)).resolves.toEqual([{ outflow, inflow }]);
-		await expect(findTransaction(deps(), inflow)).resolves.toMatchObject({
-			transfer: null,
-			transferSuggested: false,
-		});
+		await expect(findTransaction(deps(), inflow)).resolves.toMatchObject({ transfer: null });
 		await expect(history(joint.id)).resolves.toEqual(before);
 	});
 
-	it("never offers nor accepts the rejected pair, and still links others", async () => {
-		const { outflow, inflow, transfer, card, amount } = await matchedPair();
+	it("never proposes the rejected pair again, still proposes others, and lets the owner pair it by hand", async () => {
+		const { outflow, inflow, transfer, card, livret, amount } = await matchedPair();
 		await rejectTransfer(deps(), transfer.id, { origin: "user" });
-		const refused = {
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "counterpartId", code: "not_a_candidate" }],
-		};
 
-		await expect(transferCandidates(deps(), outflow)).resolves.toEqual([]);
-		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
-		await expect(matchTransfer(deps(), outflow, inflow, { origin: "user" })).rejects.toMatchObject(
-			refused,
-		);
-		await expect(matchTransfer(deps(), inflow, outflow, { origin: "user" })).rejects.toMatchObject(
-			refused,
-		);
+		// Any later ingest runs the matcher over every unmatched line.
+		await add(livret.id, { date: "2026-09-20", amount: toMinorUnits(-(amount + 5)) });
+		await expect(transferRows(outflow)).resolves.toEqual([]);
 
-		// Were the rejected pair counted, the outflow would have two candidates
-		// and stay unlinked.
+		// Were the rejected pair counted, the outflow could stay with the inflow.
 		const repaid = await add(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
 
 		await expect(transferRows(repaid)).resolves.toMatchObject([
-			{ outflowTransactionId: outflow, inflowTransactionId: repaid },
+			{ outflowTransactionId: outflow, inflowTransactionId: repaid, status: "pending" },
 		]);
 		await expect(transferRows(inflow)).resolves.toEqual([]);
+
+		// By hand, as Sure's picker, which includes rejected pairs.
+		await unpair(outflow);
+		await expect(transferCandidates(deps(), inflow)).resolves.toMatchObject([{ id: outflow }]);
+		await expect(matchTransfer(deps(), inflow, outflow, asUser)).resolves.toMatchObject({
+			outflowTransactionId: outflow,
+			inflowTransactionId: inflow,
+			status: "confirmed",
+		});
 	});
 
 	it("answers NOT_FOUND for an unknown transfer", async () => {

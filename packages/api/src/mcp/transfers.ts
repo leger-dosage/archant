@@ -3,7 +3,7 @@ import { z } from "zod";
 import { toDecimalString } from "@archant/data/money";
 import { TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
-import { TRANSFER_WINDOW_DAYS } from "../domain/transfer-matching.ts";
+import { HAND_TRANSFER_WINDOW_DAYS } from "../domain/transfer-matching.ts";
 import {
 	pairTransferInput,
 	transferCandidatesInput,
@@ -20,7 +20,7 @@ import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, decimal, defineTool, namedRef 
 export const getTransferCandidates = defineTool({
 	name: "get_transfer_candidates",
 	title: "Transfer candidates",
-	description: `The transactions a transaction can be paired with as one transfer, as « Rapprocher un virement » lists them in Archant, closest date first: the opposite amount in another active account of the same currency, within ${TRANSFER_WINDOW_DAYS} days, in no transfer, never a pair the owner refused. A transaction already in a transfer, excluded, or a split's line has none. ${BANK_TEXT}`,
+	description: `The transactions a transaction can be paired with as one transfer, as « Rapprocher un virement » lists them in Archant, closest date first: the opposite amount in another active account of the same currency, within ${HAND_TRANSFER_WINDOW_DAYS} days, in no transfer, a pair the owner told the matcher never to propose included. A transaction already in a transfer, excluded, or a split's line has none. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: transferCandidatesInput,
@@ -59,7 +59,7 @@ export const pairTransferTool = defineTool({
 	name: "pair_transfer",
 	title: "Pair a transfer",
 	description:
-		"Pairs a transaction with one of its candidates as one transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transaction_id answers NOT_FOUND; a counterpart get_transfer_candidates does not list, a refused pair included, answers VALIDATION_ERROR on counterpart_id.",
+		"Pairs a transaction with one of its candidates as one confirmed transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transaction_id answers NOT_FOUND; a counterpart get_transfer_candidates does not list answers VALIDATION_ERROR on counterpart_id.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: pairTransferInput,
@@ -91,7 +91,7 @@ export const unpairTransferTool = defineTool({
 	name: "unpair_transfer",
 	title: "Unpair a transfer",
 	description:
-		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses. With never_propose, as « Ne plus proposer », the pair is also refused for good: no candidate list, import or sync pairs these two again, and the refusal cannot be undone.",
+		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses. With never_propose, as « Ne plus proposer », the pair is also refused for good: no import, sync or rule proposes these two again, though pair_transfer still may, and the refusal cannot be undone.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: unpairTransferInput,

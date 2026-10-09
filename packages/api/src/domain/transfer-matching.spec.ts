@@ -5,9 +5,10 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import {
+	HAND_TRANSFER_WINDOW_DAYS,
 	TRANSFER_WINDOW_DAYS,
+	greedyMatches,
 	isTransferCandidate,
-	mutualMatches,
 	narrowToExpected,
 	transferKindOf,
 } from "./transfer-matching.ts";
@@ -28,62 +29,120 @@ const side = (overrides: Partial<TransferSide> = {}): TransferSide => ({
 const outflow = side();
 const inflow = side({ accountId: "livret", amount: toMinorUnits(50000) });
 
+/** Whether a pair by hand may take the inflow dated `date`. */
+const within = (date: string) =>
+	isTransferCandidate(outflow, { ...inflow, date }, HAND_TRANSFER_WINDOW_DAYS);
+
 describe("isTransferCandidate", () => {
 	it("pairs opposite amounts in two accounts of one currency, either way round", () => {
-		expect(isTransferCandidate(outflow, inflow)).toBe(true);
-		expect(isTransferCandidate(inflow, outflow)).toBe(true);
+		expect(isTransferCandidate(outflow, inflow, TRANSFER_WINDOW_DAYS)).toBe(true);
+		expect(isTransferCandidate(inflow, outflow, TRANSFER_WINDOW_DAYS)).toBe(true);
 	});
 
 	it("keeps the window inclusive: 4 days in, 5 out, before or after", () => {
 		expect(TRANSFER_WINDOW_DAYS).toBe(4);
-		expect(isTransferCandidate(outflow, { ...inflow, date: "2026-09-14" })).toBe(true);
-		expect(isTransferCandidate(outflow, { ...inflow, date: "2026-09-06" })).toBe(true);
-		expect(isTransferCandidate(outflow, { ...inflow, date: "2026-09-15" })).toBe(false);
-		expect(isTransferCandidate(outflow, { ...inflow, date: "2026-09-05" })).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, date: "2026-09-14" }, TRANSFER_WINDOW_DAYS),
+		).toBe(true);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, date: "2026-09-06" }, TRANSFER_WINDOW_DAYS),
+		).toBe(true);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, date: "2026-09-15" }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, date: "2026-09-05" }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+	});
+
+	it("lets a pair by hand span 30 days, as Sure's picker, and no more", () => {
+		expect(HAND_TRANSFER_WINDOW_DAYS).toBe(30);
+		expect(within("2026-09-30")).toBe(true);
+		expect(within("2026-10-10")).toBe(true);
+		expect(within("2026-08-11")).toBe(true);
+		expect(within("2026-10-11")).toBe(false);
+		expect(within("2026-08-10")).toBe(false);
 	});
 
 	it("refuses a valuation on either side", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, kind: "valuation" })).toBe(false);
-		expect(isTransferCandidate({ ...outflow, kind: "valuation" }, inflow)).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, kind: "valuation" }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+		expect(
+			isTransferCandidate({ ...outflow, kind: "valuation" }, inflow, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
 	});
 
 	it("refuses amounts that do not sum to zero, and two zeros", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, amount: toMinorUnits(49900) })).toBe(false);
-		expect(isTransferCandidate(outflow, { ...inflow, amount: toMinorUnits(-50000) })).toBe(false);
+		expect(
+			isTransferCandidate(
+				outflow,
+				{ ...inflow, amount: toMinorUnits(49900) },
+				TRANSFER_WINDOW_DAYS,
+			),
+		).toBe(false);
+		expect(
+			isTransferCandidate(
+				outflow,
+				{ ...inflow, amount: toMinorUnits(-50000) },
+				TRANSFER_WINDOW_DAYS,
+			),
+		).toBe(false);
 		expect(
 			isTransferCandidate(
 				{ ...outflow, amount: toMinorUnits(0) },
 				{ ...inflow, amount: toMinorUnits(0) },
+				TRANSFER_WINDOW_DAYS,
 			),
 		).toBe(false);
 	});
 
 	it("refuses the same account", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, accountId: "checking" })).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, accountId: "checking" }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
 	});
 
 	it("refuses another currency", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, currency: "USD" })).toBe(false);
+		expect(isTransferCandidate(outflow, { ...inflow, currency: "USD" }, TRANSFER_WINDOW_DAYS)).toBe(
+			false,
+		);
 	});
 
 	it("refuses a side already in a transfer", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, inTransfer: true })).toBe(false);
-		expect(isTransferCandidate({ ...outflow, inTransfer: true }, inflow)).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, inTransfer: true }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+		expect(
+			isTransferCandidate({ ...outflow, inTransfer: true }, inflow, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
 	});
 
 	it("refuses an excluded side, whichever side", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, excluded: true })).toBe(false);
-		expect(isTransferCandidate({ ...outflow, excluded: true }, inflow)).toBe(false);
+		expect(isTransferCandidate(outflow, { ...inflow, excluded: true }, TRANSFER_WINDOW_DAYS)).toBe(
+			false,
+		);
+		expect(isTransferCandidate({ ...outflow, excluded: true }, inflow, TRANSFER_WINDOW_DAYS)).toBe(
+			false,
+		);
 	});
 
 	it("refuses a side on an inactive account, whichever side", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, accountActive: false })).toBe(false);
-		expect(isTransferCandidate({ ...outflow, accountActive: false }, inflow)).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, accountActive: false }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+		expect(
+			isTransferCandidate({ ...outflow, accountActive: false }, inflow, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
 	});
 
 	it("refuses a split line, whichever side", () => {
-		expect(isTransferCandidate(outflow, { ...inflow, splitChild: true })).toBe(false);
-		expect(isTransferCandidate({ ...outflow, splitChild: true }, inflow)).toBe(false);
+		expect(
+			isTransferCandidate(outflow, { ...inflow, splitChild: true }, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
+		expect(
+			isTransferCandidate({ ...outflow, splitChild: true }, inflow, TRANSFER_WINDOW_DAYS),
+		).toBe(false);
 	});
 });
 
@@ -125,51 +184,38 @@ describe("transferKindOf", () => {
 	});
 });
 
-const candidates = (entries: Record<string, string[]>) => new Map(Object.entries(entries));
+const pair = (outflowId: string, inflowId: string, days: number) => ({ outflowId, inflowId, days });
 
-describe("mutualMatches", () => {
-	it("pairs a new row with its only candidate when that candidate has only it", () => {
-		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["n"] }))).toEqual([["n", "c"]]);
+describe("greedyMatches", () => {
+	it("pairs an outflow with its closest candidate and leaves the other free", () => {
+		// −100 on A day 10; +100 on B day 11 and on C day 13.
+		expect(greedyMatches([pair("a", "c", 3), pair("a", "b", 1)])).toEqual([pair("a", "b", 1)]);
 	});
 
-	it("links nothing for a row without candidates, known or not", () => {
-		expect(mutualMatches(["n"], candidates({ n: [] }))).toEqual([]);
-		expect(mutualMatches(["n"], candidates({}))).toEqual([]);
+	it("gives a shared candidate to the lower outflow id when both are as close", () => {
+		// −50 on A day 1 and on C day 3; +50 on B day 2.
+		expect(greedyMatches([pair("c", "b", 1), pair("a", "b", 1)])).toEqual([pair("a", "b", 1)]);
 	});
 
-	it("links nothing when the new row has two candidates", () => {
-		expect(mutualMatches(["n"], candidates({ n: ["c1", "c2"], c1: ["n"], c2: ["n"] }))).toEqual([]);
+	it("breaks a tie on one outflow by the lower inflow id", () => {
+		expect(greedyMatches([pair("a", "d", 2), pair("a", "c", 2)])).toEqual([pair("a", "c", 2)]);
 	});
 
-	it("links nothing when the candidate has another candidate too", () => {
-		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["n", "o"] }))).toEqual([]);
-	});
-
-	it("links nothing when the candidate's only candidate is another row", () => {
-		expect(mutualMatches(["n"], candidates({ n: ["c"], c: ["o"] }))).toEqual([]);
-	});
-
-	it("links nothing when the candidate's candidates are unknown", () => {
-		expect(mutualMatches(["n"], candidates({ n: ["c"] }))).toEqual([]);
-	});
-
-	it("returns two new rows that pick each other once, whatever their order", () => {
-		const both = candidates({ a: ["b"], b: ["a"] });
-
-		expect(mutualMatches(["a", "b"], both)).toEqual([["a", "b"]]);
-		expect(mutualMatches(["b", "a"], both)).toEqual([["b", "a"]]);
-	});
-
-	it("keeps each independent pair, in the order of the new rows", () => {
+	it("skips a pair whose side the closer pair took, and takes the next free one", () => {
 		expect(
-			mutualMatches(
-				["n1", "n2", "n3"],
-				candidates({ n1: ["c1"], c1: ["n1"], n2: ["c1", "c2"], n3: ["c3"], c3: ["n3"] }),
-			),
-		).toEqual([
-			["n1", "c1"],
-			["n3", "c3"],
-		]);
+			greedyMatches([pair("a", "b", 0), pair("c", "b", 1), pair("c", "d", 2), pair("a", "d", 3)]),
+		).toEqual([pair("a", "b", 0), pair("c", "d", 2)]);
+	});
+
+	it("gives the same pairs whatever order the candidates arrive in", () => {
+		const pairs = [pair("a", "b", 2), pair("c", "b", 1), pair("c", "d", 1), pair("a", "d", 0)];
+
+		expect(greedyMatches(pairs)).toEqual(greedyMatches(pairs.toReversed()));
+		expect(greedyMatches(pairs)).toEqual([pair("a", "d", 0), pair("c", "b", 1)]);
+	});
+
+	it("links nothing without candidates", () => {
+		expect(greedyMatches([])).toEqual([]);
 	});
 });
 

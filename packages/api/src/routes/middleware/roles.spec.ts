@@ -189,6 +189,7 @@ describe("a viewer's writes", () => {
 				"POST /api/recurring/occurrences/x/reopen",
 				"PATCH /api/recurring/occurrences/x",
 				"DELETE /api/recurring/payments/x",
+				"POST /api/transfers/x/confirm",
 			]),
 		);
 

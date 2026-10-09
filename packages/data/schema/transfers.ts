@@ -1,9 +1,9 @@
-import type { TransferKind } from "../transfer-kinds.ts";
+import type { TransferKind, TransferStatus } from "../transfer-kinds.ts";
 
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-import { TRANSFER_KINDS } from "../transfer-kinds.ts";
+import { TRANSFER_KINDS, TRANSFER_STATUSES } from "../transfer-kinds.ts";
 import { inList } from "./check.ts";
 import { transactions } from "./transactions.ts";
 
@@ -25,6 +25,9 @@ export const transfers = sqliteTable(
 			.notNull()
 			.references(() => transactions.entryId, { onDelete: "restrict" }),
 		kind: text("kind").$type<TransferKind>().notNull(),
+		// Every transfer made before statuses existed reads `pending`: no column
+		// said which ones the matcher had made, and the owner confirms them.
+		status: text("status").$type<TransferStatus>().notNull().default("pending"),
 		createdAt: integer("created_at").notNull(),
 	},
 	(table) => [
@@ -37,5 +40,6 @@ export const transfers = sqliteTable(
 			sql`${table.outflowTransactionId} <> ${table.inflowTransactionId}`,
 		),
 		check("transfers_kind_check", sql`${table.kind} in ${inList(TRANSFER_KINDS)}`),
+		check("transfers_status_check", sql`${table.status} in ${inList(TRANSFER_STATUSES)}`),
 	],
 );

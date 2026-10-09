@@ -29,7 +29,7 @@ import {
 	oneByOne,
 	transferColumns,
 } from "./shared.ts";
-import { matchNewTransfers } from "./transfers.ts";
+import { matchTransfers } from "./transfers.ts";
 
 /** Which of `ids` `find` still finds, looked up 500 per query. */
 async function stillThere(
@@ -73,16 +73,14 @@ function plannedRows(tx: Transaction, ids: string[]) {
  * already holds, and a category, merchant, tag or account deleted since the
  * plan. A tag is added beside the others while the row holds fewer than
  * `MAX_TAGS_PER_TRANSACTION`; the expected counterpart account is set only on
- * a row in no transfer. Returns the ids of the rows it changed and, among
- * them, of those whose expected counterpart account it set, which transfer
- * matching reads next. Step 5 of `ingest` calls it; applying rules to history
- * reuses it.
+ * a row in no transfer. Returns the ids of the rows it changed. Step 5 of
+ * `ingest` calls it; applying rules to history reuses it.
  */
 export async function applyRulePlan(
 	tx: Transaction,
 	plan: ReadonlyMap<string, RowPlan>,
 	_options: { origin: "rule" },
-): Promise<{ changed: string[]; marked: string[] }> {
+): Promise<{ changed: string[] }> {
 	const origin: Origin = "rule";
 	const ids = [...plan.keys()];
 	const plans = [...plan.values()];
@@ -121,7 +119,6 @@ export async function applyRulePlan(
 		{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
 	>();
 	const newTaggings: { transactionId: string; tagId: string }[] = [];
-	const marked: string[] = [];
 
 	const rowById = new Map(rows.map((row) => [row.id, row]));
 
@@ -169,10 +166,6 @@ export async function applyRulePlan(
 			continue;
 		}
 
-		if (expects) {
-			marked.push(id);
-		}
-
 		const detail = {
 			...detailOf(current, change, origin),
 			...(expects ? { expectedTransferAccountId: expected } : {}),
@@ -204,14 +197,15 @@ export async function applyRulePlan(
 	);
 	await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
 
-	return { changed: [...writes.values()].flatMap(({ ids: group }) => group), marked };
+	return { changed: [...writes.values()].flatMap(({ ids: group }) => group) };
 }
 
 /**
  * Applying rules to existing transactions: writes `plan` through
- * `applyRulePlan`, then pairs the rows whose expected counterpart account it
- * set, as step 6 of `ingest` pairs new ones. No balance moves: no rule action
- * changes an amount. Returns how many rows changed, each once.
+ * `applyRulePlan`, then proposes transfers over every unmatched line, as
+ * step 6 of `ingest` does, so a row whose expected counterpart account it
+ * set finds its pair. No balance moves: no rule action changes an amount.
+ * Returns how many rows changed, each once.
  */
 export async function applyRulePlanToHistory(
 	deps: ServiceDeps,
@@ -220,9 +214,9 @@ export async function applyRulePlanToHistory(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
-			const { changed, marked } = await applyRulePlan(tx, plan, options);
+			const { changed } = await applyRulePlan(tx, plan, options);
 
-			await matchNewTransfers(tx, marked, Date.now());
+			await matchTransfers(tx, Date.now());
 
 			return changed.length;
 		},

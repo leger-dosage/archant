@@ -19,6 +19,7 @@ import {
 	SplitIcon,
 	TrendingUpIcon,
 	TriangleAlertIcon,
+	WandSparklesIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -32,10 +33,10 @@ const STATUSES = {
 	pending: { icon: ClockIcon, key: "transactions.pending", tone: "neutral" },
 	recurring: { icon: RepeatIcon, key: "transactions.recurringBadge", tone: "neutral" },
 	transfer: { icon: ArrowLeftRightIcon, key: "transactions.transfer.internal", tone: "neutral" },
-	// Neutral: a suggestion waits for a pick but needs no attention.
-	transferSuggested: {
-		icon: ArrowLeftRightIcon,
-		key: "transactions.transfer.suggested",
+	// Sure's neutral pill on a transfer the matcher proposed, until the owner confirms it.
+	autoMatched: {
+		icon: WandSparklesIcon,
+		key: "transactions.transfer.autoMatched",
 		tone: "neutral",
 	},
 	// A split's parent, shown above its lines, as Sure's « Split » pill.

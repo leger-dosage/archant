@@ -383,12 +383,14 @@
 			"unmatched": "Virement dissocié",
 			"rejected": "Virement dissocié, il ne sera plus proposé",
 			"internal": "Virement interne",
-			"suggested": "Virement possible",
-			"suggestion": "Plusieurs opérations pourraient former l'autre côté de ce virement.",
+			"autoMatched": "Correspondance automatique",
+			"confirmMatch": "Confirmer la correspondance",
+			"rejectMatch": "Rejeter la correspondance",
+			"confirmed": "Virement mis à jour",
 			"dialogTitle": "Rapprocher un virement",
 			"dialogDescription": "Choisissez l'opération de montant opposé qui forme l'autre côté de ce virement.",
 			"candidates": "Opérations candidates",
-			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 4 jours près"
+			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 30 jours près"
 		},
 		"duplicate": {
 			"flag": "Doublon possible",

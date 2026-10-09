@@ -866,6 +866,39 @@ describe("rejected transfers", () => {
 	});
 });
 
+describe("transfer status", () => {
+	it("reads every transfer made before 0065 as pending, and holds a status Sure knows", async () => {
+		const before = await migratedBefore("0065");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertEntry(before, "e1", "transaction", null, "2026-09-01", "a1");
+		await insertEntry(before, "e2", "transaction", null, "2026-09-01", "a2");
+		await insertEntry(before, "e3", "transaction", null, "2026-09-01", "a1");
+		await insertEntry(before, "e4", "transaction", null, "2026-09-01", "a2");
+		await before.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'Virement'), ('e2', 'Virement'), ('e3', 'Virement'), ('e4', 'Virement')`,
+		);
+		await insertTransfer(before, "x1", "e1", "e2", "internal_move");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, kind, status from transfers`)).resolves.toEqual([
+			{ id: "x1", kind: "internal_move", status: "pending" },
+		]);
+		await expect(
+			database.run(
+				sql`insert into transfers (id, outflow_transaction_id, inflow_transaction_id, kind, status, created_at) values ('x2', 'e3', 'e4', 'internal_move', 'rejected', 0)`,
+			),
+		).rejects.toThrow();
+		await database.run(
+			sql`insert into transfers (id, outflow_transaction_id, inflow_transaction_id, kind, status, created_at) values ('x2', 'e3', 'e4', 'internal_move', 'confirmed', 0)`,
+		);
+		await expect(insertTransfer(database, "x3", "e3", "e2")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("loan subtypes", () => {
 	it("takes Sure's seven at 0064, a consumer loan becoming Sure's other loan with its details", async () => {
 		const before = await migratedBefore("0064");

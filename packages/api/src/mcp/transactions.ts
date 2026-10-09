@@ -73,11 +73,6 @@ const transaction = z.object({
 		.object(transferFields)
 		.nullable()
 		.describe("The transfer it is a side of, with the other side and its account; null for none."),
-	transfer_suggested: z
-		.boolean()
-		.describe(
-			"In no transfer, with several candidates: matching left it for the owner to pair, through get_transfer_candidates.",
-		),
 	pending: z.boolean().describe("Not booked by the bank yet."),
 });
 
@@ -118,7 +113,6 @@ function itemOf(item: TransactionRecord, names: NameBook): z.input<typeof transa
 							name: item.transfer.counterpartAccountName,
 						},
 					},
-		transfer_suggested: item.transferSuggested,
 		pending: item.pending,
 	};
 }

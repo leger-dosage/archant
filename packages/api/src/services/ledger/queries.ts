@@ -19,7 +19,7 @@ import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
-import type { TransferKind } from "@archant/data/transfer-kinds";
+import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
 import { filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
 import { tagIdsByEntry, tagIdsOf } from "./patch.ts";
@@ -33,7 +33,6 @@ import {
 	inSequence,
 	transferColumns,
 } from "./shared.ts";
-import { candidatePairs } from "./transfers.ts";
 
 export type TransactionRecord = {
 	id: string;
@@ -58,11 +57,6 @@ export type TransactionRecord = {
 	/** The transfer it is a side of, with the other side's account. */
 	transfer: TransferLink | null;
 	/**
-	 * In no transfer, with at least `SUGGESTION_THRESHOLD` candidates: automatic
-	 * matching left it for the user to pick.
-	 */
-	transferSuggested: boolean;
-	/**
 	 * Created by an import or a sync that found two entries equally near it
 	 * (AD-7), until the user merges or dismisses it.
 	 */
@@ -81,6 +75,8 @@ export type TransactionRecord = {
 type TransferLink = {
 	id: string;
 	kind: TransferKind;
+	/** `pending` while the owner has not confirmed what the matcher proposed. */
+	status: TransferStatus;
 	counterpartTransactionId: string;
 	counterpartAccountId: string;
 	counterpartAccountName: string;
@@ -116,38 +112,6 @@ function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: Min
 	return { ...row, amount: toMinorUnits(row.amount) };
 }
 
-/**
- * How many candidates make a suggestion. Two, as the epic says: a pair unlinked
- * with « Dissocier » has one candidate, and flagging it would undo the unlink.
- */
-const SUGGESTION_THRESHOLD = 2;
-
-/**
- * The rows of `entryIds` with at least `SUGGESTION_THRESHOLD` candidates, by
- * the search the picker and step 6 use, `isTransferCandidate` included, so the
- * flag never disagrees with them. Read after the page query, for its rows in
- * no transfer only: a subquery in the page's select would run for every row
- * the filter keeps whenever the sort is not index-covered.
- */
-async function suggestedAmong(
-	db: Pick<Transaction, "select">,
-	entryIds: readonly string[],
-): Promise<Set<string>> {
-	const counts = new Map<string, number>();
-
-	for (const { source } of await candidatePairs(db, entryIds)) {
-		counts.set(source.id, (counts.get(source.id) ?? 0) + 1);
-	}
-
-	return new Set(
-		[...counts].filter(([, total]) => total >= SUGGESTION_THRESHOLD).map(([id]) => id),
-	);
-}
-
-/** The ids of `rows` in no transfer, the only ones a suggestion is read for. */
-const unmatchedIds = (rows: readonly { id: string; transferId: string | null }[]) =>
-	rows.filter((row) => row.transferId === null).map((row) => row.id);
-
 /** Folds the transfer columns of a row into its `transfer`. */
 function withTransferLink<Row extends TransferColumns>(
 	row: Row,
@@ -155,6 +119,7 @@ function withTransferLink<Row extends TransferColumns>(
 	const {
 		transferId,
 		transferKind,
+		transferStatus,
 		counterpartTransactionId,
 		counterpartAccountId,
 		counterpartAccountName,
@@ -166,6 +131,7 @@ function withTransferLink<Row extends TransferColumns>(
 		transfer:
 			transferId === null ||
 			transferKind === null ||
+			transferStatus === null ||
 			counterpartTransactionId === null ||
 			counterpartAccountId === null ||
 			counterpartAccountName === null
@@ -173,6 +139,7 @@ function withTransferLink<Row extends TransferColumns>(
 				: {
 						id: transferId,
 						kind: transferKind,
+						status: transferStatus,
 						counterpartTransactionId,
 						counterpartAccountId,
 						counterpartAccountName,
@@ -250,13 +217,7 @@ export async function findTransaction(
 		return null;
 	}
 
-	const suggested = await suggestedAmong(deps.db, unmatchedIds([row]));
-
-	return {
-		...withTransferLink(toRecord(row)),
-		tagIds: await tagIdsOf(deps.db, entryId),
-		transferSuggested: suggested.has(entryId),
-	};
+	return { ...withTransferLink(toRecord(row)), tagIds: await tagIdsOf(deps.db, entryId) };
 }
 
 /**
@@ -345,7 +306,7 @@ async function idsBySize(
 	return rows.map((row) => row.id);
 }
 
-/** The rows of `listSelect` as records, with their tags and suggestions, in two queries. */
+/** The rows of `listSelect` as records, with their tags. */
 async function listRecordsOf(
 	db: Pick<Transaction, "select">,
 	rows: Awaited<ReturnType<typeof listSelect>>,
@@ -354,12 +315,9 @@ async function listRecordsOf(
 		db,
 		rows.map((row) => row.id),
 	);
-	const suggested = await suggestedAmong(db, unmatchedIds(rows));
-
 	return rows.map((row) => ({
 		...withTransferLink(toRecord(row)),
 		tagIds: tagsOf.get(row.id) ?? [],
-		transferSuggested: suggested.has(row.id),
 	}));
 }
 

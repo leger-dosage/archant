@@ -26,8 +26,14 @@ import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { ROWS_PER_INSERT, inSequence } from "./ledger/shared.ts";
+import { proposalCandidateQuery } from "./ledger/transfers.ts";
 import { getBalanceSheet, getIncomeStatement } from "./reports.ts";
-import { listAccountTransactions, listAllTransactions, transactionTotals } from "./transactions.ts";
+import {
+	createTransaction,
+	listAccountTransactions,
+	listAllTransactions,
+	transactionTotals,
+} from "./transactions.ts";
 import { listTransferCandidates } from "./transfers.ts";
 
 // NFR10, on a decade of a household's history. CI runners are slower and
@@ -47,6 +53,11 @@ const REPORT_MS = 2 * PAGE_MS;
 const IMPORT_RATIO = 5;
 const EXPORT_MS = 10_000 * MARGIN;
 const REVALUE_MS = 1000 * MARGIN;
+// A typed line runs `matchTransfers` over every unmatched line of the
+// household, as Sure's family sync: about 270 ms of it at 100,000 rows on a
+// laptop on 2026-10-09. Five times that on a noisy runner still fails a
+// matcher that stops reading the amount index.
+const TYPED_LINE_MS = 1500;
 
 const ROWS = 100_000;
 const DAYS = 3650;
@@ -59,7 +70,7 @@ let temp: TempDatabase;
 let jointId = "";
 let savingsId = "";
 let cardId = "";
-let suggestedId = "";
+let unmatchedId = "";
 let securityIds: string[] = [];
 let peaId = "";
 /** Days each security is held, from its first trade to today. */
@@ -76,6 +87,14 @@ function chunksOf<Row>(rows: readonly Row[], size: number): Row[][] {
 
 const dayOf = (offset: number) =>
 	new Date(FIRST_DAY + offset * 86_400_000).toISOString().slice(0, 10);
+
+/** One line typed on the joint account, as `POST /api/accounts/:id/transactions` writes it. */
+const typeLine = async () =>
+	createTransaction(deps(), jointId, {
+		date: dayOf(DAYS - 1),
+		label: "CB CAFE DU COIN",
+		amount: "-3,17",
+	});
 
 const listQuery = { page: 1, pageSize: 50 } as const;
 const expenses = { direction: ["expense" as const] };
@@ -110,7 +129,7 @@ type SeedRow = {
  * spending on the joint account and the card, a credit every 97 rows, and
  * every 400 rows a move to the savings account recorded as a transfer. Every
  * 50th row has its exact opposite on the card a day later, unlinked, so the
- * list pays for the suggestion's search as it would on an imported history.
+ * import's matching proposes them as it would on a history imported before.
  */
 function seedRows(): { rows: SeedRow[]; pairs: [string, string][] } {
 	const rows: SeedRow[] = [];
@@ -276,7 +295,7 @@ async function seed() {
 	const { rows, pairs } = seedRows();
 	const now = Date.UTC(2026, 0, 1);
 	const kept = new Set(rows.map((row) => row.id));
-	suggestedId = rows.find((row, index) => index % 50 === 1 && row.amount < 0)?.id ?? "";
+	unmatchedId = rows.find((row, index) => index % 50 === 1 && row.amount < 0)?.id ?? "";
 
 	// Seeded directly: the ledger would recompute ten years of balances per row,
 	// and only the read paths are being measured. In sequence, so each chunk's
@@ -635,6 +654,12 @@ describe("NFR10 at 100,000 transactions", () => {
 		expect(held?.price).toBe(closeToday(0));
 	});
 
+	// Before the import below, so the household is the seeded one. `timed`'s
+	// first, untimed line proposes the seeded unmatched pairs.
+	it("types one line, matching transfers over the whole household, in under 1.5 seconds", async () => {
+		await expect(timed(typeLine)).resolves.toBeLessThan(TYPED_LINE_MS);
+	});
+
 	it("confirms a 24,000-line OFX file in under five times the bare writes of its lines", async () => {
 		const accountId = await openAccount("Compte courant", "checking");
 		const lines = Array.from({ length: OFX_LINES }, (_, index) => {
@@ -661,7 +686,7 @@ describe("NFR10 at 100,000 transactions", () => {
 
 describe("query plans at 100,000 transactions", () => {
 	it("finds a transfer candidate by the source's key and the amount index", async () => {
-		const statements = await statementsOf(async () => listTransferCandidates(deps(), suggestedId));
+		const statements = await statementsOf(async () => listTransferCandidates(deps(), unmatchedId));
 		const plan = await planOf(only(statements, /"source_entry"/u));
 
 		expect(plan).toMatch(/SEARCH source_entry USING INDEX sqlite_autoindex_entries_1 \(id=\?\)/u);
@@ -670,6 +695,19 @@ describe("query plans at 100,000 transactions", () => {
 		);
 		expect(plan).not.toMatch(/entries_kind_amount_date \(kind=\?\)/u);
 		expect(plan).not.toMatch(/SCAN source_account/u);
+	});
+
+	it("reads every unmatched outflow and its candidates from the amount index when matching", async () => {
+		const { sql: text, params } = proposalCandidateQuery(temp.db).toSQL();
+		const plan = await planOf(capturedSchema.parse({ sql: text, args: params }));
+
+		expect(plan).toMatch(
+			/SEARCH source_entry USING INDEX entries_kind_amount_date \(kind=\? AND amount<\?\)/u,
+		);
+		expect(plan).toMatch(
+			/SEARCH entries USING INDEX entries_kind_amount_date \(kind=\? AND amount=\? AND date>\? AND date<\?\)/u,
+		);
+		expect(plan).not.toMatch(/SCAN (?:source_)?account/u);
 	});
 
 	it.each([

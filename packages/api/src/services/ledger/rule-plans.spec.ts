@@ -30,6 +30,7 @@ import {
 	temp,
 	transferAmount,
 	transferRows,
+	unpair,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { updateAccount } from "../accounts.ts";
@@ -46,7 +47,7 @@ async function write(plan: Map<string, RowPlan>) {
 
 describe("applyRulePlan", () => {
 	it("writes nothing for an empty plan", async () => {
-		await expect(write(new Map())).resolves.toEqual({ changed: [], marked: [] });
+		await expect(write(new Map())).resolves.toEqual({ changed: [] });
 	});
 
 	it("writes every planned field with a rule origin, and locks nothing", async () => {
@@ -76,7 +77,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [id, twin], marked: [id] });
+		expect(written).toEqual({ changed: [id, twin] });
 		await expect(categoryOf(id)).resolves.toBe(groceries);
 		await expect(categoryOriginOf(id)).resolves.toBe("rule");
 		await expect(merchantOf(id)).resolves.toBe(merchant);
@@ -122,7 +123,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [], marked: [] });
+		expect(written).toEqual({ changed: [] });
 		await expect(categoryOf(locked)).resolves.toBe(leisure);
 		await expect(categoryOriginOf(locked)).resolves.toBe("user");
 		await expect(merchantOf(locked)).resolves.toBeNull();
@@ -143,7 +144,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [food], marked: [] });
+		expect(written).toEqual({ changed: [food] });
 		await expect(excludedOf(parent)).resolves.toBe(true);
 		await expect(excludedOf(food)).resolves.toBe(false);
 		await expect(categoryOf(food)).resolves.toBe(groceries);
@@ -160,7 +161,6 @@ describe("applyRulePlan", () => {
 
 		await expect(write(new Map([[crowded, { addTagIds: [added] }]]))).resolves.toEqual({
 			changed: [],
-			marked: [],
 		});
 		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 	});
@@ -179,11 +179,9 @@ describe("applyRulePlan", () => {
 
 		await expect(write(new Map([[id, { addTagIds: [carried] }]]))).resolves.toEqual({
 			changed: [],
-			marked: [],
 		});
 		await expect(write(new Map([[id, { addTagIds: [carried, added] }]]))).resolves.toEqual({
 			changed: [id],
-			marked: [],
 		});
 		await expect(tagsOf(id)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 		await expect(tagsOf(id)).resolves.toContain(added);
@@ -208,7 +206,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [], marked: [] });
+		expect(written).toEqual({ changed: [] });
 		await expect(categoryOf(id)).resolves.toBeNull();
 		await expect(merchantOf(id)).resolves.toBeNull();
 		await expect(tagsOf(id)).resolves.toEqual([]);
@@ -227,7 +225,7 @@ describe("applyRulePlan", () => {
 					[alone, { expectedTransferAccountId: joint.id }],
 				]),
 			),
-		).resolves.toEqual({ changed: [], marked: [] });
+		).resolves.toEqual({ changed: [] });
 		await expect(expectedOf(outflow)).resolves.toBeNull();
 		await expect(expectedOf(alone)).resolves.toBeNull();
 	});
@@ -365,15 +363,27 @@ describe("ruleCandidates", () => {
 });
 
 describe("applyRulePlanToHistory", () => {
-	it("pairs an existing row with the expected account's line it had to share before", async () => {
+	it("pairs an existing row with the expected account's line, though another account holds a closer one", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		// Both inflows come first, so the outflow arrives with two candidates
-		// and step 6 leaves every row unpaired.
-		await add(card.id, { amount: toMinorUnits(amount), label: "Remboursement" });
-		const inflow = await add(livret.id, { amount: toMinorUnits(amount), label: "VIR RECU" });
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
-		await expect(transferRows(outflow)).resolves.toEqual([]);
+		const refund = await add(card.id, {
+			date: "2026-09-10",
+			amount: toMinorUnits(amount),
+			label: "Remboursement",
+		});
+		const inflow = await add(livret.id, {
+			date: "2026-09-12",
+			amount: toMinorUnits(amount),
+			label: "VIR RECU",
+		});
+		const outflow = await add(joint.id, {
+			date: "2026-09-10",
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
+		// The matcher proposed the closer line on the card; « Dissocier » undoes it.
+		await expect(transferRows(outflow)).resolves.toMatchObject([{ inflowTransactionId: refund }]);
+		await unpair(outflow);
 
 		const changed = await applyRulePlanToHistory(
 			deps(),
@@ -385,5 +395,6 @@ describe("applyRulePlanToHistory", () => {
 		await expect(transferRows(outflow)).resolves.toMatchObject([
 			{ outflowTransactionId: outflow, inflowTransactionId: inflow, kind: "internal_move" },
 		]);
+		await expect(transferRows(refund)).resolves.toEqual([]);
 	});
 });

@@ -27,6 +27,7 @@ import { createAccount } from "../services/ledger/accounts.ts";
 import { linkBankAccount, unlinkBankAccount } from "../services/ledger/bank-link.ts";
 import { revertImport } from "../services/ledger/import-revert.ts";
 import { ingest } from "../services/ledger/ingest.ts";
+import { oneByOne } from "../services/ledger/shared.ts";
 import { recordSnapshot } from "../services/ledger/snapshots.ts";
 import { splitTransaction } from "../services/ledger/splits.ts";
 import { matchTransfer, unmatchTransfer } from "../services/ledger/transfers.ts";
@@ -444,8 +445,24 @@ export async function insertTransfer(outflow: string, inflow: string, kind: Tran
 }
 
 /**
+ * Undoes the transfer each of `entryIds` sits in, if any: matching runs over
+ * every unmatched line, so a row unlinked before the last `add` may have been
+ * proposed again.
+ */
+export async function unpair(...entryIds: string[]) {
+	await oneByOne(entryIds, async (entryId) => {
+		const [linked] = await transferRows(entryId);
+
+		if (linked !== undefined) {
+			await unmatchTransfer(deps(), linked.id, { origin: "user" });
+		}
+	});
+}
+
+/**
  * `add`, then undoes the transfer step 6 may have made, for the tests that
- * need the row unmatched.
+ * need the row unmatched. A later `add` may propose it again; `unpair` after
+ * the last one.
  */
 export async function addStandard(
 	accountId: string,

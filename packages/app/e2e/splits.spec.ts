@@ -164,7 +164,7 @@ test("a removed line leaves the counter, and only a splittable transaction offer
 	});
 	await api.excludeTransaction(excluded);
 	// The same amount out of one account and into another the same day:
-	// linked as a transfer on creation.
+	// proposed as a transfer on creation.
 	await api.addTransaction(account.id, {
 		date: daysAgo(4),
 		label: `${prefix} virement`,
@@ -179,7 +179,7 @@ test("a removed line leaves the counter, and only a splittable transaction offer
 	});
 
 	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
-	await expect(rowButton(page, `${prefix} virement`)).toContainText("Virement interne");
+	await expect(rowButton(page, `${prefix} virement`)).toContainText("Correspondance automatique");
 
 	// One sheet after the other: only one is ever open.
 	await [`${prefix} exclue`, `${prefix} virement`, `${prefix} divisée courses`].reduce(

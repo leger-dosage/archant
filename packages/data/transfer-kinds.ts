@@ -21,3 +21,12 @@ export const EXPENSE_TRANSFER_KINDS = [
 	"loan_payment",
 	"investment_contribution",
 ] as const satisfies readonly TransferKind[];
+
+/**
+ * Sure's `Transfer#status`: the matcher proposes a transfer `pending`, the
+ * owner confirms it or pairs two lines by hand, `confirmed`. Both count the
+ * same everywhere; only the list reads it, to offer the proposal.
+ */
+export const TRANSFER_STATUSES = ["pending", "confirmed"] as const;
+
+export type TransferStatus = (typeof TRANSFER_STATUSES)[number];

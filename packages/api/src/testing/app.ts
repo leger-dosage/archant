@@ -9,6 +9,8 @@ import { readFile } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, expect, vi } from "vitest";
 import { z } from "zod";
 
+import { TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
+
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
 import { bankDepsFromEnv } from "../services/bank-connections.ts";
@@ -186,11 +188,11 @@ export const listItem = z.object({
 		.object({
 			id: z.string(),
 			kind: z.string(),
+			status: z.enum(TRANSFER_STATUSES),
 			counterpartAccountId: z.string(),
 			counterpartAccountName: z.string(),
 		})
 		.nullable(),
-	transferSuggested: z.boolean(),
 	possibleDuplicate: z.boolean(),
 	parentEntryId: z.string().nullable(),
 	splitParent: z.boolean(),

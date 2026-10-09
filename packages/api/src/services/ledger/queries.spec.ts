@@ -392,7 +392,6 @@ describe("listTransactionsById", () => {
 			accountType: "depository",
 			tagIds: [],
 			transfer: null,
-			transferSuggested: false,
 		});
 		await expect(listTransactionsById(deps(), [food])).resolves.toMatchObject([
 			{ id: food, parentEntryId: parent },
