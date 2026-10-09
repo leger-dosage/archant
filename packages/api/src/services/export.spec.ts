@@ -641,7 +641,7 @@ describe("exportArchive", () => {
 			price: "612.4",
 			amount: "612.40",
 			currency: "EUR",
-			cost_basis: "612.4",
+			cost_basis: "614.9",
 			cost_basis_source: "calculated",
 			cost_basis_locked: false,
 			security_locked: false,
@@ -652,7 +652,7 @@ describe("exportArchive", () => {
 			qty: "0.5",
 			price: "650",
 			amount: "325.00",
-			cost_basis: "612.4",
+			cost_basis: "614.9",
 		});
 		expect(holdings).toContainEqual(
 			expect.objectContaining({ ticker: "Parts sociales", date: "2026-09-13", amount: "10.00" }),

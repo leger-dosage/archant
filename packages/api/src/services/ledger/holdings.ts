@@ -13,6 +13,7 @@ import { entries } from "@archant/data/schema/entries";
 import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import type { PriceProviderId } from "@archant/data/schema/securities";
 import { securities, securityPrices } from "@archant/data/schema/securities";
+import { settings } from "@archant/data/schema/settings";
 import { trades } from "@archant/data/schema/trades";
 
 import { maxDate, today } from "../../domain/dates.ts";
@@ -53,6 +54,59 @@ export async function revalueHoldings(
 
 	await oneByOne(holders, async ({ firstTrade: first, ...account }) =>
 		recomputeBalances(tx, account, maxDate(from, first), timeZone),
+	);
+}
+
+const FEE_COST_BASIS_KEY = "fee_cost_basis_recomputed_at";
+
+/**
+ * Rewrites every investment account's holdings once per instance, so a cost
+ * basis stored before a buy's fee counted in it (Story 27.5) gets that fee,
+ * and returns how many accounts it recomputed. A migration cannot replay
+ * trades, so the `fee_cost_basis_recomputed_at` row is claimed in the same
+ * transaction as the recompute (AD-12): a failure rolls the claim back and
+ * the next start tries again, a later start recomputes nothing. No balance
+ * moves, since neither a holding's amount nor the cash reads its cost basis
+ * (AD-22).
+ */
+export async function recomputeFeeCostBases(
+	deps: Pick<ServiceDeps, "db" | "timeZone">,
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const now = Date.now();
+			const claimed = await tx
+				.insert(settings)
+				.values({ key: FEE_COST_BASIS_KEY, value: String(now), updatedAt: now })
+				.onConflictDoNothing()
+				.returning({ key: settings.key });
+
+			if (claimed.length === 0) {
+				return 0;
+			}
+
+			const investments = await tx
+				.select({
+					id: accounts.id,
+					type: accounts.type,
+					currency: accounts.currency,
+					openingDate: entries.date,
+				})
+				.from(accounts)
+				.innerJoin(
+					entries,
+					and(eq(entries.accountId, accounts.id), eq(entries.valuationKind, "opening_anchor")),
+				)
+				.where(eq(accounts.type, "investment"))
+				.orderBy(asc(accounts.id));
+
+			await oneByOne(investments, async ({ openingDate, ...account }) =>
+				recomputeBalances(tx, account, openingDate, deps.timeZone),
+			);
+
+			return investments.length;
+		},
+		{ behavior: "immediate" },
 	);
 }
 
@@ -118,37 +172,29 @@ export async function liveCostBasisLocks(
 	db: Reader,
 	accountId: string | null,
 ): Promise<LiveCostBasisLock[]> {
+	// Per lock, a seek into the partial index `holdings_zero_quantity`: the
+	// locks are few, the holdings ten years of days per security. The zero is
+	// a literal, never a bound parameter: SQLite proves a partial index applies
+	// only from the query's text.
 	const lastZero = db
-		.select({
-			accountId: holdings.accountId,
-			securityId: holdings.securityId,
-			day: sql<IsoDate>`max(${holdings.date})`.as("last_zero_day"),
-		})
+		.select({ day: max(holdings.date) })
 		.from(holdings)
 		.where(
 			and(
-				eq(holdings.quantity, toMicros(0)),
-				accountId === null ? undefined : eq(holdings.accountId, accountId),
+				eq(holdings.accountId, costBasisLocks.accountId),
+				eq(holdings.securityId, costBasisLocks.securityId),
+				sql`${holdings.quantity} = 0`,
 			),
-		)
-		.groupBy(holdings.accountId, holdings.securityId)
-		.as("last_zero");
+		);
 	const rows = await db
 		.select({
 			accountId: costBasisLocks.accountId,
 			securityId: costBasisLocks.securityId,
 			costBasis: costBasisLocks.costBasis,
 			lockedOn: costBasisLocks.lockedOn,
-			after: lastZero.day,
+			after: sql<IsoDate | null>`(${lastZero})`,
 		})
 		.from(costBasisLocks)
-		.leftJoin(
-			lastZero,
-			and(
-				eq(lastZero.accountId, costBasisLocks.accountId),
-				eq(lastZero.securityId, costBasisLocks.securityId),
-			),
-		)
 		.where(accountId === null ? undefined : eq(costBasisLocks.accountId, accountId))
 		.orderBy(asc(costBasisLocks.accountId), asc(costBasisLocks.securityId));
 

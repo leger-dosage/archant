@@ -3,6 +3,7 @@ import type { HoldingTrade, HoldingsInput, StoredPrice } from "./forward.ts";
 import { describe, expect, it } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
+import { toMinorUnits } from "@archant/data/money";
 
 import { forwardHoldings } from "./forward.ts";
 
@@ -11,11 +12,18 @@ const micros = toMicros;
 const LVMH = "lvmh";
 const AIR = "air-liquide";
 
-const trade = (date: string, quantity: number, price: number, securityId = LVMH): HoldingTrade => ({
+const trade = (
+	date: string,
+	quantity: number,
+	price: number,
+	securityId = LVMH,
+	fee = 0,
+): HoldingTrade => ({
 	date,
 	securityId,
 	quantity: micros(quantity),
 	price: micros(price),
+	fee: toMinorUnits(fee),
 });
 
 const price = (date: string, value: number, securityId = LVMH): StoredPrice => ({
@@ -42,7 +50,7 @@ const rows = (input: HoldingsInput) =>
 	);
 
 describe("forwardHoldings", () => {
-	it("values a buy at its own price when nothing is stored, its fee out of the cost basis", () => {
+	it("values a buy at its own price when nothing is stored", () => {
 		expect(forwardHoldings({ ...bought, until: "2026-09-10" })).toEqual([
 			{
 				securityId: LVMH,
@@ -53,6 +61,45 @@ describe("forwardHoldings", () => {
 				costBasis: 612_400_000,
 			},
 		]);
+	});
+
+	it("adds a buy's fee to its cost, as Sure's effective trade price", () => {
+		expect(
+			rows({
+				...bought,
+				until: "2026-09-10",
+				trades: [trade("2026-09-10", 10_000_000, 612_400_000, LVMH, 250)],
+			}),
+		).toEqual(["2026-09-10 lvmh 10000000 612400000 612400 612650000"]);
+	});
+
+	it("averages the buys with their fees, and leaves a sale's fee out", () => {
+		expect(
+			rows({
+				...bought,
+				until: "2026-09-12",
+				trades: [
+					trade("2026-09-10", 10_000_000, 100_000_000, LVMH, 100),
+					trade("2026-09-11", 10_000_000, 110_000_000, LVMH, 300),
+					trade("2026-09-12", -5_000_000, 120_000_000, LVMH, 400),
+				],
+			}),
+		).toEqual([
+			"2026-09-10 lvmh 10000000 100000000 100000 100100000",
+			"2026-09-11 lvmh 20000000 110000000 220000 105200000",
+			"2026-09-12 lvmh 15000000 120000000 180000 105200000",
+		]);
+	});
+
+	it("scales a fee from the account currency's minor unit, a yen fee without one", () => {
+		expect(
+			rows({
+				...bought,
+				until: "2026-09-10",
+				currency: "JPY",
+				trades: [trade("2026-09-10", 3_000_000, 1_000_000_000, LVMH, 10)],
+			}),
+		).toEqual(["2026-09-10 lvmh 3000000 1000000000 3000 1003333333"]);
 	});
 
 	it("takes a provider's price, then carries it over a day without one", () => {

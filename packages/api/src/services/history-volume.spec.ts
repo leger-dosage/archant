@@ -9,7 +9,7 @@ import { refreshStatistics } from "@archant/data/client";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
-import { holdings } from "@archant/data/schema/holdings";
+import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
@@ -24,7 +24,7 @@ import { confirmImport, createImport, previewImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
-import { revalueHoldings } from "./ledger/holdings.ts";
+import { liveCostBasisLocks, revalueHoldings } from "./ledger/holdings.ts";
 import { ROWS_PER_INSERT, inSequence } from "./ledger/shared.ts";
 import { proposalCandidateQuery } from "./ledger/transfers.ts";
 import { getBalanceSheet, getIncomeStatement } from "./reports.ts";
@@ -286,6 +286,13 @@ async function seedInvestments() {
 		async (tx) => recomputeBalances(tx, pea, addDays(first, -1), TIME_ZONE),
 		{ behavior: "immediate" },
 	);
+	// One lock, so the lock read joins a row to its last day at zero.
+	await temp.db.insert(costBasisLocks).values({
+		accountId: pea.id,
+		securityId: securityIds[0] ?? "",
+		costBasis: toMicros(60_000_000),
+		lockedOn: last,
+	});
 }
 
 async function seed() {
@@ -756,6 +763,22 @@ describe("query plans at 100,000 transactions", () => {
 		);
 		expect(plan).not.toMatch(/TEMP B-TREE/u);
 	});
+
+	it.each([
+		["one account", () => peaId],
+		["every account", () => null],
+	])(
+		"finds the live cost basis locks of %s from the zero-quantity index, never every holding",
+		async (_name, accountOf) => {
+			const statements = await statementsOf(async () => liveCostBasisLocks(temp.db, accountOf()));
+			const plan = await planOf(only(statements, /"cost_basis_locks"/u));
+
+			expect(plan).toMatch(
+				/SEARCH holdings USING COVERING INDEX holdings_zero_quantity \(account_id=\? AND security_id=\?\)/u,
+			);
+			expect(plan).not.toMatch(/SCAN holdings/u);
+		},
+	);
 
 	it("lists one account from its date index, sorting only within a day", async () => {
 		const statements = await statementsOf(async () =>

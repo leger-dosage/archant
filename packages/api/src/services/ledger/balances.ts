@@ -213,6 +213,7 @@ async function recomputeHoldings(
 			securityId: tradedSecurityId,
 			quantity: trades.quantity,
 			price: trades.price,
+			fee: trades.fee,
 		})
 		.from(trades)
 		.innerJoin(entries, eq(entries.id, trades.entryId))

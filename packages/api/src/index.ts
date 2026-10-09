@@ -14,6 +14,7 @@ import { loopbackListener } from "./lib/port.ts";
 import { createAuth } from "./services/auth.ts";
 import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
+import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { hasUser } from "./services/setup.ts";
 
@@ -110,6 +111,13 @@ try {
 const seeded = await seedDefaults({ db });
 if (seeded > 0) {
 	logger.info({ seeded }, "default categories seeded");
+}
+// Once per instance: holdings stored before a buy's fee counted in its cost
+// basis get it. A failure stops the start, the claim rolled back with it, so
+// the next start tries again.
+const feeCostBases = await recomputeFeeCostBases({ db, timeZone: env.APP_TIMEZONE });
+if (feeCostBases > 0) {
+	logger.info({ accounts: feeCostBases }, "cost bases recomputed with fees");
 }
 // An unconfirmed preview keeps the uploaded file; a day is long enough to
 // come back to it, and short enough that bank statements do not pile up.
