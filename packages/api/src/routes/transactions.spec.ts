@@ -1,6 +1,8 @@
+import type { Auth } from "../services/auth.ts";
+
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
@@ -16,6 +18,7 @@ import {
 	expense,
 	importBody,
 	linkMerchant,
+	listBody,
 	listItem,
 	listOwn,
 	listed,
@@ -36,9 +39,13 @@ import {
 	uniqueCategory,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { buildTestApp, withSession } from "../testing/auth.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
+
+/** The list's rows of one account, as the interface reads them. */
+const listedOf = async (accountId: string) =>
+	listBody.parse((await request("GET", `/api/transactions?account=${accountId}`)).body).data.items;
 
 const locksOf = async (id: string) =>
 	(
@@ -119,6 +126,23 @@ describe("PATCH /api/transactions/:id", () => {
 
 		expect(response.status).toBe(200);
 		expect((await response.json()).data).toMatchObject({ excluded: true, amount: -4290 });
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
+	});
+
+	it("marks a transaction one-time, Sure's `one_time` kind, and the list reads it back", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			oneTime: true,
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { oneTime: true, excluded: false, amount: -4290 } });
+		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: true }]);
+		// No new lock: no sync, import or rule writes it. Those three come from the creation.
+		await expect(locksOf(data.id)).resolves.toBe('["date","amount","label"]');
 		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
 	});
 
@@ -1410,5 +1434,34 @@ describe("/api/transactions/:id/split", () => {
 
 		expect(response.status).toBe(201);
 		await expect(client.$get({ param: { id } })).resolves.toMatchObject({ status: 200 });
+	});
+});
+
+describe("a viewer and a one-time transaction", () => {
+	let viewerCookie: string;
+	let auth: Auth;
+	const silent = createLogger("silent");
+
+	// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+	beforeAll(async () => {
+		auth = createTestAuth(temp.db, silent);
+		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	});
+
+	it("is refused FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const edit = await viewer.request(`/api/transactions/${data.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ oneTime: true }),
+		});
+
+		expect(edit.status).toBe(403);
+		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
+		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: false }]);
 	});
 });

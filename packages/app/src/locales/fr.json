@@ -311,6 +311,8 @@
 			"save": "Enregistrer",
 			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
 			"excluded": "Exclure des rapports",
+			"oneTime": "Transaction ponctuelle ({{type}})",
+			"oneTimeDescription": "Les transactions ponctuelles seront exclues de certains calculs budgétaires et rapports afin de vous aider à voir ce qui compte vraiment.",
 			"category": "Catégorie",
 			"merchant": "Marchand",
 			"tags": "Étiquettes"
@@ -338,6 +340,10 @@
 			}
 		},
 		"excluded": "Exclue des rapports",
+		"oneTime": {
+			"income": "Revenu ponctuel (exclu des moyennes)",
+			"expense": "Dépense ponctuelle (exclue des moyennes)"
+		},
 		"pending": "En attente",
 		"recurringBadge": "Récurrent",
 		"category": {
@@ -1235,8 +1241,8 @@
 			"budgetedSpending": "Dépenses prévues",
 			"expectedIncome": "Revenus attendus",
 			"suggest": "Suggérer",
-			"suggestHint": "Remplit chaque montant avec la médiane des mois précédents.",
-			"noSuggestion": "Aucun mois précédent ne permet de suggérer un montant.",
+			"suggestHint": "Remplit chaque montant avec la médiane mensuelle de tout votre historique.",
+			"noSuggestion": "Aucun mois ne permet encore de suggérer un montant.",
 			"save": "Enregistrer"
 		},
 		"steps": {
@@ -2398,7 +2404,7 @@
 			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant.",
 			"invalid_months": "Indiquez un nombre entier de mois, de 1 à 120.",
 			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
-			"no_expenses": "Aucun mois complet ne compte encore de dépenses : choisissez un montant fixe.",
+			"no_expenses": "Aucun mois ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
 			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type.",
 			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, six décimales au plus. Exemple : 12,5.",

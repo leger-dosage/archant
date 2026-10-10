@@ -883,9 +883,15 @@ describe("a reserve", () => {
 		await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_200_000 }]);
 	});
 
-	it("refuses months of expenses before a complete month has any", async () => {
-		await spent([["2026-09-10", "-9 000"]]);
+	it("reads this month's expenses, as Sure's median, and refuses months of expenses without any", async () => {
+		const [only = ""] = await spent([["2026-09-10", "-9 000"]]);
 		const account = await savings("3 000");
+
+		// The current month counts, where it was refused before a complete month spent.
+		await expect(
+			create("Réserve", [{ accountId: account.id, allocatedAmount: "10" }], reserve("2")),
+		).resolves.toMatchObject({ targetAmount: 1_800_000, monthlyExpenses: 900_000 });
+		await sendOwn("PATCH", `/api/transactions/${only}`, { oneTime: true });
 
 		await expect(
 			rejection(body("Urgences", [{ accountId: account.id }], reserve("6"))),
@@ -894,7 +900,8 @@ describe("a reserve", () => {
 			message: "The request is invalid.",
 			fields: [{ path: "targetMonths", code: "no_expenses" }],
 		});
-		await expect(goalCount()).resolves.toBe(0);
+		// The first goal and its link alone.
+		await expect(goalCount()).resolves.toBe(2);
 	});
 
 	it("refuses months of expenses for accounts outside the reporting currency", async () => {

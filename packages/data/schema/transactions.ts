@@ -44,6 +44,11 @@ export const transactions = sqliteTable(
 		// Kept out of future reports (AD-9), never out of the account's balance:
 		// the money did move.
 		excluded: integer("excluded", { mode: "boolean" }).notNull().default(false),
+		// Sure's `one_time` kind: a rare purchase or windfall kept out of cash
+		// flow and its medians (AD-9), still in the balance and the list's
+		// totals. Only the owner sets it; a transfer written or undone clears
+		// it, as Sure's `Transfer::Creator` and `Transfer#destroy!` reset the kind.
+		oneTime: integer("one_time", { mode: "boolean" }).notNull().default(false),
 		// Set when an import or a sync found two entries equally near this line
 		// and created it rather than guess. Only ever set on insert; the user
 		// clears it by merging the row into the entry it repeats, which deletes

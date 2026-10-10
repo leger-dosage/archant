@@ -652,6 +652,39 @@ test("« Revenus », « Dépenses » and each line read Sure's net view: a refun
 	await expect(earned).toContainText(`+${euros(3_000)}`);
 });
 
+test("a transaction marked one-time in the sheet leaves « Dépenses », and the list keeps it with Sure's asterisk", async ({
+	page,
+	api,
+}) => {
+	// September 2022 belongs to this test alone.
+	const account = await api.openAccount({ openingBalance: "0", openingDate: "2022-08-15" });
+	const label = uniqueName("Électroménager");
+	await api.addTransaction(account.id, { date: "2022-09-05", label, amount: "-900,00" });
+	await api.addTransaction(account.id, { date: "2022-09-06", label: "Courses", amount: "-40,00" });
+
+	await page.goto("/?month=2022-09");
+	await expect(cell(page, "2022-09", "Dépenses")).toContainText(euros(-94_000));
+
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	const listed = page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
+	await listed.click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const oneTime = sheet.getByRole("switch", { name: "Transaction ponctuelle (Dépense)" });
+	await expect(oneTime).not.toBeChecked();
+	await expect(oneTime).toHaveAccessibleDescription(
+		"Les transactions ponctuelles seront exclues de certains calculs budgétaires et rapports afin de vous aider à voir ce qui compte vraiment.",
+	);
+	await oneTime.click();
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(sheet).toBeHidden();
+	await expect(listed).toHaveAccessibleName(/Dépense ponctuelle \(exclue des moyennes\)/u);
+	await expect(listed).toContainText(euros(-90_000));
+
+	await page.goto("/?month=2022-09");
+	await expect(cell(page, "2022-09", "Dépenses")).toContainText(euros(-4_000));
+});
+
 test("a month of a PEA's lines and a dividend alone shows no income and no expense", async ({
 	page,
 	api,

@@ -15,7 +15,6 @@ import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
-import { suggestions } from "../domain/budgets/actuals.ts";
 import { minDate, today } from "../domain/dates.ts";
 import {
 	backingShares,
@@ -31,7 +30,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { balanceOn, balancesBetween, openingDateOf } from "./ledger/balances.ts";
-import { getCashFlowHistory } from "./reports.ts";
+import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** One linked account as a goal shows it. */
@@ -155,15 +154,13 @@ function linkOf(row: LinkRow): GoalLink {
 }
 
 /**
- * The household's median monthly expenses, as the budget suggests spending
- * (Story 17.1): every complete month before the current one in
- * `APP_TIMEZONE` that has an expense line, in the reporting currency (AD-9).
- * Reads only.
+ * The household's median monthly expenses, as Sure's `median_expense` and
+ * the budget's suggested spending: `FamilyStats`' expense side over the
+ * whole history, the current month included, in the reporting currency
+ * (AD-9). Reads only.
  */
 async function monthlyExpenses(deps: ServiceDeps): Promise<MinorUnits | null> {
-	const current = today(deps.timeZone).slice(0, 7);
-
-	return suggestions(await getCashFlowHistory(deps, current), current, current).spending;
+	return (await getCashFlowStatistics(deps)).family.expense.median;
 }
 
 /**

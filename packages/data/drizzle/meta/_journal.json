@@ -470,6 +470,13 @@
       "when": 1791572860259,
       "tag": "0066_holdings_zero_quantity",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1791625264090,
+      "tag": "0067_transaction_one_time",
+      "breakpoints": true
     }
   ]
 }

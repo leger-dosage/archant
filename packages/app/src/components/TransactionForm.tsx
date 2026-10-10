@@ -142,6 +142,7 @@ export function TransactionForm({
 	const date = useController({ control: form.control, name: "date" });
 	const amount = useController({ control: form.control, name: "amount" });
 	const excluded = useController({ control: form.control, name: "excluded" });
+	const oneTime = useController({ control: form.control, name: "oneTime" });
 	const category = useController({ control: form.control, name: "categoryId" });
 	const merchant = useController({ control: form.control, name: "merchantId" });
 	const tagIds = useController({ control: form.control, name: "tagIds" });
@@ -171,6 +172,7 @@ export function TransactionForm({
 				// merchant and the tags show on edits only.
 				const {
 					excluded: _excluded,
+					oneTime: _oneTime,
 					categoryId: _categoryId,
 					merchantId: _merchantId,
 					tagIds: _tagIds,
@@ -181,7 +183,7 @@ export function TransactionForm({
 				// Sent only when changed: a category, a merchant or a tag deleted
 				// elsewhere since the sheet opened would otherwise refuse the save of
 				// any other field. Tags are a set, so their order is no change.
-				const { categoryId, merchantId, tagIds: tags, ...rest } = values;
+				const { categoryId, merchantId, oneTime: oneTimeValue, tagIds: tags, ...rest } = values;
 				const { dirtyFields } = form.formState;
 				const input = {
 					...rest,
@@ -191,6 +193,8 @@ export function TransactionForm({
 						? { categoryId }
 						: {}),
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
+					// Pairing a transfer in this sheet clears it: an untouched switch never sets it back.
+					...(dirtyFields.oneTime === true ? { oneTime: oneTimeValue } : {}),
 					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
 				};
 				await updateTransaction.mutateAsync({ id: transaction.id, input });
@@ -414,6 +418,32 @@ export function TransactionForm({
 								checked={excluded.field.value}
 								onCheckedChange={excluded.field.onChange}
 								onBlur={excluded.field.onBlur}
+							/>
+						</div>
+					)}
+
+					{transaction !== null && !inSplit && (
+						<div className="flex items-start justify-between gap-4">
+							<div className="flex flex-col gap-1">
+								<Label htmlFor="transaction-one-time">
+									{t("transactions.form.oneTime", {
+										type: t(
+											transaction.amount > 0
+												? "transactions.form.income"
+												: "transactions.form.expense",
+										),
+									})}
+								</Label>
+								<p id="transaction-one-time-description" className="text-sm text-muted-foreground">
+									{t("transactions.form.oneTimeDescription")}
+								</p>
+							</div>
+							<Switch
+								id="transaction-one-time"
+								aria-describedby="transaction-one-time-description"
+								checked={oneTime.field.value}
+								onCheckedChange={oneTime.field.onChange}
+								onBlur={oneTime.field.onBlur}
 							/>
 						</div>
 					)}

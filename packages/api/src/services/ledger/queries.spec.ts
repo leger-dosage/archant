@@ -416,6 +416,16 @@ describe("sumTransactions", () => {
 		]);
 	});
 
+	it("keeps a one-time row in the list's totals, as Sure's `Transaction::Search#totals`", async () => {
+		const joint = await openChecking({ name: "Somme ponctuelle" });
+		const oneTime = await add(joint.id, { amount: toMinorUnits(-90_000), label: "Électroménager" });
+		await updateTransaction(deps(), oneTime, { oneTime: true }, asUser);
+
+		await expect(sumTransactions(deps(), { accountIds: [joint.id] })).resolves.toEqual([
+			{ currency: "EUR", amount: -90_000, income: 0, expense: -90_000, count: 1 },
+		]);
+	});
+
 	it("keeps the income and the expense sums to the rows the direction filter matches", async () => {
 		const { joint } = await openPair();
 		await add(joint.id, { amount: toMinorUnits(10000) });
@@ -574,6 +584,8 @@ describe("cashFlowByCategory", () => {
 		await add(joint.id, { amount: toMinorUnits(0), label: "zero" });
 		const excluded = await inCategory(-transferAmount());
 		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		const oneTime = await inCategory(-transferAmount());
+		await updateTransaction(deps(), oneTime, { oneTime: true }, asUser);
 		const pendingRow = await add(joint.id, {
 			amount: toMinorUnits(-transferAmount()),
 			label: "pending",
@@ -662,6 +674,8 @@ describe("cashFlowByMonth", () => {
 		await add(joint.id, { amount: toMinorUnits(-transferAmount()), date: "2026-08-16" });
 		const excluded = await inCategory(-transferAmount(), "2026-08-20");
 		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		const oneTime = await inCategory(-transferAmount(), "2026-08-21");
+		await updateTransaction(deps(), oneTime, { oneTime: true }, asUser);
 		await add(joint.id, {
 			amount: toMinorUnits(-transferAmount()),
 			date: "2026-09-02",
@@ -696,6 +710,21 @@ describe("cashFlowByMonth", () => {
 		await expect(cashFlowByMonth(deps(), { to: "2026-09-30", accountIds: [] })).resolves.toEqual(
 			[],
 		);
+	});
+
+	it("reads every month without `to`, future ones included", async () => {
+		const joint = await openChecking({ name: "Compte sans borne", openingDate: "2026-06-01" });
+		const groceries = await newCategory("Courses sans borne");
+		const later = await add(joint.id, {
+			amount: toMinorUnits(-transferAmount()),
+			date: "2026-12-01",
+			label: "Courses",
+		});
+		await updateTransaction(deps(), later, { categoryId: groceries }, asUser);
+
+		const rows = await cashFlowByMonth(deps(), { accountIds: [joint.id] });
+
+		expect(rows.map((row) => row.month)).toContain("2026-12");
 	});
 });
 

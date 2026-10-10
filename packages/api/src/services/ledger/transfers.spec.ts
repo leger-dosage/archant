@@ -661,6 +661,97 @@ describe("automatic transfer matching", () => {
 	});
 });
 
+// One after the other: each is an `immediate` ledger write.
+const flag = async (...ids: string[]) =>
+	ids.reduce(async (previous, id) => {
+		await previous;
+		await updateTransaction(deps(), id, { oneTime: true }, asUser);
+	}, Promise.resolve());
+
+const oneTimeOf = async (...ids: string[]) =>
+	Promise.all(ids.map(async (id) => (await findTransaction(deps(), id))?.oneTime));
+
+describe("one-time sides", () => {
+	it("clears the flag of both sides the matcher pairs, as Sure's `Transfer::Creator`", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		await flag(outflow);
+
+		const inflow = await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(amount) });
+
+		await expect(transferRows(outflow)).resolves.toHaveLength(1);
+		await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([false, false]);
+	});
+
+	it("clears the flag of both sides paired by hand", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		const inflow = await add(livret.id, { date: "2026-09-30", amount: toMinorUnits(amount) });
+		await flag(outflow, inflow);
+
+		await matchTransfer(deps(), outflow, inflow, asUser);
+
+		await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([false, false]);
+	});
+
+	it("keeps a flag the owner ticked on a pending side when confirming, as Sure's `Transfer#confirm!` sets the status alone", async () => {
+		const { outflow, inflow, transfer } = await matchedPair();
+		await flag(outflow);
+
+		await confirmTransfer(deps(), transfer.id, asUser);
+
+		await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([true, false]);
+	});
+
+	it.each([
+		["unmatched", unmatchTransfer],
+		["rejected", rejectTransfer],
+	])(
+		"clears the flag of both sides of a transfer %s, as Sure resets them to `standard`",
+		async (_name, write) => {
+			const { outflow, inflow, transfer } = await matchedPair();
+			await flag(outflow, inflow);
+			await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([true, true]);
+
+			await write(deps(), transfer.id, asUser);
+
+			await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([false, false]);
+		},
+	);
+
+	it("keeps the flag an amount change sets on its own side, and clears the other side's", async () => {
+		const { outflow, inflow, amount } = await matchedPair();
+		await flag(inflow);
+
+		await updateTransaction(
+			deps(),
+			outflow,
+			{ amount: toMinorUnits(-(amount - 50)), oneTime: true },
+			{ origin: "user" },
+		);
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([true, false]);
+	});
+
+	it("clears the flag of both sides when an amount change undoes the transfer", async () => {
+		const { outflow, inflow, amount } = await matchedPair();
+		await flag(outflow, inflow);
+
+		await updateTransaction(
+			deps(),
+			outflow,
+			{ amount: toMinorUnits(-(amount - 50)) },
+			{ origin: "user" },
+		);
+
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		await expect(oneTimeOf(outflow, inflow)).resolves.toEqual([false, false]);
+	});
+});
+
 describe("rejectTransfer", () => {
 	it("undoes the transfer and records the pair", async () => {
 		const { outflow, inflow, transfer, checking: joint } = await matchedPair();

@@ -182,6 +182,7 @@ export const EXPORTED_COLUMNS = {
 		notes: transactions.notes,
 		reference: transactions.reference,
 		excluded: transactions.excluded,
+		oneTime: transactions.oneTime,
 		possibleDuplicate: transactions.possibleDuplicate,
 		pending: transactions.pending,
 		lockedFields: transactions.lockedFields,

@@ -46,6 +46,11 @@ export type TransactionPatch = {
 	label?: string | undefined;
 	notes?: string | null | undefined;
 	excluded?: boolean | undefined;
+	/**
+	 * Sure's `one_time` kind. Not lockable: no sync, import or rule writes it,
+	 * so only `updateTransaction` reads it.
+	 */
+	oneTime?: boolean | undefined;
 	/** `null` leaves the transaction « Sans catégorie ». */
 	categoryId?: string | null | undefined;
 	/** `null` leaves the transaction « Sans marchand ». */
@@ -77,6 +82,7 @@ export const editableColumns = {
 	label: transactions.label,
 	notes: transactions.notes,
 	excluded: transactions.excluded,
+	oneTime: transactions.oneTime,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
 	lockedFields: transactions.lockedFields,

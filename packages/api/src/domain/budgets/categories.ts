@@ -1,11 +1,10 @@
 import type { CashFlowCategory, CashFlowRow } from "../cash-flow.ts";
 import type { IsoMonth } from "../dates.ts";
+import type { Stats } from "../statistics.ts";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-
-import { medianOf } from "./actuals.ts";
 
 /** Sure's three pills: over budget, near the limit from 90 %, on track. */
 type BudgetStatus = "over" | "near" | "onTrack";
@@ -31,7 +30,11 @@ type Envelope = {
 	status: BudgetStatus;
 	/** `null` when hidden: neither budgeted nor spending, or a shared child yet to spend. */
 	section: BudgetSection | null;
-	/** Over the complete earlier months in which it has a counted row; `null` without one. */
+	/**
+	 * Sure's `median_monthly_expense` and `avg_monthly_expense`: its own
+	 * category's `CategoryStats` expense side over the whole history, never its
+	 * children's; `null` without a month that spent in it.
+	 */
 	median: MinorUnits | null;
 	average: MinorUnits | null;
 };
@@ -75,20 +78,6 @@ const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 const spentOf = (net: MinorUnits): MinorUnits => toMinorUnits(net < 0 ? Math.abs(net) : 0);
 
 const zero = toMinorUnits(0);
-
-/** The mean of minor-unit amounts, rounded to the minor unit; `null` for none. */
-export function averageOf(values: readonly MinorUnits[]): MinorUnits | null {
-	if (values.length === 0) {
-		return null;
-	}
-
-	return toMinorUnits(Math.round(values.reduce((sum, value) => sum + value, 0) / values.length));
-}
-
-const statsOf = (values: readonly MinorUnits[]) => ({
-	median: medianOf(values),
-	average: averageOf(values),
-});
 
 /**
  * Sure's `sync_parent_budgeted_spending!`: once a child's amount changes, its
@@ -200,21 +189,17 @@ function measured(envelope: {
  * whatever its kind, and « Sans catégorie »'s, as Sure's
  * `budget_category_actual_spending` nets a category's expense and refunds,
  * its `:uncategorized` key included. A row in an unknown category is
- * uncategorised, as `grossCashFlow` counts it. `uncategorised` stays `null`
- * until an uncategorised outflow is counted, so a month of uncategorised
- * income alone enters no median.
+ * uncategorised, as `grossCashFlow` counts it.
  */
 function netsOf(rows: readonly CashFlowRow[], byId: ReadonlyMap<string, TreeCategory>) {
 	const nets = new Map<string, MinorUnits>();
-	let uncategorisedNet = 0;
-	let spentUncategorised = false;
+	let uncategorised = 0;
 
 	for (const row of rows) {
 		const own = row.categoryId === null ? undefined : byId.get(row.categoryId);
 
 		if (own === undefined) {
-			uncategorisedNet += row.amount;
-			spentUncategorised ||= row.amount < 0;
+			uncategorised += row.amount;
 		} else {
 			for (const id of own.parentId === null ? [own.id] : [own.id, own.parentId]) {
 				nets.set(id, toMinorUnits((nets.get(id) ?? 0) + row.amount));
@@ -222,7 +207,7 @@ function netsOf(rows: readonly CashFlowRow[], byId: ReadonlyMap<string, TreeCate
 		}
 	}
 
-	return { nets, uncategorised: spentUncategorised ? toMinorUnits(uncategorisedNet) : null };
+	return { nets, uncategorised: toMinorUnits(uncategorised) };
 }
 
 /**
@@ -239,30 +224,6 @@ export function spentByCategory(
 	return new Map([...nets].map(([id, net]) => [id, spentOf(net)]));
 }
 
-/**
- * What each envelope spent in each earlier month in which it has a counted
- * row, a parent's months including its children's: the values its median and
- * average take. « Sans catégorie » counts the months with an outflow.
- */
-function historyOf(history: readonly MonthRows[], byId: ReadonlyMap<string, TreeCategory>) {
-	const perCategory = new Map<string, MinorUnits[]>();
-	const uncategorised: MinorUnits[] = [];
-
-	for (const { rows } of history) {
-		const { nets, uncategorised: outflow } = netsOf(rows, byId);
-
-		for (const [id, net] of nets) {
-			perCategory.set(id, [...(perCategory.get(id) ?? []), spentOf(net)]);
-		}
-
-		if (outflow !== null) {
-			uncategorised.push(spentOf(outflow));
-		}
-	}
-
-	return { perCategory, uncategorised };
-}
-
 const sumOf = (amounts: readonly MinorUnits[]): MinorUnits =>
 	toMinorUnits(amounts.reduce((sum, amount) => sum + amount, 0));
 
@@ -272,20 +233,19 @@ const sumOf = (amounts: readonly MinorUnits[]): MinorUnits =>
  * and « Sans catégorie », which budgets what the total leaves unallocated.
  * `amounts` holds the stored amounts by category; a category without one has
  * 0. `rollover` holds each row's switch and what `rolloverChain` carried into
- * it. `history` is the counted rows of the months before both `shown` and
- * `current`, as 17.1's suggestions take them.
+ * it. `statistics` is `categoryStats`' over the whole history: each
+ * envelope's median and average read its own key's expense side, « Sans
+ * catégorie » the `null` key's.
  */
 export function budgetCategories(input: {
 	categories: readonly CashFlowCategory[];
 	amounts: ReadonlyMap<string, MinorUnits>;
 	rollover: ReadonlyMap<string, { enabled: boolean; carried: MinorUnits }>;
 	rows: readonly CashFlowRow[];
-	history: readonly MonthRows[];
-	shown: IsoMonth;
-	current: IsoMonth;
+	statistics: ReadonlyMap<string | null, Stats>;
 	budgetedSpending: MinorUnits | null;
 }): { categories: BudgetCategoryLine[]; uncategorised: UncategorisedLine; allocated: MinorUnits } {
-	const { amounts, shown, current } = input;
+	const { amounts } = input;
 	const byId = new Map(input.categories.map((category) => [category.id, category]));
 	const expense = input.categories
 		.filter((category) => category.kind === "expense")
@@ -298,11 +258,11 @@ export function budgetCategories(input: {
 		childrenOf(parentId).filter((child) => amountOf(child.id) > 0);
 	const { nets, uncategorised: uncategorisedNet } = netsOf(input.rows, byId);
 	const spentOn = (id: string) => spentOf(nets.get(id) ?? zero);
-	const before = shown < current ? shown : current;
-	const past = historyOf(
-		input.history.filter((item) => item.month < before),
-		byId,
-	);
+	const statsOf = (id: string | null) => {
+		const spent = input.statistics.get(id)?.expense;
+
+		return { median: spent?.median ?? null, average: spent?.average ?? null };
+	};
 
 	/**
 	 * Sure's shared child: only what the parent keeps beyond its ring-fenced
@@ -357,7 +317,7 @@ export function budgetCategories(input: {
 			}),
 			rolloverEnabled: input.rollover.get(category.id)?.enabled ?? false,
 			rolledOver,
-			...statsOf(past.perCategory.get(category.id) ?? []),
+			...statsOf(category.id),
 			...(category.parentId !== null && shared
 				? sharedOf(category.parentId, spent)
 				: measured({
@@ -372,7 +332,7 @@ export function budgetCategories(input: {
 
 	const allocated = sumOf(parents.map((parent) => amountOf(parent.id)));
 	const left = toMinorUnits(Math.max((input.budgetedSpending ?? 0) - allocated, 0));
-	const uncategorisedSpent = spentOf(uncategorisedNet ?? zero);
+	const uncategorisedSpent = spentOf(uncategorisedNet);
 	const uncategorised = measured({
 		budget: left,
 		budgeted: left > 0,
@@ -389,7 +349,7 @@ export function budgetCategories(input: {
 			// Sure lists « Sans catégorie » on track only beside a category of its own.
 			section:
 				uncategorised.section === "onTrack" && expense.length === 0 ? null : uncategorised.section,
-			...statsOf(past.uncategorised),
+			...statsOf(null),
 		},
 		allocated,
 	};

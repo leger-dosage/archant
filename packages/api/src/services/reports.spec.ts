@@ -17,7 +17,13 @@ import { ingest } from "./ledger/ingest.ts";
 import { findTransaction } from "./ledger/queries.ts";
 import { recordTrade } from "./ledger/trades.ts";
 import { matchTransfer } from "./ledger/transfers.ts";
-import { getBalanceSheet, getCashFlow, getIncomeStatement, getNetWorth } from "./reports.ts";
+import {
+	getBalanceSheet,
+	getCashFlow,
+	getCashFlowStatistics,
+	getIncomeStatement,
+	getNetWorth,
+} from "./reports.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -97,6 +103,8 @@ async function category(name: string) {
 async function categorised(accountId: string, date: string, amount: number, categoryId: string) {
 	const id = await spend(accountId, date, amount);
 	await updateTransaction(deps(), id, { categoryId }, { origin: "user" });
+
+	return id;
 }
 
 describe("getBalanceSheet", () => {
@@ -280,7 +288,66 @@ describe("getCashFlow", () => {
 	});
 });
 
+describe("getCashFlow and one-time transactions", () => {
+	it("leaves a one-time expense out of the month, where it counted 900 €", async () => {
+		const checking = await account();
+		const appliances = await category("Électroménager");
+		const oneTime = await categorised(checking, "2026-09-10", -90_000, appliances);
+		await updateTransaction(deps(), oneTime, { oneTime: true }, { origin: "user" });
+		await spend(checking, "2026-09-11", -2_000);
+
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+
+		expect(cashFlow.expenses).toBe(-2_000);
+	});
+});
+
+describe("getCashFlowStatistics", () => {
+	it("reads the whole history, this month and next included, and each category's own rows", async () => {
+		const checking = await account({ openingDate: "2026-06-01" });
+		const groceries = await category("Courses");
+		await categorised(checking, "2026-07-10", -10_000, groceries);
+		await categorised(checking, "2026-09-10", -20_000, groceries);
+		await categorised(checking, "2026-10-02", -60_000, groceries);
+		await spend(checking, "2026-08-05", 250_000);
+
+		const { family, categories: byCategory } = await getCashFlowStatistics(deps());
+
+		expect(family).toEqual({
+			income: { median: 250_000, average: 250_000 },
+			expense: { median: 20_000, average: 30_000 },
+		});
+		expect(byCategory.get(groceries)?.expense.median).toBe(20_000);
+		expect(byCategory.get(null)?.income.median).toBe(250_000);
+	});
+});
+
 describe("getIncomeStatement", () => {
+	it("gives Sure's monthly statistics without an account filter, the next month included, and none with one", async () => {
+		const checking = await account({ openingDate: "2026-06-01" });
+		const savings = await account({
+			name: "Livret",
+			subtype: "savings",
+			openingDate: "2026-06-01",
+		});
+		await spend(checking, "2026-07-10", -10_000);
+		await spend(checking, "2026-08-10", -30_000);
+		await spend(checking, "2026-10-02", -60_000);
+		await spend(savings, "2026-08-31", 1_200);
+		await spend(savings, "2026-09-30", 1_400);
+
+		const query = { from: "2026-09-01", to: "2026-09-30", byMonth: false, comparePrevious: false };
+		const all = await getIncomeStatement(deps(), query);
+		const scoped = await getIncomeStatement(deps(), { ...query, accountIds: [savings] });
+
+		expect(all.breakdown).toMatchObject({
+			medianMonthlyIncome: 1_300,
+			medianMonthlyExpenses: -30_000,
+			avgMonthlyExpenses: -33_333,
+		});
+		expect(scoped).toMatchObject({ income: 1_400, breakdown: null });
+	});
+
 	it("keeps a refund as income in its category, where the net dashboard lowers the expense", async () => {
 		const checking = await account();
 		const groceries = await category("Courses");

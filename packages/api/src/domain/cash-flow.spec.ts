@@ -56,8 +56,8 @@ describe("recurringDirection", () => {
 	});
 });
 
-const counted = (value: CashFlowTransaction, excluded = false, pending = false) =>
-	countsInCashFlow({ ...value, excluded, pending });
+const counted = (value: CashFlowTransaction, excluded = false, pending = false, oneTime = false) =>
+	countsInCashFlow({ ...value, excluded, pending, oneTime });
 
 describe("countsInCashFlow", () => {
 	it("counts income and expenses and a loan payment's or contribution's outflow, not an excluded row nor another transfer side", () => {
@@ -75,6 +75,11 @@ describe("countsInCashFlow", () => {
 	it("never counts a pending row", () => {
 		expect(counted(tx(-1200), false, true)).toBe(false);
 		expect(counted(tx(3000), false, true)).toBe(false);
+	});
+
+	it("never counts a one-time row, as Sure's `BUDGET_EXCLUDED_KINDS`", () => {
+		expect(counted(tx(-90000), false, false, true)).toBe(false);
+		expect(counted(tx(150000), false, false, true)).toBe(false);
 	});
 });
 

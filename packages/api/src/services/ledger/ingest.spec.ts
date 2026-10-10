@@ -90,6 +90,7 @@ describe("ingest", () => {
 			notes: null,
 			reference: null,
 			excluded: false,
+			oneTime: false,
 			pending: false,
 			categoryId: null,
 			merchantId: null,

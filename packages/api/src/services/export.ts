@@ -627,8 +627,8 @@ function archantTransaction(transaction: ExportedTransactionRow["transaction"]) 
 /**
  * A split line under its parent, with the keys of Sure's
  * `serialize_split_lines_for_export`. A line is never a transfer side
- * (AD-20), so its kind is `standard`; the entry is the transaction, so both
- * ids are its own.
+ * (AD-20), so its kind is `standard` unless it is one-time; the entry is the
+ * transaction, so both ids are its own.
  */
 function sureSplitLine(line: SplitLineRow) {
 	return {
@@ -642,7 +642,7 @@ function sureSplitLine(line: SplitLineRow) {
 		category_id: line.transaction.categoryId,
 		merchant_id: line.transaction.merchantId,
 		tag_ids: line.tagIds,
-		kind: "standard",
+		kind: line.transaction.oneTime ? "one_time" : "standard",
 		created_at: timestamp(line.createdAt),
 		updated_at: timestamp(line.updatedAt),
 		archant: archantTransaction(line.transaction),
@@ -946,8 +946,11 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 			page
 				.filter((row) => row.date >= from)
 				.map((row) => {
-					const kind =
-						row.outflowOf !== null && accepted.has(row.outflowOf.id)
+					// A flagged row exports `one_time` whatever its transfer, as Sure's
+					// kind column then holds `one_time`.
+					const kind = row.transaction.oneTime
+						? "one_time"
+						: row.outflowOf !== null && accepted.has(row.outflowOf.id)
 							? SURE_OUTFLOW_KINDS[row.outflowOf.kind]
 							: row.inflowOf !== null && accepted.has(row.inflowOf.id)
 								? "funds_movement"

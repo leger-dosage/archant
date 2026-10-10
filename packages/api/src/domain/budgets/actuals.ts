@@ -1,5 +1,4 @@
-import type { CashFlowBreakdown, CashFlowLine, MonthBreakdown } from "../cash-flow.ts";
-import type { IsoMonth } from "../dates.ts";
+import type { CashFlowBreakdown, CashFlowLine } from "../cash-flow.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -49,46 +48,4 @@ export function spendingSegments(lines: readonly CashFlowLine[]): SpendingSegmen
 			// Stable: lines of the same size keep the breakdown's order.
 			.toSorted((a, b) => b.spent - a.spent)
 	);
-}
-
-/** The median of minor-unit amounts, rounded to the minor unit; `null` for none. */
-export function medianOf(values: readonly MinorUnits[]): MinorUnits | null {
-	if (values.length === 0) {
-		return null;
-	}
-
-	const sorted = values.toSorted((a, b) => a - b);
-	// The middle value of an odd count, the two middle values of an even one.
-	const middle = sorted.slice((sorted.length - 1) >> 1, (sorted.length >> 1) + 1);
-
-	return toMinorUnits(Math.round(middle.reduce((sum, value) => sum + value, 0) / middle.length));
-}
-
-/**
- * Sure's `estimated_spending` and `estimated_income`: the median of each
- * figure over the months before both `shown` and `current`. Unlike Sure, the
- * current month never counts, since half a month drags the median down. A
- * month enters a side's median only when its gross view has a line on that
- * side, so the months before the first counted line never do.
- */
-export function suggestions(
-	history: readonly MonthBreakdown[],
-	shown: IsoMonth,
-	current: IsoMonth,
-): { spending: MinorUnits | null; income: MinorUnits | null } {
-	const before = shown < current ? shown : current;
-	const earlier = history.filter((item) => item.month < before);
-
-	return {
-		spending: medianOf(
-			earlier
-				.filter((item) => item.gross.lines.expense.length > 0)
-				.map((item) => actualsOf(item).spending),
-		),
-		income: medianOf(
-			earlier
-				.filter((item) => item.gross.lines.income.length > 0)
-				.map((item) => actualsOf(item).income),
-		),
-	};
 }

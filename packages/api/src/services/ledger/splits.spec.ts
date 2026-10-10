@@ -183,6 +183,42 @@ describe("splitTransaction", () => {
 		);
 	});
 
+	it("gives each child a one-time parent's flag, as Sure's `Entry#split!` its kind, so the split stays out of cash flow", async () => {
+		const account = await openChecking({ name: "Ponctuelle divisée" });
+		const { id: parent, amount } = await expense(account.id);
+		await updateTransaction(deps(), parent, { oneTime: true }, asUser);
+
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Four", amount: toMinorUnits(-6_000), categoryId: null },
+				{ label: "Pose", amount: toMinorUnits(amount + 6_000), categoryId: null },
+			],
+			asUser,
+		);
+		const flow = await cashFlowByCategory(deps(), {
+			from: "2026-09-01",
+			to: "2026-09-30",
+			accountIds: [account.id],
+		});
+
+		const flags = await Promise.all(
+			split.childIds.map(
+				async (id) =>
+					(
+						await temp.db
+							.select({ oneTime: transactions.oneTime })
+							.from(transactions)
+							.where(eq(transactions.entryId, id))
+							.get()
+					)?.oneTime,
+			),
+		);
+		expect(flags).toEqual([true, true]);
+		expect(flow).toEqual([]);
+	});
+
 	it("allows zero and mixed signs, as Sure", async () => {
 		const account = await openChecking({ name: "Signes" });
 		const { id, amount } = await expense(account.id);

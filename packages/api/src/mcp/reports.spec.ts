@@ -193,6 +193,29 @@ describe("get_income_statement", () => {
 		});
 	});
 
+	it("takes Sure's monthly statistics over the whole history, next month included and a one-time line left out", async () => {
+		const tools = await household();
+		const { checking } = tools.accounts;
+		await postOwn(checking.id, { date: "2026-10-05", label: "COURSES", amount: "-300,00" });
+		const oneTime = await postOwn(checking.id, {
+			date: "2026-09-15",
+			label: "ÉLECTROMÉNAGER",
+			amount: "-900,00",
+		});
+		await sendOwn("PATCH", `/api/transactions/${oneTime}`, { oneTime: true });
+
+		const result = await tools.read(QUARTER);
+
+		// Out: 50,00, 874,20, 100,00 and October's 300,00, where October was
+		// left out and the one-time 900,00 made September 1 000,00.
+		expect(result.insights).toMatchObject({
+			median_monthly_income: "2500.00",
+			median_monthly_expenses: "-200.00",
+			avg_monthly_expenses: "-331.05",
+		});
+		expect(result.expense.total).toBe("-1024.20");
+	});
+
 	it("adds Sure's monthly_series, each calendar month cut to the period", async () => {
 		const tools = await household();
 
