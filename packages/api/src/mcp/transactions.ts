@@ -245,7 +245,7 @@ export const getTransactionTool = defineTool({
 export const updateTransactionTool = defineTool({
 	name: "update_transaction",
 	title: "Classify a transaction",
-	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it under transaction, as get_transaction gives it, as Sure's update_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers TRANSACTION_SPLIT. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
+	description: `Sets a transaction's category, merchant, tags, notes, label or exclusion as its sheet in Archant does, and returns it under transaction, as get_transaction gives it, as Sure's update_transaction does. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers transaction_split. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	fieldPaths: { label: "name" },
@@ -260,7 +260,7 @@ export const updateTransactionTool = defineTool({
 export const bulkUpdateTransactionsTool = defineTool({
 	name: "bulk_update_transactions",
 	title: "Classify transactions in bulk",
-	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers BULK_COUNT_STALE with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
+	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers bulk_count_stale with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: bulkUpdateTransactionsInput,
@@ -301,7 +301,7 @@ function signedAmount(
 export const createTransactionTool = defineTool({
 	name: "create_transaction",
 	title: "Record a transaction",
-	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns created and the line under transaction, as get_transaction gives it, as Sure's create_transaction does. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. A refused field answers VALIDATION_ERROR with its path and code; an unknown account_id, NOT_FOUND.`,
+	description: `Records a transaction on an account, as the transaction sheet does in Archant: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. The line is in the account's currency. Returns created and the line under transaction, as get_transaction gives it, as Sure's create_transaction does. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. A field the input itself refuses answers { error, hint }, its error each refused field's path and code; a value the sheet's check refuses, such as a category that does not exist or another currency, answers validation_error, its message naming the field's path and code; an unknown account_id, not_found.`,
 	scope: "archant:write",
 	annotations: CREATES,
 	fieldPaths: { label: "name" },
@@ -344,7 +344,7 @@ export const createTransactionTool = defineTool({
 export const deleteTransactionTool = defineTool({
 	name: "delete_transaction",
 	title: "Delete a transaction",
-	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the account_id, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers TRANSACTION_CHANGED with the fields that differ. A split's line alone answers TRANSACTION_SPLIT: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A line a bank or a file brought comes back at the next sync or import still listing it. Returns the transaction as it was and how many rows went.`,
+	description: `Deletes one transaction for good, as « Supprimer » on its sheet in Archant, and recomputes the account's balances from its date. Pass the account_id, date and amount get_transaction gave and the owner agreed to: when the transaction no longer has them, nothing is deleted and it answers transaction_changed with the fields that differ. A split's line alone answers transaction_split: deleting the split's parent deletes its lines with it. A side of a transfer goes with its transfer, the other side becoming a standard transaction. A line a bank or a file brought comes back at the next sync or import still listing it. Returns the transaction as it was and how many rows went.`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: deleteTransactionInput,

@@ -7,13 +7,15 @@ import { BANK_TEXT, CREATES, READ_ONLY, REPLACES, defineTool, pageOf, pageOutput
 const merchant = z.object({
 	id: z.string(),
 	name: z.string(),
-	transaction_count: z.number().int(),
+	source: z
+		.literal("family")
+		.describe("Always family: every merchant here is the household's own, none a provider's."),
 });
 
 export const getMerchants = defineTool({
 	name: "get_merchants",
 	title: "Merchants",
-	description: `The merchants, sorted by name, a page at a time as Sure's get_merchants, each with how many transactions it holds: the id update_transaction's merchant_id takes, and the exact name get_transactions' merchants filter takes. Pass search to narrow by name rather than paging through them all. ${BANK_TEXT}`,
+	description: `Returns the merchants, sorted alphabetically, a page at a time as Sure's get_merchants. Each entry includes the id update_transaction's merchant_id takes and the exact name get_transactions' merchants filter takes. Pass search to filter by name instead of paging through everything. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: merchantsInput,
@@ -27,11 +29,7 @@ export const getMerchants = defineTool({
 
 		return {
 			result: {
-				merchants: items.map(({ id, name, transactionCount }) => ({
-					id,
-					name,
-					transaction_count: transactionCount,
-				})),
+				merchants: items.map(({ id, name }) => ({ id, name, source: "family" as const })),
 				...fields,
 			},
 			changedRows: 0,
@@ -43,7 +41,7 @@ export const createMerchantTool = defineTool({
 	name: "create_merchant",
 	title: "Create a merchant",
 	description:
-		"Creates a merchant as Archant's merchant picker does and returns its id for a rule's action or condition. A name already taken answers VALIDATION_ERROR with name_taken: use that merchant's id from get_merchants instead.",
+		"Creates a merchant as Archant's merchant picker does and returns its id for a rule's action or condition. A name already taken answers validation_error with name_taken: use that merchant's id from get_merchants instead.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createMerchantInput,
@@ -59,7 +57,7 @@ export const renameMerchantTool = defineTool({
 	name: "rename_merchant",
 	title: "Rename a merchant",
 	description:
-		"Renames a merchant as « Réglages » does; every transaction it holds shows the new name. A name another merchant holds, case aside, answers VALIDATION_ERROR with name_taken.",
+		"Renames a merchant as « Réglages » does; every transaction it holds shows the new name. A name another merchant holds, case aside, answers validation_error with name_taken.",
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: renameMerchantInput,

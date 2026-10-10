@@ -309,9 +309,9 @@ describe("get_income_statement", () => {
 		const refused = await tools.call({ ...QUARTER, account_ids: [savings.id, dollars.id, "nope"] });
 
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toMatch(/^VALIDATION_ERROR: /u);
-		expect(refused.content[0]?.text).toContain('{"path":"account_ids.1","code":"unknown_account"}');
-		expect(refused.content[0]?.text).toContain('{"path":"account_ids.2","code":"unknown_account"}');
+		expect(refused.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
+		expect(refused.content[0]?.text).toContain("account_ids.1 unknown_account");
+		expect(refused.content[0]?.text).toContain("account_ids.2 unknown_account");
 		expect(refused.content[0]?.text).not.toContain("account_ids.0");
 	});
 
@@ -331,7 +331,7 @@ describe("get_income_statement", () => {
 
 		expect(result.expense.total).toBe("-1024.20");
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain('{"path":"account_ids.0","code":"unknown_account"}');
+		expect(refused.content[0]?.text).toContain("account_ids.0 unknown_account");
 	});
 
 	it("keeps a refund as income in its category, where it lowered the expense line", async () => {
@@ -382,10 +382,10 @@ describe("get_income_statement", () => {
 		const missing = await tools.call({ start_date: "2026-07-01" });
 
 		expect(longest.monthly_series).toHaveLength(36);
-		expect(tooLong.content[0]?.text).toContain('{"path":"group_by","code":"too_many_periods"}');
-		expect(reversed.content[0]?.text).toContain('"path":"end_date","code":"before_from"');
-		expect(badDate.content[0]?.text).toContain('"path":"start_date"');
-		expect(missing.content[0]?.text).toContain('"path":"end_date"');
+		expect(tooLong.content[0]?.text).toContain("group_by too_many_periods");
+		expect(reversed.content[0]?.text).toContain("end_date before_from");
+		expect(badDate.content[0]?.text).toContain("start_date ");
+		expect(missing.content[0]?.text).toContain("end_date ");
 	});
 });
 
@@ -558,8 +558,8 @@ describe("get_balance_sheet", () => {
 
 		expect(most.net_worth.monthly_history.values).toHaveLength(400);
 		expect(tooMany.isError).toBe(true);
-		expect(tooMany.content[0]?.text).toContain('{"path":"interval","code":"too_many_points"}');
-		expect(reversed.content[0]?.text).toContain('"path":"end_date","code":"before_from"');
-		expect(unknown.content[0]?.text).toContain('"path":"period"');
+		expect(tooMany.content[0]?.text).toContain("interval too_many_points");
+		expect(reversed.content[0]?.text).toContain("end_date before_from");
+		expect(unknown.content[0]?.text).toContain("period ");
 	});
 });

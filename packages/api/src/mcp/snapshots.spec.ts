@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
 
+import { daysBetween } from "../domain/dates.ts";
 import { createLogger } from "../lib/logger.ts";
 import {
 	buildApp,
@@ -108,9 +109,7 @@ const accountsWithSeries = z.object({
 			.object({
 				id: z.string(),
 				balance: z.string(),
-				historical_balances: z.object({
-					points: z.array(z.object({ date: z.string(), balance: z.string() })),
-				}),
+				historical_balances: z.object({ start_date: z.string(), values: z.array(z.number()) }),
 			})
 			.loose(),
 	),
@@ -120,16 +119,16 @@ const accountsWithSeries = z.object({
 async function balancesOf(tools: Awaited<ReturnType<typeof assistants>>, id: string, date: string) {
 	const result = await tools.read("get_accounts", {
 		include_balance_series: true,
-		series_period: "3M",
+		series_period: "last_90_days",
 	});
 	const account = accountsWithSeries
 		.parse(result.structuredContent)
 		.accounts.find((candidate) => candidate.id === id);
+	// One value a day from the series' first day: the period is under a year.
+	const days =
+		account === undefined ? -1 : daysBetween(account.historical_balances.start_date, date);
 
-	return {
-		today: account?.balance,
-		onDate: account?.historical_balances.points.find((point) => point.date === date)?.balance,
-	};
+	return { today: account?.balance, onDate: account?.historical_balances.values[days] };
 }
 
 /** The account's snapshots, the « Soldes » tab's, without its opening balance. */
@@ -263,7 +262,7 @@ describe("get_valuations", () => {
 		});
 
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain('"path":"end_date","code":"before_start_date"');
+		expect(refused.content[0]?.text).toContain("end_date before_start_date");
 	});
 });
 
@@ -297,8 +296,8 @@ describe("record_valuation", () => {
 			},
 		});
 		await expect(balancesOf(tools, account.id, "2026-08-15")).resolves.toEqual({
-			today: "2480.00",
-			onDate: "2500.00",
+			today: "2480.0",
+			onDate: 2500,
 		});
 		expect((await calls())[0]).toEqual({
 			tool: "record_valuation",
@@ -372,10 +371,10 @@ describe("record_valuation", () => {
 		});
 
 		expect(opening.isError).toBe(true);
-		expect(opening.content[0]?.text).toMatch(/^VALIDATION_ERROR:/);
-		expect(opening.content[0]?.text).toContain('"path":"date","code":"not_after_opening_date"');
-		expect(tomorrow.content[0]?.text).toContain('"path":"date","code":"date_in_future"');
-		expect(badAmount.content[0]?.text).toContain('"path":"amount","code":"invalid_amount"');
+		expect(opening.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
+		expect(opening.content[0]?.text).toContain("date not_after_opening_date");
+		expect(tomorrow.content[0]?.text).toContain("date date_in_future");
+		expect(badAmount.content[0]?.text).toContain("amount invalid_amount");
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 		expect(await calls()).toEqual([
 			{ tool: "record_valuation", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -396,7 +395,7 @@ describe("record_valuation", () => {
 			source: "Relevé de compte (grade: A)",
 		});
 
-		expect(numeric.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"amount"/);
+		expect(numeric.content[0]?.text).toMatch(/^\{"error":"amount invalid_type","hint":/u);
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 	});
 
@@ -479,10 +478,10 @@ describe("record_valuation", () => {
 			source: "Relevé (grade: D)",
 		});
 
-		expect(missing.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"source"/);
-		expect(blank.content[0]?.text).toContain('"path":"source","code":"source_required"');
-		expect(ungraded.content[0]?.text).toContain('"path":"source","code":"estimate_without_grade"');
-		expect(unknown.content[0]?.text).toContain('"path":"source","code":"unknown_grade"');
+		expect(missing.content[0]?.text).toMatch(/^\{"error":"source invalid_type","hint":/u);
+		expect(blank.content[0]?.text).toContain("source source_required");
+		expect(ungraded.content[0]?.text).toContain("source estimate_without_grade");
+		expect(unknown.content[0]?.text).toContain("source unknown_grade");
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 	});
 
@@ -509,7 +508,7 @@ describe("record_valuation", () => {
 
 		expect(accounts.find((account) => account.id === loan.id)).toMatchObject({
 			classification: "liability",
-			balance: "175000.00",
+			balance: "175000.0",
 		});
 	});
 });
@@ -527,8 +526,8 @@ describe("an unknown account", () => {
 			source: "Relevé de compte (grade: A)",
 		});
 
-		expect(read.content[0]?.text).toMatch(/^NOT_FOUND:/);
-		expect(written.content[0]?.text).toMatch(/^NOT_FOUND:/);
+		expect(read.content[0]?.text).toContain('"error":"not_found"');
+		expect(written.content[0]?.text).toContain('"error":"not_found"');
 		expect(await calls()).toEqual([
 			{ tool: "get_valuations", outcome: "NOT_FOUND", changedRows: 0 },
 			{ tool: "record_valuation", outcome: "NOT_FOUND", changedRows: 0 },

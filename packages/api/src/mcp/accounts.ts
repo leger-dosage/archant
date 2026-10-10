@@ -1,57 +1,84 @@
-import type { AccountSummary } from "../services/accounts.ts";
+import type { AssistantAccount } from "../services/balances.ts";
 
 import { z } from "zod";
 
-import type { Classification } from "@archant/data/account-types";
+import type { AccountType } from "@archant/data/account-types";
 import { CLASSIFICATIONS } from "@archant/data/account-types";
-import { toDecimalString } from "@archant/data/money";
 
+import { SURE_INTERVALS } from "../domain/balances/sure-periods.ts";
 import { today } from "../domain/dates.ts";
 import { getAccountsInput } from "../schemas/assistants.ts";
-import { listAccounts } from "../services/accounts.ts";
-import { listAccountsWithHistory } from "../services/balances.ts";
-import { BANK_TEXT, READ_ONLY, defineTool, seriesOf, seriesOutput } from "./tool.ts";
+import { listAssistantAccounts } from "../services/balances.ts";
+import { BANK_TEXT, READ_ONLY, decimalOf, defineTool, formatMoney } from "./tool.ts";
+
+/** Sure's `accountable_type` for each of Archant's account types. */
+const SURE_TYPES = {
+	depository: "Depository",
+	credit_card: "CreditCard",
+	loan: "Loan",
+	investment: "Investment",
+	property: "Property",
+	vehicle: "Vehicle",
+} as const satisfies Record<AccountType, string>;
 
 const account = z.object({
 	id: z.string(),
 	name: z.string(),
-	type: z.string(),
-	subtype: z.string().nullable(),
-	classification: z.enum(CLASSIFICATIONS),
+	balance: z.string().describe('Today\'s balance as a decimal string, such as "1234.5".'),
 	currency: z.string(),
-	balance: z
-		.string()
-		.describe("Today's balance as a decimal string in the account's currency, such as \"-12.50\"."),
-	active: z.boolean(),
-	excluded_from_reports: z.boolean(),
-	historical_balances: seriesOutput
+	balance_formatted: z.string().describe('The balance as Sure writes it, such as "1 234,50 €".'),
+	classification: z.enum(CLASSIFICATIONS),
+	type: z.enum(SURE_TYPES),
+	start_date: z.string().describe("The day before its first entry, YYYY-MM-DD."),
+	is_linked: z.boolean().describe("A bank connection feeds it."),
+	provider: z.literal("enable_banking").nullable(),
+	status: z.literal("active"),
+	historical_balances: z
+		.object({
+			start_date: z.string(),
+			end_date: z.string(),
+			interval: z.enum(SURE_INTERVALS),
+			currency: z.string(),
+			values: z.array(z.number()).describe("The end-of-day balance at each step, oldest first."),
+		})
 		.optional()
-		.describe(
-			"With include_balance_series: the end-of-day balance in the account's currency over the period, oldest first, today last; empty for an account opening after today.",
-		),
+		.describe("With include_balance_series, absent for an account starting after the period."),
 });
 
-function accountOf(
-	summary: AccountSummary,
-	classification: Classification,
-): z.input<typeof account> {
+function accountOf(item: AssistantAccount): z.input<typeof account> {
+	const { currency, linked } = item;
+
 	return {
-		id: summary.id,
-		name: summary.name,
-		type: summary.type,
-		subtype: summary.subtype,
-		classification,
-		currency: summary.currency,
-		balance: toDecimalString({ amount: summary.balance, currency: summary.currency }),
-		active: summary.active,
-		excluded_from_reports: summary.excludedFromReports,
+		id: item.id,
+		name: item.name,
+		balance: decimalOf({ amount: item.balance, currency }),
+		currency,
+		balance_formatted: formatMoney({ amount: item.balance, currency }),
+		classification: item.classification,
+		type: SURE_TYPES[item.type],
+		start_date: item.startDate,
+		is_linked: linked,
+		provider: linked ? "enable_banking" : null,
+		status: "active",
+		...(item.series === undefined || item.series === null
+			? {}
+			: {
+					historical_balances: {
+						start_date: item.series.range.from,
+						end_date: item.series.range.to,
+						interval: item.series.interval,
+						currency,
+						// Read through the decimal text, never divided as a float.
+						values: item.series.values.map((amount) => Number(decimalOf({ amount, currency }))),
+					},
+				}),
 	};
 }
 
 export const getAccounts = defineTool({
 	name: "get_accounts",
 	title: "Accounts",
-	description: `Every account with today's balance, assets then liabilities, inactive ones included. With include_balance_series, each also gives its balance over the period, as its page charts it. ${BANK_TEXT}`,
+	description: `Use this to see what accounts the user has along with their current balances, as Sure's get_accounts. Returns account ids: use them for account_ids filters in other tools. Pass include_balance_series: true only when the user asks about balance history; the series is omitted by default to keep responses small. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getAccountsInput,
@@ -60,32 +87,13 @@ export const getAccounts = defineTool({
 		accounts: z.array(account),
 	}),
 	run: async (deps, input) => {
-		if (!input.include_balance_series) {
-			const { groups } = await listAccounts(deps);
-
-			return {
-				result: {
-					as_of_date: today(deps.timeZone),
-					accounts: groups.flatMap((group) =>
-						group.accounts.map((summary) => accountOf(summary, group.classification)),
-					),
-				},
-				changedRows: 0,
-			};
-		}
-
-		const { groups } = await listAccountsWithHistory(deps, input.series_period);
+		const listed = await listAssistantAccounts(
+			deps,
+			input.include_balance_series ? input.series_period : undefined,
+		);
 
 		return {
-			result: {
-				as_of_date: today(deps.timeZone),
-				accounts: groups.flatMap((group) =>
-					group.accounts.map((summary) => ({
-						...accountOf(summary, group.classification),
-						historical_balances: seriesOf(summary.balanceSeries, summary.currency),
-					})),
-				),
-			},
+			result: { as_of_date: today(deps.timeZone), accounts: listed.map(accountOf) },
 			changedRows: 0,
 		};
 	},

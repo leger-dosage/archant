@@ -274,7 +274,7 @@ export const previewRule = defineTool({
 const savedRule = z.object({ currency: z.string(), rule: ruleOutput });
 
 const WRITES_RULES =
-	"The input takes the rule form's shape; a refused field answers VALIDATION_ERROR with its path and code, to correct and send again.";
+	"The input takes the rule form's shape; a field the input itself refuses answers { error, hint }, its error each refused field's path and code; a value the rule's check refuses, such as a category that does not exist, answers validation_error, its message naming the field's path and code. Correct it and send again.";
 
 export const createRuleTool = defineTool({
 	name: "create_rule",
@@ -348,7 +348,7 @@ export const applyRulesTool = defineTool({
 	name: "apply_rules",
 	title: "Apply rules to existing transactions",
 	description:
-		"Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers RULE_PREVIEW_STALE with the count now; preview again and show the owner. Fields the owner set by hand never change.",
+		"Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: applyRulesInput,

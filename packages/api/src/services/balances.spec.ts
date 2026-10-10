@@ -1,13 +1,14 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
-import { listAccounts } from "./accounts.ts";
-import { getBalanceHistory, listAccountsWithHistory } from "./balances.ts";
+import { listAssistantAccounts } from "./balances.ts";
 import { createAccount } from "./ledger/accounts.ts";
 
 let temp: TempDatabase;
@@ -42,56 +43,56 @@ async function account(overrides: Partial<NewAccountInput> = {}) {
 	return created.id;
 }
 
-describe("listAccountsWithHistory", () => {
-	it("gives listAccounts with each account's points as its page charts them", async () => {
+describe("listAssistantAccounts", () => {
+	it("lists the active accounts with their start date, a deactivated one left out", async () => {
 		const checking = await account();
-		const card = await account({
-			name: "Carte",
-			type: "credit_card",
-			subtype: null,
-			openingBalance: toMinorUnits(30_000),
-			openingDate: "2026-09-10",
-		});
+		const closed = await account({ name: "Ancien" });
+		await temp.db.update(accounts).set({ active: false }).where(eq(accounts.id, closed));
 
-		const list = await listAccountsWithHistory(deps(), "3M");
-		const accounts = list.groups.flatMap((group) => group.accounts);
+		const listed = await listAssistantAccounts(deps());
 
-		expect({
-			...list,
-			groups: list.groups.map((group) => ({
-				...group,
-				accounts: group.accounts.map(({ balanceSeries: _, ...summary }) => summary),
-			})),
-		}).toEqual(await listAccounts(deps()));
-		expect(accounts.find((row) => row.id === checking)?.balanceSeries).toEqual({
-			interval: "day",
-			points: (await getBalanceHistory(deps(), checking, "3M")).points,
-		});
-		expect(accounts.find((row) => row.id === card)?.balanceSeries.points.at(0)).toEqual({
-			date: "2026-09-10",
-			balance: 30_000,
-		});
-	});
-
-	it("gives an account opening after today an empty series", async () => {
-		const later = await account({ openingDate: "2026-10-01" });
-
-		const list = await listAccountsWithHistory(deps(), "1Y");
-
-		expect(list.groups.flatMap((group) => group.accounts)).toEqual([
-			expect.objectContaining({ id: later, balanceSeries: { interval: "day", points: [] } }),
+		expect(listed).toEqual([
+			expect.objectContaining({
+				id: checking,
+				classification: "asset",
+				startDate: "2026-06-01",
+				linked: false,
+				balance: 100_000,
+				series: undefined,
+			}),
 		]);
 	});
 
-	it("samples a long history by week", async () => {
-		const old = await account({ openingDate: "2023-09-21" });
+	it("reads the period from the account's start date, a day at a time up to a year", async () => {
+		const checking = await account({ openingDate: "2026-09-10" });
 
-		const [row] = (await listAccountsWithHistory(deps(), "all")).groups.flatMap(
-			(group) => group.accounts,
-		);
+		const [row] = await listAssistantAccounts(deps(), "last_90_days");
 
-		expect(row?.id).toBe(old);
-		expect(row?.balanceSeries.interval).toBe("week");
-		expect(row?.balanceSeries.points.at(-1)).toEqual({ date: "2026-09-21", balance: 100_000 });
+		expect(row?.id).toBe(checking);
+		expect(row?.series?.range).toEqual({ from: "2026-09-10", to: "2026-09-21" });
+		expect(row?.series?.interval).toBe("1 day");
+		expect(row?.series?.values).toHaveLength(12);
+		expect(row?.series?.values.at(-1)).toBe(100_000);
+	});
+
+	it("gives no series to an account starting after the period", async () => {
+		await account({ openingDate: "2026-10-01" });
+
+		const [row] = await listAssistantAccounts(deps(), "last_7_days");
+
+		expect(row?.series).toBeNull();
+	});
+
+	it("steps by week beyond a year and by month beyond five", async () => {
+		await account({ openingDate: "2020-09-01" });
+
+		const [weekly] = await listAssistantAccounts(deps(), "last_5_years");
+		const [monthly] = await listAssistantAccounts(deps(), "last_10_years");
+
+		expect(weekly?.series?.interval).toBe("1 week");
+		expect(weekly?.series?.range.from).toBe("2021-09-21");
+		expect(monthly?.series?.interval).toBe("1 month");
+		expect(monthly?.series?.range.from).toBe("2020-09-01");
+		expect(monthly?.series?.values.at(-1)).toBe(100_000);
 	});
 });

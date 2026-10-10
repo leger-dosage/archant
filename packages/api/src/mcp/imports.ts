@@ -245,7 +245,7 @@ const PREVIEW = `Answers the import's id, the counts of each group, which confir
 export const importBankStatementTool = defineTool({
 	name: "import_bank_statement",
 	title: "Import a bank statement",
-	description: `Reads a statement file the owner's bank exported, OFX, QIF or CSV, into a preview for one account, as the import dialog does in Archant: the same format detection, the same recognition of lines already there, and for a CSV the column mapping the account's last CSV import saved, when the file has its columns. A CSV with no saved mapping answers empty groups until preview_import gives one. ${PREVIEW} A file above ${MAX_ASSISTANT_FILE_BYTES / 1024 / 1024} MB once decoded, or one no format reads, answers INVALID_IMPORT_FILE; the owner imports a larger file through the dialog. An unconfirmed preview is deleted after 24 hours. ${BANK_TEXT}`,
+	description: `Reads a statement file the owner's bank exported, OFX, QIF or CSV, into a preview for one account, as the import dialog does in Archant: the same format detection, the same recognition of lines already there, and for a CSV the column mapping the account's last CSV import saved, when the file has its columns. A CSV with no saved mapping answers empty groups until preview_import gives one. ${PREVIEW} A file above ${MAX_ASSISTANT_FILE_BYTES / 1024 / 1024} MB once decoded, or one no format reads, answers invalid_import_file; the owner imports a larger file through the dialog. An unconfirmed preview is deleted after 24 hours. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: importBankStatementInput,
@@ -266,7 +266,7 @@ export const importBankStatementTool = defineTool({
 export const previewImportTool = defineTool({
 	name: "preview_import",
 	title: "Preview an import again",
-	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping, a QIF file's date order, or moving the account's opening date back to opening_suggestion. ${PREVIEW} A mapping without one date, a label and an amount answers VALIDATION_ERROR on csv.columns; an import already confirmed or unknown, NOT_FOUND. ${BANK_TEXT}`,
+	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping, a QIF file's date order, or moving the account's opening date back to opening_suggestion. ${PREVIEW} A mapping without one date, a label and an amount answers { error, hint }, its error each refused field's path and code, csv.columns invalid_columns; an import already confirmed or unknown, not_found. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: previewImportInput,
@@ -299,7 +299,7 @@ export const confirmImportTool = defineTool({
 	name: "confirm_import",
 	title: "Confirm an import",
 	description:
-		"Writes a previewed import into its account, as the dialog's « Importer » does: the new lines and the possible duplicates are created, matched lines linked to the file, the closing balance recorded as the preview said, a CSV mapping saved for the account's next CSV file, and recurring payments detected again. expected_counts are the counts of the last preview, as the owner saw them: when the account now gives other groups, it answers IMPORT_PREVIEW_STALE with the counts now and writes nothing; preview again and show the owner. A CSV file with no mapping yet answers VALIDATION_ERROR. The owner can revert the import from the account's « Imports » tab; no tool does.",
+		"Writes a previewed import into its account, as the dialog's « Importer » does: the new lines and the possible duplicates are created, matched lines linked to the file, the closing balance recorded as the preview said, a CSV mapping saved for the account's next CSV file, and recurring payments detected again. expected_counts are the counts of the last preview, as the owner saw them: when the account now gives other groups, it answers import_preview_stale with the counts now and writes nothing; preview again and show the owner. A CSV file with no mapping yet answers validation_error. The owner can revert the import from the account's « Imports » tab; no tool does.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: confirmImportInput,

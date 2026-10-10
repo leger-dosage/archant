@@ -519,8 +519,8 @@ describe("get_bills", () => {
 
 		const text = failure(await tools.read("get_bills", { due_within_days: 0 }));
 
-		expect(text).toMatch(/^VALIDATION_ERROR/u);
-		expect(text).toContain('"path":"due_within_days"');
+		expect(text).toMatch(/^\{"error":"[^"]+","hint":/u);
+		expect(text).toContain("due_within_days ");
 		expect(await calls()).toEqual([
 			{ tool: "get_bills", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);
@@ -613,8 +613,8 @@ describe("get_bill_details", () => {
 		await household();
 		const tools = await assistants();
 
-		expect(failure(await tools.read("get_bill_details", { bill_id: "nope" }))).toMatch(
-			/^NOT_FOUND/u,
+		expect(failure(await tools.read("get_bill_details", { bill_id: "nope" }))).toContain(
+			'"error":"not_found"',
 		);
 	});
 });
@@ -725,7 +725,7 @@ describe("get_bill_audit", () => {
 			},
 		]);
 		expect(failure(await tools.read("get_bill_audit", { lookback_months: 25 }))).toMatch(
-			/^VALIDATION_ERROR/u,
+			/^\{"error":"[^"]+","hint":/u,
 		);
 	});
 });
@@ -838,21 +838,21 @@ describe("create_bill", () => {
 		await tools.write("create_bill", netflix);
 
 		expect(failure(await tools.write("create_bill", netflix))).toMatch(
-			/^RECURRING_ALREADY_EXISTS/u,
+			/^\{"success":false,"error":"recurring_already_exists"/u,
 		);
 		expect(failure(await tools.write("create_bill", { ...netflix, amount: "-13.49" }))).toContain(
-			'"code":"not_positive"',
+			"not_positive",
 		);
 		expect(
 			failure(
 				await tools.write("create_bill", { ...netflix, amount: "9.99", category_name: "Nope" }),
 			),
-		).toContain('"path":"category_name"');
+		).toContain("category_name ");
 		expect(
 			failure(
 				await tools.write("create_bill", { ...netflix, amount: "9.99", frequency: "yearly" }),
 			),
-		).toContain('"path":"frequency"');
+		).toContain("frequency ");
 		expect(await db.select().from(recurringTransactions)).toHaveLength(1);
 		expect((await calls()).map((call) => [call.outcome, call.changedRows])).toEqual([
 			["OK", 1],
@@ -889,7 +889,7 @@ describe("update_bill", () => {
 			changed_fields: ["category_name"],
 			bill: { category: { id: streaming, name: "Abonnements" } },
 		});
-		expect(failure(otherCase)).toContain('"path":"category_name"');
+		expect(failure(otherCase)).toContain("category_name ");
 		expect(cleared.bill.category).toBeNull();
 		expect(await stored(netflix.id)).toMatchObject({ categoryId: null });
 	});
@@ -975,7 +975,7 @@ describe("update_bill", () => {
 			failure(
 				await tools.write("update_bill", { bill_id: salary.id, name: "Paie", bill_type: "bill" }),
 			),
-		).toContain('"path":"bill_type"');
+		).toContain("bill_type ");
 		expect(
 			failure(
 				await tools.write("update_bill", {
@@ -984,15 +984,15 @@ describe("update_bill", () => {
 					status: "paused",
 				}),
 			),
-		).toContain('"path":"status"');
+		).toContain("status ");
 		expect(failure(await tools.write("update_bill", { bill_id: salary.id, weekday: 1 }))).toContain(
-			'{"path":"weekday","code":"requires_frequency"}',
+			"weekday requires_frequency",
 		);
 		expect(failure(await tools.write("update_bill", { bill_id: salary.id }))).toContain(
-			'"code":"empty_patch"',
+			"empty_patch",
 		);
-		expect(failure(await tools.write("update_bill", { bill_id: "nope", name: "X" }))).toMatch(
-			/^NOT_FOUND/u,
+		expect(failure(await tools.write("update_bill", { bill_id: "nope", name: "X" }))).toContain(
+			'"error":"not_found"',
 		);
 		expect(await stored(salary.id)).toMatchObject({ name: "Salaire", billType: "income" });
 		expect(await stored(suggestion.id)).toMatchObject({ name: null, status: "suggested" });
@@ -1033,7 +1033,7 @@ describe("record_bill_payment", () => {
 		const tools = await assistants();
 
 		expect(failure(await tools.write("record_bill_payment", { bill_id: mortgage.id }))).toContain(
-			'{"path":"occurrence_due_on","code":"not_due"}',
+			"occurrence_due_on not_due",
 		);
 		expect((await occurrencesOf(mortgage.id)).every((row) => row.status === "scheduled")).toBe(
 			true,
@@ -1073,7 +1073,7 @@ describe("record_bill_payment", () => {
 		});
 		expect(
 			failure(await tools.write("record_bill_payment", { bill_id: mortgage.id, amount: "471.30" })),
-		).toContain('{"path":"amount","code":"exceeds_remaining"}');
+		).toContain("amount exceeds_remaining");
 		expect(
 			failure(
 				await tools.write("record_bill_payment", {
@@ -1081,10 +1081,10 @@ describe("record_bill_payment", () => {
 					occurrence_due_on: "2026-09-06",
 				}),
 			),
-		).toMatch(/^NOT_FOUND/u);
+		).toContain('"error":"not_found"');
 		expect(
 			failure(await tools.write("record_bill_payment", { bill_id: mortgage.id, amount: "-1.00" })),
-		).toContain('"code":"not_positive"');
+		).toContain("not_positive");
 		expect((await calls()).map((call) => [call.outcome, call.changedRows])).toEqual([
 			["OK", 1],
 			["VALIDATION_ERROR", 0],

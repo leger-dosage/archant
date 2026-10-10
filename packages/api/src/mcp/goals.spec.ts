@@ -349,13 +349,9 @@ describe("create_goal", () => {
 		});
 
 		expect(currency.isError).toBe(true);
-		expect(currency.content[0]?.text).toMatch(/^VALIDATION_ERROR:/);
-		expect(currency.content[0]?.text).toContain(
-			'"path":"accounts.1.account_id","code":"currency_mismatch"',
-		);
-		expect(whole.content[0]?.text).toContain(
-			'"path":"accounts.0.allocated_amount","code":"whole_balance_taken"',
-		);
+		expect(currency.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
+		expect(currency.content[0]?.text).toContain("accounts.1.account_id currency_mismatch");
+		expect(whole.content[0]?.text).toContain("accounts.0.allocated_amount whole_balance_taken");
 		await expect(goalRows()).resolves.toEqual(before);
 		expect(await calls()).toEqual([
 			{ tool: "create_goal", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -386,11 +382,9 @@ describe("create_goal", () => {
 			accounts: [{ account_id: dollars.id }],
 		});
 
-		expect(debt.content[0]?.text).toContain('"path":"accounts.0.account_id","code":"not_fundable"');
-		expect(empty.content[0]?.text).toContain('"path":"accounts","code":"no_account"');
-		expect(foreign.content[0]?.text).toContain(
-			'"path":"target_months","code":"not_reporting_currency"',
-		);
+		expect(debt.content[0]?.text).toContain("accounts.0.account_id not_fundable");
+		expect(empty.content[0]?.text).toContain("accounts no_account");
+		expect(foreign.content[0]?.text).toContain("target_months not_reporting_currency");
 		await expect(goalRows()).resolves.toEqual([]);
 	});
 
@@ -427,12 +421,12 @@ describe("create_goal", () => {
 			accounts,
 		});
 
-		expect(both.content[0]?.text).toContain('"path":"target_months","code":"one_target_only"');
-		expect(none.content[0]?.text).toContain('"path":"target_amount","code":"target_required"');
-		expect(months.content[0]?.text).toContain('"path":"target_months","code":"reserve_only"');
-		expect(dated.content[0]?.text).toContain('"path":"target_date","code":"reserve_has_no_date"');
-		expect(sureShaped.content[0]?.text).toMatch(/^VALIDATION_ERROR:.*"path":"target_amount"/);
-		expect(sureShaped.content[0]?.text).toContain('"path":"linked_account_names"');
+		expect(both.content[0]?.text).toContain("target_months one_target_only");
+		expect(none.content[0]?.text).toContain("target_amount target_required");
+		expect(months.content[0]?.text).toContain("target_months reserve_only");
+		expect(dated.content[0]?.text).toContain("target_date reserve_has_no_date");
+		expect(sureShaped.content[0]?.text).toMatch(/^\{"error":"(?:[^"]*; )?target_amount /u);
+		expect(sureShaped.content[0]?.text).toContain("linked_account_names ");
 		await expect(goalRows()).resolves.toEqual([]);
 	});
 });

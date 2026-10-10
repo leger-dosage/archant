@@ -59,7 +59,7 @@ export const pairTransferTool = defineTool({
 	name: "pair_transfer",
 	title: "Pair a transfer",
 	description:
-		"Pairs a transaction with one of its candidates as one confirmed transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transaction_id answers NOT_FOUND; a counterpart get_transfer_candidates does not list answers VALIDATION_ERROR on counterpart_id.",
+		"Pairs a transaction with one of its candidates as one confirmed transfer, as « Rapprocher un virement » does in Archant: the negative side becomes the outflow, and both leave income and expenses. No balance, category or tag changes. An unknown transaction_id answers not_found; a counterpart get_transfer_candidates does not list answers validation_error on counterpart_id.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: pairTransferInput,

@@ -17,6 +17,7 @@ import {
 } from "../testing/app.ts";
 import {
 	READ_WRITE,
+	answerOf,
 	callTool,
 	connect,
 	mcp,
@@ -282,9 +283,12 @@ describe("import_bank_statement and confirm_import", () => {
 		});
 
 		expect(stale.isError).toBe(true);
-		expect(stale.content[0]?.text).toBe(
-			'IMPORT_PREVIEW_STALE: The counts given are not the preview\'s. {"created":"5","present":"0","matched":"0","duplicates":"0","rejected":"0"}',
-		);
+		expect(answerOf(stale)).toEqual({
+			success: false,
+			error: "import_preview_stale",
+			message:
+				"The counts given are not the preview's; created 5; present 0; matched 0; duplicates 0; rejected 0",
+		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 
 		// The import stays a preview: the right counts confirm it.
@@ -368,7 +372,7 @@ describe("CSV files", () => {
 			expected_counts: NO_LINES,
 		});
 
-		expect(unmapped.content[0]?.text).toMatch(/^VALIDATION_ERROR:/u);
+		expect(unmapped.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
 
 		const mapped = preview.parse(
 			(await tools.write("preview_import", { import_id: first.import_id, csv: BANK_MAPPING }))
@@ -430,7 +434,7 @@ describe("CSV files", () => {
 			csv: { ...BANK_MAPPING, columns: ["date", "label", "ignore"] },
 		});
 
-		expect(refused.content[0]?.text).toContain('"path":"csv.columns","code":"invalid_columns"');
+		expect(refused.content[0]?.text).toContain("csv.columns invalid_columns");
 	});
 
 	it("shows the skipped lines, the header and ten records of a long file", async () => {
@@ -588,8 +592,10 @@ describe("refusals", () => {
 			content_base64: base64(paddedOfx(1024 * 1024)),
 		});
 
-		expect(big.content[0]?.text).toMatch(/^INVALID_IMPORT_FILE:/u);
-		expect(unreadable.content[0]?.text).toMatch(/^INVALID_IMPORT_FILE:/u);
+		expect(big.content[0]?.text).toMatch(/^\{"success":false,"error":"invalid_import_file"/u);
+		expect(unreadable.content[0]?.text).toMatch(
+			/^\{"success":false,"error":"invalid_import_file"/u,
+		);
 		expect(atLimit.isError).toBeUndefined();
 		expect(await calls()).toEqual([
 			{ tool: "import_bank_statement", outcome: "INVALID_IMPORT_FILE", changedRows: 0 },
@@ -608,8 +614,8 @@ describe("refusals", () => {
 			content_base64: "%%%",
 		});
 
-		expect(refused.content[0]?.text).toMatch(/^VALIDATION_ERROR:/u);
-		expect(refused.content[0]?.text).toContain('"path":"content_base64"');
+		expect(refused.content[0]?.text).toMatch(/^\{"error":"[^"]+","hint":/u);
+		expect(refused.content[0]?.text).toContain("content_base64 ");
 		expect(await calls()).toEqual([
 			{ tool: "import_bank_statement", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);

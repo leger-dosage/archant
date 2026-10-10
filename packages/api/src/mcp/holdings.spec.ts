@@ -205,6 +205,6 @@ describe("get_holdings", () => {
 
 		expect(past).toMatchObject({ holdings: [], total_results: 4, page: 2, total_pages: 1 });
 		expect(missing.isError).toBe(true);
-		expect(missing.content[0]?.text).toMatch(/^VALIDATION_ERROR: .*"path":"page"/u);
+		expect(missing.content[0]?.text).toMatch(/^\{"error":"page invalid_type","hint":/u);
 	});
 });

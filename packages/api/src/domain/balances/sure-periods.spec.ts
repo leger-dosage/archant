@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { seriesDates, seriesPointCount, surePeriodRange } from "./sure-periods.ts";
+import { periodInterval, seriesDates, seriesPointCount, surePeriodRange } from "./sure-periods.ts";
 
 describe("surePeriodRange", () => {
 	// A Wednesday.
@@ -82,5 +82,14 @@ describe("seriesDates", () => {
 			"2026-04-28",
 			"2026-04-30",
 		]);
+	});
+});
+
+describe("periodInterval", () => {
+	it("steps by day up to a calendar year, by week up to five, by month beyond, as Sure's Period#interval", () => {
+		expect(periodInterval({ from: "2025-09-21", to: "2026-09-21" })).toBe("1 day");
+		expect(periodInterval({ from: "2025-09-21", to: "2026-09-22" })).toBe("1 week");
+		expect(periodInterval({ from: "2021-09-21", to: "2026-09-21" })).toBe("1 week");
+		expect(periodInterval({ from: "2021-09-21", to: "2026-09-22" })).toBe("1 month");
 	});
 });
