@@ -41,11 +41,9 @@ import {
 	MAX_TAGS_PER_TRANSACTION,
 	MAX_TAG_FILTER,
 	bulkIds,
-	compareAmountBounds,
 	directionSchema,
 	filterCheck,
 	filterFields,
-	parseAmountBound,
 	parseBounds,
 } from "./transactions.ts";
 
@@ -312,14 +310,14 @@ const namesOf = idsOf;
  * assistant sends JSON, never a query string. Named as Sure's
  * `get_transactions` names them where it has the field, `account_ids`.
  */
-const idFilterFields = {
+const idFields = {
 	account_ids: idsOf("Account ids from get_accounts; any of them."),
 	types: z
 		.array(directionSchema)
 		.transform((values) => [...new Set(values)])
 		.optional()
 		.describe(
-			"income, expense or transfer, as the list's type filter; any of them. A transfer between two accounts is neither income nor expense.",
+			'Filter by kind, income, expense or transfer; any of them. ["income", "expense"] leaves out transfers between the household\'s own accounts.',
 		),
 	category_ids: idsOf(
 		'Category ids from get_categories, "none" standing for uncategorised; any of them. A parent stands for its children too.',
@@ -328,13 +326,17 @@ const idFilterFields = {
 	tag_ids: idsOf("Tag ids from get_tags; transactions carrying any of them."),
 	start_date: filterFields.from.describe("The first date, YYYY-MM-DD, inclusive."),
 	end_date: filterFields.to.describe("The last date, YYYY-MM-DD, inclusive."),
+	search: filterFields.q.describe("Text searched in the label and the notes, case aside."),
+};
+
+const idFilterFields = {
+	...idFields,
 	amount_min: filterFields.amountMin.describe(
 		'The smallest absolute amount, a decimal string such as "12.50".',
 	),
 	amount_max: filterFields.amountMax.describe(
 		'The largest absolute amount, a decimal string such as "120".',
 	),
-	search: filterFields.q.describe("Text searched in the label and the notes, case aside."),
 };
 
 /**
@@ -353,7 +355,8 @@ const toolFilterFields = {
 	tags: namesOf("Exact tag names, as get_tags gives them; transactions carrying any of them."),
 };
 
-type ToolFilter = z.output<z.ZodObject<typeof idFilterFields>> &
+// Partial: the bulk filter and get_transactions take some of these fields only.
+type ToolFilter = Partial<z.output<z.ZodObject<typeof idFilterFields>>> &
 	Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[] | undefined>>;
 
 /** The list's filter as the services read it, from the tool's names. */
@@ -392,6 +395,8 @@ function checkToolFilter(value: ToolFilter, context: z.core.$RefinementCtx) {
 
 /** Sure's `amount_operator`, on the absolute amount. */
 const AMOUNT_OPERATORS = ["equal", "less", "greater"] as const;
+
+type AmountOperator = (typeof AMOUNT_OPERATORS)[number];
 
 /** Sure's `statuses`: booked lines are `confirmed`. */
 const STATUSES = ["pending", "confirmed"] as const;
@@ -432,41 +437,72 @@ function operatorBounds(
 		: { min: { units: fine.units + 1n, scale: fine.scale } };
 }
 
-/** The larger of two lower bounds, or the smaller of two upper ones; either alone. */
-function tighter(
-	a: AmountBound | undefined,
-	b: AmountBound | undefined,
-	keep: (comparison: number) => boolean,
-): AmountBound | undefined {
-	if (a === undefined || b === undefined) {
-		return a ?? b;
-	}
+/**
+ * Sure's `amount` as Ruby's `to_f` then `abs` read it: the text's leading
+ * decimal, its sign dropped, or 0 without one, so `"-12,50"` reads 12. A
+ * JSON number arrives as its shortest decimal text, never through a float.
+ */
+function leadingAmount(value: string | number): AmountBound {
+	const match = /^\s*[+-]?(\d*)(?:\.(\d+))?/u.exec(String(value));
+	const fraction = match?.[2] ?? "";
 
-	return keep(compareAmountBounds(a, b)) ? a : b;
+	return { units: BigInt(`0${match?.[1] ?? ""}${fraction}`), scale: fraction.length };
 }
 
-/** Sure's `amount`: a decimal string, its sign ignored as Sure's `abs`. */
-const sureAmount = z.string().trim().max(40);
+/**
+ * Sure's `amount` and `amount_operator` as the list's bounds on the absolute
+ * amount. Either alone, or a blank amount, filters nothing, as Sure's
+ * `apply_amount_filter` returns the scope untouched.
+ */
+function amountFilterOf(
+	amount: string | number | undefined,
+	operator: AmountOperator | undefined,
+): { amountMin?: AmountBound; amountMax?: AmountBound } {
+	if (amount === undefined || operator === undefined || String(amount).trim() === "") {
+		return {};
+	}
 
-/** `get_transactions`: the list's filter and a page of it, with Sure's sort, status and amount operator. */
+	const { min, max } = operatorBounds(operator, leadingAmount(amount));
+
+	return {
+		...(min === undefined ? {} : { amountMin: min }),
+		...(max === undefined ? {} : { amountMax: max }),
+	};
+}
+
+/** Sure's amount filter, which `get_transactions` and the bulk filter share so one counts what the other selects. */
+const amountFields = {
+	amount: z
+		.union([z.string().max(40), z.number()])
+		.optional()
+		.describe(
+			'An amount such as "12.50", compared with each absolute amount by amount_operator; read as Sure reads it, its leading number with the sign aside, 0 without one. Without amount_operator it filters nothing.',
+		),
+	amount_operator: z
+		.enum(AMOUNT_OPERATORS)
+		.optional()
+		.describe(
+			'"equal": within 0.01; "less" or "greater": strictly. Without amount it filters nothing.',
+		),
+};
+
+/**
+ * `get_transactions`: Sure's parameters, names where Sure takes names, its
+ * sort, statuses and amount operator, and its page clamped as Sure's.
+ */
 export const getTransactionsInput = z
 	.strictObject({
-		...toolFilterFields,
-		...pageFields,
+		...clampedPageFields,
 		order: z.enum(["asc", "desc"]).default("desc").describe("Sort direction, desc by default."),
 		sort_by: z
 			.enum(["date", "amount"])
 			.default("date")
 			.describe("By date, by default, or by absolute amount, then most recent first."),
-		amount: sureAmount
-			.optional()
-			.describe(
-				'An amount such as "12.50", compared with each absolute amount by amount_operator, which it needs.',
-			),
-		amount_operator: z
-			.enum(AMOUNT_OPERATORS)
-			.optional()
-			.describe('"equal": within 0.01; "less" or "greater": strictly. It needs amount.'),
+		search: idFields.search,
+		...amountFields,
+		start_date: idFields.start_date,
+		end_date: idFields.end_date,
+		types: idFields.types,
 		statuses: z
 			.array(z.enum(STATUSES))
 			.min(1)
@@ -474,22 +510,13 @@ export const getTransactionsInput = z
 			.describe(
 				'"pending": lines the bank has not booked yet; "confirmed": booked ones; both, every line.',
 			),
+		account_ids: idFields.account_ids,
+		accounts: toolFilterFields.accounts,
+		categories: toolFilterFields.categories,
+		merchants: toolFilterFields.merchants,
+		tags: toolFilterFields.tags,
 	})
-	.superRefine((value, context) => {
-		checkToolFilter(value, context);
-
-		if (value.amount !== undefined && value.amount_operator === undefined) {
-			context.addIssue({ code: "custom", path: ["amount_operator"], message: "required" });
-		}
-
-		if (value.amount === undefined && value.amount_operator !== undefined) {
-			context.addIssue({ code: "custom", path: ["amount"], message: "required" });
-		}
-
-		if (value.amount !== undefined && parseAmountBound(value.amount.replace(/^-/u, "")) === null) {
-			context.addIssue({ code: "custom", path: ["amount"], message: "invalid_amount" });
-		}
-	})
+	.superRefine(checkToolFilter)
 	.transform(
 		({
 			page,
@@ -501,21 +528,14 @@ export const getTransactionsInput = z
 			statuses,
 			...filter
 		}) => {
-			const bounds = parseBounds(listFilterOf(filter));
-			const parsed = amount === undefined ? null : parseAmountBound(amount.replace(/^-/u, ""));
-			const operated =
-				parsed === null || operator === undefined ? {} : operatorBounds(operator, parsed);
-			const amountMin = tighter(bounds.amountMin, operated.min, (comparison) => comparison >= 0);
-			const amountMax = tighter(bounds.amountMax, operated.max, (comparison) => comparison <= 0);
 			const pending =
 				statuses === undefined || new Set(statuses).size === 2
 					? undefined
 					: statuses[0] === "pending";
 
 			return {
-				...bounds,
-				...(amountMin === undefined ? {} : { amountMin }),
-				...(amountMax === undefined ? {} : { amountMax }),
+				...parseBounds(listFilterOf(filter)),
+				...amountFilterOf(amount, operator),
 				...(pending === undefined ? {} : { pending }),
 				page,
 				pageSize,
@@ -531,13 +551,17 @@ export const groupTransactionsInput = z
 	.transform((filter) => parseBounds(listFilterOf(filter)));
 
 /**
- * The filter `bulk_update_transactions` writes through: by id only. A bank
+ * The filter `bulk_update_transactions` writes through: by id only, and
+ * Sure's amount filter, so get_transactions counts what it selects. A bank
  * writes account names, and a write never selects by a text a bank wrote (AD-19).
  */
 const bulkFilterInput = z
-	.strictObject(idFilterFields)
+	.strictObject({ ...idFields, ...amountFields })
 	.superRefine(checkToolFilter)
-	.transform((filter) => parseBounds(listFilterOf(filter)));
+	.transform(({ amount, amount_operator: operator, ...filter }) => ({
+		...parseBounds(listFilterOf(filter)),
+		...amountFilterOf(amount, operator),
+	}));
 
 /** `get_rule_runs`: a page of past applications. */
 export const ruleRunsInput = z.strictObject({
@@ -884,10 +908,7 @@ export const updateTransactionInput = z
 			.optional()
 			.describe("true leaves it out of reports; it still counts in the balance."),
 	})
-	.refine(
-		(value) => Object.entries(value).some(([key, field]) => key !== "id" && field !== undefined),
-		{ message: "empty_patch" },
-	)
+	// No field at all is refused by `run`, after the id, with Sure's `no_changes`.
 	.transform(({ id, category_id, merchant_id, tag_ids, notes, name, excluded }) => ({
 		id,
 		patch: {
@@ -917,7 +938,9 @@ export const bulkUpdateTransactionsInput = z
 			),
 		filter: bulkFilterInput
 			.optional()
-			.describe("get_transactions' filter by id, without names, page or page_size; without ids."),
+			.describe(
+				'get_transactions\' filter, with ids where it takes names (category_ids, merchant_ids, tag_ids, "none" for uncategorised), without statuses, page or page_size; without ids.',
+			),
 		expected_count: z
 			.number()
 			.int()
@@ -1407,33 +1430,47 @@ export const createGoalInput = z
 const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
 
 /**
- * `create_transaction`: the transaction sheet's fields, passed raw to
- * `createTransaction`, which parses them as it parses the sheet's, and
- * Sure's: a type deriving the sign, a currency, a category, a merchant and
- * tags, set and locked, and an id of the assistant's own that makes a retry
- * find the line instead of recording it twice.
+ * A value Sure's write requires, kept required in the advertised schema: a
+ * missing one reaches `run` blank, which refuses it with Sure's key, as
+ * `requiredSureName` does for a name.
+ */
+const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
+	z.preprocess((value) => value ?? "", schema);
+
+/** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
+const sureAmount = z.union([z.string().max(40), z.number()]);
+
+/**
+ * `create_transaction`: Sure's parameters. The date, the amount and the name
+ * reach `run` loosely typed, which refuses them with Sure's keys; the amount
+ * is in Sure's sign, positive for money out, which `run` turns into the
+ * ledger's (AD-5). The line is recorded through the sheet's checks, its
+ * category, merchant and tags set and locked, and an id of the assistant's
+ * own makes a retry find the line instead of recording it twice.
  */
 export const createTransactionInput = z.strictObject({
 	account_id: accountId,
-	date: z.iso
-		.date()
-		.describe("YYYY-MM-DD, after the account's opening date and at most a year from today."),
-	name: z.string().describe("The label the line shows, such as « Marché du samedi »."),
-	amount: z
-		.string()
-		.describe(
-			'A decimal string such as "-12.50" in the account\'s currency: negative is money out, positive money in, as get_transactions gives them. With type, its sign is ignored.',
-		),
+	date: requiredLoose(z.string()).describe(
+		"ISO 8601 date (YYYY-MM-DD) of the transaction, after the account's opening date and at most a year from today.",
+	),
+	amount: requiredLoose(sureAmount).describe(
+		"Transaction amount in the account's currency, a number or a decimal string: positive is an expense (money out), negative an income (money in). With type, type decides the sign and the magnitude of amount is used.",
+	),
+	name: requiredLoose(z.string()).describe(
+		"Transaction name / payee / description, such as « Marché du samedi ».",
+	),
 	type: z
 		.enum(TRANSACTION_TYPES)
 		.optional()
 		.describe(
-			'"expense" or "outflow": money out; "income" or "inflow": money in. Given, it sets the sign, and amount gives the size.',
+			'Optional. Derives the sign: "income" or "inflow" is money in, "expense" or "outflow" money out. Omit to take amount as given.',
 		),
 	currency: z
 		.string()
 		.optional()
-		.describe("The account's ISO 4217 currency, which a line always has; another one is refused."),
+		.describe(
+			"ISO 4217 currency code, the account's by default; another one than the account's is refused.",
+		),
 	notes: z.string().nullable().optional(),
 	category_id: categoryId.nullable().optional(),
 	merchant_id: merchantId.nullable().optional(),
@@ -1472,14 +1509,15 @@ export const createTransactionInput = z.strictObject({
 /**
  * `delete_transaction`: the transaction and what the owner was shown of it,
  * every field required: the ledger deletes it only while they still hold.
+ * The amount is in Sure's sign, which `run` turns into the ledger's.
  */
 export const deleteTransactionInput = z.strictObject({
 	id: transactionIdInput.shape.id,
 	account_id: accountId.describe("Its account id, as get_transaction gave it."),
 	date: z.iso.date().describe("Its date, YYYY-MM-DD, as get_transaction gave it."),
-	amount: z
-		.string()
-		.describe('Its signed amount, a decimal string such as "-12.50", as get_transaction gave it.'),
+	amount: sureAmount.describe(
+		'Its amount in Sure\'s sign, a number or a decimal string: get_transaction\'s amount, such as "12.5", for an expense, and that amount negated, such as "-12.5", for an income.',
+	),
 });
 
 /**

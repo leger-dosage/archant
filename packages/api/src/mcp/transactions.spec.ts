@@ -72,32 +72,79 @@ function calls() {
 
 const ref = z.object({ id: z.string(), name: z.string() });
 
-const detail = z.object({
-	id: z.string(),
-	date: z.string(),
-	name: z.string(),
-	amount: z.string(),
-	currency: z.string(),
-	classification: z.enum(["income", "expense"]),
-	account: ref,
-	category: ref.nullable(),
-	merchant: ref.nullable(),
-	tags: z.array(ref),
-	notes: z.string().nullable(),
-	transfer: z.object({ id: z.string() }).loose().nullable(),
-	source: z.object({ kind: z.string() }).loose(),
-});
-
-/** Sure's `{ created, transaction }`, read as the line with its flag. */
+/** Sure's `create_transaction` answer, read as the line with its flag and message. */
 const created = z
-	.strictObject({ created: z.boolean(), transaction: detail })
-	.transform(({ created: flag, transaction }) => ({ ...transaction, created: flag }));
+	.strictObject({
+		success: z.literal(true),
+		created: z.boolean(),
+		transaction: z.strictObject({
+			id: z.string(),
+			entry_id: z.string(),
+			name: z.string(),
+			date: z.string(),
+			amount: z.string(),
+			amount_formatted: z.string(),
+			currency: z.string(),
+			type: z.enum(["income", "expense"]),
+			notes: z.string().nullable(),
+			category: ref.nullable(),
+			merchant: ref.nullable(),
+			tags: z.array(ref),
+		}),
+		message: z.string(),
+	})
+	.transform(({ created: flag, transaction, message }) => ({
+		...transaction,
+		created: flag,
+		message,
+	}));
 
-const deleted = z.object({
-	deleted: z.literal(true),
-	transaction: detail,
-	deleted_count: z.number(),
-});
+/** Sure's keys for each answer, in Sure's order. */
+const ITEM_KEYS = [
+	"id",
+	"name",
+	"date",
+	"amount",
+	"currency",
+	"formatted_amount",
+	"classification",
+	"account",
+	"notes",
+	"category",
+	"merchant",
+	"tags",
+	"is_transfer",
+];
+const CREATED_KEYS = [
+	"id",
+	"entry_id",
+	"name",
+	"date",
+	"amount",
+	"amount_formatted",
+	"currency",
+	"type",
+	"notes",
+	"category",
+	"merchant",
+	"tags",
+];
+const DELETED_KEYS = [
+	"id",
+	"entry_id",
+	"account_id",
+	"name",
+	"date",
+	"amount",
+	"amount_formatted",
+	"currency",
+	"type",
+];
+
+const record = z.record(z.string(), z.unknown());
+
+/** The keys of an object of an answer, in their order. */
+const keysOf = (value: unknown) => Object.keys(record.parse(value));
 
 const errorText = (result: Awaited<ReturnType<typeof callTool>>) =>
 	z.array(z.object({ text: z.string() })).parse(result.content)[0]?.text ?? "";
@@ -168,8 +215,27 @@ async function bankLine(accountId: string) {
 	return { id, resync };
 }
 
+/** The account's ledger amounts, in minor units, most recent first. */
+async function ledgerAmounts(accountId: string) {
+	const page = await sendOwn("GET", `/api/accounts/${accountId}/transactions`);
+
+	return z
+		.object({ data: z.object({ items: z.array(z.object({ amount: z.number() })) }) })
+		.parse(page)
+		.data.items.map((item) => item.amount);
+}
+
+async function merchantId(name: string) {
+	const merchant = await sendOwn("POST", "/api/merchants", { name });
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(merchant).data.id;
+}
+
+/** Sure's `error(key, message)` answer. */
+const sure = (error: string, message: string) => ({ success: false, error, message });
+
 describe("create_transaction", () => {
-	it("records a line as the sheet does, the rule matching its label setting its category", async () => {
+	it("records a line as the sheet does, in Sure's sign, the rule matching its label setting its category", async () => {
 		const account = await checking();
 		const market = await ownCategory("Marché");
 		await sendOwn("POST", "/api/rules", {
@@ -182,39 +248,48 @@ describe("create_transaction", () => {
 			account_id: account.id,
 			date: "2026-09-19",
 			name: "Marché du samedi",
-			amount: "-23.40",
+			amount: "23.40",
 			notes: "Espèces",
 		});
 
 		expect(result.isError, errorText(result)).toBeUndefined();
+		expect(keysOf(result.structuredContent)).toEqual([
+			"success",
+			"created",
+			"transaction",
+			"message",
+		]);
+		expect(keysOf(result.structuredContent?.transaction)).toEqual(CREATED_KEYS);
 		const line = created.parse(result.structuredContent);
-		expect(line).toMatchObject({
-			date: "2026-09-19",
+		expect(line).toEqual({
+			id: line.id,
+			entry_id: line.id,
 			name: "Marché du samedi",
-			amount: "-23.40",
+			date: "2026-09-19",
+			amount: "23.4",
+			amount_formatted: "23,40 €",
 			currency: "EUR",
-			classification: "expense",
-			account: { id: account.id, name: account.name },
-			category: { id: market, name: "Marché" },
+			type: "expense",
 			notes: "Espèces",
-			source: { kind: "manual" },
+			category: { id: market, name: "Marché" },
+			merchant: null,
+			tags: [],
 			created: true,
+			message: "Created Marché du samedi (23,40 € on 2026-09-19).",
 		});
-		await expect(tools.read("get_transaction", { id: line.id })).resolves.toMatchObject({
-			structuredContent: { id: line.id, category: { id: market } },
-		});
+		await expect(ledgerAmounts(account.id)).resolves.toEqual([-2340]);
 		await expect(balanceOf(tools, account.id)).resolves.toBe("1476.6");
 		await expect(calls()).resolves.toEqual([
 			{ tool: "create_transaction", outcome: "OK", changedRows: 1 },
-			{ tool: "get_transaction", outcome: "OK", changedRows: 0 },
 			{ tool: "get_accounts", outcome: "OK", changedRows: 0 },
 		]);
 	});
 
-	it("sets and locks the category and tags it is given, which the matching rule leaves alone", async () => {
+	it("sets and locks the category, merchant and tags it is given, which the matching rule leaves alone", async () => {
 		const account = await checking();
 		const market = await ownCategory("Marché");
 		const gifts = await ownCategory("Cadeaux");
+		const florist = await merchantId("Fleuriste");
 		const birthday = await idOf("Anniversaire");
 		await sendOwn("POST", "/api/rules", {
 			conditions: [{ conditionType: "transaction_name", operator: "like", value: "fleurs" }],
@@ -226,59 +301,86 @@ describe("create_transaction", () => {
 			account_id: account.id,
 			date: "2026-09-18",
 			name: "Fleurs",
-			amount: "-30.00",
+			amount: 30,
 			category_id: gifts,
+			merchant_id: florist,
 			tag_ids: [birthday, birthday],
 		});
 
 		const line = created.parse(result.structuredContent);
 		expect(line).toMatchObject({
 			category: { id: gifts, name: "Cadeaux" },
+			merchant: { id: florist, name: "Fleuriste" },
 			tags: [{ id: birthday, name: "Anniversaire" }],
 		});
 		// Locked as an edit by the owner: applying the rule leaves it alone too.
 		await sendOwn("POST", "/api/rules/apply", {});
 		await expect(tools.read("get_transaction", { id: line.id })).resolves.toMatchObject({
-			structuredContent: { category: { id: gifts } },
+			structuredContent: { category: "Cadeaux" },
 		});
 	});
 
-	it("accepts the account's currency in any case, as Sure upcases it", async () => {
+	it("accepts the account's currency in any case, and a blank one as the account's, as Sure", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
-		const result = await tools.write("create_transaction", {
+		const lower = await tools.write("create_transaction", {
 			account_id: account.id,
 			date: "2026-09-18",
 			name: "Boulangerie",
-			amount: "-1.00",
+			amount: "1.00",
 			currency: "eur",
 		});
-
-		expect(created.parse(result.structuredContent).currency).toBe("EUR");
-	});
-
-	it("takes the sign from type and the size from amount, as Sure's", async () => {
-		const account = await checking();
-		const tools = await assistants();
-
-		const expense = await tools.write("create_transaction", {
+		const blank = await tools.write("create_transaction", {
 			account_id: account.id,
 			date: "2026-09-18",
 			name: "Boulangerie",
-			amount: "12.50",
-			type: "expense",
-		});
-		const income = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-09-18",
-			name: "Remboursement",
-			amount: "-8.00",
-			type: "inflow",
+			amount: "1.00",
+			currency: " ",
 		});
 
-		expect(created.parse(expense.structuredContent).amount).toBe("-12.50");
-		expect(created.parse(income.structuredContent).amount).toBe("8.00");
+		expect(created.parse(lower.structuredContent).currency).toBe("EUR");
+		expect(created.parse(blank.structuredContent).currency).toBe("EUR");
+	});
+
+	it("reads a number or a decimal string in Sure's sign, positive money out, type deciding the sign when given", async () => {
+		const account = await checking();
+		const tools = await assistants();
+		const line = async (args: Record<string, unknown>) =>
+			created.parse(
+				(
+					await tools.write("create_transaction", {
+						account_id: account.id,
+						date: "2026-09-18",
+						name: "Ligne",
+						...args,
+					})
+				).structuredContent,
+			);
+
+		const expense = await line({ amount: 12.5 });
+		expect(await ledgerAmounts(account.id)).toEqual([-1250]);
+		const income = await line({ amount: 12.5, type: "income" });
+		const outflow = await line({ amount: "-8.00", type: "outflow" });
+		const inflow = await line({ amount: "-3", type: "inflow" });
+		const refund = await line({ amount: "-20.10" });
+
+		expect(expense).toMatchObject({
+			amount: "12.5",
+			amount_formatted: "12,50 €",
+			type: "expense",
+		});
+		expect(income).toMatchObject({
+			amount: "-12.5",
+			amount_formatted: "-12,50 €",
+			type: "income",
+		});
+		expect(outflow).toMatchObject({ amount: "8.0", type: "expense" });
+		expect(inflow).toMatchObject({ amount: "-3.0", type: "income" });
+		expect(refund).toMatchObject({ amount: "-20.1", type: "income" });
+		expect((await ledgerAmounts(account.id)).toSorted((a, b) => a - b)).toEqual([
+			-1250, -800, 300, 1250, 2010,
+		]);
 	});
 
 	it("takes Sure's call as it is, user_modified included, which changes nothing", async () => {
@@ -289,7 +391,7 @@ describe("create_transaction", () => {
 			account_id: account.id,
 			date: "2026-09-18",
 			name: "Roche",
-			amount: "2194.15",
+			amount: 2194.15,
 			type: "expense",
 			user_modified: true,
 		});
@@ -304,77 +406,79 @@ describe("create_transaction", () => {
 
 		expect(created.parse(result.structuredContent)).toMatchObject({
 			name: "Roche",
-			amount: "-2194.15",
+			amount: "2194.15",
 			created: true,
 		});
-		expect(created.parse(plain.structuredContent)).toMatchObject({ amount: "-2194.15" });
+		expect(created.parse(plain.structuredContent)).toMatchObject({ amount: "2194.15" });
 		expect(await calls()).toEqual([
 			{ tool: "create_transaction", outcome: "OK", changedRows: 1 },
 			{ tool: "create_transaction", outcome: "OK", changedRows: 1 },
 		]);
 	});
 
-	it("refuses each invalid field with its path and code, writing nothing", async () => {
+	it("refuses each field with Sure's key and message, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
+		const line = {
+			account_id: account.id,
+			date: "2026-09-18",
+			name: "Boulangerie",
+			amount: "1.00",
+		};
+		const refusal = async (args: Record<string, unknown>) =>
+			answerOf(await tools.write("create_transaction", { ...line, ...args }));
 
-		const fields = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-09-18",
-			name: " ",
-			amount: "12,345",
+		await expect(refusal({ account_id: "nope" })).resolves.toEqual(
+			sure("account_not_found", "No account found with that ID that this user can write to."),
+		);
+		await expect(refusal({ date: "18/09/2026", amount: "douze" })).resolves.toEqual(
+			sure("invalid_date", "date must be an ISO 8601 date (YYYY-MM-DD)."),
+		);
+		await expect(refusal({ date: undefined })).resolves.toEqual(
+			sure("invalid_date", "date must be an ISO 8601 date (YYYY-MM-DD)."),
+		);
+		await expect(refusal({ amount: "douze", name: " " })).resolves.toEqual(
+			sure("invalid_amount", "amount must be a number."),
+		);
+		await expect(refusal({ amount: undefined })).resolves.toEqual(
+			sure("invalid_amount", "amount must be a number."),
+		);
+		// A cent's fraction the account's currency cannot hold.
+		await expect(refusal({ amount: "12.345" })).resolves.toEqual(
+			sure("invalid_amount", "amount must be a number."),
+		);
+		await expect(refusal({ name: " " })).resolves.toEqual(
+			sure("invalid_name", "name is required."),
+		);
+		await expect(refusal({ name: undefined })).resolves.toEqual(
+			sure("invalid_name", "name is required."),
+		);
+		await expect(refusal({ currency: "ABC" })).resolves.toEqual(
+			sure("invalid_currency", "currency must be a valid ISO 4217 code."),
+		);
+		await expect(refusal({ currency: "USD" })).resolves.toEqual(
+			sure("invalid_currency", "currency must be the account's currency, EUR."),
+		);
+		await expect(refusal({ category_id: "nope" })).resolves.toEqual(
+			sure("invalid_category", "category_id does not belong to the user's family."),
+		);
+		await expect(refusal({ merchant_id: "nope" })).resolves.toEqual(
+			sure("invalid_merchant", "merchant_id is not available to the user's family."),
+		);
+		await expect(refusal({ tag_ids: ["nope"] })).resolves.toEqual(
+			sure("invalid_tags", "One or more tag_ids do not belong to the user's family."),
+		);
+		// The sheet's own checks keep the generic shape.
+		await expect(refusal({ date: "2026-01-10" })).resolves.toEqual(
+			sure("validation_error", "The request is invalid; date not_after_opening_date"),
+		);
+		await expect(refusal({ external_id: "row-1", source: "csv:2026" })).resolves.toMatchObject({
+			error: "source invalid_format",
 		});
-		const category = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-09-18",
-			name: "Boulangerie",
-			amount: "-1.00",
-			category_id: "nope",
-		});
-		const currency = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-09-18",
-			name: "Boulangerie",
-			amount: "-1.00",
-			currency: "USD",
-		});
-		const opening = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-01-10",
-			name: "Boulangerie",
-			amount: "-1.00",
-		});
-		const unknown = await tools.write("create_transaction", {
-			account_id: "nope",
-			date: "2026-09-18",
-			name: "Boulangerie",
-			amount: "-1.00",
-		});
-
-		expect(fields.isError).toBe(true);
-		expect(errorText(fields)).toContain("name too_small");
-		expect(errorText(fields)).toContain("amount invalid_amount");
-		expect(errorText(category)).toContain("category_id invalid_value");
-		expect(errorText(currency)).toContain("currency currency_mismatch");
-		expect(errorText(opening)).toContain("date not_after_opening_date");
-		expect(errorText(unknown)).toContain('"error":"not_found"');
-		const colon = await tools.write("create_transaction", {
-			account_id: account.id,
-			date: "2026-09-18",
-			name: "Boulangerie",
-			amount: "-1.00",
-			external_id: "row-1",
-			source: "csv:2026",
-		});
-		expect(errorText(colon)).toContain("source invalid_format");
 		await expect(transactionCount(account.id)).resolves.toBe(0);
-		await expect(calls()).resolves.toEqual([
-			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "create_transaction", outcome: "NOT_FOUND", changedRows: 0 },
-			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
+		expect((await calls()).map((call) => call.outcome)).toEqual([
+			"NOT_FOUND",
+			...Array.from({ length: 14 }, () => "VALIDATION_ERROR"),
 		]);
 	});
 
@@ -386,13 +490,13 @@ describe("create_transaction", () => {
 			account_id: account.id,
 			date: "2026-09-15",
 			name: "Relevé ligne 4",
-			amount: "-45.00",
+			amount: "45.00",
 			external_id: "row-4",
 		};
 
 		const first = created.parse((await tools.write("create_transaction", line)).structuredContent);
 		const again = created.parse(
-			(await tools.write("create_transaction", { ...line, amount: "-99.00" })).structuredContent,
+			(await tools.write("create_transaction", { ...line, amount: "99.00" })).structuredContent,
 		);
 		const otherSource = created.parse(
 			(await tools.write("create_transaction", { ...line, source: "csv-2026-09" }))
@@ -404,7 +508,11 @@ describe("create_transaction", () => {
 		);
 
 		expect(first.created).toBe(true);
-		expect(again).toEqual({ ...first, created: false });
+		expect(again).toEqual({
+			...first,
+			created: false,
+			message: "Transaction already exists for this external_id; returned the existing one.",
+		});
 		expect(otherSource.created).toBe(true);
 		expect(otherAccount.created).toBe(true);
 		await expect(transactionCount(account.id)).resolves.toBe(2);
@@ -419,7 +527,7 @@ describe("create_transaction", () => {
 			id: first.id,
 			account_id: account.id,
 			date: "2026-09-15",
-			amount: "-45.00",
+			amount: "45.00",
 		});
 		const recreated = created.parse(
 			(await tools.write("create_transaction", line)).structuredContent,
@@ -436,7 +544,7 @@ describe("create_transaction", () => {
 			account_id: account.id,
 			date: "2026-09-18",
 			name: "Boulangerie",
-			amount: "-1.00",
+			amount: "1.00",
 		});
 
 		expect(response.status).toBe(403);
@@ -448,12 +556,12 @@ describe("create_transaction", () => {
 });
 
 describe("delete_transaction", () => {
-	it("deletes the line whose values still match, moving the balance back", async () => {
+	it("deletes the line whose values still match, its amount in Sure's sign, moving the balance back", async () => {
 		const account = await checking();
 		const id = await postOwn(account.id, {
 			date: "2026-09-10",
 			label: "Courses",
-			amount: "-120,00",
+			amount: "-12,50",
 		});
 		const tools = await assistants();
 
@@ -461,22 +569,32 @@ describe("delete_transaction", () => {
 			id,
 			account_id: account.id,
 			date: "2026-09-10",
-			amount: "-120.00",
+			amount: "12.50",
 		});
 
 		expect(result.isError, errorText(result)).toBeUndefined();
-		expect(deleted.parse(result.structuredContent)).toMatchObject({
+		expect(keysOf(result.structuredContent)).toEqual([
+			"success",
+			"deleted",
+			"transaction",
+			"message",
+		]);
+		expect(keysOf(result.structuredContent?.transaction)).toEqual(DELETED_KEYS);
+		expect(result.structuredContent).toEqual({
+			success: true,
 			deleted: true,
 			transaction: {
 				id,
-				date: "2026-09-10",
+				entry_id: id,
+				account_id: account.id,
 				name: "Courses",
-				amount: "-120.00",
+				date: "2026-09-10",
+				amount: "12.5",
+				amount_formatted: "12,50 €",
 				currency: "EUR",
-				account: { id: account.id },
-				source: { kind: "manual" },
+				type: "expense",
 			},
-			deleted_count: 1,
+			message: "Deleted Courses (12,50 € on 2026-09-10).",
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(balanceOf(tools, account.id)).resolves.toBe("1500.0");
@@ -486,27 +604,101 @@ describe("delete_transaction", () => {
 		]);
 	});
 
-	it("keeps a line whose amount changed since, naming what differs and never its value", async () => {
+	it("refuses an amount it cannot read, such as a French comma, deleting nothing", async () => {
+		const account = await checking();
+		const income = await postOwn(account.id, {
+			date: "2026-09-10",
+			label: "Remboursement",
+			amount: "12,50",
+		});
+		const tools = await assistants();
+
+		const result = await tools.write("delete_transaction", {
+			id: income,
+			account_id: account.id,
+			date: "2026-09-10",
+			amount: "12,50",
+		});
+
+		expect(answerOf(result)).toEqual(sure("invalid_amount", "amount must be a number."));
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+		await expect(calls()).resolves.toEqual([
+			{ tool: "delete_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
+		]);
+	});
+
+	it("deletes an income from its amount negated, as a decimal string", async () => {
+		const account = await checking();
+		const id = await postOwn(account.id, {
+			date: "2026-09-10",
+			label: "Remboursement",
+			amount: "12,50",
+		});
+		const tools = await assistants();
+
+		const result = await tools.write("delete_transaction", {
+			id,
+			account_id: account.id,
+			date: "2026-09-10",
+			amount: "-12.50",
+		});
+
+		expect(result.structuredContent).toMatchObject({
+			transaction: { amount: "-12.5", type: "income" },
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+	});
+
+	it("deletes an income from its amount negated, a number as well as a string", async () => {
+		const account = await checking();
+		const id = await postOwn(account.id, {
+			date: "2026-09-10",
+			label: "Remboursement",
+			amount: "12,50",
+		});
+		const tools = await assistants();
+
+		const result = await tools.write("delete_transaction", {
+			id,
+			account_id: account.id,
+			date: "2026-09-10",
+			amount: -12.5,
+		});
+
+		expect(result.structuredContent).toMatchObject({
+			transaction: { amount: "-12.5", amount_formatted: "-12,50 €", type: "income" },
+			message: "Deleted Remboursement (-12,50 € on 2026-09-10).",
+		});
+		await expect(transactionCount(account.id)).resolves.toBe(0);
+	});
+
+	it("keeps a line whose amount or sign changed since, naming what differs and never its value", async () => {
 		const account = await checking();
 		const id = await postOwn(account.id, {
 			date: "2026-09-10",
 			label: "Courses",
-			amount: "-120,00",
+			amount: "-12,50",
 		});
-		await sendOwn("PATCH", `/api/transactions/${id}`, { amount: "-125,00" });
 		const tools = await assistants();
 
+		const sign = await tools.write("delete_transaction", {
+			id,
+			account_id: account.id,
+			date: "2026-09-10",
+			amount: "-12.50",
+		});
+		await sendOwn("PATCH", `/api/transactions/${id}`, { amount: "-125,00" });
 		const changed = await tools.write("delete_transaction", {
 			id,
 			account_id: account.id,
 			date: "2026-09-10",
-			amount: "-120.00",
+			amount: "12.50",
 		});
 		const elsewhere = await tools.write("delete_transaction", {
 			id,
 			account_id: "another",
 			date: "2026-09-11",
-			amount: "-125.00",
+			amount: "125.00",
 		});
 		const unreadable = await tools.write("delete_transaction", {
 			id,
@@ -518,20 +710,26 @@ describe("delete_transaction", () => {
 			id: "nope",
 			account_id: account.id,
 			date: "2026-09-10",
-			amount: "-120.00",
+			amount: "125.00",
 		});
 
-		expect(changed.isError).toBe(true);
-		expect(answerOf(changed)).toEqual({
+		expect(answerOf(sign)).toEqual({
 			success: false,
 			error: "transaction_changed",
 			message: "The transaction changed since it was shown; changed amount",
 		});
+		expect(changed.isError).toBe(true);
+		expect(answerOf(changed)).toEqual(answerOf(sign));
 		expect(errorText(elsewhere)).toContain("; changed account_id,date");
-		expect(errorText(unreadable)).toContain("amount invalid_amount");
-		expect(errorText(unknown)).toContain('"error":"not_found"');
+		expect(answerOf(unreadable)).toEqual(sure("invalid_amount", "amount must be a number."));
+		expect(answerOf(unknown)).toEqual({
+			success: false,
+			error: "not_found",
+			message: "No transaction with id 'nope' in an account you can write to.",
+		});
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 		await expect(calls()).resolves.toEqual([
+			{ tool: "delete_transaction", outcome: "TRANSACTION_CHANGED", changedRows: 0 },
 			{ tool: "delete_transaction", outcome: "TRANSACTION_CHANGED", changedRows: 0 },
 			{ tool: "delete_transaction", outcome: "TRANSACTION_CHANGED", changedRows: 0 },
 			{ tool: "delete_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -539,7 +737,7 @@ describe("delete_transaction", () => {
 		]);
 	});
 
-	it("refuses a split's line alone, and deletes a split's parent with its lines", async () => {
+	it("refuses a split's line alone as Sure's split_child, and deletes a split's parent with its lines", async () => {
 		const account = await checking();
 		const parent = await postOwn(account.id, {
 			date: "2026-09-05",
@@ -563,17 +761,22 @@ describe("delete_transaction", () => {
 			id: food?.id,
 			account_id: account.id,
 			date: "2026-09-05",
-			amount: "-60.00",
+			amount: "60.00",
 		});
 		const whole = await tools.write("delete_transaction", {
 			id: parent,
 			account_id: account.id,
 			date: "2026-09-05",
-			amount: "-100.00",
+			amount: "100.00",
 		});
 
-		expect(errorText(line)).toMatch(/^\{"success":false,"error":"transaction_split"/u);
-		expect(deleted.parse(whole.structuredContent).deleted_count).toBe(3);
+		expect(answerOf(line)).toEqual({
+			success: false,
+			error: "split_child",
+			message:
+				"Split child transactions cannot be deleted individually. Delete the split parent instead.",
+		});
+		expect(whole.structuredContent).toMatchObject({ deleted: true, transaction: { id: parent } });
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "TRANSACTION_SPLIT", changedRows: 0 },
@@ -596,23 +799,20 @@ describe("delete_transaction", () => {
 		});
 		const tools = await assistants();
 		await expect(tools.read("get_transaction", { id: inflow })).resolves.toMatchObject({
-			structuredContent: { transfer: { counterpart_transaction_id: outflow } },
+			structuredContent: { is_transfer: true, transfer: { counterpart_transaction_id: outflow } },
 		});
 
 		const result = await tools.write("delete_transaction", {
 			id: outflow,
 			account_id: account.id,
 			date: "2026-09-10",
-			amount: "-500.00",
+			amount: "500.00",
 		});
 
-		expect(deleted.parse(result.structuredContent)).toMatchObject({
-			transaction: { transfer: { counterpart_transaction_id: inflow } },
-			deleted_count: 1,
-		});
+		expect(result.structuredContent).toMatchObject({ transaction: { id: outflow } });
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(tools.read("get_transaction", { id: inflow })).resolves.toMatchObject({
-			structuredContent: { id: inflow, transfer: null },
+			structuredContent: { id: inflow, is_transfer: false, transfer: null },
 		});
 		await expect(calls()).resolves.toEqual([
 			{ tool: "get_transaction", outcome: "OK", changedRows: 0 },
@@ -625,25 +825,22 @@ describe("delete_transaction", () => {
 		const account = await checking();
 		const { id, resync } = await bankLine(account.id);
 		const tools = await assistants();
+		await expect(tools.read("get_transaction", { id })).resolves.toMatchObject({
+			structuredContent: { source: { kind: "bank", connector: "enable-banking" } },
+		});
 
 		const result = await tools.write("delete_transaction", {
 			id,
 			account_id: account.id,
 			date: "2026-09-12",
-			amount: "-32.10",
+			amount: "32.10",
 		});
 
-		expect(deleted.parse(result.structuredContent)).toMatchObject({
-			transaction: { id, source: { kind: "bank", connector: "enable-banking" } },
-			deleted_count: 1,
-		});
+		expect(result.structuredContent).toMatchObject({ deleted: true, transaction: { id } });
 		expect(result.structuredContent).not.toHaveProperty("bank_will_not_resend");
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(resync()).resolves.toMatchObject({ created: [expect.any(String)] });
 		await expect(transactionCount(account.id)).resolves.toBe(1);
-		await expect(calls()).resolves.toEqual([
-			{ tool: "delete_transaction", outcome: "OK", changedRows: 1 },
-		]);
 	});
 
 	it("is refused to a read-only token, deleting nothing", async () => {
@@ -659,13 +856,236 @@ describe("delete_transaction", () => {
 			id,
 			account_id: account.id,
 			date: "2026-09-10",
-			amount: "-120.00",
+			amount: "120.00",
 		});
 
 		expect(response.status).toBe(403);
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "INSUFFICIENT_SCOPE", changedRows: 0 },
+		]);
+	});
+});
+
+describe("get_transactions and get_transaction in Sure's fields", () => {
+	it("lists each line as Sure's, its amount positive, its references by name, with Sure's totals", async () => {
+		const account = await checking();
+		const dollars = await openOwn({ ...pinned, name: "Dollars", currency: "USD" });
+		const food = await ownCategory("Alimentation");
+		const bakery = await merchantId("Boulangerie Dupain");
+		const holidays = await idOf("Vacances");
+		const bread = await postOwn(account.id, {
+			date: "2026-09-10",
+			label: "Pain",
+			amount: "-12,50",
+		});
+		await postOwn(account.id, { date: "2026-09-11", label: "Salaire", amount: "2 000,00" });
+		await postOwn(dollars.id, { date: "2026-09-12", label: "Hotel", amount: "-80,00" });
+		await sendOwn("PATCH", `/api/transactions/${bread}`, {
+			categoryId: food,
+			merchantId: bakery,
+			tagIds: [holidays],
+			notes: "Croissants",
+		});
+		const tools = await assistants();
+
+		const result = await tools.read("get_transactions", { order: "asc" });
+
+		expect(result.isError, errorText(result)).toBeUndefined();
+		expect(keysOf(result.structuredContent)).toEqual([
+			"transactions",
+			"total_results",
+			"page",
+			"page_size",
+			"total_pages",
+			"total_income",
+			"total_expenses",
+		]);
+		const page = z
+			.object({ transactions: z.array(record) })
+			.loose()
+			.parse(result.structuredContent);
+		expect(page.transactions.map(keysOf)).toEqual([ITEM_KEYS, ITEM_KEYS, ITEM_KEYS]);
+		expect(page).toEqual({
+			transactions: [
+				{
+					id: bread,
+					name: "Pain",
+					date: "2026-09-10",
+					amount: "12.5",
+					currency: "EUR",
+					formatted_amount: "12,50 €",
+					classification: "expense",
+					account: "Compte courant",
+					notes: "Croissants",
+					category: "Alimentation",
+					merchant: "Boulangerie Dupain",
+					tags: ["Vacances"],
+					is_transfer: false,
+				},
+				expect.objectContaining({
+					name: "Salaire",
+					amount: "2000.0",
+					formatted_amount: "2 000,00 €",
+					classification: "income",
+					category: null,
+					merchant: null,
+					tags: [],
+				}),
+				expect.objectContaining({
+					name: "Hotel",
+					amount: "80.0",
+					currency: "USD",
+					formatted_amount: "80,00 $",
+					account: "Dollars",
+				}),
+			],
+			total_results: 3,
+			page: 1,
+			page_size: 50,
+			total_pages: 1,
+			// The dollar line is left out until exchange rates exist (AD-6).
+			total_income: "2 000,00 €",
+			total_expenses: "12,50 €",
+		});
+	});
+
+	it("gives a transaction in full: the item, its account id, exclusion, source and transfer with its status", async () => {
+		const account = await checking();
+		const livret = await openOwn({ name: "Livret A", subtype: "savings", openingBalance: "0" });
+		const outflow = await postOwn(account.id, {
+			date: "2026-09-10",
+			label: "VIR LIVRET A",
+			amount: "-500,00",
+		});
+		const inflow = await postOwn(livret.id, {
+			date: "2026-09-10",
+			label: "VIR COMPTE COURANT",
+			amount: "500,00",
+		});
+		const tools = await assistants();
+
+		const result = await tools.read("get_transaction", { id: outflow });
+		const { transfer } = z
+			.object({ transfer: z.object({ id: z.string() }) })
+			.parse(result.structuredContent);
+
+		expect(keysOf(result.structuredContent)).toEqual([
+			...ITEM_KEYS,
+			"account_id",
+			"excluded",
+			"source",
+			"transfer",
+		]);
+		expect(result.structuredContent).toEqual({
+			id: outflow,
+			name: "VIR LIVRET A",
+			date: "2026-09-10",
+			amount: "500.0",
+			currency: "EUR",
+			formatted_amount: "500,00 €",
+			classification: "expense",
+			account: "Compte courant",
+			notes: null,
+			category: null,
+			merchant: null,
+			tags: [],
+			is_transfer: true,
+			account_id: account.id,
+			excluded: false,
+			source: { kind: "manual" },
+			transfer: {
+				id: transfer.id,
+				kind: "internal_move",
+				status: "pending",
+				counterpart_transaction_id: inflow,
+				counterpart_account: { id: livret.id, name: "Livret A" },
+			},
+		});
+	});
+});
+
+describe("update_transaction in Sure's fields", () => {
+	it("answers the line as Sure's, its references as { id, name }, with Sure's message", async () => {
+		const account = await checking();
+		const food = await ownCategory("Alimentation");
+		const bakery = await merchantId("Boulangerie Dupain");
+		const holidays = await idOf("Vacances");
+		const id = await postOwn(account.id, { date: "2026-09-10", label: "Pain", amount: "-2,40" });
+		const tools = await assistants();
+
+		const result = await tools.write("update_transaction", {
+			id,
+			name: "Pain de campagne",
+			notes: "Samedi",
+			category_id: food,
+			merchant_id: bakery,
+			tag_ids: [holidays],
+		});
+
+		expect(keysOf(result.structuredContent)).toEqual(["success", "transaction", "message"]);
+		expect(result.structuredContent).toEqual({
+			success: true,
+			transaction: {
+				id,
+				name: "Pain de campagne",
+				date: "2026-09-10",
+				notes: "Samedi",
+				category: { id: food, name: "Alimentation" },
+				merchant: { id: bakery, name: "Boulangerie Dupain" },
+				tags: [{ id: holidays, name: "Vacances" }],
+			},
+			message: "Transaction 'Pain de campagne' updated.",
+		});
+		expect(keysOf(result.structuredContent?.transaction)).toEqual([
+			"id",
+			"name",
+			"date",
+			"notes",
+			"category",
+			"merchant",
+			"tags",
+		]);
+	});
+
+	it("refuses with Sure's keys: an unknown id, no field, and ids naming nothing, writing nothing", async () => {
+		const account = await checking();
+		const id = await postOwn(account.id, { date: "2026-09-10", label: "Pain", amount: "-2,40" });
+		const tools = await assistants();
+		const refusal = async (args: Record<string, unknown>) =>
+			answerOf(await tools.write("update_transaction", args));
+
+		await expect(refusal({ id: "nope" })).resolves.toEqual({
+			success: false,
+			error: "not_found",
+			message: "Transaction with id 'nope' not found.",
+		});
+		await expect(refusal({ id: "nope", notes: "x" })).resolves.toMatchObject({
+			error: "not_found",
+		});
+		await expect(refusal({ id })).resolves.toEqual({
+			success: false,
+			error: "no_changes",
+			message: "Provide at least one field to update.",
+		});
+		await expect(refusal({ id, category_id: "nope" })).resolves.toEqual({
+			success: false,
+			error: "invalid_category",
+			message: "category_id does not belong to the user's family.",
+		});
+		await expect(refusal({ id, merchant_id: "nope" })).resolves.toMatchObject({
+			error: "invalid_merchant",
+		});
+		await expect(refusal({ id, tag_ids: ["nope"] })).resolves.toMatchObject({
+			error: "invalid_tags",
+		});
+		await expect(calls()).resolves.toEqual([
+			{ tool: "update_transaction", outcome: "NOT_FOUND", changedRows: 0 },
+			{ tool: "update_transaction", outcome: "NOT_FOUND", changedRows: 0 },
+			{ tool: "update_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "update_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);
 	});
 });
@@ -765,8 +1185,10 @@ describe("get_transactions by Sure's names", () => {
 
 describe("get_transactions sorted and filtered as Sure's", () => {
 	const listed = z.object({
-		transactions: z.array(z.object({ name: z.string(), pending: z.boolean() }).loose()),
+		transactions: z.array(z.object({ name: z.string() }).loose()),
 		total_results: z.number(),
+		page: z.number(),
+		page_size: z.number(),
 	});
 
 	/**
@@ -811,7 +1233,7 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 						currency: "EUR",
 						label: "CB EN ATTENTE",
 						reference: null,
-						notes: null,
+						notes: "à vérifier",
 						pending: true,
 					},
 				],
@@ -831,7 +1253,12 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 
 			const page = listed.parse(result.structuredContent);
 
-			return { names: page.transactions.map((item) => item.name), total: page.total_results };
+			return {
+				names: page.transactions.map((item) => item.name),
+				total: page.total_results,
+				page: page.page,
+				pageSize: page.page_size,
+			};
 		};
 	}
 
@@ -865,21 +1292,36 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 		expect(smallest.names).toEqual(largest.names.toReversed());
 	});
 
-	it("compares the absolute amount as Sure's amount_operator does, within a cent for equal", async () => {
+	it("compares the absolute amount as Sure's amount_operator does, reading amount as Ruby's to_f", async () => {
 		const list = await household();
 
 		const equal = await list({ amount: "12.50", amount_operator: "equal" });
-		const signed = await list({ amount: "-12,50", amount_operator: "equal" });
+		const signed = await list({ amount: "-12.50", amount_operator: "equal" });
+		const number = await list({ amount: 12.5, amount_operator: "equal" });
+		// `to_f` stops at the comma: "12,50" reads 12, within a cent of none.
+		const comma = await list({ amount: "12,50", amount_operator: "equal" });
 		const less = await list({ amount: "12.50", amount_operator: "less" });
 		const greater = await list({ amount: "12.50", amount_operator: "greater" });
-		const bounded = await list({ amount: "12.50", amount_operator: "greater", amount_max: "100" });
+		const word = await list({ amount: "douze", amount_operator: "greater" });
 
 		expect(equal.names.toSorted()).toEqual(["COURSES", "COURSES BIS", "REMBOURSEMENT"]);
 		expect(equal.total).toBe(3);
 		expect(signed.names).toEqual(equal.names);
+		expect(number.names).toEqual(equal.names);
+		expect(comma).toMatchObject({ names: [], total: 0 });
 		expect(less.names.toSorted()).toEqual(["CAFE", "REMBOURSEMENT"]);
 		expect(greater.names.toSorted()).toEqual(["CB EN ATTENTE", "COURSES BIS", "LOYER", "SALAIRE"]);
-		expect(bounded.names.toSorted()).toEqual(["CB EN ATTENTE", "COURSES BIS"]);
+		expect(word.total).toBe(7);
+	});
+
+	it("ignores an amount without its operator, an operator without its amount, and a blank amount", async () => {
+		const list = await household();
+
+		await expect(list({ amount: "12.50" })).resolves.toMatchObject({ total: 7 });
+		await expect(list({ amount_operator: "less" })).resolves.toMatchObject({ total: 7 });
+		await expect(list({ amount: " ", amount_operator: "less" })).resolves.toMatchObject({
+			total: 7,
+		});
 	});
 
 	it("keeps pending or confirmed lines by Sure's statuses, both meaning every line", async () => {
@@ -890,25 +1332,48 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 		const both = await list({ statuses: ["confirmed", "pending"] });
 		const largestBooked = await list({ statuses: ["confirmed"], sort_by: "amount", page_size: 2 });
 
-		expect(pending).toEqual({ names: ["CB EN ATTENTE"], total: 1 });
+		expect(pending).toMatchObject({ names: ["CB EN ATTENTE"], total: 1 });
 		expect(confirmed.total).toBe(6);
 		expect(confirmed.names).not.toContain("CB EN ATTENTE");
 		expect(both.total).toBe(7);
-		expect(largestBooked).toEqual({ names: ["SALAIRE", "LOYER"], total: 6 });
+		expect(largestBooked).toMatchObject({ names: ["SALAIRE", "LOYER"], total: 6 });
 	});
 
-	it("refuses an amount without its operator, an operator without its amount, and a bad amount", async () => {
-		await checking();
+	it("filters by types, search and dates, as Sure's", async () => {
+		const list = await household();
+
+		const income = await list({ types: ["income"] });
+		const searched = await list({ search: "courses" });
+		const notes = await list({ search: "vérifier" });
+		const dated = await list({ start_date: "2026-09-10", end_date: "2026-09-12" });
+
+		expect(income.names.toSorted()).toEqual(["REMBOURSEMENT", "SALAIRE"]);
+		expect(searched.names.toSorted()).toEqual(["COURSES", "COURSES BIS"]);
+		expect(notes.names).toEqual(["CB EN ATTENTE"]);
+		expect(dated.names).toEqual(["COURSES", "CAFE"]);
+	});
+
+	it("clamps the page and its size as Sure's, and refuses a status or a filter Sure lacks", async () => {
+		const list = await household();
 		const tools = await assistants();
 
-		const alone = await tools.read("get_transactions", { amount: "12.50" });
-		const operator = await tools.read("get_transactions", { amount_operator: "less" });
-		const bad = await tools.read("get_transactions", { amount: "douze", amount_operator: "less" });
+		await expect(list({ page_size: 500, page: 0 })).resolves.toMatchObject({
+			page: 1,
+			pageSize: 100,
+			total: 7,
+		});
+		await expect(list({ page_size: 2, page: "2" })).resolves.toMatchObject({
+			names: ["COURSES BIS", "COURSES"],
+			page: 2,
+			pageSize: 2,
+		});
 		const status = await tools.read("get_transactions", { statuses: ["booked"] });
+		const bounds = await tools.read("get_transactions", {
+			amount_min: "1",
+			category_ids: ["none"],
+		});
 
-		expect(errorText(alone)).toContain("amount_operator required");
-		expect(errorText(operator)).toContain("amount required");
-		expect(errorText(bad)).toContain("amount invalid_amount");
 		expect(errorText(status)).toContain("statuses.0 ");
+		expect(errorText(bounds)).toContain("unrecognized_keys");
 	});
 });

@@ -550,10 +550,14 @@ export async function createTransaction(
 
 	// Sure falls back to the account's currency and upcases what it is given;
 	// a line in another one needs an exchange rate Archant does not have (AD-6).
+	// The account's currency goes in `params`: Sure's message names it.
 	if (options.currency !== undefined && options.currency.trim().toUpperCase() !== currency) {
-		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-			{ path: "currency", code: "currency_mismatch" },
-		]);
+		throw new AppError(
+			"VALIDATION_ERROR",
+			"The request is invalid.",
+			[{ path: "currency", code: "currency_mismatch" }],
+			{ currency },
+		);
 	}
 
 	const result = await ingest(
