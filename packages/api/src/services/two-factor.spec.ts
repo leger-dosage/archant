@@ -155,6 +155,26 @@ async function totp(auth: Auth, secret: string): Promise<string> {
 	return code;
 }
 
+const STEP_MS = 30_000;
+
+/** The code of the step `steps` away from now, which the server accepts within one step. */
+async function totpAt(auth: Auth, secret: string, steps: number): Promise<string> {
+	const now = Date.now();
+	vi.setSystemTime(now + steps * STEP_MS);
+
+	try {
+		return await totp(auth, secret);
+	} finally {
+		vi.setSystemTime(now);
+	}
+}
+
+async function lastUsedStep(): Promise<number | null | undefined> {
+	const [row] = await temp.db.select({ step: twoFactors.lastUsedStep }).from(twoFactors);
+
+	return row?.step;
+}
+
 /** A code the server refuses: the right one, its last digit changed. */
 function wrong(code: string): string {
 	return `${code.slice(0, 5)}${(Number(code.at(5)) + 1) % 10}`;
@@ -182,6 +202,9 @@ async function enable({ app, auth }: Server): Promise<Enabled> {
 	);
 
 	expect(verified.status).toBe(200);
+	// Activation used the current step's code, which never works twice: the
+	// clock moves to the next step, so the code a test computes next is fresh.
+	vi.setSystemTime(Date.now() + STEP_MS);
 
 	return { jar, secret, totpURI, backupCodes };
 }
@@ -418,6 +441,151 @@ describe("signing in with two-factor on", () => {
 	});
 });
 
+describe("a TOTP code works once", () => {
+	it("signs in once, then refuses the same code as a wrong one and counts it", async () => {
+		const server = startServer();
+		const { secret } = await enable(server);
+		const code = await totp(server.auth, secret);
+
+		const first = await passwordStep(server.app);
+		const accepted = await post(server.app, "/two-factor/verify-totp", { code }, first.jar);
+
+		expect(accepted.status).toBe(200);
+		expect(await lastUsedStep()).toBe(Math.floor(Date.now() / STEP_MS));
+
+		const second = await passwordStep(server.app);
+		const refused = await post(server.app, "/two-factor/verify-totp", { code }, second.jar);
+
+		expect(refused.status).toBe(401);
+		await expect(refused.json()).resolves.toMatchObject({ code: "INVALID_CODE" });
+		expect(await isSignedIn(server.app, second.jar)).toBe(false);
+		const [row] = await temp.db
+			.select({ failed: twoFactors.failedVerificationCount })
+			.from(twoFactors);
+		expect(row?.failed).toBe(1);
+	});
+
+	it("accepts the next step's code, then refuses an earlier step still in the window", async () => {
+		const server = startServer();
+		const { secret } = await enable(server);
+		const previous = await totpAt(server.auth, secret, -1);
+		const current = await totp(server.auth, secret);
+
+		const first = await passwordStep(server.app);
+		expect(
+			(await post(server.app, "/two-factor/verify-totp", { code: current }, first.jar)).status,
+		).toBe(200);
+
+		vi.setSystemTime(Date.now() + STEP_MS);
+		const next = await passwordStep(server.app);
+		const nextCode = await totp(server.auth, secret);
+		expect(
+			(await post(server.app, "/two-factor/verify-totp", { code: nextCode }, next.jar)).status,
+		).toBe(200);
+
+		// The step before the last one used, still inside the window a step ago.
+		vi.setSystemTime(Date.now() - STEP_MS);
+		const late = await passwordStep(server.app);
+		const refused = await post(server.app, "/two-factor/verify-totp", { code: previous }, late.jar);
+
+		expect(refused.status).toBe(401);
+		await expect(refused.json()).resolves.toMatchObject({ code: "INVALID_CODE" });
+	});
+
+	it("lets one of two simultaneous verifications of a code through", async () => {
+		const server = startServer();
+		const { secret } = await enable(server);
+		const code = await totp(server.auth, secret);
+		const first = await passwordStep(server.app);
+		const second = await passwordStep(server.app);
+
+		const responses = await Promise.all([
+			post(server.app, "/two-factor/verify-totp", { code }, first.jar),
+			post(server.app, "/two-factor/verify-totp", { code }, second.jar),
+		]);
+
+		expect(responses.map((response) => response.status).toSorted((a, b) => a - b)).toEqual([
+			200, 401,
+		]);
+		expect(
+			[await isSignedIn(server.app, first.jar), await isSignedIn(server.app, second.jar)].filter(
+				Boolean,
+			),
+		).toHaveLength(1);
+	});
+
+	it("says an activation code was already used, and keeps the secret for the next one", async () => {
+		const server = startServer();
+		const jar = new Jar(template.cookie);
+		const started = await post(server.app, "/two-factor/enable", { password: ADMIN.password }, jar);
+		const secret = secretOf(enabledBody(await started.json()).totpURI);
+		// A duplicate submit of the same code already claimed this step.
+		await temp.db.update(twoFactors).set({ lastUsedStep: Math.floor(Date.now() / STEP_MS) });
+
+		const replayed = await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: await totp(server.auth, secret) },
+			jar,
+		);
+
+		expect(replayed.status).toBe(401);
+		await expect(replayed.json()).resolves.toMatchObject({ code: "CODE_ALREADY_USED" });
+		await expect(twoFactorEnabled()).resolves.toBe(false);
+
+		const next = await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: await totpAt(server.auth, secret, 1) },
+			jar,
+		);
+
+		expect(next.status).toBe(200);
+		await expect(twoFactorEnabled()).resolves.toBe(true);
+	});
+
+	it("forgets the used step when two-factor is turned on again", async () => {
+		const server = startServer();
+		const jar = new Jar(template.cookie);
+		await post(server.app, "/two-factor/enable", { password: ADMIN.password }, jar);
+		await temp.db.update(twoFactors).set({ lastUsedStep: Math.floor(Date.now() / STEP_MS) });
+
+		const restarted = await post(
+			server.app,
+			"/two-factor/enable",
+			{ password: ADMIN.password },
+			jar,
+		);
+		const secret = secretOf(enabledBody(await restarted.json()).totpURI);
+
+		expect(await lastUsedStep()).toBeNull();
+		const accepted = await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: await totp(server.auth, secret) },
+			jar,
+		);
+		expect(accepted.status).toBe(200);
+	});
+
+	it("leaves no used step once two-factor is off", async () => {
+		const server = startServer();
+		const { jar, secret } = await enable(server);
+		const signIn = await passwordStep(server.app);
+		await post(
+			server.app,
+			"/two-factor/verify-totp",
+			{ code: await totp(server.auth, secret) },
+			signIn.jar,
+		);
+		expect(await lastUsedStep()).not.toBeNull();
+
+		await post(server.app, "/two-factor/disable", { password: ADMIN.password }, jar);
+
+		expect(await lastUsedStep()).toBeUndefined();
+	});
+});
+
 describe("turning two-factor off", () => {
 	it("refuses a wrong password and stays on", async () => {
 		const server = startServer();
@@ -541,6 +709,12 @@ describe("logs", () => {
 		const server = startServer(logger);
 		const { jar, secret, totpURI, backupCodes } = await enable(server);
 		const code = await totp(server.auth, secret);
+
+		// A code claimed, then replayed: the step written is no code either.
+		const claimedOnce = await passwordStep(server.app);
+		await post(server.app, "/two-factor/verify-totp", { code }, claimedOnce.jar);
+		const replayed = await passwordStep(server.app);
+		await post(server.app, "/two-factor/verify-totp", { code }, replayed.jar);
 
 		const challenge = await passwordStep(server.app);
 		await post(server.app, "/two-factor/verify-totp", { code: wrong(code) }, challenge.jar);

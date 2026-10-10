@@ -2,7 +2,7 @@ import type { APIRequest, Browser, Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures.ts";
 import { ADMIN, NEW_PASSWORD, WEB_URL } from "./settings.ts";
-import { totp } from "./totp.ts";
+import { freshTotp } from "./totp.ts";
 
 // Story 15.4: a full sign-in ceiling lets a known device through. Its own
 // Playwright project, the very last: the ceiling it fills refuses every other
@@ -34,7 +34,7 @@ async function turnTwoFactorOn(page: Page): Promise<string> {
 	const secret = (
 		await twoFactor.getByLabel("Clé à saisir si vous ne pouvez pas scanner").innerText()
 	).trim();
-	await twoFactor.getByLabel("Code de vérification").fill(totp(secret));
+	await twoFactor.getByLabel("Code de vérification").fill(await freshTotp(secret));
 	await twoFactor.getByRole("button", { name: "Confirmer l'activation" }).click();
 	await twoFactor.getByRole("button", { name: "J'ai conservé ces codes" }).click();
 	await expect(twoFactor.getByText(/^Activée\./u)).toBeVisible();
@@ -114,7 +114,7 @@ test("a browser that signed in before passes a full ceiling, a new one is refuse
 
 	// The sign-in that earns this browser its device cookie: password and code.
 	await passwordStep(page);
-	await codeStep(page, totp(secret));
+	await codeStep(page, await freshTotp(secret));
 	await expect(greeting(page)).toBeVisible();
 
 	// A window runs ten minutes from the sign-in that opened it, which an
@@ -128,7 +128,7 @@ test("a browser that signed in before passes a full ceiling, a new one is refuse
 		// per ten seconds, and this browser has had two.
 		await page.context().setExtraHTTPHeaders({ "x-forwarded-for": `192.0.2.${200 + index}` });
 		await passwordStep(page);
-		await codeStep(page, totp(secret));
+		await codeStep(page, await freshTotp(secret));
 		await expect(greeting(page)).toBeVisible();
 
 		return newBrowserRefused(browser, index);

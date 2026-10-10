@@ -30,6 +30,7 @@ import {
 } from "@archant/data/schema/oauth";
 
 import { firstNameSchema } from "../schemas/setup.ts";
+import { oneTimeTotp } from "./one-time-totp.ts";
 
 export type AuthOptions = {
 	db: Database;
@@ -225,6 +226,9 @@ export function createAuth({
 			// per address on `/two-factor/*`. The issuer is what the
 			// authenticator app shows; without it, Better Auth names itself.
 			twoFactor({ issuer: "Archant" }),
+			// After `twoFactor`, whose model it adds a field to: a TOTP code
+			// works once.
+			oneTimeTotp(),
 			...(assistantsAvailable(baseURL) ? assistantPlugins(baseURL, fetchMetadata) : []),
 		],
 		databaseHooks: {

@@ -114,7 +114,11 @@ export const verifications = sqliteTable(
  * `BETTER_AUTH_SECRET`. A row with `verified` false is an activation the
  * user started and never confirmed with a code: it signs nobody in.
  * `failed_verification_count` and `locked_until` are the plugin's account
- * lockout, which caps wrong codes across challenges.
+ * lockout, which caps wrong codes across challenges. `last_used_step` is the
+ * last 30-second step a TOTP code signed in with, declared by
+ * `services/one-time-totp.ts`: a code read over a shoulder or relayed by a
+ * phishing page would otherwise sign in again within its window, as Sure's
+ * `otp_last_used_at` prevents.
  */
 export const twoFactors = sqliteTable(
 	"two_factors",
@@ -128,6 +132,7 @@ export const twoFactors = sqliteTable(
 		verified: integer("verified", { mode: "boolean" }).default(true),
 		failedVerificationCount: integer("failed_verification_count").default(0),
 		lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+		lastUsedStep: integer("last_used_step"),
 	},
 	(table) => [index("two_factors_user_id").on(table.userId)],
 );

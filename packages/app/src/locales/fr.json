@@ -2389,6 +2389,7 @@
 			"invalid_pattern": "Expression non reconnue. Les références arrière et les assertions comme (?=…) ne sont pas permises.",
 			"invalid_private_key": "Ce fichier ne contient pas de clé privée RSA lisible.",
 			"invalid_two_factor_code": "Code incorrect. Vérifiez l'heure de votre téléphone, ou utilisez un code de secours encore inutilisé.",
+			"two_factor_code_already_used": "Ce code a déjà été utilisé. Veuillez saisir le code suivant de votre application d'authentification.",
 			"not_positive": "Le montant doit être supérieur à zéro.",
 			"insufficient_funds": "Cette catégorie ne peut pas donner autant.",
 			"same_category": "Choisissez une autre catégorie que la source.",

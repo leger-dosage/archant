@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures.ts";
 import { ADMIN, NEW_PASSWORD } from "./settings.ts";
-import { totp } from "./totp.ts";
+import { freshTotp, totp } from "./totp.ts";
 
 // Story 13.4: two-factor sign-in. Its own Playwright project, after the
 // password change: every test signs in with the password that change set.
@@ -60,7 +60,7 @@ test("turning it on asks for the password, then a code, and shows the backup cod
 	await twoFactor.getByRole("button", { name: "Confirmer l'activation" }).click();
 	await expect(twoFactor.getByText(/^Code incorrect\./u)).toBeVisible();
 
-	await twoFactor.getByLabel("Code de vérification").fill(totp(secret));
+	await twoFactor.getByLabel("Code de vérification").fill(await freshTotp(secret));
 	await twoFactor.getByRole("button", { name: "Confirmer l'activation" }).click();
 
 	await expect(page.getByText("Double authentification activée.")).toBeVisible();
@@ -87,7 +87,16 @@ test("sign-in asks for a code: a TOTP code, then a backup code, which is refused
 	await expect(page.getByLabel("Code de vérification")).toBeVisible();
 	await expect(page).toHaveURL(/\/sign-in/u);
 
-	await codeStep(page, totp(secret));
+	const used = await freshTotp(secret);
+	await codeStep(page, used);
+	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
+
+	// Story 27.8: the same code never signs in twice; the next one does.
+	await context.clearCookies();
+	await passwordStep(page, "/accounts");
+	await codeStep(page, used);
+	await expect(page.getByText(/^Code incorrect\./u)).toBeVisible();
+	await codeStep(page, await freshTotp(secret));
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
 	await context.clearCookies();
@@ -164,7 +173,7 @@ test("regenerating and turning off ask for the password; then sign-in has one st
 	context,
 }) => {
 	await passwordStep(page, "/settings/security");
-	await codeStep(page, totp(secret));
+	await codeStep(page, await freshTotp(secret));
 	const twoFactor = section(page);
 	await expect(twoFactor.getByText(/^Activée\./u)).toBeVisible();
 

@@ -60,22 +60,25 @@ export default defineConfig({
 		// one user's state, so a retry would start from what the failed
 		// attempt left: no `retries` here either. `assistants.spec.ts` runs
 		// first, by file name: it turns two-factor on for an assistant's
-		// sign-in, then off again.
+		// sign-in, then off again. A TOTP code works once, so a test that needs
+		// a third code within 30 seconds waits for the next step (`freshTotp`).
 		{
 			name: "two-factor",
 			testMatch: /(assistants|two-factor)\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
 			dependencies: ["password"],
+			timeout: 90_000,
 		},
 		// After everything: it fills the sign-in ceiling, which then refuses
 		// every browser without a device cookie for ten minutes. It turns
 		// two-factor on again, so a retry would meet a state it does not
-		// expect: no `retries`.
+		// expect: no `retries`. Its four codes may wait for two steps.
 		{
 			name: "ceiling",
 			testMatch: /sign-in-ceiling\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: { cookies: [], origins: [] } },
 			dependencies: ["two-factor"],
+			timeout: 120_000,
 		},
 	],
 	// No `reuseExistingServer`: a stale server left on this port once made a

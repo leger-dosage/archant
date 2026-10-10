@@ -477,6 +477,13 @@
       "when": 1791625264090,
       "tag": "0067_transaction_one_time",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1791638553175,
+      "tag": "0068_two_factor_last_used_step",
+      "breakpoints": true
     }
   ]
 }
