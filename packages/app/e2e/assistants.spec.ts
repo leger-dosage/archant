@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { expect, test } from "./fixtures.ts";
 import { ADMIN, NEW_PASSWORD, WEB_URL } from "./settings.ts";
-import { totp } from "./totp.ts";
+import { freshTotp } from "./totp.ts";
 
 // Story 16.1: an assistant is refused, then another connects and is
 // disconnected. In the `two-factor` project, after the password change: the
@@ -61,7 +61,7 @@ async function turnTwoFactorOn(page: Page): Promise<string> {
 	const secret = (
 		await twoFactor.getByLabel("Clé à saisir si vous ne pouvez pas scanner").innerText()
 	).trim();
-	await twoFactor.getByLabel("Code de vérification").fill(totp(secret));
+	await twoFactor.getByLabel("Code de vérification").fill(await freshTotp(secret));
 	await twoFactor.getByRole("button", { name: "Confirmer l'activation" }).click();
 	await twoFactor.getByRole("button", { name: "J'ai conservé ces codes" }).click();
 	await expect(twoFactor.getByText(/^Activée\./u)).toBeVisible();
@@ -80,7 +80,7 @@ async function turnTwoFactorOff(page: Page, secret: string) {
 
 	if (await email.isVisible()) {
 		await passwordStep(page);
-		await page.getByLabel("Code de vérification").fill(totp(secret));
+		await page.getByLabel("Code de vérification").fill(await freshTotp(secret));
 		await page.getByRole("button", { name: "Vérifier" }).click();
 	}
 
@@ -230,7 +230,7 @@ async function connectThenDisconnect(
 	await page.goto(authorizeUrl(clientId, verifier));
 	await expect(page).toHaveURL(/\/sign-in\?/u);
 	await passwordStep(page);
-	await page.getByLabel("Code de vérification").fill(totp(secret));
+	await page.getByLabel("Code de vérification").fill(await freshTotp(secret));
 	await page.getByRole("button", { name: "Vérifier" }).click();
 
 	await expect(page).toHaveURL(/\/oauth\/consent\?/u);

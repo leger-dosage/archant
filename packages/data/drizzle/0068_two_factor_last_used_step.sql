@@ -1,0 +1,1 @@
+ALTER TABLE `two_factors` ADD `last_used_step` integer;

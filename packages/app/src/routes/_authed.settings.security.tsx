@@ -466,6 +466,13 @@ function ScanStep({
 			return;
 		}
 
+		// The right code, whose step a duplicate submit already used; the
+		// secret stays, so the next code turns two-factor on.
+		if (error.code === "CODE_ALREADY_USED") {
+			form.setError("code", { type: "custom", message: "two_factor_code_already_used" });
+			return;
+		}
+
 		await onFailure(error);
 	});
 

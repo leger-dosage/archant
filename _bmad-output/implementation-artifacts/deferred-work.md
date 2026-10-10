@@ -193,6 +193,7 @@
   summary: Accept each TOTP code once, by storing the last accepted time step and claiming it with a conditional update.
   evidence: Sure #3830 (2026-09-29). Better Auth's `verifyTOTP` keeps no used step, so a code read over a shoulder or relayed by a phishing page works again within its window, the password still required. Do it through a Better Auth hook on `/two-factor/verify-totp` or upstream, never by hand (AD-13, NFR6); until then `docs/security-model.md` should name the limit.
   planned: Story 27.8 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.8. `oneTimeTotp` in `packages/api/src/services/one-time-totp.ts` claims the step a code matches in `two_factors.last_used_step` with one conditional update, before Better Auth's handler runs.
 - source_spec: `_bmad-output/planning-artifacts/epics.md` (Epic 23)
   summary: The bills calendar: a month grid of due dates, and an iCal feed a phone calendar subscribes to.
   evidence: Sure #3202 (`bills/calendar.html.erb`, `bills_feeds_controller.rb`). Left out of Epic 23 to keep it buildable: the grid repeats the bills list. The feed is served at a secret URL without a session, which AD-13's list of unguarded routes does not allow, and the owner's instance is reachable only through Tailscale; it needs its own AD.
