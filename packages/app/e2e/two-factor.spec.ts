@@ -1,5 +1,7 @@
 import type { Page } from "@playwright/test";
 
+import { randomInt } from "node:crypto";
+
 import { expect, test } from "./fixtures.ts";
 import { ADMIN, NEW_PASSWORD } from "./settings.ts";
 import { freshTotp, totp } from "./totp.ts";
@@ -100,6 +102,13 @@ test("sign-in asks for a code: a TOTP code, then a backup code, which is refused
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
 	await context.clearCookies();
+	// Four password sign-ins from one address can fall within Better Auth's
+	// three per ten seconds when no TOTP step needs waiting for: CI refused
+	// the fourth with « Trop de tentatives ». The backup code's two sign-ins
+	// come from another client.
+	await context.setExtraHTTPHeaders({
+		"x-forwarded-for": `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`,
+	});
 	const [code = ""] = backupCodes;
 	await passwordStep(page, "/accounts");
 	await codeStep(page, code);
