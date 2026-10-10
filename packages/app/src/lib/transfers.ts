@@ -33,7 +33,7 @@ const expenseKinds: ReadonlySet<TransferKind> = new Set(EXPENSE_TRANSFER_KINDS);
 /**
  * Whether a row shows, and lets the user change, its category: not a transfer
  * side, or a spent one, the outflow of a loan payment or an investment
- * contribution. The dashboard counts that outflow in its category (`direction`
+ * contribution. The dashboard counts that outflow in its category (`countsInCashFlow`
  * in the API), so the list shows what it counts; recurring detection groups it
  * too. Sure lets a loan payment keep a category as well (`Transfer#categorizable?`).
  */

@@ -74,6 +74,20 @@ export function isSubtypeOf(type: AccountType, subtype: string | null): boolean 
 }
 
 /**
+ * Sure's `:tax_advantaged` subtypes Archant has: a PEA and an assurance-vie
+ * hold money set aside, so no cash-flow report and no list total counts
+ * their lines, as Sure's `tax_advantaged_account_ids`. Net worth still does.
+ */
+export const TAX_ADVANTAGED_SUBTYPES = [
+	"pea",
+	"assurance_vie",
+] as const satisfies readonly AccountSubtype[];
+
+export function isTaxAdvantaged(subtype: string | null): boolean {
+	return TAX_ADVANTAGED_SUBTYPES.some((value) => value === subtype);
+}
+
+/**
  * What a bank account can become, the targets of Sure's
  * `CASH_ACCOUNT_TYPE_MAP`: only these types hold a bank's cash balance.
  */

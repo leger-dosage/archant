@@ -281,25 +281,30 @@ describe("budgetCategories", () => {
 		expect(lineOf(result, "Maison")).toMatchObject({ spent: 0, available: 10_000 });
 	});
 
-	it("spends the uncategorised outflow, an unknown category's included, never income", () => {
+	it("nets « Sans catégorie » as Sure's `:uncategorized` key, an unknown category's included, where its income was left out", () => {
 		const result = budgetOf({
 			amounts: amounts({ Courses: 150_000 }),
 			rows: [
 				row(null, -30_000),
 				row("Disparue", -10_000),
-				row(null, 100_000),
+				row(null, 15_000),
 				row("Salaire", -5_000),
 			],
+		});
+		const refunded = budgetOf({
+			amounts: amounts({ Courses: 150_000 }),
+			rows: [row(null, -30_000), row(null, 100_000)],
 		});
 
 		expect(result.uncategorised).toMatchObject({
 			budgetedSpending: 50_000,
 			budgeted: true,
-			spent: 40_000,
-			available: 10_000,
+			spent: 25_000,
+			available: 25_000,
 			status: "onTrack",
 			section: "onTrack",
 		});
+		expect(refunded.uncategorised).toMatchObject({ spent: 0, available: 50_000 });
 	});
 
 	it("files « Sans catégorie » as over once it spends beyond what is left", () => {
@@ -418,15 +423,21 @@ describe("budgetCategories", () => {
 });
 
 describe("spentByCategory", () => {
-	it("counts each expense category's outflow net of refunds, a parent with its children", () => {
+	it("counts each category's outflow net of refunds, a parent with its children, an income category's too where it counted nowhere", () => {
 		expect(
 			Object.fromEntries(
 				spentByCategory(
-					[row("Travaux", -3_000), row("Maison", -1_000), row("Courses", 2_000), row(null, -500)],
+					[
+						row("Travaux", -3_000),
+						row("Maison", -1_000),
+						row("Courses", 2_000),
+						row(null, -500),
+						row("Salaire", -2_000),
+					],
 					[house, works, garden, groceries, salary],
 				),
 			),
-		).toEqual({ Maison: 4_000, Travaux: 3_000, Courses: 0 });
+		).toEqual({ Maison: 4_000, Travaux: 3_000, Courses: 0, Salaire: 2_000 });
 	});
 });
 

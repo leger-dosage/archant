@@ -228,9 +228,12 @@ describe("transfers", () => {
 		});
 		const detail = await ownRequest("GET", `/api/accounts/${loan.id}`);
 		expect(detail.body).toMatchObject({ data: { balance: 18000000 - 120000 } });
-		// The outflow still spends, so it is an expense; the loan side is neither.
-		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([payment]);
-		expect((await listed("?direction=transfer")).items.map((item) => item.id)).toEqual([repaid]);
+		// Both sides are transfers for « Sens », as Sure's type filter; the
+		// outflow still counts as an expense in the cash flow.
+		expect((await listed("?direction=expense")).items).toEqual([]);
+		expect((await listed("?direction=transfer")).items.map((item) => item.id).toSorted()).toEqual(
+			[payment, repaid].toSorted(),
+		);
 	});
 
 	it("links a card paying off a loan as a loan payment", async () => {
@@ -245,8 +248,9 @@ describe("transfers", () => {
 
 		const data = await listed("?direction=transfer");
 
-		expect(data.items.map((item) => item.transfer?.kind)).toEqual(["loan_payment"]);
-		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([payment]);
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual(["loan_payment", "loan_payment"]);
+		expect(data.items.map((item) => item.id)).toContain(payment);
+		expect((await listed("?direction=expense")).items).toEqual([]);
 	});
 
 	it("links a move into a PEA as a contribution, by hand too, raising its value", async () => {
@@ -278,10 +282,10 @@ describe("transfers", () => {
 		});
 		const detail = await ownRequest("GET", `/api/accounts/${account.id}`);
 		expect(detail.body).toMatchObject({ data: { balance: 2500000 + 50000 } });
-		expect((await listed("?direction=expense")).items.map((item) => item.id)).toEqual([
-			contribution,
-		]);
-		expect((await listed("?direction=transfer")).items.map((item) => item.id)).toEqual([received]);
+		expect((await listed("?direction=expense")).items).toEqual([]);
+		expect((await listed("?direction=transfer")).items.map((item) => item.id).toSorted()).toEqual(
+			[contribution, received].toSorted(),
+		);
 	});
 
 	it("links a card paying into a PEA as a contribution", async () => {
@@ -292,7 +296,10 @@ describe("transfers", () => {
 
 		const data = await listed("?direction=transfer");
 
-		expect(data.items.map((item) => item.transfer?.kind)).toEqual(["investment_contribution"]);
+		expect(data.items.map((item) => item.transfer?.kind)).toEqual([
+			"investment_contribution",
+			"investment_contribution",
+		]);
 	});
 
 	it("links a move between two investments, and out of one, as internal moves", async () => {

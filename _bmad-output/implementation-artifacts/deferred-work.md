@@ -248,3 +248,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-24-2-the-amortisation-schedule.md`
   summary: Test that a payment falling on the server's today is shaded as past in the « Échéancier » tab.
   evidence: `LoanSchedule.tsx` shades `date <= asOf`; the e2e test checks payments 69 and 300 only, and only an e2e test with a pinned server clock and a start date landing a payment on that day reaches the boundary.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-6-count-income-and-expenses-as-sure-does.md`
+  summary: An income-kind category whose month nets an expense counts in the budget's spending but has no envelope, so envelopes no longer add up to it.
+  evidence: `budgetCategories` in `domain/budgets/categories.ts` builds envelopes for `kind === "expense"` only, while `actualsOf` reads Sure's `total_net_expense` over every category; Sure dropped category kinds in #1160, a divergence for Story 27.25.
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-6-count-income-and-expenses-as-sure-does.md`
+  summary: A month whose refunds cancel its spending enters the budget's spending median at zero.
+  evidence: `suggestions` filters months on the gross view's expense lines and takes the net spending; Sure's `median_expense` is gross. Story 27.7 rewrites the medians as `IncomeStatement::FamilyStats`; check there.

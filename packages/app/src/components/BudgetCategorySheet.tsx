@@ -29,13 +29,13 @@ import { cn } from "@/lib/utils";
 
 /**
  * The list a category's sheet links to: the category, its children with it,
- * over the month. « Sans catégorie » keeps the expense side only, as the
- * dashboard's drill-down does, since its income has its own line.
+ * over the month. « Sans catégorie » lists both signs, as Sure's
+ * `BudgetCategoriesController#show`, since its envelope nets them.
  */
 function filtersOf(envelope: Envelope, budget: BudgetData): TransactionFilters {
 	return envelope.kind === "category"
 		? { category: [envelope.line.categoryId], from: budget.from, to: budget.to }
-		: { category: [UNCATEGORISED], direction: ["expense"], from: budget.from, to: budget.to };
+		: { category: [UNCATEGORISED], from: budget.from, to: budget.to };
 }
 
 function Figure({ label, children }: { label: string; children: React.ReactNode }) {

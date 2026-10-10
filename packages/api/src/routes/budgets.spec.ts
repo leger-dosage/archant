@@ -112,22 +112,24 @@ async function line(accountId: string, date: string, amount: string, categoryId?
 /**
  * Four earlier months spending 100, 300, 200 and 400, two earning 2 000 and
  * 3 000, then September: groceries, an uncategorised outflow, a refund
- * beyond what « Vêtements » spent, and a salary.
+ * beyond what « Vêtements » spent, and a salary, in a category of its own so
+ * it never nets the uncategorised outflow away.
  */
 async function household() {
 	const account = await openOwn({ openingDate: "2026-04-01", openingBalance: "10 000,00" });
 	const courses = await ownCategory("Courses");
 	const clothes = await ownCategory("Vêtements", { color: "#4ea7fc" });
+	const salary = await ownCategory("Salaire", { kind: "income" });
 	await line(account.id, "2026-05-10", "-100,00", courses);
 	await line(account.id, "2026-06-10", "-300,00", courses);
-	await line(account.id, "2026-06-25", "2 000,00");
+	await line(account.id, "2026-06-25", "2 000,00", salary);
 	await line(account.id, "2026-07-10", "-200,00", courses);
 	await line(account.id, "2026-08-10", "-400,00", courses);
-	await line(account.id, "2026-08-25", "3 000,00");
+	await line(account.id, "2026-08-25", "3 000,00", salary);
 	await line(account.id, "2026-09-05", "-60,00", courses);
 	await line(account.id, "2026-09-06", "-15,00");
 	await line(account.id, "2026-09-07", "30,00", clothes);
-	await line(account.id, "2026-09-08", "1 000,00");
+	await line(account.id, "2026-09-08", "1 000,00", salary);
 
 	return { account, courses, clothes };
 }
@@ -146,7 +148,7 @@ describe("GET /api/budgets/:month", () => {
 			budgetedSpending: null,
 			expectedIncome: null,
 			// « Vêtements » nets +30,00: it spends nothing and draws no segment.
-			actual: { spending: 7_500, income: 100_000 },
+			actual: { spending: 7_500, income: 103_000 },
 			segments: [
 				{ categoryId: courses, name: "Courses", color: "#e99537", icon: "tag", spent: 6_000 },
 				{ categoryId: null, name: null, color: null, icon: null, spent: 1_500 },
@@ -330,7 +332,7 @@ describe("GET /api/budgets/:month", () => {
 });
 
 describe("a budget's income from an investment account", () => {
-	it("counts a dividend and interest as actual income, never a buy", async () => {
+	it("counts neither a dividend nor interest as actual income, where they added 15,34 €, nor a buy", async () => {
 		await household();
 		const pea = await openOwn({
 			type: "investment",
@@ -359,8 +361,25 @@ describe("a budget's income from an investment account", () => {
 
 		const budget = await budgetOf("2026-09");
 
-		// The salary of 1 000,00 and the 15,34 € the PEA was paid; the buy counts nowhere.
-		expect(budget.actual).toEqual({ spending: 7_500, income: 100_000 + 1_534 });
+		// The salary of 1 000,00 and the refund of 30,00, gross; no trade counts.
+		expect(budget.actual).toEqual({ spending: 7_500, income: 103_000 });
+	});
+});
+
+describe("a budget's history and a PEA", () => {
+	it("suggests the same spending with a PEA line of −15,00 € in an earlier month, where July would have spent 215,00 €", async () => {
+		await household();
+		const pea = await openOwn({
+			type: "investment",
+			subtype: "pea",
+			openingDate: "2026-04-01",
+			openingBalance: "10 000,00",
+		});
+		await line(pea.id, "2026-07-12", "-15,00");
+
+		const budget = await budgetOf("2026-09");
+
+		expect(budget.suggested).toEqual({ spending: 25_000, income: 250_000 });
 	});
 });
 
@@ -376,7 +395,7 @@ describe("PUT /api/budgets/:month", () => {
 			setUp: true,
 			budgetedSpending: 200_000,
 			expectedIncome: 250_000,
-			actual: { spending: 7_500, income: 100_000 },
+			actual: { spending: 7_500, income: 103_000 },
 		});
 		await expect(budgetOf("2026-09")).resolves.toMatchObject({ setUp: true });
 

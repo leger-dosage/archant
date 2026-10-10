@@ -468,12 +468,34 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 	await expect(rowItem(page, out).getByText("Virement", { exact: true })).toHaveCount(0);
 });
 
-test("« Sens » lists transfers, expenses or income alone, and survives a reload", async ({
+test("« Sens » lists transfers, a loan payment's outflow among them, expenses or income alone, and survives a reload", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Sens");
 	const { checking, out, into } = await moveToSavings(api, prefix);
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "180 000,00",
+		openingDate: daysAgo(30),
+	});
+	const repaid = uniqueAmount();
+	const instalment = `${prefix} échéance`;
+	const received = `${prefix} remboursement`;
+	const instalmentId = await api.addTransaction(checking.id, {
+		date: daysAgo(4),
+		label: instalment,
+		amount: `-${repaid}`,
+	});
+	const receivedId = await api.addTransaction(loan.id, {
+		date: daysAgo(4),
+		label: received,
+		amount: repaid,
+	});
+	// Proposed on creation; refused and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(instalmentId, { never: true });
+	await api.matchTransfer(instalmentId, receivedId);
 	const spent = `${prefix} café`;
 	const earned = `${prefix} prime`;
 	// Amounts of their own: another test's opposite row would be linked to them.
@@ -505,12 +527,16 @@ test("« Sens » lists transfers, expenses or income alone, and survives a reloa
 	};
 
 	await visitOperations(page, prefix);
-	await expect(listed).toHaveCount(4);
+	await expect(listed).toHaveCount(6);
 
+	// Every transfer side, as Sure's type filter: a loan payment's outflow
+	// still counts in the dashboard's « Dépenses », never in this one.
 	await filterOn("Virements");
-	await expect(listed).toHaveCount(2);
+	await expect(listed).toHaveCount(4);
 	await expect(rowItem(page, out)).toBeVisible();
 	await expect(rowItem(page, into)).toBeVisible();
+	await expect(rowItem(page, instalment)).toBeVisible();
+	await expect(rowItem(page, received)).toBeVisible();
 
 	await filterOn("Dépenses", "Virements");
 	await expect(listed).toHaveCount(1);

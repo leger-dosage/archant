@@ -1,21 +1,23 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 
-import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
-import { accounts } from "@archant/data/schema/accounts";
+import { categories } from "@archant/data/schema/categories";
 import { securityPrices } from "@archant/data/schema/securities";
 
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
+import { updateTransaction } from "./ledger/edits.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { ingest } from "./ledger/ingest.ts";
+import { findTransaction } from "./ledger/queries.ts";
 import { recordTrade } from "./ledger/trades.ts";
-import { getBalanceSheet, getCashFlow, getNetWorth } from "./reports.ts";
+import { matchTransfer } from "./ledger/transfers.ts";
+import { getBalanceSheet, getCashFlow, getIncomeStatement, getNetWorth } from "./reports.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -50,7 +52,7 @@ async function account(overrides: Partial<NewAccountInput> = {}) {
 }
 
 async function spend(accountId: string, date: string, amount: number, currency = "EUR") {
-	await ingest(
+	const { created } = await ingest(
 		deps(),
 		accountId,
 		{
@@ -72,6 +74,29 @@ async function spend(accountId: string, date: string, amount: number, currency =
 		{ manual: true },
 		{ origin: "user" },
 	);
+
+	return created[0] ?? "";
+}
+
+async function category(name: string) {
+	const id = crypto.randomUUID();
+	await temp.db.insert(categories).values({
+		id,
+		name,
+		kind: "expense",
+		color: "#e99537",
+		icon: "tag",
+		parentId: null,
+		createdAt: 0,
+		updatedAt: 0,
+	});
+
+	return id;
+}
+
+async function categorised(accountId: string, date: string, amount: number, categoryId: string) {
+	const id = await spend(accountId, date, amount);
+	await updateTransaction(deps(), id, { categoryId }, { origin: "user" });
 }
 
 describe("getBalanceSheet", () => {
@@ -208,51 +233,89 @@ describe("getCashFlow", () => {
 		expect(cashFlow.expenses).toBe(0);
 		expect(cashFlow.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);
 	});
-	it("counts a PEA's dividend and interest as uncategorised income, its buy nowhere, and an excluded account's not at all", async () => {
+	it("counts nothing of a PEA, its cash line, dividend and interest included, where they made 15,34 € of income, and still a contribution into it as an expense", async () => {
+		const checking = await account();
 		const pea = await account({ name: "PEA", type: "investment", subtype: "pea" });
-		const hidden = await account({ name: "PEA caché", type: "investment", subtype: "pea" });
 		const lvmh = await insertSecurity(temp.db, {}, { held: false });
-		const trade = async (accountId: string, input: Parameters<typeof recordTrade>[2]) =>
-			recordTrade(deps(), accountId, input, { origin: "user" });
-		const buy = {
+		const trade = async (input: Parameters<typeof recordTrade>[2]) =>
+			recordTrade(deps(), pea, input, { origin: "user" });
+		await trade({
 			side: "buy",
 			security: { source: "known", id: lvmh },
 			date: "2026-09-10",
 			quantity: toMicros(1_000_000),
 			price: toMicros(612_400_000),
 			fee: toMinorUnits(0),
-		} as const;
-		await trade(pea, buy);
-		await trade(hidden, buy);
-		await trade(pea, {
+		});
+		await trade({
 			side: "dividend",
 			security: { source: "known", id: lvmh },
 			date: "2026-09-15",
 			amount: toMinorUnits(1234),
 		});
-		await trade(pea, {
+		await trade({
 			side: "interest",
 			security: null,
 			date: "2026-09-16",
 			amount: toMinorUnits(300),
 		});
-		await trade(hidden, {
-			side: "interest",
-			security: null,
-			date: "2026-09-16",
-			amount: toMinorUnits(999),
-		});
-		await temp.db
-			.update(accounts)
-			.set({ excludedFromReports: true })
-			.where(eq(accounts.id, hidden));
+		await spend(pea, "2026-09-17", -1_500);
+		const outflow = await spend(checking, "2026-09-18", -20_000);
+		const inflow = await spend(pea, "2026-09-18", 20_000);
+		// The matcher may have proposed the pair already.
+		if ((await findTransaction(deps(), outflow))?.transfer === null) {
+			await matchTransfer(deps(), outflow, inflow, { origin: "user" });
+		}
 
 		const cashFlow = await getCashFlow(deps(), "2026-09");
 
-		expect(cashFlow.income).toBe(1534);
-		expect(cashFlow.expenses).toBe(0);
-		expect(cashFlow.lines.income).toEqual([
-			{ categoryId: null, name: null, color: null, icon: null, amount: 1534, share: 1 },
-		]);
+		expect(cashFlow.income).toBe(0);
+		expect(cashFlow.expenses).toBe(-20_000);
+		expect(cashFlow.lines).toEqual({
+			income: [],
+			expense: [
+				{ categoryId: null, name: null, color: null, icon: null, amount: -20_000, share: 1 },
+			],
+		});
+	});
+});
+
+describe("getIncomeStatement", () => {
+	it("keeps a refund as income in its category, where the net dashboard lowers the expense", async () => {
+		const checking = await account();
+		const groceries = await category("Courses");
+		await categorised(checking, "2026-09-10", -10_000, groceries);
+		await categorised(checking, "2026-09-12", 3_000, groceries);
+
+		const statement = await getIncomeStatement(deps(), {
+			from: "2026-09-01",
+			to: "2026-09-30",
+			byMonth: false,
+			comparePrevious: false,
+		});
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+
+		expect(statement).toMatchObject({ income: 3_000, expenses: -10_000 });
+		expect(statement.breakdown?.lines.income.map((line) => line.categoryId)).toEqual([groceries]);
+		expect(statement.breakdown?.lines.expense.map((line) => line.categoryId)).toEqual([groceries]);
+		expect(cashFlow).toMatchObject({ income: 0, expenses: -7_000 });
+	});
+
+	it("refuses a PEA among the accounts asked, as it would report it as zero", async () => {
+		const checking = await account();
+		const pea = await account({ name: "PEA", type: "investment", subtype: "pea" });
+
+		await expect(
+			getIncomeStatement(deps(), {
+				from: "2026-09-01",
+				to: "2026-09-30",
+				accountIds: [checking, pea],
+				byMonth: false,
+				comparePrevious: false,
+			}),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "accountIds.1", code: "unknown_account" }],
+		});
 	});
 });

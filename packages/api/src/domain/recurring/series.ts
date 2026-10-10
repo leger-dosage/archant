@@ -7,7 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { LAST_DAY_OF_MONTH } from "@archant/data/recurring";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
-import { direction } from "../cash-flow.ts";
+import { recurringDirection } from "../cash-flow.ts";
 import { addDays, addMonths } from "../dates.ts";
 import { roundedMean, sameKey, seriesKeyOf, withinBand } from "./identifier.ts";
 import {
@@ -136,7 +136,7 @@ function matches(series: StoredSeries, candidate: RecurringCandidate): boolean {
 	return (
 		candidate.accountId === series.accountId &&
 		candidate.currency === series.currency &&
-		direction(candidate) !== "transfer" &&
+		recurringDirection(candidate) !== "transfer" &&
 		withinBand(candidate.amount, series.amount) &&
 		sameKey(seriesKeyOf(candidate), series) &&
 		matchesDay(scheduleOf(series), candidate.date)
@@ -183,7 +183,7 @@ export function rekey(
 	candidates: readonly RecurringCandidate[],
 	today: IsoDate,
 ): { steps: RekeyStep[]; stored: StoredSeries[] } {
-	const spent = candidates.filter((candidate) => direction(candidate) !== "transfer");
+	const spent = candidates.filter((candidate) => recurringDirection(candidate) !== "transfer");
 	const steps: RekeyStep[] = [];
 	let current = [...stored];
 

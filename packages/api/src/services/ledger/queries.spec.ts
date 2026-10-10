@@ -629,6 +629,19 @@ describe("cashFlowByCategory", () => {
 	});
 });
 
+describe("cashFlowByCategory and transfers", () => {
+	it("counts a contribution's outflow as an expense and its PEA side nowhere", async () => {
+		const joint = await openChecking({ name: "Courant versement", openingDate: "2026-08-01" });
+		const pea = await openPea({ name: "PEA versement", openingDate: "2026-08-01" });
+		const { outflow } = await contributionOf(joint.id, pea.id);
+		const contributed = await findTransaction(deps(), outflow);
+
+		await expect(
+			cashFlowByCategory(deps(), { ...monthRange("2026-09"), accountIds: [joint.id, pea.id] }),
+		).resolves.toEqual([{ categoryId: null, amount: contributed?.amount }]);
+	});
+});
+
 describe("cashFlowByMonth", () => {
 	it("gives each month exactly the rows `cashFlowByCategory` gives it, up to `to`", async () => {
 		const { livret } = await openHousehold();
@@ -689,8 +702,8 @@ describe("cashFlowByMonth", () => {
 const trade = async (accountId: string, input: Parameters<typeof recordTrade>[2]) =>
 	recordTrade(deps(), accountId, input, asUser);
 
-describe("income trades in the cash flow", () => {
-	it("count each dividend and interest of the accounts asked as uncategorised income, never a buy or a sale", async () => {
+describe("trades in the cash flow", () => {
+	it("count nowhere, a dividend and interest no more than a buy or a sale, where income counted 12,34 € and 3,50 €", async () => {
 		const pea = await openPea({ name: "PEA revenus", openingDate: "2026-06-01" });
 		const elsewhere = await openPea({ name: "PEA ailleurs", openingDate: "2026-06-01" });
 		const securityId = crypto.randomUUID();
@@ -733,15 +746,29 @@ describe("income trades in the cash flow", () => {
 
 		await expect(
 			cashFlowByCategory(deps(), { ...monthRange("2026-08"), accountIds: [pea.id] }),
-		).resolves.toEqual([{ categoryId: null, amount: 1234 }]);
+		).resolves.toEqual([]);
 		await expect(
 			cashFlowByCategory(deps(), { ...monthRange("2026-07"), accountIds: [pea.id] }),
 		).resolves.toEqual([]);
 		await expect(
 			cashFlowByMonth(deps(), { to: "2026-09-30", accountIds: [pea.id] }),
-		).resolves.toEqual([
-			{ month: "2026-08", categoryId: null, amount: 1234 },
-			{ month: "2026-09", categoryId: null, amount: 350 },
+		).resolves.toEqual([]);
+	});
+});
+
+describe("sumTransactions and tax-advantaged accounts", () => {
+	it("leaves a PEA's lines out of income and expenses, where they counted, and keeps them in the count and the signed sum", async () => {
+		const joint = await openChecking({ name: "Courant totaux", openingDate: "2026-06-01" });
+		const pea = await openPea({ name: "PEA totaux", openingDate: "2026-06-01" });
+		const spent = transferAmount();
+		const fee = transferAmount();
+		const earned = transferAmount();
+		await add(joint.id, { amount: toMinorUnits(-spent), label: "Courses" });
+		await add(pea.id, { amount: toMinorUnits(-fee), label: "Frais de garde" });
+		await add(pea.id, { amount: toMinorUnits(earned), label: "Remboursement" });
+
+		await expect(sumTransactions(deps(), { accountIds: [joint.id, pea.id] })).resolves.toEqual([
+			{ currency: "EUR", amount: earned - fee - spent, income: 0, expense: -spent, count: 3 },
 		]);
 	});
 });

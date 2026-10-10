@@ -2,11 +2,12 @@ import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
 import type { SureInterval, SurePeriod } from "../domain/balances/sure-periods.ts";
 import type {
+	CashFlowBreakdown,
 	CashFlowCategory,
 	CashFlowLine,
 	CashFlowRow,
 	MonthBreakdown,
-	SubcategoryLine,
+	SubcategoryLines,
 } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
@@ -14,7 +15,7 @@ import type { BalancePeriod } from "../schemas/balances.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { Classification } from "@archant/data/account-types";
-import { classificationOf } from "@archant/data/account-types";
+import { classificationOf, isTaxAdvantaged } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
@@ -25,7 +26,7 @@ import type { Account } from "@archant/data/types";
 import { balanceChange, periodRange } from "../domain/balances/history.ts";
 import { seriesDates, seriesPointCount, surePeriodRange } from "../domain/balances/sure-periods.ts";
 import { medianOf } from "../domain/budgets/actuals.ts";
-import { cashFlowBreakdown, subcategoryLines } from "../domain/cash-flow.ts";
+import { grossCashFlow, netCashFlow } from "../domain/cash-flow.ts";
 import {
 	addDays,
 	addMonths,
@@ -95,6 +96,17 @@ async function reportedAccounts(deps: ServiceDeps) {
 		.map((row) => ({ id: row.id, name: row.name, currency: row.currency }));
 
 	return { currency, counted, leftOut };
+}
+
+/**
+ * The accounts every cash-flow report counts, as Sure's
+ * `IncomeStatement#eligible_accounts`: `reportedAccounts`' without the
+ * tax-advantaged ones, a PEA or an assurance-vie, whose money is set aside.
+ */
+async function cashFlowAccounts(deps: ServiceDeps) {
+	const { counted, ...rest } = await reportedAccounts(deps);
+
+	return { ...rest, counted: counted.filter((row) => !isTaxAdvantaged(row.subtype)) };
 }
 
 /**
@@ -253,7 +265,7 @@ export type CashFlow = {
 	to: IsoDate;
 	/** The reporting currency every amount below is in. */
 	currency: string;
-	/** Signed sums of their lines: a refund lowers « Dépenses », a negative total. */
+	/** Sums of the net view's lines: income positive, expenses negative. */
 	income: MinorUnits;
 	expenses: MinorUnits;
 	lines: { income: CashFlowLine[]; expense: CashFlowLine[] };
@@ -261,20 +273,23 @@ export type CashFlow = {
 	leftOut: LeftOutAccount[];
 };
 
-/** A month's cash flow beside the counted rows and the categories it was built from. */
+/** A month's cash flow beside its gross view, and the rows and categories it was built from. */
 type CashFlowWithRows = {
 	cashFlow: CashFlow;
+	gross: CashFlowBreakdown;
 	rows: CashFlowRow[];
 	categories: CashFlowCategory[];
 };
 
 /**
- * A calendar month's income and expenses by top-level category, over the
- * accounts net worth counts. The whole month counts, future-dated rows
- * included, so a line's drill-down covers the same dates. That list filters on
- * category and dates only, so it can also show excluded rows, rows of accounts
- * excluded from reports, which this report leaves out, and transfer sides that
- * kept a category; a deactivated account's rows are hidden from both.
+ * A calendar month's net view (AD-9), Sure's `net_category_totals` as its
+ * dashboard shows them: each top-level category on the side of its net, over
+ * the accounts net worth counts but the tax-advantaged ones. The whole month
+ * counts, future-dated rows included, so a line's drill-down covers the same
+ * dates. That list filters on category and dates only, so it can also show
+ * excluded rows, rows of accounts excluded from reports and of tax-advantaged
+ * accounts, which this report leaves out, and transfer sides that kept a
+ * category; a deactivated account's rows are hidden from both.
  */
 export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<CashFlow> {
 	return (await getCashFlowWithRows(deps, month)).cashFlow;
@@ -289,20 +304,23 @@ export async function getCashFlowWithRows(
 	month: IsoMonth,
 ): Promise<CashFlowWithRows> {
 	const { from, to } = monthRange(month);
-	const { currency, counted, leftOut } = await reportedAccounts(deps);
+	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByCategory(deps, { from, to, accountIds: counted.map((row) => row.id) }),
 		breakdownCategories(deps),
 	]);
+	const { income, expenses, lines } = grossCashFlow(rows, allCategories);
+	const gross = { income, expenses, lines };
 
 	return {
-		cashFlow: { month, from, to, currency, ...cashFlowBreakdown(rows, allCategories), leftOut },
+		cashFlow: { month, from, to, currency, ...netCashFlow(gross), leftOut },
+		gross,
 		rows,
 		categories: allCategories,
 	};
 }
 
-/** Every category as `cashFlowBreakdown` reads it. */
+/** Every category as `grossCashFlow` reads it. */
 async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[]> {
 	return deps.db
 		.select({
@@ -316,20 +334,20 @@ async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[
 		.from(categories);
 }
 
-/** One month of `getCashFlowHistory`: its breakdown beside the rows it counted. */
+/** One month of `getCashFlowHistory`: its two views beside the rows it counted. */
 type MonthHistory = MonthBreakdown & { rows: CashFlowRow[] };
 
 /**
- * `getCashFlow`'s breakdown of every month before `before`, over the same
- * accounts and from the same rows, read in one query, each beside its rows:
- * what the budget's suggestions, each category's median and the budget's
+ * `getCashFlow`'s gross and net views of every month before `before`, over
+ * the same accounts and from the same rows, read in one query, each beside
+ * its rows: what the budget's suggestions, each category's median and the budget's
  * rollover chain take.
  */
 export async function getCashFlowHistory(
 	deps: ServiceDeps,
 	before: IsoMonth,
 ): Promise<MonthHistory[]> {
-	const { counted } = await reportedAccounts(deps);
+	const { counted } = await cashFlowAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByMonth(deps, {
 			to: monthRange(shiftMonth(before, -1)).to,
@@ -347,9 +365,15 @@ export async function getCashFlowHistory(
 	return [...byMonth]
 		.toSorted(([a], [b]) => a.localeCompare(b))
 		.map(([month, monthRows]) => {
-			const { income, lines } = cashFlowBreakdown(monthRows, allCategories);
+			const gross = grossCashFlow(monthRows, allCategories);
+			const net = netCashFlow(gross);
 
-			return { month, income, lines, rows: monthRows };
+			return {
+				month,
+				gross: { income: gross.income, lines: gross.lines },
+				net: { expenses: net.expenses, lines: net.lines },
+				rows: monthRows,
+			};
 		});
 }
 
@@ -367,14 +391,14 @@ export type IncomeStatementQuery = {
 	comparePrevious: boolean;
 };
 
-/** Income and expenses between two days, both inclusive, as `CashFlow` signs them. */
+/** Gross income and expenses between two days, both inclusive, as `CashFlow` signs them. */
 export type PeriodTotals = { from: IsoDate; to: IsoDate; income: MinorUnits; expenses: MinorUnits };
 
-/** The breakdown Sure's statement gives without an account filter. */
+/** The gross breakdown Sure's statement gives without an account filter. */
 type StatementBreakdown = {
-	lines: CashFlow["lines"];
-	/** Each top-level line's sub-categories, by the line's category id. */
-	subcategories: ReadonlyMap<string, SubcategoryLine[]>;
+	lines: CashFlowBreakdown["lines"];
+	/** Each side's top-level lines' sub-categories, by the line's category id. */
+	subcategories: SubcategoryLines;
 	/**
 	 * Sure's `median_monthly_income`, `median_monthly_expenses` and
 	 * `avg_monthly_expenses`: over every month of the history up to this one
@@ -417,16 +441,17 @@ function sumOf(values: readonly MinorUnits[]): MinorUnits {
 
 /**
  * Sure's `get_income_statement` over any period, from the dashboard's
- * counted rows (AD-9): `getCashFlow`'s accounts, categories and signs, over
- * days rather than a month. An account outside those, inactive, excluded
- * from reports, in another currency or unknown, is refused, as Sure refuses
- * one its totals would silently report as zero.
+ * counted rows (AD-9) in the gross view, Sure's `IncomeStatement::Totals`:
+ * `getCashFlow`'s accounts and categories, over days rather than a month. An
+ * account outside those, inactive, excluded from reports, tax-advantaged, in
+ * another currency or unknown, is refused, as Sure refuses one its totals
+ * would silently report as zero.
  */
 export async function getIncomeStatement(
 	deps: ServiceDeps,
 	query: IncomeStatementQuery,
 ): Promise<IncomeStatement> {
-	const { currency, counted, leftOut } = await reportedAccounts(deps);
+	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
 	const countedIds = new Set(counted.map((row) => row.id));
 	const refused = (query.accountIds ?? []).flatMap((id, index) =>
 		countedIds.has(id) ? [] : [{ path: `accountIds.${index}`, code: "unknown_account" }],
@@ -435,7 +460,7 @@ export async function getIncomeStatement(
 	if (refused.length > 0) {
 		throw new AppError(
 			"VALIDATION_ERROR",
-			"Some accounts are not counted in income and expenses: inactive, excluded from reports, in another currency or unknown.",
+			"Some accounts are not counted in income and expenses: inactive, excluded from reports, tax-advantaged, in another currency or unknown.",
 			refused,
 		);
 	}
@@ -469,12 +494,11 @@ export async function getIncomeStatement(
 	const rowsIn = (range: DateRange) =>
 		dayRows.filter((row) => row.date >= range.from && row.date <= range.to);
 	const totalsOf = (range: DateRange): PeriodTotals => {
-		const { income, expenses } = cashFlowBreakdown(rowsIn(range), allCategories);
+		const { income, expenses } = grossCashFlow(rowsIn(range), allCategories);
 
 		return { ...range, income, expenses };
 	};
-	const rows = rowsIn(query);
-	const { income, expenses, lines } = cashFlowBreakdown(rows, allCategories);
+	const { income, expenses, lines, subcategories } = grossCashFlow(rowsIn(query), allCategories);
 
 	return {
 		from: query.from,
@@ -487,7 +511,7 @@ export async function getIncomeStatement(
 			accountIds === null
 				? {
 						lines,
-						subcategories: subcategoryLines(rows, allCategories),
+						subcategories,
 						...monthlyStatistics(
 							dayRows.filter((row) => row.date <= thisMonthEnd),
 							allCategories,
@@ -502,7 +526,7 @@ export async function getIncomeStatement(
 
 /**
  * Sure's family statistics: each calendar month's income and expenses, as
- * `cashFlowBreakdown` sums them, and their median and mean over the months
+ * `grossCashFlow` sums them, and their median and mean over the months
  * with a line on that side.
  */
 function monthlyStatistics(
@@ -515,9 +539,7 @@ function monthlyStatistics(
 		byMonth.set(row.date.slice(0, 7), [...(byMonth.get(row.date.slice(0, 7)) ?? []), row]);
 	}
 
-	const months = [...byMonth.values()].map((monthRows) =>
-		cashFlowBreakdown(monthRows, allCategories),
-	);
+	const months = [...byMonth.values()].map((monthRows) => grossCashFlow(monthRows, allCategories));
 	const incomes = months
 		.filter((month) => month.lines.income.length > 0)
 		.map((month) => month.income);

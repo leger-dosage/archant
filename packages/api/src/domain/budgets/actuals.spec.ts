@@ -1,9 +1,10 @@
-import type { CashFlowLine, MonthBreakdown } from "../cash-flow.ts";
+import type { CashFlowCategory, CashFlowLine, CashFlowRow, MonthBreakdown } from "../cash-flow.ts";
 
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
+import { grossCashFlow, netCashFlow } from "../cash-flow.ts";
 import { actualsOf, medianOf, spendingSegments, suggestions } from "./actuals.ts";
 
 const line = (categoryId: string | null, amount: number): CashFlowLine => ({
@@ -15,35 +16,55 @@ const line = (categoryId: string | null, amount: number): CashFlowLine => ({
 	share: null,
 });
 
-const breakdown = (expense: CashFlowLine[], income: CashFlowLine[] = []) => ({
-	income: toMinorUnits(income.reduce((sum, item) => sum + item.amount, 0)),
-	lines: { income, expense },
+const categories: CashFlowCategory[] = ["courses", "clothes", "loyer", "salaire"].map((id) => ({
+	id,
+	name: id,
+	kind: id === "salaire" ? "income" : "expense",
+	color: "#e99537",
+	icon: "tag",
+	parentId: null,
+}));
+
+const row = (categoryId: string | null, amount: number): CashFlowRow => ({
+	categoryId,
+	amount: toMinorUnits(amount),
 });
 
+/** A month's two views, as `getCashFlowHistory` builds them from its rows. */
+const views = (rows: CashFlowRow[]) => {
+	const gross = grossCashFlow(rows, categories);
+
+	return { gross, net: netCashFlow(gross) };
+};
+
 describe("actualsOf", () => {
-	it("adds what each expense category spent and the uncategorised outflow", () => {
-		const month = breakdown([line("courses", -12_000), line(null, -3_000), line("loyer", -80_000)]);
+	it("adds what each category spent net and the uncategorised outflow", () => {
+		const month = views([row("courses", -12_000), row(null, -3_000), row("loyer", -80_000)]);
 
 		expect(actualsOf(month).spending).toBe(95_000);
 	});
 
-	it("lets a refund lower its category, and a category refunded beyond spend nothing", () => {
+	it("lets a refund lower its category, and a category refunded beyond spend nothing, from the net view", () => {
 		// `clothes` nets +30,00: refunded more than it spent this month.
-		const month = breakdown([line("courses", -4_000), line("clothes", 3_000)]);
+		const month = views([row("courses", -4_000), row("clothes", -1_000), row("clothes", 4_000)]);
 
 		expect(actualsOf(month).spending).toBe(4_000);
 	});
 
-	it("takes the income side's total, never below zero", () => {
-		expect(actualsOf(breakdown([], [line("salaire", 250_000), line(null, 1_000)])).income).toBe(
-			251_000,
-		);
-		// An income category that only paid money back nets negative.
-		expect(actualsOf(breakdown([], [line("salaire", -5_000)])).income).toBe(0);
+	it("counts what an income-kind category spends, where it counted nowhere", () => {
+		const month = views([row("salaire", -5_000), row(null, 250_000)]);
+
+		expect(actualsOf(month)).toEqual({ spending: 5_000, income: 250_000 });
 	});
 
-	it("counts nothing in a month without a line", () => {
-		expect(actualsOf(breakdown([]))).toEqual({ spending: 0, income: 0 });
+	it("takes income from the gross view, a refund beyond spend included, where it netted it away", () => {
+		const month = views([row("courses", -1_000), row("courses", 3_000), row(null, 1_000)]);
+
+		expect(actualsOf(month)).toEqual({ spending: 0, income: 4_000 });
+	});
+
+	it("counts nothing in a month without a row", () => {
+		expect(actualsOf(views([]))).toEqual({ spending: 0, income: 0 });
 	});
 });
 
@@ -96,19 +117,18 @@ describe("medianOf", () => {
 	});
 });
 
-const month = (
-	value: string,
-	expense: CashFlowLine[],
-	income: CashFlowLine[] = [],
-): MonthBreakdown => ({ month: value, ...breakdown(expense, income) });
+const month = (value: string, rows: CashFlowRow[]): MonthBreakdown => ({
+	month: value,
+	...views(rows),
+});
 
 describe("suggestions", () => {
 	it("takes the median of the earlier months that spent, as Sure's estimated spending", () => {
 		const history = [
-			month("2026-04", [line("courses", -10_000)]),
-			month("2026-05", [line("courses", -30_000)]),
-			month("2026-06", [line("courses", -20_000)]),
-			month("2026-07", [line("courses", -40_000)]),
+			month("2026-04", [row("courses", -10_000)]),
+			month("2026-05", [row("courses", -30_000)]),
+			month("2026-06", [row("courses", -20_000)]),
+			month("2026-07", [row("courses", -40_000)]),
 		];
 
 		expect(suggestions(history, "2026-08", "2026-10").spending).toBe(25_000);
@@ -116,11 +136,11 @@ describe("suggestions", () => {
 
 	it("counts only the months before both the shown month and the current one", () => {
 		const history = [
-			month("2026-07", [line("courses", -10_000)]),
-			month("2026-08", [line("courses", -50_000)]),
-			month("2026-09", [line("courses", -90_000)]),
+			month("2026-07", [row("courses", -10_000)]),
+			month("2026-08", [row("courses", -50_000)]),
+			month("2026-09", [row("courses", -90_000)]),
 			// The current, partial month: never counted.
-			month("2026-10", [line("courses", -1_000)]),
+			month("2026-10", [row("courses", -1_000)]),
 		];
 
 		expect(suggestions(history, "2026-09", "2026-10").spending).toBe(30_000);
@@ -129,23 +149,24 @@ describe("suggestions", () => {
 
 	it("enters a month in a side's median only when it has a line on that side", () => {
 		const history = [
-			month("2026-06", [line("courses", -10_000)]),
-			month("2026-07", [], [line("salaire", 200_000)]),
-			month("2026-08", [line("courses", -30_000)], [line("salaire", 300_000)]),
-			// A refund alone still has a line: a month that spent nothing.
-			month("2026-09", [line("clothes", 3_000)]),
+			month("2026-06", [row("courses", -10_000)]),
+			month("2026-07", [row("salaire", 200_000)]),
+			month("2026-08", [row("courses", -30_000), row("salaire", 300_000)]),
+			// Gross lines on both sides: a month that spent nothing net and took
+			// its refund in as income.
+			month("2026-09", [row("clothes", -1_000), row("clothes", 1_000)]),
 		];
 
 		expect(suggestions(history, "2026-10", "2026-10")).toEqual({
 			spending: 10_000,
-			income: 250_000,
+			income: 200_000,
 		});
 	});
 
 	it("suggests nothing without an earlier month", () => {
 		expect(suggestions([], "2026-10", "2026-10")).toEqual({ spending: null, income: null });
-		expect(
-			suggestions([month("2026-10", [line("courses", -1_000)])], "2026-10", "2026-10"),
-		).toEqual({ spending: null, income: null });
+		expect(suggestions([month("2026-10", [row("courses", -1_000)])], "2026-10", "2026-10")).toEqual(
+			{ spending: null, income: null },
+		);
 	});
 });

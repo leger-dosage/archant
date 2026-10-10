@@ -130,7 +130,7 @@ test("a contribution matched as a transfer stays a line of the PEA, with nothing
 	await expect(sheet(page).getByRole("button", { name: "Convertir en ordre" })).toHaveCount(0);
 });
 
-test("a dividend line converted from its sheet counts once as the month's income, beside interest on cash", async ({
+test("a dividend line converted from its sheet becomes a trade, which the month's income never counts, as no PEA line does", async ({
 	page,
 	api,
 }) => {
@@ -173,10 +173,11 @@ test("a dividend line converted from its sheet counts once as the month's income
 		page.getByRole("row", { name: new RegExp(`^${formatTableDate("2024-10-15")} `, "u") }),
 	).toContainText("Dividende");
 
+	// Sure counts no trade and no tax-advantaged account: 15,34 € before Story 27.6.
 	await page.goto("/?month=2024-10");
 	await expect(
 		page
 			.getByRole("region", { name: "Flux d'octobre 2024" })
 			.getByRole("group", { name: "Revenus", exact: true }),
-	).toContainText(`+${euros(1534)}`);
+	).toContainText(euros(0));
 });

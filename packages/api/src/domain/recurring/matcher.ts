@@ -7,7 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import type { BillType } from "@archant/data/recurring";
 import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 
-import { direction } from "../cash-flow.ts";
+import { recurringDirection } from "../cash-flow.ts";
 import { addDays, daysBetween, maxDate } from "../dates.ts";
 import { normalizeLabel } from "../normalize-label.ts";
 import {
@@ -150,7 +150,7 @@ function identityMatches(series: MatchSeries, entry: MatchEntry, names: Set<stri
 		series.amount < 0 !== entry.amount < 0 ||
 		entry.excluded ||
 		entry.splitParent ||
-		direction(entry) === "transfer"
+		recurringDirection(entry) === "transfer"
 	) {
 		return false;
 	}

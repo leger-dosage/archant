@@ -479,13 +479,16 @@ test("a viewer reads every page with no control that writes, and the server refu
 			const occurrenceRead = page.waitForResponse((response) =>
 				/\/api\/recurring\/occurrences\/[^/]+$/u.test(response.url()),
 			);
+			// The bill due in two days: the cleaner pauses « boulangerie », last
+			// paid in 2022, and on its due day the pause takes its only open
+			// occurrence away, as Sure's `regenerate_future!`.
 			await page
 				.locator('[data-slot="inset-group"]')
 				.getByRole("link")
-				.filter({ hasText: `${prefix} boulangerie` })
+				.filter({ hasText: `${prefix} facture proche` })
 				.first()
 				.click();
-			const sheet = page.getByRole("dialog", { name: `${prefix} boulangerie` });
+			const sheet = page.getByRole("dialog", { name: `${prefix} facture proche` });
 			await expect(sheet).toBeVisible();
 			expect((await occurrenceRead).status()).toBe(200);
 			await expect(sheet).toContainText("restant");

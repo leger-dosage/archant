@@ -5,9 +5,10 @@ import type { TransactionFilter } from "./filter.ts";
 import type { Transaction, TransferColumns } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, not, notInArray, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
+import { TAX_ADVANTAGED_SUBTYPES } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -17,11 +18,10 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
-import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
-import { filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
+import { both, filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
 import { tagIdsByEntry, tagIdsOf } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -414,6 +414,16 @@ export async function listTransactions(
 	return { items, total: await countTransactions(deps, filter) };
 }
 
+/** The accounts of `TAX_ADVANTAGED_SUBTYPES`, whatever their state. */
+async function taxAdvantagedAccountIds(deps: ServiceDeps): Promise<string[]> {
+	const rows = await deps.db
+		.select({ id: accounts.id })
+		.from(accounts)
+		.where(inArray(accounts.subtype, [...TAX_ADVANTAGED_SUBTYPES]));
+
+	return rows.map((row) => row.id);
+}
+
 /** The sum of the amounts of the rows `condition` holds for, `0` when none does. */
 function sumWhere(condition: SQL) {
 	return sum(sql`case when ${condition} then ${entries.amount} else 0 end`).mapWith(Number);
@@ -424,8 +434,10 @@ function sumWhere(condition: SQL) {
  * transactions matching `filter`, one row per currency. Excluded transactions
  * count: the sums describe the rows the list shows, not a report. Income and
  * expenses are the direction filter's, so a transfer side counts in neither,
- * as in Sure's `Transaction::Search#totals`. Joins `transactions` only for the
- * text search and the category and merchant filters, as the count does.
+ * and leave out a tax-advantaged account's rows, as in Sure's
+ * `Transaction::Search#totals`; the count and the signed sum keep them, since
+ * the list pages on them. Joins `transactions` only for the text search and
+ * the category and merchant filters, as the count does.
  */
 export async function sumTransactions(
 	deps: ServiceDeps,
@@ -439,12 +451,15 @@ export async function sumTransactions(
 		return [];
 	}
 
+	const sheltered = await taxAdvantagedAccountIds(deps);
+	const reported = (direction: SQL) =>
+		sheltered.length === 0 ? direction : both(direction, notInArray(entries.accountId, sheltered));
 	const query = deps.db
 		.select({
 			currency: entries.currency,
 			amount: sum(entries.amount).mapWith(Number),
-			income: sumWhere(joinedTransferSide.directions.income),
-			expense: sumWhere(joinedTransferSide.directions.expense),
+			income: sumWhere(reported(joinedTransferSide.directions.income)),
+			expense: sumWhere(reported(joinedTransferSide.directions.expense)),
 			count: count(),
 		})
 		.from(entries)
@@ -519,45 +534,31 @@ export async function sumTransactionsByLabel(
 }
 
 /**
- * The rows every cash-flow query counts (AD-9): income and expense sides of
- * `accountIds` in the range, neither excluded nor pending. One definition, so
+ * The rows every cash-flow query counts (AD-9): transactions of `accountIds`
+ * in the range, neither excluded nor pending, and no transfer side but the
+ * outflow of a loan payment or an investment contribution. One definition, so
  * the month's breakdown and the budget's history never disagree; `null` when
- * nothing can match.
+ * nothing can match. No trade counts, as Sure's `trades_subquery_sql`.
  */
 function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
-	const where = filterCondition({ ...range, direction: ["income", "expense"] }, joinedTransferSide);
+	const where = filterCondition(range, joinedTransferSide);
 
 	return where === null
 		? null
-		: and(where, eq(transactions.excluded, false), eq(transactions.pending, false));
-}
-
-/**
- * The dividends and interest of `accountIds` in the range (AD-9): income,
- * uncategorised, since a trade carries no category, Sure having dropped it.
- * Sure counts no trade in its reports; Archant counts the money a security
- * or the broker pays, never a buy or a sale, which only moves money between
- * cash and holdings. `accountIds` is never empty here: `countedInCashFlow`
- * answers `null` first.
- */
-function incomeTradesIn(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
-	return and(
-		eq(entries.kind, "trade"),
-		isNotNull(trades.incomeKind),
-		inArray(entries.accountId, [...range.accountIds]),
-		range.from === undefined ? undefined : gte(entries.date, range.from),
-		lte(entries.date, range.to),
-	);
+		: and(
+				where,
+				not(joinedTransferSide.uncounted),
+				eq(transactions.excluded, false),
+				eq(transactions.pending, false),
+			);
 }
 
 /**
  * The counted transactions of `accountIds` between `from` and `to`, both
- * inclusive, summed per category and per sign, then the dividends and
- * interest of those accounts as uncategorised income: `countsInCashFlow`'s
- * SQL twin, tied to it by a parity test. Uncategorised rows keep their two signs
- * apart, since « Sans catégorie » splits into income and expenses; a
- * category's two signs meet again in `cashFlowBreakdown`. The currency is the
- * caller's to settle through `accountIds`.
+ * inclusive, summed per category and per sign: `countsInCashFlow`'s SQL
+ * twin, tied to it by a parity test. Each sign is a side of the gross view;
+ * `netCashFlow` meets them again. The currency is the caller's to settle
+ * through `accountIds`.
  */
 export async function cashFlowByCategory(
 	deps: ServiceDeps,
@@ -580,17 +581,8 @@ export async function cashFlowByCategory(
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.where(where)
 		.groupBy(transactions.categoryId, sql`${entries.amount} > 0`);
-	const income = await deps.db
-		.select({
-			categoryId: sql<null>`null`,
-			amount: sum(entries.amount).mapWith(Number),
-		})
-		.from(trades)
-		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(incomeTradesIn(range))
-		.groupBy(sql`${entries.amount} > 0`);
 
-	return [...rows, ...income].map(toRecord);
+	return rows.map(toRecord);
 }
 
 /** `cashFlowByCategory`'s rows, each group also keyed by `key`, an expression of the entry's date. */
@@ -605,27 +597,20 @@ async function cashFlowKeyed(
 		return [];
 	}
 
-	const select = {
-		key,
-		categoryId: transactions.categoryId,
-		amount: sum(entries.amount).mapWith(Number),
-	};
 	const rows = await deps.db
-		.select(select)
+		.select({
+			key,
+			categoryId: transactions.categoryId,
+			amount: sum(entries.amount).mapWith(Number),
+		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.where(where)
 		.groupBy(key, transactions.categoryId, sql`${entries.amount} > 0`);
-	const income = await deps.db
-		.select({ key, categoryId: sql<null>`null`, amount: sum(entries.amount).mapWith(Number) })
-		.from(trades)
-		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(incomeTradesIn(range))
-		.groupBy(key, sql`${entries.amount} > 0`);
 
-	return [...rows, ...income].map(toRecord);
+	return rows.map(toRecord);
 }
 
 /**

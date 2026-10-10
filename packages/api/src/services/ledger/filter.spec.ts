@@ -31,7 +31,7 @@ const sortedIds = (page: { items: { id: string }[] }) =>
 	page.items.map((item) => item.id).toSorted();
 
 describe("the direction filter", () => {
-	it("partitions every case as `direction` does", async () => {
+	it("partitions every case as `direction` does, a loan payment's and a contribution's outflow under « Transfert » where they were expenses", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const mortgage = await openLoan();
 		const pea = await openPea();
@@ -50,8 +50,10 @@ describe("the direction filter", () => {
 		const investment = await contributionOf(joint.id, pea.id);
 		const expected = {
 			income: [income],
-			expense: [expense, zero, loan.outflow, investment.outflow],
+			expense: [expense, zero],
 			transfer: [
+				loan.outflow,
+				investment.outflow,
 				move.outflow,
 				move.inflow,
 				cardPayment.outflow,
@@ -81,7 +83,7 @@ describe("the direction filter", () => {
 		expect(moves && sortedIds(moves)).toEqual(byRule("transfer"));
 		await expect(
 			listTransactions(deps(), { accountIds, direction: ["income", "expense"] }, firstPage),
-		).resolves.toMatchObject({ total: 5 });
+		).resolves.toMatchObject({ total: 3 });
 		await expect(
 			listTransactions(deps(), { accountIds, direction: [] }, firstPage),
 		).resolves.toEqual({ items: [], total: 0 });
@@ -118,14 +120,14 @@ describe("transfer sides and categories", () => {
 		expect(page.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
-	it("lists the outflow of a loan payment under « Sans catégorie », as the dashboard counts it", async () => {
+	it("lists the outflow of a loan payment under « Sans catégorie », as the dashboard counts it, and under « Transfert » for the « Sens » filter", async () => {
 		const { checking: joint } = await openHousehold();
 		const mortgage = await openLoan();
 		const { outflow, inflow } = await loanPaymentOf(joint.id, mortgage.id);
 
 		const page = await listTransactions(
 			deps(),
-			{ accountIds: [joint.id, mortgage.id], uncategorised: true, direction: ["expense"] },
+			{ accountIds: [joint.id, mortgage.id], uncategorised: true, direction: ["transfer"] },
 			firstPage,
 		);
 		const all = await listTransactions(
@@ -191,7 +193,8 @@ describe("transfer sides and categories", () => {
 			Promise.resolve([]),
 		);
 
-		expect(results.map(({ counted }) => counted)).toEqual([2, 3]);
+		// Every transfer side, the loan payment's two included.
+		expect(results.map(({ counted }) => counted)).toEqual([2, 4]);
 		expect(results.map(({ matched }) => matched)).toEqual(results.map(({ counted }) => counted));
 	});
 
