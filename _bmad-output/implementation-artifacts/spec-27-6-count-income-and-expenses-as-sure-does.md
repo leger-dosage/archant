@@ -94,7 +94,7 @@ context:
 - Fixtures whose uncategorised income would now net an uncategorised expense away put that income in a category: `services/export.spec.ts`, `routes/budgets.spec.ts`, `e2e/budgets.spec.ts`.
 - The budget's « Sans catégorie » sheet lists and links without `direction`, as Sure's `BudgetCategoriesController#show`, since its envelope nets both signs.
 - `get_income_statement`'s description no longer says it counts « as the dashboard ».
-- `e2e/viewer.spec.ts:58` fails on `main` at the baseline as well (CI run of 2026-10-10 on `e60e93e`): out of this story.
+- `e2e/viewer.spec.ts:58` failed on `main` from 2026-10-10: the cleaner pauses its « boulangerie » series, last paid in 2022, and on that series' due day the pause removes its only open occurrence, as Sure's `regenerate_future!`, so the bills page had no link to open. The occurrence sheet step now opens the active « facture proche » bill.
 
 ## Spec Change Log
 
