@@ -6,14 +6,18 @@ import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
 import { addDays } from "../dates.ts";
-import { marketValue } from "../trades.ts";
+import { MICROS_SQUARED, marketValue, minorUnitsPerMajor } from "../trades.ts";
 
-/** A trade as holdings read it: its signed quantity, positive for a buy, and its price. */
+/**
+ * A trade as holdings read it: its signed quantity, positive for a buy, its
+ * price, and its fee in minor units of the account's currency.
+ */
 export type HoldingTrade = {
 	date: IsoDate;
 	securityId: string;
 	quantity: Micros;
 	price: Micros;
+	fee: MinorUnits;
 };
 
 /** A `security_prices` row, provider or typed alike. */
@@ -45,7 +49,10 @@ export type DailyHolding = {
 	price: Micros;
 	/** `quantity × price`, rounded half to even to the minor unit (AD-22). */
 	amount: MinorUnits;
-	/** Weighted average price of the buys, fees out; `null` while nothing is held. */
+	/**
+	 * Weighted average price of the buys, each buy's fee in its cost, a
+	 * sale's fee out; `null` while nothing is held.
+	 */
 	costBasis: Micros | null;
 };
 
@@ -58,22 +65,25 @@ type Position = {
 };
 
 /**
- * Sure's `CostBasisTracker`: a buy moves the weighted average, rounded half
- * to even to the millionth, its fee left out; a sale leaves it; nothing held
- * clears it, so the next buy starts over from its own price, as Sure's
- * `reset`.
+ * Sure's `CostBasisTracker`: a buy moves the weighted average, its cost
+ * `quantity × price + fee` as Sure's `effective_trade_price`, the fee joining
+ * that cost before the buy's one rounding, half to even, to the millionth;
+ * a sale leaves it, its fee out; nothing held clears it, so the next buy
+ * starts over from its own cost, as Sure's `reset`.
  */
-function apply(position: Position, trade: HoldingTrade): void {
+function apply(position: Position, trade: HoldingTrade, feeScale: bigint): void {
 	const quantity = BigInt(trade.quantity);
 
 	if (quantity > 0n) {
-		position.costBasis =
-			position.costBasis === null
-				? BigInt(trade.price)
-				: divideHalfEven(
-						position.quantity * position.costBasis + quantity * BigInt(trade.price),
-						position.quantity + quantity,
-					);
+		// A short position, a sale before the buy that covers it, has no cost.
+		const held = position.costBasis === null ? 0n : position.quantity;
+
+		position.costBasis = divideHalfEven(
+			held * (position.costBasis ?? 0n) +
+				quantity * BigInt(trade.price) +
+				BigInt(trade.fee) * feeScale,
+			held + quantity,
+		);
 	}
 
 	position.quantity += quantity;
@@ -87,7 +97,7 @@ function apply(position: Position, trade: HoldingTrade): void {
 }
 
 /** Applies `trade` to its security's position, opening one on its first trade. */
-function applyTo(positions: Map<string, Position>, trade: HoldingTrade): void {
+function applyTo(positions: Map<string, Position>, trade: HoldingTrade, feeScale: bigint): void {
 	const position = positions.get(trade.securityId) ?? {
 		quantity: 0n,
 		costBasis: null,
@@ -95,7 +105,7 @@ function applyTo(positions: Map<string, Position>, trade: HoldingTrade): void {
 		pricedOn: trade.date,
 	};
 
-	apply(position, trade);
+	apply(position, trade, feeScale);
 	positions.set(trade.securityId, position);
 }
 
@@ -110,11 +120,14 @@ function applyTo(positions: Map<string, Position>, trade: HoldingTrade): void {
  */
 export function forwardHoldings(input: HoldingsInput): DailyHolding[] {
 	const positions = new Map<string, Position>();
+	// A fee in minor units of the account's currency, as millionths squared,
+	// the unit of `quantity × price`.
+	const feeScale = MICROS_SQUARED / minorUnitsPerMajor(input.currency);
 	const tradesOn = new Map<IsoDate, HoldingTrade[]>();
 
 	for (const trade of input.trades) {
 		if (trade.date < input.from) {
-			applyTo(positions, trade);
+			applyTo(positions, trade, feeScale);
 		} else {
 			tradesOn.set(trade.date, [...(tradesOn.get(trade.date) ?? []), trade]);
 		}
@@ -133,7 +146,7 @@ export function forwardHoldings(input: HoldingsInput): DailyHolding[] {
 
 	for (let date = input.from; date <= input.until; date = addDays(date, 1)) {
 		for (const trade of tradesOn.get(date) ?? []) {
-			applyTo(positions, trade);
+			applyTo(positions, trade, feeScale);
 		}
 
 		for (const [securityId, position] of positions) {

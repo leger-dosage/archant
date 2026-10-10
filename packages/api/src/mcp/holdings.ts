@@ -49,7 +49,7 @@ export const getHoldings = defineTool({
 					.string()
 					.nullable()
 					.describe(
-						"The average cost (« PRU ») per unit, fees out, a decimal string in the holding's currency; null when unknown.",
+						"The average cost (« PRU ») per unit, each buy's fee in it, a decimal string in the holding's currency; null when unknown.",
 					),
 				account: namedRef,
 				date: z.string().describe("The account's holdings day, today."),

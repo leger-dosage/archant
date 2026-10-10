@@ -58,7 +58,12 @@ export function typeOf(trade: { quantity: Micros; incomeKind: IncomeKind | null 
 }
 
 /** Millionths in one unit, squared: a quantity times a price. */
-const MICROS_SQUARED = 10n ** 12n;
+export const MICROS_SQUARED = 10n ** 12n;
+
+/** Minor units in one major unit of `currency`: two decimals outside ISO 4217. */
+export function minorUnitsPerMajor(currency: string): bigint {
+	return 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
+}
 
 /**
  * `quantity × price` in minor units of `currency` (AD-22): the product
@@ -66,9 +71,10 @@ const MICROS_SQUARED = 10n ** 12n;
  * outside ISO 4217 has two decimals, as `toDecimalString` writes it.
  */
 export function marketValue(quantity: Micros, price: Micros, currency: string): bigint {
-	const minor = 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
-
-	return divideHalfEven(BigInt(quantity) * BigInt(price) * minor, MICROS_SQUARED);
+	return divideHalfEven(
+		BigInt(quantity) * BigInt(price) * minorUnitsPerMajor(currency),
+		MICROS_SQUARED,
+	);
 }
 
 /**

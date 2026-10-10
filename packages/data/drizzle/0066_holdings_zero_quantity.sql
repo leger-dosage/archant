@@ -1,0 +1,1 @@
+CREATE INDEX `holdings_zero_quantity` ON `holdings` (`account_id`,`security_id`,`date`) WHERE quantity = 0;

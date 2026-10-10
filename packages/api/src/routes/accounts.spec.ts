@@ -2066,10 +2066,10 @@ describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
 					price: "612.4",
 					priceDate: "2026-09-10",
 					amount: 612_400,
-					costBasis: "612.4",
+					costBasis: "612.65",
 					costBasisLocked: false,
-					gain: 0,
-					gainPercent: "0",
+					gain: -250,
+					gainPercent: "-0.040806",
 					weight: "24.49845",
 				},
 			],
@@ -2113,7 +2113,7 @@ describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
 
 		expect(unlocked.status).toBe(200);
 		await expect(unlocked.json()).resolves.toMatchObject({
-			data: { costBasis: "612.4", costBasisLocked: false },
+			data: { costBasis: "612.65", costBasisLocked: false },
 		});
 	});
 

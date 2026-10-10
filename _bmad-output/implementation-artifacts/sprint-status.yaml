@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-09-2026 16:43
+last_updated: 10-09-2026 21:28
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -237,7 +237,7 @@ development_status:
   27-2-a-paused-bill-is-never-overdue: done
   27-3-bill-totals-order-and-amounts-as-sure-shows-them: done
   27-4-a-recurring-series-is-never-deleted-by-detection: done
-  27-5-a-purchases-fee-in-its-cost-basis: backlog
+  27-5-a-purchases-fee-in-its-cost-basis: done
   27-6-count-income-and-expenses-as-sure-does: backlog
   27-7-one-time-transactions-and-sures-monthly-medians: backlog
   27-8-a-two-factor-code-works-once: backlog

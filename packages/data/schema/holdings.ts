@@ -2,7 +2,7 @@ import type { Micros } from "../micros.ts";
 import type { MinorUnits } from "../money.ts";
 
 import { sql } from "drizzle-orm";
-import { check, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "./accounts.ts";
 import { securities } from "./securities.ts";
@@ -35,8 +35,9 @@ export const holdings = sqliteTable(
 		/** `quantity × price`, in minor units of the account's currency. */
 		amount: integer("amount").$type<MinorUnits>().notNull(),
 		/**
-		 * The weighted average price of the buys, fees out, in millionths per
-		 * unit, as Sure's `CostBasisTracker`; `null` while nothing is held.
+		 * The weighted average price of the buys, each buy's fee in its cost, a
+		 * sale's fee out, in millionths per unit, as Sure's `CostBasisTracker`;
+		 * `null` while nothing is held.
 		 */
 		costBasis: integer("cost_basis").$type<Micros>(),
 	},
@@ -44,6 +45,11 @@ export const holdings = sqliteTable(
 		// By account then day: the balance recompute reads and rewrites an
 		// account's days from a date on, the export pages along it.
 		primaryKey({ columns: [table.accountId, table.date, table.securityId] }),
+		// A position's last day at zero, which ends a cost basis lock: the
+		// days at zero are few, so the lock read never walks every holding.
+		index("holdings_zero_quantity")
+			.on(table.accountId, table.securityId, table.date)
+			.where(sql`quantity = 0`),
 		check("holdings_quantity_check", sql`${table.quantity} >= 0`),
 		check("holdings_price_check", sql`${table.price} >= 0`),
 		check("holdings_amount_check", sql`${table.amount} >= 0`),

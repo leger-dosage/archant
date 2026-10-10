@@ -5,9 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { securities, securityPrices } from "@archant/data/schema/securities";
+import { settings } from "@archant/data/schema/settings";
 
 import {
 	deps,
@@ -22,7 +24,13 @@ import {
 } from "../../testing/ledger.ts";
 import { deleteAccount } from "./accounts.ts";
 import * as ledgerBalances from "./balances.ts";
-import { currentHoldings, lockCostBasis, revalueHoldings, unlockCostBasis } from "./holdings.ts";
+import {
+	currentHoldings,
+	lockCostBasis,
+	recomputeFeeCostBases,
+	revalueHoldings,
+	unlockCostBasis,
+} from "./holdings.ts";
 import { deleteTrade, recordTrade, updateTrade } from "./trades.ts";
 
 /** A buy or a sale, as the helpers below build them. */
@@ -124,8 +132,8 @@ describe("holdings in the balance recompute", () => {
 
 		const rows = await holdingsOf(pea.id);
 		expect(rows).toHaveLength(12);
-		expect(rows[0]).toBe("2026-09-10 10000000 612400000 612400 612400000");
-		expect(rows.at(-1)).toBe("2026-09-21 10000000 612400000 612400 612400000");
+		expect(rows[0]).toBe("2026-09-10 10000000 612400000 612400 612650000");
+		expect(rows.at(-1)).toBe("2026-09-21 10000000 612400000 612400 612650000");
 		await expect(dayOf(pea.id, "2026-09-09")).resolves.toEqual({
 			balance: 2_500_000,
 			cash: 2_500_000,
@@ -144,7 +152,7 @@ describe("holdings in the balance recompute", () => {
 		await record(pea.id, buy(securityId));
 
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-10 10000000 640000000 640000 612400000",
+			"2026-09-10 10000000 640000000 640000 612650000",
 		);
 		await expect(dayOf(pea.id, "2026-09-10")).resolves.toEqual({
 			balance: 1_887_350 + 640_000,
@@ -230,16 +238,16 @@ describe("holdings in the balance recompute", () => {
 		const id = await record(pea.id, buy(securityId, { date: "2026-09-10" }));
 
 		const rows = await holdingsOf(pea.id);
-		expect(rows[1]).toBe("2026-09-06 10000000 1 612400 612400000");
-		expect(rows[5]).toBe("2026-09-10 20000000 612400000 1224800 612400000");
+		expect(rows[1]).toBe("2026-09-06 10000000 1 612400 612650000");
+		expect(rows[5]).toBe("2026-09-10 20000000 612400000 1224800 612650000");
 
 		await updateTrade(deps(), id, { date: "2026-09-08" }, user);
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-08 20000000 612400000 1224800 612400000",
+			"2026-09-08 20000000 612400000 1224800 612650000",
 		);
 		await deleteTrade(deps(), id, user);
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-08 10000000 612400000 612400 612400000",
+			"2026-09-08 10000000 612400000 612400 612650000",
 		);
 	});
 
@@ -281,6 +289,62 @@ describe("holdings in the balance recompute", () => {
 	});
 });
 
+describe("recomputeFeeCostBases", () => {
+	it("rolls its claim back with a failed recompute, so the next start tries again", async () => {
+		const pea = await openPea();
+		await record(pea.id, buy(await newSecurity()));
+		vi.spyOn(ledgerBalances, "recomputeBalances").mockRejectedValueOnce(new Error("disk full"));
+
+		await expect(recomputeFeeCostBases(deps())).rejects.toThrow("disk full");
+
+		await expect(
+			temp.db.select().from(settings).where(eq(settings.key, "fee_cost_basis_recomputed_at")).get(),
+		).resolves.toBeUndefined();
+	});
+
+	it("puts each buy's fee in a stored cost basis once, every balance left as it was", async () => {
+		const pea = await openPea();
+		const checking = await openChecking();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		// As a release before Story 27.5 stored it: the fee out.
+		await temp.db
+			.update(holdings)
+			.set({ costBasis: toMicros(612_400_000) })
+			.where(eq(holdings.accountId, pea.id));
+		// This account's alone: another test's account ends on an earlier
+		// today, which the recompute extends.
+		const balancesOf = () =>
+			temp.db
+				.select()
+				.from(balances)
+				.where(eq(balances.accountId, pea.id))
+				.orderBy(asc(balances.date));
+		const before = await balancesOf();
+		// The file's other tests opened investment accounts too, all recomputed.
+		const investments = await temp.db
+			.select({ id: accounts.id })
+			.from(accounts)
+			.where(eq(accounts.type, "investment"));
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await expect(recomputeFeeCostBases(deps())).resolves.toBe(investments.length);
+
+		const calls = recompute.mock.calls.map(([, account, from]) => [account.id, from]);
+		expect(calls).toHaveLength(investments.length);
+		expect(calls).toContainEqual([pea.id, "2026-09-01"]);
+		expect(calls.flat()).not.toContain(checking.id);
+		const rows = await holdingsOf(pea.id);
+		expect(rows).toHaveLength(12);
+		expect(rows.every((row) => row.endsWith(" 612650000"))).toBe(true);
+		await expect(balancesOf()).resolves.toEqual(before);
+
+		// Claimed: a second start recomputes nothing.
+		await expect(recomputeFeeCostBases(deps())).resolves.toBe(0);
+		expect(recompute).toHaveBeenCalledTimes(investments.length);
+	});
+});
+
 describe("revalueHoldings", () => {
 	it("values the holdings at an imported price, carried over the days without one", async () => {
 		const pea = await openPea();
@@ -292,9 +356,9 @@ describe("revalueHoldings", () => {
 
 		const rows = await holdingsOf(pea.id);
 		expect(rows.slice(0, 3)).toEqual([
-			"2026-09-10 10000000 612400000 612400 612400000",
-			"2026-09-11 10000000 650000000 650000 612400000",
-			"2026-09-12 10000000 650000000 650000 612400000",
+			"2026-09-10 10000000 612400000 612400 612650000",
+			"2026-09-11 10000000 650000000 650000 612650000",
+			"2026-09-12 10000000 650000000 650000 612650000",
 		]);
 		await expect(dayOf(pea.id, "2026-09-11")).resolves.toEqual({
 			balance: 2_537_350,
@@ -305,10 +369,10 @@ describe("revalueHoldings", () => {
 		await storePrice(securityId, "2026-09-14", 660_000_000);
 		await revalue(securityId, "2026-09-14");
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-13 10000000 650000000 650000 612400000",
+			"2026-09-13 10000000 650000000 650000 612650000",
 		);
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-15 10000000 660000000 660000 612400000",
+			"2026-09-15 10000000 660000000 660000 612650000",
 		);
 	});
 
@@ -324,7 +388,7 @@ describe("revalueHoldings", () => {
 		await snapshot(pea.id, "2026-09-14", 2_600_000);
 
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-14 10000000 650000000 650000 612400000",
+			"2026-09-14 10000000 650000000 650000 612650000",
 		);
 		await expect(dayOf(pea.id, "2026-09-14")).resolves.toEqual({
 			balance: 2_600_000,
@@ -407,7 +471,7 @@ describe("currentHoldings", () => {
 					quantity: 10_000_000,
 					price: 650_000_000,
 					amount: 650_000,
-					costBasis: 612_400_000,
+					costBasis: 612_650_000,
 					costBasisLocked: false,
 					priceDate: "2026-09-11",
 				},
@@ -535,7 +599,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await unlockCostBasis(deps(), pea.id, securityId, user);
 
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
-			holdings: [{ costBasis: 612_400_000, costBasisLocked: false }],
+			holdings: [{ costBasis: 612_650_000, costBasisLocked: false }],
 		});
 		expect(recompute).not.toHaveBeenCalled();
 		// Unlocking what is not locked changes nothing.
@@ -560,7 +624,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		});
 		// The holdings still carry the calculated one.
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-21 20000000 710000000 1420000 656200000",
+			"2026-09-21 20000000 710000000 1420000 656450000",
 		);
 	});
 
@@ -588,7 +652,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 
 		const held = (await currentHoldings(temp.db, pea.id, "2026-09-21")).holdings;
 		expect(held.find((holding) => holding.security.id === securityId)).toMatchObject({
-			costBasis: 700_000_000,
+			costBasis: 700_250_000,
 			costBasisLocked: false,
 		});
 		expect(held.find((holding) => holding.security.id === other)).toMatchObject({
