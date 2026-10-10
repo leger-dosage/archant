@@ -111,7 +111,7 @@ async function line(accountId: string, date: string, amount: string, categoryId?
 
 /**
  * Four earlier months spending 100, 300, 200 and 400, two earning 2 000 and
- * 3 000, then September: groceries, an uncategorised outflow, a refund
+ * 3 000, then September, the current month: groceries, an uncategorised outflow, a refund
  * beyond what « Vêtements » spent, and a salary, in a category of its own so
  * it never nets the uncategorised outflow away.
  */
@@ -172,8 +172,9 @@ describe("GET /api/budgets/:month", () => {
 					percentSpent: 100,
 					status: "over",
 					section: "over",
-					median: 25_000,
-					average: 25_000,
+					// May to September, the current month included: 100, 300, 200, 400 and 60.
+					median: 20_000,
+					average: 21_200,
 				},
 				{
 					categoryId: clothes,
@@ -204,11 +205,14 @@ describe("GET /api/budgets/:month", () => {
 				percentSpent: 100,
 				status: "over",
 				section: "over",
-				median: null,
-				average: null,
+				// September's 15,00, where only earlier months counted.
+				median: 1_500,
+				average: 1_500,
 			},
 			allocated: 0,
-			suggested: { spending: 25_000, income: 250_000 },
+			// Sure's `FamilyStats`, September included: spending 100, 300, 200,
+			// 400 and 75; income 2 000, 3 000 and 1 030, where it was 25 000 and 250 000.
+			suggested: { spending: 20_000, income: 200_000 },
 			previousMonth: "2026-08",
 			nextMonth: "2026-10",
 			bounds: { from: "2024-09", to: "2028-09" },
@@ -218,26 +222,25 @@ describe("GET /api/budgets/:month", () => {
 		await expect(amountRows()).resolves.toEqual([]);
 	});
 
-	it("suggests from the months before the shown one, or before the current one", async () => {
+	it("suggests the same medians whatever month is shown, as Sure's", async () => {
 		await household();
 
 		await expect(budgetOf("2026-07")).resolves.toMatchObject({
 			suggested: { spending: 20_000, income: 200_000 },
 		});
-		// A later month takes the same medians as the current one: never a partial month.
 		await expect(budgetOf("2027-02")).resolves.toMatchObject({
-			suggested: { spending: 25_000, income: 250_000 },
+			suggested: { spending: 20_000, income: 200_000 },
 			actual: { spending: 0, income: 0 },
 			segments: [],
 		});
 	});
 
-	it("suggests nothing without a counted line before the month", async () => {
+	it("suggests from the current month's lines, where it suggested nothing without an earlier one", async () => {
 		const account = await openOwn({ openingDate: "2026-09-01" });
 		await line(account.id, "2026-09-05", "-60,00");
 
 		await expect(budgetOf("2026-09")).resolves.toMatchObject({
-			suggested: { spending: null, income: null },
+			suggested: { spending: 6_000, income: null },
 			actual: { spending: 6_000, income: 0 },
 		});
 	});
@@ -379,7 +382,21 @@ describe("a budget's history and a PEA", () => {
 
 		const budget = await budgetOf("2026-09");
 
-		expect(budget.suggested).toEqual({ spending: 25_000, income: 250_000 });
+		expect(budget.suggested).toEqual({ spending: 20_000, income: 200_000 });
+	});
+});
+
+describe("a budget and a one-time transaction", () => {
+	it("leaves a one-time 900,00 € out of the actuals and the medians, where it made September 975,00 €", async () => {
+		const { account, courses } = await household();
+		const oneTime = await line(account.id, "2026-09-12", "-900,00", courses);
+		await sendOwn("PATCH", `/api/transactions/${oneTime}`, { oneTime: true });
+
+		const budget = await budgetOf("2026-09");
+
+		expect(budget.actual).toEqual({ spending: 7_500, income: 103_000 });
+		expect(budget.suggested).toEqual({ spending: 20_000, income: 200_000 });
+		expect(lineOf(budget, courses)).toMatchObject({ spent: 6_000, median: 20_000 });
 	});
 });
 
@@ -646,7 +663,7 @@ describe("PUT /api/budgets/:month/categories/:categoryId", () => {
 		});
 	});
 
-	it("gives each category the median and average of the months it has a line in", async () => {
+	it("gives each category the median and average of its own lines' months, the current one included, never its children's", async () => {
 		const { account, parent, works } = await house();
 		await line(account.id, "2026-05-10", "-100,00", works);
 		await line(account.id, "2026-06-10", "-300,00", parent);
@@ -655,7 +672,8 @@ describe("PUT /api/budgets/:month/categories/:categoryId", () => {
 
 		const budget = await budgetOf("2026-09");
 
-		expect(lineOf(budget, parent)).toMatchObject({ median: 10_000, average: 15_000 });
+		// 300, 50 and 900, where its child's 100 in May counted and September did not.
+		expect(lineOf(budget, parent)).toMatchObject({ median: 30_000, average: 41_667 });
 		expect(lineOf(budget, works)).toMatchObject({ median: 10_000, average: 10_000 });
 	});
 

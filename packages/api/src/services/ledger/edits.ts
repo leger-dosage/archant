@@ -49,6 +49,7 @@ import {
 	rejectedOf,
 	transferOf,
 } from "./shared.ts";
+import { clearOneTime, sidesOf } from "./transfers.ts";
 
 /** What only `services/ledger/splits.ts` changes on a split's rows (AD-20). */
 const SPLIT_FIELDS: ReadonlySet<LockableField> = new Set(["date", "amount", "excluded"]);
@@ -120,6 +121,14 @@ export async function updateTransaction(
 				return { status: "rejected", reason };
 			}
 
+			// Sure's `one_time` kind, written apart: no other origin sets it, so it takes no lock.
+			if (patch.oneTime !== undefined && patch.oneTime !== current.oneTime) {
+				await tx
+					.update(transactions)
+					.set({ oneTime: patch.oneTime })
+					.where(eq(transactions.entryId, entryId));
+			}
+
 			if (changed.length === 0) {
 				return { status: "updated" };
 			}
@@ -140,7 +149,18 @@ export async function updateTransaction(
 			// The two sides no longer cancel out, so they stop being one movement.
 			// A new date keeps the transfer, as in Sure: the money still moved.
 			if (changed.includes("amount")) {
-				await tx.delete(transfers).where(transferOf([entryId]));
+				const deleted = await tx
+					.delete(transfers)
+					.where(transferOf([entryId]))
+					.returning({
+						outflowTransactionId: transfers.outflowTransactionId,
+						inflowTransactionId: transfers.inflowTransactionId,
+					});
+				// Sure's `Transfer#destroy!` resets both kinds; a flag this very edit sets stands.
+				await clearOneTime(
+					tx,
+					deleted.flatMap(sidesOf).filter((id) => id !== entryId || patch.oneTime !== true),
+				);
 			}
 
 			await tx

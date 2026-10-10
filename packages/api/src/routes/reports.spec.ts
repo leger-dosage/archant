@@ -350,6 +350,23 @@ describe("GET /api/reports/cash-flow", () => {
 		});
 	});
 
+	it("leaves a one-time −900 € out of « Dépenses », where it counted, and the list's total keeps it", async () => {
+		const account = await openOwn(august);
+		const appliances = await ownCategory("Électroménager");
+		const oneTime = await spend(account.id, "-900,00", appliances);
+		await sendOwn("PATCH", `/api/transactions/${oneTime}`, { oneTime: true });
+		await spend(account.id, "-12,00");
+
+		const data = await cashFlowOf("2026-09");
+		const list = await listed(`?account=${account.id}`);
+
+		expect(data).toMatchObject({
+			expenses: -1200,
+			lines: { income: [], expense: [line(null, null, -1200)] },
+		});
+		expect(list).toMatchObject({ total: 2, sum: { amount: -91_200, expense: -91_200 } });
+	});
+
 	it("counts a loan payment's outflow in « Dépenses », its loan side in neither", async () => {
 		const checking = await openOwn({ ...august, name: "Compte courant" });
 		const loan = await openOwn({ ...august, ...mortgage });

@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `one_time` integer DEFAULT false NOT NULL;

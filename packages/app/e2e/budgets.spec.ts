@@ -2,8 +2,10 @@ import type { Page } from "@playwright/test";
 
 import { z } from "zod";
 
+import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
 
+import { amountToText } from "../src/lib/amount-sign.ts";
 import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 
@@ -12,10 +14,10 @@ import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
 // its months, of 2023, February to May 2024 and September to December 2024,
 // which no other test writes to: the actuals are exact. The 2023-11 test runs
 // before the 2023-05 one sets that month up, so it meets no earlier month set
-// up and offers « Définir le budget », not a copy. The medians take every
-// earlier month, so they stay exact only while no other test records a line
-// in euros before November 2023; a category's own medians, of a category no
-// other test uses, always are. December 2023 is this file's too.
+// up and offers « Définir le budget », not a copy. The suggestions are Sure's
+// household medians over the whole history, which every test writes to, so a
+// test reads them from the API; a category's own medians, of a category no
+// other test uses, are exact. December 2023 is this file's too.
 
 const heading = (page: Page, month: string) =>
 	page.getByRole("heading", { level: 1, name: `Budget ${ofMonth(month)}` });
@@ -35,6 +37,16 @@ const slices = (page: Page) => donut(page).locator(".recharts-pie-sector path");
 const UNUSED = "var(--inset)";
 
 const budgetBody = z.object({ data: z.object({ bounds: z.object({ from: z.string() }) }) });
+
+const suggestedBody = z.object({
+	data: z.object({
+		suggested: z.object({ spending: z.number().nullable(), income: z.number().nullable() }),
+	}),
+});
+
+/** A suggestion as « Suggérer » types it: empty without one. */
+const typedSuggestion = (amount: number | null) =>
+	amount === null ? "" : amountToText(toMinorUnits(amount), "EUR");
 
 test("/budgets opens this month, and the arrows and the picker stop at the bounds", async ({
 	page,
@@ -96,6 +108,7 @@ test("/budgets opens this month, and the arrows and the picker stop at the bound
 test("a month is set up with « Suggérer », then shows its donut and its summary", async ({
 	page,
 	api,
+	request,
 }) => {
 	const account = await api.openAccount({ openingBalance: "0", openingDate: "2023-06-01" });
 	const groceries = await api.createCategory({ name: uniqueName("Courses") });
@@ -151,10 +164,16 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	await page.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText("Ce champ est obligatoire.")).toHaveCount(2);
 
-	// The medians of July to October: 100, 300, 200, 400, and 2 000, 3 000.
+	// Sure's household medians, whatever month is shown: other tests' lines count too.
+	const response = await request.get("/api/budgets/2023-11");
+	const { suggested } = suggestedBody.parse(await response.json()).data;
+	expect(suggested.spending).not.toBeNull();
 	await page.getByRole("button", { name: "Suggérer" }).click();
-	await expect(spending).toHaveValue("250,00");
-	await expect(income).toHaveValue("2500,00");
+	await expect(spending).toHaveValue(typedSuggestion(suggested.spending));
+	await expect(income).toHaveValue(typedSuggestion(suggested.income));
+	// Exact figures from here on.
+	await spending.fill("250,00");
+	await income.fill("2 500,00");
 
 	await page.getByRole("button", { name: "Enregistrer" }).click();
 
@@ -307,12 +326,15 @@ test("a month is spread over its categories, which show their status and open a 
 	});
 
 	await test.step("each amount saves on change, beside its median", async () => {
-		// December's 100 and the child's 300: a parent's month includes its children's.
-		await expect(page.getByText(`${euros(40_000)}/mois en médiane`)).toBeVisible();
+		// December's 100 alone: a parent's own rows, never its children's, as Sure's `CategoryStats`.
+		await expect(field(page, house.name)).toHaveAccessibleDescription(
+			new RegExp(`^${euros(10_000)}/mois en médiane`, "u"),
+		);
 		await expect(field(page, works.name)).toHaveAttribute("placeholder", "Partagé");
+		// December's 300 and February's 100: the shown month counts.
 		await expect(field(page, works.name)).toHaveAccessibleDescription(
 			new RegExp(
-				`^${euros(30_000)}/mois en médiane Laissez vide pour partager le budget de ${house.name}\\.$`,
+				`^${euros(20_000)}/mois en médiane Laissez vide pour partager le budget de ${house.name}\\.$`,
 				"u",
 			),
 		);
@@ -411,9 +433,9 @@ test("a month is spread over its categories, which show their status and open a 
 		await expect(sheet).toContainText(`Dépenses de février 2024${euros(75_000)}`);
 		await expect(sheet).toContainText(`Statut${euros(25_000)} restants`);
 		await expect(sheet).toContainText(`Budgété${euros(100_000)}`);
-		// December, its one earlier month.
-		await expect(sheet).toContainText(`Moyenne mensuelle${euros(40_000)}`);
-		await expect(sheet).toContainText(`Médiane mensuelle${euros(40_000)}`);
+		// December, its one month with a row of its own.
+		await expect(sheet).toContainText(`Moyenne mensuelle${euros(10_000)}`);
+		await expect(sheet).toContainText(`Médiane mensuelle${euros(10_000)}`);
 		const recent = sheet.getByRole("list", { name: "Opérations récentes" });
 		await expect(recent.getByRole("listitem")).toHaveCount(2);
 		await expect(recent.getByRole("listitem").first()).toContainText("Pépinière");

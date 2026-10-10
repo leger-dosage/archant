@@ -75,6 +75,7 @@ export async function splitRow(db: Pick<Transaction, "select">, id: string) {
 			inTransfer: inAnyTransfer.mapWith(Boolean),
 			pending: transactions.pending,
 			excluded: transactions.excluded,
+			oneTime: transactions.oneTime,
 			possibleDuplicate: transactions.possibleDuplicate,
 			merchantId: transactions.merchantId,
 			lockedFields: transactions.lockedFields,
@@ -217,6 +218,8 @@ async function insertChildren(
 			entryId: id,
 			label: line.label,
 			notes,
+			// Sure's `Entry#split!` gives each child the parent's kind, `one_time` included.
+			oneTime: parent.oneTime,
 			merchantId: parent.merchantId,
 			categoryId: line.categoryId,
 			categoryOrigin: line.categoryId === null ? null : categoryOriginOf(origin),

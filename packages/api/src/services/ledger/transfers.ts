@@ -5,7 +5,7 @@ import type { Origin, Transaction } from "./shared.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { and, between, eq, isNotNull, isNull, lt, ne, not, sql } from "drizzle-orm";
+import { and, between, eq, inArray, isNotNull, isNull, lt, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -30,6 +30,7 @@ import {
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
 import {
+	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
 	inAnyTransfer,
 	inSequence,
@@ -285,6 +286,28 @@ export function proposalCandidateQuery(db: Pick<Transaction, "select">) {
 	);
 }
 
+/**
+ * Clears the one-time flag of each side a transfer write touches, as Sure's
+ * `Family::AutoTransferMatchable` and `Transfer::Creator` overwrite both
+ * kinds and `Transfer#destroy!` resets them to `standard`: a side just
+ * paired is not one-time, and an undone one counts again as the plain
+ * transaction it was.
+ */
+export async function clearOneTime(tx: Pick<Transaction, "update">, ids: readonly string[]) {
+	await inSequence(ids, KEYS_PER_LOOKUP, (chunk) =>
+		tx
+			.update(transactions)
+			.set({ oneTime: false })
+			.where(and(inArray(transactions.entryId, chunk), eq(transactions.oneTime, true))),
+	);
+}
+
+/** Both sides of `transfer`, as `clearOneTime` takes them. */
+export const sidesOf = (transfer: TransferSides) => [
+	transfer.outflowTransactionId,
+	transfer.inflowTransactionId,
+];
+
 /** The side ranking reads of a pair: its id, its account and the account a rule expects. */
 const expecting = (side: { id: string; accountId: string; expectedAccountId: string | null }) => ({
 	id: side.id,
@@ -304,7 +327,7 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
  * balance, category, lock or tag moves.
  */
 export async function matchTransfers(
-	tx: Pick<Transaction, "select" | "insert">,
+	tx: Pick<Transaction, "select" | "insert" | "update">,
 	now: number,
 ): Promise<void> {
 	const rows = accepted(await proposalCandidateQuery(tx), PROPOSAL);
@@ -341,6 +364,7 @@ export async function matchTransfers(
 	).map(({ row }) => transferBetween(row.source, row.candidate, "pending", now));
 
 	await inSequence(links, ROWS_PER_INSERT, (chunk) => tx.insert(transfers).values(chunk));
+	await clearOneTime(tx, links.flatMap(sidesOf));
 }
 
 /**
@@ -415,6 +439,7 @@ export async function matchTransfer(
 			const transfer = transferBetween(pair.source, pair.candidate, "confirmed", Date.now());
 
 			await tx.insert(transfers).values(transfer);
+			await clearOneTime(tx, sidesOf(transfer));
 
 			return transfer;
 		},
@@ -479,6 +504,8 @@ export async function unmatchTransfer(
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
 			}
 
+			await clearOneTime(tx, sidesOf(deleted));
+
 			return deleted;
 		},
 		{ behavior: "immediate" },
@@ -508,6 +535,7 @@ export async function rejectTransfer(
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
 			}
 
+			await clearOneTime(tx, sidesOf(deleted));
 			await tx.insert(rejectedTransfers).values({
 				id: crypto.randomUUID(),
 				...deleted,

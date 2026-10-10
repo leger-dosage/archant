@@ -1,11 +1,11 @@
-import type { CashFlowCategory, CashFlowLine, CashFlowRow, MonthBreakdown } from "../cash-flow.ts";
+import type { CashFlowCategory, CashFlowLine, CashFlowRow } from "../cash-flow.ts";
 
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
 import { grossCashFlow, netCashFlow } from "../cash-flow.ts";
-import { actualsOf, medianOf, spendingSegments, suggestions } from "./actuals.ts";
+import { actualsOf, spendingSegments } from "./actuals.ts";
 
 const line = (categoryId: string | null, amount: number): CashFlowLine => ({
 	categoryId,
@@ -30,7 +30,7 @@ const row = (categoryId: string | null, amount: number): CashFlowRow => ({
 	amount: toMinorUnits(amount),
 });
 
-/** A month's two views, as `getCashFlowHistory` builds them from its rows. */
+/** A month's two views, as `getCashFlowWithRows` builds them from its rows. */
 const views = (rows: CashFlowRow[]) => {
 	const gross = grossCashFlow(rows, categories);
 
@@ -95,78 +95,5 @@ describe("spendingSegments", () => {
 		const segments = spendingSegments([line("b", -1_000), line("a", -1_000)]);
 
 		expect(segments.map((segment) => segment.categoryId)).toEqual(["b", "a"]);
-	});
-});
-
-describe("medianOf", () => {
-	it("takes the middle value of an odd count", () => {
-		expect(medianOf([300, 100, 200].map(toMinorUnits))).toBe(200);
-	});
-
-	it("averages the two middle values of an even count", () => {
-		expect(medianOf([100, 300, 200, 400].map(toMinorUnits))).toBe(250);
-	});
-
-	it("rounds an average that falls between two minor units", () => {
-		expect(medianOf([100, 101].map(toMinorUnits))).toBe(101);
-		expect(medianOf([100, 103].map(toMinorUnits))).toBe(102);
-	});
-
-	it("has no median without a value", () => {
-		expect(medianOf([])).toBeNull();
-	});
-});
-
-const month = (value: string, rows: CashFlowRow[]): MonthBreakdown => ({
-	month: value,
-	...views(rows),
-});
-
-describe("suggestions", () => {
-	it("takes the median of the earlier months that spent, as Sure's estimated spending", () => {
-		const history = [
-			month("2026-04", [row("courses", -10_000)]),
-			month("2026-05", [row("courses", -30_000)]),
-			month("2026-06", [row("courses", -20_000)]),
-			month("2026-07", [row("courses", -40_000)]),
-		];
-
-		expect(suggestions(history, "2026-08", "2026-10").spending).toBe(25_000);
-	});
-
-	it("counts only the months before both the shown month and the current one", () => {
-		const history = [
-			month("2026-07", [row("courses", -10_000)]),
-			month("2026-08", [row("courses", -50_000)]),
-			month("2026-09", [row("courses", -90_000)]),
-			// The current, partial month: never counted.
-			month("2026-10", [row("courses", -1_000)]),
-		];
-
-		expect(suggestions(history, "2026-09", "2026-10").spending).toBe(30_000);
-		expect(suggestions(history, "2027-03", "2026-10").spending).toBe(50_000);
-	});
-
-	it("enters a month in a side's median only when it has a line on that side", () => {
-		const history = [
-			month("2026-06", [row("courses", -10_000)]),
-			month("2026-07", [row("salaire", 200_000)]),
-			month("2026-08", [row("courses", -30_000), row("salaire", 300_000)]),
-			// Gross lines on both sides: a month that spent nothing net and took
-			// its refund in as income.
-			month("2026-09", [row("clothes", -1_000), row("clothes", 1_000)]),
-		];
-
-		expect(suggestions(history, "2026-10", "2026-10")).toEqual({
-			spending: 10_000,
-			income: 200_000,
-		});
-	});
-
-	it("suggests nothing without an earlier month", () => {
-		expect(suggestions([], "2026-10", "2026-10")).toEqual({ spending: null, income: null });
-		expect(suggestions([month("2026-10", [row("courses", -1_000)])], "2026-10", "2026-10")).toEqual(
-			{ spending: null, income: null },
-		);
 	});
 });

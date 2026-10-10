@@ -46,6 +46,8 @@ export type TransactionRecord = {
 	reference: string | null;
 	/** Left out of reports (AD-9), still counted in the balance. */
 	excluded: boolean;
+	/** Sure's `one_time` kind: left out of cash flow (AD-9), kept in the list's totals. */
+	oneTime: boolean;
 	/** Not booked by the bank yet: counted in the balance, left out of cash flow (AD-8, AD-9). */
 	pending: boolean;
 	/** `null` is « Sans catégorie ». */
@@ -101,6 +103,7 @@ const transactionColumns = {
 	notes: transactions.notes,
 	reference: transactions.reference,
 	excluded: transactions.excluded,
+	oneTime: transactions.oneTime,
 	pending: transactions.pending,
 	possibleDuplicate: transactions.possibleDuplicate,
 	categoryId: transactions.categoryId,
@@ -535,12 +538,12 @@ export async function sumTransactionsByLabel(
 
 /**
  * The rows every cash-flow query counts (AD-9): transactions of `accountIds`
- * in the range, neither excluded nor pending, and no transfer side but the
+ * in the range, neither excluded, one-time nor pending, and no transfer side but the
  * outflow of a loan payment or an investment contribution. One definition, so
  * the month's breakdown and the budget's history never disagree; `null` when
  * nothing can match. No trade counts, as Sure's `trades_subquery_sql`.
  */
-function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] }) {
+function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
 	const where = filterCondition(range, joinedTransferSide);
 
 	return where === null
@@ -549,6 +552,7 @@ function countedInCashFlow(range: { from?: IsoDate; to: IsoDate; accountIds: rea
 				where,
 				not(joinedTransferSide.uncounted),
 				eq(transactions.excluded, false),
+				eq(transactions.oneTime, false),
 				eq(transactions.pending, false),
 			);
 }
@@ -588,7 +592,7 @@ export async function cashFlowByCategory(
 /** `cashFlowByCategory`'s rows, each group also keyed by `key`, an expression of the entry's date. */
 async function cashFlowKeyed(
 	deps: ServiceDeps,
-	range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] },
+	range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] },
 	key: SQL<string>,
 ): Promise<(CashFlowRow & { key: string })[]> {
 	const where = countedInCashFlow(range);
@@ -614,14 +618,16 @@ async function cashFlowKeyed(
 }
 
 /**
- * `cashFlowByCategory`'s rows over every month up to `to`, inclusive, each
- * group also keyed by its calendar month: the same counted rows, so a month's
- * rows here sum to that month's rows there, which a parity test checks. The
- * budget's suggestions read it, one query for the whole history.
+ * `cashFlowByCategory`'s rows over every month up to `to`, inclusive, or
+ * every month without it, future ones included, each group also keyed by its
+ * calendar month: the same counted rows, so a month's rows here sum to that
+ * month's rows there, which a parity test checks. The budget's rollover
+ * chain reads it up to a month; Sure's monthly statistics over the whole
+ * history, one query each.
  */
 export async function cashFlowByMonth(
 	deps: ServiceDeps,
-	range: { to: IsoDate; accountIds: readonly string[] },
+	range: { to?: IsoDate; accountIds: readonly string[] },
 ): Promise<(CashFlowRow & { month: IsoMonth })[]> {
 	const rows = await cashFlowKeyed(deps, range, sql<IsoMonth>`substr(${entries.date}, 1, 7)`);
 
@@ -629,15 +635,15 @@ export async function cashFlowByMonth(
 }
 
 /**
- * `cashFlowByCategory`'s rows from `from`, or the first day, to `to`, each
- * group also keyed by its day: one read from which the assistant's income
- * statement sums any period, the one before it, its months and the
- * history's monthly medians, where a read per figure would scan the history
- * again for each.
+ * `cashFlowByCategory`'s rows from `from` to `to`, or over every day without
+ * them, each group also keyed by its day: one read from which the
+ * assistant's income statement sums any period, the one before it, its
+ * months and Sure's monthly statistics, where a read per figure would scan
+ * the history again for each.
  */
 export async function cashFlowByDay(
 	deps: ServiceDeps,
-	range: { from?: IsoDate; to: IsoDate; accountIds: readonly string[] },
+	range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] },
 ): Promise<(CashFlowRow & { date: IsoDate })[]> {
 	const rows = await cashFlowKeyed(deps, range, sql<IsoDate>`${entries.date}`);
 

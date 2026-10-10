@@ -13,6 +13,7 @@ import { CategoryPill, TransferPill } from "@/components/CategoryPill";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
+import { OneTimeMarker } from "@/components/OneTimeMarker";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Badge } from "@/components/ui/badge";
@@ -413,6 +414,15 @@ function RowLine({
 							>
 								{item.label}
 							</span>
+							{item.oneTime && (
+								<OneTimeMarker
+									label={t(
+										item.amount > 0
+											? "transactions.oneTime.income"
+											: "transactions.oneTime.expense",
+									)}
+								/>
+							)}
 							{parent && <StatusBadge status="split" iconBelowMd className="shrink-0" />}
 							{item.pending && <StatusBadge status="pending" iconBelowMd className="shrink-0" />}
 							{/* The sheet's own condition: a side it shows no category for has no series. */}

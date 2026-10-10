@@ -181,6 +181,7 @@ export const listItem = z.object({
 	label: z.string(),
 	amount: z.number(),
 	excluded: z.boolean(),
+	oneTime: z.boolean(),
 	categoryId: z.string().nullable(),
 	merchantId: z.string().nullable(),
 	tagIds: z.array(z.string()),

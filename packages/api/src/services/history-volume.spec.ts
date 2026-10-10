@@ -19,6 +19,7 @@ import { addDays, today } from "../domain/dates.ts";
 import { tradeAmount } from "../domain/trades.ts";
 import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { getBudget } from "./budgets.ts";
 import { exportArchive } from "./export.ts";
 import { confirmImport, createImport, previewImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
@@ -27,7 +28,7 @@ import { transactionPages } from "./ledger/export.ts";
 import { liveCostBasisLocks, revalueHoldings } from "./ledger/holdings.ts";
 import { ROWS_PER_INSERT, inSequence } from "./ledger/shared.ts";
 import { proposalCandidateQuery } from "./ledger/transfers.ts";
-import { getBalanceSheet, getIncomeStatement } from "./reports.ts";
+import { getBalanceSheet, getCashFlowStatistics, getIncomeStatement } from "./reports.ts";
 import {
 	createTransaction,
 	listAccountTransactions,
@@ -549,7 +550,7 @@ describe("NFR10 at 100,000 transactions", () => {
 		).resolves.toBeLessThan(PAGE_MS);
 	});
 
-	// One read of the whole history each, which the medians need.
+	// One read of the whole history each, which the statistics need.
 	it("answers the assistant's income statement over ten years and 36 months by month in under 300 ms each", async () => {
 		const decade = { from: dayOf(0), to: dayOf(DAYS - 1), byMonth: false, comparePrevious: true };
 		const months = { from: "2023-10-01", to: "2026-09-30", byMonth: true, comparePrevious: true };
@@ -564,6 +565,21 @@ describe("NFR10 at 100,000 transactions", () => {
 		await expect(timed(async () => getIncomeStatement(deps(), months))).resolves.toBeLessThan(
 			REPORT_MS,
 		);
+	});
+
+	it("answers Sure's monthly statistics over the whole history in under 300 ms", async () => {
+		const { family, categories } = await getCashFlowStatistics(deps());
+
+		expect(family.expense.median).toBeGreaterThan(0);
+		expect(categories.size).toBeGreaterThan(0);
+		await expect(timed(async () => getCashFlowStatistics(deps()))).resolves.toBeLessThan(REPORT_MS);
+	});
+
+	it("answers this month's budget, its rollover history and medians read once, in under 300 ms", async () => {
+		const month = today(TIME_ZONE).slice(0, 7);
+
+		expect((await getBudget(deps(), month)).suggested.spending).toBeGreaterThan(0);
+		await expect(timed(async () => getBudget(deps(), month))).resolves.toBeLessThan(REPORT_MS);
 	});
 
 	it("answers the assistant's balance sheet over ten years by month and 400 days by day in under 150 ms each", async () => {
@@ -779,6 +795,18 @@ describe("query plans at 100,000 transactions", () => {
 			expect(plan).not.toMatch(/SCAN holdings/u);
 		},
 	);
+
+	it("reads the statistics' unbounded history from a kind index, each detail row by its key", async () => {
+		const statements = await statementsOf(async () => getCashFlowStatistics(deps()));
+		const plan = await planOf(only(statements, /group by substr/u));
+
+		expect(plan).toMatch(/SEARCH entries USING INDEX entries_kind_\w+ \(kind=\?\)/u);
+		expect(plan).toMatch(
+			/SEARCH transactions USING INDEX sqlite_autoindex_transactions_1 \(entry_id=\?\)/u,
+		);
+		expect(plan).not.toMatch(/SCAN (?:entries|transactions)/u);
+		expect(plan).not.toMatch(/CORRELATED/u);
+	});
 
 	it("lists one account from its date index, sorting only within a day", async () => {
 		const statements = await statementsOf(async () =>

@@ -168,7 +168,7 @@ export const getIncomeStatementTool = defineTool({
 	name: "get_income_statement",
 	title: "Income statement",
 	description:
-		"Sure's get_income_statement: income and expenses between start_date and end_date in the reporting currency, by top-level category with its sub-categories, largest first: each transaction on the side of its sign, so a refund is income in its category, and a loan payment or an investment contribution an expense; other transfers between accounts, trades, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency, a PEA or an assurance-vie left out. Month over month: group_by \"month\" adds monthly_series. Against the period before: compare_previous_period. Per account: account_ids gives totals only, as Sure's.",
+		"Sure's get_income_statement: income and expenses between start_date and end_date in the reporting currency, by top-level category with its sub-categories, largest first: each transaction on the side of its sign, so a refund is income in its category, and a loan payment or an investment contribution an expense; other transfers between accounts, trades, excluded, one-time and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency, a PEA or an assurance-vie left out. Month over month: group_by \"month\" adds monthly_series. Against the period before: compare_previous_period. Per account: account_ids gives totals only, as Sure's.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: incomeStatementInput,
@@ -187,10 +187,10 @@ export const getIncomeStatementTool = defineTool({
 					.number()
 					.describe("net_income over income, in percent, one decimal; 0 without income."),
 				median_monthly_income: decimal(
-					"The median of every month's income, the history's months with income up to this one",
+					"The median of every month's income, the history's months with income",
 				),
 				median_monthly_expenses: decimal(
-					"The median of every month's expenses, negative, the history's months with expenses up to this one",
+					"The median of every month's expenses, negative, the history's months with expenses",
 				),
 				avg_monthly_expenses: decimal("The mean of those months' expenses, negative"),
 			})

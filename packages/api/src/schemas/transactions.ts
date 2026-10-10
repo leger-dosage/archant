@@ -32,6 +32,8 @@ export const transactionBodySchema = z.object({
 // always counted, and starts « Sans catégorie », « Sans marchand » and untagged.
 export const transactionPatchBodySchema = transactionBodySchema.partial().extend({
 	excluded: z.boolean().optional(),
+	// Sure's `one_time` kind; only this edit sets it, never a sync, an import or a rule.
+	oneTime: z.boolean().optional(),
 	// `null` clears it; the ledger checks that the id names a category.
 	categoryId: z.string().nullable().optional(),
 	// `null` clears it; the ledger checks that the id names a merchant.
@@ -124,6 +126,7 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 			amount: fields.amount.optional(),
 			notes: z.string().trim().max(NOTES_MAX_LENGTH).nullable().optional(),
 			excluded: z.boolean().optional(),
+			oneTime: z.boolean().optional(),
 			categoryId: z.string().min(1).nullable().optional(),
 			merchantId: z.string().min(1).nullable().optional(),
 			// Repeats are dropped before the cap counts, so a double click never refuses.
@@ -192,7 +195,7 @@ export function splitTransactionSchema(currency: CurrencyCode) {
 
 /**
  * The interface's sheet: the fields of a new transaction plus the exclusion
- * switch, the category, the merchant and the tags, checked the way the API checks them. The form
+ * and one-time switches, the category, the merchant and the tags, checked the way the API checks them. The form
  * sends the typed text as is; the create or update schema parses it on the
  * server.
  */
@@ -201,6 +204,7 @@ export function transactionFormSchema(currency: CurrencyCode) {
 		.object({
 			...fields,
 			excluded: z.boolean(),
+			oneTime: z.boolean(),
 			categoryId: z.string().nullable(),
 			merchantId: z.string().nullable(),
 			tagIds: z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION),

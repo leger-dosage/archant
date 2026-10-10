@@ -1,13 +1,12 @@
 import type { CashFlowCategory, CashFlowRow } from "../cash-flow.ts";
-import type { MonthRows } from "./categories.ts";
 
 import { describe, expect, it } from "vitest";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
+import { categoryStats } from "../statistics.ts";
 import {
-	averageOf,
 	budgetCategories,
 	parentAfterChildSave,
 	parentAfterOwnSave,
@@ -34,7 +33,8 @@ const amounts = (entries: Record<string, number>) =>
 
 const minor = (value: number): MinorUnits => toMinorUnits(value);
 
-const month = (value: string, rows: CashFlowRow[]): MonthRows => ({ month: value, rows });
+/** `rows` in `month`, as `cashFlowByMonth` keys them. */
+const inMonth = (month: string, rows: CashFlowRow[]) => rows.map((item) => ({ ...item, month }));
 
 /** Rollover on, with what came in, by category. */
 const carried = (entries: Record<string, number>) =>
@@ -60,9 +60,7 @@ function budgetOf(
 		amounts: new Map(),
 		rollover: new Map(),
 		rows: [],
-		history: [],
-		shown: "2026-09",
-		current: "2026-09",
+		statistics: new Map(),
 		budgetedSpending: minor(200_000),
 		...input,
 	});
@@ -389,35 +387,26 @@ describe("budgetCategories", () => {
 	});
 
 	describe("medians and averages", () => {
-		const history = [
-			month("2026-05", [row("Courses", -10_000), row("Travaux", -4_000), row(null, 2_000)]),
-			month("2026-06", [row("Courses", -30_000), row("Maison", -1_000), row(null, -500)]),
-			month("2026-07", [row("Courses", -20_000), row("Courses", 25_000)]),
-			month("2026-08", [row("Courses", -40_000), row(null, -1_500)]),
-			month("2026-09", [row("Courses", -90_000)]),
-		];
+		const statistics = categoryStats([
+			...inMonth("2026-05", [row("Courses", -10_000), row("Travaux", -4_000), row(null, 2_000)]),
+			...inMonth("2026-06", [row("Courses", -30_000), row("Maison", -1_000), row(null, -500)]),
+			...inMonth("2026-07", [row("Courses", -20_000), row("Courses", 25_000)]),
+			...inMonth("2026-08", [row("Courses", -40_000), row(null, -1_500)]),
+			// The current month counts, as Sure's.
+			...inMonth("2026-09", [row("Courses", -90_000)]),
+		]);
 
-		it("take the months before both the shown and the current month that have a row", () => {
-			const result = budgetOf({ history, shown: "2026-09", current: "2026-09" });
+		it("read each envelope's own expense statistics, gross of refunds, the current month included", () => {
+			const result = budgetOf({ statistics });
 
-			// May to August: 100, 300, 0 (refunded beyond what it spent), 400.
-			expect(lineOf(result, "Courses")).toMatchObject({ median: 20_000, average: 20_000 });
-			// A parent's months include its children's: 40 in May, 10 in June.
-			expect(lineOf(result, "Maison")).toMatchObject({ median: 2_500, average: 2_500 });
+			// May to September: 100, 300, 200 (its refund apart, where it made 0), 400, 900.
+			expect(lineOf(result, "Courses")).toMatchObject({ median: 30_000, average: 38_000 });
+			// A parent's own rows alone: 10 in June, where its child's 40 in May counted too.
+			expect(lineOf(result, "Maison")).toMatchObject({ median: 1_000, average: 1_000 });
 			expect(lineOf(result, "Travaux")).toMatchObject({ median: 4_000, average: 4_000 });
 			expect(lineOf(result, "Jardin")).toMatchObject({ median: null, average: null });
-			// Months with an uncategorised outflow only: 5 in June, 15 in August.
+			// The months with an uncategorised outflow: 5 in June, 15 in August.
 			expect(result.uncategorised).toMatchObject({ median: 1_000, average: 1_000 });
-		});
-
-		it("stop at the shown month when it comes earlier, and never take a later one", () => {
-			expect(lineOf(budgetOf({ history, shown: "2026-07" }), "Courses")).toMatchObject({
-				median: 20_000,
-				average: 20_000,
-			});
-			expect(
-				lineOf(budgetOf({ history, shown: "2027-01", current: "2026-09" }), "Courses").median,
-			).toBe(20_000);
 		});
 	});
 });
@@ -496,12 +485,5 @@ describe("parentAfterOwnSave", () => {
 	it("never goes below what its ring-fenced children hold", () => {
 		expect(parentAfterOwnSave({ typed: minor(10_000), children: minor(30_000) })).toBe(30_000);
 		expect(parentAfterOwnSave({ typed: minor(0), children: minor(0) })).toBe(0);
-	});
-});
-
-describe("averageOf", () => {
-	it("rounds to the minor unit, and has nothing to say of nothing", () => {
-		expect(averageOf([minor(1), minor(2)])).toBe(2);
-		expect(averageOf([])).toBeNull();
 	});
 });

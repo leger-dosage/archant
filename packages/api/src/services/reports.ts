@@ -1,16 +1,17 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
 import type { SureInterval, SurePeriod } from "../domain/balances/sure-periods.ts";
+import type { MonthRows } from "../domain/budgets/categories.ts";
 import type {
 	CashFlowBreakdown,
 	CashFlowCategory,
 	CashFlowLine,
 	CashFlowRow,
-	MonthBreakdown,
 	SubcategoryLines,
 } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
+import type { MonthlyCashFlowRow, Stats } from "../domain/statistics.ts";
 import type { BalancePeriod } from "../schemas/balances.ts";
 import type { ServiceDeps } from "./deps.ts";
 
@@ -25,7 +26,6 @@ import type { Account } from "@archant/data/types";
 
 import { balanceChange, periodRange } from "../domain/balances/history.ts";
 import { seriesDates, seriesPointCount, surePeriodRange } from "../domain/balances/sure-periods.ts";
-import { medianOf } from "../domain/budgets/actuals.ts";
 import { grossCashFlow, netCashFlow } from "../domain/cash-flow.ts";
 import {
 	addDays,
@@ -37,6 +37,7 @@ import {
 	today,
 } from "../domain/dates.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
+import { categoryStats, familyStats } from "../domain/statistics.ts";
 import { AppError } from "../lib/errors.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
@@ -334,47 +335,77 @@ async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[
 		.from(categories);
 }
 
-/** One month of `getCashFlowHistory`: its two views beside the rows it counted. */
-type MonthHistory = MonthBreakdown & { rows: CashFlowRow[] };
+/** `rows` of the months before `before`, grouped by month, oldest first, a month without a row absent. */
+export function historyBefore(rows: readonly MonthlyCashFlowRow[], before: IsoMonth): MonthRows[] {
+	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
+
+	for (const { month, ...row } of rows) {
+		if (month < before) {
+			const monthRows = byMonth.get(month);
+
+			if (monthRows === undefined) {
+				byMonth.set(month, [row]);
+			} else {
+				monthRows.push(row);
+			}
+		}
+	}
+
+	return [...byMonth]
+		.toSorted(([a], [b]) => a.localeCompare(b))
+		.map(([month, monthRows]) => ({ month, rows: monthRows }));
+}
 
 /**
- * `getCashFlow`'s gross and net views of every month before `before`, over
- * the same accounts and from the same rows, read in one query, each beside
- * its rows: what the budget's suggestions, each category's median and the budget's
- * rollover chain take.
+ * The counted rows of every month before `before`, over `getCashFlow`'s
+ * accounts, read in one query: what the budget's rollover chain takes.
  */
 export async function getCashFlowHistory(
 	deps: ServiceDeps,
 	before: IsoMonth,
-): Promise<MonthHistory[]> {
+): Promise<MonthRows[]> {
 	const { counted } = await cashFlowAccounts(deps);
-	const [rows, allCategories] = await Promise.all([
-		cashFlowByMonth(deps, {
-			to: monthRange(shiftMonth(before, -1)).to,
-			accountIds: counted.map((row) => row.id),
-		}),
-		breakdownCategories(deps),
-	]);
-	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
+	const rows = await cashFlowByMonth(deps, {
+		to: monthRange(shiftMonth(before, -1)).to,
+		accountIds: counted.map((row) => row.id),
+	});
 
-	for (const row of rows) {
-		byMonth.set(row.month, [...(byMonth.get(row.month) ?? []), row]);
-	}
+	return historyBefore(rows, before);
+}
 
-	// Oldest first; a month without a counted row is absent.
-	return [...byMonth]
-		.toSorted(([a], [b]) => a.localeCompare(b))
-		.map(([month, monthRows]) => {
-			const gross = grossCashFlow(monthRows, allCategories);
-			const net = netCashFlow(gross);
+/**
+ * Every counted row of the history over `getCashFlow`'s accounts, keyed by
+ * month, no bound on either side: one read from which a budget takes both its
+ * rollover history, through `historyBefore`, and its statistics.
+ */
+export async function getCashFlowMonths(deps: ServiceDeps): Promise<MonthlyCashFlowRow[]> {
+	const { counted } = await cashFlowAccounts(deps);
 
-			return {
-				month,
-				gross: { income: gross.income, lines: gross.lines },
-				net: { expenses: net.expenses, lines: net.lines },
-				rows: monthRows,
-			};
-		});
+	return cashFlowByMonth(deps, { accountIds: counted.map((row) => row.id) });
+}
+
+/** Sure's `FamilyStats` and `CategoryStats`, by month, over one set of accounts. */
+export type CashFlowStatistics = {
+	family: Stats;
+	/** Each category's own rows, « Sans catégorie » under `null`. */
+	categories: ReadonlyMap<string | null, Stats>;
+};
+
+/**
+ * Sure's monthly statistics over every row of `getCashFlowMonths`, so they
+ * never depend on the month shown.
+ */
+export function statisticsOf(rows: readonly MonthlyCashFlowRow[]): CashFlowStatistics {
+	return { family: familyStats(rows), categories: categoryStats(rows) };
+}
+
+/**
+ * The statistics over the accounts `getCashFlow` counts, as Sure's
+ * `IncomeStatement#median_expense`, `avg_expense` and `median_income`: what
+ * the goals' reserve reads.
+ */
+export async function getCashFlowStatistics(deps: ServiceDeps): Promise<CashFlowStatistics> {
+	return statisticsOf(await getCashFlowMonths(deps));
 }
 
 /** Sure's `MAX_MONTH_BUCKETS`: the monthly series of a period holds 36 months at most. */
@@ -400,9 +431,10 @@ type StatementBreakdown = {
 	/** Each side's top-level lines' sub-categories, by the line's category id. */
 	subcategories: SubcategoryLines;
 	/**
-	 * Sure's `median_monthly_income`, `median_monthly_expenses` and
-	 * `avg_monthly_expenses`: over every month of the history up to this one
-	 * with a line on that side, whatever the period.
+	 * Sure's `median_income`, `median_expense` and `avg_expense`, from
+	 * `FamilyStats`: over every month of the history with a line on that
+	 * side, the current and future months included, whatever the period, 0
+	 * without one; expenses negative, as `CashFlow` signs them.
 	 */
 	medianMonthlyIncome: MinorUnits;
 	medianMonthlyExpenses: MinorUnits;
@@ -422,6 +454,20 @@ export type IncomeStatement = PeriodTotals & {
 	leftOut: LeftOutAccount[];
 };
 
+/**
+ * `familyStats` over a day-keyed read: a month's day groups sum to its
+ * month's groups, so these are `cashFlowByMonth`'s statistics.
+ */
+function statementStatistics(rows: readonly (CashFlowRow & { date: IsoDate })[]) {
+	const family = familyStats(rows.map((row) => ({ ...row, month: row.date.slice(0, 7) })));
+
+	return {
+		medianMonthlyIncome: family.income.median ?? toMinorUnits(0),
+		medianMonthlyExpenses: toMinorUnits(0 - (family.expense.median ?? 0)),
+		avgMonthlyExpenses: toMinorUnits(0 - (family.expense.average ?? 0)),
+	};
+}
+
 /** Each calendar month from `from` to `to`, its first and last days cut to them. */
 function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
 	const buckets: DateRange[] = [];
@@ -433,10 +479,6 @@ function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
 	}
 
 	return buckets;
-}
-
-function sumOf(values: readonly MinorUnits[]): MinorUnits {
-	return toMinorUnits(values.reduce((sum, value) => sum + value, 0));
 }
 
 /**
@@ -478,17 +520,20 @@ export async function getIncomeStatement(
 	const accountIds = query.accountIds === undefined ? null : [...new Set(query.accountIds)];
 	const days = daysBetween(query.from, query.to) + 1;
 	const previousRange = { from: addDays(query.from, -days), to: addDays(query.from, -1) };
-	const thisMonthEnd = monthRange(today(deps.timeZone).slice(0, 7)).to;
-	// One read for every figure: the medians need the whole history up to
-	// this month, so without an account filter it starts at the first day.
+	// One read for every figure: without an account filter, the statistics
+	// need the whole history, so the period's totals filter it rather than
+	// scan it again; with one, Sure gives no statistics, so the periods suffice.
 	const [dayRows, allCategories] = await Promise.all([
-		cashFlowByDay(deps, {
-			...(accountIds === null
-				? {}
-				: { from: query.comparePrevious ? previousRange.from : query.from }),
-			to: accountIds === null ? maxDate(query.to, thisMonthEnd) : query.to,
-			accountIds: accountIds ?? [...countedIds],
-		}),
+		cashFlowByDay(
+			deps,
+			accountIds === null
+				? { accountIds: [...countedIds] }
+				: {
+						from: query.comparePrevious ? previousRange.from : query.from,
+						to: query.to,
+						accountIds,
+					},
+		),
 		breakdownCategories(deps),
 	]);
 	const rowsIn = (range: DateRange) =>
@@ -508,50 +553,9 @@ export async function getIncomeStatement(
 		currency,
 		accountIds,
 		breakdown:
-			accountIds === null
-				? {
-						lines,
-						subcategories,
-						...monthlyStatistics(
-							dayRows.filter((row) => row.date <= thisMonthEnd),
-							allCategories,
-						),
-					}
-				: null,
+			accountIds === null ? { lines, subcategories, ...statementStatistics(dayRows) } : null,
 		months: buckets?.map(totalsOf) ?? null,
 		previous: query.comparePrevious ? totalsOf(previousRange) : null,
 		leftOut: accountIds === null ? leftOut : [],
-	};
-}
-
-/**
- * Sure's family statistics: each calendar month's income and expenses, as
- * `grossCashFlow` sums them, and their median and mean over the months
- * with a line on that side.
- */
-function monthlyStatistics(
-	rows: readonly (CashFlowRow & { date: IsoDate })[],
-	allCategories: readonly CashFlowCategory[],
-) {
-	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
-
-	for (const row of rows) {
-		byMonth.set(row.date.slice(0, 7), [...(byMonth.get(row.date.slice(0, 7)) ?? []), row]);
-	}
-
-	const months = [...byMonth.values()].map((monthRows) => grossCashFlow(monthRows, allCategories));
-	const incomes = months
-		.filter((month) => month.lines.income.length > 0)
-		.map((month) => month.income);
-	const spent = months
-		.filter((month) => month.lines.expense.length > 0)
-		.map((month) => month.expenses);
-
-	return {
-		medianMonthlyIncome: medianOf(incomes) ?? toMinorUnits(0),
-		medianMonthlyExpenses: medianOf(spent) ?? toMinorUnits(0),
-		avgMonthlyExpenses: toMinorUnits(
-			spent.length === 0 ? 0 : Math.round(sumOf(spent) / spent.length),
-		),
 	};
 }

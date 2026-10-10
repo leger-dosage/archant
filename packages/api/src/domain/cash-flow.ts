@@ -1,5 +1,3 @@
-import type { IsoMonth } from "./dates.ts";
-
 import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -56,12 +54,17 @@ export function recurringDirection(tx: CashFlowTransaction): Direction {
 	return tx.amount > 0 ? "income" : "expense";
 }
 
-/** What `countsInCashFlow` reads: `direction`'s fields, the exclusion and pending flags. */
-export type CountedTransaction = CashFlowTransaction & { excluded: boolean; pending: boolean };
+/** What `countsInCashFlow` reads: `direction`'s fields, the exclusion, pending and one-time flags. */
+export type CountedTransaction = CashFlowTransaction & {
+	excluded: boolean;
+	pending: boolean;
+	oneTime: boolean;
+};
 
 /**
  * Whether a transaction enters a cash-flow report (AD-9): not excluded, not
- * pending, since its booked version counts once the bank settles it, and not
+ * one-time, as Sure's `BUDGET_EXCLUDED_KINDS` leave its `one_time` kind out,
+ * not pending, since its booked version counts once the bank settles it, and not
  * a transfer side unless it is the outflow of a loan payment or an investment
  * contribution, which Sure's `classification_sql` always counts as an
  * expense. Which accounts count is the caller's choice: `services/reports.ts`
@@ -70,7 +73,7 @@ export type CountedTransaction = CashFlowTransaction & { excluded: boolean; pend
  * tied by a parity test. No trade ever counts, as Sure's `trades_subquery_sql`.
  */
 export function countsInCashFlow(tx: CountedTransaction): boolean {
-	return !tx.excluded && !tx.pending && (tx.transfer === null || isSpentOutflow(tx));
+	return !tx.excluded && !tx.oneTime && !tx.pending && (tx.transfer === null || isSpentOutflow(tx));
 }
 
 /** The signed sum of counted transactions sharing a category and a sign. */
@@ -118,17 +121,10 @@ export type SubcategoryLines = {
 /** Sure's `IncomeStatement::Totals`: each side by category, with its sub-categories. */
 export type GrossCashFlow = CashFlowBreakdown & { subcategories: SubcategoryLines };
 
-/** One calendar month's two views, as a series of months reads them. */
-export type MonthBreakdown = {
-	month: IsoMonth;
-	gross: Pick<CashFlowBreakdown, "income" | "lines">;
-	net: Pick<CashFlowBreakdown, "expenses" | "lines">;
-};
-
 type Side = keyof CashFlowBreakdown["lines"];
 
 /** Sure's `classification_sql`: a counted row above zero is income, any other an expense. */
-const sideOf = (amount: number): Side => (amount > 0 ? "income" : "expense");
+export const sideOf = (amount: MinorUnits): Side => (amount > 0 ? "income" : "expense");
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 

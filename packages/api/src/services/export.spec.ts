@@ -829,6 +829,22 @@ describe("exportArchive", () => {
 		]);
 	});
 
+	it("writes Sure's `one_time` kind for a one-time row, where it was `standard`", async () => {
+		const { ids } = await household();
+		const appliance = await postOwn(ids.checking, {
+			date: "2026-09-14",
+			label: "ÉLECTROMÉNAGER",
+			amount: "-900,00",
+		});
+		await sendOwn("PATCH", `/api/transactions/${appliance}`, { oneTime: true });
+
+		const archive = await exported();
+		const transactions = new Map(archive.of("Transaction").map((row) => [row["id"], row]));
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(transactions.get(appliance)).toMatchObject({ kind: "one_time", excluded: false });
+	});
+
 	it("writes amounts in Sure's sign, balances and valuations as stored", async () => {
 		const { ids, bread, salary, bakery, baker, trip, odd } = await household();
 
@@ -975,6 +991,37 @@ describe("exportArchive", () => {
 			binary_included: false,
 			attachments: [...manifestOf(before), ...manifestOf(after)],
 		});
+	});
+
+	it("writes Sure's `one_time` kind on the split lines of a one-time parent", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		const parent = await postOwn(checking.id, {
+			date: "2026-09-09",
+			label: "CUISINE",
+			amount: "-1 000,00",
+		});
+		await sendOwn("PATCH", `/api/transactions/${parent}`, { oneTime: true });
+		await sendOwn("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{ label: "Four", amount: "-600,00", categoryId: null },
+				{ label: "Pose", amount: "-400,00", categoryId: null },
+			],
+		});
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("Transaction")).toEqual([
+			expect.objectContaining({
+				id: parent,
+				kind: "one_time",
+				split_lines: [
+					expect.objectContaining({ name: "Four", kind: "one_time" }),
+					expect.objectContaining({ name: "Pose", kind: "one_time" }),
+				],
+			}),
+		]);
 	});
 
 	it("lists a split's lines in transactions.csv, and nests them under their parent in all.ndjson", async () => {
@@ -1680,8 +1727,8 @@ describe("exportArchive", () => {
 		});
 		await sendOwn("POST", `/api/goals/${car}/complete`);
 		vi.setSystemTime(new Date("2026-09-21T10:00:02Z"));
-		// The only month before September with an expense: a median of 400. In a
-		// category, or August's uncategorised salary would net it away.
+		// August's 400 beside September's 1 489,40: a median of 944,70, three
+		// months of it 2 834,10.
 		const groceries = await postOwn(ids.checking, {
 			date: "2026-08-10",
 			label: "Courses",
@@ -1702,7 +1749,7 @@ describe("exportArchive", () => {
 			.object({ data: z.object({ targetAmount: z.number() }) })
 			.parse(await sendOwn("GET", `/api/goals/${reserve}`));
 
-		expect(read.data.targetAmount).not.toBe(120_000);
+		expect(read.data.targetAmount).not.toBe(283_410);
 
 		const archive = await exported();
 		const goals = (archive.text["goals.ndjson"] ?? "")
@@ -1750,7 +1797,7 @@ describe("exportArchive", () => {
 			type: "Goal",
 			data: {
 				id: reserve,
-				target_amount: "1200.00",
+				target_amount: "2834.10",
 				kind: "maintained",
 				target_mode: "months_of_expenses",
 				target_months: 3,

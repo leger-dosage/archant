@@ -42,7 +42,7 @@ import { shiftMonth } from "@archant/data/months";
 import { budgetCategories as budgetCategoryRows, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 
-import { actualsOf, spendingSegments, suggestions } from "../domain/budgets/actuals.ts";
+import { actualsOf, spendingSegments } from "../domain/budgets/actuals.ts";
 import {
 	budgetCategories,
 	parentAfterChildSave,
@@ -63,7 +63,13 @@ import {
 	budgetUpdateSchema,
 } from "../schemas/budgets.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
-import { getCashFlowHistory, getCashFlowWithRows } from "./reports.ts";
+import {
+	getCashFlowHistory,
+	getCashFlowMonths,
+	getCashFlowWithRows,
+	historyBefore,
+	statisticsOf,
+} from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** A month's budget as the page shows it, whether set up or not. */
@@ -355,22 +361,29 @@ async function budgetMonths(deps: ServiceDeps) {
  * only the next budget write refreshes. A month out of bounds is `NOT_FOUND`.
  */
 export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<BudgetMonth> {
-	const { current, bounds } = await budgetMonths(deps);
+	const { bounds } = await budgetMonths(deps);
 
 	if (!isBudgetMonth(month, bounds)) {
 		throw notFound();
 	}
 
-	const [row, chainMonths, { cashFlow, gross, rows, categories: allCategories }, history, source] =
-		await Promise.all([
-			deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
-			setUpMonths(deps.db, { to: month }),
-			getCashFlowWithRows(deps, month),
-			// Every earlier month: the suggestions and the medians keep those
-			// before the current one, the chain needs them all.
-			getCashFlowHistory(deps, month),
-			latestSetUpBefore(deps.db, month),
-		]);
+	const [
+		row,
+		chainMonths,
+		{ cashFlow, gross, rows, categories: allCategories },
+		monthRows,
+		source,
+	] = await Promise.all([
+		deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
+		setUpMonths(deps.db, { to: month }),
+		getCashFlowWithRows(deps, month),
+		// The whole history once: the chain takes the months before this one,
+		// the statistics every month, whatever the month shown, as Sure's.
+		getCashFlowMonths(deps),
+		latestSetUpBefore(deps.db, month),
+	]);
+	const history = historyBefore(monthRows, month);
+	const statistics = statisticsOf(monthRows);
 	const budgetedSpending = row?.budgetedSpending ?? null;
 	const expectedIncome = row?.expectedIncome ?? null;
 	// A month not set up has no row: its categories have 0 and nothing came in.
@@ -389,9 +402,7 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 			]),
 		),
 		rows,
-		history,
-		shown: month,
-		current,
+		statistics: statistics.categories,
 		budgetedSpending: budgetedSpending === null ? null : toMinorUnits(budgetedSpending),
 	});
 
@@ -407,7 +418,11 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 		actual: actualsOf({ net: cashFlow, gross }),
 		segments: spendingSegments(cashFlow.lines.expense),
 		...envelopes,
-		suggested: suggestions(history, month, current),
+		// Sure's `estimated_spending` and `estimated_income`.
+		suggested: {
+			spending: statistics.family.expense.median,
+			income: statistics.family.income.median,
+		},
 		...neighbours(month, bounds),
 		bounds,
 		leftOut: cashFlow.leftOut,
