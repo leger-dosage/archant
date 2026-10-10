@@ -3,9 +3,10 @@ import type { AmountBound } from "./transactions.ts";
 
 import { z } from "zod";
 
-import { CATEGORY_ICONS } from "@archant/data/category-presets";
+import { CATEGORY_ICONS, CATEGORY_NAME_MAX_LENGTH } from "@archant/data/category-presets";
 import { CSV_COLUMN_ROLES } from "@archant/data/csv-mapping";
 import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
+import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
@@ -16,7 +17,6 @@ import {
 	parseCitation,
 } from "../domain/balances/citation.ts";
 import { SURE_INTERVALS, SURE_PERIODS } from "../domain/balances/sure-periods.ts";
-import { BALANCE_PERIODS } from "./balances.ts";
 import {
 	BILL_LIFECYCLES,
 	BILL_PAYMENT_STATES,
@@ -34,7 +34,6 @@ import { merchantSchema } from "./merchants.ts";
 import { RECURRING_VIEWS } from "./recurring.ts";
 import { monthSchema } from "./reports.ts";
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "./rules.ts";
-import { tagSchema } from "./tags.ts";
 import {
 	DEFAULT_PAGE_SIZE,
 	MAX_BULK_IDS,
@@ -68,18 +67,58 @@ const pageFields = {
 		.describe(`Results per page, 50 by default, ${MAX_TOOL_PAGE_SIZE} at most.`),
 };
 
+/**
+ * A page argument as Sure's `to_i` reads text: its leading whole number, or 0
+ * without one; a blank one is absent, as Rails' `blank?` says.
+ */
+function pageNumberOf(value: unknown): unknown {
+	if (typeof value !== "string") {
+		return value;
+	}
+
+	if (value.trim() === "") {
+		return undefined;
+	}
+
+	const leading = /^\s*([+-]?\d+)/u.exec(value)?.[1];
+
+	return leading === undefined ? 0 : Number(leading);
+}
+
+/**
+ * Sure's `resolved_page` and `resolved_page_size`: a page below 1 or not a
+ * whole number reads the first, a page size is held within 1 and 100, and
+ * neither refuses the call.
+ */
+const clampedPageFields = {
+	page: z
+		.preprocess(pageNumberOf, z.number().int().min(1).catch(1))
+		.default(1)
+		.describe("Page number, 1 by default."),
+	page_size: z
+		.preprocess(
+			pageNumberOf,
+			z
+				.number()
+				.transform((size) => Math.min(MAX_TOOL_PAGE_SIZE, Math.max(1, Math.trunc(size))))
+				.catch(DEFAULT_PAGE_SIZE),
+		)
+		.default(DEFAULT_PAGE_SIZE)
+		.describe(`Results per page, ${DEFAULT_PAGE_SIZE} by default, ${MAX_TOOL_PAGE_SIZE} at most.`),
+};
+
 /** `get_categories` and `get_tags`: a page of the list, as Sure's. */
-export const listPageInput = z.strictObject(pageFields);
+export const listPageInput = z.strictObject(clampedPageFields);
 
 /** `get_merchants`: a page of the list, narrowed by Sure's `search`. */
 export const merchantsInput = z.strictObject({
-	...pageFields,
+	...clampedPageFields,
 	search: z
 		.string()
 		.trim()
 		.max(200)
 		.optional()
-		.describe("Text searched in the merchant's name, case aside."),
+		.describe("Case-insensitive substring filter on merchant name."),
 });
 
 const MONTH_ABBREVIATIONS = [
@@ -109,26 +148,20 @@ const toolMonth = z
 	})
 	.pipe(monthSchema);
 
-/**
- * A period ending today, as the dashboard's and an account page's charts
- * offer them. A year by default, as Sure's tools default to the last 365 days.
- */
-const toolPeriod = z
-	.enum(BALANCE_PERIODS)
-	.default("1Y")
-	.describe(
-		'"1M", "3M", "6M" or "1Y": that many months ending today; "all": since the first account opened.',
-	);
-
 /** `get_accounts`: today's balances, and with `include_balance_series` their history. */
 export const getAccountsInput = z.strictObject({
 	include_balance_series: z
 		.boolean()
 		.default(false)
-		.describe("Adds each account's balance over the period, as its page charts it."),
-	series_period: toolPeriod.describe(
-		'Only with include_balance_series. "1M", "3M", "6M" or "1Y": that many months ending today; "all": since the account opened.',
-	),
+		.describe(
+			"Include a historical balance series per account, false by default: pass true only when the owner asks about balance history.",
+		),
+	// Sure reads an unknown key as its default rather than refusing it.
+	series_period: z
+		.enum(SURE_PERIODS)
+		.catch("last_365_days")
+		.default("last_365_days")
+		.describe("Period for the balance series, last_365_days by default."),
 });
 
 /**
@@ -760,34 +793,54 @@ const categoryIcon = categoryField.icon.describe(
 );
 
 /**
- * `create_category`: Sure's fields, and the kind Archant's categories carry,
- * an expense by default as the picker creates one.
+ * A name as Sure's writes take it: trimmed and composed, a blank one left to
+ * the tool's `run`, which refuses it with Sure's `name_required`.
  */
+const sureName = (max: number) =>
+	z
+		.string()
+		.trim()
+		.transform((value) => value.normalize("NFC"))
+		.pipe(z.string().max(max));
+
+/** A name Sure's write requires: a missing one reaches `run` blank, refused there as Sure's. */
+const requiredSureName = (max: number) => z.preprocess((value) => value ?? "", sureName(max));
+
+/** Sure's `presence`: a blank value reads as absent rather than refused. */
+const present = <Schema extends z.ZodType>(schema: Schema) =>
+	z.preprocess(
+		(value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+		schema.optional(),
+	);
+
+/** `create_category`: Sure's fields; the category is an expense, or its parent's kind. */
 export const createCategoryInput = z.strictObject({
-	name: categoryField.name.describe("A name no other category holds, case aside."),
-	kind: categoryField.kind
-		.default("expense")
-		.describe('"income" or "expense", "expense" by default; a subcategory takes its parent\'s.'),
-	color: categoryColor
-		.optional()
-		.describe(
-			"A hex colour such as \"#e99537\", the picker's first one by default; a subcategory takes its parent's.",
-		),
-	icon: categoryIcon
-		.optional()
-		.describe(`A Lucide icon name, "tag" by default, one of: ${CATEGORY_ICONS.join(", ")}.`),
+	name: requiredSureName(CATEGORY_NAME_MAX_LENGTH).describe(
+		"Category name, which no other category holds, case aside.",
+	),
+	color: present(categoryColor).describe(
+		"Hex color code such as \"#e99537\", the picker's first one by default. Ignored for subcategories, which take their parent's.",
+	),
+	icon: present(categoryIcon).describe(
+		`A Lucide icon name, "tag" by default, one of: ${CATEGORY_ICONS.join(", ")}.`,
+	),
 	parent_id: z
 		.string()
-		.min(1)
 		.optional()
 		.describe(
-			"A top-level category's id from get_categories; the new one then takes its kind and colour.",
+			"ID of an existing top-level category to nest under, which makes this a subcategory. Use get_categories to find ids.",
 		),
 });
 
 export const createMerchantInput = merchantSchema.strict();
 
-export const createTagInput = tagSchema.strict();
+/** `create_tag`: Sure's fields; Archant's tags have no colour, so `color` is taken and ignored. */
+export const createTagInput = z.strictObject({
+	name: requiredSureName(TAG_NAME_MAX_LENGTH).describe(
+		"Tag name, which no other tag holds, case aside.",
+	),
+	color: z.string().optional().describe("Ignored: Archant's tags have no colour."),
+});
 
 const categoryId = z
 	.string()
@@ -910,20 +963,18 @@ export const bulkUpdateTransactionsInput = z
 	});
 
 /**
- * `update_category`: Sure's name, colour and icon, at least one, through the
- * edit « Réglages » makes. Its kind and parent stay, as Sure's function moves
- * no category.
+ * `update_category`: Sure's name, colour and icon, through the edit
+ * « Réglages » makes; `run` refuses none of them with Sure's `no_changes`.
+ * Its kind and parent stay, as Sure's function moves no category.
  */
-export const updateCategoryInput = z
-	.strictObject({
-		id: categoryId,
-		name: categoryField.name.optional().describe("A name no other category holds, case aside."),
-		color: categoryColor.optional(),
-		icon: categoryIcon.optional(),
-	})
-	.refine((value) => [value.name, value.color, value.icon].some((field) => field !== undefined), {
-		message: "empty_patch",
-	});
+export const updateCategoryInput = z.strictObject({
+	id: z.string().describe("ID of the category to update; use get_categories to find it."),
+	name: sureName(CATEGORY_NAME_MAX_LENGTH)
+		.optional()
+		.describe("New name for the category, which no other category holds, case aside."),
+	color: present(categoryColor),
+	icon: present(categoryIcon),
+});
 
 export const renameMerchantInput = z.strictObject({
 	merchant_id: merchantId,
@@ -932,11 +983,15 @@ export const renameMerchantInput = z.strictObject({
 
 /**
  * `update_tag`: the tag by its current name, as Sure's. Only the owner names
- * a tag, never a bank or a file, and no two tags share a name (AD-19).
+ * a tag, never a bank or a file, and no two tags share a name (AD-19). No
+ * `enum` of the names, unlike Sure's: the schema would list every tag.
  */
 export const updateTagInput = z.strictObject({
-	name: tagSchema.shape.name.describe("The tag's current name, exactly as get_tags gives it."),
-	new_name: tagSchema.shape.name.describe("Its new name, which no other tag holds, case aside."),
+	name: z.string().describe("Current name of the tag to update, exactly as get_tags gives it."),
+	new_name: sureName(TAG_NAME_MAX_LENGTH)
+		.optional()
+		.describe("New name for the tag, which no other tag holds, case aside."),
+	color: z.string().optional().describe("Ignored: Archant's tags have no colour."),
 });
 
 /** `get_budget`: a month's budget, and up to eleven months before it, as Sure's `GetBudget`. */

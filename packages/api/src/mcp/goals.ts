@@ -129,7 +129,7 @@ export const getGoals = defineTool({
 export const createGoalTool = defineTool({
 	name: "create_goal",
 	title: "Create a savings goal",
-	description: `Creates an active savings goal or a reserve, as « Nouvel objectif » does in Archant, held in its accounts' currency. Each account is an active current, savings or investment account, all in one currency; it holds a fixed amount for the goal, or its whole balance, which only one goal holding its money may take. A refused field answers VALIDATION_ERROR with its path and code. It answers the goal as get_goals gives it, and the url of its page in Archant to point the owner to. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
+	description: `Creates an active savings goal or a reserve, as « Nouvel objectif » does in Archant, held in its accounts' currency. Each account is an active current, savings or investment account, all in one currency; it holds a fixed amount for the goal, or its whole balance, which only one goal holding its money may take. A field the input itself refuses, such as both targets or none, answers { error, hint }, its error each refused field's path and code; an account the goal cannot take, such as one in another currency, answers validation_error, its message naming the field's path and code. It answers the goal as get_goals gives it, and the url of its page in Archant to point the owner to. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createGoalInput,

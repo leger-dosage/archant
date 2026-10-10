@@ -528,7 +528,7 @@ export const createBillTool = defineTool({
 	name: "create_bill",
 	title: "Create a bill",
 	description:
-		"Declares a bill, a subscription, an installment plan or an income, as « Ajouter une facture » does: active at once, due on first_due_on and then on its cadence. The amount is positive; is_income makes it money coming in. The same account, name and amount twice answers RECURRING_ALREADY_EXISTS. It answers the bill and its next three due dates. Tell the owner what you are about to create and wait for their agreement first.",
+		"Declares a bill, a subscription, an installment plan or an income, as « Ajouter une facture » does: active at once, due on first_due_on and then on its cadence. The amount is positive; is_income makes it money coming in. The same account, name and amount twice answers recurring_already_exists. It answers the bill and its next three due dates. Tell the owner what you are about to create and wait for their agreement first.",
 	scope: "archant:write",
 	annotations: CREATES,
 	fieldPaths: { categoryId: "category_name" },

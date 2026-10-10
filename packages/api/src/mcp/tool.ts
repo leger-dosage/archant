@@ -1,4 +1,4 @@
-import type { SampledSeries } from "../domain/balances/history.ts";
+import type { ErrorCode } from "../lib/errors.ts";
 import type { ArchantScope } from "../services/assistants.ts";
 import type { ImportDeps } from "../services/imports.ts";
 import type { ToolAnnotations } from "@modelcontextprotocol/server";
@@ -6,9 +6,11 @@ import type { ZodObject, ZodType } from "zod";
 
 import { z } from "zod";
 
-import { toDecimalString } from "@archant/data/money";
+import type { Money } from "@archant/data/money";
+import { isCurrencyCode, minorUnitsOf, toDecimalString } from "@archant/data/money";
 
-import { SERIES_INTERVALS } from "../domain/balances/history.ts";
+import { AppError } from "../lib/errors.ts";
+import { CURRENCY_SYMBOLS } from "./currency-symbols.ts";
 
 /**
  * What a tool's `run` receives: the route's `deps`, the import routes' among
@@ -124,28 +126,6 @@ export function pageOf<Item>(items: readonly Item[], page: number, pageSize: num
 export const decimal = (what: string) =>
 	z.string().describe(`${what}, a decimal string such as "-12.50" in the currency beside it.`);
 
-/** A sampled series as an assistant reads it, each balance a decimal string. */
-export const seriesOutput = z
-	.object({
-		interval: z
-			.enum(SERIES_INTERVALS)
-			.describe(
-				'"day": every day; "week": each week\'s last day, beyond a year; "month": each month\'s last day, beyond five years. The last point is today.',
-			),
-		points: z.array(z.object({ date: z.string(), balance: decimal("The end-of-day balance") })),
-	})
-	.describe("Oldest first.");
-
-export function seriesOf(series: SampledSeries, currency: string): z.input<typeof seriesOutput> {
-	return {
-		interval: series.interval,
-		points: series.points.map((point) => ({
-			date: point.date,
-			balance: toDecimalString({ amount: point.balance, currency }),
-		})),
-	};
-}
-
 /** What a figure counted in the reporting currency says of the accounts it left out. */
 export const leftOutFields = {
 	left_out_count: z
@@ -162,3 +142,147 @@ export const leftOutOf = (leftOut: readonly { id: string }[]) => ({
 	left_out_count: leftOut.length,
 	left_out_account_ids: leftOut.map((account) => account.id),
 });
+
+/**
+ * The error keys Sure's functions refuse with, each beside the `AppError`
+ * code `assistant_calls` records for it, the one a service would have thrown.
+ */
+const SURE_REFUSALS = {
+	name_required: "VALIDATION_ERROR",
+	parent_not_found: "NOT_FOUND",
+	not_found: "NOT_FOUND",
+	no_changes: "VALIDATION_ERROR",
+	validation_failed: "VALIDATION_ERROR",
+} as const satisfies Record<string, ErrorCode>;
+
+type SureRefusal = keyof typeof SURE_REFUSALS;
+
+type RefusalBody =
+	| { success: false; error: SureRefusal; message: string }
+	| { error: string; hint: string };
+
+/**
+ * What a tool's `run` throws to answer as Sure's function refuses: its
+ * `{ success: false, error, message }`, or `{ error, hint }` where Sure
+ * answers a hint. `call` sends `body` whole as the answer's text and records
+ * `outcome`.
+ */
+export class ToolRefusal extends Error {
+	readonly body: RefusalBody;
+	readonly outcome: ErrorCode;
+
+	constructor(body: RefusalBody, outcome: ErrorCode) {
+		super(body.error);
+		this.body = body;
+		this.outcome = outcome;
+	}
+}
+
+/** Refuses as Sure's `error(key, message)` helpers answer. */
+export function refuse(error: SureRefusal, message: string): never {
+	throw new ToolRefusal({ success: false, error, message }, SURE_REFUSALS[error]);
+}
+
+/** Rails' full message for each refusal a category or tag write shares with Sure's model. */
+const RAILS_MESSAGES: Readonly<Record<string, string>> = {
+	name_taken: "Name has already been taken",
+	invalid_parent: "Parent can't have more than 2 levels of subcategories",
+};
+
+/**
+ * A write whose model refusals answer as Sure's `validation_failed`, with
+ * Rails' full messages joined by `; `; any other failure passes as it is.
+ */
+export async function validated<Written>(write: () => Promise<Written>): Promise<Written> {
+	try {
+		return await write();
+	} catch (error) {
+		const messages =
+			error instanceof AppError && error.code === "VALIDATION_ERROR"
+				? (error.fields ?? []).map((field) => RAILS_MESSAGES[field.code])
+				: [];
+
+		if (messages.length > 0 && messages.every((message) => message !== undefined)) {
+			refuse("validation_failed", messages.join("; "));
+		}
+
+		throw error;
+	}
+}
+
+const NBSP = "\u00A0";
+
+function decimalsOf(currency: string): number {
+	return isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;
+}
+
+/**
+ * Sure's `get_symbol`: the currency's symbol, prefixed with the code's first
+ * two letters when it is a dollar other than the US one, so « CA$ ».
+ */
+function symbolOf(currency: string): string {
+	const symbol = isCurrencyCode(currency) ? CURRENCY_SYMBOLS[currency] : undefined;
+
+	if (symbol === undefined) {
+		return currency;
+	}
+
+	return symbol === "$" && currency !== "USD" ? `${currency.slice(0, 2)}${symbol}` : symbol;
+}
+
+/**
+ * Sure's `Money#format` in its `:fr` locale, « 1 234,56 € », built from the
+ * minor units' digits: `Intl` groups French digits with U+202F, where Sure's
+ * locale writes U+00A0.
+ */
+export function formatMoney(money: Money): string {
+	const decimals = decimalsOf(money.currency);
+	const digits = String(Math.abs(money.amount)).padStart(decimals + 1, "0");
+	const whole = decimals === 0 ? digits : digits.slice(0, -decimals);
+	const fraction = decimals === 0 ? "" : `,${digits.slice(-decimals)}`;
+	const grouped = whole.replace(/\B(?=(?:\d{3})+$)/gu, NBSP);
+
+	return `${money.amount < 0 ? "-" : ""}${grouped}${fraction}${NBSP}${symbolOf(money.currency)}`;
+}
+
+/**
+ * Rails' `number_to_percentage` in Sure's `:fr` locale: rounded half up from
+ * the value's shortest decimal text, as `BigDecimal(number.to_s)` rounds it,
+ * so no binary fraction tips a tie; `,` before the decimals, no grouping.
+ */
+export function percentage(value: number, precision: number): string {
+	const [mantissa = "0", exponent = "0"] = String(Math.abs(value)).split("e");
+	const [integer = "0", fraction = ""] = mantissa.split(".");
+	let digits = `${integer}${fraction}`;
+	let point = integer.length + Number(exponent);
+
+	if (point <= 0) {
+		digits = `${"0".repeat(1 - point)}${digits}`;
+		point = 1;
+	}
+
+	const kept = BigInt(digits.slice(0, point + precision).padEnd(point + precision, "0"));
+	const next = digits[point + precision];
+	const rounded = next !== undefined && next >= "5" ? kept + 1n : kept;
+	const text = rounded.toString().padStart(precision + 1, "0");
+	const number = precision === 0 ? text : `${text.slice(0, -precision)},${text.slice(-precision)}`;
+
+	return `${value < 0 && rounded !== 0n ? "-" : ""}${number}%`;
+}
+
+/**
+ * An amount as Rails writes a `BigDecimal` to JSON, `BigDecimal#to_s` in its
+ * `F` format: trailing zeros dropped, one decimal kept, so `"125.5"`,
+ * `"125.0"`, `"0.0"`.
+ */
+export function decimalOf(money: Money): string {
+	const exact = toDecimalString(money);
+
+	if (!exact.includes(".")) {
+		return `${exact}.0`;
+	}
+
+	const trimmed = exact.replace(/0+$/u, "");
+
+	return trimmed.endsWith(".") ? `${trimmed}0` : trimmed;
+}

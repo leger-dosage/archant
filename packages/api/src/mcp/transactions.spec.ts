@@ -19,7 +19,14 @@ import {
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { READ_WRITE, callTool, connect, mcp, registerClient } from "../testing/assistant.ts";
+import {
+	READ_WRITE,
+	answerOf,
+	callTool,
+	connect,
+	mcp,
+	registerClient,
+} from "../testing/assistant.ts";
 import { buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
@@ -196,7 +203,7 @@ describe("create_transaction", () => {
 		await expect(tools.read("get_transaction", { id: line.id })).resolves.toMatchObject({
 			structuredContent: { id: line.id, category: { id: market } },
 		});
-		await expect(balanceOf(tools, account.id)).resolves.toBe("1476.60");
+		await expect(balanceOf(tools, account.id)).resolves.toBe("1476.6");
 		await expect(calls()).resolves.toEqual([
 			{ tool: "create_transaction", outcome: "OK", changedRows: 1 },
 			{ tool: "get_transaction", outcome: "OK", changedRows: 0 },
@@ -345,12 +352,12 @@ describe("create_transaction", () => {
 		});
 
 		expect(fields.isError).toBe(true);
-		expect(errorText(fields)).toContain('{"path":"name","code":"too_small"}');
-		expect(errorText(fields)).toContain('{"path":"amount","code":"invalid_amount"}');
-		expect(errorText(category)).toContain('[{"path":"category_id","code":"invalid_value"}]');
-		expect(errorText(currency)).toContain('[{"path":"currency","code":"currency_mismatch"}]');
-		expect(errorText(opening)).toContain('[{"path":"date","code":"not_after_opening_date"}]');
-		expect(errorText(unknown)).toMatch(/^NOT_FOUND/);
+		expect(errorText(fields)).toContain("name too_small");
+		expect(errorText(fields)).toContain("amount invalid_amount");
+		expect(errorText(category)).toContain("category_id invalid_value");
+		expect(errorText(currency)).toContain("currency currency_mismatch");
+		expect(errorText(opening)).toContain("date not_after_opening_date");
+		expect(errorText(unknown)).toContain('"error":"not_found"');
 		const colon = await tools.write("create_transaction", {
 			account_id: account.id,
 			date: "2026-09-18",
@@ -359,7 +366,7 @@ describe("create_transaction", () => {
 			external_id: "row-1",
 			source: "csv:2026",
 		});
-		expect(errorText(colon)).toContain('[{"path":"source","code":"invalid_format"}]');
+		expect(errorText(colon)).toContain("source invalid_format");
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(calls()).resolves.toEqual([
 			{ tool: "create_transaction", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -472,7 +479,7 @@ describe("delete_transaction", () => {
 			deleted_count: 1,
 		});
 		await expect(transactionCount(account.id)).resolves.toBe(0);
-		await expect(balanceOf(tools, account.id)).resolves.toBe("1500.00");
+		await expect(balanceOf(tools, account.id)).resolves.toBe("1500.0");
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "OK", changedRows: 1 },
 			{ tool: "get_accounts", outcome: "OK", changedRows: 0 },
@@ -515,12 +522,14 @@ describe("delete_transaction", () => {
 		});
 
 		expect(changed.isError).toBe(true);
-		expect(errorText(changed)).toBe(
-			'TRANSACTION_CHANGED: The transaction changed since it was shown. {"changed":"amount"}',
-		);
-		expect(errorText(elsewhere)).toContain('{"changed":"account_id,date"}');
-		expect(errorText(unreadable)).toContain('[{"path":"amount","code":"invalid_amount"}]');
-		expect(errorText(unknown)).toMatch(/^NOT_FOUND/);
+		expect(answerOf(changed)).toEqual({
+			success: false,
+			error: "transaction_changed",
+			message: "The transaction changed since it was shown; changed amount",
+		});
+		expect(errorText(elsewhere)).toContain("; changed account_id,date");
+		expect(errorText(unreadable)).toContain("amount invalid_amount");
+		expect(errorText(unknown)).toContain('"error":"not_found"');
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 		await expect(calls()).resolves.toEqual([
 			{ tool: "delete_transaction", outcome: "TRANSACTION_CHANGED", changedRows: 0 },
@@ -563,7 +572,7 @@ describe("delete_transaction", () => {
 			amount: "-100.00",
 		});
 
-		expect(errorText(line)).toMatch(/^TRANSACTION_SPLIT/);
+		expect(errorText(line)).toMatch(/^\{"success":false,"error":"transaction_split"/u);
 		expect(deleted.parse(whole.structuredContent).deleted_count).toBe(3);
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(calls()).resolves.toEqual([
@@ -750,7 +759,7 @@ describe("get_transactions by Sure's names", () => {
 			groups: [{ label: "Pain", categories: [{ id: food, name: "Alimentation" }] }],
 			group_count: 1,
 		});
-		expect(errorText(bulk)).toContain('"path":"filter.accounts","code":"unrecognized_keys"');
+		expect(errorText(bulk)).toContain("filter.accounts unrecognized_keys");
 	});
 });
 
@@ -897,9 +906,9 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 		const bad = await tools.read("get_transactions", { amount: "douze", amount_operator: "less" });
 		const status = await tools.read("get_transactions", { statuses: ["booked"] });
 
-		expect(errorText(alone)).toContain('{"path":"amount_operator","code":"required"}');
-		expect(errorText(operator)).toContain('{"path":"amount","code":"required"}');
-		expect(errorText(bad)).toContain('{"path":"amount","code":"invalid_amount"}');
-		expect(errorText(status)).toContain('"path":"statuses.0"');
+		expect(errorText(alone)).toContain("amount_operator required");
+		expect(errorText(operator)).toContain("amount required");
+		expect(errorText(bad)).toContain("amount invalid_amount");
+		expect(errorText(status)).toContain("statuses.0 ");
 	});
 });

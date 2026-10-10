@@ -65,6 +65,18 @@ export function surePeriodRange(
 	return ranges[key]();
 }
 
+/**
+ * Sure's `Period#interval`: a day's step up to a calendar year, a week's up
+ * to five, a month's beyond.
+ */
+export function periodInterval(range: DateRange): SureInterval {
+	if (range.to > addMonths(range.from, 60)) {
+		return "1 month";
+	}
+
+	return range.to > addMonths(range.from, 12) ? "1 week" : "1 day";
+}
+
 const DAYS_PER_POINT: Record<SureInterval, number> = { "1 day": 1, "1 week": 7, "1 month": 30 };
 
 /** Sure's `series_points`: the range's days over the interval's, rounded down. */

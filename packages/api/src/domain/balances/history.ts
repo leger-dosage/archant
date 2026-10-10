@@ -87,7 +87,7 @@ export function fillDays(
 	return points;
 }
 
-export const SERIES_INTERVALS = ["day", "week", "month"] as const;
+const SERIES_INTERVALS = ["day", "week", "month"] as const;
 
 type SeriesInterval = (typeof SERIES_INTERVALS)[number];
 

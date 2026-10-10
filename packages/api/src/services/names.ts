@@ -162,11 +162,11 @@ export async function categoryIdsOf(
 }
 
 /**
- * The id of the tag this exact name names, as Sure's `update_tag` finds it;
- * the name itself when none does, so the service refuses it as unknown.
+ * The id of the tag this exact name names, case included, as Sure's
+ * `update_tag` finds it; `undefined` when none does.
  */
-export async function tagIdNamed(deps: ServiceDeps, name: string): Promise<string> {
-	const [id] = (await idsNamed(deps, "tags", [name.trim()])) ?? [];
+export async function tagIdNamed(deps: ServiceDeps, name: string): Promise<string | undefined> {
+	const [id] = (await idsNamed(deps, "tags", [name])) ?? [];
 
-	return id ?? name;
+	return id;
 }

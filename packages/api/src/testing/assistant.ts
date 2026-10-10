@@ -207,3 +207,8 @@ export async function callTool(app: TestApp, token: string, name: string, args: 
 
 	return toolResult.parse(await resultOf(response));
 }
+
+/** A tool's JSON answer, read from its one text block: what Sure answers, a refusal included. */
+export function answerOf(result: { content: readonly { text: string }[] }): unknown {
+	return JSON.parse(result.content[0]?.text ?? "null");
+}

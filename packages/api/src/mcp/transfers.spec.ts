@@ -227,7 +227,7 @@ describe("get_transfer_candidates", () => {
 
 		expect(candidates.parse(linked.structuredContent).candidates).toEqual([]);
 		expect(unknown.isError).toBe(true);
-		expect(unknown.content[0]?.text).toMatch(/^NOT_FOUND:/);
+		expect(unknown.content[0]?.text).toContain('"error":"not_found"');
 		expect(await calls()).toEqual([
 			{ tool: "get_transfer_candidates", outcome: "OK", changedRows: 0 },
 			{ tool: "get_transfer_candidates", outcome: "NOT_FOUND", changedRows: 0 },
@@ -280,8 +280,8 @@ describe("pair_transfer", () => {
 		});
 
 		expect(tooFar.isError).toBe(true);
-		expect(tooFar.content[0]?.text).toContain('"path":"counterpart_id","code":"not_a_candidate"');
-		expect(unknown.content[0]?.text).toMatch(/^NOT_FOUND:/);
+		expect(tooFar.content[0]?.text).toContain("counterpart_id not_a_candidate");
+		expect(unknown.content[0]?.text).toContain('"error":"not_found"');
 		expect(await transfersNow()).toEqual([]);
 		expect(await calls()).toEqual([
 			{ tool: "pair_transfer", outcome: "VALIDATION_ERROR", changedRows: 0 },
@@ -370,8 +370,8 @@ describe("unpair_transfer", () => {
 			never_propose: true,
 		});
 
-		expect(plain.content[0]?.text).toMatch(/^NOT_FOUND:/);
-		expect(refused.content[0]?.text).toMatch(/^NOT_FOUND:/);
+		expect(plain.content[0]?.text).toContain('"error":"not_found"');
+		expect(refused.content[0]?.text).toContain('"error":"not_found"');
 		expect(await transfersNow()).toHaveLength(1);
 		expect(await calls()).toEqual([
 			{ tool: "unpair_transfer", outcome: "NOT_FOUND", changedRows: 0 },
