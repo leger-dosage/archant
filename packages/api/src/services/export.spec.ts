@@ -1660,7 +1660,7 @@ describe("exportArchive", () => {
 	});
 
 	it("writes goals and their links to goals.ndjson, outside the lines Sure's preflight reads", async () => {
-		const { ids } = await household();
+		const { ids, food } = await household();
 		const holiday = await goalOf({
 			name: "Vacances",
 			targetAmount: "2 000,50",
@@ -1680,8 +1680,14 @@ describe("exportArchive", () => {
 		});
 		await sendOwn("POST", `/api/goals/${car}/complete`);
 		vi.setSystemTime(new Date("2026-09-21T10:00:02Z"));
-		// The only month before September with an expense: a median of 400.
-		await postOwn(ids.checking, { date: "2026-08-10", label: "Courses", amount: "-400" });
+		// The only month before September with an expense: a median of 400. In a
+		// category, or August's uncategorised salary would net it away.
+		const groceries = await postOwn(ids.checking, {
+			date: "2026-08-10",
+			label: "Courses",
+			amount: "-400",
+		});
+		await sendOwn("PATCH", `/api/transactions/${groceries}`, { categoryId: food });
 		const reserve = await goalOf({
 			name: "Urgences",
 			kind: "maintained",

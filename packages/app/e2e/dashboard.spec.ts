@@ -475,7 +475,10 @@ test("« Revenus » and « Dépenses » count only the month's counted rows", as
 	);
 });
 
-test("a net refund keeps its row, and draws no donut segment", async ({ page, api }) => {
+test("a category refunded beyond what it spent moves to « Revenus », where it drew no segment under « Dépenses »", async ({
+	page,
+	api,
+}) => {
 	const account = await api.openAccount(before2024);
 	const groceries = await api.createCategory({ name: uniqueName("Courses") });
 	const clothes = await api.createCategory({ name: uniqueName("Vêtements"), color: "#4ea7fc" });
@@ -495,12 +498,22 @@ test("a net refund keeps its row, and draws no donut segment", async ({ page, ap
 	await page.goto("/?month=2024-08");
 
 	const rows = rowsOf(page, "2024-08", "Dépenses");
-	await expect(rows).toHaveCount(2);
-	await expect(rows.filter({ hasText: clothes.name })).toContainText(`+${euros(2_000)}`);
+	await expect(rows).toHaveCount(1);
+	await expect(rows).toContainText(groceries.name);
 	await expect(donut(page, "2024-08").locator(".recharts-pie-sector")).toHaveCount(1);
 	await expect(donut(page, "2024-08").locator(".recharts-pie-sector path")).toHaveAttribute(
 		"fill",
 		"#e99537",
+	);
+
+	await flows(page, "2024-08").getByRole("radio", { name: "Revenus" }).click();
+
+	await expect(rowsOf(page, "2024-08", "Revenus")).toHaveCount(1);
+	await expect(rowsOf(page, "2024-08", "Revenus")).toContainText(clothes.name);
+	await expect(rowsOf(page, "2024-08", "Revenus")).toContainText(`+${euros(2_000)}`);
+	await expect(donut(page, "2024-08").locator(".recharts-pie-sector path")).toHaveAttribute(
+		"fill",
+		"#4ea7fc",
 	);
 });
 
@@ -548,10 +561,133 @@ test("a parent line rolls up its sub-category, beside « Sans catégorie »", as
 
 	await expect(page).toHaveURL(/\/transactions\?/u);
 	await expect(page).toHaveURL(/[?&]category=[^&]*none/u);
-	await expect(page).toHaveURL(/[?&]direction=[^&]*expense/u);
+	// The net line holds both signs: its list keeps them both.
+	await expect(page).not.toHaveURL(/[?&]direction=/u);
 	await expect(page).toHaveURL(/[?&]from=2024-04-01(&|$)/u);
 	await expect(page).toHaveURL(/[?&]to=2024-04-30(&|$)/u);
 	await expect(page.getByText(uncategorised)).toBeVisible();
+});
+
+const tradesBody = z.object({
+	data: z.object({
+		items: z.array(z.object({ security: z.object({ id: z.string() }).nullable() })),
+	}),
+});
+
+test("« Revenus », « Dépenses » and each line read Sure's net view: a refund, a category's net income, a loan payment, and no dividend nor PEA line", async ({
+	page,
+	api,
+	request,
+}) => {
+	// July 2022 belongs to this test alone, so its figures are exact.
+	const opened = { openingBalance: "0", openingDate: "2022-06-01" } as const;
+	const checking = await api.openAccount(opened);
+	const pea = await api.openAccount({ ...opened, kind: "pea", openingBalance: "5 000,00" });
+	const loan = await api.openAccount({ ...opened, kind: "mortgage", openingBalance: "90 000,00" });
+	const groceries = await api.createCategory({ name: uniqueName("Courses") });
+	const gifts = await api.createCategory({ name: uniqueName("Cadeaux"), color: "#4ea7fc" });
+	const lines = [
+		{ label: "Courses", amount: "-100,00", categoryId: groceries.id },
+		{ label: "Retour courses", amount: "30,00", categoryId: groceries.id },
+		{ label: "Cadeau offert", amount: "-20,00", categoryId: gifts.id },
+		{ label: "Cadeau reçu", amount: "50,00", categoryId: gifts.id },
+	];
+	await lines.reduce(async (previous, { label, amount, categoryId }, index) => {
+		await previous;
+		const id = await api.addTransaction(checking.id, {
+			date: `2022-07-0${index + 1}`,
+			label,
+			amount,
+		});
+		await api.categorise([id], categoryId);
+	}, Promise.resolve());
+	const instalment = await api.addTransaction(checking.id, {
+		date: "2022-07-10",
+		label: "Échéance prêt",
+		amount: "-500,00",
+	});
+	const repaid = await api.addTransaction(loan.id, {
+		date: "2022-07-10",
+		label: "Remboursement",
+		amount: "500,00",
+	});
+	// Proposed on creation; refused and matched again as « Rapprocher » would.
+	await api.unlinkTransfer(instalment, { never: true });
+	await api.matchTransfer(instalment, repaid);
+	await api.recordTrade(pea.id, {
+		security: { source: "manual", name: uniqueName("Fonds") },
+		date: "2022-07-11",
+		quantity: "10",
+		price: "100",
+	});
+	const listed = await request.get(`/api/accounts/${pea.id}/trades`);
+	const securityId = tradesBody.parse(await listed.json()).data.items[0]?.security?.id ?? "";
+	await api.recordTrade(pea.id, {
+		side: "dividend",
+		security: { source: "known", id: securityId },
+		date: "2022-07-15",
+		amount: "12,00",
+	});
+	await api.addTransaction(pea.id, { date: "2022-07-16", label: "Frais", amount: "-15,00" });
+
+	await page.goto("/?month=2022-07");
+
+	// Before Story 27.6: +12,00 € in, the dividend, and −555,00 € out:
+	// « Courses » −70,00 €, « Cadeaux » +30,00 € under « Dépenses » by its
+	// kind, the loan payment −500,00 € and the PEA's fee −15,00 €.
+	await expect(cell(page, "2022-07", "Revenus")).toContainText(`+${euros(3_000)}`);
+	await expect(cell(page, "2022-07", "Dépenses")).toContainText(euros(-57_000));
+	const spent = rowsOf(page, "2022-07", "Dépenses");
+	await expect(spent).toHaveCount(2);
+	await expect(spent.nth(0)).toContainText("Sans catégorie");
+	await expect(spent.nth(0)).toContainText(euros(-50_000));
+	await expect(spent.nth(1)).toContainText(groceries.name);
+	await expect(spent.nth(1)).toContainText(euros(-7_000));
+
+	await flows(page, "2022-07").getByRole("radio", { name: "Revenus" }).click();
+
+	const earned = rowsOf(page, "2022-07", "Revenus");
+	await expect(earned).toHaveCount(1);
+	await expect(earned).toContainText(gifts.name);
+	await expect(earned).toContainText(`+${euros(3_000)}`);
+});
+
+test("a month of a PEA's lines and a dividend alone shows no income and no expense", async ({
+	page,
+	api,
+	request,
+}) => {
+	// August 2022 belongs to this test alone.
+	const pea = await api.openAccount({
+		kind: "pea",
+		openingBalance: "5 000,00",
+		openingDate: "2022-07-01",
+	});
+	await api.recordTrade(pea.id, {
+		security: { source: "manual", name: uniqueName("Fonds") },
+		date: "2022-07-20",
+		quantity: "10",
+		price: "100",
+	});
+	const listed = await request.get(`/api/accounts/${pea.id}/trades`);
+	const securityId = tradesBody.parse(await listed.json()).data.items[0]?.security?.id ?? "";
+	await api.recordTrade(pea.id, {
+		side: "dividend",
+		security: { source: "known", id: securityId },
+		date: "2022-08-15",
+		amount: "12,00",
+	});
+	await api.addTransaction(pea.id, { date: "2022-08-16", label: "Frais", amount: "-15,00" });
+	await api.addTransaction(pea.id, { date: "2022-08-17", label: "Crédit", amount: "40,00" });
+
+	await page.goto("/?month=2022-08");
+
+	await expect(cell(page, "2022-08", "Revenus")).toContainText(euros(0));
+	await expect(cell(page, "2022-08", "Revenus")).not.toContainText(euros(1_200));
+	await expect(cell(page, "2022-08", "Revenus")).not.toContainText(euros(4_000));
+	await expect(cell(page, "2022-08", "Dépenses")).toContainText(euros(0));
+	await expect(cell(page, "2022-08", "Dépenses")).not.toContainText(euros(1_500));
+	await expect(rowsOf(page, "2022-08", "Dépenses")).toHaveCount(0);
 });
 
 test("a category line opens its rows of the month in « Opérations »", async ({ page, api }) => {

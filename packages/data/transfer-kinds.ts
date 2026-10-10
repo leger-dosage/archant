@@ -15,7 +15,7 @@ export type TransferKind = (typeof TRANSFER_KINDS)[number];
 /**
  * Kinds whose outflow still counts as an expense: a loan repayment or an
  * investment contribution leaves the household's spending money for good.
- * `direction` and the list's SQL filter are both built from it.
+ * `countsInCashFlow`, `recurringDirection` and their SQL twins are built from it.
  */
 export const EXPENSE_TRANSFER_KINDS = [
 	"loan_payment",

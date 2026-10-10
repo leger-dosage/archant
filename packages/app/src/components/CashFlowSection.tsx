@@ -38,11 +38,7 @@ const CashFlowChart = lazy(async () => ({
 	default: (await import("@/components/CashFlowChart")).CashFlowChart,
 }));
 
-/** The side's usual sign: a line against it, a net refund, draws no segment. */
-const alongSide = (line: CashFlowLine, side: Side) =>
-	side === "expense" ? line.amount < 0 : line.amount > 0;
-
-function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; data: CashFlowData }) {
+function CategoryRow({ line, data }: { line: CashFlowLine; data: CashFlowData }) {
 	const { t } = useTranslation();
 
 	return (
@@ -50,9 +46,8 @@ function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; dat
 			<Link
 				to="/transactions"
 				search={{
+					// A net line holds both signs: its list shows every row it nets.
 					category: [line.categoryId ?? UNCATEGORISED],
-					// « Sans catégorie » sits on both sides: its list keeps this side's rows.
-					...(line.categoryId === null ? { direction: [side] } : {}),
 					from: data.from,
 					to: data.to,
 				}}
@@ -84,13 +79,11 @@ function CategoryRow({ line, side, data }: { line: CashFlowLine; side: Side; dat
  */
 function Donut({ side, data, lines }: { side: Side; data: CashFlowData; lines: CashFlowLine[] }) {
 	const { t } = useTranslation();
-	const segments = lines
-		.filter((line) => alongSide(line, side))
-		.map((line) => ({
-			key: line.categoryId ?? UNCATEGORISED,
-			value: Math.abs(line.amount),
-			fill: line.color ?? "var(--muted-foreground)",
-		}));
+	const segments = lines.map((line) => ({
+		key: line.categoryId ?? UNCATEGORISED,
+		value: Math.abs(line.amount),
+		fill: line.color ?? "var(--muted-foreground)",
+	}));
 
 	if (segments.length === 0) {
 		return null;
@@ -256,12 +249,7 @@ export function CashFlowSection({
 									className="flex flex-col divide-y divide-line"
 								>
 									{lines.map((line) => (
-										<CategoryRow
-											key={line.categoryId ?? UNCATEGORISED}
-											line={line}
-											side={side}
-											data={data}
-										/>
+										<CategoryRow key={line.categoryId ?? UNCATEGORISED} line={line} data={data} />
 									))}
 								</ul>
 							</InsetGroup>

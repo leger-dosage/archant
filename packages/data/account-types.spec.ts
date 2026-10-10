@@ -8,6 +8,7 @@ import {
 	isAccountSubtype,
 	isBankAccountTarget,
 	isSubtypeOf,
+	isTaxAdvantaged,
 } from "./account-types.ts";
 
 describe("account types", () => {
@@ -94,5 +95,14 @@ describe("bank account targets", () => {
 		expect(isBankAccountTarget("credit_card", null)).toBe(true);
 		expect(isBankAccountTarget("loan", "student")).toBe(false);
 		expect(isBankAccountTarget("investment", "pea")).toBe(false);
+	});
+});
+
+describe("tax-advantaged accounts", () => {
+	it("are a PEA and an assurance-vie, as Sure's `:tax_advantaged` subtypes, never a compte-titres", () => {
+		expect(isTaxAdvantaged("pea")).toBe(true);
+		expect(isTaxAdvantaged("assurance_vie")).toBe(true);
+		expect(isTaxAdvantaged("brokerage")).toBe(false);
+		expect(isTaxAdvantaged(null)).toBe(false);
 	});
 });

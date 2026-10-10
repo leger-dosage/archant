@@ -241,14 +241,14 @@ describe("matches on the type", () => {
 		expect(matching([type("transfer")], { transfer: { kind: "internal_move" } })).toBe(true);
 	});
 
-	it("calls the outflow of a loan payment an expense, as the list's filter does", () => {
+	it("calls the outflow of a loan payment a transfer, as Sure's `TransactionType` condition, where it was an expense", () => {
 		const loanPayment = {
 			amount: toMinorUnits(-1000),
 			transfer: { kind: "loan_payment" as const },
 		};
 
-		expect(matching([type("expense")], loanPayment)).toBe(true);
-		expect(matching([type("transfer")], loanPayment)).toBe(false);
+		expect(matching([type("expense")], loanPayment)).toBe(false);
+		expect(matching([type("transfer")], loanPayment)).toBe(true);
 	});
 });
 

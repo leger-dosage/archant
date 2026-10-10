@@ -33,7 +33,7 @@ import {
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
-import { direction } from "../../domain/cash-flow.ts";
+import { recurringDirection } from "../../domain/cash-flow.ts";
 import {
 	addDays,
 	addMonths,
@@ -539,7 +539,7 @@ export async function candidatePatterns(
 	const groups = new Map<string, typeof detectable>();
 
 	for (const row of detectable) {
-		if (row.date < from || direction(row) !== "income") {
+		if (row.date < from || recurringDirection(row) !== "income") {
 			continue;
 		}
 

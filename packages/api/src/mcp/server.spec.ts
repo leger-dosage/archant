@@ -978,15 +978,6 @@ const incomeStatement = z.object({
 	left_out_account_ids: z.array(z.string()),
 });
 
-const routeLines = z.array(
-	z.object({
-		categoryId: z.string().nullable(),
-		name: z.string().nullable(),
-		amount: z.number(),
-		share: z.number().nullable(),
-	}),
-);
-
 const leftOutIds = (leftOut: unknown) =>
 	z
 		.array(z.object({ id: z.string() }))
@@ -1122,7 +1113,7 @@ describe("reading reports", () => {
 		}
 	});
 
-	it("get_income_statement gives the dashboard's month over its days, line by line", async () => {
+	it("get_income_statement gives the month's gross lines, « Sans catégorie » on both sides, where it read the dashboard's net 2 490,00 € and −64,20 €", async () => {
 		const account = await openAccount({ name: "Mois", openingDate: "2026-07-01" });
 		const food = await createCategory(uniqueCategory("STATEMENT Alimentation"));
 		const groceries = await spend(account, "STATEMENT Courses", -6420, "2026-08-12");
@@ -1139,30 +1130,45 @@ describe("reading reports", () => {
 		});
 		const statement = incomeStatement.parse(result.structuredContent);
 		const route = await routeData("/api/reports/cash-flow?month=2026-08");
-		const lines = z.object({ income: routeLines, expense: routeLines }).parse(route.lines);
-		const decimals = (side: z.infer<typeof routeLines>) =>
-			side.map(({ categoryId, name, amount, share }) => ({
-				category_id: categoryId,
-				name,
-				total: money(amount),
-				percentage_of_total: share === null ? null : Math.round(share * 1000) / 10,
-				subcategory_totals: [],
-			}));
-		const net = z.number().parse(route.income) + z.number().parse(route.expenses);
 
 		expect(statement).toMatchObject({
 			currency: "EUR",
 			period: { start_date: "2026-08-01", end_date: "2026-08-31" },
-			income: { total: money(route.income), by_category: decimals(lines.income) },
-			expense: { total: money(route.expenses), by_category: decimals(lines.expense) },
-			insights: {
-				net_income: money(net),
-				savings_rate: Math.round((net / z.number().parse(route.income)) * 1000) / 10,
+			income: {
+				total: "2500.00",
+				by_category: [
+					{
+						category_id: null,
+						name: null,
+						total: "2500.00",
+						percentage_of_total: 100,
+						subcategory_totals: [],
+					},
+				],
 			},
+			expense: {
+				total: "-74.20",
+				by_category: [
+					{
+						category_id: food.id,
+						name: food.name,
+						total: "-64.20",
+						percentage_of_total: 86.5,
+						subcategory_totals: [],
+					},
+					{
+						category_id: null,
+						name: null,
+						total: "-10.00",
+						percentage_of_total: 13.5,
+						subcategory_totals: [],
+					},
+				],
+			},
+			insights: { net_income: "2425.80", savings_rate: 97 },
 		});
-		expect(statement.expense.by_category).toContainEqual(
-			expect.objectContaining({ category_id: food.id, total: "-64.20" }),
-		);
+		// The dashboard reads Sure's net view: « Sans catégorie » nets to one income line.
+		expect(route).toMatchObject({ income: 249000, expenses: -6420 });
 	});
 
 	it("get_income_statement gives 0.00 and no lines for an empty period, and refuses a bad date", async () => {

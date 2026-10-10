@@ -102,11 +102,11 @@ function categoryCondition(
 	return or(
 		ids.length === 0 ? undefined : inArray(transactions.categoryId, [...ids]),
 		// A transfer side shows no category, so it is not « Sans catégorie »
-		// either, as Sure's `uncategorized_condition` leaves transfers out. The
-		// outflows of `EXPENSE_TRANSFER_KINDS`, loan payments and investment
-		// contributions, are the exception: the dashboard counts them as
-		// uncategorised expenses, so its drill-down must list them.
-		uncategorised ? and(isNull(transactions.categoryId), not(sides.is)) : undefined,
+		// either, as Sure's `UNCATEGORIZED_EXCLUDED_KINDS`. The outflows of
+		// `EXPENSE_TRANSFER_KINDS`, loan payments and investment contributions,
+		// are the exception: the dashboard counts them as uncategorised
+		// expenses, so its drill-down must list them.
+		uncategorised ? and(isNull(transactions.categoryId), not(sides.uncounted)) : undefined,
 	);
 }
 
@@ -132,29 +132,31 @@ function contains(column: typeof transactions.label | typeof transactions.notes,
 }
 
 /** Drizzle's `and` of two conditions, typed as never empty, so a sum can pick rows by it. */
-const both = (left: SQL, right: SQL): SQL => sql`(${left} and ${right})`;
+export const both = (left: SQL, right: SQL): SQL => sql`(${left} and ${right})`;
 
 /**
- * The SQL twin of `direction` in `domain/cash-flow.ts`, built from the same
- * `EXPENSE_TRANSFER_KINDS`; the parity test in `filter.spec.ts` keeps the two
- * in step. It lives here because only the ledger reads the money tables. `is`
- * says whether a row is a transfer side; `directions` are the filter's
- * conditions built on it.
+ * The SQL twin of `direction` in `domain/cash-flow.ts`; the parity test in
+ * `filter.spec.ts` keeps the two in step. It lives here because only the
+ * ledger reads the money tables. `is` says whether a row is a transfer side,
+ * any side, as Sure's `TRANSFER_KINDS`; `uncounted` whether it is a side
+ * cash flow never counts and that carries no category, every side but the
+ * outflow of `EXPENSE_TRANSFER_KINDS`, as Sure's `UNCATEGORIZED_EXCLUDED_KINDS`;
+ * `directions` are the filter's conditions built on `is`.
  */
-type TransferSideSql = { is: SQL; directions: Record<Direction, SQL> };
+type TransferSideSql = { is: SQL; uncounted: SQL; directions: Record<Direction, SQL> };
 
-function transferSideOf(is: SQL): TransferSideSql {
+function transferSideOf(sides: { is: SQL; uncounted: SQL }): TransferSideSql {
 	// `+` keeps SQLite off `entries_kind_amount_date` for a sign: « Dépenses »
 	// matches most rows, and read by amount they had to be sorted by date in
 	// full, 65 ms at 100,000 rows, where the date index stops at the page.
 	const amount = sql`+${entries.amount}`;
 
 	return {
-		is,
+		...sides,
 		directions: {
-			income: both(not(is), gt(amount, 0)),
-			expense: both(not(is), lte(amount, 0)),
-			transfer: is,
+			income: both(not(sides.is), gt(amount, 0)),
+			expense: both(not(sides.is), lte(amount, 0)),
+			transfer: sides.is,
 		},
 	};
 }
@@ -164,9 +166,10 @@ function transferSideOf(is: SQL): TransferSideSql {
  * subquery per row, which the list, its count, its sum and the cash flow
  * cannot afford at 100,000 rows.
  */
-export const correlatedTransferSide = transferSideOf(
-	sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
-);
+export const correlatedTransferSide = transferSideOf({
+	is: sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or ${transfers.outflowTransactionId} = ${entries.id})`,
+	uncounted: sql`exists (select 1 from ${transfers} where ${transfers.inflowTransactionId} = ${entries.id} or (${transfers.outflowTransactionId} = ${entries.id} and ${notInArray(transfers.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
+});
 
 /**
  * For a query that left-joins `asOutflow` and `asInflow` on the row's id: the
@@ -174,9 +177,10 @@ export const correlatedTransferSide = transferSideOf(
  * than the correlated subquery. Each join is on a unique index, so no row
  * doubles, and SQLite drops either join when nothing reads it.
  */
-export const joinedTransferSide = transferSideOf(
-	sql`(${asInflow.id} is not null or (${asOutflow.id} is not null and ${notInArray(asOutflow.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
-);
+export const joinedTransferSide = transferSideOf({
+	is: sql`(${asInflow.id} is not null or ${asOutflow.id} is not null)`,
+	uncounted: sql`(${asInflow.id} is not null or (${asOutflow.id} is not null and ${notInArray(asOutflow.kind, [...EXPENSE_TRANSFER_KINDS])}))`,
+});
 
 /**
  * The where clause of a filter, `null` when it can match nothing at all, so

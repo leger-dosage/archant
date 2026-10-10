@@ -361,7 +361,7 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 		throw notFound();
 	}
 
-	const [row, chainMonths, { cashFlow, rows, categories: allCategories }, history, source] =
+	const [row, chainMonths, { cashFlow, gross, rows, categories: allCategories }, history, source] =
 		await Promise.all([
 			deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
 			setUpMonths(deps.db, { to: month }),
@@ -404,7 +404,7 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 		copySource: budgetedSpending === null ? (source?.month ?? null) : null,
 		budgetedSpending: budgetedSpending === null ? null : toMinorUnits(budgetedSpending),
 		expectedIncome: expectedIncome === null ? null : toMinorUnits(expectedIncome),
-		actual: actualsOf(cashFlow),
+		actual: actualsOf({ net: cashFlow, gross }),
 		segments: spendingSegments(cashFlow.lines.expense),
 		...envelopes,
 		suggested: suggestions(history, month, current),

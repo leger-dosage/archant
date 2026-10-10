@@ -292,7 +292,7 @@ describe("GET /api/reports/cash-flow", () => {
 		});
 	});
 
-	it("lowers a category and « Dépenses » by a refund", async () => {
+	it("lowers a category and « Dépenses » by a refund, Sure's net view", async () => {
 		const account = await openOwn(august);
 		const courses = await ownCategory("Courses");
 		await spend(account.id, "-80,00", courses);
@@ -304,7 +304,7 @@ describe("GET /api/reports/cash-flow", () => {
 		expect(data.lines.expense).toEqual([line(courses, "Courses", -6000)]);
 	});
 
-	it("splits uncategorised rows by sign into « Sans catégorie » on each side", async () => {
+	it("nets « Sans catégorie » into an income line of +60 €, where it split into +100 € and −40 €", async () => {
 		const account = await openOwn(august);
 		await spend(account.id, "100,00");
 		await spend(account.id, "-40,00");
@@ -312,9 +312,9 @@ describe("GET /api/reports/cash-flow", () => {
 		const data = await cashFlowOf("2026-09");
 
 		expect(data).toMatchObject({
-			income: 10000,
-			expenses: -4000,
-			lines: { income: [line(null, null, 10000)], expense: [line(null, null, -4000)] },
+			income: 6000,
+			expenses: 0,
+			lines: { income: [line(null, null, 6000)], expense: [] },
 		});
 	});
 
@@ -366,7 +366,7 @@ describe("GET /api/reports/cash-flow", () => {
 			lines: { income: [], expense: [line(null, null, -120000)] },
 		});
 		// The « Sans catégorie » drill-down lists what the line counts.
-		const drilled = await listed("?category=none&direction=expense&from=2026-09-01&to=2026-09-30");
+		const drilled = await listed("?category=none&from=2026-09-01&to=2026-09-30");
 		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
 	});
@@ -386,9 +386,22 @@ describe("GET /api/reports/cash-flow", () => {
 			expenses: -50000,
 			lines: { income: [], expense: [line(null, null, -50000)] },
 		});
-		const drilled = await listed("?category=none&direction=expense&from=2026-09-01&to=2026-09-30");
+		const drilled = await listed("?category=none&from=2026-09-01&to=2026-09-30");
 		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
+	});
+
+	it("counts nothing of a PEA's own line, where it was a −15 € expense, as Sure leaves tax-advantaged accounts out", async () => {
+		const checking = await openOwn({ ...august, name: "Compte courant" });
+		const account = await openOwn({ ...august, ...pea });
+		await spend(account.id, "-15,00");
+		await spend(checking.id, "-12,00");
+
+		await expect(cashFlowOf("2026-09")).resolves.toMatchObject({
+			income: 0,
+			expenses: -1200,
+			lines: { income: [], expense: [line(null, null, -1200)] },
+		});
 	});
 
 	it("counts a loan payment's outflow in the category picked on it", async () => {
@@ -486,7 +499,7 @@ describe("GET /api/reports/cash-flow", () => {
 		await expect(cashFlowOf("2026-09")).resolves.toMatchObject({ expenses: -600 });
 	});
 
-	it("keeps both lines of a group summing to zero, without a share", async () => {
+	it("puts an income-kind category that spends on the expense side, where it lowered income to zero", async () => {
 		const account = await openOwn(august);
 		const salaire = await ownCategory("Salaire", { kind: "income" });
 		const primes = await ownCategory("Primes", { kind: "income" });
@@ -495,11 +508,14 @@ describe("GET /api/reports/cash-flow", () => {
 
 		const data = await cashFlowOf("2026-09");
 
-		expect(data.income).toBe(0);
-		expect(data.lines.income).toEqual([
-			line(primes, "Primes", -5000, null),
-			line(salaire, "Salaire", 5000, null),
-		]);
+		expect(data).toMatchObject({
+			income: 5000,
+			expenses: -5000,
+			lines: {
+				income: [line(salaire, "Salaire", 5000)],
+				expense: [line(primes, "Primes", -5000)],
+			},
+		});
 	});
 
 	it("is zero with empty lines for a month without counted rows", async () => {

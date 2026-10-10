@@ -168,7 +168,7 @@ export const getIncomeStatementTool = defineTool({
 	name: "get_income_statement",
 	title: "Income statement",
 	description:
-		"Sure's get_income_statement: income and expenses between start_date and end_date in the reporting currency, by top-level category with its sub-categories, largest first, as the dashboard counts them: transfers between accounts, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency. Month over month: group_by \"month\" adds monthly_series. Against the period before: compare_previous_period. Per account: account_ids gives totals only, as Sure's.",
+		"Sure's get_income_statement: income and expenses between start_date and end_date in the reporting currency, by top-level category with its sub-categories, largest first: each transaction on the side of its sign, so a refund is income in its category, and a loan payment or an investment contribution an expense; other transfers between accounts, trades, excluded and pending transactions count in neither. It counts the active accounts included in reports and held in the reporting currency, a PEA or an assurance-vie left out. Month over month: group_by \"month\" adds monthly_series. Against the period before: compare_previous_period. Per account: account_ids gives totals only, as Sure's.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: incomeStatementInput,
@@ -225,7 +225,11 @@ export const getIncomeStatementTool = defineTool({
 			percent: previous === 0 ? null : percentOf(current - previous, previous),
 		});
 		const { breakdown } = statement;
-		const sideOf = (total: MinorUnits, lines: readonly CashFlowLine[] | null) => ({
+		const sideOf = (
+			total: MinorUnits,
+			lines: readonly CashFlowLine[] | null,
+			sign: "income" | "expense",
+		) => ({
 			total: money(total),
 			by_category:
 				lines === null || breakdown === null
@@ -238,7 +242,7 @@ export const getIncomeStatementTool = defineTool({
 								entry.share === null ? null : Math.round(entry.share * 1000) / 10,
 							subcategory_totals: (entry.categoryId === null
 								? []
-								: (breakdown.subcategories.get(entry.categoryId) ?? [])
+								: (breakdown.subcategories[sign].get(entry.categoryId) ?? [])
 							).map((child) => ({
 								category_id: child.categoryId,
 								name: child.name,
@@ -255,8 +259,8 @@ export const getIncomeStatementTool = defineTool({
 				currency: statement.currency,
 				period: { start_date: statement.from, end_date: statement.to },
 				...(statement.accountIds === null ? {} : { account_ids: statement.accountIds }),
-				income: sideOf(statement.income, breakdown?.lines.income ?? null),
-				expense: sideOf(statement.expenses, breakdown?.lines.expense ?? null),
+				income: sideOf(statement.income, breakdown?.lines.income ?? null, "income"),
+				expense: sideOf(statement.expenses, breakdown?.lines.expense ?? null, "expense"),
 				...(breakdown === null
 					? { net: money(net), breakdown_omitted_reason: OMITTED_REASON }
 					: {

@@ -196,36 +196,37 @@ function measured(envelope: {
 }
 
 /**
- * Each expense category's signed net over `rows`, a parent's with its
- * children's, and the uncategorised outflow. A row in an unknown category is
- * uncategorised, as `cashFlowBreakdown` counts it; a row in an income
- * category counts nowhere.
+ * Each category's signed net over `rows`, a parent's with its children's,
+ * whatever its kind, and « Sans catégorie »'s, as Sure's
+ * `budget_category_actual_spending` nets a category's expense and refunds,
+ * its `:uncategorized` key included. A row in an unknown category is
+ * uncategorised, as `grossCashFlow` counts it. `uncategorised` stays `null`
+ * until an uncategorised outflow is counted, so a month of uncategorised
+ * income alone enters no median.
  */
 function netsOf(rows: readonly CashFlowRow[], byId: ReadonlyMap<string, TreeCategory>) {
 	const nets = new Map<string, MinorUnits>();
-	// `null` until an uncategorised outflow is counted.
-	let uncategorised: MinorUnits | null = null;
+	let uncategorisedNet = 0;
+	let spentUncategorised = false;
 
 	for (const row of rows) {
 		const own = row.categoryId === null ? undefined : byId.get(row.categoryId);
 
 		if (own === undefined) {
-			// Rows are grouped by sign: a positive one is income, not a refund.
-			if (row.amount < 0) {
-				uncategorised = toMinorUnits((uncategorised ?? 0) + row.amount);
-			}
-		} else if (own.kind === "expense") {
+			uncategorisedNet += row.amount;
+			spentUncategorised ||= row.amount < 0;
+		} else {
 			for (const id of own.parentId === null ? [own.id] : [own.id, own.parentId]) {
 				nets.set(id, toMinorUnits((nets.get(id) ?? 0) + row.amount));
 			}
 		}
 	}
 
-	return { nets, uncategorised };
+	return { nets, uncategorised: spentUncategorised ? toMinorUnits(uncategorisedNet) : null };
 }
 
 /**
- * What each expense category spent over `rows`, a parent with its children,
+ * What each category spent over `rows`, a parent with its children,
  * floored at zero, as `budgetCategories` counts it; a category that counted
  * no row has no entry.
  */

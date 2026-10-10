@@ -116,22 +116,23 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 		Promise.resolve([]),
 	);
 	await api.categorise(spent, groceries.id);
-	await api.addTransaction(account.id, {
-		date: "2023-08-25",
-		label: "Salaire",
-		amount: "2 000,00",
-	});
-	await api.addTransaction(account.id, {
-		date: "2023-10-25",
-		label: "Salaire",
-		amount: "3 000,00",
-	});
+	// In a category of their own: uncategorised, November's would net « Retrait » away.
+	const salary = await api.createCategory({ name: uniqueName("Salaire"), kind: "income" });
+	const paid = await (
+		[
+			["2023-08-25", "2 000,00"],
+			["2023-10-25", "3 000,00"],
+			["2023-11-25", "2 800,00"],
+		] as const
+	).reduce<Promise<string[]>>(
+		async (previous, [date, amount]) => [
+			...(await previous),
+			await api.addTransaction(account.id, { date, label: "Salaire", amount }),
+		],
+		Promise.resolve([]),
+	);
+	await api.categorise(paid, salary.id);
 	await api.addTransaction(account.id, { date: "2023-11-12", label: "Retrait", amount: "-100,00" });
-	await api.addTransaction(account.id, {
-		date: "2023-11-25",
-		label: "Salaire",
-		amount: "2 800,00",
-	});
 
 	await page.goto("/budgets/2023-11");
 
@@ -261,6 +262,7 @@ test("a month is spread over its categories, which show their status and open a 
 	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
 	const gifts = await api.createCategory({ name: uniqueName("Cadeaux") });
 	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
+	const refunds = await api.createCategory({ name: uniqueName("Remboursements"), kind: "income" });
 	// One after the other: each is an `immediate` ledger write.
 	const lines = [
 		["2023-12-10", "-100,00", house.id, "Quincaillerie"],
@@ -273,9 +275,10 @@ test("a month is spread over its categories, which show their status and open a 
 		["2024-02-07", "-5,00", gifts.id, "Carte"],
 		["2024-02-08", "-5,00", gifts.id, "Ruban"],
 		["2024-02-09", "-5,00", gifts.id, "Papier"],
-		// « Sans catégorie »: its outflow spends, its income does not.
+		// « Sans catégorie »'s outflow spends. The income sits in a category of
+		// its own: uncategorised, it would net the outflow away, as Sure's.
 		["2024-02-10", "-30,00", null, "Retrait"],
-		["2024-02-11", "500,00", null, "Remboursement"],
+		["2024-02-11", "500,00", refunds.id, "Remboursement"],
 	] as const;
 	await lines.reduce(async (previous, [date, amount, categoryId, label]) => {
 		await previous;
@@ -425,7 +428,7 @@ test("a month is spread over its categories, which show their status and open a 
 		await expect(page.getByText("Pépinière")).toBeVisible();
 	});
 
-	await test.step("a sheet lists three rows, « Sans catégorie »'s its outflow only", async () => {
+	await test.step("a sheet lists three rows, « Sans catégorie »'s with no « Sens », where it kept the outflow only", async () => {
 		await page.goto("/budgets/2024-02");
 		await card(page, gifts.name).click();
 		const gifted = page.getByRole("dialog", { name: gifts.name });
@@ -450,7 +453,7 @@ test("a month is spread over its categories, which show their status and open a 
 		await expect(rows).toContainText("Retrait");
 		await uncategorised.getByRole("link", { name: "Voir toutes les opérations" }).click();
 		await expect(page).toHaveURL(/[?&]category=[^&]*none/u);
-		await expect(page).toHaveURL(/[?&]direction=[^&]*expense/u);
+		await expect(page).not.toHaveURL(/[?&]direction=/u);
 		await expect(page).toHaveURL(/[?&]from=2024-02-01(&|$)/u);
 		await expect(page).toHaveURL(/[?&]to=2024-02-29(&|$)/u);
 		await expect(page.getByText("Retrait")).toBeVisible();

@@ -794,7 +794,7 @@ describe("dividends and interest", () => {
 		]);
 	});
 
-	it("records interest on the account's cash, with no security, and counts both as income", async () => {
+	it("records interest on the account's cash, with no security, and counts neither as income, where both made 15,34 €", async () => {
 		const account = await openPea();
 		const fund = await newSecurity();
 		await record(account.id, buy(fund));
@@ -813,14 +813,14 @@ describe("dividends and interest", () => {
 			security: null,
 		});
 		await expect(cashOn(account.id, "2026-09-16")).resolves.toBe(2_500_000 - 612_650 + 1234 + 300);
-		// Income, uncategorised, where a buy never counts.
+		// No trade counts, as Sure's `trades_subquery_sql`.
 		await expect(
 			cashFlowByCategory(deps(), {
 				from: "2026-09-01",
 				to: "2026-09-30",
 				accountIds: [account.id],
 			}),
-		).resolves.toEqual([{ categoryId: null, amount: 1534 }]);
+		).resolves.toEqual([]);
 		expect(
 			(await tradedSecurities(temp.db)).every((row) => typeof row.securityId === "string"),
 		).toBe(true);

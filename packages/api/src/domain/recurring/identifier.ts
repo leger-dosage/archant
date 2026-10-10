@@ -4,7 +4,7 @@ import type { IsoDate } from "../dates.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { direction } from "../cash-flow.ts";
+import { recurringDirection } from "../cash-flow.ts";
 import { addDays, addMonths } from "../dates.ts";
 import { normalizeLabel } from "../normalize-label.ts";
 import { DAY_MATCH_TOLERANCE } from "./schedule.ts";
@@ -197,7 +197,7 @@ export function detectRecurring<Row extends RecurringCandidate>(
 	const groups = new Map<string, Row[]>();
 
 	for (const candidate of candidates) {
-		if (candidate.date < from || direction(candidate) === "transfer") {
+		if (candidate.date < from || recurringDirection(candidate) === "transfer") {
 			continue;
 		}
 

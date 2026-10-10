@@ -256,7 +256,7 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 			.select({
 				id: entries.id,
 				...editableColumns,
-				categoryHidden: correlatedTransferSide.is.mapWith(Boolean),
+				categoryHidden: correlatedTransferSide.uncounted.mapWith(Boolean),
 				parentEntryId: entries.parentEntryId,
 				split: inSplit.mapWith(Boolean),
 			})

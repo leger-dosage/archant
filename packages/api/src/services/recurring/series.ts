@@ -23,7 +23,7 @@ import {
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
-import { direction } from "../../domain/cash-flow.ts";
+import { recurringDirection } from "../../domain/cash-flow.ts";
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { classify } from "../../domain/recurring/classifier.ts";
 import { detectFrequency } from "../../domain/recurring/frequency.ts";
@@ -852,7 +852,7 @@ export async function addRecurringFromEntry(
 	const transaction = await transactionOf(deps, entryId);
 
 	// A loan payment's or investment contribution's outflow is spent, and detection groups it.
-	if (direction(transaction) === "transfer") {
+	if (recurringDirection(transaction) === "transfer") {
 		throw invalid("entryId");
 	}
 

@@ -292,6 +292,55 @@ describe("get_income_statement", () => {
 		expect(refused.content[0]?.text).not.toContain("account_ids.0");
 	});
 
+	it("leaves a PEA's line out, where it was an expense of −15,00 €, and refuses the PEA in account_ids", async () => {
+		const tools = await household();
+		const pea = await openOwn({
+			openingBalance: "1 000,00",
+			openingDate: "2026-01-01",
+			name: "PEA test",
+			type: "investment",
+			subtype: "pea",
+		});
+		await postOwn(pea.id, { date: "2026-08-15", label: "FRAIS", amount: "-15,00" });
+
+		const result = await tools.read(QUARTER);
+		const refused = await tools.call({ ...QUARTER, account_ids: [pea.id] });
+
+		expect(result.expense.total).toBe("-1024.20");
+		expect(refused.isError).toBe(true);
+		expect(refused.content[0]?.text).toContain('{"path":"account_ids.0","code":"unknown_account"}');
+	});
+
+	it("keeps a refund as income in its category, where it lowered the expense line", async () => {
+		const tools = await household();
+		await postOwn(tools.accounts.checking.id, {
+			date: "2026-09-09",
+			label: "REMBOURSEMENT",
+			amount: "30,00",
+		}).then((id) =>
+			sendOwn("PATCH", `/api/transactions/${id}`, { categoryId: tools.categories.groceries }),
+		);
+
+		const result = await tools.read(QUARTER);
+
+		expect(result.income.total).toBe("7042.00");
+		expect(result.income.by_category).toContainEqual({
+			category_id: tools.categories.home,
+			name: "Maison test",
+			total: "30.00",
+			percentage_of_total: 0.4,
+			subcategory_totals: [
+				{
+					category_id: tools.categories.groceries,
+					name: "Courses test",
+					total: "30.00",
+					percentage_of_total: 0.4,
+				},
+			],
+		});
+		expect(result.expense.total).toBe("-1024.20");
+	});
+
 	it("refuses more than 36 monthly buckets, a reversed period and a bad date", async () => {
 		const tools = await household();
 
