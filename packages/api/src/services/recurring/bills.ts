@@ -111,6 +111,19 @@ export type BillCandidate = {
 const alreadyExists = () =>
 	new AppError("RECURRING_ALREADY_EXISTS", "A series with this account, key and amount exists.");
 
+/**
+ * The currency of a series without an account, as Sure's: the reporting one
+ * when declared, the series' own once it exists, so moving a bill to any
+ * account never converts it.
+ */
+function currencyWithoutAccount(currency: string): CurrencyCode {
+	if (!isCurrencyCode(currency)) {
+		throw invalid("accountId");
+	}
+
+	return currency;
+}
+
 /** The account's currency, or a `VALIDATION_ERROR` on `accountId` when there is no such account. */
 async function currencyOfAccount(
 	db: Pick<Transaction, "select">,
@@ -148,12 +161,14 @@ async function mustBeCategory(db: Pick<Transaction, "select">, categoryId: strin
 /**
  * Whether another series holds what the unique indexes key on: account, key,
  * amount, currency and dedup scope. Checked inside the write transaction, so
- * the answer is a `409`, never a constraint failure.
+ * the answer is a `409`, never a constraint failure. A series without an
+ * account is held by another without one, as Sure's `account_less_duplicate?`,
+ * which the indexes cannot see since SQLite keeps NULLs distinct.
  */
 export async function taken(
 	tx: Pick<Transaction, "select">,
 	row: SeriesKey & {
-		accountId: string;
+		accountId: string | null;
 		amount: MinorUnits;
 		currency: string;
 		dedupScope: string;
@@ -165,7 +180,9 @@ export async function taken(
 		.from(recurringTransactions)
 		.where(
 			and(
-				eq(recurringTransactions.accountId, row.accountId),
+				row.accountId === null
+					? isNull(recurringTransactions.accountId)
+					: eq(recurringTransactions.accountId, row.accountId),
 				row.merchantId === null
 					? isNull(recurringTransactions.merchantId)
 					: eq(recurringTransactions.merchantId, row.merchantId),
@@ -197,7 +214,10 @@ export async function declareBill(
 	deps: ServiceDeps,
 	input: DeclareInput,
 ): Promise<RecurringRecord> {
-	const currency = await currencyOfAccount(deps.db, input.accountId);
+	const currency =
+		input.accountId === null
+			? currencyWithoutAccount(getReportingCurrency())
+			: await currencyOfAccount(deps.db, input.accountId);
 	const parsed = declareBillSchema(currency).safeParse(input);
 
 	if (!parsed.success) {
@@ -352,7 +372,11 @@ async function editWithin(
 	day: IsoDate,
 ): Promise<void> {
 	const current = await getRecord(tx, id, day);
-	const currency = await currencyOfAccount(tx, input.accountId ?? current.accountId);
+	const target = input.accountId === undefined ? current.accountId : input.accountId;
+	const currency =
+		target === null
+			? currencyWithoutAccount(current.currency)
+			: await currencyOfAccount(tx, target);
 	const parsed = editBillSchema(currency).safeParse(input);
 
 	if (!parsed.success) {
@@ -401,7 +425,7 @@ async function editWithin(
 		: isKept(current)
 			? (nextDateFrom(schedule, from) ?? current.nextExpectedDate)
 			: nextExpectedDate(schedule, current.lastOccurrenceDate);
-	const accountId = edit.accountId ?? current.accountId;
+	const accountId = edit.accountId === undefined ? current.accountId : edit.accountId;
 	const moved = currency !== current.currency;
 	if (
 		(accountId !== current.accountId || amount !== current.amount || moved) &&
@@ -562,7 +586,8 @@ export async function candidatePatterns(
 				series.some(
 					(other) =>
 						other.billType === "income" &&
-						other.accountId === first.accountId &&
+						// Sure's `claimed_income_source?`: a series without an account claims any.
+						(other.accountId === null || other.accountId === first.accountId) &&
 						other.currency === first.currency &&
 						sameKey(other, key),
 				)
@@ -603,8 +628,9 @@ type BillRow = {
 	seriesId: string;
 	/** The series' name, else its merchant's, else its label, as Sure's `display_name`. */
 	name: string;
-	accountId: string;
-	accountName: string;
+	/** `null`, with its name, for a series paid from any account. */
+	accountId: string | null;
+	accountName: string | null;
 	merchantName: string | null;
 	dueOn: IsoDate;
 	/** The due date, or a later snooze. */
@@ -744,7 +770,7 @@ export async function loadBills(
 			recurringTransactions,
 			eq(recurringTransactions.id, recurringOccurrences.recurringTransactionId),
 		)
-		.innerJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
+		.leftJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
 		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
 		.where(where)
 		.orderBy(recurringOccurrences.dueOn, recurringOccurrences.id);

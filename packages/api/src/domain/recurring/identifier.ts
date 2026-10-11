@@ -259,7 +259,8 @@ export function detectRecurring<Row extends RecurringCandidate>(
 
 /** What a claim reads of a stored series. */
 export type ClaimableSeries = SeriesKey & {
-	accountId: string;
+	/** `null` claims no pattern: Sure keys its claim on the pattern's account. */
+	accountId: string | null;
 	currency: string;
 	amount: MinorUnits;
 };

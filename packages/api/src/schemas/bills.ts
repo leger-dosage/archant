@@ -77,7 +77,8 @@ export const declareBodySchema = z.object({
 	kind: z.string(),
 	name: z.string(),
 	amount: z.string(),
-	accountId: z.string(),
+	// `null` pays from any account, as Sure's « N'importe quel compte ».
+	accountId: z.string().nullable(),
 	firstDueOn: z.string(),
 	frequency: frequencyBody,
 	// The dialog sends neither: a bill is a `bill`, uncategorised, until edited.
@@ -95,7 +96,7 @@ export type DeclareInput = z.input<typeof declareBodySchema>;
 export const editBodySchema = z.object({
 	name: z.string().nullable().optional(),
 	amount: z.string().optional(),
-	accountId: z.string().optional(),
+	accountId: z.string().nullable().optional(),
 	billType: z.string().optional(),
 	categoryId: z.string().nullable().optional(),
 	frequency: frequencyBody.optional(),
@@ -243,8 +244,9 @@ function frequencySchema(presets: readonly [string, ...string[]]) {
 
 /**
  * Sure's `DeclaredBill`: a name, a positive amount in the account's currency,
- * the account, the first due date and how often, optionally its type and
- * category, autopay, notes and a payment link. Built per currency and shared with the dialog's
+ * or the reporting one without an account, the account or none, the first
+ * due date and how often, optionally its type and category, autopay, notes
+ * and a payment link. Built per currency and shared with the dialog's
  * resolver, so both report the same field codes. Whether the account and the
  * transaction exist needs the database: the service checks it.
  */
@@ -253,7 +255,7 @@ export function declareBillSchema(currency: CurrencyCode) {
 		kind: z.enum(BILL_KINDS),
 		name,
 		amount: z.string().trim().min(1).transform(amountIn(currency, true)),
-		accountId: z.string().min(1),
+		accountId: z.string().min(1).nullable(),
 		firstDueOn: z.iso.date(),
 		frequency: frequencySchema([...FREQUENCY_PRESETS, INTERVAL_PRESET]),
 		billType: z.enum(EDITABLE_BILL_TYPES).default("bill"),
@@ -271,7 +273,7 @@ export type DeclareFormInput = z.input<ReturnType<typeof declareBillSchema>>;
 /**
  * The edit dialog's fields, each optional, an absent one left as it is: the
  * name, blank for none, a positive amount whose sign the series keeps, the
- * account, the type, the category, the frequency, the number of payments of
+ * account or none, the type, the category, the frequency, the number of payments of
  * an installment, autopay, notes and the payment link.
  */
 export function editBillSchema(currency: CurrencyCode) {
@@ -284,7 +286,8 @@ export function editBillSchema(currency: CurrencyCode) {
 			.pipe(z.string().max(LABEL_MAX_LENGTH).nullable())
 			.optional(),
 		amount: z.string().trim().min(1).transform(amountIn(currency, true)).optional(),
-		accountId: z.string().min(1).optional(),
+		// `null` moves the series to any account.
+		accountId: z.string().min(1).nullable().optional(),
 		billType: z.enum(EDITABLE_BILL_TYPES).optional(),
 		categoryId: z.string().min(1).nullable().optional(),
 		frequency: frequencySchema([...FREQUENCY_PRESETS, INTERVAL_PRESET, CUSTOM_PRESET]).optional(),

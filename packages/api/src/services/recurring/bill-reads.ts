@@ -173,9 +173,12 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 			activeCount: bills.filter((bill) => bill.status === "active").length,
 			overdueCount: bills.filter((bill) => bill.currentOccurrence?.state === "overdue").length,
 			activeMonthly: monthlyRollup(spending.filter((bill) => bill.currency === currency)).monthly,
+			// A bill paid from any account has no account to name.
 			leftOut: [
 				...new Set(
-					spending.filter((bill) => bill.currency !== currency).map((bill) => bill.accountId),
+					spending
+						.filter((bill) => bill.currency !== currency)
+						.flatMap((bill) => (bill.accountId === null ? [] : [bill.accountId])),
 				),
 			].map((id) => ({ id })),
 		},

@@ -510,7 +510,7 @@ The owner asks their assistant to fix what a bank, a file or the transfer matche
 ### Epic 27: Consolidate before new features
 
 Archant fixes the figures it gets wrong, makes a two-factor code work once, answers the assistant field by field as Sure does, mirrors the Sure commits it missed, makes bank sync and import revert robust, and reviews every remaining departure from Sure, before any new feature.
-**FRs covered:** FR101, FR102, FR103, FR104, FR105, FR106; revises FR31, FR32, FR35, FR38, FR41, FR64, FR90, FR96 to FR100, NFR2, NFR19
+**FRs covered:** FR101, FR102, FR103, FR104, FR105, FR106; revises FR31, FR32, FR35, FR38, FR41, FR64, FR86, FR87, FR90, FR96 to FR100, NFR2, NFR19
 
 ## Epic 1: Track accounts and transactions by hand
 
@@ -4890,7 +4890,7 @@ Not built, and recorded as Later: converting an account in another currency into
 
 AD decisions that stories overturn, each edited by the story that builds it, never before: AD-11 (Story 27.1), AD-22 (Stories 27.5 and 27.6), AD-9 (Stories 27.6 and 27.7), AD-19 and NFR19 (Story 27.9, then Stories 27.10 to 27.14 as each tool changes), AD-8 (Story 27.17), AD-10 (Story 27.18), AD-18 (Story 27.19), AD-9 and AD-24 again (Story 27.24). `docs/sure-parity.md` marks every row these stories change as Later, citing Epic 27; each story sets its rows to Parity.
 
-Stories 27.1 to 27.8 come first, in any order, except that 27.7 follows 27.6. Stories 27.9 to 27.14 follow: 27.9 first, since it brings the shared formats; 27.12 after 27.6 and 27.7; 27.13 after 27.2 and 27.3. Stories 27.15 to 27.24 follow in any order; 27.17 after 27.9, 27.24 after 27.6. Story 27.25, a pass over the parity page, follows them, and Story 27.26 comes last, after 27.14.
+Stories 27.1 to 27.8 come first, in any order, except that 27.7 follows 27.6. Stories 27.9 to 27.14 follow: 27.9 first, since it brings the shared formats; 27.12 after 27.6 and 27.7; 27.13 after 27.2, 27.3 and 27.27. Stories 27.15 to 27.24 follow in any order; 27.17 after 27.9, 27.24 after 27.6. Story 27.27, added on 2026-10-11 when the owner chose Sure's bill without an account for `create_bill`, comes before 27.13. Story 27.25, a pass over the parity page, follows them, and Story 27.26 comes last, after 27.14.
 
 ### Story 27.1: Confirm the transfers the matcher proposes
 
@@ -5623,3 +5623,37 @@ So that the next feature finds code it can read.
 **Given** the finished story
 **When** the verification gate runs
 **Then** it passes with no behaviour changed; the loan service needs no new spec, since `routes/accounts.spec.ts` covers `/schedule`, `/overview` and `/payoff-chart`
+
+### Story 27.27: A bill paid from any account
+
+As the household's administrator,
+I want to declare a bill without choosing the account it is paid from,
+So that a bill I pay from one account or another is followed, as Sure's « N'importe quel compte ».
+
+**Requirements:** FR86, FR87, FR90
+
+**Acceptance Criteria:**
+
+**Given** `recurring_transactions.account_id`
+**When** the migration runs
+**Then** it accepts `NULL`; every existing series keeps its account
+
+**Given** « Ajouter une facture », « Ajouter un revenu » or a bill's edit dialog
+**When** the owner opens the account field
+**Then** it offers Sure's blank choice « N'importe quel compte » first, under Sure's labels « Payée depuis » and « Versé sur »; a bill without an account takes the reporting currency, as Sure's takes the family currency
+
+**Given** a series without an account
+**When** the matcher, detection or the manual pass looks for its lines
+**Then** they follow Sure's `matcher.rb` and `identifier.rb`: a line of any account may pay it, the account signal counting as matched; a series with an account keeps matching its own account's lines only
+
+**Given** two series without an account
+**When** a declaration would repeat one's currency, `dedup_scope`, and merchant or name
+**Then** it is refused as Sure's `account_less_duplicate?`, since SQLite, like Postgres, treats `NULL`s as distinct in the unique indexes
+
+**Given** « Factures », « Toutes les factures », a bill's page, the audit, price changes and the export
+**When** a bill has no account
+**Then** each lists it, with no account name where Sure shows none; no read drops it through an inner join
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a bill without an account declared, matched by a line of each of two accounts, refused as a duplicate, and listed by every read; Playwright declares one from « Ajouter une facture »

@@ -96,6 +96,10 @@ export const BANK_TEXT =
 /** A row another one points to, as Sure's functions give it. */
 export const namedRef = z.object({ id: z.string(), name: z.string() });
 
+/** A series' account, `null` for one paid from any account, as Sure's `account: nil`. */
+export const accountRefOf = (series: { accountId: string | null; accountName: string | null }) =>
+	series.accountId === null ? null : { id: series.accountId, name: series.accountName ?? "" };
+
 /** Sure's pagination fields, which every paged tool answers beside its rows. */
 export const pageOutput = {
 	total_results: z.number().int().describe("Every matching row, on every page."),

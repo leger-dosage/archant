@@ -34,6 +34,7 @@ Fix what an audit of 2026-10-08 found before any new feature: figures Archant ge
 - Story 27.24: Recurring transfers as Sure follows them
 - Story 27.25: Every remaining departure from Sure reviewed
 - Story 27.26: Split the largest files and remove duplicates
+- Story 27.27: A bill paid from any account
 
 ## Requirements & Constraints
 
@@ -69,6 +70,6 @@ Fix what an audit of 2026-10-08 found before any new feature: figures Archant ge
 
 ## Cross-Story Dependencies
 
-- Stories 27.1 to 27.8 first, any order, 27.7 after 27.6. Then 27.9, which brings the shared formats, before 27.10 to 27.14; 27.12 after 27.6 and 27.7; 27.13 after 27.2 and 27.3. Stories 27.15 to 27.24 in any order, 27.17 after 27.9, 27.24 after 27.6. Story 27.25, documents only, after those. Story 27.26 last, after 27.14, since it splits `schemas/assistants.ts`.
+- Stories 27.1 to 27.8 first, any order, 27.7 after 27.6. Then 27.9, which brings the shared formats, before 27.10 to 27.14; 27.12 after 27.6 and 27.7; 27.13 after 27.2, 27.3 and 27.27, which comes before it. Stories 27.15 to 27.24 in any order, 27.17 after 27.9, 27.24 after 27.6. Story 27.25, documents only, after those. Story 27.26 last, after 27.14, since it splits `schemas/assistants.ts`.
 - Stories 27.9 to 27.14 each edit `mcp/server.ts`, `docs/deployment.md` « Connecting an assistant » and `docs/security-model.md` « Assistants »: one at a time.
 - Outside the epic: Epic 5's transfers, Epic 22's holdings, Epic 23's bills, Epics 16 and 26's tools, Epic 10's Enable Banking connector.

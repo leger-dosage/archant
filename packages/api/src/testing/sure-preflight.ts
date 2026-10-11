@@ -297,7 +297,8 @@ const SCHEMAS = {
 	RecurringTransaction: z
 		.strictObject({
 			id,
-			account_id: id,
+			// Sure's `belongs_to :account, optional: true`: a bill paid from any account.
+			account_id: id.nullable(),
 			merchant_id: z.string().nullable(),
 			// `merchant_or_name_present`; every Archant pattern has a label.
 			name: present,

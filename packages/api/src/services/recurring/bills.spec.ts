@@ -101,7 +101,7 @@ async function addRows(
 
 const stored = () => temp.db.select().from(recurringTransactions);
 
-const bill = (accountId: string, overrides: Partial<DeclareInput> = {}): DeclareInput => ({
+const bill = (accountId: string | null, overrides: Partial<DeclareInput> = {}): DeclareInput => ({
 	kind: "bill",
 	name: "Eau du Grand Lyon",
 	amount: "84,20",
@@ -714,6 +714,21 @@ describe("billCandidates", () => {
 		await declareBill(
 			deps(),
 			bill(accountId, { kind: "income", name: "Salaire", amount: "1,00", entryId: pay[0]! }),
+		);
+
+		await expect(billCandidates(deps(), "income")).resolves.toEqual([
+			expect.objectContaining({ name: "FREELANCE" }),
+		]);
+	});
+
+	it("leaves out deposits an income paid into any account follows, as Sure's `claimed_income_source?`", async () => {
+		const accountId = await account();
+		const pay = await addRows(accountId, ["2026-07-28", "2026-08-28"], "SALAIRE", 250_000);
+		await addRows(accountId, ["2026-08-10", "2026-08-24", "2026-09-07"], "FREELANCE", 40_000);
+
+		await declareBill(
+			deps(),
+			bill(null, { kind: "income", name: "Salaire", amount: "1,00", entryId: pay[0]! }),
 		);
 
 		await expect(billCandidates(deps(), "income")).resolves.toEqual([
@@ -1549,5 +1564,101 @@ describe("upcomingRecurring", () => {
 			{ name: "Électricité", amount: -5200, projectedAmount: -5000 },
 			{ name: "Eau", amount: -3000, projectedAmount: -3000 },
 		]);
+	});
+});
+
+describe("a bill paid from any account", () => {
+	it("declares one in the reporting currency, and refuses its twin without an account", async () => {
+		const accountId = await account();
+
+		const water = await declareBill(deps(), bill(null, { amount: "12,00" }));
+
+		expect(water).toMatchObject({
+			accountId: null,
+			accountName: null,
+			accountType: null,
+			currency: "EUR",
+			amount: -1200,
+		});
+		await expect(
+			refusal(declareBill(deps(), bill(null, { amount: "12,00" }))),
+		).resolves.toMatchObject({ code: "RECURRING_ALREADY_EXISTS" });
+		await expect(declareBill(deps(), bill(accountId, { amount: "12,00" }))).resolves.toMatchObject({
+			accountId,
+		});
+		await expect(stored()).resolves.toHaveLength(2);
+	});
+
+	it("moves to any account keeping its currency, and back to an account", async () => {
+		const dollars = await account("USD", "Dollars");
+		const water = await declareBill(deps(), bill(dollars, { amount: "95.10" }));
+
+		await expect(editBill(deps(), water.id, { accountId: null })).resolves.toMatchObject({
+			accountId: null,
+			currency: "USD",
+			amount: -9510,
+		});
+		await expect(editBill(deps(), water.id, { amount: "96.00" })).resolves.toMatchObject({
+			accountId: null,
+			currency: "USD",
+			amount: -9600,
+		});
+		await expect(editBill(deps(), water.id, { accountId: dollars })).resolves.toMatchObject({
+			accountId: dollars,
+			accountName: "Dollars",
+		});
+	});
+
+	it("refuses a move to any account onto a twin without one", async () => {
+		const accountId = await account();
+		await declareBill(deps(), bill(null));
+		const twin = await declareBill(deps(), bill(accountId));
+
+		await expect(refusal(editBill(deps(), twin.id, { accountId: null }))).resolves.toMatchObject({
+			code: "RECURRING_ALREADY_EXISTS",
+		});
+	});
+
+	it("is paid by a line of each account on its due dates", async () => {
+		const first = await account("EUR", "Courant");
+		const second = await account("EUR", "Joint");
+		const water = await declareBill(
+			deps(),
+			bill(null, { amount: "12,00", firstDueOn: "2026-08-05" }),
+		);
+		await addRows(first, ["2026-08-05"], "Eau du Grand Lyon", -1200);
+		await addRows(second, ["2026-09-05"], "Eau du Grand Lyon", -1200);
+
+		await runRecurring(deps(), { backfill: true });
+
+		await expect(
+			temp.db
+				.select({ dueOn: recurringOccurrences.dueOn, status: recurringOccurrences.status })
+				.from(recurringOccurrences)
+				.where(eq(recurringOccurrences.recurringTransactionId, water.id))
+				.orderBy(recurringOccurrences.dueOn),
+		).resolves.toEqual(
+			expect.arrayContaining([
+				{ dueOn: "2026-08-05", status: "paid" },
+				{ dueOn: "2026-09-05", status: "paid" },
+			]),
+		);
+	});
+
+	it("is listed on the bills page and among all bills", async () => {
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+		await account();
+		const water = await declareBill(deps(), bill(null, { firstDueOn: "2026-10-20" }));
+
+		const overview = await billsOverview(deps());
+		const { bills } = await allBills(deps(), query());
+
+		expect([...overview.month, ...overview.later]).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ seriesId: water.id, accountId: null, accountName: null }),
+			]),
+		);
+		expect(bills).toEqual([expect.objectContaining({ id: water.id, accountId: null })]);
+		await expect(billDetail(deps(), water.id)).resolves.toMatchObject({ lastAccount: null });
 	});
 });

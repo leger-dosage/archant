@@ -54,6 +54,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useAccounts } from "@/hooks/useAccounts";
 import {
 	recurringName,
 	useBillCandidates,
@@ -177,12 +178,20 @@ const monthName = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "U
 /** A capitalised day or month name, as a select lists it. */
 const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The currency amounts are read in: the chosen account's. */
+/**
+ * The currency amounts are read in: the chosen account's, else `withoutAccount`
+ * for « N'importe quel compte », the reporting currency for a new series and
+ * its own for an edited one, as Sure's form.
+ */
 function currencyOf(
 	accounts: readonly AccountSummaryData[],
-	accountId: string | undefined,
+	accountId: string | null | undefined,
+	withoutAccount: string,
 ): CurrencyCode {
-	const code = accounts.find((account) => account.id === accountId)?.currency;
+	const code =
+		accountId === null || accountId === undefined
+			? withoutAccount
+			: accounts.find((account) => account.id === accountId)?.currency;
 
 	return code !== undefined && isCurrencyCode(code) ? code : DEFAULT_CURRENCY;
 }
@@ -414,7 +423,13 @@ function FrequencyFields({
 	);
 }
 
-/** The account a bill is paid from, or an income paid into. */
+// A select item cannot hold `null`, which the form keeps for « N'importe quel compte ».
+const ANY_ACCOUNT = "any";
+
+/**
+ * The account a bill is paid from, or an income paid into, Sure's blank
+ * « N'importe quel compte » first.
+ */
 function AccountField({
 	form,
 	accounts,
@@ -425,14 +440,37 @@ function AccountField({
 	income: boolean;
 }) {
 	const { t } = useTranslation();
+	const { field } = useController({ control: form.control, name: "accountId" });
+	const error = errorAt(form.formState.errors, "accountId");
 
 	return (
-		<SelectField
-			form={form}
-			name="accountId"
-			label={t(income ? "recurring.form.incomeAccount" : "recurring.form.account")}
-			options={accounts.map((account) => ({ value: account.id, label: account.name }))}
-		/>
+		<div className="flex flex-col gap-1.5">
+			<Label htmlFor="bill-accountId">
+				{t(income ? "recurring.form.incomeAccount" : "recurring.form.account")}
+			</Label>
+			<Select
+				value={field.value ?? ANY_ACCOUNT}
+				onValueChange={(value) => field.onChange(value === ANY_ACCOUNT ? null : value)}
+			>
+				<SelectTrigger
+					id="bill-accountId"
+					className="w-full"
+					aria-invalid={error !== undefined}
+					{...(error === undefined ? {} : { "aria-describedby": errorId("accountId") })}
+				>
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value={ANY_ACCOUNT}>{t("recurring.form.anyAccount")}</SelectItem>
+					{accounts.map((account) => (
+						<SelectItem key={account.id} value={account.id}>
+							{account.name}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<FieldMessage id={errorId("accountId")} error={error} />
+		</div>
 	);
 }
 
@@ -546,12 +584,13 @@ function Candidates({
 	);
 }
 
-function declareValues(kind: BillKind, accounts: readonly AccountSummaryData[]): BillValues {
+function declareValues(kind: BillKind): BillValues {
 	return {
 		kind,
 		name: "",
 		amount: "",
-		accountId: accounts[0]?.id ?? "",
+		// Sure's `include_blank` on a new record: any account until one is picked.
+		accountId: null,
 		firstDueOn: toIsoDate(),
 		// Paychecks default to the most common pay cadence, bills to monthly, as Sure's.
 		frequency: {
@@ -580,18 +619,22 @@ function DeclareForm({
 }) {
 	const { t } = useTranslation();
 	const declare = useDeclareBill();
+	const reporting = useAccounts({ select: (data) => data.reportingCurrency }).data;
 	// `raw` hands the typed text to the API as is: the same schema parses it
-	// there, in the account's currency. Read through a ref, since that currency
-	// follows the account chosen.
+	// there, in the account's currency, or the reporting one for « N'importe
+	// quel compte ». Read through a ref, since that currency follows the
+	// account chosen.
 	const resolve: Resolver<BillValues> = async (values, context, options) =>
-		zodResolver(declareBillSchema(currencyOf(accounts, values.accountId)), undefined, {
-			raw: true,
-		})(values, context, options);
+		zodResolver(
+			declareBillSchema(currencyOf(accounts, values.accountId, reporting ?? DEFAULT_CURRENCY)),
+			undefined,
+			{ raw: true },
+		)(values, context, options);
 	const resolver = useRef(resolve);
 	resolver.current = resolve;
 	const form = useForm<BillValues>({
 		resolver: async (values, context, options) => resolver.current(values, context, options),
-		defaultValues: { ...declareValues(kind, accounts), ...prefill },
+		defaultValues: { ...declareValues(kind), ...prefill },
 	});
 	const { errors, isSubmitting } = form.formState;
 	const firstDueOn = useController({ control: form.control, name: "firstDueOn" });
@@ -746,9 +789,11 @@ function EditForm({
 	const edit = useEditBill();
 	const income = series.billType === "income";
 	const resolve: Resolver<BillValues> = async (values, context, options) =>
-		zodResolver(editFormSchema(currencyOf(accounts, values.accountId)), undefined, {
-			raw: true,
-		})(values, context, options);
+		zodResolver(
+			editFormSchema(currencyOf(accounts, values.accountId, series.currency)),
+			undefined,
+			{ raw: true },
+		)(values, context, options);
 	const resolver = useRef(resolve);
 	resolver.current = resolve;
 	const initial = useMemo(() => editValues(series), [series]);

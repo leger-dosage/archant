@@ -44,6 +44,7 @@ import {
 	CREATES,
 	READ_ONLY,
 	SETS,
+	accountRefOf,
 	defineTool,
 	leftOutFields,
 	leftOutOf,
@@ -95,7 +96,7 @@ const billOutput = z.object({
 		.describe("YYYY-MM-DD: the current open occurrence's, else the next expected one."),
 	autopay: z.boolean(),
 	detected_automatically: z.boolean().describe("false when the owner declared it."),
-	account: namedRef,
+	account: namedRef.nullable().describe("null for a bill paid from any account."),
 	category: namedRef.nullable(),
 	monthly_equivalent: magnitude("Its cost a month, whatever its cadence"),
 	payment_url: z.string().nullable(),
@@ -149,7 +150,7 @@ function billOf(bill: RecurringRecord, names: NameBook): z.input<typeof billOutp
 		next_due_date: nextDueDateOf(bill),
 		autopay: bill.autopay,
 		detected_automatically: !bill.manual,
-		account: { id: bill.accountId, name: bill.accountName },
+		account: accountRefOf(bill),
 		category: refOf(names.categories, bill.categoryId),
 		monthly_equivalent: positive(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
 		payment_url: bill.paymentUrl,
@@ -399,13 +400,13 @@ const sectionOf = <Item extends z.ZodType>(item: Item, what: string) =>
 const billRef = {
 	bill_id: z.string(),
 	name: z.string(),
-	account: namedRef,
+	account: namedRef.nullable(),
 };
 
 const billRefOf = (bill: BillView) => ({
 	bill_id: bill.id,
 	name: bill.displayName,
-	account: { id: bill.accountId, name: bill.accountName },
+	account: accountRefOf(bill),
 });
 
 /** An audit section with each of its items as the tool writes it. */

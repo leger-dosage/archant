@@ -1452,6 +1452,21 @@ describe("exportArchive", () => {
 		]);
 	});
 
+	it("writes a bill paid from any account with Sure's null account", async () => {
+		await ownDatabase();
+		await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		await database().run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, name, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, manual, dedup_scope, created_at, updated_at) values ('r1', null, 'edf', 'EDF', 'EDF', -4500, 'EUR', 5, '2026-10-05', '2026-10-05', 0, 'active', 1, '-4500', 0, 0)`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("RecurringTransaction")).toEqual([
+			expect.objectContaining({ id: "r1", account_id: null }),
+		]);
+	});
+
 	it("writes a bill's fields and its rules as Sure's lines", async () => {
 		await ownDatabase();
 		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });

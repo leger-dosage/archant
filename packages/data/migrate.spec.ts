@@ -1578,6 +1578,35 @@ describe("recurring transactions", () => {
 		await expect(database.all(sql`select id from recurrence_rules`)).resolves.toEqual([]);
 	});
 
+	it("keeps every series' account, rules and occurrences when 0069 lets a series have none", async () => {
+		const before = await migratedBefore("0069");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertRecurring(before, "r1", { labelKey: "netflix" });
+		await insertRecurrenceRule(before, "x1", { day: 5 });
+		await insertOccurrence(before, "o1", {});
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, account_id as account from recurring_transactions`),
+		).resolves.toEqual([{ id: "r1", account: "a1" }]);
+		await expect(database.all(sql`select id from recurrence_rules`)).resolves.toEqual([
+			{ id: "x1" },
+		]);
+		await expect(database.all(sql`select id from recurring_occurrences`)).resolves.toEqual([
+			{ id: "o1" },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+
+		await database.run(
+			sql`insert into recurring_transactions (id, account_id, label_key, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, created_at, updated_at) values ('r2', null, 'edf', 'EDF', -4500, 'EUR', 5, '2026-09-05', '2026-10-05', 0, 0, 0)`,
+		);
+		await expect(
+			database.get(sql`select account_id as account from recurring_transactions where id = 'r2'`),
+		).resolves.toEqual({ account: null });
+	});
+
 	it("holds a known bill type and 1 to 600 payments, and leaves a series uncategorised when its category goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

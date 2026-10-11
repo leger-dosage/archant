@@ -528,7 +528,8 @@ export function apiHelpers(request: APIRequestContext) {
 		async declareBill(input: {
 			name: string;
 			amount: string;
-			accountId: string;
+			/** Omitted, the bill is paid from any account. */
+			accountId?: string;
 			firstDueOn: string;
 			entryId?: string;
 			kind?: "bill" | "income";
@@ -536,7 +537,7 @@ export function apiHelpers(request: APIRequestContext) {
 		}): Promise<string> {
 			return created(
 				await request.post("/api/recurring/declare", {
-					data: { kind: "bill", frequency: { preset: "monthly" }, ...input },
+					data: { kind: "bill", frequency: { preset: "monthly" }, accountId: null, ...input },
 				}),
 			);
 		},
