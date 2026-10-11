@@ -261,3 +261,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-13-assistant-bills-and-recurring-payments-as-sures.md`
   summary: An income declared with a category keeps it, as Sure's `create_bill` sets `series.category` whatever `is_income`.
   evidence: `declareBill` in `services/recurring/bills.ts` clears `categoryId` for every income, so `create_bill` drops it where Sure answers it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-17-edit-an-accounts-opening-balance.md`
+  summary: Test that the « Solde d'ouverture » row of « Soldes » shows on the last page only.
+  evidence: `opening={page >= pageCount ? opening : null}` in `SnapshotsPanel` has no test; every e2e test of `snapshots.spec.ts` stays on one page.

@@ -401,7 +401,9 @@ test("a file without a ledger balance states none and leaves Soldes empty", asyn
 
 	await expect(dialog(page)).toBeHidden();
 	await openSnapshots(page);
-	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+	// Only the opening balance: no snapshot is recorded.
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
 });
 
 test("a ledger balance dated before the opening date is not recorded, and the preview says why", async ({
@@ -422,7 +424,9 @@ test("a ledger balance dated before the opening date is not recorded, and the pr
 
 	await expect(dialog(page)).toBeHidden();
 	await openSnapshots(page);
-	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+	// Only the opening balance: no snapshot is recorded.
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
 });
 
 test("the same lines with a later ledger balance offer « Enregistrer le solde », and the balance follows", async ({

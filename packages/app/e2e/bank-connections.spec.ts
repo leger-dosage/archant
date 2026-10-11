@@ -1035,6 +1035,9 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	await toTransactions(page);
 	await expect(columnAccount(page, accountId)).toContainText(euros(123_456));
 	await page.goto(`/accounts/${accountId}?tab=snapshots`);
+	// Shown, never opened: the bank's balances ignore the opening amount.
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+	await expect(page.locator("[data-opening-balance]")).toHaveCount(0);
 	const yesterday = daysAgo(1);
 	const rows = page.getByRole("row", { name: new RegExp(`^${formatTableDate(yesterday)} `, "u") });
 	await expect(rows).toHaveCount(1);

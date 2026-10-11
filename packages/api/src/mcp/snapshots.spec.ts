@@ -410,13 +410,53 @@ describe("record_valuation", () => {
 		]);
 	});
 
-	it("refuses the opening date, tomorrow and an amount the currency cannot hold, writing nothing", async () => {
+	it("sets the opening balance on the opening date, answering replaced_existing, as Sure's", async () => {
+		const account = await checking();
+		const tools = await assistants();
+		const { valuations: before } = valuations.parse(
+			(await tools.read("get_valuations", { account_id: account.id })).structuredContent,
+		);
+
+		const result = await tools.write("record_valuation", {
+			account_id: account.id,
+			date: "2026-01-10",
+			amount: "1800.00",
+			source: "Relevé d'ouverture (grade: A)",
+		});
+
+		const anchor = before.find((item) => item.kind === "opening_anchor");
+		expect(recordedValuation.parse(result.structuredContent)).toMatchObject({
+			entry_id: anchor?.entry_id,
+			date: "2026-01-10",
+			amount: "1800.0",
+			replaced_existing: true,
+		});
+		const { valuations: after } = valuations.parse(
+			(await tools.read("get_valuations", { account_id: account.id })).structuredContent,
+		);
+		expect(after).toEqual([
+			{
+				entry_id: anchor?.entry_id,
+				account: { id: account.id, name: "Compte courant", currency: "EUR" },
+				date: "2026-01-10",
+				amount: "1800.0",
+				amount_formatted: euros("1 800,00"),
+				kind: "opening_anchor",
+				notes: "Relevé d'ouverture (grade: A)",
+			},
+		]);
+		await expect(balancesOf(tools, account.id, "2026-09-21")).resolves.toMatchObject({
+			today: "1680.0",
+		});
+	});
+
+	it("refuses the day before the opening date, tomorrow and an amount the currency cannot hold, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
 		const opening = await tools.write("record_valuation", {
 			account_id: account.id,
-			date: "2026-01-10",
+			date: "2026-01-09",
 			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
@@ -435,7 +475,7 @@ describe("record_valuation", () => {
 
 		expect(opening.isError).toBe(true);
 		expect(opening.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
-		expect(opening.content[0]?.text).toContain("date not_after_opening_date");
+		expect(opening.content[0]?.text).toContain("date before_opening_date");
 		expect(tomorrow.content[0]?.text).toContain("date date_in_future");
 		expect(badAmount.content[0]?.text).toContain("amount invalid_amount");
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);

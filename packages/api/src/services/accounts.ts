@@ -1,8 +1,10 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { UpdateAccountRequest } from "../schemas/accounts.ts";
+import type { SnapshotInput } from "../schemas/snapshots.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
+import type { OpeningBalanceResult } from "./ledger/opening.ts";
 
 import { eq } from "drizzle-orm";
 
@@ -14,7 +16,7 @@ import type {
 } from "@archant/data/account-types";
 import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
+import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
@@ -22,12 +24,15 @@ import type { Account } from "@archant/data/types";
 
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { validationError } from "../lib/zod-error.ts";
 import { parseLoanDetails } from "../schemas/accounts.ts";
+import { openingBalanceSchema } from "../schemas/snapshots.ts";
 import {
 	createAccount as createLedgerAccount,
 	deleteAccount as deleteLedgerAccount,
 } from "./ledger/accounts.ts";
-import { balanceOn, openingDateOf } from "./ledger/balances.ts";
+import { balanceOn, openingAnchorOf, openingDateOf } from "./ledger/balances.ts";
+import { setOpeningBalance } from "./ledger/opening.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 export type AccountSummary = {
@@ -152,6 +157,12 @@ export type AccountDetail = AccountSummary & {
 	classification: Classification;
 	/** The opening anchor's date; a transaction must be dated after it. */
 	openingDate: IsoDate;
+	/**
+	 * The opening anchor's stored balance (AD-5) and notes, the oldest row of
+	 * « Soldes ». A linked account's is not what its history starts from: its
+	 * balances derive backward from the bank's.
+	 */
+	openingBalance: { balance: MinorUnits; notes: string | null };
 	/** A loan's terms, each null when not given; null for other types. */
 	details: LoanDetails | null;
 	/** The bank connection that feeds it, null for a manual account. */
@@ -161,9 +172,9 @@ export type AccountDetail = AccountSummary & {
 /** One account as its page shows it. */
 export async function getAccount(deps: ServiceDeps, id: string): Promise<AccountDetail> {
 	const account = await deps.db.select().from(accounts).where(eq(accounts.id, id)).get();
-	const openingDate = await openingDateOf(deps, id);
+	const opening = await openingAnchorOf(deps, id);
 
-	if (account === undefined || openingDate === null) {
+	if (account === undefined || opening === null) {
 		throw new AppError("NOT_FOUND", "No account has this id.");
 	}
 
@@ -180,7 +191,8 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 	return {
 		...(await summarise(deps, account, today(deps.timeZone))),
 		classification: classificationOf(account.type),
-		openingDate,
+		openingDate: opening.date,
+		openingBalance: { balance: opening.balance, notes: opening.notes },
 		details: account.details,
 		bankConnection: bankConnection ?? null,
 	};
@@ -246,6 +258,72 @@ export async function updateAccount(
 		.where(eq(accounts.id, id));
 
 	return getAccount(deps, id);
+}
+
+/** What moving an opening balance did, or would do on a dry run, beside the account after it. */
+export type OpeningBalanceChange = Extract<OpeningBalanceResult, { status: "set" }> & {
+	account: AccountDetail;
+};
+
+function openingRejection(result: Extract<OpeningBalanceResult, { status: "rejected" }>) {
+	if (result.reason === "ACCOUNT_LINKED") {
+		return new AppError(
+			"ACCOUNT_LINKED",
+			"A bank sets this account's balances: its opening balance cannot be edited.",
+		);
+	}
+
+	if (result.reason === "NOT_BEFORE_OLDEST_ENTRY") {
+		return new AppError(
+			"VALIDATION_ERROR",
+			"The request is invalid.",
+			[{ path: "date", code: "not_before_oldest_entry" }],
+			{ date: result.oldestEntryDate },
+		);
+	}
+
+	return new AppError("VALIDATION_ERROR", "The request is invalid.", [
+		{ path: "date", code: "date_in_future" },
+	]);
+}
+
+/**
+ * Moves the account's opening balance, date and amount, on the user's behalf
+ * or an assistant's, and returns the account as its page shows it. A date on
+ * or after the account's oldest entry is refused naming that entry's date,
+ * a date and never an amount (AD-14). A dry run writes nothing.
+ */
+export async function setAccountOpeningBalance(
+	deps: ServiceDeps,
+	id: string,
+	input: SnapshotInput,
+	options: { dryRun?: boolean } = {},
+): Promise<OpeningBalanceChange> {
+	const account = await getAccount(deps, id);
+
+	if (!isCurrencyCode(account.currency)) {
+		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+	}
+
+	const parsed = openingBalanceSchema(account.currency).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	const result = await setOpeningBalance(deps, id, parsed.data, {
+		origin: "user",
+		dryRun: options.dryRun ?? false,
+	});
+
+	if (result.status === "rejected") {
+		throw openingRejection(result);
+	}
+
+	return {
+		...result,
+		account: options.dryRun === true ? account : await getAccount(deps, id),
+	};
 }
 
 /**

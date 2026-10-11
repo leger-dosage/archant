@@ -133,6 +133,8 @@ const SURE_REFUSALS = {
 	no_changes: "VALIDATION_ERROR",
 	validation_failed: "VALIDATION_ERROR",
 	account_not_found: "NOT_FOUND",
+	linked_account: "ACCOUNT_LINKED",
+	invalid_balance: "VALIDATION_ERROR",
 	invalid_date: "VALIDATION_ERROR",
 	invalid_amount: "VALIDATION_ERROR",
 	invalid_name: "VALIDATION_ERROR",
@@ -368,6 +370,23 @@ export function decimalOf(money: Money): string {
 
 	return trimmed.endsWith(".") ? `${trimmed}0` : trimmed;
 }
+
+/**
+ * Rails' `ActiveModel::Type::Boolean::FALSE_VALUES`, which `update_bill`
+ * assigns through and `set_opening_balance` casts `dry_run` with: any other
+ * value is true.
+ */
+export const RAILS_FALSE = new Set<unknown>([
+	false,
+	0,
+	"0",
+	"f",
+	"F",
+	"false",
+	"FALSE",
+	"off",
+	"OFF",
+]);
 
 /** Rails' `pluralize(count, word)`: « 1 transaction », « 0 transactions ». */
 export function pluralize(count: number, word: string): string {

@@ -115,8 +115,8 @@ async function investmentAccount(tx: Transaction, accountId: string) {
 }
 
 /**
- * Dated as a snapshot is: after the opening date, whose anchor fixes its own
- * day, and not after today.
+ * Dated after the opening date, whose anchor fixes its own day, and not after
+ * today: a snapshot's bounds, without the opening day a snapshot may set.
  */
 function refuseDate(account: { openingDate: IsoDate }, date: IsoDate, timeZone: string): void {
 	const reason = snapshotRejectionFor(date, {
@@ -124,7 +124,7 @@ function refuseDate(account: { openingDate: IsoDate }, date: IsoDate, timeZone: 
 		today: today(timeZone),
 	});
 
-	if (reason === "BEFORE_OPENING_DATE") {
+	if (reason === "BEFORE_OPENING_DATE" || reason === "OPENING_DATE") {
 		throw invalidField("date", "not_after_opening_date");
 	}
 

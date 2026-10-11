@@ -1,0 +1,288 @@
+import { and, eq, lt } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+
+import { toMicros } from "@archant/data/micros";
+import { toMinorUnits } from "@archant/data/money";
+import { entries } from "@archant/data/schema/entries";
+import { holdings } from "@archant/data/schema/holdings";
+import { securities } from "@archant/data/schema/securities";
+
+import {
+	add,
+	deps,
+	history,
+	link,
+	newBankAccount,
+	openChecking,
+	openPea,
+	snapshot,
+	temp,
+	useLedgerDatabase,
+} from "../../testing/ledger.ts";
+import { setOpeningBalance } from "./opening.ts";
+import { recordTrade } from "./trades.ts";
+
+useLedgerDatabase();
+
+const user = { origin: "user" } as const;
+
+/** The matrix's account: opened on 2026-01-10 at 1 500,00, with −120,00 on 2026-01-15. */
+async function opened() {
+	const account = await openChecking({
+		openingBalance: toMinorUnits(150000),
+		openingDate: "2026-01-10",
+	});
+	await add(account.id, { date: "2026-01-15", amount: toMinorUnits(-12000) });
+
+	return account;
+}
+
+async function anchorOf(accountId: string) {
+	return temp.db
+		.select({ id: entries.id, date: entries.date, amount: entries.amount, notes: entries.notes })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "opening_anchor")))
+		.get();
+}
+
+/** A PEA opened on 2026-09-01 at 25 000,00, with a buy of 10 at 612,40 € plus 2,50 € of fees on 2026-09-10. */
+async function peaWithBuy() {
+	const pea = await openPea();
+	const securityId = crypto.randomUUID();
+	await temp.db.insert(securities).values({
+		id: securityId,
+		isin: "FR0000121014",
+		ticker: `MC${securityId.slice(0, 8)}.PA`,
+		mic: "XPAR",
+		name: "LVMH",
+		currency: "EUR",
+		provider: "yahoo",
+		createdAt: 0,
+		updatedAt: 0,
+	});
+	await recordTrade(
+		deps(),
+		pea.id,
+		{
+			side: "buy",
+			security: { source: "known", id: securityId },
+			date: "2026-09-10",
+			quantity: toMicros(10_000_000),
+			price: toMicros(612_400_000),
+			fee: toMinorUnits(250),
+		},
+		user,
+	);
+
+	return pea;
+}
+
+describe("setOpeningBalance", () => {
+	it("moves the anchor to an earlier date in place and computes the balances from there", async () => {
+		const account = await opened();
+		const before = await anchorOf(account.id);
+
+		const result = await setOpeningBalance(
+			deps(),
+			account.id,
+			{ date: "2025-12-01", balance: toMinorUnits(100000), notes: "Relevé d'ouverture" },
+			user,
+		);
+
+		expect(result).toEqual({
+			status: "set",
+			changed: true,
+			before: { date: "2026-01-10", balance: 150000 },
+			after: { date: "2025-12-01", balance: 100000 },
+			pinnedBy: null,
+		});
+		await expect(anchorOf(account.id)).resolves.toEqual({
+			id: before?.id,
+			date: "2025-12-01",
+			amount: 100000,
+			notes: "Relevé d'ouverture",
+		});
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe("2025-12-01");
+		expect(days.get("2026-01-10")).toBe(100000);
+		expect(days.get("2026-01-15")).toBe(88000);
+		expect(days.get("2026-09-21")).toBe(88000);
+	});
+
+	it("deletes the rows before a later date", async () => {
+		const account = await opened();
+
+		await setOpeningBalance(
+			deps(),
+			account.id,
+			{ date: "2026-01-12", balance: toMinorUnits(150000) },
+			user,
+		);
+
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe("2026-01-12");
+		expect(days.get("2026-01-12")).toBe(150000);
+		expect(days.get("2026-09-21")).toBe(138000);
+	});
+
+	it("keeps the date when none is given", async () => {
+		const account = await opened();
+
+		const result = await setOpeningBalance(
+			deps(),
+			account.id,
+			{ balance: toMinorUnits(75000) },
+			user,
+		);
+
+		expect(result).toMatchObject({ after: { date: "2026-01-10", balance: 75000 } });
+		await expect(anchorOf(account.id)).resolves.toMatchObject({
+			date: "2026-01-10",
+			amount: 75000,
+		});
+		expect((await history(account.id)).get("2026-09-21")).toBe(63000);
+	});
+
+	it("refuses a date on or after the oldest entry, a snapshot or a pending line included", async () => {
+		const account = await opened();
+		const before = await history(account.id);
+
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2026-01-15", balance: toMinorUnits(1) }, user),
+		).resolves.toEqual({
+			status: "rejected",
+			reason: "NOT_BEFORE_OLDEST_ENTRY",
+			oldestEntryDate: "2026-01-15",
+		});
+
+		await add(account.id, { date: "2026-01-13", amount: toMinorUnits(-100), pending: true });
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2026-01-14", balance: toMinorUnits(1) }, user),
+		).resolves.toMatchObject({ oldestEntryDate: "2026-01-13" });
+
+		await snapshot(account.id, "2026-01-11", 150000);
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2026-01-12", balance: toMinorUnits(1) }, user),
+		).resolves.toMatchObject({ oldestEntryDate: "2026-01-11" });
+		await expect(anchorOf(account.id)).resolves.toMatchObject({
+			date: "2026-01-10",
+			amount: 150000,
+		});
+		expect((await history(account.id)).get("2026-01-10")).toBe(before.get("2026-01-10"));
+	});
+
+	it("refuses a future date on an account without entries", async () => {
+		const account = await openChecking({ openingDate: "2026-09-01" });
+
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2026-09-22", balance: toMinorUnits(1) }, user),
+		).resolves.toEqual({ status: "rejected", reason: "DATE_IN_FUTURE" });
+	});
+
+	it("refuses a linked account", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000);
+
+		await expect(
+			setOpeningBalance(deps(), account.id, { balance: toMinorUnits(1) }, user),
+		).resolves.toEqual({ status: "rejected", reason: "ACCOUNT_LINKED" });
+	});
+
+	it("names a later snapshot, which keeps today's balance", async () => {
+		const account = await opened();
+		await snapshot(account.id, "2026-02-01", 200000);
+
+		const result = await setOpeningBalance(
+			deps(),
+			account.id,
+			{ balance: toMinorUnits(100000) },
+			user,
+		);
+
+		expect(result).toMatchObject({ pinnedBy: "2026-02-01" });
+		const days = await history(account.id);
+		expect(days.get("2026-01-31")).toBe(88000);
+		expect(days.get("2026-09-21")).toBe(200000);
+	});
+
+	it("writes nothing on a dry run, and says nothing changed", async () => {
+		const account = await opened();
+		const before = await history(account.id);
+
+		const result = await setOpeningBalance(
+			deps(),
+			account.id,
+			{ date: "2025-12-01", balance: toMinorUnits(100000) },
+			{ ...user, dryRun: true },
+		);
+
+		expect(result).toMatchObject({
+			status: "set",
+			changed: false,
+			after: { date: "2025-12-01", balance: 100000 },
+		});
+		await expect(anchorOf(account.id)).resolves.toMatchObject({
+			date: "2026-01-10",
+			amount: 150000,
+		});
+		await expect(history(account.id)).resolves.toEqual(before);
+	});
+
+	it("answers unchanged when neither the date nor the amount moves", async () => {
+		const account = await opened();
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-01-10", balance: toMinorUnits(150000) },
+				user,
+			),
+		).resolves.toMatchObject({ status: "set", changed: false });
+	});
+
+	it("computes an investment account's holdings again from the new date", async () => {
+		const pea = await peaWithBuy();
+
+		await setOpeningBalance(
+			deps(),
+			pea.id,
+			{ date: "2026-08-01", balance: toMinorUnits(3_000_000) },
+			user,
+		);
+
+		const days = await history(pea.id);
+		expect([...days.keys()][0]).toBe("2026-08-01");
+		expect(days.get("2026-09-09")).toBe(3_000_000);
+		// The buy's cash, 6 124,00 + 2,50 of fees, out; the holding's 6 124,00 in.
+		expect(days.get("2026-09-10")).toBe(2_999_750);
+		const held = await temp.db
+			.select({ date: holdings.date })
+			.from(holdings)
+			.where(eq(holdings.accountId, pea.id))
+			.orderBy(holdings.date);
+		expect(held[0]?.date).toBe("2026-09-10");
+		expect(held.at(-1)?.date).toBe("2026-09-21");
+	});
+
+	it("leaves no holding row before a later date on an investment account", async () => {
+		const pea = await peaWithBuy();
+
+		await setOpeningBalance(
+			deps(),
+			pea.id,
+			{ date: "2026-09-05", balance: toMinorUnits(2_500_000) },
+			user,
+		);
+
+		const early = await temp.db
+			.select({ date: holdings.date })
+			.from(holdings)
+			.where(and(eq(holdings.accountId, pea.id), lt(holdings.date, "2026-09-05")));
+		expect(early).toEqual([]);
+		const days = await history(pea.id);
+		expect([...days.keys()][0]).toBe("2026-09-05");
+		expect(days.get("2026-09-10")).toBe(2_499_750);
+	});
+});

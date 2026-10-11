@@ -13,8 +13,12 @@ describe("snapshotRejectionFor", () => {
 		expect(snapshotRejectionFor("2026-09-21", context)).toBeNull();
 	});
 
-	it("refuses the opening date and any day before it", () => {
-		expect(snapshotRejectionFor("2026-01-10", context)).toBe("BEFORE_OPENING_DATE");
+	it("names the opening date, where a snapshot sets the opening anchor", () => {
+		expect(snapshotRejectionFor("2026-01-10", context)).toBe("OPENING_DATE");
+	});
+
+	it("refuses any day before the opening date", () => {
+		expect(snapshotRejectionFor("2026-01-09", context)).toBe("BEFORE_OPENING_DATE");
 		expect(snapshotRejectionFor("2025-12-31", context)).toBe("BEFORE_OPENING_DATE");
 	});
 

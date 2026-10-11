@@ -2,6 +2,8 @@ import type { SnapshotData } from "@/hooks/useSnapshots";
 
 import { useTranslation } from "react-i18next";
 
+import type { MinorUnits } from "@archant/data/money";
+
 import { Money } from "@/components/Money";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -14,17 +16,29 @@ import {
 } from "@/components/ui/table";
 import { formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 
+/** The account's opening balance, the list's oldest row. */
+export type OpeningRow = { date: string; balance: MinorUnits; currency: string };
+
 type SnapshotListProps = {
 	items: readonly SnapshotData[];
 	/** `null` for a viewer: a row opens the form that edits it, which they cannot use. */
 	onOpen: ((snapshot: SnapshotData) => void) | null;
+	/** Shown below the snapshots, on the last page only; `null` elsewhere. */
+	opening: OpeningRow | null;
+	/**
+	 * `null` for a viewer and on a linked account, whose balances derive from
+	 * the bank's and ignore the opening amount: the row opens nothing.
+	 */
+	onOpenOpening: (() => void) | null;
 };
 
 /**
  * One account's snapshots, most recent first: the balance typed, the balance
- * the transactions alone give for that day, and the gap between them.
+ * the transactions alone give for that day, and the gap between them. The
+ * opening balance comes last, as Sure lists its opening anchor among the
+ * valuations: it starts the balances, so nothing is computed against it.
  */
-export function SnapshotList({ items, onOpen }: SnapshotListProps) {
+export function SnapshotList({ items, onOpen, opening, onOpenOpening }: SnapshotListProps) {
 	const { t } = useTranslation();
 
 	return (
@@ -84,8 +98,47 @@ export function SnapshotList({ items, onOpen }: SnapshotListProps) {
 						</TableCell>
 					</TableRow>
 				))}
+				{opening !== null && (
+					<TableRow className="relative h-9">
+						<TableCell>
+							{onOpenOpening === null ? (
+								<OpeningLabel date={opening.date} />
+							) : (
+								<button
+									type="button"
+									data-opening-balance=""
+									onClick={onOpenOpening}
+									// 28 px, the floor of a control: a line of text alone is 20 px.
+									className="inline-flex min-h-7 items-center rounded-sm text-left outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
+								>
+									<OpeningLabel date={opening.date} />
+								</button>
+							)}
+						</TableCell>
+						<TableCell className="text-right">
+							<Money amount={opening.balance} currency={opening.currency} />
+						</TableCell>
+						<TableCell className="text-right">
+							<span aria-hidden="true">—</span>
+						</TableCell>
+						<TableCell className="text-right">
+							<span aria-hidden="true">—</span>
+						</TableCell>
+					</TableRow>
+				)}
 			</TableBody>
 		</Table>
+	);
+}
+
+function OpeningLabel({ date }: { date: string }) {
+	const { t } = useTranslation();
+
+	return (
+		<span className="flex flex-wrap items-baseline gap-x-2">
+			<span>{formatTableDate(date)}</span>
+			<span className="text-xs text-muted-foreground">{t("snapshots.opening.label")}</span>
+		</span>
 	);
 }
 

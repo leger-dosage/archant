@@ -220,6 +220,9 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page.getByRole("cell", { name: "990,00 €" }).first()).toBeVisible();
 			await expectNone(page, [{ role: "button", name: "Ajouter un solde" }]);
 			await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
+			// The opening balance shows for every reader, without the sheet that edits it.
+			await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+			await expect(page.locator("[data-opening-balance]")).toHaveCount(0);
 
 			await page.getByRole("tab", { name: "Imports" }).click();
 			await expect(page.getByRole("cell", { name: "releve-lecteur.ofx" })).toBeVisible();

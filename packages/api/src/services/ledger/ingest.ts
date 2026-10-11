@@ -502,8 +502,11 @@ async function planStatementBalance(
 ): Promise<BalancePlan> {
 	const { date } = statementBalance;
 	const balance = toStoredBalance(account, statementBalance.amount);
+	const placed = snapshotRejectionFor(date, context);
+	// A statement balance never moves the opening anchor: an import moves the
+	// opening date its own way, and the owner sets its amount.
 	const reason =
-		snapshotRejectionFor(date, context) ??
+		(placed === "OPENING_DATE" ? "BEFORE_OPENING_DATE" : placed) ??
 		(statementBalance.currency === account.currency ? null : "CURRENCY_MISMATCH");
 
 	if (reason !== null) {

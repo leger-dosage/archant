@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
+import { EARLIEST_OPENING_DATE } from "./accounts.ts";
 import { NOTES_MAX_LENGTH } from "./transactions.ts";
 
 // What the route checks before it knows the account: every field is text,
@@ -77,3 +78,17 @@ export function updateSnapshotSchema(currency: CurrencyCode) {
 
 /** What the interface's form holds: the text typed, before the schema parses it. */
 export type SnapshotFormInput = z.input<ReturnType<typeof createSnapshotSchema>>;
+
+/**
+ * The full check of an opening balance, shared with the « Solde d'ouverture »
+ * sheet: a new snapshot's fields, the date required, parsed in the account's
+ * currency. Where the date may fall needs the account's entries, so the
+ * ledger checks it. The route takes `snapshotBodySchema`.
+ */
+export function openingBalanceSchema(currency: CurrencyCode) {
+	// As an account's creation: each day from the opening date on gets a row.
+	return createSnapshotSchema(currency).refine((value) => value.date >= EARLIEST_OPENING_DATE, {
+		path: ["date"],
+		message: "date_too_early",
+	});
+}
