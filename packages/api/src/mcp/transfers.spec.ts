@@ -91,7 +91,10 @@ const transferOf = z.object({
 	transfer: z.object({ id: z.string(), counterpart_transaction_id: z.string() }).loose().nullable(),
 });
 
-const page = z.object({ transactions: z.array(transferOf.extend({ id: z.string() }).loose()) });
+/** A get_transactions page: Sure's item says only whether a line is a transfer side. */
+const page = z.object({
+	transactions: z.array(z.object({ id: z.string(), is_transfer: z.boolean() }).loose()),
+});
 
 const candidates = z.object({
 	candidates: z.array(
@@ -139,7 +142,7 @@ async function sidesOf(ids: string[]) {
 }
 
 describe("the read tools", () => {
-	it("give a side its transfer's id and the other side's id", async () => {
+	it("say a side is a transfer in the list, and give its transfer, status and other side in full", async () => {
 		const { outflow, inflow, transferId } = await household();
 		const tools = await assistants();
 
@@ -150,19 +153,21 @@ describe("the read tools", () => {
 			(await tools.read("get_transaction", { id: inflow })).structuredContent,
 		);
 
-		expect(found.transactions.find((item) => item.id === outflow)).toMatchObject({
-			transfer: { id: transferId, kind: "internal_move", counterpart_transaction_id: inflow },
-		});
+		expect(found.transactions.find((item) => item.id === outflow)).toEqual(
+			expect.objectContaining({ is_transfer: true }),
+		);
+		expect(found.transactions.find((item) => item.id === outflow)).not.toHaveProperty("transfer");
 		expect(detail).toMatchObject({
 			transfer: {
 				id: transferId,
+				kind: "internal_move",
+				status: "pending",
 				counterpart_transaction_id: outflow,
 				counterpart_account: { name: "Compte courant" },
 			},
 		});
-		// Story 27.13 brings Sure's fields; no status and no suggestion until then.
+		// Story 27.1 removed the suggestion flag; status replaces it.
 		expect(detail).not.toHaveProperty("transfer_suggested");
-		expect(detail.transfer).not.toHaveProperty("status");
 	});
 
 	it("show the closest candidate the matcher proposed, the other line left alone", async () => {
@@ -180,12 +185,16 @@ describe("the read tools", () => {
 		const tools = await assistants();
 
 		const found = page.parse((await tools.read("get_transactions")).structuredContent);
+		const detail = transferOf.parse(
+			(await tools.read("get_transaction", { id: source })).structuredContent,
+		);
 
-		expect(found.transactions.find((item) => item.id === source)).toMatchObject({
-			transfer: { counterpart_transaction_id: inflow },
+		expect(detail).toMatchObject({ transfer: { counterpart_transaction_id: inflow } });
+		expect(found.transactions.find((item) => item.id === inflow)).toMatchObject({
+			is_transfer: true,
 		});
 		expect(found.transactions.find((item) => item.id === other)).toMatchObject({
-			transfer: null,
+			is_transfer: false,
 		});
 	});
 });
@@ -257,6 +266,14 @@ describe("pair_transfer", () => {
 		expect(result.structuredContent).not.toHaveProperty("status");
 		expect(await transfersNow()).toEqual([{ id: created.id }]);
 		expect(await calls()).toEqual([{ tool: "pair_transfer", outcome: "OK", changedRows: 1 }]);
+		// A pair by hand is confirmed, as Sure's.
+		expect((await tools.read("get_transaction", { id: inflow })).structuredContent).toMatchObject({
+			transfer: { id: created.id, status: "confirmed" },
+		});
+		const found = page.parse((await tools.read("get_transactions")).structuredContent);
+		expect(found.transactions.find((item) => item.id === inflow)).toMatchObject({
+			is_transfer: true,
+		});
 	});
 
 	it("refuses a counterpart that is no candidate, writing nothing", async () => {

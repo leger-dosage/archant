@@ -153,9 +153,18 @@ const SURE_REFUSALS = {
 	not_found: "NOT_FOUND",
 	no_changes: "VALIDATION_ERROR",
 	validation_failed: "VALIDATION_ERROR",
+	account_not_found: "NOT_FOUND",
+	invalid_date: "VALIDATION_ERROR",
+	invalid_amount: "VALIDATION_ERROR",
+	invalid_name: "VALIDATION_ERROR",
+	invalid_currency: "VALIDATION_ERROR",
+	invalid_category: "VALIDATION_ERROR",
+	invalid_merchant: "VALIDATION_ERROR",
+	invalid_tags: "VALIDATION_ERROR",
+	split_child: "TRANSACTION_SPLIT",
 } as const satisfies Record<string, ErrorCode>;
 
-type SureRefusal = keyof typeof SURE_REFUSALS;
+export type SureRefusal = keyof typeof SURE_REFUSALS;
 
 type RefusalBody =
 	| { success: false; error: SureRefusal; message: string }
