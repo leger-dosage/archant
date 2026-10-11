@@ -162,12 +162,14 @@ const SURE_REFUSALS = {
 	invalid_merchant: "VALIDATION_ERROR",
 	invalid_tags: "VALIDATION_ERROR",
 	split_child: "TRANSACTION_SPLIT",
+	invalid_source_citation: "VALIDATION_ERROR",
 } as const satisfies Record<string, ErrorCode>;
 
 export type SureRefusal = keyof typeof SURE_REFUSALS;
 
 type RefusalBody =
 	| { success: false; error: SureRefusal; message: string }
+	| { error: SureRefusal; message: string }
 	| { error: string; hint: string };
 
 /**
@@ -190,6 +192,11 @@ export class ToolRefusal extends Error {
 /** Refuses as Sure's `error(key, message)` helpers answer. */
 export function refuse(error: SureRefusal, message: string): never {
 	throw new ToolRefusal({ success: false, error, message }, SURE_REFUSALS[error]);
+}
+
+/** Refuses as the Sure functions whose `error` helper answers no `success`, such as `get_valuations`. */
+export function refuseWithoutSuccess(error: SureRefusal, message: string): never {
+	throw new ToolRefusal({ error, message }, SURE_REFUSALS[error]);
 }
 
 /** Rails' full message for each refusal a category or tag write shares with Sure's model. */
@@ -221,7 +228,8 @@ export async function validated<Written>(write: () => Promise<Written>): Promise
 
 const NBSP = "\u00A0";
 
-function decimalsOf(currency: string): number {
+/** How many decimals an amount in this code carries: two outside ISO 4217. */
+export function decimalsOf(currency: string): number {
 	return isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;
 }
 
@@ -294,4 +302,27 @@ export function decimalOf(money: Money): string {
 	const trimmed = exact.replace(/0+$/u, "");
 
 	return trimmed.endsWith(".") ? `${trimmed}0` : trimmed;
+}
+
+/** A decimal text as Sure's `BigDecimal(value.to_s)` reads it: a sign, digits, a fraction. */
+const DECIMAL_TEXT = /^([+-]?)(\d*)(?:\.(\d+))?$/u;
+
+/**
+ * Sure's `amount`, a JSON number read through `String(number)` or a decimal
+ * string, as a plain decimal text: `"-12.5"`, `"0.5"`, `"175000"`. Built
+ * from the digits, never through a float. `null` for anything Sure would not
+ * read as a number.
+ */
+export function sureDecimalText(value: string | number): string | null {
+	const match = DECIMAL_TEXT.exec(String(value).trim());
+	const [, sign = "", integer = "", fraction = ""] = match ?? [];
+
+	if (match === null || (integer === "" && fraction === "")) {
+		return null;
+	}
+
+	const kept = fraction.replace(/0+$/u, "");
+	const digits = `${integer.replace(/^0+(?=\d)/u, "") || "0"}${kept === "" ? "" : `.${kept}`}`;
+
+	return sign === "-" && !/^[0.]+$/u.test(digits) ? `-${digits}` : digits;
 }

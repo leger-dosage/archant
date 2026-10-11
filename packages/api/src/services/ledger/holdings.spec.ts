@@ -26,6 +26,7 @@ import { deleteAccount } from "./accounts.ts";
 import * as ledgerBalances from "./balances.ts";
 import {
 	currentHoldings,
+	lastHeldHoldings,
 	lockCostBasis,
 	recomputeFeeCostBases,
 	revalueHoldings,
@@ -576,6 +577,86 @@ describe("currentHoldings", () => {
 			holdings: [],
 			cash: 0,
 		});
+	});
+});
+
+describe("lastHeldHoldings", () => {
+	it("reads each security's last day held, a sold-out one at its last quantity, with the cost basis standing that day", async () => {
+		const pea = await openPea();
+		const other = await openPea();
+		const soldOut = await newSecurity("Vendu");
+		const rebought = await newSecurity("Racheté");
+		const lockedThenSold = await newSecurity("Verrou puis vente");
+		const lockEnded = await newSecurity("Verrou levé");
+		await record(pea.id, buy(soldOut));
+		await record(pea.id, buy(rebought));
+		await record(pea.id, buy(lockedThenSold));
+		await record(pea.id, buy(lockEnded));
+		await record(other.id, buy(soldOut));
+		await record(pea.id, sell(soldOut, { date: "2026-09-12" }));
+		await record(pea.id, sell(rebought, { date: "2026-09-12" }));
+		await record(pea.id, buy(rebought, { date: "2026-09-14", price: toMicros(700_000_000) }));
+		setToday("2026-09-15T10:00:00Z");
+		await lock(pea.id, lockedThenSold, 400_000_000);
+		await lock(pea.id, lockEnded, 450_000_000);
+		setToday("2026-09-21T10:00:00Z");
+		await record(pea.id, sell(lockedThenSold, { date: "2026-09-16" }));
+		await record(pea.id, sell(lockEnded, { date: "2026-09-16" }));
+		await record(pea.id, buy(lockEnded, { date: "2026-09-18", price: toMicros(700_000_000) }));
+		// Locked after a full sale: it stands on the position bought back.
+		await lock(pea.id, rebought, 650_000_000);
+
+		const held = await lastHeldHoldings(temp.db, [pea.id], "2026-09-21");
+
+		expect(
+			held
+				.map(({ accountId, security, date, quantity, amount, costBasis }) => ({
+					accountId,
+					name: security.name,
+					date,
+					quantity,
+					amount,
+					costBasis,
+				}))
+				.toSorted((a, b) => a.name.localeCompare(b.name)),
+		).toEqual([
+			{
+				accountId: pea.id,
+				name: "Racheté",
+				date: "2026-09-21",
+				quantity: 10_000_000,
+				amount: 700_000,
+				costBasis: 650_000_000,
+			},
+			{
+				accountId: pea.id,
+				name: "Vendu",
+				date: "2026-09-11",
+				quantity: 10_000_000,
+				amount: 612_400,
+				costBasis: 612_650_000,
+			},
+			// A full sale after the lock's day ended it: the rebuy is priced from its own buy.
+			{
+				accountId: pea.id,
+				name: "Verrou levé",
+				date: "2026-09-21",
+				quantity: 10_000_000,
+				amount: 700_000,
+				costBasis: 700_250_000,
+			},
+			// The lock stood on its last day held: the sale came after it.
+			{
+				accountId: pea.id,
+				name: "Verrou puis vente",
+				date: "2026-09-15",
+				quantity: 10_000_000,
+				amount: 612_400,
+				costBasis: 400_000_000,
+			},
+		]);
+		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-09")).resolves.toEqual([]);
+		await expect(lastHeldHoldings(temp.db, [], "2026-09-21")).resolves.toEqual([]);
 	});
 });
 

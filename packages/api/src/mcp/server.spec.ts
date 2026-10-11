@@ -382,6 +382,13 @@ describe("the request", () => {
 		expect(result.instructions).toContain(
 			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement; pass that document as source, in the tool's citation grammar. Never record a figure the owner or a document did not give, and never invent a source.",
 		);
+		expect(result.instructions).toContain(
+			"get_holdings gives quantities, prices and amounts as JSON numbers, as Sure's, beside formatted strings",
+		);
+		expect(result.instructions).toContain(
+			"get_valuations and record_valuation give amounts as Sure's decimal text",
+		);
+		expect(result.instructions).not.toMatch(/\bgap\b/u);
 	});
 });
 
@@ -1505,7 +1512,7 @@ describe("reading accounts, recurring series and one transaction", () => {
 		expect(result.truncated).toBe(true);
 	});
 
-	it("get_holdings gives each position as its route does, numbers as decimal strings", async () => {
+	it("get_holdings gives each position as its route does, in Sure's fields", async () => {
 		const account = await openAccount({ ...pea, name: "PEA outil", openingDate: "2026-09-01" });
 		const traded = await apiRequest("POST", `/api/accounts/${account.id}/trades`, {
 			side: "buy",
@@ -1527,14 +1534,8 @@ describe("reading accounts, recurring series and one transaction", () => {
 		const route = z
 			.object({
 				date: z.string(),
-				positions: z.array(
-					z.object({
-						amount: z.number(),
-						bookValue: z.number(),
-						gainPercent: z.string(),
-						weight: z.string(),
-					}),
-				),
+				total: z.number(),
+				positions: z.array(z.object({ amount: z.number(), costBasis: z.string() })),
 			})
 			.parse(await routeData(`/api/accounts/${account.id}/holdings`));
 		const [position] = route.positions;
@@ -1544,31 +1545,31 @@ describe("reading accounts, recurring series and one transaction", () => {
 			account_ids: [account.id],
 		});
 
-		expect(result.structuredContent).toMatchObject({
+		expect(route.total).toBe(2_499_750);
+		expect(result.structuredContent).toEqual({
 			holdings: [
 				{
 					ticker: null,
 					name: "Fonds outil",
-					quantity: "10",
-					price: "612.4",
+					quantity: 10,
+					price: 612.4,
 					currency: "EUR",
-					amount: money(position?.amount),
-					weight: position?.weight,
-					average_cost: "600",
-					account: { id: account.id, name: "PEA outil" },
+					amount: Number(money(position?.amount)),
+					formatted_amount: "6\u00A0124,00\u00A0€",
+					// 6 124,00 of the 24 997,50 balance: 24.4983…, half up.
+					weight: "24.5",
+					// The owner's lock, as the « Positions » tab shows it.
+					average_cost: Number(position?.costBasis),
+					formatted_average_cost: "600,00\u00A0€",
+					account: "PEA outil",
 					date: route.date,
-					security_id: securityId,
-					isin: "FR0000121014",
-					exchange_mic: null,
-					price_date: "2026-09-10",
-					average_cost_locked: true,
-					book_value: money(position?.bookValue),
-					gain: "124.00",
-					gain_percent: position?.gainPercent,
 				},
 			],
 			total_results: 1,
-			total_value: "6124.00",
+			page: 1,
+			page_size: 50,
+			total_pages: 1,
+			total_value: "6\u00A0124,00\u00A0€",
 		});
 	});
 

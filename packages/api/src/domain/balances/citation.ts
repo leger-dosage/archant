@@ -51,10 +51,16 @@ function isGrade(value: string | undefined): value is CitationGrade {
 	return CITATION_GRADES.some((grade) => grade === value);
 }
 
-/** Sure's `Provenance::Citation.parse!`, its refusals in the same order. */
+/**
+ * Sure's `Provenance::Citation.parse!`, its refusals in the same order. An
+ * unknown grade comes with the grade given, which Sure's message names.
+ */
 export function parseCitation(
 	raw: string,
-): { ok: true; citation: Citation } | { ok: false; code: CitationRejection } {
+):
+	| { ok: true; citation: Citation }
+	| { ok: false; code: "unknown_grade"; grade: string }
+	| { ok: false; code: Exclude<CitationRejection, "unknown_grade"> } {
 	const value = raw.trim();
 
 	if (value === "") {
@@ -70,9 +76,10 @@ export function parseCitation(
 	}
 
 	const suffix = GRADE_SUFFIX.exec(value);
+	const given = suffix?.groups?.["grade"];
 
-	if (suffix !== null && !isGrade(suffix.groups?.["grade"])) {
-		return { ok: false, code: "unknown_grade" };
+	if (suffix !== null && !isGrade(given)) {
+		return { ok: false, code: "unknown_grade", grade: String(given) };
 	}
 
 	// A line break fails it, as Ruby's `.` matches none either.

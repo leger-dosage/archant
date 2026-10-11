@@ -57,7 +57,7 @@ describe("parseCitation", () => {
 
 	it("refuses an unknown grade, whatever the spacing", () => {
 		for (const raw of ["Doc (grade:D)", "Doc (grade:  D)", "Some document (grade: D)"]) {
-			expect(parseCitation(raw)).toEqual({ ok: false, code: "unknown_grade" });
+			expect(parseCitation(raw)).toEqual({ ok: false, code: "unknown_grade", grade: "D" });
 		}
 	});
 

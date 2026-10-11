@@ -11,11 +11,7 @@ import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
-import {
-	CITATION_MAX_LENGTH,
-	ESTIMATED_PREFIX,
-	parseCitation,
-} from "../domain/balances/citation.ts";
+import { CITATION_MAX_LENGTH, ESTIMATED_PREFIX } from "../domain/balances/citation.ts";
 import { SURE_INTERVALS, SURE_PERIODS } from "../domain/balances/sure-periods.ts";
 import {
 	BILL_LIFECYCLES,
@@ -1291,70 +1287,49 @@ export const unpairTransferInput = z.strictObject({
 });
 
 /**
- * `get_valuations`: a page of valuations, as Sure's: every active account's
- * unless one is named, between two optional dates.
+ * A value Sure's write requires, kept required in the advertised schema: a
+ * missing one reaches `run` blank, which refuses it with Sure's key, as
+ * `requiredSureName` does for a name.
  */
-export const valuationsInput = z
-	.strictObject({
-		account_id: accountId
-			.optional()
-			.describe("Only this account's; every active account's without it."),
-		start_date: z.iso
-			.date()
-			.optional()
-			.describe("Only valuations on or after this date, YYYY-MM-DD."),
-		end_date: z.iso
-			.date()
-			.optional()
-			.describe("Only valuations on or before this date, YYYY-MM-DD."),
-		page: pageFields.page.describe(
-			`${DEFAULT_PAGE_SIZE} valuations a page, most recent first; 1 by default.`,
-		),
-	})
-	.superRefine((value, context) => {
-		if (
-			value.start_date !== undefined &&
-			value.end_date !== undefined &&
-			value.end_date < value.start_date
-		) {
-			context.addIssue({ code: "custom", path: ["end_date"], message: "before_start_date" });
-		}
-	});
+const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
+	z.preprocess((value) => value ?? "", schema);
+
+/** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
+const sureAmount = z.union([z.string().max(40), z.number()]);
 
 /**
- * `record_valuation`: the « Soldes » dialog's fields, passed raw to
- * `createSnapshot`, which parses the balance in the account's currency as
- * it parses the dialog's, and Sure's required `source`, parsed here into
- * its citation.
+ * `get_valuations`: a page of valuations, as Sure's: every active account's
+ * unless one is named, between two optional dates. The dates reach `run`
+ * loosely typed, which refuses them with Sure's `invalid_date`; the page
+ * reads as Sure's `resolved_page`.
+ */
+export const valuationsInput = z.strictObject({
+	account_id: accountId
+		.optional()
+		.describe("Only this account's; every active account's without it."),
+	start_date: z.string().optional().describe("Only valuations on or after this date, YYYY-MM-DD."),
+	end_date: z.string().optional().describe("Only valuations on or before this date, YYYY-MM-DD."),
+	page: clampedPageFields.page.describe(
+		`${DEFAULT_PAGE_SIZE} valuations a page, most recent first; 1 by default.`,
+	),
+});
+
+/**
+ * `record_valuation`: Sure's parameters. The date, the amount and the source
+ * reach `run` loosely typed, which refuses them with Sure's keys in Sure's
+ * order; the balance is then recorded through the « Soldes » dialog's checks.
  */
 export const recordValuationInput = z.strictObject({
 	account_id: accountId,
-	date: z.iso
-		.date()
-		.describe(
-			"YYYY-MM-DD: the day whose end-of-day balance this is, after the opening date and not after today.",
-		),
-	amount: z
-		.string()
-		.describe(
-			'The stored balance, a decimal string such as "175000.00" in the account\'s currency: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.',
-		),
-	source: z
-		.string()
-		.transform((value, context) => {
-			const parsed = parseCitation(value);
-
-			if (!parsed.ok) {
-				context.addIssue({ code: "custom", message: parsed.code });
-
-				return z.NEVER;
-			}
-
-			return parsed.citation;
-		})
-		.describe(
-			`Required citation naming the document this balance came from, in the grammar: ["${ESTIMATED_PREFIX}"] citation [" (grade: A|B|C)"], ${CITATION_MAX_LENGTH} characters at most, on one line.`,
-		),
+	date: requiredLoose(z.string()).describe(
+		"ISO 8601 date (YYYY-MM-DD) the value applies to, after the opening date and not after today. For a period-end value, use the last day of the period.",
+	),
+	amount: requiredLoose(sureAmount).describe(
+		"The account's stored balance on that date in its own currency, a number or a decimal string: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.",
+	),
+	source: requiredLoose(z.string()).describe(
+		`Required citation naming the document this value came from, in the grammar: ["${ESTIMATED_PREFIX}"] citation [" (grade: A|B|C)"], ${CITATION_MAX_LENGTH} characters at most, on one line.`,
+	),
 });
 
 /**
@@ -1428,17 +1403,6 @@ export const createGoalInput = z
 
 /** Sure's `type`: the sign of a magnitude, money in or money out. */
 const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
-
-/**
- * A value Sure's write requires, kept required in the advertised schema: a
- * missing one reaches `run` blank, which refuses it with Sure's key, as
- * `requiredSureName` does for a name.
- */
-const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
-	z.preprocess((value) => value ?? "", schema);
-
-/** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
-const sureAmount = z.union([z.string().max(40), z.number()]);
 
 /**
  * `create_transaction`: Sure's parameters. The date, the amount and the name
