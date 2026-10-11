@@ -5272,7 +5272,7 @@ So that an assistant reads and edits my bills in Sure's words.
 
 **Given** `get_bill_details` and `get_bill_audit`
 **When** they answer
-**Then** they give Sure's sections and names: the configuration fields Sure lists, from the constants of `domain/recurring/` where Archant stores none and `null` for subscription dates, which are Later; `analytics`; `history` and `history_window`; payments with `transaction_name`; price changes with `source` and `price_change_window`; the audit with `as_of_date`, empty `upcoming_trials` and `upcoming_renewals`, and each section's fields as Sure's
+**Then** they give Sure's sections and names: the configuration fields Sure lists, from the constants of `domain/recurring/` where Archant stores none, and subscription dates, which are Later, left out as Sure's `.compact` leaves them; `analytics`; `history` and `history_window`; payments with `transaction_name`; price changes with `source` and `price_change_window`; the audit with `as_of_date`, empty `upcoming_trials` and `upcoming_renewals`, and each section's fields as Sure's
 
 **Given** `create_bill`, `update_bill` and `record_bill_payment`
 **When** they write

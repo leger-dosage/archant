@@ -320,6 +320,21 @@ export function monthlyRollup(
 }
 
 /**
+ * Sure's `annualized_cost`: the average of `count` payments summing to
+ * `total`, unrounded, times `occurrencesPerYear`, rounded once half up, as
+ * Sure multiplies its `BigDecimal` average before `Money` rounds it.
+ */
+export function annualizedAverage(
+	rules: readonly RecurrenceRule[],
+	total: MinorUnits,
+	count: number,
+): MinorUnits {
+	const [numerator, denominator] = monthlyFraction(rules, total);
+
+	return roundHalfUp([12n * numerator, denominator * BigInt(count)]);
+}
+
+/**
  * Sure's installment plan end in `default_horizon`: `count + 1` cycles of the
  * schedule, each rounded up to whole days, from `start`, so the horizon holds
  * an installment's last payment.

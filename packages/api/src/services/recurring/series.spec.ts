@@ -889,19 +889,21 @@ const labelsOf = (filter: Parameters<typeof listRecurring>[1]) =>
 	listRecurring(deps(), filter).then((rows) => rows.map((row) => row.label));
 
 describe("listRecurring with a filter", () => {
-	it("keeps active series for active, inactive ones for inactive, those and the suggestions for all", async () => {
+	it("keeps active series for active, inactive ones for inactive, and every one for all, by status then date", async () => {
 		await fiveSeries();
 
 		await expect(labelsOf({ status: "active" })).resolves.toEqual(["LATER"]);
 		await expect(labelsOf({ status: "inactive" })).resolves.toEqual(["STOPPED"]);
+		// Sure's `order(status: :asc, next_expected_date: :asc)`, the ended and the suggested included.
 		await expect(labelsOf({ status: "all" })).resolves.toEqual([
+			"LATER",
+			"GONE",
+			"STOPPED",
 			"OVERDUE",
 			"SOON",
-			"LATER",
-			"STOPPED",
 		]);
-		// The page's call, without a filter, is the same list as all.
-		await expect(labelsOf(undefined)).resolves.toEqual(await labelsOf({ status: "all" }));
+		// The page's call, without a filter, leaves the ended one out, current before inactive.
+		await expect(labelsOf(undefined)).resolves.toEqual(["OVERDUE", "SOON", "LATER", "STOPPED"]);
 	});
 
 	it("keeps the next dates from today to today plus the days, overdue ones out", async () => {
@@ -912,15 +914,20 @@ describe("listRecurring with a filter", () => {
 		expect(nextOf.get("SOON")).toBe("2026-09-24");
 		expect(nextOf.get("LATER")).toBe("2026-10-10");
 		expect(nextOf.get("OVERDUE")).toBe("2026-09-15");
-		await expect(labelsOf({ status: "all", withinDays: 7 })).resolves.toEqual(["SOON", "STOPPED"]);
+		await expect(labelsOf({ status: "all", withinDays: 7 })).resolves.toEqual([
+			"GONE",
+			"STOPPED",
+			"SOON",
+		]);
 		await expect(labelsOf({ status: "all", withinDays: 3 })).resolves.toEqual(["SOON"]);
 		await expect(labelsOf({ status: "all", withinDays: 2 })).resolves.toEqual([]);
 		await expect(labelsOf({ status: "active", withinDays: 7 })).resolves.toEqual([]);
 		await expect(labelsOf({ status: "active", withinDays: 19 })).resolves.toEqual(["LATER"]);
 		await expect(labelsOf({ status: "all", withinDays: 19 })).resolves.toEqual([
-			"SOON",
 			"LATER",
+			"GONE",
 			"STOPPED",
+			"SOON",
 		]);
 		await expect(labelsOf({ status: "inactive", withinDays: 7 })).resolves.toEqual(["STOPPED"]);
 	});

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import {
+	annualizedAverage,
 	cycleFor,
 	dueFrom,
 	firstOccurrenceAfter,
@@ -250,6 +251,19 @@ describe("monthlyRollup", () => {
 
 	it("is zero without a series", () => {
 		expect(monthlyRollup([])).toEqual({ monthly: 0, annual: 0 });
+	});
+});
+
+describe("annualizedAverage", () => {
+	it("multiplies the unrounded average by the occurrences a year, then rounds once", () => {
+		// 30,01 € over three is 10,003…; a weekly year of it, 1461 / 28, is 521,959… €.
+		expect(annualizedAverage([weekly(MONDAY)], euros(3001), 3)).toBe(52_196);
+		// Quarterly: 300,02 € over three is 100,006…, four times a year 400,026… €.
+		expect(annualizedAverage([monthly(5, 3)], euros(30_002), 3)).toBe(40_003);
+	});
+
+	it("rounds a half up", () => {
+		expect(annualizedAverage([monthly(5)], euros(1), 24)).toBe(1);
 	});
 });
 

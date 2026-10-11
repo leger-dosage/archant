@@ -8,17 +8,11 @@ import { CSV_COLUMN_ROLES } from "@archant/data/csv-mapping";
 import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
 import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
-import { BILL_TYPES } from "@archant/data/recurring";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
 import { CITATION_MAX_LENGTH, ESTIMATED_PREFIX } from "../domain/balances/citation.ts";
 import { SURE_INTERVALS, SURE_PERIODS } from "../domain/balances/sure-periods.ts";
-import {
-	BILL_LIFECYCLES,
-	BILL_PAYMENT_STATES,
-	EDITABLE_BILL_TYPES,
-	FREQUENCY_PRESETS,
-} from "./bills.ts";
+import { FREQUENCY_PRESETS } from "./bills.ts";
 import { createCategorySchema } from "./categories.ts";
 import {
 	MAX_CSV_COLUMNS,
@@ -53,6 +47,12 @@ const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
 
 /** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
 const sureAmount = z.union([z.string().max(40), z.number()]);
+
+/** A whole number Sure reads with `Integer(value.to_s)` or `to_i`: a number or its text. */
+const looseInteger = z.union([z.number(), z.string()]);
+
+/** A flag Sure reads through its allowlist: a JSON boolean, or `"true"`, `"t"`, `"1"`, `1` and their false twins. */
+const looseBoolean = z.union([z.boolean(), z.string(), z.number()]);
 
 /** The input of a tool that takes none: an assistant may send `{}`, nothing more. */
 export const noToolInput = z.strictObject({});
@@ -244,22 +244,25 @@ export const incomeStatementInput = z.strictObject({
 		),
 });
 
-/** `get_recurring_transactions`: the series « Récurrents » lists, narrowed. */
+/**
+ * `get_recurring_transactions`: Sure's filters, read loosely as Sure's: an
+ * unknown status reads `active`, and the days as Ruby's `to_i`, held within
+ * 1 and 365.
+ */
 export const recurringInput = z.strictObject({
 	status: z
 		.enum(RECURRING_VIEWS)
+		.catch("active")
 		.default("active")
 		.describe(
-			'"active": followed by the owner, "active" by default; "inactive": paused or retired; "all": those and the suggestions awaiting the owner, ended ones never.',
+			'"active" by default, followed by the owner; "inactive": paused or retired; "all": every series, the suggestions awaiting the owner and the ended ones included. Any other value reads as "active".',
 		),
-	upcoming_within_days: z
-		.number()
-		.int()
-		.min(1)
-		.max(365)
+	upcoming_within_days: looseInteger
+		.nullable()
 		.optional()
+		.catch(undefined)
 		.describe(
-			"Keeps the series expected from today to today plus this many days; overdue ones are left out.",
+			"Only include items whose next expected date falls from today to this many days from now, 1 to 365; overdue ones are left out.",
 		),
 });
 
@@ -1075,187 +1078,185 @@ export const updateBudgetInput = z.strictObject({
 		),
 });
 
-const billId = z.string().min(1).describe("A bill id from get_bills.");
+const accountId = z.string().min(1).describe("An account id from get_accounts.");
 
-/** `get_bills`: Sure's `GetBills` filters. */
+const billId = requiredLoose(z.string()).describe(
+	"The bill's id, exactly as returned by get_bills.",
+);
+
+/**
+ * `get_bills`: Sure's `GetBills` filters, loosely typed as Sure's: `run`
+ * refuses an unknown status, type or payment state, and a range outside 1 to
+ * 365, with Sure's messages.
+ */
 export const getBillsInput = z.strictObject({
 	status: z
-		.enum(BILL_LIFECYCLES)
-		.default("active")
+		.string()
+		.nullable()
+		.optional()
 		.describe(
-			'"active": followed by the owner; "suggested": found by Archant, awaiting the owner, not a bill yet; "paused": set aside; "ended": dismissed or finished; "all": every one.',
+			'Series lifecycle filter, "active" by default: "active", "suggested" (found by Archant, awaiting the owner, not a bill yet), "paused" (set aside), "ended" (dismissed or finished), "all".',
 		),
 	payment_state: z
-		.enum(BILL_PAYMENT_STATES)
+		.string()
+		.nullable()
 		.optional()
 		.describe(
-			"The current occurrence's state: overdue, due (within three days of its date), upcoming, partial (partly paid) or paid. Nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue, due or upcoming.",
+			'The current occurrence\'s state, applied after the status filter: "overdue", "due" (within three days of its date), "upcoming", "partial" (partly paid), "paid". Nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue, due or upcoming.',
 		),
 	bill_type: z
-		.enum(BILL_TYPES)
-		.optional()
-		.describe('"income" is a declared income, not something to pay.'),
-	search: z
 		.string()
-		.trim()
-		.min(1)
-		.max(200)
-		.optional()
-		.describe("Text searched in the name, the merchant and the label, case aside."),
-	due_within_days: z
-		.number()
-		.int()
-		.min(1)
-		.max(365)
+		.nullable()
 		.optional()
 		.describe(
-			"Keeps the bills whose next due date falls within this many days, overdue ones included.",
+			'The kind of recurring obligation: "bill", "subscription", "installment", "income" (a declared income, not something to pay), "other".',
+		),
+	search: z
+		.string()
+		.nullable()
+		.optional()
+		.describe("Substring match on the bill's name, its merchant's and its bank label, case aside."),
+	due_within_days: looseInteger
+		.nullable()
+		.optional()
+		.describe(
+			"A whole number from 1 to 365: only bills whose next due date falls within this many days, overdue ones included.",
 		),
 });
 
 export const billIdInput = z.strictObject({ bill_id: billId });
 
-/** `get_bill_audit`: how far back price changes reach. */
+/** `get_bill_audit`: how far back price changes reach, checked by `run` as Sure's. */
 export const billAuditInput = z.strictObject({
-	lookback_months: z
-		.number()
-		.int()
-		.min(1)
-		.max(24)
-		.default(12)
-		.describe("How many months of price changes to report, 12 by default."),
+	lookback_months: looseInteger
+		.nullable()
+		.optional()
+		.describe("A whole number from 1 to 24: how far back to report price changes, 12 by default."),
 });
 
-const billAmount = (what: string) =>
-	z
-		.string()
-		.describe(
-			`${what}, a positive decimal string such as "13.49" in the account's currency, never negative: the type carries the direction.`,
-		);
-
-const frequencyPreset = z.enum(FREQUENCY_PRESETS);
-
-const accountId = z.string().min(1).describe("An account id from get_accounts.");
-
-const billTypeInput = z
-	.enum(EDITABLE_BILL_TYPES)
-	.describe("The kind of bill; an income is never one of them.");
-
-const paymentUrlInput = z
-	.string()
-	.describe("Where the bill gets paid, an http or https link; a bare host gets https://.");
+const frequencyText = z.string().nullable().optional();
 
 /**
- * `create_bill`: the declare dialog's fields, by id, passed raw to
- * `declareBill`, which parses them as it parses the dialog's.
+ * `create_bill`: Sure's `CreateBill` parameters, loosely typed as Sure's:
+ * `run` reads the flags through Sure's allowlist, the account and the
+ * category by their exact names, and refuses in Sure's order.
  */
 export const createBillInput = z.strictObject({
-	name: z.string().describe("What the owner calls the bill."),
-	amount: billAmount("The amount of each occurrence"),
-	first_due_on: z.iso
-		.date()
-		.describe("YYYY-MM-DD: the first due date; its day, weekday and month set the schedule's."),
-	account_id: accountId,
-	frequency: frequencyPreset.default("monthly").describe("How often, monthly by default."),
-	is_income: z
-		.boolean()
-		.default(false)
-		.describe("true for an income such as a salary: money coming in, with no type or category."),
-	bill_type: billTypeInput.optional().describe('"bill" by default; ignored for an income.'),
+	name: requiredLoose(z.string()).describe("What the owner calls this bill."),
+	amount: requiredLoose(sureAmount).describe(
+		'Positive magnitude per occurrence, a number or decimal string such as 13.49 or "13.49"; is_income gives the direction.',
+	),
+	first_due_on: requiredLoose(z.string()).describe(
+		"Next due date, YYYY-MM-DD: its day of the month, weekday and month set the schedule's.",
+	),
+	frequency: frequencyText.describe(
+		`Cadence, monthly by default: ${FREQUENCY_PRESETS.join(", ")}. Any other word is refused, "yearly" among them.`,
+	),
+	is_income: looseBoolean
+		.nullable()
+		.optional()
+		.describe("true for a paycheck or another income: money coming in, never categorised."),
+	bill_type: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('"bill" by default, "subscription" or "installment"; ignored for an income.'),
+	account_name: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			"Exact account name from get_accounts. Omit it to create the bill paid from any account, in the reporting currency.",
+		),
 	category_name: z
 		.string()
-		.min(1)
+		.nullable()
 		.optional()
-		.describe("An exact category name from get_categories; ignored for an income."),
-	entry_id: z
+		.describe("Exact category name from get_categories; ignored for an income."),
+	autopay: looseBoolean.nullable().optional().describe("Paid by direct debit."),
+	payment_url: z
 		.string()
-		.min(1)
+		.nullable()
 		.optional()
-		.describe(
-			"The transaction an undeclared candidate came from, as get_bill_audit gives it: the bill then matches its bank lines.",
-		),
-	autopay: z.boolean().optional().describe("Paid by direct debit, without the owner acting."),
-	payment_url: paymentUrlInput.optional(),
-	notes: z.string().optional(),
+		.describe("Where this bill gets paid, an http or https link; a bare host gets https://."),
+	notes: z.string().nullable().optional(),
 });
 
-const DAY_FIELDS = ["due_day_of_month", "weekday", "month_of_year"] as const;
-
 /**
- * `update_bill`: the edit dialog's fields and a status, by id. A day without
- * the cadence it belongs to is refused rather than dropped, and so is a call
- * that changes nothing.
+ * `update_bill`: Sure's `UpdateBill` parameters, loosely typed as Sure's. A
+ * key given changes its field, `null` included; `run` applies them in Sure's
+ * steps and refuses at the first wrong one, writing nothing.
  */
-export const updateBillInput = z
-	.strictObject({
-		bill_id: billId,
-		name: z.string().optional().describe("The new name; empty shows the merchant or label again."),
-		amount: billAmount(
-			"The new amount, from now on: occurrences already due keep the one they had",
-		).optional(),
-		account_id: accountId.optional(),
-		category_name: z
-			.string()
-			.min(1)
-			.optional()
-			.describe('An exact category name from get_categories; "Uncategorized" clears it.'),
-		bill_type: billTypeInput.optional().describe("Never to or from an income."),
-		status: z
-			.enum(["active", "paused"])
-			.optional()
-			.describe('"paused" sets the bill aside, with no new occurrences; "active" resumes it.'),
-		frequency: frequencyPreset
-			.optional()
-			.describe(
-				"A new cadence, pinned against detection; due_day_of_month, weekday or month_of_year set its day.",
-			),
-		due_day_of_month: z
-			.number()
-			.int()
-			.min(-1)
-			.max(31)
-			.refine((day) => day !== 0, "invalid_value")
-			.optional()
-			.describe("1 to 31, or -1 for the month's last day; only with frequency."),
-		weekday: z
-			.number()
-			.int()
-			.min(0)
-			.max(6)
-			.optional()
-			.describe("0 is Sunday; only with frequency."),
-		month_of_year: z.number().int().min(1).max(12).optional().describe("Only with frequency."),
-		autopay: z.boolean().optional(),
-		payment_url: paymentUrlInput.nullable().optional().describe("null or empty removes it."),
-		notes: z.string().nullable().optional().describe("null or empty removes them."),
-	})
-	.superRefine((value, context) => {
-		if (Object.entries(value).every(([key, field]) => key === "bill_id" || field === undefined)) {
-			context.addIssue({ code: "custom", message: "empty_patch" });
-		}
+export const updateBillInput = z.strictObject({
+	bill_id: billId,
+	name: z.string().nullable().optional().describe("Empty shows the merchant or label again."),
+	amount: sureAmount
+		.nullable()
+		.optional()
+		.describe(
+			"New positive magnitude, a number or decimal string; it applies forward only: occurrences already due keep theirs.",
+		),
+	account_name: z.string().nullable().optional().describe("Exact account name from get_accounts."),
+	category_name: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('Exact category name from get_categories, or "Uncategorized" to clear it.'),
+	bill_type: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('"bill", "subscription" or "installment", for a bill of one of these kinds only.'),
+	status: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('"paused" sets the bill aside, with no new occurrences; "active" resumes it.'),
+	frequency: frequencyText.describe(
+		`New cadence, pinned against detection: ${FREQUENCY_PRESETS.join(", ")}. Combine with due_day_of_month, weekday or month_of_year as the cadence needs.`,
+	),
+	due_day_of_month: looseInteger
+		.nullable()
+		.optional()
+		.describe("1 to 31, or -1 for the month's last day; only with frequency."),
+	weekday: looseInteger.nullable().optional().describe("0 is Sunday; only with frequency."),
+	month_of_year: looseInteger.nullable().optional().describe("1 to 12; only with frequency."),
+	autopay: looseBoolean.nullable().optional(),
+	payment_url: z.string().nullable().optional().describe("Empty or null removes it."),
+	notes: z.string().nullable().optional().describe("Empty or null removes them."),
+	renews_on: z
+		.string()
+		.nullable()
+		.optional()
+		.describe("YYYY-MM-DD. Archant keeps no renewal date yet: refused."),
+	trial_ends_on: z
+		.string()
+		.nullable()
+		.optional()
+		.describe("YYYY-MM-DD. Archant keeps no trial end yet: refused."),
+});
 
-		if (value.frequency === undefined) {
-			for (const field of DAY_FIELDS.filter((key) => value[key] !== undefined)) {
-				context.addIssue({ code: "custom", path: [field], message: "requires_frequency" });
-			}
-		}
-	});
-
-/** `record_bill_payment`: an open occurrence, the current one by default, in full or in part. */
+/** `record_bill_payment`: Sure's `RecordBillPayment` parameters, checked by `run` as Sure's. */
 export const recordBillPaymentInput = z.strictObject({
 	bill_id: billId,
-	occurrence_due_on: z.iso
-		.date()
+	occurrence_due_on: z
+		.string()
+		.nullable()
 		.optional()
 		.describe(
-			"YYYY-MM-DD: the due date of the open occurrence to pay, as get_bill_details lists it; the current one when absent.",
+			"Due date (YYYY-MM-DD) of the open occurrence to pay, as get_bill_details lists it. Defaults to the current one.",
 		),
-	amount: billAmount("A partial payment, at most what remains")
+	amount: sureAmount
+		.nullable()
 		.optional()
 		.describe(
-			'A partial payment, a positive decimal string such as "100.00", at most what remains; absent settles what remains.',
+			"Partial payment magnitude, a number or decimal string, at most what remains. Omit to settle in full.",
 		),
-	paid_on: z.iso.date().optional().describe("YYYY-MM-DD: when it was paid; today when absent."),
+	paid_on: z
+		.string()
+		.nullable()
+		.optional()
+		.describe("When it was paid, YYYY-MM-DD. Defaults to today."),
 });
 
 const transferTransactionId = z

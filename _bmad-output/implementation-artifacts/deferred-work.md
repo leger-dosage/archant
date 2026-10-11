@@ -257,3 +257,7 @@
   summary: A month whose refunds cancel its spending enters the budget's spending median at zero.
   evidence: `suggestions` filters months on the gross view's expense lines and takes the net spending; Sure's `median_expense` is gross. Story 27.7 rewrites the medians as `IncomeStatement::FamilyStats`; check there.
   resolved: Story 27.7. `familyStats` and `categoryStats` in `domain/statistics.ts` sum each side gross, so a refund month enters the expense median at its outflow and the income median at its refund, never at zero.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-13-assistant-bills-and-recurring-payments-as-sures.md`
+  summary: An income declared with a category keeps it, as Sure's `create_bill` sets `series.category` whatever `is_income`.
+  evidence: `declareBill` in `services/recurring/bills.ts` clears `categoryId` for every income, so `create_bill` drops it where Sure answers it.

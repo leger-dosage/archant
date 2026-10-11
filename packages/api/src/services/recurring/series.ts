@@ -580,17 +580,13 @@ type RecurringFilter = {
 	withinDays?: number | undefined;
 };
 
-const VIEW_STATUSES: Record<RecurringView, readonly RecurringStatus[]> = {
-	active: ["active"],
-	inactive: ["inactive"],
-	all: ["suggested", "active", "inactive"],
-};
-
 /**
- * Every pattern but the ended ones, current before inactive, each by next
- * expected date as Sure orders them. The whole set, not a page: a household
- * has a few dozen at most. `filter` narrows it by status and, as Sure's
- * `upcoming_within_days`, by next date; the page passes none.
+ * The page's list: every pattern but the ended ones, current before
+ * inactive, each by next expected date as Sure orders them. The whole set,
+ * not a page: a household has a few dozen at most. With a `filter`, Sure's
+ * `get_recurring_transactions`: `active` or `inactive` alone, or `all`, the
+ * ended ones and the suggestions included, ordered by stored status, then
+ * next date, and as Sure's `upcoming_within_days`, by next date.
  */
 export async function listRecurring(
 	deps: ServiceDeps,
@@ -604,15 +600,18 @@ export async function listRecurring(
 	const rows = await selectRecords(deps.db)
 		.where(
 			and(
-				ne(recurringTransactions.status, "ended"),
 				filter === undefined
-					? undefined
-					: inArray(recurringTransactions.status, [...VIEW_STATUSES[filter.status]]),
+					? ne(recurringTransactions.status, "ended")
+					: filter.status === "all"
+						? undefined
+						: eq(recurringTransactions.status, filter.status),
 				window,
 			),
 		)
 		.orderBy(
-			sql`case when ${recurringTransactions.status} = 'inactive' then 1 else 0 end`,
+			filter === undefined
+				? sql`case when ${recurringTransactions.status} = 'inactive' then 1 else 0 end`
+				: asc(recurringTransactions.status),
 			asc(recurringTransactions.nextExpectedDate),
 			asc(recurringTransactions.id),
 		);

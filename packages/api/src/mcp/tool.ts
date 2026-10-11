@@ -96,10 +96,6 @@ export const BANK_TEXT =
 /** A row another one points to, as Sure's functions give it. */
 export const namedRef = z.object({ id: z.string(), name: z.string() });
 
-/** A series' account, `null` for one paid from any account, as Sure's `account: nil`. */
-export const accountRefOf = (series: { accountId: string | null; accountName: string | null }) =>
-	series.accountId === null ? null : { id: series.accountId, name: series.accountName ?? "" };
-
 /** Sure's pagination fields, which every paged tool answers beside its rows. */
 export const pageOutput = {
 	total_results: z.number().int().describe("Every matching row, on every page."),
@@ -129,23 +125,6 @@ export function pageOf<Item>(items: readonly Item[], page: number, pageSize: num
 /** An amount in an output: a decimal string, never a JSON number that would round. */
 export const decimal = (what: string) =>
 	z.string().describe(`${what}, a decimal string such as "-12.50" in the currency beside it.`);
-
-/** What a figure counted in the reporting currency says of the accounts it left out. */
-export const leftOutFields = {
-	left_out_count: z
-		.number()
-		.int()
-		.describe(
-			"Active accounts in another currency, left out of every figure here until exchange rates exist: say so to the owner when above zero.",
-		),
-	left_out_account_ids: z.array(z.string()).describe("Their ids, as get_accounts gives them."),
-};
-
-/** The left-out fields of the accounts a service named. */
-export const leftOutOf = (leftOut: readonly { id: string }[]) => ({
-	left_out_count: leftOut.length,
-	left_out_account_ids: leftOut.map((account) => account.id),
-});
 
 /**
  * The error keys Sure's functions refuse with, each beside the `AppError`
@@ -201,6 +180,26 @@ export class ToolRefusal extends Error {
 /** Refuses as Sure's `error(key, message)` helpers answer. */
 export function refuse(error: SureRefusal, message: string): never {
 	throw new ToolRefusal({ success: false, error, message }, SURE_REFUSALS[error]);
+}
+
+/**
+ * Refuses as the Sure functions that answer `{ error, hint }`, such as the
+ * bill tools, recorded as `outcome`.
+ */
+export function refuseWithHint(error: string, hint: string, outcome: ErrorCode): never {
+	throw new ToolRefusal({ error, hint }, outcome);
+}
+
+/**
+ * Sure's `FunctionToolCaller` answer to a record the caller cannot reach,
+ * missing or another family's alike.
+ */
+export function refuseNoSuchRecord(): never {
+	refuseWithHint(
+		"No such record, or it is not one you have access to",
+		"That record was not found. List valid options first (for example get_accounts or get_categories) and retry once with an exact match.",
+		"NOT_FOUND",
+	);
 }
 
 /**
