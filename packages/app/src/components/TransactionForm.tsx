@@ -12,6 +12,7 @@ import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { AccountType } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
+import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
 
 import { AmountField } from "@/components/AmountField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -381,7 +382,24 @@ export function TransactionForm({
 						</div>
 					)}
 
-					{transaction !== null && (
+					{/* Never sent: the API refuses it, and only the outflow changes it. */}
+					{transaction !== null &&
+						transfer !== null &&
+						categorySetOnOutflow(transaction.amount, transfer) && (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="transaction-category">{t("transactions.form.category")}</Label>
+								<CategoryField
+									value={transfer.counterpartCategoryId}
+									onChange={() => undefined}
+									invalid={false}
+									describedBy={undefined}
+									setOnOutflow
+								/>
+							</div>
+						)}
+
+					{/* Sure's drawer shows neither on a transfer side. */}
+					{transaction !== null && transfer === null && (
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="transaction-merchant">{t("transactions.form.merchant")}</Label>
 							<MerchantField
@@ -397,7 +415,7 @@ export function TransactionForm({
 						</div>
 					)}
 
-					{transaction !== null && (
+					{transaction !== null && transfer === null && (
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="transaction-tags">{t("transactions.form.tags")}</Label>
 							<TagsField

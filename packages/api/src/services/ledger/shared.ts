@@ -268,6 +268,7 @@ export const asOutflow = alias(transfers, "as_outflow");
 export const asInflow = alias(transfers, "as_inflow");
 export const counterpartEntry = alias(entries, "counterpart_entry");
 export const counterpartAccount = alias(accounts, "counterpart_account");
+export const counterpartTransaction = alias(transactions, "counterpart_transaction");
 
 export const counterpartIdOf = sql`coalesce(${asOutflow.inflowTransactionId}, ${asInflow.outflowTransactionId})`;
 
@@ -278,6 +279,7 @@ export const transferColumns = {
 	counterpartTransactionId: counterpartEntry.id,
 	counterpartAccountId: counterpartAccount.id,
 	counterpartAccountName: counterpartAccount.name,
+	counterpartCategoryId: counterpartTransaction.categoryId,
 };
 
 export type TransferColumns = {
@@ -287,4 +289,5 @@ export type TransferColumns = {
 	counterpartTransactionId: string | null;
 	counterpartAccountId: string | null;
 	counterpartAccountName: string | null;
+	counterpartCategoryId: string | null;
 };

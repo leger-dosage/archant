@@ -22,9 +22,12 @@ import {
 	listItem,
 	listOwn,
 	listed,
+	mortgage,
 	openAccount,
+	pea,
 	openOwn,
 	own,
+	ownCategory,
 	ownDatabase,
 	ownRequest,
 	postOwn,
@@ -222,6 +225,82 @@ describe("PATCH /api/transactions/:id", () => {
 		// An empty patch answers the transaction as it stands.
 		const after = await request("PATCH", `/api/transactions/${data.id}`, {});
 		expect(after.body).toMatchObject({ data: { label: "Boulangerie", categoryId: null } });
+	});
+
+	it.each([
+		["investment_contribution", pea, 400],
+		["internal_move", { name: "Livret A", subtype: "savings", openingBalance: "0" }, 200],
+	] as const)("answers a category on a %s's inflow with %s", async (kind, into, status) => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const other = await openOwn(into);
+		await postOwn(checking.id, { date: "2026-09-12", label: "VERSEMENT", amount: "-500,00" });
+		const inflow = await postOwn(other.id, {
+			date: "2026-09-12",
+			label: "RECU",
+			amount: "500,00",
+		});
+		const { items } = await listed("");
+		expect(items.find((item) => item.id === inflow)?.transfer?.kind).toBe(kind);
+		const savings = await ownCategory("Épargne");
+
+		const response = await ownRequest("PATCH", `/api/transactions/${inflow}`, {
+			categoryId: savings,
+		});
+
+		expect(response.status).toBe(status);
+		if (status === 400) {
+			expect(errorBody.parse(response.body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "categoryId", code: "set_on_outflow" }],
+			});
+		}
+	});
+
+	it("refuses a category on a loan payment's inflow, which shows its outflow's, and sets it on the outflow", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const loan = await openOwn(mortgage);
+		const payment = await postOwn(checking.id, {
+			date: "2026-09-12",
+			label: "ECHEANCE PRET",
+			amount: "-1 200,00",
+		});
+		const repaid = await postOwn(loan.id, {
+			date: "2026-09-12",
+			label: "ECHEANCE",
+			amount: "1 200,00",
+		});
+		const housing = await ownCategory("Prêt immo");
+
+		const onOutflow = await ownRequest("PATCH", `/api/transactions/${payment}`, {
+			categoryId: housing,
+		});
+		const onInflow = await ownRequest("PATCH", `/api/transactions/${repaid}`, {
+			categoryId: housing,
+			label: "Autre",
+		});
+
+		expect(onOutflow.status).toBe(200);
+		expect(onInflow.status).toBe(400);
+		expect(errorBody.parse(onInflow.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "categoryId", code: "set_on_outflow" }],
+		});
+		// Refused whole: the label sent beside it is not saved either.
+		await expect(
+			ownRequest("PATCH", `/api/transactions/${repaid}`, { label: "Échéance" }),
+		).resolves.toMatchObject({
+			status: 200,
+			body: { data: { label: "Échéance", categoryId: null } },
+		});
+
+		const { items } = await listed("");
+		expect(items.find((item) => item.id === repaid)?.transfer).toMatchObject({
+			kind: "loan_payment",
+			counterpartCategoryId: housing,
+		});
+		expect(items.find((item) => item.id === payment)?.transfer).toMatchObject({
+			counterpartCategoryId: null,
+		});
 	});
 
 	it("sets and clears a merchant, locking it and leaving the balance alone", async () => {

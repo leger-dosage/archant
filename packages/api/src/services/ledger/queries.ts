@@ -28,6 +28,7 @@ import {
 	asInflow,
 	asOutflow,
 	counterpartAccount,
+	counterpartTransaction,
 	counterpartEntry,
 	counterpartIdOf,
 	inSequence,
@@ -82,6 +83,11 @@ type TransferLink = {
 	counterpartTransactionId: string;
 	counterpartAccountId: string;
 	counterpartAccountName: string;
+	/**
+	 * The other side's category: an inflow of a loan payment or a contribution
+	 * shows its outflow's, which only the outflow changes.
+	 */
+	counterpartCategoryId: string | null;
 };
 
 /**
@@ -126,6 +132,7 @@ function withTransferLink<Row extends TransferColumns>(
 		counterpartTransactionId,
 		counterpartAccountId,
 		counterpartAccountName,
+		counterpartCategoryId,
 		...rest
 	} = row;
 
@@ -146,6 +153,7 @@ function withTransferLink<Row extends TransferColumns>(
 						counterpartTransactionId,
 						counterpartAccountId,
 						counterpartAccountName,
+						counterpartCategoryId,
 					},
 	};
 }
@@ -213,6 +221,7 @@ export async function findTransaction(
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
 		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
+		.leftJoin(counterpartTransaction, eq(counterpartTransaction.entryId, counterpartEntry.id))
 		.where(eq(entries.id, entryId))
 		.get();
 
@@ -242,6 +251,7 @@ function listSelect(db: Pick<Transaction, "select">) {
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
 		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
+		.leftJoin(counterpartTransaction, eq(counterpartTransaction.entryId, counterpartEntry.id))
 		.$dynamic();
 }
 

@@ -48,6 +48,8 @@ export type TransferCandidate = {
 	currency: string;
 	accountId: string;
 	accountName: string;
+	/** What the inflow of a loan payment or a contribution paired with it shows, as the list's `counterpartCategoryId`. */
+	categoryId: string | null;
 };
 
 /** Whether the user refused `a` and `b` as one transfer, whichever side each was. */
@@ -196,6 +198,7 @@ function candidatePairQuery(
 				...sideColumns,
 				label: transactions.label,
 				accountName: accounts.name,
+				categoryId: transactions.categoryId,
 				expectedAccountId: transactions.expectedTransferAccountId,
 			},
 		})
@@ -402,6 +405,7 @@ export async function transferCandidates(
 				currency: candidate.currency,
 				accountId: candidate.accountId,
 				accountName: candidate.accountName,
+				categoryId: candidate.categoryId,
 			}))
 	);
 }

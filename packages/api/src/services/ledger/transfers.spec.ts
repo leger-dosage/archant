@@ -75,7 +75,21 @@ describe("transferCandidates", () => {
 				currency: "EUR",
 				accountId: livret.id,
 				accountName: "Livret A",
+				categoryId: null,
 			},
+		]);
+	});
+
+	it("gives each candidate its own category", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const housing = await newCategory("Logement");
+		const source = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		const candidate = await add(joint.id, { date: "2026-09-20", amount: toMinorUnits(-amount) });
+		await updateTransaction(deps(), candidate, { categoryId: housing }, { origin: "user" });
+
+		await expect(transferCandidates(deps(), source)).resolves.toMatchObject([
+			{ id: candidate, categoryId: housing },
 		]);
 	});
 

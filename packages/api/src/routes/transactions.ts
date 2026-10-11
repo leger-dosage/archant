@@ -2,6 +2,9 @@ import type { ServiceDeps } from "../services/deps.ts";
 
 import { Hono } from "hono";
 
+import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
+
+import { AppError } from "../lib/errors.ts";
 import { validated } from "../lib/validated.ts";
 import { convertTradeBodySchema } from "../schemas/trades.ts";
 import {
@@ -21,6 +24,7 @@ import {
 	dismissDuplicate,
 	editSplit,
 	getSplit,
+	getTransaction,
 	listAllTransactions,
 	listDuplicateCandidates,
 	mergeDuplicate,
@@ -30,6 +34,23 @@ import {
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
+
+/**
+ * Refuses a category on the inflow of a loan payment or a contribution, as
+ * Sure's `7e1d93613`: its category belongs to the outflow, which budgets
+ * count once, and one picked here would look saved but count nowhere. The
+ * interface's route only: an assistant's `update_transaction`, as Sure's,
+ * goes through the service unguarded.
+ */
+async function refuseCategoryOnInflow(deps: ServiceDeps, id: string): Promise<void> {
+	const { amount, transfer } = await getTransaction(deps, id);
+
+	if (categorySetOnOutflow(amount, transfer)) {
+		throw new AppError("VALIDATION_ERROR", "This category is set on the transfer's outflow.", [
+			{ path: "categoryId", code: "set_on_outflow" },
+		]);
+	}
+}
 
 export function transactionsRoutes(deps: ServiceDeps) {
 	return (
@@ -82,12 +103,16 @@ export function transactionsRoutes(deps: ServiceDeps) {
 					201,
 				),
 			)
-			.patch("/:id", validated("json", transactionPatchBodySchema), async (c) =>
-				c.json(
-					{ data: await updateTransaction(deps, c.req.param("id"), c.req.valid("json")) },
-					200,
-				),
-			)
+			.patch("/:id", validated("json", transactionPatchBodySchema), async (c) => {
+				const id = c.req.param("id");
+				const input = c.req.valid("json");
+
+				if (input.categoryId !== undefined) {
+					await refuseCategoryOnInflow(deps, id);
+				}
+
+				return c.json({ data: await updateTransaction(deps, id, input) }, 200);
+			})
 			.delete("/:id", async (c) => {
 				const id = c.req.param("id");
 				await deleteTransaction(deps, id);

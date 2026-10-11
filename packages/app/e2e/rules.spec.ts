@@ -434,8 +434,12 @@ test("a rule « Virement avec » pairs a matching line with the one opposite lin
 	const rowOf = (label: string) =>
 		page.getByRole("main").getByRole("listitem").filter({ hasText: label });
 	await expect(rowOf(`${marker} départ`).getByText("Virement", { exact: true })).toBeVisible();
-	await expect(rowOf(`${marker} arrivée`).getByText("Virement", { exact: true })).toBeVisible();
+	// Paired with the line on the page, the inflow shows once, as its outflow.
+	await expect(rowOf(`${marker} arrivée`)).toHaveCount(0);
+	await expect(rowOf(`${marker} départ`)).toContainText("Vers");
 	await expect(rowOf(`${marker} autre`).getByText("Virement", { exact: true })).toHaveCount(0);
+	await page.goto(`/transactions?q=${encodeURIComponent(`${marker} arrivée`)}`);
+	await expect(rowOf(`${marker} arrivée`).getByText("Virement", { exact: true })).toBeVisible();
 });
 
 test("the form points at an empty « Renommer » and saves nothing", async ({ page }) => {
@@ -772,12 +776,16 @@ test("the runs table pages to older runs", async ({ page, api }) => {
 
 // Story 11.12: the rule dialog's pickers create what they cannot find.
 
-/** Types `name` in the open picker's search, then picks « Créer "…" », offered last. */
+/** What « Créer » reads in a picker: the category's takes French quotes, as Sure's. */
+const createText = (search: string, name: string) =>
+	search === "Rechercher une catégorie" ? `Créer « ${name} »` : `Créer "${name}"`;
+
+/** Types `name` in the open picker's search, then picks its « Créer », offered last but the subcategory step. */
 async function createFromPicker(page: Page, search: string, name: string) {
 	await page.getByRole("combobox", { name: search }).fill(name);
-	const options = page.getByRole("option");
-	await expect(options.last()).toHaveText(`Créer "${name}"`);
-	await options.last().click();
+	const create = page.getByRole("option", { name: createText(search, name), exact: true });
+	await expect(create).toBeVisible();
+	await create.click();
 }
 
 test("a merchant created from the action's picker is picked and read back in the list", async ({
@@ -943,11 +951,16 @@ for (const refused of [
 		await createFromPicker(page, refused.search, name);
 
 		await expect(
-			page
-				.locator("[data-sonner-toast]")
-				.filter({ hasText: "Une erreur inattendue s'est produite." }),
+			page.locator("[data-sonner-toast]").filter({
+				hasText:
+					refused.path === "categories"
+						? "Impossible de créer la catégorie"
+						: "Une erreur inattendue s'est produite.",
+			}),
 		).toBeVisible();
-		await expect(page.getByRole("option", { name: `Créer "${name}"` })).toBeVisible();
+		await expect(
+			page.getByRole("option", { name: createText(refused.search, name), exact: true }),
+		).toBeVisible();
 		await expect(button).toHaveText(refused.placeholder);
 	});
 }

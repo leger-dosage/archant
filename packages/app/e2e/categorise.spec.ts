@@ -1,6 +1,8 @@
 import type { Api } from "./fixtures.ts";
 import type { Page, Route } from "@playwright/test";
 
+import { z } from "zod";
+
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
 // Story 4.2: categorise transactions and filter by category. One database
@@ -97,15 +99,159 @@ test("typing in a row's category combobox and pressing Enter sets it at once, an
 	await expect(chipOf(page, label, "Courses")).toBeVisible();
 });
 
-test("a row's category combobox offers no « Créer » for an unknown name", async ({ page, api }) => {
+// Story 27.16: the sheet's and the row's pickers create a category, as Sure's.
+
+const categoryList = z.object({
+	data: z.array(
+		z.object({
+			id: z.string(),
+			name: z.string(),
+			parentId: z.string().nullable(),
+			kind: z.string(),
+			color: z.string(),
+		}),
+	),
+});
+
+/** The categories as the API lists them, to read where a created one landed. */
+async function categoryNamed(page: Page, name: string) {
+	const response = await page.request.get("/api/categories");
+	const { data } = categoryList.parse(await response.json());
+
+	return data.find((category) => category.name === name);
+}
+
+test("« Créer » creates « Voyages » from the sheet, then a row's picker creates « Train » under it", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Gare");
+	const ticket = `${prefix} billet`;
+	const pass = `${prefix} abonnement`;
+	const account = await api.openAccount();
+	await api.addTransaction(account.id, { date: daysAgo(2), label: ticket, amount: "-42,90" });
+	await api.addTransaction(account.id, { date: daysAgo(3), label: pass, amount: "-75,20" });
+	const parent = uniqueName("Voyages");
+	const child = uniqueName("Train");
+
+	await visitOperations(page, prefix);
+	await rowButton(page, ticket).click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const field = sheet.getByRole("button", { name: "Catégorie", exact: true });
+	await field.click();
+	await categorySearch(page).fill(parent);
+	await page.getByRole("option", { name: `Créer « ${parent} »`, exact: true }).click();
+	await expect(field).toHaveText(parent);
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(sheet).toBeHidden();
+	await expect(chipOf(page, ticket, parent)).toBeVisible();
+	await expect(categoryNamed(page, parent)).resolves.toMatchObject({
+		parentId: null,
+		kind: "expense",
+		color: "#fc7840",
+	});
+
+	await chipOf(page, pass, "Sans catégorie").click();
+	await categorySearch(page).fill(child);
+	await page.getByRole("option", { name: "Ajouter comme sous-catégorie…" }).click();
+	await expect(page.getByText(`Créer « ${child} » dans :`)).toBeVisible();
+	await expect(page.getByRole("option").first()).toHaveText("Retour");
+	// `Escape` goes back to the list rather than closing the picker.
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("option", { name: `Créer « ${child} »`, exact: true })).toBeVisible();
+	await page.getByRole("option", { name: "Ajouter comme sous-catégorie…" }).click();
+	await page.getByRole("option", { name: parent, exact: true }).click();
+
+	await expect(chipOf(page, pass, child)).toBeVisible();
+	await expect(categorySearch(page)).toBeHidden();
+	await expect(toast(page, "Catégorie modifiée")).toBeVisible();
+	const created = await categoryNamed(page, child);
+	const createdParent = await categoryNamed(page, parent);
+	expect(created).toMatchObject({ parentId: createdParent?.id, kind: "expense", color: "#fc7840" });
+});
+
+test("a category created in a row's picker but not set says so, and « Créer » again sets it without a second one", async ({
+	page,
+	api,
+}) => {
+	const label = uniqueName("Musée");
+	await oneTransaction(api, label);
+	const name = uniqueName("Culture");
+	let posts = 0;
+	await page.route("**/api/categories", (route) => {
+		if (route.request().method() === "POST") {
+			posts += 1;
+		}
+		return route.fallback();
+	});
+	let refuse = true;
+	await page.route("**/api/transactions/*", (route) =>
+		route.request().method() === "PATCH" && refuse
+			? route.fulfill({
+					status: 500,
+					json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong." } },
+				})
+			: route.fallback(),
+	);
+
+	await visitOperations(page, label);
+	await chipOf(page, label, "Sans catégorie").click();
+	await categorySearch(page).fill(name);
+	const create = page.getByRole("option", { name: `Créer « ${name} »`, exact: true });
+	await create.click();
+
+	await expect(
+		page.getByText(
+			"Catégorie créée, mais impossible de l'attribuer. Choisissez « Créer » à nouveau pour réessayer.",
+		),
+	).toBeVisible();
+	await expect(chipOf(page, label, "Sans catégorie")).toBeVisible();
+	await expect(categorySearch(page)).toBeVisible();
+
+	refuse = false;
+	await create.click();
+	await expect(chipOf(page, label, name)).toBeVisible();
+	await expect(categorySearch(page)).toBeHidden();
+	expect(posts).toBe(1);
+});
+
+test("a category creation the server refuses says so and keeps the row's picker open", async ({
+	page,
+	api,
+}) => {
+	const label = uniqueName("Cinéma");
+	await oneTransaction(api, label);
+	await page.route("**/api/categories", (route) =>
+		route.request().method() === "POST"
+			? route.fulfill({
+					status: 500,
+					json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong." } },
+				})
+			: route.fallback(),
+	);
+	const name = uniqueName("Loisirs");
+
+	await visitOperations(page, label);
+	await chipOf(page, label, "Sans catégorie").click();
+	await categorySearch(page).fill(name);
+	await page.getByRole("option", { name: `Créer « ${name} »`, exact: true }).click();
+
+	await expect(toast(page, "Impossible de créer la catégorie")).toBeVisible();
+	await expect(page.getByRole("option", { name: `Créer « ${name} »`, exact: true })).toBeVisible();
+	await expect(chipOf(page, label, "Sans catégorie")).toBeVisible();
+});
+
+test("a name held in another case offers no « Créer » in a row's picker", async ({ page, api }) => {
 	const label = uniqueName("Marché");
 	await oneTransaction(api, label);
 
 	await visitOperations(page, label);
 	await chipOf(page, label, "Sans catégorie").click();
-	await categorySearch(page).fill(uniqueName("Absente"));
+	await categorySearch(page).fill("courses");
 
+	await expect(page.getByRole("option", { name: "Courses", exact: true })).toBeVisible();
 	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+	await expect(page.getByRole("option", { name: /^Ajouter comme/u })).toHaveCount(0);
 });
 
 test("« Annuler » in the toast puts « Sans catégorie » back", async ({ page, api }) => {

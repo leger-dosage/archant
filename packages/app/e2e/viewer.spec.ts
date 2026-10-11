@@ -283,6 +283,17 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(page.getByRole("checkbox")).toHaveCount(0);
 			await expect(page.getByText(category.name).first()).toBeVisible();
 			await expectNone(page, [{ role: "button", name: `Catégorie : ${category.name}` }]);
+			// A click on the pill reaches the row beneath: no picker, so no « Créer ».
+			await page
+				.getByRole("main")
+				.getByRole("listitem")
+				.filter({ has: row })
+				.locator('[data-slot="category-pill"]')
+				.click({ force: true });
+			await expect(page.getByRole("dialog", { name: "Opération" })).toBeVisible();
+			await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
+			await page.keyboard.press("Escape");
+			await expect(page.getByRole("dialog", { name: "Opération" })).toBeHidden();
 
 			await row.click();
 			const sheet = page.getByRole("dialog", { name: "Opération" });
