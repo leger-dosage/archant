@@ -262,7 +262,7 @@ describe("pair_transfer", () => {
 			outflow_transaction_id: outflow,
 			inflow_transaction_id: inflow,
 		});
-		// No status in the assistant's answer before Story 27.13.
+		// No status in the assistant's answer before Story 27.14, which shapes Archant's own tools.
 		expect(result.structuredContent).not.toHaveProperty("status");
 		expect(await transfersNow()).toEqual([{ id: created.id }]);
 		expect(await calls()).toEqual([{ tool: "pair_transfer", outcome: "OK", changedRows: 1 }]);

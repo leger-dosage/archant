@@ -3,28 +3,57 @@ import type { RecurringRecord } from "../services/recurring/series.ts";
 import { z } from "zod";
 
 import type { MinorUnits } from "@archant/data/money";
-import { toDecimalString, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import { RECURRING_STATUSES } from "@archant/data/schema/recurring-transactions";
 
 import { today } from "../domain/dates.ts";
+import { displayName } from "../domain/recurring/bills.ts";
 import { recurringInput } from "../schemas/assistants.ts";
-import { displayName } from "../services/recurring/bills.ts";
 import { listRecurring } from "../services/recurring/series.ts";
-import { BANK_TEXT, READ_ONLY, accountRefOf, decimal, defineTool, namedRef } from "./tool.ts";
+import { BANK_TEXT, READ_ONLY, defineTool, formatMoney, formatted, namedRef } from "./tool.ts";
 
-/** A household has a few dozen series; past this many, the assistant narrows its filter. */
+// Sure's `MAX_RESULTS`.
 const MAX_RECURRING = 200;
 
-/** Sure's `expected_amount_range`: the lowest and highest amounts seen, when both are known. */
-function rangeOf(record: RecurringRecord): [string, string] | undefined {
-	const { expectedAmountMin: min, expectedAmountMax: max, currency } = record;
+/** An amount in Sure's sign, an expense positive and an income negative, formatted. */
+const sureSigned = (amount: MinorUnits, currency: string) =>
+	formatMoney({ amount: toMinorUnits(0 - amount), currency });
 
-	return min === null || max === null
-		? undefined
-		: [toDecimalString({ amount: min, currency }), toDecimalString({ amount: max, currency })];
+/**
+ * Sure's `expected_amount_range` in Sure's sign, which swaps the bounds: an
+ * expense's lowest in Sure's sign is Archant's highest negated. Absent when
+ * neither is known.
+ */
+function rangeOf(record: RecurringRecord): string[] | undefined {
+	const range = [record.expectedAmountMax, record.expectedAmountMin].flatMap((bound) =>
+		bound === null ? [] : [sureSigned(bound, record.currency)],
+	);
+
+	return range.length === 0 ? undefined : range;
 }
 
-/** Sure's `totals_by_currency`: the active series' amounts, summed in each currency. */
+/**
+ * Sure's `upcoming_within_days`: a blank value is none, any other is read as
+ * Ruby's `to_i`, its leading whole number or 0, then held within 1 and 365.
+ */
+function daysOf(value: string | number | null | undefined): number | undefined {
+	if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) {
+		return undefined;
+	}
+
+	const days =
+		typeof value === "number"
+			? Math.trunc(value)
+			: Number(/^\s*([+-]?\d+)/u.exec(value)?.[1] ?? "0");
+
+	return Math.min(365, Math.max(1, Number.isFinite(days) ? days : 1));
+}
+
+/**
+ * Sure's `totals_by_currency`: the active series' amounts in Sure's sign,
+ * summed in each currency over every match. No series is a transfer until
+ * Archant follows recurring transfers.
+ */
 function totalsByCurrency(records: readonly RecurringRecord[]): Record<string, string> {
 	const sums = new Map<string, MinorUnits>();
 
@@ -33,14 +62,14 @@ function totalsByCurrency(records: readonly RecurringRecord[]): Record<string, s
 	}
 
 	return Object.fromEntries(
-		[...sums].map(([currency, amount]) => [currency, toDecimalString({ amount, currency })]),
+		[...sums].map(([currency, amount]) => [currency, sureSigned(amount, currency)]),
 	);
 }
 
 export const getRecurringTransactions = defineTool({
 	name: "get_recurring_transactions",
 	title: "Recurring transactions",
-	description: `The payments and incomes that recur on their schedule for about the same amount, as « Récurrents » lists them and as Sure's get_recurring_transactions gives them: the active ones by default, each by expected next date, with its amount, its expected day and next date, and its last occurrence. Pass upcoming_within_days to keep the ones expected from today to that many days from now; overdue ones appear only without it. totals_by_currency sums the active ones. ${BANK_TEXT}`,
+	description: `Lists detected and manual recurring transactions (subscriptions, salaries, recurring bills) with expected amounts and next expected dates, as « Récurrents » lists them. Amounts are formatted in Sure's sign: an expense positive, an income negative. status defaults to "active"; "all" lists every series, suggested and ended ones included. Pass upcoming_within_days to only see items expected between today and that many days from now (overdue items appear when no window is given). totals_by_currency sums the active items. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: recurringInput,
@@ -56,38 +85,38 @@ export const getRecurringTransactions = defineTool({
 					.describe(
 						"The owner's name for it, else its merchant's, else the label its transactions carry.",
 					),
-				amount: decimal("Signed: negative is money out"),
+				amount: formatted("Its expected amount, positive for an expense, negative for an income"),
 				expected_amount_range: z
-					.tuple([z.string(), z.string()])
+					.array(z.string())
 					.optional()
-					.describe(
-						"The lowest and highest amounts seen, signed decimal strings; absent when unknown.",
-					),
+					.describe("The lowest and highest amounts seen, in the same sign; absent when unknown."),
 				currency: z.string(),
 				status: z
 					.enum(RECURRING_STATUSES)
 					.describe(
-						'"suggested": found by Archant, awaiting the owner; "active": followed by the owner; "inactive": paused or retired.',
+						'"suggested": found by Archant, awaiting the owner; "active": followed by the owner; "inactive": paused or retired; "ended": dismissed or finished.',
 					),
 				expected_day_of_month: z.number().int(),
 				next_expected_date: z.string(),
 				last_occurrence_date: z.string(),
 				occurrence_count: z.number().int(),
-				is_manual: z.boolean().describe("Added by the owner from a transaction."),
-				account: namedRef.nullable().describe("null for a series paid from any account."),
-				merchant: namedRef.nullable(),
+				is_manual: z.boolean().describe("Added by the owner."),
+				is_transfer: z
+					.boolean()
+					.describe("Always false: Archant follows no recurring transfer yet."),
+				account: namedRef.optional().describe("Absent for a series paid from any account."),
 			}),
 		),
 		totals_by_currency: z
 			.record(z.string(), z.string())
 			.describe(
-				"Each currency's sum of the matching active series' signed amounts, over every match, not only those shown.",
+				"Each currency's sum of the matching active series' amounts, in the same sign, over every match, not only those shown.",
 			),
 	}),
 	run: async (deps, input) => {
 		const records = await listRecurring(deps, {
 			status: input.status,
-			withinDays: input.upcoming_within_days,
+			withinDays: daysOf(input.upcoming_within_days),
 		});
 
 		return {
@@ -101,7 +130,7 @@ export const getRecurringTransactions = defineTool({
 					return {
 						id: record.id,
 						name: displayName(record),
-						amount: toDecimalString(record),
+						amount: sureSigned(record.amount, record.currency),
 						...(range === undefined ? {} : { expected_amount_range: range }),
 						currency: record.currency,
 						status: record.status,
@@ -110,11 +139,10 @@ export const getRecurringTransactions = defineTool({
 						last_occurrence_date: record.lastOccurrenceDate,
 						occurrence_count: record.occurrenceCount,
 						is_manual: record.manual,
-						account: accountRefOf(record),
-						merchant:
-							record.merchantId === null
-								? null
-								: { id: record.merchantId, name: record.merchantName ?? record.merchantId },
+						is_transfer: false,
+						...(record.accountId === null
+							? {}
+							: { account: { id: record.accountId, name: record.accountName ?? "" } }),
 					};
 				}),
 				totals_by_currency: totalsByCurrency(records),

@@ -6,9 +6,10 @@ import type { Transaction } from "../ledger/shared.ts";
 import type { BillOccurrence, BillRecord, PriceChange } from "./bills.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, eq, gte } from "drizzle-orm";
+import { and, count, eq, gte, ne } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import type {
 	AllocationSource,
 	AllocationState,
@@ -23,13 +24,13 @@ import type { RecurringStatus } from "@archant/data/schema/recurring-transaction
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { addDays, addMonths, today } from "../../domain/dates.ts";
-import { nextDueDateOf, nextDueDates } from "../../domain/recurring/bills.ts";
-import { monthlyRollup } from "../../domain/recurring/schedule.ts";
+import { displayName, nextDueDateOf, nextDueDates } from "../../domain/recurring/bills.ts";
+import { annualizedAverage, monthlyRollup } from "../../domain/recurring/schedule.ts";
 import { billStatusSchema } from "../../schemas/bills.ts";
 import { paymentEntries } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
-import { displayName, loadBills, priceChangesWhere, withAmounts } from "./bills.ts";
-import { notFound, selectRecords, toRecords } from "./series.ts";
+import { loadBills, priceChangesWhere, withAmounts } from "./bills.ts";
+import { notFound, nullableMinor, selectRecords, toRecords } from "./series.ts";
 
 /** A series as the assistant's bill tools read it. */
 export type BillView = BillRecord & {
@@ -43,7 +44,7 @@ type Reader = Pick<Transaction, "select">;
 
 // Sure's `STATUS_VOCABULARY`: nothing stores `paused`, the interface's
 // « En pause » is `inactive`.
-export const STORED_STATUS = {
+const STORED_STATUS = {
 	active: "active",
 	suggested: "suggested",
 	paused: "inactive",
@@ -74,7 +75,7 @@ export async function loadBillViews(db: Reader, day: IsoDate, where?: SQL): Prom
 }
 
 /** One series as the bill tools read it; `NOT_FOUND` when no series has `id`. */
-async function billView(deps: ServiceDeps, id: string): Promise<BillView> {
+export async function billView(deps: ServiceDeps, id: string): Promise<BillView> {
 	const [view] = await loadBillViews(
 		deps.db,
 		today(deps.timeZone),
@@ -119,15 +120,23 @@ export type FindBillsQuery = {
 export type FoundBills = {
 	/** Every match, by next due date. */
 	bills: BillView[];
+	/** The reporting currency, Sure's `family.currency`. */
+	familyCurrency: CurrencyCode;
 	totals: {
-		currency: CurrencyCode;
 		activeCount: number;
 		overdueCount: number;
-		/** The active bills' monthly equivalents but the incomes', in `currency`. */
-		activeMonthly: MinorUnits;
-		/** The accounts of the active bills in another currency, which the sum leaves out (NFR2). */
-		leftOut: { id: string }[];
+		/**
+		 * The active bills' monthly equivalents but the incomes', summed in each
+		 * currency, the currencies as the bills first name them.
+		 */
+		activeMonthlyByCurrency: [currency: string, monthly: MinorUnits][];
 	};
+	/**
+	 * Sure's `other_status_hint`: when nothing matched a lifecycle and no other
+	 * filter narrowed it, the series of the type asked under each other stored
+	 * status, the most first; empty otherwise.
+	 */
+	elsewhere: { status: RecurringStatus; count: number }[];
 };
 
 /**
@@ -136,13 +145,15 @@ export type FoundBills = {
  * aside, by a next due date within `dueWithinDays`, overdue ones included,
  * and by the current occurrence's payment state. The totals cover every
  * match: the active ones, the overdue ones, and the active bills' monthly
- * equivalent without the incomes, in the reporting currency, a bill in
- * another one left out with its account (NFR2), where Sure sums per currency.
+ * equivalents without the incomes, summed in each currency, each sum of
+ * unrounded fractions rounded once.
  */
 export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promise<FoundBills> {
 	const day = today(deps.timeZone);
 	const needle = query.search?.toLocaleLowerCase("fr");
 	const horizon = query.dueWithinDays === undefined ? undefined : addDays(day, query.dueWithinDays);
+	const byType =
+		query.billType === undefined ? undefined : eq(recurringTransactions.billType, query.billType);
 	const views = await loadBillViews(
 		deps.db,
 		day,
@@ -150,7 +161,7 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 			query.status === "all"
 				? undefined
 				: eq(recurringTransactions.status, STORED_STATUS[query.status]),
-			query.billType === undefined ? undefined : eq(recurringTransactions.billType, query.billType),
+			byType,
 		),
 	);
 	const bills = views.filter(
@@ -163,25 +174,37 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 			(query.paymentState === undefined ||
 				inPaymentState(bill.currentOccurrence, query.paymentState)),
 	);
-	const currency = getReportingCurrency();
-	const spending = bills.filter((bill) => bill.status === "active" && bill.billType !== "income");
+	const spending = new Map<string, BillView[]>();
+
+	for (const bill of bills.filter((one) => one.status === "active" && one.billType !== "income")) {
+		spending.set(bill.currency, [...(spending.get(bill.currency) ?? []), bill]);
+	}
+
+	const narrowed =
+		query.paymentState !== undefined ||
+		query.search !== undefined ||
+		query.dueWithinDays !== undefined;
+	const elsewhere =
+		bills.length > 0 || narrowed || query.status === "all"
+			? []
+			: await deps.db
+					.select({ status: recurringTransactions.status, count: count() })
+					.from(recurringTransactions)
+					.where(and(ne(recurringTransactions.status, STORED_STATUS[query.status]), byType))
+					.groupBy(recurringTransactions.status);
 
 	return {
 		bills,
+		familyCurrency: getReportingCurrency(),
 		totals: {
-			currency,
 			activeCount: bills.filter((bill) => bill.status === "active").length,
 			overdueCount: bills.filter((bill) => bill.currentOccurrence?.state === "overdue").length,
-			activeMonthly: monthlyRollup(spending.filter((bill) => bill.currency === currency)).monthly,
-			// A bill paid from any account has no account to name.
-			leftOut: [
-				...new Set(
-					spending
-						.filter((bill) => bill.currency !== currency)
-						.flatMap((bill) => (bill.accountId === null ? [] : [bill.accountId])),
-				),
-			].map((id) => ({ id })),
+			activeMonthlyByCurrency: [...spending].map(([currency, group]) => [
+				currency,
+				monthlyRollup(group).monthly,
+			]),
 		},
+		elsewhere: elsewhere.toSorted((a, b) => b.count - a.count || a.status.localeCompare(b.status)),
 	};
 }
 
@@ -207,8 +230,27 @@ type PaymentView = {
 	transactionLabel: string | null;
 };
 
+/**
+ * Sure's `analytics`, each a positive amount in the bill's currency, from the
+ * confirmed payments alone, never from what an occurrence expected.
+ */
+type BillAnalytics = {
+	/** Of each paid occurrence's confirmed payments, rounded once. */
+	averagePaid: MinorUnits;
+	lowestPaid: MinorUnits;
+	highestPaid: MinorUnits;
+	/** The unrounded average times the occurrences a year, rounded once. */
+	annualizedCost: MinorUnits;
+	/** The monthly equivalent of the bill's own amount times 12, rounded once. */
+	annualizedDeclared: MinorUnits;
+	/** Every confirmed payment dated from 1 January, toward any occurrence. */
+	paidThisYear: MinorUnits;
+};
+
 export type BillHistory = {
-	bill: BillView & { schedulePinned: boolean };
+	bill: BillView & { schedulePinned: boolean; expectedAmountAvg: MinorUnits | null };
+	/** `null` until an occurrence is paid. */
+	analytics: BillAnalytics | null;
 	/** Every open occurrence, by due date. */
 	open: OccurrenceView[];
 	/** The latest closed ones first, `HISTORY_LIMIT` at most. */
@@ -220,22 +262,82 @@ export type BillHistory = {
 	priceChanges: PriceChange[];
 };
 
+const sumOf = (amounts: readonly MinorUnits[]) =>
+	toMinorUnits(amounts.reduce((total, amount) => total + amount, 0));
+
+/** `total / size` rounded half up, both positive. */
+const averageOf = (total: MinorUnits, size: number): MinorUnits =>
+	toMinorUnits(Number((2n * BigInt(total) + BigInt(size)) / (2n * BigInt(size))));
+
+/**
+ * Sure's `analytics`: each paid occurrence's confirmed payments summed, an
+ * occurrence with none left out, then their average, lowest and highest, the
+ * average times the occurrences a year, the bill's own amount a year, and
+ * every confirmed payment since `yearStart`. `null` before a paid occurrence.
+ */
+function analyticsOf(
+	view: BillView,
+	rows: readonly { occurrenceId: string; status: OccurrenceStatus }[],
+	allocations: readonly {
+		occurrenceId: string;
+		amount: MinorUnits;
+		state: AllocationState;
+		paidOn: IsoDate | null;
+	}[],
+	yearStart: IsoDate,
+): BillAnalytics | null {
+	const confirmed = allocations.filter((one) => one.state === "confirmed");
+	const paid = new Set(rows.filter((row) => row.status === "paid").map((row) => row.occurrenceId));
+	const byOccurrence = new Map<string, MinorUnits>();
+
+	for (const one of confirmed.filter((allocation) => paid.has(allocation.occurrenceId))) {
+		byOccurrence.set(
+			one.occurrenceId,
+			toMinorUnits((byOccurrence.get(one.occurrenceId) ?? 0) + one.amount),
+		);
+	}
+
+	const sums = [...byOccurrence.values()];
+
+	if (sums.length === 0) {
+		return null;
+	}
+
+	const total = sumOf(sums);
+
+	return {
+		averagePaid: averageOf(total, sums.length),
+		lowestPaid: toMinorUnits(Math.min(...sums)),
+		highestPaid: toMinorUnits(Math.max(...sums)),
+		annualizedCost: annualizedAverage(view.rules, total, sums.length),
+		annualizedDeclared: monthlyRollup([view]).annual,
+		paidThisYear: sumOf(
+			confirmed
+				.filter((one) => one.paidOn !== null && one.paidOn >= yearStart)
+				.map((one) => one.amount),
+		),
+	};
+}
+
 // Sure's `HISTORY_LIMIT` and `PRICE_CHANGE_LOOKBACK_MONTHS`.
 const HISTORY_LIMIT = 12;
 const PRICE_CHANGE_MONTHS = 24;
 
 /**
- * Sure's `GetBillDetails` without its analytics: the series, its open
- * occurrences, its twelve latest closed ones with every payment, its next
- * three due dates after today and its price changes of the last 24 months.
+ * Sure's `GetBillDetails`: the series, its analytics, its open occurrences,
+ * its twelve latest closed ones with every payment, its next three due dates
+ * after today and its price changes of the last 24 months.
  * Read through the bills page's own loader, so an occurrence reads the same
  * on the page and here.
  */
 export async function billHistory(deps: ServiceDeps, id: string): Promise<BillHistory> {
 	const day = today(deps.timeZone);
 	const view = await billView(deps, id);
-	const pinned = await deps.db
-		.select({ at: recurringTransactions.schedulePinnedAt })
+	const stored = await deps.db
+		.select({
+			pinnedAt: recurringTransactions.schedulePinnedAt,
+			average: recurringTransactions.expectedAmountAvg,
+		})
 		.from(recurringTransactions)
 		.where(eq(recurringTransactions.id, id))
 		.get();
@@ -270,7 +372,12 @@ export async function billHistory(deps: ServiceDeps, id: string): Promise<BillHi
 	);
 
 	return {
-		bill: { ...view, schedulePinned: pinned?.at !== null && pinned?.at !== undefined },
+		bill: {
+			...view,
+			schedulePinned: stored?.pinnedAt !== null && stored?.pinnedAt !== undefined,
+			expectedAmountAvg: nullableMinor(stored?.average ?? null),
+		},
+		analytics: analyticsOf(view, rows, allocations, `${day.slice(0, 4)}-01-01`),
 		open: rows.filter((row) => row.status === "scheduled").map(toView),
 		closed: shown.map((row) => ({
 			...toView(row),

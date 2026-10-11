@@ -1,6 +1,6 @@
 import type { ServiceDeps } from "./deps.ts";
 
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
@@ -138,30 +138,18 @@ export async function categoryFilterNamed(
 }
 
 /**
- * Sure's `category_name` of the bill tools: a category's id, or its exact
- * name. « Sans catégorie » and "Uncategorized" read as `null`, unless a
- * category holds that name. A reference nothing matches is returned as it
- * was, so the service refuses it as the unknown id it is.
+ * The ids of the active accounts this exact name, case included, names,
+ * two at most, as the bill dialog offers only active ones, as Sure's bill tools look an account up: one is the account, two say
+ * the name is shared and no write may pick between them.
  */
-export async function categoryIdsOf(
-	deps: ServiceDeps,
-	refs: readonly string[],
-): Promise<Map<string, string | null>> {
-	const rows = await deps.db.select({ id: categories.id, name: categories.name }).from(categories);
+export async function accountsNamed(deps: ServiceDeps, name: string): Promise<string[]> {
+	const rows = await deps.db
+		.select({ id: accounts.id })
+		.from(accounts)
+		.where(and(eq(accounts.name, name), eq(accounts.active, true)))
+		.limit(2);
 
-	return new Map(
-		refs.map((ref) => {
-			const byId = rows.find((row) => row.id === ref);
-			const byName = rows.find((row) => row.name === ref.trim());
-			const found = byId ?? byName;
-
-			if (found !== undefined) {
-				return [ref, found.id];
-			}
-
-			return [ref, UNCATEGORISED_NAMES.includes(ref.trim()) ? null : ref];
-		}),
-	);
+	return rows.map((row) => row.id);
 }
 
 /** A name as Sure's `LOWER(name) = ref.downcase` compares it. */

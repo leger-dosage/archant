@@ -44,6 +44,7 @@ import {
 	weekdayOf,
 } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
+import { displayName } from "../../domain/recurring/bills.ts";
 import { majorUnitOf } from "../../domain/recurring/classifier.ts";
 import { applyFrequency } from "../../domain/recurring/frequency.ts";
 import {
@@ -1102,12 +1103,6 @@ const HISTORY_MONTHS = 12;
 const UPCOMING_DAYS = 10;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
-
-export const displayName = (row: {
-	name: string | null;
-	merchantName: string | null;
-	label: string;
-}) => row.name ?? row.merchantName ?? row.label;
 
 const sumOf = (amounts: readonly MinorUnits[]) =>
 	toMinorUnits(amounts.reduce((total, amount) => total + amount, 0));

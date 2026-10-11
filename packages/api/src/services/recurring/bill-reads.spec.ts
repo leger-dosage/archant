@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { recurringAllocations } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { addMonths } from "../../domain/dates.ts";
@@ -139,12 +140,12 @@ describe("findBills", () => {
 		await expect(names({ status: "paused" })).resolves.toEqual(["Pause"]);
 	});
 
-	it("totals the active bills but incomes in the reporting currency, naming each other account once", async () => {
+	it("totals the active bills but incomes in each currency, and says which statuses hold the others", async () => {
 		const accountId = await openAccount();
 		const dollars = await openAccount("USD");
+		await bill(dollars, "Hosting", "2026-10-03", "12.00");
 		await bill(accountId, "Loyer", "2026-10-01", "800,00");
 		await bill(accountId, "Retard", "2026-09-10");
-		await bill(dollars, "Hosting", "2026-10-03", "12.00");
 		await bill(dollars, "Domain", "2026-10-04", "1.00");
 		await declareBill(deps(), {
 			kind: "income",
@@ -154,19 +155,34 @@ describe("findBills", () => {
 			firstDueOn: "2026-09-28",
 			frequency: { preset: "monthly" },
 		});
+		const paused = await bill(accountId, "Pause", "2026-10-05");
+		await setRecurringStatus(deps(), paused.id, "inactive");
 
-		await expect(findBills(deps(), ACTIVE)).resolves.toMatchObject({
-			totals: {
-				currency: "EUR",
-				activeCount: 5,
-				overdueCount: 1,
-				activeMonthly: 82_000,
-				leftOut: [{ id: dollars }],
-			},
+		const active = await findBills(deps(), ACTIVE);
+
+		expect(active).toMatchObject({
+			familyCurrency: "EUR",
+			totals: { activeCount: 5, overdueCount: 1 },
+			elsewhere: [],
 		});
+		// The currencies in the order of the bills, by next due date.
+		expect(active.totals.activeMonthlyByCurrency).toEqual([
+			["EUR", 82_000],
+			["USD", 1300],
+		]);
 		await expect(findBills(deps(), { status: "ended" })).resolves.toMatchObject({
 			bills: [],
-			totals: { activeCount: 0, activeMonthly: 0, leftOut: [] },
+			totals: { activeCount: 0, activeMonthlyByCurrency: [] },
+			elsewhere: [
+				{ status: "active", count: 5 },
+				{ status: "inactive", count: 1 },
+			],
+		});
+		await expect(findBills(deps(), { status: "ended", billType: "income" })).resolves.toMatchObject(
+			{ elsewhere: [{ status: "active", count: 1 }] },
+		);
+		await expect(findBills(deps(), { status: "ended", search: "Loyer" })).resolves.toMatchObject({
+			elsewhere: [],
 		});
 	});
 
@@ -185,7 +201,7 @@ describe("findBills", () => {
 		expect(found.bills.map((one) => one.monthlyEquivalent).toSorted((a, b) => a - b)).toEqual([
 			2178, 4348,
 		]);
-		expect(found.totals.activeMonthly).toBe(6527);
+		expect(found.totals.activeMonthlyByCurrency).toEqual([["EUR", 6527]]);
 	});
 });
 
@@ -249,6 +265,108 @@ describe("billHistory", () => {
 		]);
 		expect(history.bill.schedulePinned).toBe(true);
 		expect(history.nextDueDates).toEqual(["2026-10-06", "2026-11-06", "2026-12-06"]);
+	});
+
+	it("gives no analytics before a paid occurrence", async () => {
+		const accountId = await openAccount();
+		const water = await bill(accountId, "Eau", "2026-09-10");
+		await addPayment(deps(), (await occurrencesOf(water.id))[0]!.id, {
+			amount: "5,00",
+			paidOn: "2026-09-12",
+		});
+
+		await expect(billHistory(deps(), water.id)).resolves.toMatchObject({ analytics: null });
+	});
+
+	it("reads the analytics from the paid occurrences' confirmed payments, rounding each figure once", async () => {
+		const accountId = await openAccount();
+		setToday("2025-11-01");
+		const box = await bill(accountId, "Box", "2025-11-05", "100,00");
+		const payments = [
+			["2025-11-05", "100,00"],
+			["2025-12-05", "100,01"],
+			["2026-01-05", "100,01"],
+			// Partly paid: it stays open, out of the average, in the year's payments.
+			["2026-02-05", "30,00"],
+		] as const;
+
+		await oneByOne(payments, async ([due, amount]) => {
+			setToday(due);
+			await temp.db.transaction((tx) => generateOccurrences(tx, due));
+			const open = (await occurrencesOf(box.id)).find((row) => row.dueOn === due)!;
+			await addPayment(deps(), open.id, { amount, paidOn: due });
+		});
+		setToday("2026-09-21");
+		await temp.db.transaction((tx) => generateOccurrences(tx, "2026-09-21"));
+		// Proposals the owner never confirmed count nowhere, on a paid occurrence or an open one.
+		const byDue = new Map((await occurrencesOf(box.id)).map((row) => [row.dueOn, row.id]));
+		await temp.db.insert(recurringAllocations).values(
+			["2026-01-05", "2026-02-05"].map((due) => ({
+				id: `suggested-${due}`,
+				recurringOccurrenceId: byDue.get(due)!,
+				allocatedAmount: 50_000,
+				state: "suggested" as const,
+				source: "auto_matched" as const,
+				paidOn: due,
+				createdAt: 0,
+				updatedAt: 0,
+			})),
+		);
+
+		const history = await billHistory(deps(), box.id);
+
+		expect(history.closed.map((row) => [row.dueOn, row.status])).toEqual([
+			["2026-01-05", "paid"],
+			["2025-12-05", "paid"],
+			["2025-11-05", "paid"],
+		]);
+		expect(history.open[0]).toMatchObject({ dueOn: "2026-02-05", paid: 3000 });
+		// 300,02 € over three: 100,0066… is 100,01 €, and a year of it 1 200,08 €.
+		expect(history.analytics).toEqual({
+			averagePaid: 10_001,
+			lowestPaid: 10_000,
+			highestPaid: 10_001,
+			annualizedCost: 120_008,
+			annualizedDeclared: 120_000,
+			paidThisYear: 13_001,
+		});
+	});
+
+	it("annualises a quarterly bill's average by its four occurrences a year", async () => {
+		const accountId = await openAccount();
+		setToday("2026-03-01");
+		const insurance = await declareBill(deps(), {
+			kind: "bill",
+			name: "Assurance",
+			amount: "300,00",
+			accountId,
+			firstDueOn: "2026-03-05",
+			frequency: { preset: "quarterly" },
+		});
+
+		await oneByOne(
+			[
+				["2026-03-05", "300,00"],
+				["2026-06-05", "300,01"],
+			] as const,
+			async ([due, amount]) => {
+				setToday(due);
+				await temp.db.transaction((tx) => generateOccurrences(tx, due));
+				const open = (await occurrencesOf(insurance.id)).find((row) => row.dueOn === due)!;
+				await addPayment(deps(), open.id, { amount, paidOn: due });
+			},
+		);
+		setToday("2026-09-21");
+
+		// 600,01 € over two is 300,005 €: 300,01 € rounded half up, 1 200,02 € a year.
+		await expect(billHistory(deps(), insurance.id)).resolves.toMatchObject({
+			analytics: {
+				averagePaid: 30_001,
+				annualizedCost: 120_002,
+				annualizedDeclared: 120_000,
+				paidThisYear: 60_001,
+			},
+		});
 	});
 
 	it("answers NOT_FOUND for an id no series has", async () => {

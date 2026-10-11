@@ -7,6 +7,13 @@ import { addDays, daysBetween, maxDate } from "../dates.ts";
 import { DAYS_PER_YEAR, occurrencesBetween, occurrencesPerYear } from "./schedule.ts";
 import { scheduleOf } from "./series.ts";
 
+/** A series' name: the owner's, else its merchant's, else its bank label. */
+export const displayName = (row: {
+	name: string | null;
+	merchantName: string | null;
+	label: string;
+}) => row.name ?? row.merchantName ?? row.label;
+
 /**
  * Sure's `next_due_date`, without its fallback for a series with nothing
  * generated yet: the current occurrence's effective date while it is open,

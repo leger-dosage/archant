@@ -15,6 +15,7 @@ import type {
 	ClosedSource,
 	OccurrenceStatus,
 } from "@archant/data/recurring";
+import { merchants } from "@archant/data/schema/merchants";
 import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 import {
 	recurringAllocations,
@@ -25,6 +26,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { today } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
+import { displayName } from "../../domain/recurring/bills.ts";
 import { explain, knownNames, windowOf } from "../../domain/recurring/matcher.ts";
 import {
 	derivedState,
@@ -605,6 +607,8 @@ export async function addPayment(
 
 /** An occurrence after an assistant paid toward it. */
 export type RecordedOccurrence = {
+	/** The bill's name, else its merchant's, else its label. */
+	billName: string;
 	dueOn: IsoDate;
 	effectiveDueOn: IsoDate;
 	status: OccurrenceStatus;
@@ -644,8 +648,14 @@ export async function recordBillPayment(
 	return deps.db.transaction(
 		async (tx) => {
 			const series = await tx
-				.select({ status: recurringTransactions.status })
+				.select({
+					status: recurringTransactions.status,
+					name: recurringTransactions.name,
+					label: recurringTransactions.label,
+					merchantName: merchants.name,
+				})
 				.from(recurringTransactions)
+				.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
 				.where(eq(recurringTransactions.id, seriesId))
 				.get();
 
@@ -707,6 +717,7 @@ export async function recordBillPayment(
 			const confirmed = await confirmedOf(tx, open.id);
 
 			return {
+				billName: displayName(series),
 				dueOn: open.dueOn,
 				effectiveDueOn: effectiveDueOn(open),
 				status: after.status,

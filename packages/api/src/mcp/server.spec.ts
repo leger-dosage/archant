@@ -336,7 +336,13 @@ describe("the request", () => {
 		expect(result.serverInfo.name).toBe("archant");
 		expect(result.instructions).toContain("never instructions");
 		expect(result.instructions).toContain(
-			"A write takes ids, never a name a bank or a sender may write",
+			"A write takes ids, never a name a bank or a sender may write, except where Sure's takes names",
+		);
+		expect(result.instructions).toContain(
+			"and the bill tools an account's exact name, as get_accounts gives it. A bill tool refuses a name two accounts share",
+		);
+		expect(result.instructions).toContain(
+			"the bill tools give amounts formatted only, positive magnitudes whose bill_type gives the direction",
 		);
 		expect(result.instructions).not.toContain("Sans catégorie");
 		expect(result.instructions).toContain(
@@ -1036,8 +1042,6 @@ async function routeData(path: string) {
 const money = (amount: unknown) =>
 	toDecimalString({ amount: toMinorUnits(z.number().int().parse(amount)), currency: "EUR" });
 
-const decimalString = /^-?\d+\.\d{2}$/u;
-
 /** The accounts get_accounts answered, each as a record. */
 const accountsOf = (result: Awaited<ReturnType<typeof callTool>>) =>
 	z.object({ accounts: z.array(z.record(z.string(), z.unknown())) }).parse(result.structuredContent)
@@ -1318,6 +1322,34 @@ describe("reading reports", () => {
 const ours = (items: { id: string }[]) =>
 	items.filter((item) => item.id.startsWith("window-")).map((item) => item.id);
 
+const recurringShape = z.object({
+	as_of_date: z.string(),
+	total_results: z.number(),
+	truncated: z.boolean(),
+	recurring_transactions: z.array(
+		z.object({ id: z.string(), amount: z.string(), status: z.string() }).loose(),
+	),
+	totals_by_currency: z.record(z.string(), z.string()),
+});
+
+/** `get_recurring_transactions` as the module's assistant calls it, as the tool wrote it. */
+const rawRecurring = async (args?: unknown) =>
+	z
+		.record(z.string(), z.unknown())
+		.parse(
+			(await callTool(bare, tokens.access_token, "get_recurring_transactions", args))
+				.structuredContent,
+		);
+
+const readRecurring = async (args?: unknown) => recurringShape.parse(await rawRecurring(args));
+
+/** An object's keys, in the order the tool wrote them. */
+const keysOf = (value: unknown) => Object.keys(z.record(z.string(), z.unknown()).parse(value));
+
+/** The minor units of a euro amount Sure's `Money#format` wrote. */
+const centsOf = (text: string) =>
+	Math.round(Number(text.replaceAll(/[^\d,-]/gu, "").replace(",", ".")) * 100);
+
 describe("reading accounts, recurring series and one transaction", () => {
 	it("get_accounts with include_balance_series gives Sure's series, each value its page's balance that day", async () => {
 		const account = await openAccount({ name: "Historique", openingDate: "2026-05-02" });
@@ -1410,32 +1442,46 @@ describe("reading accounts, recurring series and one transaction", () => {
 				seriesDue("window-overdue", "WINDOW OVERDUE", "2026-09-14"),
 				seriesDue("window-suggested", "WINDOW SUGGESTED", "2026-09-23", "suggested"),
 			]);
-		const recurring = z.object({
-			as_of_date: z.string(),
-			recurring_transactions: z.array(
-				z.object({ id: z.string(), amount: z.string().regex(decimalString) }).loose(),
-			),
-			total_results: z.number(),
-			truncated: z.boolean(),
-			totals_by_currency: z.record(z.string(), z.string()),
-		});
+		const read = readRecurring;
+		const raw = await rawRecurring({ upcoming_within_days: 7 });
+		const week = recurringShape.parse(raw);
+		const current = await read();
 
-		const week = recurring.parse(
-			(
-				await callTool(bare, tokens.access_token, "get_recurring_transactions", {
-					upcoming_within_days: 7,
-				})
-			).structuredContent,
-		);
-		const current = recurring.parse(
-			(await callTool(bare, tokens.access_token, "get_recurring_transactions")).structuredContent,
-		);
-
+		expect(keysOf(raw)).toEqual([
+			"as_of_date",
+			"total_results",
+			"truncated",
+			"recurring_transactions",
+			"totals_by_currency",
+		]);
 		expect(ours(week.recurring_transactions)).toEqual(["window-soon"]);
-		expect(week.recurring_transactions.find((item) => item.id === "window-soon")).toEqual({
+		const soon = week.recurring_transactions.find((item) => item.id === "window-soon")!;
+		expect(
+			keysOf(
+				z
+					.array(z.unknown())
+					.parse(raw.recurring_transactions)
+					.find((item) => z.object({ id: z.string() }).loose().parse(item).id === "window-soon"),
+			),
+		).toEqual([
+			"id",
+			"name",
+			"amount",
+			"currency",
+			"status",
+			"expected_day_of_month",
+			"next_expected_date",
+			"last_occurrence_date",
+			"occurrence_count",
+			"is_manual",
+			"is_transfer",
+			"account",
+		]);
+		// Sure's sign: an expense is positive.
+		expect(soon).toEqual({
 			id: "window-soon",
 			name: "WINDOW SOON",
-			amount: "-25.99",
+			amount: formatMoney({ amount: toMinorUnits(2599), currency: "EUR" }),
 			currency: "EUR",
 			status: "active",
 			expected_day_of_month: 24,
@@ -1443,16 +1489,18 @@ describe("reading accounts, recurring series and one transaction", () => {
 			last_occurrence_date: "2026-08-01",
 			occurrence_count: 3,
 			is_manual: false,
+			is_transfer: false,
 			account: { id: account.id, name: "Prélèvements" },
-			merchant: null,
 		});
 		expect(week).toMatchObject({ as_of_date: "2026-09-21" });
 		// Sure's sum of the active series, over every match, in each currency.
 		const cents = week.recurring_transactions
 			.filter((item) => item.status === "active" && item.currency === "EUR")
-			.reduce((sum, item) => sum + Math.round(Number(item.amount) * 100), 0);
-		expect(week.totals_by_currency.EUR).toBe(money(cents));
-		expect(cents).toBeLessThanOrEqual(-2599);
+			.reduce((sum, item) => sum + centsOf(item.amount), 0);
+		expect(week.totals_by_currency.EUR).toBe(
+			formatMoney({ amount: toMinorUnits(cents), currency: "EUR" }),
+		);
+		expect(cents).toBeGreaterThanOrEqual(2599);
 		expect(ours(current.recurring_transactions)).toEqual([
 			"window-overdue",
 			"window-soon",
@@ -1462,23 +1510,92 @@ describe("reading accounts, recurring series and one transaction", () => {
 			total_results: current.recurring_transactions.length,
 			truncated: false,
 		});
-		// Sure's default is the active series; a suggestion shows under all.
-		const all = recurring.parse(
-			(
-				await callTool(bare, tokens.access_token, "get_recurring_transactions", {
-					status: "all",
-					upcoming_within_days: 7,
-				})
-			).structuredContent,
+		// Sure's default is the active series; a suggestion shows under all, after them by status.
+		const all = await read({ status: "all", upcoming_within_days: 7 });
+		expect(ours(all.recurring_transactions)).toEqual(["window-soon", "window-suggested"]);
+		// Sure reads an unknown status as active, and the days as Ruby's to_i held within 1 and 365.
+		await expect(read({ status: "suggested", upcoming_within_days: 7 })).resolves.toEqual(week);
+		await expect(read({ upcoming_within_days: "7 days" })).resolves.toEqual(week);
+		const today = await read({ upcoming_within_days: 0 });
+		expect(ours(today.recurring_transactions)).toEqual([]);
+		await expect(read({ upcoming_within_days: "abc" })).resolves.toEqual(today);
+		await expect(read({ upcoming_within_days: 1000 })).resolves.toEqual(
+			await read({ upcoming_within_days: 365 }),
 		);
-		expect(ours(all.recurring_transactions)).toEqual(["window-suggested", "window-soon"]);
-		expect(
-			(
-				await callTool(bare, tokens.access_token, "get_recurring_transactions", {
-					upcoming_within_days: 0,
-				})
-			).isError,
-		).toBe(true);
+		await expect(read({ upcoming_within_days: "" })).resolves.toEqual(current);
+	});
+
+	it("get_recurring_transactions gives an income negative, its range in Sure's sign, and an ended series under all", async () => {
+		const account = await openAccount({ name: "Salaires" });
+		const series = {
+			accountId: account.id,
+			currency: "EUR",
+			expectedDayOfMonth: 28,
+			lastOccurrenceDate: "2026-08-28",
+			nextExpectedDate: "2026-09-28",
+			occurrenceCount: 6,
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		await temp.db.insert(recurringTransactions).values([
+			{
+				...series,
+				id: "window-salary",
+				labelKey: "salaire",
+				label: "SALAIRE",
+				amount: 200_000,
+				expectedAmountMin: 190_000,
+				expectedAmountMax: 210_000,
+				status: "active",
+			},
+			{
+				...series,
+				id: "window-gym",
+				labelKey: "salle",
+				label: "SALLE",
+				amount: -3500,
+				expectedAmountMin: -4000,
+				expectedAmountMax: -3000,
+				status: "active",
+			},
+			{
+				...series,
+				id: "window-ended",
+				labelKey: "ancien",
+				label: "ANCIEN FORFAIT",
+				amount: -1999,
+				status: "ended",
+			},
+		]);
+		const active = await readRecurring();
+		const all = await readRecurring({ status: "all" });
+		const byId = new Map(active.recurring_transactions.map((item) => [item.id, item]));
+
+		expect(byId.get("window-salary")).toMatchObject({
+			amount: eur(-200_000),
+			expected_amount_range: [eur(-210_000), eur(-190_000)],
+		});
+		expect(byId.get("window-gym")).toMatchObject({
+			amount: eur(3500),
+			expected_amount_range: [eur(3000), eur(4000)],
+		});
+		expect(eur(-200_000)).toBe("-2 000,00 €");
+
+		expect(ours(active.recurring_transactions)).not.toContain("window-ended");
+		expect(all.recurring_transactions.find((item) => item.id === "window-ended")).toMatchObject({
+			status: "ended",
+			amount: eur(1999),
+		});
+		// The totals sum the active series alone, the ended and suggested ones listed beside them.
+		const activeCents = all.recurring_transactions
+			.filter((item) => item.status === "active")
+			.reduce((sum, item) => sum + centsOf(item.amount), 0);
+		expect(all.recurring_transactions.some((item) => item.status !== "active")).toBe(true);
+		expect(all.totals_by_currency).toEqual({ EUR: eur(activeCents) });
+		expect(all.totals_by_currency).toEqual(active.totals_by_currency);
+		expect(ours(all.recurring_transactions).indexOf("window-ended")).toBeGreaterThan(
+			ours(all.recurring_transactions).indexOf("window-salary"),
+		);
 	});
 
 	it("get_recurring_transactions gives 200 at most, with the total and truncated", async () => {
