@@ -71,33 +71,34 @@ describe("chartDomain", () => {
 });
 
 describe("scheduledSeries", () => {
-	it("opens at origination with the amount borrowed", () => {
+	it("opens at origination with the amount borrowed, and splits each payment", () => {
 		const schedule = {
 			originationDate: "2026-01-15",
 			payments: [
 				{
 					number: 1,
 					date: "2026-02-15",
-					payment: 0n,
-					principal: 0n,
-					interest: 0n,
+					payment: 612n,
+					principal: 600n,
+					interest: 12n,
 					endingBalance: 600n,
 				},
 				{
 					number: 2,
 					date: "2026-03-15",
-					payment: 0n,
-					principal: 0n,
-					interest: 0n,
+					payment: 606n,
+					principal: 600n,
+					interest: 6n,
 					endingBalance: 0n,
 				},
 			],
 		};
 
+		// As Sure's `scheduled_series`: the amount borrowed is no payment, so it has no split.
 		expect(scheduledSeries(schedule, 1_200n)).toEqual([
 			at("2026-01-15", 1_200),
-			at("2026-02-15", 600),
-			at("2026-03-15", 0),
+			{ ...at("2026-02-15", 600), principal: toMinorUnits(600), interest: toMinorUnits(12) },
+			{ ...at("2026-03-15", 0), principal: toMinorUnits(600), interest: toMinorUnits(6) },
 		]);
 	});
 });
@@ -138,6 +139,17 @@ describe("payoffChartSeries", () => {
 			at("2025-12-01", 800),
 			at("2026-06-01", 500),
 			at("2027-01-01", 100),
+		]);
+	});
+
+	it("keeps a scheduled payment's split through the cut", () => {
+		const split = { principal: toMinorUnits(100), interest: toMinorUnits(5) };
+		const scheduled = [at("2025-12-01", 800), { ...at("2026-06-01", 500), ...split }];
+		const series = payoffChartSeries({ actual: [], scheduled, projected: [] }, domain);
+
+		expect(series.scheduled).toEqual([
+			at("2025-12-01", 800),
+			{ ...at("2026-06-01", 500), ...split },
 		]);
 	});
 

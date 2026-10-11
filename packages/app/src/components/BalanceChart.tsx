@@ -30,7 +30,7 @@ import {
 	formatTick,
 	formatTooltipDate,
 } from "@/lib/balance-change";
-import { axisTicks } from "@/lib/chart-axis";
+import { axisTicks, balanceDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 
 /**
@@ -109,7 +109,9 @@ function Chart({
 	} satisfies ChartConfig;
 	const byDate = new Map(history.points.map((point) => [point.date, point]));
 	const longRange = history.points.length > LONG_RANGE_POINTS;
-	const ticks = axisTicks(history.points.map((point) => point.balance));
+	const balances = history.points.map((point) => point.balance);
+	const domain = balanceDomain(balances, history.currency);
+	const ticks = axisTicks(domain, history.currency, balances);
 
 	return (
 		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHTS[height]}`}>
@@ -135,7 +137,7 @@ function Chart({
 					tickFormatter={(value: string) => formatTick(value, longRange)}
 				/>
 				<YAxis
-					domain={[ticks.at(0) ?? "auto", ticks.at(-1) ?? "auto"]}
+					domain={[...domain]}
 					ticks={ticks}
 					tickLine={false}
 					axisLine={false}
