@@ -96,32 +96,45 @@ const page = z.object({
 	transactions: z.array(z.object({ id: z.string(), is_transfer: z.boolean() }).loose()),
 });
 
+/** A page of candidates, each a get_transactions row. */
 const candidates = z.object({
-	candidates: z.array(
-		z.object({
-			id: z.string(),
-			date: z.string(),
-			name: z.string(),
-			amount: z.string(),
-			currency: z.string(),
-			account: z.object({ id: z.string(), name: z.string() }),
-		}),
-	),
+	candidates: z.array(z.object({ id: z.string() }).loose()),
+	total_results: z.number(),
+	page: z.number(),
+	page_size: z.number(),
+	total_pages: z.number(),
 });
 
-const paired = z.object({
-	id: z.string(),
-	kind: z.string(),
-	outflow_transaction_id: z.string(),
-	inflow_transaction_id: z.string(),
+/** What pair_transfer and unpair_transfer answer, in Sure's `{ success, <row>, message }`. */
+const written = z.object({
+	success: z.literal(true),
+	transfer: z.object({
+		id: z.string(),
+		status: z.string(),
+		outflow_transaction_id: z.string(),
+		inflow_transaction_id: z.string(),
+	}),
+	message: z.string(),
 });
 
-const unpaired = z.object({
-	transfer_id: z.string(),
-	outflow_transaction_id: z.string(),
-	inflow_transaction_id: z.string(),
-	never_propose: z.boolean(),
-});
+const ROW_KEYS = [
+	"id",
+	"name",
+	"date",
+	"amount",
+	"currency",
+	"formatted_amount",
+	"classification",
+	"account",
+	"notes",
+	"category",
+	"merchant",
+	"tags",
+	"is_transfer",
+];
+
+/** Sure's `Money#format`, its spaces non-breaking. */
+const money = (text: string) => text.replaceAll(" ", "\u00A0");
 
 /** The transfers of the household, as the transaction list shows them, one per pair. */
 async function transfersNow() {
@@ -200,31 +213,59 @@ describe("the read tools", () => {
 });
 
 describe("get_transfer_candidates", () => {
-	it("lists what « Rapprocher un virement » lists, within 30 days, amounts as decimal strings", async () => {
-		const { livret, outflow, inflow, later, transferId } = await household();
+	it("lists what « Rapprocher un virement » lists, within 30 days, as get_transactions rows, a page at a time", async () => {
+		const { outflow, inflow, later, transferId } = await household();
 		const tools = await assistants();
 		await tools.write("unpair_transfer", { transfer_id: transferId });
 
 		const result = await tools.read("get_transfer_candidates", { transaction_id: outflow });
+		const shown = candidates.parse(result.structuredContent);
 
-		expect(candidates.parse(result.structuredContent).candidates).toEqual([
-			{
-				id: inflow,
-				date: "2026-09-13",
-				name: "VIR COMPTE COURANT",
-				amount: "500.00",
-				currency: "EUR",
-				account: { id: livret.id, name: "Livret A" },
-			},
-			{
-				id: later,
-				date: "2026-09-16",
-				name: "Plus tard",
-				amount: "500.00",
-				currency: "EUR",
-				account: { id: livret.id, name: "Livret A" },
-			},
+		expect(Object.keys(result.structuredContent ?? {})).toEqual([
+			"candidates",
+			"total_results",
+			"page",
+			"page_size",
+			"total_pages",
 		]);
+		expect(shown.candidates.map((row) => Object.keys(row))).toEqual([ROW_KEYS, ROW_KEYS]);
+		expect(shown).toEqual({
+			candidates: [
+				{
+					id: inflow,
+					name: "VIR COMPTE COURANT",
+					date: "2026-09-13",
+					amount: "500.0",
+					currency: "EUR",
+					formatted_amount: money("500,00 €"),
+					classification: "income",
+					account: "Livret A",
+					notes: null,
+					category: null,
+					merchant: null,
+					tags: [],
+					is_transfer: false,
+				},
+				expect.objectContaining({ id: later, name: "Plus tard", date: "2026-09-16" }),
+			],
+			total_results: 2,
+			page: 1,
+			page_size: 50,
+			total_pages: 1,
+		});
+
+		const second = candidates.parse(
+			(
+				await tools.read("get_transfer_candidates", {
+					transaction_id: outflow,
+					page: 2,
+					page_size: 1,
+				})
+			).structuredContent,
+		);
+
+		expect(second).toMatchObject({ total_results: 2, page: 2, page_size: 1, total_pages: 2 });
+		expect(second.candidates.map((row) => row.id)).toEqual([later]);
 	});
 
 	it("gives none for a side already in a transfer, and NOT_FOUND for an unknown id", async () => {
@@ -255,15 +296,26 @@ describe("pair_transfer", () => {
 			transaction_id: inflow,
 			counterpart_id: outflow,
 		});
-		const created = paired.parse(result.structuredContent);
+		const answer = written.parse(result.structuredContent);
+		const created = answer.transfer;
 
-		expect(created).toMatchObject({
-			kind: "internal_move",
-			outflow_transaction_id: outflow,
-			inflow_transaction_id: inflow,
+		expect(Object.keys(result.structuredContent ?? {})).toEqual(["success", "transfer", "message"]);
+		expect(Object.keys(created)).toEqual([
+			"id",
+			"status",
+			"outflow_transaction_id",
+			"inflow_transaction_id",
+		]);
+		expect(answer).toEqual({
+			success: true,
+			transfer: {
+				id: created.id,
+				status: "confirmed",
+				outflow_transaction_id: outflow,
+				inflow_transaction_id: inflow,
+			},
+			message: "Transfer confirmed: both transactions now count in neither income nor expenses.",
 		});
-		// No status in the assistant's answer before Story 27.14, which shapes Archant's own tools.
-		expect(result.structuredContent).not.toHaveProperty("status");
 		expect(await transfersNow()).toEqual([{ id: created.id }]);
 		expect(await calls()).toEqual([{ tool: "pair_transfer", outcome: "OK", changedRows: 1 }]);
 		// A pair by hand is confirmed, as Sure's.
@@ -320,11 +372,15 @@ describe("unpair_transfer", () => {
 
 		const result = await tools.write("unpair_transfer", { transfer_id: transferId });
 
-		expect(unpaired.parse(result.structuredContent)).toEqual({
-			transfer_id: transferId,
-			outflow_transaction_id: outflow,
-			inflow_transaction_id: inflow,
-			never_propose: false,
+		expect(written.parse(result.structuredContent)).toEqual({
+			success: true,
+			transfer: {
+				id: transferId,
+				status: "pending",
+				outflow_transaction_id: outflow,
+				inflow_transaction_id: inflow,
+			},
+			message: "Transfer unpaired. Matching may propose the pair again.",
 		});
 		expect(await transfersNow()).toEqual([]);
 		expect(await sidesOf([outflow, inflow])).toEqual(before);
@@ -361,12 +417,23 @@ describe("unpair_transfer", () => {
 			counterpart_id: inflow,
 		});
 
-		expect(unpaired.parse(result.structuredContent)).toMatchObject({ never_propose: true });
+		expect(written.parse(result.structuredContent)).toEqual({
+			success: true,
+			transfer: {
+				id: transferId,
+				status: "pending",
+				outflow_transaction_id: outflow,
+				inflow_transaction_id: inflow,
+			},
+			message:
+				"Transfer unpaired. The pair is refused for good: no import, sync or rule proposes it again.",
+		});
 		// By hand, as Sure's picker, a refused pair is still offered.
 		expect(candidates.parse(offered.structuredContent).candidates.map((row) => row.id)).toContain(
 			inflow,
 		);
-		expect(paired.parse(repaired.structuredContent)).toMatchObject({
+		expect(written.parse(repaired.structuredContent).transfer).toMatchObject({
+			status: "confirmed",
 			outflow_transaction_id: outflow,
 			inflow_transaction_id: inflow,
 		});
@@ -375,6 +442,25 @@ describe("unpair_transfer", () => {
 			{ tool: "get_transfer_candidates", outcome: "OK", changedRows: 0 },
 			{ tool: "pair_transfer", outcome: "OK", changedRows: 1 },
 		]);
+	});
+
+	it("answers the status a confirmed transfer had before it was unpaired", async () => {
+		const { outflow, inflow, transferId } = await household();
+		const tools = await assistants();
+		await tools.write("unpair_transfer", { transfer_id: transferId });
+		const paired = written.parse(
+			(await tools.write("pair_transfer", { transaction_id: outflow, counterpart_id: inflow }))
+				.structuredContent,
+		);
+
+		const result = await tools.write("unpair_transfer", { transfer_id: paired.transfer.id });
+
+		expect(written.parse(result.structuredContent).transfer).toEqual({
+			id: paired.transfer.id,
+			status: "confirmed",
+			outflow_transaction_id: outflow,
+			inflow_transaction_id: inflow,
+		});
 	});
 
 	it("answers NOT_FOUND for an unknown transfer, either way", async () => {

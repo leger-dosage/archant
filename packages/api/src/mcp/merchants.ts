@@ -2,7 +2,16 @@ import { z } from "zod";
 
 import { createMerchantInput, merchantsInput, renameMerchantInput } from "../schemas/assistants.ts";
 import { createMerchant, listMerchants, renameMerchant } from "../services/merchants.ts";
-import { BANK_TEXT, CREATES, READ_ONLY, REPLACES, defineTool, pageOf, pageOutput } from "./tool.ts";
+import {
+	BANK_TEXT,
+	CREATES,
+	READ_ONLY,
+	REPLACES,
+	defineTool,
+	pageOf,
+	pageOutput,
+	validated,
+} from "./tool.ts";
 
 const merchant = z.object({
 	id: z.string(),
@@ -37,34 +46,46 @@ export const getMerchants = defineTool({
 	},
 });
 
+/** What a write answers, as Sure's `create_tag`: the merchant and a sentence. */
+const written = z.object({ success: z.literal(true), merchant, message: z.string() });
+
+function writtenOf({ id, name }: { id: string; name: string }, verb: "created" | "updated") {
+	return {
+		success: true as const,
+		merchant: { id, name, source: "family" as const },
+		message: `Merchant '${name}' ${verb}.`,
+	};
+}
+
 export const createMerchantTool = defineTool({
 	name: "create_merchant",
 	title: "Create a merchant",
 	description:
-		"Creates a merchant as Archant's merchant picker does and returns its id for a rule's action or condition. A name already taken answers validation_error with name_taken: use that merchant's id from get_merchants instead.",
+		"Creates a merchant as Archant's merchant picker does, answering as Sure's create_tag: { success, merchant, message }, its id for a rule's action or condition. Merchant names must be unique, case aside: a taken one answers validation_failed; use that merchant's id from get_merchants instead.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createMerchantInput,
-	output: z.object({ merchant: z.object({ id: z.string(), name: z.string() }) }),
-	run: async (deps, input) => {
-		const { id, name } = await createMerchant(deps, input);
-
-		return { result: { merchant: { id, name } }, changedRows: 1 };
-	},
+	output: written,
+	run: async (deps, input) => ({
+		result: writtenOf(await validated(async () => createMerchant(deps, input)), "created"),
+		changedRows: 1,
+	}),
 });
 
 export const renameMerchantTool = defineTool({
 	name: "rename_merchant",
 	title: "Rename a merchant",
 	description:
-		"Renames a merchant as « Réglages » does; every transaction it holds shows the new name. A name another merchant holds, case aside, answers validation_error with name_taken.",
+		"Renames a merchant as « Réglages » does, answering as Sure's update_tag: { success, merchant, message }; every transaction it holds shows the new name. A name another merchant holds, case aside, answers validation_failed.",
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: renameMerchantInput,
-	output: z.object({ merchant: z.object({ id: z.string(), name: z.string() }) }),
-	run: async (deps, { merchant_id: merchantId, name }) => {
-		const { id, name: renamed } = await renameMerchant(deps, merchantId, { name });
-
-		return { result: { merchant: { id, name: renamed } }, changedRows: 1 };
-	},
+	output: written,
+	run: async (deps, { merchant_id: merchantId, name }) => ({
+		result: writtenOf(
+			await validated(async () => renameMerchant(deps, merchantId, { name })),
+			"updated",
+		),
+		changedRows: 1,
+	}),
 });

@@ -9,6 +9,7 @@ import {
 	matchTransfer,
 	rejectTransfer as rejectLedgerTransfer,
 	transferCandidates,
+	transferStatusOf,
 	unmatchTransfer,
 } from "./ledger/transfers.ts";
 
@@ -27,6 +28,17 @@ export async function createTransfer(deps: ServiceDeps, body: TransferRequest): 
 
 /** A transfer confirmed or undone, with the two sides it joins or joined. */
 type TransferOutcome = TransferSides & { id: string };
+
+/**
+ * The status of the transfer `id` names, `undefined` for none: what an
+ * assistant's unpair answers the transfer had. Reads only.
+ */
+export async function getTransferStatus(
+	deps: ServiceDeps,
+	id: string,
+): Promise<Transfer["status"] | undefined> {
+	return transferStatusOf(deps, id);
+}
 
 /** Undoes a transfer, both sides becoming standard transactions again. */
 export async function deleteTransfer(deps: ServiceDeps, id: string): Promise<TransferOutcome> {

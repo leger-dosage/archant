@@ -1,14 +1,17 @@
+import type { ServiceDeps } from "../services/deps.ts";
+import type { NameBook } from "../services/names.ts";
+
 import { z } from "zod";
 
 import type { CurrencyCode } from "@archant/data/money";
-import { toDecimalString, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import type { RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, RULE_OPERATORS } from "@archant/data/rules";
 
 import { AppError } from "../lib/errors.ts";
 import {
 	applyRulesInput,
-	noToolInput,
+	listPageInput,
 	previewRuleInput,
 	ruleIdInput,
 	ruleRunsInput,
@@ -16,6 +19,7 @@ import {
 	setRuleEnabledInput,
 	updateRuleInput,
 } from "../schemas/assistants.ts";
+import { namesOf } from "../services/names.ts";
 import {
 	applyRules,
 	createRule,
@@ -27,12 +31,32 @@ import {
 	updateRule,
 } from "../services/rules.ts";
 import { getReportingCurrency } from "../services/settings.ts";
-import { BANK_TEXT, CREATES, DESTROYS, READ_ONLY, REPLACES, SETS, defineTool } from "./tool.ts";
+import { transactionsById } from "../services/transactions.ts";
+import {
+	BANK_TEXT,
+	CREATES,
+	DESTROYS,
+	READ_ONLY,
+	REPLACES,
+	SETS,
+	defineTool,
+	formatMoney,
+	pageFieldsOf,
+	pageOf,
+	pageOutput,
+	pluralize,
+} from "./tool.ts";
+import { itemOf, nameOf, namesFor, transaction } from "./transactions.ts";
 
 const leafOutput = z.object({
 	condition_type: z.enum(RULE_CONDITION_TYPES),
 	operator: z.enum(RULE_OPERATORS),
-	value: z.string().nullable(),
+	value: z
+		.string()
+		.nullable()
+		.describe(
+			'The account, merchant, category or tag by name, an amount formatted such as "12,50 €", else the text or type compared; null for is_null.',
+		),
 });
 
 const conditionOutput = leafOutput.extend({
@@ -42,7 +66,12 @@ const conditionOutput = leafOutput.extend({
 
 const actionOutput = z.object({
 	action_type: z.enum(RULE_ACTION_TYPES),
-	value: z.string().nullable(),
+	value: z
+		.string()
+		.nullable()
+		.describe(
+			"The category, merchant, tag or account by name, else the label or the pattern; null to exclude.",
+		),
 	replacement: z.string().nullable().optional(),
 });
 
@@ -59,30 +88,88 @@ const ruleOutput = z.object({
 	...snapshotFields,
 });
 
-/**
- * A condition as `create_rule` takes it: an amount as a decimal string, not
- * the minor units it is stored in, and `conditions` on a group only, so a rule
- * read here goes back into `update_rule` as it is.
- */
 type ConditionOutput = z.input<typeof conditionOutput>;
 
-/** A stored value as `create_rule` takes it: an amount as a decimal string, not its minor units. */
-function valueOf(condition: RuleConditionSnapshot, currency: CurrencyCode): string | null {
-	return condition.conditionType === "transaction_amount" && condition.value !== null
-		? toDecimalString({ amount: toMinorUnits(Number(condition.value)), currency })
-		: condition.value;
+/** Which of the book's names a condition's or an action's stored id is one of. */
+const CONDITION_KINDS: Partial<Record<RuleConditionSnapshot["conditionType"], keyof NameBook>> = {
+	transaction_account: "accounts",
+	transaction_merchant: "merchants",
+	transaction_category: "categories",
+	transaction_tag: "tags",
+};
+
+const ACTION_KINDS: Partial<Record<RuleSnapshot["actions"][number]["actionType"], keyof NameBook>> =
+	{
+		set_transaction_category: "categories",
+		set_transaction_merchant: "merchants",
+		set_transaction_tags: "tags",
+		set_as_transfer_or_payment: "accounts",
+	};
+
+/** Every id the rules point to, by the kind of row each names. */
+function idsIn(rules: readonly RuleSnapshot[]) {
+	const ids: Record<keyof NameBook, string[]> = {
+		accounts: [],
+		categories: [],
+		merchants: [],
+		tags: [],
+	};
+	const leaves = rules.flatMap((rule) =>
+		rule.conditions.flatMap((condition) => [condition, ...condition.conditions]),
+	);
+
+	for (const leaf of leaves) {
+		const kind = CONDITION_KINDS[leaf.conditionType];
+
+		if (kind !== undefined && leaf.value !== null) {
+			ids[kind].push(leaf.value);
+		}
+	}
+
+	for (const action of rules.flatMap((rule) => rule.actions)) {
+		const kind = ACTION_KINDS[action.actionType];
+
+		if (kind !== undefined && action.value !== null) {
+			ids[kind].push(action.value);
+		}
+	}
+
+	return ids;
 }
 
 /**
- * A condition as `create_rule` takes it, `conditions` on a group only and
- * `value` on a leaf only, so a rule read here goes back into `update_rule` as
- * it is.
+ * How a rule read names what it points to, as Sure's `get_transactions`
+ * names a transaction's account, category, merchant and tags; its amounts
+ * formatted in the reporting currency, which they are stored in.
  */
-function conditionOf(condition: RuleConditionSnapshot, currency: CurrencyCode): ConditionOutput {
+type Reader = { names: NameBook; currency: CurrencyCode };
+
+async function readerFor(deps: ServiceDeps, rules: readonly RuleSnapshot[]): Promise<Reader> {
+	return { names: await namesOf(deps, idsIn(rules)), currency: getReportingCurrency() };
+}
+
+/** A stored value as a rule read gives it: a row by its name, an amount formatted. */
+function valueOf(condition: RuleConditionSnapshot, reader: Reader): string | null {
+	const { value, conditionType } = condition;
+	const kind = CONDITION_KINDS[conditionType];
+
+	if (value === null) {
+		return null;
+	}
+
+	if (conditionType === "transaction_amount") {
+		return formatMoney({ amount: toMinorUnits(Number(value)), currency: reader.currency });
+	}
+
+	return kind === undefined ? value : nameOf(reader.names[kind], value);
+}
+
+/** A condition, `conditions` on a group only and `value` on a leaf only. */
+function conditionOf(condition: RuleConditionSnapshot, reader: Reader): ConditionOutput {
 	const { conditionType, operator } = condition;
 
 	if (conditionType !== "compound") {
-		return { condition_type: conditionType, operator, value: valueOf(condition, currency) };
+		return { condition_type: conditionType, operator, value: valueOf(condition, reader) };
 	}
 
 	return {
@@ -91,51 +178,55 @@ function conditionOf(condition: RuleConditionSnapshot, currency: CurrencyCode): 
 		conditions: condition.conditions.map((child) => ({
 			condition_type: child.conditionType,
 			operator: child.operator,
-			value: valueOf(child, currency),
+			value: valueOf(child, reader),
 		})),
 	};
 }
 
-function snapshotOf(rule: RuleSnapshot, currency: CurrencyCode) {
+function snapshotOf(rule: RuleSnapshot, reader: Reader) {
 	return {
 		name: rule.name,
-		conditions: rule.conditions.map((condition) => conditionOf(condition, currency)),
-		actions: rule.actions.map(({ actionType, value, replacement }) => ({
-			action_type: actionType,
-			value,
-			...(replacement === undefined ? {} : { replacement }),
-		})),
+		conditions: rule.conditions.map((condition) => conditionOf(condition, reader)),
+		actions: rule.actions.map(({ actionType, value, replacement }) => {
+			const kind = ACTION_KINDS[actionType];
+
+			return {
+				action_type: actionType,
+				value: kind === undefined || value === null ? value : nameOf(reader.names[kind], value),
+				...(replacement === undefined ? {} : { replacement }),
+			};
+		}),
 	};
 }
 
 type RuleData = Awaited<ReturnType<typeof listRules>>[number];
 
-function ruleOf(rule: RuleData, currency: CurrencyCode) {
+function ruleOf(rule: RuleData, reader: Reader) {
 	return {
 		id: rule.id,
 		enabled: rule.enabled,
 		effective_date: rule.effectiveDate,
-		...snapshotOf(rule, currency),
+		...snapshotOf(rule, reader),
 	};
 }
 
-const AMOUNTS =
-	"Amount conditions are decimal strings in the reporting currency, named in currency.";
+const READS =
+	"Each condition and action names the account, merchant, category or tag it points to, and gives an amount formatted in the reporting currency; create_rule, update_rule and preview_rule take ids and decimal strings instead, from get_accounts, get_merchants, get_categories and get_tags.";
 
 export const getRules = defineTool({
 	name: "get_rules",
 	title: "Rules",
-	description: `Every rule, in the order they apply: a later rule sees what earlier ones set, and overwrites it. Each with its conditions, actions, start date and whether it is enabled. ${AMOUNTS} ${BANK_TEXT}`,
+	description: `Every rule, in the order they apply, a page at a time as Sure's get_categories: a later rule sees what earlier ones set, and overwrites it. Each with its conditions, actions, start date and whether it is enabled. ${READS} ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
-	input: noToolInput,
-	output: z.object({ currency: z.string(), rules: z.array(ruleOutput) }),
-	run: async (deps) => {
-		const currency = getReportingCurrency();
-		const rules = await listRules(deps);
+	input: listPageInput,
+	output: z.object({ rules: z.array(ruleOutput), ...pageOutput }),
+	run: async (deps, { page, page_size: pageSize }) => {
+		const { items, ...fields } = pageOf(await listRules(deps), page, pageSize);
+		const reader = await readerFor(deps, items);
 
 		return {
-			result: { currency, rules: rules.map((rule) => ruleOf(rule, currency)) },
+			result: { rules: items.map((rule) => ruleOf(rule, reader)), ...fields },
 			changedRows: 0,
 		};
 	},
@@ -144,13 +235,12 @@ export const getRules = defineTool({
 export const getRuleRuns = defineTool({
 	name: "get_rule_runs",
 	title: "Rule runs",
-	description: `A page of past applications of rules to existing transactions, the latest first: the rule as it was then, how many transactions it matched and how many it changed. ${AMOUNTS} ${BANK_TEXT}`,
+	description: `Past applications of rules to existing transactions, the latest first, a page at a time as Sure's get_categories: the rule as it was then, how many transactions it matched and how many it changed. ${READS} ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: ruleRunsInput,
 	output: z.object({
-		currency: z.string(),
-		items: z.array(
+		rule_runs: z.array(
 			z.object({
 				id: z.string(),
 				rule_id: z.string().nullable().describe("null once the rule is deleted."),
@@ -160,28 +250,26 @@ export const getRuleRuns = defineTool({
 				executed_at: z.string().describe("When it ran, an ISO 8601 UTC timestamp."),
 			}),
 		),
-		page: z.number().int(),
-		page_size: z.number().int(),
-		total_results: z.number().int(),
+		...pageOutput,
 	}),
-	run: async (deps, input) => {
-		const currency = getReportingCurrency();
-		const runs = await listRuleRuns(deps, { page: input.page, pageSize: input.page_size });
+	run: async (deps, { page, page_size: pageSize }) => {
+		const runs = await listRuleRuns(deps, { page, pageSize });
+		const reader = await readerFor(
+			deps,
+			runs.items.map((run) => run.rule),
+		);
 
 		return {
 			result: {
-				currency,
-				items: runs.items.map((run) => ({
+				rule_runs: runs.items.map((run) => ({
 					id: run.id,
 					rule_id: run.ruleId,
-					rule: snapshotOf(run.rule, currency),
+					rule: snapshotOf(run.rule, reader),
 					matched_count: run.matchedCount,
 					changed_count: run.changedCount,
 					executed_at: new Date(run.executedAt).toISOString(),
 				})),
-				page: runs.page,
-				page_size: runs.pageSize,
-				total_results: runs.total,
+				...pageFieldsOf(runs.total, runs.page, runs.pageSize),
 			},
 			changedRows: 0,
 		};
@@ -209,10 +297,74 @@ async function asDraft<Result>(preview: Promise<Result>): Promise<Result> {
 	}
 }
 
+type Preview = Awaited<ReturnType<typeof previewRules>>;
+
+type Changes = Preview["samples"][number]["changes"];
+
+/** Every id a preview's changes name, beside the ids of the samples' own rows. */
+function changedIds(changes: readonly Changes[]) {
+	const pairs = <Value>(pick: (item: Changes) => { from: Value; to: Value } | undefined) =>
+		changes.flatMap((item) => {
+			const pair = pick(item);
+
+			return pair === undefined ? [] : [pair.from, pair.to];
+		});
+
+	return {
+		accounts: pairs((item) => item.expectedTransferAccount).filter((id) => id !== null),
+		categories: pairs((item) => item.category).filter((id) => id !== null),
+		merchants: pairs((item) => item.merchant).filter((id) => id !== null),
+		tags: pairs((item) => item.tags).flat(),
+	};
+}
+
+/** A change by name: each side's row named, `null` kept. */
+function namedChange(
+	pair: { from: string | null; to: string | null } | undefined,
+	names: ReadonlyMap<string, string>,
+) {
+	const named = (id: string | null) => (id === null ? null : nameOf(names, id));
+
+	return pair === undefined ? undefined : { from: named(pair.from), to: named(pair.to) };
+}
+
+/** What a preview changes on one row, by name, each field present only when it changes. */
+function changesOf(changes: Changes, names: NameBook) {
+	const category = namedChange(changes.category, names.categories);
+	const merchant = namedChange(changes.merchant, names.merchants);
+	const account = namedChange(changes.expectedTransferAccount, names.accounts);
+	const tags =
+		changes.tags === undefined
+			? undefined
+			: {
+					from: changes.tags.from.map((id) => nameOf(names.tags, id)),
+					to: changes.tags.to.map((id) => nameOf(names.tags, id)),
+				};
+
+	return {
+		...(category === undefined ? {} : { category }),
+		...(merchant === undefined ? {} : { merchant }),
+		...(tags === undefined ? {} : { tags }),
+		...(changes.label === undefined ? {} : { name: changes.label }),
+		...(changes.excluded === undefined ? {} : { excluded: changes.excluded }),
+		...(account === undefined ? {} : { expected_transfer_account: account }),
+	};
+}
+
+/** Two books of names as one: the samples' rows' and their changes'. */
+function merged(a: NameBook, b: NameBook): NameBook {
+	return {
+		accounts: new Map([...a.accounts, ...b.accounts]),
+		categories: new Map([...a.categories, ...b.categories]),
+		merchants: new Map([...a.merchants, ...b.merchants]),
+		tags: new Map([...a.tags, ...b.tags]),
+	};
+}
+
 export const previewRule = defineTool({
 	name: "preview_rule",
 	title: "Preview a rule",
-	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every enabled rule when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each changed field with its current and new value. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
+	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every enabled rule when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each as get_transactions lists it with each changed field's current and new value, by name. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: previewRuleInput,
@@ -220,13 +372,7 @@ export const previewRule = defineTool({
 		matched: z.number().int(),
 		changed: z.number().int(),
 		samples: z.array(
-			z.object({
-				id: z.string(),
-				date: z.string(),
-				name: z.string().describe("The label as it stands."),
-				amount: z.string().describe('A decimal string such as "-12.50" in the currency beside it.'),
-				currency: z.string(),
-				account_id: z.string(),
+			transaction.omit({ is_transfer: true }).extend({
 				changes: z.object({
 					category: change(z.string().nullable()),
 					merchant: change(z.string().nullable()),
@@ -242,39 +388,49 @@ export const previewRule = defineTool({
 		const preview = await (input.rule === undefined
 			? previewRules(deps, input.rule_id)
 			: asDraft(previewRules(deps, input.rule)));
+		const changes = new Map(preview.samples.map((sample) => [sample.id, sample.changes]));
+		const rows = await transactionsById(
+			deps,
+			preview.samples.map((sample) => sample.id),
+		);
+		const names = merged(
+			await namesFor(deps, rows),
+			await namesOf(deps, changedIds([...changes.values()])),
+		);
 
 		return {
 			result: {
 				matched: preview.matched,
 				changed: preview.changed,
-				samples: preview.samples.map((sample) => ({
-					id: sample.id,
-					date: sample.date,
-					name: sample.label,
-					amount: toDecimalString(sample),
-					currency: sample.currency,
-					account_id: sample.accountId,
-					changes: {
-						...(sample.changes.category === undefined ? {} : { category: sample.changes.category }),
-						...(sample.changes.merchant === undefined ? {} : { merchant: sample.changes.merchant }),
-						...(sample.changes.tags === undefined ? {} : { tags: sample.changes.tags }),
-						...(sample.changes.label === undefined ? {} : { name: sample.changes.label }),
-						...(sample.changes.excluded === undefined ? {} : { excluded: sample.changes.excluded }),
-						...(sample.changes.expectedTransferAccount === undefined
-							? {}
-							: { expected_transfer_account: sample.changes.expectedTransferAccount }),
-					},
-				})),
+				samples: rows.map((row) => {
+					const { is_transfer: _transfer, ...item } = itemOf(row, names);
+
+					return { ...item, changes: changesOf(changes.get(row.id) ?? {}, names) };
+				}),
 			},
 			changedRows: 0,
 		};
 	},
 });
 
-const savedRule = z.object({ currency: z.string(), rule: ruleOutput });
+/** What a write answers, as Sure's `create_category`: the rule, read as get_rules gives it. */
+const savedRule = z.object({ success: z.literal(true), rule: ruleOutput, message: z.string() });
+
+/** Sure's message for a written record: its name quoted when it has one. */
+function messageOf(rule: { name: string | null }, verb: string): string {
+	return rule.name === null ? `Rule ${verb}.` : `Rule '${rule.name}' ${verb}.`;
+}
+
+async function savedOf(deps: ServiceDeps, rule: RuleData, verb: string) {
+	return {
+		success: true as const,
+		rule: ruleOf(rule, await readerFor(deps, [rule])),
+		message: messageOf(rule, verb),
+	};
+}
 
 const WRITES_RULES =
-	"The input takes the rule form's shape; a field the input itself refuses answers { error, hint }, its error each refused field's path and code; a value the rule's check refuses, such as a category that does not exist, answers validation_error, its message naming the field's path and code. Correct it and send again.";
+	"The input takes the rule form's shape, with ids and decimal strings; a field the input itself refuses answers { error, hint }, its error each refused field's path and code; a value the rule's check refuses, such as a category that does not exist, answers validation_error, its message naming the field's path and code. Correct it and send again. It answers { success, rule, message }, the rule read as get_rules gives it, by name.";
 
 export const createRuleTool = defineTool({
 	name: "create_rule",
@@ -284,95 +440,114 @@ export const createRuleTool = defineTool({
 	annotations: CREATES,
 	input: ruleToolInput,
 	output: savedRule,
-	run: async (deps, input) => {
-		const currency = getReportingCurrency();
-
-		return {
-			result: { currency, rule: ruleOf(await createRule(deps, input), currency) },
-			changedRows: 1,
-		};
-	},
+	run: async (deps, input) => ({
+		result: await savedOf(deps, await createRule(deps, input), "created"),
+		changedRows: 1,
+	}),
 });
 
 export const updateRuleTool = defineTool({
 	name: "update_rule",
 	title: "Update a rule",
-	description: `Replaces a rule's name, start date, conditions and actions; it keeps its place in the order and whether it is enabled. What it wrote before stays. ${WRITES_RULES} ${BANK_TEXT}`,
+	description: `Replaces a rule's name, start date, conditions and actions; it keeps its place in the order and whether it is enabled. What it wrote before stays. A rule get_rules gives names its rows: give their ids here. ${WRITES_RULES} ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: updateRuleInput,
 	output: savedRule,
-	run: async (deps, { ruleId, rule }) => {
-		const currency = getReportingCurrency();
-
-		return {
-			result: { currency, rule: ruleOf(await updateRule(deps, ruleId, rule), currency) },
-			changedRows: 1,
-		};
-	},
+	run: async (deps, { ruleId, rule }) => ({
+		result: await savedOf(deps, await updateRule(deps, ruleId, rule), "updated"),
+		changedRows: 1,
+	}),
 });
 
 export const setRuleEnabledTool = defineTool({
 	name: "set_rule_enabled",
 	title: "Enable or disable a rule",
-	description: `Turns a rule on or off. Off, it no longer applies to new transactions; what it wrote stays. ${BANK_TEXT}`,
+	description: `Turns a rule on or off. Off, it no longer applies to new transactions; what it wrote stays. It answers { success, rule, message }. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: setRuleEnabledInput,
 	output: savedRule,
-	run: async (deps, { rule_id: ruleId, enabled }) => {
-		const currency = getReportingCurrency();
-
-		return {
-			result: { currency, rule: ruleOf(await setRuleEnabled(deps, ruleId, { enabled }), currency) },
-			changedRows: 1,
-		};
-	},
+	run: async (deps, { rule_id: ruleId, enabled }) => ({
+		result: await savedOf(
+			deps,
+			await setRuleEnabled(deps, ruleId, { enabled }),
+			enabled ? "enabled" : "disabled",
+		),
+		changedRows: 1,
+	}),
 });
 
 export const deleteRuleTool = defineTool({
 	name: "delete_rule",
 	title: "Delete a rule",
-	description: "Deletes a rule for good. What it wrote on transactions stays.",
+	description: `Deletes a rule for good. What it wrote on transactions stays. It answers the rule as it was. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: ruleIdInput,
-	output: z.object({ id: z.string() }),
-	run: async (deps, { rule_id: ruleId }) => ({
-		result: await deleteRule(deps, ruleId),
-		changedRows: 1,
+	output: z.object({
+		success: z.literal(true),
+		deleted: z.literal(true),
+		rule: ruleOutput.describe("The rule as it was."),
+		message: z.string(),
 	}),
+	run: async (deps, { rule_id: ruleId }) => {
+		const before = (await listRules(deps)).find((rule) => rule.id === ruleId);
+
+		await deleteRule(deps, ruleId);
+
+		// `deleteRule` refused an unknown id: only a rule read just before can reach here.
+		if (before === undefined) {
+			throw new AppError("NOT_FOUND", "No rule has this id.");
+		}
+
+		const { rule, message } = await savedOf(deps, before, "deleted");
+
+		return {
+			result: { success: true as const, deleted: true as const, rule, message },
+			changedRows: 1,
+		};
+	},
 });
 
 export const applyRulesTool = defineTool({
 	name: "apply_rules",
 	title: "Apply rules to existing transactions",
-	description:
-		"Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change.",
+	description: `Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: applyRulesInput,
 	output: z.object({
+		success: z.literal(true),
 		changed: z.number().int().describe("Transactions changed, each once."),
 		runs: z.array(
 			z.object({
 				rule_id: z.string().nullable(),
+				rule: z.object(snapshotFields).describe("The rule as it ran."),
 				matched_count: z.number().int(),
 				changed_count: z.number().int(),
 			}),
 		),
+		message: z.string(),
 	}),
 	run: async (deps, { rule_id: ruleId, expected_changed: expectedChanged }) => {
 		const { changed, runs } = await applyRules(deps, ruleId, expectedChanged);
+		const reader = await readerFor(
+			deps,
+			runs.map((run) => run.rule),
+		);
 
 		return {
 			result: {
+				success: true as const,
 				changed,
 				runs: runs.map((run) => ({
 					rule_id: run.ruleId,
+					rule: snapshotOf(run.rule, reader),
 					matched_count: run.matchedCount,
 					changed_count: run.changedCount,
 				})),
+				message: `Applied ${pluralize(runs.length, "rule")}: ${pluralize(changed, "transaction")} changed.`,
 			},
 			changedRows: changed,
 		};
