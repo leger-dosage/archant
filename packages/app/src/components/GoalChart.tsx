@@ -31,7 +31,7 @@ import {
 	formatTick,
 	formatTooltipDate,
 } from "@/lib/balance-change";
-import { axisTicks } from "@/lib/chart-axis";
+import { axisTicks, goalDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
 
 const HEIGHT = CHART_HEIGHTS[256];
@@ -160,10 +160,12 @@ function Chart({ goal, history }: { goal: GoalData; history: GoalHistoryData }) 
 	const first = points.at(0)?.day ?? 0;
 	const last = points.at(-1)?.day ?? 0;
 	const longRange = (last - first) / DAY_MS > LONG_RANGE_DAYS;
-	const values = points
-		.flatMap((point) => [point.saved, point.projection])
+	const saved = points.map((point) => point.saved).filter((value) => value !== undefined);
+	const projections = points
+		.map((point) => point.projection)
 		.filter((value) => value !== undefined);
-	const ticks = axisTicks([...values, goal.targetAmount]);
+	const domain = goalDomain({ target: goal.targetAmount, projections, saved }, goal.currency);
+	const ticks = axisTicks(domain, goal.currency, [...saved, ...projections, goal.targetAmount]);
 
 	return (
 		<ChartContainer config={config} className={`aspect-auto w-full ${HEIGHT}`}>
@@ -190,8 +192,10 @@ function Chart({ goal, history }: { goal: GoalData; history: GoalHistoryData }) 
 					tickFormatter={(value: number) => formatTick(isoOf(value), longRange)}
 				/>
 				<YAxis
-					domain={[ticks.at(0) ?? "auto", ticks.at(-1) ?? "auto"]}
+					domain={[...domain]}
 					ticks={ticks}
+					// Sure clips a saved line past twice the goal's own scale inside the plot.
+					allowDataOverflow
 					tickLine={false}
 					axisLine={false}
 					tickMargin={4}

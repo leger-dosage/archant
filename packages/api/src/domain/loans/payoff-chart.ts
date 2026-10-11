@@ -4,6 +4,7 @@ import type { IsoDate } from "../dates.ts";
 import type { AmortizationSchedule } from "./amortization-schedule.ts";
 import type { PayoffProjection } from "./payoff-projection.ts";
 
+import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
 import { addDays, addMonths, maxDate } from "../dates.ts";
@@ -13,7 +14,14 @@ const PAYOFF_SERIES = ["actual", "scheduled", "projected"] as const;
 
 type PayoffSeriesKey = (typeof PAYOFF_SERIES)[number];
 
-type PayoffSeries = Record<PayoffSeriesKey, DailyBalance[]>;
+/** A point of the contract: a payment carries what it repays, for the tooltip. */
+export type ScheduledPoint = DailyBalance & { principal?: MinorUnits; interest?: MinorUnits };
+
+type PayoffSeries = {
+	actual: DailyBalance[];
+	scheduled: ScheduledPoint[];
+	projected: DailyBalance[];
+};
 
 type DomainInput = {
 	/** The account chart's period: calendar months back from today, or the whole life. */
@@ -53,23 +61,28 @@ export function chartDomain({
 	return { from, to: maxDate(asOf, addDays(from, 1)) };
 }
 
-const point = (date: IsoDate, balance: bigint): DailyBalance => ({
-	date,
-	balance: toMinorUnits(Number(balance)),
-});
+const minor = (amount: bigint): MinorUnits => toMinorUnits(Number(amount));
+
+const point = (date: IsoDate, balance: bigint): DailyBalance => ({ date, balance: minor(balance) });
 
 /**
  * The contract, from origination at the amount borrowed: starting at the
  * first payment would leave the amount borrowed out, and a one-payment loan
- * with a single point and no line.
+ * with a single point and no line. Each payment carries its principal and
+ * interest, as Sure's `scheduled_series`; the amount borrowed is no payment,
+ * so the opening point carries neither.
  */
 export function scheduledSeries(
 	schedule: Pick<AmortizationSchedule, "originationDate" | "payments">,
 	originalAmount: bigint,
-): DailyBalance[] {
+): ScheduledPoint[] {
 	return [
 		point(schedule.originationDate, originalAmount),
-		...schedule.payments.map((payment) => point(payment.date, payment.endingBalance)),
+		...schedule.payments.map((payment) => ({
+			...point(payment.date, payment.endingBalance),
+			principal: minor(payment.principal),
+			interest: minor(payment.interest),
+		})),
 	];
 }
 
@@ -119,7 +132,7 @@ function visible(points: readonly DailyBalance[], domain: DateRange): boolean {
  * The points inside the domain, plus the last before and the first after it,
  * so a line that crosses an edge is cut there rather than stopping short.
  */
-function cut(points: readonly DailyBalance[], domain: DateRange): DailyBalance[] {
+function cut<P extends DailyBalance>(points: readonly P[], domain: DateRange): P[] {
 	const before = points.findLast((candidate) => candidate.date < domain.from);
 	const after = points.find((candidate) => candidate.date > domain.to);
 

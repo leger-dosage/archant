@@ -87,7 +87,7 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(200) });
 	await api.addTransaction(account.id, { date: daysAgo(3), label: "Loyer", amount: "-100,00" });
-	const { change } = await api.netWorth();
+	const { change, points } = await api.netWorth();
 
 	expect(change).not.toBeNull();
 
@@ -107,7 +107,14 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 	// Abbreviated labels, « 275 k€ », never an amount to the cent.
 	const ticks = card(page).locator(".recharts-cartesian-axis-tick-value", { hasText: /€$/u });
 	await expect(ticks.first()).toBeVisible();
-	expect(await ticks.allTextContents()).not.toContainEqual(expect.stringMatching(/,\d{2}\s€$/u));
+	const labels = await ticks.allTextContents();
+	expect(labels).not.toContainEqual(expect.stringMatching(/,\d{2}\s€$/u));
+	// Round labels inside Sure's scale: two never read the same, and none is
+	// negative under a net worth that never was, though Sure's scale may dip below zero.
+	expect(new Set(labels).size).toBe(labels.length);
+	if (points.every((point) => point.balance >= 0)) {
+		expect(labels).not.toContainEqual(expect.stringMatching(/^−/u));
+	}
 });
 
 const bilan = (page: Page) => page.getByRole("region", { name: "Bilan" });

@@ -2480,7 +2480,13 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		});
 		expect(data?.scheduled).toHaveLength(301);
 		expect(data?.scheduled[0]).toEqual({ date: "2020-12-05", balance: 13_000_000 });
-		expect(data?.scheduled[70]).toEqual({ date: "2026-10-05", balance: 10_472_454 });
+		// Each payment says what it repays, as Sure's `scheduled_series`; the amount borrowed does not.
+		expect(data?.scheduled[70]).toEqual({
+			date: "2026-10-05",
+			balance: 10_472_454,
+			principal: 38_028,
+			interest: 15_941,
+		});
 		expect(data?.projected).toHaveLength(231);
 		expect(data?.projected[0]).toEqual({ date: "2026-10-06", balance: 10_472_454 });
 		expect(data?.projected.at(-1)).toEqual({ date: "2045-12-05", balance: 0 });

@@ -769,6 +769,24 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 	await expect(description).toHaveClass(/sr-only/u);
 	await expect(card.getByRole("button", { name: "Voir le tableau" })).toHaveCount(0);
 
+	// Sure's tooltip splits a scheduled payment into what it repays; the
+	// amount borrowed, at the origin, is no payment.
+	const plot = await card.locator(".recharts-cartesian-grid").boundingBox();
+	const tooltip = card.locator(".recharts-tooltip-wrapper");
+	const split = tooltip.getByText(/^Capital : /u);
+	expect(plot).not.toBeNull();
+	await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height / 2);
+	await expect(split).toHaveText(/^Capital : \d[\d\s]*,\d\d\s€ · Intérêts : \d[\d\s]*,\d\d\s€$/u);
+	// At 1.82 %, every payment repays more capital than interest.
+	const [principal, interest] = ((await split.textContent()) ?? "")
+		.match(/\d[\d\s]*,\d\d/gu)!
+		.map((amount) => Number(amount.replaceAll(/\s/gu, "").replace(",", ".")));
+	expect(principal).toBeGreaterThan(interest!);
+	await page.mouse.move(plot!.x + 1, plot!.y + plot!.height / 2);
+	await expect(tooltip).toContainText("Échéancier du contrat");
+	await expect(split).toHaveCount(0);
+	await page.mouse.move(0, 0);
+
 	// A window ends today, where the projection draws no line.
 	await card.getByRole("radio", { name: "1 A" }).click();
 	await expect(page).toHaveURL(/period=1Y/u);

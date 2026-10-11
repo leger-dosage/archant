@@ -3,6 +3,7 @@ import type { BalanceChange } from "../domain/balances/history.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { AmortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import type { Instalment, LoanOverview } from "../domain/loans/overview.ts";
+import type { ScheduledPoint } from "../domain/loans/payoff-chart.ts";
 import type { PayoffProjection } from "../domain/loans/payoff-projection.ts";
 import type { RateResolver } from "../domain/loans/rate-resolver.ts";
 import type { BalancePeriod } from "../schemas/balances.ts";
@@ -287,7 +288,8 @@ export type LoanPayoffChartData = {
 	change: BalanceChange;
 	/** The recorded balances, thinned as the account chart's `sampleSeries`. */
 	actual: DailyBalance[];
-	scheduled: DailyBalance[];
+	/** The contract; each payment with its principal and interest, as Sure's tooltip shows them. */
+	scheduled: ScheduledPoint[];
 	projected: DailyBalance[];
 	/** The series that draw a line between `from` and `to`, in the legend's order. */
 	visible: ("actual" | "scheduled" | "projected")[];

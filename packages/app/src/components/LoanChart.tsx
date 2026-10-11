@@ -4,7 +4,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import type { TooltipContentProps } from "recharts";
 
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
 
@@ -23,7 +23,7 @@ import {
 	formatSignedPercent,
 	formatTick,
 } from "@/lib/balance-change";
-import { axisTicks } from "@/lib/chart-axis";
+import { axisTicks, loanDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { longDate } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -33,6 +33,9 @@ const HEIGHT = CHART_HEIGHTS[DEFAULT_CHART_HEIGHT];
 type SeriesKey = LoanPayoffChartData["visible"][number];
 
 type ChartPoint = LoanPayoffChartData["actual"][number];
+
+/** A point of any series; a scheduled payment also says what it repays. */
+type TooltipPoint = LoanPayoffChartData["scheduled"][number];
 
 /**
  * Sure's `loan_payoff_chart_controller` styles: dash and colour together, so a
@@ -96,7 +99,7 @@ function nearestDate(dates: readonly string[], date: string): string {
  * A series' point nearest a date, as Sure's tooltip reads it; none outside
  * the series' own span, about which it says nothing.
  */
-function pointNear(points: readonly ChartPoint[], date: string): ChartPoint | undefined {
+function pointNear<P extends ChartPoint>(points: readonly P[], date: string): P | undefined {
 	const first = points.at(0);
 	const last = points.at(-1);
 
@@ -143,9 +146,9 @@ function PayoffTooltip({
 	// figures come from, where the recorded line's own points repeat a month.
 	const date = nearestDate(stops, isoOf(label));
 	const values = chart.visible.flatMap((key) => {
-		const point = pointNear(chart[key], date);
+		const point = pointNear<TooltipPoint>(chart[key], date);
 
-		return point === undefined ? [] : [{ key, balance: point.balance }];
+		return point === undefined ? [] : [{ key, point }];
 	});
 
 	if (values.length === 0) {
@@ -155,13 +158,24 @@ function PayoffTooltip({
 	return (
 		<div className="grid gap-1 rounded-lg border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md">
 			<span className="text-muted-foreground">{formatTick(date, true)}</span>
-			{values.map(({ key, balance }) => (
-				<span key={key}>
-					{t(`loanChart.series.${key}`)} :{" "}
-					<span className="font-medium whitespace-nowrap tabular-nums">
-						{formatWholeMoney(balance, chart.currency)}
+			{values.map(({ key, point }) => (
+				<Fragment key={key}>
+					<span>
+						{t(`loanChart.series.${key}`)} :{" "}
+						<span className="font-medium whitespace-nowrap tabular-nums">
+							{formatWholeMoney(point.balance, chart.currency)}
+						</span>
 					</span>
-				</span>
+					{/* Sure's split of a scheduled payment, to the cent; the amount borrowed has none. */}
+					{point.principal !== undefined && point.interest !== undefined && (
+						<span className="text-muted-foreground tabular-nums">
+							{t("loanSchedule.columns.principal")} :{" "}
+							{formatMoney({ amount: point.principal, currency: chart.currency })} ·{" "}
+							{t("loanSchedule.columns.interest")} :{" "}
+							{formatMoney({ amount: point.interest, currency: chart.currency })}
+						</span>
+					)}
+				</Fragment>
 			))}
 		</div>
 	);
@@ -201,13 +215,12 @@ function Chart({ chart }: { chart: LoanPayoffChartData }) {
 	const from = atMidnight(chart.from);
 	const to = atMidnight(chart.to);
 	const longRange = (to - from) / DAY_MS > LONG_RANGE_DAYS;
+	const balances = rows
+		.flatMap((row) => chart.visible.map((key) => row[key]))
+		.filter((value) => value !== undefined);
 	// From zero, as Sure's axis: a balance owed reads against nothing owed.
-	const ticks = axisTicks([
-		0,
-		...rows
-			.flatMap((row) => chart.visible.map((key) => row[key]))
-			.filter((value) => value !== undefined),
-	]);
+	const domain = loanDomain(balances, chart.currency);
+	const ticks = axisTicks(domain, chart.currency, balances);
 	const shown = new Set(chart.visible);
 	const scheduledDates = chart.scheduled
 		.map((point) => point.date)
@@ -270,7 +283,7 @@ function Chart({ chart }: { chart: LoanPayoffChartData }) {
 						tickFormatter={(value: number) => formatTick(isoOf(value), longRange)}
 					/>
 					<YAxis
-						domain={[ticks.at(0) ?? 0, ticks.at(-1) ?? "auto"]}
+						domain={[...domain]}
 						ticks={ticks}
 						allowDataOverflow
 						tickLine={false}
