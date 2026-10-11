@@ -1,10 +1,12 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
+import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 
 import { deps, openAccount, temp, useRecurringDatabase } from "../testing/recurring.ts";
-import { accountsNamed } from "./names.ts";
+import { createAccount } from "./ledger/accounts.ts";
+import { accountsNamed, fundableAccountsNamed } from "./names.ts";
 
 useRecurringDatabase("2026-09-21T10:00:00Z");
 
@@ -34,5 +36,37 @@ describe("accountsNamed", () => {
 		await temp.db.update(accounts).set({ active: false }).where(eq(accounts.id, shown));
 
 		await expect(accountsNamed(deps(), "Compte EUR")).resolves.toEqual([]);
+	});
+});
+
+describe("fundableAccountsNamed", () => {
+	it("finds every active account a goal may take by its exact name, a shared name giving both", async () => {
+		const euros = await openAccount("EUR");
+		const [first, second] = [await openAccount("USD"), await openAccount("USD")];
+		const hidden = await openAccount("EUR");
+		await temp.db.update(accounts).set({ active: false }).where(eq(accounts.id, hidden));
+		await createAccount(
+			deps(),
+			{
+				name: "Compte EUR",
+				type: "credit_card",
+				subtype: null,
+				currency: "EUR",
+				openingBalance: toMinorUnits(0),
+				openingDate: "2026-01-01",
+			},
+			{ origin: "user" },
+		);
+
+		await expect(fundableAccountsNamed(deps(), ["Compte EUR"])).resolves.toEqual([
+			{ id: euros, name: "Compte EUR", currency: "EUR" },
+		]);
+		await expect(fundableAccountsNamed(deps(), ["compte eur"])).resolves.toEqual([]);
+		await expect(
+			fundableAccountsNamed(deps(), ["Compte USD", "Compte USD"]).then((rows) =>
+				rows.map((row) => row.id).toSorted(),
+			),
+		).resolves.toEqual([first, second].toSorted());
+		await expect(fundableAccountsNamed(deps(), [])).resolves.toEqual([]);
 	});
 });

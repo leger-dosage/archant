@@ -429,6 +429,20 @@ export async function findTransactions(
 	return { ...page, ...totals };
 }
 
+/**
+ * The transactions `ids` names, in that order, as the list shows them; an
+ * unknown id is absent. One read, for the rows a tool answers beside what a
+ * service gave it by id.
+ */
+export async function transactionsById(
+	deps: ServiceDeps,
+	ids: readonly string[],
+): Promise<TransactionRecord[]> {
+	const rows = new Map((await listTransactionsById(deps, ids)).map((row) => [row.id, row]));
+
+	return ids.flatMap((id) => rows.get(id) ?? []);
+}
+
 /** Transactions whose labels read the same, case, accents and spaces aside. */
 export type LabelGroup = {
 	/** The label most of them carry, as the bank wrote it. */
@@ -441,9 +455,6 @@ export type LabelGroup = {
 	/** The categories its transactions carry, `null` for uncategorised ones first. */
 	categoryIds: (string | null)[];
 };
-
-/** Past this a list of groups is no longer read through; `groupCount` says how many there are. */
-const MAX_LABEL_GROUPS = 100;
 
 type GroupDraft = Omit<LabelGroup, "label" | "categoryIds"> & {
 	labels: Map<string, number>;
@@ -472,12 +483,12 @@ const nullFirst = (a: string | null, b: string | null) =>
  * The transactions matching the list's filter, grouped by label as Sure's
  * « Catégoriser » offers them: case, accents and spaces aside, each currency
  * and each sign apart, as Sure keeps income and expenses apart. The largest
- * groups first, `MAX_LABEL_GROUPS` at most, with how many there are.
+ * groups first, every one of them: the assistant reads them a page at a time.
  */
 export async function groupTransactionsByLabel(
 	deps: ServiceDeps,
 	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
-): Promise<{ groups: LabelGroup[]; groupCount: number }> {
+): Promise<LabelGroup[]> {
 	const rows = await sumTransactionsByLabel(deps, await filterOf(deps, query));
 	const drafts = new Map<string, GroupDraft>();
 
@@ -514,7 +525,7 @@ export async function groupTransactionsByLabel(
 				a.total - b.total,
 		);
 
-	return { groups: groups.slice(0, MAX_LABEL_GROUPS), groupCount: groups.length };
+	return groups;
 }
 
 /**

@@ -10,20 +10,29 @@ import {
 	CSV_SIGNS,
 } from "@archant/data/csv-mapping";
 import type { MinorUnits } from "@archant/data/money";
-import { toDecimalString } from "@archant/data/money";
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 
 import {
 	MAX_ASSISTANT_FILE_BYTES,
 	confirmImportInput,
-	importBankStatementInput,
+	importStatementFileInput,
 	previewImportInput,
 } from "../schemas/assistants.ts";
 import { confirmImport, createImport, previewImport } from "../services/imports.ts";
-import { BANK_TEXT, CREATES, DESTROYS, SETS, decimal, defineTool } from "./tool.ts";
+import {
+	BANK_TEXT,
+	CREATES,
+	DESTROYS,
+	SETS,
+	decimalOf,
+	defineTool,
+	formatMoney,
+	formatted,
+	pluralize,
+} from "./tool.ts";
 
-/** As many lines as Sure's `import_bank_statement` previews, in each group here. */
-const LINES_PER_GROUP = 5;
+/** As many lines as Sure's `import_bank_statement` previews. */
+const PREVIEWED_LINES = 5;
 
 /** The records after a mapping's skipped lines and header that a CSV sample shows. */
 const SAMPLE_RECORDS = 10;
@@ -49,16 +58,23 @@ const countsOutput = z.object({
 	rejected: z.number().int().describe("Lines the account cannot hold or the file could not read."),
 });
 
+/** A line to create as Sure's `import_bank_statement` previews what it extracted. */
 const lineOutput = z.object({
 	date: z.string(),
+	amount: z
+		.string()
+		.describe(
+			'Sure\'s decimal text in the statement\'s sign, such as "-12.5" for money out, "2000.0" for money in.',
+		),
 	name: z.string().describe("The line's label."),
-	amount: decimal("The line's amount, negative for money out,"),
+	category: z.null().describe("Always null: Archant reads no category from the file."),
+	notes: z.string().nullable().describe("The memo the file gives; null when it gives none."),
 });
 
 const rejectedOutput = z.object({
 	date: z.string().nullable().describe("null when the file could not read the line."),
 	name: z.string().nullable(),
-	amount: decimal("The line's amount,").nullable(),
+	amount: formatted("The line's amount, negative for money out").nullable(),
 	reason: z
 		.string()
 		.describe(
@@ -77,20 +93,34 @@ const mappingOutput = z.object({
 });
 
 const previewOutput = z.object({
+	success: z.literal(true),
 	import_id: z.string(),
-	filename: z.string(),
-	source: z.string().describe('The format read: "ofx", "qif" or "csv".'),
-	currency: z.string().describe("The account's currency, every amount here is in it."),
+	transaction_count: z.number().int().describe("The lines read, rejected ones left out."),
+	transactions_preview: z
+		.array(lineOutput)
+		.describe(
+			`The first ${PREVIEWED_LINES} lines confirm_import would create, in the file's order.`,
+		),
+	statement_period: z
+		.object({ start_date: z.string(), end_date: z.string() })
+		.partial()
+		.describe("The first and last dates of the lines read; {} when none is."),
+	message: z.string(),
 	counts: countsOutput.describe("What confirm_import takes as expected_counts."),
-	lines: z
-		.object({
-			created: z.array(lineOutput),
-			present: z.array(lineOutput),
-			matched: z.array(lineOutput),
-			duplicates: z.array(lineOutput),
-			rejected: z.array(rejectedOutput),
-		})
-		.describe(`Up to ${LINES_PER_GROUP} lines of each group, in the file's order.`),
+	rejected_lines: z
+		.array(rejectedOutput)
+		.describe(`Up to ${PREVIEWED_LINES} rejected lines, in the file's order.`),
+	duplicate_lines: z
+		.array(
+			z.object({
+				date: z.string(),
+				name: z.string().describe("The line's label."),
+				amount: formatted("The line's amount, negative for money out"),
+			}),
+		)
+		.describe(
+			`Up to ${PREVIEWED_LINES} possible duplicates, in the file's order: lines close to two transactions already there, created anyway and flagged for the owner to check; transactions_preview lists them among the lines to create.`,
+		),
 	opening_suggestion: z
 		.string()
 		.nullable()
@@ -98,7 +128,7 @@ const previewOutput = z.object({
 			"The opening date that would let in the lines refused as BEFORE_OPENING_DATE, to pass to preview_import as move_opening_date if the owner agrees; null when none is.",
 		),
 	opening: z
-		.object({ date: z.string(), balance: decimal("The opening balance then") })
+		.object({ date: z.string(), balance: formatted("The opening balance then") })
 		.nullable()
 		.describe(
 			"The opening date and balance confirm sets, the balance on the current opening date unchanged; null when it stays.",
@@ -111,9 +141,11 @@ const previewOutput = z.object({
 					'"recorded": confirm records the file\'s closing balance as a snapshot on its date; "present": that snapshot is there already; "kept": the owner recorded another balance that day, which stays, gap apart; "skipped": not recorded, for reason.',
 				),
 			date: z.string(),
-			balance: decimal("The file's closing balance, as stored: what a liability owes is positive,"),
-			recorded: decimal("The balance the owner recorded that day,").optional(),
-			gap: decimal("balance minus recorded").optional(),
+			balance: formatted(
+				"The file's closing balance, as stored: what a liability owes is positive",
+			),
+			recorded: formatted("The balance the owner recorded that day").optional(),
+			gap: formatted("balance minus recorded").optional(),
 			reason: z
 				.string()
 				.optional()
@@ -172,17 +204,28 @@ function mappingOf(mapping: CsvMapping): z.input<typeof mappingOutput> {
 
 function previewOf(preview: ImportPreview): PreviewOutput {
 	const { currency, groups, statementBalance } = preview;
-	const money = (amount: MinorUnits) => toDecimalString({ amount, currency });
-	const lines = (group: ImportPreview["groups"]["created"]) =>
-		group
-			.slice(0, LINES_PER_GROUP)
-			.map((line) => ({ date: line.date, name: line.label, amount: money(line.amount) }));
+	const money = (amount: MinorUnits) => formatMoney({ amount, currency });
+	const read = [...groups.created, ...groups.present, ...groups.matched, ...groups.duplicates];
+	const toCreate = [...groups.created, ...groups.duplicates].toSorted(
+		(a, b) => Number(a.ref) - Number(b.ref),
+	);
+	const dates = read.map((line) => line.date).toSorted();
+	const [start, end] = [dates.at(0), dates.at(-1)];
 
 	return {
+		success: true,
 		import_id: preview.id,
-		filename: preview.fileName,
-		source: preview.source,
-		currency,
+		transaction_count: read.length,
+		transactions_preview: toCreate.slice(0, PREVIEWED_LINES).map((line) => ({
+			date: line.date,
+			amount: decimalOf({ amount: line.amount, currency }),
+			name: line.label,
+			category: null,
+			notes: line.notes,
+		})),
+		statement_period:
+			start === undefined || end === undefined ? {} : { start_date: start, end_date: end },
+		message: `Successfully extracted ${read.length} transactions. Import created with ID: ${preview.id}. Review and publish when ready.`,
 		counts: {
 			created: groups.created.length,
 			present: groups.present.length,
@@ -190,18 +233,17 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 			duplicates: groups.duplicates.length,
 			rejected: groups.rejected.length,
 		},
-		lines: {
-			created: lines(groups.created),
-			present: lines(groups.present),
-			matched: lines(groups.matched),
-			duplicates: lines(groups.duplicates),
-			rejected: groups.rejected.slice(0, LINES_PER_GROUP).map(({ line, reason }) => ({
-				date: line?.date ?? null,
-				name: line?.label ?? null,
-				amount: line === null ? null : money(line.amount),
-				reason,
-			})),
-		},
+		rejected_lines: groups.rejected.slice(0, PREVIEWED_LINES).map(({ line, reason }) => ({
+			date: line?.date ?? null,
+			name: line?.label ?? null,
+			amount: line === null ? null : money(line.amount),
+			reason,
+		})),
+		duplicate_lines: groups.duplicates.slice(0, PREVIEWED_LINES).map((line) => ({
+			date: line.date,
+			name: line.label,
+			amount: money(line.amount),
+		})),
 		opening_suggestion: preview.openingSuggestion,
 		opening:
 			preview.opening === null
@@ -240,15 +282,15 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 	};
 }
 
-const PREVIEW = `Answers the import's id, the counts of each group, which confirm_import takes, up to ${LINES_PER_GROUP} lines of each, what confirming does with the opening date and the file's closing balance, and for a CSV file a sample of its records with the column mapping; nothing reaches the account until confirm_import.`;
+const PREVIEW = `Answers Sure's import_bank_statement keys: the import's id, how many lines it read, the first ${PREVIEWED_LINES} lines it would create and the statement's period; then the counts of each group, which confirm_import takes, up to ${PREVIEWED_LINES} rejected lines, what confirming does with the opening date and the file's closing balance, amounts formatted, and for a CSV file a sample of its records with the column mapping. Nothing reaches the account until confirm_import.`;
 
-export const importBankStatementTool = defineTool({
-	name: "import_bank_statement",
-	title: "Import a bank statement",
-	description: `Reads a statement file the owner's bank exported, OFX, QIF or CSV, into a preview for one account, as the import dialog does in Archant: the same format detection, the same recognition of lines already there, and for a CSV the column mapping the account's last CSV import saved, when the file has its columns. A CSV with no saved mapping answers empty groups until preview_import gives one. ${PREVIEW} A file above ${MAX_ASSISTANT_FILE_BYTES / 1024 / 1024} MB once decoded, or one no format reads, answers invalid_import_file; the owner imports a larger file through the dialog. An unconfirmed preview is deleted after 24 hours. ${BANK_TEXT}`,
+export const importStatementFileTool = defineTool({
+	name: "import_statement_file",
+	title: "Import a statement file",
+	description: `Reads a statement file the owner's bank exported, OFX, QIF or CSV, into a preview for one account, as the import dialog does in Archant: the same format detection, the same recognition of lines already there, and for a CSV the column mapping the account's last CSV import saved, when the file has its columns. A CSV with no saved mapping reads no line until preview_import gives one. ${PREVIEW} A file above ${MAX_ASSISTANT_FILE_BYTES / 1024 / 1024} MB once decoded, or one no format reads, answers invalid_import_file; the owner imports a larger file through the dialog. An unconfirmed preview is deleted after 24 hours. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
-	input: importBankStatementInput,
+	input: importStatementFileInput,
 	output: previewOutput,
 	run: async (deps, { account_id: accountId, filename, content_base64: bytes }) => {
 		const preview = await createImport(
@@ -303,14 +345,19 @@ export const confirmImportTool = defineTool({
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: confirmImportInput,
-	output: z.object({ import_id: z.string(), counts: countsOutput }),
+	output: z.object({ success: z.literal(true), counts: countsOutput, message: z.string() }),
 	run: async (deps, { import_id: importId, expected_counts: expectedCounts }) => {
-		const { id, counts } = await confirmImport(deps, importId, expectedCounts);
+		const { counts } = await confirmImport(deps, importId, expectedCounts);
+		const imported = counts.created + counts.duplicates + counts.matched;
 
 		return {
-			result: { import_id: id, counts },
+			result: {
+				success: true as const,
+				counts,
+				message: `Imported ${pluralize(imported, "transaction")}: ${counts.matched} matched, ${counts.duplicates} flagged as possible duplicates.`,
+			},
 			// Rows written or linked to the file; the lines already present change nothing.
-			changedRows: counts.created + counts.duplicates + counts.matched,
+			changedRows: imported,
 		};
 	},
 });

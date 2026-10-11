@@ -122,10 +122,6 @@ export function pageOf<Item>(items: readonly Item[], page: number, pageSize: num
 	};
 }
 
-/** An amount in an output: a decimal string, never a JSON number that would round. */
-export const decimal = (what: string) =>
-	z.string().describe(`${what}, a decimal string such as "-12.50" in the currency beside it.`);
-
 /**
  * The error keys Sure's functions refuse with, each beside the `AppError`
  * code `assistant_calls` records for it, the one a service would have thrown.
@@ -151,12 +147,22 @@ const SURE_REFUSALS = {
 	too_many_points: "VALIDATION_ERROR",
 	invalid_params: "VALIDATION_ERROR",
 	invalid_month: "NOT_FOUND",
+	target_amount_invalid: "VALIDATION_ERROR",
+	no_linked_accounts: "VALIDATION_ERROR",
+	unknown_accounts: "VALIDATION_ERROR",
+	ambiguous_accounts: "VALIDATION_ERROR",
+	currency_mismatch: "VALIDATION_ERROR",
+	account_claimed_in_full: "VALIDATION_ERROR",
 } as const satisfies Record<string, ErrorCode>;
 
 export type SureRefusal = keyof typeof SURE_REFUSALS;
 
+/**
+ * What a refusal answers. Sure's `create_goal` adds its own keys after
+ * `message`, such as `available_accounts`.
+ */
 type RefusalBody =
-	| { success: false; error: SureRefusal; message: string }
+	| ({ success: false; error: SureRefusal; message: string } & Record<string, unknown>)
 	| { error: SureRefusal; message: string; unknown_ids?: string[] }
 	| { error: string; hint: string };
 
@@ -177,9 +183,16 @@ export class ToolRefusal extends Error {
 	}
 }
 
-/** Refuses as Sure's `error(key, message)` helpers answer. */
-export function refuse(error: SureRefusal, message: string): never {
-	throw new ToolRefusal({ success: false, error, message }, SURE_REFUSALS[error]);
+/**
+ * Refuses as Sure's `error(key, message, extras)` helpers answer, the
+ * extras after the message, as Sure's `merge` puts them.
+ */
+export function refuse(
+	error: SureRefusal,
+	message: string,
+	extras: Readonly<Record<string, unknown>> = {},
+): never {
+	throw new ToolRefusal({ success: false, error, message, ...extras }, SURE_REFUSALS[error]);
 }
 
 /**
@@ -354,6 +367,11 @@ export function decimalOf(money: Money): string {
 	const trimmed = exact.replace(/0+$/u, "");
 
 	return trimmed.endsWith(".") ? `${trimmed}0` : trimmed;
+}
+
+/** Rails' `pluralize(count, word)`: « 1 transaction », « 0 transactions ». */
+export function pluralize(count: number, word: string): string {
+	return `${count} ${count === 1 ? word : `${word}s`}`;
 }
 
 /** A decimal text as Sure's `BigDecimal(value.to_s)` reads it: a sign, digits, a fraction. */

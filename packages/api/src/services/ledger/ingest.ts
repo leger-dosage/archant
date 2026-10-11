@@ -134,6 +134,8 @@ type PreviewLine = {
 	date: IsoDate;
 	amount: MinorUnits;
 	label: string;
+	/** The memo the file gives beside the label; `null` when it gives none. */
+	notes: string | null;
 	entryId: string | null;
 };
 
@@ -281,6 +283,7 @@ function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): Prev
 		date: line.date,
 		amount: line.amount,
 		label: line.label,
+		notes: line.notes,
 		entryId: rest.entryId ?? null,
 	};
 }

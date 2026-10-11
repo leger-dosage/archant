@@ -9,7 +9,12 @@ import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryColor, CategoryIcon } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
-import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
+import {
+	FUNDABLE_ACCOUNT_TYPES,
+	RELEASED_GOAL_STATES,
+	canBackGoal,
+	goalTransition,
+} from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -256,22 +261,11 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
 }
 
 /**
- * Every goal as `/goals` lists them, and the dashboard's card summed from
- * that same read, so an assistant never sees totals that disagree with the
- * goals beside them. Reads only.
- */
-export async function getGoalsOverview(deps: ServiceDeps) {
-	const all = await listGoals(deps);
-
-	return { goals: all, summary: goalsSummary(all, getReportingCurrency()) };
-}
-
-/**
  * The dashboard's card: the goals that hold their money, summed in the
  * reporting currency, as Sure's Plan card. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
-	return (await getGoalsOverview(deps)).summary;
+	return goalsSummary(await listGoals(deps), getReportingCurrency());
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
@@ -308,6 +302,59 @@ export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<Goa
 		to: date,
 		points: goalSeries({ goalId: id, from, to: date, accounts: accountsSeries }),
 	};
+}
+
+/** An account a new goal could take, as Sure's `create_goal` lists it for the assistant. */
+export type GoalAccountChoice = {
+	id: string;
+	name: string;
+	currency: string;
+	/**
+	 * What a new goal could still reserve, as Sure's `free_to_earmark`: the
+	 * balance today less the fixed amounts the goals holding their money
+	 * reserve on it, negative when they reserve more; zero once one of them
+	 * takes it whole.
+	 */
+	freeToEarmark: MinorUnits;
+	/** A goal holding its money takes its whole balance: a new goal needs a fixed amount of it. */
+	claimedInFull: boolean;
+};
+
+/**
+ * Every active account a goal may take, by name, with what a new goal could
+ * still reserve on it, as Sure's `depository_account_payload`. Reads only.
+ */
+export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccountChoice[]> {
+	const date = today(deps.timeZone);
+	const [rows, links] = await Promise.all([
+		deps.db
+			.select({ id: accounts.id, name: accounts.name, currency: accounts.currency })
+			.from(accounts)
+			.where(and(eq(accounts.active, true), inArray(accounts.type, [...FUNDABLE_ACCOUNT_TYPES]))),
+		deps.db
+			.select({ accountId: goalAccounts.accountId, allocatedAmount: goalAccounts.allocatedAmount })
+			.from(goalAccounts)
+			.innerJoin(goals, eq(goals.id, goalAccounts.goalId))
+			.where(notInArray(goals.state, [...RELEASED_GOAL_STATES])),
+	]);
+	const choices = await Promise.all(
+		rows.map(async (row): Promise<GoalAccountChoice> => {
+			const own = links.filter((link) => link.accountId === row.id);
+			const claimedInFull = own.some((link) => link.allocatedAmount === null);
+			const reserved = own.reduce((sum, link) => sum + (link.allocatedAmount ?? 0), 0);
+			const balance = claimedInFull ? null : await balanceOn(deps, row.id, date);
+
+			return {
+				...row,
+				freeToEarmark: toMinorUnits(
+					claimedInFull ? 0 : (balance?.amount ?? toMinorUnits(0)) - reserved,
+				),
+				claimedInFull,
+			};
+		}),
+	);
+
+	return choices.toSorted((a, b) => byName.compare(a.name, b.name));
 }
 
 /** A stored currency as the schema reads amounts in; the reporting one if it is no longer known. */

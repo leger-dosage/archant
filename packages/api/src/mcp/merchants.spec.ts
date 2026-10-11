@@ -7,7 +7,7 @@ import { assistantCalls } from "@archant/data/schema/assistant-calls";
 
 import { createLogger } from "../lib/logger.ts";
 import { ownDatabase, sendOwn, template, useSignedInApp } from "../testing/app.ts";
-import { READ_WRITE, callTool, connect, registerClient } from "../testing/assistant.ts";
+import { READ_WRITE, answerOf, callTool, connect, registerClient } from "../testing/assistant.ts";
 import { buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
@@ -60,5 +60,59 @@ describe("get_merchants", () => {
 
 		expect(clamped.isError).toBeUndefined();
 		expect(clamped.structuredContent).toMatchObject({ page: 1, page_size: 100 });
+	});
+});
+
+describe("create_merchant and rename_merchant", () => {
+	it("answer Sure's { success, merchant, message }, as create_tag and update_tag", async () => {
+		const tools = await assistants();
+
+		const created = await tools.write("create_merchant", { name: "Boulangerie Dupain" });
+		const merchant = z
+			.object({ merchant: z.object({ id: z.string() }) })
+			.parse(created.structuredContent).merchant;
+		const renamed = await tools.write("rename_merchant", {
+			merchant_id: merchant.id,
+			name: "Boulangerie Martin",
+		});
+
+		expect(Object.keys(created.structuredContent ?? {})).toEqual([
+			"success",
+			"merchant",
+			"message",
+		]);
+		expect(created.structuredContent).toEqual({
+			success: true,
+			merchant: { id: merchant.id, name: "Boulangerie Dupain", source: "family" },
+			message: "Merchant 'Boulangerie Dupain' created.",
+		});
+		expect(renamed.structuredContent).toEqual({
+			success: true,
+			merchant: { id: merchant.id, name: "Boulangerie Martin", source: "family" },
+			message: "Merchant 'Boulangerie Martin' updated.",
+		});
+	});
+
+	it("refuse a name another merchant holds, case aside, as Sure's validation_failed, writing nothing", async () => {
+		const tools = await assistants();
+		await tools.write("create_merchant", { name: "Picard" });
+		const other = z
+			.object({ merchant: z.object({ id: z.string() }) })
+			.parse((await tools.write("create_merchant", { name: "Lidl" })).structuredContent).merchant;
+
+		const taken = await tools.write("create_merchant", { name: "PICARD" });
+		const renamed = await tools.write("rename_merchant", { merchant_id: other.id, name: "picard" });
+		const refusal = {
+			success: false,
+			error: "validation_failed",
+			message: "Name has already been taken",
+		};
+
+		expect(taken.isError).toBe(true);
+		expect(answerOf(taken)).toEqual(refusal);
+		expect(answerOf(renamed)).toEqual(refusal);
+		expect((await tools.read("get_merchants")).structuredContent).toMatchObject({
+			merchants: [{ id: other.id, name: "Lidl" }, { name: "Picard" }],
+		});
 	});
 });

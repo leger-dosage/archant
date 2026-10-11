@@ -478,6 +478,20 @@ export async function confirmTransfer(
 /** The two sides a transfer joined, as an unpair gives them back. */
 export type TransferSides = Pick<Transfer, "outflowTransactionId" | "inflowTransactionId">;
 
+/** A transfer's status, `undefined` when no transfer has this id. Reads only. */
+export async function transferStatusOf(
+	deps: ServiceDeps,
+	transferId: string,
+): Promise<Transfer["status"] | undefined> {
+	const row = await deps.db
+		.select({ status: transfers.status })
+		.from(transfers)
+		.where(eq(transfers.id, transferId))
+		.get();
+
+	return row?.status;
+}
+
 const sidesColumns = {
 	outflowTransactionId: transfers.outflowTransactionId,
 	inflowTransactionId: transfers.inflowTransactionId,

@@ -1184,12 +1184,12 @@ describe("get_transactions by Sure's names", () => {
 		});
 
 		expect(grouped.structuredContent).toMatchObject({
-			groups: [{ label: "Pain", categories: [{ id: food, name: "Alimentation" }] }],
-			group_count: 1,
+			groups: [{ label: "Pain", categories: ["Alimentation"] }],
+			total_results: 1,
 		});
 		expect(uncategorised.structuredContent).toMatchObject({
 			groups: [{ label: "Divers" }],
-			group_count: 1,
+			total_results: 1,
 		});
 		expect(errorText(bulk)).toContain("filter.accounts unrecognized_keys");
 	});

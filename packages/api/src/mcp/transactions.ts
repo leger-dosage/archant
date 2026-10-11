@@ -7,7 +7,7 @@ import type { SureRefusal } from "./tool.ts";
 import { z } from "zod";
 
 import type { Money, MinorUnits } from "@archant/data/money";
-import { isCurrencyCode, toDecimalString, toMinorUnits } from "@archant/data/money";
+import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
 import { TRANSFER_KINDS, TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
 
@@ -38,13 +38,14 @@ import {
 	DESTROYS,
 	READ_ONLY,
 	REPLACES,
-	decimal,
 	decimalOf,
 	defineTool,
 	formatMoney,
 	namedRef,
 	pageFieldsOf,
+	pageOf,
 	pageOutput,
+	pluralize,
 	refuse,
 	sureDecimalText,
 } from "./tool.ts";
@@ -60,7 +61,7 @@ const classificationOf = (amount: MinorUnits): z.output<typeof classifications> 
  * its sign, which `classification` gives, and its account, category,
  * merchant and tags by name.
  */
-const transaction = z.object({
+export const transaction = z.object({
 	id: z.string(),
 	name: z.string().describe("The label the line shows."),
 	date: z.string(),
@@ -85,7 +86,10 @@ const transaction = z.object({
 });
 
 /** The names every transaction of an answer points to, read once for all of them. */
-async function namesFor(deps: ServiceDeps, items: readonly TransactionRecord[]): Promise<NameBook> {
+export async function namesFor(
+	deps: ServiceDeps,
+	items: readonly TransactionRecord[],
+): Promise<NameBook> {
 	return namesOf(deps, {
 		accounts: items.map((item) => item.accountId),
 		categories: items.flatMap((item) => (item.categoryId === null ? [] : [item.categoryId])),
@@ -95,10 +99,10 @@ async function namesFor(deps: ServiceDeps, items: readonly TransactionRecord[]):
 }
 
 /** A name an id names, or the id itself for a row deleted since. */
-const nameOf = (names: ReadonlyMap<string, string>, id: string) => names.get(id) ?? id;
+export const nameOf = (names: ReadonlyMap<string, string>, id: string) => names.get(id) ?? id;
 
 /** A transaction as get_transactions lists it. */
-function itemOf(item: TransactionRecord, names: NameBook): z.input<typeof transaction> {
+export function itemOf(item: TransactionRecord, names: NameBook): z.input<typeof transaction> {
 	const magnitude = { amount: toMinorUnits(Math.abs(item.amount)), currency: item.currency };
 
 	return {
@@ -163,7 +167,7 @@ export const getTransactions = defineTool({
 export const groupTransactionLabels = defineTool({
 	name: "group_transactions_by_label",
 	title: "Transactions grouped by label",
-	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, 100 at most, with how many groups there are. Each group gives the label most of its transactions carry, their count, signed total and last date, and the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category_ids ["none"], or categories ["Uncategorized"], keeps the uncategorised ones. ${BANK_TEXT}`,
+	description: `Every transaction of an active account matching the filter, grouped by label with case, accents and spaces aside, money in and money out and each currency apart: the largest groups first, a page at a time as Sure's get_categories. Each group gives the label most of its transactions carry, their count, their total without its sign as Sure's decimal text and formatted, the classification saying income or expense, their last date, and the names of the categories they carry, null for uncategorised. Start here to find what a rule should clean up; category_ids ["none"], or categories ["Uncategorized"], keeps the uncategorised ones. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: groupTransactionsInput,
@@ -172,31 +176,54 @@ export const groupTransactionLabels = defineTool({
 			z.object({
 				label: z.string(),
 				count: z.number().int(),
-				total: decimal("Signed"),
+				total: z
+					.string()
+					.describe(
+						'The absolute total as Sure\'s decimal text, such as "125.5"; classification gives its side.',
+					),
+				formatted_total: z.string().describe('The absolute total formatted, such as "125,50 €".'),
+				classification: classifications.describe("income for money in, expense for money out."),
 				currency: z.string(),
 				last_date: z.string(),
-				categories: z.array(namedRef.nullable()).describe("null for uncategorised."),
+				categories: z
+					.array(z.string().nullable())
+					.describe("The categories' names; null for uncategorised."),
 			}),
 		),
-		group_count: z.number().int(),
+		...pageOutput,
 	}),
-	run: async (deps, input) => {
-		const { groups, groupCount } = await groupTransactionsByLabel(deps, input);
+	run: async (deps, { filter, page, pageSize }) => {
+		const { items, ...fields } = pageOf(
+			await groupTransactionsByLabel(deps, filter),
+			page,
+			pageSize,
+		);
 		const names = await namesOf(deps, {
-			categories: groups.flatMap((group) => group.categoryIds.filter((id) => id !== null)),
+			categories: items.flatMap((group) => group.categoryIds.filter((id) => id !== null)),
 		});
 
 		return {
 			result: {
-				groups: groups.map((group) => ({
-					label: group.label,
-					count: group.count,
-					total: toDecimalString({ amount: group.total, currency: group.currency }),
-					currency: group.currency,
-					last_date: group.lastDate,
-					categories: group.categoryIds.map((id) => refOf(names.categories, id)),
-				})),
-				group_count: groupCount,
+				groups: items.map((group) => {
+					const magnitude = {
+						amount: toMinorUnits(Math.abs(group.total)),
+						currency: group.currency,
+					};
+
+					return {
+						label: group.label,
+						count: group.count,
+						total: decimalOf(magnitude),
+						formatted_total: formatMoney(magnitude),
+						classification: classificationOf(group.total),
+						currency: group.currency,
+						last_date: group.lastDate,
+						categories: group.categoryIds.map((id) =>
+							id === null ? null : nameOf(names.categories, id),
+						),
+					};
+				}),
+				...fields,
 			},
 			changedRows: 0,
 		};
@@ -406,13 +433,15 @@ export const updateTransactionTool = defineTool({
 export const bulkUpdateTransactionsTool = defineTool({
 	name: "bulk_update_transactions",
 	title: "Classify transactions in bulk",
-	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers bulk_count_stale with the count now. Each field it changes is locked against rules. Returns how many transactions were matched and how many changed.`,
+	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers bulk_count_stale with the count now. Each field it changes is locked against rules. Answers { success, matched, changed, message }: how many transactions were matched and how many changed.`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: bulkUpdateTransactionsInput,
 	output: z.object({
+		success: z.literal(true),
 		matched: z.number().int().describe("Transactions selected, unchanged ones included."),
 		changed: z.number().int().describe("Transactions whose fields changed."),
+		message: z.string(),
 	}),
 	run: async (deps, { ids, filter, expected_count: expectedCount, patch }) => {
 		const selection = ids === undefined ? { filter: filter ?? {} } : { ids };
@@ -422,7 +451,15 @@ export const bulkUpdateTransactionsTool = defineTool({
 			{ expectedCount },
 		);
 
-		return { result: { matched: updated, changed }, changedRows: changed };
+		return {
+			result: {
+				success: true as const,
+				matched: updated,
+				changed,
+				message: `Updated ${pluralize(changed, "transaction")}.`,
+			},
+			changedRows: changed,
+		};
 	},
 });
 

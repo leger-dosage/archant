@@ -299,8 +299,15 @@ describe("ingest from an import", () => {
 		const { result } = await preview(account.id, statementOf(cafe, salary));
 
 		expect(result.groups.created).toEqual([
-			{ ref: "0", date: "2026-09-10", amount: -4290, label: "CB Café", entryId: null },
-			{ ref: "1", date: "2026-09-12", amount: 215000, label: "VIR SALAIRE", entryId: null },
+			{ ref: "0", date: "2026-09-10", amount: -4290, label: "CB Café", notes: null, entryId: null },
+			{
+				ref: "1",
+				date: "2026-09-12",
+				amount: 215000,
+				label: "VIR SALAIRE",
+				notes: null,
+				entryId: null,
+			},
 		]);
 		expect(counts(result)).toEqual({
 			created: 2,

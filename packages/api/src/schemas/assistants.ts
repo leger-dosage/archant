@@ -54,23 +54,8 @@ const looseInteger = z.union([z.number(), z.string()]);
 /** A flag Sure reads through its allowlist: a JSON boolean, or `"true"`, `"t"`, `"1"`, `1` and their false twins. */
 const looseBoolean = z.union([z.boolean(), z.string(), z.number()]);
 
-/** The input of a tool that takes none: an assistant may send `{}`, nothing more. */
-export const noToolInput = z.strictObject({});
-
 /** The page an assistant reads at once: a list page of the interface, no more. */
 const MAX_TOOL_PAGE_SIZE = 100;
-
-/** Sure's `page` and `page_size`, 50 a page by default. */
-const pageFields = {
-	page: z.number().int().min(1).default(1).describe("Page number, 1 by default."),
-	page_size: z
-		.number()
-		.int()
-		.min(1)
-		.max(MAX_TOOL_PAGE_SIZE)
-		.default(50)
-		.describe(`Results per page, 50 by default, ${MAX_TOOL_PAGE_SIZE} at most.`),
-};
 
 /**
  * A page argument as Sure's `to_i` reads text: its leading whole number, or 0
@@ -547,11 +532,18 @@ export const getTransactionsInput = z
 		},
 	);
 
-/** `group_transactions_by_label`: the list's filter, every matching transaction grouped. */
+/**
+ * `group_transactions_by_label`: the list's filter, every matching
+ * transaction grouped, the groups a page at a time as Sure's `get_categories`.
+ */
 export const groupTransactionsInput = z
-	.strictObject(toolFilterFields)
+	.strictObject({ ...toolFilterFields, ...clampedPageFields })
 	.superRefine(checkToolFilter)
-	.transform((filter) => parseBounds(listFilterOf(filter)));
+	.transform(({ page, page_size: pageSize, ...filter }) => ({
+		filter: parseBounds(listFilterOf(filter)),
+		page,
+		pageSize,
+	}));
 
 /**
  * The filter `bulk_update_transactions` writes through: by id only, and
@@ -566,11 +558,8 @@ const bulkFilterInput = z
 		...amountFilterOf(amount, operator),
 	}));
 
-/** `get_rule_runs`: a page of past applications. */
-export const ruleRunsInput = z.strictObject({
-	page: pageFields.page,
-	page_size: z.number().int().min(1).max(MAX_TOOL_PAGE_SIZE).default(20),
-});
+/** `get_rule_runs`: a page of past applications, paged as Sure's `get_categories`. */
+export const ruleRunsInput = z.strictObject(clampedPageFields);
 
 const operatorsOf = <Type extends keyof typeof RULE_OPERATORS_BY_TYPE>(type: Type, what: string) =>
 	z.enum(RULE_OPERATORS_BY_TYPE[type]).describe(what);
@@ -1264,8 +1253,14 @@ const transferTransactionId = z
 	.min(1)
 	.describe("A transaction id from get_transactions, in no transfer.");
 
-/** `get_transfer_candidates`: what « Rapprocher un virement » lists for a transaction. */
-export const transferCandidatesInput = z.strictObject({ transaction_id: transferTransactionId });
+/**
+ * `get_transfer_candidates`: what « Rapprocher un virement » lists for a
+ * transaction, a page at a time as Sure's `get_categories`.
+ */
+export const transferCandidatesInput = z.strictObject({
+	transaction_id: transferTransactionId,
+	...clampedPageFields,
+});
 
 /** `pair_transfer`: the body of `POST /api/transfers`, as the picker sends it. */
 export const pairTransferInput = z.strictObject({
@@ -1326,73 +1321,58 @@ export const recordValuationInput = z.strictObject({
 });
 
 /**
- * `create_goal`: « Nouvel objectif »'s fields, accounts by id, every amount a
- * decimal string the service parses in the goal's currency, as it parses the
- * dialog's. One target: an amount, or for a reserve a number of months of
- * expenses, the dialog's two modes.
+ * `create_goal`: Sure's parameters, accounts by their exact names, then
+ * Archant's reserve. Sure's values reach `run` loosely typed, as Sure reads
+ * them, which refuses them with Sure's keys in Sure's order: a target that
+ * is not a positive number, an unreadable date ignored, earmarks that are
+ * not positive numbers dropped. Archant's own `kind` and `target_months`
+ * are checked here, `target_months` a whole number.
  */
-export const createGoalInput = z
-	.strictObject({
-		name: z.string().describe("What the owner calls the goal, such as « Vacances en Grèce »."),
-		kind: z
-			.enum(GOAL_KINDS)
-			.default("one_off")
-			.describe(
-				'"one_off" saves toward a target, by a date if one is given; "maintained" is a reserve kept full, such as an emergency fund, with no date.',
-			),
-		target_amount: z
-			.string()
-			.optional()
-			.describe(
-				'The target, a positive decimal string such as "5000.00" in the accounts\' currency. Give it, or target_months, not both.',
-			),
-		target_months: z
-			.number()
-			.int()
-			.optional()
-			.describe(
-				`A reserve only: its target is that many months of the household's median monthly expenses, 1 to ${GOAL_TARGET_MONTHS_MAX}, followed as they move, and only for accounts in the reporting currency.`,
-			),
-		target_date: z.iso
-			.date()
-			.optional()
-			.describe("YYYY-MM-DD: when the owner wants to reach the target; refused for a reserve."),
-		notes: z.string().optional(),
-		accounts: z
-			.array(
-				z.strictObject({
-					account_id: accountId.describe(
-						"An active current, savings or investment account id from get_accounts, all in one currency, which becomes the goal's.",
-					),
-					allocated_amount: z
-						.string()
-						.optional()
-						.describe(
-							'A fixed amount of the account held for this goal, a positive decimal string such as "300.00"; left out, the goal takes the whole balance, which an account allows one goal at a time.',
-						),
-				}),
-			)
-			.describe("The accounts that hold the money, at least one."),
-	})
-	.superRefine((value, context) => {
-		if (value.target_amount === undefined && value.target_months === undefined) {
-			context.addIssue({ code: "custom", path: ["target_amount"], message: "target_required" });
-		}
-
-		if (value.target_amount !== undefined && value.target_months !== undefined) {
-			context.addIssue({ code: "custom", path: ["target_months"], message: "one_target_only" });
-		}
-
-		// The dialog hides the date of a reserve and the service drops it: the
-		// owner would agree to a date nothing keeps.
-		if (value.target_date !== undefined && value.kind === "maintained") {
-			context.addIssue({ code: "custom", path: ["target_date"], message: "reserve_has_no_date" });
-		}
-
-		if (value.target_months !== undefined && value.kind !== "maintained") {
-			context.addIssue({ code: "custom", path: ["target_months"], message: "reserve_only" });
-		}
-	});
+export const createGoalInput = z.strictObject({
+	name: requiredLoose(z.string()).describe("Short goal name, e.g. 'Vacation in Italy'."),
+	target_amount: sureAmount
+		.optional()
+		.describe(
+			"Total amount to save, in the linked accounts' currency, a number or a decimal string. A reserve may give target_months instead.",
+		),
+	target_date: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			"Optional ISO 8601 date (YYYY-MM-DD) for when the user wants to reach the target; refused for a reserve.",
+		),
+	// Sure's `Array(value)`: none is an empty list, one name a list of one.
+	linked_account_names: z
+		.preprocess(
+			(value) =>
+				value === undefined || value === null ? [] : typeof value === "string" ? [value] : value,
+			z.array(z.string()),
+		)
+		.describe(
+			"Names of the household's active current, savings or investment accounts to link, exactly as get_accounts gives them, case included, all in one currency. Must contain at least one.",
+		),
+	earmarks: z
+		.record(z.string(), sureAmount)
+		.optional()
+		.describe(
+			'Optional map of account name to the amount to reserve from that account, e.g. {"Livret A": 2000}. Required for an account already claimed in full by another goal: the available accounts list says which, and how much room is left. Accounts left out of this map reserve their whole balance.',
+		),
+	notes: z.string().nullable().optional().describe("Optional freeform notes."),
+	kind: z
+		.enum(GOAL_KINDS)
+		.default("one_off")
+		.describe(
+			'Archant\'s own: "one_off" saves toward a target, by a date if one is given; "maintained" is a reserve kept full, such as an emergency fund, with no date.',
+		),
+	target_months: z
+		.number()
+		.int()
+		.optional()
+		.describe(
+			`Archant's own, a reserve only: its target is that many months of the household's median monthly expenses, 1 to ${GOAL_TARGET_MONTHS_MAX}, followed as they move, instead of target_amount, and only for accounts in the reporting currency.`,
+		),
+});
 
 /** Sure's `type`: the sign of a magnitude, money in or money out. */
 const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
@@ -1486,11 +1466,13 @@ export const deleteTransactionInput = z.strictObject({
 export const MAX_ASSISTANT_FILE_BYTES = 1024 * 1024;
 
 /**
- * `import_bank_statement`: the dialog's upload, the file in Sure's
- * `upload_account_statement` shape. Base64 only, as Sure's: a text field
+ * `import_statement_file`: the dialog's upload, the file in Sure's
+ * `upload_account_statement` shape, the account required. Not Sure's
+ * `import_bank_statement`, which reads a PDF already uploaded, though it
+ * answers its keys. Base64 only, as Sure's: a text field
  * would lose the encoding of a Windows-1252 export.
  */
-export const importBankStatementInput = z.strictObject({
+export const importStatementFileInput = z.strictObject({
 	account_id: accountId.describe("The account the statement is for, an id from get_accounts."),
 	filename: z
 		.string()
@@ -1511,7 +1493,7 @@ export const importBankStatementInput = z.strictObject({
 const importId = z
 	.string()
 	.min(1)
-	.describe("The import_id import_bank_statement gave, of an import not confirmed yet.");
+	.describe("The import_id import_statement_file gave, of an import not confirmed yet.");
 
 /**
  * A CSV column mapping as `preview_import` takes it: the dialog's « Colonnes »
