@@ -63,28 +63,19 @@ function calls() {
 		.from(assistantCalls);
 }
 
-const snapshot = z.object({
-	entry_id: z.string(),
-	date: z.string(),
-	amount: z.string(),
-	computed: z.string(),
-	gap: z.string(),
-});
+const accountRef = z.strictObject({ id: z.string(), name: z.string(), currency: z.string() });
 
-const accountRef = z.object({ id: z.string(), name: z.string(), currency: z.string() });
-
-const valuation = z.object({
+const valuation = z.strictObject({
 	entry_id: z.string(),
 	account: accountRef,
 	date: z.string(),
-	kind: z.enum(["opening_anchor", "reconciliation", "current_anchor"]),
 	amount: z.string(),
-	computed: z.string().nullable(),
-	gap: z.string().nullable(),
+	amount_formatted: z.string(),
+	kind: z.enum(["opening_anchor", "reconciliation", "current_anchor"]),
 	notes: z.string().nullable(),
 });
 
-const valuations = z.object({
+const valuations = z.strictObject({
 	valuations: z.array(valuation),
 	page: z.number(),
 	page_size: z.number(),
@@ -92,16 +83,29 @@ const valuations = z.object({
 	total_pages: z.number(),
 });
 
-const recordedValuation = snapshot.extend({
+const recordedValuation = z.strictObject({
+	success: z.literal(true),
+	entry_id: z.string(),
 	account: accountRef,
+	date: z.string(),
+	amount: z.string(),
+	amount_formatted: z.string(),
 	replaced_existing: z.boolean(),
-	provenance: z.object({
+	provenance: z.strictObject({
 		source: z.string(),
 		citation: z.string(),
 		estimated: z.boolean(),
 		grade: z.enum(["A", "B", "C"]).nullable(),
 	}),
+	message: z.string(),
 });
+
+/** Sure's `Money#format` in French, with its non-breaking spaces. */
+const euros = (text: string) => `${text.replaceAll(" ", "\u00A0")}\u00A0€`;
+
+/** The answer's text, parsed: a refusal's whole body. */
+const bodyOf = (result: { content: { text?: string }[] }) =>
+	z.unknown().parse(JSON.parse(result.content[0]?.text ?? "null"));
 
 const accountsWithSeries = z.object({
 	accounts: z.array(
@@ -142,7 +146,7 @@ async function snapshotsOf(tools: Awaited<ReturnType<typeof assistants>>, accoun
 }
 
 describe("get_valuations", () => {
-	it("lists an account's valuations, its opening balance included, latest first, with each snapshot's computed balance and gap", async () => {
+	it("lists an account's valuations, its opening balance included, latest first, Sure's fields exactly", async () => {
 		const account = await checking();
 		const tools = await assistants();
 		await tools.write("record_valuation", {
@@ -166,32 +170,45 @@ describe("get_valuations", () => {
 
 		const of = { account: { id: account.id, name: "Compte courant", currency: "EUR" } };
 
+		expect(Object.keys(first.structuredContent ?? {})).toEqual([
+			"valuations",
+			"total_results",
+			"page",
+			"page_size",
+			"total_pages",
+		]);
+		expect(Object.keys(items[0] ?? {})).toEqual([
+			"entry_id",
+			"account",
+			"date",
+			"amount",
+			"amount_formatted",
+			"kind",
+			"notes",
+		]);
 		expect(items.map(({ entry_id: _id, ...item }) => item)).toEqual([
 			{
 				...of,
 				date: "2026-04-01",
+				amount: "1990.0",
+				amount_formatted: euros("1 990,00"),
 				kind: "reconciliation",
-				amount: "1990.00",
-				computed: "2000.00",
-				gap: "-10.00",
 				notes: "Relevé de compte (grade: A)",
 			},
 			{
 				...of,
 				date: "2026-03-05",
+				amount: "2000.0",
+				amount_formatted: euros("2 000,00"),
 				kind: "reconciliation",
-				amount: "2000.00",
-				computed: "1380.00",
-				gap: "620.00",
 				notes: "Relevé de compte (grade: A)",
 			},
 			{
 				...of,
 				date: "2026-01-10",
+				amount: "1500.0",
+				amount_formatted: euros("1 500,00"),
 				kind: "opening_anchor",
-				amount: "1500.00",
-				computed: null,
-				gap: null,
 				notes: null,
 			},
 		]);
@@ -252,17 +269,51 @@ describe("get_valuations", () => {
 		]);
 	});
 
-	it("refuses an end date before the start date", async () => {
+	it("refuses a reversed range or a malformed date with Sure's invalid_date, without success", async () => {
 		await checking();
 		const tools = await assistants();
 
-		const refused = await tools.read("get_valuations", {
+		const reversed = await tools.read("get_valuations", {
 			start_date: "2026-04-01",
 			end_date: "2026-03-01",
 		});
+		const malformed = await tools.read("get_valuations", { end_date: "31/03/2026" });
+		const impossible = await tools.read("get_valuations", { start_date: "2026-02-30" });
 
-		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain("end_date before_start_date");
+		expect(reversed.isError).toBe(true);
+		expect(bodyOf(reversed)).toEqual({
+			error: "invalid_date",
+			message: "start_date must be on or before end_date.",
+		});
+		for (const refused of [malformed, impossible]) {
+			expect(bodyOf(refused)).toEqual({
+				error: "invalid_date",
+				message: "Dates must be valid and in YYYY-MM-DD format.",
+			});
+		}
+		expect(await calls()).toEqual([
+			{ tool: "get_valuations", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "get_valuations", outcome: "VALIDATION_ERROR", changedRows: 0 },
+			{ tool: "get_valuations", outcome: "VALIDATION_ERROR", changedRows: 0 },
+		]);
+	});
+
+	it("reads blank dates as none and a page below 1 as the first, as Sure's", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = valuations.parse(
+			(
+				await tools.read("get_valuations", {
+					account_id: account.id,
+					start_date: "",
+					end_date: " ",
+					page: 0,
+				})
+			).structuredContent,
+		);
+
+		expect(result).toMatchObject({ page: 1, total_results: 1 });
 	});
 });
 
@@ -281,12 +332,23 @@ describe("record_valuation", () => {
 
 		const { entry_id: _id, ...recorded } = recordedValuation.parse(result.structuredContent);
 
+		expect(Object.keys(result.structuredContent ?? {})).toEqual([
+			"success",
+			"entry_id",
+			"account",
+			"date",
+			"amount",
+			"amount_formatted",
+			"replaced_existing",
+			"provenance",
+			"message",
+		]);
 		expect(recorded).toEqual({
+			success: true,
 			account: { id: account.id, name: "Compte courant", currency: "EUR" },
 			date: "2026-08-15",
-			amount: "2500.00",
-			computed: "1380.00",
-			gap: "1120.00",
+			amount: "2500.0",
+			amount_formatted: euros("2 500,00"),
 			replaced_existing: false,
 			provenance: {
 				source: "Relevé de compte (grade: A)",
@@ -294,6 +356,7 @@ describe("record_valuation", () => {
 				estimated: false,
 				grade: "A",
 			},
+			message: `Recorded ${euros("2 500,00")} for Compte courant on 2026-08-15, cited as: Relevé de compte (grade: A).`,
 		});
 		await expect(balancesOf(tools, account.id, "2026-08-15")).resolves.toEqual({
 			today: "2480.0",
@@ -333,11 +396,11 @@ describe("record_valuation", () => {
 
 		expect(second).toMatchObject({
 			entry_id: first.entry_id,
-			amount: "2450.00",
+			amount: "2450.0",
 			replaced_existing: true,
 		});
 		expect(await snapshotsOf(tools, account.id)).toMatchObject({
-			items: [{ entry_id: first.entry_id, amount: "2450.00" }],
+			items: [{ entry_id: first.entry_id, amount: "2450.0" }],
 			total: 1,
 		});
 		expect(await calls()).toEqual([
@@ -366,7 +429,7 @@ describe("record_valuation", () => {
 		const badAmount = await tools.write("record_valuation", {
 			account_id: account.id,
 			date: "2026-08-15",
-			amount: "12,345",
+			amount: "12.345",
 			source: "Relevé de compte (grade: A)",
 		});
 
@@ -384,19 +447,100 @@ describe("record_valuation", () => {
 		]);
 	});
 
-	it("refuses a number as amount, writing nothing", async () => {
-		const account = await checking();
+	it("reads a JSON number amount through its decimal text, as Sure's", async () => {
+		db = (await ownDatabase()).db;
+		const loan = await openOwn({ ...pinned, ...mortgage });
 		const tools = await assistants();
 
-		const numeric = await tools.write("record_valuation", {
-			account_id: account.id,
-			date: "2026-08-15",
-			amount: 2500,
-			source: "Relevé de compte (grade: A)",
+		const result = await tools.write("record_valuation", {
+			account_id: loan.id,
+			date: "2026-09-01",
+			amount: 175000.5,
+			source: "Tableau d'amortissement (grade: A)",
 		});
 
-		expect(numeric.content[0]?.text).toMatch(/^\{"error":"amount invalid_type","hint":/u);
+		expect(recordedValuation.parse(result.structuredContent)).toMatchObject({
+			amount: "175000.5",
+			amount_formatted: euros("175 000,50"),
+		});
+		expect((await snapshotsOf(tools, loan.id)).items).toMatchObject([{ amount: "175000.5" }]);
+		const stored = await buildApp(db).request(`/api/accounts/${loan.id}/snapshots`);
+		expect(
+			z
+				.object({ data: z.object({ items: z.array(z.object({ balance: z.number() })) }) })
+				.parse(await stored.json()).data.items[0]?.balance,
+		).toBe(17_500_050);
+	});
+
+	it("refuses with Sure's keys in Sure's order: citation, date, amount, then account", async () => {
+		const account = await checking();
+		const tools = await assistants();
+		const good = {
+			account_id: account.id,
+			date: "2026-08-15",
+			amount: "2500.00",
+			source: "Relevé de compte (grade: A)",
+		};
+
+		const everything = await tools.write("record_valuation", {
+			account_id: "nothing",
+			date: "15/08/2026",
+			amount: "beaucoup",
+			source: "",
+		});
+		const date = await tools.write("record_valuation", {
+			...good,
+			account_id: "nothing",
+			date: "15/08/2026",
+			amount: "beaucoup",
+		});
+		const missingDate = await tools.write("record_valuation", {
+			account_id: account.id,
+			amount: "2500.00",
+			source: good.source,
+		});
+		const amount = await tools.write("record_valuation", {
+			...good,
+			account_id: "nothing",
+			amount: "12,50",
+		});
+		const unknown = await tools.write("record_valuation", { ...good, account_id: "nothing" });
+
+		expect(bodyOf(everything)).toEqual({
+			success: false,
+			error: "invalid_source_citation",
+			message:
+				'source citation is required. Every recorded value must cite its source, in the grammar: ["estimated: "] citation [" (grade: A|B|C)"].',
+		});
+		expect(bodyOf(date)).toEqual({
+			success: false,
+			error: "invalid_date",
+			message: "date must be an ISO 8601 date (YYYY-MM-DD).",
+		});
+		expect(bodyOf(missingDate)).toEqual({
+			success: false,
+			error: "invalid_date",
+			message: "date must be an ISO 8601 date (YYYY-MM-DD).",
+		});
+		expect(bodyOf(amount)).toEqual({
+			success: false,
+			error: "invalid_amount",
+			message: "amount must be a number.",
+		});
+		expect(bodyOf(unknown)).toEqual({
+			success: false,
+			error: "account_not_found",
+			message: "No account found with that ID that this user can write to.",
+		});
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
+		expect((await calls()).map(({ outcome }) => outcome)).toEqual([
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"NOT_FOUND",
+			"OK",
+		]);
 	});
 
 	it("stores the cited source in the snapshot's notes and answers its provenance, as Sure's", async () => {
@@ -462,26 +606,41 @@ describe("record_valuation", () => {
 		);
 	});
 
-	it("refuses a missing, blank or ungraded estimated source on source, writing nothing", async () => {
+	it("refuses each source outside the grammar with Sure's invalid_source_citation and its reason, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 		const base = { account_id: account.id, date: "2026-08-15", amount: "2500.00" };
+		const grammar = '["estimated: "] citation [" (grade: A|B|C)"]';
+		const cases = [
+			[undefined, "source citation is required"],
+			["  ", "source citation is required"],
+			["x".repeat(501), "source citation must be 500 characters or fewer"],
+			[
+				"Estimated: interpolated (grade: C)",
+				'estimated values must start with the exact prefix "estimated: "',
+			],
+			["Relevé (grade: D)", 'reliability grade must be one of A, B, C (got "D")'],
+			["Relevé\n2026-08-15", `source citation does not match ${grammar}`],
+			["ab (grade: A)", "source citation must name the document it came from"],
+			[
+				"estimated: from a spreadsheet",
+				'estimated values must carry a reliability grade, e.g. "estimated: ... (grade: C)"',
+			],
+		] as const;
 
-		const missing = await tools.write("record_valuation", base);
-		const blank = await tools.write("record_valuation", { ...base, source: "  " });
-		const ungraded = await tools.write("record_valuation", {
-			...base,
-			source: "estimated: from a spreadsheet",
-		});
-		const unknown = await tools.write("record_valuation", {
-			...base,
-			source: "Relevé (grade: D)",
-		});
+		const refusals = await Promise.all(
+			cases.map(async ([source]) =>
+				bodyOf(await tools.write("record_valuation", { ...base, source })),
+			),
+		);
 
-		expect(missing.content[0]?.text).toMatch(/^\{"error":"source invalid_type","hint":/u);
-		expect(blank.content[0]?.text).toContain("source source_required");
-		expect(ungraded.content[0]?.text).toContain("source estimate_without_grade");
-		expect(unknown.content[0]?.text).toContain("source unknown_grade");
+		expect(refusals).toEqual(
+			cases.map(([, reason]) => ({
+				success: false,
+				error: "invalid_source_citation",
+				message: `${reason}. Every recorded value must cite its source, in the grammar: ${grammar}.`,
+			})),
+		);
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 	});
 
@@ -514,7 +673,7 @@ describe("record_valuation", () => {
 });
 
 describe("an unknown account", () => {
-	it("answers NOT_FOUND to both tools, writing nothing", async () => {
+	it("answers not_found to get_valuations and Sure's account_not_found to record_valuation, writing nothing", async () => {
 		await checking();
 		const tools = await assistants();
 
@@ -527,7 +686,7 @@ describe("an unknown account", () => {
 		});
 
 		expect(read.content[0]?.text).toContain('"error":"not_found"');
-		expect(written.content[0]?.text).toContain('"error":"not_found"');
+		expect(written.content[0]?.text).toContain('"error":"account_not_found"');
 		expect(await calls()).toEqual([
 			{ tool: "get_valuations", outcome: "NOT_FOUND", changedRows: 0 },
 			{ tool: "record_valuation", outcome: "NOT_FOUND", changedRows: 0 },

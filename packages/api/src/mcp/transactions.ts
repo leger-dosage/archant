@@ -46,6 +46,7 @@ import {
 	pageFieldsOf,
 	pageOutput,
 	refuse,
+	sureDecimalText,
 } from "./tool.ts";
 
 /** Sure's `entry.classification`: money in is income, anything else an expense. */
@@ -425,35 +426,28 @@ export const bulkUpdateTransactionsTool = defineTool({
 	},
 });
 
-/** A decimal text as Sure's `BigDecimal(value.to_s)` reads it: a sign, digits, a fraction. */
-const DECIMAL_TEXT = /^([+-]?)(\d*)(?:\.(\d+))?$/u;
-
 /**
  * An amount in Sure's sign, positive for money out, as the ledger's decimal
  * text (AD-5): negated, or with `type`, its magnitude signed as `type` says.
- * Built from the digits, never through a float. `null` for anything Sure
- * would not read as a number.
+ * `null` for anything Sure would not read as a number.
  */
 function ledgerAmount(
 	value: string | number,
 	type?: z.output<typeof createTransactionInput>["type"],
 ): string | null {
-	const match = DECIMAL_TEXT.exec(String(value).trim());
-	const [, sign = "", integer = "", fraction = ""] = match ?? [];
+	const text = sureDecimalText(value);
 
-	if (match === null || (integer === "" && fraction === "")) {
+	if (text === null) {
 		return null;
 	}
 
-	const digits = `${integer.replace(/^0+(?=\d)/u, "") || "0"}${
-		fraction.replace(/0+$/u, "") === "" ? "" : `.${fraction.replace(/0+$/u, "")}`
-	}`;
+	const digits = text.replace(/^-/u, "");
 	const moneyIn =
 		type === "income" || type === "inflow"
 			? true
 			: type === "expense" || type === "outflow"
 				? false
-				: sign === "-";
+				: text.startsWith("-");
 
 	return moneyIn || /^[0.]+$/u.test(digits) ? digits : `-${digits}`;
 }

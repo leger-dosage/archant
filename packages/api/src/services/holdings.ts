@@ -1,7 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { CostBasisInput } from "../schemas/holdings.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { CurrentHolding } from "./ledger/holdings.ts";
+import type { CurrentHolding, LastHeldHolding } from "./ledger/holdings.ts";
 
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -16,8 +16,10 @@ import { positionFigures, weightOf } from "../domain/holdings/positions.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { costBasisSchema } from "../schemas/holdings.ts";
 import { getAccount } from "./accounts.ts";
+import { balanceOn } from "./ledger/balances.ts";
 import {
 	currentHoldings,
+	lastHeldHoldings,
 	lockCostBasis,
 	notHeld,
 	unlockCostBasis as unlockLedgerCostBasis,
@@ -105,7 +107,7 @@ export async function listPositions(deps: ServiceDeps, accountId: string): Promi
 	};
 }
 
-/** Which positions `listHoldings` reads: every one when nothing is given. */
+/** Which holdings `listHoldings` reads: every one when nothing is given. */
 export type HoldingsFilter = {
 	accountIds?: readonly string[] | undefined;
 	/** Exact account names, as Sure's `accounts`; an id and a name narrow each other. */
@@ -114,38 +116,38 @@ export type HoldingsFilter = {
 	tickers?: readonly string[] | undefined;
 };
 
-/** One account's position, with the account and the day it was read on. */
-type AccountPosition = PositionData & {
+/** A security's last held row on an account, with the account and its balance today. */
+type AccountHolding = Omit<LastHeldHolding, "accountId"> & {
 	account: { id: string; name: string; currency: string };
-	/** The account's holdings day. */
-	date: IsoDate;
+	/** The account's balance today, Sure's `account.balance`, which `weight` divides by. */
+	balance: MinorUnits;
 };
 
 export type HoldingsAcrossAccounts = {
 	/** By value, largest first, then security name and account name. */
-	positions: AccountPosition[];
+	holdings: AccountHolding[];
 	currency: string;
-	/** The value of the positions held in the reporting currency. */
+	/** The value of the listed holdings of accounts in the reporting currency. */
 	totalValue: MinorUnits;
-	/** Accounts in another currency holding a position here, left out of `totalValue`. */
-	leftOut: { id: string }[];
 };
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
 /**
- * The positions of every active investment account today, each one as its
- * « Positions » tab lists it, as Sure's `get_holdings` reads its
- * investment accounts' latest holdings. An inactive account is left out, as
- * Sure keeps to visible accounts; one excluded from reports is not, as
- * Sure's is not either. The total sums the reporting currency's alone: there
- * are no exchange rates to add the others.
+ * Each security's last held row on every active investment account, as
+ * Sure's `get_holdings` reads its investment accounts' holdings: a security
+ * sold out stays listed at its last quantity. An inactive account is left
+ * out, as Sure keeps to visible accounts; one excluded from reports is not,
+ * as Sure's is not either. The total sums what is listed, sold-out rows
+ * included, as Sure sums its query, but the reporting currency's alone:
+ * there are no exchange rates to add the others (AD-6).
  */
 export async function listHoldings(
 	deps: ServiceDeps,
 	filter: HoldingsFilter,
 ): Promise<HoldingsAcrossAccounts> {
 	const currency = getReportingCurrency();
+	const day = today(deps.timeZone);
 	const named = await idsNamed(deps, "accounts", filter.accountNames);
 	const ids = [filter.accountIds, named].filter((list) => list !== undefined);
 	const rows = await deps.db
@@ -162,43 +164,51 @@ export async function listHoldings(
 		filter.tickers === undefined
 			? undefined
 			: new Set(filter.tickers.map((ticker) => ticker.trim().toUpperCase()));
-	const held = await Promise.all(
-		rows.map(async (account) => {
-			const { date, positions } = await listPositions(deps, account.id);
-
-			return date === null
-				? []
-				: positions
-						.filter(
-							({ security }) =>
-								tickers === undefined || (security.ticker !== null && tickers.has(security.ticker)),
-						)
-						.map((position) => ({ ...position, account, date }));
-		}),
-	);
-	const positions = held
-		.flat()
-		.toSorted(
-			(a, b) =>
-				b.amount - a.amount ||
-				byName.compare(a.security.name, b.security.name) ||
-				byName.compare(a.account.name, b.account.name) ||
-				a.account.id.localeCompare(b.account.id),
-		);
-	const counted = positions.filter((position) => position.account.currency === currency);
-	const leftOut = [
-		...new Set(
-			positions
-				.filter((position) => position.account.currency !== currency)
-				.map((position) => position.account.id),
+	// Each account with its balance today, Sure's `account.balance`.
+	const byId = new Map(
+		await Promise.all(
+			rows.map(
+				async (account) =>
+					[
+						account.id,
+						{
+							account,
+							balance: (await balanceOn(deps, account.id, day))?.amount ?? toMinorUnits(0),
+						},
+					] as const,
+			),
 		),
-	];
+	);
+	const held = (
+		await lastHeldHoldings(
+			deps.db,
+			rows.map((account) => account.id),
+			day,
+		)
+	).flatMap(({ accountId, ...holding }) => {
+		const owner = byId.get(accountId);
+		const kept =
+			tickers === undefined ||
+			(holding.security.ticker !== null && tickers.has(holding.security.ticker));
+
+		return owner === undefined || !kept ? [] : [{ ...holding, ...owner }];
+	});
+	const holdings = held.toSorted(
+		(a, b) =>
+			b.amount - a.amount ||
+			byName.compare(a.security.name, b.security.name) ||
+			byName.compare(a.account.name, b.account.name) ||
+			a.account.id.localeCompare(b.account.id),
+	);
 
 	return {
-		positions,
+		holdings,
 		currency,
-		totalValue: toMinorUnits(counted.reduce((sum, position) => sum + position.amount, 0)),
-		leftOut: leftOut.map((id) => ({ id })),
+		totalValue: toMinorUnits(
+			holdings
+				.filter((holding) => holding.account.currency === currency)
+				.reduce((sum, holding) => sum + holding.amount, 0),
+		),
 	};
 }
 

@@ -430,7 +430,7 @@ export type ValuationFilter = {
 	to?: IsoDate | undefined;
 };
 
-/** A valuation as Sure's `get_valuations` lists it: a snapshot with its gap, or an anchor. */
+/** A valuation as Sure's `get_valuations` lists it: a snapshot or an anchor. */
 export type ValuationRecord = {
 	id: string;
 	accountId: string;
@@ -439,9 +439,6 @@ export type ValuationRecord = {
 	kind: ValuationKind;
 	/** The stored balance (AD-5). */
 	balance: MinorUnits;
-	/** A snapshot's computed balance and gap; `null` for an anchor, which sets the balance itself. */
-	computed: MinorUnits | null;
-	gap: MinorUnits | null;
 	currency: string;
 	/** Sure's `get_valuations` answers each entry's notes, the citation among them. */
 	notes: string | null;
@@ -482,42 +479,18 @@ export async function listValuations(
 		.from(entries)
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.where(where);
-	// The page's snapshots with their gaps, read once per account as the tab reads them.
-	const snapshots = rows.filter((row) => row.kind === "reconciliation");
-	const gapped = new Map<string, SnapshotRecord>();
-
-	await Promise.all(
-		[...new Set(snapshots.map((row) => row.accountId))].map(async (accountId) => {
-			const ofAccount = snapshots.filter((row) => row.accountId === accountId);
-			const withGap = await gapReader(
-				deps.db,
-				accountId,
-				ofAccount.map((row) => row.date),
-			);
-
-			for (const row of ofAccount) {
-				gapped.set(row.id, withGap(row));
-			}
-		}),
-	);
 
 	return {
-		items: rows.map(({ accountName, kind, ...row }) => {
-			const snapshot = gapped.get(row.id);
-
-			return {
-				id: row.id,
-				accountId: row.accountId,
-				accountName,
-				date: row.date,
-				kind,
-				balance: toMinorUnits(row.balance),
-				computed: snapshot?.computed ?? null,
-				gap: snapshot?.gap ?? null,
-				currency: row.currency,
-				notes: row.notes,
-			};
-		}),
+		items: rows.map((row) => ({
+			id: row.id,
+			accountId: row.accountId,
+			accountName: row.accountName,
+			date: row.date,
+			kind: row.kind,
+			balance: toMinorUnits(row.balance),
+			currency: row.currency,
+			notes: row.notes,
+		})),
 		total: totals.reduce((sumOfRows, row) => sumOfRows + row.total, 0),
 	};
 }

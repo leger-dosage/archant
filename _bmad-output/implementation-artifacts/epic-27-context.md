@@ -38,6 +38,7 @@ Fix what an audit of 2026-10-08 found before any new feature: figures Archant ge
 ## Requirements & Constraints
 
 - FR101 to FR106, and the revisions of FR31, FR32, FR35, FR38, FR41, FR64, FR90, FR96 to FR100, NFR2 and NFR19 that `epics.md` records.
+- Assistant tools (NFR19 as Epic 27 revises it): every tool takes its Sure function's parameters, names included where Sure takes names, and answers its Sure function's shape, numbers read through their decimal text and refusals as Sure's. The rest holds: a token bound to `/api/mcp`, short-lived, scoped read or write, revocable; Zod-parsed inputs calling the interface's service functions; a deletion only while account, date and amount still match; every write recorded without amounts or labels.
 - Money stays integer minor units inside (NFR1). Sure's `Money#format` strings and `number_to_percentage` strings are built from integers; an amount Sure takes as a JSON number is read through its decimal text, never as a float.
 - No exchange rates exist (AD-6): totals keep counting the reporting currency's accounts and the interface keeps its notice; converting other currencies, as Sure's totals do, stays Later. The assistant's `left_out_count` and `left_out_account_ids` go.
 - French text: Sure's `fr.yml` wording wherever it has a key; where Sure falls back to English, the word a French user expects.

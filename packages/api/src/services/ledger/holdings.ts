@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, asc, desc, eq, gt, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lte, max, min, sql } from "drizzle-orm";
 
 import type { Micros } from "@archant/data/micros";
 import { toMicros } from "@archant/data/micros";
@@ -162,6 +162,29 @@ export type LiveCostBasisLock = {
 };
 
 /**
+ * The rule that a full sale ends a lock: the first day at quantity zero on or
+ * after the day it was locked, `null` while none, read per lock row of the
+ * query it goes in. A seek into the partial index `holdings_zero_quantity`:
+ * the zero is a literal, never a bound parameter, since SQLite proves a
+ * partial index applies only from the query's text.
+ */
+function lockEndedOn(db: Reader) {
+	const firstZero = db
+		.select({ day: min(holdings.date) })
+		.from(holdings)
+		.where(
+			and(
+				eq(holdings.accountId, costBasisLocks.accountId),
+				eq(holdings.securityId, costBasisLocks.securityId),
+				sql`${holdings.quantity} = 0`,
+				gte(holdings.date, costBasisLocks.lockedOn),
+			),
+		);
+
+	return sql<IsoDate | null>`(${firstZero})`;
+}
+
+/**
  * The cost basis locks whose position still runs, one account's or every
  * one's. A day at quantity zero on or after the day it was locked ended that
  * position, a full sale, and the lock with it: a rebuy is priced from its own
@@ -172,10 +195,9 @@ export async function liveCostBasisLocks(
 	db: Reader,
 	accountId: string | null,
 ): Promise<LiveCostBasisLock[]> {
-	// Per lock, a seek into the partial index `holdings_zero_quantity`: the
-	// locks are few, the holdings ten years of days per security. The zero is
-	// a literal, never a bound parameter: SQLite proves a partial index applies
-	// only from the query's text.
+	// `after`, which the export reads, and the lock's end: per lock, seeks
+	// into the partial index `holdings_zero_quantity`, the locks being few and
+	// the holdings ten years of days per security. The zero is a literal.
 	const lastZero = db
 		.select({ day: max(holdings.date) })
 		.from(holdings)
@@ -191,16 +213,16 @@ export async function liveCostBasisLocks(
 			accountId: costBasisLocks.accountId,
 			securityId: costBasisLocks.securityId,
 			costBasis: costBasisLocks.costBasis,
-			lockedOn: costBasisLocks.lockedOn,
 			after: sql<IsoDate | null>`(${lastZero})`,
+			endedOn: lockEndedOn(db),
 		})
 		.from(costBasisLocks)
 		.where(accountId === null ? undefined : eq(costBasisLocks.accountId, accountId))
 		.orderBy(asc(costBasisLocks.accountId), asc(costBasisLocks.securityId));
 
 	return rows
-		.filter(({ after, lockedOn }) => after === null || after < lockedOn)
-		.map(({ lockedOn: _lockedOn, ...lock }) => lock);
+		.filter(({ endedOn }) => endedOn === null)
+		.map(({ endedOn: _endedOn, ...lock }) => lock);
 }
 
 /** The account's last holdings day on or before `day`, `null` before its first trade. */
@@ -298,6 +320,102 @@ export async function currentHoldings(
 		}),
 		cash,
 	};
+}
+
+/** A security's last held day on an account, as Sure's `get_holdings` lists it. */
+export type LastHeldHolding = {
+	accountId: string;
+	security: { id: string; name: string; ticker: string | null };
+	/** The last day it was held, today for a position still running. */
+	date: IsoDate;
+	/** Above zero: that day's quantity, a sold-out security's last one. */
+	quantity: Micros;
+	price: Micros;
+	amount: MinorUnits;
+	/** The lock's when one stands on that day, else the calculated one. */
+	costBasis: Micros | null;
+};
+
+/**
+ * Each security's last holding above zero on or before `day`, on each of
+ * `accountIds`, a security sold out included at its last held quantity, as
+ * Sure's `DISTINCT ON (account_id, security_id)` over `qty <> 0`. Its cost
+ * basis is the lock's when no day at zero falls between the lock's day and
+ * the row's, so a lock stands on the last day of a position sold since.
+ */
+export async function lastHeldHoldings(
+	db: Reader,
+	accountIds: readonly string[],
+	day: IsoDate,
+): Promise<LastHeldHolding[]> {
+	if (accountIds.length === 0) {
+		return [];
+	}
+
+	// No index: the primary key's `account_id` prefix bounds the scan to the
+	// accounts asked, once per assistant call.
+	const lastHeld = db
+		.select({
+			accountId: holdings.accountId,
+			securityId: holdings.securityId,
+			day: max(holdings.date).as("day"),
+		})
+		.from(holdings)
+		.where(
+			and(
+				inArray(holdings.accountId, [...accountIds]),
+				lte(holdings.date, day),
+				gt(holdings.quantity, toMicros(0)),
+			),
+		)
+		.groupBy(holdings.accountId, holdings.securityId)
+		.as("last_held");
+	const rows = await db
+		.select({
+			accountId: holdings.accountId,
+			date: holdings.date,
+			quantity: holdings.quantity,
+			price: holdings.price,
+			amount: holdings.amount,
+			costBasis: holdings.costBasis,
+			security: { id: securities.id, name: securities.name, ticker: securities.ticker },
+		})
+		.from(holdings)
+		.innerJoin(
+			lastHeld,
+			and(
+				eq(holdings.accountId, lastHeld.accountId),
+				eq(holdings.securityId, lastHeld.securityId),
+				eq(holdings.date, lastHeld.day),
+			),
+		)
+		.innerJoin(securities, eq(securities.id, holdings.securityId))
+		.orderBy(asc(holdings.accountId), asc(securities.id));
+	const locks = new Map(
+		(
+			await db
+				.select({
+					accountId: costBasisLocks.accountId,
+					securityId: costBasisLocks.securityId,
+					costBasis: costBasisLocks.costBasis,
+					endedOn: lockEndedOn(db),
+				})
+				.from(costBasisLocks)
+				.where(inArray(costBasisLocks.accountId, [...accountIds]))
+		).map((lock) => [`${lock.accountId}:${lock.securityId}`, lock]),
+	);
+
+	return rows.map((row) => {
+		const lock = locks.get(`${row.accountId}:${row.security.id}`);
+		// A lock stands on a row unless a day at zero falls between its day and the row's.
+		const locked = lock !== undefined && (lock.endedOn === null || lock.endedOn > row.date);
+
+		return {
+			...row,
+			amount: toMinorUnits(row.amount),
+			costBasis: locked ? lock.costBasis : row.costBasis,
+		};
+	});
 }
 
 /** The refusal of a cost basis for a security the account does not hold. */
