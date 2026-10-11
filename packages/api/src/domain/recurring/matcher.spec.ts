@@ -201,6 +201,25 @@ describe("matchPayments", () => {
 		expect(decisions).toEqual([]);
 	});
 
+	it("pays a series without an account from any account, the account score still counted", () => {
+		const decisions = matchPayments(
+			byId(series({ accountId: null })),
+			[occurrence("o1", "2026-07-05"), occurrence("o2", "2026-08-05")],
+			[
+				entry("e1", "2026-07-05", MORTGAGE_AMOUNT, { accountId: "a1" }),
+				entry("e2", "2026-08-05", MORTGAGE_AMOUNT, { accountId: "a2" }),
+			],
+			context("2026-08-05"),
+			backfill,
+		);
+
+		expect(decisions).toEqual([
+			expect.objectContaining({ occurrenceId: "o1", entryId: "e1", score: 9500 }),
+			expect.objectContaining({ occurrenceId: "o2", entryId: "e2", score: 9500 }),
+		]);
+		expect(decisions[1]?.signals).toMatchObject({ account: 1000 });
+	});
+
 	it("leaves out an excluded row, a split parent and a transfer side, but keeps a loan payment's outflow", () => {
 		const decisions = matchPayments(
 			byId(series()),

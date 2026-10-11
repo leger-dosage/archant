@@ -10,7 +10,7 @@ import { today } from "../domain/dates.ts";
 import { recurringInput } from "../schemas/assistants.ts";
 import { displayName } from "../services/recurring/bills.ts";
 import { listRecurring } from "../services/recurring/series.ts";
-import { BANK_TEXT, READ_ONLY, decimal, defineTool, namedRef } from "./tool.ts";
+import { BANK_TEXT, READ_ONLY, accountRefOf, decimal, defineTool, namedRef } from "./tool.ts";
 
 /** A household has a few dozen series; past this many, the assistant narrows its filter. */
 const MAX_RECURRING = 200;
@@ -74,7 +74,7 @@ export const getRecurringTransactions = defineTool({
 				last_occurrence_date: z.string(),
 				occurrence_count: z.number().int(),
 				is_manual: z.boolean().describe("Added by the owner from a transaction."),
-				account: namedRef,
+				account: namedRef.nullable().describe("null for a series paid from any account."),
 				merchant: namedRef.nullable(),
 			}),
 		),
@@ -110,7 +110,7 @@ export const getRecurringTransactions = defineTool({
 						last_occurrence_date: record.lastOccurrenceDate,
 						occurrence_count: record.occurrenceCount,
 						is_manual: record.manual,
-						account: { id: record.accountId, name: record.accountName },
+						account: accountRefOf(record),
 						merchant:
 							record.merchantId === null
 								? null

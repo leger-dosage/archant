@@ -1710,6 +1710,7 @@
 			"firstDueOn": "Prochaine échéance",
 			"incomeDueOn": "Prochaine paie",
 			"account": "Payée depuis",
+			"anyAccount": "N'importe quel compte",
 			"incomeAccount": "Versé sur",
 			"frequency": "Fréquence",
 			"incomeFrequency": "Fréquence de versement",

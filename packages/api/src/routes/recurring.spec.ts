@@ -277,7 +277,7 @@ describe("/api/recurring", () => {
 	});
 });
 
-const water = (accountId: string) => ({
+const water = (accountId: string | null) => ({
 	kind: "bill",
 	name: "Eau",
 	amount: "84,20",
@@ -312,6 +312,17 @@ describe("POST /api/recurring/declare", () => {
 
 		expect(again.status).toBe(409);
 		expect(errorBody.parse(await again.json()).error.code).toBe("RECURRING_ALREADY_EXISTS");
+	});
+
+	it("creates a bill paid from any account in the reporting currency", async () => {
+		const { app } = await ownRecurringAccount();
+
+		const created = await testClient(app).api.recurring.declare.$post({ json: water(null) });
+
+		expect(created.status).toBe(201);
+		expect(await created.json()).toMatchObject({
+			data: { accountId: null, accountName: null, currency: "EUR", amount: -8420 },
+		});
 	});
 
 	it("creates an income positive", async () => {

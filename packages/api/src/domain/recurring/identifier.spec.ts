@@ -444,4 +444,10 @@ describe("claimOf", () => {
 			]),
 		).toBeUndefined();
 	});
+
+	it("lets no series without an account claim a pattern, as Sure keys a claim on the account", () => {
+		const found = pattern([-1000, -1000, -1000]);
+
+		expect(claimOf(found, [stored("s1", -1000, { accountId: null })])).toBeUndefined();
+	});
 });

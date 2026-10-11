@@ -477,6 +477,61 @@ test("« Ajouter une facture » declares a quarterly bill, listed active and man
 	await expect(edit.getByLabel("Lien de paiement")).toHaveValue("https://eau.example/payer");
 });
 
+test("« N'importe quel compte » declares a bill paid from any account, listed on « Factures »", async ({
+	page,
+}) => {
+	const name = uniqueName("Électricité");
+
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une facture" }).click();
+	const dialog = billDialog(page, "Ajouter une facture");
+	await expect(dialog.getByRole("combobox", { name: "Payée depuis" })).toHaveText(
+		"N'importe quel compte",
+	);
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByLabel("Montant").fill("12,00");
+	await dialog.getByLabel("Prochaine échéance").fill(typed(daysAgo(-5)));
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(toast(page, "Facture ajoutée")).toBeVisible();
+	await expect(row(page, name)).toContainText(euros(-1200));
+
+	await page.goto("/bills");
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	await expect(
+		page.locator('[data-slot="inset-group"]').getByRole("link").filter({ hasText: name }).first(),
+	).toContainText(euros(1200));
+
+	await page.goto(PAGE);
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(
+		billDialog(page, `Modifier ${name}`).getByRole("combobox", { name: "Payée depuis" }),
+	).toHaveText("N'importe quel compte");
+});
+
+test("« Modifier » moves a bill to « N'importe quel compte »", async ({ page, api }) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Gaz");
+	await api.declareBill({ name, amount: "45,00", accountId: account.id, firstDueOn: daysAgo(-5) });
+
+	await visit(page);
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = billDialog(page, `Modifier ${name}`);
+	await expect(dialog.getByRole("combobox", { name: "Payée depuis" })).toHaveText(account.name);
+	await choose(page, dialog, "Payée depuis", "N'importe quel compte");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(toast(page, "Facture mise à jour")).toBeVisible();
+	await expect(dialog).toBeHidden();
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog.getByRole("combobox", { name: "Payée depuis" })).toHaveText(
+		"N'importe quel compte",
+	);
+});
+
 test("« Ajouter un revenu » declares an income, positive, without a link or autopay", async ({
 	page,
 	api,

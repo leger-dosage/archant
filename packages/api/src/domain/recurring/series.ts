@@ -101,7 +101,8 @@ export type StoredSeries = SeriesKey &
 	AmountBand &
 	ScheduledSeries & {
 		id: string;
-		accountId: string;
+		/** `null` pays from any account. */
+		accountId: string | null;
 		label: string;
 		amount: MinorUnits;
 		currency: string;
@@ -129,12 +130,13 @@ const byDate = (a: RecurringCandidate, b: RecurringCandidate) =>
 
 /**
  * Sure's `manual_recurring_matches_entry?`: a transaction of the series'
- * account, key and currency, transfers left out, between half and twice its
- * amount and on a day its schedule matches.
+ * account, or of any for a series without one, of its key and currency,
+ * transfers left out, between half and twice its amount and on a day its
+ * schedule matches.
  */
 function matches(series: StoredSeries, candidate: RecurringCandidate): boolean {
 	return (
-		candidate.accountId === series.accountId &&
+		(series.accountId === null || candidate.accountId === series.accountId) &&
 		candidate.currency === series.currency &&
 		recurringDirection(candidate) !== "transfer" &&
 		withinBand(candidate.amount, series.amount) &&
@@ -197,7 +199,7 @@ export function rekey(
 
 		const sameDay = spent.filter(
 			(candidate) =>
-				candidate.accountId === row.accountId &&
+				(row.accountId === null || candidate.accountId === row.accountId) &&
 				withinBand(candidate.amount, row.amount) &&
 				candidate.date === row.lastOccurrenceDate,
 		);

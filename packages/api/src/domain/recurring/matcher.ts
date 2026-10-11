@@ -46,7 +46,8 @@ const ACCOUNT_SCORE = 1000;
 /** A series as the matcher reads it. */
 export type MatchSeries = {
 	id: string;
-	accountId: string;
+	/** `null` pays from any account, as Sure's « N'importe quel compte ». */
+	accountId: string | null;
 	currency: string;
 	/** Signed as its transactions (AD-5). */
 	amount: MinorUnits;
@@ -139,14 +140,15 @@ export function knownNames(
 
 /**
  * Sure's `identity_matches?` and the filters around it: the series' currency,
- * account and sign, its merchant or else a name it knows, not excluded, not a
- * split parent, not a transfer side but for the outflow of a loan payment or
- * an investment contribution, as detection reads it.
+ * its account when it has one, its sign, its merchant or else a name it
+ * knows, not excluded, not a split parent, not a transfer side but for the
+ * outflow of a loan payment or an investment contribution, as detection
+ * reads it.
  */
 function identityMatches(series: MatchSeries, entry: MatchEntry, names: Set<string>): boolean {
 	if (
 		entry.currency !== series.currency ||
-		entry.accountId !== series.accountId ||
+		(series.accountId !== null && entry.accountId !== series.accountId) ||
 		series.amount < 0 !== entry.amount < 0 ||
 		entry.excluded ||
 		entry.splitParent ||

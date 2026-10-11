@@ -73,7 +73,7 @@ async function assistants() {
 }
 
 function declare(
-	accountId: string,
+	accountId: string | null,
 	name: string,
 	amount: string,
 	firstDueOn: string,
@@ -135,7 +135,7 @@ const bill = z
 		frequency: z.string(),
 		next_due_date: z.string(),
 		monthly_equivalent: z.string(),
-		account: z.object({ id: z.string(), name: z.string() }),
+		account: z.object({ id: z.string(), name: z.string() }).nullable(),
 		category: z.object({ id: z.string(), name: z.string() }).nullable(),
 	})
 	.loose();
@@ -248,6 +248,16 @@ function failure(result: Awaited<ReturnType<typeof callTool>>) {
 }
 
 describe("get_bills", () => {
+	it("gives a bill paid from any account a null account", async () => {
+		await household();
+		const water = await declare(null, "Eau", "20,00", "2026-10-02");
+		const tools = await assistants();
+
+		const [listed] = bills.parse((await tools.read("get_bills")).structuredContent).bills;
+
+		expect(listed).toMatchObject({ id: water.id, currency: "EUR", account: null });
+	});
+
 	it("lists the active bills by next due date, and each lifecycle when asked", async () => {
 		const accountId = await household();
 		const later = await declare(accountId, "Électricité", "60,00", "2026-10-12");

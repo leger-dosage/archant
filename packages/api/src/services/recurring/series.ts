@@ -8,7 +8,7 @@ import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
 import type { CurrentOccurrence } from "./occurrences.ts";
 
-import { and, asc, between, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, between, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -57,9 +57,10 @@ export type CleanupResult = { inactive: number };
 /** A stored pattern as the page lists it, with its account's and merchant's names. */
 export type RecurringRecord = {
 	id: string;
-	accountId: string;
-	accountName: string;
-	accountType: AccountType;
+	/** `null`, with its name and type, for a series paid from any account. */
+	accountId: string | null;
+	accountName: string | null;
+	accountType: AccountType | null;
 	merchantId: string | null;
 	merchantName: string | null;
 	label: string;
@@ -518,7 +519,7 @@ export function selectRecords(db: Pick<ServiceDeps["db"], "select">) {
 	return db
 		.select(recordColumns)
 		.from(recurringTransactions)
-		.innerJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
+		.leftJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
 		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId));
 }
 
@@ -701,14 +702,21 @@ export async function deleteRecurring(deps: ServiceDeps, id: string): Promise<{ 
 }
 
 /**
- * The stored rows of a transaction's account and key, whatever their amount,
- * the one of the transaction's amount first, then the latest last date. Read
+ * The stored rows of a transaction's key, of its account or of none in its
+ * currency, whatever their amount: the account's first, then the one of the
+ * transaction's amount, then the latest last date. Read
  * by `addRecurringFromEntry` and `recurringOfEntry`, so the sheet names the
  * series the button would confirm.
  */
 async function seriesOfTransaction(
 	db: Pick<ServiceDeps["db"], "select">,
-	transaction: { accountId: string; merchantId: string | null; label: string; amount: MinorUnits },
+	transaction: {
+		accountId: string;
+		currency: string;
+		merchantId: string | null;
+		label: string;
+		amount: MinorUnits;
+	},
 ) {
 	const key = seriesKeyOf(transaction);
 
@@ -717,7 +725,13 @@ async function seriesOfTransaction(
 		.from(recurringTransactions)
 		.where(
 			and(
-				eq(recurringTransactions.accountId, transaction.accountId),
+				or(
+					eq(recurringTransactions.accountId, transaction.accountId),
+					and(
+						isNull(recurringTransactions.accountId),
+						eq(recurringTransactions.currency, transaction.currency),
+					),
+				),
 				key.merchantId === null
 					? isNull(recurringTransactions.merchantId)
 					: eq(recurringTransactions.merchantId, key.merchantId),
@@ -727,6 +741,8 @@ async function seriesOfTransaction(
 			),
 		)
 		.orderBy(
+			// The account's own series before one paid from any account.
+			sql`case when ${recurringTransactions.accountId} is null then 1 else 0 end`,
 			sql`case when ${recurringTransactions.amount} = ${transaction.amount} then 0 else 1 end`,
 			desc(recurringTransactions.lastOccurrenceDate),
 			asc(recurringTransactions.id),
@@ -735,12 +751,19 @@ async function seriesOfTransaction(
 
 /**
  * The ids of `rows` a series not ended holds, by `recurringOfEntry`'s
- * rule: the series of the row's account and key, whatever its amount. One
- * query for a whole page, never one per row.
+ * rule: the series of the row's key, of its account or of none in its
+ * currency, whatever its amount. One query for a whole page, never one per
+ * row.
  */
 export async function recurringEntryIds(
 	db: Pick<ServiceDeps["db"], "select">,
-	rows: readonly { id: string; accountId: string; merchantId: string | null; label: string }[],
+	rows: readonly {
+		id: string;
+		accountId: string;
+		currency: string;
+		merchantId: string | null;
+		label: string;
+	}[],
 ): Promise<Set<string>> {
 	if (rows.length === 0) {
 		return new Set();
@@ -751,18 +774,30 @@ export async function recurringEntryIds(
 	const series = await db
 		.select({
 			accountId: recurringTransactions.accountId,
+			currency: recurringTransactions.currency,
 			merchantId: recurringTransactions.merchantId,
 			labelKey: recurringTransactions.labelKey,
 		})
 		.from(recurringTransactions)
 		.where(
 			and(
-				inArray(recurringTransactions.accountId, [...new Set(rows.map((row) => row.accountId))]),
+				or(
+					inArray(recurringTransactions.accountId, [...new Set(rows.map((row) => row.accountId))]),
+					isNull(recurringTransactions.accountId),
+				),
 				ne(recurringTransactions.status, "ended"),
 			),
 		);
+	// A series paid from any account holds its currency's rows only.
 	const held = new Set(
-		series.map((row) => JSON.stringify([row.accountId, row.merchantId, row.labelKey])),
+		series.map((row) =>
+			JSON.stringify([
+				row.accountId,
+				row.accountId === null ? row.currency : null,
+				row.merchantId,
+				row.labelKey,
+			]),
+		),
 	);
 
 	return new Set(
@@ -770,7 +805,10 @@ export async function recurringEntryIds(
 			.filter((row) => {
 				const key = seriesKeyOf(row);
 
-				return held.has(JSON.stringify([row.accountId, key.merchantId, key.labelKey]));
+				return (
+					held.has(JSON.stringify([row.accountId, null, key.merchantId, key.labelKey])) ||
+					held.has(JSON.stringify([null, row.currency, key.merchantId, key.labelKey]))
+				);
 			})
 			.map((row) => row.id),
 	);
@@ -796,8 +834,8 @@ export type EntryRecurring = RecurringRecord & { pays: PaidOccurrence | null };
  * The series a transaction belongs to, for the sheet. A transaction in a
  * confirmed payment belongs to that payment's series, and names the
  * occurrence it pays, the earliest when it pays several; any other belongs
- * to the row not ended of its account and key, the one of its amount first,
- * else the latest. `null` when there is none.
+ * to the row not ended of its key, of its account or of none, the one of
+ * its amount first, else the latest. `null` when there is none.
  */
 export async function recurringOfEntry(
 	deps: ServiceDeps,

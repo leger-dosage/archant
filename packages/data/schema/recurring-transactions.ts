@@ -30,9 +30,10 @@ export const recurringTransactions = sqliteTable(
 	"recurring_transactions",
 	{
 		id: text("id").primaryKey(),
-		accountId: text("account_id")
-			.notNull()
-			.references(() => accounts.id, { onDelete: "cascade" }),
+		// Null pays from any account, as Sure's « N'importe quel compte »: any
+		// account's line may pay it, and SQLite's distinct NULLs leave its
+		// duplicates to the declaration's own check.
+		accountId: text("account_id").references(() => accounts.id, { onDelete: "cascade" }),
 		// Cascade: a merged merchant's patterns come back under the target at the
 		// next detection, since its rows now carry the target's id.
 		merchantId: text("merchant_id").references(() => merchants.id, { onDelete: "cascade" }),

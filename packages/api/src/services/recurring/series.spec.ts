@@ -1718,6 +1718,48 @@ describe("recurringEntryIds", () => {
 		await expect(recurringEntryIds(temp.db, await rowsOf([entryId]))).resolves.toEqual(new Set());
 	});
 
+	it("flags a row of any account for a series without an account, and the sheet names it", async () => {
+		const withSeries = await account("Compte B");
+		const other = await account("Compte A");
+		const row = await detectedBill(withSeries);
+		await temp.db.update(recurringTransactions).set({ accountId: null });
+		const [entryId = ""] = await addRows(other, ["2026-09-21"]);
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([entryId]))).resolves.toEqual(
+			new Set([entryId]),
+		);
+		await expect(recurringOfEntry(deps(), entryId)).resolves.toMatchObject({
+			id: row.id,
+			accountId: null,
+			accountName: null,
+		});
+	});
+
+	it("leaves out a row in another currency than a series without an account", async () => {
+		const accountId = await account();
+		await detectedBill(accountId);
+		await temp.db.update(recurringTransactions).set({ accountId: null, currency: "USD" });
+		const [entryId = ""] = await addRows(accountId, ["2026-09-21"]);
+
+		await expect(recurringEntryIds(temp.db, await rowsOf([entryId]))).resolves.toEqual(new Set());
+		await expect(recurringOfEntry(deps(), entryId)).resolves.toBeNull();
+	});
+
+	it("names the account's own series before one without an account, whatever their amounts", async () => {
+		const accountId = await account();
+		const own = await detectedBill(accountId);
+		await temp.db.insert(recurringTransactions).values({
+			...own,
+			id: "any",
+			accountId: null,
+			amount: toMinorUnits(-7000),
+			dedupScope: "any",
+		});
+		const [entryId = ""] = await addRows(accountId, ["2026-09-21"], "PRLV EDF", -7000);
+
+		await expect(recurringOfEntry(deps(), entryId)).resolves.toMatchObject({ id: own.id });
+	});
+
 	it("reads nothing for an empty page", async () => {
 		await expect(recurringEntryIds(temp.db, [])).resolves.toEqual(new Set());
 	});

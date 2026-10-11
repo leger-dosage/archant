@@ -147,6 +147,12 @@ describe("rekey", () => {
 		).toEqual([{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }]);
 	});
 
+	it("reads any account's transactions for a series without an account", () => {
+		expect(
+			rekey([series({ accountId: null })], [row("2026-09-05", { accountId: "a2" })], TODAY).steps,
+		).toEqual([{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }]);
+	});
+
 	it("never moves a bill declared with no payment yet onto a purchase of its due date", () => {
 		const declared = series({
 			status: "active",
@@ -274,6 +280,15 @@ describe("occurrencesOf", () => {
 		];
 
 		expect(occurrencesOf(series(), candidates, TODAY)).toEqual([]);
+	});
+
+	it("keeps any account's transactions for a series without an account", () => {
+		const candidates = [
+			row("2026-08-05", { ...noMerchant, accountId: "a1" }),
+			row("2026-09-05", { ...noMerchant, accountId: "a2" }),
+		];
+
+		expect(occurrencesOf(series({ accountId: null }), candidates, TODAY)).toEqual(candidates);
 	});
 
 	it("orders them by date, same days in the caller's order", () => {
