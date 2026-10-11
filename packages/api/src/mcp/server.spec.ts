@@ -57,6 +57,7 @@ import {
 	toolNames,
 } from "../testing/assistant.ts";
 import { buildTestApp, createTestAuth, TEST_ORIGIN, withSession } from "../testing/auth.ts";
+import { formatMoney, percentage } from "./tool.ts";
 
 useSignedInApp();
 
@@ -337,8 +338,9 @@ describe("the request", () => {
 		expect(result.instructions).toContain(
 			"A write takes ids, never a name a bank or a sender may write",
 		);
+		expect(result.instructions).not.toContain("Sans catégorie");
 		expect(result.instructions).toContain(
-			"- In get_budget, « Sans catégorie » (uncategorised) is what budgeted_spending leaves unallocated: change it through budgeted_spending or the category amounts, never directly.",
+			'get_income_statement, get_balance_sheet, get_budget and update_budget give amounts formatted only, such as "1 234,56 €", expenses positive',
 		);
 		expect(result.instructions).toContain(
 			"Before update_budget, tell the owner the amounts you are about to set and wait for their agreement.",
@@ -1041,62 +1043,64 @@ const accountsOf = (result: Awaited<ReturnType<typeof callTool>>) =>
 	z.object({ accounts: z.array(z.record(z.string(), z.unknown())) }).parse(result.structuredContent)
 		.accounts;
 
-const history = z.object({
-	start_date: z.string(),
-	end_date: z.string(),
-	interval: z.enum(["1 day", "1 week", "1 month"]),
-	currency: z.string(),
-	values: z.array(z.string().regex(decimalString)),
-});
-
-const sheetSide = z.object({ current: z.string().regex(decimalString), monthly_history: history });
-
-const balanceSheet = z.object({
-	as_of_date: z.string(),
-	oldest_account_start_date: z.string(),
-	currency: z.string(),
-	net_worth: sheetSide.extend({
-		change: z
-			.object({ amount: z.string().regex(decimalString), percent: z.number().nullable() })
-			.nullable(),
-	}),
-	assets: sheetSide,
-	liabilities: sheetSide,
-	insights: z.object({ debt_to_asset_ratio: z.number().nullable() }),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
-});
-
-const statementLine = z.object({
-	category_id: z.string().nullable(),
-	name: z.string().nullable(),
-	total: z.string().regex(decimalString),
-	percentage_of_total: z.number().nullable(),
-});
-
-const statementSide = z.object({
-	total: z.string().regex(decimalString),
-	by_category: z.array(statementLine.extend({ subcategory_totals: z.array(statementLine) })),
-});
-
-const incomeStatement = z.object({
-	currency: z.string(),
-	period: z.object({ start_date: z.string(), end_date: z.string() }),
-	income: statementSide,
-	expense: statementSide,
-	insights: z.object({ net_income: z.string().regex(decimalString), savings_rate: z.number() }),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
-});
-
 const leftOutIds = (leftOut: unknown) =>
 	z
 		.array(z.object({ id: z.string() }))
 		.parse(leftOut)
 		.map((account) => account.id);
 
+/** A route's minor units as Sure's `Money#format` writes them in euros. */
+const eur = (amount: unknown) =>
+	formatMoney({ amount: toMinorUnits(z.number().int().parse(amount)), currency: "EUR" });
+
+const history = z.union([
+	z.object({
+		start_date: z.string(),
+		end_date: z.string(),
+		interval: z.enum(["1 day", "1 week", "1 month"]),
+		currency: z.string(),
+		values: z.array(z.number()),
+	}),
+	z.tuple([]),
+]);
+
+const sheetSide = z.object({ current: z.string(), monthly_history: history });
+
+const balanceSheet = z.strictObject({
+	as_of_date: z.string(),
+	oldest_account_start_date: z.string(),
+	currency: z.string(),
+	net_worth: z.strictObject(sheetSide.shape),
+	assets: z.strictObject(sheetSide.shape),
+	liabilities: z.strictObject(sheetSide.shape),
+	insights: z.strictObject({ debt_to_asset_ratio: z.string() }),
+});
+
+/** The values of a history that has some. */
+const valuesOf = (side: z.infer<typeof sheetSide>) =>
+	Array.isArray(side.monthly_history) ? [] : side.monthly_history.values;
+
+const statementLine = z.strictObject({
+	name: z.string(),
+	total: z.string(),
+	percentage_of_total: z.string(),
+});
+
+const statementSide = z.strictObject({
+	total: z.string(),
+	by_category: z.array(statementLine.extend({ subcategory_totals: z.array(statementLine) })),
+});
+
+const incomeStatement = z.strictObject({
+	currency: z.string(),
+	period: z.object({ start_date: z.string(), end_date: z.string() }),
+	income: statementSide,
+	expense: statementSide,
+	insights: z.object({ net_income: z.string(), savings_rate: z.string() }).loose(),
+});
+
 describe("reading reports", () => {
-	it("get_balance_sheet gives the dashboard's net worth, assets and liabilities as decimal strings", async () => {
+	it("get_balance_sheet gives the dashboard's net worth, assets and liabilities in Sure's formats", async () => {
 		const checking = await openAccount({ name: "Bilan", openingBalance: "1 000,00" });
 		await openAccount({
 			name: "Carte bilan",
@@ -1114,37 +1118,34 @@ describe("reading reports", () => {
 		const sheet = balanceSheet.parse(result.structuredContent);
 		const route = await routeData("/api/reports/net-worth?period=1M");
 		const points = z.array(z.object({ date: z.string(), balance: z.number() })).parse(route.points);
+		const assets = z.number().parse(route.assets);
+		const liabilities = z.number().parse(route.liabilities);
 
 		expect(sheet).toMatchObject({
 			as_of_date: "2026-09-21",
 			currency: "EUR",
-			net_worth: { current: money(route.netWorth) },
-			assets: { current: money(route.assets) },
-			liabilities: { current: money(route.liabilities) },
-			left_out_count: leftOutIds(route.leftOut).length,
-			left_out_account_ids: leftOutIds(route.leftOut),
+			net_worth: { current: eur(route.netWorth) },
+			assets: { current: eur(assets) },
+			liabilities: { current: eur(liabilities) },
+			// Sure's ratio, liabilities over assets in percent, no decimal.
+			insights: { debt_to_asset_ratio: percentage((liabilities / assets) * 100, 0) },
 		});
-		// A value a day, the dashboard's balance of each day it charts.
+		// A value a day, the dashboard's balance of each day it charts, in JSON numbers.
 		expect(sheet.net_worth.monthly_history).toMatchObject({
 			start_date: "2026-08-21",
 			end_date: "2026-09-21",
 			interval: "1 day",
 			currency: "EUR",
 		});
-		expect(sheet.net_worth.monthly_history.values.slice(-points.length)).toEqual(
-			points.map((point) => money(point.balance)),
+		expect(valuesOf(sheet.net_worth).slice(-points.length)).toEqual(
+			points.map((point) => point.balance / 100),
 		);
-		expect(sheet.net_worth.monthly_history.values.at(-1)).toBe(sheet.net_worth.current);
-		expect(sheet.assets.monthly_history.values.at(-1)).toBe(sheet.assets.current);
-		expect(sheet.liabilities.monthly_history.values.at(-1)).toBe(sheet.liabilities.current);
-		// Sure's ratio, liabilities over assets in percent.
-		const assets = z.number().parse(route.assets);
-		expect(sheet.insights.debt_to_asset_ratio).toBe(
-			Math.round((z.number().parse(route.liabilities) / assets) * 1000) / 10,
-		);
+		expect(valuesOf(sheet.assets).at(-1)).toBe(assets / 100);
+		// Owed, negative in the history, as Sure's.
+		expect(valuesOf(sheet.liabilities).at(-1)).toBe(-liabilities / 100);
 	});
 
-	it("leaves an active account in another currency out of both reports, with its count and id", async () => {
+	it("leaves an active account in another currency out of both reports, without Archant's left_out fields", async () => {
 		const dollars = await openAccount({ name: "Dollars rapport", currency: "USD" });
 
 		const sheet = balanceSheet.parse(
@@ -1158,16 +1159,12 @@ describe("reading reports", () => {
 				})
 			).structuredContent,
 		);
-		const netWorthLeftOut = leftOutIds(
-			(await routeData("/api/reports/net-worth?period=1Y")).leftOut,
-		);
+		const route = await routeData("/api/reports/net-worth?period=1Y");
 
-		expect(sheet.net_worth.monthly_history.interval).toBe("1 month");
-		expect(sheet.left_out_account_ids).toContain(dollars.id);
-		expect(sheet.left_out_account_ids).toEqual(netWorthLeftOut);
-		expect(sheet.left_out_count).toBe(netWorthLeftOut.length);
-		expect(statement.left_out_account_ids).toEqual(netWorthLeftOut);
-		expect(statement.left_out_count).toBe(netWorthLeftOut.length);
+		expect(sheet.net_worth.monthly_history).toMatchObject({ interval: "1 month" });
+		expect(sheet.net_worth.current).toBe(eur(route.netWorth));
+		expect(leftOutIds(route.leftOut)).toContain(dollars.id);
+		expect(statement).not.toHaveProperty("left_out_count");
 	});
 
 	it("get_balance_sheet reads ten years by month, its last value today's net worth", async () => {
@@ -1177,20 +1174,21 @@ describe("reading reports", () => {
 			(await callTool(bare, tokens.access_token, "get_balance_sheet", { period: "last_10_years" }))
 				.structuredContent,
 		);
+		const netWorth = z
+			.number()
+			.parse((await routeData("/api/reports/net-worth?period=all")).netWorth);
 
 		expect(sheet.net_worth.monthly_history).toMatchObject({
 			start_date: "2016-09-21",
 			end_date: "2026-09-21",
 			interval: "1 month",
 		});
-		expect(sheet.net_worth.monthly_history.values).toHaveLength(121);
-		expect(sheet.net_worth.monthly_history.values.at(-1)).toBe(sheet.net_worth.current);
-		expect(sheet.net_worth.current).toBe(
-			money((await routeData("/api/reports/net-worth?period=all")).netWorth),
-		);
+		expect(valuesOf(sheet.net_worth)).toHaveLength(121);
+		expect(valuesOf(sheet.net_worth).at(-1)).toBe(netWorth / 100);
+		expect(sheet.net_worth.current).toBe(eur(netWorth));
 	});
 
-	it("get_balance_sheet gives no change and zero values for a household without accounts", async () => {
+	it('get_balance_sheet gives zero values and a "0%" ratio for a household without accounts', async () => {
 		const empty = await freshDatabase();
 		const { getBalanceSheet } = reportsService;
 		vi.spyOn(reportsService, "getBalanceSheet").mockImplementation(async (serviceDeps, query) =>
@@ -1209,22 +1207,18 @@ describe("reading reports", () => {
 
 			expect(sheet).toMatchObject({
 				oldest_account_start_date: "2026-09-21",
-				net_worth: { current: "0.00", change: null },
-				assets: { current: "0.00" },
-				liabilities: { current: "0.00" },
-				insights: { debt_to_asset_ratio: null },
-				left_out_count: 0,
-				left_out_account_ids: [],
+				net_worth: { current: "0,00\u00A0€" },
+				assets: { current: "0,00\u00A0€" },
+				liabilities: { current: "0,00\u00A0€" },
+				insights: { debt_to_asset_ratio: "0%" },
 			});
-			expect(sheet.net_worth.monthly_history.values).toEqual(
-				Array.from({ length: 8 }, () => "0.00"),
-			);
+			expect(valuesOf(sheet.net_worth)).toEqual(Array.from({ length: 8 }, () => 0));
 		} finally {
 			await empty.dispose();
 		}
 	});
 
-	it("get_income_statement gives the month's gross lines, « Sans catégorie » on both sides, where it read the dashboard's net 2 490,00 € and −64,20 €", async () => {
+	it("get_income_statement gives the month's gross lines, « Non catégorisé » on both sides, where it read the dashboard's net 2 490,00 € and −64,20 €", async () => {
 		const account = await openAccount({ name: "Mois", openingDate: "2026-07-01" });
 		const food = await createCategory(uniqueCategory("STATEMENT Alimentation"));
 		const groceries = await spend(account, "STATEMENT Courses", -6420, "2026-08-12");
@@ -1245,44 +1239,46 @@ describe("reading reports", () => {
 		expect(statement).toMatchObject({
 			currency: "EUR",
 			period: { start_date: "2026-08-01", end_date: "2026-08-31" },
-			income: {
-				total: "2500.00",
-				by_category: [
-					{
-						category_id: null,
-						name: null,
-						total: "2500.00",
-						percentage_of_total: 100,
-						subcategory_totals: [],
-					},
-				],
-			},
-			expense: {
-				total: "-74.20",
-				by_category: [
-					{
-						category_id: food.id,
-						name: food.name,
-						total: "-64.20",
-						percentage_of_total: 86.5,
-						subcategory_totals: [],
-					},
-					{
-						category_id: null,
-						name: null,
-						total: "-10.00",
-						percentage_of_total: 13.5,
-						subcategory_totals: [],
-					},
-				],
-			},
-			insights: { net_income: "2425.80", savings_rate: 97 },
+			income: { total: eur(250000) },
+			expense: { total: eur(7420) },
+			// 2 425,80 over 2 500,00: 97,032 %, rounded to two decimals.
+			insights: { net_income: eur(242580), savings_rate: "97,030%" },
 		});
+		expect(statement.income.by_category[0]).toEqual({
+			name: "Non catégorisé",
+			total: eur(250000),
+			percentage_of_total: "100,0%",
+			subcategory_totals: [],
+		});
+		expect(statement.expense.by_category.slice(0, 2)).toEqual([
+			{
+				name: food.name,
+				total: eur(6420),
+				percentage_of_total: "86,5%",
+				subcategory_totals: [],
+			},
+			{
+				name: "Non catégorisé",
+				total: eur(1000),
+				percentage_of_total: "13,5%",
+				subcategory_totals: [],
+			},
+		]);
+		// Every category on both sides, the food one at zero among the income lines.
+		expect(statement.income.by_category).toContainEqual({
+			name: food.name,
+			total: eur(0),
+			percentage_of_total: "0,0%",
+			subcategory_totals: [],
+		});
+		expect(statement.expense.by_category.map((line) => line.name)).toContain(
+			"Autres investissements",
+		);
 		// The dashboard reads Sure's net view: « Sans catégorie » nets to one income line.
 		expect(route).toMatchObject({ income: 249000, expenses: -6420 });
 	});
 
-	it("get_income_statement gives 0.00 and no lines for an empty period, and refuses a bad date", async () => {
+	it("get_income_statement gives zero lines for an empty period, and refuses a bad date as Sure's", async () => {
 		const empty = incomeStatement.parse(
 			(
 				await callTool(bare, tokens.access_token, "get_income_statement", {
@@ -1297,12 +1293,24 @@ describe("reading reports", () => {
 		});
 
 		expect(empty).toMatchObject({
-			income: { total: "0.00", by_category: [] },
-			expense: { total: "0.00", by_category: [] },
-			insights: { net_income: "0.00", savings_rate: 0 },
+			income: { total: eur(0) },
+			expense: { total: eur(0) },
+			insights: { net_income: eur(0), savings_rate: "0,000%" },
 		});
-		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain("start_date ");
+		expect(
+			[...empty.income.by_category, ...empty.expense.by_category].every(
+				(line) => line.total === eur(0) && line.percentage_of_total === "0,0%",
+			),
+		).toBe(true);
+		expect(refused).toEqual({
+			isError: true,
+			content: [
+				{
+					type: "text",
+					text: '{"error":"invalid_date","message":"Dates must be valid and in YYYY-MM-DD format."}',
+				},
+			],
+		});
 	});
 });
 
@@ -2521,19 +2529,14 @@ async function setAmount(month: string, categoryId: string, budgetedSpending: st
 
 const budgetStatus = z.enum(["over_budget", "near_limit", "on_track", "unbudgeted", "no_activity"]);
 
-const amount = z.string().regex(decimalString);
-
 const lineFields = {
-	category_id: z.string(),
 	name: z.string(),
-	budgeted: amount,
-	carried: amount,
-	actual: amount,
-	available: amount,
-	percent_spent: z.number(),
+	budgeted: z.string(),
+	actual: z.string(),
+	available: z.string(),
+	percent_spent: z.string(),
 	status: budgetStatus,
-	suggested_daily_spending: amount.optional(),
-	rollover_enabled: z.boolean(),
+	suggested_daily_spending: z.string().optional(),
 };
 
 /** A month in Sure's `get_budget` shape. */
@@ -2543,18 +2546,18 @@ const budgetMonth = z.strictObject({
 	is_current: z.boolean(),
 	initialized: z.boolean(),
 	totals: z.strictObject({
-		budgeted_spending: amount.nullable(),
-		allocated_spending: amount,
-		available_to_allocate: amount.nullable(),
-		actual_spending: amount,
-		available_to_spend: amount.nullable(),
-		percent_of_budget_spent: z.number(),
-		overage_percent: z.number(),
+		budgeted_spending: z.string(),
+		allocated_spending: z.string(),
+		available_to_allocate: z.string(),
+		actual_spending: z.string(),
+		available_to_spend: z.string(),
+		percent_of_budget_spent: z.string(),
+		overage_percent: z.string(),
 	}),
 	income: z.strictObject({
-		expected_income: amount.nullable(),
-		actual_income: amount,
-		remaining_expected_income: amount.nullable(),
+		expected_income: z.string(),
+		actual_income: z.string(),
+		remaining_expected_income: z.string(),
 	}),
 	categories: z.array(
 		z.strictObject({
@@ -2565,37 +2568,28 @@ const budgetMonth = z.strictObject({
 			),
 		}),
 	),
-	uncategorised: z.strictObject({
-		budgeted: amount,
-		actual: amount,
-		available: amount,
-		status: budgetStatus,
-	}),
 });
 
 const budgetResult = z.strictObject({
 	currency: z.string(),
 	months: z.array(budgetMonth),
 	months_unavailable: z.number().optional(),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
 });
 
 /** What update_budget answers, as Sure's `UpdateBudget`. */
 const updatedBudget = z.strictObject({
+	success: z.literal(true),
 	month: z.string(),
-	currency: z.string(),
 	totals: z.strictObject({
-		budgeted_spending: amount.nullable(),
-		expected_income: amount.nullable(),
-		allocated_spending: amount,
-		available_to_allocate: amount.nullable(),
+		budgeted_spending: z.string(),
+		expected_income: z.string(),
+		allocated_spending: z.string(),
+		available_to_allocate: z.string(),
 	}),
 	updated_categories: z.array(
-		z.strictObject({ category_id: z.string(), category: z.string(), budgeted_spending: amount }),
+		z.strictObject({ category: z.string(), budgeted_spending: z.string() }),
 	),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
+	message: z.string(),
 });
 
 const routeLine = z.object({
@@ -2605,11 +2599,9 @@ const routeLine = z.object({
 	color: z.string(),
 	budgetedSpending: z.number(),
 	shared: z.boolean(),
-	rolledOver: z.number(),
 	spent: z.number(),
 	available: z.number(),
 	percentSpent: z.number(),
-	rolloverEnabled: z.boolean(),
 });
 
 const routeBudget = z.object({
@@ -2623,11 +2615,6 @@ const routeBudget = z.object({
 	allocated: z.number(),
 	actual: z.object({ spending: z.number(), income: z.number() }),
 	categories: z.array(routeLine),
-	uncategorised: z.object({
-		budgetedSpending: z.number(),
-		spent: z.number(),
-		available: z.number(),
-	}),
 });
 
 /**
@@ -2640,34 +2627,35 @@ async function budgetFromRoute(month: string) {
 	expect(status).toBe(200);
 
 	const route = routeBudget.parse(z.object({ data: z.unknown() }).parse(body).data);
-	const nullable = (value: number | null) => (value === null ? null : money(value));
-	const minus = (a: number | null, b: number) => (a === null ? null : money(a - b));
+	const total = route.budgetedSpending ?? 0;
+	const income = route.expectedIncome ?? 0;
+	const amountOf = new Map(
+		route.categories.map((line) => [line.categoryId, line.budgetedSpending]),
+	);
 	const lineOfRoute = (line: z.infer<typeof routeLine>) => ({
-		category_id: line.categoryId,
 		name: line.name,
-		budgeted: money(line.budgetedSpending),
-		carried: money(line.rolledOver),
-		actual: money(line.spent),
-		available: money(line.available),
-		percent_spent: Math.round(line.percentSpent * 10) / 10,
-		rollover_enabled: line.rolloverEnabled,
+		budgeted: eur(
+			line.shared && line.parentId !== null ? amountOf.get(line.parentId) : line.budgetedSpending,
+		),
+		actual: eur(line.spent),
+		available: eur(line.available),
+		percent_spent: percentage(line.percentSpent, 1),
 	});
 
 	return {
-		month: route.month,
 		period: { start_date: route.from, end_date: route.to },
 		initialized: route.setUp,
 		totals: {
-			budgeted_spending: nullable(route.budgetedSpending),
-			allocated_spending: money(route.allocated),
-			available_to_allocate: minus(route.budgetedSpending, route.allocated),
-			actual_spending: money(route.actual.spending),
-			available_to_spend: minus(route.budgetedSpending, route.actual.spending),
+			budgeted_spending: eur(total),
+			allocated_spending: eur(route.allocated),
+			available_to_allocate: eur(total - route.allocated),
+			actual_spending: eur(route.actual.spending),
+			available_to_spend: eur(total - route.actual.spending),
 		},
 		income: {
-			expected_income: nullable(route.expectedIncome),
-			actual_income: money(route.actual.income),
-			remaining_expected_income: minus(route.expectedIncome, route.actual.income),
+			expected_income: eur(income),
+			actual_income: eur(route.actual.income),
+			remaining_expected_income: eur(income - route.actual.income),
 		},
 		categories: route.categories
 			.filter((line) => line.parentId === null)
@@ -2678,19 +2666,17 @@ async function budgetFromRoute(month: string) {
 					.filter((line) => line.parentId === parent.categoryId)
 					.map((child) => ({ ...lineOfRoute(child), inherits_parent_budget: child.shared })),
 			})),
-		uncategorised: {
-			budgeted: money(route.uncategorised.budgetedSpending),
-			actual: money(route.uncategorised.spent),
-			available: money(route.uncategorised.available),
-		},
 	};
 }
 
-/** A category's line, a parent's or a subcategory's. */
-const lineOf = (month: z.infer<typeof budgetMonth>, id: string) =>
-	month.categories
+/** A category's line by its name, a parent's or a subcategory's. */
+const lineOf = (month: z.infer<typeof budgetMonth> | undefined, name: string) =>
+	month?.categories
 		.flatMap((parent) => [parent, ...parent.subcategories])
-		.find((line) => line.category_id === id);
+		.find((line) => line.name === name);
+
+/** Sure's `error(key, message)` answer. */
+const refusal = (error: string, message: string) => ({ success: false, error, message });
 
 async function budgetRowCount(db: typeof temp.db) {
 	const { rows } = await db.$client.execute("select count(*) as n from budgets");
@@ -2699,13 +2685,13 @@ async function budgetRowCount(db: typeof temp.db) {
 }
 
 describe("reading a budget", () => {
-	it("get_budget gives each category's status as Sure's GetBudget, every amount as the page's", async () => {
+	it("get_budget gives each category's status as Sure's GetBudget, every amount as the page's, in Sure's formats", async () => {
 		const { db, app, reader, account } = await budgetHousehold();
 		const over = await ownCategory("Dépassée");
 		const near = await ownCategory("Presque");
 		const under = await ownCategory("Tranquille");
 		const unbudgeted = await ownCategory("Imprévue");
-		const untouched = await ownCategory("Intacte");
+		await ownCategory("Intacte");
 		await setBudget("2026-09", "1 000,00", "2 000,00");
 		await Promise.all([over, near, under].map(async (id) => setAmount("2026-09", id, "100,00")));
 		await spendOn(account.id, "2026-09-03", "-150,00", over);
@@ -2714,12 +2700,23 @@ describe("reading a budget", () => {
 		await spendOn(account.id, "2026-09-06", "-30,00", unbudgeted);
 
 		const result = await callTool(app, reader, "get_budget", { month: "2026-09" });
-		const { months, ...leftOut } = budgetResult.parse(result.structuredContent);
-		const [september] = months;
-		const statusOf = (id: string) => (september ? lineOf(september, id)?.status : undefined);
+		const answer = budgetResult.parse(result.structuredContent);
+		const [september] = answer.months;
+		const statusOf = (name: string) => lineOf(september, name)?.status;
 
-		expect(months).toHaveLength(1);
-		expect([over, near, under, unbudgeted, untouched].map(statusOf)).toEqual([
+		expect(Object.keys(answer)).toEqual(["currency", "months"]);
+		expect(answer.currency).toBe("EUR");
+		expect(answer.months).toHaveLength(1);
+		expect(Object.keys(september ?? {})).toEqual([
+			"month",
+			"period",
+			"is_current",
+			"initialized",
+			"totals",
+			"income",
+			"categories",
+		]);
+		expect(["Dépassée", "Presque", "Tranquille", "Imprévue", "Intacte"].map(statusOf)).toEqual([
 			"over_budget",
 			"near_limit",
 			"on_track",
@@ -2728,47 +2725,72 @@ describe("reading a budget", () => {
 		]);
 		expect(september).toMatchObject(await budgetFromRoute("2026-09"));
 		expect(september).toMatchObject({
+			month: "sep-2026",
 			is_current: true,
 			initialized: true,
 			totals: {
-				budgeted_spending: "1000.00",
-				allocated_spending: "300.00",
-				available_to_allocate: "700.00",
-				actual_spending: "308.33",
-				available_to_spend: "691.67",
-				percent_of_budget_spent: 30.8,
-				overage_percent: 0,
+				budgeted_spending: eur(100_000),
+				allocated_spending: eur(30_000),
+				available_to_allocate: eur(70_000),
+				actual_spending: eur(30_833),
+				available_to_spend: eur(69_167),
+				percent_of_budget_spent: "30,8%",
+				overage_percent: "0,0%",
 			},
-			income: { expected_income: "2000.00", remaining_expected_income: "2000.00" },
-			uncategorised: { budgeted: "700.00", actual: "0.00", status: "on_track" },
+			income: { expected_income: eur(200_000), remaining_expected_income: eur(200_000) },
 		});
-		expect(september?.categories.find((line) => line.category_id === over)).toEqual({
-			category_id: over,
+		const overLine = september?.categories.find((line) => line.name === "Dépassée");
+		expect(overLine).toEqual({
 			name: "Dépassée",
-			budgeted: "100.00",
-			carried: "0.00",
-			actual: "150.00",
-			available: "-50.00",
-			percent_spent: 150,
+			budgeted: eur(10_000),
+			actual: eur(15_000),
+			available: eur(-5_000),
+			percent_spent: "150,0%",
 			status: "over_budget",
-			rollover_enabled: false,
 			color: "#e99537",
 			subcategories: [],
 		});
+		expect(Object.keys(overLine ?? {})).toEqual([
+			"name",
+			"budgeted",
+			"actual",
+			"available",
+			"percent_spent",
+			"status",
+			"color",
+			"subcategories",
+		]);
 		// The clock stands at 2026-09-21: ten days left, today included, as Sure divides.
-		expect(september ? lineOf(september, under) : undefined).toMatchObject({
-			actual: "33.33",
-			available: "66.67",
-			percent_spent: 33.3,
-			suggested_daily_spending: "6.67",
+		expect(lineOf(september, "Tranquille")).toMatchObject({
+			actual: eur(3_333),
+			available: eur(6_667),
+			percent_spent: "33,3%",
+			suggested_daily_spending: eur(667),
 		});
-		expect(leftOut).toEqual({ currency: "EUR", left_out_count: 0, left_out_account_ids: [] });
 		expect(outcomes(await callsRecorded(db))).toEqual([
 			{ tool: "get_budget", outcome: "OK", changedRows: 0 },
 		]);
 	});
 
-	it("get_budget carries what a month left into the next, earlier months first, as the page shows them", async () => {
+	it("get_budget gives Sure's overage once spending passes the budget", async () => {
+		const { app, reader, account } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+		await spendOn(account.id, "2026-09-03", "-1 250,00", groceries);
+
+		const [september] = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "2026-09" })).structuredContent,
+		).months;
+
+		// 250,00 past the budget, over the 1 250,00 spent.
+		expect(september?.totals).toMatchObject({
+			available_to_spend: eur(-25_000),
+			percent_of_budget_spent: "125,0%",
+			overage_percent: "20,0%",
+		});
+	});
+
+	it("get_budget carries what a month left into the next, earlier months first, a shared subcategory showing its parent's amount", async () => {
 		const { app, reader, account } = await budgetHousehold();
 		const gifts = await ownCategory("Cadeaux");
 		const birthdays = await ownCategory("Anniversaires", { parentId: gifts });
@@ -2786,24 +2808,23 @@ describe("reading a budget", () => {
 		);
 		const [august, september] = months;
 
-		expect(months.map((item) => item.month)).toEqual(["2026-08", "2026-09"]);
+		expect(months.map((item) => item.month)).toEqual(["aug-2026", "sep-2026"]);
 		expect(august).toMatchObject(await budgetFromRoute("2026-08"));
 		expect(september).toMatchObject(await budgetFromRoute("2026-09"));
-		expect(september ? lineOf(september, gifts) : undefined).toMatchObject({
-			budgeted: "0.00",
-			carried: "60.00",
-			available: "60.00",
-			rollover_enabled: true,
+		expect(lineOf(september, "Cadeaux")).toMatchObject({
+			budgeted: eur(0),
+			available: eur(6_000),
 			status: "on_track",
 		});
-		expect(september ? lineOf(september, birthdays) : undefined).toMatchObject({
+		// Sure's display_budgeted_spending: the parent's 100,00 in August.
+		expect(lineOf(august, "Anniversaires")).toMatchObject({
+			budgeted: eur(10_000),
 			inherits_parent_budget: true,
-			carried: "60.00",
 		});
 		expect(august?.is_current).toBe(false);
 	});
 
-	it("get_budget drops the months before the first one a budget covers, and shows a month not set up", async () => {
+	it("get_budget drops the months before the first one a budget covers, and shows a month not set up at zero", async () => {
 		const { app, reader } = await budgetHousehold();
 
 		const { months, months_unavailable: unavailable } = budgetResult.parse(
@@ -2815,13 +2836,17 @@ describe("reading a budget", () => {
 		);
 
 		// The clock is 2026-09-21: budgets reach back to 2024-09.
-		expect(months.map((item) => item.month)).toEqual(["2024-09", "2024-10", "2024-11"]);
+		expect(months.map((item) => item.month)).toEqual(["sep-2024", "oct-2024", "nov-2024"]);
 		expect(unavailable).toBe(9);
-		expect(current.months.map((item) => item.month)).toEqual(["2026-09"]);
+		expect(current.months.map((item) => item.month)).toEqual(["sep-2026"]);
 		expect(current.months[0]).toMatchObject({
 			initialized: false,
-			totals: { budgeted_spending: null, allocated_spending: "0.00", available_to_spend: null },
-			income: { expected_income: null },
+			totals: {
+				budgeted_spending: eur(0),
+				allocated_spending: eur(0),
+				percent_of_budget_spent: "0,0%",
+			},
+			income: { expected_income: eur(0) },
 		});
 		expect(current.months_unavailable).toBeUndefined();
 		expect(current.months[0]).toMatchObject(await budgetFromRoute("2026-09"));
@@ -2847,22 +2872,23 @@ describe("reading a budget", () => {
 });
 
 describe("setting a budget", () => {
-	it("update_budget sets up a month with its categories, inheriting a switch, then changes one field at a time", async () => {
+	it("update_budget sets up a month with its categories, then changes one field at a time, as Sure's answers", async () => {
 		const { db, app, author } = await budgetHousehold();
 		const gifts = await ownCategory("Cadeaux");
-		const groceries = await ownCategory("Courses");
+		await ownCategory("Courses");
 		const home = await ownCategory("Maison");
-		const garden = await ownCategory("Jardin", { parentId: home });
+		await ownCategory("Jardin", { parentId: home });
 		await setBudget("2026-08", "1 000,00", "2 000,00");
 		await sendOwn("PUT", `/api/budgets/2026-08/categories/${gifts}/rollover`, {
 			rolloverEnabled: true,
 		});
 
-		// Sure's call: the current month by default, a category by name, case aside.
+		// Sure's call: the current month by default, a category by name, case aside,
+		// amounts as JSON numbers or decimal strings.
 		const created = await callTool(app, author, "update_budget", {
 			budgeted_spending: "1500.00",
-			expected_income: "3000.00",
-			categories: [{ category: "courses", amount: "400.00" }],
+			expected_income: 3000,
+			categories: [{ category: "courses", amount: 400 }],
 		});
 		const read = budgetResult.parse(
 			(await callTool(app, author, "get_budget", { month: "2026-09" })).structuredContent,
@@ -2870,23 +2896,25 @@ describe("setting a budget", () => {
 		const september = updatedBudget.parse(created.structuredContent);
 
 		expect(september).toEqual({
-			month: "2026-09",
-			currency: "EUR",
+			success: true,
+			month: "sep-2026",
 			totals: {
-				budgeted_spending: "1500.00",
-				expected_income: "3000.00",
-				allocated_spending: "400.00",
-				available_to_allocate: "1100.00",
+				budgeted_spending: eur(150_000),
+				expected_income: eur(300_000),
+				allocated_spending: eur(40_000),
+				available_to_allocate: eur(110_000),
 			},
-			updated_categories: [
-				{ category_id: groceries, category: "Courses", budgeted_spending: "400.00" },
-			],
-			left_out_count: read.left_out_count,
-			left_out_account_ids: read.left_out_account_ids,
+			updated_categories: [{ category: "Courses", budgeted_spending: eur(40_000) }],
+			message: "Budget for September 2026 updated.",
 		});
-		const [month] = read.months;
-		expect(month ? lineOf(month, groceries)?.budgeted : undefined).toBe("400.00");
-		expect(month ? lineOf(month, gifts)?.rollover_enabled : undefined).toBe(true);
+		expect(Object.keys(september)).toEqual([
+			"success",
+			"month",
+			"totals",
+			"updated_categories",
+			"message",
+		]);
+		expect(lineOf(read.months[0], "Courses")?.budgeted).toBe(eur(40_000));
 
 		const partial = updatedBudget.parse(
 			(
@@ -2898,33 +2926,33 @@ describe("setting a budget", () => {
 		);
 
 		expect(partial).toMatchObject({
-			totals: { budgeted_spending: "1500.00", expected_income: "3200.00" },
+			totals: { budgeted_spending: eur(150_000), expected_income: eur(320_000) },
 			updated_categories: [],
 		});
 
-		// The parent comes first here: it is written last, so its 500 stays.
-		// One by id, one by name, as Sure's `category` takes either.
+		// The parent comes first here: Sure writes it last, so its 500 stays,
+		// and answers the subcategory first. One by id, one by name.
 		const both = updatedBudget.parse(
 			(
 				await callTool(app, author, "update_budget", {
 					month: "2026-09",
 					categories: [
 						{ category: home, amount: "500.00" },
-						{ category: "Jardin", amount: "200.00" },
+						{ category: "Jardin", amount: 200 },
 					],
 				})
 			).structuredContent,
 		);
 
 		expect(both.updated_categories).toEqual([
-			{ category_id: home, category: "Maison", budgeted_spending: "500.00" },
-			{ category_id: garden, category: "Jardin", budgeted_spending: "200.00" },
+			{ category: "Jardin", budgeted_spending: eur(20_000) },
+			{ category: "Maison", budgeted_spending: eur(50_000) },
 		]);
 		const after = budgetResult.parse(
 			(await callTool(app, author, "get_budget", { month: "2026-09" })).structuredContent,
 		).months[0];
-		expect(after ? lineOf(after, garden) : undefined).toMatchObject({
-			budgeted: "200.00",
+		expect(lineOf(after, "Jardin")).toMatchObject({
+			budgeted: eur(20_000),
 			inherits_parent_budget: false,
 		});
 		expect(after).toMatchObject(await budgetFromRoute("2026-09"));
@@ -2937,70 +2965,158 @@ describe("setting a budget", () => {
 		]);
 	});
 
-	it("update_budget refuses half a set-up, a category before it, « Sans catégorie », a category twice and nothing, writing nothing", async () => {
+	it("update_budget reads a JSON number through its decimal text", async () => {
+		const { db, app, author } = await budgetHousehold();
+		await setBudget("2026-10", "1 000,00", "2 000,00");
+
+		const answer = updatedBudget.parse(
+			(
+				await callTool(app, author, "update_budget", {
+					month: "2026-10",
+					budgeted_spending: 6500,
+				})
+			).structuredContent,
+		);
+		const { rows } = await db.$client.execute(
+			"select budgeted_spending as amount from budgets where month = '2026-10'",
+		);
+
+		expect(rows[0]?.amount).toBe(650_000);
+		expect(answer).toMatchObject({
+			month: "oct-2026",
+			totals: { budgeted_spending: eur(650_000) },
+			message: "Budget for October 2026 updated.",
+		});
+	});
+
+	it("update_budget refuses in Sure's order and words, and Archant's own refusals as validation_failed, writing nothing", async () => {
 		const { db, app, author } = await budgetHousehold();
 		const groceries = await ownCategory("Courses");
-		const salary = await ownCategory("Salaire", { kind: "income" });
-		const call = async (args: Record<string, unknown>) =>
-			(await callTool(app, author, "update_budget", { month: "2026-10", ...args })).content[0]
-				?.text;
+		await ownCategory("Salaire", { kind: "income" });
+		const call = async (args: Record<string, unknown>) => {
+			const answer = await callTool(app, author, "update_budget", { month: "2026-10", ...args });
 
-		await expect(call({ budgeted_spending: "1000.00" })).resolves.toBe(
-			'{"success":false,"error":"validation_error","message":"The request is invalid; expected_income required"}',
+			expect(answer.isError).toBe(true);
+
+			return z.unknown().parse(JSON.parse(answer.content[0]?.text ?? ""));
+		};
+		const setUp = { budgeted_spending: 1000, expected_income: 2000 };
+
+		await expect(call({})).resolves.toEqual(
+			refusal(
+				"no_changes",
+				"Provide at least one of budgeted_spending, expected_income, or categories.",
+			),
+		);
+		// Nothing to change before a month it cannot read.
+		await expect(call({ month: "2026/10" })).resolves.toEqual(
+			refusal(
+				"no_changes",
+				"Provide at least one of budgeted_spending, expected_income, or categories.",
+			),
+		);
+		// The month before the amounts, as Sure resolves it first.
+		await expect(call({ month: "2026/10", budgeted_spending: -5 })).resolves.toEqual(
+			refusal("invalid_params", "Invalid month: 2026/10. Use YYYY-MM or MMM-YYYY."),
+		);
+		await expect(call({ month: "2026-13", ...setUp })).resolves.toEqual(
+			refusal("invalid_params", "Invalid month: 2026-13. Use YYYY-MM or MMM-YYYY."),
+		);
+		await expect(call({ month: "2029-09", budgeted_spending: -5 })).resolves.toEqual(
+			refusal(
+				"invalid_month",
+				"No budget exists (or can be created) for that month — it is outside the valid budget range.",
+			),
+		);
+		await expect(call({ budgeted_spending: -5, expected_income: "abc" })).resolves.toEqual(
+			refusal("invalid_params", "budgeted_spending must be a non-negative number."),
+		);
+		// The totals' amounts before any category, as Sure parses them first.
+		await expect(
+			call({ budgeted_spending: -5, categories: [{ category: "Absente", amount: 5 }] }),
+		).resolves.toEqual(
+			refusal("invalid_params", "budgeted_spending must be a non-negative number."),
+		);
+		await expect(call({ budgeted_spending: 5, expected_income: "abc" })).resolves.toEqual(
+			refusal("invalid_params", "expected_income must be a non-negative number."),
+		);
+		await expect(call({ ...setUp, categories: [{ amount: 5 }] })).resolves.toEqual(
+			refusal("invalid_params", "Each categories entry needs a category name or id."),
 		);
 		await expect(
-			call({ categories: [{ category: groceries, amount: "100.00" }] }),
-		).resolves.toMatch(/^\{"success":false,"error":"budget_not_set_up"/u);
+			Promise.all(
+				["non catégorisé", "UNCATEGORIZED", "Sans catégorie"].map(async (name) =>
+					call({ ...setUp, categories: [{ category: name, amount: 5 }] }),
+				),
+			),
+		).resolves.toEqual(
+			["non catégorisé", "UNCATEGORIZED", "Sans catégorie"].map((name) =>
+				refusal(
+					"invalid_params",
+					`'${name}' is the unallocated remainder of budgeted_spending and cannot be set directly. Adjust budgeted_spending or category amounts instead.`,
+				),
+			),
+		);
 		await expect(
-			call({
-				budgeted_spending: "1000.00",
-				expected_income: "2000.00",
-				categories: [{ category: "Sans catégorie", amount: "100.00" }],
-			}),
-		).resolves.toBe(
-			'{"success":false,"error":"validation_error","message":"The request is invalid; categories.0.category uncategorised"}',
+			call({ ...setUp, categories: [{ category: "Absente", amount: 5 }] }),
+		).resolves.toEqual(
+			refusal(
+				"invalid_params",
+				"Category 'Absente' not found. Use get_categories to list categories.",
+			),
+		);
+		await expect(
+			call({ ...setUp, categories: [{ category: "salaire", amount: 5 }] }),
+		).resolves.toEqual(
+			refusal("invalid_params", "No budget row exists for category 'Salaire' in oct-2026."),
+		);
+		await expect(
+			call({ ...setUp, categories: [{ category: "courses", amount: -5 }] }),
+		).resolves.toEqual(
+			refusal("invalid_params", "amount for 'Courses' must be a non-negative number."),
+		);
+		// Archant's own: half a set-up, a category before it, a category twice, a third decimal.
+		await expect(call({ budgeted_spending: 1000 })).resolves.toEqual(
+			refusal("validation_failed", "The request is invalid; expected_income required"),
+		);
+		await expect(call({ categories: [{ category: groceries, amount: 100 }] })).resolves.toEqual(
+			refusal("validation_failed", "Set this month's budget before its categories."),
 		);
 		await expect(
 			call({
-				budgeted_spending: "1000.00",
-				expected_income: "2000.00",
+				...setUp,
 				categories: [
-					{ category: groceries, amount: "100.00" },
-					{ category: "Courses", amount: "200.00" },
+					{ category: groceries, amount: 100 },
+					{ category: "Courses", amount: 200 },
 				],
 			}),
-		).resolves.toBe(
-			'{"success":false,"error":"validation_error","message":"The request is invalid; categories.1.category duplicate"}',
+		).resolves.toEqual(
+			refusal("validation_failed", "The request is invalid; categories.1.category duplicate"),
 		);
-		await expect(call({})).resolves.toContain("empty_patch");
-		await expect(
-			call({ budgeted_spending: "-5.00", expected_income: "2000.00" }),
-		).resolves.toContain("budgeted_spending negative_amount");
-		// A first set-up whose category is refused is rolled back with it.
-		await expect(
-			call({
-				budgeted_spending: "1000.00",
-				expected_income: "2000.00",
-				categories: [{ category: salary, amount: "100.00" }],
-			}),
-		).resolves.toBe(
-			'{"success":false,"error":"not_found","message":"No expense category has this id."}',
-		);
-		await expect(
-			call({ month: "2029-09", budgeted_spending: "1000.00", expected_income: "2000.00" }),
-		).resolves.toBe(
-			'{"success":false,"error":"not_found","message":"No budget can be set for this month."}',
+		await expect(call({ ...setUp, budgeted_spending: "12.345" })).resolves.toEqual(
+			refusal("validation_failed", "The request is invalid; budgeted_spending invalid_amount"),
 		);
 		await expect(budgetRowCount(db)).resolves.toBe(0);
-		expect(outcomes(await callsRecorded(db))).toEqual([
-			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "update_budget", outcome: "BUDGET_NOT_SET_UP", changedRows: 0 },
-			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "update_budget", outcome: "VALIDATION_ERROR", changedRows: 0 },
-			{ tool: "update_budget", outcome: "NOT_FOUND", changedRows: 0 },
-			{ tool: "update_budget", outcome: "NOT_FOUND", changedRows: 0 },
+		expect(outcomes(await callsRecorded(db)).map((entry) => entry.outcome)).toEqual([
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"NOT_FOUND",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
+			"VALIDATION_ERROR",
 		]);
 	});
 
@@ -3036,7 +3152,7 @@ describe("setting a budget", () => {
 		await expect(carriedIntoSeptember()).resolves.toBe(11_000);
 	});
 
-	it("update_budget refuses an income category with NOT_FOUND, leaving the total it was given unwritten", async () => {
+	it("update_budget refuses an income category before writing the total it was given", async () => {
 		const { app, author } = await budgetHousehold();
 		await ownCategory("Salaire", { kind: "income" });
 		await setBudget("2026-09", "1 000,00", "2 000,00");
@@ -3046,25 +3162,18 @@ describe("setting a budget", () => {
 			budgeted_spending: "1800.00",
 			categories: [{ category: "Salaire", amount: "50.00" }],
 		});
-		const unknown = await callTool(app, author, "update_budget", {
-			month: "2026-09",
-			categories: [{ category: "Absente", amount: "50.00" }],
-		});
 
 		expect(result).toEqual({
 			isError: true,
 			content: [
 				{
 					type: "text",
-					text: '{"success":false,"error":"not_found","message":"No expense category has this id."}',
+					text: '{"success":false,"error":"invalid_params","message":"No budget row exists for category \'Salaire\' in sep-2026."}',
 				},
 			],
 		});
-		expect(unknown.content[0]?.text).toBe(
-			'{"success":false,"error":"not_found","message":"No expense category has this id."}',
-		);
 		await expect(budgetFromRoute("2026-09")).resolves.toMatchObject({
-			totals: { budgeted_spending: "1000.00" },
+			totals: { budgeted_spending: eur(100_000) },
 		});
 	});
 
@@ -3073,7 +3182,7 @@ describe("setting a budget", () => {
 
 		const response = await mcp(app, reader, "tools/call", {
 			name: "update_budget",
-			arguments: { month: "2026-09", budgeted_spending: "1000.00", expected_income: "2000.00" },
+			arguments: { month: "2026-09", budgeted_spending: 1000, expected_income: 2000 },
 		});
 
 		expect(response.status).toBe(403);

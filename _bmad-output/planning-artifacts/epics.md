@@ -5234,7 +5234,7 @@ So that an assistant reads my figures with Sure's signs and formats.
 
 **Given** `get_income_statement`
 **When** it answers
-**Then** totals, categories, medians, averages, monthly series and the previous period are formatted and positive, `net` and `net_income` are income minus expenses, `percentage_of_total` is `number_to_percentage` at precision 1, `savings_rate` at Sure's default precision 3, the uncategorised line is named « Uncategorized », every category of the household is listed on both sides, zero included, as Sure's, and `category_id` goes; figures come from Story 27.6's gross view
+**Then** totals, categories, medians, averages, monthly series and the previous period are formatted and positive, `net` and `net_income` are income minus expenses, `percentage_of_total` is `number_to_percentage` at precision 1, `savings_rate` at Sure's default precision 3, the uncategorised line is named « Non catégorisé », Sure's `fr.yml` name, beside Sure's always-zero « Autres investissements », every category of the household is listed on both sides, zero included, as Sure's, and `category_id` goes; figures come from Story 27.6's gross view
 
 **Given** `get_balance_sheet`
 **When** it answers

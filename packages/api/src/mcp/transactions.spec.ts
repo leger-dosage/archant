@@ -1138,6 +1138,11 @@ describe("get_transactions by Sure's names", () => {
 			"Divers",
 			"Hôtel",
 			"Intérêts",
+		]); // The name get_income_statement gives its uncategorised line, Sure's French one.
+		await expect(labelsOf(tools, { categories: ["Non catégorisé"] })).resolves.toEqual([
+			"Divers",
+			"Hôtel",
+			"Intérêts",
 		]);
 	});
 
@@ -1169,6 +1174,9 @@ describe("get_transactions by Sure's names", () => {
 		const grouped = await tools.read("group_transactions_by_label", {
 			categories: ["Alimentation"],
 		});
+		const uncategorised = await tools.read("group_transactions_by_label", {
+			categories: ["Non catégorisé"],
+		});
 		const bulk = await tools.write("bulk_update_transactions", {
 			filter: { accounts: ["Compte courant"] },
 			expected_count: 2,
@@ -1177,6 +1185,10 @@ describe("get_transactions by Sure's names", () => {
 
 		expect(grouped.structuredContent).toMatchObject({
 			groups: [{ label: "Pain", categories: [{ id: food, name: "Alimentation" }] }],
+			group_count: 1,
+		});
+		expect(uncategorised.structuredContent).toMatchObject({
+			groups: [{ label: "Divers" }],
 			group_count: 1,
 		});
 		expect(errorText(bulk)).toContain("filter.accounts unrecognized_keys");

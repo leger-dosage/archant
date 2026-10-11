@@ -43,6 +43,17 @@ import {
 	parseBounds,
 } from "./transactions.ts";
 
+/**
+ * A value Sure's write requires, kept required in the advertised schema: a
+ * missing one reaches `run` blank, which refuses it with Sure's key, as
+ * `requiredSureName` does for a name.
+ */
+const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
+	z.preprocess((value) => value ?? "", schema);
+
+/** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
+const sureAmount = z.union([z.string().max(40), z.number()]);
+
 /** The input of a tool that takes none: an assistant may send `{}`, nothing more. */
 export const noToolInput = z.strictObject({});
 
@@ -130,16 +141,30 @@ const MONTH_ABBREVIATIONS = [
 	"dec",
 ] as const;
 
-/** Sure's month slug: "YYYY-MM", or "MMM-YYYY" such as "Aug-2026", read as "2026-08". */
+/** Sure's `Budget#to_param`: "aug-2026" for "2026-08". */
+export function monthParam(month: string): string {
+	const [year = "", number = ""] = month.split("-");
+
+	return `${MONTH_ABBREVIATIONS[Number(number) - 1] ?? number}-${year}`;
+}
+
+/**
+ * Sure's month slug, "YYYY-MM" or "MMM-YYYY" such as "Aug-2026", as
+ * "2026-08"; `null` for anything else.
+ */
+export function sureMonthOf(value: string): string | null {
+	const named = /^([A-Za-z]{3})-(\d{4})$/u.exec(value);
+	const abbreviation = named?.[1]?.toLowerCase();
+	const index = MONTH_ABBREVIATIONS.findIndex((month) => month === abbreviation);
+	const month = index === -1 ? value : `${named?.[2]}-${String(index + 1).padStart(2, "0")}`;
+
+	return monthSchema.safeParse(month).success ? month : null;
+}
+
+/** Sure's month slug, read as "2026-08". */
 const toolMonth = z
 	.string()
-	.transform((value) => {
-		const match = /^([A-Za-z]{3})-(\d{4})$/u.exec(value);
-		const abbreviation = match?.[1]?.toLowerCase();
-		const index = MONTH_ABBREVIATIONS.findIndex((month) => month === abbreviation);
-
-		return index === -1 ? value : `${match?.[2]}-${String(index + 1).padStart(2, "0")}`;
-	})
+	.transform((value) => sureMonthOf(value) ?? value)
 	.pipe(monthSchema);
 
 /** `get_accounts`: today's balances, and with `include_balance_series` their history. */
@@ -160,85 +185,64 @@ export const getAccountsInput = z.strictObject({
 
 /**
  * `get_balance_sheet`: Sure's named period, or its custom range when both
- * dates are given, and its series interval.
+ * dates are given, and its series interval. The dates reach `run` loosely
+ * typed, which refuses them with Sure's `invalid_date`; an unknown period or
+ * interval reads as its default, as Sure's.
  */
-export const balanceSheetInput = z
-	.strictObject({
-		period: z
-			.enum(SURE_PERIODS)
-			.optional()
-			.describe("A named period for the history series; the last five years when absent."),
-		start_date: z.iso
-			.date()
-			.optional()
-			.describe(
-				"A custom range's first day, YYYY-MM-DD; overrides period when end_date is also given.",
-			),
-		end_date: z.iso
-			.date()
-			.optional()
-			.describe(
-				"A custom range's last day, YYYY-MM-DD; overrides period when start_date is also given.",
-			),
-		interval: z
-			.enum(SURE_INTERVALS)
-			.default("1 month")
-			.describe('The series\' step, "1 month" by default; 400 points at most.'),
-	})
-	.superRefine((value, context) => {
-		if (
-			value.start_date !== undefined &&
-			value.end_date !== undefined &&
-			value.end_date < value.start_date
-		) {
-			context.addIssue({ code: "custom", path: ["end_date"], message: "before_from" });
-		}
-	})
-	.transform((value) => ({
-		from: value.start_date,
-		to: value.end_date,
-		period: value.period,
-		interval: value.interval,
-	}));
+export const balanceSheetInput = z.strictObject({
+	period: z
+		.enum(SURE_PERIODS)
+		.optional()
+		.catch(undefined)
+		.describe("A named period for the history series; the last five years when absent."),
+	start_date: z
+		.string()
+		.optional()
+		.describe(
+			"A custom range's first day, YYYY-MM-DD; overrides period when end_date is also given.",
+		),
+	end_date: z
+		.string()
+		.optional()
+		.describe(
+			"A custom range's last day, YYYY-MM-DD; overrides period when start_date is also given.",
+		),
+	interval: z
+		.enum(SURE_INTERVALS)
+		.catch("1 month")
+		.default("1 month")
+		.describe('The series\' step, "1 month" by default; 400 points at most.'),
+});
 
-/** `get_income_statement`: Sure's period, account filter, monthly series and comparison. */
-export const incomeStatementInput = z
-	.strictObject({
-		start_date: z.iso.date().describe("The period's first day, YYYY-MM-DD, inclusive."),
-		end_date: z.iso.date().describe("The period's last day, YYYY-MM-DD, inclusive."),
-		account_ids: z
-			.array(z.string().min(1))
-			.min(1)
-			.max(MAX_TAG_FILTER)
-			.optional()
-			.describe(
-				"Account ids from get_accounts: totals of those accounts alone, without the category breakdown or the insights. An inactive account, one excluded from reports or in another currency is refused.",
-			),
-		group_by: z
-			.enum(["none", "month"])
-			.default("none")
-			.describe(
-				'"month" adds monthly_series: income, expenses and net per calendar month, the first and last cut to the period, 36 months at most.',
-			),
-		compare_previous_period: z
-			.boolean()
-			.default(false)
-			.describe(
-				"Adds previous_period: the totals of the equal-length period just before start_date, with the changes.",
-			),
-	})
-	.superRefine((value, context) => {
-		if (value.end_date < value.start_date) {
-			context.addIssue({ code: "custom", path: ["end_date"], message: "before_from" });
-		}
-	})
-	.transform((value) => ({
-		from: value.start_date,
-		to: value.end_date,
-		accountIds: value.account_ids,
-		byMonth: value.group_by === "month",
-		comparePrevious: value.compare_previous_period,
-	}));
+/**
+ * `get_income_statement`: Sure's period, account filter, monthly series and
+ * comparison. The dates reach `run` loosely typed, which refuses them with
+ * Sure's `invalid_date`.
+ */
+export const incomeStatementInput = z.strictObject({
+	start_date: requiredLoose(z.string()).describe("The period's first day, YYYY-MM-DD, inclusive."),
+	end_date: requiredLoose(z.string()).describe("The period's last day, YYYY-MM-DD, inclusive."),
+	account_ids: z
+		.array(z.string().min(1))
+		.min(1)
+		.max(MAX_TAG_FILTER)
+		.optional()
+		.describe(
+			"Account ids from get_accounts: totals of those accounts alone, without the category breakdown or the insights. An inactive account, one excluded from reports, tax-advantaged or in another currency is refused with unknown_account_ids.",
+		),
+	group_by: z
+		.enum(["none", "month"])
+		.default("none")
+		.describe(
+			'"month" adds monthly_series: income, expenses and net per calendar month, the first and last cut to the period, 36 months at most.',
+		),
+	compare_previous_period: z
+		.boolean()
+		.default(false)
+		.describe(
+			"Adds previous_period: the totals of the equal-length period just before start_date, with the changes.",
+		),
+});
 
 /** `get_recurring_transactions`: the series « Récurrents » lists, narrowed. */
 export const recurringInput = z.strictObject({
@@ -345,7 +349,7 @@ const toolFilterFields = {
 	...idFilterFields,
 	accounts: namesOf("Exact account names, as get_accounts gives them; any of them."),
 	categories: namesOf(
-		'Exact category names, as get_categories gives them, "Uncategorized" or « Sans catégorie » standing for uncategorised; any of them. A parent stands for its children too.',
+		'Exact category names, as get_categories gives them, "Uncategorized", « Non catégorisé » or « Sans catégorie » standing for uncategorised; any of them. A parent stands for its children too.',
 	),
 	merchants: namesOf("Exact merchant names, as get_merchants gives them; any of them."),
 	tags: namesOf("Exact tag names, as get_tags gives them; transactions carrying any of them."),
@@ -1030,20 +1034,21 @@ export const budgetInput = z.strictObject({
 });
 
 const budgetAmount = (what: string) =>
-	z
-		.string()
+	sureAmount
 		.optional()
 		.describe(
-			`${what}, a decimal string such as "1500.00" in the reporting currency; absent keeps it.`,
+			`${what}, a non-negative number or decimal string such as 1500 or "1500.00" in the reporting currency; absent keeps it.`,
 		);
 
 /**
- * `update_budget`: what the budget page sets, at once. Passed raw to
- * `updateBudget`, which parses the amounts as the page's fields are parsed
- * and refuses an empty call, a category twice and « Sans catégorie ».
+ * `update_budget`: Sure's parameters, what the budget page sets at once. The
+ * month, the amounts and the category references reach `run` loosely typed,
+ * which refuses them with Sure's keys in Sure's order before `updateBudget`
+ * parses the amounts as the page's fields are parsed.
  */
 export const updateBudgetInput = z.strictObject({
-	month: toolMonth
+	month: z
+		.string()
 		.optional()
 		.describe(
 			'"YYYY-MM" or "MMM-YYYY" such as "Aug-2026": the month to set; the current month when absent.',
@@ -1055,15 +1060,13 @@ export const updateBudgetInput = z.strictObject({
 			z.strictObject({
 				category: z
 					.string()
-					.min(1)
+					.optional()
 					.describe(
-						"An expense category's name, case aside, or its id, from get_categories or get_budget. « Sans catégorie » is refused: it holds what budgeted_spending leaves unallocated.",
+						"An expense category's name, case aside, or its id, from get_categories or get_budget. « Non catégorisé » is refused: it holds what budgeted_spending leaves unallocated.",
 					),
-				amount: z
-					.string()
-					.describe(
-						'The amount, a decimal string such as "250.00"; "" or "0" lets a subcategory share its parent\'s. A parent\'s amount is never below what its subcategories hold.',
-					),
+				amount: requiredLoose(sureAmount).describe(
+					"The amount, a non-negative number or decimal string; 0 lets a subcategory share its parent's. A parent's amount is never below what its subcategories hold.",
+				),
 			}),
 		)
 		.optional()
@@ -1285,17 +1288,6 @@ export const unpairTransferInput = z.strictObject({
 			"true also refuses the pair for good: no search, by hand, by an import or by a sync, offers it again, and nothing undoes the refusal. Pass it only when the owner said so.",
 		),
 });
-
-/**
- * A value Sure's write requires, kept required in the advertised schema: a
- * missing one reaches `run` blank, which refuses it with Sure's key, as
- * `requiredSureName` does for a name.
- */
-const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
-	z.preprocess((value) => value ?? "", schema);
-
-/** Sure's `amount`: a JSON number, read through its decimal text, or a decimal string. */
-const sureAmount = z.union([z.string().max(40), z.number()]);
 
 /**
  * `get_valuations`: a page of valuations, as Sure's: every active account's

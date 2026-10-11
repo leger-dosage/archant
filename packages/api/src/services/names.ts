@@ -12,9 +12,15 @@ export type NamedRef = { id: string; name: string };
 
 /**
  * The names Sure's `get_transactions` and `update_budget` take for « Sans
- * catégorie »: its English name, and the one Archant shows.
+ * catégorie »: Sure's English and French names, the French one being what
+ * `get_income_statement` lists, and the one Archant shows.
  */
-const UNCATEGORISED_NAMES = ["Uncategorized", "Sans catégorie"];
+const UNCATEGORISED_NAMES = ["Uncategorized", "Non catégorisé", "Sans catégorie"];
+
+/** Whether `ref` names « Sans catégorie », case aside, as Sure's `casecmp?`. */
+export function isUncategorisedName(ref: string): boolean {
+	return UNCATEGORISED_NAMES.some((name) => fold(name) === fold(ref));
+}
 
 type NamedTable = typeof accounts | typeof categories | typeof merchants | typeof tags;
 
@@ -132,24 +138,21 @@ export async function categoryFilterNamed(
 }
 
 /**
- * Sure's `category` of `update_budget` and `category_name` of the bill tools:
- * a category's id, or its name, case aside where `caseInsensitive`. « Sans
- * catégorie » and "Uncategorized" read as `null`, unless a category holds
- * that name. A reference nothing matches is returned as it was, so the
- * service refuses it as the unknown id it is.
+ * Sure's `category_name` of the bill tools: a category's id, or its exact
+ * name. « Sans catégorie » and "Uncategorized" read as `null`, unless a
+ * category holds that name. A reference nothing matches is returned as it
+ * was, so the service refuses it as the unknown id it is.
  */
 export async function categoryIdsOf(
 	deps: ServiceDeps,
 	refs: readonly string[],
-	options: { caseInsensitive: boolean },
 ): Promise<Map<string, string | null>> {
 	const rows = await deps.db.select({ id: categories.id, name: categories.name }).from(categories);
-	const fold = (value: string) => (options.caseInsensitive ? value.toLocaleLowerCase("fr") : value);
 
 	return new Map(
 		refs.map((ref) => {
 			const byId = rows.find((row) => row.id === ref);
-			const byName = rows.find((row) => fold(row.name) === fold(ref.trim()));
+			const byName = rows.find((row) => row.name === ref.trim());
 			const found = byId ?? byName;
 
 			if (found !== undefined) {
@@ -158,6 +161,37 @@ export async function categoryIdsOf(
 
 			return [ref, UNCATEGORISED_NAMES.includes(ref.trim()) ? null : ref];
 		}),
+	);
+}
+
+/** A name as Sure's `LOWER(name) = ref.downcase` compares it. */
+const fold = (value: string) => value.trim().toLocaleLowerCase("fr");
+
+/** A category as Sure's `update_budget` finds it. */
+type FoundCategory = { id: string; name: string; kind: string; parentId: string | null };
+
+/**
+ * Sure's `find_budget_category!` lookup: each reference's category by its
+ * id, else by its name, case aside; `undefined` for one nothing matches.
+ */
+export async function categoriesByRef(
+	deps: ServiceDeps,
+	refs: readonly string[],
+): Promise<Map<string, FoundCategory | undefined>> {
+	const rows = await deps.db
+		.select({
+			id: categories.id,
+			name: categories.name,
+			kind: categories.kind,
+			parentId: categories.parentId,
+		})
+		.from(categories);
+
+	return new Map(
+		refs.map((ref) => [
+			ref,
+			rows.find((row) => row.id === ref.trim()) ?? rows.find((row) => fold(row.name) === fold(ref)),
+		]),
 	);
 }
 

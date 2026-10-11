@@ -163,13 +163,18 @@ const SURE_REFUSALS = {
 	invalid_tags: "VALIDATION_ERROR",
 	split_child: "TRANSACTION_SPLIT",
 	invalid_source_citation: "VALIDATION_ERROR",
+	unknown_account_ids: "VALIDATION_ERROR",
+	too_many_periods: "VALIDATION_ERROR",
+	too_many_points: "VALIDATION_ERROR",
+	invalid_params: "VALIDATION_ERROR",
+	invalid_month: "NOT_FOUND",
 } as const satisfies Record<string, ErrorCode>;
 
 export type SureRefusal = keyof typeof SURE_REFUSALS;
 
 type RefusalBody =
 	| { success: false; error: SureRefusal; message: string }
-	| { error: SureRefusal; message: string }
+	| { error: SureRefusal; message: string; unknown_ids?: string[] }
 	| { error: string; hint: string };
 
 /**
@@ -194,9 +199,19 @@ export function refuse(error: SureRefusal, message: string): never {
 	throw new ToolRefusal({ success: false, error, message }, SURE_REFUSALS[error]);
 }
 
-/** Refuses as the Sure functions whose `error` helper answers no `success`, such as `get_valuations`. */
-export function refuseWithoutSuccess(error: SureRefusal, message: string): never {
-	throw new ToolRefusal({ error, message }, SURE_REFUSALS[error]);
+/**
+ * Refuses as the Sure functions whose `error` helper answers no `success`,
+ * such as `get_valuations`, with the ids Sure's `unknown_account_ids` names.
+ */
+export function refuseWithoutSuccess(
+	error: SureRefusal,
+	message: string,
+	unknownIds?: string[],
+): never {
+	throw new ToolRefusal(
+		{ error, message, ...(unknownIds === undefined ? {} : { unknown_ids: unknownIds }) },
+		SURE_REFUSALS[error],
+	);
 }
 
 /** Rails' full message for each refusal a category or tag write shares with Sure's model. */
@@ -266,8 +281,17 @@ export function formatMoney(money: Money): string {
  * Rails' `number_to_percentage` in Sure's `:fr` locale: rounded half up from
  * the value's shortest decimal text, as `BigDecimal(number.to_s)` rounds it,
  * so no binary fraction tips a tie; `,` before the decimals, no grouping.
+ * A ratio over zero writes Ruby's `Float#to_s`, `"Inf%"`, as Rails does.
  */
 export function percentage(value: number, precision: number): string {
+	if (Number.isNaN(value)) {
+		return "NaN%";
+	}
+
+	if (!Number.isFinite(value)) {
+		return `${value < 0 ? "-" : ""}Inf%`;
+	}
+
 	const [mantissa = "0", exponent = "0"] = String(Math.abs(value)).split("e");
 	const [integer = "0", fraction = ""] = mantissa.split(".");
 	let digits = `${integer}${fraction}`;
@@ -285,6 +309,31 @@ export function percentage(value: number, precision: number): string {
 	const number = precision === 0 ? text : `${text.slice(0, -precision)},${text.slice(-precision)}`;
 
 	return `${value < 0 && rounded !== 0n ? "-" : ""}${number}%`;
+}
+
+/** An amount in an output as Sure's `Money#format` writes it. */
+export const formatted = (what: string) =>
+	z.string().describe(`${what}, as Sure's Money#format writes it, such as "1 234,56 €".`);
+
+/** A percentage in an output as Sure's `number_to_percentage` writes it. */
+export const percent = (what: string) =>
+	z.string().describe(`${what}, as Sure's number_to_percentage writes it, such as "12,3%".`);
+
+/**
+ * `part / whole × 100` as Sure's `BigDecimal#round(digits)` gives it, half
+ * up, written as Rails writes a `BigDecimal` to JSON, `"12.5"`, `"100.0"`:
+ * computed from the two integers, never through a float, so no binary
+ * fraction tips a half.
+ */
+export function percentDecimal(part: number, whole: number, digits: number): string {
+	const numerator = BigInt(Math.abs(part)) * 100n * 10n ** BigInt(digits);
+	const denominator = BigInt(Math.abs(whole));
+	const quotient = numerator / denominator;
+	const rounded = (numerator % denominator) * 2n >= denominator ? quotient + 1n : quotient;
+	const text = rounded.toString().padStart(digits + 1, "0");
+	const fraction = text.slice(-digits).replace(/0+$/u, "") || "0";
+
+	return `${part < 0 !== whole < 0 ? "-" : ""}${text.slice(0, -digits)}.${fraction}`;
 }
 
 /**

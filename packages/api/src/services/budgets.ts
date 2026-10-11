@@ -353,6 +353,11 @@ async function budgetMonths(deps: ServiceDeps) {
 	return { current, bounds: budgetBounds(current, await oldestEntryDate(deps)) };
 }
 
+/** Whether a budget may cover `month`, as Sure's `budget_date_valid?`. */
+export async function isBudgetableMonth(deps: ServiceDeps, month: IsoMonth): Promise<boolean> {
+	return isBudgetMonth(month, (await budgetMonths(deps)).bounds);
+}
+
 /**
  * A month's budget beside its actuals and suggestions. Never writes: a month
  * not set up has no row, and reading it creates none, where Sure bootstraps

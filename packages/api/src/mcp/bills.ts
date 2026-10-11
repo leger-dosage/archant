@@ -179,7 +179,7 @@ async function categoryOf(
 		return undefined;
 	}
 
-	return (await categoryIdsOf(deps, [name], { caseInsensitive: false })).get(name);
+	return (await categoryIdsOf(deps, [name])).get(name);
 }
 
 /** Sure's `serialize_occurrence`. */
