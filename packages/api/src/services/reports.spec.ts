@@ -135,8 +135,6 @@ describe("getBalanceSheet", () => {
 			liabilities: 30_000,
 			range: { from: "2026-08-25", to: "2026-09-21" },
 			interval: "1 week",
-			change: netWorth.change,
-			leftOut: [],
 		});
 		// 25 August, before any opening, then 1, 8 and 15 September, then today.
 		expect(sheet.series).toEqual({
@@ -165,7 +163,6 @@ describe("getBalanceSheet", () => {
 		const today = await getBalanceSheet(deps(), { period: "current_week", interval: "1 day" });
 
 		expect(today.series).toEqual({ netWorth: [], assets: [], liabilities: [] });
-		expect(today.change).toBeNull();
 		expect(today.netWorth).toBe(100_000);
 		await expect(
 			getBalanceSheet(deps(), { period: "last_5_years", interval: "1 day" }),
@@ -175,14 +172,14 @@ describe("getBalanceSheet", () => {
 		});
 	});
 
-	it("leaves an account in another currency out of every total and names it", async () => {
+	it("leaves an account in another currency out of every total", async () => {
 		await account();
-		const dollars = await account({ name: "Dollars", currency: "USD" });
+		await account({ name: "Dollars", currency: "USD" });
 
 		const sheet = await getBalanceSheet(deps(), { period: "last_30_days", interval: "1 day" });
 
 		expect(sheet).toMatchObject({ netWorth: 100_000, assets: 100_000 });
-		expect(sheet.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);
+		expect(sheet.series.netWorth.at(-1)).toBe(100_000);
 	});
 });
 
@@ -365,6 +362,8 @@ describe("getIncomeStatement", () => {
 		expect(statement).toMatchObject({ income: 3_000, expenses: -10_000 });
 		expect(statement.breakdown?.lines.income.map((line) => line.categoryId)).toEqual([groceries]);
 		expect(statement.breakdown?.lines.expense.map((line) => line.categoryId)).toEqual([groceries]);
+		// Every category, so a tool lists those without a counted row at zero.
+		expect(statement.breakdown?.categories.map((row) => row.id)).toContain(groceries);
 		expect(cashFlow).toMatchObject({ income: 0, expenses: -7_000 });
 	});
 

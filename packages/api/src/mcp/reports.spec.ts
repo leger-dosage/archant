@@ -19,16 +19,20 @@ useSignedInApp();
 
 // The clock stands at 2026-09-21, a Monday; each test has a household of its own.
 
-const line = z.strictObject({
-	category_id: z.string().nullable(),
-	name: z.string().nullable(),
+/** Sure's `Money#format` in its `:fr` locale: `eur("1 024,20")` is « 1 024,20 € ». */
+const eur = (amount: string) => `${amount.replaceAll(" ", "\u00A0")}\u00A0€`;
+
+const subcategoryLine = z.strictObject({
+	name: z.string(),
 	total: z.string(),
-	percentage_of_total: z.number().nullable(),
+	percentage_of_total: z.string(),
 });
 
 const side = z.strictObject({
 	total: z.string(),
-	by_category: z.array(line.extend({ subcategory_totals: z.array(line) })).nullable(),
+	by_category: z
+		.array(subcategoryLine.extend({ subcategory_totals: z.array(subcategoryLine) }).strict())
+		.nullable(),
 });
 
 const totals = z.strictObject({
@@ -39,7 +43,7 @@ const totals = z.strictObject({
 	net: z.string(),
 });
 
-const change = z.strictObject({ amount: z.string(), percent: z.number().nullable() });
+const change = z.strictObject({ amount: z.string(), percent: z.string().nullable() });
 
 const statement = z.strictObject({
 	currency: z.string(),
@@ -52,7 +56,7 @@ const statement = z.strictObject({
 	insights: z
 		.strictObject({
 			net_income: z.string(),
-			savings_rate: z.number(),
+			savings_rate: z.string(),
 			median_monthly_income: z.string(),
 			median_monthly_expenses: z.string(),
 			avg_monthly_expenses: z.string(),
@@ -63,8 +67,18 @@ const statement = z.strictObject({
 		.extend({ income_change: change, expenses_change: change })
 		.strict()
 		.optional(),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
+});
+
+/** A category of the household nothing counted, as Sure lists it. */
+const zero = (name: string, subcategories: string[] = []) => ({
+	name,
+	total: eur("0,00"),
+	percentage_of_total: "0,0%",
+	subcategory_totals: subcategories.map((child) => ({
+		name: child,
+		total: eur("0,00"),
+		percentage_of_total: "0,0%",
+	})),
 });
 
 /**
@@ -124,9 +138,8 @@ async function household() {
 const QUARTER = { start_date: "2026-07-01", end_date: "2026-09-30" };
 
 describe("get_income_statement", () => {
-	it("gives any period's income and expenses by category and sub-category, with Sure's insights", async () => {
+	it("gives the quarter in Sure's formats, every category on both sides, zero included", async () => {
 		const tools = await household();
-		const { pay, home, groceries } = tools.categories;
 
 		const result = await tools.read(QUARTER);
 
@@ -134,63 +147,65 @@ describe("get_income_statement", () => {
 			currency: "EUR",
 			period: { start_date: "2026-07-01", end_date: "2026-09-30" },
 			income: {
-				total: "7012.00",
+				total: eur("7 012,00"),
 				by_category: [
 					{
-						category_id: pay,
 						name: "Paie test",
-						total: "7000.00",
-						percentage_of_total: 99.8,
+						total: eur("7 000,00"),
+						percentage_of_total: "99,8%",
 						subcategory_totals: [],
 					},
 					{
-						category_id: null,
-						name: null,
-						total: "12.00",
-						percentage_of_total: 0.2,
+						name: "Non catégorisé",
+						total: eur("12,00"),
+						percentage_of_total: "0,2%",
 						subcategory_totals: [],
 					},
+					// The expense category stays on the income side at zero, as Sure's.
+					zero("Autres investissements"),
+					zero("Maison test", ["Courses test"]),
 				],
 			},
 			expense: {
-				total: "-1024.20",
+				total: eur("1 024,20"),
 				by_category: [
 					{
-						category_id: home,
 						name: "Maison test",
-						total: "-1014.20",
-						percentage_of_total: 99,
+						total: eur("1 014,20"),
+						percentage_of_total: "99,0%",
 						// Over the side's total, as Sure's weight.
 						subcategory_totals: [
-							{
-								category_id: groceries,
-								name: "Courses test",
-								total: "-214.20",
-								percentage_of_total: 20.9,
-							},
+							{ name: "Courses test", total: eur("214,20"), percentage_of_total: "20,9%" },
 						],
 					},
 					{
-						category_id: null,
-						name: null,
-						total: "-10.00",
-						percentage_of_total: 1,
+						name: "Non catégorisé",
+						total: eur("10,00"),
+						percentage_of_total: "1,0%",
 						subcategory_totals: [],
 					},
+					zero("Autres investissements"),
+					zero("Paie test"),
 				],
 			},
 			insights: {
-				net_income: "5987.80",
-				savings_rate: 85.4,
+				net_income: eur("5 987,80"),
+				// 85,394 % rounded to two decimals, then printed with three.
+				savings_rate: "85,390%",
 				// Every month of the history: 2 000,00, 2 512,00 and 2 500,00 in;
 				// 50,00, 874,20 and 100,00 out.
-				median_monthly_income: "2500.00",
-				median_monthly_expenses: "-100.00",
-				avg_monthly_expenses: "-341.40",
+				median_monthly_income: eur("2 500,00"),
+				median_monthly_expenses: eur("100,00"),
+				avg_monthly_expenses: eur("341,40"),
 			},
-			left_out_count: 1,
-			left_out_account_ids: [tools.accounts.dollars.id],
 		});
+		expect(Object.keys(result)).toEqual(["currency", "period", "income", "expense", "insights"]);
+		expect(Object.keys(result.expense.by_category?.[0] ?? {})).toEqual([
+			"name",
+			"total",
+			"percentage_of_total",
+			"subcategory_totals",
+		]);
 	});
 
 	it("takes Sure's monthly statistics over the whole history, next month included and a one-time line left out", async () => {
@@ -209,11 +224,64 @@ describe("get_income_statement", () => {
 		// Out: 50,00, 874,20, 100,00 and October's 300,00, where October was
 		// left out and the one-time 900,00 made September 1 000,00.
 		expect(result.insights).toMatchObject({
-			median_monthly_income: "2500.00",
-			median_monthly_expenses: "-200.00",
-			avg_monthly_expenses: "-331.05",
+			median_monthly_income: eur("2 500,00"),
+			median_monthly_expenses: eur("200,00"),
+			avg_monthly_expenses: eur("331,05"),
 		});
-		expect(result.expense.total).toBe("-1024.20");
+		expect(result.expense.total).toBe(eur("1 024,20"));
+	});
+
+	it("gives a negative net income and savings rate when more went out", async () => {
+		const tools = await household();
+
+		const result = await tools.read({ start_date: "2026-08-12", end_date: "2026-08-31" });
+
+		// 12,00 in, 874,20 out: −862,20, −7 185 % of the income.
+		expect(result.insights).toMatchObject({
+			net_income: eur("-862,20"),
+			savings_rate: "-7185,000%",
+		});
+		expect(result.income.total).toBe(eur("12,00"));
+	});
+
+	it("rounds the savings rate half up from the exact ratio, where a float rounds 1,005 % down", async () => {
+		const { db } = await ownDatabase();
+		const account = await openOwn({ openingDate: "2026-01-01", name: "Courant" });
+		await postOwn(account.id, { date: "2026-03-02", label: "SALAIRE", amount: "200,00" });
+		await postOwn(account.id, { date: "2026-03-03", label: "LOYER", amount: "-197,99" });
+		const auth = createTestAuth(db);
+		const app = buildTestApp(db, createLogger("silent"), auth);
+		const session = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
+		const token = (await connect(session, app, await registerClient(app))).access_token;
+
+		const result = statement.parse(
+			(
+				await callTool(app, token, "get_income_statement", {
+					start_date: "2026-03-01",
+					end_date: "2026-03-31",
+				})
+			).structuredContent,
+		);
+
+		// 2,01 kept of 200,00: exactly 1,005 %.
+		expect(result.insights?.savings_rate).toBe("1,010%");
+	});
+
+	it('gives "0,000%" for the savings rate and "0,0%" for every line without income or spending', async () => {
+		const tools = await household();
+
+		const result = await tools.read({ start_date: "2025-02-01", end_date: "2025-02-28" });
+
+		expect(result.income).toEqual({
+			total: eur("0,00"),
+			by_category: [
+				zero("Autres investissements"),
+				zero("Maison test", ["Courses test"]),
+				zero("Non catégorisé"),
+				zero("Paie test"),
+			],
+		});
+		expect(result.insights).toMatchObject({ net_income: eur("0,00"), savings_rate: "0,000%" });
 	});
 
 	it("adds Sure's monthly_series, each calendar month cut to the period", async () => {
@@ -229,26 +297,26 @@ describe("get_income_statement", () => {
 			{
 				start_date: "2026-07-15",
 				end_date: "2026-07-31",
-				income: "0.00",
-				expenses: "-50.00",
-				net: "-50.00",
+				income: eur("0,00"),
+				expenses: eur("50,00"),
+				net: eur("-50,00"),
 			},
 			{
 				start_date: "2026-08-01",
 				end_date: "2026-08-31",
-				income: "2512.00",
-				expenses: "-874.20",
-				net: "1637.80",
+				income: eur("2 512,00"),
+				expenses: eur("874,20"),
+				net: eur("1 637,80"),
 			},
 			{
 				start_date: "2026-09-01",
 				end_date: "2026-09-10",
-				income: "2500.00",
-				expenses: "-100.00",
-				net: "2400.00",
+				income: eur("2 500,00"),
+				expenses: eur("100,00"),
+				net: eur("2 400,00"),
 			},
 		]);
-		expect(result.income.total).toBe("5012.00");
+		expect(result.income.total).toBe(eur("5 012,00"));
 		expect(result.previous_period).toBeUndefined();
 	});
 
@@ -264,14 +332,30 @@ describe("get_income_statement", () => {
 		expect(result.previous_period).toEqual({
 			start_date: "2026-07-01",
 			end_date: "2026-07-31",
-			income: "2000.00",
-			expenses: "-50.00",
-			net: "1950.00",
-			income_change: { amount: "512.00", percent: 25.6 },
+			income: eur("2 000,00"),
+			expenses: eur("50,00"),
+			net: eur("1 950,00"),
+			income_change: { amount: eur("512,00"), percent: "25.6" },
 			// 874,20 spent against 50,00: Sure's 1 648,4 %.
-			expenses_change: { amount: "-824.20", percent: 1648.4 },
+			expenses_change: { amount: eur("824,20"), percent: "1648.4" },
 		});
 		expect(result.monthly_series).toBeUndefined();
+	});
+
+	it("gives a fall as a negative change, as Sure's delta", async () => {
+		const tools = await household();
+
+		const result = await tools.read({
+			start_date: "2026-09-01",
+			end_date: "2026-09-30",
+			compare_previous_period: true,
+		});
+
+		// 2 to 31 August: 2 512,00 in and 874,20 out, against September's 2 500,00 and 100,00.
+		expect(result.previous_period).toMatchObject({
+			income_change: { amount: eur("-12,00"), percent: "-0.5" },
+			expenses_change: { amount: eur("-774,20"), percent: "-88.6" },
+		});
 	});
 
 	it("scopes the totals to account_ids and drops the category breakdown, as Sure's", async () => {
@@ -285,37 +369,55 @@ describe("get_income_statement", () => {
 			compare_previous_period: true,
 		});
 
+		expect(Object.keys(result)).toEqual([
+			"currency",
+			"period",
+			"account_ids",
+			"income",
+			"expense",
+			"net",
+			"breakdown_omitted_reason",
+			"monthly_series",
+			"previous_period",
+		]);
 		expect(result).toMatchObject({
 			account_ids: [savings.id],
-			income: { total: "12.00", by_category: null },
-			expense: { total: "0.00", by_category: null },
-			net: "12.00",
+			income: { total: eur("12,00"), by_category: null },
+			expense: { total: eur("0,00"), by_category: null },
+			net: eur("12,00"),
 			breakdown_omitted_reason: "category breakdown is not available with an account filter",
-			left_out_count: 0,
 		});
-		expect(result.insights).toBeUndefined();
-		expect(result.monthly_series?.map((month) => month.income)).toEqual(["0.00", "12.00", "0.00"]);
+		expect(result.monthly_series?.map((month) => month.income)).toEqual([
+			eur("0,00"),
+			eur("12,00"),
+			eur("0,00"),
+		]);
 		expect(result.previous_period).toMatchObject({
 			start_date: "2026-03-31",
 			end_date: "2026-06-30",
-			income_change: { amount: "12.00", percent: null },
+			income_change: { amount: eur("12,00"), percent: null },
 		});
 	});
 
-	it("refuses an account the totals do not count, naming its place in account_ids", async () => {
+	it("refuses an account the totals do not count as Sure's unknown_account_ids, naming each once", async () => {
 		const tools = await household();
 		const { savings, dollars } = tools.accounts;
 
-		const refused = await tools.call({ ...QUARTER, account_ids: [savings.id, dollars.id, "nope"] });
+		const refused = await tools.call({
+			...QUARTER,
+			account_ids: [savings.id, dollars.id, "nope", dollars.id],
+		});
 
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
-		expect(refused.content[0]?.text).toContain("account_ids.1 unknown_account");
-		expect(refused.content[0]?.text).toContain("account_ids.2 unknown_account");
-		expect(refused.content[0]?.text).not.toContain("account_ids.0");
+		expect(JSON.parse(refused.content[0]?.text ?? "")).toEqual({
+			error: "unknown_account_ids",
+			message:
+				"Some account ids were not found or are not part of income and expense reporting (hidden, excluded-from-reports and tax-advantaged accounts are not eligible). Call get_accounts for ids and retry once with eligible accounts.",
+			unknown_ids: [dollars.id, "nope"],
+		});
 	});
 
-	it("leaves a PEA's line out, where it was an expense of −15,00 €, and refuses the PEA in account_ids", async () => {
+	it("leaves a PEA's line out, where it was an expense of 15,00 €, and refuses the PEA in account_ids", async () => {
 		const tools = await household();
 		const pea = await openOwn({
 			openingBalance: "1 000,00",
@@ -329,9 +431,9 @@ describe("get_income_statement", () => {
 		const result = await tools.read(QUARTER);
 		const refused = await tools.call({ ...QUARTER, account_ids: [pea.id] });
 
-		expect(result.expense.total).toBe("-1024.20");
+		expect(result.expense.total).toBe(eur("1 024,20"));
 		expect(refused.isError).toBe(true);
-		expect(refused.content[0]?.text).toContain("account_ids.0 unknown_account");
+		expect(refused.content[0]?.text).toContain(`"unknown_ids":["${pea.id}"]`);
 	});
 
 	it("keeps a refund as income in its category, where it lowered the expense line", async () => {
@@ -346,56 +448,70 @@ describe("get_income_statement", () => {
 
 		const result = await tools.read(QUARTER);
 
-		expect(result.income.total).toBe("7042.00");
+		expect(result.income.total).toBe(eur("7 042,00"));
 		expect(result.income.by_category).toContainEqual({
-			category_id: tools.categories.home,
 			name: "Maison test",
-			total: "30.00",
-			percentage_of_total: 0.4,
+			total: eur("30,00"),
+			percentage_of_total: "0,4%",
 			subcategory_totals: [
-				{
-					category_id: tools.categories.groceries,
-					name: "Courses test",
-					total: "30.00",
-					percentage_of_total: 0.4,
-				},
+				{ name: "Courses test", total: eur("30,00"), percentage_of_total: "0,4%" },
 			],
 		});
-		expect(result.expense.total).toBe("-1024.20");
+		expect(result.expense.total).toBe(eur("1 024,20"));
 	});
 
-	it("refuses more than 36 monthly buckets, a reversed period and a bad date", async () => {
+	it("refuses more than 36 monthly buckets, a reversed period and a bad or missing date, as Sure's", async () => {
 		const tools = await household();
+		const refusal = async (args: unknown) => {
+			const refused = await tools.call(args);
+
+			expect(refused.isError).toBe(true);
+
+			return z.unknown().parse(JSON.parse(refused.content[0]?.text ?? ""));
+		};
+		const badDate = {
+			error: "invalid_date",
+			message: "Dates must be valid and in YYYY-MM-DD format.",
+		};
 
 		const longest = await tools.read({
 			start_date: "2023-10-01",
 			end_date: "2026-09-30",
 			group_by: "month",
 		});
-		const tooLong = await tools.call({
-			start_date: "2023-09-30",
-			end_date: "2026-09-30",
-			group_by: "month",
-		});
-		const reversed = await tools.call({ start_date: "2026-09-30", end_date: "2026-07-01" });
-		const badDate = await tools.call({ start_date: "2026-02-30", end_date: "2026-07-01" });
-		const missing = await tools.call({ start_date: "2026-07-01" });
 
 		expect(longest.monthly_series).toHaveLength(36);
-		expect(tooLong.content[0]?.text).toContain("group_by too_many_periods");
-		expect(reversed.content[0]?.text).toContain("end_date before_from");
-		expect(badDate.content[0]?.text).toContain("start_date ");
-		expect(missing.content[0]?.text).toContain("end_date ");
+		await expect(
+			refusal({ start_date: "2023-09-30", end_date: "2026-09-30", group_by: "month" }),
+		).resolves.toEqual({
+			error: "too_many_periods",
+			message: "That range produces more than 36 monthly buckets. Use a shorter range.",
+		});
+		await expect(refusal({ start_date: "2026-09-30", end_date: "2026-07-01" })).resolves.toEqual({
+			error: "invalid_date",
+			message: "start_date must be on or before end_date.",
+		});
+		await expect(refusal({ start_date: "2026-02-30", end_date: "2026-07-01" })).resolves.toEqual(
+			badDate,
+		);
+		await expect(refusal({ start_date: "2026-07-01" })).resolves.toEqual(badDate);
+		// A bad date before an unknown account, as Sure parses the dates first.
+		await expect(
+			refusal({ start_date: "juillet", end_date: "2026-07-31", account_ids: ["nope"] }),
+		).resolves.toEqual(badDate);
 	});
 });
 
-const history = z.strictObject({
-	start_date: z.string(),
-	end_date: z.string(),
-	interval: z.enum(["1 day", "1 week", "1 month"]),
-	currency: z.string(),
-	values: z.array(z.string()),
-});
+const history = z.union([
+	z.strictObject({
+		start_date: z.string(),
+		end_date: z.string(),
+		interval: z.enum(["1 day", "1 week", "1 month"]),
+		currency: z.string(),
+		values: z.array(z.number()),
+	}),
+	z.tuple([]),
+]);
 
 const sheetSide = z.strictObject({ current: z.string(), monthly_history: history });
 
@@ -403,15 +519,29 @@ const balanceSheet = z.strictObject({
 	as_of_date: z.string(),
 	oldest_account_start_date: z.string(),
 	currency: z.string(),
-	net_worth: sheetSide.extend({
-		change: z.strictObject({ amount: z.string(), percent: z.number().nullable() }).nullable(),
-	}),
+	net_worth: sheetSide,
 	assets: sheetSide,
 	liabilities: sheetSide,
-	insights: z.strictObject({ debt_to_asset_ratio: z.number().nullable() }),
-	left_out_count: z.number(),
-	left_out_account_ids: z.array(z.string()),
+	insights: z.strictObject({ debt_to_asset_ratio: z.string() }),
 });
+
+/** The values of a history that has some. */
+const valuesOf = (figure: z.infer<typeof sheetSide>) =>
+	Array.isArray(figure.monthly_history) ? [] : figure.monthly_history.values;
+
+/** The tool over the household this test opened. */
+async function sheetTools(db: Awaited<ReturnType<typeof ownDatabase>>["db"]) {
+	const auth = createTestAuth(db);
+	const app = buildTestApp(db, createLogger("silent"), auth);
+	const session = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
+	const token = (await connect(session, app, await registerClient(app))).access_token;
+
+	return {
+		call: async (args: unknown) => callTool(app, token, "get_balance_sheet", args),
+		read: async (args: unknown) =>
+			balanceSheet.parse((await callTool(app, token, "get_balance_sheet", args)).structuredContent),
+	};
+}
 
 /**
  * A checking account opened on 2026-01-10 at 1 500,00 with −120,00 on
@@ -429,23 +559,13 @@ async function sheetHousehold() {
 		openingBalance: "300,00",
 		openingDate: "2026-06-01",
 	});
-	const dollars = await openOwn({ ...pinned, name: "Dollars", currency: "USD" });
+	await openOwn({ ...pinned, name: "Dollars", currency: "USD" });
 
-	const auth = createTestAuth(db);
-	const app = buildTestApp(db, createLogger("silent"), auth);
-	const session = withSession(buildTestApp(db, createLogger("silent"), auth), template.cookie);
-	const token = (await connect(session, app, await registerClient(app))).access_token;
-
-	return {
-		dollars,
-		call: (args: unknown) => callTool(app, token, "get_balance_sheet", args),
-		read: async (args: unknown) =>
-			balanceSheet.parse((await callTool(app, token, "get_balance_sheet", args)).structuredContent),
-	};
+	return sheetTools(db);
 }
 
 describe("get_balance_sheet", () => {
-	it("samples any dates at Sure's interval, as Sure's chart series reads them", async () => {
+	it("samples any dates at Sure's interval, current figures formatted and the history in JSON numbers", async () => {
 		const tools = await sheetHousehold();
 
 		const result = await tools.read({
@@ -459,45 +579,84 @@ describe("get_balance_sheet", () => {
 			interval: "1 month",
 			currency: "EUR",
 		};
-		const assets = ["0.00", "1500.00", "1500.00", ...Array.from({ length: 7 }, () => "1380.00")];
-		const liabilities = [
-			...Array.from({ length: 5 }, () => "0.00"),
-			...Array.from({ length: 5 }, () => "300.00"),
-		];
 
 		expect(result).toEqual({
 			as_of_date: "2026-09-21",
 			oldest_account_start_date: "2026-01-10",
 			currency: "EUR",
 			net_worth: {
-				current: "1080.00",
+				current: eur("1 080,00"),
 				// The first of each month, then the last day; nothing before the opening.
 				monthly_history: {
-					start_date: "2026-01-01",
-					end_date: "2026-09-21",
-					interval: "1 month",
-					currency: "EUR",
-					values: [
-						"0.00",
-						"1500.00",
-						"1500.00",
-						"1380.00",
-						"1380.00",
-						"1080.00",
-						"1080.00",
-						"1080.00",
-						"1080.00",
-						"1080.00",
-					],
+					...monthly,
+					values: [0, 1500, 1500, 1380, 1380, 1080, 1080, 1080, 1080, 1080],
 				},
-				change: { amount: "-420.00", percent: -28 },
 			},
-			assets: { current: "1380.00", monthly_history: { ...monthly, values: assets } },
-			liabilities: { current: "300.00", monthly_history: { ...monthly, values: liabilities } },
-			insights: { debt_to_asset_ratio: 21.7 },
-			left_out_count: 1,
-			left_out_account_ids: [tools.dollars.id],
+			assets: {
+				current: eur("1 380,00"),
+				monthly_history: {
+					...monthly,
+					values: [0, 1500, 1500, ...Array.from({ length: 7 }, () => 1380)],
+				},
+			},
+			// What is owed today positive, its history negative, as Sure's.
+			liabilities: {
+				current: eur("300,00"),
+				monthly_history: {
+					...monthly,
+					values: [0, 0, 0, 0, 0, -300, -300, -300, -300, -300],
+				},
+			},
+			// 300,00 over 1 380,00: 21,7 %.
+			insights: { debt_to_asset_ratio: "22%" },
 		});
+		expect(Object.keys(result)).toEqual([
+			"as_of_date",
+			"oldest_account_start_date",
+			"currency",
+			"net_worth",
+			"assets",
+			"liabilities",
+			"insights",
+		]);
+		expect(Object.keys(result.net_worth.monthly_history)).toEqual([
+			"start_date",
+			"end_date",
+			"interval",
+			"currency",
+			"values",
+		]);
+	});
+
+	it("keeps the decimals of a figure in its JSON number", async () => {
+		const { db } = await ownDatabase();
+		await openOwn({ openingBalance: "1 234,56", openingDate: "2026-09-01", name: "Courant" });
+		const tools = await sheetTools(db);
+
+		const result = await tools.read({ period: "last_7_days", interval: "1 day" });
+
+		expect(valuesOf(result.net_worth).at(-1)).toBe(1234.56);
+		expect(result.net_worth.current).toBe(eur("1 234,56"));
+		// Without liabilities, as Sure's: 0 rather than a division.
+		expect(result.insights.debt_to_asset_ratio).toBe("0%");
+	});
+
+	it('gives "Inf%" for a household that owes without assets, as Sure\'s division by zero', async () => {
+		const { db } = await ownDatabase();
+		await openOwn({
+			name: "Prêt",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "5 000,00",
+			openingDate: "2026-09-01",
+		});
+		const tools = await sheetTools(db);
+
+		const result = await tools.read({});
+
+		expect(result.insights.debt_to_asset_ratio).toBe("Inf%");
+		expect(result.liabilities.current).toBe(eur("5 000,00"));
+		expect(result.net_worth.current).toBe(eur("-5 000,00"));
 	});
 
 	it("defaults to the last five years from the oldest entry, at one month", async () => {
@@ -511,55 +670,73 @@ describe("get_balance_sheet", () => {
 			interval: "1 month",
 		});
 		// The tenth of each month, then today.
-		expect(result.net_worth.monthly_history.values).toHaveLength(10);
-		expect(result.net_worth.monthly_history.values.at(-1)).toBe(result.net_worth.current);
+		expect(valuesOf(result.net_worth)).toHaveLength(10);
+		expect(valuesOf(result.net_worth).at(-1)).toBe(1080);
 	});
 
-	it("reads Sure's named periods, a custom range winning only with both dates", async () => {
+	it("reads Sure's named periods, a custom range winning only with both dates, and an unknown period or interval as its default", async () => {
 		const tools = await sheetHousehold();
 
 		const weeks = await tools.read({ period: "last_30_days", interval: "1 week" });
 		const lastMonth = await tools.read({ period: "last_month", interval: "1 day" });
 		const thisWeek = await tools.read({ period: "current_week" });
 		const halfCustom = await tools.read({ period: "last_month", start_date: "2026-01-01" });
+		const halfBad = await tools.read({ period: "last_month", start_date: "janvier" });
+		const unknown = await tools.read({ period: "1Y", interval: "2 days" });
 
 		expect(weeks.net_worth.monthly_history).toMatchObject({
 			start_date: "2026-08-22",
 			end_date: "2026-09-21",
 			interval: "1 week",
 		});
-		expect(weeks.net_worth.monthly_history.values).toHaveLength(6);
+		expect(valuesOf(weeks.net_worth)).toHaveLength(6);
 		expect(lastMonth.net_worth.monthly_history).toMatchObject({
 			start_date: "2026-08-01",
 			end_date: "2026-08-31",
 		});
-		expect(lastMonth.net_worth.monthly_history.values).toHaveLength(31);
-		// A period starting today has no history, as Sure's.
-		expect(thisWeek.net_worth.monthly_history.values).toEqual([]);
-		expect(thisWeek.net_worth.change).toBeNull();
-		expect(halfCustom.net_worth.monthly_history.start_date).toBe("2026-08-01");
+		expect(valuesOf(lastMonth.net_worth)).toHaveLength(31);
+		// A period starting today has no history, as Sure's: an empty list.
+		expect(thisWeek.net_worth.monthly_history).toEqual([]);
+		expect(thisWeek.liabilities.monthly_history).toEqual([]);
+		expect(halfCustom.net_worth.monthly_history).toMatchObject({ start_date: "2026-08-01" });
+		expect(halfBad.net_worth.monthly_history).toMatchObject({ start_date: "2026-08-01" });
+		expect(unknown.net_worth.monthly_history).toMatchObject({
+			start_date: "2026-01-10",
+			interval: "1 month",
+		});
 	});
 
-	it("refuses more than 400 points, a reversed range and a period Sure lacks", async () => {
+	it("refuses more than 400 points, a reversed range and a bad date, as Sure's", async () => {
 		const tools = await sheetHousehold();
+		const refusal = async (args: unknown) => {
+			const refused = await tools.call(args);
+
+			expect(refused.isError).toBe(true);
+
+			return z.unknown().parse(JSON.parse(refused.content[0]?.text ?? ""));
+		};
 
 		const most = await tools.read({
 			start_date: "2025-08-17",
 			end_date: "2026-09-20",
 			interval: "1 day",
 		});
-		const tooMany = await tools.call({
-			start_date: "2025-08-16",
-			end_date: "2026-09-20",
-			interval: "1 day",
-		});
-		const reversed = await tools.call({ start_date: "2026-09-21", end_date: "2026-01-01" });
-		const unknown = await tools.call({ period: "1Y" });
 
-		expect(most.net_worth.monthly_history.values).toHaveLength(400);
-		expect(tooMany.isError).toBe(true);
-		expect(tooMany.content[0]?.text).toContain("interval too_many_points");
-		expect(reversed.content[0]?.text).toContain("end_date before_from");
-		expect(unknown.content[0]?.text).toContain("period ");
+		expect(valuesOf(most.net_worth)).toHaveLength(400);
+		await expect(
+			refusal({ start_date: "2025-08-16", end_date: "2026-09-20", interval: "1 day" }),
+		).resolves.toEqual({
+			error: "too_many_points",
+			message:
+				"That period and interval combination produces too many data points. Use a coarser interval or a shorter period.",
+		});
+		await expect(refusal({ start_date: "2026-09-21", end_date: "2026-01-01" })).resolves.toEqual({
+			error: "invalid_date",
+			message: "start_date must be on or before end_date.",
+		});
+		await expect(refusal({ start_date: "2026-02-30", end_date: "2026-03-01" })).resolves.toEqual({
+			error: "invalid_date",
+			message: "Dates must be valid and in YYYY-MM-DD format.",
+		});
 	});
 });

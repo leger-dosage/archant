@@ -193,9 +193,6 @@ type BalanceSheet = {
 	interval: SureInterval;
 	/** Each figure at each of Sure's series dates; empty for a range starting today, as Sure's. */
 	series: { netWorth: MinorUnits[]; assets: MinorUnits[]; liabilities: MinorUnits[] };
-	/** Net worth's last day of the range minus its first counted day. */
-	change: BalanceChange | null;
-	leftOut: LeftOutAccount[];
 };
 
 /** Each figure of `points` on `dates`, zero on a day before any account opened. */
@@ -231,7 +228,7 @@ export async function getBalanceSheet(
 		);
 	}
 
-	const { currency, counted, leftOut } = await reportedAccounts(deps);
+	const { currency, counted } = await reportedAccounts(deps);
 	const [current, series] = await Promise.all([
 		countedBetween(deps, counted, { from: asOf, to: asOf }),
 		range.from === asOf ? [] : countedBetween(deps, counted, range),
@@ -255,8 +252,6 @@ export async function getBalanceSheet(
 			assets: valuesAt(classificationSeries(series, "asset"), dates),
 			liabilities: valuesAt(classificationSeries(series, "liability"), dates),
 		},
-		change: balanceChange(points),
-		leftOut,
 	};
 }
 
@@ -439,6 +434,11 @@ type StatementBreakdown = {
 	medianMonthlyIncome: MinorUnits;
 	medianMonthlyExpenses: MinorUnits;
 	avgMonthlyExpenses: MinorUnits;
+	/**
+	 * Every category of the household, so a tool lists each one, as Sure's
+	 * `IncomeStatement::Totals` does, those without a counted row at zero.
+	 */
+	categories: CashFlowCategory[];
 };
 
 export type IncomeStatement = PeriodTotals & {
@@ -450,8 +450,6 @@ export type IncomeStatement = PeriodTotals & {
 	/** Each calendar month the period touches, cut to it; `null` unless asked. */
 	months: PeriodTotals[] | null;
 	previous: PeriodTotals | null;
-	/** Accounts in another currency left out; none with `accountIds`, which refuses them. */
-	leftOut: LeftOutAccount[];
 };
 
 /**
@@ -493,7 +491,7 @@ export async function getIncomeStatement(
 	deps: ServiceDeps,
 	query: IncomeStatementQuery,
 ): Promise<IncomeStatement> {
-	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
+	const { currency, counted } = await cashFlowAccounts(deps);
 	const countedIds = new Set(counted.map((row) => row.id));
 	const refused = (query.accountIds ?? []).flatMap((id, index) =>
 		countedIds.has(id) ? [] : [{ path: `accountIds.${index}`, code: "unknown_account" }],
@@ -553,9 +551,10 @@ export async function getIncomeStatement(
 		currency,
 		accountIds,
 		breakdown:
-			accountIds === null ? { lines, subcategories, ...statementStatistics(dayRows) } : null,
+			accountIds === null
+				? { lines, subcategories, ...statementStatistics(dayRows), categories: allCategories }
+				: null,
 		months: buckets?.map(totalsOf) ?? null,
 		previous: query.comparePrevious ? totalsOf(previousRange) : null,
-		leftOut: accountIds === null ? leftOut : [],
 	};
 }
