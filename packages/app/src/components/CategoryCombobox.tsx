@@ -1,10 +1,16 @@
 import type { CategoryData } from "@/hooks/useCategories";
 
-import { PlusIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeftIcon, CornerDownRightIcon, PlusIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
-import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
+import type { CategoryColor } from "@archant/data/category-presets";
+import {
+	CATEGORY_COLORS,
+	CATEGORY_NAME_MAX_LENGTH,
+	newCategory,
+} from "@archant/data/category-presets";
 
 import { TintedIcon } from "@/components/TintedIcon";
 import {
@@ -16,22 +22,27 @@ import {
 	CommandList,
 } from "@/components/ui/command";
 import { useCreateCategory } from "@/hooks/useCategories";
-import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
-import { showErrorToast } from "@/lib/error-toast";
-import { isNewName } from "@/lib/name-key";
+import { isNewName, nameKey } from "@/lib/name-key";
 import { matchesSearch } from "@/lib/search-match";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their
 // names, and the filter reads the name from the keywords instead.
 const NONE = "none";
 const CREATE = "create";
+const CREATE_CHILD = "create-child";
+const BACK = "back";
 
 /** Case and accents aside, in list order: `Enter` picks the first match as the user reads it. */
 function filterByName(value: string, search: string, keywords: string[] = []): number {
-	// « Créer » names exactly what was typed, so it always matches.
-	return value === CREATE || matchesSearch(keywords.join(" "), search) ? 1 : 0;
+	// « Créer » and « Ajouter comme sous-catégorie… » name exactly what was typed, so they always match.
+	return value === CREATE || value === CREATE_CHILD || matchesSearch(keywords.join(" "), search)
+		? 1
+		: 0;
 }
+
+/** A category this picker created, so « Créer » again assigns it rather than posting a twin. */
+type Created = { name: string; parentId: string | null; id: string };
 
 type CategoryComboboxProps = {
 	categories: readonly CategoryData[];
@@ -44,19 +55,31 @@ type CategoryComboboxProps = {
 	/** Offers « Sans catégorie » first; a rule's action has no such choice. */
 	allowNone?: boolean;
 	/**
-	 * Offers « Créer "…" » last, making a top-level expense category with the
-	 * form's defaults. Only the rule dialog does: it cannot stack the category
-	 * form over itself, and a transaction's category is best picked, not made
-	 * up on the spot.
+	 * Offers « Créer « … » » and « Ajouter comme sous-catégorie… » last, as
+	 * Sure's `DS::CategorySelect` and quick picker: a top-level expense, or a
+	 * child of the parent picked next, which takes that parent's kind and
+	 * colour. « Réglages › Catégories » edits the rest later.
 	 */
 	allowCreate?: boolean;
+	/** A new top-level category's colour: the first swatch, as Sure's form, unless the caller picks. */
+	createColor?: () => CategoryColor;
+	/**
+	 * Receives the id of a category created here, `onSelect` otherwise. Picked
+	 * again with the same name and parent, « Créer » passes the same id again
+	 * and posts nothing, for a caller whose assignment failed.
+	 */
+	onCreate?: (categoryId: string) => void;
+	/** Shown above the list while the caller keeps it open, as an assignment that failed. */
+	error?: string | null;
 };
 
 /**
  * A single-choice category list to type into: « Sans catégorie » first, then
- * each parent followed by its children, indented, and « Créer "…" » last when
- * allowed and no category holds the typed name. Arrows move, `Enter` picks.
- * The caller puts it in a popover and closes it on `onSelect`.
+ * each parent followed by its children, indented, and the creation choices
+ * last when allowed and no category holds the typed name. « Ajouter comme
+ * sous-catégorie… » swaps the list for the top-level categories, « Retour »
+ * first; `Escape` or editing the text goes back. Arrows move, `Enter`
+ * picks. The caller puts it in a popover and closes it on `onSelect`.
  */
 export function CategoryCombobox({
 	categories,
@@ -64,29 +87,71 @@ export function CategoryCombobox({
 	onSelect,
 	allowNone = true,
 	allowCreate = false,
+	createColor = () => CATEGORY_COLORS[0],
+	onCreate = onSelect,
+	error = null,
 }: CategoryComboboxProps) {
 	const { t } = useTranslation();
 	const createCategory = useCreateCategory();
 	const [search, setSearch] = useState("");
+	const [choosingParent, setChoosingParent] = useState(false);
+	const [created, setCreated] = useState<Created | null>(null);
 	const none = t("transactions.category.none");
 	const typed = search.trim();
+	const remembered = created !== null && nameKey(created.name) === nameKey(typed);
 	const canCreate =
 		allowCreate &&
-		isNewName(
-			typed,
-			categories.map((category) => category.name),
-			CATEGORY_NAME_MAX_LENGTH,
-		);
+		(remembered ||
+			isNewName(
+				typed,
+				categories.map((category) => category.name),
+				CATEGORY_NAME_MAX_LENGTH,
+			));
+	const topLevel = categoryTree(categories)
+		.map(({ parent }) => parent)
+		.filter((category) => category.parentId === null);
+	const parentStep = canCreate && choosingParent;
 
-	const create = () => {
+	// Radix closes the popover on `Escape` in a capture listener on the
+	// document; one on the window runs first and keeps it open to go back.
+	useEffect(() => {
+		if (!parentStep) {
+			return undefined;
+		}
+
+		const back = (event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				setChoosingParent(false);
+			}
+		};
+
+		window.addEventListener("keydown", back, { capture: true });
+
+		return () => window.removeEventListener("keydown", back, { capture: true });
+	}, [parentStep]);
+
+	const create = (parentId: string | null) => {
 		if (createCategory.isPending) {
 			return;
 		}
 
-		createCategory.mutate(newCategory(typed), {
-			onSuccess: (category) => onSelect(category.id),
-			onError: (error) => showErrorToast(errorCodeOf(error)),
-		});
+		if (remembered && created.parentId === parentId) {
+			onCreate(created.id);
+
+			return;
+		}
+
+		createCategory.mutate(
+			{ ...newCategory(typed), color: createColor(), parentId },
+			{
+				onSuccess: (category) => {
+					setCreated({ name: typed, parentId, id: category.id });
+					onCreate(category.id);
+				},
+				onError: () => toast.error(t("transactions.category.createError")),
+			},
+		);
 	};
 
 	const item = (category: CategoryData, child: boolean) => (
@@ -107,38 +172,85 @@ export function CategoryCombobox({
 	);
 
 	return (
-		<Command filter={filterByName} loop>
+		<Command filter={filterByName} shouldFilter={!parentStep} loop>
 			<CommandInput
 				aria-label={t("transactions.category.search")}
 				placeholder={t("transactions.category.search")}
 				value={search}
-				onValueChange={setSearch}
+				onValueChange={(next) => {
+					setSearch(next);
+					setChoosingParent(false);
+				}}
 			/>
+			{error !== null && (
+				<p role="alert" className="px-3 pt-2 text-sm text-destructive">
+					{error}
+				</p>
+			)}
 			<CommandList>
 				<CommandEmpty>{t("transactions.category.empty")}</CommandEmpty>
-				<CommandGroup>
-					{allowNone && (
-						<CommandItem
-							value={NONE}
-							keywords={[none]}
-							data-checked={value === null}
-							onSelect={() => onSelect(null)}
-						>
-							<TintedIcon subject={{ kind: "uncategorised" }} size="sm" />
-							<span>{none}</span>
+				{parentStep ? (
+					<CommandGroup heading={t("transactions.category.createIn", { name: typed })}>
+						<CommandItem value={BACK} onSelect={() => setChoosingParent(false)}>
+							<ArrowLeftIcon aria-hidden="true" />
+							<span>{t("transactions.category.back")}</span>
 						</CommandItem>
-					)}
-					{categoryTree(categories).flatMap(({ parent, children }) => [
-						item(parent, false),
-						...children.map((child) => item(child, true)),
-					])}
-					{canCreate && (
-						<CommandItem value={CREATE} disabled={createCategory.isPending} onSelect={create}>
-							<PlusIcon aria-hidden="true" />
-							<span className="truncate">{t("transactions.category.create", { name: typed })}</span>
-						</CommandItem>
-					)}
-				</CommandGroup>
+						{topLevel.map((parent) => (
+							<CommandItem
+								key={parent.id}
+								value={`parent-${parent.id}`}
+								disabled={createCategory.isPending}
+								onSelect={() => create(parent.id)}
+							>
+								<TintedIcon
+									subject={{ kind: "category", color: parent.color, icon: parent.icon }}
+									size="sm"
+								/>
+								<span className="truncate">{parent.name}</span>
+							</CommandItem>
+						))}
+					</CommandGroup>
+				) : (
+					<CommandGroup>
+						{allowNone && (
+							<CommandItem
+								value={NONE}
+								keywords={[none]}
+								data-checked={value === null}
+								onSelect={() => onSelect(null)}
+							>
+								<TintedIcon subject={{ kind: "uncategorised" }} size="sm" />
+								<span>{none}</span>
+							</CommandItem>
+						)}
+						{categoryTree(categories).flatMap(({ parent, children }) => [
+							item(parent, false),
+							...children.map((child) => item(child, true)),
+						])}
+						{canCreate && (
+							<CommandItem
+								value={CREATE}
+								disabled={createCategory.isPending}
+								onSelect={() => create(null)}
+							>
+								<PlusIcon aria-hidden="true" />
+								<span className="truncate">
+									{t("transactions.category.create", { name: typed })}
+								</span>
+							</CommandItem>
+						)}
+						{canCreate && topLevel.length > 0 && (
+							<CommandItem
+								value={CREATE_CHILD}
+								disabled={createCategory.isPending}
+								onSelect={() => setChoosingParent(true)}
+							>
+								<CornerDownRightIcon aria-hidden="true" />
+								<span>{t("transactions.category.createChild")}</span>
+							</CommandItem>
+						)}
+					</CommandGroup>
+				)}
 			</CommandList>
 		</Command>
 	);

@@ -63,6 +63,7 @@ export function TransferBlock({
 						counterpartTransactionId: candidate.id,
 						counterpartAccountId: candidate.accountId,
 						counterpartAccountName: candidate.accountName,
+						counterpartCategoryId: candidate.categoryId,
 					});
 					setPicking(false);
 					toast.success(t("transactions.transfer.matched"));

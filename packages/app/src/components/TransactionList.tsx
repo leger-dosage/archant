@@ -8,6 +8,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
+import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
+
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryPill, TransferPill } from "@/components/CategoryPill";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
@@ -68,6 +71,11 @@ type CategoryChipProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onPick: (categoryId: string | null) => void;
+	/**
+	 * Sets a category the picker just created, keeping the picker open until
+	 * it is set; `onFailed` runs when it is not.
+	 */
+	onCreated: (categoryId: string, onFailed: () => void) => void;
 };
 
 // Over the row button, never inside it: beside the date below 768 px, under
@@ -94,12 +102,27 @@ function columnsOf(showAccount: boolean) {
  * The row's category pill, or « Sans catégorie ». A button of its own beside
  * the row's, never inside it, that opens the combobox in place.
  */
-function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: CategoryChipProps) {
+function CategoryChip({
+	transaction,
+	categories,
+	open,
+	onOpenChange,
+	onPick,
+	onCreated,
+}: CategoryChipProps) {
 	const { t } = useTranslation();
 	const { color, icon, name } = useCategoryShown(transaction.categoryId);
+	// What a failed assignment of a created category says, until the picker closes.
+	const [assignError, setAssignError] = useState<string | null>(null);
 
 	return (
-		<Popover open={open} onOpenChange={onOpenChange}>
+		<Popover
+			open={open}
+			onOpenChange={(next) => {
+				setAssignError(null);
+				onOpenChange(next);
+			}}
+		>
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
@@ -135,9 +158,64 @@ function CategoryChip({ transaction, categories, open, onOpenChange, onPick }: C
 					categories={categories ?? []}
 					value={transaction.categoryId}
 					onSelect={onPick}
+					allowCreate
+					createColor={randomColor}
+					onCreate={(categoryId) => {
+						setAssignError(null);
+						onCreated(categoryId, () => setAssignError(t("transactions.category.assignError")));
+					}}
+					error={assignError}
 				/>
 			</PopoverContent>
 		</Popover>
+	);
+}
+
+/** A swatch at random, as Sure's quick picker gives a category it creates. */
+function randomColor() {
+	return CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
+}
+
+/**
+ * The inflow of a loan payment or a contribution: its outflow's category,
+ * muted and never a picker, since only the outflow changes it, as Sure's
+ * `7e1d93613`. Focusable, for its tooltip; a click does nothing.
+ */
+function OutflowCategoryChip({ categoryId }: { categoryId: string | null }) {
+	const { t } = useTranslation();
+	const { color, icon, name } = useCategoryShown(categoryId);
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<button
+					type="button"
+					aria-disabled="true"
+					aria-label={
+						name === null
+							? t("transactions.category.setOnOutflowTooltip")
+							: t("transactions.category.chip", { name })
+					}
+					className={cn(
+						CATEGORY_SLOT,
+						"cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",
+					)}
+				>
+					{name === null ? (
+						<Skeleton className="h-6 w-24 rounded-full" />
+					) : (
+						<CategoryPill
+							category={color === null || icon === null ? null : { name, color, icon }}
+							fallback={name}
+							className="opacity-60"
+						/>
+					)}
+				</button>
+			</TooltipTrigger>
+			<TooltipContent side="bottom">
+				{t("transactions.category.setOnOutflowTooltip")}
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -327,6 +405,11 @@ function RowLine({
 	const parent = kind === "parent";
 	const caption = transferCaption(item);
 	const categoryShown = showsCategory(item.amount, item.transfer);
+	// The inflow of a loan payment or a contribution shows its outflow's category, not its own.
+	const outflowCategory =
+		item.transfer !== null && categorySetOnOutflow(item.amount, item.transfer)
+			? { id: item.transfer.counterpartCategoryId }
+			: null;
 	const merchantName =
 		item.merchantId === null ? undefined : context.merchantNames.get(item.merchantId);
 	// A transfer side names the other account where a purchase names its
@@ -335,13 +418,14 @@ function RowLine({
 	const subtitle =
 		caption === null
 			? merchantName
-			: categoryShown && item.transfer !== null
+			: (categoryShown || outflowCategory !== null) && item.transfer !== null
 				? t("transactions.transfer.spentCaption", {
 						kind: t(`transactions.transfer.kinds.${item.transfer.kind}`),
 						caption: t(caption.key, { account: caption.account }),
 					})
 				: t(caption.key, { account: caption.account });
-	const category = item.categoryId === null ? undefined : context.categoryOf.get(item.categoryId);
+	const shownCategoryId = outflowCategory === null ? item.categoryId : outflowCategory.id;
+	const category = shownCategoryId === null ? undefined : context.categoryOf.get(shownCategoryId);
 	const rowTags = item.tagIds
 		.flatMap((id) => {
 			const name = context.tagNames.get(id);
@@ -490,7 +574,9 @@ function RowLine({
 						/>
 					</span>
 				</button>
-				{parent ? null : item.transfer !== null && !categoryShown ? (
+				{parent ? null : outflowCategory !== null ? (
+					<OutflowCategoryChip categoryId={outflowCategory.id} />
+				) : item.transfer !== null && !categoryShown ? (
 					<TransferChip kind={item.transfer.kind} />
 				) : !context.admin ? (
 					<CategoryLabel categoryId={item.categoryId} />
@@ -510,6 +596,17 @@ function RowLine({
 								});
 							}
 						}}
+						onCreated={(categoryId, onFailed) =>
+							setCategory.mutate(
+								{
+									id: item.id,
+									value: categoryId,
+									previous: item.categoryId,
+									onError: onFailed,
+								},
+								{ onSuccess: () => setPicking(null) },
+							)
+						}
 					/>
 				)}
 			</div>

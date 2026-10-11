@@ -33,6 +33,12 @@ async function expectNoCategoryField(page: Page, label: string) {
 	await expect(sheet(page)).toBeHidden();
 }
 
+/** The open sheet has neither « Marchand » nor « Étiquettes », as Sure's drawer on a transfer side. */
+async function expectNoMerchantOrTags(page: Page) {
+	await expect(sheet(page).getByRole("button", { name: "Marchand", exact: true })).toHaveCount(0);
+	await expect(sheet(page).getByRole("button", { name: "Étiquettes", exact: true })).toHaveCount(0);
+}
+
 const categorySearch = (page: Page) =>
 	page.getByRole("combobox", { name: "Rechercher une catégorie" });
 
@@ -53,6 +59,15 @@ async function visitOperations(page: Page, q: string, search = "") {
 	await page.goto(`/transactions?q=${encodeURIComponent(q)}${search}`);
 	await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
 	await expect(rowItem(page, q).first()).toBeVisible();
+}
+
+/**
+ * Opens the list on the inflow alone: with its outflow on the page, a
+ * transfer shows once, as its outflow, as Sure's `entries_by_date`.
+ */
+async function expectInflow(page: Page, into: string, text: string) {
+	await visitOperations(page, into);
+	await expect(rowButton(page, into)).toContainText(text);
 }
 
 /** « Compte courant » and « Livret A », each with a name no other test uses. */
@@ -212,14 +227,17 @@ test("picking the candidate links both rows, each naming the other account", asy
 	await expect(sheet(page).getByRole("button", { name: "Dissocier" })).toBeVisible();
 	// The category is not a transfer's to pick.
 	await expect(sheet(page).getByRole("button", { name: "Catégorie" })).toBeHidden();
+	await expectNoMerchantOrTags(page);
 	await page.keyboard.press("Escape");
 	await expect(sheet(page)).toBeHidden();
 
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
 	await expect(rowItem(page, out).getByText("Virement", { exact: true })).toBeVisible();
-	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
-	await expect(rowItem(page, into).getByText("Virement", { exact: true })).toBeVisible();
 	await expect(rowItem(page, out).getByRole("button", { name: /^Catégorie/ })).toHaveCount(0);
+	// Both sides on the page, the pair shows once, as its outflow.
+	await expect(rowItem(page, into)).toHaveCount(0);
+	await expectInflow(page, into, `Depuis ${checking.name}`);
+	await expect(rowItem(page, into).getByText("Virement", { exact: true })).toBeVisible();
 });
 
 test("two lines 20 days apart, paired by hand, make a confirmed transfer", async ({
@@ -246,13 +264,11 @@ test("two lines 20 days apart, paired by hand, make a confirmed transfer", async
 	await page.keyboard.press("Escape");
 	await expect(sheet(page)).toBeHidden();
 
-	await Promise.all(
-		[out, into].map(async (label) => {
-			await expect(rowButton(page, label)).toContainText("Virement interne");
-			await expect(rowButton(page, label)).not.toContainText("Correspondance automatique");
-		}),
-	);
+	await expect(rowButton(page, out)).toContainText("Virement interne");
+	await expect(rowButton(page, out)).not.toContainText("Correspondance automatique");
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
+	await expectInflow(page, into, "Virement interne");
+	await expect(rowButton(page, into)).not.toContainText("Correspondance automatique");
 });
 
 test("a payment into a credit card is linked on creation as « Remboursement de carte »", async ({
@@ -275,14 +291,14 @@ test("a payment into a credit card is linked on creation as « Remboursement de 
 	await visitOperations(page, prefix);
 
 	await expect(rowItem(page, out).getByText("Remboursement de carte")).toBeVisible();
-	await expect(rowItem(page, into).getByText("Remboursement de carte")).toBeVisible();
 	await expect(rowButton(page, out)).not.toContainText("Remboursement de carte ·");
 	await expect(rowButton(page, out)).toContainText(`Vers ${card.name}`);
-	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
 	// Neither side is counted by the dashboard, so neither has a category.
 	await expect(categoryButtons(page, out)).toHaveCount(0);
-	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await expectNoCategoryField(page, out);
+	await expectInflow(page, into, `Depuis ${checking.name}`);
+	await expect(rowItem(page, into).getByText("Remboursement de carte")).toBeVisible();
+	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await expectNoCategoryField(page, into);
 });
 
@@ -306,6 +322,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	});
 	const out = `${prefix} échéance`;
 	const into = `${prefix} remboursement`;
+	const groceries = `${prefix} courses`;
 	const outId = await api.addTransaction(checking.id, {
 		date: "2024-06-05",
 		label: out,
@@ -316,23 +333,38 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 		label: into,
 		amount: "1 200,00",
 	});
+	await api.addTransaction(checking.id, { date: "2024-06-05", label: groceries, amount: "-50,00" });
 	// Proposed on creation; refused and matched again as « Rapprocher » would.
+	// Unpaired in between, the inflow takes a category of its own, which the
+	// pair then hides behind its outflow's.
 	await api.unlinkTransfer(outId, { never: true });
+	const own = await api.createCategory({ name: uniqueName("Divers") });
+	await api.categorise([intoId], own.id);
 	await api.matchTransfer(outId, intoId);
 
 	const housing = await api.createCategory({ name: uniqueName("Logement") });
 
 	await visitOperations(page, prefix);
 	// The dashboard counts the outflow in its category, so the row shows it,
-	// and the kind moves to the subtitle; the loan side keeps the chip.
+	// and the kind moves to the subtitle. Both sides on the page, the pair
+	// shows once, as its outflow, and the day's total leaves it out, as Sure's.
 	await expect(rowButton(page, out)).toContainText(`Remboursement de prêt · Vers ${loan.name}`);
 	await expect(
 		rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }),
 	).toBeVisible();
-	await expect(rowItem(page, into).getByText("Remboursement de prêt")).toBeVisible();
-	await expect(rowItem(page, into)).not.toContainText("Remboursement de prêt ·");
-	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
-	await expect(categoryButtons(page, into)).toHaveCount(0);
+	await expect(rowItem(page, into)).toHaveCount(0);
+	const day = page.getByRole("main").locator('[data-slot="inset-group"]');
+	await expect(day).toHaveCount(1);
+	const dayHeader = day.getByRole("heading", { level: 2 }).locator("../..");
+	await expect(dayHeader).toContainText("2 opérations");
+	await expect(dayHeader).toContainText(euros(-5000));
+	await expect(dayHeader).not.toContainText(euros(-125_000));
+
+	await rowButton(page, out).click();
+	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toBeEnabled();
+	await expectNoMerchantOrTags(page);
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
 
 	await rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }).click();
 	await categorySearch(page).fill(housing.name);
@@ -340,6 +372,39 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(
 		rowItem(page, out).getByRole("button", { name: `Catégorie : ${housing.name}` }),
 	).toBeVisible();
+
+	// Its outflow on another page, the inflow shows: the outflow's category,
+	// muted, and in its sheet the same, disabled, with the reason; no merchant
+	// and no tags on a transfer side, as Sure's drawer.
+	await visitOperations(page, into);
+	await expect(rowButton(page, into)).toContainText(
+		`Remboursement de prêt · Depuis ${checking.name}`,
+	);
+	const muted = rowItem(page, into).getByRole("button", {
+		name: `Catégorie : ${housing.name}`,
+	});
+	await expect(muted).toHaveAttribute("aria-disabled", "true");
+	await expect(rowItem(page, into)).not.toContainText(own.name);
+	await muted.hover();
+	await expect(
+		page.getByRole("tooltip").filter({
+			hasText: "La catégorie appartient au côté sortant de ce transfert et ne se modifie que là.",
+		}),
+	).toBeVisible();
+	await expect(muted).toBeDisabled();
+	const day2 = page.getByRole("main").locator('[data-slot="inset-group"]');
+	await expect(day2.getByRole("heading", { level: 2 }).locator("../..")).not.toContainText("€");
+
+	await rowButton(page, into).click();
+	const field = sheet(page).getByRole("button", { name: "Catégorie", exact: true });
+	await expect(field).toHaveText(housing.name);
+	await expect(field).toBeDisabled();
+	await expect(field).toHaveAccessibleDescription(
+		"C'est le côté entrant d'un transfert. Sa catégorie appartient au côté sortant et ne se modifie que là, pour que les budgets la comptent une fois.",
+	);
+	await expectNoMerchantOrTags(page);
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
 
 	await page.goto(`/accounts/${loan.id}`);
 	await expect(page.getByRole("region", { name: loan.name, exact: true })).toContainText(
@@ -349,7 +414,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await page.goto("/?month=2024-06");
 	const june = page.getByRole("region", { name: "Flux de juin 2024" });
 	await expect(june.getByRole("group", { name: "Dépenses", exact: true })).toContainText(
-		euros(-120_000),
+		euros(-125_000),
 	);
 	await expect(
 		june
@@ -405,12 +470,13 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Versement · Vers ${pea.name}`);
-	await expect(rowItem(page, into).getByText("Versement", { exact: true })).toBeVisible();
-	await expect(categoryButtons(page, into)).toHaveCount(0);
+	// Shown once, as its outflow.
+	await expect(rowItem(page, into)).toHaveCount(0);
 
 	await rowButton(page, out).click();
 	const field = sheet(page).getByRole("button", { name: "Catégorie", exact: true });
 	await expect(field).toHaveText("Sans catégorie");
+	await expectNoMerchantOrTags(page);
 	await field.click();
 	await categorySearch(page).fill(savings.name);
 	await page.getByRole("option", { name: savings.name }).click();
@@ -419,7 +485,16 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await expect(
 		rowItem(page, out).getByRole("button", { name: `Catégorie : ${savings.name}` }),
 	).toBeVisible();
-	await expectNoCategoryField(page, into);
+
+	await visitOperations(page, into);
+	await expect(rowButton(page, into)).toContainText(`Versement · Depuis ${checking.name}`);
+	await expect(
+		rowItem(page, into).getByRole("button", { name: `Catégorie : ${savings.name}` }),
+	).toHaveAttribute("aria-disabled", "true");
+	await rowButton(page, into).click();
+	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toBeDisabled();
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
 
 	await page.goto(`/accounts/${pea.id}`);
 	await expect(page.getByRole("region", { name: pea.name, exact: true })).toContainText(
@@ -448,8 +523,9 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
 	await expect(categoryButtons(page, out)).toHaveCount(0);
-	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await expectNoCategoryField(page, out);
+	await expectInflow(page, into, `Depuis ${checking.name}`);
+	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await rowButton(page, into).click();
 	await expect(sheet(page).getByText(`Depuis ${checking.name}`)).toBeVisible();
 	await sheet(page).getByRole("button", { name: "Dissocier" }).click();
@@ -457,6 +533,8 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 	await page.keyboard.press("Escape");
 	await expect(sheet(page)).toBeHidden();
 
+	// Two standard rows again, both on the page.
+	await visitOperations(page, prefix);
 	await expect(
 		rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }),
 	).toBeVisible();
@@ -527,16 +605,18 @@ test("« Sens » lists transfers, a loan payment's outflow among them, expenses 
 	};
 
 	await visitOperations(page, prefix);
-	await expect(listed).toHaveCount(6);
+	// Each pair shows once, as its outflow.
+	await expect(listed).toHaveCount(4);
 
 	// Every transfer side, as Sure's type filter: a loan payment's outflow
-	// still counts in the dashboard's « Dépenses », never in this one.
+	// still counts in the dashboard's « Dépenses », never in this one. Both
+	// sides of each pair match, and each pair shows once.
 	await filterOn("Virements");
-	await expect(listed).toHaveCount(4);
+	await expect(listed).toHaveCount(2);
 	await expect(rowItem(page, out)).toBeVisible();
-	await expect(rowItem(page, into)).toBeVisible();
+	await expect(rowItem(page, into)).toHaveCount(0);
 	await expect(rowItem(page, instalment)).toBeVisible();
-	await expect(rowItem(page, received)).toBeVisible();
+	await expect(rowItem(page, received)).toHaveCount(0);
 
 	await filterOn("Dépenses", "Virements");
 	await expect(listed).toHaveCount(1);
@@ -563,7 +643,7 @@ test("adding the other side of a move links both rows without a match by hand", 
 
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
 	await expect(rowItem(page, out).getByText("Virement", { exact: true })).toBeVisible();
-	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
+	await expectInflow(page, into, `Depuis ${checking.name}`);
 	await expect(rowItem(page, into).getByText("Virement", { exact: true })).toBeVisible();
 });
 
@@ -582,7 +662,7 @@ test("an OFX file adding the other side links both rows once confirmed", async (
 	await visitOperations(page, prefix);
 
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
-	await expect(rowButton(page, into)).toContainText(`Depuis ${checking.name}`);
+	await expectInflow(page, into, `Depuis ${checking.name}`);
 });
 
 test("a row with two candidates is proposed with the closer one, the other left alone", async ({
@@ -608,11 +688,12 @@ test("a row with two candidates is proposed with the closer one, the other left 
 
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
 	await expect(rowButton(page, out)).toContainText("Correspondance automatique");
-	await expect(rowButton(page, toLivret)).toContainText(`Depuis ${checking.name}`);
+	await expect(rowItem(page, toLivret)).toHaveCount(0);
 	await expect(rowButton(page, toCard)).not.toContainText("Depuis");
 	await expect(
 		rowItem(page, toCard).getByRole("button", { name: "Confirmer la correspondance" }),
 	).toHaveCount(0);
+	await expectInflow(page, toLivret, `Depuis ${checking.name}`);
 });
 
 test("a proposal is confirmed from the list, and another rejected, never proposed again", async ({
@@ -625,27 +706,25 @@ test("a proposal is confirmed from the list, and another rejected, never propose
 
 	await visitOperations(page, prefix);
 	await Promise.all(
-		[kept.out, kept.into, refused.out, refused.into].map(async (label) =>
+		[kept.out, refused.out].map(async (label) =>
 			expect(rowButton(page, label)).toContainText("Correspondance automatique"),
 		),
 	);
+	await expect(rowItem(page, kept.into)).toHaveCount(0);
+	await expect(rowItem(page, refused.into)).toHaveCount(0);
 
 	await rowItem(page, kept.out)
 		.getByRole("button", { name: "Confirmer la correspondance" })
 		.click();
 	await expect(page.getByText("Virement mis à jour")).toBeVisible();
-	await Promise.all(
-		[kept.out, kept.into].map(async (label) => {
-			await expect(rowButton(page, label)).not.toContainText("Correspondance automatique");
-			await expect(rowButton(page, label)).toContainText("Virement interne");
-			await expect(
-				rowItem(page, label).getByRole("button", { name: /la correspondance$/u }),
-			).toHaveCount(0);
-		}),
-	);
+	await expect(rowButton(page, kept.out)).not.toContainText("Correspondance automatique");
+	await expect(rowButton(page, kept.out)).toContainText("Virement interne");
+	await expect(
+		rowItem(page, kept.out).getByRole("button", { name: /la correspondance$/u }),
+	).toHaveCount(0);
 	await expect(rowButton(page, kept.out)).toContainText(`Vers ${kept.livret.name}`);
 
-	await rowItem(page, refused.into)
+	await rowItem(page, refused.out)
 		.getByRole("button", { name: "Rejeter la correspondance" })
 		.click();
 	await expect(page.getByText("Virement dissocié, il ne sera plus proposé")).toBeVisible();

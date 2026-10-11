@@ -122,6 +122,11 @@ type RowChange<Field extends RowField> = {
 	previous: RowValues[Field];
 	/** An undo shows no toast of its own: it would offer to undo the undo. */
 	undo?: boolean;
+	/**
+	 * Says a failure in place of the destructive toast, as the row's picker
+	 * does for a category it created but could not set.
+	 */
+	onError?: () => void;
 };
 
 /**
@@ -145,7 +150,7 @@ const ROW_FIELDS = {
  * Sets one row's category from the list. The row changes at once
  * in every cached list; a success toast offers « Annuler », which sets the
  * previous value back, by hand again, so it stays locked. A failure puts the
- * rows back and shows a destructive toast.
+ * rows back and shows a destructive toast, or calls the change's `onError`.
  */
 function useSetRowField<Field extends RowField>(field: Field) {
 	const queryClient = useQueryClient();
@@ -175,11 +180,15 @@ function useSetRowField<Field extends RowField>(field: Field) {
 
 			return { snapshot };
 		},
-		onError: (error, _change, context) => {
+		onError: (error, change, context) => {
 			for (const [key, data] of context?.snapshot ?? []) {
 				queryClient.setQueryData(key, data);
 			}
-			showErrorToast(errorCodeOf(error));
+			if (change.onError === undefined) {
+				showErrorToast(errorCodeOf(error));
+			} else {
+				change.onError();
+			}
 		},
 		onSuccess: (_data, change) => {
 			if (change.undo === true) {

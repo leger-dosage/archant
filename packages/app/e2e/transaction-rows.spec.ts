@@ -133,8 +133,9 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 		"Montant",
 	]);
 
-	// The day's tray: its day, « · 8 » read « 8 opérations », and the signed sum
-	// of its rows, transfers included, over a white block of the rows.
+	// The day's tray: its day, « · 6 » read « 6 opérations », and the signed sum
+	// of its rows, transfers left out as Sure's, over a white block of the rows.
+	// Each pair has both sides on the page, so it shows once, as its outflow.
 	const day = page.getByRole("main").locator('[data-slot="inset-group"]');
 	await expect(day).toHaveCount(1);
 	await expect(day).toHaveCSS("background-color", rgb("#f2f2f3"));
@@ -143,13 +144,13 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	const dayHeading = day.getByRole("heading", { level: 2 });
 	await expect(dayHeading).toHaveCSS("text-transform", "uppercase");
 	const dayHeader = dayHeading.locator("../..");
-	await expect(dayHeader).toContainText("8 opérations");
+	await expect(dayHeader).toContainText("6 opérations");
 	await expect(dayHeader).toContainText(euros(-(1234 + 500 + 100 + 999)));
 	const block = day.locator("ul").locator("..");
 	await expect(block).toHaveCSS("background-color", rgb("#ffffff"));
 	await expect(block).toHaveCSS("overflow", "hidden");
-	await expect(block.getByRole("listitem")).toHaveCount(8);
-	await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(8);
+	await expect(block.getByRole("listitem")).toHaveCount(6);
+	await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(6);
 
 	const box = await rowItem(page, label.food).boundingBox();
 	expect(box?.height).toBe(56);
@@ -183,16 +184,13 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	await expect(pill(page, label.bare)).toHaveText("Sans catégorie");
 	await expect(badges(page, label.bare)).toHaveCount(0);
 
-	// Both sides of a move between accounts, as the matcher proposed it.
-	await Promise.all(
-		[label.out, label.into].flatMap((side) => [
-			expect(rowIcon(page, side).locator("svg.lucide-arrow-left-right")).toBeVisible(),
-			expect(pill(page, side)).toHaveText("Virement"),
-			expect(badges(page, side)).toHaveText(["Correspondance automatique"]),
-			expect(badges(page, side).locator("svg.lucide-wand-sparkles")).toBeVisible(),
-		]),
-	);
+	// A move between accounts, as the matcher proposed it, shown as its outflow.
+	await expect(rowIcon(page, label.out).locator("svg.lucide-arrow-left-right")).toBeVisible();
+	await expect(pill(page, label.out)).toHaveText("Virement");
+	await expect(badges(page, label.out)).toHaveText(["Correspondance automatique"]);
+	await expect(badges(page, label.out).locator("svg.lucide-wand-sparkles")).toBeVisible();
 	await expect(rowButton(page, label.out)).toContainText(`Vers ${livret.name}`);
+	await expect(rowItem(page, label.into)).toHaveCount(0);
 
 	// A spent loan payment, confirmed, keeps its category, and says it is a transfer.
 	await expect(rowIcon(page, label.instalment).locator("svg.lucide-utensils")).toBeVisible();
@@ -202,7 +200,7 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	await expect(rowButton(page, label.instalment)).toContainText(
 		`Remboursement de prêt · Vers ${loan.name}`,
 	);
-	await expect(pill(page, label.repayment)).toHaveText("Remboursement de prêt");
+	await expect(rowItem(page, label.repayment)).toHaveCount(0);
 
 	await expect(badges(page, label.subscription)).toHaveText(["Récurrent"]);
 	await expect(badges(page, label.subscription).locator("svg.lucide-repeat")).toBeVisible();
@@ -212,7 +210,6 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 		checking.name,
 	);
 	await expect(accountIcon(page, label.food).locator("svg.lucide-landmark")).toBeVisible();
-	await expect(accountIcon(page, label.repayment).locator("svg.lucide-hand-coins")).toBeVisible();
 
 	// A hovered row takes the hover colour.
 	await expect(rowItem(page, label.bare)).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
@@ -238,6 +235,16 @@ test("each row shows its icon, pill, account, badges and amount on one 56 px lin
 	await expect(columns.getByText("Compte", { exact: true })).toBeHidden();
 	await expect(columns.getByText("Catégorie")).toBeVisible();
 	expect((await rowItem(page, label.food).boundingBox())?.height).toBe(56);
+
+	// The loan's side, alone on its page: its account's icon, and the
+	// outflow's category, muted, where its own would be.
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await visitOperations(page, label.repayment);
+	await expect(accountIcon(page, label.repayment).locator("svg.lucide-hand-coins")).toBeVisible();
+	await expect(pill(page, label.repayment)).toHaveText(food.name);
+	await expect(rowButton(page, label.repayment)).toContainText(
+		`Remboursement de prêt · Depuis ${checking.name}`,
+	);
 });
 
 test("below 768 px a row takes two lines: the label and the amount, then the date and the category", async ({
@@ -360,6 +367,7 @@ test("pending, possible duplicate and proposed transfer rows each carry their ba
 								counterpartTransactionId: "other-side",
 								counterpartAccountId: "livret",
 								counterpartAccountName: "Livret A",
+								counterpartCategoryId: null,
 							},
 						}
 					: {}),

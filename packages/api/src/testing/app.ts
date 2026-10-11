@@ -192,6 +192,7 @@ export const listItem = z.object({
 			status: z.enum(TRANSFER_STATUSES),
 			counterpartAccountId: z.string(),
 			counterpartAccountName: z.string(),
+			counterpartCategoryId: z.string().nullable(),
 		})
 		.nullable(),
 	possibleDuplicate: z.boolean(),

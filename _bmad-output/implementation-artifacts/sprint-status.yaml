@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-11-2026 19:32
+last_updated: 10-11-2026 21:21
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -248,7 +248,7 @@ development_status:
   27-13-assistant-bills-and-recurring-payments-as-sures: done
   27-14-archants-own-assistant-tools-in-sures-shapes: done
   27-15-principal-and-interest-in-the-loan-chart-and-sures-chart-axis: done
-  27-16-categories-as-sure-in-the-transaction-list: backlog
+  27-16-categories-as-sure-in-the-transaction-list: done
   27-17-edit-an-accounts-opening-balance: backlog
   27-18-let-a-sync-update-a-transaction-again: backlog
   27-19-every-balance-a-bank-sends-and-a-revoked-consent-at-once: backlog

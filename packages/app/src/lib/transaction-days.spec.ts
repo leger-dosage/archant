@@ -10,14 +10,23 @@ const row = (
 	date: string,
 	minorUnits: number,
 	currency = "EUR",
-	overrides: { id?: string; parentEntryId?: string } = {},
+	overrides: {
+		id?: string;
+		parentEntryId?: string;
+		transfer?: { counterpartTransactionId: string } | null;
+	} = {},
 ) => ({
 	id: overrides.id ?? `row-${String((next += 1))}`,
 	date,
 	amount: toMinorUnits(minorUnits),
 	currency,
 	parentEntryId: overrides.parentEntryId ?? null,
+	transfer: overrides.transfer ?? null,
 });
+
+/** A side of a transfer whose other side is `counterpart`. */
+const side = (id: string, counterpart: string, minorUnits: number, date = "2026-09-20") =>
+	row(date, minorUnits, "EUR", { id, transfer: { counterpartTransactionId: counterpart } });
 
 const line = (id: string, parentEntryId: string, minorUnits: number, date = "2026-09-20") =>
 	row(date, minorUnits, "EUR", { id, parentEntryId });
@@ -135,7 +144,68 @@ describe("groupByDay", () => {
 	});
 });
 
+describe("groupByDay and transfers", () => {
+	it("shows a transfer whose two sides the page holds once, as its outflow, and leaves it out of the subtotal", () => {
+		// −50 € of groceries beside a −500 € / +500 € loan payment.
+		const days = groupByDay([
+			row("2026-09-20", -5000, "EUR", { id: "groceries" }),
+			side("inflow", "outflow", 50000),
+			side("outflow", "inflow", -50000),
+		]);
+
+		expect(shown(days)).toEqual([["2026-09-20", ["groceries", "outflow"]]]);
+		expect(days[0]?.items).toHaveLength(2);
+		expect(days[0]?.subtotals).toEqual([{ currency: "EUR", amount: -5000 }]);
+	});
+
+	it("shows an inflow whose outflow is on another page, and never sums it", () => {
+		const days = groupByDay([
+			row("2026-09-20", -1200, "EUR", { id: "bakery" }),
+			side("inflow", "elsewhere", 50000),
+		]);
+
+		expect(shown(days)).toEqual([["2026-09-20", ["bakery", "inflow"]]]);
+		expect(days[0]?.subtotals).toEqual([{ currency: "EUR", amount: -1200 }]);
+	});
+
+	it("keeps both sides of a pair on two days of the page apart, the outflow alone shown", () => {
+		const days = groupByDay([
+			side("inflow", "outflow", 30000, "2026-09-20"),
+			row("2026-09-20", -700, "EUR", { id: "coffee" }),
+			side("outflow", "inflow", -30000, "2026-09-17"),
+		]);
+
+		expect(shown(days)).toEqual([
+			["2026-09-20", ["coffee"]],
+			["2026-09-17", ["outflow"]],
+		]);
+	});
+
+	it("leaves a pending proposal out of the subtotal too", () => {
+		// The matcher's proposal is a transfer until the owner rejects it.
+		const [day] = groupByDay([
+			side("proposed", "elsewhere", -20000),
+			row("2026-09-20", -300, "EUR", { id: "bus" }),
+		]);
+
+		expect(day?.subtotals).toEqual([{ currency: "EUR", amount: -300 }]);
+	});
+
+	it("keeps no subtotal for a day of transfers alone", () => {
+		const [day] = groupByDay([side("a", "b", 10000), side("b", "a", -10000), side("c", "z", -400)]);
+
+		expect(day?.items.map((item) => item.id)).toEqual(["b", "c"]);
+		expect(day?.subtotals).toEqual([]);
+	});
+});
+
 describe("shownOrder", () => {
+	it("leaves out an inflow the page also shows as its outflow", () => {
+		const rows = shownOrder([side("in", "out", 100), side("out", "in", -100)], []);
+
+		expect(rows.map((item) => item.id)).toEqual(["out"]);
+	});
+
 	it("lists the rows as the list shows them, a split's lines in their order", () => {
 		const rows = shownOrder(
 			[row("2026-09-20", -1, "EUR", { id: "x" }), line("b", "p", -2), line("a", "p", -3)],

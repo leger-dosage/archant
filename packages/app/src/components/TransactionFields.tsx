@@ -13,8 +13,9 @@ import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
 
 /**
- * The sheet's Catégorie field: the list's combobox behind a button showing the choice.
- * A split's dialog holds one per line, each with its own `id` and name.
+ * The sheet's Catégorie field: the list's combobox behind a button showing the choice,
+ * creating a category as Sure's `DS::CategorySelect` does. A split's dialog holds one
+ * per line, each with its own `id` and name.
  */
 export function CategoryField({
 	id = "transaction-category",
@@ -23,6 +24,7 @@ export function CategoryField({
 	onChange,
 	invalid,
 	describedBy,
+	setOnOutflow = false,
 }: {
 	id?: string;
 	/**
@@ -34,49 +36,68 @@ export function CategoryField({
 	onChange: (categoryId: string | null) => void;
 	invalid: boolean;
 	describedBy: string | undefined;
+	/**
+	 * The inflow of a loan payment or a contribution: `value` is its outflow's
+	 * category, shown disabled with the reason, as Sure's `7e1d93613`.
+	 */
+	setOnOutflow?: boolean;
 }) {
+	const { t } = useTranslation();
 	const categories = useCategories();
 	const [open, setOpen] = useState(false);
 	const { color, icon, name } = useCategoryShown(value);
+	const noteId = `${id}-note`;
+	const described = [describedBy, setOnOutflow ? noteId : undefined]
+		.filter((part) => part !== undefined)
+		.join(" ");
 
 	return (
-		<Popover open={open} onOpenChange={setOpen}>
-			<PopoverTrigger asChild>
-				<Button
-					id={id}
-					type="button"
-					variant="outline"
-					className="w-full justify-start font-normal"
-					aria-invalid={invalid}
-					{...(accessibleName === undefined ? {} : { "aria-label": accessibleName(name) })}
-					{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
-				>
-					<TintedIcon
-						subject={
-							color === null || icon === null
-								? { kind: "uncategorised" }
-								: { kind: "category", color, icon }
-						}
-						size="sm"
+		<>
+			<Popover open={open} onOpenChange={setOpen}>
+				<PopoverTrigger asChild>
+					<Button
+						id={id}
+						type="button"
+						variant="outline"
+						disabled={setOnOutflow}
+						className="w-full justify-start font-normal"
+						aria-invalid={invalid}
+						{...(accessibleName === undefined ? {} : { "aria-label": accessibleName(name) })}
+						{...(described === "" ? {} : { "aria-describedby": described })}
+					>
+						<TintedIcon
+							subject={
+								color === null || icon === null
+									? { kind: "uncategorised" }
+									: { kind: "category", color, icon }
+							}
+							size="sm"
+						/>
+						{name === null ? (
+							<Skeleton className="h-3 w-24" />
+						) : (
+							<span className="truncate">{name}</span>
+						)}
+					</Button>
+				</PopoverTrigger>
+				<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
+					<CategoryCombobox
+						categories={categories.data ?? []}
+						value={value}
+						allowCreate
+						onSelect={(categoryId) => {
+							onChange(categoryId);
+							setOpen(false);
+						}}
 					/>
-					{name === null ? (
-						<Skeleton className="h-3 w-24" />
-					) : (
-						<span className="truncate">{name}</span>
-					)}
-				</Button>
-			</PopoverTrigger>
-			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
-				<CategoryCombobox
-					categories={categories.data ?? []}
-					value={value}
-					onSelect={(categoryId) => {
-						onChange(categoryId);
-						setOpen(false);
-					}}
-				/>
-			</PopoverContent>
-		</Popover>
+				</PopoverContent>
+			</Popover>
+			{setOnOutflow && (
+				<p id={noteId} className="text-sm text-muted-foreground">
+					{t("transactions.category.setOnOutflow")}
+				</p>
+			)}
+		</>
 	);
 }
 
