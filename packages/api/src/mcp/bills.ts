@@ -39,6 +39,7 @@ import { recordBillPayment } from "../services/recurring/payments.ts";
 import {
 	BANK_TEXT,
 	CREATES,
+	RAILS_FALSE,
 	READ_ONLY,
 	SETS,
 	defineTool,
@@ -763,9 +764,6 @@ function flagOf(value: unknown, key: string): boolean {
 		"VALIDATION_ERROR",
 	);
 }
-
-// Rails' `ActiveModel::Type::Boolean::FALSE_VALUES`, which `update_bill` assigns through.
-const RAILS_FALSE = new Set<unknown>([false, 0, "0", "f", "F", "false", "FALSE", "off", "OFF"]);
 
 /** The account `name` names, as Sure's bill tools resolve it: exactly one, else refused. */
 async function accountNamed(deps: ServiceDeps, name: string | null): Promise<string> {

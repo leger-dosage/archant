@@ -46,6 +46,7 @@ import { createGoalTool, getGoals } from "./goals.ts";
 import { getHoldings } from "./holdings.ts";
 import { confirmImportTool, importStatementFileTool, previewImportTool } from "./imports.ts";
 import { createMerchantTool, getMerchants, renameMerchantTool } from "./merchants.ts";
+import { setOpeningBalanceTool } from "./opening-balance.ts";
 import { getRecurringTransactions } from "./recurring.ts";
 import { getBalanceSheetTool, getIncomeStatementTool } from "./reports.ts";
 import {
@@ -122,6 +123,7 @@ const TOOLS: AnyTool[] = [
 	pairTransferTool,
 	unpairTransferTool,
 	recordValuationTool,
+	setOpeningBalanceTool,
 	createGoalTool,
 	updateCategoryTool,
 	renameMerchantTool,
@@ -176,7 +178,8 @@ const INSTRUCTIONS = [
 	"To record a balance:",
 	"- record_valuation sets an account's balance on a date, from which the balance follows it, then the transactions after it; on an account a bank syncs, today's balance stays the bank's, and the snapshot sets its day and the days before it. The balance is what an asset holds or is worth, or what a liability still owes, both positive; an overdraft is negative.",
 	"- Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement; pass that document as source, in the tool's citation grammar. Never record a figure the owner or a document did not give, and never invent a source.",
-	"- get_valuations lists the snapshots already recorded, with the notes where record_valuation keeps each source: when one holds that date, tell the owner record_valuation replaces its balance and appends the new source to its notes.",
+	"- get_valuations lists the snapshots already recorded, with the notes where record_valuation keeps each source: when one holds that date, tell the owner record_valuation replaces its balance and appends the new source to its notes. On the opening date, record_valuation sets the opening balance.",
+	"- set_opening_balance moves a manual account's opening balance, its date and amount, where its history starts; it gives them as Sure's decimal text alone. Call it with dry_run: true first, show the owner the before, the after and what happens to the current balance, and wait for their agreement.",
 	"To set up a savings goal:",
 	"- Before create_goal, paraphrase the name, the target, the date and each account with any amount reserved from it, and wait for the owner's agreement. create_goal takes the accounts by their exact names, as get_accounts gives them.",
 	"- In get_goals, an account of an active or paused goal that its earmarks leave out gives the goal its whole balance: another goal can only reserve a fixed amount of it, through create_goal's earmarks. A completed or archived goal holds nothing.",

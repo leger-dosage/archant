@@ -236,7 +236,7 @@
 		"disconnectToDelete": "Déconnecter {{institutionName}} pour supprimer ce compte",
 		"form": {
 			"title": "Modifier le compte",
-			"description": "La devise, le solde d'ouverture et la date d'ouverture ne changent pas après la création du compte.",
+			"description": "La devise ne change pas après la création du compte. Le solde d'ouverture se modifie dans l'onglet « Soldes ».",
 			"name": "Nom",
 			"subtype": "Type",
 			"excludedFromReports": "Exclure des rapports",
@@ -587,7 +587,6 @@
 	},
 	"snapshots": {
 		"add": "Ajouter un solde",
-		"empty": "Aucun solde saisi.",
 		"paginationLabel": "Pages des soldes",
 		"noGap": "Aucun écart",
 		"columns": {
@@ -610,6 +609,15 @@
 			"action": "Supprimer",
 			"title": "Supprimer le solde du {{date}} ?",
 			"description": "Le solde saisi de {{amount}} sera supprimé, et le solde du compte recalculé à partir des opérations."
+		},
+		"opening": {
+			"label": "Solde d'ouverture",
+			"title": "Solde d'ouverture",
+			"description": "Le solde du compte au début de son historique. Tous les soldes suivants seront recalculés à partir de cette valeur.",
+			"date": "Date",
+			"balance": "Valeur du compte à ce jour",
+			"notes": "Notes",
+			"save": "Mettre à jour la valeur"
 		}
 	},
 	"trades": {
@@ -2376,6 +2384,8 @@
 			"unknown": "Valeur invalide.",
 			"date_too_early": "La date doit être postérieure au 1er janvier 1900.",
 			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
+			"before_opening_date": "La date ne peut pas précéder celle du solde d'ouverture.",
+			"not_before_oldest_entry": "La date doit précéder la plus ancienne opération du compte, le {{date}}.",
 			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",
 			"sync_start_too_early": "La date ne peut pas remonter à plus de deux ans.",

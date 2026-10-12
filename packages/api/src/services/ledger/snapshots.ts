@@ -55,17 +55,14 @@ export type SnapshotPatch = {
 export type RecordSnapshotResult =
 	/** `replaced`: a snapshot already held the date, and now holds this balance. */
 	| { status: "recorded"; id: string; replaced: boolean }
-	| { status: "rejected"; reason: SnapshotRejectionCode };
+	/** `OPENING_DATE`: a linked account's opening date, which a snapshot may not set. */
+	| { status: "rejected"; reason: SnapshotRejectionCode | "OPENING_DATE" };
 
 export type SnapshotUpdateResult =
 	| { status: "updated" }
 	| { status: "rejected"; reason: SnapshotRejectionCode };
 
-function snapshotRejection(
-	account: { openingDate: IsoDate },
-	date: IsoDate,
-	timeZone: string,
-): SnapshotRejectionCode | null {
+function snapshotRejection(account: { openingDate: IsoDate }, date: IsoDate, timeZone: string) {
 	return snapshotRejectionFor(date, { openingDate: account.openingDate, today: today(timeZone) });
 }
 
@@ -95,6 +92,15 @@ export async function snapshotOn(
 		.get();
 }
 
+/** The opening anchor, read as `snapshotOn` reads a snapshot. */
+async function openingAnchorRow(tx: Transaction, id: string) {
+	return tx
+		.select({ id: entries.id, notes: entries.notes })
+		.from(entries)
+		.where(eq(entries.id, id))
+		.get();
+}
+
 async function snapshotRow(tx: Transaction, id: string) {
 	const row = await tx
 		.select({ accountId: entries.accountId, date: entries.date, balance: entries.amount })
@@ -111,9 +117,10 @@ async function snapshotRow(tx: Transaction, id: string) {
 
 /**
  * Records the balance the bank shows at the end of `date`, a `reconciliation`
- * valuation (AD-8), and recomputes the balances from that day. A snapshot
- * already on that date is updated in place and keeps its id, as in Sure's
- * `Account::ReconciliationManager`.
+ * valuation (AD-8), and recomputes the balances from that day. A valuation
+ * already on that date is updated in place and keeps its id and kind, as in
+ * Sure's `Account::ReconciliationManager`: on the opening date, the opening
+ * anchor takes the amount and keeps its date.
  */
 export async function recordSnapshot(
 	deps: ServiceDeps,
@@ -126,12 +133,22 @@ export async function recordSnapshot(
 			const account = await accountWithOpeningDate(tx, accountId);
 			const reason = snapshotRejection(account, input.date, deps.timeZone);
 
-			if (reason !== null) {
+			// A linked account's balances derive backward from the bank's and
+			// ignore the anchor's amount: setting it would look saved and change
+			// nothing, so its opening date stays refused.
+			if (reason === "OPENING_DATE" && account.bankAccountId !== null) {
+				return { status: "rejected", reason };
+			}
+
+			if (reason !== null && reason !== "OPENING_DATE") {
 				return { status: "rejected", reason };
 			}
 
 			const now = Date.now();
-			const held = await snapshotOn(tx, accountId, input.date);
+			const held =
+				reason === "OPENING_DATE"
+					? await openingAnchorRow(tx, account.openingId)
+					: await snapshotOn(tx, accountId, input.date);
 			const existing = held?.id;
 			const id = existing ?? crypto.randomUUID();
 			const written = input.notes === undefined ? (held?.notes ?? null) : input.notes;
@@ -157,7 +174,7 @@ export async function recordSnapshot(
 				});
 			} else {
 				// The user's value now: later imports keep it, and reverting the
-				// import that wrote it leaves it.
+				// import that wrote it leaves it. The opening anchor has no import.
 				await tx
 					.update(entries)
 					.set({ amount: input.balance, importId: null, ...notes, updatedAt: now })
@@ -190,6 +207,12 @@ export async function updateSnapshot(
 			const date = patch.date ?? current.date;
 			const balance = patch.balance ?? current.balance;
 			const reason = snapshotRejection(account, date, deps.timeZone);
+
+			// The opening anchor holds its date, as a snapshot would: Sure's
+			// valuations are unique by account and date.
+			if (reason === "OPENING_DATE") {
+				return { status: "rejected", reason: "SNAPSHOT_EXISTS" };
+			}
 
 			if (reason !== null) {
 				return { status: "rejected", reason };
@@ -342,22 +365,37 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 	};
 }
 
-/** One snapshot with its gap, `null` when the id names none. */
+/**
+ * One snapshot with its gap, `null` when the id names none. The opening
+ * anchor, which a snapshot on its date sets, reads as one with no gap: it
+ * starts the balances, so nothing was computed before it.
+ */
 export async function findSnapshot(deps: ServiceDeps, id: string): Promise<SnapshotRecord | null> {
 	const row = await deps.db
-		.select(snapshotColumns)
+		.select({ ...snapshotColumns, kind: entries.valuationKind })
 		.from(entries)
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
-		.where(and(eq(entries.id, id), eq(entries.valuationKind, "reconciliation")))
+		.where(
+			and(eq(entries.id, id), inArray(entries.valuationKind, ["reconciliation", "opening_anchor"])),
+		)
 		.get();
 
 	if (row === undefined) {
 		return null;
 	}
 
-	const withGap = await gapReader(deps.db, row.accountId, [row.date]);
+	const { kind, ...snapshot } = row;
 
-	return withGap(row);
+	if (kind === "opening_anchor") {
+		const { type: _type, ...rest } = snapshot;
+		const balance = toMinorUnits(rest.balance);
+
+		return { ...rest, balance, computed: balance, gap: toMinorUnits(0) };
+	}
+
+	const withGap = await gapReader(deps.db, snapshot.accountId, [snapshot.date]);
+
+	return withGap(snapshot);
 }
 
 /**

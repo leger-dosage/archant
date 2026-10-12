@@ -355,9 +355,11 @@ export async function accountWithOpeningDate(tx: Transaction, accountId: string)
 			id: accounts.id,
 			type: accounts.type,
 			currency: accounts.currency,
+			bankAccountId: accounts.bankAccountId,
 			openingId: entries.id,
 			openingDate: entries.date,
 			openingBalance: entries.amount,
+			openingNotes: entries.notes,
 		})
 		.from(accounts)
 		.innerJoin(
@@ -422,17 +424,19 @@ export async function openingDateOf(deps: ServiceDeps, accountId: string): Promi
 
 /**
  * The account's opening anchor, its first valuation since no snapshot may
- * precede it; `null` for an unknown account.
+ * precede it, with what the owner wrote on it; `null` for an unknown account.
  */
 export async function openingAnchorOf(
 	deps: ServiceDeps,
 	accountId: string,
-): Promise<{ date: IsoDate; balance: MinorUnits } | null> {
+): Promise<{ date: IsoDate; balance: MinorUnits; notes: string | null } | null> {
 	const row = await deps.db
-		.select({ date: entries.date, balance: entries.amount })
+		.select({ date: entries.date, balance: entries.amount, notes: entries.notes })
 		.from(entries)
 		.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "opening_anchor")))
 		.get();
 
-	return row === undefined ? null : { date: row.date, balance: toMinorUnits(row.balance) };
+	return row === undefined
+		? null
+		: { date: row.date, balance: toMinorUnits(row.balance), notes: row.notes };
 }

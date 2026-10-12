@@ -104,6 +104,7 @@ const WRITE_TOOLS = [
 	"pair_transfer",
 	"unpair_transfer",
 	"record_valuation",
+	"set_opening_balance",
 	"create_goal",
 	"update_category",
 	"rename_merchant",
@@ -405,6 +406,9 @@ describe("the request", () => {
 		expect(result.instructions).toContain(
 			"get_valuations and record_valuation give amounts as Sure's decimal text",
 		);
+		expect(result.instructions).toContain(
+			"- set_opening_balance moves a manual account's opening balance, its date and amount, where its history starts; it gives them as Sure's decimal text alone. Call it with dry_run: true first, show the owner the before, the after and what happens to the current balance, and wait for their agreement.",
+		);
 		expect(result.instructions).not.toMatch(/\bgap\b/u);
 	});
 });
@@ -515,6 +519,7 @@ describe("tools/list", () => {
 			pair_transfer: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			unpair_transfer: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
 			record_valuation: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			set_opening_balance: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			create_goal: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 			update_category: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
 			rename_merchant: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },

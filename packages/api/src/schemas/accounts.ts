@@ -344,7 +344,8 @@ export type CreateAccountRequest = z.output<typeof createAccountSchema>;
 
 /**
  * An edit of an account's settings: any non-empty subset of these fields.
- * Type, currency and opening balance are fixed at creation. Whether `subtype`
+ * Type and currency are fixed at creation; the opening balance has its own
+ * route, `PATCH /api/accounts/:id/opening-balance`. Whether `subtype`
  * fits the account needs its stored type, so the service checks it and raises
  * the same `invalid_subtype` field error as creation. `details` likewise: the
  * service refuses it on a non-loan and parses it in the account's currency.

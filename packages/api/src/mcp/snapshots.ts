@@ -151,7 +151,7 @@ export const recordValuationTool = defineTool({
 		`The source citation is required, as in Sure, and checked against this grammar: ${GRAMMAR}. The "${ESTIMATED_PREFIX}" prefix says the value was interpolated or proxied, not read off a document; an estimate must carry a grade. Grade A is an official document for that exact date, such as a statement or a loan table; B is derived with a document; C is a proxy or an assumption, to derive again from the real source. For example "Relevé Boursorama 2026-03-31, solde de fin de mois (grade: A)" or "estimated: linear interpolation over 2026-02 / 2026-04 statements (grade: C)".`,
 		"If you have no document to cite, do not invent one and do not call this tool: ask the owner for the source. A value with no provenance is worse than a missing one, because it looks authoritative.",
 		"The citation is stored in the snapshot's notes; what the owner wrote there is kept and the new citation appended below it, and a citation already there is not added again.",
-		"Refusals answer Sure's keys, in Sure's order: invalid_source_citation, its message saying why; invalid_date; invalid_amount; account_not_found. A date on or before the opening date, or after today, answers validation_error naming date; an amount with more decimals than the account's currency holds, validation_error naming amount.",
+		"Refusals answer Sure's keys, in Sure's order: invalid_source_citation, its message saying why; invalid_date; invalid_amount; account_not_found. On the opening date, the value sets the opening balance, as Sure's; a date before it, or after today, answers validation_error naming date; an amount with more decimals than the account's currency holds, validation_error naming amount.",
 	].join("\n\n"),
 	scope: "archant:write",
 	annotations: REPLACES,
@@ -166,7 +166,7 @@ export const recordValuationTool = defineTool({
 		replaced_existing: z
 			.boolean()
 			.describe(
-				"Whether a snapshot already held the date: it keeps its entry_id, with this amount.",
+				"Whether a valuation already held the date, a snapshot or the opening balance: it keeps its entry_id, with this amount.",
 			),
 		provenance: z
 			.object({

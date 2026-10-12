@@ -31,7 +31,9 @@ test("?tab=snapshots opens Soldes; a recorded snapshot sets the balance and show
 		"aria-selected",
 		"false",
 	);
-	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+	// Only the opening balance: no snapshot is recorded.
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
 
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter un solde" });
@@ -168,7 +170,8 @@ test("a second snapshot on the same date replaces the first", async ({ page, api
 	await expect(dialog).toBeHidden();
 	await expect(snapshotRow(page, date)).toHaveCount(1);
 	await expect(snapshotRow(page, date)).toContainText(euros(250_000));
-	await expect(page.getByRole("main").getByRole("row")).toHaveCount(2);
+	// The header, the snapshot, then the opening balance.
+	await expect(page.getByRole("main").getByRole("row")).toHaveCount(3);
 	await expect(header(page, account.name)).toContainText(euros(250_000));
 });
 
@@ -200,7 +203,9 @@ test("a snapshot is edited, then deleted after confirmation", async ({ page, api
 
 	await expect(confirm).toBeHidden();
 	await expect(dialog).toBeHidden();
-	await expect(page.getByText("Aucun solde saisi.")).toBeVisible();
+	// Only the opening balance: no snapshot is recorded.
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
+	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
@@ -265,4 +270,69 @@ test("a transaction on a snapshot day moves the gap, not the balance", async ({ 
 		euros(90_000),
 		gap(110_000),
 	]);
+});
+
+// Story 27.17: the opening balance, Sure's valuation drawer on its anchor.
+
+test("« Solde d'ouverture » moves the opening balance to an earlier date, and the balance follows", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	await api.addTransaction(account.id, {
+		date: daysAgo(10),
+		label: uniqueName("Courses"),
+		amount: "-100,00",
+	});
+
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
+	const row = page.getByRole("row", { name: "Solde d'ouverture" });
+	await expect(row.getByRole("cell")).toHaveText([
+		`${formatTableDate(daysAgo(30))}Solde d'ouverture`,
+		euros(100_000),
+		"—",
+		"—",
+	]);
+
+	await row.getByRole("button").click();
+	const sheet = page.getByRole("dialog", { name: "Solde d'ouverture" });
+	await expect(sheet.getByLabel("Date", { exact: true })).toHaveValue(typed(daysAgo(30)));
+	await expect(sheet.getByLabel("Valeur du compte à ce jour")).toHaveValue("1000,00");
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(40)));
+	await sheet.getByLabel("Valeur du compte à ce jour").fill("1 500,00");
+	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
+
+	await expect(sheet).toBeHidden();
+	await expect(row.getByRole("cell").first()).toHaveText(
+		`${formatTableDate(daysAgo(40))}Solde d'ouverture`,
+	);
+	await expect(header(page, account.name)).toContainText(euros(140_000));
+	await expect(row.getByRole("button")).toBeFocused();
+});
+
+test("« Solde d'ouverture » refuses a date on the oldest line, naming it", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	await api.addTransaction(account.id, {
+		date: daysAgo(10),
+		label: uniqueName("Courses"),
+		amount: "-100,00",
+	});
+
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
+	await page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("button").click();
+	const sheet = page.getByRole("dialog", { name: "Solde d'ouverture" });
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(10)));
+	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
+
+	await expect(
+		sheet.getByText(
+			`La date doit précéder la plus ancienne opération du compte, le ${formatTableDate(daysAgo(10))}.`,
+		),
+	).toBeVisible();
+	await expect(sheet.getByLabel("Date", { exact: true })).toHaveAttribute("aria-invalid", "true");
+	await sheet.getByRole("button", { name: "Annuler" }).click();
+	await expect(header(page, account.name)).toContainText(euros(90_000));
 });

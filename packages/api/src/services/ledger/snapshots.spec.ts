@@ -11,6 +11,9 @@ import {
 	deps,
 	firstPage,
 	history,
+	link,
+	newBankAccount,
+	openChecking,
 	openPinned,
 	setToday,
 	snapshot,
@@ -105,7 +108,65 @@ describe("recordSnapshot", () => {
 		});
 	});
 
-	it("refuses the opening date and tomorrow, and writes nothing", async () => {
+	it("sets the opening anchor on its date, keeping its id, kind and date, as Sure's reconciliation", async () => {
+		const account = await openPinned();
+		const anchor = () =>
+			temp.db
+				.select({
+					id: entries.id,
+					kind: entries.valuationKind,
+					date: entries.date,
+					amount: entries.amount,
+				})
+				.from(entries)
+				.where(and(eq(entries.accountId, account.id), eq(entries.kind, "valuation")))
+				.all();
+		const [before] = await anchor();
+
+		const result = await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-01-10", balance: toMinorUnits(180000) },
+			{ origin: "user" },
+		);
+
+		expect(result).toEqual({ status: "recorded", id: before?.id, replaced: true });
+		await expect(anchor()).resolves.toEqual([
+			{ id: before?.id, kind: "opening_anchor", date: "2026-01-10", amount: 180000 },
+		]);
+		const days = await history(account.id);
+		expect(days.get("2026-01-10")).toBe(180000);
+		expect(days.get("2026-09-21")).toBe(168000);
+		await expect(findSnapshot(deps(), before?.id ?? "")).resolves.toMatchObject({
+			balance: 180000,
+			computed: 180000,
+			gap: 0,
+		});
+	});
+
+	it("refuses the opening date of a linked account, whose balances ignore the anchor's amount", async () => {
+		const account = await openChecking();
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000);
+
+		await expect(
+			recordSnapshot(
+				deps(),
+				account.id,
+				{ date: "2026-09-01", balance: toMinorUnits(1) },
+				{ origin: "user" },
+			),
+		).resolves.toEqual({ status: "rejected", reason: "OPENING_DATE" });
+		await expect(
+			temp.db
+				.select({ amount: entries.amount })
+				.from(entries)
+				.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "opening_anchor")))
+				.get(),
+		).resolves.toEqual({ amount: 123456 });
+	});
+
+	it("refuses the day before the opening date and tomorrow, and writes nothing", async () => {
 		const account = await openPinned();
 		const before = await history(account.id);
 
@@ -113,7 +174,7 @@ describe("recordSnapshot", () => {
 			recordSnapshot(
 				deps(),
 				account.id,
-				{ date: "2026-01-10", balance: toMinorUnits(1) },
+				{ date: "2026-01-09", balance: toMinorUnits(1) },
 				{ origin: "user" },
 			),
 		).resolves.toEqual({ status: "rejected", reason: "BEFORE_OPENING_DATE" });
@@ -230,12 +291,15 @@ describe("updateSnapshot", () => {
 		).resolves.toEqual({ status: "updated" });
 	});
 
-	it("refuses the opening date and tomorrow", async () => {
+	it("refuses the opening date, which its anchor holds, the day before and tomorrow", async () => {
 		const account = await openPinned();
 		const id = await snapshot(account.id, "2026-03-05", 200000);
 
 		await expect(
 			updateSnapshot(deps(), id, { date: "2026-01-10" }, { origin: "user" }),
+		).resolves.toEqual({ status: "rejected", reason: "SNAPSHOT_EXISTS" });
+		await expect(
+			updateSnapshot(deps(), id, { date: "2026-01-09" }, { origin: "user" }),
 		).resolves.toEqual({ status: "rejected", reason: "BEFORE_OPENING_DATE" });
 		await expect(
 			updateSnapshot(deps(), id, { date: "2026-09-22" }, { origin: "user" }),

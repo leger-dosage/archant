@@ -63,3 +63,18 @@ export function useDeleteSnapshot(accountId: string) {
 		onSuccess: invalidate,
 	});
 }
+
+/** Moves the account's opening balance, date and amount: every balance after it changes. */
+export function useSetOpeningBalance(accountId: string) {
+	const invalidate = useInvalidateAccount(accountId);
+
+	return useMutation({
+		mutationFn: async (input: SnapshotInput) =>
+			(
+				await unwrap(
+					api.accounts[":id"]["opening-balance"].$patch({ param: { id: accountId }, json: input }),
+				)
+			).data,
+		onSuccess: invalidate,
+	});
+}

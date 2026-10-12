@@ -1,3 +1,5 @@
+import type { OpeningAccount } from "@/components/OpeningBalanceSheet";
+import type { OpeningRow } from "@/components/SnapshotList";
 import type { SheetAccount } from "@/components/TransactionForm";
 import type { HoldingsData, PositionData } from "@/hooks/useHoldings";
 import type { SnapshotData } from "@/hooks/useSnapshots";
@@ -25,6 +27,7 @@ import { LazyLoanChart } from "@/components/LazyLoanChart";
 import { LoanOverview, LoanOverviewSkeleton } from "@/components/LoanOverview";
 import { LoanSchedule, LoanScheduleSkeleton } from "@/components/LoanSchedule";
 import { Money } from "@/components/Money";
+import { OpeningBalanceSheet } from "@/components/OpeningBalanceSheet";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { PeriodToggle } from "@/components/PeriodToggle";
@@ -215,9 +218,20 @@ type SnapshotsPanelProps = {
 	/** Both `null` for a viewer: no « Ajouter un solde », and rows that open nothing. */
 	onAdd: (() => void) | null;
 	onOpen: ((snapshot: SnapshotData) => void) | null;
+	/** `null` until the account loads. */
+	opening: OpeningRow | null;
+	onOpenOpening: (() => void) | null;
 };
 
-function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPanelProps) {
+function SnapshotsPanel({
+	accountId,
+	page,
+	canAdd,
+	onAdd,
+	onOpen,
+	opening,
+	onOpenOpening,
+}: SnapshotsPanelProps) {
 	const { t } = useTranslation();
 	const snapshots = useAccountSnapshots(accountId, page);
 	const data = snapshots.data;
@@ -246,9 +260,15 @@ function SnapshotsPanel({ accountId, page, canAdd, onAdd, onOpen }: SnapshotsPan
 				<ListError error={snapshots.error} onRetry={() => void snapshots.refetch()} />
 			)}
 
-			{data !== undefined && data.total === 0 && <EmptyNote>{t("snapshots.empty")}</EmptyNote>}
-
-			{data !== undefined && data.total > 0 && <SnapshotList items={data.items} onOpen={onOpen} />}
+			{data !== undefined && (data.total > 0 || opening !== null) && (
+				<SnapshotList
+					items={data.items}
+					onOpen={onOpen}
+					// The oldest row: on the last page, where the oldest snapshots are.
+					opening={page >= pageCount ? opening : null}
+					onOpenOpening={onOpenOpening}
+				/>
+			)}
 
 			{data !== undefined && pageCount > 1 && (
 				<Pagination
@@ -443,6 +463,7 @@ function AccountPage() {
 	});
 	const [importing, setImporting] = useState(false);
 	const [editingLoan, setEditingLoan] = useState(false);
+	const [editingOpening, setEditingOpening] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
 	const navigate = Route.useNavigate();
@@ -509,9 +530,31 @@ function AccountPage() {
 				}
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
-	// A snapshot or a trade must fall after the opening date and not after
-	// today: an account opened today or later has no valid date yet.
+	// A trade must fall after the opening date and not after today: an account
+	// opened today or later has no valid date yet. A snapshot may fall on the
+	// opening date, where it sets the opening balance.
 	const canDateAfterOpening = writable !== undefined && writable.openingDate < toIsoDate();
+	const canSnapshot = writable !== undefined && writable.openingDate <= toIsoDate();
+	const opening: OpeningRow | null =
+		account.data === undefined
+			? null
+			: {
+					date: account.data.openingDate,
+					balance: account.data.openingBalance.balance,
+					currency: account.data.currency,
+				};
+	const openingAccount: OpeningAccount | undefined =
+		writable !== undefined && account.data !== undefined
+			? {
+					id: writable.id,
+					currency: writable.currency,
+					openingDate: writable.openingDate,
+					openingBalance: account.data.openingBalance,
+				}
+			: undefined;
+	// A linked account's balances derive backward from the bank's and ignore
+	// the opening amount: an edit would look saved and change nothing.
+	const canEditOpening = admin && account.data?.bankConnection === null;
 	// The dialog needs the account's currency, like the two forms.
 	const canImport = writable !== undefined;
 
@@ -672,9 +715,11 @@ function AccountPage() {
 					<SnapshotsPanel
 						accountId={accountId}
 						page={snapshotsPage}
-						canAdd={canDateAfterOpening}
+						canAdd={canSnapshot}
 						onAdd={admin ? openNewSnapshot : null}
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
+						opening={opening}
+						onOpenOpening={canEditOpening ? () => setEditingOpening(true) : null}
 					/>
 				</TabsContent>
 				{loan && (
@@ -746,6 +791,13 @@ function AccountPage() {
 								snapshot={snapshotDialog.snapshot}
 								onOpenChange={(open) => setSnapshotDialog((current) => ({ ...current, open }))}
 							/>
+							{openingAccount !== undefined && (
+								<OpeningBalanceSheet
+									account={openingAccount}
+									open={editingOpening && canEditOpening}
+									onOpenChange={setEditingOpening}
+								/>
+							)}
 							{investment && (
 								<TradeDialog
 									account={writable}

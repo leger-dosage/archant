@@ -1310,7 +1310,7 @@ export const valuationsInput = z.strictObject({
 export const recordValuationInput = z.strictObject({
 	account_id: accountId,
 	date: requiredLoose(z.string()).describe(
-		"ISO 8601 date (YYYY-MM-DD) the value applies to, after the opening date and not after today. For a period-end value, use the last day of the period.",
+		"ISO 8601 date (YYYY-MM-DD) the value applies to, on or after the opening date and not after today; on the opening date, it sets the opening balance. For a period-end value, use the last day of the period.",
 	),
 	amount: requiredLoose(sureAmount).describe(
 		"The account's stored balance on that date in its own currency, a number or a decimal string: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.",
@@ -1318,6 +1318,29 @@ export const recordValuationInput = z.strictObject({
 	source: requiredLoose(z.string()).describe(
 		`Required citation naming the document this value came from, in the grammar: ["${ESTIMATED_PREFIX}"] citation [" (grade: A|B|C)"], ${CITATION_MAX_LENGTH} characters at most, on one line.`,
 	),
+});
+
+/**
+ * `set_opening_balance`: Sure's parameters, loosely typed as Sure reads them:
+ * `run` refuses a balance that is no number and a date that is no ISO 8601
+ * date with Sure's keys, in Sure's order, and casts `dry_run` as Rails does.
+ */
+export const setOpeningBalanceInput = z.strictObject({
+	account_id: requiredLoose(z.string()).describe("Manual account ID from get_accounts."),
+	balance: requiredLoose(z.union([sureAmount, z.boolean()])).describe(
+		"Opening balance in the account's currency, a number or a decimal string.",
+	),
+	date: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			"Date the opening balance applies from (YYYY-MM-DD), before the account's oldest entry. Omit to keep the current date.",
+		),
+	dry_run: looseBoolean
+		.nullable()
+		.optional()
+		.describe("Describe the change without making it. Defaults to false."),
 });
 
 /**

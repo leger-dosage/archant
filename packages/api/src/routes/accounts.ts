@@ -17,6 +17,7 @@ import {
 	deleteAccount,
 	getAccount,
 	listAccounts,
+	setAccountOpeningBalance,
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
@@ -67,6 +68,15 @@ export function accountsRoutes(deps: ImportDeps) {
 		)
 		.post("/:id/snapshots", validated("json", snapshotBodySchema), async (c) =>
 			c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.patch("/:id/opening-balance", validated("json", snapshotBodySchema), async (c) =>
+			c.json(
+				{
+					data: (await setAccountOpeningBalance(deps, c.req.param("id"), c.req.valid("json")))
+						.account,
+				},
+				200,
+			),
 		)
 		.get("/:id/trades", validated("query", tradePageQuerySchema), async (c) =>
 			c.json({ data: await listAccountTrades(deps, c.req.param("id"), c.req.valid("query")) }, 200),

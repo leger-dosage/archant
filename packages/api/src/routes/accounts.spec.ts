@@ -1,10 +1,14 @@
 import type { LoanDetailsInput } from "../schemas/accounts.ts";
 import type { Auth } from "../services/auth.ts";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+
+import { accounts } from "@archant/data/schema/accounts";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
+import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { createLogger } from "../lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "../schemas/imports.ts";
@@ -1227,16 +1231,16 @@ describe("POST /api/accounts/:id/snapshots", () => {
 		expect(overdraft).toMatchObject({ balance: -8000 });
 	});
 
-	it("refuses the opening date and tomorrow on the date field", async () => {
+	it("refuses the day before the opening date and tomorrow on the date field", async () => {
 		const account = await openPinned();
 
-		const opening = await postSnapshot(account.id, { date: "2026-01-10", balance: "1,00" });
+		const opening = await postSnapshot(account.id, { date: "2026-01-09", balance: "1,00" });
 		const tomorrow = await postSnapshot(account.id, { date: "2026-09-22", balance: "1,00" });
 
 		expect(opening.status).toBe(400);
 		expect(errorBody.parse(opening.body).error).toMatchObject({
 			code: "VALIDATION_ERROR",
-			fields: [{ path: "date", code: "not_after_opening_date" }],
+			fields: [{ path: "date", code: "before_opening_date" }],
 		});
 		expect(tomorrow.status).toBe(400);
 		expect(errorBody.parse(tomorrow.body).error.fields).toEqual([
@@ -1641,6 +1645,22 @@ describe("a viewer on a loan", () => {
 		expect(detail.body).toMatchObject({ data: { details: { interestRate: 18200 } } });
 	});
 
+	it("refuses an edit of the opening balance with FORBIDDEN, nothing written", async () => {
+		const account = await openPinned();
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const refused = await viewer.request(`/api/accounts/${account.id}/opening-balance`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date: "2025-12-01", balance: "1,00" }),
+		});
+
+		expect(refused.status).toBe(403);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(detail.body).toMatchObject({ data: { openingDate: "2026-01-10" } });
+	});
+
 	it("reads its schedule", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
 		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
@@ -1669,6 +1689,178 @@ describe("a viewer on a loan", () => {
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { scheduledPayoffDate: "2045-12-05" } });
+	});
+});
+
+const patchOpening = (id: string, body: unknown) =>
+	request("PATCH", `/api/accounts/${id}/opening-balance`, body);
+
+// Story 27.17's matrix: checking opened on 2026-01-10 at 1 500,00, with
+// -120,00 on 2026-03-02, the clock at 2026-09-21.
+describe("PATCH /api/accounts/:id/opening-balance", () => {
+	const openingDetail = z.object({
+		data: z.object({
+			balance: z.number(),
+			openingDate: z.string(),
+			openingBalance: z.object({ balance: z.number(), notes: z.string().nullable() }),
+		}),
+	});
+
+	it("moves the opening balance to an earlier date and recomputes today's balance", async () => {
+		const account = await openPinned();
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "2025-12-01",
+			balance: "1 000,00",
+			notes: "Relevé d'ouverture",
+		});
+
+		expect(status).toBe(200);
+		expect(openingDetail.parse(body).data).toMatchObject({
+			openingDate: "2025-12-01",
+			openingBalance: { balance: 100000, notes: "Relevé d'ouverture" },
+			balance: 88000,
+		});
+		await expect(balanceOnDay(account.id, "2025-12-01")).resolves.toBe(100000);
+	});
+
+	it("drops the days before a later date", async () => {
+		const account = await openPinned();
+
+		await patchOpening(account.id, { date: "2026-01-12", balance: "1 500,00" });
+
+		await expect(balanceOnDay(account.id, "2026-01-11")).resolves.toBeUndefined();
+		await expect(balanceOnDay(account.id, "2026-01-12")).resolves.toBe(150000);
+	});
+
+	it("refuses a date on the oldest entry, naming its date, and writes nothing", async () => {
+		const account = await openPinned();
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "2026-03-02",
+			balance: "1,00",
+		});
+
+		expect(status).toBe(400);
+		expect(body).toMatchObject({
+			error: {
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "date", code: "not_before_oldest_entry" }],
+				params: { date: "2026-03-02" },
+			},
+		});
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(openingDetail.parse(detail.body).data).toMatchObject({
+			openingDate: "2026-01-10",
+			openingBalance: { balance: 150000 },
+		});
+	});
+
+	it("refuses a future date and an invalid amount", async () => {
+		const account = await openAccount(pinned);
+
+		const future = await patchOpening(account.id, { date: "2026-09-22", balance: "1,00" });
+		const amount = await patchOpening(account.id, { date: "2026-01-01", balance: "beaucoup" });
+
+		expect(future.status).toBe(400);
+		expect(errorBody.parse(future.body).error.fields).toEqual([
+			{ path: "date", code: "date_in_future" },
+		]);
+		expect(errorBody.parse(amount.body).error.fields).toEqual([
+			{ path: "balance", code: "invalid_amount" },
+		]);
+	});
+
+	it("refuses a date before 1900, as an account's creation", async () => {
+		const account = await openAccount(pinned);
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "1899-12-31",
+			balance: "1,00",
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "date_too_early" }]);
+	});
+
+	it("refuses the opening anchor's id on PATCH and DELETE /api/snapshots/:id, keeping it", async () => {
+		const account = await openPinned();
+		const anchorId = (await recorded(account.id, { date: "2026-01-10", balance: "1 500,00" })).id;
+
+		const patched = await request("PATCH", `/api/snapshots/${anchorId}`, { balance: "1,00" });
+		const deleted = await request("DELETE", `/api/snapshots/${anchorId}`);
+
+		expect(patched.status).toBe(404);
+		expect(deleted.status).toBe(404);
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(openingDetail.parse(detail.body).data).toMatchObject({
+			openingDate: "2026-01-10",
+			openingBalance: { balance: 150000 },
+		});
+	});
+
+	it("refuses a linked account with ACCOUNT_LINKED", async () => {
+		const account = await openAccount(pinned);
+		const connectionId = crypto.randomUUID();
+		const bankAccountId = crypto.randomUUID();
+		await temp.db.insert(bankConnections).values({
+			id: connectionId,
+			connector: "enable-banking",
+			institutionName: "Banque Test",
+			country: "FR",
+			status: "active",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		await temp.db.insert(bankAccounts).values({
+			id: bankAccountId,
+			bankConnectionId: connectionId,
+			identificationHash: `hash-${bankAccountId}`,
+			providerUid: `uid-${bankAccountId}`,
+			name: "Compte courant",
+			currency: "EUR",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		await temp.db.update(accounts).set({ bankAccountId }).where(eq(accounts.id, account.id));
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "2026-01-01",
+			balance: "1,00",
+		});
+
+		expect(status).toBe(409);
+		expect(errorBody.parse(body).error.code).toBe("ACCOUNT_LINKED");
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const { status } = await patchOpening("nope", { date: "2026-01-01", balance: "1,00" });
+
+		expect(status).toBe(404);
+	});
+
+	it("gives a loan's original principal the new amount, as Sure's", async () => {
+		const loan = await openAccount({ ...mortgage, openingDate: "2026-01-10" });
+
+		await patchOpening(loan.id, { date: "2026-01-10", balance: "175 000,00" });
+
+		const overview = await request("GET", `/api/accounts/${loan.id}/overview`);
+		expect(overview.body).toMatchObject({ data: { originalAmount: 17_500_000 } });
+	});
+
+	it("sets the opening anchor from a snapshot on its date", async () => {
+		const account = await openPinned();
+
+		const snapshot = await recorded(account.id, { date: "2026-01-10", balance: "1 800,00" });
+
+		expect(snapshot).toMatchObject({ date: "2026-01-10", balance: 180000, gap: 0 });
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(openingDetail.parse(detail.body).data).toMatchObject({
+			openingDate: "2026-01-10",
+			openingBalance: { balance: 180000 },
+			balance: 168000,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
 	});
 });
 
