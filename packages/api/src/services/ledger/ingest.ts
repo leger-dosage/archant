@@ -288,18 +288,20 @@ function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): Prev
 /**
  * Sorts the accepted lines of a keyed statement into present, matched,
  * possible duplicates, absorbed and created (AD-7, AD-17), each in statement
- * order. A booked line is looked up by its fingerprint, then its external
- * key; a pending line by its external key only, since its fingerprint shifts
- * once an identical line before it is booked. A key hit on a pending entry
+ * order. A booked line is looked up by its external key, then its
+ * fingerprint, as Sure keys a bank line by its reference before its content;
+ * a pending line by its external key only, since its fingerprint shifts once
+ * an identical line before it is booked. A key hit on a pending entry
  * absorbs the line, whatever its status, unless a booked line of the same
  * statement booked that entry first. Pending lines no key found are then
  * recognised within their group of identical lines (`assignIdentical`), and
  * booked lines no key found take a pending entry of the connection by amount
  * and date. A pending line never pairs by amount and date: it is recognised,
- * present on the entry its fingerprint names, or created. A line whose entry
- * the user deleted has no key left, so it goes through the same steps as a
- * new one, as Sure's importer creates what its reference no longer finds. The keys
- * of the lines step 1 refused are looked up too, for the entries they name.
+ * present on the entry its fingerprint names when it has no reference, or
+ * created. A line whose entry the user deleted has no key left, so it goes
+ * through the same steps as a new one, as Sure's importer creates what its
+ * reference no longer finds. The keys of the lines step 1 refused are looked
+ * up too, for the entries they name.
  */
 async function groupLines(
 	tx: Transaction,
@@ -337,7 +339,7 @@ async function groupLines(
 
 	for (const item of accepted) {
 		const byExternal = item.keys.external === null ? undefined : known.get(item.keys.external);
-		const hit = item.line.pending ? byExternal : (known.get(item.keys.fingerprint) ?? byExternal);
+		const hit = item.line.pending ? byExternal : (byExternal ?? known.get(item.keys.fingerprint));
 
 		if (hit === undefined && item.line.pending) {
 			const triple = tripleOf(item.line);
@@ -410,8 +412,8 @@ async function groupLines(
 				groups.absorbed.push({ ...item, entryId });
 				groups.grouped.add(item.ref);
 				claimed.add(entryId);
-			} else if (named !== undefined && (!named.pending || item.keys.external === null)) {
-				// Booked, or refreshed by another line of this statement: that entry
+			} else if (named !== undefined && item.keys.external === null) {
+				// Without a reference, the content is all the line has: that entry
 				// listed again. Creating it would store the key twice.
 				groups.present.push({ ...item, entryId: named.entryId });
 			} else {
@@ -419,8 +421,8 @@ async function groupLines(
 
 				if (named !== undefined) {
 					// A reference no entry holds is a new line, though its fingerprint
-					// names a pending entry under another reference: it goes in, and
-					// leaves that fingerprint where it is.
+					// names another entry: it goes in, and leaves that fingerprint where
+					// it is.
 					groups.sharing.add(item.ref);
 				}
 			}

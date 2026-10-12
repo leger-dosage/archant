@@ -810,3 +810,102 @@ describe("identical pending lines", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 });
+
+/** A new purchase, pending, whose label matches `bookedLine`'s, so both share a fingerprint. */
+const purchase = (amount: number, externalId: string | null = "r9") =>
+	pendingLine(amount, { externalId, label: "BOULANGERIE" });
+
+/** A booked entry, then a sync listing a new identical purchase, pending, before it. */
+async function purchaseBesideBooked() {
+	const { account, bank } = await linkedChecking();
+	const amount = -transferAmount();
+	const booked = bookedLine(amount, { externalId: "r1" });
+	const [first = ""] = await createdBySync(account.id, bank.connectionId, [booked]);
+	const fingerprint = (await keysOf(first)).find((key) => key.startsWith("fp:")) ?? "";
+	const synced = await sync(account.id, bank.connectionId, [purchase(amount), booked]);
+
+	return { account, bank, amount, booked, first, fingerprint, synced };
+}
+
+describe("a new pending purchase beside a booked one", () => {
+	it("creates a pending line with a new reference whose fingerprint a booked entry holds", async () => {
+		const { account, first, fingerprint, synced } = await purchaseBesideBooked();
+		const [second = ""] = synced.created;
+
+		expect(synced.created).toHaveLength(1);
+		expect(synced.groups.present).toEqual([expect.objectContaining({ ref: "1", entryId: first })]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(keysOf(second)).resolves.toEqual(["ext:r9"]);
+		await expect(keysOf(first)).resolves.toEqual(["ext:r1", fingerprint]);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("refreshes the new purchase on the next sync", async () => {
+		const { account, bank, amount, booked, synced } = await purchaseBesideBooked();
+		const [second = ""] = synced.created;
+
+		const again = await sync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: "r9", label: "BOULANGERIE", notes: "CB 19/09" }),
+			booked,
+		]);
+
+		expect(again.created).toEqual([]);
+		await expect(rowOf(second)).resolves.toMatchObject({ notes: "CB 19/09", pending: true });
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("books the new purchase in place when its booked line comes first", async () => {
+		const { account, bank, amount, booked, first, fingerprint, synced } =
+			await purchaseBesideBooked();
+		const [second = ""] = synced.created;
+
+		const settledBoth = await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "r9" }),
+			booked,
+		]);
+
+		expect(settledBoth.created).toEqual([]);
+		expect(settledBoth.groups.present).toEqual([
+			expect.objectContaining({ ref: "1", entryId: first }),
+		]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: false });
+		await expect(rowOf(first)).resolves.toMatchObject({ pending: false });
+		await expect(keysOf(second)).resolves.toEqual(["ext:r9"]);
+		await expect(keysOf(first)).resolves.toEqual(["ext:r1", fingerprint]);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+
+	it("still finds the booked entry for a pending line without reference", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [first = ""] = await createdBySync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "r1" }),
+		]);
+
+		const synced = await sync(account.id, bank.connectionId, [purchase(amount, null)]);
+
+		expect(synced.created).toEqual([]);
+		expect(synced.groups.present).toEqual([expect.objectContaining({ entryId: first })]);
+		await expect(rowOf(first)).resolves.toMatchObject({ pending: false });
+		await expect(transactionCount(account.id)).resolves.toBe(1);
+	});
+
+	it("creates a pending line with a reference beside a booked entry holding none", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [first = ""] = await createdBySync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: null }),
+		]);
+		const held = await keysOf(first);
+
+		const synced = await sync(account.id, bank.connectionId, [purchase(amount)]);
+		const [second = ""] = synced.created;
+
+		expect(synced.created).toHaveLength(1);
+		expect(synced.groups.present).toEqual([]);
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
+		await expect(keysOf(second)).resolves.toEqual(["ext:r9"]);
+		await expect(keysOf(first)).resolves.toEqual(held);
+		await expect(transactionCount(account.id)).resolves.toBe(2);
+	});
+});
