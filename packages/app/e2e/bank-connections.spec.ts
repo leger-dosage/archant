@@ -16,6 +16,7 @@ import {
 	HISTORY_BANK,
 	NO_CURRENCY_BANK,
 	OLD_LINE,
+	REVOKED_BANK,
 	SLOW_BANK,
 	SLOW_LINE,
 	UNREADABLE_BANK,
@@ -297,7 +298,7 @@ test("the picker lists France's banks with name and BIC, focuses the search, scr
 		"BIC : DEMOFRPP",
 	);
 
-	// Eight banks overflow the bounded list, which scrolls inside a dialog
+	// Ten banks overflow the bounded list, which scrolls inside a dialog
 	// that stays on screen.
 	const overflows = await banks(page).evaluate(
 		(list) => list.scrollHeight > list.clientHeight && getComputedStyle(list).overflowY === "auto",
@@ -1258,6 +1259,44 @@ test("a sync stopped for more than 48 hours leads to its connection", async ({ p
 		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
 		await expect(page.getByRole("heading", { level: 1, name: "Banque Démo" })).toBeVisible();
 		await expectRowBadge(page, connectionId, "syncStale", "Synchronisation en retard");
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+// Story 27.19: a consent the bank revokes ends at the next sync, as Sure reads the session first.
+test("a session the bank revoked ends the consent at the first visit of the day, without waiting 48 hours", async ({
+	page,
+	request,
+}) => {
+	const connectionId = await connect(page, REVOKED_BANK);
+
+	try {
+		await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+		await validate(page).click();
+		await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+		await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+		await age(connectionId, {
+			syncAttemptedAt: Date.now() - DAY_MS,
+			lastSyncedAt: Date.now() - 12 * 60 * 60_000,
+		});
+		// The first page of the day starts the sync after it answers.
+		await page.goto("/");
+
+		await expect(async () => {
+			await page.reload();
+			await expect(banners(page)).toContainText(
+				`Le consentement de ${REVOKED_BANK} a expiré. La synchronisation est arrêtée.`,
+				{ timeout: 1000 },
+			);
+		}).toPass();
+		await expect(
+			banners(page).getByRole("button", { name: "Reconnecter", exact: true }),
+		).toBeVisible();
+		await expectRowBadge(page, connectionId, "consentExpired", "Consentement expiré");
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {
 			headers: { origin: WEB_URL },

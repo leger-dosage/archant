@@ -265,3 +265,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-17-edit-an-accounts-opening-balance.md`
   summary: Test that the « Solde d'ouverture » row of « Soldes » shows on the last page only.
   evidence: `opening={page >= pageCount ? opening : null}` in `SnapshotsPanel` has no test; every e2e test of `snapshots.spec.ts` stays on one page.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-19-every-balance-a-bank-sends-and-a-revoked-consent-at-once.md`
+  summary: A balances response holding one balance whose currency is not ISO 4217, such as `XXX`, fails the whole response, where Sure's `split_balances_by_currency` reads it as no currency and still picks the others.
+  evidence: `balanceSchema.balance_amount.currency` in `packages/api/src/connectors/enable-banking/schemas.ts` refuses a code `isCurrencyCode` rejects; pre-existing, found by the Story 27.19 spec review. Unverified whether a bank sends such a balance.

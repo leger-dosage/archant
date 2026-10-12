@@ -58,8 +58,15 @@ type BankSession = {
  * A bank's balance as it prints it: signed, never converted to a stored
  * balance (AD-5). `date` is the day it describes, `null` when the bank does
  * not say; the ledger dates it today then, and never later than today.
+ * `otherCurrencies` counts the non-zero balances left out because they are
+ * in another currency, a count the service may log, never an amount.
  */
-export type BankBalance = { amount: MinorUnits; currency: CurrencyCode; date: IsoDate | null };
+export type BankBalance = {
+	amount: MinorUnits;
+	currency: CurrencyCode;
+	date: IsoDate | null;
+	otherCurrencies: number;
+};
 
 /**
  * An account's lines as a bank connector reads them, without a balance: the
@@ -101,10 +108,19 @@ export type BankConnector = {
 	 */
 	revokeAuthorization: (sessionId: string) => Promise<void>;
 	/**
-	 * The account's current balance (AD-18): the interim booked one, else
-	 * the closing booked one; `null` when the bank gives neither.
+	 * Reads a session at the provider, Sure's `get_session`: when its consent
+	 * ends, `null` when the answer does not say. A refused session throws
+	 * with its HTTP status, a 401 or a 404 when the bank or the user revoked it.
 	 */
-	fetchBalance: (uid: string) => Promise<BankBalance | null>;
+	readSession: (sessionId: string) => Promise<{ consentExpiresAt: number | null }>;
+	/**
+	 * The account's current balance (AD-18), Sure's choice: among the
+	 * balances in `currency`, else in the first currency listed, the first
+	 * of its booked then available types, a fresher available one beating a
+	 * period's boundary, else the first balance; `null` when the bank lists
+	 * none.
+	 */
+	fetchBalance: (uid: string, currency: CurrencyCode | null) => Promise<BankBalance | null>;
 	/**
 	 * The account's booked and pending lines dated `since` or later, every
 	 * page, a line the bank lists twice kept once. A bank that refuses the

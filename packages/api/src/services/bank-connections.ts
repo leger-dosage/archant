@@ -1,4 +1,4 @@
-import type { BankConnector } from "../connectors/bank-connector.ts";
+import type { BankBalance, BankConnector } from "../connectors/bank-connector.ts";
 import type { ConnectionAlert } from "../domain/bank-connection-alert.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { Env } from "../env.ts";
@@ -127,6 +127,24 @@ export function logFailure(
 		deps.logger.warn(
 			{ connectionId, code: error.code, ...error.failure },
 			"bank provider request failed",
+		);
+	}
+}
+
+/**
+ * Sure's `capture_skipped_currency_balances`: a balance in another currency
+ * holding money is money the account leaves out, said with the currency kept
+ * and how many, never an amount.
+ */
+export function logOtherCurrencies(
+	deps: Pick<BankConnectionDeps, "logger">,
+	ids: { connectionId: string; accountId?: string; bankAccountId?: string },
+	balance: BankBalance | null,
+) {
+	if (balance !== null && balance.otherCurrencies > 0) {
+		deps.logger.info(
+			{ ...ids, currency: balance.currency, otherCurrencies: balance.otherCurrencies },
+			"bank balances in other currencies left out",
 		);
 	}
 }
@@ -699,7 +717,12 @@ export async function linkBankAccounts(
 	try {
 		balances = await Promise.all(
 			planned.map(async ({ bankAccount }) => {
-				const balance = await connector.fetchBalance(bankAccount.providerUid);
+				const balance = await connector.fetchBalance(
+					bankAccount.providerUid,
+					currencyOf(bankAccount),
+				);
+
+				logOtherCurrencies(deps, { connectionId, bankAccountId: bankAccount.id }, balance);
 
 				// No conversion (FR56 wants the bank's own figure): a balance in
 				// another currency is as good as none.
@@ -787,6 +810,27 @@ export const codeOf = (error: unknown): ErrorCode =>
 	error instanceof AppError ? error.code : "INTERNAL_ERROR";
 
 /**
+ * The stored session id in clear; `null`, logged as `SESSION_UNREADABLE`
+ * under `message`, when it no longer decrypts, as after an `ENCRYPTION_KEY`
+ * change. Never logged itself.
+ */
+export function readableSessionId(
+	deps: Pick<BankConnectionDeps, "logger">,
+	encryptionKey: Uint8Array,
+	connectionId: string,
+	stored: string,
+	message: string,
+): string | null {
+	try {
+		return decrypt(encryptionKey, stored);
+	} catch {
+		deps.logger.warn({ connectionId, code: "SESSION_UNREADABLE" }, message);
+
+		return null;
+	}
+}
+
+/**
  * Sure's `revoke_session`, best effort: the provider may be down, or the
  * session unreadable after an `ENCRYPTION_KEY` change, and neither may keep
  * the user from disconnecting. Each is logged by its code, never with the
@@ -802,16 +846,15 @@ async function revokeSession(
 		return;
 	}
 
-	let sessionId: string;
+	const sessionId = readableSessionId(
+		deps,
+		encryptionKey,
+		connection.id,
+		connection.sessionId,
+		"bank session not revoked",
+	);
 
-	try {
-		sessionId = decrypt(encryptionKey, connection.sessionId);
-	} catch {
-		deps.logger.warn(
-			{ connectionId: connection.id, code: "SESSION_UNREADABLE" },
-			"bank session not revoked",
-		);
-
+	if (sessionId === null) {
 		return;
 	}
 
