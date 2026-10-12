@@ -64,6 +64,7 @@
   summary: A new pending purchase with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so the purchase never counts.
   evidence: medium, pre-existing: before Story 11.5 a pending line was looked up by fingerprint first. Creating such a line with `keepExisting` keys, as Story 11.5 does when the fingerprint names a pending entry, would settle it.
   planned: Story 27.22 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.22. Such a line is created beside the booked entry, which keeps the fingerprint; a booked line is looked up by its reference before its fingerprint, so the new purchase books in place.
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-9-a-first-start-that-says-what-is-wrong.md`
   summary: No automated test reaches the API server's `error` handler (`EADDRINUSE` or another listen failure) in `packages/api/src/index.ts`.
   evidence: The loopback probe always stops the process first in tests; removing the handler keeps the suite green. A portable way to make the bind fail after the probe (non-loopback address on Linux, privileged port) was not found.
@@ -279,3 +280,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-21-revert-imports-in-any-order.md`
   summary: No route test asserts `snapshot_exists` for a snapshot on a linked account's opening date, which replaced `not_after_opening_date`.
   evidence: `services/snapshots.ts` maps `OPENING_DATE` to it; only `routes/snapshots.spec.ts` covers `snapshot_exists`, for a moved snapshot.
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-22-a-new-pending-purchase-is-never-taken-for-a-booked-line.md`
+  summary: A sync's booked line with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so an identical purchase listed booked at once, or booked under a new reference, never counts.
+  evidence: medium, pre-existing: booked lines fall back to the fingerprint when their reference is unknown. Sure never matches a provider entry by content. Skipping the fallback for a sync's line when the named entry holds an `ext:` key of the connection would settle it, files kept as they are since a bank re-export with new `FITID`s relies on the fingerprint.
