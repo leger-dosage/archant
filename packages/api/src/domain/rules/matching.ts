@@ -5,7 +5,7 @@ import type { LabelPattern } from "./label-pattern.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { RuleOperatorOf } from "@archant/data/rules";
-import type { LockableField } from "@archant/data/schema/transactions";
+import type { LockableField, LockedFields } from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { direction } from "../cash-flow.ts";
@@ -144,7 +144,7 @@ export type RuleCandidate = {
 	/** The transfer the row is a side of: `direction` needs its kind. */
 	transfer: { kind: TransferKind } | null;
 	expectedTransferAccountId: string | null;
-	lockedFields: readonly LockableField[];
+	lockedFields: LockedFields;
 };
 
 function textMatches(operator: "like" | "=", expected: string, actual: string): boolean {
@@ -289,7 +289,7 @@ function applyAction(
 	row: RuleCandidate,
 	maxTagsPerRow: number,
 ): Partial<RuleCandidate> {
-	const locked = (field: LockableField) => row.lockedFields.includes(field);
+	const locked = (field: LockableField) => Object.hasOwn(row.lockedFields, field);
 
 	switch (action.type) {
 		case "set_transaction_category":

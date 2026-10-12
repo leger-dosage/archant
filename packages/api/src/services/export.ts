@@ -617,7 +617,13 @@ type SplitLineRow = ExportedTransactionRow["splitLines"][number];
 function archantTransaction(transaction: ExportedTransactionRow["transaction"]) {
 	return {
 		pending: transaction.pending,
-		locked_fields: transaction.lockedFields,
+		// Sure's stored form, ISO 8601 text; a lock older than the times stays null.
+		locked_fields: Object.fromEntries(
+			Object.entries(transaction.lockedFields).map(([field, at]) => [
+				field,
+				at === null ? null : timestamp(at),
+			]),
+		),
 		category_origin: transaction.categoryOrigin,
 		reference: transaction.reference,
 		possible_duplicate: transaction.possibleDuplicate,

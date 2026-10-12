@@ -142,7 +142,7 @@ async function originsOf(entryIds: string[]) {
 	const rows = await Promise.all(
 		entryIds.map((id) =>
 			temp.db.get<{ origin: string | null; locked: string }>(
-				sql`select category_origin as origin, locked_fields as locked from transactions where entry_id = ${id}`,
+				sql`select category_origin as origin, (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${id}`,
 			),
 		),
 	);

@@ -119,7 +119,8 @@ export async function history(accountId: string) {
 	return new Map(rows.map((row) => [row.date, row.balance]));
 }
 
-export async function lockedFields(entryId: string) {
+/** The locked fields' times, `undefined` for an unknown transaction. */
+export async function lockTimes(entryId: string) {
 	const row = await temp.db
 		.select({ locked: transactions.lockedFields })
 		.from(transactions)
@@ -127,6 +128,13 @@ export async function lockedFields(entryId: string) {
 		.get();
 
 	return row?.locked;
+}
+
+/** The locked fields, in the order they were first locked. */
+export async function lockedFields(entryId: string) {
+	const locked = await lockTimes(entryId);
+
+	return locked === undefined ? undefined : Object.keys(locked);
 }
 
 // Story 2.1: the keyed path of `ingest`, as an import drives it.

@@ -405,6 +405,26 @@
 			"candidates": "Opérations candidates",
 			"noCandidate": "Aucune opération de montant opposé dans un autre compte à 30 jours près"
 		},
+		"protection": {
+			"title": "Protégée contre la synchronisation",
+			"description": "Vos modifications sur cette entrée ne seront pas écrasées par la synchronisation du fournisseur.",
+			"lockedFields": "Champs verrouillés :",
+			"fields": {
+				"date": "Date",
+				"amount": "Montant",
+				"label": "Libellé",
+				"notes": "Notes",
+				"excluded": "Exclue des rapports",
+				"category": "Catégorie",
+				"merchant": "Marchand",
+				"tags": "Étiquettes"
+			},
+			"unlock": "Autoriser la mise à jour par la synchronisation",
+			"confirmTitle": "Autoriser la synchronisation à mettre à jour cette entrée ?",
+			"confirmDescription": "Vos modifications pourraient être écrasées lors de la prochaine synchronisation.",
+			"confirm": "Autoriser",
+			"unlocked": "Entrée déverrouillée. Elle pourra être mise à jour lors de la prochaine synchronisation."
+		},
 		"duplicate": {
 			"flag": "Doublon possible",
 			"description": "Un import ou une synchronisation a trouvé deux opérations aussi proches de celle-ci et l'a ajoutée plutôt que de choisir.",

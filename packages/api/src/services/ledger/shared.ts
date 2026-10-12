@@ -14,7 +14,7 @@ import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
-import type { LockableField } from "@archant/data/schema/transactions";
+import type { LockableField, LockedFields } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
@@ -27,13 +27,20 @@ export type Origin = "user" | "rule" | "provider" | "sync" | "maintenance";
 
 export type Transaction = Parameters<Parameters<ServiceDeps["db"]["transaction"]>[0]>[0];
 
-/** `current` with `fields` locked when a user asks (AD-10); any other origin locks nothing. */
+/**
+ * `current` with `fields` locked at `now` when a user asks, a field already
+ * locked taking the new time, as Sure's `lock_attr!`; any other origin
+ * changes nothing (AD-10).
+ */
 export function lockedBy(
 	origin: Origin,
-	current: readonly LockableField[],
+	current: LockedFields,
 	fields: readonly LockableField[],
-): LockableField[] {
-	return origin === "user" ? [...new Set([...current, ...fields])] : [...current];
+	now: number,
+): LockedFields {
+	return origin === "user"
+		? { ...current, ...Object.fromEntries(fields.map((field) => [field, now])) }
+		: { ...current };
 }
 
 // Nine columns per entry row: 500 rows bind 4 500 parameters, far below the

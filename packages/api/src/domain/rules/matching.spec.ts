@@ -21,7 +21,7 @@ const candidate = (overrides: Partial<RuleCandidate> = {}): RuleCandidate => ({
 	excluded: false,
 	transfer: null,
 	expectedTransferAccountId: null,
-	lockedFields: [],
+	lockedFields: {},
 	...overrides,
 });
 
@@ -370,7 +370,7 @@ describe("planActions", () => {
 		];
 		const locked = candidate({
 			label: "Saisie à la main",
-			lockedFields: ["category", "merchant", "tags", "label", "excluded"],
+			lockedFields: { category: 1, merchant: 1, tags: 1, label: 1, excluded: 1 },
 		});
 
 		// Rules add no lock: the transfer action has none to respect.
@@ -467,7 +467,7 @@ describe("planActions' replacement in the label", () => {
 		expect(
 			plan(
 				[replacing("^CARTE ", "")],
-				[candidate({ label: "CARTE PICARD", lockedFields: ["label"] })],
+				[candidate({ label: "CARTE PICARD", lockedFields: { label: 1 } })],
 			),
 		).toEqual([]);
 	});
@@ -502,7 +502,7 @@ describe("planActions' per-rule tallies", () => {
 			candidate(),
 			candidate({ id: "e2" }),
 			candidate({ id: "e3" }),
-			candidate({ id: "e4", categoryId: "loisirs", lockedFields: ["category"] }),
+			candidate({ id: "e4", categoryId: "loisirs", lockedFields: { category: null } }),
 			candidate({ id: "e5", categoryId: "courses" }),
 			candidate({ id: "e6", label: "Loyer" }),
 		];

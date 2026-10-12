@@ -153,7 +153,7 @@ describe("runMigrations", () => {
 			database.get<{ locked: string }>(
 				sql`select locked_fields as locked from transactions where entry_id = 'e1'`,
 			),
-		).resolves.toEqual({ locked: "[]" });
+		).resolves.toEqual({ locked: "{}" });
 		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
 	});
 
@@ -582,7 +582,7 @@ describe("categories", () => {
 				sql`select entry_id as entryId, label, locked_fields as locked, category_id as categoryId from transactions`,
 			),
 		).resolves.toEqual([
-			{ entryId: "e1", label: "Boulangerie", locked: '["label"]', categoryId: null },
+			{ entryId: "e1", label: "Boulangerie", locked: '{"label":null}', categoryId: null },
 		]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
@@ -647,7 +647,7 @@ describe("categories", () => {
 				reference: "12",
 				excluded: 1,
 				possibleDuplicate: 1,
-				locked: '["label","category"]',
+				locked: '{"label":null,"category":null}',
 				categoryId: "c1",
 				// Before 0012 only a person could set a category, by hand in the
 				// database; the row takes `user` and its lock rather than failing
@@ -661,7 +661,7 @@ describe("categories", () => {
 				reference: null,
 				excluded: 0,
 				possibleDuplicate: 0,
-				locked: "[]",
+				locked: "{}",
 				categoryId: null,
 				categoryOrigin: null,
 			},
@@ -712,7 +712,7 @@ describe("merchants", () => {
 			{
 				entryId: "e1",
 				label: "CB CARREFOUR 1234",
-				locked: '["category"]',
+				locked: '{"category":null}',
 				categoryId: "c1",
 				merchantId: null,
 			},
@@ -763,7 +763,7 @@ describe("tags", () => {
 				sql`select entry_id as entryId, label, locked_fields as locked, merchant_id as merchantId from transactions`,
 			),
 		).resolves.toEqual([
-			{ entryId: "e1", label: "CB CARREFOUR 1234", locked: '["merchant"]', merchantId: "m1" },
+			{ entryId: "e1", label: "CB CARREFOUR 1234", locked: '{"merchant":null}', merchantId: "m1" },
 		]);
 		await insertTag(database, "t1", "Vacances");
 		await expect(
@@ -1607,6 +1607,35 @@ describe("recurring transactions", () => {
 		).resolves.toEqual({ account: null });
 	});
 
+	it("turns each lock list into an object of unknown times when 0070 times the locks", async () => {
+		const before = await migratedBefore("0070");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertEntry(before, "e2", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, locked_fields) values ('e1', 'Boulangerie', '["date","amount","label","category"]'), ('e2', 'Loyer', '[]')`,
+		);
+		// The rebuild drops a table others reference: their rows must survive it.
+		await insertTag(before, "t1", "Pain");
+		await before.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, locked_fields as locked from transactions order by entry_id`,
+			),
+		).resolves.toEqual([
+			{ entryId: "e1", locked: '{"date":null,"amount":null,"label":null,"category":null}' },
+			{ entryId: "e2", locked: "{}" },
+		]);
+		await expect(database.all(sql`select transaction_id as id from taggings`)).resolves.toEqual([
+			{ id: "e1" },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("holds a known bill type and 1 to 600 payments, and leaves a series uncategorised when its category goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");
@@ -2043,7 +2072,7 @@ describe("pending transactions", () => {
 				entryId: "e1",
 				label: "Boulangerie",
 				excluded: 1,
-				locked: '["label"]',
+				locked: '{"label":null}',
 				pending: 0,
 				missed: 0,
 			},

@@ -19,6 +19,7 @@ import { Money } from "@/components/Money";
 import { OneTimeMarker } from "@/components/OneTimeMarker";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
+import { ProtectionMarker } from "@/components/TransactionProtection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,6 +36,7 @@ import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayHeading } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { protectedFromSync } from "@/lib/locked-fields";
 import { rowSubject } from "@/lib/tint";
 import { groupByDay } from "@/lib/transaction-days";
 import { showsCategory, transferCaption } from "@/lib/transfers";
@@ -479,7 +481,7 @@ function RowLine({
 					// moved it under another day, which remounts it.
 					data-transaction-id={item.id}
 					onClick={() => context.onOpen(item)}
-					className="col-span-full row-start-1 row-end-3 grid grid-cols-subgrid grid-rows-subgrid items-center rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:row-end-2 md:py-0"
+					className="group/row col-span-full row-start-1 row-end-3 grid grid-cols-subgrid grid-rows-subgrid items-center rounded-lg px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset md:row-end-2 md:py-0"
 				>
 					<TintedIcon
 						size="lg"
@@ -565,6 +567,9 @@ function RowLine({
 					<span className="col-[-2/-1] row-start-1 flex items-center justify-end gap-1.5">
 						{/* A parent's badge already says why it is not counted. */}
 						{!parent && item.excluded && <ExcludedMarker label={t("transactions.excluded")} />}
+						{protectedFromSync(item) && (
+							<ProtectionMarker label={t("transactions.protection.title")} />
+						)}
 						{/* Named in words by its badge, never by colour alone. */}
 						<Money
 							amount={item.amount}

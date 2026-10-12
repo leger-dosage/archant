@@ -97,7 +97,7 @@ describe("tags", () => {
 		});
 		await expect(
 			temp.db.all(
-				sql`select t.locked_fields as locked, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t where t.entry_id in (select id from entries where account_id = ${account.id})`,
+				sql`select (select json_group_array(key) from json_each(t.locked_fields)) as locked, (select group_concat(tag_id) from taggings where transaction_id = t.entry_id) as tags from transactions t where t.entry_id in (select id from entries where account_id = ${account.id})`,
 			),
 		).resolves.toEqual([
 			{ locked: '["date","amount","label","tags"]', tags: kept.id },

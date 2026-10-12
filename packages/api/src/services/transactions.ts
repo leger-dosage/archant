@@ -56,6 +56,7 @@ import {
 	bulkDeleteTransactions as bulkDeleteLedgerTransactions,
 	bulkUpdateTransactions as bulkUpdateLedgerTransactions,
 	deleteTransaction as deleteLedgerTransaction,
+	unlockTransaction as unlockLedgerTransaction,
 	updateTransaction as updateLedgerTransaction,
 } from "./ledger/edits.ts";
 import { ingest } from "./ledger/ingest.ts";
@@ -719,6 +720,16 @@ export async function mergeDuplicate(
 /** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
 export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 	await dismissLedgerDuplicate(deps, id);
+
+	return getTransaction(deps, id);
+}
+
+/**
+ * « Autoriser la mise à jour par la synchronisation »: clears every lock, and
+ * returns the transaction as it now stands.
+ */
+export async function unlockTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await unlockLedgerTransaction(deps, id);
 
 	return getTransaction(deps, id);
 }

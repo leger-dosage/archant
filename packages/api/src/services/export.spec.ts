@@ -847,6 +847,13 @@ describe("exportArchive", () => {
 
 	it("writes amounts in Sure's sign, balances and valuations as stored", async () => {
 		const { ids, bread, salary, bakery, baker, trip, odd } = await household();
+		// A lock 0070 migrated, whose time nobody knows.
+		await database().run(
+			sql`update transactions set locked_fields = json_set(locked_fields, '$.date', json('null')) where entry_id = ${bread}`,
+		);
+		const lockedAt: unknown = expect.stringMatching(
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u,
+		);
 
 		const archive = await exported();
 		const transactions = new Map(archive.of("Transaction").map((row) => [row["id"], row]));
@@ -863,7 +870,15 @@ describe("exportArchive", () => {
 			excluded: false,
 			archant: {
 				pending: false,
-				locked_fields: ["date", "amount", "label", "notes", "category", "merchant", "tags"],
+				locked_fields: {
+					date: null,
+					amount: lockedAt,
+					label: lockedAt,
+					notes: lockedAt,
+					category: lockedAt,
+					merchant: lockedAt,
+					tags: lockedAt,
+				},
 				category_origin: "user",
 				reference: null,
 				possible_duplicate: false,
@@ -1078,7 +1093,15 @@ describe("exportArchive", () => {
 						updated_at: "2026-09-21T10:00:00.000Z",
 						archant: {
 							pending: false,
-							locked_fields: ["date", "amount", "label", "excluded", "notes", "category", "tags"],
+							locked_fields: {
+								date: "2026-09-21T10:00:00.000Z",
+								amount: "2026-09-21T10:00:00.000Z",
+								label: "2026-09-21T10:00:00.000Z",
+								excluded: "2026-09-21T10:00:00.000Z",
+								notes: "2026-09-21T10:00:00.000Z",
+								category: "2026-09-21T10:00:00.000Z",
+								tags: "2026-09-21T10:00:00.000Z",
+							},
 							category_origin: "user",
 							reference: null,
 							possible_duplicate: false,

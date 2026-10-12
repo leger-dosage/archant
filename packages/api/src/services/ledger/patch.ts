@@ -1,8 +1,9 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { RejectionCode } from "../../domain/statement.ts";
 import type { Origin, Transaction } from "./shared.ts";
+import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core";
 
-import { count, eq, inArray } from "drizzle-orm";
+import { count, eq, inArray, sql } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
@@ -139,7 +140,7 @@ type RowChange = { next: EditableRow; changed: LockableField[] };
  * same way.
  */
 export function changeOf(current: EditableRow, patch: TransactionPatch, origin: Origin): RowChange {
-	const locked = new Set(current.lockedFields);
+	const locked = new Set(Object.keys(current.lockedFields));
 	const next = { ...current };
 	const changed: LockableField[] = [];
 
@@ -157,17 +158,23 @@ export function changeOf(current: EditableRow, patch: TransactionPatch, origin: 
 	return { next, changed };
 }
 
+/** What a change writes on its `transactions` row, the locks as SQL. */
+export type TransactionDetail = SQLiteUpdateSetSource<typeof transactions>;
+
 /**
  * The `transactions` columns a change writes: the fields it changed, the
  * category's origin with the category, `null` without one, and the locks a
- * `user` write adds. The entry's date and amount and the taggings are the
- * caller's.
+ * `user` write adds, timed `now`. Any other origin leaves `locked_fields`
+ * unwritten. The locks are one SQL expression stamping only the changed
+ * fields on whatever the row holds, so a bulk edit's rows locking the same
+ * fields share a statement whatever they held before. The entry's date and
+ * amount and the taggings are the caller's.
  */
 export function detailOf(
-	current: EditableRow,
 	{ next, changed }: RowChange,
 	origin: Origin,
-): Partial<typeof transactions.$inferInsert> {
+	now: number,
+): TransactionDetail {
 	// Asked even when the category is cleared, so a maintenance write fails either way.
 	const categoryOrigin = changed.includes("category") ? categoryOriginOf(origin) : null;
 
@@ -182,11 +189,33 @@ export function detailOf(
 				}
 			: {}),
 		...(changed.includes("merchant") ? { merchantId: next.merchantId } : {}),
-		lockedFields:
-			origin === "user"
-				? [...new Set([...current.lockedFields, ...changed])]
-				: current.lockedFields,
+		...(origin === "user" && changed.length > 0
+			? { lockedFields: stampedLocks(changed, now) }
+			: {}),
 	};
+}
+
+/** `locked_fields` with each of `fields` locked at `now`, as Sure's `lock_attr!`. */
+function stampedLocks(fields: readonly LockableField[], now: number) {
+	// libSQL binds a JS number as a real, which `json_set` would store as `….0`.
+	const stamps = fields.map((field) => sql`${`$.${field}`}, cast(${now} as integer)`);
+
+	return sql`json_set(${transactions.lockedFields}, ${sql.join(stamps, sql`, `)})`;
+}
+
+/**
+ * What groups rows a bulk write sends in one statement: the same columns and,
+ * for a `user` write, the same fields locked. The locks' SQL object is left
+ * out, since it does not stringify.
+ */
+export function writeKeyOf(
+	detail: TransactionDetail,
+	{ changed }: RowChange,
+	origin: Origin,
+): string {
+	const { lockedFields: _locks, ...columns } = detail;
+
+	return JSON.stringify([columns, origin === "user" ? changed : []]);
 }
 
 export async function categoryExists(tx: Transaction, id: string): Promise<boolean> {

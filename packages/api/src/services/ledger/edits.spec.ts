@@ -23,6 +23,7 @@ import {
 	importStatement,
 	keysOf,
 	linkedChecking,
+	lockTimes,
 	lockedFields,
 	merchantOf,
 	newBankLine,
@@ -53,6 +54,7 @@ import {
 	moveMerchant,
 	recategorise,
 	removeTag,
+	unlockTransaction,
 	updateTransaction,
 } from "./edits.ts";
 import { findTransaction } from "./queries.ts";
@@ -110,6 +112,43 @@ describe("updateTransaction", () => {
 			label: "Boulangerie Dupont",
 			notes: "Pain",
 		});
+	});
+
+	it("stamps each lock with the edit's time, a re-edit renewing it, as Sure's `lock_attr!`", async () => {
+		const account = await openChecking();
+		setToday("2026-09-12T08:00:00Z");
+		const id = await add(account.id);
+		const added = Date.parse("2026-09-12T08:00:00Z");
+
+		setToday("2026-09-14T09:30:00Z");
+		await updateTransaction(deps(), id, { label: "Boulangerie Dupont" }, { origin: "user" });
+
+		const edited = Date.parse("2026-09-14T09:30:00Z");
+		await expect(lockTimes(id)).resolves.toEqual({ date: added, amount: added, label: edited });
+
+		setToday("2026-09-15T09:30:00Z");
+		await updateTransaction(
+			deps(),
+			id,
+			{ label: "RULE LABEL", notes: "Catégorisé" },
+			{ origin: "rule" },
+		);
+		await updateTransaction(deps(), id, { amount: toMinorUnits(-1) }, { origin: "sync" });
+
+		await expect(lockTimes(id)).resolves.toEqual({ date: added, amount: added, label: edited });
+	});
+
+	it("locks only the field edited after an unlock, with the edit's time", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+
+		await unlockTransaction(deps(), id);
+		await expect(lockTimes(id)).resolves.toEqual({});
+		setToday("2026-09-16T07:00:00Z");
+		await updateTransaction(deps(), id, { label: "Boulangerie Martin" }, { origin: "user" });
+
+		await expect(lockTimes(id)).resolves.toEqual({ label: Date.parse("2026-09-16T07:00:00Z") });
+		await expect(unlockTransaction(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 
 	it("never overwrites a locked field for another origin, nor locks what it changes", async () => {
@@ -1182,7 +1221,7 @@ describe("bulkUpdateTransactions", () => {
 });
 
 describe("bulkUpdateTransactions on 5,000 rows", () => {
-	it("categorises every row a filter matches in one transaction", async () => {
+	it("categorises every row a filter matches in one transaction, one update per chunk", async () => {
 		const big = await createTempDatabase();
 
 		try {
@@ -1229,11 +1268,26 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 						updatedAt: row.index,
 					})),
 				);
-				await big.db
-					.insert(transactions)
-					.values(chunk.map((row) => ({ entryId: row.id, label: `Opération ${row.index}` })));
+				// Every other row was relabelled by hand earlier, each at its own time.
+				await big.db.insert(transactions).values(
+					chunk.map((row) => ({
+						entryId: row.id,
+						label: `Opération ${row.index}`,
+						lockedFields: row.index % 2 === 0 ? { label: row.index } : {},
+					})),
+				);
 			}, Promise.resolve());
-			const transaction = vi.spyOn(big.db, "transaction");
+			const original = big.db.transaction.bind(big.db);
+			let updates = 0;
+			const transaction = vi.spyOn(big.db, "transaction").mockImplementation(async (run, config) =>
+				original(async (tx) => {
+					const update = vi.spyOn(tx, "update");
+					const result = await run(tx);
+					updates = update.mock.calls.length;
+
+					return result;
+				}, config),
+			);
 
 			await expect(
 				bulkUpdateTransactions(
@@ -1245,11 +1299,27 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 			).resolves.toEqual({ matched: 5000, changed: 5000 });
 
 			expect(transaction).toHaveBeenCalledTimes(1);
+			// Rows locking the same fields share a statement, whatever they held: 500 rows each.
+			expect(updates).toBe(10);
 			await expect(
-				big.db.all(
-					sql`select count(*) as count from transactions where category_id = ${category} and locked_fields = '["category","tags"]'`,
-				),
+				big.db.all(sql`select count(*) as count from transactions where category_id = ${category}`),
 			).resolves.toEqual([{ count: 5000 }]);
+			const locks = await big.db
+				.select({ id: transactions.entryId, locked: transactions.lockedFields })
+				.from(transactions);
+			const indexOf = new Map<string, number>(rows.map((row) => [row.id, row.index]));
+			const now = Date.parse("2026-09-21T10:00:00Z");
+			expect(
+				locks.every(({ id, locked }) => {
+					const index = indexOf.get(id) ?? -1;
+					const expected =
+						index % 2 === 0
+							? { label: index, category: now, tags: now }
+							: { category: now, tags: now };
+
+					return JSON.stringify(locked) === JSON.stringify(expected);
+				}),
+			).toBe(true);
 			await expect(
 				big.db.all(sql`select count(*) as count from taggings where tag_id = ${tag}`),
 			).resolves.toEqual([{ count: 5000 }]);

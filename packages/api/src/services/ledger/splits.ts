@@ -223,7 +223,7 @@ async function insertChildren(
 			merchantId: parent.merchantId,
 			categoryId: line.categoryId,
 			categoryOrigin: line.categoryId === null ? null : categoryOriginOf(origin),
-			lockedFields: lockedBy(origin, [], filled),
+			lockedFields: lockedBy(origin, {}, filled, now),
 		});
 
 		if (tagIds.length > 0) {
@@ -260,10 +260,12 @@ async function updateChild(
 			.where(eq(entries.id, current.id));
 	}
 
-	await tx
-		.update(transactions)
-		.set(detailOf(current, change, origin))
-		.where(eq(transactions.entryId, current.id));
+	const detail = detailOf(change, origin, now);
+
+	// A kept line may change nothing here, and an empty `set` is no statement.
+	if (Object.keys(detail).length > 0) {
+		await tx.update(transactions).set(detail).where(eq(transactions.entryId, current.id));
+	}
 
 	if (change.changed.includes("tags")) {
 		await tx.delete(taggings).where(eq(taggings.transactionId, current.id));
@@ -324,12 +326,14 @@ export async function splitTransaction(
 			}
 
 			await checkLines(tx, parent, lines, []);
-			await insertChildren(tx, parent, lines, options.origin, Date.now());
+			const now = Date.now();
+
+			await insertChildren(tx, parent, lines, options.origin, now);
 			await tx
 				.update(transactions)
 				.set({
 					excluded: true,
-					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"]),
+					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"], now),
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);
@@ -412,7 +416,7 @@ export async function unsplitTransaction(
 				.update(transactions)
 				.set({
 					excluded: false,
-					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"]),
+					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"], Date.now()),
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);

@@ -69,6 +69,8 @@ async function all<Page>(pages: AsyncIterable<Page[]>): Promise<Page[][]> {
 	return read;
 }
 
+const anyTime: unknown = expect.any(Number);
+
 describe("the columns the archive reads", () => {
 	it("cover every table and column of a migrated database, each exported or left out, never both", async () => {
 		const tables = z
@@ -331,7 +333,11 @@ describe("transactionPages", () => {
 			tagIds: [first, second].toSorted(),
 			outflowOf: null,
 			inflowOf: null,
-			transaction: { label: "Libraire", pending: false, lockedFields: ["date", "amount", "label"] },
+			transaction: {
+				label: "Libraire",
+				pending: false,
+				lockedFields: { date: anyTime, amount: anyTime, label: anyTime },
+			},
 		});
 		expect(byId.get(pair.outflow)).toMatchObject({
 			outflowOf: { id: pair.transfer.id, kind: "internal_move" },

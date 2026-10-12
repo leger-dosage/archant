@@ -1,7 +1,7 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { TransactionFilter } from "./filter.ts";
-import type { EditableRow, TransactionPatch, UpdateResult } from "./patch.ts";
+import type { EditableRow, TransactionDetail, TransactionPatch, UpdateResult } from "./patch.ts";
 import type { Origin, TradedPosition, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
@@ -32,6 +32,7 @@ import {
 	tagIdsByEntry,
 	tagsExist,
 	transactionRow,
+	writeKeyOf,
 } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -163,10 +164,12 @@ export async function updateTransaction(
 				);
 			}
 
-			await tx
-				.update(transactions)
-				.set(detailOf(current, change, options.origin))
-				.where(eq(transactions.entryId, entryId));
+			const detail = detailOf(change, options.origin, Date.now());
+
+			// Tags alone, from an origin that locks nothing, leave the row as it is.
+			if (Object.keys(detail).length > 0) {
+				await tx.update(transactions).set(detail).where(eq(transactions.entryId, entryId));
+			}
 
 			if (changed.includes("tags")) {
 				await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
@@ -352,6 +355,8 @@ export async function bulkUpdateTransactions(
 			}
 
 			const rows = await selectedRows(tx, selection);
+			// One time for every row, so rows locking the same fields share a write.
+			const now = Date.now();
 
 			if (options.expectedCount !== undefined && options.expectedCount !== rows.length) {
 				throw new AppError(
@@ -371,10 +376,7 @@ export async function bulkUpdateTransactions(
 						);
 			// Rows whose write is the same share one statement per chunk: the
 			// classification is the same for all, only the locks already held differ.
-			const writes = new Map<
-				string,
-				{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
-			>();
+			const writes = new Map<string, { detail: TransactionDetail; ids: string[] }>();
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 			let changed = 0;
 
@@ -407,8 +409,8 @@ export async function bulkUpdateTransactions(
 				}
 
 				changed += 1;
-				const detail = detailOf(current, change, options.origin);
-				const key = JSON.stringify(detail);
+				const detail = detailOf(change, options.origin, now);
+				const key = writeKeyOf(detail, change, options.origin);
 				const group = writes.get(key);
 
 				if (group === undefined) {
@@ -426,9 +428,12 @@ export async function bulkUpdateTransactions(
 				}
 			}
 
-			const statements = [...writes.values()].flatMap(({ detail, ids }) =>
-				chunksOf(ids, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
-			);
+			// Tags alone, from an origin that locks nothing, leave the rows as they are.
+			const statements = [...writes.values()]
+				.filter(({ detail }) => Object.keys(detail).length > 0)
+				.flatMap(({ detail, ids }) =>
+					chunksOf(ids, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
+				);
 
 			await oneByOne(statements, ({ detail, chunk }) =>
 				tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),
@@ -500,6 +505,24 @@ export async function bulkDeleteTransactions(
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * Clears every lock of a transaction at once, as Sure's `unlock_for_sync!`,
+ * so the next sync or rule may update any of its fields again (AD-10). Only
+ * the locks go: the category keeps the origin that set it. Throws
+ * `NOT_FOUND` for an unknown transaction.
+ */
+export async function unlockTransaction(deps: ServiceDeps, entryId: string): Promise<void> {
+	const updated = await deps.db
+		.update(transactions)
+		.set({ lockedFields: {} })
+		.where(eq(transactions.entryId, entryId))
+		.returning({ entryId: transactions.entryId });
+
+	if (updated.length === 0) {
+		throw new AppError("NOT_FOUND", "No transaction has this id.");
+	}
 }
 
 /**
