@@ -30,6 +30,7 @@ import {
 	mergeDuplicate,
 	splitTransaction,
 	transactionTotals,
+	unlockTransaction,
 	unsplitTransaction,
 	updateTransaction,
 } from "../services/transactions.ts";
@@ -82,6 +83,10 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.post("/:id/dismiss-duplicate", async (c) =>
 				c.json({ data: await dismissDuplicate(deps, c.req.param("id")) }, 200),
+			)
+			// Sure's `unlock_for_sync!`: every lock at once, none per field.
+			.post("/:id/unlock", async (c) =>
+				c.json({ data: await unlockTransaction(deps, c.req.param("id")) }, 200),
 			)
 			// From the parent or a child, as Sure's `resolve_to_parent!`.
 			.get("/:id/split", async (c) =>

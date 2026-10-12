@@ -612,7 +612,7 @@ describe("rules", () => {
 		]);
 		// Rules add no lock: the rows the rule changed hold none on their category.
 		const locks = await temp.db.all<{ locked: string }>(
-			sql`select t.locked_fields as locked from transactions t join entries e on e.id = t.entry_id where e.account_id = ${account.id} and t.entry_id != ${locked}`,
+			sql`select (select json_group_array(key) from json_each(t.locked_fields)) as locked from transactions t join entries e on e.id = t.entry_id where e.account_id = ${account.id} and t.entry_id != ${locked}`,
 		);
 		expect(locks.every(({ locked: fields }) => !fields.includes("category"))).toBe(true);
 	});

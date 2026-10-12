@@ -383,3 +383,20 @@ export function useUnsplitTransaction() {
 		onSuccess: invalidate,
 	});
 }
+
+/**
+ * « Autoriser la mise à jour par la synchronisation »: clears every lock of a
+ * transaction, as Sure's `unlock_for_sync!`. No field nor balance moves, so
+ * only the rows refresh, dropping their lock icon.
+ */
+export function useUnlockTransaction() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (id: string) =>
+			(await unwrap(api.transactions[":id"].unlock.$post({ param: { id } }))).data,
+		onSettled: () => {
+			void queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
+		},
+	});
+}

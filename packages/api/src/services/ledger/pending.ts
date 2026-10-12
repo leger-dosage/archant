@@ -122,7 +122,7 @@ export async function absorb(
 	await tx
 		.update(transactions)
 		.set({
-			...detailOf(current, change, origin),
+			...detailOf(change, origin, now),
 			pending: line.line.pending,
 			pendingMissedSyncs: 0,
 			pendingMissedOn: null,

@@ -305,6 +305,9 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(sheet.getByLabel("Libellé")).toBeDisabled();
 			await expect(sheet.getByLabel("Notes")).toHaveValue("Pain du dimanche");
 			await expect(sheet.getByLabel("Notes")).toBeDisabled();
+			// Sure's protection indicator is read without its unlock.
+			await sheet.getByText("Protégée contre la synchronisation").click();
+			await expect(sheet.getByText("Champs verrouillés :")).toBeVisible();
 			await expect(sheet.getByText("Cette opération fait partie de la récurrence")).toBeVisible();
 			await expect(sheet.getByRole("link", { name: "ticket.png" })).toBeVisible();
 			await expectNone(
@@ -317,6 +320,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 					"Créer une facture",
 					"Rapprocher un virement",
 					"Diviser",
+					"Autoriser la mise à jour par la synchronisation",
 				].map((action) => ({ role: "button", name: action })),
 			);
 			await expect(sheet.getByRole("button", { name: /Supprimer « ticket\.png »/u })).toHaveCount(

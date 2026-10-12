@@ -22,6 +22,7 @@ import { FieldMessage } from "@/components/FieldMessage";
 import { TransactionAttachments } from "@/components/TransactionAttachments";
 import { CategoryField, MerchantField, TagsField } from "@/components/TransactionFields";
 import { DuplicateBlock, RecurringBlock, TransferBlock } from "@/components/TransactionLinks";
+import { ProtectionBlock } from "@/components/TransactionProtection";
 import { SplitBlock } from "@/components/TransactionSplit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,7 @@ import {
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { protectedFromSync } from "@/lib/locked-fields";
 import { valuesOf } from "@/lib/transaction-form";
 import { showsCategory } from "@/lib/transfers";
 
@@ -102,6 +104,9 @@ export function TransactionForm({
 	// Hidden once resolved here; a refetch clearing the flag hides it too.
 	const [duplicateHidden, setDuplicateHidden] = useState(false);
 	const duplicate = transaction?.possibleDuplicate === true && !duplicateHidden;
+	// Hidden once unlocked here, as the duplicate block once resolved.
+	const [unlocked, setUnlocked] = useState(false);
+	const locked = transaction !== null && protectedFromSync(transaction) && !unlocked;
 	// A split's parent and its lines keep their date, amount and exclusion,
 	// which only the split changes (AD-20); a line keeps its parent's merchant
 	// and goes only with its parent.
@@ -272,6 +277,18 @@ export function TransactionForm({
 					}
 				}}
 			>
+				{transaction !== null && locked && (
+					<ProtectionBlock
+						transaction={transaction}
+						onUnlocked={() => {
+							setUnlocked(true);
+							// The block goes with the button that had focus: the next control takes it.
+							requestAnimationFrame(() =>
+								formRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus(),
+							);
+						}}
+					/>
+				)}
 				{transaction !== null && (
 					<SplitBlock
 						transaction={transaction}

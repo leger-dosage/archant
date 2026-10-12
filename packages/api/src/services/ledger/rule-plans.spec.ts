@@ -100,7 +100,7 @@ describe("applyRulePlan", () => {
 		// Clearing a field by hand locks it too, as in Sure; set here directly.
 		await temp.db
 			.update(transactions)
-			.set({ lockedFields: ["label", "category", "merchant", "tags", "excluded"] })
+			.set({ lockedFields: { label: 1, category: 1, merchant: 1, tags: 1, excluded: 1 } })
 			.where(eq(transactions.entryId, locked));
 		const already = await add(joint.id, {}, "sync");
 		await write(
@@ -278,7 +278,7 @@ describe("ruleCandidates", () => {
 			transfer: null,
 			expectedTransferAccountId: livret.id,
 		});
-		expect(read?.lockedFields).toEqual(
+		expect(Object.keys(read?.lockedFields ?? {})).toEqual(
 			expect.arrayContaining(["category", "merchant", "tags", "excluded"]),
 		);
 		await expect(candidatesOf([outflow, inflow])).resolves.toMatchObject([

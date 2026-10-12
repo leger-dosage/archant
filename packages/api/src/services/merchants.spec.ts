@@ -94,7 +94,7 @@ async function linksOf(entryIds: string[]) {
 	const rows = await Promise.all(
 		entryIds.map((id) =>
 			temp.db.get<{ merchantId: string | null; locked: string }>(
-				sql`select merchant_id as merchantId, locked_fields as locked from transactions where entry_id = ${id}`,
+				sql`select merchant_id as merchantId, (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${id}`,
 			),
 		),
 	);

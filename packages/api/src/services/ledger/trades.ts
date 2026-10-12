@@ -594,7 +594,7 @@ export async function deleteTrade(
 					.update(transactions)
 					.set({
 						excluded: false,
-						lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"]),
+						lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"], Date.now()),
 					})
 					.where(eq(transactions.entryId, parent.id));
 			}
@@ -708,7 +708,7 @@ export async function convertTransaction(
 				.update(transactions)
 				.set({
 					excluded: true,
-					lockedFields: lockedBy(options.origin, source.lockedFields, ["excluded"]),
+					lockedFields: lockedBy(options.origin, source.lockedFields, ["excluded"], now),
 				})
 				.where(eq(transactions.entryId, source.id));
 

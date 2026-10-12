@@ -2350,7 +2350,9 @@ async function lockedFieldsOf(id: string): Promise<unknown> {
 		args: [id],
 	});
 
-	return JSON.parse(z.string().parse(rows[0]?.locked_fields));
+	return Object.keys(
+		z.record(z.string(), z.unknown()).parse(JSON.parse(z.string().parse(rows[0]?.locked_fields))),
+	);
 }
 
 async function categoriesOf(token: string, accountIds: string[]) {

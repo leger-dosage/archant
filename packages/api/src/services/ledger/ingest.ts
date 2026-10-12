@@ -45,7 +45,7 @@ import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
-import { ROWS_PER_INSERT, inSequence, invalidField, oneByOne } from "./shared.ts";
+import { ROWS_PER_INSERT, inSequence, invalidField, lockedBy, oneByOne } from "./shared.ts";
 import { snapshotOn } from "./snapshots.ts";
 import { matchTransfers } from "./transfers.ts";
 
@@ -851,9 +851,12 @@ export async function ingest(
 				),
 			);
 			const locksOf = (line: NormalizedTransaction) =>
-				options.origin === "user"
-					? [...filledFields(line), ...classifiedFields(classification)]
-					: [];
+				lockedBy(
+					options.origin,
+					{},
+					[...filledFields(line), ...classifiedFields(classification)],
+					now,
+				);
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(transactions).values(

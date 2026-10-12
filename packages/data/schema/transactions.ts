@@ -25,6 +25,13 @@ export const LOCKABLE_FIELDS = [
 export type LockableField = (typeof LOCKABLE_FIELDS)[number];
 
 /**
+ * Each locked field with the time, in epoch milliseconds, a user write last
+ * locked it, as Sure's `locked_attributes`. `null` is a lock older than the
+ * times (migration 0070), whose moment nobody knows.
+ */
+export type LockedFields = Partial<Record<LockableField, number | null>>;
+
+/**
  * The transaction-only columns of an entry whose `kind` is `transaction`, as
  * in Sure's delegated types (AD-8). The date and the amount stay on `entries`,
  * where the balance computation reads them for transactions and valuations alike.
@@ -64,11 +71,12 @@ export const transactions = sqliteTable(
 		// The day, in the app's time zone, of the last miss counted: two syncs an
 		// hour apart around a bank dropping the line before booking it count once.
 		pendingMissedOn: text("pending_missed_on"),
-		// Written only by `origin: "user"` ledger calls; read by every later writer.
+		// Keys added only by `origin: "user"` ledger calls, read by every later
+		// writer; the owner's unlock clears them all at once (AD-10).
 		lockedFields: text("locked_fields", { mode: "json" })
-			.$type<LockableField[]>()
+			.$type<LockedFields>()
 			.notNull()
-			.default(sql`'[]'`),
+			.default(sql`'{}'`),
 		// Null is « Sans catégorie ». Restrict: deleting a category goes through the
 		// service, which moves its transactions first, so a bypass fails instead of
 		// silently uncategorising them.

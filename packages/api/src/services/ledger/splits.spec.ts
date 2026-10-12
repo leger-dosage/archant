@@ -15,6 +15,7 @@ import {
 	excludedOf,
 	history,
 	keysOf,
+	lockTimes,
 	lockedFields,
 	matchedPair,
 	merchantOf,
@@ -457,6 +458,26 @@ describe("editSplit", () => {
 		await expect(tagsOf(home)).resolves.toEqual([fresh]);
 		await expect(childRow(food)).resolves.toMatchObject({ amount: -6_000 });
 		await expect(lockedFields(food)).resolves.toContain("tags");
+	});
+
+	it("writes nothing on a kept child it did not change, whose locks keep their times", async () => {
+		const account = await openChecking({ name: "Inchangée" });
+		const { food, home, amount } = await splitInTwo(account.id);
+		const before = await lockTimes(home);
+
+		await editSplit(
+			deps(),
+			food,
+			[
+				{ id: food, label: "Primeurs", amount: toMinorUnits(-6_000), categoryId: null },
+				{ id: home, label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null },
+			],
+			asUser,
+		);
+
+		await expect(childRow(food)).resolves.toMatchObject({ label: "Primeurs" });
+		await expect(childRow(home)).resolves.toMatchObject({ label: "Maison" });
+		await expect(lockTimes(home)).resolves.toEqual(before);
 	});
 
 	it("refuses an id that is no child of this split, or the same child twice", async () => {

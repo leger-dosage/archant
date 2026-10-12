@@ -117,7 +117,7 @@ describe("merchants", () => {
 		});
 		await expect(
 			temp.db.all(
-				sql`select merchant_id as merchantId, locked_fields as locked from transactions where entry_id in (select id from entries where account_id = ${account.id})`,
+				sql`select merchant_id as merchantId, (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id in (select id from entries where account_id = ${account.id})`,
 			),
 		).resolves.toEqual([
 			{ merchantId: null, locked: '["date","amount","label","merchant"]' },

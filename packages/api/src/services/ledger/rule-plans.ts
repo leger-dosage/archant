@@ -1,7 +1,7 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { RowPlan, RuleCandidate } from "../../domain/rules/matching.ts";
 import type { ServiceDeps } from "../deps.ts";
-import type { EditableRow } from "./patch.ts";
+import type { EditableRow, TransactionDetail } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
 import { and, eq, gte, inArray } from "drizzle-orm";
@@ -16,7 +16,7 @@ import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
-import { changeOf, detailOf, editableColumns, tagIdsByEntry } from "./patch.ts";
+import { changeOf, detailOf, editableColumns, tagIdsByEntry, writeKeyOf } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
@@ -82,6 +82,7 @@ export async function applyRulePlan(
 	_options: { origin: "rule" },
 ): Promise<{ changed: string[] }> {
 	const origin: Origin = "rule";
+	const now = Date.now();
 	const ids = [...plan.keys()];
 	const plans = [...plan.values()];
 	const rows: Awaited<ReturnType<typeof plannedRows>> = [];
@@ -114,10 +115,7 @@ export async function applyRulePlan(
 		),
 	];
 	// Rows whose write is the same share one statement per chunk, as in a bulk edit.
-	const writes = new Map<
-		string,
-		{ detail: Partial<typeof transactions.$inferInsert>; ids: string[] }
-	>();
+	const writes = new Map<string, { detail: TransactionDetail; ids: string[] }>();
 	const newTaggings: { transactionId: string; tagId: string }[] = [];
 
 	const rowById = new Map(rows.map((row) => [row.id, row]));
@@ -167,10 +165,10 @@ export async function applyRulePlan(
 		}
 
 		const detail = {
-			...detailOf(current, change, origin),
+			...detailOf(change, origin, now),
 			...(expects ? { expectedTransferAccountId: expected } : {}),
 		};
-		const key = JSON.stringify(detail);
+		const key = writeKeyOf(detail, change, origin);
 		const group = writes.get(key);
 
 		if (group === undefined) {
@@ -188,9 +186,12 @@ export async function applyRulePlan(
 		}
 	}
 
-	const statements = [...writes.values()].flatMap(({ detail, ids: group }) =>
-		chunksOf(group, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
-	);
+	// Tags alone, which a rule never locks, leave the rows as they are.
+	const statements = [...writes.values()]
+		.filter(({ detail }) => Object.keys(detail).length > 0)
+		.flatMap(({ detail, ids: group }) =>
+			chunksOf(group, ROWS_PER_INSERT).map((chunk) => ({ detail, chunk })),
+		);
 
 	await oneByOne(statements, ({ detail, chunk }) =>
 		tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),

@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
+import { TIME_ZONE } from "./settings.ts";
 
 // Story 1.2: record transactions by hand.
 
@@ -65,6 +66,69 @@ test("a transaction is added, edited and deleted, and the balance follows each",
 	await expect(editSheet).toBeHidden();
 	await expect(row(page, label)).toHaveCount(0);
 	await expect(header(page, account.name)).toContainText(euros(100_000));
+});
+
+// Story 27.18: Sure's protection indicator, and its unlock.
+test("a hand-typed line is protected from sync until the owner lets a sync update it", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingDate: daysAgo(30) });
+	const label = uniqueName("Primeur");
+	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-8,40" });
+	const today = new Intl.DateTimeFormat("fr-FR", {
+		day: "numeric",
+		month: "long",
+		year: "numeric",
+		timeZone: TIME_ZONE,
+	}).format(new Date());
+
+	await page.goto(`/accounts/${account.id}`);
+	await row(page, label).hover();
+	await expect(row(page, label).getByTitle("Protégée contre la synchronisation")).toHaveCount(1);
+	await row(page, label).click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const block = sheet.getByRole("group").filter({ hasText: "Protégée contre la synchronisation" });
+	await expect(block).not.toHaveAttribute("open");
+	await expect(block.getByText("Champs verrouillés :")).toBeHidden();
+
+	await block.getByText("Protégée contre la synchronisation").click();
+	await expect(
+		block.getByText(
+			"Vos modifications sur cette entrée ne seront pas écrasées par la synchronisation du fournisseur.",
+		),
+	).toBeVisible();
+	await expect(block.getByRole("listitem")).toHaveText([
+		`Date${today}`,
+		`Montant${today}`,
+		`Libellé${today}`,
+	]);
+
+	await block
+		.getByRole("button", { name: "Autoriser la mise à jour par la synchronisation" })
+		.click();
+	const confirm = page.getByRole("alertdialog", {
+		name: "Autoriser la synchronisation à mettre à jour cette entrée ?",
+	});
+	await expect(
+		confirm.getByText(
+			"Vos modifications pourraient être écrasées lors de la prochaine synchronisation.",
+		),
+	).toBeVisible();
+	await confirm.getByRole("button", { name: "Autoriser" }).click();
+
+	await expect(confirm).toBeHidden();
+	await expect(
+		page.getByText(
+			"Entrée déverrouillée. Elle pourra être mise à jour lors de la prochaine synchronisation.",
+		),
+	).toBeVisible();
+	await expect(block).toHaveCount(0);
+	await page.keyboard.press("Escape");
+	await expect(sheet).toBeHidden();
+	await expect(row(page, label).getByTitle("Protégée contre la synchronisation")).toHaveCount(0);
+	await row(page, label).click();
+	await expect(sheet.getByText("Protégée contre la synchronisation")).toHaveCount(0);
 });
 
 test("the newest transaction is listed first", async ({ page, api }) => {

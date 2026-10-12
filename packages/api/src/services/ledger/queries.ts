@@ -19,6 +19,7 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { transactions } from "@archant/data/schema/transactions";
+import type { LockedFields } from "@archant/data/schema/transactions";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
 import { both, filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
@@ -69,6 +70,11 @@ export type TransactionRecord = {
 	 * unsplit transaction or a split's parent.
 	 */
 	parentEntryId: string | null;
+	/**
+	 * The fields a user edit locked against syncs and rules (AD-10), each
+	 * with its lock time, `null` for a lock older than the times.
+	 */
+	lockedFields: LockedFields;
 };
 
 /**
@@ -114,6 +120,7 @@ const transactionColumns = {
 	possibleDuplicate: transactions.possibleDuplicate,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
+	lockedFields: transactions.lockedFields,
 	parentEntryId: entries.parentEntryId,
 };
 

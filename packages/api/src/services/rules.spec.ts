@@ -625,7 +625,7 @@ describe("previewRules and applyRules", () => {
 			null,
 		]);
 		// No lock added: only the user's edits hold one.
-		expect(rows.map((row) => row?.lockedFields.includes("category"))).toEqual([
+		expect(rows.map((row) => Object.hasOwn(row?.lockedFields ?? {}, "category"))).toEqual([
 			true,
 			false,
 			false,

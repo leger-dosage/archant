@@ -93,7 +93,7 @@ async function linksOf(entryIds: string[]) {
 	const rows = await Promise.all(
 		entryIds.map(async (id) => {
 			const row = await temp.db.get<{ locked: string }>(
-				sql`select locked_fields as locked from transactions where entry_id = ${id}`,
+				sql`select (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${id}`,
 			);
 			const tagged = await temp.db.all<{ tagId: string }>(
 				sql`select tag_id as tagId from taggings where transaction_id = ${id}`,

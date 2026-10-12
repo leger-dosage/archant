@@ -144,7 +144,7 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Binds:** Epics 4, 8, 10; FR23, FR38, FR39, FR51
 - **Prevents:** a rule, a categorisation provider or a booked version overwriting what the user set, and locking depending on who called the ledger.
-- **Rule:** `transactions.locked_fields` is a JSON array of field names. Only a ledger call with `origin: "user"` adds to it. Calls with any other origin never write a locked field. Category and merchant merges use `maintenance` and keep lock state. `transactions.category_origin` records who set the category (`user`, `rule`, `provider` or null), so a provider can skip categories set by rules.
+- **Rule:** `transactions.locked_fields` is a JSON object, Sure's `locked_attributes`: each locked field of `LOCKABLE_FIELDS` maps to the epoch milliseconds a user write last locked it, `null` for a lock migration 0070 found without a time. Only a ledger call with `origin: "user"` adds a key or renews its time, as Sure's `lock_attr!`. Calls with any other origin never write a locked field nor change the object. The owner clears every lock of a transaction at once with `POST /api/transactions/:id/unlock`, as Sure's `unlock_for_sync!`; there is no per-field unlock, and the unlock leaves `category_origin` as it is. Category and merchant merges use `maintenance` and keep lock state. `transactions.category_origin` records who set the category (`user`, `rule`, `provider` or null), so a provider can skip categories set by rules.
 
 ### AD-11 — Transfers
 

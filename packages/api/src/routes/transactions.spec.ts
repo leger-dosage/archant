@@ -50,12 +50,14 @@ useSignedInApp();
 const listedOf = async (accountId: string) =>
 	listBody.parse((await request("GET", `/api/transactions?account=${accountId}`)).body).data.items;
 
-const locksOf = async (id: string) =>
-	(
-		await temp.db.get<{ locked: string }>(
-			sql`select locked_fields as locked from transactions where entry_id = ${id}`,
-		)
-	)?.locked;
+/** The locked fields, in the order they were first locked. */
+const locksOf = async (id: string) => {
+	const row = await temp.db.get<{ locked: string }>(
+		sql`select (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${id}`,
+	);
+
+	return row === undefined ? undefined : z.array(z.string()).parse(JSON.parse(row.locked));
+};
 
 describe("PATCH /api/transactions/:id", () => {
 	it("moves and changes a transaction, and the balance follows", async () => {
@@ -145,7 +147,7 @@ describe("PATCH /api/transactions/:id", () => {
 		expect(body).toMatchObject({ data: { oneTime: true, excluded: false, amount: -4290 } });
 		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: true }]);
 		// No new lock: no sync, import or rule writes it. Those three come from the creation.
-		await expect(locksOf(data.id)).resolves.toBe('["date","amount","label"]');
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 		await expect(balanceOf(account.id)).resolves.toBe(123456 - 4290);
 	});
 
@@ -203,8 +205,8 @@ describe("PATCH /api/transactions/:id", () => {
 		});
 
 		// A transaction typed by hand starts with its date, amount and label locked.
-		await expect(locksOf(set)).resolves.toBe('["date","amount","label","category"]');
-		await expect(locksOf(unchanged)).resolves.toBe('["date","amount","label"]');
+		await expect(locksOf(set)).resolves.toEqual(["date", "amount", "label", "category"]);
+		await expect(locksOf(unchanged)).resolves.toEqual(["date", "amount", "label"]);
 	});
 
 	it("refuses an unknown category and writes nothing", async () => {
@@ -321,7 +323,7 @@ describe("PATCH /api/transactions/:id", () => {
 		expect((await cleared.json()).data).toMatchObject({ merchantId: null });
 		await expect(
 			temp.db.get(
-				sql`select locked_fields as locked from transactions where entry_id = ${data.id}`,
+				sql`select (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${data.id}`,
 			),
 		).resolves.toEqual({ locked: '["date","amount","label","merchant"]' });
 	});
@@ -373,7 +375,7 @@ describe("PATCH /api/transactions/:id", () => {
 		expect((await cleared.json()).data).toMatchObject({ tagIds: [] });
 		await expect(
 			temp.db.get(
-				sql`select locked_fields as locked from transactions where entry_id = ${data.id}`,
+				sql`select (select json_group_array(key) from json_each(locked_fields)) as locked from transactions where entry_id = ${data.id}`,
 			),
 		).resolves.toEqual({ locked: '["date","amount","label","tags"]' });
 	});
@@ -932,7 +934,7 @@ async function rowsOf(accountId: string) {
 		locked: string;
 		tags: string | null;
 	}>(
-		sql`select t.category_id as category, t.category_origin as origin, t.merchant_id as merchant, t.excluded as excluded, t.locked_fields as locked, (select group_concat(tag_id) from (select tag_id from taggings where transaction_id = t.entry_id order by tag_id)) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.id`,
+		sql`select t.category_id as category, t.category_origin as origin, t.merchant_id as merchant, t.excluded as excluded, (select json_group_array(key) from json_each(t.locked_fields)) as locked, (select group_concat(tag_id) from (select tag_id from taggings where transaction_id = t.entry_id order by tag_id)) as tags from transactions t join entries e on e.id = t.entry_id where e.account_id = ${accountId} order by e.id`,
 	);
 }
 
@@ -1516,6 +1518,70 @@ describe("/api/transactions/:id/split", () => {
 	});
 });
 
+describe("POST /api/transactions/:id/unlock", () => {
+	const unlockedBody = z.object({
+		data: z.object({
+			id: z.string(),
+			categoryId: z.string().nullable(),
+			lockedFields: z.record(z.string(), z.unknown()),
+		}),
+	});
+
+	it("clears every lock at once, keeps the category's origin, and lets a rule reach the row", async () => {
+		const account = await openAccount();
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const created = await postTransaction(account.id, { ...expense, label: "CB ZEPHYR HALLES" });
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		await request("PATCH", `/api/transactions/${data.id}`, { categoryId: leisure.id });
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label", "category"]);
+
+		const { status, body } = await request("POST", `/api/transactions/${data.id}/unlock`);
+
+		expect(status).toBe(200);
+		expect(unlockedBody.parse(body).data).toEqual({
+			id: data.id,
+			categoryId: leisure.id,
+			lockedFields: {},
+		});
+		await expect(locksOf(data.id)).resolves.toEqual([]);
+		await expect(
+			temp.db.get(
+				sql`select category_origin as origin from transactions where entry_id = ${data.id}`,
+			),
+		).resolves.toEqual({ origin: "user" });
+
+		const rule = z.object({ data: z.object({ id: z.string() }) }).parse(
+			(
+				await request("POST", "/api/rules", {
+					conditions: [{ conditionType: "transaction_name", operator: "like", value: "zephyr" }],
+					actions: [{ actionType: "set_transaction_category", value: groceries.id }],
+				})
+			).body,
+		).data;
+		const applied = await request("POST", `/api/rules/${rule.id}/apply`);
+
+		expect(applied.status).toBe(200);
+		await expect(listedOf(account.id)).resolves.toMatchObject([
+			{ id: data.id, categoryId: groceries.id },
+		]);
+	});
+
+	it("answers NOT_FOUND for an unknown transaction, and 401 signed out", async () => {
+		const unknown = await request("POST", "/api/transactions/nope/unlock");
+
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(unknown.body).error.code).toBe("NOT_FOUND");
+
+		const anonymous = await buildTestApp(temp.db, createLogger("silent")).request(
+			"/api/transactions/nope/unlock",
+			{ method: "POST", headers: { origin: "http://localhost:5173" } },
+		);
+
+		expect(anonymous.status).toBe(401);
+	});
+});
+
 describe("a viewer and a one-time transaction", () => {
 	let viewerCookie: string;
 	let auth: Auth;
@@ -1542,5 +1608,18 @@ describe("a viewer and a one-time transaction", () => {
 		expect(edit.status).toBe(403);
 		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
 		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: false }]);
+	});
+
+	it("refuses a viewer's unlock FORBIDDEN, every lock kept", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const unlock = await viewer.request(`/api/transactions/${data.id}/unlock`, { method: "POST" });
+
+		expect(unlock.status).toBe(403);
+		expect(errorBody.parse(await unlock.json()).error.code).toBe("FORBIDDEN");
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 	});
 });

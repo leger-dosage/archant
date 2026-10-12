@@ -33,6 +33,7 @@ import {
 	line,
 	link,
 	linkedChecking,
+	lockTimes,
 	lockedFields,
 	merchantOf,
 	newBankAccount,
@@ -74,6 +75,8 @@ import { rejectTransfer } from "./transfers.ts";
 
 useLedgerDatabase();
 
+const anyTime: unknown = expect.any(Number);
+
 describe("ingest", () => {
 	it("records an expense and recomputes the balance from its date", async () => {
 		const account = await openChecking();
@@ -98,6 +101,7 @@ describe("ingest", () => {
 			transfer: null,
 			possibleDuplicate: false,
 			parentEntryId: null,
+			lockedFields: { date: anyTime, amount: anyTime, label: anyTime },
 		});
 		const days = await history(account.id);
 		expect(days.size).toBe(21);
@@ -130,6 +134,16 @@ describe("ingest", () => {
 
 		await expect(lockedFields(withoutNotes)).resolves.toEqual(["date", "amount", "label"]);
 		await expect(lockedFields(withNotes)).resolves.toEqual(["date", "amount", "label", "notes"]);
+	});
+
+	it("stamps each lock a hand-typed line takes with the time it was typed", async () => {
+		const account = await openChecking();
+		setToday("2026-09-12T08:00:00Z");
+		const at = Date.parse("2026-09-12T08:00:00Z");
+
+		const id = await add(account.id, { notes: "Pour dimanche" });
+
+		await expect(lockTimes(id)).resolves.toEqual({ date: at, amount: at, label: at, notes: at });
 	});
 
 	it("locks nothing for any other origin", async () => {
