@@ -818,7 +818,7 @@ describe("syncConnection", () => {
 		});
 	});
 
-	it("after a renewal that drops the card, syncs the rest and never asks for the card's uid", async () => {
+	it("after a renewal that leaves out the card, still reads it under its last uid, its failure the run's error", async () => {
 		const connectionId = await newConnection({
 			lastSyncedAt: NOW - 2 * 60 * MINUTE,
 			authorizationState: "renewal-state",
@@ -843,16 +843,26 @@ describe("syncConnection", () => {
 				}),
 		});
 		await completeConnection(deps(), { code: "new-code", state: "renewal-state" });
-		const requests = mockProvider();
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
-			lastSyncedAt: NOW,
-			lastError: null,
+		// The new session no longer knows the card's uid.
+		const requests = mockProvider({
+			transactions: (url) =>
+				url.pathname.includes(FIXTURE_CARD_UID)
+					? HttpResponse.json({ error: "NOT_FOUND" }, { status: 404 })
+					: transactionsPage(url),
 		});
 
-		expect(requests.filter(({ path }) => path.includes(FIXTURE_CARD_UID))).toEqual([]);
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW - 2 * 60 * MINUTE,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+
+		expect(requests.some(({ path }) => path.includes(FIXTURE_CARD_UID))).toBe(true);
 		await expect(transactionCount(checking.accountId)).resolves.toBe(6);
+		await expect(bankAccountSyncedAt(checking.bankAccountId)).resolves.toBe(NOW);
 		await expect(bankAccountSyncedAt(card.bankAccountId)).resolves.toBeNull();
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: Date.parse("2026-12-20T10:00:00Z"),
+		});
 		const [row] = await temp.db
 			.select({ bankAccountId: accounts.bankAccountId })
 			.from(accounts)

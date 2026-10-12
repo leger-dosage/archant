@@ -181,7 +181,7 @@ describe("/api/bank-connections", () => {
 
 		const before = await client.setup.$get();
 		expect((await before.json()).data).toMatchObject({ available: false, source: null });
-		expect((await client.$get()).status).toBe(503);
+		expect((await client.institutions.$get({ query: { country: "FR" } })).status).toBe(503);
 
 		const saved = await client.credentials.$put({
 			json: { applicationId: ` ${TEST_APPLICATION_ID} `, privateKey: pem },
@@ -267,7 +267,7 @@ describe("/api/bank-connections", () => {
 		).resolves.toEqual([]);
 	});
 
-	it("names the missing variables and answers 503 elsewhere, while accounts still answer", async () => {
+	it("names the missing variables, lists and disconnects, and answers 503 elsewhere, while accounts still answer", async () => {
 		const app = await bankApp({
 			...configuredBank(),
 			encryptionKey: null,
@@ -286,8 +286,19 @@ describe("/api/bank-connections", () => {
 			},
 		});
 
+		// A connection stays listed and can be disconnected without its connector.
+		const list = await client["bank-connections"].$get();
+		expect(list.status).toBe(200);
+		expect(await list.json()).toEqual({ data: [] });
+		const answered = await Promise.all([
+			app.request("/api/bank-connections/c1/accounts"),
+			app.request("/api/bank-connections/c1", { method: "DELETE" }),
+		]);
+		expect(answered.map((response) => response.status)).toEqual([404, 404]);
+
 		const refused = await Promise.all([
-			app.request("/api/bank-connections"),
+			app.request("/api/bank-connections/c1/sync", { method: "POST" }),
+			app.request("/api/bank-connections/c1/renew", { method: "POST" }),
 			// Refused before its query is read: no field error for an unknown country.
 			app.request("/api/bank-connections/institutions?country=US"),
 			app.request("/api/bank-connections", {
@@ -302,7 +313,7 @@ describe("/api/bank-connections", () => {
 			}),
 		]);
 
-		expect(refused.map((response) => response.status)).toEqual([503, 503, 503, 503]);
+		expect(refused.map((response) => response.status)).toEqual([503, 503, 503, 503, 503]);
 		const codes = await Promise.all(
 			refused.map(async (response) => errorBody.parse(await response.json()).error.code),
 		);
@@ -555,7 +566,7 @@ describe("/api/bank-connections", () => {
 		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
 	});
 
-	it("answers 503 on a connection's accounts while unconfigured", async () => {
+	it("lists a connection's accounts while unconfigured, and refuses to link them", async () => {
 		const app = await bankApp({
 			...configuredBank(),
 			encryptionKey: null,
@@ -570,7 +581,44 @@ describe("/api/bank-connections", () => {
 			}),
 		]);
 
-		expect(responses.map((response) => response.status)).toEqual([503, 503]);
+		expect(responses.map((response) => response.status)).toEqual([404, 503]);
+	});
+
+	it("lists and disconnects a connection after ENCRYPTION_KEY is lost, revoking nothing", async () => {
+		const { connection } = await connectedApp();
+		const requests = mockProvider();
+		const database = own;
+
+		if (database === undefined) {
+			throw new Error("connectedApp opens the test's own database.");
+		}
+
+		const client = testClient(
+			withSession(
+				buildTestApp(
+					database.db,
+					createLogger("silent"),
+					undefined,
+					{},
+					{
+						...configuredBank(),
+						encryptionKey: null,
+					},
+				),
+				template.cookie,
+			),
+		).api["bank-connections"];
+
+		const list = await client.$get();
+		expect(list.status).toBe(200);
+		expect((await list.json()).data).toEqual([expect.objectContaining({ id: connection.id })]);
+		const accounts = await client[":id"].accounts.$get({ param: { id: connection.id } });
+		expect(accounts.status).toBe(200);
+		expect((await accounts.json()).data).not.toEqual([]);
+		const removed = await client[":id"].$delete({ param: { id: connection.id } });
+		expect(removed.status).toBe(200);
+		expect(await removed.json()).toEqual({ data: { id: connection.id, accounts: 0 } });
+		expect(requests).toEqual([]);
 	});
 
 	it("answers BANK_PROVIDER_ERROR when the bank's balance cannot be read", async () => {

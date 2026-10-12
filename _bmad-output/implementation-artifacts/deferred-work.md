@@ -77,6 +77,7 @@
   summary: With a bank still connected, credentials that no longer resolve (an `ENCRYPTION_KEY` lost or changed, or the `ENABLE_BANKING_*` variables removed) leave the page locked and every bank route at 503, disconnection included, so nothing unlocks it.
   evidence: medium, pre-existing since Spec 10.5: `disconnectConnection` needs a connector and a readable session id. Story 11.14 adds the environment-to-interface path to it. Disconnecting without revoking at the provider when no connector resolves would settle it.
   planned: Story 27.20 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.20. `disconnectConnection` skips the revocation when no connector resolves, logged `BANK_CONNECTOR_UNAVAILABLE`, and the list, accounts and disconnection routes answer before the connector guard; « Banques » lists the connections while the credentials are locked.
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-14-enable-banking-set-up-from-the-interface.md`
   summary: An unknown application ID may be answered by `GET /application` with a 4xx other than 401 or 403, which would show as `BANK_PROVIDER_ERROR` instead of `BANK_CREDENTIALS_REFUSED`.
   evidence: medium, unverified: the fake and the fixtures only return 401. One save against the sandbox with a mistyped application ID would settle it.
@@ -97,6 +98,7 @@
   summary: A renewal whose session drops an account as unreadable marks its stored row unlisted, so a linked account stops syncing.
   evidence: `completeConnection` unlists every stored hash missing from `session.accounts`; a dropped account is missing too. Pre-existing since Epic 10; Story 13.12 only logs the drop.
   planned: Story 27.20 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.20. Migration `0071` drops `bank_accounts.listed`: a left-out or unreadable account keeps its link and its last uid, and the sync still reads it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-1-report-a-vulnerability-privately-protect-the-default-branch.md`
   summary: Check in CI that the job names of `ci.yml` match the required status checks of the ruleset « main: pull request and CI ».
   evidence: The ruleset lists contexts by name; an added job is silently not required, and only `AGENTS.md` and a comment in `ci.yml` say so. A step reading `repos/leger-dosage/archant/rulesets` fits Story 15.2 or 15.7, which edit the workflows.
@@ -269,3 +271,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-19-every-balance-a-bank-sends-and-a-revoked-consent-at-once.md`
   summary: A balances response holding one balance whose currency is not ISO 4217, such as `XXX`, fails the whole response, where Sure's `split_balances_by_currency` reads it as no currency and still picks the others.
   evidence: `balanceSchema.balance_amount.currency` in `packages/api/src/connectors/enable-banking/schemas.ts` refuses a code `isCurrencyCode` rejects; pre-existing, found by the Story 27.19 spec review. Unverified whether a bank sends such a balance.
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-20-a-renewal-that-keeps-every-account-and-a-disconnection-without-the-key.md`
+  summary: `docs/troubleshooting.md` has no section for a connection whose every sync ends in `BANK_PROVIDER_ERROR` because a renewal left a linked account out; the remedy, renewing with that account shared or disconnecting, is written nowhere a self-hoster reads.
+  evidence: Story 27.20 review. Since 27.20 such an account is read under its stale uid and fails each run, as in Sure.

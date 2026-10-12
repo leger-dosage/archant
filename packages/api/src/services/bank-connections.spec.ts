@@ -11,6 +11,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { settings } from "@archant/data/schema/settings";
 
 import { server } from "../../vitest.setup.ts";
 import * as registry from "../connectors/registry.ts";
@@ -20,6 +21,7 @@ import {
 	TEST_APPLICATION_ID,
 	TEST_ENCRYPTION_KEY_BASE64,
 	TEST_PKCS8_BASE64,
+	TEST_PRIVATE_KEY,
 	TEST_PROVIDER_URL,
 } from "../testing/bank.ts";
 import {
@@ -45,10 +47,17 @@ import {
 	renewConnection,
 	startConnection,
 } from "./bank-connections.ts";
+import {
+	APPLICATION_ID_SETTING,
+	PRIVATE_KEY_SETTING,
+	bankSetup,
+	saveBankCredentials,
+} from "./bank-credentials.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import { ingest } from "./ledger/ingest.ts";
+import { syncConnection } from "./sync.ts";
 
 // A spy that builds the real connector, so one test can make a single call
 // throw something no provider answer produces.
@@ -87,6 +96,11 @@ function deps(): BankConnectionDeps {
 		logger: createLogger("info", { write: (line: string) => logLines.push(line) }),
 		...bankDepsFromEnv(validateEnv(FULL_ENV)),
 	};
+}
+
+/** As a server started without `ENCRYPTION_KEY`. */
+function depsWithoutKey(): BankConnectionDeps {
+	return { ...deps(), ...bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENCRYPTION_KEY: "" })) };
 }
 
 beforeAll(async () => {
@@ -141,11 +155,8 @@ describe("bankDepsFromEnv", () => {
 });
 
 describe("when unavailable", () => {
-	it("refuses every operation with BANK_CONNECTOR_UNAVAILABLE", async () => {
-		const unavailable = {
-			...deps(),
-			...bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENCRYPTION_KEY: "" })),
-		};
+	it("refuses every operation that reaches the provider with BANK_CONNECTOR_UNAVAILABLE", async () => {
+		const unavailable = depsWithoutKey();
 		const refused = { code: "BANK_CONNECTOR_UNAVAILABLE", status: 503 };
 
 		await expect(listInstitutions(unavailable, "FR")).rejects.toMatchObject(refused);
@@ -155,10 +166,8 @@ describe("when unavailable", () => {
 		await expect(completeConnection(unavailable, { code: "c", state: "s" })).rejects.toMatchObject(
 			refused,
 		);
-		await expect(listConnections(unavailable)).rejects.toMatchObject(refused);
-		await expect(listBankAccounts(unavailable, "c1")).rejects.toMatchObject(refused);
 		await expect(renewConnection(unavailable, "c1")).rejects.toMatchObject(refused);
-		await expect(disconnectConnection(unavailable, "c1")).rejects.toMatchObject(refused);
+		await expect(syncConnection(unavailable, "c1")).rejects.toMatchObject(refused);
 		await expect(
 			linkBankAccounts(unavailable, "c1", {
 				links: [{ bankAccountId: "b1", action: "link", accountId: "a1" }],
@@ -1319,6 +1328,21 @@ function renewedSession() {
 	});
 }
 
+/** The fixture session with the card's entry replaced by `card`. */
+function sessionWithCard(card: Record<string, unknown>) {
+	const session = z
+		.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+		.loose()
+		.parse(fixtures.session);
+
+	return HttpResponse.json({
+		...session,
+		accounts: session.accounts.map((account) =>
+			account["identification_hash"] === "anonymised-hash-card" ? card : account,
+		),
+	});
+}
+
 async function renew(connectionId: string, sessions?: () => Response) {
 	const requests = mockProvider(sessions === undefined ? {} : { sessions });
 	const { url } = await renewConnection(deps(), connectionId);
@@ -1332,7 +1356,6 @@ async function bankRows(connectionId: string) {
 			id: bankAccounts.id,
 			hash: bankAccounts.identificationHash,
 			uid: bankAccounts.providerUid,
-			listed: bankAccounts.listed,
 		})
 		.from(bankAccounts)
 		.where(eq(bankAccounts.bankConnectionId, connectionId))
@@ -1483,7 +1506,7 @@ describe("renewConnection", () => {
 		expect(logLines.join("")).not.toContain("Livret A");
 	});
 
-	it("marks a bank account the renewal leaves out unlisted, keeping its link, until one lists it again", async () => {
+	it("keeps a bank account the renewal leaves out, its uid and its link, until one lists it again", async () => {
 		const { connection, card, accountIds } = await linkedConnection();
 		const cardLink = () =>
 			temp.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.bankAccountId, card.id));
@@ -1494,26 +1517,50 @@ describe("renewConnection", () => {
 		const dropped = await renew(connection.id, renewedSession);
 		await completeConnection(deps(), { code: "new-code", state: dropped.state });
 
-		const afterDrop = await bankRows(connection.id);
-		expect(afterDrop.find((row) => row.id === card.id)).toMatchObject({
+		await expect(bankRows(connection.id)).resolves.toContainEqual({
+			id: card.id,
+			hash: "anonymised-hash-card",
 			uid: FIXTURE_CARD_UID,
-			listed: false,
 		});
-		expect(afterDrop.filter((row) => row.id !== card.id)).toEqual(
-			afterDrop.filter((row) => row.id !== card.id).map((row) => ({ ...row, listed: true })),
-		);
 		await expect(cardLink()).resolves.toEqual(linkedBefore);
 
-		const listedAgain = await renew(connection.id);
+		const listedAgain = await renew(connection.id, () =>
+			sessionWithCard({
+				uid: "renewed-card-uid",
+				identification_hash: "anonymised-hash-card",
+				currency: "EUR",
+			}),
+		);
 		await completeConnection(deps(), { code: "newer-code", state: listedAgain.state });
 
 		await expect(bankRows(connection.id)).resolves.toContainEqual({
 			id: card.id,
 			hash: "anonymised-hash-card",
-			uid: FIXTURE_CARD_UID,
-			listed: true,
+			uid: "renewed-card-uid",
 		});
 		await expect(cardLink()).resolves.toEqual(linkedBefore);
+	});
+
+	it("keeps a linked bank account the renewal sends unreadable, under its old uid", async () => {
+		const { connection, card } = await linkedConnection();
+		const { state } = await renew(connection.id, () =>
+			sessionWithCard({ identification_hash: "anonymised-hash-card" }),
+		);
+
+		await completeConnection(deps(), { code: "new-code", state });
+
+		await expect(bankRows(connection.id)).resolves.toContainEqual({
+			id: card.id,
+			hash: "anonymised-hash-card",
+			uid: FIXTURE_CARD_UID,
+		});
+		await expect(
+			temp.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.bankAccountId, card.id)),
+		).resolves.toHaveLength(1);
+		const warning = logLines.find((line) =>
+			line.includes("bank accounts the provider sent unreadable"),
+		);
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({ connectionId: connection.id, dropped: 1 });
 	});
 
 	it("keeps the active row and its old session when the bank refuses the renewal", async () => {
@@ -1750,6 +1797,80 @@ describe("disconnectConnection", () => {
 		});
 		expect(requests).toEqual([]);
 		expect(logLines.join("")).toContain('"code":"SESSION_UNREADABLE"');
+	});
+
+	it("disconnects without revoking while ENCRYPTION_KEY is unset, logging BANK_CONNECTOR_UNAVAILABLE", async () => {
+		const { connection, accountIds } = await linkedConnection();
+		const requests = mockProvider();
+		const service = depsWithoutKey();
+
+		await expect(listConnections(service)).resolves.toEqual([
+			expect.objectContaining({ id: connection.id }),
+		]);
+		await expect(listBankAccounts(service, connection.id)).resolves.toHaveLength(2);
+		await expect(disconnectConnection(service, connection.id)).resolves.toEqual({
+			id: connection.id,
+			accounts: 2,
+		});
+
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toEqual([]);
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(inArray(accounts.id, accountIds)),
+		).resolves.toEqual([{ bankAccountId: null }, { bankAccountId: null }]);
+		const warning = logLines.find((line) => line.includes("bank session not revoked"));
+		expect(JSON.parse(warning ?? "{}")).toMatchObject({
+			connectionId: connection.id,
+			code: "BANK_CONNECTOR_UNAVAILABLE",
+		});
+	});
+
+	it("disconnects when the stored credentials no longer decrypt, then takes new ones", async () => {
+		const { connection } = await linkedConnection();
+		// Saved from the interface under a key other than today's `ENCRYPTION_KEY`.
+		await temp.db.insert(settings).values([
+			{ key: APPLICATION_ID_SETTING, value: TEST_APPLICATION_ID, updatedAt: 1 },
+			{
+				key: PRIVATE_KEY_SETTING,
+				value: encrypt(Buffer.alloc(32, 0xcd), "a private key"),
+				updatedAt: 1,
+			},
+		]);
+
+		try {
+			const requests = mockProvider();
+			const service = {
+				...deps(),
+				...bankDepsFromEnv(
+					validateEnv({
+						...FULL_ENV,
+						ENABLE_BANKING_APPLICATION_ID: "",
+						ENABLE_BANKING_PRIVATE_KEY: "",
+					}),
+				),
+			};
+			await expect(bankSetup(service)).resolves.toMatchObject({ available: false, locked: true });
+
+			await expect(disconnectConnection(service, connection.id)).resolves.toMatchObject({
+				accounts: 2,
+			});
+
+			expect(requests).toEqual([]);
+			expect(logLines.join("")).toContain('"code":"BANK_CONNECTOR_UNAVAILABLE"');
+			await expect(bankSetup(service)).resolves.toMatchObject({ locked: false });
+			await expect(
+				saveBankCredentials(service, {
+					applicationId: TEST_APPLICATION_ID,
+					privateKey: TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString(),
+				}),
+			).resolves.toMatchObject({ available: true, source: "interface" });
+		} finally {
+			// The file's other tests read their credentials from the environment.
+			await temp.db.delete(settings);
+		}
 	});
 
 	it("disconnects a connection without a session or a linked account", async () => {

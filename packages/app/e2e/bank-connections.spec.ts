@@ -136,6 +136,8 @@ test("a fresh install lists Sure's steps, with the redirect address to copy, and
 	await expect(applicationIdField(page)).toBeVisible();
 	await expect(keyFile(page)).toHaveAttribute("type", "file");
 	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	// Nothing locks the form, so no connection is listed above it.
+	await expect(page.getByText("Banques connectées", { exact: true })).toBeHidden();
 
 	await page.getByRole("button", { name: "Copier l'adresse de retour" }).click();
 	await expect(toast(page, "Adresse copiée.")).toBeVisible();
@@ -1336,6 +1338,71 @@ test("disconnecting keeps each account in the accounts column, with the same bal
 
 	await page.goto(`/settings/banks/${connectionId}`);
 	await expect(page.getByRole("alert")).toContainText("Cette connexion n'existe pas.");
+});
+
+// Story 27.20: the server's side, no key and no revocation, is covered by
+// Vitest; the run's server keeps its key, so the setup answer is mocked.
+test("a bank stays listed and can be disconnected while Enable Banking is unavailable", async ({
+	page,
+}) => {
+	const connectionId = await connect(page);
+	await page.route(SETUP, (route) =>
+		route.fulfill({
+			json: setupData({
+				available: false,
+				source: null,
+				applicationId: null,
+				locked: true,
+				missing: ["ENCRYPTION_KEY"],
+			}),
+		}),
+	);
+
+	await visit(page);
+	await expect(
+		page.getByRole("alert").filter({ hasText: "La connexion bancaire n'est pas configurée" }),
+	).toBeVisible();
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	await page
+		.getByRole("list", { name: "Banques connectées" })
+		.locator(`[href="/settings/banks/${connectionId}"]`)
+		.click();
+	await expect(page.getByRole("heading", { level: 1, name: "Banque Démo" })).toBeVisible();
+
+	await page.getByRole("button", { name: "Déconnecter" }).click();
+	await page
+		.getByRole("alertdialog", { name: "Déconnecter Banque Démo ?" })
+		.getByRole("button", { name: "Déconnecter" })
+		.click();
+
+	await expect(toast(page, "La connexion à Banque Démo est supprimée.")).toBeVisible();
+	await expect(page).toHaveURL(/\/settings\/banks$/u);
+	await expect(
+		page.getByRole("alert").filter({ hasText: "La connexion bancaire n'est pas configurée" }),
+	).toBeVisible();
+	await expect(page.locator(`[href="/settings/banks/${connectionId}"]`)).toHaveCount(0);
+});
+
+test("a bank connected under credentials that no longer decrypt is listed above the locked form", async ({
+	page,
+}) => {
+	const connectionId = await connect(page);
+	await page.route(SETUP, (route) =>
+		route.fulfill({
+			json: setupData({ available: false, source: null, applicationId: null, locked: true }),
+		}),
+	);
+
+	await visit(page);
+
+	await expect(
+		page
+			.getByRole("list", { name: "Banques connectées" })
+			.locator(`[href="/settings/banks/${connectionId}"]`),
+	).toBeVisible();
+	await expect(page.getByText("Configuration verrouillée")).toBeVisible();
+	await expect(applicationIdField(page)).toBeDisabled();
+	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
 });
 
 // Story 13.8: the first request of the day syncs every bank after answering.

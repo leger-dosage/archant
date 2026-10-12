@@ -64,8 +64,12 @@ const ALERT_BADGES = {
 	sync_stale: "syncStale",
 } as const satisfies Record<NonNullable<BankConnectionData["alert"]>, Status>;
 
-/** `onChooseBank` opens the bank picker, the one way to add a bank. */
-function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => void }) {
+/**
+ * `onChooseBank` opens the bank picker, the one way to add a bank; without
+ * it, as while Enable Banking is unavailable, the list only leads to each
+ * connection's page, where it can still be disconnected.
+ */
+function Connections({ onChooseBank }: { onChooseBank?: (opener: HTMLElement) => void }) {
 	const { t } = useTranslation();
 	const connections = useBankConnections(true);
 	const list: BankConnectionData[] = connections.data ?? [];
@@ -97,9 +101,11 @@ function Connections({ onChooseBank }: { onChooseBank: (opener: HTMLElement) => 
 							title={t("banks.noConnections.title")}
 							description={t("banks.noConnections.description")}
 							action={
-								<Button onClick={(event) => onChooseBank(event.currentTarget)}>
-									{t("banks.noConnections.action")}
-								</Button>
+								onChooseBank === undefined ? undefined : (
+									<Button onClick={(event) => onChooseBank(event.currentTarget)}>
+										{t("banks.noConnections.action")}
+									</Button>
+								)
 							}
 						/>
 					) : (
@@ -196,10 +202,17 @@ function BanksPage() {
 			)}
 
 			{data !== undefined &&
-				(data.missing.length > 0 ? (
-					<Unavailable missing={data.missing} />
-				) : data.source === null ? (
-					<CredentialsForm setup={data} />
+				(data.missing.length > 0 || data.source === null ? (
+					<>
+						{/* A bank connected under credentials that no longer resolve stays
+						    listed: disconnecting it is what unlocks the form. */}
+						{data.locked && <Connections />}
+						{data.missing.length > 0 ? (
+							<Unavailable missing={data.missing} />
+						) : (
+							<CredentialsForm setup={data} />
+						)}
+					</>
 				) : (
 					<>
 						<Connections onChooseBank={openPicker} />

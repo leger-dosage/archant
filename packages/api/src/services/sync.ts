@@ -167,14 +167,10 @@ async function runSync(
 		})
 		.from(bankAccounts)
 		.innerJoin(accounts, eq(accounts.bankAccountId, bankAccounts.id))
-		// An account the current consent leaves out is neither read nor failed.
-		.where(
-			and(
-				eq(bankAccounts.bankConnectionId, connectionId),
-				eq(bankAccounts.listed, true),
-				eq(accounts.active, true),
-			),
-		)
+		// Sure's `linked_accounts_query`: an account a renewal left out is still
+		// read under its last uid, and a refusal fails the run as Sure's syncer
+		// does, rather than letting the account stop without a word.
+		.where(and(eq(bankAccounts.bankConnectionId, connectionId), eq(accounts.active, true)))
 		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
 	const errors: ErrorCode[] = [];
 	let created = 0;

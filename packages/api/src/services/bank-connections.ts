@@ -13,7 +13,7 @@ import type { ServiceDeps } from "./deps.ts";
 import type { AnchorBalance } from "./ledger/bank-link.ts";
 import type { AnyColumn } from "drizzle-orm";
 
-import { and, asc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
@@ -343,7 +343,8 @@ export async function renewConnection(
  * encrypted. The row is pending for a new connection, active for a renewal,
  * whose bank accounts are refreshed on their `identification_hash`: each
  * keeps its id and the account it feeds, a new one appears unlinked, and one
- * the bank no longer lists stays. A failure after the claim deletes a
+ * the bank no longer lists, or sends unreadable, stays as it was, its link
+ * and its last uid with it, as Sure's importer. A failure after the claim deletes a
  * pending row, since the code is single use at the provider too; an active
  * one keeps its old session, which the bank has not revoked (Sure).
  */
@@ -455,7 +456,6 @@ export async function completeConnection(
 				.onConflictDoUpdate({
 					target: [bankAccounts.bankConnectionId, bankAccounts.identificationHash],
 					set: {
-						listed: true,
 						providerUid: excluded(bankAccounts.providerUid),
 						name: excluded(bankAccounts.name),
 						ibanLast4: excluded(bankAccounts.ibanLast4),
@@ -465,21 +465,6 @@ export async function completeConnection(
 					},
 				});
 		}
-
-		// Sure's importer: an account the new consent leaves out keeps its row
-		// and its link, and no sync asks the new session for its old uid.
-		await tx
-			.update(bankAccounts)
-			.set({ listed: false, updatedAt })
-			.where(
-				and(
-					eq(bankAccounts.bankConnectionId, updated.id),
-					notInArray(
-						bankAccounts.identificationHash,
-						session.accounts.map((account) => account.identificationHash),
-					),
-				),
-			);
 
 		return { updated, defaulted: unknown.length };
 	});
@@ -514,8 +499,6 @@ export async function completeConnection(
 
 /** Every open connection, oldest first. */
 export async function listConnections(deps: BankConnectionDeps): Promise<BankConnectionRecord[]> {
-	await resolveBankConnector(deps);
-
 	const rows = await deps.db
 		.select()
 		.from(bankConnections)
@@ -590,7 +573,6 @@ export async function listBankAccounts(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<BankAccountRecord[]> {
-	await resolveBankConnector(deps);
 	await activeConnection(deps, connectionId);
 
 	const rows = await deps.db
@@ -870,18 +852,37 @@ async function revokeSession(
 }
 
 /**
+ * The connector the revocation needs; `null`, logged by its code, when none
+ * resolves, as after an `ENCRYPTION_KEY` change: Sure's `revoke_session`
+ * returns unless a provider is configured, and the deletion goes on.
+ */
+async function revokingConnector(deps: BankConnectionDeps, connectionId: string) {
+	try {
+		return await resolveBankConnector(deps);
+	} catch (error) {
+		if (!(error instanceof AppError && error.code === "BANK_CONNECTOR_UNAVAILABLE")) {
+			throw error;
+		}
+
+		deps.logger.warn({ connectionId, code: error.code }, "bank session not revoked");
+
+		return null;
+	}
+}
+
+/**
  * Sure's `destroy` on a connection: revokes its session at the provider,
  * turns every account it feeds into a manual one with its history unchanged
  * (AD-8), then deletes the connection, its bank accounts with it. Synced
  * lines keep their keys, their connection cleared, so connecting the same
  * bank again recognises every one of them. Takes the sync lease, ignoring
  * the hour between two syncs: a running sync answers `SYNC_IN_PROGRESS`.
+ * Needs no connector, so a lost key never keeps a bank connected.
  */
 export async function disconnectConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<{ id: string; accounts: number }> {
-	const { connector, encryptionKey } = await resolveBankConnector(deps);
 	const connection = await activeConnection(deps, connectionId);
 	const now = Date.now();
 	const [leased] = await deps.db
@@ -903,7 +904,14 @@ export async function disconnectConnection(
 	}
 
 	try {
-		await revokeSession(deps, connector, encryptionKey, connection);
+		// Sure's `revoke_session` returns before looking for a provider when
+		// there is no session to revoke.
+		const revocation =
+			connection.sessionId === null ? null : await revokingConnector(deps, connection.id);
+
+		if (revocation !== null) {
+			await revokeSession(deps, revocation.connector, revocation.encryptionKey, connection);
+		}
 
 		// One transaction, the write lock taken up front: an account linked
 		// meanwhile is unlinked too, rather than losing its link through the
