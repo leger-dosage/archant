@@ -121,6 +121,7 @@
   summary: A lazy chunk that no longer exists after an upgrade drops the whole page to `RootError` instead of reloading or failing only the chart or dialog.
   evidence: No `vite:preloadError` handler and no error boundary around `LazyBalanceChart`, `CashFlowChart` or `LazyCreateAccountDialog`; route chunks have failed the same way since `autoCodeSplitting`, so a stale tab after an image upgrade already meets it.
   planned: Story 27.23 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.23. A `vite:preloadError` listener in `main.tsx` reloads the page, as Sure does when its assets change; a `sessionStorage` mark lets a failure within ten seconds of that reload through to `RootError`. No error boundary around a chart or dialog.
 - source_spec: `_bmad-output/implementation-artifacts/spec-15-5-fast-at-ten-years-of-history.md`
   summary: Test that a refused `ANALYZE` at startup logs a code-only warning and the server still listens.
   evidence: `index.spec.ts` starts against a local file where `ANALYZE` always succeeds; the catch in `index.ts` is untested there, though `imports.spec.ts` tests the same catch on the import path.
