@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-12-2026 15:33
+last_updated: 10-12-2026 16:56
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -255,7 +255,7 @@ development_status:
   27-20-a-renewal-that-keeps-every-account-and-a-disconnection-without-the-key: done
   27-21-revert-imports-in-any-order: done
   27-22-a-new-pending-purchase-is-never-taken-for-a-booked-line: done
-  27-23-a-tab-left-open-across-an-upgrade-reloads: backlog
+  27-23-a-tab-left-open-across-an-upgrade-reloads: done
   27-24-recurring-transfers-as-sure-follows-them: backlog
   27-25-every-remaining-departure-from-sure-reviewed: backlog
   27-26-split-the-largest-files-and-remove-duplicates: backlog
