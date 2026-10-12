@@ -30,6 +30,8 @@ export const fixtures = {
 	aspsps: await load("aspsps-fr.json"),
 	auth: await load("auth.json"),
 	session: await load("session.json"),
+	// `GET /sessions/{id}`: its accounts are bare uids.
+	sessionRead: await load("session-read.json"),
 	// Shaped like the Boursorama session of 2026-09-29: every account `XXX`.
 	sessionNoCurrency: await load("session-no-currency.json"),
 	balances: await load("balances.json"),
@@ -62,6 +64,7 @@ type Endpoint =
 	| "aspsps"
 	| "auth"
 	| "sessions"
+	| "session"
 	| "revoke"
 	| "balances"
 	| "transactions";
@@ -76,7 +79,7 @@ export function transactionsPage(url: URL): Response {
 }
 
 /**
- * Serves the seven endpoints from the fixtures, or from `overrides`, and
+ * Serves the eight endpoints from the fixtures, or from `overrides`, and
  * records every request so a spec can read what was sent.
  */
 export function mockProvider(
@@ -114,6 +117,10 @@ export function mockProvider(
 		http.post(
 			`${TEST_PROVIDER_URL}/sessions`,
 			answer("sessions", () => HttpResponse.json(fixtures.session)),
+		),
+		http.get(
+			`${TEST_PROVIDER_URL}/sessions/:id`,
+			answer("session", () => HttpResponse.json(fixtures.sessionRead)),
 		),
 		http.delete(
 			`${TEST_PROVIDER_URL}/sessions/:id`,

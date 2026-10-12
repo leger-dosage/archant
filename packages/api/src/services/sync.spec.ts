@@ -24,6 +24,7 @@ import {
 import {
 	FIXTURE_CARD_UID,
 	FIXTURE_CHECKING_UID,
+	FIXTURE_CONSENT_END,
 	FIXTURE_SESSION_ID,
 	fixtures,
 	mockProvider,
@@ -105,7 +106,8 @@ async function newConnection(fields: Partial<typeof bankConnections.$inferInsert
 		country: "FR",
 		status: "active",
 		sessionId: encrypt(Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"), FIXTURE_SESSION_ID),
-		consentExpiresAt: NOW + 60 * DAY,
+		// As the provider's session holds it, so reading it writes nothing.
+		consentExpiresAt: FIXTURE_CONSENT_END,
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 		...fields,
@@ -288,7 +290,7 @@ function bankBalancesWith(amount: string) {
 
 	return {
 		balances: balances.map((row) =>
-			row["balance_type"] === "ITBD"
+			row["balance_type"] === "CLBD"
 				? { ...row, balance_amount: { currency: "EUR", amount } }
 				: row,
 		),
@@ -887,7 +889,8 @@ describe("syncConnection", () => {
 			lastSyncedAt: null,
 			lastError: null,
 		});
-		expect(requests).toEqual([]);
+		// The session alone, read before any account.
+		expect(requests.map(({ path }) => path)).toEqual([`/sessions/${FIXTURE_SESSION_ID}`]);
 	});
 
 	it("releases the lease when the run throws", async () => {
@@ -992,6 +995,185 @@ describe("syncConnection", () => {
 		await expect(
 			syncConnection({ ...deps(), bankCredentials: null }, connectionId),
 		).rejects.toMatchObject({ code: "BANK_CONNECTOR_UNAVAILABLE" });
+	});
+});
+
+/** Enable Banking refusing the session read with `status`, and the fixtures elsewhere. */
+const sessionAnswering = (status: number) =>
+	mockProvider({ session: () => HttpResponse.json({ error: "UNAUTHORIZED" }, { status }) });
+
+describe("the session, read before any account", () => {
+	it.each([401, 404])(
+		"ends the consent now on a %i, reads no account, and the next day's sync skips it",
+		async (status) => {
+			const requests = sessionAnswering(status);
+			const connectionId = await newConnection({ lastSyncedAt: NOW - 5 * DAY });
+			const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+			await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
+				code: "CONSENT_EXPIRED",
+				status: 409,
+			});
+
+			expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+				`GET /sessions/${FIXTURE_SESSION_ID}`,
+			]);
+			await expect(connectionRow(connectionId)).resolves.toMatchObject({
+				consentExpiresAt: NOW,
+				lastError: "CONSENT_EXPIRED",
+				lastSyncedAt: NOW - 5 * DAY,
+				syncStartedAt: null,
+				status: "active",
+			});
+			await expect(transactionCount(accountId)).resolves.toBe(0);
+			await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBeNull();
+			expect(logged()).toContainEqual(
+				expect.objectContaining({
+					msg: "bank consent revoked",
+					connectionId,
+					code: "CONSENT_EXPIRED",
+				}),
+			);
+
+			vi.setSystemTime(NOW + DAY);
+			await expect(startDailySync(deps())).resolves.toMatchObject({ leased: [] });
+			await expect(syncAll(deps())).resolves.toEqual([
+				{ id: connectionId, result: "consent_expired" },
+			]);
+			expect(requests).toHaveLength(1);
+		},
+	);
+
+	it("reports a refused session to the cron as an ended consent", async () => {
+		sessionAnswering(404);
+		const connectionId = await newConnection();
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncAll(deps())).resolves.toEqual([
+			{ id: connectionId, result: "consent_expired" },
+		]);
+	});
+
+	it("moves the stored consent end to the provider's, then syncs the accounts", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ consentExpiresAt: NOW + 10 * DAY });
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+
+		expect(requests[0]?.path).toBe(`/sessions/${FIXTURE_SESSION_ID}`);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: FIXTURE_CONSENT_END,
+		});
+		await expect(transactionCount(accountId)).resolves.toBeGreaterThan(0);
+	});
+
+	it("keeps the stored consent end when the session names none, and syncs the accounts", async () => {
+		mockProvider({ session: () => HttpResponse.json({ status: "AUTHORIZED", access: {} }) });
+		const connectionId = await newConnection({ consentExpiresAt: NOW + 10 * DAY });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: NOW + 10 * DAY,
+		});
+	});
+
+	it("takes a session id that no longer decrypts as a refused session, asking the provider nothing", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ sessionId: "not-a-ciphertext" });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
+			code: "CONSENT_EXPIRED",
+		});
+
+		expect(requests).toEqual([]);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: NOW,
+			lastError: "CONSENT_EXPIRED",
+		});
+		expect(logged()).toContainEqual(
+			expect.objectContaining({ connectionId, code: "SESSION_UNREADABLE" }),
+		);
+	});
+
+	it("fails the run on any other session failure, reading no account and keeping the consent", async () => {
+		const requests = sessionAnswering(500);
+		const connectionId = await newConnection({ lastSyncedAt: NOW - 5 * DAY });
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW - 5 * DAY,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+
+		expect(requests).toHaveLength(1);
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: FIXTURE_CONSENT_END,
+			syncStartedAt: null,
+		});
+		await expect(transactionCount(accountId)).resolves.toBe(0);
+		expect(logged()).toContainEqual(
+			expect.objectContaining({ msg: "bank session read failed", code: "BANK_PROVIDER_ERROR" }),
+		);
+	});
+
+	it("keeps an account's 404 that account's error, the consent untouched", async () => {
+		mockProvider({
+			transactions: (url) =>
+				url.pathname.includes(FIXTURE_CARD_UID)
+					? HttpResponse.json({ error: "NOT_FOUND" }, { status: 404 })
+					: transactionsPage(url),
+		});
+		const connectionId = await newConnection();
+		const checking = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await linkedAccount(connectionId, FIXTURE_CARD_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: null,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
+
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			consentExpiresAt: FIXTURE_CONSENT_END,
+		});
+		await expect(bankAccountSyncedAt(checking.bankAccountId)).resolves.toBe(NOW);
+	});
+
+	it("logs the currency kept and how many funded balances in others were left out, never an amount", async () => {
+		mockProvider({
+			balances: () =>
+				HttpResponse.json({
+					balances: [
+						{ balance_amount: { currency: "USD", amount: "12.00" }, balance_type: "CLBD" },
+						{ balance_amount: { currency: "EUR", amount: "1234.56" }, balance_type: "CLBD" },
+					],
+				}),
+		});
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(anchorOf(accountId)).resolves.toMatchObject({ amount: 123456 });
+		expect(logged()).toContainEqual(
+			expect.objectContaining({
+				msg: "bank balances in other currencies left out",
+				connectionId,
+				accountId,
+				currency: "EUR",
+				otherCurrencies: 1,
+			}),
+		);
+		expect(loggedFigures(logLines)).not.toContain("12.00");
+		expectNoSecretLogged();
 	});
 });
 

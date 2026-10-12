@@ -11,6 +11,7 @@ import type { balanceSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
 import type { z } from "zod";
 
+import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { addDays } from "../../domain/dates.ts";
@@ -26,6 +27,7 @@ import {
 	errorResponseSchema,
 	revokeResponseSchema,
 	sessionAccountSchema,
+	sessionReadSchema,
 	sessionResponseSchema,
 	transactionSchema,
 	transactionsPageSchema,
@@ -66,8 +68,50 @@ const failed = (status: number | null, providerCode: string | null = null) =>
 		providerCode,
 	});
 
-/** AD-18: the interim booked balance, else the closing booked one. */
-const BALANCE_TYPES = ["ITBD", "CLBD"] as const;
+/** Sure's `normalize_balance_type`: `closing_booked` and `closingBooked` are one type. */
+function normalizedType(type: string): string {
+	return type.replaceAll(/[_-]/gu, "").toLowerCase();
+}
+
+/**
+ * AD-18, Sure's `BALANCE_TYPE_PRIORITY`: booked ledger balances before
+ * available ones, which some banks inflate with an arranged overdraft. Each
+ * type under its ISO code and Enable Banking's long name.
+ */
+const BALANCE_PRIORITY = [
+	"CLBD",
+	"closingBooked",
+	"ITBD",
+	"interimBooked",
+	"OPBD",
+	"openingBooked",
+	"PRCD",
+	"previouslyClosedBooked",
+	"XPCD",
+	"expected",
+	"CLAV",
+	"closingAvailable",
+	"ITAV",
+	"interimAvailable",
+].map((type) => normalizedType(type));
+
+/**
+ * Sure's `PERIOD_BOUNDARY_TYPES`: a period's opening or the previous one's
+ * closing, up to a day old, so a strictly newer `FRESHNESS_TYPES` balance wins.
+ */
+const PERIOD_BOUNDARY_TYPES = new Set(
+	["OPBD", "openingBooked", "PRCD", "previouslyClosedBooked"].map((type) => normalizedType(type)),
+);
+
+/**
+ * Sure's `FRESHNESS_BALANCE_TYPES`: a forward-looking or informational
+ * balance never beats a booked one on its date alone.
+ */
+const FRESHNESS_TYPES = new Set(
+	["XPCD", "expected", "CLAV", "closingAvailable", "ITAV", "interimAvailable"].map((type) =>
+		normalizedType(type),
+	),
+);
 
 /**
  * A session account as the port hands it on. The name is Sure's choice
@@ -291,16 +335,112 @@ export function toTransaction(
 	};
 }
 
-/**
- * AD-18: the interim booked balance, else the closing booked one, with the
- * day it describes; `null` when the bank gives neither.
- */
-function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): BankBalance | null {
-	const chosen = BALANCE_TYPES.map((type) =>
-		balances.find((balance) => balance.balance_type === type),
-	).find((balance) => balance !== undefined);
+type RawBalance = z.output<typeof balanceSchema>;
 
-	if (chosen === undefined) {
+const referenceDate = (balance: RawBalance) =>
+	balance.reference_date === null ? null : providerIsoDate(balance.reference_date);
+
+/**
+ * Sure's `split_balances_by_currency`: a multi-currency wallet lists one
+ * balance per currency under the same type, so only those in the account's
+ * currency are kept, else those in the first currency listed.
+ */
+function splitByCurrency(
+	balances: readonly RawBalance[],
+	accountCurrency: CurrencyCode | null,
+): { kept: RawBalance[]; skipped: RawBalance[]; currency: CurrencyCode | null } {
+	const currencies = [...new Set(balances.map((balance) => balance.balance_amount.currency))];
+	const [first = null] = currencies;
+
+	if (currencies.length <= 1) {
+		return { kept: [...balances], skipped: [], currency: first };
+	}
+
+	const currency =
+		accountCurrency !== null && currencies.includes(accountCurrency) ? accountCurrency : first;
+
+	return {
+		kept: balances.filter((balance) => balance.balance_amount.currency === currency),
+		skipped: balances.filter((balance) => balance.balance_amount.currency !== currency),
+		currency,
+	};
+}
+
+/**
+ * Sure's `fresher_balance`: the `FRESHNESS_TYPES` balance with the latest
+ * `reference_date` strictly after the period boundary's. A date missing or
+ * unreadable on either side skips the check.
+ */
+function fresherThan(boundary: RawBalance, balances: readonly RawBalance[]): RawBalance | null {
+	const since = referenceDate(boundary);
+
+	if (since === null) {
+		return null;
+	}
+
+	let fresher: { balance: RawBalance; date: IsoDate } | null = null;
+
+	for (const balance of balances) {
+		const date = referenceDate(balance);
+
+		if (
+			FRESHNESS_TYPES.has(normalizedType(balance.balance_type)) &&
+			date !== null &&
+			date > since &&
+			(fresher === null || date > fresher.date)
+		) {
+			fresher = { balance, date };
+		}
+	}
+
+	return fresher?.balance ?? null;
+}
+
+/**
+ * Sure's `select_current_balance`: the first type of `BALANCE_PRIORITY` the
+ * bank sent, the last one listed of that type, else the first balance.
+ */
+function selectBalance(balances: readonly RawBalance[]): RawBalance | null {
+	const byType = new Map(
+		balances.map((balance) => [normalizedType(balance.balance_type), balance]),
+	);
+
+	for (const type of BALANCE_PRIORITY) {
+		const balance = byType.get(type);
+
+		if (balance !== undefined) {
+			return (PERIOD_BOUNDARY_TYPES.has(type) ? fresherThan(balance, balances) : null) ?? balance;
+		}
+	}
+
+	return balances[0] ?? null;
+}
+
+/**
+ * How many balances left out hold money, Sure's
+ * `capture_skipped_currency_balances`: one that does not read counts as
+ * zero, as `to_d` reads it.
+ */
+const fundedCount = (skipped: readonly RawBalance[]) =>
+	skipped.filter((balance) => {
+		const amount = parseAmount(balance.balance_amount.amount, balance.balance_amount.currency);
+
+		return amount !== null && amount !== 0;
+	}).length;
+
+/**
+ * AD-18: the balance `selectBalance` picks among those in the account's
+ * currency, signed and in minor units, with the day it describes; `null`
+ * when the bank lists none.
+ */
+function chooseBalance(
+	balances: readonly RawBalance[],
+	accountCurrency: CurrencyCode | null,
+): BankBalance | null {
+	const { kept, skipped } = splitByCurrency(balances, accountCurrency);
+	const chosen = selectBalance(kept);
+
+	if (chosen === null) {
 		return null;
 	}
 
@@ -314,7 +454,8 @@ function chooseBalance(balances: readonly z.output<typeof balanceSchema>[]): Ban
 	return {
 		amount: chosen.credit_debit_indicator === "DBIT" ? toMinorUnits(-Math.abs(parsed)) : parsed,
 		currency,
-		date: chosen.reference_date === null ? null : providerIsoDate(chosen.reference_date),
+		date: referenceDate(chosen),
+		otherCurrencies: fundedCount(skipped),
 	};
 }
 
@@ -377,14 +518,17 @@ async function call<Schema extends z.ZodType>(
 
 /** Enable Banking behind the bank connector port, after Sure's `Provider::EnableBanking`. */
 export function createEnableBankingConnector(config: EnableBankingConfig): BankConnector {
-	async function fetchBalance(uid: string): Promise<BankBalance | null> {
+	async function fetchBalance(
+		uid: string,
+		currency: CurrencyCode | null,
+	): Promise<BankBalance | null> {
 		const { balances } = await call(
 			config,
 			{ method: "GET", path: `/accounts/${encodeURIComponent(uid)}/balances` },
 			balancesResponseSchema,
 		);
 
-		return chooseBalance(balances);
+		return chooseBalance(balances, currency);
 	}
 
 	/**
@@ -569,6 +713,16 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				{ method: "DELETE", path: `/sessions/${encodeURIComponent(sessionId)}` },
 				revokeResponseSchema,
 			);
+		},
+
+		async readSession(sessionId) {
+			const session = await call(
+				config,
+				{ method: "GET", path: `/sessions/${encodeURIComponent(sessionId)}` },
+				sessionReadSchema,
+			);
+
+			return { consentExpiresAt: session.access?.valid_until ?? null };
 		},
 
 		fetchBalance,

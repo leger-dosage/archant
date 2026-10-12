@@ -86,9 +86,29 @@ export const sessionResponseSchema = z.object({
 });
 
 /**
+ * `GET /sessions/{id}`, read at the start of each sync for the consent's end
+ * alone: its accounts, bare uids unlike `POST /sessions`'s, and its status
+ * are not read, as Sure decides on neither. A consent end missing or
+ * unreadable is `null`, as Sure's `reconcile_session_expiry!` skips it: the
+ * stored one stays and the sync goes on.
+ */
+export const sessionReadSchema = z.object({
+	access: z
+		.object({
+			valid_until: z.iso
+				.datetime({ offset: true })
+				.transform((value) => Date.parse(value))
+				.nullish()
+				.catch(null),
+		})
+		.nullish()
+		.catch(null),
+});
+
+/**
  * `BalanceResource`. The amount stays a string: `parseAmount` reads it into
  * minor units, so no float ever holds it. A balance of a type the client
- * does not read is kept here and dropped there.
+ * does not rank is kept here: the client falls back to the first one listed.
  */
 export const balanceSchema = z.object({
 	balance_amount: z.object({ amount: z.string().min(1), currency }),

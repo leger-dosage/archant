@@ -6,6 +6,7 @@ import type { BankConnectionDeps } from "./bank-connections.ts";
 
 import { and, asc, eq, gt, isNull, lt, or } from "drizzle-orm";
 
+import { isCurrencyCode } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
@@ -13,7 +14,13 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import { BankProviderError } from "../connectors/bank-connector.ts";
 import { addDays, addMonths, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { LEASE_MS, codeOf, logFailure } from "./bank-connections.ts";
+import {
+	LEASE_MS,
+	codeOf,
+	logFailure,
+	logOtherCurrencies,
+	readableSessionId,
+} from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { oldestPendingDate } from "./ledger/snapshots.ts";
@@ -79,7 +86,10 @@ function toParsedStatement(
 	return {
 		transactions: statement.transactions,
 		rejected: statement.rejected,
-		balance: balance === null ? null : { ...balance, date: balance.date ?? day },
+		balance:
+			balance === null
+				? null
+				: { amount: balance.amount, currency: balance.currency, date: balance.date ?? day },
 	};
 }
 
@@ -153,6 +163,7 @@ async function runSync(
 			providerUid: bankAccounts.providerUid,
 			lastSyncedAt: bankAccounts.lastSyncedAt,
 			accountId: accounts.id,
+			currency: accounts.currency,
 		})
 		.from(bankAccounts)
 		.innerJoin(accounts, eq(accounts.bankAccountId, bankAccounts.id))
@@ -170,13 +181,21 @@ async function runSync(
 	let balanceMissing = false;
 
 	/**
-	 * The balance after a complete read; `null`, logged by its code, when the
-	 * bank fails it. Anything else is no answer from the bank and fails the
-	 * account.
+	 * The balance after a complete read, in the account's currency when the
+	 * bank lists several; `null`, logged by its code, when the bank fails it.
+	 * Anything else is no answer from the bank and fails the account.
 	 */
-	const readBalance = async (uid: string, accountId: string): Promise<BankBalance | null> => {
+	const readBalance = async (
+		uid: string,
+		accountId: string,
+		currency: string,
+	): Promise<BankBalance | null> => {
 		try {
-			return await connector.fetchBalance(uid);
+			const balance = await connector.fetchBalance(uid, isCurrencyCode(currency) ? currency : null);
+
+			logOtherCurrencies(deps, { connectionId, accountId }, balance);
+
+			return balance;
 		} catch (error) {
 			if (!(error instanceof BankProviderError)) {
 				throw error;
@@ -217,7 +236,9 @@ async function runSync(
 			}
 
 			const balance =
-				interrupted === null ? await readBalance(item.providerUid, item.accountId) : null;
+				interrupted === null
+					? await readBalance(item.providerUid, item.accountId, item.currency)
+					: null;
 			// Read before `ingest`, so the lines and the anchor commit together.
 			const result = await ingest(
 				deps,
@@ -311,16 +332,117 @@ async function runSync(
 
 type Connection = { id: string; consentExpiresAt: number | null; syncStartedAt: number | null };
 
-/** The run of a connection whose lease was taken at `startedAt`, released here. */
+/** The connector and the key its connection's session id is decrypted with. */
+type Bank = { connector: BankConnector; encryptionKey: Uint8Array };
+
+/** What Sure's `fetch_session_data` may answer for a session, besides a valid one. */
+const REFUSED_SESSION = new Set([401, 404]);
+
+/**
+ * Sure's `fetch_session_data`, before any account is read: the session as
+ * the provider holds it. A valid one updates the stored consent end when it
+ * names one that moved, and answers `null`. A 401 or a 404, or a stored session id that no
+ * longer decrypts, which only a renewal replaces, ends the consent now, as
+ * Sure's `requires_update`: every reader then asks for a reconnection.
+ * Any other failure is the run's error, and no account is read.
+ */
+async function readSession(
+	deps: BankConnectionDeps,
+	{ connector, encryptionKey }: Bank,
+	connectionId: string,
+	startedAt: number,
+): Promise<"consent_expired" | "failed" | null> {
+	const stored = await deps.db
+		.select({
+			sessionId: bankConnections.sessionId,
+			consentExpiresAt: bankConnections.consentExpiresAt,
+		})
+		.from(bankConnections)
+		.where(eq(bankConnections.id, connectionId))
+		.get();
+	const sessionId =
+		stored?.sessionId === null || stored?.sessionId === undefined
+			? null
+			: readableSessionId(
+					deps,
+					encryptionKey,
+					connectionId,
+					stored.sessionId,
+					"bank session unreadable",
+				);
+
+	if (sessionId !== null) {
+		let session: { consentExpiresAt: number | null } | null;
+
+		// The provider call alone: a local write failing below is no provider answer.
+		try {
+			session = await connector.readSession(sessionId);
+		} catch (error) {
+			logFailure(deps, connectionId, error);
+
+			if (!(error instanceof BankProviderError && REFUSED_SESSION.has(error.failure.status ?? 0))) {
+				const code = codeOf(error);
+
+				await deps.db
+					.update(bankConnections)
+					.set({ lastError: code, updatedAt: Date.now() })
+					.where(eq(bankConnections.id, connectionId));
+				deps.logger.warn({ connectionId, code }, "bank session read failed");
+
+				return "failed";
+			}
+
+			session = null;
+		}
+
+		if (session !== null) {
+			const { consentExpiresAt } = session;
+
+			// No end in the answer keeps the stored one, as Sure's `reconcile_session_expiry!`.
+			if (consentExpiresAt !== null && consentExpiresAt !== stored?.consentExpiresAt) {
+				await deps.db
+					.update(bankConnections)
+					.set({ consentExpiresAt, updatedAt: Date.now() })
+					.where(eq(bankConnections.id, connectionId));
+			}
+
+			return null;
+		}
+	}
+
+	await deps.db
+		.update(bankConnections)
+		.set({ consentExpiresAt: startedAt, lastError: "CONSENT_EXPIRED", updatedAt: Date.now() })
+		.where(eq(bankConnections.id, connectionId));
+	deps.logger.info({ connectionId, code: "CONSENT_EXPIRED" }, "bank consent revoked");
+
+	return "consent_expired";
+}
+
+/**
+ * The run of a connection whose lease was taken at `startedAt`, released
+ * here: the session first, then every account.
+ */
 async function runLeased(
 	deps: BankConnectionDeps,
-	connector: BankConnector,
+	bank: Bank,
 	connectionId: string,
 	startedAt: number,
 	trigger: SyncTrigger,
 ): Promise<SyncResult> {
 	try {
-		const outcome = await runSync(deps, connector, connectionId, startedAt);
+		const stopped = await readSession(deps, bank, connectionId, startedAt);
+
+		if (stopped !== null) {
+			deps.logger.info(
+				{ connectionId, trigger, result: stopped, durationMs: Date.now() - startedAt },
+				"bank connection not synced",
+			);
+
+			return stopped;
+		}
+
+		const outcome = await runSync(deps, bank.connector, connectionId, startedAt);
 
 		deps.logger.info(
 			{ connectionId, trigger, ...outcome, durationMs: Date.now() - startedAt },
@@ -339,15 +461,19 @@ async function runLeased(
 	}
 }
 
+const consentExpired = () =>
+	new AppError("CONSENT_EXPIRED", "This bank connection's consent has expired.");
+
 /**
  * One connection's sync, lease taken and released here. The button refuses a
  * held lease with `SYNC_IN_PROGRESS` and a sync within the hour with
  * `SYNC_TOO_RECENT`; the cron skips both. An ended consent reads nothing and
- * writes nothing: the button answers `CONSENT_EXPIRED`, the cron reports it.
+ * writes nothing, and a session the provider refuses ends it: the button
+ * answers `CONSENT_EXPIRED`, the cron reports it.
  */
 async function syncOne(
 	deps: BankConnectionDeps,
-	connector: BankConnector,
+	bank: Bank,
 	connection: Connection,
 	trigger: SyncTrigger,
 ): Promise<SyncResult> {
@@ -362,7 +488,7 @@ async function syncOne(
 		);
 
 		if (trigger === "button") {
-			throw new AppError("CONSENT_EXPIRED", "This bank connection's consent has expired.");
+			throw consentExpired();
 		}
 
 		return "consent_expired";
@@ -388,7 +514,13 @@ async function syncOne(
 		return "skipped";
 	}
 
-	return runLeased(deps, connector, connection.id, startedAt, trigger);
+	const result = await runLeased(deps, bank, connection.id, startedAt, trigger);
+
+	if (result === "consent_expired" && trigger === "button") {
+		throw consentExpired();
+	}
+
+	return result;
 }
 
 const connectionColumns = {
@@ -405,7 +537,7 @@ export async function syncConnection(
 	deps: BankConnectionDeps,
 	connectionId: string,
 ): Promise<SyncStatus> {
-	const { connector } = await resolveBankConnector(deps);
+	const bank = await resolveBankConnector(deps);
 
 	const connection = await deps.db
 		.select(connectionColumns)
@@ -417,7 +549,7 @@ export async function syncConnection(
 		throw new AppError("NOT_FOUND", "No bank connection has this id.");
 	}
 
-	await syncOne(deps, connector, connection, "button");
+	await syncOne(deps, bank, connection, "button");
 
 	const status = await deps.db
 		.select({ lastSyncedAt: bankConnections.lastSyncedAt, lastError: bankConnections.lastError })
@@ -436,7 +568,7 @@ export async function syncAll(
 	deps: BankConnectionDeps,
 ): Promise<{ id: string; result: SyncResult }[]> {
 	// Once for the whole run: every connection syncs under the same credentials.
-	const { connector } = await resolveBankConnector(deps);
+	const bank = await resolveBankConnector(deps);
 
 	const connections = await deps.db
 		.select(connectionColumns)
@@ -451,7 +583,7 @@ export async function syncAll(
 		try {
 			results.push({
 				id: connection.id,
-				result: await syncOne(deps, connector, connection, "cron"),
+				result: await syncOne(deps, bank, connection, "cron"),
 			});
 		} catch (error) {
 			deps.logger.error({ connectionId: connection.id, code: codeOf(error) }, "bank sync failed");
@@ -508,10 +640,10 @@ export async function startDailySync(deps: BankConnectionDeps): Promise<DailySyn
 		return NOTHING_TO_SYNC;
 	}
 
-	let connector: BankConnector;
+	let bank: Bank;
 
 	try {
-		({ connector } = await resolveBankConnector(deps));
+		bank = await resolveBankConnector(deps);
 	} catch (error) {
 		if (error instanceof AppError && error.code === "BANK_CONNECTOR_UNAVAILABLE") {
 			return NOTHING_TO_SYNC;
@@ -536,7 +668,7 @@ export async function startDailySync(deps: BankConnectionDeps): Promise<DailySyn
 				await previous;
 
 				try {
-					await runLeased(deps, connector, connectionId, now, "auto");
+					await runLeased(deps, bank, connectionId, now, "auto");
 				} catch (error) {
 					deps.logger.error({ connectionId, code: codeOf(error) }, "bank sync failed");
 				}

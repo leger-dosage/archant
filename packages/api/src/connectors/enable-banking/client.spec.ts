@@ -478,24 +478,78 @@ describe("toBankAccount", () => {
 	});
 });
 
+describe("readSession", () => {
+	it("reads the session's consent end, signed like every other request", async () => {
+		const requests = mockProvider();
+
+		await expect(connector.readSession(FIXTURE_SESSION_ID)).resolves.toEqual({
+			consentExpiresAt: FIXTURE_CONSENT_END,
+		});
+		expect(requests.map(({ method, path }) => ({ method, path }))).toEqual([
+			{ method: "GET", path: `/sessions/${FIXTURE_SESSION_ID}` },
+		]);
+		expect(requests[0]?.authorization).toMatch(/^Bearer /u);
+	});
+
+	it.each([401, 404])("throws a %i with its status, never naming the session", async (status) => {
+		mockProvider({ session: () => HttpResponse.json(fixtures.unauthorized, { status }) });
+
+		const error = await rejection(connector.readSession(FIXTURE_SESSION_ID));
+
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status, providerCode: "UNAUTHORIZED" });
+		expect(JSON.stringify(error.toJSON())).not.toContain(FIXTURE_SESSION_ID);
+		expect(error.message).not.toContain(FIXTURE_SESSION_ID);
+	});
+
+	it.each([
+		{},
+		{ access: {} },
+		{ access: { valid_until: "" } },
+		{ access: { valid_until: "demain" } },
+	])("answers no consent end when the session says none it can read: %j", async (body) => {
+		mockProvider({ session: () => HttpResponse.json({ status: "AUTHORIZED", ...body }) });
+
+		await expect(connector.readSession(FIXTURE_SESSION_ID)).resolves.toEqual({
+			consentExpiresAt: null,
+		});
+	});
+});
+
 const balances = (...items: Record<string, unknown>[]) =>
 	mockProvider({ balances: () => HttpResponse.json({ balances: items }) });
 
-const balance = (type: string, amount: string, extra: Record<string, unknown> = {}) => ({
-	balance_amount: { amount, currency: "EUR" },
+const balance = (
+	type: string,
+	amount: string,
+	extra: Record<string, unknown> = {},
+	currency = "EUR",
+) => ({
+	balance_amount: { amount, currency },
 	balance_type: type,
 	...extra,
 });
 
+/** The balance chosen among `items`, for an account in `currency`. */
+async function chosen(items: Record<string, unknown>[], currency: "EUR" | "USD" | null = "EUR") {
+	balances(...items);
+
+	return connector.fetchBalance(FIXTURE_CARD_UID, currency);
+}
+
+/** Sure's `BALANCE_TYPE_PRIORITY`, ISO codes only: booked, then expected, then available. */
+const SURE_ORDER = ["CLBD", "ITBD", "OPBD", "PRCD", "XPCD", "CLAV", "ITAV"];
+
 describe("fetchBalance", () => {
-	it("reads the interim booked balance before the closing one, as minor units", async () => {
+	it("reads the closing booked balance before the interim one, as minor units", async () => {
 		const requests = mockProvider();
 
-		// The interim balance names no day: the ledger dates it today.
-		await expect(connector.fetchBalance(FIXTURE_CHECKING_UID)).resolves.toEqual({
+		// The closing balance names no day: the ledger dates it today.
+		await expect(connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR")).resolves.toEqual({
 			amount: 123456,
 			currency: "EUR",
 			date: null,
+			otherCurrencies: 0,
 		});
 		expect(requests).toEqual([
 			expect.objectContaining({
@@ -505,58 +559,187 @@ describe("fetchBalance", () => {
 		]);
 	});
 
-	it("falls back to the closing booked balance, with the day it describes", async () => {
-		balances(balance("XPCD", "5.00"), balance("CLBD", "-300.00", { reference_date: "2026-09-23" }));
+	it("takes the closing booked balance, with the day it describes, whatever the order", async () => {
+		await expect(
+			chosen([balance("ITBD", "1.00"), balance("CLBD", "2.00", { reference_date: "2026-09-23" })]),
+		).resolves.toMatchObject({ amount: 200, date: "2026-09-23" });
+		await expect(chosen([balance("CLBD", "2.00"), balance("ITBD", "1.00")])).resolves.toMatchObject(
+			{ amount: 200 },
+		);
+	});
 
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toEqual({
-			amount: -30000,
-			currency: "EUR",
-			date: "2026-09-23",
+	it.each(SURE_ORDER.map((type, index) => [type, SURE_ORDER.slice(index + 1)] as const))(
+		"takes %s before %j, wherever it is listed",
+		async (type, later) => {
+			const others = later.map((other) => balance(other, "1.00"));
+
+			await expect(chosen([balance(type, "2.00"), ...others])).resolves.toMatchObject({
+				amount: 200,
+			});
+			await expect(chosen([...others, balance(type, "2.00")])).resolves.toMatchObject({
+				amount: 200,
+			});
+		},
+	);
+
+	it("reads Enable Banking's long names, whatever their case, underscores or dashes", async () => {
+		await expect(chosen([balance("closingBooked", "3.00")])).resolves.toMatchObject({
+			amount: 300,
+		});
+		await expect(
+			chosen([balance("interim_available", "1.00"), balance("OPENING-BOOKED", "2.00")]),
+		).resolves.toMatchObject({ amount: 200 });
+		await expect(
+			chosen([balance("ITAV", "1.00"), balance("previously_closed_booked", "4.00")]),
+		).resolves.toMatchObject({ amount: 400 });
+	});
+
+	it("takes the last balance listed of a type, and an ISO code before its long name", async () => {
+		await expect(chosen([balance("CLBD", "1.00"), balance("clbd", "2.00")])).resolves.toMatchObject(
+			{ amount: 200 },
+		);
+		await expect(
+			chosen([balance("CLBD", "1.00"), balance("closingBooked", "2.00")]),
+		).resolves.toMatchObject({ amount: 100 });
+	});
+
+	it("reads an opening booked balance alone", async () => {
+		await expect(chosen([balance("OPBD", "100.00")])).resolves.toMatchObject({ amount: 10000 });
+	});
+
+	it("prefers the freshest available balance strictly newer than an opening or closed one", async () => {
+		await expect(
+			chosen([
+				balance("OPBD", "1.00", { reference_date: "2026-10-10" }),
+				balance("ITAV", "2.00", { reference_date: "2026-10-11" }),
+				balance("XPCD", "3.00", { reference_date: "2026-10-12" }),
+			]),
+		).resolves.toEqual({ amount: 300, currency: "EUR", date: "2026-10-12", otherCurrencies: 0 });
+		await expect(
+			chosen([
+				balance("previouslyClosedBooked", "1.00", { reference_date: "2026-10-10" }),
+				balance("closing_available", "2.00", { reference_date: "2026-10-11" }),
+			]),
+		).resolves.toMatchObject({ amount: 200 });
+	});
+
+	it("keeps the opening balance against a same-day or undated available one", async () => {
+		await expect(
+			chosen([
+				balance("OPBD", "1.00", { reference_date: "2026-10-11" }),
+				balance("ITAV", "2.00", { reference_date: "2026-10-11" }),
+			]),
+		).resolves.toMatchObject({ amount: 100 });
+		await expect(
+			chosen([
+				balance("OPBD", "1.00", { reference_date: "2026-10-10" }),
+				balance("ITAV", "2.00"),
+				balance("CLAV", "3.00", { reference_date: "11/10/2026" }),
+			]),
+		).resolves.toMatchObject({ amount: 100 });
+	});
+
+	it("skips the freshness check when the opening balance's own date is missing or unreadable", async () => {
+		await expect(
+			chosen([balance("OPBD", "1.00"), balance("ITAV", "2.00", { reference_date: "2026-10-11" })]),
+		).resolves.toMatchObject({ amount: 100 });
+		await expect(
+			chosen([
+				balance("PRCD", "1.00", { reference_date: "hier" }),
+				balance("ITAV", "2.00", { reference_date: "2026-10-11" }),
+			]),
+		).resolves.toMatchObject({ amount: 100 });
+	});
+
+	it("never lets an unranked type or a booked balance yield to a fresher one", async () => {
+		await expect(
+			chosen([
+				balance("OPBD", "1.00", { reference_date: "2026-10-10" }),
+				balance("FWAV", "2.00", { reference_date: "2026-10-12" }),
+				balance("INFO", "3.00", { reference_date: "2026-10-12" }),
+			]),
+		).resolves.toMatchObject({ amount: 100 });
+		await expect(
+			chosen([
+				balance("ITBD", "1.00", { reference_date: "2026-10-10" }),
+				balance("XPCD", "2.00", { reference_date: "2026-10-12" }),
+			]),
+		).resolves.toMatchObject({ amount: 100 });
+	});
+
+	it("falls back to the first balance listed when no type ranks", async () => {
+		await expect(chosen([balance("INFO", "5.00"), balance("OTHR", "6.00")])).resolves.toMatchObject(
+			{ amount: 500 },
+		);
+	});
+
+	it("gives nothing when the bank lists no balance", async () => {
+		await expect(chosen([])).resolves.toBeNull();
+	});
+
+	it("keeps the balances in the account's currency, counting the funded ones left out", async () => {
+		await expect(
+			chosen([
+				balance("CLBD", "12.00", {}, "USD"),
+				balance("CLBD", "50.00"),
+				balance("ITBD", "0.00", {}, "GBP"),
+			]),
+		).resolves.toEqual({ amount: 5000, currency: "EUR", date: null, otherCurrencies: 1 });
+	});
+
+	it("keeps the first currency listed when the account's is not among them", async () => {
+		await expect(
+			chosen([balance("ITBD", "12.00", {}, "USD"), balance("CLBD", "50.00", {}, "GBP")], null),
+		).resolves.toMatchObject({ amount: 1200, currency: "USD", otherCurrencies: 1 });
+		await expect(
+			chosen([balance("CLBD", "50.00", {}, "GBP"), balance("CLBD", "12.00", {}, "USD")], "EUR"),
+		).resolves.toMatchObject({ amount: 5000, currency: "GBP", otherCurrencies: 1 });
+	});
+
+	it("keeps a single currency whatever the account's, leaving nothing out", async () => {
+		await expect(chosen([balance("CLBD", "12.00", {}, "USD")], "EUR")).resolves.toMatchObject({
+			currency: "USD",
+			otherCurrencies: 0,
 		});
 	});
 
 	it("dates a balance whose day it cannot read as undated", async () => {
-		balances(balance("ITBD", "1.00", { reference_date: "23/09/2026" }));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({ date: null });
-
-		balances(balance("ITBD", "1.00", { reference_date: 20_260_923 }));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({ date: null });
-	});
-
-	it("gives nothing when the bank has no booked balance", async () => {
-		balances(balance("XPCD", "5.00"));
-
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toBeNull();
+		await expect(
+			chosen([balance("ITBD", "1.00", { reference_date: "23/09/2026" })]),
+		).resolves.toMatchObject({ date: null });
+		await expect(
+			chosen([balance("ITBD", "1.00", { reference_date: 20_260_923 })]),
+		).resolves.toMatchObject({ date: null });
 	});
 
 	it("makes a debit balance negative, and leaves a credit one as it is", async () => {
-		balances(balance("ITBD", "300.00", { credit_debit_indicator: "DBIT" }));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({
-			amount: -30000,
-		});
-
-		balances(balance("ITBD", "300.00", { credit_debit_indicator: "CRDT" }));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).resolves.toMatchObject({
-			amount: 30000,
-		});
+		await expect(
+			chosen([balance("CLBD", "300.00", { credit_debit_indicator: "DBIT" })]),
+		).resolves.toMatchObject({ amount: -30000 });
+		await expect(
+			chosen([balance("OPBD", "300.00", { credit_debit_indicator: "CRDT" })]),
+		).resolves.toMatchObject({ amount: 30000 });
 	});
 
 	it("refuses an amount with more decimals than its currency, or not a number", async () => {
-		balances(balance("ITBD", "12.345"));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).rejects.toMatchObject({
+		await expect(chosen([balance("ITBD", "12.345")])).rejects.toMatchObject({
 			code: "BANK_PROVIDER_ERROR",
 		});
+		await expect(chosen([balance("ITBD", "1e3")])).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
+	});
 
-		balances(balance("ITBD", "1e3"));
-		await expect(connector.fetchBalance(FIXTURE_CARD_UID)).rejects.toMatchObject({
-			code: "BANK_PROVIDER_ERROR",
-		});
+	it("counts a left-out balance that does not read as holding nothing", async () => {
+		await expect(
+			chosen([balance("CLBD", "50.00"), balance("CLBD", "1e3", {}, "USD")]),
+		).resolves.toMatchObject({ amount: 5000, otherCurrencies: 0 });
 	});
 
 	it("passes a provider failure on", async () => {
 		mockProvider({ balances: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }) });
 
-		const error = await rejection(connector.fetchBalance(FIXTURE_CARD_UID));
+		const error = await rejection(connector.fetchBalance(FIXTURE_CARD_UID, "EUR"));
 
 		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
 	});

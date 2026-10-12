@@ -10,7 +10,7 @@ import { TIME_ZONE } from "./settings.ts";
 /**
  * A stand-in for Enable Banking on loopback, so the suite never reaches the
  * network (AD-16). It serves what the API calls, `/application`, `/aspsps`, `/auth`,
- * `/sessions`, `DELETE /sessions/{id}` and `/accounts/{uid}/balances`, plus
+ * `/sessions`, `GET` and `DELETE /sessions/{id}` and `/accounts/{uid}/balances`, plus
  * the bank's consent page, which approves at once and
  * sends the browser back to `redirect_url` with a `code` and the `state`,
  * and `/accounts/{uid}/transactions`, two pages of lines dated a few days
@@ -77,6 +77,12 @@ export const SLOW_LINE = { label: "Virement du matin Lente", amount: "150.00" } 
 /** The balance `DATED_BANK` gives first, dated yesterday. */
 const DATED_FIRST_BALANCE = "1200.00";
 
+/**
+ * The bank that revokes its consent once a statement was read: the session
+ * read of every sync after the first answers 404.
+ */
+export const REVOKED_BANK = "Banque Révoquée";
+
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = [
 	"Banque Démo",
@@ -88,6 +94,7 @@ export const FAKE_BANKS = [
 	UNREADABLE_BANK,
 	SLOW_BANK,
 	HISTORY_BANK,
+	REVOKED_BANK,
 ] as const;
 
 /**
@@ -308,8 +315,11 @@ export async function startFakeEnableBanking(options: {
 	const slowReads = new Map<string, number>();
 	// The accounts of each `HISTORY_BANK` session.
 	const history = new Set<string>();
-	// Every session opened and not revoked yet.
-	const sessions = new Set<string>();
+	// Every session opened and not revoked yet, with the end of its consent.
+	const sessions = new Map<string, string>();
+	// The current account of each `REVOKED_BANK` session; the uids whose statement was read.
+	const revoking = new Map<string, string>();
+	const statementRead = new Set<string>();
 	let origin = "";
 
 	const server = createServer((request, response) => {
@@ -438,7 +448,11 @@ export async function startFakeEnableBanking(options: {
 				}
 
 				const sessionId = randomUUID();
-				sessions.add(sessionId);
+				sessions.set(sessionId, attempt.validUntil);
+
+				if (attempt.bank === REVOKED_BANK) {
+					revoking.set(sessionId, checkingUid);
+				}
 
 				const currency = attempt.bank === NO_CURRENCY_BANK ? "XXX" : "EUR";
 				const accounts = [
@@ -472,6 +486,24 @@ export async function startFakeEnableBanking(options: {
 			}
 
 			const sessionPath = /^\/sessions\/([^/]+)$/u.exec(url.pathname);
+
+			if (request.method === "GET" && sessionPath !== null) {
+				const sessionId = decodeURIComponent(sessionPath[1] ?? "");
+				const validUntil = sessions.get(sessionId);
+				const revokedAfter = revoking.get(sessionId);
+
+				if (
+					validUntil === undefined ||
+					(revokedAfter !== undefined && statementRead.has(revokedAfter))
+				) {
+					json(response, 404, { code: 404, message: "Unknown session", error: "NOT_FOUND" });
+					return;
+				}
+
+				// Its account list left out: the API reads the consent's end alone.
+				json(response, 200, { status: "AUTHORIZED", access: { valid_until: validUntil } });
+				return;
+			}
 
 			if (request.method === "DELETE" && sessionPath !== null) {
 				// A second revocation finds nothing, as at the real service.
@@ -544,6 +576,11 @@ export async function startFakeEnableBanking(options: {
 				}
 
 				const continuationKey = url.searchParams.get("continuation_key");
+
+				if (continuationKey === "page-2") {
+					statementRead.add(uid);
+				}
+
 				const slowRead = slowReads.get(uid);
 
 				if (slowRead !== undefined && continuationKey === null) {

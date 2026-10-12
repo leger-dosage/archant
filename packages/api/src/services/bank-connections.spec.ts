@@ -1037,15 +1037,13 @@ describe("linkBankAccounts", () => {
 		});
 	});
 
-	it("links without an anchor when the bank has no booked balance, or one in another currency", async () => {
+	it("links without an anchor when the bank lists no balance, or one in another currency", async () => {
 		const connection = await connected();
 		const { checking, card } = await bankAccountsOf(connection.id);
 		const account = await openAccount();
 		mockProvider({
 			balances: balancesBy({
-				[FIXTURE_CHECKING_UID]: {
-					balances: [{ balance_amount: { amount: "5.00", currency: "EUR" }, balance_type: "XPCD" }],
-				},
+				[FIXTURE_CHECKING_UID]: { balances: [] },
 				[FIXTURE_CARD_UID]: {
 					balances: [{ balance_amount: { amount: "5.00", currency: "USD" }, balance_type: "ITBD" }],
 				},
@@ -1067,6 +1065,45 @@ describe("linkBankAccounts", () => {
 		await expect(valuations(cardAccount)).resolves.toEqual([
 			{ kind: "opening_anchor", date: "2024-09-24", amount: 0 },
 		]);
+	});
+
+	it("anchors on the balance in the account's currency, logging the funded one left out without its amount", async () => {
+		const connection = await connected();
+		const { checking } = await bankAccountsOf(connection.id);
+		const account = await openAccount();
+		mockProvider({
+			balances: balancesBy({
+				[FIXTURE_CHECKING_UID]: {
+					balances: [
+						{ balance_amount: { amount: "12.00", currency: "USD" }, balance_type: "CLBD" },
+						{ balance_amount: { amount: "50.00", currency: "EUR" }, balance_type: "CLBD" },
+					],
+				},
+			}),
+		});
+		const linkDeps = deps();
+
+		await linkBankAccounts(linkDeps, connection.id, {
+			links: [{ bankAccountId: checking.id, action: "link", accountId: account.id }],
+		});
+
+		await expect(valuations(account.id)).resolves.toContainEqual({
+			kind: "current_anchor",
+			date: today,
+			amount: 5000,
+		});
+		const lines = logLines.map((line) => z.record(z.string(), z.unknown()).parse(JSON.parse(line)));
+		expect(
+			lines.filter((line) => line["msg"] === "bank balances in other currencies left out"),
+		).toEqual([
+			expect.objectContaining({
+				connectionId: connection.id,
+				bankAccountId: checking.id,
+				currency: "EUR",
+				otherCurrencies: 1,
+			}),
+		]);
+		expect(loggedFigures(logLines)).not.toMatch(/"12(?:\.00)?"|1200|"50(?:\.00)?"|5000/u);
 	});
 
 	it("refuses an account in another currency and writes nothing", async () => {
