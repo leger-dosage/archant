@@ -498,6 +498,13 @@
       "when": 1791785977152,
       "tag": "0070_locked_field_times",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1791796532319,
+      "tag": "0071_drop_bank_accounts_listed",
+      "breakpoints": true
     }
   ]
 }

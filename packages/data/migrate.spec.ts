@@ -2096,7 +2096,7 @@ describe("pending transactions", () => {
 });
 
 describe("consent renewal", () => {
-	it("keeps every connection with no authorisation times, and every bank account listed, when 0030 runs", async () => {
+	it("keeps every connection with no authorisation times, and every bank account, when 0030 runs", async () => {
 		const before = await migratedBefore("0030");
 		await insertConnection(before, "c1", { status: "active", state: null });
 		await insertBankAccount(before, "b1", "c1", "hash-1");
@@ -2109,9 +2109,32 @@ describe("consent renewal", () => {
 				sql`select id, status, authorization_started_at as startedAt, authorized_at as authorizedAt from bank_connections`,
 			),
 		).resolves.toEqual([{ id: "c1", status: "active", startedAt: null, authorizedAt: null }]);
-		await expect(database.all(sql`select id, listed from bank_accounts`)).resolves.toEqual([
-			{ id: "b1", listed: 1 },
-		]);
+		await expect(database.all(sql`select id from bank_accounts`)).resolves.toEqual([{ id: "b1" }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps a bank account a renewal left out, and its link, when 0071 drops `listed`", async () => {
+		const before = await migratedBefore("0071");
+		await insertConnection(before, "c1", { status: "active", state: null });
+		await insertBankAccount(before, "b1", "c1", "hash-1");
+		await before.run(sql`update bank_accounts set listed = 0 where id = 'b1'`);
+		await insertAccount(before, "a1", "depository", "checking");
+		await before.run(sql`update accounts set bank_account_id = 'b1' where id = 'a1'`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, bank_account_id as bankAccountId from accounts`),
+		).resolves.toEqual([{ id: "a1", bankAccountId: "b1" }]);
+		await expect(
+			database.all(
+				sql`select id, provider_uid as uid, identification_hash as hash from bank_accounts`,
+			),
+		).resolves.toEqual([{ id: "b1", uid: "uid-b1", hash: "hash-1" }]);
+		await expect(
+			database.all(sql`select name from pragma_table_info('bank_accounts') where name = 'listed'`),
+		).resolves.toEqual([]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 

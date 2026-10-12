@@ -42,15 +42,23 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 			.put("/credentials", validated("json", saveBankCredentialsSchema), async (c) =>
 				c.json({ data: await saveBankCredentials(deps, c.req.valid("json")) }, 200),
 			)
-			// Registered after `/setup` and `/credentials`, which answer without
-			// reaching it: every other route is refused before its input is even read.
+			// Before the guard too: a lost key must never keep a bank connected,
+			// which would lock the credentials for good (Sure's `return unless provider`).
+			.get("/", async (c) => c.json({ data: await listConnections(deps) }, 200))
+			.get("/:id/accounts", validated("param", connectionParamSchema), async (c) =>
+				c.json({ data: await listBankAccounts(deps, c.req.valid("param").id) }, 200),
+			)
+			.delete("/:id", validated("param", connectionParamSchema), async (c) =>
+				c.json({ data: await disconnectConnection(deps, c.req.valid("param").id) }, 200),
+			)
+			// Registered after the routes above, which answer without reaching it:
+			// every other route is refused before its input is even read.
 			.use(
 				createMiddleware(async (_c, next) => {
 					await resolveBankConnector(deps);
 					await next();
 				}),
 			)
-			.get("/", async (c) => c.json({ data: await listConnections(deps) }, 200))
 			.get("/institutions", validated("query", institutionsQuerySchema), async (c) =>
 				c.json({ data: await listInstitutions(deps, c.req.valid("query").country) }, 200),
 			)
@@ -60,17 +68,11 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 			.post("/callback", validated("json", completeConnectionSchema), async (c) =>
 				c.json({ data: await completeConnection(deps, c.req.valid("json")) }, 200),
 			)
-			.get("/:id/accounts", validated("param", connectionParamSchema), async (c) =>
-				c.json({ data: await listBankAccounts(deps, c.req.valid("param").id) }, 200),
-			)
 			.post("/:id/sync", validated("param", connectionParamSchema), async (c) =>
 				c.json({ data: await syncConnection(deps, c.req.valid("param").id) }, 200),
 			)
 			.post("/:id/renew", validated("param", connectionParamSchema), async (c) =>
 				c.json({ data: await renewConnection(deps, c.req.valid("param").id) }, 200),
-			)
-			.delete("/:id", validated("param", connectionParamSchema), async (c) =>
-				c.json({ data: await disconnectConnection(deps, c.req.valid("param").id) }, 200),
 			)
 			.post(
 				"/:id/accounts",

@@ -19,7 +19,7 @@ The Enable Banking application ID is stored as is: it identifies the application
 
 Passwords are hashed by Better Auth, and never stored or logged in clear.
 
-Losing or changing `ENCRYPTION_KEY` means saving the Enable Banking credentials and reconnecting every bank again.
+Losing or changing `ENCRYPTION_KEY` means saving the Enable Banking credentials and reconnecting every bank again. Each bank connected before stays listed and can be disconnected: its session, which no longer decrypts, is not revoked at Enable Banking and lapses at its consent's end, unless access is withdrawn earlier from the bank's own site.
 
 Neither secret lives in the database, so a copy of the file alone does not open the encrypted values. [Keep two secrets off the machine](hosting.md#keep-two-secrets-off-the-machine) says why to keep a copy of both.
 
