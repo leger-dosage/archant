@@ -89,19 +89,24 @@ describe("PATCH /api/transactions/:id", () => {
 		expect(body).toMatchObject({ data: { notes: null } });
 	});
 
-	it("refuses a move onto the opening date", async () => {
+	it("takes a move onto the opening date or before it, and refuses one before 1900", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
 
+		await expect(
+			request("PATCH", `/api/transactions/${data.id}`, { date: "2026-09-01" }),
+		).resolves.toMatchObject({ status: 200, body: { data: { date: "2026-09-01" } } });
+		await expect(
+			request("PATCH", `/api/transactions/${data.id}`, { date: "2026-08-20" }),
+		).resolves.toMatchObject({ status: 200, body: { data: { date: "2026-08-20" } } });
+
 		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
-			date: "2026-09-01",
+			date: "0026-08-20",
 		});
 
 		expect(status).toBe(400);
-		expect(errorBody.parse(body).error.fields).toEqual([
-			{ path: "date", code: "not_after_opening_date" },
-		]);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "date_too_early" }]);
 	});
 
 	it("refuses an invalid amount", async () => {

@@ -167,7 +167,7 @@ export const statementOf = (...lines: NormalizedTransaction[]): ParsedStatement 
 	rejected: [],
 });
 
-type ImportOptions = { moveOpeningDate?: string; db?: TempDatabase["db"]; source?: FileSourceId };
+type ImportOptions = { db?: TempDatabase["db"]; source?: FileSourceId };
 
 /** Previews a statement, stores the digest as the service does, and returns the preview. */
 export async function preview(
@@ -182,7 +182,7 @@ export async function preview(
 		accountId,
 		statement,
 		{ importId },
-		{ origin: "sync", dryRun: true, moveOpeningDate: options.moveOpeningDate },
+		{ origin: "sync", dryRun: true },
 	);
 
 	await db.update(imports).set({ previewDigest: result.digest }).where(eq(imports.id, importId));
@@ -201,11 +201,7 @@ export async function confirm(
 		accountId,
 		statement,
 		{ importId },
-		{
-			origin: "sync",
-			moveOpeningDate: options.moveOpeningDate,
-			expectedCounts: options.expectedCounts,
-		},
+		{ origin: "sync", expectedCounts: options.expectedCounts },
 	);
 }
 

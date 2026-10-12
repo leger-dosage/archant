@@ -5,7 +5,7 @@ import { toMinorUnits } from "@archant/data/money";
 
 export type CountedAccount = {
 	classification: Classification;
-	/** Its daily balances, oldest first, none before its opening date. */
+	/** Its daily balances, oldest first, none before its oldest entry. */
 	points: readonly DailyBalance[];
 };
 

@@ -20,7 +20,6 @@ import {
 	or,
 	sum,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/sqlite-core";
 
 import { classificationOf } from "@archant/data/account-types";
 import type { MinorUnits, Money } from "@archant/data/money";
@@ -119,28 +118,57 @@ export async function bookedMovements(
 }
 
 /**
- * A bank-linked account's balances, rewritten whole from its opening date:
- * a change on any day moves every earlier one, since they derive from the
- * bank's balance backward (AD-8), each reconciliation, an earlier bank
- * figure included, fixing its own day. Pending entries play no part, as
- * Sure's `Entry.excluding_pending`: the bank's balance is a booked one
- * (AD-18).
+ * The first day an account has a balance: its oldest entry that is not
+ * pending, the opening anchor or any older one, as Sure's
+ * `Balance::BaseCalculator#calculation_start_date` and
+ * `Account#history_start_date`. `fallback` for an unknown account, which
+ * holds no entry. Read in date order rather than with `min`, so the
+ * account's date index stops at the first row.
+ */
+export async function historyStartOf<Fallback extends IsoDate | null>(
+	db: Pick<ServiceDeps["db"], "select"> | Pick<Transaction, "select">,
+	accountId: string,
+	fallback: Fallback,
+): Promise<IsoDate | Fallback> {
+	// An array rather than `.get()`: every account holds its opening anchor.
+	const rows = await db
+		.select({ date: entries.date })
+		.from(entries)
+		.leftJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(
+			and(
+				eq(entries.accountId, accountId),
+				or(isNull(transactions.entryId), eq(transactions.pending, false)),
+			),
+		)
+		.orderBy(asc(entries.date))
+		.limit(1);
+
+	return rows.reduce<IsoDate | Fallback>((_, row) => row.date, fallback);
+}
+
+/**
+ * A bank-linked account's balances, rewritten whole from `start`: a change
+ * on any day moves every earlier one, since they derive from the bank's
+ * balance backward (AD-8), each reconciliation, an earlier bank figure
+ * included, fixing its own day. Pending entries play no part, as Sure's
+ * `Entry.excluding_pending`: the bank's balance is a booked one (AD-18).
  */
 async function recomputeBackward(
 	tx: Transaction,
 	account: Pick<Account, "id" | "type" | "currency">,
 	anchor: DailyBalance,
-	openingDate: IsoDate,
+	start: IsoDate,
 	timeZone: string,
 ): Promise<void> {
 	const movements = await bookedMovements(tx, account.id);
-	// The opening anchor bounds the range; its amount plays no part.
+	// The opening anchor's amount plays no part.
 	const reconciliations = await tx
 		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
 		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "reconciliation")));
 	const rows: NewBalance[] = reverseBalances({
-		from: openingDate,
+		from: start,
 		anchor,
 		valuations: reconciliations.map((row) => ({
 			date: row.date,
@@ -163,23 +191,14 @@ async function recomputeBackward(
 }
 
 /**
- * The bank balance a linked account is computed backward from (AD-8), with
- * its opening date; `undefined` for an account computed forward.
+ * The bank balance a linked account is computed backward from (AD-8);
+ * `undefined` for an account computed forward.
  */
 export async function backwardAnchor(db: Pick<ServiceDeps["db"], "select">, accountId: string) {
-	const openingAnchor = alias(entries, "opening_anchor");
-
 	return db
-		.select({ date: entries.date, balance: entries.amount, openingDate: openingAnchor.date })
+		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
-		.innerJoin(
-			openingAnchor,
-			and(
-				eq(openingAnchor.accountId, entries.accountId),
-				eq(openingAnchor.valuationKind, "opening_anchor"),
-			),
-		)
 		.where(
 			and(
 				eq(entries.accountId, accountId),
@@ -277,11 +296,13 @@ async function recomputeHoldings(
 
 /**
  * Rewrites an account's daily balances from `affected`, the earliest date the
- * write touched, to `max(today, latest entry date)`, and deletes the rows past
- * that end. Called by every ledger write inside its own transaction, so no
- * commit ever leaves `balances` stale (AD-2). A bank-linked account with a
- * bank balance is computed backward from it, whole; any other forward, an
- * investment account's holdings with it, from the same day.
+ * write touched, to `max(today, latest entry date)`, and deletes the rows
+ * outside that range. Balances start at the account's oldest booked entry,
+ * Sure's `calculation_start_date`, so `affected` before it reads as that day.
+ * Called by every ledger write inside its own transaction, so no commit ever
+ * leaves `balances` stale (AD-2). A bank-linked account with a bank balance is
+ * computed backward from it, whole; any other forward, an investment account's
+ * holdings with it, from the same day.
  */
 export async function recomputeBalances(
 	tx: Transaction,
@@ -289,8 +310,9 @@ export async function recomputeBalances(
 	affected: IsoDate,
 	timeZone: string,
 ): Promise<void> {
-	// Read here rather than passed in: an ingest or a revert may just have
-	// moved the opening date.
+	// Read here rather than passed in: the write may just have added, moved or
+	// deleted the oldest entry. An account always holds its opening anchor.
+	const start = await historyStartOf(tx, account.id, affected);
 	const anchor = await backwardAnchor(tx, account.id);
 
 	if (anchor !== undefined) {
@@ -298,19 +320,34 @@ export async function recomputeBalances(
 			tx,
 			account,
 			{ date: anchor.date, balance: toMinorUnits(anchor.balance) },
-			anchor.openingDate,
+			start,
 			timeZone,
 		);
 
 		return;
 	}
 
-	const previous = await lastBalanceOnOrBefore(tx, account.id, addDays(affected, -1));
+	// The rows a deleted oldest entry or a later opening date leave behind
+	// would otherwise stay, and seed the new first day.
+	await tx
+		.delete(balances)
+		.where(and(eq(balances.accountId, account.id), lt(balances.date, start)));
+
+	if (account.type === "investment") {
+		await tx
+			.delete(holdings)
+			.where(and(eq(holdings.accountId, account.id), lt(holdings.date, start)));
+	}
+
+	const first = maxDate(affected, start);
+	const previous =
+		first > start ? await lastBalanceOnOrBefore(tx, account.id, addDays(first, -1)) : undefined;
 	// Rows stop where the last write ended. A line dated past that day leaves a
-	// gap the recompute fills from the last stored row. No row at all means the
-	// account is being created: its opening anchor sets the first balance.
+	// gap the recompute fills from the last stored row. No row before the first
+	// day starts it from zero, as Sure's `opening_starting_balances`: a
+	// valuation, the opening anchor included, then sets its own day.
 	const [from, previousCash] =
-		previous === undefined ? [affected, 0] : [addDays(previous.date, 1), previous.cash];
+		previous === undefined ? [start, 0] : [addDays(previous.date, 1), previous.cash];
 	const movements = await bookedMovements(tx, account.id, gte(entries.date, from));
 	const valuations = await tx
 		.select({ date: entries.date, balance: entries.amount })
@@ -378,7 +415,7 @@ export async function accountWithOpeningDate(tx: Transaction, accountId: string)
 
 /**
  * The balance at the end of `date`: the last stored day on or before it (AD-8).
- * `null` before the account's opening date, when it did not exist yet.
+ * `null` before the account's first balance, its history start.
  */
 export async function balanceOn(
 	deps: ServiceDeps,
@@ -394,7 +431,7 @@ export async function balanceOn(
  * The end-of-day balance of every day from `from` to `to`, both included,
  * oldest first, as `balanceOn` would read each one (AD-8). Stored rows stop at
  * the last write's end, so the days after it carry its balance. Days before
- * the opening date are left out. One primary-key range scan plus one lookup.
+ * the history start are left out. One primary-key range scan plus one lookup.
  */
 export async function balancesBetween(
 	deps: ServiceDeps,
@@ -423,8 +460,8 @@ export async function openingDateOf(deps: ServiceDeps, accountId: string): Promi
 }
 
 /**
- * The account's opening anchor, its first valuation since no snapshot may
- * precede it, with what the owner wrote on it; `null` for an unknown account.
+ * The account's opening anchor, with what the owner wrote on it; `null` for
+ * an unknown account.
  */
 export async function openingAnchorOf(
 	deps: ServiceDeps,

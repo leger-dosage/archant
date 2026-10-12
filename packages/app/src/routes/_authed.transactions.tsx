@@ -148,7 +148,6 @@ function OperationSheet({
 			account={{
 				id: data.id,
 				currency: data.currency,
-				openingDate: data.openingDate,
 				type: data.type,
 			}}
 			open={open}

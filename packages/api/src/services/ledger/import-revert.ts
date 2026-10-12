@@ -1,13 +1,11 @@
-import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, TradedPosition, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, count, eq, inArray, isNull, lt, lte, ne, notExists, or } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, notExists, or } from "drizzle-orm";
 
 import { classificationOf } from "@archant/data/account-types";
 import { toMinorUnits } from "@archant/data/money";
-import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { imports } from "@archant/data/schema/imports";
@@ -15,9 +13,7 @@ import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { taggings } from "@archant/data/schema/taggings";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
-import type { Entry } from "@archant/data/types";
 
-import { addDays, maxDate } from "../../domain/dates.ts";
 import { AppError } from "../../lib/errors.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
@@ -98,74 +94,20 @@ export async function removableOf(
 	);
 }
 
-/**
- * Puts back the opening anchor an import moved, and returns its date.
- * `ingest` shifted its amount by the lines dated on or before
- * `previousDate` so that day kept its balance; the deleted ones give their
- * share back, the kept ones and a later import's keep theirs. Its date moves
- * back to `previousDate`, or the day before the earliest entry still dated on
- * or before it, whatever its kind, and never earlier than it stands now: it
- * crosses only empty days, so every balance from the restored date on stays.
- */
-async function restoreOpening(
-	tx: Transaction,
-	account: Awaited<ReturnType<typeof accountWithOpeningDate>>,
-	previousDate: IsoDate,
-	deleted: Pick<Entry, "date" | "amount">[],
-	now: number,
-): Promise<IsoDate> {
-	const [kept] = await tx
-		.select({ date: entries.date })
-		.from(entries)
-		.where(
-			and(
-				eq(entries.accountId, account.id),
-				ne(entries.id, account.openingId),
-				lte(entries.date, previousDate),
-			),
-		)
-		.orderBy(entries.date)
-		.limit(1);
-	const date = maxDate(
-		kept === undefined ? previousDate : addDays(kept.date, -1),
-		account.openingDate,
-	);
-	const shift = deleted
-		.filter((entry) => entry.date <= previousDate)
-		.reduce((total, entry) => total + entry.amount, 0);
-
-	await tx
-		.update(entries)
-		.set({
-			date,
-			amount: toMinorUnits(
-				classificationOf(account.type) === "asset"
-					? account.openingBalance + shift
-					: account.openingBalance - shift,
-			),
-			updatedAt: now,
-		})
-		.where(eq(entries.id, account.openingId));
-	// A forward recompute rewrites only from the day it is given, and would
-	// leave the rows before the restored opening date.
-	await tx.delete(balances).where(and(eq(balances.accountId, account.id), lt(balances.date, date)));
-
-	return date;
-}
-
 export type RevertResult = { accountId: string; removed: Removable };
 
 /**
  * Undoes a confirmed import, in one transaction (AD-7): deletes the keys it
  * wrote, the transactions it created that no other source holds, edited ones
  * included as Sure deletes every entry of an import, split ones with their
- * lines, and the snapshot it still owns. When the import moved the opening
- * anchor, its amount gets back what the deleted lines had shifted it by, and
- * its date moves back toward where it stood, across days no remaining entry
- * holds. Sure keeps the moved date, but it accepts lines before the opening
- * date: Archant refuses them, so a kept date would read the same file
- * differently next time. Then marks the import `reverted` and recomputes.
- * The `imports` row stays, for the history.
+ * lines, and the snapshot it still owns. The opening anchor's date is never
+ * touched, as Sure's revert: a date a QIF import moved stays, so imports
+ * revert in any order. An import confirmed before Story 27.21 that moved the
+ * anchor shifted its amount by the lines dated on or before
+ * `previous_opening_date`; its revert gives the anchor back the current
+ * amounts of those it deletes, so the old opening day keeps its balance. No
+ * later import writes that date. Then marks the import `reverted` and
+ * recomputes. The `imports` row stays, for the history.
  */
 export async function revertImport(
 	deps: ServiceDeps,
@@ -251,12 +193,27 @@ export async function revertImport(
 				.where(and(eq(entries.importId, importId), eq(entries.valuationKind, "reconciliation")))
 				.returning({ date: entries.date });
 
-			// 4. The opening anchor, when this import moved it.
+			// 4. A legacy import's share of the anchor's amount, from the lines it
+			// deleted; a line another source keeps keeps its share.
 			const previousDate = row.previousOpeningDate;
-			const openingDate =
-				previousDate === null
-					? account.openingDate
-					: await restoreOpening(tx, account, previousDate, created, now);
+
+			if (previousDate !== null) {
+				const shift = created
+					.filter((entry) => entry.date <= previousDate)
+					.reduce((total, entry) => total + entry.amount, 0);
+
+				await tx
+					.update(entries)
+					.set({
+						amount: toMinorUnits(
+							classificationOf(account.type) === "asset"
+								? account.openingBalance + shift
+								: account.openingBalance - shift,
+						),
+						updatedAt: now,
+					})
+					.where(eq(entries.id, account.openingId));
+			}
 
 			// 5.
 			await tx
@@ -264,15 +221,15 @@ export async function revertImport(
 				.set({ status: "reverted", revertedAt: now })
 				.where(eq(imports.id, importId));
 
-			// 6. From the earliest date touched, the anchor's when it moved, and
-			// never before the opening date: no balance exists before it.
+			// 6. From the earliest date touched, the anchor's when its amount
+			// changed; the recompute starts no earlier than the oldest entry left.
 			const [earliest] = [
 				...[...created, ...snapshots].map((entry) => entry.date),
-				...(previousDate === null ? [] : [openingDate]),
+				...(previousDate === null ? [] : [account.openingDate]),
 			].toSorted();
 
 			if (earliest !== undefined) {
-				await recomputeBalances(tx, account, maxDate(earliest, openingDate), deps.timeZone);
+				await recomputeBalances(tx, account, earliest, deps.timeZone);
 			}
 
 			return {

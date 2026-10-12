@@ -129,7 +129,28 @@ describe("reverseBalances", () => {
 		]);
 	});
 
-	it("leaves out the days before the opening date when the anchor precedes it", () => {
+	it("goes on past the opening date down to an older line, ignoring the opening anchor", () => {
+		expect(
+			reverseBalances({
+				...linked,
+				from: "2026-08-30",
+				movements: [
+					{ date: "2026-08-30", amount: m(-2000) },
+					{ date: "2026-09-03", amount: m(-500) },
+				],
+			}),
+		).toEqual([
+			{ date: "2026-08-30", balance: 100500 },
+			{ date: "2026-08-31", balance: 100500 },
+			{ date: "2026-09-01", balance: 100500 },
+			{ date: "2026-09-02", balance: 100500 },
+			{ date: "2026-09-03", balance: 100000 },
+			{ date: "2026-09-04", balance: 100000 },
+			{ date: "2026-09-05", balance: 100000 },
+		]);
+	});
+
+	it("leaves out the days before the first day when the anchor precedes it", () => {
 		expect(
 			reverseBalances({
 				...linked,

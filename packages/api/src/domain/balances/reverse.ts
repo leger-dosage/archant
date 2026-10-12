@@ -8,7 +8,11 @@ import { addDays } from "../dates.ts";
 import { forwardBalances } from "./forward.ts";
 
 export type ReverseInput = {
-	/** First day to compute: the opening anchor's date. Its amount plays no part. */
+	/**
+	 * First day to compute: the earlier of the opening date and the oldest
+	 * booked entry, Sure's `calculation_start_date`. The opening anchor's
+	 * amount plays no part.
+	 */
 	from: IsoDate;
 	/** The bank balance at the end of its day, a stored balance (AD-5). */
 	anchor: DailyBalance;
@@ -24,9 +28,10 @@ export type ReverseInput = {
  * Daily balances of a bank-linked account, computed backward from its
  * current anchor (AD-8), as Sure's `Balance::ReverseCalculator`. The anchor
  * day is the anchor; each earlier day is the next day's balance less the
- * next day's movements, unless a reconciliation fixes it. The opening
- * anchor's amount is ignored, so no jump appears on the opening day where
- * Sure records a cash adjustment. Days after the anchor go forward from it.
+ * next day's movements, unless a reconciliation fixes it, down to the oldest
+ * entry, past the opening date when a line precedes it. The opening anchor's
+ * amount is ignored, so no jump appears on the opening day where Sure records
+ * a cash adjustment. Days after the anchor go forward from it.
  */
 export function reverseBalances(input: ReverseInput): DailyBalance[] {
 	const sign = input.classification === "asset" ? 1 : -1;

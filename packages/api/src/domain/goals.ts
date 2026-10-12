@@ -61,22 +61,23 @@ function floorDiv(a: bigint, b: bigint): bigint {
 /** Sure's month when it counts in days: a goal's date two days off asks for a fraction of one. */
 const DAYS_PER_MONTH = 30;
 
-/** The window the pace reads: 90 days, or since the account opened when that is later. */
+/** The window the pace reads: 90 days, or since the account's history starts when that is later. */
 const PACE_DAYS = 90;
 
 /** What the pace divides the window's change by, three months. */
 const PACE_MONTHS = BigInt(PACE_DAYS / DAYS_PER_MONTH);
 
 /**
- * The day a linked account's pace starts from: 90 days ago, or its opening
- * date if later, and never after today, so an account opened at a future
- * date moves nothing yet rather than falling by its opening balance. Given
- * the earliest opening date of a goal's accounts, the day its chart starts.
+ * The day a linked account's pace starts from: 90 days ago, or its history
+ * start if later, its first balance, Sure's `history_start_date`, and never
+ * after today, so an account opened at a future date moves nothing yet
+ * rather than falling by its opening balance. Given the earliest history
+ * start of a goal's accounts, the day its chart starts.
  */
-export function paceStart(today: IsoDate, openingDate: IsoDate | null): IsoDate {
+export function paceStart(today: IsoDate, startDate: IsoDate | null): IsoDate {
 	const start = addDays(today, -PACE_DAYS);
 
-	return openingDate === null ? start : minDate(maxDate(start, openingDate), today);
+	return startDate === null ? start : minDate(maxDate(start, startDate), today);
 }
 
 /**

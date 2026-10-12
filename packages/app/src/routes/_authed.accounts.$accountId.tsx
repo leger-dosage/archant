@@ -65,7 +65,6 @@ import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf } from "@/lib/api";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
-import { toIsoDate } from "@/lib/dates";
 import { pageSearch } from "@/lib/page-search";
 
 const ACCOUNT_TABS = [
@@ -264,7 +263,7 @@ function SnapshotsPanel({
 				<SnapshotList
 					items={data.items}
 					onOpen={onOpen}
-					// The oldest row: on the last page, where the oldest snapshots are.
+					// On the last page, where the oldest snapshots are, placed among them by date.
 					opening={page >= pageCount ? opening : null}
 					onOpenOpening={onOpenOpening}
 				/>
@@ -525,16 +524,13 @@ function AccountPage() {
 			? {
 					id: account.data.id,
 					currency,
-					openingDate: account.data.openingDate,
 					type: account.data.type,
 				}
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
-	// A trade must fall after the opening date and not after today: an account
-	// opened today or later has no valid date yet. A snapshot may fall on the
-	// opening date, where it sets the opening balance.
-	const canDateAfterOpening = writable !== undefined && writable.openingDate < toIsoDate();
-	const canSnapshot = writable !== undefined && writable.openingDate <= toIsoDate();
+	// Any day up to today takes a trade or a snapshot, before the opening date
+	// included, as Sure's: only the account's currency must be known.
+	const canAddDated = writable !== undefined;
 	const opening: OpeningRow | null =
 		account.data === undefined
 			? null
@@ -548,7 +544,7 @@ function AccountPage() {
 			? {
 					id: writable.id,
 					currency: writable.currency,
-					openingDate: writable.openingDate,
+					openingDate: account.data.openingDate,
 					openingBalance: account.data.openingBalance,
 				}
 			: undefined;
@@ -715,7 +711,7 @@ function AccountPage() {
 					<SnapshotsPanel
 						accountId={accountId}
 						page={snapshotsPage}
-						canAdd={canSnapshot}
+						canAdd={canAddDated}
 						onAdd={admin ? openNewSnapshot : null}
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 						opening={opening}
@@ -747,7 +743,7 @@ function AccountPage() {
 						<TradesPanel
 							accountId={accountId}
 							page={tradesPage}
-							canAdd={canDateAfterOpening}
+							canAdd={canAddDated}
 							onAdd={admin ? openNewTrade : null}
 							onOpen={admin ? (trade) => setTradeDialog({ open: true, trade }) : null}
 						/>

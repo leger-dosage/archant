@@ -40,7 +40,7 @@ import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { categoryStats, familyStats } from "../domain/statistics.ts";
 import { AppError } from "../lib/errors.ts";
 import { PERIOD_MONTHS } from "./balances.ts";
-import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
+import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import {
 	cashFlowByCategory,
 	cashFlowByDay,
@@ -130,13 +130,13 @@ async function countedBetween(
 	);
 }
 
-/** The dashboard's daily balances over a period ending today, never before the first counted account opened. */
+/** The dashboard's daily balances over a period ending today, never before the first counted account's history starts. */
 async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
 	const to = today(deps.timeZone);
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
 
-	const openingDates = await Promise.all(counted.map((row) => openingDateOf(deps, row.id)));
-	const earliest = openingDates
+	const startDates = await Promise.all(counted.map((row) => historyStartOf(deps.db, row.id, null)));
+	const earliest = startDates
 		.filter((date): date is IsoDate => date !== null)
 		.reduce<IsoDate | null>((min, date) => (min === null || date < min ? date : min), null);
 	const range = earliest === null ? null : periodRange(PERIOD_MONTHS[period], to, earliest);

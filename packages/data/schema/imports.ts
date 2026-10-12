@@ -44,8 +44,6 @@ export type CsvMapping = {
 
 /** What a preview offers to change besides writing lines, kept with the file. */
 export type ImportOptions = {
-	/** The earlier opening date the user accepted, so older lines can go in. */
-	moveOpeningDate?: string | undefined;
 	/** How a CSV file is read; absent for every other source. */
 	csv?: CsvMapping | undefined;
 	/**
@@ -87,11 +85,10 @@ export const imports = sqliteTable(
 		createdAt: integer("created_at").notNull(),
 		confirmedAt: integer("confirmed_at"),
 		revertedAt: integer("reverted_at"),
-		// The opening date before confirm moved the anchor back, written only
-		// then. The moved-in lines shifted the anchor's amount; a revert gives
-		// back the share of the lines it deletes dated on or before this day,
-		// and moves the anchor's date back toward it, as far as the entries
-		// still on the account allow.
+		// The opening date before confirm moved the anchor back, written only by
+		// imports confirmed before Story 27.21, which shifted the anchor's amount
+		// by the lines dated on or before it; no import writes it now. A revert
+		// of such an import gives the lines it deletes back to the anchor.
 		previousOpeningDate: text("previous_opening_date"),
 	},
 	(table) => [

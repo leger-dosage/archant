@@ -59,7 +59,6 @@ type FieldName = (typeof FIELD_NAMES)[number];
 export type SheetAccount = {
 	id: string;
 	currency: CurrencyCode;
-	openingDate: string;
 	/** An investment account's lines can be converted into trades. */
 	type: AccountType;
 };
@@ -142,7 +141,7 @@ export function TransactionForm({
 		// `raw` hands the typed text to the API as is: the same schema parses it
 		// there, into minor units of the account's currency.
 		resolver: zodResolver(schema, undefined, { raw: true }),
-		defaultValues: valuesOf(transaction, account.openingDate),
+		defaultValues: valuesOf(transaction),
 	});
 	const { errors, isSubmitting, isDirty } = form.formState;
 	const date = useController({ control: form.control, name: "date" });

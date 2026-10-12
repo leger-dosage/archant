@@ -498,7 +498,7 @@ const sureSigned = (item: TransactionRecord) => ({
 /**
  * Sure's `create_transaction` refusals for what the sheet's checks refuse;
  * `run` checks the date's format first, so a date the sheet refuses, before
- * the opening or too far ahead, keeps the generic shape.
+ * 1900 or too far ahead, keeps the generic shape.
  */
 const CREATE_REFUSALS = {
 	codes: {
@@ -550,7 +550,7 @@ function sureLineOf(item: TransactionRecord) {
 export const createTransactionTool = defineTool({
 	name: "create_transaction",
 	title: "Record a transaction",
-	description: `Creates a transaction on one of the household's accounts, as Sure's create_transaction and Archant's transaction sheet: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. Amount sign, as Sure's: a positive amount is an expense (money out), a negative one an income (money in); or pass a positive magnitude with type "income" or "expense", which then decides the sign. The line is in the account's currency: another one answers invalid_currency. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. Refusals answer Sure's keys: account_not_found, invalid_date, invalid_amount, invalid_name, invalid_currency, invalid_category, invalid_merchant, invalid_tags; a date before the account's opening or more than a year ahead answers validation_error, naming the field's path and code; another field the input itself refuses answers { error, hint }.`,
+	description: `Creates a transaction on one of the household's accounts, as Sure's create_transaction and Archant's transaction sheet: a cash payment, a line the bank does not show, a line of a statement. Rules then run on it, and transfer matching, as on a line typed by hand; a category, merchant or tags given here are set and locked, so no rule changes them. Amount sign, as Sure's: a positive amount is an expense (money out), a negative one an income (money in); or pass a positive magnitude with type "income" or "expense", which then decides the sign. The line is in the account's currency: another one answers invalid_currency. Calling it twice records two lines, unless external_id is given: then the second call records nothing and returns the line with created false. user_modified, Sure's, is accepted and changes nothing: a sync never rewrites a line it did not bring. Refusals answer Sure's keys: account_not_found, invalid_date, invalid_amount, invalid_name, invalid_currency, invalid_category, invalid_merchant, invalid_tags; a date before 1900 or more than a year ahead answers validation_error, naming the field's path and code, while a date before the account's opening goes in as any other, as Sure's; another field the input itself refuses answers { error, hint }.`,
 	scope: "archant:write",
 	annotations: CREATES,
 	fieldPaths: { label: "name" },

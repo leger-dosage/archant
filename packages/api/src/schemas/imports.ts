@@ -11,8 +11,6 @@ import {
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import type { CsvMapping } from "@archant/data/schema/imports";
 
-import { EARLIEST_OPENING_DATE } from "./accounts.ts";
-
 /**
  * The largest file an import accepts: far above a decade of a household's
  * statements, and a bound on the memory one upload takes. `ofx-js` no longer
@@ -66,18 +64,11 @@ export const csvMappingSchema = z
 	}) satisfies z.ZodType<CsvMapping>;
 
 /**
- * A new preview of a stored import. `moveOpeningDate` accepts the offer to
- * move the account's opening date back; `null` withdraws it. `csv` is the
- * column mapping to read a CSV file with, `qif` the order of a QIF file's
- * dates; absent, the stored one stays.
+ * A new preview of a stored import. `csv` is the column mapping to read a CSV
+ * file with, `qif` the order of a QIF file's dates; absent, the stored one
+ * stays.
  */
 export const importPreviewSchema = z.object({
-	// As at account creation: an opening in year 1 would write a balance row
-	// for every day since.
-	moveOpeningDate: z.iso
-		.date()
-		.refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early")
-		.nullable(),
 	csv: csvMappingSchema.optional(),
 	qif: z.object({ dateOrder: z.enum(QIF_DATE_ORDERS) }).optional(),
 });

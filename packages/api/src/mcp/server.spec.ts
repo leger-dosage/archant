@@ -392,10 +392,11 @@ describe("the request", () => {
 		);
 		expect(result.instructions).not.toContain("pass each line's own id as externalId");
 		expect(result.instructions).toContain(
-			"4. Show the owner the counts, the possible duplicates, the rejected lines with their reasons, and what happens to the opening date and the closing balance, and wait for their agreement.",
+			"3. Show the owner the counts, the possible duplicates, the rejected lines with their reasons, and what happens to the closing balance, and wait for their agreement.",
 		);
+		expect(result.instructions).not.toContain("opening_suggestion");
 		expect(result.instructions).toContain(
-			"5. Call confirm_import with those counts as expected_counts. If it answers import_preview_stale, call preview_import again and show the owner.",
+			"4. Call confirm_import with those counts as expected_counts. If it answers import_preview_stale, call preview_import again and show the owner.",
 		);
 		expect(result.instructions).toContain(
 			"Before record_valuation, tell the owner the account, the date, the balance and where the figure comes from, such as a statement, a loan table or an appraisal, and wait for their agreement; pass that document as source, in the tool's citation grammar. Never record a figure the owner or a document did not give, and never invent a source.",

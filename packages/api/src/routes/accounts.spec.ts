@@ -841,17 +841,14 @@ describe("POST /api/accounts/:id/transactions", () => {
 	});
 
 	it.each(["2026-09-01", "2026-08-31"])(
-		"refuses a transaction dated %s, on or before the opening date",
+		"records a transaction dated %s, on or before the opening date, as Sure",
 		async (date) => {
 			const account = await openAccount();
 
 			const { status, body } = await postTransaction(account.id, { ...expense, date });
 
-			expect(status).toBe(400);
-			expect(errorBody.parse(body).error).toMatchObject({
-				code: "VALIDATION_ERROR",
-				fields: [{ path: "date", code: "not_after_opening_date" }],
-			});
+			expect(status).toBe(201);
+			expect(body).toMatchObject({ data: { date } });
 		},
 	);
 
@@ -1013,6 +1010,20 @@ describe("GET /api/accounts/:id/balances", () => {
 		expect(data.points).toHaveLength(32);
 		expect(data.points[0]).toEqual({ date: "2026-08-21", balance: 123456 });
 		expect(data.points.at(-1)).toEqual({ date: "2026-09-21", balance: 123456 });
+	});
+
+	it("starts `all` at a line dated before the opening date, from zero, as Sure's history start", async () => {
+		const account = await openAccount({ openingDate: "2026-09-01" });
+		await postTransaction(account.id, { ...expense, date: "2026-08-20" });
+
+		const data = await balancesOf(account.id, "all");
+
+		expect(data.from).toBe("2026-08-20");
+		expect(data.points[0]).toEqual({ date: "2026-08-20", balance: -4290 });
+		expect(data.points.find((point) => point.date === "2026-09-01")).toEqual({
+			date: "2026-09-01",
+			balance: 123456,
+		});
 	});
 
 	it("fills every day up to today when nothing was written for a month", async () => {
@@ -1231,22 +1242,18 @@ describe("POST /api/accounts/:id/snapshots", () => {
 		expect(overdraft).toMatchObject({ balance: -8000 });
 	});
 
-	it("refuses the day before the opening date and tomorrow on the date field", async () => {
+	it("records the day before the opening date, and refuses tomorrow on the date field", async () => {
 		const account = await openPinned();
 
-		const opening = await postSnapshot(account.id, { date: "2026-01-09", balance: "1,00" });
+		const before = await postSnapshot(account.id, { date: "2026-01-09", balance: "1,00" });
 		const tomorrow = await postSnapshot(account.id, { date: "2026-09-22", balance: "1,00" });
 
-		expect(opening.status).toBe(400);
-		expect(errorBody.parse(opening.body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "date", code: "before_opening_date" }],
-		});
+		expect(before.status).toBe(201);
 		expect(tomorrow.status).toBe(400);
 		expect(errorBody.parse(tomorrow.body).error.fields).toEqual([
 			{ path: "date", code: "date_in_future" },
 		]);
-		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 1 });
 	});
 
 	it("refuses a balance with too many decimals for the currency", async () => {
@@ -2035,7 +2042,6 @@ describe("POST /api/accounts/:id/imports", () => {
 		expect(data).toMatchObject({
 			fileName: "releve.ofx",
 			source: "ofx",
-			openingSuggestion: null,
 			statementBalance: { status: "recorded", date: "2026-09-15", balance: 123456 },
 		});
 		expect(data.groups.created.map((line) => line.label)).toEqual([

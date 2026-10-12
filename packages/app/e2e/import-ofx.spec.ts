@@ -164,7 +164,9 @@ test("the same file again is already present, and confirm is disabled", async ({
 	await expect(dialog(page).getByRole("button", { name: /^Importer 0 opération/u })).toBeDisabled();
 });
 
-test("lines before the opening date can go in by moving it, keeping today's balance", async ({
+// Story 27.21: as Sure, a line before the opening date goes in like any
+// other, and the opening balance keeps setting its own day.
+test("lines on and before the opening date go in without any offer, the opening balance unchanged", async ({
 	page,
 	api,
 }) => {
@@ -178,30 +180,25 @@ test("lines before the opening date can go in by moving it, keeping today's bala
 	await openImport(page, account.id, account.name);
 	await choose(page, sgml(lines));
 
-	await expect(tab(page, "Rejetées", 2)).toHaveAttribute("aria-selected", "true");
-	await expect(
-		dialog(page).getByRole("cell", { name: "Datée au plus tard le jour d'ouverture du compte" }),
-	).toHaveCount(2);
-	await dialog(page)
-		.getByRole("button", { name: `Avancer la date d'ouverture au ${formatTableDate(daysAgo(36))}` })
-		.click();
-
 	await expect(tab(page, "À créer", 2)).toHaveAttribute("aria-selected", "true");
 	await expect(tab(page, "Rejetées", 0)).toBeVisible();
-	// 1 000,00 − (−20,00 + 50,00): the old opening day still ends at 1 000,00.
-	await expect(
-		dialog(page).getByText(
-			`La date d'ouverture passera au ${formatTableDate(daysAgo(36))}, avec un solde initial de ${euros(97_000)}. Le solde du ${formatTableDate(daysAgo(30))}, date d'ouverture actuelle, ne change pas.`,
-		),
-	).toBeVisible();
+	await expect(dialog(page).getByText(/date d'ouverture/u)).toHaveCount(0);
 	await dialog(page).getByRole("button", { name: "Importer 2 opérations" }).click();
 
 	await expect(dialog(page)).toBeHidden();
 	await expect(page.getByText("2 opérations importées.")).toBeVisible();
+	// The opening balance sets the end of its own day, the line on it included.
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 	await expect(
 		page.getByRole("main").getByRole("button", { name: new RegExp(first.label) }),
 	).toBeVisible();
+	await openSnapshots(page);
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("cell")).toHaveText([
+		`${formatTableDate(daysAgo(30))}Solde d'ouverture`,
+		euros(100_000),
+		"—",
+		"—",
+	]);
 });
 
 test("a transaction added since the preview shows the stale message over the new preview", async ({
@@ -406,27 +403,31 @@ test("a file without a ledger balance states none and leaves Soldes empty", asyn
 	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
 });
 
-test("a ledger balance dated before the opening date is not recorded, and the preview says why", async ({
+test("a ledger balance dated before the opening date joins Soldes as any other", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(30) });
+	const date = daysAgo(40);
 
 	await openImport(page, account.id, account.name);
 	await choose(page, sgml(threeLines(), { ledger: { amount: "2408,61", daysAgo: 40 } }));
 
 	await expect(
 		dialog(page).getByText(
-			`Le solde du relevé au ${formatTableDate(daysAgo(40))} ne sera pas enregistré : il précède la date d'ouverture du compte.`,
+			`Le relevé indique un solde de ${euros(240_861)} au ${formatTableDate(date)}. Il sera enregistré dans l'onglet Soldes.`,
 		),
 	).toBeVisible();
 	await dialog(page).getByRole("button", { name: "Importer 3 opérations" }).click();
 
 	await expect(dialog(page)).toBeHidden();
 	await openSnapshots(page);
-	// Only the opening balance: no snapshot is recorded.
-	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
-	await expect(page.locator("[data-snapshot-id]")).toHaveCount(0);
+	// By date, as Sure: the opening balance, then the older snapshot below it.
+	const rows = page.getByRole("tabpanel", { name: "Soldes" }).getByRole("row");
+	await expect(rows).toHaveCount(3);
+	await expect(rows.nth(1)).toContainText("Solde d'ouverture");
+	await expect(rows.nth(2)).toContainText(formatTableDate(date));
+	await expect(rows.nth(2)).toContainText(euros(240_861));
 });
 
 test("the same lines with a later ledger balance offer « Enregistrer le solde », and the balance follows", async ({

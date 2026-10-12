@@ -5,26 +5,11 @@ import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { amountToText } from "@/lib/amount-sign";
 import { toIsoDate } from "@/lib/dates";
 
-/**
- * A new transaction's default date: today, unless the account opened today or
- * later, where the first day it accepts is the day after its opening date.
- */
-function defaultDate(openingDate: string): string {
-	const dayAfterOpening = new Date(Date.parse(`${openingDate}T00:00:00Z`) + 86_400_000)
-		.toISOString()
-		.slice(0, 10);
-	const today = toIsoDate();
-
-	return today > dayAfterOpening ? today : dayAfterOpening;
-}
-
-export function valuesOf(
-	transaction: TransactionData | null,
-	openingDate: string,
-): TransactionFormInput {
+/** A new transaction is dated today, as Sure's form, whatever the opening date. */
+export function valuesOf(transaction: TransactionData | null): TransactionFormInput {
 	return transaction === null
 		? {
-				date: defaultDate(openingDate),
+				date: toIsoDate(),
 				label: "",
 				amount: "",
 				notes: "",

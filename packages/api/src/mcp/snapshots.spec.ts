@@ -450,13 +450,13 @@ describe("record_valuation", () => {
 		});
 	});
 
-	it("refuses the day before the opening date, tomorrow and an amount the currency cannot hold, writing nothing", async () => {
+	it("refuses a day before 1900, tomorrow and an amount the currency cannot hold, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
 		const opening = await tools.write("record_valuation", {
 			account_id: account.id,
-			date: "2026-01-09",
+			date: "1899-12-31",
 			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
@@ -475,7 +475,7 @@ describe("record_valuation", () => {
 
 		expect(opening.isError).toBe(true);
 		expect(opening.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
-		expect(opening.content[0]?.text).toContain("date before_opening_date");
+		expect(opening.content[0]?.text).toContain("date date_too_early");
 		expect(tomorrow.content[0]?.text).toContain("date date_in_future");
 		expect(badAmount.content[0]?.text).toContain("amount invalid_amount");
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);

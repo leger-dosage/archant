@@ -16,6 +16,18 @@ import { isCurrencyCode, parseAmount } from "@archant/data/money";
 
 export const EARLIEST_OPENING_DATE = "1900-01-01";
 
+/**
+ * The date of an entry the owner types: a line, a trade or a snapshot. Any
+ * day before the opening date goes, as in Sure, but not before 1900: each day
+ * from the oldest entry on gets a balance row, and a year typo such as 0026
+ * would write hundreds of thousands in one transaction.
+ */
+export const entryDateSchema = z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, {
+	message: "date_too_early",
+	// A malformed date reports its format alone.
+	when: (payload) => payload.issues.length === 0,
+});
+
 export const ACCOUNT_NAME_MAX_LENGTH = 100;
 
 // One rule for creating and renaming, so a name the one accepts the other does too.

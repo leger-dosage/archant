@@ -427,16 +427,30 @@ describe("pending transactions", () => {
 		});
 	});
 
+	it("starts no balance at a pending line dated before every other entry", async () => {
+		const { account, bank } = await linkedChecking();
+		const before = await history(account.id);
+
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(-transferAmount(), { date: "2026-08-20" }),
+		]);
+
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true });
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe("2026-09-01");
+		expect(days).toEqual(before);
+	});
+
 	it("counts no miss on a pending entry a refused line still names", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 
 		const synced = await sync(account.id, bank.connectionId, [
-			pendingLine(amount, { date: "2026-08-31" }),
+			pendingLine(amount, { date: "2027-10-23" }),
 		]);
 
-		expect(synced.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
+		expect(synced.rejected).toEqual([{ ref: "0", reason: "DATE_TOO_LATE" }]);
 		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
 	});
 

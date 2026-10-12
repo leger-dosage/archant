@@ -695,7 +695,7 @@ describe("NFR10 at 100,000 transactions", () => {
 			`<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR<BANKTRANLIST>\n${lines.join("\n")}\n</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`,
 		);
 		const created = await createImport(importDeps(), accountId, { name: "releve.ofx", bytes });
-		await previewImport(importDeps(), created.id, { moveOpeningDate: null });
+		await previewImport(importDeps(), created.id, {});
 
 		const started = performance.now();
 		const confirmed = await confirmImport(importDeps(), created.id);

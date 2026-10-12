@@ -5475,24 +5475,28 @@ So that no account stops silently and I can always disconnect.
 ### Story 27.21: Revert imports in any order
 
 As the household's administrator,
-I want reverting an import to restore exactly what it moved, whatever the order and my edits,
-So that re-importing a file never counts it twice.
+I want lines before an account's opening date to go in as Sure takes them, and reverting an import never to touch the opening balance,
+So that re-importing a file never counts it twice, whatever the order of my reverts and my edits.
 
 **Requirements:** FR18, NFR8
 
 **Acceptance Criteria:**
 
-**Given** the schema
-**When** this story ships
-**Then** `imports` gains the opening shift and the moved-to opening date, written at confirm
+**Given** a line, a trade or a snapshot dated on or before an account's opening date, from a file, a bank, the owner or an assistant
+**When** it is written
+**Then** it is accepted, as Sure accepts it: balances start at the oldest entry from zero and the opening anchor sets the balance on its date, as Sure's `calculation_start_date` and `opening_starting_balances`; no balance on or after the opening date changes; the history and charts start at the oldest entry
 
-**Given** an import that moved the opening date
+**Given** a CSV or OFX import
+**When** it is previewed and confirmed
+**Then** it never moves nor shifts the opening anchor, and offers no earlier opening date; a QIF import whose earliest line precedes the anchor moves the anchor's date to the day before, its amount kept, as Sure's `adjust_opening_anchor_if_needed!`
+
+**Given** a confirmed import
 **When** it is reverted
-**Then** the opening anchor gets back the stored shift, not the sum of its lines' current amounts, so an edited amount changes nothing; a newer confirmed import of the account whose previous opening date is this import's moved-to date takes this import's previous opening date, so reverting the older first restores fully
+**Then** its lines go and the opening anchor stays as it is, as Sure's `Import#revert`; `imports.previous_opening_date` goes
 
 **Given** the finished story
-**When** `pnpm test` runs
-**Then** Vitest covers two moving imports reverted oldest first then re-imported without double counting, and a moved-in line edited before the revert
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers two imports reverted oldest first then re-imported without double counting, lines and snapshots before the opening date, and a QIF move; Playwright imports a file older than the opening date and reverts it
 
 ### Story 27.22: A new pending purchase is never taken for a booked line
 

@@ -14,12 +14,7 @@ import { CITATION_MAX_LENGTH, ESTIMATED_PREFIX } from "../domain/balances/citati
 import { SURE_INTERVALS, SURE_PERIODS } from "../domain/balances/sure-periods.ts";
 import { FREQUENCY_PRESETS } from "./bills.ts";
 import { createCategorySchema } from "./categories.ts";
-import {
-	MAX_CSV_COLUMNS,
-	csvMappingSchema,
-	importPreviewSchema,
-	isCsvColumnsValid,
-} from "./imports.ts";
+import { MAX_CSV_COLUMNS, csvMappingSchema, isCsvColumnsValid } from "./imports.ts";
 import { merchantSchema } from "./merchants.ts";
 import { RECURRING_VIEWS } from "./recurring.ts";
 import { monthSchema } from "./reports.ts";
@@ -1310,7 +1305,7 @@ export const valuationsInput = z.strictObject({
 export const recordValuationInput = z.strictObject({
 	account_id: accountId,
 	date: requiredLoose(z.string()).describe(
-		"ISO 8601 date (YYYY-MM-DD) the value applies to, on or after the opening date and not after today; on the opening date, it sets the opening balance. For a period-end value, use the last day of the period.",
+		"ISO 8601 date (YYYY-MM-DD) the value applies to, not after today; on the opening date, it sets the opening balance. For a period-end value, use the last day of the period.",
 	),
 	amount: requiredLoose(sureAmount).describe(
 		"The account's stored balance on that date in its own currency, a number or a decimal string: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.",
@@ -1411,7 +1406,7 @@ const TRANSACTION_TYPES = ["income", "expense", "inflow", "outflow"] as const;
 export const createTransactionInput = z.strictObject({
 	account_id: accountId,
 	date: requiredLoose(z.string()).describe(
-		"ISO 8601 date (YYYY-MM-DD) of the transaction, after the account's opening date and at most a year from today.",
+		"ISO 8601 date (YYYY-MM-DD) of the transaction, from 1900 on and at most a year from today.",
 	),
 	amount: requiredLoose(sureAmount).describe(
 		"Transaction amount in the account's currency, a number or a decimal string: positive is an expense (money out), negative an income (money in). With type, type decides the sign and the magnitude of amount is used.",
@@ -1575,11 +1570,6 @@ export const previewImportInput = z.strictObject({
 		})
 		.optional()
 		.describe("A QIF file's date order; absent, the one in use stays."),
-	move_opening_date: importPreviewSchema.shape.moveOpeningDate
-		.default(null)
-		.describe(
-			"YYYY-MM-DD, the opening_suggestion a preview gave: moves the account's opening date back so the lines refused before it go in. null or absent keeps the opening date.",
-		),
 });
 
 /** `confirm_import`: the import and the counts of the preview the owner agreed to. */

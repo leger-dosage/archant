@@ -29,11 +29,10 @@ export type SnapshotPage = {
 
 // The ledger names why it refused a snapshot; the form shows it under the
 // date. A snapshot may fall on the opening date, where it sets the opening
-// balance, so its code is not a transaction's `not_after_opening_date`, except
-// on a linked account, whose opening date a snapshot may not set.
+// balance, except on a linked account: there the opening anchor holds the
+// date, as another snapshot would, since a snapshot may not set it.
 const REJECTION_FIELDS: Record<SnapshotRejectionCode | "OPENING_DATE", FieldError> = {
-	BEFORE_OPENING_DATE: { path: "date", code: "before_opening_date" },
-	OPENING_DATE: { path: "date", code: "not_after_opening_date" },
+	OPENING_DATE: { path: "date", code: "snapshot_exists" },
 	DATE_IN_FUTURE: { path: "date", code: "date_in_future" },
 	SNAPSHOT_EXISTS: { path: "date", code: "snapshot_exists" },
 };

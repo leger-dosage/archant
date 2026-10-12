@@ -17,9 +17,9 @@ describe("snapshotRejectionFor", () => {
 		expect(snapshotRejectionFor("2026-01-10", context)).toBe("OPENING_DATE");
 	});
 
-	it("refuses any day before the opening date", () => {
-		expect(snapshotRejectionFor("2026-01-09", context)).toBe("BEFORE_OPENING_DATE");
-		expect(snapshotRejectionFor("2025-12-31", context)).toBe("BEFORE_OPENING_DATE");
+	it("accepts any day before the opening date, as a reconciliation", () => {
+		expect(snapshotRejectionFor("2026-01-09", context)).toBeNull();
+		expect(snapshotRejectionFor("2025-12-31", context)).toBeNull();
 	});
 
 	it("refuses tomorrow", () => {

@@ -719,8 +719,9 @@ export async function linkBankAccounts(
 	}
 
 	const firstDay = syncStartDate ?? connection.syncStartDate;
-	// Sure's `OpeningBalanceManager.default_date`, two years back, but before
-	// the first day the sync reads: a line on the opening date is refused.
+	// Sure's `OpeningBalanceManager.default_date`: two years back, or the day
+	// before the first day the sync reads when that is earlier, as Sure's
+	// `[oldest_entry_date - 1.day, 2.years.ago].min`.
 	const openingDate =
 		firstDay === null
 			? addMonths(day, -HISTORY_MONTHS)

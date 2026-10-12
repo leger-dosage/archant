@@ -10,6 +10,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { listAssistantAccounts } from "./balances.ts";
 import { createAccount } from "./ledger/accounts.ts";
+import { ingest } from "./ledger/ingest.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -61,6 +62,36 @@ describe("listAssistantAccounts", () => {
 				series: undefined,
 			}),
 		]);
+	});
+
+	it("starts an account at a line dated before its opening date", async () => {
+		const checking = await account();
+		await ingest(
+			deps(),
+			checking,
+			{
+				transactions: [
+					{
+						externalId: null,
+						date: "2026-05-20",
+						amount: toMinorUnits(-500),
+						currency: "EUR",
+						label: "Boulangerie",
+						reference: null,
+						notes: null,
+						pending: false,
+					},
+				],
+				balance: null,
+				rejected: [],
+			},
+			{ manual: true },
+			{ origin: "user" },
+		);
+
+		const [row] = await listAssistantAccounts(deps());
+
+		expect(row?.startDate).toBe("2026-05-20");
 	});
 
 	it("reads the period from the account's start date, a day at a time up to a year", async () => {

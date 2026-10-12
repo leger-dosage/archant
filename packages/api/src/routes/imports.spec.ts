@@ -208,9 +208,7 @@ describe("POST /api/imports/:id/confirm", () => {
 		});
 		await expect(transactionsOf(account.id)).resolves.toMatchObject({ total: 1 });
 
-		const fresh = await request("POST", `/api/imports/${preview.id}/preview`, {
-			moveOpeningDate: null,
-		});
+		const fresh = await request("POST", `/api/imports/${preview.id}/preview`, {});
 		const { data } = importBody.parse(fresh.body);
 		expect(data.groups.matched).toEqual([expect.objectContaining({ ref: "0" })]);
 		expect(z.object({ data: z.object({ id: z.string() }) }).parse(manual.body).data.id).toBe(
@@ -308,59 +306,36 @@ describe("POST /api/imports/:id/revert and recurring detection", () => {
 });
 
 describe("POST /api/imports/:id/preview", () => {
-	it("moves the opening date back on request, and confirm keeps today's balance", async () => {
+	it("takes the lines before the opening date, and confirm leaves the opening date and its day's balance", async () => {
 		const account = await openAccount({ openingDate: "2026-09-05" });
 		const preview = await uploaded(account.id, await creditAgricole());
-		expect(preview.openingSuggestion).toBe("2026-09-02");
-		expect(
-			preview.groups.rejected.map(({ ref, reason, line }) => [ref, reason, line?.date]),
-		).toEqual([
-			["0", "BEFORE_OPENING_DATE", "2026-09-03"],
-			["1", "BEFORE_OPENING_DATE", "2026-09-05"],
-		]);
-
-		const moved = await request("POST", `/api/imports/${preview.id}/preview`, {
-			moveOpeningDate: "2026-09-02",
-		});
-
-		const { data } = importBody.parse(moved.body);
-		expect(data.groups.created).toHaveLength(5);
-		expect(data.opening).toEqual({ date: "2026-09-02", balance: 123456 + 4290 + 8712 });
-		await expect(balanceOnDay(account.id, "2026-09-05")).resolves.toBe(123456);
+		expect(preview.groups.created).toHaveLength(5);
+		expect(preview.groups.rejected).toEqual([]);
+		expect(preview).not.toHaveProperty("openingSuggestion");
+		expect(preview).not.toHaveProperty("opening");
 
 		await request("POST", `/api/imports/${preview.id}/confirm`);
 
+		await expect(balanceOnDay(account.id, "2026-09-03")).resolves.toBe(-4290);
 		await expect(balanceOnDay(account.id, "2026-09-05")).resolves.toBe(123456);
 		// The file's LEDGERBAL on 15 September sets today's balance.
 		await expect(balanceOf(account.id)).resolves.toBe(123456);
 		const { data: detail } = await (
 			await testClient(buildApp()).api.accounts[":id"].$get({ param: { id: account.id } })
 		).json();
-		expect(detail.openingDate).toBe("2026-09-02");
+		expect(detail.openingDate).toBe("2026-09-05");
 	});
 
-	it("refuses a malformed date and answers NOT_FOUND for an unknown import", async () => {
+	it("refuses a malformed date order and answers NOT_FOUND for an unknown import", async () => {
 		const account = await openAccount();
 		const preview = await uploaded(account.id, await creditAgricole());
 
 		await expect(
-			request("POST", `/api/imports/${preview.id}/preview`, { moveOpeningDate: "hier" }),
+			request("POST", `/api/imports/${preview.id}/preview`, { qif: { dateOrder: "hier" } }),
 		).resolves.toMatchObject({ status: 400, body: { error: { code: "VALIDATION_ERROR" } } });
-		await expect(
-			request("POST", `/api/imports/${preview.id}/preview`, { moveOpeningDate: "0001-01-01" }),
-		).resolves.toEqual({
-			status: 400,
-			body: {
-				error: {
-					code: "VALIDATION_ERROR",
-					message: "The request is invalid.",
-					fields: [{ path: "moveOpeningDate", code: "date_too_early" }],
-				},
-			},
+		await expect(request("POST", "/api/imports/nope/preview", {})).resolves.toMatchObject({
+			status: 404,
 		});
-		await expect(
-			request("POST", "/api/imports/nope/preview", { moveOpeningDate: null }),
-		).resolves.toMatchObject({ status: 404 });
 	});
 });
 
@@ -459,8 +434,8 @@ async function uploadedCsv(accountId: string, bytes: Uint8Array, name = "releve.
 	return csvBody.parse(body).data;
 }
 
-async function previewCsv(id: string, csv: unknown, moveOpeningDate: string | null = null) {
-	return request("POST", `/api/imports/${id}/preview`, { moveOpeningDate, csv });
+async function previewCsv(id: string, csv: unknown) {
+	return request("POST", `/api/imports/${id}/preview`, { csv });
 }
 
 async function mappingRows(accountId: string) {
@@ -621,9 +596,7 @@ describe("CSV imports", () => {
 		expect(preview.groups.created).toEqual([]);
 
 		// A preview without a mapping stays on the columns.
-		const without = await request("POST", `/api/imports/${preview.id}/preview`, {
-			moveOpeningDate: null,
-		});
+		const without = await request("POST", `/api/imports/${preview.id}/preview`, {});
 		expect(csvBody.parse(without.body).data.csv.mapping).toBeNull();
 	});
 
@@ -831,7 +804,6 @@ async function uploadedQif(accountId: string, bytes: Uint8Array, name = "releve.
 
 async function previewQif(id: string, body: Record<string, unknown>) {
 	const { status, body: json } = await request("POST", `/api/imports/${id}/preview`, {
-		moveOpeningDate: null,
 		...body,
 	});
 
@@ -847,7 +819,7 @@ const dates = async (id: string) =>
 				groups: z.object({ created: z.array(z.object({ date: z.string() })) }),
 			}),
 		})
-		.parse((await request("POST", `/api/imports/${id}/preview`, { moveOpeningDate: null })).body)
+		.parse((await request("POST", `/api/imports/${id}/preview`, {})).body)
 		.data.groups.created.map((line) => line.date);
 
 describe("QIF imports", () => {
@@ -990,7 +962,6 @@ describe("QIF imports", () => {
 		const preview = await uploadedQif(account.id, qifFile(["D10/09/2026", "T-1,00", "PA"]));
 
 		const { status, body } = await request("POST", `/api/imports/${preview.id}/preview`, {
-			moveOpeningDate: null,
 			qif: { dateOrder: "year-first" },
 		});
 
@@ -1003,7 +974,6 @@ describe("QIF imports", () => {
 		const preview = await uploaded(account.id, await creditAgricole());
 
 		const { status, body } = await request("POST", `/api/imports/${preview.id}/preview`, {
-			moveOpeningDate: null,
 			qif: { dateOrder: "month-first" },
 		});
 

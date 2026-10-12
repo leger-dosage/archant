@@ -349,8 +349,6 @@ export const importBody = z.object({
 				}),
 			),
 		}),
-		openingSuggestion: z.string().nullable(),
-		opening: z.object({ date: z.string(), balance: z.number() }).nullable(),
 		statementBalance: z
 			.object({ status: z.string(), date: z.string(), balance: z.number() })
 			.passthrough()

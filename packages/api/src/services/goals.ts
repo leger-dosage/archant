@@ -34,7 +34,7 @@ import {
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
-import { balanceOn, balancesBetween, openingDateOf } from "./ledger/balances.ts";
+import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -95,11 +95,11 @@ const RELEASED: readonly GoalState[] = RELEASED_GOAL_STATES;
 
 /** An account's balance today, and on the day its 90-day pace starts from (AD-8). */
 async function accountFigures(deps: ServiceDeps, accountId: string, date: IsoDate) {
-	const [now, openingDate] = await Promise.all([
+	const [now, startDate] = await Promise.all([
 		balanceOn(deps, accountId, date),
-		openingDateOf(deps, accountId),
+		historyStartOf(deps.db, accountId, null),
 	]);
-	const before = await balanceOn(deps, accountId, paceStart(date, openingDate));
+	const before = await balanceOn(deps, accountId, paceStart(date, startDate));
 
 	return { now: now?.amount ?? toMinorUnits(0), before: before?.amount ?? toMinorUnits(0) };
 }
@@ -272,8 +272,8 @@ export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points
 
 /**
  * What a goal had saved each day of its chart, as Sure's projection panel's
- * `balance_series_values`: from 90 days ago, or from the earliest opening of
- * its active accounts if later, to today, each day its share of each active
+ * `balance_series_values`: from 90 days ago, or from the earliest history
+ * start of its active accounts if later, to today, each day its share of each active
  * account's balance under today's links (AD-8). Reads only.
  */
 export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<GoalHistory> {
@@ -286,8 +286,10 @@ export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<Goa
 	}
 
 	const links = linkRows.filter((row) => row.goalId === id && row.active);
-	const openings = await Promise.all(links.map(async (row) => openingDateOf(deps, row.accountId)));
-	const opened = openings.filter((opening) => opening !== null);
+	const starts = await Promise.all(
+		links.map(async (row) => historyStartOf(deps.db, row.accountId, null)),
+	);
+	const opened = starts.filter((start) => start !== null);
 	const from = paceStart(date, opened.length === 0 ? null : opened.reduce(minDate));
 	const accountsSeries = await Promise.all(
 		links.map(async (row) => ({

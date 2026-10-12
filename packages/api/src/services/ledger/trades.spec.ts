@@ -1,6 +1,6 @@
 import type { SecurityChoice, TradeInput } from "./trades.ts";
 
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, lt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
@@ -283,18 +283,51 @@ describe("recordTrade", () => {
 		await expect(record("nope", buy("nope"))).rejects.toMatchObject({ code: "NOT_FOUND" });
 	});
 
-	it.each([
-		["the opening day, whose anchor fixes it", "2026-09-01", "not_after_opening_date"],
-		["a day before it", "2026-08-20", "not_after_opening_date"],
-		["tomorrow", "2026-09-22", "date_in_future"],
-	])("refuses %s", async (_name, date, code) => {
+	it("refuses tomorrow", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 
-		await expect(record(account.id, buy(securityId, { date }))).rejects.toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "date", code }],
-		});
+		await expect(record(account.id, buy(securityId, { date: "2026-09-22" }))).rejects.toMatchObject(
+			{
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "date", code: "date_in_future" }],
+			},
+		);
+	});
+
+	it.each([
+		["the opening day, whose anchor still sets its balance", "2026-09-01"],
+		["a day before it, where the balances then start", "2026-08-20"],
+	])("records a buy on %s, as Sure", async (_name, date) => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+
+		await record(account.id, buy(securityId, { date }));
+
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe(date);
+		expect(days.get("2026-09-01")).toBe(2_500_000);
+	});
+
+	it("leaves no balance nor holding before the opening date once a buy before it is deleted", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		const id = await record(account.id, buy(securityId, { date: "2026-08-20" }));
+		const before = await temp.db
+			.select({ date: holdings.date })
+			.from(holdings)
+			.where(and(eq(holdings.accountId, account.id), lt(holdings.date, "2026-09-01")));
+		expect(before.length).toBeGreaterThan(0);
+
+		await deleteTrade(deps(), id, user);
+
+		await expect(
+			temp.db
+				.select({ date: holdings.date })
+				.from(holdings)
+				.where(and(eq(holdings.accountId, account.id), lt(holdings.date, "2026-09-01"))),
+		).resolves.toEqual([]);
+		expect([...(await history(account.id)).keys()][0]).toBe("2026-09-01");
 	});
 
 	it("refuses an amount no balance could hold, on the quantity", async () => {
@@ -527,14 +560,11 @@ describe("updateTrade", () => {
 		});
 	});
 
-	it("refuses a date outside the account's life and an amount too big", async () => {
+	it("refuses a date in the future and an amount too big", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		const id = await record(account.id, buy(securityId));
 
-		await expect(updateTrade(deps(), id, { date: "2026-09-01" }, user)).rejects.toMatchObject({
-			fields: [{ path: "date", code: "not_after_opening_date" }],
-		});
 		await expect(updateTrade(deps(), id, { date: "2026-09-30" }, user)).rejects.toMatchObject({
 			fields: [{ path: "date", code: "date_in_future" }],
 		});

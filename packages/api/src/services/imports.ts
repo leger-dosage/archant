@@ -1,4 +1,3 @@
-import type { IsoDate } from "../domain/dates.ts";
 import type { ParsedStatement } from "../domain/statement.ts";
 import type { Logger } from "../lib/logger.ts";
 import type { ImportPreviewInput } from "../schemas/imports.ts";
@@ -11,7 +10,7 @@ import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
 import { errorCode } from "@archant/data/backup";
 import type { Database } from "@archant/data/client";
 import { refreshStatistics } from "@archant/data/client";
-import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 import type { QifDateOrder } from "@archant/data/qif-options";
 import { importMappings } from "@archant/data/schema/import-mappings";
@@ -87,10 +86,6 @@ export type ImportPreview = {
 	/** The account's currency, which every amount here is in. */
 	currency: CurrencyCode;
 	groups: IngestGroups;
-	/** The opening date the Rejetées tab offers, the day before the earliest refused line. */
-	openingSuggestion: IsoDate | null;
-	/** The opening anchor confirming moves to, with its new balance (AD-5). */
-	opening: { date: IsoDate; balance: MinorUnits } | null;
 	/** What confirming does with the file's closing balance, `null` when it has none. */
 	statementBalance: StatementBalanceOutcome | null;
 	/** `null` for every source but CSV. */
@@ -227,8 +222,6 @@ async function unmappedPreview(
 		source: row.source,
 		currency,
 		groups: { created: [], present: [], matched: [], duplicates: [], rejected: [] },
-		openingSuggestion: null,
-		opening: null,
 		statementBalance: null,
 		csv: await csvPreview(deps, row, undefined),
 		qif: null,
@@ -258,7 +251,7 @@ async function runPreview(
 		row.accountId,
 		statement,
 		{ importId: row.id },
-		{ origin: ORIGIN, dryRun: true, moveOpeningDate: options.moveOpeningDate },
+		{ origin: ORIGIN, dryRun: true },
 	);
 
 	await deps.db
@@ -274,8 +267,6 @@ async function runPreview(
 		source: row.source,
 		currency,
 		groups: result.groups,
-		openingSuggestion: result.openingSuggestion,
-		opening: result.opening,
 		statementBalance: result.balance,
 		csv: row.source === "csv" ? await csvPreview(deps, row, options.csv) : null,
 		qif: row.source === "qif" ? qifPreview(row, options) : null,
@@ -364,7 +355,6 @@ export async function previewImport(
 	const csv = row.source === "csv" ? (input.csv ?? row.options.csv) : undefined;
 	const qif = row.source === "qif" ? (input.qif ?? row.options.qif) : undefined;
 	const options: ImportOptions = {
-		...(input.moveOpeningDate === null ? {} : { moveOpeningDate: input.moveOpeningDate }),
 		...(csv === undefined ? {} : { csv }),
 		...(qif === undefined ? {} : { qif }),
 	};
@@ -410,7 +400,7 @@ export async function confirmImport(
 					row.accountId,
 					statement,
 					{ importId: row.id },
-					{ origin: ORIGIN, moveOpeningDate: row.options.moveOpeningDate, expectedCounts },
+					{ origin: ORIGIN, expectedCounts },
 				);
 
 				if (mapping !== undefined) {

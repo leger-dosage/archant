@@ -30,6 +30,26 @@ describe("forwardBalances", () => {
 		]);
 	});
 
+	it("starts from zero before the anchor, which then sets its own day, as Sure", () => {
+		// Sure's `opening_starting_balances`: a day before the opening anchor
+		// starts from zero, and the anchor still fixes the end of its day.
+		expect(
+			forwardBalances({
+				...opening,
+				from: "2026-08-20",
+				movements: [
+					{ date: "2026-08-20", amount: m(-2000) },
+					{ date: "2026-09-05", amount: m(-300) },
+				],
+				until: "2026-09-05",
+			})
+				.filter((row) =>
+					["2026-08-20", "2026-08-31", "2026-09-01", "2026-09-05"].includes(row.date),
+				)
+				.map((row) => row.balance),
+		).toEqual([-2000, -2000, 123456, 123156]);
+	});
+
 	it("adds several movements of one day together on an asset", () => {
 		expect(
 			balances({

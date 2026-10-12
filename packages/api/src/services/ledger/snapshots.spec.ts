@@ -166,18 +166,41 @@ describe("recordSnapshot", () => {
 		).resolves.toEqual({ amount: 123456 });
 	});
 
-	it("refuses the day before the opening date and tomorrow, and writes nothing", async () => {
+	it("records a day before the opening date as a reconciliation the balances start from, as Sure", async () => {
+		const account = await openChecking();
+
+		const result = await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-08-15", balance: toMinorUnits(50000) },
+			{ origin: "user" },
+		);
+
+		expect(result).toMatchObject({ status: "recorded", replaced: false });
+		const id = result.status === "recorded" ? result.id : "";
+		await expect(findSnapshot(deps(), id)).resolves.toMatchObject({
+			date: "2026-08-15",
+			balance: 50000,
+			computed: 0,
+			gap: 50000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-08-14")).resolves.toBeNull();
+		await expect(balanceOn(deps(), account.id, "2026-08-31")).resolves.toMatchObject({
+			amount: 50000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+
+		await deleteSnapshot(deps(), id, { origin: "user" });
+
+		await expect(balanceOn(deps(), account.id, "2026-08-31")).resolves.toBeNull();
+	});
+
+	it("refuses tomorrow, and writes nothing", async () => {
 		const account = await openPinned();
 		const before = await history(account.id);
 
-		await expect(
-			recordSnapshot(
-				deps(),
-				account.id,
-				{ date: "2026-01-09", balance: toMinorUnits(1) },
-				{ origin: "user" },
-			),
-		).resolves.toEqual({ status: "rejected", reason: "BEFORE_OPENING_DATE" });
 		await expect(
 			recordSnapshot(
 				deps(),
@@ -291,16 +314,13 @@ describe("updateSnapshot", () => {
 		).resolves.toEqual({ status: "updated" });
 	});
 
-	it("refuses the opening date, which its anchor holds, the day before and tomorrow", async () => {
+	it("refuses the opening date, which its anchor holds, and tomorrow", async () => {
 		const account = await openPinned();
 		const id = await snapshot(account.id, "2026-03-05", 200000);
 
 		await expect(
 			updateSnapshot(deps(), id, { date: "2026-01-10" }, { origin: "user" }),
 		).resolves.toEqual({ status: "rejected", reason: "SNAPSHOT_EXISTS" });
-		await expect(
-			updateSnapshot(deps(), id, { date: "2026-01-09" }, { origin: "user" }),
-		).resolves.toEqual({ status: "rejected", reason: "BEFORE_OPENING_DATE" });
 		await expect(
 			updateSnapshot(deps(), id, { date: "2026-09-22" }, { origin: "user" }),
 		).resolves.toEqual({ status: "rejected", reason: "DATE_IN_FUTURE" });

@@ -184,13 +184,37 @@ describe("updateTransaction", () => {
 		);
 	});
 
-	it("rejects a date on the opening day and changes nothing", async () => {
+	it("moves a line before the opening date, the balances starting there from zero", async () => {
 		const account = await openChecking();
 		const id = await add(account.id);
 
 		await expect(
-			updateTransaction(deps(), id, { date: "2026-09-01" }, { origin: "user" }),
-		).resolves.toEqual({ status: "rejected", reason: "BEFORE_OPENING_DATE" });
+			updateTransaction(deps(), id, { date: "2026-08-20" }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ date: "2026-08-20" });
+		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
+			amount: -4290,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 123456,
+		});
+
+		await updateTransaction(deps(), id, { date: "2026-09-10" }, { origin: "user" });
+
+		await expect(balanceOn(deps(), account.id, "2026-08-31")).resolves.toBeNull();
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 123456 - 4290,
+		});
+	});
+
+	it("rejects a date more than a year ahead and changes nothing", async () => {
+		const account = await openChecking();
+		const id = await add(account.id);
+
+		await expect(
+			updateTransaction(deps(), id, { date: "2027-10-23" }, { origin: "user" }),
+		).resolves.toEqual({ status: "rejected", reason: "DATE_TOO_LATE" });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ date: "2026-09-10" });
 	});
