@@ -176,7 +176,10 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 	);
 	const spending = new Map<string, BillView[]>();
 
-	for (const bill of bills.filter((one) => one.status === "active" && one.billType !== "income")) {
+	// Sure's `spend_series?`: an income is no spend, and a transfer only moves money.
+	for (const bill of bills.filter(
+		(one) => one.status === "active" && one.billType !== "income" && one.billType !== "transfer",
+	)) {
 		spending.set(bill.currency, [...(spending.get(bill.currency) ?? []), bill]);
 	}
 

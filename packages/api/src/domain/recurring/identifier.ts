@@ -3,17 +3,26 @@ import type { IsoDate } from "../dates.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import type { TransferKind } from "@archant/data/transfer-kinds";
 
-import { recurringDirection } from "../cash-flow.ts";
+import { direction } from "../cash-flow.ts";
 import { addDays, addMonths } from "../dates.ts";
 import { normalizeLabel } from "../normalize-label.ts";
 import { DAY_MATCH_TOLERANCE } from "./schedule.ts";
+
+/** A transfer side as recurring reads it: a recurring transfer is paid by an outflow into its destination. */
+export type TransferSide = {
+	kind: TransferKind;
+	/** The account the transfer pays into when this row is its outflow; `null` on its inflow. */
+	intoAccountId: string | null;
+};
 
 /**
  * What detection reads of a transaction; excluded rows count, as in Sure. The
  * caller leaves out split parents and investment accounts.
  */
-export type RecurringCandidate = CashFlowTransaction & {
+export type RecurringCandidate = Omit<CashFlowTransaction, "transfer"> & {
+	transfer: TransferSide | null;
 	accountId: string;
 	date: IsoDate;
 	currency: string;
@@ -197,7 +206,8 @@ export function detectRecurring<Row extends RecurringCandidate>(
 	const groups = new Map<string, Row[]>();
 
 	for (const candidate of candidates) {
-		if (candidate.date < from || recurringDirection(candidate) === "transfer") {
+		// Sure's `.where.not(kind: TRANSFER_KINDS)`: no transfer side groups.
+		if (candidate.date < from || direction(candidate) === "transfer") {
 			continue;
 		}
 

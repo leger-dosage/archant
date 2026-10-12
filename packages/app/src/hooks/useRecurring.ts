@@ -111,6 +111,17 @@ export function useAddRecurring() {
 	});
 }
 
+/** Sure's « Marquer comme récurrent » on a transfer: a recurring transfer from it. */
+export function useMarkTransferRecurring() {
+	const invalidate = useInvalidateRecurring();
+
+	return useMutation({
+		mutationFn: async (transferId: string) =>
+			(await unwrap(api.transfers[":id"].recurring.$post({ param: { id: transferId } }))).data,
+		onSuccess: invalidate,
+	});
+}
+
 /** « Supprimer »: deletes a manual series, ends a detected one. */
 export function useDeleteRecurring() {
 	const invalidate = useInvalidateRecurring();

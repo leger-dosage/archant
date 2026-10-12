@@ -2,17 +2,21 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchEntry } from "../../domain/recurring/matcher.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, inArray, sql } from "drizzle-orm";
+import { and, between, eq, gte, inArray, sql } from "drizzle-orm";
 
+import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
 import { transactions } from "@archant/data/schema/transactions";
+import { transfers } from "@archant/data/schema/transfers";
 
 import {
 	KEYS_PER_LOOKUP,
 	asInflow,
 	asOutflow,
+	counterpartAccount,
+	counterpartEntry,
 	inSequence,
 	isSplitParent,
 	transferColumns,
@@ -23,7 +27,9 @@ type Reader = Pick<Transaction, "select">;
 /**
  * The transactions dated within `window`, as the recurring matcher reads
  * them: split parents and transfer sides marked rather than left out, so the
- * matcher's own identity filter decides, as it does for one it explains.
+ * matcher's own identity filter decides, as it does for one it explains. A
+ * transfer's outflow carries the account it pays into, which a recurring
+ * transfer reads, as Sure's `preload_transfer_destinations`.
  */
 export async function matchableTransactions(
 	db: Reader,
@@ -42,20 +48,89 @@ export async function matchableTransactions(
 			excluded: transactions.excluded,
 			splitParent: sql<number>`${isSplitParent(entries.id)}`,
 			transferKind: transferColumns.transferKind,
+			intoAccountId: counterpartEntry.accountId,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.leftJoin(counterpartEntry, eq(counterpartEntry.id, asOutflow.inflowTransactionId))
 		.where(and(eq(entries.kind, "transaction"), between(entries.date, window.start, window.end)))
 		.orderBy(entries.date, entries.createdAt, entries.id);
 
-	return rows.map(({ transferKind, splitParent, ...row }) => ({
+	return rows.map(({ transferKind, intoAccountId, splitParent, ...row }) => ({
 		...row,
 		amount: toMinorUnits(row.amount),
 		splitParent: Boolean(splitParent),
-		transfer: transferKind === null ? null : { kind: transferKind },
+		transfer: transferKind === null ? null : { kind: transferKind, intoAccountId },
 	}));
+}
+
+/**
+ * The account each transfer outflow dated from `from` pays into, by the
+ * outflow's id: what detection's passes read of a recurring transfer.
+ */
+export async function transferDestinations(
+	db: Reader,
+	from: IsoDate,
+): Promise<Map<string, string>> {
+	const rows = await db
+		.select({ id: transfers.outflowTransactionId, intoAccountId: counterpartEntry.accountId })
+		.from(transfers)
+		.innerJoin(entries, eq(entries.id, transfers.outflowTransactionId))
+		.innerJoin(counterpartEntry, eq(counterpartEntry.id, transfers.inflowTransactionId))
+		.where(gte(entries.date, from));
+
+	return new Map(rows.map((row) => [row.id, row.intoAccountId]));
+}
+
+/** A transfer as « Marquer comme récurrent » reads it: its outflow, and the account it pays into. */
+export type TransferPair = {
+	outflow: {
+		accountId: string;
+		amount: MinorUnits;
+		currency: string;
+		date: IsoDate;
+		label: string;
+	};
+	destination: { id: string; name: string; type: AccountType };
+};
+
+/** The transfer `transferId` names, `null` for none. */
+export async function transferPair(db: Reader, transferId: string): Promise<TransferPair | null> {
+	const row = await db
+		.select({
+			accountId: entries.accountId,
+			amount: entries.amount,
+			currency: entries.currency,
+			date: entries.date,
+			label: transactions.label,
+			destinationId: counterpartAccount.id,
+			destinationName: counterpartAccount.name,
+			destinationType: counterpartAccount.type,
+		})
+		.from(transfers)
+		.innerJoin(entries, eq(entries.id, transfers.outflowTransactionId))
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(counterpartEntry, eq(counterpartEntry.id, transfers.inflowTransactionId))
+		.innerJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
+		.where(eq(transfers.id, transferId))
+		.get();
+
+	if (row === undefined) {
+		return null;
+	}
+
+	return {
+		outflow: {
+			accountId: row.accountId,
+			amount: toMinorUnits(row.amount),
+			currency: row.currency,
+			date: row.date,
+			label: row.label,
+		},
+		destination: { id: row.destinationId, name: row.destinationName, type: row.destinationType },
+	};
 }
 
 /** A transaction the owner attaches to an occurrence; `null` for no transaction of this id. */
@@ -64,29 +139,46 @@ export async function paymentTransaction(
 	entryId: string,
 ): Promise<{
 	id: string;
+	accountId: string;
 	amount: MinorUnits;
 	date: IsoDate;
 	currency: string;
 	label: string;
 	splitParent: boolean;
+	transfer: MatchEntry["transfer"];
 } | null> {
 	const row = await db
 		.select({
 			id: entries.id,
+			accountId: entries.accountId,
 			amount: entries.amount,
 			date: entries.date,
 			currency: entries.currency,
 			label: transactions.label,
 			splitParent: sql<number>`${isSplitParent(entries.id)}`,
+			transferKind: transferColumns.transferKind,
+			intoAccountId: counterpartEntry.accountId,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.leftJoin(counterpartEntry, eq(counterpartEntry.id, asOutflow.inflowTransactionId))
 		.where(eq(entries.id, entryId))
 		.get();
 
-	return row === undefined
-		? null
-		: { ...row, amount: toMinorUnits(row.amount), splitParent: Boolean(row.splitParent) };
+	if (row === undefined) {
+		return null;
+	}
+
+	const { transferKind, intoAccountId, ...rest } = row;
+
+	return {
+		...rest,
+		amount: toMinorUnits(row.amount),
+		splitParent: Boolean(row.splitParent),
+		transfer: transferKind === null ? null : { kind: transferKind, intoAccountId },
+	};
 }
 
 /**

@@ -4,6 +4,7 @@ import type { TempDatabase } from "./temp-database.ts";
 import { asc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, vi } from "vitest";
 
+import type { AccountSubtype, AccountType } from "@archant/data/account-types";
 import { toMinorUnits } from "@archant/data/money";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
@@ -17,6 +18,7 @@ import { createAccount } from "../services/ledger/accounts.ts";
 import { linkBankAccount } from "../services/ledger/bank-link.ts";
 import { updateTransaction } from "../services/ledger/edits.ts";
 import { ingest } from "../services/ledger/ingest.ts";
+import { findTransaction } from "../services/ledger/queries.ts";
 import { oneByOne } from "../services/ledger/shared.ts";
 import { declareBill } from "../services/recurring/bills.ts";
 import { createTempDatabase } from "./temp-database.ts";
@@ -49,13 +51,19 @@ export function setToday(date: string): void {
 	vi.setSystemTime(new Date(`${date}T10:00:00Z`));
 }
 
-export async function openAccount(currency: "EUR" | "USD" = "EUR"): Promise<string> {
+export async function openAccount(
+	currency: "EUR" | "USD" = "EUR",
+	kind: { name?: string; type: AccountType; subtype: AccountSubtype | null } = {
+		type: "depository",
+		subtype: "checking",
+	},
+): Promise<string> {
 	const created = await createAccount(
 		deps(),
 		{
-			name: `Compte ${currency}`,
-			type: "depository",
-			subtype: "checking",
+			name: kind.name ?? `Compte ${currency}`,
+			type: kind.type,
+			subtype: kind.subtype,
 			currency,
 			openingBalance: toMinorUnits(0),
 			openingDate: "2026-01-01",
@@ -96,6 +104,31 @@ export async function addRows(
 	);
 
 	return result.created;
+}
+
+/** The owner's mortgage, « Prêt immobilier », in euros. */
+export const openLoan = () =>
+	openAccount("EUR", { name: "Prêt immobilier", type: "loan", subtype: "mortgage" });
+
+/**
+ * `amount`, a magnitude, out of `from` and into `to` on `date`, which
+ * ingestion pairs as a transfer. Answers the outflow's id and the transfer's.
+ */
+export async function transferBetween(
+	from: string,
+	to: string,
+	date: string,
+	amount: number,
+): Promise<{ outflow: string; transferId: string }> {
+	const [outflow = ""] = await addRows(from, [{ date, amount: -amount, label: "ECHEANCE PRET" }]);
+	await addRows(to, [{ date, amount, label: "ECHEANCE" }]);
+	const transfer = (await findTransaction(deps(), outflow))?.transfer;
+
+	if (transfer === null || transfer === undefined) {
+		throw new Error(`No transfer paired ${outflow}.`);
+	}
+
+	return { outflow, transferId: transfer.id };
 }
 
 /** Links `accountId` to a bank account of a new connection, and answers the connection's id. */

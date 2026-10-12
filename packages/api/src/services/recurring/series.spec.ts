@@ -26,7 +26,7 @@ import { findTransaction } from "../ledger/queries.ts";
 import { recordSnapshot } from "../ledger/snapshots.ts";
 import { splitTransaction } from "../ledger/splits.ts";
 import { applyRules, createRule } from "../rules.ts";
-import { declareBill, editBill } from "./bills.ts";
+import { declareBill, editBill, markTransferRecurring } from "./bills.ts";
 import { runRecurring } from "./pipeline.ts";
 import {
 	addRecurringFromEntry,
@@ -158,6 +158,19 @@ async function detectedBill(accountId: string, ids?: readonly string[]) {
 }
 
 describe("detection", () => {
+	it("finds no series in three monthly loan payments, transfer sides as Sure leaves them out", async () => {
+		const checking = await account("Courant");
+		const loan = await account("Prêt", { type: "loan", subtype: "mortgage" });
+		const dates = ["2026-07-05", "2026-08-05", "2026-09-05"];
+		await addRows(checking, dates, "ECHEANCE PRET", -80_000);
+		await addRows(loan, dates, "ECHEANCE", 80_000);
+
+		await expect(runRecurring(deps(), { backfill: false })).resolves.toMatchObject({
+			detected: 0,
+		});
+		await expect(stored()).resolves.toEqual([]);
+	});
+
 	it("stores a detected pattern and counts it", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
@@ -169,6 +182,7 @@ describe("detection", () => {
 		expect(row).toEqual({
 			id: row?.id,
 			accountId,
+			destinationAccountId: null,
 			merchantId: null,
 			labelKey: "prlv edf",
 			label: "PRLV EDF",
@@ -595,6 +609,42 @@ describe("cleanupRecurring", () => {
 		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 0 });
 	});
 
+	it("keeps a recurring transfer its outflows still pay, retires one they stopped paying, and detection leaves its dates", async () => {
+		const checking = await account("Courant");
+		const paidLoan = await account("Prêt payé", { type: "loan", subtype: "mortgage" });
+		const stoppedLoan = await account("Prêt soldé", { type: "loan", subtype: "mortgage" });
+		/** Marks the transfer of 5 March into `loan`, then answers the series' id. */
+		const marked = async (loan: string, amount: number) => {
+			const [outflow = ""] = await addRows(checking, ["2026-03-05"], "ECHEANCE PRET", -amount);
+			await addRows(loan, ["2026-03-05"], "ECHEANCE", amount);
+			const transfer = (await findTransaction(deps(), outflow))!.transfer!;
+
+			return (await markTransferRecurring(deps(), transfer.id)).id;
+		};
+		vi.setSystemTime(new Date("2026-03-10T10:00:00Z"));
+		const paid = await marked(paidLoan, 80_000);
+		const stopped = await marked(stoppedLoan, 30_000);
+		// Six months on, past a manual series' staleness threshold.
+		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
+		// Only the first loan keeps being paid, within the six months a manual series has.
+		await addRows(checking, ["2026-09-05"], "VIR SEPA", -80_000);
+		await addRows(paidLoan, ["2026-09-05"], "ECHEANCE", 80_000);
+		const dates = async (id: string) => {
+			const row = (await stored()).find((one) => one.id === id)!;
+
+			return [row.lastOccurrenceDate, row.occurrenceCount, row.nextExpectedDate];
+		};
+
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 1 });
+		const status = new Map((await stored()).map((row) => [row.id, row.status]));
+		expect(status.get(paid)).toBe("active");
+		expect(status.get(stopped)).toBe("inactive");
+
+		const before = await dates(paid);
+		await runRecurring(deps(), { backfill: false });
+		await expect(dates(paid)).resolves.toEqual(before);
+	});
+
 	it("deletes a suggestion with no row left in its window, and never counts it", async () => {
 		const accountId = await account();
 		await detectedBill(accountId);
@@ -807,6 +857,9 @@ describe("listRecurring", () => {
 				accountId,
 				accountName: "Joint",
 				accountType: "depository",
+				destinationAccountId: null,
+				destinationAccountName: null,
+				destinationAccountType: null,
 				merchantId: null,
 				merchantName: null,
 				label: "LOYER",
@@ -1073,6 +1126,9 @@ describe("addRecurringFromEntry", () => {
 			accountId,
 			accountName: "Joint",
 			accountType: "depository",
+			destinationAccountId: null,
+			destinationAccountName: null,
+			destinationAccountType: null,
 			merchantId: null,
 			merchantName: null,
 			label: "Prlv  EDF",
@@ -1226,7 +1282,7 @@ describe("addRecurringFromEntry", () => {
 		await expect(stored()).resolves.toEqual([]);
 	});
 
-	it("accepts a loan payment's outflow, which is spent", async () => {
+	it("refuses a loan payment's outflow, which only « Marquer comme récurrent » on its transfer follows, as Sure's", async () => {
 		const checking = await account("Courant");
 		const loan = await account("Prêt", { type: "loan", subtype: "mortgage" });
 		const [outflow = ""] = await addRows(checking, ["2026-09-10"], "ECHEANCE PRET", -80_000);
@@ -1235,12 +1291,11 @@ describe("addRecurringFromEntry", () => {
 			transfer: { kind: "loan_payment" },
 		});
 
-		await expect(addRecurringFromEntry(deps(), outflow)).resolves.toMatchObject({
-			accountId: checking,
-			amount: -80_000,
-			status: "active",
-			manual: true,
+		await expect(addRecurringFromEntry(deps(), outflow)).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "entryId", code: "invalid_value" }],
 		});
+		await expect(stored()).resolves.toEqual([]);
 	});
 
 	it("answers NOT_FOUND for an unknown entry or a valuation", async () => {

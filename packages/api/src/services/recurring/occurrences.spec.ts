@@ -1,7 +1,10 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { recurringOccurrences } from "@archant/data/schema/recurring-occurrences";
+import {
+	recurringAllocations,
+	recurringOccurrences,
+} from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import {
@@ -10,11 +13,14 @@ import {
 	deps,
 	occurrencesOf,
 	openAccount,
+	openLoan,
+	payments,
 	setToday,
 	temp,
+	transferBetween,
 	useRecurringDatabase,
 } from "../../testing/recurring.ts";
-import { editBill } from "./bills.ts";
+import { editBill, markTransferRecurring } from "./bills.ts";
 import { generateOccurrences, startDailyOccurrences } from "./occurrences.ts";
 import { addPayment } from "./payments.ts";
 import { runRecurring } from "./pipeline.ts";
@@ -241,5 +247,40 @@ describe("startDailyOccurrences", () => {
 
 		setToday("2026-12-12");
 		await expect(startDailyOccurrences(deps())).resolves.not.toBeNull();
+	});
+});
+
+describe("a recurring transfer", () => {
+	it("is paid by the next transfer from its account into its destination, as Sure's #3932", async () => {
+		const checking = await openAccount();
+		const loan = await openLoan();
+		const savings = await openAccount("EUR", {
+			name: "Livret A",
+			type: "depository",
+			subtype: "savings",
+		});
+		const { transferId } = await transferBetween(checking, loan, "2026-08-05", 80_000);
+		const series = await markTransferRecurring(deps(), transferId);
+		// Into another account: no candidate.
+		await transferBetween(checking, savings, "2026-09-05", 80_000);
+		const { outflow } = await transferBetween(checking, loan, "2026-09-05", 80_000);
+
+		await runRecurring(deps(), { backfill: false });
+
+		const september = (await occurrencesOf(series.id)).find(
+			(occurrence) => occurrence.dueOn === "2026-09-05",
+		);
+		expect(september).toMatchObject({ status: "paid", closedSource: "auto" });
+		await expect(payments()).resolves.toMatchObject([
+			{ dueOn: "2026-09-05", entryId: outflow, amount: 80_000, state: "confirmed" },
+		]);
+		await expect(
+			temp.db
+				.select({ signals: recurringAllocations.matchSignals })
+				.from(recurringAllocations)
+				.get(),
+		).resolves.toEqual({
+			signals: { transfer: 4000, amount: 3000, date: 2000, account: 1000 },
+		});
 	});
 });

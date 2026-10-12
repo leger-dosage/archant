@@ -10,10 +10,18 @@ export const RECURRENCE_FREQUENCIES = ["weekly", "monthly", "yearly"] as const;
 export type RecurrenceFrequency = (typeof RECURRENCE_FREQUENCIES)[number];
 
 /**
- * Sure's `bill_type` without `transfer`: Archant has no recurring transfer
- * between the household's own accounts.
+ * Sure's `bill_type`. `transfer` belongs to a recurring transfer, a series
+ * with a destination account, and to nothing else, as Sure's
+ * `derive_transfer_bill_type` and `bill_type_matches_shape`.
  */
-export const BILL_TYPES = ["bill", "subscription", "installment", "income", "other"] as const;
+export const BILL_TYPES = [
+	"bill",
+	"subscription",
+	"installment",
+	"income",
+	"transfer",
+	"other",
+] as const;
 
 export type BillType = (typeof BILL_TYPES)[number];
 

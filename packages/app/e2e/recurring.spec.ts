@@ -791,3 +791,85 @@ test("the old `/recurring` lands on every bill", async ({ page }) => {
 	await expect(page).toHaveURL(/\/bills\?view=all$/u);
 	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
 });
+
+// Story 27.24: a recurring transfer, as Sure follows one.
+
+test("« Marquer comme récurrent » follows a mortgage payment, which the next transfer pays on « Factures »", async ({
+	page,
+	api,
+}) => {
+	const checking = await openAccount(api);
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "mortgage",
+		openingBalance: "180 000,00",
+		openingDate: daysAgo(120),
+	});
+	// An amount no other test writes, so the matcher pairs these two lines only.
+	const cents = 80_000 + Math.floor(Math.random() * 90_000);
+	const amount = `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, "0")}`;
+	const { dates } = monthly(1);
+	const [previous = "", current = ""] = dates.slice(1);
+	const label = uniqueName("ECHEANCE PRET");
+	await api.addTransaction(checking.id, { date: previous, label, amount: `-${amount}` });
+	await api.addTransaction(loan.id, { date: previous, label: "ECHEANCE", amount });
+
+	const sheet = await openSheet(page, label);
+	// A transfer side follows a series through its transfer only.
+	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toHaveCount(0);
+	await sheet.getByRole("button", { name: "Marquer comme récurrent" }).click();
+	await expect(toast(page, "Virement marqué comme récurrent")).toBeVisible();
+	// Never hidden, as Sure's: a second one is refused.
+	await sheet.getByRole("button", { name: "Marquer comme récurrent" }).click();
+	await expect(
+		toast(page, "Un virement récurrent existe déjà pour cette paire de comptes."),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
+
+	await api.addTransaction(checking.id, { date: current, label, amount: `-${amount}` });
+	await api.addTransaction(loan.id, { date: current, label: "ECHEANCE", amount });
+
+	const name = `Remboursement vers ${loan.name}`;
+	await page.goto("/bills");
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	// The picker offers the transfer's outflow, by its accounts rather than its label.
+	await page
+		.locator('[data-slot="inset-group"]')
+		.getByRole("link")
+		.filter({ hasText: name })
+		.first()
+		.click();
+	const occurrence = page.getByRole("dialog", { name });
+	await expect(
+		occurrence
+			.getByRole("list", { name: "Opérations correspondantes" })
+			.getByRole("list", { name: "Pourquoi cette correspondance" })
+			.getByRole("listitem"),
+	).toHaveText(["Virement vers le même compte", "Montant exact", "À la date prévue"]);
+	await page.keyboard.press("Escape");
+
+	await detect(page);
+	await page.goto("/bills");
+	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	const paid = page
+		.getByRole("region", { name: "Ce mois-ci", exact: true })
+		.getByRole("link")
+		.filter({ hasText: name });
+	await expect(paid).toContainText("Remboursement de dette");
+	await expect(paid.locator('[data-slot="status-badge"][data-status="billPaid"]')).toBeVisible();
+
+	await visit(page);
+	await expect(row(page, name)).toContainText("Virement");
+
+	// Sure's dialog moves neither end of a recurring transfer, nor its type.
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = billDialog(page, `Modifier ${name}`);
+	await expect(dialog.getByLabel("Montant")).toBeVisible();
+	await expect(dialog.getByRole("combobox", { name: "Payée depuis" })).toHaveCount(0);
+	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
+	await dialog.getByLabel("Montant").fill(`${Math.floor(cents / 100) + 1},00`);
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(toast(page, "Facture mise à jour")).toBeVisible();
+	await expect(dialog).toBeHidden();
+});

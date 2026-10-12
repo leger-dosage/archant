@@ -3,6 +3,7 @@ import type { ClaimableSeries, RecurringCandidate, RecurringPattern } from "./id
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import {
 	claimOf,
@@ -32,6 +33,8 @@ function row(date: string, overrides: Partial<RecurringCandidate> = {}): Recurri
 		...overrides,
 	};
 }
+
+const side = (kind: TransferKind, intoAccountId: string | null) => ({ kind, intoAccountId });
 
 const rows = (dates: readonly string[], overrides: Partial<RecurringCandidate> = {}) =>
 	dates.map((date) => row(date, overrides));
@@ -331,21 +334,24 @@ describe("detectRecurring", () => {
 		).toEqual([]);
 	});
 
-	it("leaves transfers out, but counts a loan payment's outflow", () => {
+	it("leaves every transfer side out, a loan payment's or a contribution's outflow included, as Sure's", () => {
 		const dates = ["2026-07-05", "2026-08-05", "2026-09-05"];
 
-		expect(detectRecurring(rows(dates, { transfer: { kind: "internal_move" } }), TODAY)).toEqual(
+		expect(detectRecurring(rows(dates, { transfer: side("internal_move", "s1") }), TODAY)).toEqual(
 			[],
 		);
 		expect(
 			detectRecurring(
-				rows(dates, { amount: toMinorUnits(1399), transfer: { kind: "internal_move" } }),
+				rows(dates, { amount: toMinorUnits(1399), transfer: side("internal_move", null) }),
 				TODAY,
 			),
 		).toEqual([]);
+		expect(detectRecurring(rows(dates, { transfer: side("loan_payment", "l1") }), TODAY)).toEqual(
+			[],
+		);
 		expect(
-			detectRecurring(rows(dates, { transfer: { kind: "loan_payment" } }), TODAY),
-		).toHaveLength(1);
+			detectRecurring(rows(dates, { transfer: side("investment_contribution", "i1") }), TODAY),
+		).toEqual([]);
 	});
 
 	it("counts income as well as expenses", () => {

@@ -11,6 +11,7 @@ import { createLogger } from "../lib/logger.ts";
 import {
 	buildApp,
 	creditAgricole,
+	mortgage,
 	openOwn,
 	own,
 	ownCategory,
@@ -1487,6 +1488,30 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 		expect(archive.of("RecurringTransaction")).toEqual([
 			expect.objectContaining({ id: "r1", account_id: null }),
+		]);
+	});
+
+	it("writes a recurring transfer as Sure's line, a bill Sure's importer accepts", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		const loan = await openOwn({ ...mortgage, openingDate: "2026-04-01" });
+		await database().run(
+			sql`insert into recurring_transactions (id, account_id, destination_account_id, label, name, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, manual, bill_type, created_at, updated_at) values ('r1', ${checking.id}, ${loan.id}, 'ECHEANCE PRET', 'Remboursement vers Prêt immobilier', -80000, 'EUR', 5, '2026-09-05', '2026-10-05', 1, 'active', 1, 'transfer', 0, 0)`,
+		);
+
+		const archive = await exported();
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(archive.of("RecurringTransaction")).toEqual([
+			expect.objectContaining({
+				id: "r1",
+				account_id: checking.id,
+				merchant_id: null,
+				name: "Remboursement vers Prêt immobilier",
+				amount: "800.00",
+				bill_type: "bill",
+				archant: { destination_account_id: loan.id, bill_type: "transfer" },
+			}),
 		]);
 	});
 

@@ -452,6 +452,51 @@ describe("transfers", () => {
 		expect(data.sum).toMatchObject({ amount: 0, income: 0, expense: 0 });
 	});
 
+	it("marks a transfer as recurring, as Sure's `create_from_transfer`, and only once per pair and amount", async () => {
+		const checking = await openOwn({ name: "Compte courant" });
+		const loan = await openOwn(mortgage);
+		await postOwn(checking.id, { date: "2026-09-05", label: "ECHEANCE PRET", amount: "-800,00" });
+		await postOwn(loan.id, { date: "2026-09-05", label: "ECHEANCE", amount: "800,00" });
+		const [automatic] = (await listed("?direction=transfer")).items;
+		const path = `/api/transfers/${automatic?.transfer?.id ?? ""}/recurring`;
+
+		const marked = await ownRequest("POST", path);
+
+		expect(marked.status).toBe(201);
+		expect(marked.body).toMatchObject({
+			data: {
+				name: "Remboursement vers Prêt immobilier",
+				accountId: checking.id,
+				destinationAccountId: loan.id,
+				destinationAccountName: "Prêt immobilier",
+				merchantId: null,
+				amount: -80000,
+				currency: "EUR",
+				expectedDayOfMonth: 5,
+				lastOccurrenceDate: "2026-09-05",
+				occurrenceCount: 1,
+				status: "active",
+				manual: true,
+				billType: "transfer",
+				rules: [{ frequency: "monthly", interval: 1, dayOfMonth: 5 }],
+			},
+		});
+
+		const again = await ownRequest("POST", path);
+
+		expect(again.status).toBe(409);
+		expect(errorBody.parse(again.body).error.code).toBe("RECURRING_TRANSFER_ALREADY_EXISTS");
+		await notFound("POST", "/api/transfers/nope/recurring");
+	});
+
+	it("names a recurring transfer into an asset « Virement vers »", async () => {
+		const { transferId } = await household();
+
+		const marked = await ownRequest("POST", `/api/transfers/${transferId}/recurring`);
+
+		expect(marked.body).toMatchObject({ data: { name: "Virement vers Livret A", amount: -50000 } });
+	});
+
 	it("refuses a body without both ids", async () => {
 		const { status, body } = await request("POST", "/api/transfers", { transactionId: "t1" });
 

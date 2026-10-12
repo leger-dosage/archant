@@ -88,6 +88,7 @@ export const EXPORTED_COLUMNS = {
 	recurring_transactions: {
 		id: recurringTransactions.id,
 		accountId: recurringTransactions.accountId,
+		destinationAccountId: recurringTransactions.destinationAccountId,
 		merchantId: recurringTransactions.merchantId,
 		label: recurringTransactions.label,
 		amount: recurringTransactions.amount,

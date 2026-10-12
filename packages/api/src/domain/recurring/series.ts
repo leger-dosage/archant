@@ -7,7 +7,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { LAST_DAY_OF_MONTH } from "@archant/data/recurring";
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 
-import { recurringDirection } from "../cash-flow.ts";
+import { direction } from "../cash-flow.ts";
 import { addDays, addMonths } from "../dates.ts";
 import { roundedMean, sameKey, seriesKeyOf, withinBand } from "./identifier.ts";
 import {
@@ -103,6 +103,8 @@ export type StoredSeries = SeriesKey &
 		id: string;
 		/** `null` pays from any account. */
 		accountId: string | null;
+		/** Set for a recurring transfer: the account its payments go into. */
+		destinationAccountId: string | null;
 		label: string;
 		amount: MinorUnits;
 		currency: string;
@@ -132,15 +134,18 @@ const byDate = (a: RecurringCandidate, b: RecurringCandidate) =>
  * Sure's `manual_recurring_matches_entry?`: a transaction of the series'
  * account, or of any for a series without one, of its key and currency,
  * transfers left out, between half and twice its amount and on a day its
- * schedule matches.
+ * schedule matches. A recurring transfer takes, as Sure's
+ * `transfer_matching_transactions`, the outflows of transfers from its
+ * account into its destination instead of its key.
  */
 function matches(series: StoredSeries, candidate: RecurringCandidate): boolean {
 	return (
 		(series.accountId === null || candidate.accountId === series.accountId) &&
 		candidate.currency === series.currency &&
-		recurringDirection(candidate) !== "transfer" &&
+		(series.destinationAccountId === null
+			? direction(candidate) !== "transfer" && sameKey(seriesKeyOf(candidate), series)
+			: candidate.transfer?.intoAccountId === series.destinationAccountId) &&
 		withinBand(candidate.amount, series.amount) &&
-		sameKey(seriesKeyOf(candidate), series) &&
 		matchesDay(scheduleOf(series), candidate.date)
 	);
 }
@@ -185,15 +190,15 @@ export function rekey(
 	candidates: readonly RecurringCandidate[],
 	today: IsoDate,
 ): { steps: RekeyStep[]; stored: StoredSeries[] } {
-	const spent = candidates.filter((candidate) => recurringDirection(candidate) !== "transfer");
+	const spent = candidates.filter((candidate) => direction(candidate) !== "transfer");
 	const steps: RekeyStep[] = [];
 	let current = [...stored];
 
 	// A series moves at most once, so its row in `stored` is still its own;
 	// `current` carries the earlier moves the key check must see.
 	for (const row of stored) {
-		// A bill declared with no payment yet.
-		if (row.occurrenceCount === 0) {
+		// A bill declared with no payment yet, or a recurring transfer.
+		if (row.occurrenceCount === 0 || row.destinationAccountId !== null) {
 			continue;
 		}
 
@@ -354,7 +359,8 @@ export type CleanerSteps = { inactive: string[]; deleted: string[] };
 /**
  * Sure's `Cleaner#cleanup_stale_transactions`: an `active` series last seen
  * before `staleBefore` becomes `inactive`, unless one of its transactions
- * since passes `matches`. A suggestion never becomes inactive; one with no
+ * since passes `matches`, a recurring transfer's outflows included as Sure's
+ * since #1590. A suggestion never becomes inactive; one with no
  * transaction left in its window is deleted instead. Sure's removal of old
  * inactive series has no port: a household keeps its history.
  */

@@ -46,6 +46,7 @@ function series(overrides: Partial<StoredSeries> = {}): StoredSeries {
 		id: "s1",
 		accountId: "a1",
 		merchantId: null,
+		destinationAccountId: null,
 		labelKey: "prlv netflix",
 		label: "PRLV NETFLIX",
 		amount: toMinorUnits(-1399),
@@ -132,13 +133,14 @@ describe("rekey", () => {
 		expect(rekey([series()], [row("2026-09-04")], TODAY).steps).toEqual([]);
 	});
 
-	it("reads only its account, currency and half to twice its amount, and leaves transfers out", () => {
+	it("reads only its account, currency and half to twice its amount, and leaves every transfer side out", () => {
 		const others = [
 			row("2026-09-05", { accountId: "a2" }),
 			row("2026-09-05", { amount: toMinorUnits(-2799) }),
 			row("2026-09-05", { amount: toMinorUnits(-699) }),
 			row("2026-09-05", { currency: "USD" }),
-			row("2026-09-05", { transfer: { kind: "internal_move" } }),
+			row("2026-09-05", { transfer: { kind: "internal_move", intoAccountId: "s9" } }),
+			row("2026-09-05", { transfer: { kind: "loan_payment", intoAccountId: "l1" } }),
 		];
 
 		expect(rekey([series()], others, TODAY).steps).toEqual([]);
@@ -151,6 +153,18 @@ describe("rekey", () => {
 		expect(
 			rekey([series({ accountId: null })], [row("2026-09-05", { accountId: "a2" })], TODAY).steps,
 		).toEqual([{ id: "s1", merchantId: "netflix", labelKey: null, label: "NETFLIX.COM" }]);
+	});
+
+	it("never moves a recurring transfer, which has no key to follow", () => {
+		const transfer = series({
+			destinationAccountId: "l1",
+			merchantId: null,
+			labelKey: null,
+			status: "active",
+			manual: true,
+		});
+
+		expect(rekey([transfer], [row("2026-09-05")], TODAY).steps).toEqual([]);
 	});
 
 	it("never moves a bill declared with no payment yet onto a purchase of its due date", () => {
@@ -271,15 +285,42 @@ describe("occurrencesOf", () => {
 		).toEqual([-700, -2798]);
 	});
 
-	it("keeps only the series' account, key and currency, transfers left out", () => {
+	it("keeps only the series' account, key and currency, every transfer side left out", () => {
 		const candidates = [
 			row("2026-09-05"),
 			row("2026-09-05", { ...noMerchant, accountId: "a2" }),
 			row("2026-09-05", { ...noMerchant, currency: "USD" }),
-			row("2026-09-05", { ...noMerchant, transfer: { kind: "internal_move" } }),
+			row("2026-09-05", {
+				...noMerchant,
+				transfer: { kind: "internal_move", intoAccountId: "s9" },
+			}),
+			row("2026-09-05", { ...noMerchant, transfer: { kind: "loan_payment", intoAccountId: "l1" } }),
 		];
 
 		expect(occurrencesOf(series(), candidates, TODAY)).toEqual([]);
+	});
+
+	it("keeps a recurring transfer's outflows from its account into its destination, whatever their label", () => {
+		const transfer = series({ destinationAccountId: "l1", merchantId: null, labelKey: null });
+		const paid = row("2026-09-05", {
+			label: "VIR SEPA",
+			transfer: { kind: "loan_payment", intoAccountId: "l1" },
+		});
+		const candidates = [
+			paid,
+			row("2026-08-05", { transfer: { kind: "internal_move", intoAccountId: "s9" } }),
+			row("2026-07-05", {
+				amount: toMinorUnits(1399),
+				transfer: { kind: "loan_payment", intoAccountId: null },
+			}),
+			row("2026-07-05"),
+			row("2026-06-05", {
+				accountId: "a2",
+				transfer: { kind: "loan_payment", intoAccountId: "l1" },
+			}),
+		];
+
+		expect(occurrencesOf(transfer, candidates, TODAY)).toEqual([paid]);
 	});
 
 	it("keeps any account's transactions for a series without an account", () => {
@@ -573,6 +614,10 @@ describe("staleBefore", () => {
 const active = (overrides: Partial<StoredSeries> = {}) =>
 	series({ status: "active", ...overrides });
 
+/** A loan payment's outflow on 5 September, into `intoAccountId`. */
+const outflow = (intoAccountId: string) =>
+	row("2026-09-05", { transfer: { kind: "loan_payment", intoAccountId } });
+
 describe("cleanerSteps", () => {
 	const noMerchant = { merchantId: null, label: "PRLV NETFLIX" };
 
@@ -616,6 +661,18 @@ describe("cleanerSteps", () => {
 				TODAY,
 			).inactive,
 		).toEqual(["s1"]);
+	});
+
+	it("keeps a recurring transfer its outflows still pay, as Sure's since #1590", () => {
+		const transfer = active({
+			destinationAccountId: "l1",
+			merchantId: null,
+			labelKey: null,
+			lastOccurrenceDate: "2026-06-05",
+		});
+
+		expect(cleanerSteps([transfer], [outflow("l1")], TODAY).inactive).toEqual([]);
+		expect(cleanerSteps([transfer], [outflow("l2")], TODAY).inactive).toEqual(["s1"]);
 	});
 
 	it("never marks a suggestion inactive, and deletes one with no row in its window", () => {

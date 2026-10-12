@@ -1,6 +1,7 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { Classification } from "../../domain/recurring/classifier.ts";
 import type { Frequency } from "../../domain/recurring/frequency.ts";
+import type { TransferSide } from "../../domain/recurring/identifier.ts";
 import type { RecurrenceRule } from "../../domain/recurring/schedule.ts";
 import type { StoredSeries } from "../../domain/recurring/series.ts";
 import type { RecurringView } from "../../schemas/recurring.ts";
@@ -9,6 +10,7 @@ import type { Transaction } from "../ledger/shared.ts";
 import type { CurrentOccurrence } from "./occurrences.ts";
 
 import { and, asc, between, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -23,7 +25,7 @@ import {
 import type { RecurringStatus } from "@archant/data/schema/recurring-transactions";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
-import { recurringDirection } from "../../domain/cash-flow.ts";
+import { direction } from "../../domain/cash-flow.ts";
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { classify } from "../../domain/recurring/classifier.ts";
 import { detectFrequency } from "../../domain/recurring/frequency.ts";
@@ -46,6 +48,7 @@ import {
 } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
 import { findTransaction } from "../ledger/queries.ts";
+import { transferDestinations } from "../ledger/recurring.ts";
 import { ruleCandidates } from "../ledger/rule-plans.ts";
 import { backfillOccurrences, currentOccurrences, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules, rulesBySeries } from "./rules.ts";
@@ -61,6 +64,10 @@ export type RecurringRecord = {
 	accountId: string | null;
 	accountName: string | null;
 	accountType: AccountType | null;
+	/** Set for a recurring transfer, Sure's `destination_account`: the account its payments go into. */
+	destinationAccountId: string | null;
+	destinationAccountName: string | null;
+	destinationAccountType: AccountType | null;
 	merchantId: string | null;
 	merchantName: string | null;
 	label: string;
@@ -139,6 +146,7 @@ async function loadSeries(tx: Pick<Transaction, "select">): Promise<StoredSeries
 		.select({
 			id: recurringTransactions.id,
 			accountId: recurringTransactions.accountId,
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			merchantId: recurringTransactions.merchantId,
 			labelKey: recurringTransactions.labelKey,
 			label: recurringTransactions.label,
@@ -173,22 +181,32 @@ async function loadSeries(tx: Pick<Transaction, "select">): Promise<StoredSeries
 }
 
 /** A transaction as detection reads it, with its id and category. */
-type Candidate = Awaited<ReturnType<typeof ruleCandidates>>[number];
+type Candidate = Omit<Awaited<ReturnType<typeof ruleCandidates>>[number], "transfer"> & {
+	transfer: TransferSide | null;
+};
 
 /**
  * Six months of transactions, split parents left out for their children, every
  * account read as Sure's identifier does. `detectable` also leaves out the
  * investment accounts, whose dividends and contributions recur without being
  * bills, as Sure's `NON_BILLABLE_ACCOUNTABLE_TYPES`. `creditCards` are the
- * accounts the classifier reads a flat charge on.
+ * accounts the classifier reads a flat charge on. A transfer's outflow carries
+ * the account it pays into, which a recurring transfer reads.
  */
 export async function loadCandidates(
 	tx: Pick<Transaction, "select">,
 	day: IsoDate,
 ): Promise<{ candidates: Candidate[]; detectable: Candidate[]; creditCards: Set<string> }> {
-	const candidates = await ruleCandidates(tx, addMonths(day, -MANUAL_LOOKBACK_MONTHS), {
-		activeAccountsOnly: false,
-	});
+	const from = addMonths(day, -MANUAL_LOOKBACK_MONTHS);
+	const rows = await ruleCandidates(tx, from, { activeAccountsOnly: false });
+	const destinations = await transferDestinations(tx, from);
+	const candidates = rows.map((row): Candidate => ({
+		...row,
+		transfer:
+			row.transfer === null
+				? null
+				: { ...row.transfer, intoAccountId: destinations.get(row.id) ?? null },
+	}));
 	const types = await tx.select({ id: accounts.id, type: accounts.type }).from(accounts);
 	const of = (type: AccountType) =>
 		new Set(types.filter((account) => account.type === type).map((account) => account.id));
@@ -342,6 +360,7 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 			...band,
 			id: crypto.randomUUID(),
 			accountId: pattern.accountId,
+			destinationAccountId: null,
 			merchantId: pattern.merchantId,
 			labelKey: pattern.labelKey,
 			label: pattern.label,
@@ -437,8 +456,14 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 		[...created.keys()].map((id) => ({ id, rules: current.get(id)!.rules })),
 	);
 
+	// A recurring transfer is left as marked, as Sure's `update_manual_recurring_transactions`.
 	const refreshes = [...current.values()]
-		.filter((series) => series.status !== "ended" && !claimed.has(series.id))
+		.filter(
+			(series) =>
+				series.status !== "ended" &&
+				series.destinationAccountId === null &&
+				!claimed.has(series.id),
+		)
 		.map((series) => ({ series, refresh: refreshSeries(series, candidates, day) }));
 
 	await oneByOne(refreshes, ({ series, refresh }) => {
@@ -487,11 +512,16 @@ export async function cleanupRecurring(deps: ServiceDeps): Promise<CleanupResult
 	);
 }
 
+const destinationAccount = alias(accounts, "destination_account");
+
 const recordColumns = {
 	id: recurringTransactions.id,
 	accountId: recurringTransactions.accountId,
 	accountName: accounts.name,
 	accountType: accounts.type,
+	destinationAccountId: recurringTransactions.destinationAccountId,
+	destinationAccountName: destinationAccount.name,
+	destinationAccountType: destinationAccount.type,
 	merchantId: recurringTransactions.merchantId,
 	merchantName: merchants.name,
 	label: recurringTransactions.label,
@@ -520,6 +550,10 @@ export function selectRecords(db: Pick<ServiceDeps["db"], "select">) {
 		.select(recordColumns)
 		.from(recurringTransactions)
 		.leftJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
+		.leftJoin(
+			destinationAccount,
+			eq(destinationAccount.id, recurringTransactions.destinationAccountId),
+		)
 		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId));
 }
 
@@ -888,8 +922,9 @@ export async function addRecurringFromEntry(
 ): Promise<RecurringRecord> {
 	const transaction = await transactionOf(deps, entryId);
 
-	// A loan payment's or investment contribution's outflow is spent, and detection groups it.
-	if (recurringDirection(transaction) === "transfer") {
+	// Sure's `create_from_transaction` is for a charge or a deposit: a transfer
+	// side becomes a recurring transfer through its transfer, never here.
+	if (direction(transaction) === "transfer") {
 		throw invalid("entryId");
 	}
 

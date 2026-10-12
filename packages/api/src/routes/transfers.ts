@@ -4,6 +4,7 @@ import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
 import { transferBodySchema } from "../schemas/transfers.ts";
+import { markTransferRecurring } from "../services/recurring/bills.ts";
 import {
 	confirmTransfer,
 	createTransfer,
@@ -27,6 +28,10 @@ export function transfersRoutes(deps: ServiceDeps) {
 			// refreshes the same rows.
 			.post("/:id/reject", async (c) =>
 				c.json({ data: await rejectTransfer(deps, c.req.param("id")) }, 200),
+			)
+			// Sure's `mark_as_recurring`: a recurring transfer from this one.
+			.post("/:id/recurring", async (c) =>
+				c.json({ data: await markTransferRecurring(deps, c.req.param("id")) }, 201),
 			)
 	);
 }

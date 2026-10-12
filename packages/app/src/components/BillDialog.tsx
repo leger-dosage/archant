@@ -756,7 +756,8 @@ function editValues(series: RecurringData): BillValues {
 		...(series.billType === "income"
 			? {}
 			: {
-					billType: series.billType,
+					// A recurring transfer's type follows its destination: never edited.
+					...(series.billType === "transfer" ? {} : { billType: series.billType }),
 					categoryId: series.categoryId,
 					autopay: series.autopay,
 					paymentUrl: series.paymentUrl ?? "",
@@ -788,6 +789,8 @@ function EditForm({
 	const { t } = useTranslation();
 	const edit = useEditBill();
 	const income = series.billType === "income";
+	// Sure's dialog moves neither end of a recurring transfer, nor its type.
+	const transfer = series.billType === "transfer";
 	const resolve: Resolver<BillValues> = async (values, context, options) =>
 		zodResolver(
 			editFormSchema(currencyOf(accounts, values.accountId, series.currency)),
@@ -816,8 +819,10 @@ function EditForm({
 					id: series.id,
 					input: {
 						...values,
+						...(transfer ? { accountId: undefined } : {}),
 						...(unchangedName ? { name: undefined } : {}),
-						...(billType === "installment" ? {} : { endAfterCount: "" }),
+						// A transfer's type is never edited: a count it carries stays.
+						...(billType === "installment" || transfer ? {} : { endAfterCount: "" }),
 					},
 				});
 				toast.success(t(income ? "recurring.form.savedIncome" : "recurring.form.saved"));
@@ -861,7 +866,7 @@ function EditForm({
 					inputMode="decimal"
 					className="text-right tabular-nums"
 				/>
-				<AccountField form={form} accounts={accounts} income={income} />
+				{!transfer && <AccountField form={form} accounts={accounts} income={income} />}
 				<FrequencyFields
 					form={form}
 					income={income}
@@ -870,15 +875,17 @@ function EditForm({
 				/>
 				{!income && (
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-						<SelectField
-							form={form}
-							name="billType"
-							label={t("recurring.form.billType")}
-							options={EDITABLE_BILL_TYPES.map((value) => ({
-								value,
-								label: t(`recurring.billTypes.${value}`),
-							}))}
-						/>
+						{!transfer && (
+							<SelectField
+								form={form}
+								name="billType"
+								label={t("recurring.form.billType")}
+								options={EDITABLE_BILL_TYPES.map((value) => ({
+									value,
+									label: t(`recurring.billTypes.${value}`),
+								}))}
+							/>
+						)}
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="bill-category">{t("recurring.form.category")}</Label>
 							<CategoryField

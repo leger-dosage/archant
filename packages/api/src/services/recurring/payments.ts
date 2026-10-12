@@ -24,6 +24,7 @@ import {
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
+import { direction } from "../../domain/cash-flow.ts";
 import { today } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
 import { displayName } from "../../domain/recurring/bills.ts";
@@ -77,6 +78,7 @@ async function occurrenceOf(tx: Reader, occurrenceId: string) {
 			closedSource: recurringOccurrences.closedSource,
 			expectedAmount: recurringOccurrences.expectedAmount,
 			seriesAmount: recurringTransactions.amount,
+			destinationAccountId: recurringTransactions.destinationAccountId,
 		})
 		.from(recurringOccurrences)
 		.innerJoin(
@@ -359,6 +361,7 @@ async function learnFromAttach(
 ): Promise<void> {
 	const series = (await tx
 		.select({
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			merchantId: recurringTransactions.merchantId,
 			labelKey: recurringTransactions.labelKey,
 			name: recurringTransactions.name,
@@ -370,8 +373,11 @@ async function learnFromAttach(
 		.get())!;
 	const aliases = parseAliases(series.nameAliases);
 	const known = knownNames({ ...series, nameAliases: aliases });
+	// A recurring transfer knows its payments by their accounts, never by a name.
 	const nextAliases =
-		series.merchantId === null && !known.has(normalizeLabel(entry.label))
+		series.merchantId === null &&
+		series.destinationAccountId === null &&
+		!known.has(normalizeLabel(entry.label))
 			? [...aliases, entry.label]
 			: aliases;
 	const confirmed = await confirmedOf(tx, occurrence.id);
@@ -400,8 +406,10 @@ async function learnFromAttach(
  * transaction has left, dated `paidOn` or on the transaction's day, which
  * then teaches the series, as Sure's. A split's parent is refused, its lines
  * carrying the money (AD-20), and so is a transaction in another currency,
- * there being no rate (AD-6); one whose amount is spent, or an amount past
- * what it has left, answers `PAYMENT_EXCEEDS_TRANSACTION`.
+ * there being no rate (AD-6), and so is a transfer side for a series that is
+ * no recurring transfer, as Sure's `candidate_scope`; one whose amount is
+ * spent, or an amount past what it has left, answers
+ * `PAYMENT_EXCEEDS_TRANSACTION`.
  */
 async function attachEntry(
 	deps: ServiceDeps,
@@ -430,6 +438,10 @@ async function attachEntry(
 
 			if (entry.currency !== occurrence.currency) {
 				throw invalidField("entryId", "currency_mismatch");
+			}
+
+			if (occurrence.destinationAccountId === null && direction(entry) === "transfer") {
+				throw invalidField("entryId", "transfer_side");
 			}
 
 			const held = await tx

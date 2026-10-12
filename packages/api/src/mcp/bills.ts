@@ -192,7 +192,7 @@ const billOutput = z.object({
 	bill_type: z
 		.enum(BILL_TYPES)
 		.describe(
-			'The direction comes from it: "income" is money coming in, any other money going out.',
+			'The direction comes from it: "income" is money coming in, any other money going out; "transfer" moves it into another of the owner\'s accounts.',
 		),
 	status: billStatusSchema.describe(
 		'"suggested": found by Archant, awaiting the owner, not a bill yet; "paused": set aside.',
@@ -209,6 +209,9 @@ const billOutput = z.object({
 	detected_automatically: z.boolean().describe("false when the owner declared it."),
 	category: z.string().optional().describe("Its category's name; absent without one."),
 	account: namedRef.optional().describe("Absent for a bill paid from any account."),
+	destination_account: namedRef
+		.optional()
+		.describe("The account a recurring transfer pays into; absent for any other bill."),
 	monthly_equivalent: formatted("Its cost a month, whatever its cadence"),
 	payment_url: z.string().optional(),
 });
@@ -266,6 +269,14 @@ function billOf(
 		...(bill.accountId === null
 			? {}
 			: { account: { id: bill.accountId, name: bill.accountName ?? "" } }),
+		...(bill.destinationAccountId === null
+			? {}
+			: {
+					destination_account: {
+						id: bill.destinationAccountId,
+						name: bill.destinationAccountName ?? "",
+					},
+				}),
 		monthly_equivalent: magnitudeOf(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
 		...(bill.paymentUrl === null ? {} : { payment_url: bill.paymentUrl }),
 	};
@@ -354,7 +365,7 @@ function wholeNumberWithin(
 export const getBills = defineTool({
 	name: "get_bills",
 	title: "Bills",
-	description: `Get the owner's bills, subscriptions and other recurring obligations, as « Factures » lists them, by next due date, each with its current occurrence's payment state. status is the lifecycle: "active" by default, "suggested" (found by Archant, awaiting the owner's confirmation, not a bill yet), "paused", "ended", "all". payment_state filters on the current occurrence: "overdue", "due", "upcoming", "partial", "paid"; nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue or due. bill_type "income" is a declared income, not an obligation. Amounts are positive magnitudes, formatted; bill_type carries the direction. The totals cover every match, not only the bills shown, leave out the incomes, and give each bill a monthly equivalent, summed per currency. An empty answer carries a hint when other statuses hold bills. Use get_bill_details for one bill's history. ${BANK_TEXT}`,
+	description: `Get the owner's bills, subscriptions and other recurring obligations, as « Factures » lists them, by next due date, each with its current occurrence's payment state. status is the lifecycle: "active" by default, "suggested" (found by Archant, awaiting the owner's confirmation, not a bill yet), "paused", "ended", "all". payment_state filters on the current occurrence: "overdue", "due", "upcoming", "partial", "paid"; nobody is paying a paused or ended bill, so its unpaid occurrence is never overdue or due. bill_type "income" is a declared income, not an obligation. Amounts are positive magnitudes, formatted; bill_type carries the direction. The totals cover every match, not only the bills shown, leave out the incomes and the transfers (a transfer moves money, it is not spend), and give each bill a monthly equivalent, summed per currency. An empty answer carries a hint when other statuses hold bills. Use get_bill_details for one bill's history. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: getBillsInput,
@@ -379,7 +390,7 @@ export const getBills = defineTool({
 			active_monthly_equivalent_by_currency: z
 				.record(z.string(), z.string())
 				.describe(
-					"What the active bills but the incomes cost a month, in each currency, formatted.",
+					"What the active bills but the incomes and the transfers cost a month, in each currency, formatted.",
 				),
 		}),
 		hint: z
