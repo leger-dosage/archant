@@ -4,13 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import {
-	countsInCashFlow,
-	direction,
-	grossCashFlow,
-	netCashFlow,
-	recurringDirection,
-} from "./cash-flow.ts";
+import { countsInCashFlow, direction, grossCashFlow, netCashFlow } from "./cash-flow.ts";
 
 const tx = (
 	amount: number,
@@ -42,17 +36,6 @@ describe("direction", () => {
 		const excluded = { ...tx(-2000), excluded: true, accountExcludedFromReports: true };
 
 		expect(direction(excluded)).toBe("expense");
-	});
-});
-
-describe("recurringDirection", () => {
-	it("keeps the outflow of a loan payment or an investment contribution an expense, every other side a transfer", () => {
-		expect(recurringDirection(tx(-40000, { kind: "loan_payment" }))).toBe("expense");
-		expect(recurringDirection(tx(-40000, { kind: "investment_contribution" }))).toBe("expense");
-		expect(recurringDirection(tx(40000, { kind: "loan_payment" }))).toBe("transfer");
-		expect(recurringDirection(tx(-50000, { kind: "internal_move" }))).toBe("transfer");
-		expect(recurringDirection(tx(3000))).toBe("income");
-		expect(recurringDirection(tx(0))).toBe("expense");
 	});
 });
 

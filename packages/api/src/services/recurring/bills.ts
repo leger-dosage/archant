@@ -18,6 +18,8 @@ import type { SQL } from "drizzle-orm";
 
 import { and, desc, eq, gte, inArray, isNull, lt, lte, ne, or } from "drizzle-orm";
 
+import type { AccountType } from "@archant/data/account-types";
+import { classificationOf } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
@@ -33,7 +35,7 @@ import {
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
-import { recurringDirection } from "../../domain/cash-flow.ts";
+import { direction } from "../../domain/cash-flow.ts";
 import {
 	addDays,
 	addMonths,
@@ -68,7 +70,7 @@ import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
 import { declareBillSchema, editBillSchema } from "../../schemas/bills.ts";
 import { findTransaction } from "../ledger/queries.ts";
-import { hasTransactions, paymentEntries } from "../ledger/recurring.ts";
+import { hasTransactions, paymentEntries, transferPair } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence } from "../ledger/shared.ts";
 import { getReportingCurrency } from "../settings.ts";
 import { parseSignals } from "./hints.ts";
@@ -160,16 +162,18 @@ async function mustBeCategory(db: Pick<Transaction, "select">, categoryId: strin
 }
 
 /**
- * Whether another series holds what the unique indexes key on: account, key,
- * amount, currency and dedup scope. Checked inside the write transaction, so
- * the answer is a `409`, never a constraint failure. A series without an
- * account is held by another without one, as Sure's `account_less_duplicate?`,
- * which the indexes cannot see since SQLite keeps NULLs distinct.
+ * Whether another series holds what the unique indexes key on: account, key
+ * or destination, amount, currency and dedup scope. Checked inside the write
+ * transaction, so the answer is a `409`, never a constraint failure. A series
+ * without an account is held by another without one, as Sure's
+ * `account_less_duplicate?`, which the indexes cannot see since SQLite keeps
+ * NULLs distinct.
  */
 export async function taken(
 	tx: Pick<Transaction, "select">,
 	row: SeriesKey & {
 		accountId: string | null;
+		destinationAccountId: string | null;
 		amount: MinorUnits;
 		currency: string;
 		dedupScope: string;
@@ -184,6 +188,9 @@ export async function taken(
 				row.accountId === null
 					? isNull(recurringTransactions.accountId)
 					: eq(recurringTransactions.accountId, row.accountId),
+				row.destinationAccountId === null
+					? isNull(recurringTransactions.destinationAccountId)
+					: eq(recurringTransactions.destinationAccountId, row.destinationAccountId),
 				row.merchantId === null
 					? isNull(recurringTransactions.merchantId)
 					: eq(recurringTransactions.merchantId, row.merchantId),
@@ -250,6 +257,7 @@ export async function declareBill(
 	const row = {
 		...key,
 		accountId: bill.accountId,
+		destinationAccountId: null,
 		amount,
 		currency,
 		dedupScope: String(amount),
@@ -302,6 +310,100 @@ export async function declareBill(
 	);
 }
 
+/**
+ * Sure's `RecurringTransaction.create_from_transfer`, « Marquer comme
+ * récurrent » on a transfer: an active manual recurring transfer from the
+ * outflow's account into the inflow's, of the outflow's amount and currency
+ * (AD-5), monthly on the outflow's day, last seen on its date and due next
+ * from today on, named as Sure's `Transfer#name`. A series already on the
+ * same account, destination, amount and currency, whatever its status,
+ * answers `RECURRING_TRANSFER_ALREADY_EXISTS`, as Sure's controller.
+ */
+export async function markTransferRecurring(
+	deps: ServiceDeps,
+	transferId: string,
+): Promise<RecurringRecord> {
+	const date = today(deps.timeZone);
+
+	return deps.db.transaction(
+		async (tx) => {
+			const pair = await transferPair(tx, transferId);
+
+			if (pair === null) {
+				throw notFound("transfer");
+			}
+
+			const { outflow, destination } = pair;
+			const existing = await tx
+				.select({ id: recurringTransactions.id })
+				.from(recurringTransactions)
+				.where(
+					and(
+						eq(recurringTransactions.accountId, outflow.accountId),
+						eq(recurringTransactions.destinationAccountId, destination.id),
+						eq(recurringTransactions.amount, outflow.amount),
+						eq(recurringTransactions.currency, outflow.currency),
+					),
+				)
+				.get();
+
+			if (existing !== undefined) {
+				throw new AppError(
+					"RECURRING_TRANSFER_ALREADY_EXISTS",
+					"A recurring transfer already exists for this pair of accounts.",
+				);
+			}
+
+			const id = crypto.randomUUID();
+			const now = Date.now();
+			const day = Number(outflow.date.slice(8, 10));
+			const rules = [monthlyOn(day)];
+			// Sure's `Transfer#name`: a payment into a liability, a transfer otherwise.
+			const name =
+				classificationOf(destination.type) === "liability"
+					? `Remboursement vers ${destination.name}`
+					: `Virement vers ${destination.name}`;
+
+			await tx.insert(recurringTransactions).values({
+				id,
+				accountId: outflow.accountId,
+				destinationAccountId: destination.id,
+				merchantId: null,
+				labelKey: null,
+				label: outflow.label,
+				name,
+				amount: outflow.amount,
+				currency: outflow.currency,
+				expectedDayOfMonth: day,
+				lastOccurrenceDate: outflow.date,
+				// A plain monthly series always has a next date.
+				nextExpectedDate:
+					nextDateFrom(
+						{
+							rules,
+							anchorDate: null,
+							lastOccurrenceDate: outflow.date,
+							endAfterCount: null,
+							expectedDayOfMonth: day,
+						},
+						date,
+					) ?? date,
+				occurrenceCount: 1,
+				status: "active",
+				manual: true,
+				billType: "transfer",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await insertRules(tx, [{ id, rules }]);
+			await regenerateFuture(tx, [id], date);
+
+			return getRecord(tx, id, date);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
 /** `PATCH /api/recurring/:id`: a status move or an edit, the schema never letting both through. */
 export async function patchRecurring(
 	deps: ServiceDeps,
@@ -313,7 +415,8 @@ export async function patchRecurring(
 
 /**
  * Sure's edit dialog: name, amount with the series' sign kept, account with
- * its currency, type but never to or from `income`, category, frequency,
+ * its currency but never a recurring transfer's, type but never to or from
+ * `income` or `transfer`, category, frequency,
  * number of payments for an installment, cleared for any other type,
  * autopay, notes and payment link. A changed cadence pins the schedule, as
  * Sure's `pin_schedule`, so detection moves its dates but never its day, and
@@ -386,8 +489,22 @@ async function editWithin(
 
 	const edit = parsed.data;
 
-	if (edit.billType !== undefined && current.billType === "income") {
+	// An income stays one, and a recurring transfer's type follows its
+	// destination, as Sure's `derive_transfer_bill_type`.
+	if (
+		edit.billType !== undefined &&
+		(current.billType === "income" || current.billType === "transfer")
+	) {
 		throw invalid("billType");
+	}
+
+	// Sure's edit dialog moves neither end of a recurring transfer.
+	if (
+		current.destinationAccountId !== null &&
+		edit.accountId !== undefined &&
+		edit.accountId !== current.accountId
+	) {
+		throw invalid("accountId");
 	}
 
 	if (edit.categoryId !== undefined && edit.categoryId !== null) {
@@ -475,10 +592,11 @@ async function editWithin(
 	}
 }
 
-/** The key and dedup scope a series is stored under, which an edit keeps. */
+/** The key, destination and dedup scope a series is stored under, which an edit keeps. */
 async function storedKeyOf(tx: Pick<Transaction, "select">, id: string) {
 	const row = await tx
 		.select({
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			merchantId: recurringTransactions.merchantId,
 			labelKey: recurringTransactions.labelKey,
 			dedupScope: recurringTransactions.dedupScope,
@@ -564,7 +682,7 @@ export async function candidatePatterns(
 	const groups = new Map<string, typeof detectable>();
 
 	for (const row of detectable) {
-		if (row.date < from || recurringDirection(row) !== "income") {
+		if (row.date < from || direction(row) !== "income") {
 			continue;
 		}
 
@@ -614,6 +732,9 @@ export async function candidatePatterns(
 		.map(({ total: _total, ...candidate }) => candidate);
 }
 
+// Sure's `payable_series_ids`: a recurring transfer into these pays a debt.
+const DEBT_ACCOUNT_TYPES: AccountType[] = ["credit_card", "loan"];
+
 // Sure's `payable_occurrences`: three months ahead at most.
 const BILLS_HORIZON_DAYS = 90;
 
@@ -632,6 +753,8 @@ type BillRow = {
 	/** `null`, with its name, for a series paid from any account. */
 	accountId: string | null;
 	accountName: string | null;
+	/** Set for a recurring transfer: the account its payments go into. */
+	destinationAccountId: string | null;
 	merchantName: string | null;
 	dueOn: IsoDate;
 	/** The due date, or a later snooze. */
@@ -764,6 +887,7 @@ export async function loadBills(
 			label: recurringTransactions.label,
 			accountId: recurringTransactions.accountId,
 			accountName: accounts.name,
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			merchantName: merchants.name,
 		})
 		.from(recurringOccurrences)
@@ -898,14 +1022,15 @@ async function suggestionsOf(
 /**
  * Sure's `bills#index` on today in `APP_TIMEZONE`: the open occurrences of
  * active and inactive outgoing series, three months ahead at most, and the
- * month's paid ones. An inactive series' open ones are « Inactive »; an
- * active series' overdue ones need attention, those due by the month's end
- * are the month's, beside its paid ones, and the later ones show one per
- * series. Skipped and missed occurrences are not listed. The totals are
- * Sure's `compute_kpis` in the reporting currency, a row in another one left
- * out and its series named (NFR2). The review queue holds the suggestions
- * of every payable occurrence, open or paid this month, later ones
- * included though « Après ce mois-ci » shows one per series, as Sure's
+ * month's paid ones. A recurring transfer counts only into a card or a loan,
+ * a debt the household pays, as Sure's `payable_series_ids`. An inactive
+ * series' open ones are « Inactive »; an active series' overdue ones need
+ * attention, those due by the month's end are the month's, beside its paid
+ * ones, and the later ones show one per series. Skipped and missed
+ * occurrences are not listed. The totals are Sure's `compute_kpis` in the
+ * reporting currency, a row in another one left out and its series named
+ * (NFR2). The review queue holds the suggestions of every payable
+ * occurrence, open or paid this month, later ones included though « Après ce mois-ci » shows one per series, as Sure's
  * `suggested_allocations(payable_occurrences)`.
  */
 export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
@@ -918,6 +1043,16 @@ export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 			inArray(recurringTransactions.status, ["active", "inactive"]),
 			// AD-5: a bill's money leaves the account.
 			lt(recurringTransactions.amount, 0),
+			or(
+				isNull(recurringTransactions.destinationAccountId),
+				inArray(
+					recurringTransactions.destinationAccountId,
+					deps.db
+						.select({ id: accounts.id })
+						.from(accounts)
+						.where(inArray(accounts.type, DEBT_ACCOUNT_TYPES)),
+				),
+			),
 			lte(recurringOccurrences.dueOn, addDays(day, BILLS_HORIZON_DAYS)),
 			or(gte(recurringOccurrences.dueOn, monthStart), eq(recurringOccurrences.status, "scheduled")),
 		),

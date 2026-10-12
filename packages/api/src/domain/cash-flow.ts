@@ -40,20 +40,6 @@ export function direction(tx: CashFlowTransaction): Direction {
 	return tx.amount > 0 ? "income" : "expense";
 }
 
-/**
- * `direction` as recurring detection, matching and bills read it until Story
- * 27.24 follows Sure's recurring transfers: the outflow of a loan payment or
- * an investment contribution is an expense, so a loan's monthly payment stays
- * a bill the household pays.
- */
-export function recurringDirection(tx: CashFlowTransaction): Direction {
-	if (tx.transfer !== null && !isSpentOutflow(tx)) {
-		return "transfer";
-	}
-
-	return tx.amount > 0 ? "income" : "expense";
-}
-
 /** What `countsInCashFlow` reads: `direction`'s fields, the exclusion, pending and one-time flags. */
 export type CountedTransaction = CashFlowTransaction & {
 	excluded: boolean;

@@ -136,6 +136,13 @@ function BillRow({ row }: { row: BillRowData }) {
 								<PartialLabel row={row} />
 							</>
 						)}
+						{/* Sure's `bills.debt_payment`: a recurring transfer pays a card or a loan off. */}
+						{row.destinationAccountId !== null && (
+							<>
+								<span aria-hidden="true">·</span>
+								<span>{t("bills.debtPayment")}</span>
+							</>
+						)}
 					</span>
 				</span>
 				<span className="flex shrink-0 items-center gap-2">

@@ -85,6 +85,7 @@ export function MatchReasons({
 	signals: {
 		merchant?: number | undefined;
 		name?: number | undefined;
+		transfer?: number | undefined;
 		amount?: number | undefined;
 		date?: number | undefined;
 	};
@@ -104,6 +105,10 @@ export function MatchReasons({
 
 	if (signals.name !== undefined) {
 		reasons.push(t("bills.match.name"));
+	}
+
+	if (signals.transfer !== undefined) {
+		reasons.push(t("bills.match.transfer"));
 	}
 
 	if (signals.amount !== undefined && actual !== null) {

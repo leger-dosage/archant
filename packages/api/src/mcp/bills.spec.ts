@@ -12,8 +12,9 @@ import {
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { createLogger } from "../lib/logger.ts";
+import { findTransaction } from "../services/ledger/queries.ts";
 import { oneByOne } from "../services/ledger/shared.ts";
-import { declareBill, editBill } from "../services/recurring/bills.ts";
+import { declareBill, editBill, markTransferRecurring } from "../services/recurring/bills.ts";
 import { generateOccurrences } from "../services/recurring/occurrences.ts";
 import { addPayment, markPaid } from "../services/recurring/payments.ts";
 import { setRecurringStatus } from "../services/recurring/series.ts";
@@ -177,12 +178,17 @@ const BILL_KEYS = [
 	"detected_automatically",
 	"category",
 	"account",
+	"destination_account",
 	"monthly_equivalent",
 	"payment_url",
 ];
 
-/** The bill keys without those Sure's `.compact` leaves out of this bill. */
-const billKeys = (...absent: string[]) => BILL_KEYS.filter((key) => !absent.includes(key));
+/**
+ * The bill keys without those Sure's `.compact` leaves out of this bill, the
+ * destination always but for a recurring transfer.
+ */
+const billKeys = (...absent: string[]) =>
+	BILL_KEYS.filter((key) => key !== "destination_account" && !absent.includes(key));
 
 const OCCURRENCE_KEYS = [
 	"due_on",
@@ -295,7 +301,7 @@ describe("get_bills", () => {
 			},
 		});
 		expect(keysOf(at(first, "current_occurrence"))).toEqual(OCCURRENCE_KEYS);
-		expect(keysOf(second)).toEqual([...BILL_KEYS, "current_occurrence"]);
+		expect(keysOf(second)).toEqual([...billKeys(), "current_occurrence"]);
 		expect(second).toMatchObject({
 			id: netflix.id,
 			bill_type: "subscription",
@@ -313,6 +319,47 @@ describe("get_bills", () => {
 			active_count: 2,
 			overdue_count: 0,
 			active_monthly_equivalent_by_currency: { EUR: eur("33,49") },
+		});
+	});
+
+	it("gives a recurring transfer its type and its destination, as Sure's", async () => {
+		const accountId = await household();
+		const loan = await openOwn({
+			name: "Prêt immobilier",
+			type: "loan",
+			subtype: "mortgage",
+			openingBalance: "180 000,00",
+		});
+		const outflow = await postOwn(accountId, {
+			date: "2026-09-05",
+			label: "ECHEANCE PRET",
+			amount: "-800,00",
+		});
+		await postOwn(loan.id, { date: "2026-09-05", label: "ECHEANCE", amount: "800,00" });
+		const transfer = (await findTransaction(deps(), outflow))?.transfer;
+		const marked = await markTransferRecurring(deps(), transfer?.id ?? "");
+		const tools = await assistants();
+
+		const [bill] = listAt(await tools.read("get_bills"), "bills");
+
+		expect(keysOf(bill)).toEqual([
+			...BILL_KEYS.filter((key) => key !== "category" && key !== "payment_url"),
+			"current_occurrence",
+		]);
+		expect(bill).toMatchObject({
+			id: marked.id,
+			name: "Remboursement vers Prêt immobilier",
+			bill_type: "transfer",
+			amount: eur("800,00"),
+			account: { id: accountId, name: "Courant" },
+			destination_account: { id: loan.id, name: "Prêt immobilier" },
+		});
+		// A transfer moves money, it is not spend, as Sure's totals; its unpaid
+		// September occurrence still counts as overdue, as every row does.
+		expect(at(await tools.read("get_bills"), "totals")).toEqual({
+			active_count: 1,
+			overdue_count: 1,
+			active_monthly_equivalent_by_currency: {},
 		});
 	});
 
@@ -582,7 +629,7 @@ describe("get_bills", () => {
 			tools.refusal("get_bills", { bill_type: "subscriptions", payment_state: "late" }),
 		).resolves.toEqual({
 			error: "subscriptions is not a valid bill_type",
-			hint: "Valid values: bill, subscription, installment, income, other.",
+			hint: "Valid values: bill, subscription, installment, income, transfer, other.",
 		});
 		await expect(
 			tools.refusal("get_bills", { payment_state: "late", due_within_days: 0 }),
@@ -1020,7 +1067,7 @@ describe("create_bill", () => {
 		});
 
 		expect(keysOf(subscription)).toEqual(["created", "bill", "upcoming_due_dates"]);
-		expect(keysOf(at(subscription, "bill"))).toEqual(BILL_KEYS);
+		expect(keysOf(at(subscription, "bill"))).toEqual(billKeys());
 		expect(subscription).toMatchObject({
 			created: true,
 			bill: {

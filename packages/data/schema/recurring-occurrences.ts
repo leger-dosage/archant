@@ -74,6 +74,8 @@ export const recurringOccurrences = sqliteTable(
 export type MatchSignals = {
 	merchant?: number | undefined;
 	name?: number | undefined;
+	/** A recurring transfer's identity: the outflow of a transfer into its destination. */
+	transfer?: number | undefined;
 	amount?: number | undefined;
 	date?: number | undefined;
 	account?: number | undefined;

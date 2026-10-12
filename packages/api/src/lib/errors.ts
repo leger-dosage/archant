@@ -138,6 +138,12 @@ export const ERROR_STATUSES = {
 	 */
 	RECURRING_ALREADY_EXISTS: 409,
 	/**
+	 * « Marquer comme récurrent » on a transfer whose account, destination,
+	 * amount and currency a series already follows, whatever its status, as
+	 * Sure's `transfer_already_exists`. Nothing is written.
+	 */
+	RECURRING_TRANSFER_ALREADY_EXISTS: 409,
+	/**
 	 * A transaction attached to an occurrence once its whole amount already
 	 * pays other occurrences: a payment never exceeds its transaction, as
 	 * Sure's `over_allocated`. Nothing is written.

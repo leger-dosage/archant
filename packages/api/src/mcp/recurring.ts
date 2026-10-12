@@ -51,13 +51,15 @@ function daysOf(value: string | number | null | undefined): number | undefined {
 
 /**
  * Sure's `totals_by_currency`: the active series' amounts in Sure's sign,
- * summed in each currency over every match. No series is a transfer until
- * Archant follows recurring transfers.
+ * summed in each currency over every match, recurring transfers left out:
+ * money moving between the household's own accounts is no recurring spend.
  */
 function totalsByCurrency(records: readonly RecurringRecord[]): Record<string, string> {
 	const sums = new Map<string, MinorUnits>();
 
-	for (const record of records.filter((item) => item.status === "active")) {
+	for (const record of records.filter(
+		(item) => item.status === "active" && item.destinationAccountId === null,
+	)) {
 		sums.set(record.currency, toMinorUnits((sums.get(record.currency) ?? 0) + record.amount));
 	}
 
@@ -69,7 +71,7 @@ function totalsByCurrency(records: readonly RecurringRecord[]): Record<string, s
 export const getRecurringTransactions = defineTool({
 	name: "get_recurring_transactions",
 	title: "Recurring transactions",
-	description: `Lists detected and manual recurring transactions (subscriptions, salaries, recurring bills) with expected amounts and next expected dates, as « Récurrents » lists them. Amounts are formatted in Sure's sign: an expense positive, an income negative. status defaults to "active"; "all" lists every series, suggested and ended ones included. Pass upcoming_within_days to only see items expected between today and that many days from now (overdue items appear when no window is given). totals_by_currency sums the active items. ${BANK_TEXT}`,
+	description: `Lists detected and manual recurring transactions (subscriptions, salaries, recurring bills and transfers) with expected amounts and next expected dates, as « Récurrents » lists them. Amounts are formatted in Sure's sign: an expense positive, an income negative. status defaults to "active"; "all" lists every series, suggested and ended ones included. Pass upcoming_within_days to only see items expected between today and that many days from now (overdue items appear when no window is given). totals_by_currency sums the active items excluding transfers, which move money between the owner's own accounts. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: recurringInput,
@@ -103,8 +105,11 @@ export const getRecurringTransactions = defineTool({
 				is_manual: z.boolean().describe("Added by the owner."),
 				is_transfer: z
 					.boolean()
-					.describe("Always false: Archant follows no recurring transfer yet."),
+					.describe("A recurring transfer between two of the owner's accounts."),
 				account: namedRef.optional().describe("Absent for a series paid from any account."),
+				destination_account: namedRef
+					.optional()
+					.describe("The account a recurring transfer pays into; absent for any other series."),
 			}),
 		),
 		totals_by_currency: z
@@ -139,10 +144,18 @@ export const getRecurringTransactions = defineTool({
 						last_occurrence_date: record.lastOccurrenceDate,
 						occurrence_count: record.occurrenceCount,
 						is_manual: record.manual,
-						is_transfer: false,
+						is_transfer: record.destinationAccountId !== null,
 						...(record.accountId === null
 							? {}
 							: { account: { id: record.accountId, name: record.accountName ?? "" } }),
+						...(record.destinationAccountId === null
+							? {}
+							: {
+									destination_account: {
+										id: record.destinationAccountId,
+										name: record.destinationAccountName ?? "",
+									},
+								}),
 					};
 				}),
 				totals_by_currency: totalsByCurrency(records),

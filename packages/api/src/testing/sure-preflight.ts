@@ -316,7 +316,8 @@ const SCHEMAS = {
 			payment_url: z.url({ protocol: /^https?$/u }).nullable(),
 			autopay: z.boolean(),
 			notes: z.string().nullable(),
-			// `bill_type_matches_shape`: no transfer without a destination account.
+			// `bill_type_matches_shape`: no transfer without a destination account,
+			// which Sure's importer never assigns.
 			bill_type: z.enum(["bill", "subscription", "installment", "income", "other"]),
 			category_id: z.string().nullable(),
 			anchor_date: date.nullable(),
@@ -330,6 +331,7 @@ const SCHEMAS = {
 			}),
 			dedup_scope: z.string(),
 			...stamps,
+			archant: archant.optional(),
 		})
 		// `amount_variance_consistency`.
 		.refine(

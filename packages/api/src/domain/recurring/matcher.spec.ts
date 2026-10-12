@@ -16,6 +16,7 @@ function series(overrides: Partial<MatchSeries> = {}): MatchSeries {
 	return {
 		id: "s1",
 		accountId: "a1",
+		destinationAccountId: null,
 		currency: "EUR",
 		amount: toMinorUnits(MORTGAGE_AMOUNT),
 		merchantId: null,
@@ -220,7 +221,7 @@ describe("matchPayments", () => {
 		expect(decisions[1]?.signals).toMatchObject({ account: 1000 });
 	});
 
-	it("leaves out an excluded row, a split parent and a transfer side, but keeps a loan payment's outflow", () => {
+	it("leaves out an excluded row, a split parent and every transfer side, a loan payment's outflow included", () => {
 		const decisions = matchPayments(
 			byId(series()),
 			[
@@ -232,14 +233,74 @@ describe("matchPayments", () => {
 			[
 				entry("e1", "2026-08-05", MORTGAGE_AMOUNT, { excluded: true }),
 				entry("e2", "2026-09-05", MORTGAGE_AMOUNT, { splitParent: true }),
-				entry("e3", "2026-10-05", MORTGAGE_AMOUNT, { transfer: { kind: "internal_move" } }),
-				entry("e4", "2026-11-05", MORTGAGE_AMOUNT, { transfer: { kind: "loan_payment" } }),
+				entry("e3", "2026-10-05", MORTGAGE_AMOUNT, {
+					transfer: { kind: "internal_move", intoAccountId: "s9" },
+				}),
+				entry("e4", "2026-11-05", MORTGAGE_AMOUNT, {
+					transfer: { kind: "loan_payment", intoAccountId: "l1" },
+				}),
 			],
 			context("2026-11-05"),
 			live,
 		);
 
-		expect(decisions).toMatchObject([{ occurrenceId: "o4", entryId: "e4" }]);
+		expect(decisions).toEqual([]);
+	});
+
+	it("pays a recurring transfer with the outflow of a transfer into its destination, scored 4000 for it", () => {
+		const transfer = series({ destinationAccountId: "l1", labelKey: null, billType: "transfer" });
+		const decisions = matchPayments(
+			byId(transfer),
+			[occurrence("o1", "2026-08-05")],
+			[
+				entry("e1", "2026-08-05", MORTGAGE_AMOUNT, {
+					label: "VIR SEPA PRET",
+					transfer: { kind: "loan_payment", intoAccountId: "l1" },
+				}),
+			],
+			context("2026-08-05"),
+			live,
+		);
+
+		expect(decisions).toEqual([
+			{
+				occurrenceId: "o1",
+				entryId: "e1",
+				state: "confirmed",
+				score: 10_000,
+				signals: { transfer: 4000, amount: 3000, date: 2000, account: 1000 },
+			},
+		]);
+	});
+
+	it("never pays a recurring transfer with an ordinary row, an inflow, or an outflow into another account", () => {
+		const transfer = series({ destinationAccountId: "l1", labelKey: null, billType: "transfer" });
+		const decisions = matchPayments(
+			byId(transfer),
+			[
+				occurrence("o1", "2026-08-05"),
+				occurrence("o2", "2026-09-05"),
+				occurrence("o3", "2026-10-05"),
+				occurrence("o4", "2026-11-05"),
+			],
+			[
+				entry("e1", "2026-08-05", MORTGAGE_AMOUNT),
+				entry("e2", "2026-09-05", MORTGAGE_AMOUNT, {
+					transfer: { kind: "internal_move", intoAccountId: "s1" },
+				}),
+				entry("e3", "2026-10-05", -MORTGAGE_AMOUNT, {
+					transfer: { kind: "loan_payment", intoAccountId: null },
+				}),
+				entry("e4", "2026-11-05", MORTGAGE_AMOUNT, {
+					accountId: "a2",
+					transfer: { kind: "loan_payment", intoAccountId: "l1" },
+				}),
+			],
+			context("2026-11-05"),
+			live,
+		);
+
+		expect(decisions).toEqual([]);
 	});
 
 	it("never suggests a rejected pair again, nor a transaction already confirmed", () => {
@@ -550,6 +611,12 @@ describe("entryWindow", () => {
 	});
 });
 
+/** A loan payment's outflow on the due date, into `intoAccountId`. */
+const outflow = (intoAccountId: string) =>
+	entry("e1", "2026-08-05", MORTGAGE_AMOUNT, {
+		transfer: { kind: "loan_payment", intoAccountId },
+	});
+
 describe("explain", () => {
 	it("scores a payment as a run does", () => {
 		expect(
@@ -577,5 +644,16 @@ describe("explain", () => {
 			explain(series(), due, entry("e1", "2026-08-20", MORTGAGE_AMOUNT), "2026-08-05"),
 		).toBeNull();
 		expect(explain(series(), due, entry("e1", "2026-08-05", -90_000), "2026-08-05")).toBeNull();
+	});
+
+	it("explains a recurring transfer's payment by its transfer signal, and refuses an outflow into another account", () => {
+		const transfer = series({ destinationAccountId: "l1", labelKey: null, billType: "transfer" });
+		const due = occurrence("o1", "2026-08-05");
+
+		expect(explain(transfer, due, outflow("l1"), "2026-08-05")).toEqual({
+			score: 10_000,
+			signals: { transfer: 4000, amount: 3000, date: 2000, account: 1000 },
+		});
+		expect(explain(transfer, due, outflow("l2"), "2026-08-05")).toBeNull();
 	});
 });

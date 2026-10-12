@@ -78,6 +78,7 @@ export async function detectPriceChanges(tx: Writer, day: IsoDate): Promise<void
 		.select({
 			id: recurringTransactions.id,
 			accountId: recurringTransactions.accountId,
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			merchantId: recurringTransactions.merchantId,
 			labelKey: recurringTransactions.labelKey,
 			amount: recurringTransactions.amount,

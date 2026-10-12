@@ -30,6 +30,7 @@ import {
 	errorBody,
 	freshDatabase,
 	openAccount,
+	mortgage,
 	openOwn,
 	ownCategory,
 	pea,
@@ -1405,6 +1406,10 @@ const rawRecurring = async (args?: unknown) =>
 
 const readRecurring = async (args?: unknown) => recurringShape.parse(await rawRecurring(args));
 
+/** The listed series of a raw answer, every key kept. */
+const listOf = (raw: Record<string, unknown>) =>
+	z.array(z.record(z.string(), z.unknown())).parse(raw.recurring_transactions);
+
 /** An object's keys, in the order the tool wrote them. */
 const keysOf = (value: unknown) => Object.keys(z.record(z.string(), z.unknown()).parse(value));
 
@@ -1658,6 +1663,45 @@ describe("reading accounts, recurring series and one transaction", () => {
 		expect(ours(all.recurring_transactions).indexOf("window-ended")).toBeGreaterThan(
 			ours(all.recurring_transactions).indexOf("window-salary"),
 		);
+	});
+
+	it("get_recurring_transactions marks a recurring transfer, names its destination and leaves it out of the totals, as Sure's", async () => {
+		const account = await openAccount({ name: "Remboursements" });
+		const loan = await openAccount({ ...mortgage, name: "Prêt" });
+		await temp.db.insert(recurringTransactions).values({
+			id: "window-loan",
+			accountId: account.id,
+			destinationAccountId: loan.id,
+			label: "ECHEANCE PRET",
+			name: "Remboursement vers Prêt",
+			amount: -80_000,
+			currency: "EUR",
+			expectedDayOfMonth: 5,
+			lastOccurrenceDate: "2026-09-05",
+			nextExpectedDate: "2026-10-05",
+			occurrenceCount: 1,
+			status: "active",
+			manual: true,
+			billType: "transfer",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const raw = await rawRecurring({ status: "all" });
+		const all = recurringShape.parse(raw);
+		const item = listOf(raw).find((one) => one.id === "window-loan");
+
+		expect(item).toMatchObject({
+			name: "Remboursement vers Prêt",
+			amount: eur(80_000),
+			is_transfer: true,
+			account: { id: account.id, name: "Remboursements" },
+			destination_account: { id: loan.id, name: "Prêt" },
+		});
+		expect(keysOf(item).slice(-3)).toEqual(["is_transfer", "account", "destination_account"]);
+		const spentCents = listOf(raw)
+			.filter((one) => one.status === "active" && one.is_transfer === false)
+			.reduce((sum, one) => sum + centsOf(z.string().parse(one.amount)), 0);
+		expect(all.totals_by_currency).toEqual({ EUR: eur(spentCents) });
 	});
 
 	it("get_recurring_transactions gives 200 at most, with the total and truncated", async () => {

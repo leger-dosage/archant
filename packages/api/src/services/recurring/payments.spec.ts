@@ -12,14 +12,16 @@ import {
 	deps,
 	occurrencesOf,
 	openAccount,
+	openLoan,
 	payments,
 	temp,
+	transferBetween,
 	useRecurringDatabase,
 } from "../../testing/recurring.ts";
 import { deleteTransaction } from "../ledger/edits.ts";
 import { oneByOne } from "../ledger/shared.ts";
 import { splitTransaction } from "../ledger/splits.ts";
-import { declareBill, editBill } from "./bills.ts";
+import { declareBill, editBill, markTransferRecurring } from "./bills.ts";
 import {
 	addPayment,
 	confirmPayment,
@@ -684,3 +686,50 @@ async function skipAll(id: string) {
 
 	await oneByOne(open, (row) => skipOccurrence(deps(), row.id));
 }
+
+describe("a transfer side", () => {
+	it("never pays a series that is no recurring transfer, by hand or as a candidate", async () => {
+		const checking = await openAccount();
+		const loan = await openLoan();
+		const series = await declareMortgage(checking);
+		const { outflow } = await transferBetween(checking, loan, "2026-08-05", 57_129);
+		const occurrence = await august(series.id);
+
+		await expect(
+			codeOf(addPayment(deps(), occurrence.id, { entryId: outflow })),
+		).resolves.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "entryId", code: "transfer_side" }],
+		});
+		await expect(paymentCandidates(deps(), occurrence.id)).resolves.toEqual([]);
+	});
+
+	it("pays a recurring transfer, whose candidates are the outflows into its destination", async () => {
+		const checking = await openAccount();
+		const loan = await openLoan();
+		const { transferId } = await transferBetween(checking, loan, "2026-07-05", 57_129);
+		const series = await markTransferRecurring(deps(), transferId);
+		const { outflow } = await transferBetween(checking, loan, "2026-08-05", 57_129);
+		await addRows(checking, [{ date: "2026-08-05", amount: -57_129, label: "Prêt immobilier" }]);
+		const occurrence = await august(series.id);
+
+		await expect(paymentCandidates(deps(), occurrence.id)).resolves.toEqual([
+			{
+				entryId: outflow,
+				label: "ECHEANCE PRET",
+				date: "2026-08-05",
+				amount: -57_129,
+				currency: "EUR",
+				score: 10_000,
+				signals: { transfer: 4000, amount: 3000, date: 2000, account: 1000 },
+			},
+		]);
+		await expect(addPayment(deps(), occurrence.id, { entryId: outflow })).resolves.toMatchObject({
+			amount: 57_129,
+		});
+		await expect(seriesRow(series.id)).resolves.toEqual({
+			nameAliases: [],
+			learnedTolerance: null,
+		});
+	});
+});

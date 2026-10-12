@@ -23,8 +23,10 @@ export type RecurringStatus = (typeof RECURRING_STATUSES)[number];
  * Sure's `RecurringTransaction`: a payment that recurs on its schedule, the
  * `recurrence_rules` that point at it, for amounts within 7.5 % of each other.
  * Grouped by merchant when the rows have one, else by their normalised label,
- * never both. Detection or the owner writes it; no entry points at it and it
- * points at no entry.
+ * never both. A recurring transfer, Sure's `transfer?`, has a destination
+ * account instead of either: the outflows of transfers from its account into
+ * that one pay it. Detection or the owner writes it; no entry points at it
+ * and it points at no entry.
  */
 export const recurringTransactions = sqliteTable(
 	"recurring_transactions",
@@ -34,6 +36,11 @@ export const recurringTransactions = sqliteTable(
 		// account's line may pay it, and SQLite's distinct NULLs leave its
 		// duplicates to the declaration's own check.
 		accountId: text("account_id").references(() => accounts.id, { onDelete: "cascade" }),
+		// Sure's `destination_account_id`: set, the series is a recurring
+		// transfer from `account_id` into this account. Cascade, as Sure's.
+		destinationAccountId: text("destination_account_id").references(() => accounts.id, {
+			onDelete: "cascade",
+		}),
 		// Cascade: a merged merchant's patterns come back under the target at the
 		// next detection, since its rows now carry the target's id.
 		merchantId: text("merchant_id").references(() => merchants.id, { onDelete: "cascade" }),
@@ -90,9 +97,20 @@ export const recurringTransactions = sqliteTable(
 		updatedAt: integer("updated_at").notNull(),
 	},
 	(table) => [
+		// A recurring transfer is keyed by its two accounts, so it carries neither.
 		check(
 			"recurring_transactions_key_check",
-			sql`(${table.merchantId} is null) <> (${table.labelKey} is null)`,
+			sql`case when ${table.destinationAccountId} is null then (${table.merchantId} is null) <> (${table.labelKey} is null) else ${table.merchantId} is null and ${table.labelKey} is null end`,
+		),
+		// Sure's `chk_recurring_txns_transfer_requires_source`.
+		check(
+			"recurring_transactions_transfer_requires_source",
+			sql`${table.destinationAccountId} is null or ${table.accountId} is not null`,
+		),
+		// Sure's `chk_recurring_txns_transfer_distinct_accounts`.
+		check(
+			"recurring_transactions_transfer_distinct_accounts",
+			sql`${table.destinationAccountId} is null or ${table.destinationAccountId} <> ${table.accountId}`,
 		),
 		check(
 			"recurring_transactions_status_check",
@@ -102,6 +120,12 @@ export const recurringTransactions = sqliteTable(
 		check(
 			"recurring_transactions_bill_type_check",
 			sql`${table.billType} in ${inList(BILL_TYPES)}`,
+		),
+		// Sure's `derive_transfer_bill_type` and `bill_type_matches_shape`: a
+		// destination makes a transfer, and only a destination does.
+		check(
+			"recurring_transactions_transfer_type_check",
+			sql`(${table.billType} = 'transfer') = (${table.destinationAccountId} is not null)`,
 		),
 		check(
 			"recurring_transactions_end_after_count_check",
@@ -113,6 +137,16 @@ export const recurringTransactions = sqliteTable(
 		uniqueIndex("recurring_transactions_label_unique")
 			.on(table.accountId, table.labelKey, table.amount, table.currency, table.dedupScope)
 			.where(sql`${table.labelKey} is not null`),
+		uniqueIndex("recurring_transactions_transfer_unique")
+			.on(
+				table.accountId,
+				table.destinationAccountId,
+				table.amount,
+				table.currency,
+				table.dedupScope,
+			)
+			.where(sql`${table.destinationAccountId} is not null`),
 		index("recurring_transactions_merchant").on(table.merchantId),
+		index("recurring_transactions_destination").on(table.destinationAccountId),
 	],
 );

@@ -168,6 +168,7 @@ export async function seriesWithSchedules(
 		.select({
 			id: recurringTransactions.id,
 			accountId: recurringTransactions.accountId,
+			destinationAccountId: recurringTransactions.destinationAccountId,
 			currency: recurringTransactions.currency,
 			amount: recurringTransactions.amount,
 			merchantId: recurringTransactions.merchantId,

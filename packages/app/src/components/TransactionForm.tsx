@@ -324,7 +324,8 @@ export function TransactionForm({
 				{transaction !== null && !inSplit && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
 				)}
-				{transaction !== null && !splitParent && showsCategory(transaction.amount, transfer) && (
+				{/* A transfer side follows a series only through « Marquer comme récurrent », as Sure's. */}
+				{transaction !== null && !splitParent && transfer === null && (
 					<RecurringBlock transaction={transaction} dirty={isDirty} />
 				)}
 

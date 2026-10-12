@@ -21,6 +21,7 @@ import { createTempDatabase } from "../../testing/temp-database.ts";
 import { createAccount } from "../ledger/accounts.ts";
 import { updateTransaction } from "../ledger/edits.ts";
 import { ingest } from "../ledger/ingest.ts";
+import { findTransaction } from "../ledger/queries.ts";
 import { oneByOne } from "../ledger/shared.ts";
 import {
 	allBills,
@@ -29,6 +30,7 @@ import {
 	billsOverview,
 	declareBill,
 	editBill,
+	markTransferRecurring,
 	occurrenceDetail,
 	updateBill,
 	upcomingRecurring,
@@ -800,6 +802,7 @@ describe("billsOverview", () => {
 				name: "Électricité",
 				accountId,
 				accountName: "Compte",
+				destinationAccountId: null,
 				merchantName: null,
 				dueOn: "2026-10-01",
 				effectiveDueOn: "2026-10-01",
@@ -1660,5 +1663,179 @@ describe("a bill paid from any account", () => {
 		);
 		expect(bills).toEqual([expect.objectContaining({ id: water.id, accountId: null })]);
 		await expect(billDetail(deps(), water.id)).resolves.toMatchObject({ lastAccount: null });
+	});
+});
+
+async function opened(
+	name: string,
+	type: "loan" | "depository" | "credit_card",
+	subtype: "mortgage" | "savings" | null,
+) {
+	const created = await createAccount(
+		deps(),
+		{
+			name,
+			type,
+			subtype,
+			currency: "EUR",
+			openingBalance: toMinorUnits(0),
+			openingDate: "2026-01-01",
+		},
+		{ origin: "user" },
+	);
+
+	return created.id;
+}
+
+/** `amount`, −800,00 € by default, out of `from` into `to` on `date`, which ingestion pairs; answers the transfer's id. */
+async function transfer(from: string, to: string, date: string, amount = 80_000) {
+	const [outflow = ""] = await addRows(from, [date], "ECHEANCE PRET", -amount);
+	await addRows(to, [date], "ECHEANCE", amount);
+	return (await findTransaction(deps(), outflow))!.transfer!.id;
+}
+
+describe("markTransferRecurring", () => {
+	it("follows a transfer into a loan as an active manual recurring transfer, on « Factures »", async () => {
+		const checking = await account();
+		const loan = await opened("Prêt immobilier", "loan", "mortgage");
+
+		const marked = await markTransferRecurring(
+			deps(),
+			await transfer(checking, loan, "2026-09-05"),
+		);
+
+		expect(marked).toMatchObject({
+			name: "Remboursement vers Prêt immobilier",
+			accountId: checking,
+			destinationAccountId: loan,
+			destinationAccountName: "Prêt immobilier",
+			destinationAccountType: "loan",
+			merchantId: null,
+			amount: -80_000,
+			expectedAmountMin: null,
+			expectedAmountMax: null,
+			currency: "EUR",
+			expectedDayOfMonth: 5,
+			lastOccurrenceDate: "2026-09-05",
+			nextExpectedDate: "2026-10-05",
+			occurrenceCount: 1,
+			status: "active",
+			manual: true,
+			billType: "transfer",
+			categoryId: null,
+			rules: [monthly(5)],
+		});
+		await expect(stored()).resolves.toMatchObject([{ labelKey: null, dedupScope: "" }]);
+
+		const overview = await billsOverview(deps());
+
+		expect(
+			[...overview.attention, ...overview.month, ...overview.later].map((row) => ({
+				seriesId: row.seriesId,
+				dueOn: row.dueOn,
+				destinationAccountId: row.destinationAccountId,
+			})),
+		).toEqual([
+			{ seriesId: marked.id, dueOn: "2026-09-05", destinationAccountId: loan },
+			{ seriesId: marked.id, dueOn: "2026-10-05", destinationAccountId: loan },
+		]);
+	});
+
+	it("answers RECURRING_TRANSFER_ALREADY_EXISTS for a second transfer of the pair and amount, whatever the status", async () => {
+		const checking = await account();
+		const loan = await opened("Prêt immobilier", "loan", "mortgage");
+		const first = await markTransferRecurring(deps(), await transfer(checking, loan, "2026-08-05"));
+		await setRecurringStatus(deps(), first.id, "inactive");
+
+		await expect(
+			refusal(markTransferRecurring(deps(), await transfer(checking, loan, "2026-09-05"))),
+		).resolves.toEqual({
+			code: "RECURRING_TRANSFER_ALREADY_EXISTS",
+			message: "A recurring transfer already exists for this pair of accounts.",
+		});
+		await expect(stored()).resolves.toHaveLength(1);
+		await expect(refusal(markTransferRecurring(deps(), "nope"))).resolves.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+
+	it("leaves a transfer into savings off « Factures », on « Toutes les factures » as a transfer", async () => {
+		const checking = await account();
+		const savings = await opened("Livret A", "depository", "savings");
+
+		const marked = await markTransferRecurring(
+			deps(),
+			await transfer(checking, savings, "2026-09-05"),
+		);
+
+		expect(marked.name).toBe("Virement vers Livret A");
+		const overview = await billsOverview(deps());
+		expect([...overview.attention, ...overview.month, ...overview.later]).toEqual([]);
+		await expect(allBills(deps(), { type: "transfer", sort: "due" })).resolves.toMatchObject({
+			bills: [{ id: marked.id, billType: "transfer" }],
+		});
+	});
+
+	it("lists a recurring transfer into a credit card on « Factures »", async () => {
+		const checking = await account();
+		const card = await opened("Carte", "credit_card", null);
+
+		const marked = await markTransferRecurring(
+			deps(),
+			await transfer(checking, card, "2026-09-05"),
+		);
+
+		expect(marked.name).toBe("Remboursement vers Carte");
+		const overview = await billsOverview(deps());
+		expect(
+			[...overview.attention, ...overview.month, ...overview.later].map((row) => row.seriesId),
+		).toEqual([marked.id, marked.id]);
+	});
+
+	it("takes an amount another destination holds, never one another transfer into the same holds", async () => {
+		const checking = await account();
+		const loan = await opened("Prêt immobilier", "loan", "mortgage");
+		const other = await opened("Prêt auto", "loan", "mortgage");
+		const first = await markTransferRecurring(
+			deps(),
+			await transfer(checking, loan, "2026-09-05", 80_000),
+		);
+		await markTransferRecurring(deps(), await transfer(checking, other, "2026-09-07", 50_000));
+		await markTransferRecurring(deps(), await transfer(checking, loan, "2026-09-09", 60_000));
+
+		await expect(editBill(deps(), first.id, { amount: "500,00" })).resolves.toMatchObject({
+			amount: -50_000,
+		});
+		await expect(refusal(editBill(deps(), first.id, { amount: "600,00" }))).resolves.toMatchObject({
+			code: "RECURRING_ALREADY_EXISTS",
+		});
+	});
+
+	it("keeps its account and type through an edit, as Sure's dialog", async () => {
+		const checking = await account();
+		const other = await account("EUR", "Autre");
+		const loan = await opened("Prêt immobilier", "loan", "mortgage");
+		const marked = await markTransferRecurring(
+			deps(),
+			await transfer(checking, loan, "2026-09-05"),
+		);
+
+		await expect(refusal(editBill(deps(), marked.id, { accountId: other }))).resolves.toEqual({
+			code: "VALIDATION_ERROR",
+			message: "The request is invalid.",
+			fields: [{ path: "accountId", code: "invalid_value" }],
+		});
+		await expect(
+			refusal(editBill(deps(), marked.id, { billType: "subscription" })),
+		).resolves.toMatchObject({ fields: [{ path: "billType", code: "invalid_value" }] });
+		await expect(
+			editBill(deps(), marked.id, { name: "Crédit maison", amount: "850,00" }),
+		).resolves.toMatchObject({
+			name: "Crédit maison",
+			amount: -85_000,
+			accountId: checking,
+			destinationAccountId: loan,
+			billType: "transfer",
+		});
 	});
 });

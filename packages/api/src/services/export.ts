@@ -900,7 +900,10 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				payment_url: row.paymentUrl,
 				autopay: row.autopay,
 				notes: row.notes,
-				bill_type: row.billType,
+				// Sure's importer at `00dd977fb` drops the destination, so a
+				// `transfer` would fail its `bill_type_matches_shape` and abort the
+				// whole import: a recurring transfer lands as a bill, its fallback.
+				bill_type: row.billType === "transfer" ? "bill" : row.billType,
 				category_id: row.categoryId,
 				anchor_date: row.anchorDate,
 				end_mode: row.endAfterCount === null ? "never" : "after_count",
@@ -909,6 +912,15 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				dedup_scope: row.dedupScope,
 				created_at: timestamp(row.createdAt),
 				updated_at: timestamp(row.updatedAt),
+				// Sure's export writes no destination: Archant keeps it here.
+				...(row.destinationAccountId === null
+					? {}
+					: {
+							archant: {
+								destination_account_id: row.destinationAccountId,
+								bill_type: "transfer",
+							},
+						}),
 			},
 		})),
 		counts,

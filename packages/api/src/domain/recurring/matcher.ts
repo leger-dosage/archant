@@ -1,5 +1,6 @@
 import type { CashFlowTransaction } from "../cash-flow.ts";
 import type { IsoDate } from "../dates.ts";
+import type { TransferSide } from "./identifier.ts";
 import type { Schedule } from "./schedule.ts";
 
 import type { MinorUnits } from "@archant/data/money";
@@ -7,7 +8,6 @@ import { toMinorUnits } from "@archant/data/money";
 import type { BillType } from "@archant/data/recurring";
 import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 
-import { recurringDirection } from "../cash-flow.ts";
 import { addDays, daysBetween, maxDate } from "../dates.ts";
 import { normalizeLabel } from "../normalize-label.ts";
 import {
@@ -35,6 +35,7 @@ const DAYS_LATE = 7;
 
 // Sure's signals, in ten-thousandths.
 const MERCHANT_SCORE = 4000;
+const TRANSFER_SCORE = 4000;
 const NAME_SCORE = 3500;
 const EXACT_AMOUNT_SCORE = 3000;
 const NEAR_AMOUNT_SCORE = 2500;
@@ -48,6 +49,8 @@ export type MatchSeries = {
 	id: string;
 	/** `null` pays from any account, as Sure's « N'importe quel compte ». */
 	accountId: string | null;
+	/** Set for a recurring transfer, with an account: the account its payments go into. */
+	destinationAccountId: string | null;
 	currency: string;
 	/** Signed as its transactions (AD-5). */
 	amount: MinorUnits;
@@ -71,7 +74,8 @@ export type MatchOccurrence = {
 };
 
 /** A transaction as the matcher reads it. */
-export type MatchEntry = CashFlowTransaction & {
+export type MatchEntry = Omit<CashFlowTransaction, "transfer"> & {
+	transfer: TransferSide | null;
 	id: string;
 	accountId: string;
 	currency: string;
@@ -140,10 +144,10 @@ export function knownNames(
 
 /**
  * Sure's `identity_matches?` and the filters around it: the series' currency,
- * its account when it has one, its sign, its merchant or else a name it
- * knows, not excluded, not a split parent, not a transfer side but for the
- * outflow of a loan payment or an investment contribution, as detection
- * reads it.
+ * its account when it has one, its sign, not excluded, not a split parent.
+ * A recurring transfer then takes the outflow of a transfer into its
+ * destination; any other series never takes a transfer side, and takes its
+ * merchant or else a name it knows.
  */
 function identityMatches(series: MatchSeries, entry: MatchEntry, names: Set<string>): boolean {
 	if (
@@ -151,15 +155,33 @@ function identityMatches(series: MatchSeries, entry: MatchEntry, names: Set<stri
 		(series.accountId !== null && entry.accountId !== series.accountId) ||
 		series.amount < 0 !== entry.amount < 0 ||
 		entry.excluded ||
-		entry.splitParent ||
-		recurringDirection(entry) === "transfer"
+		entry.splitParent
 	) {
+		return false;
+	}
+
+	if (series.destinationAccountId !== null) {
+		return entry.transfer?.intoAccountId === series.destinationAccountId;
+	}
+
+	if (entry.transfer !== null) {
 		return false;
 	}
 
 	return series.merchantId === null
 		? names.has(normalizeLabel(entry.label))
 		: entry.merchantId === series.merchantId;
+}
+
+/** Sure's identity signal: the transfer's, else the merchant's, else the name's. */
+function identityOf(series: MatchSeries): { identity: number; signals: MatchSignals } {
+	if (series.destinationAccountId !== null) {
+		return { identity: TRANSFER_SCORE, signals: { transfer: TRANSFER_SCORE } };
+	}
+
+	return series.merchantId === null
+		? { identity: NAME_SCORE, signals: { name: NAME_SCORE } }
+		: { identity: MERCHANT_SCORE, signals: { merchant: MERCHANT_SCORE } };
 }
 
 /**
@@ -203,9 +225,7 @@ function score(
 	entry: MatchEntry,
 	window: Window,
 ): { score: number; signals: MatchSignals } {
-	const identity = series.merchantId === null ? NAME_SCORE : MERCHANT_SCORE;
-	const signals: MatchSignals =
-		series.merchantId === null ? { name: identity } : { merchant: identity };
+	const { identity, signals } = identityOf(series);
 	const amount = amountScore(
 		series,
 		resolvedExpected(occurrence, series.amount),

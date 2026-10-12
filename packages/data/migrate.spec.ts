@@ -1607,6 +1607,169 @@ describe("recurring transactions", () => {
 		).resolves.toEqual({ account: null });
 	});
 
+	it("holds a recurring transfer from one account into another, keyed by neither merchant nor label, once per pair and amount", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertAccount(database, "l1", "loan", "mortgage");
+		await insertMerchant(database, "m1", "Banque");
+		const transfer = (
+			id: string,
+			fields: {
+				account?: string | null;
+				destination?: string;
+				merchant?: string | null;
+				type?: string;
+				amount?: number;
+			},
+		) =>
+			database.run(
+				sql`insert into recurring_transactions (id, account_id, destination_account_id, merchant_id, label, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, bill_type, created_at, updated_at) values (${id}, ${fields.account === undefined ? "a1" : fields.account}, ${fields.destination ?? "l1"}, ${fields.merchant ?? null}, 'PRET', ${fields.amount ?? -80000}, 'EUR', 5, '2026-09-05', '2026-10-05', 1, ${fields.type ?? "transfer"}, 0, 0)`,
+			);
+
+		await expect(transfer("r1", {})).resolves.toBeDefined();
+		await expect(transfer("r2", {})).rejects.toThrow();
+		await expect(transfer("r3", { amount: -90000 })).resolves.toBeDefined();
+		await expect(transfer("r4", { account: null, amount: -1 })).rejects.toThrow();
+		await expect(transfer("r5", { destination: "a1", amount: -2 })).rejects.toThrow();
+		await expect(transfer("r6", { merchant: "m1", amount: -3 })).rejects.toThrow();
+		await expect(transfer("r7", { type: "bill", amount: -4 })).rejects.toThrow();
+
+		await database.run(sql`delete from accounts where id = 'l1'`);
+
+		await expect(database.all(sql`select id from recurring_transactions`)).resolves.toEqual([]);
+	});
+
+	it("turns a series paid only by loan payments into one account into a recurring transfer when 0072 adds them", async () => {
+		const before = await migratedBefore("0072");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "l1", "loan", "mortgage");
+		await insertAccount(before, "s1", "depository", "savings");
+		await insertMerchant(before, "m1", "Crédit Agricole");
+		await insertEntry(before, "e1", "transaction", null, "2026-08-05", "a1");
+		await insertEntry(before, "e2", "transaction", null, "2026-08-05", "l1");
+		await insertEntry(before, "e3", "transaction", null, "2026-09-05", "a1");
+		await insertEntry(before, "e4", "transaction", null, "2026-09-05", "l1");
+		await insertEntry(before, "e5", "transaction", null, "2026-09-10", "a1");
+		await insertEntry(before, "e6", "transaction", null, "2026-09-10", "s1");
+		await insertEntry(before, "e7", "transaction", null, "2026-09-05", "a1");
+		await before.run(
+			sql`insert into transactions (entry_id, label) values ('e1', 'PRET'), ('e2', 'PRET'), ('e3', 'PRET'), ('e4', 'PRET'), ('e5', 'EPARGNE'), ('e6', 'EPARGNE'), ('e7', 'PRET')`,
+		);
+		await insertTransfer(before, "x1", "e1", "e2", "loan_payment");
+		await insertTransfer(before, "x2", "e3", "e4", "loan_payment");
+		await insertTransfer(before, "x3", "e5", "e6", "internal_move");
+		const series = (
+			id: string,
+			status: string,
+			merchant: string | null,
+			labelKey: string | null,
+			{ manual = 1, amount = -80_000, createdAt = 0 } = {},
+		) =>
+			before.run(
+				sql`insert into recurring_transactions (id, account_id, merchant_id, label_key, label, name, amount, currency, expected_day_of_month, last_occurrence_date, next_expected_date, occurrence_count, status, manual, bill_type, created_at, updated_at) values (${id}, 'a1', ${merchant}, ${labelKey}, 'PRET', ${`Série ${id}`}, ${amount}, 'EUR', 5, '2026-09-05', '2026-10-05', 2, ${status}, ${manual}, 'bill', ${createdAt}, 0)`,
+			);
+		const paid = (occurrence: string, seriesId: string, due: string, entry: string) =>
+			before
+				.run(
+					sql`insert into recurring_occurrences (id, recurring_transaction_id, original_due_on, due_on, currency, status, closed_at, closed_source, created_at, updated_at) values (${occurrence}, ${seriesId}, ${due}, ${due}, 'EUR', 'paid', 0, 'auto', 0, 0)`,
+				)
+				.then(() =>
+					before.run(
+						sql`insert into recurring_allocations (id, recurring_occurrence_id, entry_id, allocated_amount, state, source, created_at, updated_at) values (${`p-${occurrence}`}, ${occurrence}, ${entry}, 80000, 'confirmed', 'auto_matched', 0, 0)`,
+					),
+				);
+		// Detected and paid by two loan payments into the loan: a manual recurring transfer.
+		await series("r1", "active", "m1", null, { manual: 0 });
+		await paid("o1", "r1", "2026-08-05", "e1");
+		await paid("o2", "r1", "2026-09-05", "e3");
+		// Paid by a move into savings: no loan payment, left as it is.
+		await series("r2", "active", null, "epargne");
+		await paid("o3", "r2", "2026-09-10", "e5");
+		// Ended: left as it is.
+		await series("r3", "ended", null, "pret ended");
+		await paid("o4", "r3", "2026-09-05", "e3");
+		// Never paid: left as it is.
+		await series("r4", "inactive", null, "pret");
+		// Paid by a loan payment and an ordinary line: left as it is.
+		await series("r5", "active", null, "pret mixte", { amount: -70_000 });
+		await paid("o5", "r5", "2026-08-05", "e1");
+		await paid("o6", "r5", "2026-09-05", "e7");
+		// Two that would share a pair, amount, currency and dedup scope: the oldest converts.
+		await series("r6", "active", null, "pret ancien", { amount: -50_000, createdAt: 1 });
+		await paid("o7", "r6", "2026-08-05", "e1");
+		await series("r7", "active", null, "pret recent", { amount: -50_000, createdAt: 2 });
+		await paid("o8", "r7", "2026-09-05", "e3");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, account_id as account, destination_account_id as destination, merchant_id as merchant, label_key as labelKey, name, bill_type as type, status from recurring_transactions where id <= 'r4' order by id`,
+			),
+		).resolves.toEqual([
+			{
+				id: "r1",
+				account: "a1",
+				destination: "l1",
+				merchant: null,
+				labelKey: null,
+				name: "Série r1",
+				type: "transfer",
+				status: "active",
+			},
+			{
+				id: "r2",
+				account: "a1",
+				destination: null,
+				merchant: null,
+				labelKey: "epargne",
+				name: "Série r2",
+				type: "bill",
+				status: "active",
+			},
+			{
+				id: "r3",
+				account: "a1",
+				destination: null,
+				merchant: null,
+				labelKey: "pret ended",
+				name: "Série r3",
+				type: "bill",
+				status: "ended",
+			},
+			{
+				id: "r4",
+				account: "a1",
+				destination: null,
+				merchant: null,
+				labelKey: "pret",
+				name: "Série r4",
+				type: "bill",
+				status: "inactive",
+			},
+		]);
+		await expect(
+			database.all(
+				sql`select a.entry_id as entry from recurring_allocations a join recurring_occurrences o on o.id = a.recurring_occurrence_id where o.recurring_transaction_id = 'r1' order by a.entry_id`,
+			),
+		).resolves.toEqual([{ entry: "e1" }, { entry: "e3" }]);
+		await expect(
+			database.all(
+				sql`select id, destination_account_id as destination, label_key as labelKey, bill_type as type, manual from recurring_transactions order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "r1", destination: "l1", labelKey: null, type: "transfer", manual: 1 },
+			{ id: "r2", destination: null, labelKey: "epargne", type: "bill", manual: 1 },
+			{ id: "r3", destination: null, labelKey: "pret ended", type: "bill", manual: 1 },
+			{ id: "r4", destination: null, labelKey: "pret", type: "bill", manual: 1 },
+			{ id: "r5", destination: null, labelKey: "pret mixte", type: "bill", manual: 1 },
+			{ id: "r6", destination: "l1", labelKey: null, type: "transfer", manual: 1 },
+			{ id: "r7", destination: null, labelKey: "pret recent", type: "bill", manual: 1 },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("turns each lock list into an object of unknown times when 0070 times the locks", async () => {
 		const before = await migratedBefore("0070");
 		await insertAccount(before, "a1", "depository", "checking");
