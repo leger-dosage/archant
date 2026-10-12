@@ -2,21 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { rejectionFor } from "./statement.ts";
 
-const context = { openingDate: "2026-09-01", currency: "EUR", today: "2026-09-21" };
+const context = { currency: "EUR", today: "2026-09-21" };
 
 describe("rejectionFor", () => {
-	it("accepts a line dated after the opening date, up to 366 days ahead", () => {
+	it("accepts a line dated any day up to 366 days ahead, as Sure has no opening bound", () => {
 		expect(rejectionFor({ date: "2026-09-02", currency: "EUR" }, context)).toBeNull();
 		expect(rejectionFor({ date: "2027-09-22", currency: "EUR" }, context)).toBeNull();
-	});
-
-	it("refuses the opening day itself and any day before", () => {
-		expect(rejectionFor({ date: "2026-09-01", currency: "EUR" }, context)).toBe(
-			"BEFORE_OPENING_DATE",
-		);
-		expect(rejectionFor({ date: "2026-08-31", currency: "EUR" }, context)).toBe(
-			"BEFORE_OPENING_DATE",
-		);
+		expect(rejectionFor({ date: "2026-09-01", currency: "EUR" }, context)).toBeNull();
+		expect(rejectionFor({ date: "2026-08-20", currency: "EUR" }, context)).toBeNull();
+		expect(rejectionFor({ date: "1990-01-01", currency: "EUR" }, context)).toBeNull();
 	});
 
 	it("refuses a line more than 366 days after today", () => {

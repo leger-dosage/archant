@@ -19,7 +19,12 @@ import { trades } from "@archant/data/schema/trades";
 import { maxDate, today } from "../../domain/dates.ts";
 import { marketValue } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
-import { accountWithOpeningDate, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
+import {
+	accountWithOpeningDate,
+	historyStartOf,
+	lastBalanceOnOrBefore,
+	recomputeBalances,
+} from "./balances.ts";
 import { invalidField, movesQuantity, oneByOne } from "./shared.ts";
 
 /**
@@ -86,22 +91,18 @@ export async function recomputeFeeCostBases(
 			}
 
 			const investments = await tx
-				.select({
-					id: accounts.id,
-					type: accounts.type,
-					currency: accounts.currency,
-					openingDate: entries.date,
-				})
+				.select({ id: accounts.id, type: accounts.type, currency: accounts.currency })
 				.from(accounts)
-				.innerJoin(
-					entries,
-					and(eq(entries.accountId, accounts.id), eq(entries.valuationKind, "opening_anchor")),
-				)
 				.where(eq(accounts.type, "investment"))
 				.orderBy(asc(accounts.id));
 
-			await oneByOne(investments, async ({ openingDate, ...account }) =>
-				recomputeBalances(tx, account, openingDate, deps.timeZone),
+			await oneByOne(investments, async (account) =>
+				recomputeBalances(
+					tx,
+					account,
+					await historyStartOf(tx, account.id, today(deps.timeZone)),
+					deps.timeZone,
+				),
 			);
 
 			return investments.length;

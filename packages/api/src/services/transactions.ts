@@ -213,7 +213,6 @@ async function pageItemsOf(
 
 // The ledger names why it refused a line; the form shows it under the date.
 const REJECTION_FIELDS: Partial<Record<RejectionCode, FieldError>> = {
-	BEFORE_OPENING_DATE: { path: "date", code: "not_after_opening_date" },
 	DATE_TOO_LATE: { path: "date", code: "date_too_late" },
 };
 

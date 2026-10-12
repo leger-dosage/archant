@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
-import { EARLIEST_OPENING_DATE } from "./accounts.ts";
+import { entryDateSchema } from "./accounts.ts";
 import { NOTES_MAX_LENGTH } from "./transactions.ts";
 
 // What the route checks before it knows the account: every field is text,
@@ -47,7 +47,7 @@ function balanceIn(currency: CurrencyCode) {
  */
 export function createSnapshotSchema(currency: CurrencyCode) {
 	return z
-		.object({ date: z.iso.date(), balance: z.string(), notes })
+		.object({ date: entryDateSchema, balance: z.string(), notes })
 		.superRefine(balanceIn(currency))
 		.transform((value, context) => {
 			const balance = parseAmount(value.balance, currency);
@@ -67,7 +67,7 @@ export function createSnapshotSchema(currency: CurrencyCode) {
 /** The edit counterpart: every field optional, an absent one left as it is. */
 export function updateSnapshotSchema(currency: CurrencyCode) {
 	return z
-		.object({ date: z.iso.date().optional(), balance: z.string().optional(), notes })
+		.object({ date: entryDateSchema.optional(), balance: z.string().optional(), notes })
 		.superRefine(balanceIn(currency))
 		.transform(({ balance: text, notes: written, ...rest }) => {
 			const balance = text === undefined ? null : parseAmount(text, currency);
@@ -86,9 +86,6 @@ export type SnapshotFormInput = z.input<ReturnType<typeof createSnapshotSchema>>
  * ledger checks it. The route takes `snapshotBodySchema`.
  */
 export function openingBalanceSchema(currency: CurrencyCode) {
-	// As an account's creation: each day from the opening date on gets a row.
-	return createSnapshotSchema(currency).refine((value) => value.date >= EARLIEST_OPENING_DATE, {
-		path: ["date"],
-		message: "date_too_early",
-	});
+	// `entryDateSchema` already refuses a date before 1900, as an account's creation does.
+	return createSnapshotSchema(currency);
 }

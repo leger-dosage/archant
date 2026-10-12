@@ -22,28 +22,28 @@ describe("periodRange", () => {
 		expect(periodRange(1, "2026-03-31", "2020-01-01")?.from).toBe("2026-02-28");
 	});
 
-	it("never starts before the opening date", () => {
+	it("never starts before the history start", () => {
 		expect(periodRange(6, "2026-09-21", "2026-09-01")).toEqual({
 			from: "2026-09-01",
 			to: "2026-09-21",
 		});
 	});
 
-	it("starts at the opening date for all", () => {
+	it("starts at the history start for all, an entry before the opening date included", () => {
 		expect(periodRange("all", "2026-09-21", "2024-02-29")).toEqual({
 			from: "2024-02-29",
 			to: "2026-09-21",
 		});
 	});
 
-	it("holds a single day when the account opened today", () => {
+	it("holds a single day when the history starts today", () => {
 		expect(periodRange(1, "2026-09-21", "2026-09-21")).toEqual({
 			from: "2026-09-21",
 			to: "2026-09-21",
 		});
 	});
 
-	it("is empty when the account opens after today", () => {
+	it("is empty when the history starts after today", () => {
 		expect(periodRange("all", "2026-09-21", "2026-09-22")).toBeNull();
 	});
 });

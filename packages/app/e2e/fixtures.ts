@@ -322,7 +322,7 @@ export function apiHelpers(request: APIRequestContext) {
 			if (csv !== undefined) {
 				const mapped = await request.post(`/api/imports/${id}/preview`, {
 					headers: sameOrigin,
-					data: { moveOpeningDate: null, csv },
+					data: { csv },
 				});
 
 				expect(mapped.ok(), `${mapped.url()} answered ${await mapped.text()}`).toBe(true);

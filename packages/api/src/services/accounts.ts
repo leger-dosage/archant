@@ -41,7 +41,7 @@ export type AccountSummary = {
 	type: AccountType;
 	subtype: AccountSubtype | null;
 	currency: string;
-	/** Stored balance at the end of today; zero before the opening date. */
+	/** Stored balance at the end of today; zero before the account's oldest entry. */
 	balance: MinorUnits;
 	/**
 	 * `false` once deactivated: still returned here, history kept, and hidden
@@ -155,11 +155,11 @@ export async function createAccount(
 
 export type AccountDetail = AccountSummary & {
 	classification: Classification;
-	/** The opening anchor's date; a transaction must be dated after it. */
+	/** The opening anchor's date; a transaction may be dated before it, as in Sure. */
 	openingDate: IsoDate;
 	/**
-	 * The opening anchor's stored balance (AD-5) and notes, the oldest row of
-	 * « Soldes ». A linked account's is not what its history starts from: its
+	 * The opening anchor's stored balance (AD-5) and notes, a row of « Soldes »
+	 * placed by its date. A linked account's is not what its history starts from: its
 	 * balances derive backward from the bank's.
 	 */
 	openingBalance: { balance: MinorUnits; notes: string | null };

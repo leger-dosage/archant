@@ -78,7 +78,7 @@ const rejectedOutput = z.object({
 	reason: z
 		.string()
 		.describe(
-			"BEFORE_OPENING_DATE: on or before the account's opening date, see opening_suggestion; DATE_TOO_LATE: more than a year from today; CURRENCY_MISMATCH: another currency than the account's; INVALID_DATE, INVALID_AMOUNT, MISSING_LABEL: unreadable; OPENING_BALANCE: an opening balance line, not imported.",
+			"DATE_TOO_LATE: more than a year from today; CURRENCY_MISMATCH: another currency than the account's; INVALID_DATE, INVALID_AMOUNT, MISSING_LABEL: unreadable; OPENING_BALANCE: an opening balance line, not imported.",
 		),
 });
 
@@ -121,24 +121,12 @@ const previewOutput = z.object({
 		.describe(
 			`Up to ${PREVIEWED_LINES} possible duplicates, in the file's order: lines close to two transactions already there, created anyway and flagged for the owner to check; transactions_preview lists them among the lines to create.`,
 		),
-	opening_suggestion: z
-		.string()
-		.nullable()
-		.describe(
-			"The opening date that would let in the lines refused as BEFORE_OPENING_DATE, to pass to preview_import as move_opening_date if the owner agrees; null when none is.",
-		),
-	opening: z
-		.object({ date: z.string(), balance: formatted("The opening balance then") })
-		.nullable()
-		.describe(
-			"The opening date and balance confirm sets, the balance on the current opening date unchanged; null when it stays.",
-		),
 	statement_balance: z
 		.object({
 			status: z
 				.enum(["recorded", "present", "kept", "skipped"])
 				.describe(
-					'"recorded": confirm records the file\'s closing balance as a snapshot on its date; "present": that snapshot is there already; "kept": the owner recorded another balance that day, which stays, gap apart; "skipped": not recorded, for reason.',
+					'"recorded": confirm records the file\'s closing balance as a snapshot on its date; "present": that snapshot is there already; "kept": the owner recorded another balance that day, the opening balance on the opening date included, which stays, gap apart; "skipped": not recorded, for reason.',
 				),
 			date: z.string(),
 			balance: formatted(
@@ -149,7 +137,9 @@ const previewOutput = z.object({
 			reason: z
 				.string()
 				.optional()
-				.describe("BEFORE_OPENING_DATE, DATE_IN_FUTURE or CURRENCY_MISMATCH."),
+				.describe(
+					"DATE_IN_FUTURE; OPENING_DATE, the opening date of an account a bank syncs; or CURRENCY_MISMATCH.",
+				),
 		})
 		.nullable()
 		.describe("What confirm does with the file's closing balance; null when the file gives none."),
@@ -244,11 +234,6 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 			name: line.label,
 			amount: money(line.amount),
 		})),
-		opening_suggestion: preview.openingSuggestion,
-		opening:
-			preview.opening === null
-				? null
-				: { date: preview.opening.date, balance: money(preview.opening.balance) },
 		statement_balance:
 			statementBalance === null
 				? null
@@ -282,7 +267,7 @@ function previewOf(preview: ImportPreview): PreviewOutput {
 	};
 }
 
-const PREVIEW = `Answers Sure's import_bank_statement keys: the import's id, how many lines it read, the first ${PREVIEWED_LINES} lines it would create and the statement's period; then the counts of each group, which confirm_import takes, up to ${PREVIEWED_LINES} rejected lines, what confirming does with the opening date and the file's closing balance, amounts formatted, and for a CSV file a sample of its records with the column mapping. Nothing reaches the account until confirm_import.`;
+const PREVIEW = `Answers Sure's import_bank_statement keys: the import's id, how many lines it read, the first ${PREVIEWED_LINES} lines it would create and the statement's period; then the counts of each group, which confirm_import takes, up to ${PREVIEWED_LINES} rejected lines, what confirming does with the file's closing balance, amounts formatted, and for a CSV file a sample of its records with the column mapping. Nothing reaches the account until confirm_import.`;
 
 export const importStatementFileTool = defineTool({
 	name: "import_statement_file",
@@ -308,15 +293,14 @@ export const importStatementFileTool = defineTool({
 export const previewImportTool = defineTool({
 	name: "preview_import",
 	title: "Preview an import again",
-	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping, a QIF file's date order, or moving the account's opening date back to opening_suggestion. ${PREVIEW} A mapping without one date, a label and an amount answers { error, hint }, its error each refused field's path and code, csv.columns invalid_columns; an import already confirmed or unknown, not_found. ${BANK_TEXT}`,
+	description: `Reads an import not confirmed yet again with the owner's choices, as the dialog's « Colonnes » and « Aperçu » steps do: a CSV file's column mapping or a QIF file's date order. ${PREVIEW} A mapping without one date, a label and an amount answers { error, hint }, its error each refused field's path and code, csv.columns invalid_columns; an import already confirmed or unknown, not_found. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: previewImportInput,
 	output: previewOutput,
-	run: async (deps, { import_id: importId, csv, qif, move_opening_date: moveOpeningDate }) => ({
+	run: async (deps, { import_id: importId, csv, qif }) => ({
 		result: previewOf(
 			await previewImport(deps, importId, {
-				moveOpeningDate,
 				...(csv === undefined
 					? {}
 					: {

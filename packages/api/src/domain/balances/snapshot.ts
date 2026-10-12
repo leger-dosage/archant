@@ -5,29 +5,24 @@ import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
 /**
- * Why the ledger refused a snapshot: dated before the opening date, after
- * today, or onto a day another snapshot holds.
+ * Why the ledger refused a snapshot: dated after today, or onto a day another
+ * snapshot holds.
  */
-export type SnapshotRejectionCode = "BEFORE_OPENING_DATE" | "DATE_IN_FUTURE" | "SNAPSHOT_EXISTS";
+export type SnapshotRejectionCode = "DATE_IN_FUTURE" | "SNAPSHOT_EXISTS";
 
 /**
- * Where a snapshot may be dated: on or after the opening date and not after
- * today, as Sure's valuation form allows. `null` when the date is fine.
- * `OPENING_DATE` names the day the opening anchor holds: a new snapshot there
- * sets the anchor's amount, as Sure's `ReconciliationManager` updates the
- * valuation already on its date, while a trade or a statement balance, which
- * would compete with the anchor for that day, reads it as before the opening
- * date. Another snapshot on the same date is the ledger's to check, against
- * the database.
+ * Where a snapshot may be dated: any day up to today, as Sure's valuation form
+ * allows, before the opening date included, where it is a reconciliation the
+ * balances start from as Sure's `calculation_start_date`. `null` when the date
+ * is fine. `OPENING_DATE` names the day the opening anchor holds: a new
+ * snapshot there sets the anchor's amount, as Sure's `ReconciliationManager`
+ * updates the valuation already on its date. Another snapshot on the same date
+ * is the ledger's to check, against the database.
  */
 export function snapshotRejectionFor(
 	date: IsoDate,
 	context: { openingDate: IsoDate; today: IsoDate },
 ): Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS"> | "OPENING_DATE" | null {
-	if (date < context.openingDate) {
-		return "BEFORE_OPENING_DATE";
-	}
-
 	if (date > context.today) {
 		return "DATE_IN_FUTURE";
 	}

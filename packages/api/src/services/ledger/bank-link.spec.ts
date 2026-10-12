@@ -249,26 +249,30 @@ describe("a bank-linked account", () => {
 		expect(days.get("2026-09-20")).toBe(100000);
 	});
 
-	it("follows an earlier opening date an import moves it to", async () => {
+	it("goes on backward past the opening date down to an older line", async () => {
 		const { account } = await linkedAccount();
 
 		await ingest(
 			deps(),
 			account.id,
 			{
-				transactions: [line({ date: "2026-08-20", amount: toMinorUnits(-1000) })],
+				transactions: [
+					line({ date: "2026-08-20", amount: toMinorUnits(-1000) }),
+					line({ date: "2026-08-25", amount: toMinorUnits(-500), label: "Pain" }),
+				],
 				balance: null,
 				rejected: [],
 			},
 			{ manual: true },
-			{ origin: "user", moveOpeningDate: "2026-08-19" },
+			{ origin: "user" },
 		);
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-21")).toBe(100000);
-		expect(days.get("2026-08-20")).toBe(100000);
-		expect(days.get("2026-08-19")).toBe(101000);
-		expect(days.has("2026-08-18")).toBe(false);
+		expect(days.get("2026-08-25")).toBe(100000);
+		expect(days.get("2026-08-24")).toBe(100500);
+		expect(days.get("2026-08-20")).toBe(100500);
+		expect(days.has("2026-08-19")).toBe(false);
 	});
 
 	it("reads a snapshot's gap against the day after it, derived backward from the bank", async () => {
@@ -371,6 +375,24 @@ describe("unlinkBankAccount", () => {
 		await expect(bankAccountOf(account.id)).resolves.toBe(null);
 		await expect(valuationsOf(account.id)).resolves.toEqual([
 			{ kind: "opening_anchor", date: "2026-09-01", amount: before.get("2026-09-01") },
+			{ kind: "reconciliation", date: "2026-09-21", amount: 100000 },
+		]);
+	});
+
+	it("keeps every balance before the opening date, fixing the oldest line's day", async () => {
+		const { account, link: linkIt } = await linkedAt(100000);
+		await add(account.id, { date: "2026-08-20", amount: toMinorUnits(-1000) });
+		await add(account.id, { date: "2026-08-25", amount: toMinorUnits(-500) });
+		await linkIt();
+		const before = await history(account.id);
+		expect(before.get("2026-08-20")).toBe(100500);
+
+		await unlink(account.id);
+
+		await expect(history(account.id)).resolves.toEqual(before);
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "reconciliation", date: "2026-08-20", amount: 100500 },
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 100000 },
 			{ kind: "reconciliation", date: "2026-09-21", amount: 100000 },
 		]);
 	});
@@ -527,11 +549,14 @@ describe("unlinkBankAccount", () => {
 		const bank = await newBankAccount();
 		await link(account.id, bank.id, 100000, "2026-09-20");
 		const before = await history(account.id);
+		expect([...before.keys()][0]).toBe("2026-09-20");
 
 		await unlink(account.id);
 
 		await expect(history(account.id)).resolves.toEqual(before);
+		// The bank's day starts the balances, as any entry before the opening date.
 		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "reconciliation", date: "2026-09-20", amount: 100000 },
 			{ kind: "opening_anchor", date: "2026-09-21", amount: 100000 },
 		]);
 	});
@@ -750,6 +775,21 @@ describe("a sync's earlier bank balances", () => {
 			{ kind: "opening_anchor", date: "2026-09-10", amount: 123456 },
 			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
 		]);
+	});
+
+	it("keeps an anchor dated before the opening date as a reconciliation, the balances starting there", async () => {
+		const { account, bank } = await linkedOn("2026-08-25", 100000, { openingDate: "2026-09-10" });
+
+		await sync(account.id, bank.connectionId, [], figure(90000, "2026-09-20"));
+
+		await expect(valuationsOf(account.id)).resolves.toEqual([
+			{ kind: "reconciliation", date: "2026-08-25", amount: 100000 },
+			{ kind: "opening_anchor", date: "2026-09-10", amount: 123456 },
+			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
+		]);
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe("2026-08-25");
+		expect(days.get("2026-08-25")).toBe(100000);
 	});
 
 	it("writes the first bank balance of an account linked without one", async () => {

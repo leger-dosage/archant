@@ -111,11 +111,7 @@ export async function updateTransaction(
 
 			const reason = rejectionFor(
 				{ date: next.date, currency: current.currency },
-				{
-					openingDate: account.openingDate,
-					currency: account.currency,
-					today: today(deps.timeZone),
-				},
+				{ currency: account.currency, today: today(deps.timeZone) },
 			);
 
 			if (reason !== null) {

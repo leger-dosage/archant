@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table";
 import { formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 
-/** The account's opening balance, the list's oldest row. */
+/** The account's opening balance, placed among the snapshots by its date. */
 export type OpeningRow = { date: string; balance: MinorUnits; currency: string };
 
 type SnapshotListProps = {
@@ -35,11 +35,55 @@ type SnapshotListProps = {
 /**
  * One account's snapshots, most recent first: the balance typed, the balance
  * the transactions alone give for that day, and the gap between them. The
- * opening balance comes last, as Sure lists its opening anchor among the
- * valuations: it starts the balances, so nothing is computed against it.
+ * opening balance sits at its date, as Sure lists its opening anchor among the
+ * valuations, a snapshot dated before it below it; nothing is computed
+ * against it, since it sets its own day.
  */
 export function SnapshotList({ items, onOpen, opening, onOpenOpening }: SnapshotListProps) {
 	const { t } = useTranslation();
+	// No snapshot shares the opening date: one there sets the opening balance.
+	const newer = opening === null ? items : items.filter((item) => item.date > opening.date);
+	const older = opening === null ? [] : items.filter((item) => item.date < opening.date);
+	const snapshotRow = (item: SnapshotData) => (
+		// `relative` so the date button's overlay covers the whole row: a
+		// click anywhere opens it, and the keyboard reaches one button.
+		<TableRow key={item.id} className="relative h-9">
+			<TableCell>
+				{onOpen === null ? (
+					formatTableDate(item.date)
+				) : (
+					<button
+						type="button"
+						data-snapshot-id={item.id}
+						onClick={() => onOpen(item)}
+						className="rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						{formatTableDate(item.date)}
+					</button>
+				)}
+			</TableCell>
+			<TableCell className="text-right">
+				<Money amount={item.balance} currency={item.currency} />
+			</TableCell>
+			<TableCell className="text-right">
+				<Money amount={item.computed} currency={item.currency} />
+			</TableCell>
+			<TableCell className="text-right">
+				{item.gap === 0 ? (
+					<>
+						<span aria-hidden="true">—</span>
+						<span className="sr-only">{t("snapshots.noGap")}</span>
+					</>
+				) : (
+					// Signed but uncoloured, like the chart's change: which side is
+					// higher matters, but a gap is neither income nor expense.
+					<span className="font-medium whitespace-nowrap tabular-nums">
+						{formatSignedMoney(item.gap, item.currency)}
+					</span>
+				)}
+			</TableCell>
+		</TableRow>
+	);
 
 	return (
 		<Table>
@@ -58,46 +102,7 @@ export function SnapshotList({ items, onOpen, opening, onOpenOpening }: Snapshot
 				</TableRow>
 			</TableHeader>
 			<TableBody>
-				{items.map((item) => (
-					// `relative` so the date button's overlay covers the whole row: a
-					// click anywhere opens it, and the keyboard reaches one button.
-					<TableRow key={item.id} className="relative h-9">
-						<TableCell>
-							{onOpen === null ? (
-								formatTableDate(item.date)
-							) : (
-								<button
-									type="button"
-									data-snapshot-id={item.id}
-									onClick={() => onOpen(item)}
-									className="rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-ring"
-								>
-									{formatTableDate(item.date)}
-								</button>
-							)}
-						</TableCell>
-						<TableCell className="text-right">
-							<Money amount={item.balance} currency={item.currency} />
-						</TableCell>
-						<TableCell className="text-right">
-							<Money amount={item.computed} currency={item.currency} />
-						</TableCell>
-						<TableCell className="text-right">
-							{item.gap === 0 ? (
-								<>
-									<span aria-hidden="true">—</span>
-									<span className="sr-only">{t("snapshots.noGap")}</span>
-								</>
-							) : (
-								// Signed but uncoloured, like the chart's change: which side is
-								// higher matters, but a gap is neither income nor expense.
-								<span className="font-medium whitespace-nowrap tabular-nums">
-									{formatSignedMoney(item.gap, item.currency)}
-								</span>
-							)}
-						</TableCell>
-					</TableRow>
-				))}
+				{newer.map(snapshotRow)}
 				{opening !== null && (
 					<TableRow className="relative h-9">
 						<TableCell>
@@ -126,6 +131,7 @@ export function SnapshotList({ items, onOpen, opening, onOpenOpening }: Snapshot
 						</TableCell>
 					</TableRow>
 				)}
+				{older.map(snapshotRow)}
 			</TableBody>
 		</Table>
 	);

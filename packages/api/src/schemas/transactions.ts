@@ -4,6 +4,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
+import { entryDateSchema } from "./accounts.ts";
 
 export const LABEL_MAX_LENGTH = 200;
 export const NOTES_MAX_LENGTH = 2000;
@@ -70,7 +71,7 @@ export type TransactionInput = z.input<typeof transactionBodySchema>;
 export type TransactionPatchInput = z.input<typeof transactionPatchBodySchema>;
 
 const fields = {
-	date: z.iso.date(),
+	date: entryDateSchema,
 	label: z.string().trim().min(1).max(LABEL_MAX_LENGTH),
 	amount: z.string(),
 	// A blank note is no note.

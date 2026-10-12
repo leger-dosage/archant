@@ -72,7 +72,7 @@ export function useUploadImport(accountId: string) {
 	});
 }
 
-/** Previews a stored import again, with or without moving the opening date. */
+/** Previews a stored import again, with another CSV mapping or QIF date order. */
 export function usePreviewImport() {
 	return useMutation({
 		mutationFn: async ({ id, input }: { id: string; input: ImportPreviewInput }) =>

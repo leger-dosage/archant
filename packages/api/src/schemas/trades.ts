@@ -16,6 +16,7 @@ import {
 	signFits,
 	tradeAmount,
 } from "../domain/trades.ts";
+import { entryDateSchema } from "./accounts.ts";
 import { pageQuerySchema } from "./transactions.ts";
 
 // The form's four types, its ISIN check and its sign check, from the domain
@@ -302,7 +303,7 @@ export function createTradeSchema(currency: CurrencyCode) {
 		.object({
 			side: z.enum(TRADE_TYPES),
 			security: securityChoiceSchema.nullable(),
-			date: z.iso.date(),
+			date: entryDateSchema,
 			quantity: z.string().optional(),
 			price: z.string().optional(),
 			fee: z.string().optional(),
@@ -348,7 +349,7 @@ export function updateTradeSchema(currency: CurrencyCode) {
 	return z
 		.object({
 			side: z.enum(TRADE_SIDES).optional(),
-			date: z.iso.date().optional(),
+			date: entryDateSchema.optional(),
 			quantity: z.string().optional(),
 			price: z.string().optional(),
 			fee: z.string().optional(),

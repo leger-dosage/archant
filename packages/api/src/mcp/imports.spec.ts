@@ -116,8 +116,6 @@ const preview = z.object({
 		}),
 	),
 	duplicate_lines: z.array(z.object({ date: z.string(), name: z.string(), amount: z.string() })),
-	opening_suggestion: z.string().nullable(),
-	opening: z.object({ date: z.string(), balance: z.string() }).nullable(),
 	statement_balance: z
 		.object({ status: z.string(), date: z.string(), balance: z.string() })
 		.loose()
@@ -146,8 +144,6 @@ const PREVIEW_KEYS = [
 	"counts",
 	"rejected_lines",
 	"duplicate_lines",
-	"opening_suggestion",
-	"opening",
 	"statement_balance",
 	"csv",
 	"qif",
@@ -360,8 +356,8 @@ describe("Sure's preview keys", () => {
 		const tools = await assistants();
 		const account = await openOwn();
 		const lines = [
-			["20260820", "-1.00", "AVANT 1"],
-			["20260821", "-2.00", "AVANT 2"],
+			["20271023", "-1.00", "TARD 1"],
+			["20271024", "-2.00", "TARD 2"],
 			...Array.from(
 				{ length: 10 },
 				(_, index) =>
@@ -397,8 +393,8 @@ describe("Sure's preview keys", () => {
 			`Successfully extracted 10 transactions. Import created with ID: ${read.import_id}. Review and publish when ready.`,
 		);
 		expect(read.rejected_lines.map(({ name, reason }) => [name, reason])).toEqual([
-			["AVANT 1", "BEFORE_OPENING_DATE"],
-			["AVANT 2", "BEFORE_OPENING_DATE"],
+			["TARD 1", "DATE_TOO_LATE"],
+			["TARD 2", "DATE_TOO_LATE"],
 		]);
 	});
 });
@@ -483,7 +479,7 @@ describe("the closing balance", () => {
 			amount: "1200.00",
 			source: "Relevé de compte (grade: A)",
 		});
-		const late = await openOwn({ name: "Ouvert tard", openingDate: "2026-09-16" });
+		const dollars = await openOwn({ name: "En dollars", currency: "USD" });
 		const args = { filename: "releve.ofx", content_base64: base64(await creditAgricole()) };
 
 		const kept = preview.parse(
@@ -491,7 +487,7 @@ describe("the closing balance", () => {
 				.structuredContent,
 		);
 		const skipped = preview.parse(
-			(await tools.write("import_statement_file", { ...args, account_id: late.id }))
+			(await tools.write("import_statement_file", { ...args, account_id: dollars.id }))
 				.structuredContent,
 		);
 
@@ -505,8 +501,8 @@ describe("the closing balance", () => {
 		expect(skipped.statement_balance).toEqual({
 			status: "skipped",
 			date: "2026-09-15",
-			balance: money("1 234,56 €"),
-			reason: "BEFORE_OPENING_DATE",
+			balance: money("1 234,56 $"),
+			reason: "CURRENCY_MISMATCH",
 		});
 	});
 });
@@ -691,7 +687,6 @@ describe("CSV files", () => {
 				await tools.write("preview_import", {
 					import_id: read.import_id,
 					csv: BANK_MAPPING,
-					move_opening_date: null,
 				})
 			).structuredContent,
 		);
@@ -734,15 +729,13 @@ describe("QIF files", () => {
 			).structuredContent,
 		);
 
-		// Day first, 9 February and 9 March are before the opening date.
+		// Day first, 9 February and 9 March, before the opening date, which
+		// goes in as any other day.
 		expect(read.qif).toEqual({ date_order: "day-first", ambiguous: true });
-		expect(read.counts).toEqual({ ...NO_LINES, rejected: 2 });
-		expect(read).toMatchObject({ transaction_count: 0, statement_period: {} });
-		expect(read.rejected_lines[0]).toEqual({
-			date: "2026-02-09",
-			name: "A",
-			amount: money("-10,00 €"),
-			reason: "BEFORE_OPENING_DATE",
+		expect(read.counts).toEqual({ ...NO_LINES, created: 2 });
+		expect(read).toMatchObject({
+			transaction_count: 2,
+			statement_period: { start_date: "2026-02-09", end_date: "2026-03-09" },
 		});
 
 		const monthFirst = preview.parse(
@@ -761,7 +754,7 @@ describe("QIF files", () => {
 		]);
 	});
 
-	it("moves the opening date back when asked, to let the earlier lines in", async () => {
+	it("moves the opening date back to the day before the earliest line on confirm, its amount kept, as Sure", async () => {
 		const tools = await assistants();
 		const account = await openOwn();
 		const qif = ["!Type:Bank", "D20/08/2026", "T-10,00", "PA", "^"].join("\n");
@@ -775,18 +768,21 @@ describe("QIF files", () => {
 			).structuredContent,
 		);
 
-		const moved = preview.parse(
-			(
-				await tools.write("preview_import", {
-					import_id: read.import_id,
-					move_opening_date: read.opening_suggestion,
-				})
-			).structuredContent,
-		);
+		expect(read.counts).toEqual({ ...NO_LINES, created: 1 });
 
-		expect(read.opening_suggestion).toBe("2026-08-19");
-		expect(moved.counts).toEqual({ ...NO_LINES, created: 1 });
-		expect(moved.opening).toEqual({ date: "2026-08-19", balance: money("1 244,56 €") });
+		await tools.write("confirm_import", {
+			import_id: read.import_id,
+			expected_counts: read.counts,
+		});
+
+		const { valuations } = z
+			.object({
+				valuations: z.array(z.object({ kind: z.string(), date: z.string(), amount: z.string() })),
+			})
+			.parse((await tools.write("get_valuations", { account_id: account.id })).structuredContent);
+		expect(valuations.filter(({ kind }) => kind === "opening_anchor")).toEqual([
+			{ kind: "opening_anchor", date: "2026-08-19", amount: "1234.56" },
+		]);
 	});
 });
 

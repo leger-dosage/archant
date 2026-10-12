@@ -19,7 +19,7 @@ import { balanceChange, periodRange } from "../domain/balances/history.ts";
 import { periodInterval, seriesDates, surePeriodRange } from "../domain/balances/sure-periods.ts";
 import { addDays, maxDate, today } from "../domain/dates.ts";
 import { getAccount, listAccounts } from "./accounts.ts";
-import { balancesBetween, openingDateOf } from "./ledger/balances.ts";
+import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
 
 export const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
@@ -45,17 +45,17 @@ export type BalanceHistory = {
 };
 
 /**
- * The days of `period` an account opened on `openingDate` has, ending
- * `to`, and its balance on each; none when it opens after `to`.
+ * The days of `period` an account whose history starts on `startDate` has,
+ * ending `to`, and its balance on each; none when it starts after `to`.
  */
 async function historyOf(
 	deps: ServiceDeps,
 	accountId: string,
-	openingDate: IsoDate,
+	startDate: IsoDate,
 	period: BalancePeriod,
 	to: IsoDate,
 ) {
-	const range = periodRange(PERIOD_MONTHS[period], to, openingDate);
+	const range = periodRange(PERIOD_MONTHS[period], to, startDate);
 	const points = range === null ? [] : await balancesBetween(deps, accountId, range.from, range.to);
 
 	return { from: range?.from ?? null, points };
@@ -73,14 +73,15 @@ export async function getBalanceHistory(
 ): Promise<BalanceHistory> {
 	const account = await getAccount(deps, accountId);
 	const to = today(deps.timeZone);
-	const { from, points } = await historyOf(deps, accountId, account.openingDate, period, to);
+	const startDate = await historyStartOf(deps.db, accountId, account.openingDate);
+	const { from, points } = await historyOf(deps, accountId, startDate, period, to);
 
 	return { period, from, to, currency: account.currency, points, change: balanceChange(points) };
 }
 
 export type AssistantAccount = AccountSummary & {
 	classification: Classification;
-	/** Sure's `start_date`: the opening anchor's day. */
+	/** Sure's `start_date`: the day its history starts, the oldest entry's. */
 	startDate: IsoDate;
 	/** Sure's `linked?`: a bank connection feeds it. */
 	linked: boolean;
@@ -142,7 +143,7 @@ export async function listAssistantAccounts(
 				.filter((summary) => summary.active)
 				.map(async (summary) => {
 					// An account always has its opening anchor; Sure's fallback for one without an entry.
-					const startDate = (await openingDateOf(deps, summary.id)) ?? addDays(asOf, -1);
+					const startDate = await historyStartOf(deps.db, summary.id, addDays(asOf, -1));
 
 					return {
 						...summary,

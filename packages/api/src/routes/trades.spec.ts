@@ -210,7 +210,7 @@ describe("POST /api/accounts/:id/trades", () => {
 		[{ fee: "1,234" }, "fee", "invalid_amount"],
 		[{ fee: "-1" }, "fee", "negative_amount"],
 		[{ date: "10/09/2026" }, "date", "invalid_format"],
-		[{ date: "2026-09-01" }, "date", "not_after_opening_date"],
+		[{ date: "1899-12-31" }, "date", "date_too_early"],
 		[{ date: "2026-09-22" }, "date", "date_in_future"],
 		[{ quantity: "100 000", price: "1 000 000" }, "quantity", "too_big"],
 		[

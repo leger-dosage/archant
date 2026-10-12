@@ -10,22 +10,24 @@ export type DateRange = { from: IsoDate; to: IsoDate };
 
 /**
  * The days a period covers: from `today` minus `months` calendar months, or
- * from the opening date for `all`, to `today`. Never before the opening date, since a line
- * before the account existed would read as a real balance. `null` when the
- * account opens after today and the period holds no day.
+ * from `startDate` for `all`, to `today`. `startDate` is Sure's
+ * `history_start_date`, the first day the account has a balance: the earlier
+ * of its opening date and its oldest booked entry. Never before it, where no
+ * balance exists. `null` when the account starts after today and the period
+ * holds no day.
  */
 export function periodRange(
 	months: number | "all",
 	today: IsoDate,
-	openingDate: IsoDate,
+	startDate: IsoDate,
 ): DateRange | null {
-	if (openingDate > today) {
+	if (startDate > today) {
 		return null;
 	}
 
-	const start = months === "all" ? openingDate : addMonths(today, -months);
+	const start = months === "all" ? startDate : addMonths(today, -months);
 
-	return { from: maxDate(start, openingDate), to: today };
+	return { from: maxDate(start, startDate), to: today };
 }
 
 export type BalanceChange = {

@@ -208,22 +208,25 @@ test("⌘Enter saves the transaction", async ({ page, api }) => {
 	await expect(header(page, account.name)).toContainText(euros(10_000 - 1200));
 });
 
-test("a date on the opening date is refused next to the date field", async ({ page, api }) => {
-	const openingDate = daysAgo(10);
-	const account = await api.openAccount({ openingDate });
+test("a date before the opening date is saved, the opening balance still setting its day, as Sure", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "100,00", openingDate: daysAgo(10) });
+	const label = uniqueName("Avant");
 
 	await page.goto(`/accounts/${account.id}`);
 
 	const sheet = await openNewSheet(page);
-	await sheet.getByLabel("Date", { exact: true }).fill(typed(openingDate));
-	await sheet.getByLabel("Libellé").fill(uniqueName("Trop tôt"));
+	await expect(sheet.getByLabel("Date", { exact: true })).toHaveValue(typed(daysAgo(0)));
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(15)));
+	await sheet.getByLabel("Libellé").fill(label);
 	await sheet.getByLabel("Montant").fill("5,00");
 	await sheet.getByRole("button", { name: "Enregistrer" }).click();
 
-	await expect(sheet.getByLabel("Date", { exact: true })).toHaveAccessibleDescription(
-		"La date doit être postérieure à la date du solde initial du compte.",
-	);
-	await expect(sheet).toBeVisible();
+	await expect(sheet).toBeHidden();
+	await expect(row(page, label)).toContainText(euros(-500));
+	await expect(header(page, account.name)).toContainText(euros(10_000));
 });
 
 test("a card purchase of -30,00 raises the outstanding balance by 30,00 €", async ({

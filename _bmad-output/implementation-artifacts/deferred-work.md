@@ -54,10 +54,12 @@
   summary: Reverting the older of two imports that both moved the opening date first leaves the date where the newer one found it, so re-importing the older file counts its lines past that date on top.
   evidence: medium, traced in `restoreOpening`: the older revert is blocked by the newer import's lines, and the newer revert restores its own `previous_opening_date`. Reverting newest first restores fully. A complete fix stores each import's shift or moved-to date, a migration.
   planned: Story 27.21 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.21. As Sure, every source accepts lines before the opening date and no import moves the anchor but a QIF one, its amount kept; `revertImport` never moves the anchor's date and `restoreOpening` is gone. `imports.previous_opening_date` stays for imports confirmed before: their revert gives the deleted lines back to the anchor's amount, the date kept.
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-1-opening-dates-that-accept-today-and-survive-a-revert.md`
   summary: A moved-in line whose amount the user edited before the revert gives the edited amount back to the opening anchor, so the old opening day's balance drifts by the edit.
   evidence: medium, pre-existing since Spec 2.5: `revertImport` sums the current amounts of the deleted lines. Storing the shift on `imports` at confirm would settle it.
   planned: Story 27.21 in `_bmad-output/planning-artifacts/epics.md`.
+  resolved: Story 27.21. No import shifts the anchor's amount any more, so a revert gives nothing back to it: an edited line only leaves with the import.
 - source_spec: `_bmad-output/implementation-artifacts/spec-11-5-pending-and-booked-versions-never-count-twice.md`
   summary: A new pending purchase with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so the purchase never counts.
   evidence: medium, pre-existing: before Story 11.5 a pending line was looked up by fingerprint first. Creating such a line with `keepExisting` keys, as Story 11.5 does when the fingerprint names a pending entry, would settle it.
@@ -274,3 +276,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-20-a-renewal-that-keeps-every-account-and-a-disconnection-without-the-key.md`
   summary: `docs/troubleshooting.md` has no section for a connection whose every sync ends in `BANK_PROVIDER_ERROR` because a renewal left a linked account out; the remedy, renewing with that account shared or disconnecting, is written nowhere a self-hoster reads.
   evidence: Story 27.20 review. Since 27.20 such an account is read under its stale uid and fails each run, as in Sure.
+- source_spec: `_bmad-output/implementation-artifacts/spec-27-21-revert-imports-in-any-order.md`
+  summary: No route test asserts `snapshot_exists` for a snapshot on a linked account's opening date, which replaced `not_after_opening_date`.
+  evidence: `services/snapshots.ts` maps `OPENING_DATE` to it; only `routes/snapshots.spec.ts` covers `snapshot_exists`, for a moved snapshot.

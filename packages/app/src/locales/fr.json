@@ -884,7 +884,6 @@
 		"fileLine": "Opération n° {{number}} du fichier",
 		"csvLine": "Ligne {{number}}",
 		"reasons": {
-			"BEFORE_OPENING_DATE": "Datée au plus tard le jour d'ouverture du compte",
 			"DATE_TOO_LATE": "Datée de plus d'un an après aujourd'hui",
 			"CURRENCY_MISMATCH": "Dans une autre devise que le compte",
 			"INVALID_DATE": "Date illisible",
@@ -892,16 +891,14 @@
 			"MISSING_LABEL": "Sans libellé",
 			"OPENING_BALANCE": "Solde d'ouverture, non importé"
 		},
-		"moveOpening": "Avancer la date d'ouverture au {{date}}",
-		"openingMoved": "La date d'ouverture passera au {{date}}, avec un solde initial de {{amount}}. Le solde du {{previous}}, date d'ouverture actuelle, ne change pas.",
 		"balance": {
 			"recorded": "Le relevé indique un solde de {{amount}} au {{date}}. Il sera enregistré dans l'onglet Soldes.",
 			"present": "Le solde du relevé au {{date}}, {{amount}}, est déjà enregistré.",
 			"kept": "Vous avez saisi un solde de {{recorded}} au {{date}}, il est conservé. Le relevé indique {{amount}}, soit un écart de {{gap}}.",
 			"skipped": "Le solde du relevé au {{date}} ne sera pas enregistré : {{reason}}",
 			"reasons": {
-				"BEFORE_OPENING_DATE": "il précède la date d'ouverture du compte.",
 				"DATE_IN_FUTURE": "il est daté dans le futur.",
+				"OPENING_DATE": "il tombe le jour d'ouverture d'un compte relié à une banque.",
 				"CURRENCY_MISMATCH": "sa devise diffère de celle du compte."
 			}
 		},
@@ -2402,9 +2399,7 @@
 			"invalid_value": "Valeur invalide.",
 			"invalid_type": "Valeur invalide.",
 			"unknown": "Valeur invalide.",
-			"date_too_early": "La date doit être postérieure au 1er janvier 1900.",
-			"not_after_opening_date": "La date doit être postérieure à la date du solde initial du compte.",
-			"before_opening_date": "La date ne peut pas précéder celle du solde d'ouverture.",
+			"date_too_early": "La date doit être au plus tôt le 1er janvier 1900.",
 			"not_before_oldest_entry": "La date doit précéder la plus ancienne opération du compte, le {{date}}.",
 			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",

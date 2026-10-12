@@ -64,7 +64,7 @@ import {
 import { createTempDatabase } from "../../testing/temp-database.ts";
 import { createRule, setRuleEnabled } from "../rules.ts";
 import { createAccount, deleteAccount } from "./accounts.ts";
-import { balanceOn, openingDateOf } from "./balances.ts";
+import { balanceOn, openingAnchorOf, openingDateOf } from "./balances.ts";
 import { updateTransaction } from "./edits.ts";
 import { removableOf } from "./import-revert.ts";
 import { ingest } from "./ingest.ts";
@@ -154,7 +154,7 @@ describe("ingest", () => {
 		await expect(lockedFields(id)).resolves.toEqual([]);
 	});
 
-	it("rejects lines on or before the opening day, too far ahead or in another currency", async () => {
+	it("rejects lines too far ahead or in another currency", async () => {
 		const account = await openChecking();
 		const before = await history(account.id);
 
@@ -162,12 +162,7 @@ describe("ingest", () => {
 			deps(),
 			account.id,
 			{
-				transactions: [
-					line({ date: "2026-09-01" }),
-					line({ date: "2026-08-31" }),
-					line({ date: "2027-09-23" }),
-					line({ currency: "USD" }),
-				],
+				transactions: [line({ date: "2027-10-23" }), line({ currency: "USD" })],
 				balance: null,
 				rejected: [],
 			},
@@ -178,10 +173,8 @@ describe("ingest", () => {
 		expect(result).toMatchObject({
 			created: [],
 			rejected: [
-				{ ref: "0", reason: "BEFORE_OPENING_DATE" },
-				{ ref: "1", reason: "BEFORE_OPENING_DATE" },
-				{ ref: "2", reason: "DATE_TOO_LATE" },
-				{ ref: "3", reason: "CURRENCY_MISMATCH" },
+				{ ref: "0", reason: "DATE_TOO_LATE" },
+				{ ref: "1", reason: "CURRENCY_MISMATCH" },
 			],
 		});
 		await expect(history(account.id)).resolves.toEqual(before);
@@ -200,7 +193,7 @@ describe("ingest", () => {
 			deps(),
 			account.id,
 			{
-				transactions: [line({ date: "2026-09-01" }), line({ date: "2026-09-15" })],
+				transactions: [line({ date: "2027-10-23" }), line({ date: "2026-09-15" })],
 				balance: null,
 				rejected: [],
 			},
@@ -209,7 +202,7 @@ describe("ingest", () => {
 		);
 
 		expect(result.created).toHaveLength(1);
-		expect(result.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
+		expect(result.rejected).toEqual([{ ref: "0", reason: "DATE_TOO_LATE" }]);
 		await expect(balanceOn(deps(), account.id, "2026-09-14")).resolves.toMatchObject({
 			amount: 123456,
 		});
@@ -332,8 +325,7 @@ describe("ingest from an import", () => {
 		});
 		expect(result.created).toEqual([]);
 		expect(result.digest).toMatch(/^[0-9a-f]{64}$/u);
-		expect(result.openingSuggestion).toBeNull();
-		expect(result.opening).toBeNull();
+		expect(result.openingMovedTo).toBeNull();
 		await expect(transactionCount(account.id)).resolves.toBe(0);
 		await expect(history(account.id)).resolves.toEqual(before);
 	});
@@ -381,14 +373,16 @@ describe("ingest from an import", () => {
 		await expect(findTransaction(deps(), salaryId)).resolves.toMatchObject({ reference: null });
 	});
 
-	it("gives two previews that differ only in the opening they would write different digests", async () => {
+	it("gives two previews that differ only in the opening date they would write different digests", async () => {
 		const account = await openChecking();
+		const older = statementOf({ ...cafe, date: "2026-08-20" });
 
-		const kept = await preview(account.id, statementOf(cafe));
-		const moved = await preview(account.id, statementOf(cafe), { moveOpeningDate: "2026-08-20" });
+		const kept = await preview(account.id, older);
+		const moved = await preview(account.id, older, { source: "qif" });
 
 		expect(moved.result.groups).toEqual(kept.result.groups);
-		expect(moved.result.opening).toEqual({ date: "2026-08-20", balance: 123456 });
+		expect(kept.result.openingMovedTo).toBeNull();
+		expect(moved.result.openingMovedTo).toBe("2026-08-19");
 		expect(moved.result.digest).not.toBe(kept.result.digest);
 	});
 
@@ -546,7 +540,7 @@ describe("ingest from an import", () => {
 		const account = await openChecking();
 
 		const { result } = await importStatement(account.id, {
-			transactions: [line({ date: "2026-09-01" }), cafe],
+			transactions: [line({ date: "2027-10-23" }), cafe],
 			balance: null,
 			rejected: [{ ref: "3", reason: "INVALID_AMOUNT" }],
 		});
@@ -555,15 +549,14 @@ describe("ingest from an import", () => {
 			{ ref: "3", reason: "INVALID_AMOUNT", line: null },
 			{
 				ref: "0",
-				reason: "BEFORE_OPENING_DATE",
-				line: { date: "2026-09-01", amount: -4290, label: "Boulangerie" },
+				reason: "DATE_TOO_LATE",
+				line: { date: "2027-10-23", amount: -4290, label: "Boulangerie" },
 			},
 		]);
 		expect(result.rejected).toEqual([
 			{ ref: "3", reason: "INVALID_AMOUNT" },
-			{ ref: "0", reason: "BEFORE_OPENING_DATE" },
+			{ ref: "0", reason: "DATE_TOO_LATE" },
 		]);
-		expect(result.openingSuggestion).toBe("2026-08-31");
 	});
 
 	it("refuses a confirm when the account changed since the preview, writing nothing", async () => {
@@ -602,72 +595,145 @@ describe("ingest from an import", () => {
 		});
 	});
 
-	it("ignores an opening date that is not earlier than the account's", async () => {
+	it("takes a file older than the opening date whole, the balances starting from zero before the anchor, as Sure", async () => {
 		const account = await openChecking();
-
-		const { result } = await preview(account.id, statementOf(cafe), {
-			moveOpeningDate: "2026-09-05",
-		});
-
-		expect(result.opening).toBeNull();
-		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
-	});
-
-	it("moves an asset's opening back, keeping the old opening day's balance and today's", async () => {
-		const account = await openChecking();
-		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-1000) });
-		const today = await balanceOn(deps(), account.id, "2026-09-21");
 		const lines = statementOf(
 			line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
-			line({ date: "2026-09-01", amount: toMinorUnits(5000), label: "Remboursement" }),
-			line({ date: "2026-09-15", amount: toMinorUnits(-300), label: "Pain" }),
+			line({ date: "2026-09-05", amount: toMinorUnits(-300), label: "Pain" }),
 		);
-		const first = await preview(account.id, lines);
 
-		expect(first.result.openingSuggestion).toBe("2026-08-19");
-		expect(counts(first.result)).toMatchObject({ created: 1, rejected: 2 });
+		const { result } = await importStatement(account.id, lines);
 
-		const moved = await importStatement(account.id, lines, { moveOpeningDate: "2026-08-19" });
-
-		expect(counts(moved.result)).toMatchObject({ created: 3, rejected: 0 });
-		// 1 234,56 − (−20,00 + 50,00): the old opening day still ends at 1 234,56.
-		expect(moved.result.opening).toEqual({ date: "2026-08-19", balance: 123456 - 3000 });
-		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-08-19");
-		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toMatchObject({
-			amount: 120456,
-		});
+		expect(counts(result)).toMatchObject({ created: 2, rejected: 0 });
+		expect(result.openingMovedTo).toBeNull();
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
+		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toBeNull();
 		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
-			amount: 118456,
+			amount: -2000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-08-31")).resolves.toMatchObject({
+			amount: -2000,
 		});
 		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
 			amount: 123456,
 		});
 		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
-			amount: (today?.amount ?? 0) - 300,
+			amount: 123156,
 		});
 	});
 
-	it("moves a credit card's opening back, keeping the amount owed on the old opening day", async () => {
+	it("takes a line on the opening day, which still ends at the anchor", async () => {
+		const account = await openChecking();
+
+		const result = await ingest(
+			deps(),
+			account.id,
+			statementOf(line({ date: "2026-09-01", amount: toMinorUnits(-4290) })),
+			{ manual: true },
+			{ origin: "user" },
+		);
+
+		expect(result.created).toHaveLength(1);
+		expect(result.rejected).toEqual([]);
+		await expect(balanceOn(deps(), account.id, "2026-08-31")).resolves.toBeNull();
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+	});
+
+	it("moves the opening date back for a QIF file, keeping its amount, as Sure", async () => {
+		const account = await openChecking();
+		const today = await balanceOn(deps(), account.id, "2026-09-21");
+		const lines = statementOf(
+			line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" }),
+			line({ date: "2026-09-05", amount: toMinorUnits(-300), label: "Pain" }),
+		);
+
+		const { result } = await importStatement(account.id, lines, { source: "qif" });
+
+		expect(result.openingMovedTo).toBe("2026-08-19");
+		await expect(openingAnchorOf(deps(), account.id)).resolves.toMatchObject({
+			date: "2026-08-19",
+			balance: 123456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
+			amount: 121456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: (today?.amount ?? 0) - 2300,
+		});
+	});
+
+	it("leaves a credit card's balances from the opening date as they were for a line before it", async () => {
 		const card = await openChecking({
 			name: "Carte",
 			type: "credit_card",
 			subtype: null,
 			openingBalance: toMinorUnits(50000),
 		});
-		const lines = statementOf(
-			line({ date: "2026-08-25", amount: toMinorUnits(-3000), label: "Achat" }),
+		const before = new Map([...(await history(card.id))].filter(([day]) => day >= "2026-09-01"));
+
+		await importStatement(
+			card.id,
+			statementOf(line({ date: "2026-08-25", amount: toMinorUnits(-3000), label: "Achat" })),
 		);
 
-		const { result } = await importStatement(card.id, lines, { moveOpeningDate: "2026-08-24" });
+		const days = await history(card.id);
+		// A purchase raises what is owed, from zero before the anchor.
+		expect(days.get("2026-08-25")).toBe(3000);
+		expect(new Map([...days].filter(([day]) => day >= "2026-09-01"))).toEqual(before);
+	});
 
-		// 500,00 owed − 30,00 bought after the new opening: 470,00 owed then.
-		expect(result.opening).toEqual({ date: "2026-08-24", balance: 47000 });
+	it("moves a credit card's opening date for a QIF file, keeping the amount owed", async () => {
+		const card = await openChecking({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: toMinorUnits(50000),
+		});
+
+		await importStatement(
+			card.id,
+			statementOf(
+				line({ date: "2026-08-25", amount: toMinorUnits(-3000), label: "Achat" }),
+				line({ date: "2026-09-05", amount: toMinorUnits(-1000), label: "Essence" }),
+			),
+			{ source: "qif" },
+		);
+
+		await expect(openingAnchorOf(deps(), card.id)).resolves.toMatchObject({
+			date: "2026-08-24",
+			balance: 50000,
+		});
 		await expect(balanceOn(deps(), card.id, "2026-08-25")).resolves.toMatchObject({
-			amount: 50000,
+			amount: 53000,
 		});
-		await expect(balanceOn(deps(), card.id, "2026-09-01")).resolves.toMatchObject({
-			amount: 50000,
+		await expect(balanceOn(deps(), card.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 54000,
 		});
+	});
+
+	it("leaves the opening date of a QIF file's account when another entry sits before the day it would take", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-08-10", amount: toMinorUnits(-1000) });
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(line({ date: "2026-08-20", amount: toMinorUnits(-2000) })),
+			{ source: "qif" },
+		);
+
+		expect(result.openingMovedTo).toBeNull();
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
+	});
+
+	it("never moves the opening date for a QIF file whose lines all follow it", async () => {
+		const account = await openChecking();
+
+		const { result } = await importStatement(account.id, statementOf(cafe), { source: "qif" });
+
+		expect(result.openingMovedTo).toBeNull();
+		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
 	});
 
 	it("imports 5,000 lines in chunks, then recognises all of them", async () => {
@@ -882,8 +948,6 @@ describe("ingest the statement balance", () => {
 	});
 
 	it.each([
-		["on the opening date", "2026-09-01", "EUR", "BEFORE_OPENING_DATE"],
-		["before the opening date", "2026-08-20", "EUR", "BEFORE_OPENING_DATE"],
 		["after today", "2026-09-22", "EUR", "DATE_IN_FUTURE"],
 		["in another currency", "2026-09-15", "USD", "CURRENCY_MISMATCH"],
 	])("skips a balance dated %s, writing nothing for it", async (_name, date, currency, reason) => {
@@ -896,17 +960,58 @@ describe("ingest the statement balance", () => {
 		await expect(snapshotsOf(card.id)).resolves.toEqual([]);
 	});
 
-	it("checks the date against the opening date the import moves", async () => {
+	it("records a balance dated before the opening date as a snapshot, the anchor's day unchanged", async () => {
 		const account = await openChecking();
 		const lines = closingOn(100000, "2026-08-25", "EUR", [
 			line({ date: "2026-08-22", amount: toMinorUnits(-2000), label: "Loyer" }),
 		]);
 
-		const { result } = await importStatement(account.id, lines, { moveOpeningDate: "2026-08-20" });
+		const { result } = await importStatement(account.id, lines);
 
 		expect(result.balance).toEqual({ status: "recorded", date: "2026-08-25", balance: 100000 });
+		await expect(balanceOn(deps(), account.id, "2026-08-22")).resolves.toMatchObject({
+			amount: -2000,
+		});
 		await expect(balanceOn(deps(), account.id, "2026-08-25")).resolves.toMatchObject({
 			amount: 100000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+	});
+
+	it("skips a balance dated on a linked account's opening date, whose anchor amount its balances ignore", async () => {
+		const { account } = await linkedChecking();
+
+		const { result } = await importStatement(account.id, closingOn(100000, "2026-09-01"));
+
+		expect(result.balance).toEqual({
+			status: "skipped",
+			date: "2026-09-01",
+			balance: 100000,
+			reason: "OPENING_DATE",
+		});
+		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
+	});
+
+	it("keeps the opening balance against a balance dated on the opening date, writing nothing", async () => {
+		const account = await openChecking();
+
+		const kept = await importStatement(account.id, closingOn(100000, "2026-09-01"));
+		const same = await importStatement(account.id, closingOn(123456, "2026-09-01"));
+
+		expect(kept.result.balance).toEqual({
+			status: "kept",
+			date: "2026-09-01",
+			balance: 100000,
+			recorded: 123456,
+			gap: -23456,
+		});
+		expect(same.result.balance).toEqual({ status: "present", date: "2026-09-01", balance: 123456 });
+		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
+		await expect(openingAnchorOf(deps(), account.id)).resolves.toMatchObject({
+			date: "2026-09-01",
+			balance: 123456,
 		});
 	});
 
@@ -1530,12 +1635,26 @@ describe("ingest from a bank connection", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
-	it("refuses lines on or before the opening date, as any source", async () => {
+	it("takes lines before the opening date, deriving the balances backward through them", async () => {
 		const { account, bank } = await linkedChecking();
 
-		const synced = await sync(account.id, bank.connectionId, [newBankLine({ date: "2026-09-01" })]);
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "EB-OLD", date: "2026-08-20", amount: toMinorUnits(-2000) }),
+			newBankLine({ externalId: "EB-LATER", date: "2026-08-25", amount: toMinorUnits(-1000) }),
+		]);
 
-		expect(synced.rejected).toEqual([{ ref: "0", reason: "BEFORE_OPENING_DATE" }]);
+		expect(synced.created).toHaveLength(2);
+		expect(synced.rejected).toEqual([]);
+		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toBeNull();
+		await expect(balanceOn(deps(), account.id, "2026-08-24")).resolves.toMatchObject({
+			amount: 101000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 100000,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
+			amount: 100000,
+		});
 	});
 
 	it("refuses an unknown connection and writes nothing", async () => {

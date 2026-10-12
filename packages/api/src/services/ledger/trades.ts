@@ -16,7 +16,6 @@ import { securities } from "@archant/data/schema/securities";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 
-import { snapshotRejectionFor } from "../../domain/balances/snapshot.ts";
 import { minDate, today } from "../../domain/dates.ts";
 import {
 	conversionFee,
@@ -115,20 +114,11 @@ async function investmentAccount(tx: Transaction, accountId: string) {
 }
 
 /**
- * Dated after the opening date, whose anchor fixes its own day, and not after
- * today: a snapshot's bounds, without the opening day a snapshot may set.
+ * Not after today: any earlier day goes, before the opening date included,
+ * since balances and holdings start at the oldest entry, as Sure's.
  */
-function refuseDate(account: { openingDate: IsoDate }, date: IsoDate, timeZone: string): void {
-	const reason = snapshotRejectionFor(date, {
-		openingDate: account.openingDate,
-		today: today(timeZone),
-	});
-
-	if (reason === "BEFORE_OPENING_DATE" || reason === "OPENING_DATE") {
-		throw invalidField("date", "not_after_opening_date");
-	}
-
-	if (reason === "DATE_IN_FUTURE") {
+function refuseFutureDate(date: IsoDate, timeZone: string): void {
+	if (date > today(timeZone)) {
 		throw invalidField("date", "date_in_future");
 	}
 }
@@ -376,7 +366,7 @@ export async function recordTrade(
 	return deps.db.transaction(
 		async (tx) => {
 			const account = await investmentAccount(tx, accountId);
-			refuseDate(account, input.date, deps.timeZone);
+			refuseFutureDate(input.date, deps.timeZone);
 
 			const now = Date.now();
 
@@ -517,7 +507,7 @@ export async function updateTrade(
 			const current = await tradeRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 			const date = patch.date ?? current.date;
-			refuseDate(account, date, deps.timeZone);
+			refuseFutureDate(date, deps.timeZone);
 
 			const figures =
 				current.incomeKind === null
@@ -642,7 +632,7 @@ export async function convertTransaction(
 				throw new AppError("NOT_CONVERTIBLE", "This transaction cannot be converted.");
 			}
 
-			refuseDate(account, source.date, deps.timeZone);
+			refuseFutureDate(source.date, deps.timeZone);
 
 			const amount = toMinorUnits(source.amount);
 			const now = Date.now();

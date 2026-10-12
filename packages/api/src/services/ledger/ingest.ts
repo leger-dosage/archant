@@ -12,10 +12,9 @@ import type { ServiceDeps } from "../deps.ts";
 import type { KeyTarget } from "./entry-keys.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte, ne } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
-import { classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { bankConnections } from "@archant/data/schema/bank-connections";
@@ -117,11 +116,6 @@ export type IngestOptions = {
 	/** Computes the groups and writes nothing: the import preview (AD-4). */
 	dryRun?: boolean | undefined;
 	/**
-	 * An earlier opening date the user accepted so the lines on or before the
-	 * current one go in. Ignored unless it is earlier.
-	 */
-	moveOpeningDate?: IsoDate | undefined;
-	/**
 	 * The counts of the preview the owner agreed to, from an assistant's
 	 * confirm: compared with the groups under the write lock, beside the digest.
 	 */
@@ -177,9 +171,11 @@ export function countsOf(groups: IngestGroups): ImportCounts {
  * What step 7 of the pipeline does with the statement balance (AD-8), in
  * stored balances (AD-5). `recorded`: confirm writes it as a snapshot owned by
  * the import. `present`: a snapshot with the same value is on that date
- * already, whoever wrote it. `kept`: the user entered another value on that
- * date, which stays; `gap` is `balance - recorded`. `skipped`: the account
- * cannot hold a snapshot on that date, or in that currency.
+ * already, whoever wrote it, the opening anchor on its own date included.
+ * `kept`: the user entered another value on that date, which stays, the
+ * opening anchor's amount included; `gap` is `balance - recorded`.
+ * `skipped`: the account cannot hold a snapshot on that date, or in that
+ * currency.
  */
 export type StatementBalanceOutcome =
 	| { status: "recorded"; date: IsoDate; balance: MinorUnits }
@@ -189,7 +185,10 @@ export type StatementBalanceOutcome =
 			status: "skipped";
 			date: IsoDate;
 			balance: MinorUnits;
-			reason: Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS"> | "CURRENCY_MISMATCH";
+			reason:
+				| Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS">
+				| "OPENING_DATE"
+				| "CURRENCY_MISMATCH";
 	  };
 
 export type IngestResult = {
@@ -201,12 +200,10 @@ export type IngestResult = {
 	/** The hash confirm compares with the preview's. */
 	digest: string;
 	/**
-	 * The day before the earliest line refused for being on or before the
-	 * opening date: the opening date that would let every such line in.
+	 * The date a QIF import moves the opening anchor to, its amount kept, as
+	 * Sure's `adjust_opening_anchor_if_needed!`; `null` when it stays.
 	 */
-	openingSuggestion: IsoDate | null;
-	/** The opening anchor this ingest moves, `null` when it stays. */
-	opening: { date: IsoDate; balance: MinorUnits } | null;
+	openingMovedTo: IsoDate | null;
 	/** Step 7's outcome, `null` when the statement has no balance. */
 	balance: StatementBalanceOutcome | null;
 };
@@ -479,6 +476,44 @@ async function groupLines(
 	return groups;
 }
 
+/**
+ * Where a QIF import moves the opening anchor: the day before its earliest
+ * line, when that line precedes the anchor, as Sure's
+ * `QifImport#adjust_opening_anchor_if_needed!`. No other source moves it.
+ * `null` when it stays, or when another entry already sits on or before that
+ * day, as Sure's `OpeningBalanceManager#date_error` then leaves it.
+ */
+async function qifOpeningMove(
+	tx: Transaction,
+	account: Pick<LedgerAccount, "id" | "openingId" | "openingDate">,
+	lines: readonly Keyed[],
+): Promise<IsoDate | null> {
+	const [earliest] = lines.map(({ line }) => line.date).toSorted();
+
+	if (earliest === undefined || earliest >= account.openingDate) {
+		return null;
+	}
+
+	const date = addDays(earliest, -1);
+	const blocking = await tx
+		.select({ id: entries.id })
+		.from(entries)
+		.where(
+			and(
+				eq(entries.accountId, account.id),
+				ne(entries.id, account.openingId),
+				lte(entries.date, date),
+			),
+		)
+		.limit(1)
+		.get();
+
+	return blocking === undefined ? date : null;
+}
+
+/** The account as `ingest` reads it, its opening anchor beside it. */
+type LedgerAccount = Awaited<ReturnType<typeof accountWithOpeningDate>>;
+
 type BalancePlan = {
 	outcome: StatementBalanceOutcome;
 	/** The snapshot already on the statement's date, if any. */
@@ -488,14 +523,19 @@ type BalancePlan = {
 
 /**
  * Step 7 of the pipeline, planned (AD-8): what the statement balance becomes,
- * checked against the opening date after any accepted move. A snapshot the
- * user entered on that date wins; one an earlier import wrote gives way, as
+ * placed as a snapshot is, before the opening date included. A snapshot the
+ * user entered on that date wins, and so does the opening anchor on its own
+ * date, which only the owner sets; one an earlier import wrote gives way, as
  * the bank's latest file is the better word, and Sure's `ReconciliationManager`
- * updates in place.
+ * updates in place. A linked account's opening date is skipped, as a snapshot
+ * there is refused: its backward computation ignores the anchor's amount.
  */
 async function planStatementBalance(
 	tx: Transaction,
-	account: { id: string; type: AccountType; currency: string },
+	account: Pick<
+		LedgerAccount,
+		"id" | "type" | "currency" | "bankAccountId" | "openingId" | "openingBalance"
+	>,
 	statementBalance: StatementBalance,
 	context: { openingDate: IsoDate; today: IsoDate },
 	importId: string,
@@ -503,17 +543,18 @@ async function planStatementBalance(
 	const { date } = statementBalance;
 	const balance = toStoredBalance(account, statementBalance.amount);
 	const placed = snapshotRejectionFor(date, context);
-	// A statement balance never moves the opening anchor: an import moves the
-	// opening date its own way, and the owner sets its amount.
 	const reason =
-		(placed === "OPENING_DATE" ? "BEFORE_OPENING_DATE" : placed) ??
+		(placed === "OPENING_DATE" && account.bankAccountId === null ? null : placed) ??
 		(statementBalance.currency === account.currency ? null : "CURRENCY_MISMATCH");
 
 	if (reason !== null) {
 		return { outcome: { status: "skipped", date, balance, reason }, existing: undefined, importId };
 	}
 
-	const row = await snapshotOn(tx, account.id, date);
+	const row =
+		placed === "OPENING_DATE"
+			? { id: account.openingId, balance: account.openingBalance, importId: null }
+			: await snapshotOn(tx, account.id, date);
 	const existing = row === undefined ? undefined : { ...row, balance: toMinorUnits(row.balance) };
 
 	// As a line already present: an equal value writes nothing, so a re-import
@@ -665,15 +706,7 @@ export async function ingest(
 								importId: null,
 								connectionId,
 							};
-			const moveTo =
-				options.moveOpeningDate !== undefined && options.moveOpeningDate < account.openingDate
-					? options.moveOpeningDate
-					: null;
-			const context = {
-				openingDate: moveTo ?? account.openingDate,
-				currency: account.currency,
-				today: today(deps.timeZone),
-			};
+			const context = { currency: account.currency, today: today(deps.timeZone) };
 			const accepted: Keyed[] = [];
 			const refused: (RejectedLine & { line: NonNullable<RejectedLine["line"]> })[] = [];
 			// A refused line still names its entry: a pending one it names is not missed.
@@ -681,7 +714,7 @@ export async function ingest(
 
 			// 1. Reject lines the account cannot hold. Keys cover every line,
 			// refused ones included, so a line's occurrence index never depends on
-			// the account's opening date.
+			// which lines the account refuses.
 			for (const [index, { line, keys }] of lineKeys(statement.transactions).entries()) {
 				const reason = rejectionFor(line, context);
 				const ref = String(index);
@@ -739,34 +772,20 @@ export async function ingest(
 				...grouped.created.map((item) => ({ ...item, duplicate: false })),
 				...grouped.duplicates.map((item) => ({ ...item, duplicate: true })),
 			];
-			const [earliestRefused] = refused
-				.filter(({ reason }) => reason === "BEFORE_OPENING_DATE")
-				.map(({ line }) => line.date)
-				.toSorted();
-			// AD-5: the opening balance changes so that the old opening day ends on
-			// the same balance once the lines up to it count. Sure's
-			// `adjust_opening_anchor_if_needed!` keeps the amount and shifts today's
-			// balance instead.
-			const movedIn = written
-				.filter(({ line }) => line.date <= account.openingDate)
-				.reduce((total, { line }) => total + line.amount, 0);
-			const opening =
-				moveTo === null
-					? null
-					: {
-							date: moveTo,
-							balance: toMinorUnits(
-								classificationOf(account.type) === "asset"
-									? account.openingBalance - movedIn
-									: account.openingBalance + movedIn,
-							),
-						};
+			const openingMovedTo =
+				target?.source === "qif" ? await qifOpeningMove(tx, account, accepted) : null;
 			// 7. The statement balance, planned here so the preview shows it and
 			// the digest covers it. A manual statement carries none.
 			const balancePlan =
 				target === null || statement.balance === null
 					? null
-					: await planStatementBalance(tx, account, statement.balance, context, target.id);
+					: await planStatementBalance(
+							tx,
+							account,
+							statement.balance,
+							{ openingDate: openingMovedTo ?? account.openingDate, today: context.today },
+							target.id,
+						);
 			const anchorPlan =
 				connectionId === null || statement.balance === null
 					? null
@@ -777,8 +796,8 @@ export async function ingest(
 				),
 				...unreadable.map(({ ref, reason }) => ({ group: `source:${reason}`, ref, entryId: null })),
 				...refused.map(({ ref, reason }) => ({ group: `ledger:${reason}`, ref, entryId: null })),
-				// The opening confirm would write must be the one the preview showed.
-				{ group: "opening", ref: JSON.stringify(opening), entryId: null },
+				// The opening date confirm would write must be the one the preview showed.
+				{ group: "opening", ref: JSON.stringify(openingMovedTo), entryId: null },
 				// A snapshot entered on that date since the preview turns `recorded`
 				// into `kept`: confirm must not write what the preview did not show.
 				{
@@ -792,8 +811,7 @@ export async function ingest(
 				rejected: groups.rejected.map(({ ref, reason }) => ({ ref, reason })),
 				groups,
 				digest,
-				openingSuggestion: earliestRefused === undefined ? null : addDays(earliestRefused, -1),
-				opening,
+				openingMovedTo,
 				balance: balancePlan?.outcome ?? anchorPlan,
 			};
 
@@ -923,17 +941,16 @@ export async function ingest(
 						// account number and every amount (AD-14).
 						content: Buffer.alloc(0),
 						counts: countsOf(groups),
-						// A revert gives back the shift of the moved-in lines it deletes;
-						// without it, every later balance would stay off by their sum.
-						previousOpeningDate: opening === null ? null : account.openingDate,
 					})
 					.where(eq(imports.id, target.id));
 			}
 
-			if (opening !== null) {
+			// As Sure, the date moves and the amount stays: today's balance moves
+			// by the lines, and a revert leaves the anchor where it is.
+			if (openingMovedTo !== null) {
 				await tx
 					.update(entries)
-					.set({ date: opening.date, amount: opening.balance, updatedAt: now })
+					.set({ date: openingMovedTo, updatedAt: now })
 					.where(eq(entries.id, account.openingId));
 			}
 
@@ -1000,7 +1017,7 @@ export async function ingest(
 							tx,
 							account,
 							anchorPlan,
-							opening?.date ?? account.openingDate,
+							openingMovedTo ?? account.openingDate,
 							now,
 						)
 					: null;
@@ -1010,7 +1027,7 @@ export async function ingest(
 				...rows.map(({ line }) => line.date),
 				...absorbedFrom,
 				...missedFrom,
-				...(opening === null ? [] : [opening.date]),
+				...(openingMovedTo === null ? [] : [openingMovedTo]),
 				...(snapshotDate === null ? [] : [snapshotDate]),
 				...(anchorWritten === null ? [] : [anchorWritten]),
 			].toSorted();

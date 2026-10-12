@@ -29,6 +29,7 @@ import {
 	accountWithOpeningDate,
 	backwardAnchor,
 	bookedMovements,
+	historyStartOf,
 	recomputeBalances,
 } from "./balances.ts";
 
@@ -305,6 +306,7 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 	// after: the gap is read against that day, since the day before is itself
 	// derived from the snapshot and would always agree with it.
 	const anchor = await backwardAnchor(db, accountId);
+	const start = await historyStartOf(db, accountId, null);
 	const nextDays = dates.map((date) => addDays(date, 1));
 	const balanceRows = await db
 		.select({ date: balances.date, balance: balances.balance, cash: balances.cash })
@@ -332,11 +334,13 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 	return ({ type, ...row }: SnapshotRow): SnapshotRecord => {
 		const backward = anchor !== undefined && row.date < anchor.date;
 		const neighbour = addDays(row.date, backward ? 1 : -1);
-		const known = stored.get(neighbour);
+		// Balances are written from the oldest entry on, and a snapshot is not
+		// dated after today, so the neighbouring day always has a row, but for
+		// the day before the first: the balances start from zero there, as
+		// Sure's `opening_starting_balances`. Any other missing row is a bug.
+		const first = !backward && start !== null && neighbour < start;
+		const known = stored.get(neighbour) ?? (first ? { balance: 0, cash: 0 } : undefined);
 
-		// Balances are written from the opening date on, and a snapshot is dated
-		// after it and not after today, so the neighbouring day always has a
-		// row; a missing one is a bug.
 		if (known === undefined) {
 			throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 		}

@@ -28,14 +28,14 @@ export type NormalizedTransaction = {
 };
 
 /**
- * Why a line was refused. The ledger names the first three: `BEFORE_OPENING_DATE`
- * covers the opening day too, since the opening balance is that day's
- * end-of-day balance, as in Sure. A source names the others when a field of
- * the line cannot be read, or, for `OPENING_BALANCE`, when the line is the
- * starting balance a QIF file carries rather than a movement.
+ * Why a line was refused. The ledger names the first two; no date before the
+ * opening date is among them, since balances start at the oldest entry, as
+ * Sure's `Balance::BaseCalculator#calculation_start_date`. A source names the
+ * others when a field of the line cannot be read, or, for `OPENING_BALANCE`,
+ * when the line is the starting balance a QIF file carries rather than a
+ * movement.
  */
 export type RejectionCode =
-	| "BEFORE_OPENING_DATE"
 	| "DATE_TOO_LATE"
 	| "CURRENCY_MISMATCH"
 	| "INVALID_DATE"
@@ -69,17 +69,13 @@ export type ParsedStatement = {
  */
 const MAX_DAYS_AHEAD = 366;
 
-export type LineContext = { openingDate: IsoDate; currency: string; today: IsoDate };
+export type LineContext = { currency: string; today: IsoDate };
 
 /** Step 1 of the ingestion pipeline (AD-4) for one line; `null` when it may go in. */
 export function rejectionFor(
 	line: Pick<NormalizedTransaction, "date" | "currency">,
 	context: LineContext,
 ): RejectionCode | null {
-	if (line.date <= context.openingDate) {
-		return "BEFORE_OPENING_DATE";
-	}
-
 	if (line.date > addDays(context.today, MAX_DAYS_AHEAD)) {
 		return "DATE_TOO_LATE";
 	}

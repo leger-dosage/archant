@@ -44,7 +44,7 @@ test("the Imports tab shows the file name, OFX, the date and the four counts", a
 	const lines = threeLines();
 	await api.importFile(account.id, sgml(lines));
 	// A manual twin of a new line, two equally near candidates for another,
-	// and a line dated before the opening date.
+	// and a line dated more than a year ahead.
 	await api.addTransaction(account.id, {
 		date: daysAgo(3),
 		label: "Pharmacie",
@@ -59,7 +59,7 @@ test("the Imports tab shows the file name, OFX, the date and the four counts", a
 			...lines,
 			{ daysAgo: 2, amount: "-15,00", label: uniqueName("CB PHARMACIE"), fitid: `${fitid}-4` },
 			{ daysAgo: 1, amount: "-9,99", label: uniqueName("CB LIBRAIRIE"), fitid: `${fitid}-5` },
-			{ daysAgo: 40, amount: "-5,00", label: uniqueName("CB ANCIEN"), fitid: `${fitid}-6` },
+			{ daysAgo: -400, amount: "-5,00", label: uniqueName("CB TROP TARD"), fitid: `${fitid}-6` },
 			{ daysAgo: 8, amount: "-7,00", label: uniqueName("PEAGE"), fitid: `${fitid}-7` },
 		]),
 		"releve-septembre.ofx",
@@ -159,9 +159,9 @@ test("a reverted file imported again lists its lines under À créer", async ({ 
 	await expect(dialog.getByRole("tab", { name: "Déjà présentes 0" })).toBeVisible();
 });
 
-// Story 11.1: a revert puts the opening date back, so the same file is read
-// the same way again instead of counting on top.
-test("a revert puts back the opening date a file moved, and the file imported again gives the same balance", async ({
+// Story 27.21: as Sure, a revert deletes the lines and never touches the
+// opening balance, so imports revert in any order.
+test("a revert of a file older than the opening date leaves « Solde d'ouverture » as it was, and the file imported again gives the same balance", async ({
 	page,
 	api,
 }) => {
@@ -169,33 +169,39 @@ test("a revert puts back the opening date a file moved, and the file imported ag
 	const id = uniqueName("O").replace(" ", "-");
 	const file = sgml([
 		{ daysAgo: 35, amount: "-20,00", label: uniqueName("CB ANCIEN"), fitid: `${id}-1` },
-		{ daysAgo: 30, amount: "50,00", label: uniqueName("VIR ANCIEN"), fitid: `${id}-2` },
+		{ daysAgo: 25, amount: "50,00", label: uniqueName("VIR RÉCENT"), fitid: `${id}-2` },
 	]);
 	const dialog = page.getByRole("dialog", { name: "Importer un fichier" });
-	const move = `Avancer la date d'ouverture au ${formatTableDate(daysAgo(36))}`;
-	const importWithMove = async () => {
+	const openingCells = [
+		`${formatTableDate(daysAgo(30))}Solde d'ouverture`,
+		euros(100_000),
+		"—",
+		"—",
+	];
+	const importFile = async () => {
 		await page.getByRole("button", { name: "Importer", exact: true }).click();
 		await dialog
 			.getByLabel("Relevé bancaire")
 			.setInputFiles({ name: "releve.ofx", mimeType: "application/x-ofx", buffer: file });
-		await expect(dialog.getByRole("tab", { name: "Rejetées 2" })).toHaveAttribute(
+		await expect(dialog.getByRole("tab", { name: "À créer 2" })).toHaveAttribute(
 			"aria-selected",
 			"true",
 		);
-		await dialog.getByRole("button", { name: move }).click();
-		await expect(
-			dialog.getByText(
-				`Le solde du ${formatTableDate(daysAgo(30))}, date d'ouverture actuelle, ne change pas.`,
-				{ exact: false },
-			),
-		).toBeVisible();
+		await expect(dialog.getByText(/date d'ouverture/u)).toHaveCount(0);
 		await dialog.getByRole("button", { name: "Importer 2 opérations" }).click();
 		await expect(dialog).toBeHidden();
 	};
+	const expectOpening = async () => {
+		await page.getByRole("tab", { name: "Soldes" }).click();
+		await expect(page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("cell")).toHaveText(
+			openingCells,
+		);
+	};
 
 	await openImportsTab(page, account);
-	await importWithMove();
-	await expect(header(page, account.name)).toContainText(euros(100_000));
+	await importFile();
+	await expect(header(page, account.name)).toContainText(euros(105_000));
+	await expectOpening();
 
 	await page.getByRole("tab", { name: "Imports" }).click();
 	await page.getByRole("button", { name: `Annuler l'import de releve.ofx du ${today()}` }).click();
@@ -205,10 +211,11 @@ test("a revert puts back the opening date a file moved, and the file imported ag
 		.click();
 	await expect(page.getByText("Import annulé, 2 opérations supprimées.")).toBeVisible();
 	await expect(header(page, account.name)).toContainText(euros(100_000));
+	await expectOpening();
 
-	// The lines fall before the opening date again, which the offer names.
-	await importWithMove();
-	await expect(header(page, account.name)).toContainText(euros(100_000));
+	await importFile();
+	await expect(header(page, account.name)).toContainText(euros(105_000));
+	await expectOpening();
 });
 
 test("reverting an import that only matched manual transactions deletes nothing", async ({

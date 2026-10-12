@@ -62,7 +62,7 @@ const DESKTOP_QUERY = "(min-width: 768px)";
 // enough that the counts follow the choices.
 const LIVE_PREVIEW_DELAY_MS = 300;
 
-type ImportAccount = { id: string; currency: CurrencyCode; openingDate: string };
+type ImportAccount = { id: string; currency: CurrencyCode };
 
 type LineGroup = Exclude<ImportGroup, "rejected">;
 
@@ -225,23 +225,13 @@ function StatementBalanceNote({
 type PreviewProps = {
 	preview: ImportPreviewData;
 	currency: string;
-	/** The account's opening date today, whose end-of-day balance a move keeps. */
-	openingDate: string;
 	stale: boolean;
-	moving: boolean;
-	onMoveOpening: (date: string) => void;
+	/** A new preview is on its way: the date order waits for it. */
+	previewing: boolean;
 	onDateOrder: (dateOrder: QifDateOrder) => void;
 };
 
-function Preview({
-	preview,
-	currency,
-	openingDate,
-	stale,
-	moving,
-	onMoveOpening,
-	onDateOrder,
-}: PreviewProps) {
+function Preview({ preview, currency, stale, previewing, onDateOrder }: PreviewProps) {
 	const { t } = useTranslation();
 	const counts = countsOf(preview.groups);
 	const [tab, setTab] = useState<string>(() => firstTab(counts));
@@ -264,7 +254,7 @@ function Preview({
 						onChange={onDateOrder}
 						// Until the answer lands: a second change would race the first
 						// for the order the server stores.
-						disabled={moving}
+						disabled={previewing}
 					/>
 				</div>
 			)}
@@ -275,16 +265,6 @@ function Preview({
 					className="rounded-md border border-destructive/50 bg-card p-3 text-destructive"
 				>
 					{t("errors.IMPORT_PREVIEW_STALE")}
-				</p>
-			)}
-
-			{preview.opening !== null && (
-				<p className="rounded-md border bg-card p-3">
-					{t("imports.openingMoved", {
-						date: formatTableDate(preview.opening.date),
-						amount: formatMoney({ amount: preview.opening.balance, currency }),
-						previous: formatTableDate(openingDate),
-					})}
 				</p>
 			)}
 
@@ -313,19 +293,6 @@ function Preview({
 						</TabsContent>
 					))}
 					<TabsContent value="rejected" className="flex flex-col items-start gap-2">
-						{preview.openingSuggestion !== null && preview.opening === null && (
-							<Button
-								variant="outline"
-								disabled={moving}
-								onClick={() => {
-									if (preview.openingSuggestion !== null) {
-										onMoveOpening(preview.openingSuggestion);
-									}
-								}}
-							>
-								{t("imports.moveOpening", { date: formatTableDate(preview.openingSuggestion) })}
-							</Button>
-						)}
 						<RejectedTable
 							lines={preview.groups.rejected}
 							currency={currency}
@@ -340,10 +307,7 @@ function Preview({
 
 type ImportFlowProps = { account: ImportAccount; onClose: () => void };
 
-/**
- * What every re-preview sends besides its own change, so that moving the
- * opening date or answering a stale confirm keeps the dates' order.
- */
+/** What every re-preview sends besides its own change, so that answering a stale confirm keeps the dates' order. */
 function kept(preview: ImportPreviewData): { qif?: { dateOrder: QifDateOrder } } {
 	return preview.qif === null ? {} : { qif: { dateOrder: preview.qif.dateOrder } };
 }
@@ -386,7 +350,6 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 
 	const draftValid = draft !== null && isCsvColumnsValid(draft.columns);
 	const previewId = preview?.id ?? null;
-	const moveOpeningDate = preview?.opening?.date ?? null;
 
 	const live = step === "columns" && previewId !== null && draft !== null && draftValid;
 
@@ -406,7 +369,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 
 						return livePreview.mutateAsync({
 							id: previewId,
-							input: { moveOpeningDate, csv: draft },
+							input: { csv: draft },
 						});
 					})();
 
@@ -430,7 +393,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 		return () => clearTimeout(timer);
 		// Not `livePreview` nor `t`: they change identity on every render, and
 		// each would send a request for a mapping nobody changed.
-	}, [draft, live, previewId, moveOpeningDate]);
+	}, [draft, live, previewId]);
 
 	const read = async (file: File | undefined) => {
 		// A second file while the first uploads would race it for the preview.
@@ -468,24 +431,6 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 		}
 	};
 
-	const moveOpening = async (date: string) => {
-		if (preview === null) {
-			return;
-		}
-
-		try {
-			show(
-				await previewAgain.mutateAsync({
-					id: preview.id,
-					input: { ...kept(preview), moveOpeningDate: date },
-				}),
-				false,
-			);
-		} catch (error) {
-			showErrorToast(errorCodeOf(error));
-		}
-	};
-
 	const changeDateOrder = async (dateOrder: QifDateOrder) => {
 		if (preview === null) {
 			return;
@@ -495,7 +440,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 			show(
 				await previewAgain.mutateAsync({
 					id: preview.id,
-					input: { moveOpeningDate: preview.opening?.date ?? null, qif: { dateOrder } },
+					input: { qif: { dateOrder } },
 				}),
 				false,
 			);
@@ -538,7 +483,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 					show(
 						await previewAgain.mutateAsync({
 							id: preview.id,
-							input: { ...kept(preview), moveOpeningDate: preview.opening?.date ?? null },
+							input: kept(preview),
 						}),
 						true,
 					);
@@ -634,10 +579,8 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 							key={version}
 							preview={preview}
 							currency={account.currency}
-							openingDate={account.openingDate}
 							stale={stale}
-							moving={previewAgain.isPending}
-							onMoveOpening={(date) => void moveOpening(date)}
+							previewing={previewAgain.isPending}
 							onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
 						/>
 					)}
@@ -655,10 +598,8 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						key={version}
 						preview={preview}
 						currency={account.currency}
-						openingDate={account.openingDate}
 						stale={stale}
-						moving={previewAgain.isPending}
-						onMoveOpening={(date) => void moveOpening(date)}
+						previewing={previewAgain.isPending}
 						onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
 					/>
 				</div>

@@ -469,8 +469,8 @@ describe("create_transaction", () => {
 			sure("invalid_tags", "One or more tag_ids do not belong to the user's family."),
 		);
 		// The sheet's own checks keep the generic shape.
-		await expect(refusal({ date: "2026-01-10" })).resolves.toEqual(
-			sure("validation_error", "The request is invalid; date not_after_opening_date"),
+		await expect(refusal({ date: "1899-12-31" })).resolves.toEqual(
+			sure("validation_error", "The request is invalid; date date_too_early"),
 		);
 		await expect(refusal({ external_id: "row-1", source: "csv:2026" })).resolves.toMatchObject({
 			error: "source invalid_format",

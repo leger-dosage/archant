@@ -2,15 +2,13 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin } from "./shared.ts";
 
-import { and, eq, gt, lt, min, ne } from "drizzle-orm";
+import { and, eq, gt, min, ne } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
-import { holdings } from "@archant/data/schema/holdings";
 
-import { today } from "../../domain/dates.ts";
+import { minDate, today } from "../../domain/dates.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 
 export type OpeningBalanceInput = {
@@ -49,9 +47,8 @@ export type OpeningBalanceResult =
  * balances never start after today. A linked account is refused, as Sure's
  * `set_opening_balance` refuses it: its balances derive backward from the
  * bank's and ignore the anchor's amount. In one transaction, the balances,
- * and an investment account's holdings, are computed again from the new date;
- * a later one deletes the rows before it, as reverting an import does. A dry
- * run answers the same and writes nothing.
+ * and an investment account's holdings, are computed again from the earlier
+ * of the two dates. A dry run answers the same and writes nothing.
  */
 export async function setOpeningBalance(
 	deps: ServiceDeps,
@@ -122,22 +119,9 @@ export async function setOpeningBalance(
 				})
 				.where(eq(entries.id, account.openingId));
 
-			// A forward recompute rewrites only from the day it is given and reads
-			// the day before it: the rows a later opening date leaves behind would
-			// stay, and seed the new first day.
-			if (after.date > before.date) {
-				await tx
-					.delete(balances)
-					.where(and(eq(balances.accountId, accountId), lt(balances.date, after.date)));
-				await tx
-					.delete(holdings)
-					.where(and(eq(holdings.accountId, accountId), lt(holdings.date, after.date)));
-			}
-
-			// From the new date: an earlier one is where the balances now start,
-			// and a later one has no row left before it, so the recompute starts
-			// there with nothing carried in.
-			await recomputeBalances(tx, account, after.date, deps.timeZone);
+			// From the earlier of the two dates: the recompute drops the rows
+			// before the account's new start itself.
+			await recomputeBalances(tx, account, minDate(before.date, after.date), deps.timeZone);
 
 			return { status: "set", changed: moved, before, after, pinnedBy };
 		},
