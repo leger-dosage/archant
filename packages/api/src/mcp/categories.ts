@@ -4,7 +4,8 @@ import { z } from "zod";
 
 import { newCategory } from "@archant/data/category-presets";
 
-import { createCategoryInput, listPageInput, updateCategoryInput } from "../schemas/assistants.ts";
+import { createCategoryInput, updateCategoryInput } from "../schemas/assistants/categories.ts";
+import { listPageInput } from "../schemas/assistants/fields.ts";
 import { createCategory, listCategories, updateCategory } from "../services/categories.ts";
 import { namesOf } from "../services/names.ts";
 import {

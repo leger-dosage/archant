@@ -8,7 +8,7 @@ import { toDecimalString, toMinorUnits } from "@archant/data/money";
 
 import { SURE_INTERVALS } from "../domain/balances/sure-periods.ts";
 import { AppError } from "../lib/errors.ts";
-import { balanceSheetInput, incomeStatementInput } from "../schemas/assistants.ts";
+import { balanceSheetInput, incomeStatementInput } from "../schemas/assistants/reports.ts";
 import { getBalanceSheet, getIncomeStatement } from "../services/reports.ts";
 import {
 	READ_ONLY,

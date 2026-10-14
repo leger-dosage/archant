@@ -4,13 +4,10 @@ import type { SnapshotInput, SnapshotPatchInput } from "../schemas/snapshots.ts"
 import type { ServiceDeps } from "./deps.ts";
 import type { SnapshotRecord, ValuationFilter, ValuationRecord } from "./ledger/snapshots.ts";
 
-import type { CurrencyCode } from "@archant/data/money";
-import { isCurrencyCode } from "@archant/data/money";
-
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createSnapshotSchema, updateSnapshotSchema } from "../schemas/snapshots.ts";
-import { getAccount } from "./accounts.ts";
+import { currencyOf, getAccount } from "./accounts.ts";
 import {
 	deleteSnapshot as deleteLedgerSnapshot,
 	findSnapshot,
@@ -39,16 +36,6 @@ const REJECTION_FIELDS: Record<SnapshotRejectionCode | "OPENING_DATE", FieldErro
 
 function rejectionError(reason: SnapshotRejectionCode | "OPENING_DATE"): AppError {
 	return new AppError("VALIDATION_ERROR", "The request is invalid.", [REJECTION_FIELDS[reason]]);
-}
-
-async function currencyOf(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
-	const account = await getAccount(deps, accountId);
-
-	if (!isCurrencyCode(account.currency)) {
-		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
-	}
-
-	return account.currency;
 }
 
 async function found(deps: ServiceDeps, id: string): Promise<SnapshotRecord> {

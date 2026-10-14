@@ -20,7 +20,7 @@ import {
 	groupTransactionsInput,
 	transactionIdInput,
 	updateTransactionInput,
-} from "../schemas/assistants.ts";
+} from "../schemas/assistants/transactions.ts";
 import { DEFAULT_PAGE_SIZE, MAX_BULK_IDS } from "../schemas/transactions.ts";
 import { namesOf, refOf } from "../services/names.ts";
 import {

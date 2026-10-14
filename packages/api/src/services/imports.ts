@@ -11,7 +11,6 @@ import { errorCode } from "@archant/data/backup";
 import type { Database } from "@archant/data/client";
 import { refreshStatistics } from "@archant/data/client";
 import type { CurrencyCode } from "@archant/data/money";
-import { isCurrencyCode } from "@archant/data/money";
 import type { QifDateOrder } from "@archant/data/qif-options";
 import { importMappings } from "@archant/data/schema/import-mappings";
 import type {
@@ -34,7 +33,7 @@ import { qifDateOrder } from "../connectors/qif/qif.ts";
 import { detectFileSource, fileSource } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
-import { getAccount } from "./accounts.ts";
+import { currencyOf, getAccount } from "./accounts.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
@@ -121,16 +120,6 @@ export type RevertedImport = { id: string; removed: Removable };
 
 function invalidFile(): AppError {
 	return new AppError("INVALID_IMPORT_FILE", "The file is not a readable statement.");
-}
-
-async function currencyOf(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
-	const account = await getAccount(deps, accountId);
-
-	if (!isCurrencyCode(account.currency)) {
-		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
-	}
-
-	return account.currency;
 }
 
 async function previewedImport(deps: ServiceDeps, id: string): Promise<Import> {

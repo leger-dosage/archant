@@ -1,8 +1,8 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { ErrorCode } from "../lib/errors.ts";
 import type { ServiceDeps } from "../services/deps.ts";
+import type { PriceChange } from "../services/recurring/all-bills.ts";
 import type { BillHistory, BillView, OccurrenceView } from "../services/recurring/bill-reads.ts";
-import type { PriceChange } from "../services/recurring/bills.ts";
 import type { RecurringRecord } from "../services/recurring/series.ts";
 
 import { z } from "zod";
@@ -29,7 +29,7 @@ import {
 	getBillsInput,
 	recordBillPaymentInput,
 	updateBillInput,
-} from "../schemas/assistants.ts";
+} from "../schemas/assistants/bills.ts";
 import { BILL_LIFECYCLES, BILL_PAYMENT_STATES, billStatusSchema } from "../schemas/bills.ts";
 import { accountsNamed, idsNamed, isUncategorisedName, namesOf } from "../services/names.ts";
 import { billAudit } from "../services/recurring/audit.ts";

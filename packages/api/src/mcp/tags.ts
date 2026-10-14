@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { createTagInput, listPageInput, updateTagInput } from "../schemas/assistants.ts";
+import { listPageInput } from "../schemas/assistants/fields.ts";
+import { createTagInput, updateTagInput } from "../schemas/assistants/tags.ts";
 import { tagIdNamed } from "../services/names.ts";
 import { createTag, listTags, renameTag } from "../services/tags.ts";
 import {

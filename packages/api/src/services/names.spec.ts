@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import { merchants } from "@archant/data/schema/merchants";
+import { tags } from "@archant/data/schema/tags";
 
 import { deps, openAccount, temp, useRecurringDatabase } from "../testing/recurring.ts";
 import { createAccount } from "./ledger/accounts.ts";
-import { accountsNamed, fundableAccountsNamed } from "./names.ts";
+import { accountsNamed, assertNameFree, fundableAccountsNamed } from "./names.ts";
 
 useRecurringDatabase("2026-09-21T10:00:00Z");
 
@@ -68,5 +70,20 @@ describe("fundableAccountsNamed", () => {
 			),
 		).resolves.toEqual([first, second].toSorted());
 		await expect(fundableAccountsNamed(deps(), [])).resolves.toEqual([]);
+	});
+});
+
+describe("assertNameFree", () => {
+	it("refuses a name another row of the same table holds, case aside, and lets a row keep its own", async () => {
+		await temp.db.insert(tags).values({ id: "tag-1", name: "Été", createdAt: 0, updatedAt: 0 });
+		const taken = {
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "name", code: "name_taken" }],
+		};
+
+		await expect(assertNameFree(temp.db, tags, "ÉTÉ", null)).rejects.toMatchObject(taken);
+		await expect(assertNameFree(temp.db, tags, "été", "tag-1")).resolves.toBeUndefined();
+		await expect(assertNameFree(temp.db, tags, "Ete", null)).resolves.toBeUndefined();
+		await expect(assertNameFree(temp.db, merchants, "Été", null)).resolves.toBeUndefined();
 	});
 });

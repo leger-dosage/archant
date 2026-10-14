@@ -17,7 +17,7 @@ import {
 	confirmImportInput,
 	importStatementFileInput,
 	previewImportInput,
-} from "../schemas/assistants.ts";
+} from "../schemas/assistants/imports.ts";
 import { confirmImport, createImport, previewImport } from "../services/imports.ts";
 import {
 	BANK_TEXT,

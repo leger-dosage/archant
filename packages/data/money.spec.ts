@@ -4,6 +4,7 @@ import {
 	CURRENCY_CODES,
 	formatMoney,
 	isCurrencyCode,
+	isDecimalString,
 	MAX_MINOR_UNITS,
 	minorUnitsOf,
 	parseAmount,
@@ -171,5 +172,15 @@ describe("currencies", () => {
 	it("lists codes in alphabetical order for the currency picker", () => {
 		expect(CURRENCY_CODES).toEqual(CURRENCY_CODES.toSorted());
 		expect(CURRENCY_CODES).toContain("EUR");
+	});
+});
+
+describe("isDecimalString", () => {
+	it.each(["0", "12", "-12", "12.5", "-0.001"])("accepts %s", (value) => {
+		expect(isDecimalString(value)).toBe(true);
+	});
+
+	it.each(["", "12,5", "1e3", ".5", "12.", "+1", " 1", "abc"])("refuses %j", (value) => {
+		expect(isDecimalString(value)).toBe(false);
 	});
 });

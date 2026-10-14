@@ -7,7 +7,8 @@ import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX, sampleGoalColor } from "@archant/da
 import type { MinorUnits } from "@archant/data/money";
 
 import { AppError } from "../lib/errors.ts";
-import { createGoalInput, listPageInput } from "../schemas/assistants.ts";
+import { listPageInput } from "../schemas/assistants/fields.ts";
+import { createGoalInput } from "../schemas/assistants/goals.ts";
 import { createGoal, goalAccountChoices, listGoals } from "../services/goals.ts";
 import { fundableAccountsNamed } from "../services/names.ts";
 import {

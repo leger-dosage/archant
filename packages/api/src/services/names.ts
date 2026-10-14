@@ -8,6 +8,8 @@ import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
 import { tags } from "@archant/data/schema/tags";
 
+import { invalidField } from "./ledger/shared.ts";
+
 /** A row another one points to, as Sure's assistant functions give it: `{ id, name }`. */
 export type NamedRef = { id: string; name: string };
 
@@ -26,6 +28,25 @@ export function isUncategorisedName(ref: string): boolean {
 type NamedTable = typeof accounts | typeof categories | typeof merchants | typeof tags;
 
 const TABLES = { accounts, categories, merchants, tags } as const;
+
+/**
+ * Refuses a name another category, merchant or tag holds, ignoring case.
+ * Compared here with a locale-aware fold, since SQLite's `lower` in each
+ * unique index folds ASCII only and would let « été » beside « Été ».
+ */
+export async function assertNameFree(
+	db: ServiceDeps["db"],
+	table: typeof categories | typeof merchants | typeof tags,
+	name: string,
+	ownId: string | null,
+): Promise<void> {
+	const folded = name.toLocaleLowerCase("fr");
+	const rows = await db.select({ id: table.id, name: table.name }).from(table);
+
+	if (rows.some((row) => row.id !== ownId && row.name.toLocaleLowerCase("fr") === folded)) {
+		throw invalidField("name", "name_taken");
+	}
+}
 
 type Kind = keyof typeof TABLES;
 

@@ -7,7 +7,7 @@ import {
 	pairTransferInput,
 	transferCandidatesInput,
 	unpairTransferInput,
-} from "../schemas/assistants.ts";
+} from "../schemas/assistants/transfers.ts";
 import { transactionsById } from "../services/transactions.ts";
 import {
 	createTransfer,

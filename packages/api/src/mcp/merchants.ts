@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { createMerchantInput, merchantsInput, renameMerchantInput } from "../schemas/assistants.ts";
+import {
+	createMerchantInput,
+	merchantsInput,
+	renameMerchantInput,
+} from "../schemas/assistants/merchants.ts";
 import { createMerchant, listMerchants, renameMerchant } from "../services/merchants.ts";
 import {
 	BANK_TEXT,

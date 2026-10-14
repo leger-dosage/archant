@@ -5,7 +5,7 @@ import { formatMicros } from "@archant/data/micros";
 import type { Money, MinorUnits } from "@archant/data/money";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 
-import { holdingsInput } from "../schemas/assistants.ts";
+import { holdingsInput } from "../schemas/assistants/holdings.ts";
 import { listHoldings } from "../services/holdings.ts";
 import { READ_ONLY, decimalsOf, defineTool, formatMoney, pageOf, pageOutput } from "./tool.ts";
 

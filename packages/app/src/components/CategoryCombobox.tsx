@@ -24,7 +24,7 @@ import {
 import { useCreateCategory } from "@/hooks/useCategories";
 import { categoryTree } from "@/lib/category-tree";
 import { isNewName, nameKey } from "@/lib/name-key";
-import { matchesSearch } from "@/lib/search-match";
+import { filterByName } from "@/lib/search-match";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their
 // names, and the filter reads the name from the keywords instead.
@@ -33,13 +33,8 @@ const CREATE = "create";
 const CREATE_CHILD = "create-child";
 const BACK = "back";
 
-/** Case and accents aside, in list order: `Enter` picks the first match as the user reads it. */
-function filterByName(value: string, search: string, keywords: string[] = []): number {
-	// « Créer » and « Ajouter comme sous-catégorie… » name exactly what was typed, so they always match.
-	return value === CREATE || value === CREATE_CHILD || matchesSearch(keywords.join(" "), search)
-		? 1
-		: 0;
-}
+// « Créer » and « Ajouter comme sous-catégorie… » name exactly what was typed, so they always match.
+const filterOptions = filterByName([CREATE, CREATE_CHILD]);
 
 /** A category this picker created, so « Créer » again assigns it rather than posting a twin. */
 type Created = { name: string; parentId: string | null; id: string };
@@ -172,7 +167,7 @@ export function CategoryCombobox({
 	);
 
 	return (
-		<Command filter={filterByName} shouldFilter={!parentStep} loop>
+		<Command filter={filterOptions} shouldFilter={!parentStep} loop>
 			<CommandInput
 				aria-label={t("transactions.category.search")}
 				placeholder={t("transactions.category.search")}
