@@ -14,11 +14,11 @@
 		"test:e2e": "pnpm --filter @archant/app test:e2e"
 	},
 	"devDependencies": {
-		"@shadcn/lint": "^0.2.0",
-		"knip": "^6.39.0",
-		"oxfmt": "^0.70.0",
-		"oxlint": "^1.85.0",
-		"oxlint-tsgolint": "^7.0.2003",
+		"@shadcn/lint": "^0.2.1",
+		"knip": "^6.41.0",
+		"oxfmt": "^0.72.0",
+		"oxlint": "^1.87.0",
+		"oxlint-tsgolint": "^7.0.2004",
 		"typescript": "^7.0.2"
 	},
 	"engines": {

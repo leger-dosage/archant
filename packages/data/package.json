@@ -68,7 +68,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",
-		"@vitest/coverage-v8": "^5.0.2",
+		"@vitest/coverage-v8": "^5.0.3",
 		"drizzle-kit": "^0.31.11",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
