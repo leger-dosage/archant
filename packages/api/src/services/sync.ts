@@ -42,7 +42,7 @@ const OVERLAP_DAYS = 7;
  * Who asked: the connection's button refuses what the cron and the first
  * visit of the day quietly skip.
  */
-type SyncTrigger = "button" | "cron" | "auto";
+type SyncTrigger = "button" | "cron" | "auto" | "settings";
 
 export type SyncResult = "synced" | "failed" | "skipped" | "consent_expired";
 
@@ -98,9 +98,15 @@ function toParsedStatement(
  * or older than ten minutes, and the connection not synced within the hour
  * unless a consent was renewed since its last sync (AD-18), so the renewal
  * can be checked at once. Taking the lease spends that exception, and counts
- * as the day's attempt.
+ * as the day's attempt. `anyInterval` skips the hour, never the lease: a
+ * setting that changes how balances read syncs at once, as Sure's `sync_later`.
  */
-async function takeLease(deps: BankConnectionDeps, connectionId: string, now: number) {
+async function takeLease(
+	deps: BankConnectionDeps,
+	connectionId: string,
+	now: number,
+	anyInterval = false,
+) {
 	const [taken] = await deps.db
 		.update(bankConnections)
 		// The renewal's exception is spent by the run it lets through, whatever
@@ -114,11 +120,13 @@ async function takeLease(deps: BankConnectionDeps, connectionId: string, now: nu
 					isNull(bankConnections.syncStartedAt),
 					lt(bankConnections.syncStartedAt, now - LEASE_MS),
 				),
-				or(
-					isNull(bankConnections.lastSyncedAt),
-					lt(bankConnections.lastSyncedAt, now - MIN_INTERVAL_MS),
-					lt(bankConnections.lastSyncedAt, bankConnections.authorizedAt),
-				),
+				anyInterval
+					? undefined
+					: or(
+							isNull(bankConnections.lastSyncedAt),
+							lt(bankConnections.lastSyncedAt, now - MIN_INTERVAL_MS),
+							lt(bankConnections.lastSyncedAt, bankConnections.authorizedAt),
+						),
 			),
 		)
 		.returning({ id: bankConnections.id });
@@ -648,12 +656,33 @@ export async function startDailySync(deps: BankConnectionDeps): Promise<DailySyn
 		throw error;
 	}
 
+	return leaseAll(
+		deps,
+		bank,
+		due.map(({ id }) => id),
+		now,
+		"auto",
+	);
+}
+
+/**
+ * Takes the lease of each connection it can, quietly skipping one held or,
+ * but for a setting's sync, synced within the hour, and returns the run that
+ * syncs those it took.
+ */
+async function leaseAll(
+	deps: BankConnectionDeps,
+	bank: Bank,
+	ids: readonly string[],
+	now: number,
+	trigger: SyncTrigger,
+): Promise<DailySync> {
 	// In turn: each `takeLease` is one statement, so of two requests racing
 	// here only one holds any given connection.
-	const leased = await due.reduce<Promise<string[]>>(async (previous, { id }) => {
+	const leased = await ids.reduce<Promise<string[]>>(async (previous, id) => {
 		const taken = await previous;
 
-		return (await takeLease(deps, id, now)) ? [...taken, id] : taken;
+		return (await takeLease(deps, id, now, trigger === "settings")) ? [...taken, id] : taken;
 	}, Promise.resolve([]));
 
 	return {
@@ -664,10 +693,58 @@ export async function startDailySync(deps: BankConnectionDeps): Promise<DailySyn
 				await previous;
 
 				try {
-					await runLeased(deps, bank, connectionId, now, "auto");
+					await runLeased(deps, bank, connectionId, now, trigger);
 				} catch (error) {
 					deps.logger.error({ connectionId, code: codeOf(error) }, "bank sync failed");
 				}
 			}, Promise.resolve()),
 	};
+}
+
+/**
+ * Sure's `sync_later` after a setting that changes how a connection's
+ * balances read: its lease taken now, the bank read by `run`, which the
+ * caller starts once it has answered, within the hour of the last sync too,
+ * as Sure's has no such wait. Skipped without a word, as the daily sync skips
+ * it, when the connection is not active, its consent has ended, its lease is
+ * held, or no connector is set up.
+ */
+export async function startConnectionSync(
+	deps: BankConnectionDeps,
+	connectionId: string,
+): Promise<DailySync> {
+	if (deps.encryptionKey === null) {
+		return NOTHING_TO_SYNC;
+	}
+
+	const now = Date.now();
+	const connection = await deps.db
+		.select({ id: bankConnections.id })
+		.from(bankConnections)
+		.where(
+			and(
+				eq(bankConnections.id, connectionId),
+				eq(bankConnections.status, "active"),
+				or(isNull(bankConnections.consentExpiresAt), gt(bankConnections.consentExpiresAt, now)),
+			),
+		)
+		.get();
+
+	if (connection === undefined) {
+		return NOTHING_TO_SYNC;
+	}
+
+	let bank: Bank;
+
+	try {
+		bank = await resolveBankConnector(deps);
+	} catch (error) {
+		if (error instanceof AppError && error.code === "BANK_CONNECTOR_UNAVAILABLE") {
+			return NOTHING_TO_SYNC;
+		}
+
+		throw error;
+	}
+
+	return leaseAll(deps, bank, [connection.id], now, "settings");
 }

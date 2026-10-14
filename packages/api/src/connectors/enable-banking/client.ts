@@ -113,6 +113,19 @@ const FRESHNESS_TYPES = new Set(
 	),
 );
 
+/** A card's limit in minor units of the currency it names, `null` when the amount does not read. */
+function creditLimitOf(
+	limit: z.output<typeof sessionAccountSchema>["credit_limit"],
+): BankAccountRef["creditLimit"] {
+	if (limit === null || limit === undefined) {
+		return null;
+	}
+
+	const amount = parseAmount(limit.amount, limit.currency);
+
+	return amount === null ? null : { amount, currency: limit.currency };
+}
+
 /**
  * A session account as the port hands it on. The name is Sure's choice
  * order, `details` then `product` then `name`, and only the IBAN's last four
@@ -133,6 +146,7 @@ export function toBankAccount(account: z.output<typeof sessionAccountSchema>): B
 		ibanLast4,
 		currency: account.currency,
 		cashAccountType: account.cash_account_type?.toUpperCase() ?? null,
+		creditLimit: creditLimitOf(account.credit_limit),
 	};
 }
 

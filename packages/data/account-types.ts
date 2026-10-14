@@ -160,3 +160,44 @@ export type LoanDetails = {
 	rateChanges: LoanRateChange[];
 	endDate: string | null;
 };
+
+/**
+ * What a credit card carries besides its balance, in `accounts.details`, as
+ * Sure's `CreditCard` columns, every one optional. Amounts are minor units in
+ * the account's currency; the APR is in millionths of one, as a loan's rates
+ * (AD-25), so 15,99 % is 159900. `availableCredit` holds the card's limit
+ * while its bank account treats the balance as available credit, and the
+ * credit left otherwise, as Sure's processor writes it.
+ */
+export type CreditCardDetails = {
+	availableCredit: MinorUnits | null;
+	minimumPayment: MinorUnits | null;
+	apr: number | null;
+	expirationDate: string | null;
+	annualFee: MinorUnits | null;
+};
+
+/** What `accounts.details` holds: a loan's or a credit card's, never another type's. */
+export type AccountDetails = LoanDetails | CreditCardDetails;
+
+/** A loan's details, null for any other account or a loan without them. */
+export function loanDetailsOf(account: {
+	type: AccountType;
+	details: AccountDetails | null;
+}): LoanDetails | null {
+	return account.type === "loan" && account.details !== null && "rateChanges" in account.details
+		? account.details
+		: null;
+}
+
+/** A credit card's details, null for any other account or a card without them. */
+export function creditCardDetailsOf(account: {
+	type: AccountType;
+	details: AccountDetails | null;
+}): CreditCardDetails | null {
+	return account.type === "credit_card" &&
+		account.details !== null &&
+		"availableCredit" in account.details
+		? account.details
+		: null;
+}

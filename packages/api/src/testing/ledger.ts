@@ -1,4 +1,5 @@
 import type { NormalizedTransaction, ParsedStatement } from "../domain/statement.ts";
+import type { BankConnectionDeps } from "../services/bank-connections.ts";
 import type { NewAccountInput } from "../services/ledger/accounts.ts";
 import type { Origin } from "../services/ledger/shared.ts";
 import type { TempDatabase } from "./temp-database.ts";
@@ -23,6 +24,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
+import { createLogger } from "../lib/logger.ts";
 import { createAccount } from "../services/ledger/accounts.ts";
 import { linkBankAccount, unlinkBankAccount } from "../services/ledger/bank-link.ts";
 import { revertImport } from "../services/ledger/import-revert.ts";
@@ -36,6 +38,16 @@ import { createTempDatabase } from "./temp-database.ts";
 // A live binding: `useLedgerDatabase` assigns it before the file's first test.
 export let temp: TempDatabase;
 export const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
+
+/** `deps()` for a service that may start a sync, with no bank connector set up. */
+export const bankDeps = (): BankConnectionDeps => ({
+	...deps(),
+	logger: createLogger("silent"),
+	bankCredentials: null,
+	encryptionKey: null,
+	bankApiUrl: "https://api.enablebanking.com",
+	redirectUrl: "http://localhost:5173/settings/banks/callback",
+});
 
 export const checking: NewAccountInput = {
 	name: "Compte joint",

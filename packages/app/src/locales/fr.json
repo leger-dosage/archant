@@ -226,6 +226,18 @@
 		"rateChangesHint": "Chaque ligne fixe le taux appliqué de sa date d'effet jusqu'à la suivante. Saisir à nouveau une date remplace sa ligne au lieu d'en ajouter une seconde.",
 		"rateChangesEmpty": "Aucun changement de taux enregistré. Le prêt suit le taux d'intérêt ci-dessus."
 	},
+	"creditCardDetails": {
+		"availableCredit": "Crédit disponible",
+		"availableCreditPlaceholder": "10000",
+		"minimumPayment": "Paiement minimum",
+		"minimumPaymentPlaceholder": "100",
+		"apr": "TAEG",
+		"aprPlaceholder": "15,99",
+		"expirationDate": "Date d'expiration",
+		"annualFee": "Frais annuels",
+		"annualFeePlaceholder": "99",
+		"invalidApr": "Taux invalide : un nombre positif ou nul, deux décimales au plus."
+	},
 	"accountActions": {
 		"menu": "Actions du compte {{name}}",
 		"edit": "Modifier",
@@ -246,6 +258,8 @@
 			"noSubtype": "Aucun",
 			"excludedFromReports": "Exclure des rapports",
 			"excludedFromReportsHint": "Le compte reste affiché, mais son solde n'est plus compté dans le total de son groupe.",
+			"treatBalanceAsAvailableCredit": "Le solde correspond au crédit disponible",
+			"treatBalanceAsAvailableCreditHint": "Activez cette option si votre banque communique le solde de cette carte sous forme de crédit disponible restant plutôt que de montant dû. La dette est alors déduite de la limite de crédit communiquée par votre banque, ou du champ Crédit disponible si votre banque n'en fournit pas.",
 			"cancel": "Annuler",
 			"save": "Enregistrer",
 			"saved": "Compte « {{name}} » enregistré."
@@ -2404,7 +2418,7 @@
 			"invalid_rate_change": "Chaque changement de taux demande une date et un taux entre 0 et 100, trois décimales au plus.",
 			"rate_change_before_origination": "Un changement de taux ne peut pas précéder la date d'origine du prêt.",
 			"invalid_date": "Date invalide, ou postérieure à aujourd'hui.",
-			"invalid_details": "Ces détails ne concernent que les prêts.",
+			"invalid_details": "Ces détails ne concernent que les prêts et les cartes de crédit.",
 			"invalid_format": "Date invalide.",
 			"invalid_value": "Valeur invalide.",
 			"invalid_type": "Valeur invalide.",

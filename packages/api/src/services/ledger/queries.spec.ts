@@ -11,6 +11,7 @@ import {
 	addStandard,
 	asUser,
 	contributionOf,
+	bankDeps,
 	deps,
 	firstPage,
 	importStatement,
@@ -829,7 +830,7 @@ describe("transactions of a deactivated account", () => {
 		const label = `Doublon ${crypto.randomUUID()}`;
 		await add(joint.id, { label, amount: toMinorUnits(-549) });
 		await add(card.id, { label, amount: toMinorUnits(-549) });
-		await updateAccount(deps(), card.id, { active: false });
+		await updateAccount(bankDeps(), card.id, { active: false });
 
 		const page = await listTransactions(deps(), { accountIds, q: label }, firstPage);
 		const named = await listTransactions(deps(), { accountIds: [card.id] }, firstPage);
@@ -846,7 +847,7 @@ describe("transactions of a deactivated account", () => {
 	it("are listed on the account's own page", async () => {
 		const { card } = await openPair();
 		await add(card.id, { label: "Copie" });
-		await updateAccount(deps(), card.id, { active: false });
+		await updateAccount(bankDeps(), card.id, { active: false });
 
 		const page = await listTransactions(
 			deps(),

@@ -2,6 +2,7 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { UpdateAccountRequest } from "../schemas/accounts.ts";
 import type { SnapshotInput } from "../schemas/snapshots.ts";
+import type { BankConnectionDeps } from "./bank-connections.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 import type { OpeningBalanceResult } from "./ledger/opening.ts";
@@ -9,10 +10,10 @@ import type { OpeningBalanceResult } from "./ledger/opening.ts";
 import { eq } from "drizzle-orm";
 
 import type {
+	AccountDetails,
 	AccountSubtype,
 	AccountType,
 	Classification,
-	LoanDetails,
 } from "@archant/data/account-types";
 import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
@@ -25,8 +26,13 @@ import type { Account } from "@archant/data/types";
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
-import { parseLoanDetails } from "../schemas/accounts.ts";
+import {
+	isCreditCardDetailsInput,
+	parseCreditCardDetails,
+	parseLoanDetails,
+} from "../schemas/accounts.ts";
 import { openingBalanceSchema } from "../schemas/snapshots.ts";
+import { codeOf } from "./bank-connections.ts";
 import {
 	createAccount as createLedgerAccount,
 	deleteAccount as deleteLedgerAccount,
@@ -34,6 +40,7 @@ import {
 import { balanceOn, openingAnchorOf, openingDateOf } from "./ledger/balances.ts";
 import { setOpeningBalance } from "./ledger/opening.ts";
 import { getReportingCurrency } from "./settings.ts";
+import { startConnectionSync } from "./sync.ts";
 
 export type AccountSummary = {
 	id: string;
@@ -128,10 +135,12 @@ export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
  */
 function futureStartIssues(
 	deps: ServiceDeps,
-	details: LoanDetails | null | undefined,
+	details: AccountDetails | null | undefined,
 ): FieldError[] {
-	return details?.startDate !== null &&
-		details?.startDate !== undefined &&
+	return details !== null &&
+		details !== undefined &&
+		"startDate" in details &&
+		details.startDate !== null &&
 		details.startDate > today(deps.timeZone)
 		? [{ path: "details.startDate", code: "invalid_date" }]
 		: [];
@@ -163,10 +172,18 @@ export type AccountDetail = AccountSummary & {
 	 * balances derive backward from the bank's.
 	 */
 	openingBalance: { balance: MinorUnits; notes: string | null };
-	/** A loan's terms, each null when not given; null for other types. */
-	details: LoanDetails | null;
+	/**
+	 * A loan's terms or a credit card's details, each null when not given;
+	 * null for other types, and for a card saved before it had any.
+	 */
+	details: AccountDetails | null;
 	/** The bank connection that feeds it, null for a manual account. */
 	bankConnection: { id: string; institutionName: string } | null;
+	/**
+	 * Sure's `treat_balance_as_available_credit`, its bank account's; null
+	 * for a manual account.
+	 */
+	treatBalanceAsAvailableCredit: boolean | null;
 };
 
 /** One account as its page shows it. */
@@ -178,11 +195,15 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		throw new AppError("NOT_FOUND", "No account has this id.");
 	}
 
-	const bankConnection =
+	const bank =
 		account.bankAccountId === null
 			? undefined
 			: await deps.db
-					.select({ id: bankConnections.id, institutionName: bankConnections.institutionName })
+					.select({
+						id: bankConnections.id,
+						institutionName: bankConnections.institutionName,
+						treatBalanceAsAvailableCredit: bankAccounts.treatBalanceAsAvailableCredit,
+					})
 					.from(bankAccounts)
 					.innerJoin(bankConnections, eq(bankConnections.id, bankAccounts.bankConnectionId))
 					.where(eq(bankAccounts.id, account.bankAccountId))
@@ -194,7 +215,9 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		openingDate: opening.date,
 		openingBalance: { balance: opening.balance, notes: opening.notes },
 		details: account.details,
-		bankConnection: bankConnection ?? null,
+		bankConnection:
+			bank === undefined ? null : { id: bank.id, institutionName: bank.institutionName },
+		treatBalanceAsAvailableCredit: bank?.treatBalanceAsAvailableCredit ?? null,
 	};
 }
 
@@ -210,12 +233,16 @@ export async function currencyOf(deps: ServiceDeps, accountId: string): Promise<
 }
 
 /**
- * Renames, retypes within its type, deactivates or excludes an account, and
- * returns it as its page shows it. Updating `accounts` is not a money write,
- * so it happens here rather than in the ledger.
+ * Renames, retypes within its type, deactivates or excludes an account, sets
+ * a loan's or a card's details and a linked card's toggle, and returns it as
+ * its page shows it. Updating `accounts` is not a money write, so it happens
+ * here rather than in the ledger. The toggle is written with the account, in
+ * one transaction, and ignored on any other account, as Sure's; a change
+ * starts its connection's sync once the request has answered, as Sure's
+ * `sync_later`, so the balance reads the new way.
  */
 export async function updateAccount(
-	deps: ServiceDeps,
+	deps: BankConnectionDeps,
 	id: string,
 	patch: UpdateAccountRequest,
 ): Promise<AccountDetail> {
@@ -231,10 +258,16 @@ export async function updateAccount(
 		fields.push({ path: "subtype", code: "invalid_subtype" });
 	}
 
-	let details: LoanDetails | undefined;
+	let details: AccountDetails | undefined;
 
 	if (patch.details !== undefined) {
-		if (account.type === "loan") {
+		if (account.type === "credit_card" && isCreditCardDetailsInput(patch.details)) {
+			const parsed = parseCreditCardDetails(patch.details, account.currency);
+			details = parsed.details;
+			fields.push(
+				...parsed.issues.map((issue) => ({ path: `details.${issue.field}`, code: issue.code })),
+			);
+		} else if (account.type === "loan" && !isCreditCardDetailsInput(patch.details)) {
 			const parsed = parseLoanDetails(
 				patch.details,
 				account.currency,
@@ -254,21 +287,73 @@ export async function updateAccount(
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", fields);
 	}
 
-	await deps.db
-		.update(accounts)
-		.set({
-			...(patch.name === undefined ? {} : { name: patch.name }),
-			...(patch.subtype === undefined ? {} : { subtype: patch.subtype }),
-			...(patch.active === undefined ? {} : { active: patch.active }),
-			...(details === undefined ? {} : { details }),
-			...(patch.excludedFromReports === undefined
-				? {}
-				: { excludedFromReports: patch.excludedFromReports }),
-			updatedAt: Date.now(),
-		})
-		.where(eq(accounts.id, id));
+	const now = Date.now();
+	// Read and written in one transaction, so a concurrent save cannot make
+	// this one start a sync for a toggle it did not change.
+	const toggled = await deps.db.transaction(async (tx) => {
+		await tx
+			.update(accounts)
+			.set({
+				...(patch.name === undefined ? {} : { name: patch.name }),
+				...(patch.subtype === undefined ? {} : { subtype: patch.subtype }),
+				...(patch.active === undefined ? {} : { active: patch.active }),
+				...(details === undefined ? {} : { details }),
+				...(patch.excludedFromReports === undefined
+					? {}
+					: { excludedFromReports: patch.excludedFromReports }),
+				updatedAt: now,
+			})
+			.where(eq(accounts.id, id));
 
-	return getAccount(deps, id);
+		const toggle = patch.treatBalanceAsAvailableCredit;
+		const bank =
+			account.type !== "credit_card" || account.bankAccountId === null || toggle === undefined
+				? undefined
+				: await tx
+						.select({
+							id: bankAccounts.id,
+							connectionId: bankAccounts.bankConnectionId,
+							treatBalanceAsAvailableCredit: bankAccounts.treatBalanceAsAvailableCredit,
+						})
+						.from(bankAccounts)
+						.where(eq(bankAccounts.id, account.bankAccountId))
+						.get();
+
+		if (bank === undefined || toggle === bank.treatBalanceAsAvailableCredit) {
+			return null;
+		}
+
+		await tx
+			.update(bankAccounts)
+			.set({ treatBalanceAsAvailableCredit: toggle, updatedAt: now })
+			.where(eq(bankAccounts.id, bank.id));
+
+		return bank.connectionId;
+	});
+
+	const saved = await getAccount(deps, id);
+
+	if (toggled !== null) {
+		await startSyncAfter(deps, toggled);
+	}
+
+	return saved;
+}
+
+/**
+ * Takes the connection's lease and starts its sync without awaiting it: the
+ * request answers at once, and the bank is read meanwhile. A failure is
+ * logged and never fails the save it follows.
+ */
+async function startSyncAfter(deps: BankConnectionDeps, connectionId: string): Promise<void> {
+	try {
+		const sync = await startConnectionSync(deps, connectionId);
+
+		// Not awaited: the process keeps it alive, and `run` never rejects.
+		void sync.run();
+	} catch (error) {
+		deps.logger.error({ connectionId, code: codeOf(error) }, "bank sync failed to start");
+	}
 }
 
 /** What moving an opening balance did, or would do on a dry run, beside the account after it. */

@@ -7,7 +7,8 @@ import type { ExportedTransactionRow } from "./ledger/export.ts";
 import { Zip, ZipDeflate } from "fflate";
 import Papa from "papaparse";
 
-import type { AccountType, LoanDetails } from "@archant/data/account-types";
+import type { AccountType, CreditCardDetails, LoanDetails } from "@archant/data/account-types";
+import { creditCardDetailsOf, loanDetailsOf } from "@archant/data/account-types";
 import type { Database, ReadSnapshot } from "@archant/data/client";
 import { readSnapshot } from "@archant/data/client";
 import { formatMicros } from "@archant/data/micros";
@@ -188,6 +189,23 @@ function loanAccountable(details: LoanDetails | null, currency: string) {
 		),
 		insurance_rate: percentOrNull(details?.insuranceRate ?? null),
 		insurance_rate_type: details?.insuranceRateType ?? null,
+	};
+}
+
+/**
+ * Sure's `CreditCard` columns, as its `as_json` writes them: decimals as
+ * strings, each null when unknown, a card saved before it had details included.
+ */
+function creditCardAccountable(details: CreditCardDetails | null, currency: string) {
+	const amount = (value: MinorUnits | null | undefined) =>
+		value === null || value === undefined ? null : decimal(value, currency);
+
+	return {
+		available_credit: amount(details?.availableCredit),
+		minimum_payment: amount(details?.minimumPayment),
+		apr: percentOrNull(details?.apr ?? null),
+		annual_fee: amount(details?.annualFee),
+		expiration_date: details?.expirationDate ?? null,
 	};
 }
 
@@ -791,7 +809,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 
 	yield ndjson(
 		accounts.map((account) => {
-			const loan = account.type === "loan" ? account.details : null;
+			const loan = loanDetailsOf(account);
 			const subtype = sureSubtype(account.type, account.subtype);
 
 			return {
@@ -810,6 +828,9 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					accountable: {
 						subtype,
 						...(account.type === "loan" ? loanAccountable(loan, account.currency) : {}),
+						...(account.type === "credit_card"
+							? creditCardAccountable(creditCardDetailsOf(account), account.currency)
+							: {}),
 					},
 					archant: {
 						type: account.type,

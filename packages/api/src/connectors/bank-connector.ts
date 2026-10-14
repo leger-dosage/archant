@@ -38,6 +38,8 @@ export type BankAccountRef = {
 	currency: CurrencyCode | null;
 	/** ISO 20022 cash account type, such as `CACC`, upper-cased. */
 	cashAccountType: string | null;
+	/** A card's limit as the bank lists it, in the currency it names; `null` when none or unreadable. */
+	creditLimit: { amount: MinorUnits; currency: CurrencyCode } | null;
 };
 
 /** An open session: a bearer credential for the account data until the consent ends. */

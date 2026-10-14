@@ -437,21 +437,28 @@ export async function completeConnection(
 			await tx
 				.insert(bankAccounts)
 				.values(
-					session.accounts.map((account) => ({
-						id: randomUUID(),
-						bankConnectionId: updated.id,
-						identificationHash: account.identificationHash,
-						providerUid: account.uid,
-						name: account.name,
-						ibanLast4: account.ibanLast4,
-						currency:
+					session.accounts.map((account) => {
+						const currency =
 							account.currency ??
 							storedCurrency.get(account.identificationHash) ??
-							DEFAULT_CURRENCY,
-						cashAccountType: account.cashAccountType,
-						createdAt: updatedAt,
-						updatedAt,
-					})),
+							DEFAULT_CURRENCY;
+
+						return {
+							id: randomUUID(),
+							bankConnectionId: updated.id,
+							identificationHash: account.identificationHash,
+							providerUid: account.uid,
+							name: account.name,
+							ibanLast4: account.ibanLast4,
+							currency,
+							cashAccountType: account.cashAccountType,
+							// No conversion: a limit in another currency is as good as none.
+							creditLimit:
+								account.creditLimit?.currency === currency ? account.creditLimit.amount : null,
+							createdAt: updatedAt,
+							updatedAt,
+						};
+					}),
 				)
 				.onConflictDoUpdate({
 					target: [bankAccounts.bankConnectionId, bankAccounts.identificationHash],
@@ -461,6 +468,7 @@ export async function completeConnection(
 						ibanLast4: excluded(bankAccounts.ibanLast4),
 						currency: excluded(bankAccounts.currency),
 						cashAccountType: excluded(bankAccounts.cashAccountType),
+						creditLimit: excluded(bankAccounts.creditLimit),
 						updatedAt,
 					},
 				});

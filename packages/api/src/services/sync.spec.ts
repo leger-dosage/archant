@@ -32,6 +32,7 @@ import {
 } from "../testing/enable-banking.ts";
 import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
+import { updateAccount } from "./accounts.ts";
 import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
 import { encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
@@ -40,7 +41,13 @@ import { linkBankAccount } from "./ledger/bank-link.ts";
 import { deleteTransaction } from "./ledger/edits.ts";
 import * as recurringService from "./recurring/pipeline.ts";
 import { getNetWorth } from "./reports.ts";
-import { startDailySync, syncAll, syncConnection, windowStart } from "./sync.ts";
+import {
+	startConnectionSync,
+	startDailySync,
+	syncAll,
+	syncConnection,
+	windowStart,
+} from "./sync.ts";
 
 // A spy that builds the real connector, so one test can make a single call
 // throw something no provider answer produces.
@@ -1506,6 +1513,328 @@ describe("syncAll", () => {
 		await expect(syncAll({ ...deps(), encryptionKey: null })).rejects.toMatchObject({
 			code: "BANK_CONNECTOR_UNAVAILABLE",
 		});
+	});
+});
+
+/** A card's current anchor and details. */
+async function cardState(accountId: string) {
+	const row = await temp.db
+		.select({ details: accounts.details })
+		.from(accounts)
+		.where(eq(accounts.id, accountId))
+		.get();
+
+	return { anchor: (await anchorOf(accountId))?.amount ?? null, details: row?.details };
+}
+
+describe("a credit card's bank balance", () => {
+	type CardSetup = {
+		creditLimit?: number | null;
+		toggle?: boolean;
+		availableCredit?: number | null;
+	};
+
+	/** A card of `connectionId` on the fixtures' card, linked without a balance. */
+	async function linkedCard(connectionId: string, setup: CardSetup = {}) {
+		const bankAccountId = randomUUID();
+
+		await temp.db.insert(bankAccounts).values({
+			id: bankAccountId,
+			bankConnectionId: connectionId,
+			identificationHash: `hash-${bankAccountId}`,
+			providerUid: FIXTURE_CARD_UID,
+			name: "Carte Visa Premier",
+			currency: "EUR",
+			cashAccountType: "CARD",
+			creditLimit:
+				setup.creditLimit === undefined || setup.creditLimit === null
+					? null
+					: toMinorUnits(setup.creditLimit),
+			treatBalanceAsAvailableCredit: setup.toggle ?? false,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+		const account = await createAccount(
+			deps(),
+			{
+				name: "Carte Visa Premier",
+				type: "credit_card",
+				subtype: null,
+				currency: "EUR",
+				openingBalance: toMinorUnits(0),
+				openingDate: "2026-06-01",
+				details: {
+					availableCredit:
+						setup.availableCredit === undefined || setup.availableCredit === null
+							? null
+							: toMinorUnits(setup.availableCredit),
+					minimumPayment: toMinorUnits(2500),
+					apr: 159900,
+					expirationDate: "2028-04-30",
+					annualFee: null,
+				},
+			},
+			{ origin: "sync" },
+		);
+		await linkBankAccount(deps(), account.id, { bankAccountId, balance: null }, { origin: "sync" });
+
+		return { accountId: account.id, bankAccountId };
+	}
+
+	async function cardAfterSync(reported: string, setup: CardSetup) {
+		mockProvider({ balances: () => HttpResponse.json(bankBalancesWith(reported)) });
+		const connectionId = await newConnection();
+		const { accountId } = await linkedCard(connectionId, setup);
+
+		await syncConnection(deps(), connectionId);
+
+		return { accountId, connectionId, ...(await cardState(accountId)) };
+	}
+
+	it("takes the debt as the bank limit less the reported credit, toggle on", async () => {
+		const card = await cardAfterSync("900.00", { creditLimit: 100000, toggle: true });
+
+		expect(card.anchor).toBe(10000);
+		// Its other details stay as typed.
+		expect(card.details).toEqual({
+			availableCredit: 100000,
+			minimumPayment: 2500,
+			apr: 159900,
+			expirationDate: "2028-04-30",
+			annualFee: null,
+		});
+		await expect(balanceOn(deps(), card.accountId, "2026-09-24")).resolves.toEqual({
+			amount: 10000,
+			currency: "EUR",
+		});
+	});
+
+	it("owes nothing on an overpaid card, toggle on", async () => {
+		const card = await cardAfterSync("1050.00", { creditLimit: 100000, toggle: true });
+
+		expect(card.anchor).toBe(0);
+		expect(card.details).toMatchObject({ availableCredit: 100000 });
+	});
+
+	it("subtracts from « Crédit disponible » without a bank limit, toggle on", async () => {
+		const card = await cardAfterSync("900.00", { availableCredit: 100000, toggle: true });
+
+		expect(card.anchor).toBe(10000);
+		expect(card.details).toMatchObject({ availableCredit: 100000 });
+	});
+
+	it("writes no balance and clears « Crédit disponible » with no limit anywhere, toggle on", async () => {
+		const card = await cardAfterSync("900.00", { toggle: true });
+
+		expect(card.anchor).toBeNull();
+		expect(card.details).toMatchObject({ availableCredit: null, minimumPayment: 2500 });
+		await expect(connectionRow(card.connectionId)).resolves.toMatchObject({ lastError: null });
+	});
+
+	it("keeps the reported debt and refreshes the credit left from a bank limit, toggle off", async () => {
+		const card = await cardAfterSync("100.00", { creditLimit: 100000, availableCredit: 300000 });
+
+		expect(card.anchor).toBe(10000);
+		expect(card.details).toMatchObject({ availableCredit: 90000 });
+	});
+
+	it("keeps the reported debt and « Crédit disponible » without a bank limit, toggle off", async () => {
+		const card = await cardAfterSync("-100.00", { availableCredit: 300000 });
+
+		expect(card.anchor).toBe(10000);
+		expect(card.details).toMatchObject({ availableCredit: 300000 });
+	});
+
+	it("counts a bank limit of zero as none", async () => {
+		const card = await cardAfterSync("100.00", { creditLimit: 0, availableCredit: 300000 });
+
+		expect(card.anchor).toBe(10000);
+		expect(card.details).toMatchObject({ availableCredit: 300000 });
+	});
+
+	it("changes neither the balance nor the details for a balance in another currency", async () => {
+		const { balances } = bankBalancesWith("900.00");
+		mockProvider({
+			balances: () =>
+				HttpResponse.json({
+					balances: balances.map((row) => ({
+						...row,
+						balance_amount: { currency: "USD", amount: "900.00" },
+					})),
+				}),
+		});
+		const connectionId = await newConnection();
+		const { accountId } = await linkedCard(connectionId, {
+			creditLimit: 100000,
+			toggle: true,
+			availableCredit: 300000,
+		});
+
+		await syncConnection(deps(), connectionId);
+
+		expect((await cardState(accountId)).details).toMatchObject({ availableCredit: 300000 });
+	});
+
+	it("reads a depository's bank balance as it is, whatever its bank account says", async () => {
+		mockProvider({ balances: () => HttpResponse.json(bankBalancesWith("900.00")) });
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await temp.db
+			.update(bankAccounts)
+			.set({ creditLimit: toMinorUnits(100000), treatBalanceAsAvailableCredit: true })
+			.where(eq(bankAccounts.id, bankAccountId));
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(cardState(accountId)).resolves.toEqual({ anchor: 90000, details: null });
+	});
+
+	it("interprets the balance a link writes, as a sync does", async () => {
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedCard(connectionId, {
+			creditLimit: 100000,
+			toggle: true,
+		});
+
+		await linkBankAccount(
+			deps(),
+			accountId,
+			{ bankAccountId, balance: { amount: toMinorUnits(-90000), date: null } },
+			{ origin: "sync" },
+		);
+
+		await expect(cardState(accountId)).resolves.toMatchObject({
+			anchor: 10000,
+			details: { availableCredit: 100000 },
+		});
+	});
+
+	it("leaves a link without a balance when no limit reads the available credit", async () => {
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedCard(connectionId, { toggle: true });
+
+		await linkBankAccount(
+			deps(),
+			accountId,
+			{ bankAccountId, balance: { amount: toMinorUnits(90000), date: null } },
+			{ origin: "sync" },
+		);
+
+		await expect(cardState(accountId)).resolves.toMatchObject({
+			anchor: null,
+			details: { availableCredit: null },
+		});
+	});
+
+	it("starts the connection's sync when the toggle changes, and the balance reads the new way", async () => {
+		const requests = mockProvider({
+			balances: () => HttpResponse.json(bankBalancesWith("900.00")),
+		});
+		const connectionId = await newConnection();
+		const { accountId, bankAccountId } = await linkedCard(connectionId, { creditLimit: 100000 });
+
+		const saved = await updateAccount(deps(), accountId, { treatBalanceAsAvailableCredit: true });
+
+		expect(saved.treatBalanceAsAvailableCredit).toBe(true);
+		// The lease is taken before the save answers; the bank is read after.
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncAttemptedAt: NOW });
+		await vi.waitFor(
+			async () => {
+				await expect(connectionRow(connectionId)).resolves.toMatchObject({
+					lastSyncedAt: NOW,
+					syncStartedAt: null,
+				});
+			},
+			{ timeout: 10_000 },
+		);
+		expect(balanceRequests(requests)).toHaveLength(1);
+		await expect(cardState(accountId)).resolves.toMatchObject({
+			anchor: 10000,
+			details: { availableCredit: 100000 },
+		});
+		await expect(
+			temp.db
+				.select({ toggle: bankAccounts.treatBalanceAsAvailableCredit })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.id, bankAccountId))
+				.get(),
+		).resolves.toEqual({ toggle: true });
+	});
+
+	it("syncs a connection synced minutes ago when the toggle changes, but never past a held lease", async () => {
+		const requests = mockProvider({
+			balances: () => HttpResponse.json(bankBalancesWith("900.00")),
+		});
+		const connectionId = await newConnection({ lastSyncedAt: NOW - 5 * MINUTE });
+		const { accountId } = await linkedCard(connectionId, { creditLimit: 100000 });
+
+		await updateAccount(deps(), accountId, { treatBalanceAsAvailableCredit: true });
+
+		await vi.waitFor(
+			async () => {
+				await expect(connectionRow(connectionId)).resolves.toMatchObject({
+					lastSyncedAt: NOW,
+					syncStartedAt: null,
+				});
+			},
+			{ timeout: 10_000 },
+		);
+		expect(balanceRequests(requests)).toHaveLength(1);
+		await expect(cardState(accountId)).resolves.toMatchObject({ anchor: 10000 });
+
+		const held = await newConnection({ syncStartedAt: NOW - 2 * MINUTE });
+		await expect(startConnectionSync(deps(), held)).resolves.toMatchObject({ leased: [] });
+	});
+
+	it("starts nothing for a connection not active, past its consent or without a connector", async () => {
+		const pending = await newConnection({ status: "pending" });
+		const expired = await newConnection({ consentExpiresAt: NOW });
+		const active = await newConnection();
+
+		const started = await Promise.all([
+			startConnectionSync(deps(), pending),
+			startConnectionSync(deps(), expired),
+			startConnectionSync({ ...deps(), encryptionKey: null }, active),
+			startConnectionSync({ ...deps(), bankCredentials: null }, active),
+		]);
+
+		expect(started.map(({ leased }) => leased)).toEqual([[], [], [], []]);
+		await expect(connectionRow(active)).resolves.toMatchObject({ syncAttemptedAt: null });
+	});
+
+	it("saves the toggle when its sync cannot start, logging the code alone", async () => {
+		const connectionId = await newConnection();
+		const { accountId } = await linkedCard(connectionId, { creditLimit: 100000 });
+		vi.mocked(registry.createBankConnector).mockImplementationOnce(() => {
+			throw new Error("amount 123456 refused");
+		});
+		const failing = deps();
+
+		const saved = await updateAccount(failing, accountId, { treatBalanceAsAvailableCredit: true });
+
+		expect(saved.treatBalanceAsAvailableCredit).toBe(true);
+		expect(logged()).toContainEqual(
+			expect.objectContaining({
+				connectionId,
+				code: "INTERNAL_ERROR",
+				msg: "bank sync failed to start",
+			}),
+		);
+		expect(loggedFigures(logLines)).not.toContain("123456");
+	});
+
+	it("starts no sync when the toggle is saved unchanged", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedCard(connectionId, { toggle: true });
+
+		await updateAccount(deps(), accountId, { treatBalanceAsAvailableCredit: true, name: "Visa" });
+
+		await expect(connectionRow(connectionId)).resolves.toMatchObject({
+			syncAttemptedAt: null,
+			syncStartedAt: null,
+		});
+		expect(requests).toEqual([]);
 	});
 });
 

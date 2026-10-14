@@ -607,6 +607,103 @@ describe("POST /api/accounts", () => {
 		]);
 	});
 
+	it("creates a card with its details in minor units and its APR in millionths", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				type: "credit_card",
+				subtype: null,
+				details: {
+					availableCredit: "3000",
+					minimumPayment: "25,50",
+					apr: "15,99",
+					expirationDate: "2028-04-30",
+					annualFee: "",
+				},
+			},
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: {
+				details: {
+					availableCredit: 300000,
+					minimumPayment: 2550,
+					apr: 159900,
+					expirationDate: "2028-04-30",
+					annualFee: null,
+				},
+				bankConnection: null,
+				treatBalanceAsAvailableCredit: null,
+			},
+		});
+	});
+
+	it("creates a card without details as every detail unknown", async () => {
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		const detail = await request("GET", `/api/accounts/${card.id}`);
+		expect(detail.body).toMatchObject({
+			data: {
+				details: {
+					availableCredit: null,
+					minimumPayment: null,
+					apr: null,
+					expirationDate: null,
+					annualFee: null,
+				},
+			},
+		});
+	});
+
+	it("takes an APR with no 100 % cap, below Sure's decimal(10,2) bound", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, type: "credit_card", subtype: null, details: { apr: "99999999,99" } },
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { apr: 999_999_999_900 } } });
+		const above = await postRaw({
+			...valid,
+			type: "credit_card",
+			subtype: null,
+			details: { apr: "100000000" },
+		});
+		expect(above.body.error.fields).toEqual([{ path: "details.apr", code: "invalid_rate" }]);
+	});
+
+	it("refuses a negative card amount and an APR with three decimals, writing nothing", async () => {
+		const before = await accountCount();
+
+		const { status, body } = await postRaw({
+			...valid,
+			type: "credit_card",
+			subtype: null,
+			details: { annualFee: "-1", apr: "1,234", expirationDate: "2028-02-30" },
+		});
+
+		expect(status).toBe(400);
+		expect(body.error.fields).toEqual([
+			{ path: "details.annualFee", code: "invalid_amount" },
+			{ path: "details.apr", code: "invalid_rate" },
+			{ path: "details.expirationDate", code: "invalid_date" },
+		]);
+		await expect(accountCount()).resolves.toBe(before);
+	});
+
+	it("refuses details on a depository and card details on a loan", async () => {
+		const depository = await postRaw({ ...valid, details: { availableCredit: "100" } });
+		const loan = await postRaw({ ...valid, ...mortgage, details: { apr: "15" } });
+
+		expect(depository.status).toBe(400);
+		expect(depository.body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+		expect(loan.body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+	});
+
 	it("refuses loan details on a card", async () => {
 		const { status, body } = await postRaw({
 			...valid,
@@ -1661,6 +1758,156 @@ describe("PATCH /api/accounts/:id", () => {
 	});
 });
 
+// Every field of a card's details in a PATCH, blank: it replaces them whole.
+const blankCard = {
+	availableCredit: "",
+	minimumPayment: "",
+	apr: "",
+	expirationDate: "",
+	annualFee: "",
+};
+
+/** A card fed by a new bank account of a new connection, its toggle as given. */
+async function linkedCard(toggle: boolean) {
+	const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+	const connectionId = crypto.randomUUID();
+	const bankAccountId = crypto.randomUUID();
+	await temp.db.insert(bankConnections).values({
+		id: connectionId,
+		connector: "enable-banking",
+		institutionName: "Banque Test",
+		country: "FR",
+		status: "active",
+		createdAt: 0,
+		updatedAt: 0,
+	});
+	await temp.db.insert(bankAccounts).values({
+		id: bankAccountId,
+		bankConnectionId: connectionId,
+		identificationHash: `hash-${bankAccountId}`,
+		providerUid: `uid-${bankAccountId}`,
+		name: "Carte Visa Premier",
+		currency: "EUR",
+		treatBalanceAsAvailableCredit: toggle,
+		createdAt: 0,
+		updatedAt: 0,
+	});
+	await temp.db.update(accounts).set({ bankAccountId }).where(eq(accounts.id, card.id));
+
+	return { id: card.id, bankAccountId };
+}
+
+describe("PATCH /api/accounts/:id on a credit card", () => {
+	it("replaces a card's details whole, a blank one cleared", async () => {
+		const card = await openAccount({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			details: { availableCredit: "3000", annualFee: "99" },
+		});
+
+		const { status, body } = await patchAccount(card.id, {
+			details: { ...blankCard, minimumPayment: "100", apr: "15,99" },
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({
+			data: {
+				details: {
+					availableCredit: null,
+					minimumPayment: 10000,
+					apr: 159900,
+					expirationDate: null,
+					annualFee: null,
+				},
+			},
+		});
+	});
+
+	it("refuses invalid card details and saves nothing", async () => {
+		const card = await openAccount({
+			name: "Carte",
+			type: "credit_card",
+			subtype: null,
+			details: { annualFee: "99" },
+		});
+
+		const { status, body } = await patchAccount(card.id, {
+			name: "Autre",
+			details: { ...blankCard, annualFee: "-1", apr: "1,234" },
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([
+			{ path: "details.annualFee", code: "invalid_amount" },
+			{ path: "details.apr", code: "invalid_rate" },
+		]);
+		const detail = await request("GET", `/api/accounts/${card.id}`);
+		expect(detail.body).toMatchObject({ data: { name: "Carte", details: { annualFee: 9900 } } });
+	});
+
+	it("refuses card details on a loan, and loan details on a card", async () => {
+		const loan = await openAccount(mortgage);
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		const onLoan = await patchAccount(loan.id, { details: blankCard });
+		const onCard = await patchAccount(card.id, { details: blankTerms });
+
+		expect(errorBody.parse(onLoan.body).error.fields).toEqual([
+			{ path: "details", code: "invalid_details" },
+		]);
+		expect(errorBody.parse(onCard.body).error.fields).toEqual([
+			{ path: "details", code: "invalid_details" },
+		]);
+	});
+
+	it("ignores the toggle on an unlinked card, and saves the rest", async () => {
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		const { status, body } = await patchAccount(card.id, {
+			name: "Visa",
+			treatBalanceAsAvailableCredit: true,
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { name: "Visa", treatBalanceAsAvailableCredit: null } });
+	});
+
+	it("saves the toggle of a linked card on its bank account", async () => {
+		const card = await linkedCard(false);
+
+		const { status, body } = await patchAccount(card.id, { treatBalanceAsAvailableCredit: true });
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({
+			data: {
+				treatBalanceAsAvailableCredit: true,
+				bankConnection: { institutionName: "Banque Test" },
+			},
+		});
+		await expect(
+			temp.db
+				.select({ toggle: bankAccounts.treatBalanceAsAvailableCredit })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.id, card.bankAccountId))
+				.get(),
+		).resolves.toEqual({ toggle: true });
+	});
+
+	it("ignores the toggle on a linked account that is not a card", async () => {
+		const card = await linkedCard(false);
+		await temp.db
+			.update(accounts)
+			.set({ type: "depository", subtype: "checking" })
+			.where(eq(accounts.id, card.id));
+
+		const { status, body } = await patchAccount(card.id, { treatBalanceAsAvailableCredit: true });
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { treatBalanceAsAvailableCredit: false } });
+	});
+});
+
 describe("a viewer on a loan", () => {
 	let viewerCookie: string;
 	let auth: Auth;
@@ -1689,6 +1936,31 @@ describe("a viewer on a loan", () => {
 		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
 		const detail = await request("GET", `/api/accounts/${loan.id}`);
 		expect(detail.body).toMatchObject({ data: { details: { interestRate: 18200 } } });
+	});
+
+	it("reads a card's details and toggle, and is refused FORBIDDEN on either, nothing written", async () => {
+		const card = await linkedCard(false);
+		await patchAccount(card.id, { details: { ...blankCard, apr: "15,99" } });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const edit = (body: unknown) =>
+			viewer.request(`/api/accounts/${card.id}`, {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+
+		const read = await viewer.request(`/api/accounts/${card.id}`);
+		const details = await edit({ details: { ...blankCard, apr: "20" } });
+		const toggle = await edit({ treatBalanceAsAvailableCredit: true });
+
+		expect(await read.json()).toMatchObject({
+			data: { details: { apr: 159900 }, treatBalanceAsAvailableCredit: false },
+		});
+		expect([details.status, toggle.status]).toEqual([403, 403]);
+		const detail = await request("GET", `/api/accounts/${card.id}`);
+		expect(detail.body).toMatchObject({
+			data: { details: { apr: 159900 }, treatBalanceAsAvailableCredit: false },
+		});
 	});
 
 	it("refuses an edit of the opening balance with FORBIDDEN, nothing written", async () => {

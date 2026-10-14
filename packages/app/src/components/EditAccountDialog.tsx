@@ -10,7 +10,9 @@ import { toast } from "sonner";
 
 import type { AccountSettingsFormInput } from "@archant/api/schemas/accounts";
 import { accountSettingsFormSchema } from "@archant/api/schemas/accounts";
+import { creditCardDetailsOf, loanDetailsOf } from "@archant/data/account-types";
 
+import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
@@ -35,13 +37,25 @@ import { Switch } from "@/components/ui/switch";
 import { useUpdateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
+import {
+	CREDIT_CARD_FIELD_NAMES,
+	completeCreditCardInput,
+	creditCardDetailsToInput,
+} from "@/lib/credit-card-details";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, errorAt } from "@/lib/form-errors";
 import { LOAN_FIELD_NAMES, completeLoanInput, loanDetailsToInput } from "@/lib/loan-details";
 
-const FIELD_NAMES = ["name", "subtype", "excludedFromReports", ...LOAN_FIELD_NAMES] as const;
+const FIELD_NAMES = [
+	"name",
+	"subtype",
+	"excludedFromReports",
+	"treatBalanceAsAvailableCredit",
+	...LOAN_FIELD_NAMES,
+	...CREDIT_CARD_FIELD_NAMES,
+] as const;
 
-/** Rendered for a loan only, so no other account's form ever holds `details`. */
+/** Rendered for a loan only, so no other account's form ever holds a loan's `details`. */
 function LoanFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
 	const details = useController({ control: form.control, name: "details" });
 
@@ -51,6 +65,49 @@ function LoanFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> })
 			onChange={details.field.onChange}
 			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
 		/>
+	);
+}
+
+/** Rendered for a credit card only, so no other account's form ever holds a card's `details`. */
+function CreditCardFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const details = useController({ control: form.control, name: "details" });
+
+	return (
+		<CreditCardDetailsFields
+			value={completeCreditCardInput(details.field.value)}
+			onChange={details.field.onChange}
+			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
+		/>
+	);
+}
+
+/**
+ * Sure's « Le solde correspond au crédit disponible », rendered for a card a
+ * bank feeds only: the setting is its bank account's.
+ */
+function AvailableCreditToggle({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const { t } = useTranslation();
+	const toggle = useController({ control: form.control, name: "treatBalanceAsAvailableCredit" });
+
+	return (
+		<div className="flex items-start gap-3">
+			<Switch
+				id="account-available-credit"
+				checked={toggle.field.value ?? false}
+				onCheckedChange={toggle.field.onChange}
+				onBlur={toggle.field.onBlur}
+				aria-describedby="account-available-credit-hint"
+				className="mt-0.5"
+			/>
+			<div className="flex flex-col gap-1">
+				<Label htmlFor="account-available-credit">
+					{t("accountActions.form.treatBalanceAsAvailableCredit")}
+				</Label>
+				<p id="account-available-credit-hint" className="text-xs text-muted-foreground">
+					{t("accountActions.form.treatBalanceAsAvailableCreditHint")}
+				</p>
+			</div>
+		</div>
 	);
 }
 
@@ -69,8 +126,9 @@ type EditAccountDialogProps = {
 
 /**
  * What Sure's account edit form changes: the name, the subtype within its
- * type, a loan's details and the exclusion switch. Type, currency and the
- * opening balance stay as the account was created.
+ * type, a loan's or a card's details, a linked card's toggle and the
+ * exclusion switch. Type, currency and the opening balance stay as the
+ * account was created.
  */
 export function EditAccountDialog({
 	account,
@@ -81,21 +139,41 @@ export function EditAccountDialog({
 	const { t } = useTranslation();
 	const updateAccount = useUpdateAccount(account.id);
 	const isLoan = account.type === "loan";
+	const isCard = account.type === "credit_card";
+	const linkedCard = isCard && account.bankConnection !== null;
 	const values: AccountSettingsFormInput = {
 		name: account.name,
 		subtype: account.subtype,
 		excludedFromReports: account.excludedFromReports,
 		...(isLoan
-			? { details: loanDetailsToInput(account.details, account.currency, account.openingDate) }
+			? {
+					details: loanDetailsToInput(
+						loanDetailsOf(account),
+						account.currency,
+						account.openingDate,
+					),
+				}
+			: {}),
+		...(isCard
+			? { details: creditCardDetailsToInput(creditCardDetailsOf(account), account.currency) }
+			: {}),
+		...(linkedCard
+			? { treatBalanceAsAvailableCredit: account.treatBalanceAsAvailableCredit ?? false }
 			: {}),
 	};
 	const resolver = useMemo(
 		// `raw` sends the name as typed; the API trims it with the same schema.
 		() =>
-			zodResolver(accountSettingsFormSchema(account.currency, account.openingDate), undefined, {
-				raw: true,
-			}),
-		[account.currency, account.openingDate],
+			zodResolver(
+				accountSettingsFormSchema({
+					type: account.type,
+					currency: account.currency,
+					openingDate: account.openingDate,
+				}),
+				undefined,
+				{ raw: true },
+			),
+		[account.type, account.currency, account.openingDate],
 	);
 	const form = useForm<AccountSettingsFormInput>({
 		resolver,
@@ -116,12 +194,15 @@ export function EditAccountDialog({
 		onOpenChange(next);
 	};
 
-	const submit = form.handleSubmit(async ({ details, ...input }) => {
+	const submit = form.handleSubmit(async ({ details, treatBalanceAsAvailableCredit, ...input }) => {
 		try {
 			// The API replaces the details whole, so every field always goes.
-			const saved = await updateAccount.mutateAsync(
-				isLoan ? { ...input, details: completeLoanInput(details) } : input,
-			);
+			const saved = await updateAccount.mutateAsync({
+				...input,
+				...(isLoan ? { details: completeLoanInput(details) } : {}),
+				...(isCard ? { details: completeCreditCardInput(details) } : {}),
+				...(linkedCard ? { treatBalanceAsAvailableCredit } : {}),
+			});
 			toast.success(t("accountActions.form.saved", { name: saved.name }));
 			onOpenChange(false);
 		} catch (error) {
@@ -213,6 +294,10 @@ export function EditAccountDialog({
 					)}
 
 					{isLoan && <LoanFields form={form} />}
+
+					{isCard && <CreditCardFields form={form} />}
+
+					{linkedCard && <AvailableCreditToggle form={form} />}
 
 					<div className="flex items-start gap-3">
 						<Switch

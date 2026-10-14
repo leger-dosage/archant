@@ -1,17 +1,21 @@
+import type { CreditCardBalance } from "../../domain/balances/credit-card-balance.ts";
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
 import { and, between, eq } from "drizzle-orm";
 
-import { classificationOf } from "@archant/data/account-types";
+import type { AccountDetails, AccountType, CreditCardDetails } from "@archant/data/account-types";
+import { classificationOf, creditCardDetailsOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { entries } from "@archant/data/schema/entries";
 import type { Account } from "@archant/data/types";
 
+import { interpretCreditCardBalance } from "../../domain/balances/credit-card-balance.ts";
 import { toStoredBankBalance } from "../../domain/balances/stored-balance.ts";
 import { addDays, maxDate, minDate, today } from "../../domain/dates.ts";
 import {
@@ -34,6 +38,63 @@ export type AnchorBalance = { amount: MinorUnits; date: IsoDate | null };
  */
 export function anchorDate(balance: AnchorBalance, day: IsoDate): IsoDate {
 	return balance.date === null ? day : minDate(balance.date, day);
+}
+
+const NO_CARD_DETAILS: CreditCardDetails = {
+	availableCredit: null,
+	minimumPayment: null,
+	apr: null,
+	expirationDate: null,
+	annualFee: null,
+};
+
+/**
+ * A card's bank balance as its bank account says to read it, Sure's
+ * `interpret_credit_card_balance`; `null` for any other account, whose
+ * stored balance is `reported` as it is. `reported` is already a stored
+ * balance. Read inside the write's transaction, so a toggle or a typed
+ * « Crédit disponible » saved meanwhile is the one applied.
+ */
+export async function creditCardBalanceOf(
+	tx: Transaction,
+	account: { type: AccountType; details: AccountDetails | null },
+	bankAccountId: string,
+	reported: MinorUnits,
+): Promise<CreditCardBalance | null> {
+	if (account.type !== "credit_card") {
+		return null;
+	}
+
+	const bank = await tx
+		.select({
+			creditLimit: bankAccounts.creditLimit,
+			treatBalanceAsAvailableCredit: bankAccounts.treatBalanceAsAvailableCredit,
+		})
+		.from(bankAccounts)
+		.where(eq(bankAccounts.id, bankAccountId))
+		.get();
+
+	return interpretCreditCardBalance(
+		reported,
+		bank,
+		creditCardDetailsOf(account)?.availableCredit ?? null,
+	);
+}
+
+/** Writes what a card's bank balance made of its « Crédit disponible », its other details kept. */
+export async function writeAvailableCredit(
+	tx: Transaction,
+	account: { id: string; type: AccountType; details: AccountDetails | null },
+	availableCredit: MinorUnits | null,
+	now: number,
+): Promise<void> {
+	await tx
+		.update(accounts)
+		.set({
+			details: { ...(creditCardDetailsOf(account) ?? NO_CARD_DETAILS), availableCredit },
+			updatedAt: now,
+		})
+		.where(eq(accounts.id, account.id));
 }
 
 /**
@@ -131,8 +192,10 @@ export async function rotateCurrentAnchor(
  * and writes the bank's balance as its `current_anchor`, dated the day the
  * balance describes: the account is then computed backward from it (AD-8).
  * `balance` is the bank's signed figure, `null` when the bank gave none,
- * which leaves the account computed forward. Entries, the opening anchor and
- * reconciliations stay.
+ * which leaves the account computed forward, as does a card whose balance
+ * reads as available credit with no limit to subtract it from. A card's
+ * « Crédit disponible » follows its bank balance in the same transaction.
+ * Entries, the opening anchor and reconciliations stay.
  */
 export async function linkBankAccount(
 	deps: ServiceDeps,
@@ -150,17 +213,27 @@ export async function linkBankAccount(
 				.set({ bankAccountId: input.bankAccountId, updatedAt: now })
 				.where(eq(accounts.id, accountId));
 
+			const reported =
+				input.balance === null ? null : toStoredBankBalance(account, input.balance.amount);
+			const card =
+				reported === null
+					? null
+					: await creditCardBalanceOf(tx, account, input.bankAccountId, reported);
+
+			if (card !== null) {
+				await writeAvailableCredit(tx, account, card.availableCredit, now);
+			}
+
+			const balance = card === null ? reported : card.balance;
+
 			// Deleted even without a new one: an anchor left by an earlier link
 			// would otherwise turn the account backward from a stale figure.
 			await writeCurrentAnchor(
 				tx,
 				account,
-				input.balance === null
+				input.balance === null || balance === null
 					? null
-					: {
-							date: anchorDate(input.balance, today(deps.timeZone)),
-							balance: toStoredBankBalance(account, input.balance.amount),
-						},
+					: { date: anchorDate(input.balance, today(deps.timeZone)), balance },
 				now,
 			);
 

@@ -527,6 +527,8 @@ describe("completeConnection and the session's accounts", () => {
 				ibanLast4: null,
 				currency: "EUR",
 				cashAccountType: "CARD",
+				creditLimit: 300000,
+				treatBalanceAsAvailableCredit: false,
 			}),
 			expect.objectContaining({
 				identificationHash: "anonymised-hash-checking",
@@ -535,11 +537,41 @@ describe("completeConnection and the session's accounts", () => {
 				ibanLast4: "0185",
 				currency: "EUR",
 				cashAccountType: "CACC",
+				creditLimit: null,
 			}),
 		]);
 		expect(JSON.stringify(stored)).not.toContain(FIXTURE_IBAN_HEAD);
 		expect(logLines.join("")).toContain('"accounts":2');
 		expect(logLines.join("")).not.toContain(FIXTURE_CHECKING_UID);
+	});
+
+	it("keeps a card's limit only in its account's currency, and only when positive", async () => {
+		const fixture = z
+			.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.session);
+		const [checking, card] = fixture.accounts;
+		const connection = await connected(() =>
+			HttpResponse.json({
+				...fixture,
+				accounts: [
+					{ ...checking, credit_limit: { currency: "USD", amount: "1000.00" } },
+					{ ...card, credit_limit: { currency: "EUR", amount: "0" } },
+				],
+			}),
+		);
+
+		await expect(
+			temp.db
+				.select({ hash: bankAccounts.identificationHash, creditLimit: bankAccounts.creditLimit })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.bankConnectionId, connection.id))
+				.orderBy(bankAccounts.identificationHash),
+		).resolves.toEqual([
+			// Stored as the bank gave it: a limit of zero counts as none when read.
+			{ hash: "anonymised-hash-card", creditLimit: 0 },
+			{ hash: "anonymised-hash-checking", creditLimit: null },
+		]);
 	});
 
 	it("keeps one row per identification hash, the last one listed", async () => {
@@ -1046,6 +1078,51 @@ describe("linkBankAccounts", () => {
 		});
 	});
 
+	it("refreshes a new card's « Crédit disponible » from the bank's limit", async () => {
+		const connection = await connected();
+		const { card } = await bankAccountsOf(connection.id);
+		mockProvider({ balances: balancesBy({ [FIXTURE_CARD_UID]: itbd("-300.00") }) });
+
+		const list = await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: card.id, action: "create", type: "credit_card", subtype: null }],
+		});
+
+		const cardAccount = list.find((row) => row.id === card.id)?.account?.id ?? "";
+		await expect(balanceOn(deps(), cardAccount, today)).resolves.toMatchObject({ amount: 30000 });
+		await expect(
+			temp.db
+				.select({ details: accounts.details })
+				.from(accounts)
+				.where(eq(accounts.id, cardAccount))
+				.get(),
+		).resolves.toEqual({
+			details: {
+				availableCredit: 270000,
+				minimumPayment: null,
+				apr: null,
+				expirationDate: null,
+				annualFee: null,
+			},
+		});
+	});
+
+	it("links a card whose bank reports its available credit, owing the limit less it", async () => {
+		const connection = await connected();
+		const { card } = await bankAccountsOf(connection.id);
+		await temp.db
+			.update(bankAccounts)
+			.set({ treatBalanceAsAvailableCredit: true })
+			.where(eq(bankAccounts.id, card.id));
+		mockProvider({ balances: balancesBy({ [FIXTURE_CARD_UID]: itbd("2700.00") }) });
+
+		const list = await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: card.id, action: "create", type: "credit_card", subtype: null }],
+		});
+
+		const cardAccount = list.find((row) => row.id === card.id)?.account?.id ?? "";
+		await expect(balanceOn(deps(), cardAccount, today)).resolves.toMatchObject({ amount: 30000 });
+	});
+
 	it("links without an anchor when the bank lists no balance, or one in another currency", async () => {
 		const connection = await connected();
 		const { checking, card } = await bankAccountsOf(connection.id);
@@ -1442,6 +1519,43 @@ describe("renewConnection", () => {
 		);
 		expect(savings?.account).toBeNull();
 		expect(logLines.join("")).not.toContain("renewed-session");
+	});
+
+	it("refreshes a card's limit with the renewal, and keeps its toggle", async () => {
+		const { connection, card } = await linkedConnection();
+		await temp.db
+			.update(bankAccounts)
+			.set({ treatBalanceAsAvailableCredit: true })
+			.where(eq(bankAccounts.id, card.id));
+		const fixture = z
+			.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.session);
+		vi.setSystemTime(NOW + DAY);
+		const { state } = await renew(connection.id, () =>
+			HttpResponse.json({
+				...fixture,
+				session_id: "renewed-session",
+				accounts: fixture.accounts.map((account) =>
+					account["identification_hash"] === "anonymised-hash-card"
+						? { ...account, credit_limit: { currency: "EUR", amount: "4500.00" } }
+						: account,
+				),
+			}),
+		);
+
+		await completeConnection(deps(), { code: "new-code", state });
+
+		await expect(
+			temp.db
+				.select({
+					creditLimit: bankAccounts.creditLimit,
+					toggle: bankAccounts.treatBalanceAsAvailableCredit,
+				})
+				.from(bankAccounts)
+				.where(eq(bankAccounts.id, card.id))
+				.get(),
+		).resolves.toEqual({ creditLimit: 450000, toggle: true });
 	});
 
 	it("keeps a stored account's currency when the renewal gives XXX, and EUR for a new one", async () => {

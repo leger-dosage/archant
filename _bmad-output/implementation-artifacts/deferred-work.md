@@ -284,3 +284,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-22-a-new-pending-purchase-is-never-taken-for-a-booked-line.md`
   summary: A sync's booked line with an `entry_reference` the ledger does not know, whose fingerprint names a booked entry holding another reference, is taken as that entry listed again, so an identical purchase listed booked at once, or booked under a new reference, never counts.
   evidence: medium, pre-existing: booked lines fall back to the fingerprint when their reference is unknown. Sure never matches a provider entry by content. Skipping the fallback for a sync's line when the named entry holds an `ext:` key of the connection would settle it, files kept as they are since a bank re-export with new `FITID`s relies on the fingerprint.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-2-credit-card-details-and-the-available-credit-toggle.md`
+  summary: Refresh a card's balance in the interface once the sync its available-credit toggle started ends.
+  evidence: `updateAccount` starts the sync after answering; nothing invalidates the account queries when it ends, so the page shows the old debt until a refetch.

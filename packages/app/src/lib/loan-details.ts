@@ -5,7 +5,10 @@ import { MAX_LOAN_TERM_MONTHS } from "@archant/data/account-types";
 import { amountToText } from "@/lib/amount-sign";
 
 /** Every field of a loan's details, as a PATCH must send them. */
-type CompleteLoanInput = NonNullable<UpdateAccountInput["details"]>;
+type CompleteLoanInput = Exclude<
+	NonNullable<UpdateAccountInput["details"]>,
+	{ availableCredit: string }
+>;
 
 /**
  * A rate in millionths as the percentage typed, with two decimals at least and
