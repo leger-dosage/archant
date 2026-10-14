@@ -1,4 +1,6 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+
+import { z } from "zod";
 
 import { daysAgo, euros, expect, rgb, test, typed, uniqueName } from "./fixtures.ts";
 
@@ -807,6 +809,18 @@ const ingTerms = {
 	interestRate: "1,82",
 } as const;
 
+/** The page x and width of the rect a loan chart line's group is clipped to. */
+const clipOf = (group: Locator) =>
+	group.evaluate((element) => {
+		const id = /#([^)]+)/u.exec(element.getAttribute("clip-path") ?? "")?.[1] ?? "";
+		const rect = document.getElementById(id)?.querySelector("rect");
+		const left = element.closest("svg")?.getBoundingClientRect().left ?? 0;
+
+		return { x: left + (rect?.x.baseVal.value ?? 0), width: rect?.width.baseVal.value ?? -1 };
+	});
+
+const dayOf = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
+
 test("the ING mortgage repaid early charts its balance, its contract and where it leads, and the schedule names its payoff", async ({
 	page,
 	api,
@@ -829,7 +843,8 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 		"Échéancier du contrat",
 		"Projection",
 	]);
-	await expect(card.locator(".recharts-line")).toHaveCount(2);
+	// Sure's count: the recorded line's greyed copy carries no `data-series`.
+	await expect(card.locator("[data-series]")).toHaveCount(3);
 	await expect(card.locator(".recharts-area")).toHaveCount(1);
 	await expect(card.locator(".recharts-reference-line")).toHaveCount(1);
 
@@ -862,8 +877,24 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 	const tooltip = card.locator(".recharts-tooltip-wrapper");
 	const split = tooltip.getByText(/^Capital : /u);
 	expect(plot).not.toBeNull();
+	// Sure greys the recorded line past the payment the tooltip snaps to,
+	// one clip edge shared by the coloured line and its greyed copy.
+	const shadow = card.locator('[data-series-shadow="actual"]');
+	const coloured = card.locator('[data-series="actual"]');
+	const futureClip = () => clipOf(shadow);
+	const pastClip = () => clipOf(coloured);
+	// The recorded balance has not moved since it was opened: a flat line,
+	// which Playwright never calls visible, so the clips say what is drawn.
+	await expect(coloured).toHaveCount(1);
+	await expect(shadow).toHaveCount(1);
+	await expect.poll(async () => (await futureClip()).width).toBe(0);
+	expect(Math.abs((await pastClip()).width - plot!.width)).toBeLessThanOrEqual(1);
 	await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height / 2);
 	await expect(split).toHaveText(/^Capital : \d[\d\s]*,\d\d\s€ · Intérêts : \d[\d\s]*,\d\d\s€$/u);
+	const edge = await futureClip();
+	const past = await pastClip();
+	expect(edge.width).toBeGreaterThan(plot!.width * 0.5);
+	expect(Math.abs(past.x + past.width - edge.x)).toBeLessThan(1);
 	// At 1.82 %, every payment repays more capital than interest.
 	const [principal, interest] = ((await split.textContent()) ?? "")
 		.match(/\d[\d\s]*,\d\d/gu)!
@@ -873,6 +904,24 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 	await expect(tooltip).toContainText("Échéancier du contrat");
 	await expect(split).toHaveCount(0);
 	await page.mouse.move(0, 0);
+	await expect.poll(async () => (await futureClip()).width).toBe(0);
+
+	// The keyboard moves the split as the pointer does.
+	const surface = card.locator(".recharts-surface");
+	await surface.focus();
+	await page.keyboard.press("ArrowRight");
+	await expect.poll(async () => (await futureClip()).width).toBeGreaterThan(plot!.width * 0.9);
+	const first = (await futureClip()).x;
+	// Each key steps one plotted date; several may snap to the same payment.
+	await expect
+		.poll(async () => {
+			await page.keyboard.press("ArrowRight");
+
+			return (await futureClip()).x;
+		})
+		.toBeGreaterThan(first);
+	await surface.blur();
+	await expect.poll(async () => (await futureClip()).width).toBe(0);
 
 	// A window ends today, where the projection draws no line.
 	await card.getByRole("radio", { name: "1 A" }).click();
@@ -882,6 +931,37 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 		"Échéancier du contrat",
 	]);
 	await expect(payoff).toContainText(/mois plus tôt que prévu$/u);
+
+	// A payment a month apart: the split sits on the payment the tooltip heads with.
+	const oneYear = z
+		.object({
+			data: z.object({
+				from: z.string(),
+				to: z.string(),
+				scheduled: z.array(z.object({ date: z.string() })),
+			}),
+		})
+		.parse(
+			await (await page.request.get(`/api/accounts/${loan.id}/payoff-chart?period=1Y`)).json(),
+		).data;
+	const monthOf = new Intl.DateTimeFormat("fr-FR", {
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	});
+	await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height / 2);
+	const heading = (await tooltip.locator("span").first().textContent()) ?? "";
+	const payment = oneYear.scheduled.find(
+		({ date }) =>
+			date >= oneYear.from && date <= oneYear.to && monthOf.format(dayOf(date)) === heading,
+	);
+	expect(payment, `no payment in ${heading}`).toBeDefined();
+	const paymentX =
+		plot!.x +
+		(plot!.width * (dayOf(payment!.date) - dayOf(oneYear.from))) /
+			(dayOf(oneYear.to) - dayOf(oneYear.from));
+	await expect.poll(async () => Math.abs((await futureClip()).x - paymentX)).toBeLessThan(2);
+	await page.mouse.move(0, 0);
 
 	await page.getByRole("tab", { name: "Échéancier" }).click();
 	const scheduled = page

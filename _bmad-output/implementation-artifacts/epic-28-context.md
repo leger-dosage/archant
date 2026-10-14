@@ -10,7 +10,7 @@ Bring Archant's accounts and balances back to Sure's behaviour: Sure's account t
 
 - Story 28.1: Every depository subtype a French household uses
 - Story 28.2: Credit card details and the available-credit toggle
-- Story 28.3: Loan chart periods and payoff rendering
+- Story 28.3: Grey the recorded loan line past the cursor
 - Story 28.4: Save a loan whose terms cannot be amortised
 - Story 28.5: Investment subtypes for Europe and everywhere
 - Story 28.6: Sell more than is held
@@ -49,7 +49,7 @@ Bring Archant's accounts and balances back to Sure's behaviour: Sure's account t
 - Linked accounts: the backward pass in `domain/balances/reverse.ts` honours the opening anchor and records the gap the next day as a cash adjustment; the bank's balance is dated today, an older bank balance becomes a reconciliation on its own date, and an earlier-day anchor rotates into a reconciliation (`services/ledger/bank-link.ts`). `set_opening_balance` still refuses a linked account with Sure's `linked_account`.
 - Holdings: overselling saves; quantity may go negative as Sure's `ForwardCalculator`; the cost basis relieves only what was held and restarts at zero. Deleting a position deletes every trade of that security on the account; remapping moves them to another security and merges with an existing position. Crypto `exchange` takes trades, `wallet` none.
 - Credit cards: `treat_balance_as_available_credit` stored per bank account; with it on, debt is the limit (bank `credit_limit`, else « Crédit disponible ») less the balance, floored at zero; off, « Crédit disponible » is refreshed from a bank limit.
-- Loans: save whatever Sure's `Loan` model accepts; schedule, payoff chart and « Échéancier » only when Sure's `Loan#amortizable?` holds (1 200 periods max). Loan chart periods are Sure's `WINDOW_KEYS`, falling back to « Tout ».
+- Loans: save whatever Sure's `Loan` model accepts; schedule, payoff chart and « Échéancier » only when Sure's `Loan#amortizable?` holds (1 200 periods max). Loan chart periods, Sure's `WINDOW_KEYS` falling back to « Tout », belong to Story 34.3 of Epic 34, which brings Sure's periods.
 - Per-user settings: `default_account_id` (eligible: active, unlinked depository or credit card; cleared on deactivate, link or delete) and `default_account_order` (Sure's `AccountOrder::ORDERS`, unknown refused).
 - Investment transactions carry `investment_activity_label`, locked against sync once set; the four internal-movement labels leave the income statement and the budget.
 - Balance confirmation computes the result as a dry run without writing.

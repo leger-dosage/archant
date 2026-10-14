@@ -1,12 +1,24 @@
 import type { ChartConfig } from "@/components/ui/chart";
 import type { LoanPayoffChartData } from "@/hooks/useLoanPayoffChart";
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { TooltipContentProps } from "recharts";
+import type { LineDrawShapeProps, TooltipContentProps } from "recharts";
 
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
+import {
+	Area,
+	CartesianGrid,
+	ComposedChart,
+	Line,
+	LineDrawShape,
+	ReferenceLine,
+	useActiveTooltipLabel,
+	usePlotArea,
+	useXAxisScale,
+	XAxis,
+	YAxis,
+} from "recharts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { formatMoney, isCurrencyCode, minorUnitsOf, toMinorUnits } from "@archant/data/money";
@@ -26,6 +38,7 @@ import {
 import { axisTicks, loanDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { longDate } from "@/lib/dates";
+import { atMidnight, isoOf, nearestDate, payoffStops, splitDay } from "@/lib/payoff-cursor";
 import { cn } from "@/lib/utils";
 
 const HEIGHT = CHART_HEIGHTS[DEFAULT_CHART_HEIGHT];
@@ -58,10 +71,15 @@ const DAY_MS = 86_400_000;
 // schedule does not become a solid band of circles.
 const MARKER_SPACING = 60;
 
-/** A day on the axis: milliseconds at UTC midnight, so the line to a far date keeps its slope. */
-const atMidnight = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
-
-const isoOf = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 10);
+/** What the recorded line's coloured part and its greyed copy share, so the two stay one line. */
+const recordedLine = {
+	dataKey: "actual",
+	type: "monotone",
+	strokeWidth: STYLES.actual.width,
+	strokeLinecap: "round",
+	connectNulls: true,
+	isAnimationActive: false,
+} as const;
 
 type Row = { day: number; date: string } & Partial<Record<SeriesKey, MinorUnits>>;
 
@@ -79,20 +97,6 @@ function rowsOf(chart: LoanPayoffChartData): Row[] {
 	}
 
 	return [...byDate.values()].toSorted((a, b) => a.day - b.day);
-}
-
-const inDomain = (date: string, chart: LoanPayoffChartData) =>
-	date >= chart.from && date <= chart.to;
-
-/** The date among `dates` nearest `date`; `date` itself when there is none. */
-function nearestDate(dates: readonly string[], date: string): string {
-	const day = atMidnight(date);
-
-	return dates.reduce<string>(
-		(best, candidate) =>
-			Math.abs(atMidnight(candidate) - day) < Math.abs(atMidnight(best) - day) ? candidate : best,
-		dates.at(0) ?? date,
-	);
 }
 
 /**
@@ -181,6 +185,50 @@ function PayoffTooltip({
 	);
 }
 
+/**
+ * A line's path inside a group carrying Sure's `data-series` attributes and,
+ * for the recorded line, its split clip: Recharts sets the path's own
+ * `clip-path` to the plot's, so a second clip can only sit on a parent.
+ */
+const tagged =
+	(attributes: Record<`data-${string}`, string> & { clipPath?: string }) =>
+	(props: LineDrawShapeProps) => (
+		<g {...attributes}>
+			<LineDrawShape {...props} />
+		</g>
+	);
+
+/**
+ * Sure's `pastClip` and `futureClip`: two rects sharing one edge, at the x of
+ * the date the tooltip snaps to, clamped to the plot, or at the plot's right
+ * end at rest. It reads the active tooltip, which Recharts' accessibility
+ * layer moves from the keyboard as the pointer does, so both move the split.
+ */
+function SplitClips({ id, stops, end }: { id: string; stops: readonly string[]; end: number }) {
+	const label = useActiveTooltipLabel();
+	const scale = useXAxisScale();
+	const plot = usePlotArea();
+
+	if (scale === undefined || plot === undefined) {
+		return null;
+	}
+
+	const left = plot.x;
+	const right = plot.x + plot.width;
+	const edge = Math.max(left, Math.min(scale(splitDay(label, stops, end)) ?? right, right));
+
+	return (
+		<defs>
+			<clipPath id={`${id}-past`}>
+				<rect x={left} y={plot.y} width={edge - left} height={plot.height} />
+			</clipPath>
+			<clipPath id={`${id}-future`}>
+				<rect x={edge} y={plot.y} width={right - edge} height={plot.height} />
+			</clipPath>
+		</defs>
+	);
+}
+
 /** The chart's width in pixels, which Sure's marker spacing reads. */
 function useWidth() {
 	const ref = useRef<HTMLDivElement>(null);
@@ -222,13 +270,12 @@ function Chart({ chart }: { chart: LoanPayoffChartData }) {
 	const domain = loanDomain(balances, chart.currency);
 	const ticks = axisTicks(domain, chart.currency, balances);
 	const shown = new Set(chart.visible);
-	const scheduledDates = chart.scheduled
-		.map((point) => point.date)
-		.filter((date) => inDomain(date, chart));
-	const stops =
-		scheduledDates.length > 0
-			? scheduledDates
-			: rows.map((row) => row.date).filter((date) => inDomain(date, chart));
+	const stops = payoffStops(
+		chart.scheduled.map((point) => point.date),
+		rows.map((row) => row.date),
+		chart,
+	);
+	const clipId = `loan-split${useId()}`;
 	const markers = (key: SeriesKey) => {
 		const points = chart[key];
 		const step = Math.max(1, Math.ceil(points.length / Math.max(2, width / MARKER_SPACING)));
@@ -258,6 +305,7 @@ function Chart({ chart }: { chart: LoanPayoffChartData }) {
 				activeDot={false}
 				connectNulls
 				isAnimationActive={false}
+				shape={tagged({ "data-series": key })}
 			/>
 		);
 
@@ -305,19 +353,40 @@ function Chart({ chart }: { chart: LoanPayoffChartData }) {
 					{line("scheduled")}
 					{line("projected")}
 					{shown.has("actual") && (
-						<Area
-							dataKey="actual"
-							type="monotone"
-							stroke="var(--color-actual)"
-							strokeWidth={STYLES.actual.width}
-							strokeLinecap="round"
-							fill="var(--color-actual)"
-							fillOpacity={0.08}
-							dot={dot("actual")}
-							activeDot={{ r: 4 }}
-							connectNulls
-							isAnimationActive={false}
-						/>
+						<>
+							<SplitClips id={clipId} stops={stops} end={to} />
+							<Area
+								dataKey="actual"
+								type="monotone"
+								stroke="none"
+								fill="var(--color-actual)"
+								fillOpacity={0.08}
+								dot={false}
+								activeDot={false}
+								connectNulls
+								isAnimationActive={false}
+							/>
+							{/* Sure's split: the greyed remainder underneath, the coloured line on top. */}
+							<Line
+								{...recordedLine}
+								stroke="var(--border)"
+								strokeOpacity={0.6}
+								dot={false}
+								activeDot={false}
+								tooltipType="none"
+								shape={tagged({
+									"data-series-shadow": "actual",
+									clipPath: `url(#${clipId}-future)`,
+								})}
+							/>
+							<Line
+								{...recordedLine}
+								stroke="var(--color-actual)"
+								dot={dot("actual")}
+								activeDot={{ r: 4 }}
+								shape={tagged({ "data-series": "actual", clipPath: `url(#${clipId}-past)` })}
+							/>
+						</>
 					)}
 					<ReferenceLine
 						x={atMidnight(chart.asOf)}

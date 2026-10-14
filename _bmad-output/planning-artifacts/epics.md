@@ -5715,7 +5715,7 @@ What Sure does, by area:
 
 - Account types: `app/models/depository.rb` lists `cash`, `checking`, `savings`, `hsa`, `cd` and `money_market`, and `depositories/_form` offers « Aucun »; `app/models/investment.rb` groups about 55 subtypes by region in `subtypes_grouped_for_select`; `app/models/property.rb` has ten subtypes and an address; `app/models/vehicle.rb` a make, model, year and mileage; `app/models/other_asset.rb`, `app/models/other_liability.rb` and `app/models/crypto.rb` are types of their own.
 - Account details: `app/views/credit_cards/_form.html.erb` records available credit, minimum payment, APR, expiry and annual fee, and `app/models/enable_banking_account/processor.rb` reads a card's balance as available credit when its toggle says so; `app/views/accounts/_form.html.erb` records the institution and notes.
-- Loans: `Loan::PayoffChart::WINDOW_KEYS` trims the chart's periods, and `Loan#amortizable?` lets a loan without computable terms save without a schedule.
+- Loans: `loan_payoff_chart_controller.js` greys the recorded line past the cursor, `Loan::PayoffChart::WINDOW_KEYS` trims the chart's periods (Story 34.3 of Epic 34), and `Loan#amortizable?` lets a loan without computable terms save without a schedule.
 - Holdings: `app/models/holding/cost_basis_tracker.rb` caps a sale at what is held, and `app/controllers/holdings_controller.rb` deletes a holding and remaps its security.
 - Account list: `Account.listable_manual` lists inactive accounts muted, `accounts_controller#set_default` sets a default account, `app/models/account_order.rb` orders the list, and `app/views/accounts/new.html.erb` creates an account in steps.
 - Balances: `Account#balance_type` makes property and vehicle non-cash; `Balance::ReverseCalculator#use_opening_anchor_for_date?` honours a linked account's opening balance; `Account::CurrentBalanceManager` dates the bank's balance today; `ValuationsController#confirm_create` confirms a balance before saving it; `Account::ReconciliationManager` and `Account::OpeningBalanceManager` refuse only what Sure refuses.
@@ -5778,31 +5778,29 @@ So that a card's limit, payment and fees are recorded and a bank that reports av
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** Vitest covers both modes, with and without a limit, and the details' validation; Playwright saves a card's details and reads them back
 
-### Story 28.3: Loan chart periods and payoff rendering
+### Story 28.3: Grey the recorded loan line past the cursor
 
 As a member of the household,
-I want the loan chart to offer Sure's periods and to grey the recorded line past the cursor,
+I want the loan chart to grey « Solde enregistré » past the cursor,
 So that the chart reads as Sure's loan chart.
 
 **Requirements:** none new
 
+Sure's loan chart periods, `Loan::PayoffChart::WINDOW_KEYS`, and their fallback to « Tout » belong to Story 34.3, which brings Sure's `Period::PERIODS` and the saved period they depend on (owner's decision of 2026-10-14).
+
 **Acceptance Criteria:**
 
 **Given** a loan with a schedule and its chart in `LoanChart.tsx`
-**When** the period selector opens
-**Then** it offers only Sure's `Loan::PayoffChart::WINDOW_KEYS`, in Sure's order: `current_month`, `last_90_days`, `current_year`, `last_365_days`, `last_5_years`, `last_10_years` and `all_time`, under the account chart's own labels
+**When** the cursor, or the keyboard, rests on a date of the chart
+**Then** « Solde enregistré » is coloured up to that date and greyed past it, as Sure's `loan_payoff_chart_controller.js`; the contract and the projection lines are not split, as Sure's forecasts
 
-**Given** a period saved on another account that the loan chart does not offer, such as 7 or 30 days
-**When** the loan chart opens
-**Then** it shows the whole life and its selector reads « Tout », as Sure's `period_picker_selected`; the saved period stays for the other charts
-
-**Given** the cursor on the loan chart
-**When** it moves over a day
-**Then** « Solde enregistré » is coloured up to the cursor and greyed past it, as Sure's `loan_payoff_chart_controller.js`; the contract and the projection lines are not split, as Sure's forecasts
+**Given** the cursor leaves the chart
+**When** nothing is hovered or focused
+**Then** the whole recorded line is coloured, as Sure's split at rest on the window's end
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
-**Then** Vitest covers the period list and the fallback to « Tout »; Playwright opens a loan's chart, checks the offered periods and moves the cursor
+**Then** Vitest covers where the line splits, snapped to the tooltip's date and clamped to the window; Playwright moves the cursor over a loan's chart and finds the greyed line starting there, and none once the cursor leaves
 
 ### Story 28.4: Save a loan whose terms cannot be amortised
 
@@ -7897,9 +7895,17 @@ So that every widget reads the same span I chose, as Sure.
 **When** a period is picked
 **Then** it reads Sure's comparison label, e.g. « vs. 30 derniers jours », and the account page's chart uses the same picker
 
+**Given** a loan with a schedule and its chart in `LoanChart.tsx`
+**When** the account page's picker opens
+**Then** it offers only Sure's `Loan::PayoffChart::WINDOW_KEYS`, in Sure's order: `current_month`, `last_90_days`, `current_year`, `last_365_days`, `last_5_years`, `last_10_years` and `all_time`, under the shared periods' own labels, as Sure's `Loan::PayoffChart.window_options`; the chart's window is Sure's `domain_start` and `domain_end` for that period, clamped to the loan's life
+
+**Given** a saved period the loan chart does not offer, such as « 7J » or « 30J »
+**When** the loan chart opens
+**Then** it shows the whole life and its picker reads « Tout », as Sure's `period_picker_selected`; the saved period stays for the other charts
+
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
-**Then** Vitest covers each period's dates, `current_month` and `last_month` on the household's calendar and an invalid custom range falling back to `last_30_days`; Playwright picks « 90J », reloads and drags a range
+**Then** Vitest covers each period's dates, `current_month` and `last_month` on the household's calendar, an invalid custom range falling back to `last_30_days`, the loan's period list and its fallback to « Tout »; Playwright picks « 90J », reloads and drags a range, then opens a loan's chart and finds its seven periods with « Tout » selected
 
 ### Story 34.4: Cash flow widgets
 
