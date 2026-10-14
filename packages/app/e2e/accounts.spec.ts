@@ -78,6 +78,29 @@ test("an account created through the form is listed under its group, in the acco
 	await expect(inColumn).toContainText("1 234,56 €");
 });
 
+// Story 28.1: Sure's depository subtypes, « Espèces » among them.
+test("a cash account created through the form is listed as « Espèces »", async ({ page }) => {
+	const name = uniqueName("Tirelire");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await expect(page.getByRole("option").first()).toHaveText("Liquidités");
+	await page.getByRole("option", { name: "Espèces" }).click();
+	await dialog.getByLabel("Solde à la date :").fill("80,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row).toContainText("Espèces");
+	await expect(row).toContainText("80,00 €");
+});
+
 // Story 11.1: the opening balance is an end-of-day balance, so an opening
 // dated today would refuse today's line.
 test("an account created with the form's default opening date accepts a transaction dated today", async ({

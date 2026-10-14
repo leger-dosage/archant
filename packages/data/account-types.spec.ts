@@ -31,8 +31,11 @@ describe("account types", () => {
 			"vehicle",
 		]);
 		expect(ACCOUNT_SUBTYPES).toEqual([
+			"cash",
 			"checking",
 			"savings",
+			"cd",
+			"money_market",
 			"mortgage",
 			"student",
 			"auto",
@@ -52,9 +55,13 @@ describe("account types", () => {
 		]);
 	});
 
-	it("requires a subtype where the type has some, and none where it has none", () => {
+	it("requires a subtype where the type has some, none where it has none, and admits none for a depository", () => {
 		expect(isSubtypeOf("depository", "savings")).toBe(true);
-		expect(isSubtypeOf("depository", null)).toBe(false);
+		expect(isSubtypeOf("depository", "cash")).toBe(true);
+		expect(isSubtypeOf("depository", "cd")).toBe(true);
+		expect(isSubtypeOf("depository", "money_market")).toBe(true);
+		expect(isSubtypeOf("depository", null)).toBe(true);
+		expect(isSubtypeOf("depository", "hsa")).toBe(false);
 		expect(isSubtypeOf("depository", "brokerage")).toBe(false);
 		expect(isSubtypeOf("credit_card", null)).toBe(true);
 		expect(isSubtypeOf("credit_card", "checking")).toBe(false);

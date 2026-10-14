@@ -133,8 +133,12 @@
 			"liability": "Passifs"
 		},
 		"subtypes": {
+			"depository": "Liquidités",
+			"cash": "Espèces",
 			"checking": "Compte courant",
 			"savings": "Épargne",
+			"cd": "Certificat de dépôt",
+			"money_market": "Marché monétaire",
 			"credit_card": "Carte de crédit",
 			"mortgage": "Prêt immobilier",
 			"student": "Prêt étudiant",
@@ -239,6 +243,7 @@
 			"description": "La devise ne change pas après la création du compte. Le solde d'ouverture se modifie dans l'onglet « Soldes ».",
 			"name": "Nom",
 			"subtype": "Type",
+			"noSubtype": "Aucun",
 			"excludedFromReports": "Exclure des rapports",
 			"excludedFromReportsHint": "Le compte reste affiché, mais son solde n'est plus compté dans le total de son groupe.",
 			"cancel": "Annuler",

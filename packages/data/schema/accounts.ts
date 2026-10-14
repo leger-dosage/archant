@@ -3,7 +3,7 @@ import type { AccountSubtype, AccountType, LoanDetails } from "../account-types.
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-import { ACCOUNT_TYPE_IDS, ACCOUNT_TYPES } from "../account-types.ts";
+import { ACCOUNT_TYPE_IDS, ACCOUNT_TYPES, allowsNullSubtype } from "../account-types.ts";
 import { bankAccounts } from "./bank-accounts.ts";
 import { inList } from "./check.ts";
 
@@ -40,15 +40,20 @@ export const accounts = sqliteTable(
 		check("accounts_type_check", sql`${table.type} in ${inList(ACCOUNT_TYPE_IDS)}`),
 		// One clause per type, so the database refuses a savings credit card as
 		// firmly as the API does. `is not null` is spelled out because `null in
-		// (...)` is null, and a check constraint lets null through.
+		// (...)` is null, and a check constraint lets null through. A type whose
+		// subtype is optional, as Sure's depository, says `is null or` instead.
 		check(
 			"accounts_subtype_check",
 			sql.join(
 				ACCOUNT_TYPE_IDS.map((type) => {
 					const subtypes: readonly string[] = ACCOUNT_TYPES[type].subtypes;
 
-					return subtypes.length === 0
-						? sql`(${table.type} = ${sql.raw(`'${type}'`)} and ${table.subtype} is null)`
+					if (subtypes.length === 0) {
+						return sql`(${table.type} = ${sql.raw(`'${type}'`)} and ${table.subtype} is null)`;
+					}
+
+					return allowsNullSubtype(type)
+						? sql`(${table.type} = ${sql.raw(`'${type}'`)} and (${table.subtype} is null or ${table.subtype} in ${inList(subtypes)}))`
 						: sql`(${table.type} = ${sql.raw(`'${type}'`)} and ${table.subtype} is not null and ${table.subtype} in ${inList(subtypes)})`;
 				}),
 				sql` or `,

@@ -6,8 +6,14 @@ import type { AccountSubtype, AccountType } from "@archant/data/account-types";
  * `accounts.subtypes`.
  */
 export const ACCOUNT_KINDS = [
+	// A depository without a subtype, Sure's `allow_blank`. Its id names the
+	// type: Sure shows the type's name, and « Espèces » is already `cash`'s.
+	{ id: "depository", type: "depository", subtype: null },
+	{ id: "cash", type: "depository", subtype: "cash" },
 	{ id: "checking", type: "depository", subtype: "checking" },
 	{ id: "savings", type: "depository", subtype: "savings" },
+	{ id: "cd", type: "depository", subtype: "cd" },
+	{ id: "money_market", type: "depository", subtype: "money_market" },
 	{ id: "credit_card", type: "credit_card", subtype: null },
 	{ id: "mortgage", type: "loan", subtype: "mortgage" },
 	{ id: "student", type: "loan", subtype: "student" },

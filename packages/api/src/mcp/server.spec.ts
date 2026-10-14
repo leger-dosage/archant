@@ -649,6 +649,22 @@ describe("the tools", () => {
 		expect(answerOf(result)).toEqual(result.structuredContent);
 	});
 
+	it("get_accounts lists a cash account and a blank depository as Depository assets, without a subtype", async () => {
+		const cash = await openAccount({ name: "Tirelire", subtype: "cash" });
+		const blank = await openAccount({ name: "Enveloppe", subtype: null });
+
+		const result = await callTool(bare, tokens.access_token, "get_accounts");
+		const listed = z
+			.object({ accounts: z.array(z.record(z.string(), z.unknown())) })
+			.parse(result.structuredContent);
+
+		for (const id of [cash.id, blank.id]) {
+			const row = listed.accounts.find((account) => account.id === id);
+			expect(row).toMatchObject({ classification: "asset", type: "Depository" });
+			expect(row).not.toHaveProperty("subtype");
+		}
+	});
+
 	it("get_categories, get_merchants and get_tags list what their routes list", async () => {
 		const merchant = await createMerchant("Boulangerie Dupain");
 		const tag = await createTag("Vacances");

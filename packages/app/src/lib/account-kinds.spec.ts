@@ -9,6 +9,12 @@ describe("kindOf", () => {
 		expect(kindOf("loan", "other")).toBe("other_loan");
 	});
 
+	it("names a depository by its subtype, and one without as the type itself", () => {
+		expect(kindOf("depository", "cash")).toBe("cash");
+		expect(kindOf("depository", "money_market")).toBe("money_market");
+		expect(kindOf("depository", null)).toBe("depository");
+	});
+
 	it("names an investment by its subtype", () => {
 		expect(kindOf("investment", "pea")).toBe("pea");
 	});
@@ -20,6 +26,19 @@ describe("kindOf", () => {
 });
 
 describe("ACCOUNT_KINDS", () => {
+	it("offers the blank depository, then Sure's depository subtypes in Sure's order, without hsa", () => {
+		const depositories = ACCOUNT_KINDS.filter((kind) => kind.type === "depository");
+
+		expect(depositories.map((kind) => fr.accounts.subtypes[kind.id])).toEqual([
+			"Liquidités",
+			"Espèces",
+			"Compte courant",
+			"Épargne",
+			"Certificat de dépôt",
+			"Marché monétaire",
+		]);
+	});
+
 	it("offers Sure's seven loans in Sure's order, named as a bank in France names them", () => {
 		const loans = ACCOUNT_KINDS.filter((kind) => kind.type === "loan");
 

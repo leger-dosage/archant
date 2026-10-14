@@ -200,7 +200,10 @@ export function EditAccountDialog({
 								<SelectContent>
 									{kinds.map((kind) => (
 										<SelectItem key={kind.id} value={kind.id}>
-											{t(`accounts.subtypes.${kind.id}`)}
+											{/* Sure's `include_blank`: the empty choice reads « Aucun » here. */}
+											{kind.id === "depository"
+												? t("accountActions.form.noSubtype")
+												: t(`accounts.subtypes.${kind.id}`)}
 										</SelectItem>
 									))}
 								</SelectContent>
