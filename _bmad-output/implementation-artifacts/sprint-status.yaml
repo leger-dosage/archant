@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-12-2026 22:08
+last_updated: 10-14-2026 12:40
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -257,7 +257,136 @@ development_status:
   27-22-a-new-pending-purchase-is-never-taken-for-a-booked-line: done
   27-23-a-tab-left-open-across-an-upgrade-reloads: done
   27-24-recurring-transfers-as-sure-follows-them: done
-  27-25-every-remaining-departure-from-sure-reviewed: backlog
+  27-25-every-remaining-departure-from-sure-reviewed: done
   27-26-split-the-largest-files-and-remove-duplicates: backlog
   27-27-a-bill-paid-from-any-account: done
   epic-27-retrospective: optional
+
+  epic-28: backlog
+  28-1-every-depository-subtype-a-french-household-uses: backlog
+  28-2-credit-card-details-and-the-available-credit-toggle: backlog
+  28-3-loan-chart-periods-and-payoff-rendering: backlog
+  28-4-save-a-loan-whose-terms-cannot-be-amortised: backlog
+  28-5-investment-subtypes-for-europe-and-everywhere: backlog
+  28-6-sell-more-than-is-held: backlog
+  28-7-delete-a-position-and-remap-its-security: backlog
+  28-8-property-and-vehicle-details-and-overview: backlog
+  28-9-property-and-vehicle-values-only-valuations-move: backlog
+  28-10-other-asset-and-other-liability-accounts: backlog
+  28-11-crypto-accounts: backlog
+  28-12-inactive-accounts-listed-and-a-menu-on-each-account-row: backlog
+  28-13-a-default-account-for-new-transactions: backlog
+  28-14-account-order-preference: backlog
+  28-15-account-notes-and-institution: backlog
+  28-16-create-an-account-in-sures-steps: backlog
+  28-17-honour-a-linked-accounts-opening-balance: backlog
+  28-18-date-the-banks-balance-today: backlog
+  28-19-confirm-a-balance-before-saving-it: backlog
+  28-20-opening-balance-and-snapshot-refusals-as-sures: backlog
+  28-21-an-activity-label-on-investment-transactions-as-sure: backlog
+  epic-28-retrospective: optional
+
+  epic-29: backlog
+  29-1-choose-the-banks-country-with-the-credentials-and-remove-them: backlog
+  29-2-ask-for-the-banks-longest-consent-and-step-down-on-refusal: backlog
+  29-3-retry-from-the-banks-suggested-start-and-keep-a-statement-cut-short: backlog
+  29-4-clean-bank-labels-and-create-merchants-from-counterparties: backlog
+  29-5-read-a-line-without-direction-as-money-out: backlog
+  29-6-settle-pending-lines-as-sure: backlog
+  29-7-suggest-and-merge-pending-duplicates: backlog
+  29-8-unlink-one-bank-account: backlog
+  29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address: backlog
+  29-10-recompute-an-unlinked-accounts-history-forward: backlog
+  epic-29-retrospective: optional
+
+  epic-30: backlog
+  30-1-import-a-sure-archive: backlog
+  30-2-import-mint-ynab-and-actual-files: backlog
+  30-3-import-accounts-categories-merchants-rules-and-trades-from-csv: backlog
+  30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats: backlog
+  30-5-fix-rows-before-publishing-and-sures-confirm-step: backlog
+  30-6-read-qif-categories-tags-splits-investments-and-several-accounts: backlog
+  30-7-export-each-accounts-institution-and-cash-balance-and-each-attachments-checksum: backlog
+  30-8-reset-all-financial-data: backlog
+  30-9-reset-with-sample-data: backlog
+  epic-30-retrospective: optional
+
+  epic-31: backlog
+  31-1-filter-transactions-by-status-and-amount: backlog
+  31-2-edit-several-transactions-at-once-as-sure: backlog
+  31-3-split-lines-as-sure-shows-and-edits-them: backlog
+  31-4-download-an-attachment: backlog
+  31-5-create-a-transfer-between-two-accounts: backlog
+  31-6-open-a-transfer-in-its-own-drawer: backlog
+  31-7-categorise-investment-contributions: backlog
+  31-8-edit-a-split-by-recreating-its-lines: backlog
+  epic-31-retrospective: optional
+
+  epic-32: backlog
+  32-1-categories-without-a-kind: backlog
+  32-2-sures-default-categories-merged-deleted-and-restored: backlog
+  32-3-merchants-and-tags-as-sure: backlog
+  32-4-every-rule-operator: backlog
+  32-5-match-an-amount-in-any-currency: backlog
+  32-6-add-several-tags-in-one-rule-action: backlog
+  32-7-filter-rules-by-provider-details: backlog
+  32-8-set-an-investment-activity-label-by-rule: backlog
+  32-9-confirm-a-rule-before-it-runs-sort-the-list-apply-every-rule: backlog
+  32-10-run-rules-over-the-history-after-each-sync-and-list-every-run: backlog
+  32-11-offer-a-rule-after-categorising: backlog
+  32-12-categorise-uncategorised-lines-in-groups: backlog
+  32-13-delete-every-rule: backlog
+  epic-32-retrospective: optional
+
+  epic-33: backlog
+  33-1-retire-stale-bills-from-the-cleanup-button-only: backlog
+  33-2-date-a-monthly-bills-next-payment-as-sure: backlog
+  33-3-leave-a-renamed-series-behind: backlog
+  33-4-declare-a-bill-from-any-transaction: backlog
+  33-5-postpone-an-occurrence-a-week: backlog
+  33-6-search-any-transaction-to-pay-an-occurrence: backlog
+  33-7-show-a-bills-drawer-in-full: backlog
+  33-8-price-notices-and-autopay-tone: backlog
+  33-9-turn-recurring-transactions-off: backlog
+  epic-33-retrospective: optional
+
+  epic-34: backlog
+  34-1-group-the-balance-sheet-by-account-type: backlog
+  34-2-draw-charts-axes-as-sure: backlog
+  34-3-pick-the-dashboard-period: backlog
+  34-4-cash-flow-widgets: backlog
+  34-5-investment-summary-on-the-dashboard: backlog
+  34-6-arrange-the-dashboard: backlog
+  34-7-the-reports-page-its-csv-and-print-layout: backlog
+  34-8-import-files-and-edit-rules-on-a-phone: backlog
+  34-9-sures-few-hotkeys: backlog
+  34-10-sures-layout-under-archants-visual-style: backlog
+  epic-34-retrospective: optional
+
+  epic-35: backlog
+  35-1-start-the-month-on-the-households-chosen-day: backlog
+  35-2-budget-every-category-as-sure: backlog
+  35-3-sures-budget-tools-inputs: backlog
+  35-4-available-cash-beside-the-budget: backlog
+  35-5-bills-reserved-inside-each-envelope: backlog
+  35-6-pledge-a-deposit-toward-a-goal: backlog
+  35-7-spend-a-goal: backlog
+  35-8-count-contributions-on-an-investment-backed-goal: backlog
+  35-9-a-goals-pace-and-history-as-sure: backlog
+  35-10-budgets-and-goals-on-a-plan-page: backlog
+  35-11-filter-search-and-summarise-goals: backlog
+  35-12-refresh-a-months-of-expenses-reserve-monthly: backlog
+  35-13-sures-create-goal-contract: backlog
+  35-14-explain-a-goals-state-on-its-page: backlog
+  epic-35-retrospective: optional
+
+  epic-36: backlog
+  36-1-reset-a-forgotten-password-by-e-mail: backlog
+  36-2-a-member-who-writes-and-a-guest-as-sures: backlog
+  36-3-guests-open-on-the-assistant: backlog
+  36-4-share-each-account-with-chosen-members-and-personal-budgets: backlog
+  36-5-two-factor-backup-codes-as-sures: backlog
+  36-6-household-preferences: backlog
+  36-7-sign-in-with-a-passkey: backlog
+  36-8-sign-in-through-openid-connect: backlog
+  epic-36-retrospective: optional

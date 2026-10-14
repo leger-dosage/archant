@@ -258,7 +258,7 @@
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-6-count-income-and-expenses-as-sure-does.md`
   summary: An income-kind category whose month nets an expense counts in the budget's spending but has no envelope, so envelopes no longer add up to it.
-  evidence: `budgetCategories` in `domain/budgets/categories.ts` builds envelopes for `kind === "expense"` only, while `actualsOf` reads Sure's `total_net_expense` over every category; Sure dropped category kinds in #1160, a divergence for Story 27.25.
+  evidence: `budgetCategories` in `domain/budgets/categories.ts` builds envelopes for `kind === "expense"` only, while `actualsOf` reads Sure's `total_net_expense` over every category; Sure dropped category kinds in #1160; Story 27.25 planned it as Stories 32.1 and 35.2.
 - source_spec: `_bmad-output/implementation-artifacts/spec-27-6-count-income-and-expenses-as-sure-does.md`
   summary: A month whose refunds cancel its spending enters the budget's spending median at zero.
   evidence: `suggestions` filters months on the gross view's expense lines and takes the net spending; Sure's `median_expense` is gross. Story 27.7 rewrites the medians as `IncomeStatement::FamilyStats`; check there.
