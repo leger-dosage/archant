@@ -288,3 +288,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-2-credit-card-details-and-the-available-credit-toggle.md`
   summary: Refresh a card's balance in the interface once the sync its available-credit toggle started ends.
   evidence: `updateAccount` starts the sync after answering; nothing invalidates the account queries when it ends, so the page shows the old debt until a refetch.
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-3-grey-the-recorded-loan-line-past-the-cursor.md`
+  summary: The loan chart's arrow keys step one data row per press, recorded days included, where Sure's step one tooltip stop (a payment date) per press, and Home, End and Escape do nothing.
+  evidence: Pre-existing: Recharts' `accessibilityLayer` drives the tooltip by row; Sure's `loan_payoff_chart_controller.js:520-551` steps through `stops`.
