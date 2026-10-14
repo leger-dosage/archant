@@ -232,7 +232,7 @@ development_status:
   26-5-ask-an-assistant-to-import-a-bank-file: done
   epic-26-retrospective: optional
 
-  epic-27: in-progress
+  epic-27: done
   27-1-confirm-the-transfers-the-matcher-proposes: done
   27-2-a-paused-bill-is-never-overdue: done
   27-3-bill-totals-order-and-amounts-as-sure-shows-them: done
