@@ -19,17 +19,13 @@ import { useCreateTag } from "@/hooks/useTags";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { isNewName } from "@/lib/name-key";
-import { matchesSearch } from "@/lib/search-match";
+import { filterByName } from "@/lib/search-match";
 
 // cmdk matches on an item's value; ids keep two items apart whatever their
 // names, and the filter reads the name from the keywords instead.
 const CREATE = "create";
 
-/** Case and accents aside, in list order: `Enter` picks the first match as the user reads it. */
-function filterByName(value: string, search: string, keywords: string[] = []): number {
-	// « Créer » names exactly what was typed, so it always matches.
-	return value === CREATE || matchesSearch(keywords.join(" "), search) ? 1 : 0;
-}
+const filterOptions = filterByName([CREATE]);
 
 type TagComboboxProps = {
 	/** Sorted by name, as the API lists them. */
@@ -80,7 +76,7 @@ export function TagCombobox({ tags, value, onToggle }: TagComboboxProps) {
 	};
 
 	return (
-		<Command filter={filterByName} loop>
+		<Command filter={filterOptions} loop>
 			<CommandInput
 				aria-label={t("transactions.tags.search")}
 				placeholder={t("transactions.tags.search")}

@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, isCurrencyCode, minorUnitsOf } from "@archant/data/money";
+import { formatMoney, isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
 
 /** A change of balance: `+12,40 €` up, `−12,40 €` down, `0,00 €` flat. */
 export function formatSignedMoney(amount: MinorUnits, currency: string): string {
@@ -24,10 +24,6 @@ export function changeText(
 				amount,
 				percent: formatSignedPercent(change.percent),
 			});
-}
-
-function isDecimalString(value: string): value is `${number}` {
-	return /^-?\d+(?:\.\d+)?$/u.test(value);
 }
 
 const compactFormats = new Map<string, Intl.NumberFormat>();

@@ -11,7 +11,12 @@ import { shiftMonth } from "@archant/data/months";
 import { isBudgetMonth } from "../domain/budgets/months.ts";
 import { daysBetween, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { budgetInput, monthParam, sureMonthOf, updateBudgetInput } from "../schemas/assistants.ts";
+import {
+	budgetInput,
+	monthParam,
+	sureMonthOf,
+	updateBudgetInput,
+} from "../schemas/assistants/budgets.ts";
 import { getBudget, isBudgetableMonth, updateBudget } from "../services/budgets.ts";
 import { categoriesByRef, isUncategorisedName } from "../services/names.ts";
 import {

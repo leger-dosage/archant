@@ -9,7 +9,7 @@ import {
 	parseCitation,
 } from "../domain/balances/citation.ts";
 import { AppError } from "../lib/errors.ts";
-import { recordValuationInput, valuationsInput } from "../schemas/assistants.ts";
+import { recordValuationInput, valuationsInput } from "../schemas/assistants/snapshots.ts";
 import { DEFAULT_PAGE_SIZE } from "../schemas/transactions.ts";
 import { namesOf } from "../services/names.ts";
 import { createSnapshot, listValuations } from "../services/snapshots.ts";

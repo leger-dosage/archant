@@ -220,7 +220,8 @@ export function toMinorUnits(value: number): MinorUnits {
 	return normalized;
 }
 
-function isDecimalString(value: string): value is `${number}` {
+/** A plain decimal string, such as `"-12.5"`, that `Intl.NumberFormat` formats without a float. */
+export function isDecimalString(value: string): value is `${number}` {
 	return /^-?\d+(?:\.\d+)?$/u.test(value);
 }
 

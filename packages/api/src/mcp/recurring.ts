@@ -8,7 +8,7 @@ import { RECURRING_STATUSES } from "@archant/data/schema/recurring-transactions"
 
 import { today } from "../domain/dates.ts";
 import { displayName } from "../domain/recurring/bills.ts";
-import { recurringInput } from "../schemas/assistants.ts";
+import { recurringInput } from "../schemas/assistants/recurring.ts";
 import { listRecurring } from "../services/recurring/series.ts";
 import { BANK_TEXT, READ_ONLY, defineTool, formatMoney, formatted, namedRef } from "./tool.ts";
 

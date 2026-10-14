@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-14-2026 12:40
+last_updated: 10-14-2026 15:02
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -258,7 +258,7 @@ development_status:
   27-23-a-tab-left-open-across-an-upgrade-reloads: done
   27-24-recurring-transfers-as-sure-follows-them: done
   27-25-every-remaining-departure-from-sure-reviewed: done
-  27-26-split-the-largest-files-and-remove-duplicates: backlog
+  27-26-split-the-largest-files-and-remove-duplicates: done
   27-27-a-bill-paid-from-any-account: done
   epic-27-retrospective: optional
 

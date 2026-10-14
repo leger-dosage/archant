@@ -1,4 +1,4 @@
-import { isCurrencyCode, minorUnitsOf } from "@archant/data/money";
+import { isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
 
 // The API answers quantities and prices as plain decimal strings, such as
 // `"612.4"`, read here without ever becoming a float: `Intl.NumberFormat`
@@ -8,10 +8,6 @@ import { isCurrencyCode, minorUnitsOf } from "@archant/data/money";
 const MAX_DECIMALS = 6;
 
 const quantityFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: MAX_DECIMALS });
-
-function isDecimalString(value: string): value is `${number}` {
-	return /^-?\d+(?:\.\d+)?$/u.test(value);
-}
 
 /** `"2.5"` as `2,5`, grouped the French way. */
 export function formatQuantity(quantity: string): string {

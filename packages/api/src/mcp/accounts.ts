@@ -7,7 +7,7 @@ import { CLASSIFICATIONS } from "@archant/data/account-types";
 
 import { SURE_INTERVALS } from "../domain/balances/sure-periods.ts";
 import { today } from "../domain/dates.ts";
-import { getAccountsInput } from "../schemas/assistants.ts";
+import { getAccountsInput } from "../schemas/assistants/accounts.ts";
 import { listAssistantAccounts } from "../services/balances.ts";
 import { BANK_TEXT, READ_ONLY, decimalOf, defineTool, formatMoney } from "./tool.ts";
 

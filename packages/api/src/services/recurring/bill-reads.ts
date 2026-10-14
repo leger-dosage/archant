@@ -3,7 +3,7 @@ import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { BillLifecycle, BillPaymentState, BillStatus } from "../../schemas/bills.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
-import type { BillOccurrence, BillRecord, PriceChange } from "./bills.ts";
+import type { BillOccurrence, BillRecord, PriceChange } from "./all-bills.ts";
 import type { SQL } from "drizzle-orm";
 
 import { and, count, eq, gte, ne } from "drizzle-orm";
@@ -29,7 +29,8 @@ import { annualizedAverage, monthlyRollup } from "../../domain/recurring/schedul
 import { billStatusSchema } from "../../schemas/bills.ts";
 import { paymentEntries } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
-import { loadBills, priceChangesWhere, withAmounts } from "./bills.ts";
+import { priceChangesWhere, withAmounts } from "./all-bills.ts";
+import { loadBills } from "./bill-overview.ts";
 import { notFound, nullableMinor, selectRecords, toRecords } from "./series.ts";
 
 /** A series as the assistant's bill tools read it. */

@@ -13,7 +13,8 @@ import {
 } from "../../testing/recurring.ts";
 import { oneByOne } from "../ledger/shared.ts";
 import { billAudit } from "./audit.ts";
-import { billCandidates, declareBill } from "./bills.ts";
+import { billCandidates } from "./bill-candidates.ts";
+import { declareBill } from "./bills.ts";
 import { skipOccurrence } from "./payments.ts";
 import { setRecurringStatus } from "./series.ts";
 

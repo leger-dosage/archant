@@ -11,16 +11,14 @@ import {
 	occurrencePatchSchema,
 	recurringPatchSchema,
 } from "../schemas/recurring.ts";
+import { allBills, billDetail } from "../services/recurring/all-bills.ts";
+import { billCandidates } from "../services/recurring/bill-candidates.ts";
 import {
-	allBills,
-	billCandidates,
-	billDetail,
 	billsOverview,
-	declareBill,
 	occurrenceDetail,
-	patchRecurring,
 	upcomingRecurring,
-} from "../services/recurring/bills.ts";
+} from "../services/recurring/bill-overview.ts";
+import { declareBill, patchRecurring } from "../services/recurring/bills.ts";
 import {
 	addPayment,
 	confirmPayment,

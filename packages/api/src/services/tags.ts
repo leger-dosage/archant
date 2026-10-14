@@ -8,6 +8,7 @@ import type { Tag } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
 import { countByTag, removeTag } from "./ledger/edits.ts";
+import { assertNameFree } from "./names.ts";
 
 export type TagSummary = {
 	id: string;
@@ -52,28 +53,12 @@ async function getTag(deps: ServiceDeps, id: string): Promise<TagSummary> {
 	return summarise(row, await countByTag(deps));
 }
 
-/**
- * Refuses a name another tag holds, ignoring case. Compared here with a
- * locale-aware fold, since SQLite's `lower` in the unique index folds ASCII
- * only and would let « été » beside « Été ».
- */
-async function assertNameFree(db: Db, name: string, ownId: string | null): Promise<void> {
-	const folded = name.toLocaleLowerCase("fr");
-	const rows = await db.select({ id: tags.id, name: tags.name }).from(tags);
-
-	if (rows.some((row) => row.id !== ownId && row.name.toLocaleLowerCase("fr") === folded)) {
-		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-			{ path: "name", code: "name_taken" },
-		]);
-	}
-}
-
 export async function createTag(deps: ServiceDeps, input: TagRequest): Promise<TagSummary> {
 	const id = crypto.randomUUID();
 
 	await deps.db.transaction(
 		async (tx) => {
-			await assertNameFree(tx, input.name, null);
+			await assertNameFree(tx, tags, input.name, null);
 			const now = Date.now();
 
 			await tx.insert(tags).values({ id, name: input.name, createdAt: now, updatedAt: now });
@@ -96,7 +81,7 @@ export async function renameTag(
 				throw notFound();
 			}
 
-			await assertNameFree(tx, input.name, id);
+			await assertNameFree(tx, tags, input.name, id);
 			await tx.update(tags).set({ name: input.name, updatedAt: Date.now() }).where(eq(tags.id, id));
 		},
 		{ behavior: "immediate" },

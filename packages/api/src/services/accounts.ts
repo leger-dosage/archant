@@ -15,7 +15,7 @@ import type {
 	LoanDetails,
 } from "@archant/data/account-types";
 import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
-import type { MinorUnits } from "@archant/data/money";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -196,6 +196,17 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		details: account.details,
 		bankConnection: bankConnection ?? null,
 	};
+}
+
+/** An account's currency, or `NOT_FOUND` when there is no such account. */
+export async function currencyOf(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
+	const account = await getAccount(deps, accountId);
+
+	if (!isCurrencyCode(account.currency)) {
+		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
+	}
+
+	return account.currency;
 }
 
 /**

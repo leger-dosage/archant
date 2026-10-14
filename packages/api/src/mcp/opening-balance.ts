@@ -5,7 +5,7 @@ import { z } from "zod";
 import { toMinorUnits } from "@archant/data/money";
 
 import { AppError } from "../lib/errors.ts";
-import { setOpeningBalanceInput } from "../schemas/assistants.ts";
+import { setOpeningBalanceInput } from "../schemas/assistants/opening-balance.ts";
 import { getAccount, setAccountOpeningBalance } from "../services/accounts.ts";
 import { RAILS_FALSE, REPLACES, decimalOf, defineTool, refuse, sureDecimalText } from "./tool.ts";
 

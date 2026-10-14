@@ -1,6 +1,7 @@
 import type { ServiceDeps } from "../deps.ts";
+import type { PriceChange } from "./all-bills.ts";
+import type { BillCandidate } from "./bill-candidates.ts";
 import type { BillView } from "./bill-reads.ts";
-import type { BillCandidate, PriceChange } from "./bills.ts";
 
 import { and, eq, exists, gte } from "drizzle-orm";
 
@@ -14,8 +15,9 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addMonths, today } from "../../domain/dates.ts";
 import { cyclesOverdue } from "../../domain/recurring/bills.ts";
+import { priceChangesWhere } from "./all-bills.ts";
+import { candidatePatterns } from "./bill-candidates.ts";
 import { loadBillViews } from "./bill-reads.ts";
-import { candidatePatterns, priceChangesWhere } from "./bills.ts";
 
 // Sure's `SECTION_LIMIT`.
 const SECTION_LIMIT = 20;

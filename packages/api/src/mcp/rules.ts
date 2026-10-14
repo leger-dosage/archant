@@ -9,16 +9,16 @@ import type { RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, RULE_OPERATORS } from "@archant/data/rules";
 
 import { AppError } from "../lib/errors.ts";
+import { listPageInput } from "../schemas/assistants/fields.ts";
 import {
 	applyRulesInput,
-	listPageInput,
 	previewRuleInput,
 	ruleIdInput,
 	ruleRunsInput,
 	ruleToolInput,
 	setRuleEnabledInput,
 	updateRuleInput,
-} from "../schemas/assistants.ts";
+} from "../schemas/assistants/rules.ts";
 import { namesOf } from "../services/names.ts";
 import {
 	applyRules,

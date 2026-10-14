@@ -45,7 +45,7 @@ import {
 	splitTransactionSchema,
 	updateTransactionSchema,
 } from "../schemas/transactions.ts";
-import { getAccount } from "./accounts.ts";
+import { currencyOf, getAccount } from "./accounts.ts";
 import { withChildren } from "./categories.ts";
 import {
 	dismissDuplicate as dismissLedgerDuplicate,
@@ -226,16 +226,6 @@ function rejectionError(reason: RejectionCode): AppError {
 	}
 
 	return new AppError("VALIDATION_ERROR", "The request is invalid.", [field]);
-}
-
-async function currencyOf(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
-	const account = await getAccount(deps, accountId);
-
-	if (!isCurrencyCode(account.currency)) {
-		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
-	}
-
-	return account.currency;
 }
 
 /** One transaction as its sheet shows it, with its source. */
