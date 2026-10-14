@@ -170,6 +170,36 @@ describe("POST /api/accounts", () => {
 		expect(body.error.fields).toEqual([{ path: "subtype", code: "invalid_subtype" }]);
 	});
 
+	it("creates a cash account and one without a subtype, both listed as depository assets", async () => {
+		const client = await ownClient();
+		const cash = await client.$post({ json: { ...valid, name: "Tirelire", subtype: "cash" } });
+		const blank = await client.$post({ json: { ...valid, name: "Enveloppe", subtype: null } });
+
+		expect([cash.status, blank.status]).toEqual([201, 201]);
+		const { data } = await (await client.$get()).json();
+		expect(data.groups[0]).toMatchObject({ classification: "asset" });
+		expect(
+			data.groups[0]?.accounts.map(({ name, type, subtype }) => ({ name, type, subtype })),
+		).toEqual([
+			{ name: "Enveloppe", type: "depository", subtype: null },
+			{ name: "Tirelire", type: "depository", subtype: "cash" },
+		]);
+	});
+
+	it("refuses a loan without a subtype and a depository with Sure's hsa, writing nothing", async () => {
+		const before = await accountCount();
+		const responses = await Promise.all([
+			postRaw({ ...valid, ...mortgage, subtype: null }),
+			postRaw({ ...valid, subtype: "hsa" }),
+		]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(body.error.fields).toEqual([{ path: "subtype", code: "invalid_subtype" }]);
+		}
+		await expect(accountCount()).resolves.toBe(before);
+	});
+
 	it("reports every invalid field at once", async () => {
 		const { body } = await postRaw({ ...valid, name: "", openingBalance: "abc" });
 
@@ -1388,6 +1418,15 @@ describe("PATCH /api/accounts/:id", () => {
 		expect(accountBody.parse(body).data).toMatchObject({ subtype: "savings", balance: 119166 });
 	});
 
+	it("clears a checking account's subtype, as Sure's blank depository", async () => {
+		const account = await openAccount();
+
+		const { status, body } = await patchAccount(account.id, { subtype: null });
+
+		expect(status).toBe(200);
+		expect(accountBody.parse(body).data).toMatchObject({ subtype: null });
+	});
+
 	it("refuses a subtype the type does not allow and saves nothing", async () => {
 		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
 
@@ -1414,8 +1453,8 @@ describe("PATCH /api/accounts/:id", () => {
 		});
 	});
 
-	it("refuses a depository account without a subtype", async () => {
-		const account = await openAccount();
+	it("refuses a loan without a subtype", async () => {
+		const account = await openAccount(mortgage);
 
 		const { status, body } = await patchAccount(account.id, { subtype: null });
 

@@ -83,7 +83,7 @@ describe("runMigrations", () => {
 		const database = await migrated();
 
 		await expect(insertAccount(database, "a1", "credit_card", "savings")).rejects.toThrow();
-		await expect(insertAccount(database, "a2", "depository", null)).rejects.toThrow();
+		await expect(insertAccount(database, "a2", "depository", "hsa")).rejects.toThrow();
 		await expect(insertAccount(database, "a3", "loan", null)).rejects.toThrow();
 		await expect(insertAccount(database, "a4", "credit_card", null)).resolves.toBeDefined();
 		await expect(insertAccount(database, "a5", "loan", "mortgage")).resolves.toBeDefined();
@@ -924,6 +924,47 @@ describe("loan subtypes", () => {
 			),
 		).resolves.toHaveLength(5);
 		await expect(insertAccount(database, "s6", "loan", "consumer")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("depository subtypes", () => {
+	it("keeps every account's subtype at 0073, then takes Sure's depository subtypes and none", async () => {
+		const before = await migratedBefore("0073");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertAccount(before, "a3", "credit_card", null);
+		await insertAccount(before, "a4", "loan", "mortgage");
+		// The rebuild drops `accounts`: an entry on it must outlive the drop.
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await expect(insertAccount(before, "a5", "depository", null)).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+
+		await expect(
+			database.all(sql`select id, type, subtype from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "depository", subtype: "checking" },
+			{ id: "a2", type: "depository", subtype: "savings" },
+			{ id: "a3", type: "credit_card", subtype: null },
+			{ id: "a4", type: "loan", subtype: "mortgage" },
+		]);
+		await expect(insertAccount(database, "b1", "depository", null)).resolves.toBeDefined();
+		await expect(
+			Promise.all(
+				["cash", "cd", "money_market"].map((subtype) =>
+					insertAccount(database, subtype, "depository", subtype),
+				),
+			),
+		).resolves.toHaveLength(3);
+		await expect(insertAccount(database, "b2", "depository", "hsa")).rejects.toThrow();
+		await expect(insertAccount(database, "b3", "loan", null)).rejects.toThrow();
+		await expect(insertAccount(database, "b4", "credit_card", "cash")).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });

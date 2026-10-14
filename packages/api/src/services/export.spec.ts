@@ -830,6 +830,35 @@ describe("exportArchive", () => {
 		]);
 	});
 
+	it("writes a depository's subtype as stored, a blank one null, in all three places", async () => {
+		await ownDatabase();
+		const cd = await account({ name: "Compte à terme", type: "depository", subtype: "cd" });
+		const blank = await account({ name: "Enveloppe", type: "depository", subtype: null });
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(cd)).toMatchObject({
+			accountable_type: "Depository",
+			subtype: "cd",
+			accountable: { subtype: "cd" },
+			archant: { type: "depository", subtype: "cd" },
+		});
+		expect(accounts.get(blank)).toMatchObject({
+			accountable_type: "Depository",
+			subtype: null,
+			accountable: { subtype: null },
+			archant: { type: "depository", subtype: null },
+		});
+		expect(archive.csv("accounts.csv").map((row) => row.slice(0, 4))).toEqual(
+			expect.arrayContaining([
+				[cd, "Compte à terme", "Depository", "cd"],
+				[blank, "Enveloppe", "Depository", ""],
+			]),
+		);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes Sure's `one_time` kind for a one-time row, where it was `standard`", async () => {
 		const { ids } = await household();
 		const appliance = await postOwn(ids.checking, {

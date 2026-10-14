@@ -512,6 +512,13 @@
       "when": 1791831958085,
       "tag": "0072_recurring_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1791992284647,
+      "tag": "0073_depository_subtypes",
+      "breakpoints": true
     }
   ]
 }

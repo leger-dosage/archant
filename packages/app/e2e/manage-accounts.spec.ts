@@ -95,6 +95,31 @@ test("a new name and subtype show in the header, the accounts column, /accounts 
 	]);
 });
 
+// Story 28.1: Sure's `include_blank`, « Aucun » in the dialog, the type's name elsewhere.
+test("a checking account switched to « Aucun » reads « Liquidités »", async ({ page, api }) => {
+	const account = await api.openAccount({ openingBalance: "500,00" });
+
+	const dialog = await openEdit(page, account);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await expect(page.getByRole("option")).toHaveText([
+		"Aucun",
+		"Espèces",
+		"Compte courant",
+		"Épargne",
+		"Certificat de dépôt",
+		"Marché monétaire",
+	]);
+	await page.getByRole("option", { name: "Aucun" }).click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
+		"Liquidités",
+	);
+	await page.goto("/accounts");
+	await expect(pageRow(page, account.name)).toContainText("Liquidités");
+});
+
 test("a credit card offers no type to choose, and a blank name is refused", async ({
 	page,
 	api,

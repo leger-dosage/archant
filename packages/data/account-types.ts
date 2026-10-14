@@ -7,10 +7,17 @@ export type Classification = (typeof CLASSIFICATIONS)[number];
 /**
  * The one list of account types. A type's classification decides which group
  * it is listed under and the sign of its balance updates (AD-5); its subtypes
- * are the only values `accounts.subtype` accepts for it.
+ * are the only values `accounts.subtype` accepts for it. A type with
+ * `subtypeOptional` also takes no subtype at all, as Sure's `allow_blank`.
  */
 export const ACCOUNT_TYPES = {
-	depository: { classification: "asset", subtypes: ["checking", "savings"] },
+	// Sure's `Depository::SUBTYPES` keys in its order, less `hsa`, an American
+	// health savings account no French household holds.
+	depository: {
+		classification: "asset",
+		subtypes: ["cash", "checking", "savings", "cd", "money_market"],
+		subtypeOptional: true,
+	},
 	credit_card: { classification: "liability", subtypes: [] },
 	// Sure's `Loan::SUBTYPES` keys, in its order.
 	loan: {
@@ -38,7 +45,7 @@ export const ACCOUNT_TYPES = {
 	vehicle: { classification: "asset", subtypes: [] },
 } as const satisfies Record<
 	string,
-	{ classification: Classification; subtypes: readonly string[] }
+	{ classification: Classification; subtypes: readonly string[]; subtypeOptional?: true }
 >;
 
 export type AccountType = keyof typeof ACCOUNT_TYPES;
@@ -67,10 +74,17 @@ export function classificationOf(type: AccountType): Classification {
 	return ACCOUNT_TYPES[type].classification;
 }
 
+/** Whether a type takes no subtype, either because it has none or because one is optional. */
+export function allowsNullSubtype(type: AccountType): boolean {
+	const definition: { subtypes: readonly string[]; subtypeOptional?: true } = ACCOUNT_TYPES[type];
+
+	return definition.subtypes.length === 0 || definition.subtypeOptional === true;
+}
+
 export function isSubtypeOf(type: AccountType, subtype: string | null): boolean {
 	const allowed: readonly string[] = ACCOUNT_TYPES[type].subtypes;
 
-	return subtype === null ? allowed.length === 0 : allowed.includes(subtype);
+	return subtype === null ? allowsNullSubtype(type) : allowed.includes(subtype);
 }
 
 /**
