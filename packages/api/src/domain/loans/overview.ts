@@ -233,7 +233,8 @@ export function loanOverview({ details, balance, opening, asOf }: OverviewInput)
 /**
  * Sure's `monthly_payment` and `payment_in_force`. A variable loan has no
  * single payment, so it quotes the one in force: the next on or after the day
- * asked. A fixed loan with nothing above zero borrowed pays zero.
+ * asked. A fixed loan with nothing above zero borrowed, or a term of 0,
+ * pays zero.
  */
 function monthlyPaymentOf(
 	{ rateType, interestRate, termMonths }: LoanDetails,
@@ -250,7 +251,7 @@ function monthlyPaymentOf(
 			return null;
 		}
 
-		return originalAmount <= 0n ? 0n : (schedule?.periodicPayment ?? null);
+		return originalAmount <= 0n || termMonths <= 0 ? 0n : (schedule?.periodicPayment ?? null);
 	}
 
 	return schedule?.payments.find((payment) => payment.date >= asOf)?.payment ?? "not_applicable";

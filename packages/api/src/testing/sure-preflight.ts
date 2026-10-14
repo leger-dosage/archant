@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-import {
-	LOAN_INSURANCE_TYPES,
-	LOAN_RATE_TYPES,
-	MAX_LOAN_TERM_MONTHS,
-} from "@archant/data/account-types";
+import { LOAN_INSURANCE_TYPES, LOAN_RATE_TYPES } from "@archant/data/account-types";
 
 // What Sure's `SureImport` checks before it imports an `all.ndjson`, written
 // from its code at 14638a7: `SureImport::Preflight`, the validations of the
@@ -265,7 +261,8 @@ const SCHEMAS = {
 			initial_balance: decimal.nullable().optional(),
 			down_payment: decimal.nullable().optional(),
 			start_date: date.nullable().optional(),
-			term_months: z.int().min(1).max(MAX_LOAN_TERM_MONTHS).nullable().optional(),
+			// Sure's integer column, which its model never bounds.
+			term_months: z.int32().nullable().optional(),
 			rate_type: z.enum(LOAN_RATE_TYPES).nullable().optional(),
 			interest_rate: decimal.nullable().optional(),
 			variable_rate_schedule: z.record(date, decimal).optional(),

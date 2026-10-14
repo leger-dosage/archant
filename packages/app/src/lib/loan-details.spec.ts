@@ -67,6 +67,11 @@ describe("truncatedTermOf", () => {
 		expect(truncatedTermOf(11)).toEqual({ unit: "months", count: 11 });
 		expect(truncatedTermOf(1)).toEqual({ unit: "months", count: 1 });
 	});
+
+	it("names a term the API saves past the schedule's bounds, as Sure's overview", () => {
+		expect(truncatedTermOf(0)).toEqual({ unit: "months", count: 0 });
+		expect(truncatedTermOf(1_500)).toEqual({ unit: "years", count: 125 });
+	});
 });
 
 describe("proposedTerm", () => {

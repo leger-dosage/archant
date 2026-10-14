@@ -270,8 +270,18 @@ describe("loanOverview", () => {
 	it("quotes no payment for a fixed loan without a term or a schedule", () => {
 		expect(overviewOf({ ...ing, termMonths: null }).monthlyPayment).toBeNull();
 		expect(overviewOf({ ...ing, interestRate: null }).monthlyPayment).toBeNull();
-		// A term past the simulator's bound, which only a hand-edited row holds.
+		// A term past the simulator's bound, which the API saves as Sure's model.
 		expect(overviewOf({ ...ing, termMonths: 1_201 }).monthlyPayment).toBeNull();
+	});
+
+	it("quotes a zero payment for a fixed loan with a term of 0, as Sure's", () => {
+		expect(overviewOf({ ...ing, termMonths: 0 })).toMatchObject({
+			monthlyPayment: 0n,
+			termMonths: 0,
+			payoffDate: null,
+			totalCost: null,
+			instalment: null,
+		});
 	});
 
 	it("quotes a zero payment for a fixed loan with nothing borrowed, as Sure's", () => {

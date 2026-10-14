@@ -80,12 +80,14 @@ export type LoanDetailsIssue = {
 
 // An interest rate is quoted with three decimals, an insurance rate with four
 // (0,2917 %); four decimals of a percent are six of one, so millionths hold
-// either exactly. No sign, so a negative rate is refused with the rest. A
+// either exactly. No sign, so a negative rate is refused with the rest: Sure's
+// form never sends one, and the amortisation divides by zero at −1 200 %. A
 // trailing `%` is accepted: the label says « (%) ».
 export const INTEREST_RATE_DECIMALS = 3;
 export const INSURANCE_RATE_DECIMALS = 4;
 
-// Sure's `MAX_INTEREST_RATE`, 100 %, in millionths.
+// Sure's `MAX_INTEREST_RATE`, 100 %, in millionths. Only a rate change is
+// held to it, as Sure's `rate_changes=`; its `Loan` caps neither rate.
 const MAX_RATE = 1_000_000;
 
 /**
@@ -109,12 +111,26 @@ function parsePercent(text: string, decimals: number, unitDigits: number): numbe
 }
 
 /**
- * A loan's rate as typed into millionths of one: `parseRate("1,82", 3)` is
- * 18200, `parseRate("0,2917", 4)` is 2917. Null when it is not a number, has
- * more than `decimals` decimals, or is above 100 %.
+ * A loan's interest rate as typed into millionths of one: `parseInterestRate("1,82")`
+ * is 18200. Sure's `interest_rate` is a `decimal(10,3)` with no cap, so three
+ * decimals and seven digits before them.
  */
-export function parseRate(text: string, decimals: number): number | null {
-	const rate = parsePercent(text, decimals, 3);
+export function parseInterestRate(text: string): number | null {
+	return parsePercent(text, INTEREST_RATE_DECIMALS, 7);
+}
+
+/**
+ * A loan's insurance rate as typed into millionths of one:
+ * `parseInsuranceRate("0,2917")` is 2917. Sure's `insurance_rate` is a
+ * `decimal(8,4)` with no cap, so four decimals and four digits before them.
+ */
+export function parseInsuranceRate(text: string): number | null {
+	return parsePercent(text, INSURANCE_RATE_DECIMALS, 4);
+}
+
+/** A rate change's rate in millionths of one, null above 100 %. */
+function parseRateChangeRate(text: string): number | null {
+	const rate = parsePercent(text, INTEREST_RATE_DECIMALS, 3);
 
 	return rate !== null && rate <= MAX_RATE ? rate : null;
 }
@@ -128,7 +144,10 @@ export function parseApr(text: string): number | null {
 	return parsePercent(text, 2, 8);
 }
 
-const TERM_PATTERN = /^\d{1,4}$/u;
+// Sure's `term_months` is an integer column its model never bounds: a provider
+// writes terms its form would refuse, and the loan is saved unamortised. Nine
+// digits stay within the column's 32 bits.
+const TERM_PATTERN = /^\d{1,9}$/u;
 
 const blank = (text: string | undefined) => text === undefined || text.trim() === "";
 
@@ -145,7 +164,9 @@ const isoDate = (text: string): string | null => {
  * are left unreported. `openingDate` is the account's, origination when no
  * start date is given; null leaves a rate change's date unchecked against it.
  * Whether the start date is after today needs the household's time zone, so
- * the service checks it.
+ * the service checks it. Only what Sure's `Loan` model and columns refuse is
+ * refused: a term, an amount borrowed or a rate it cannot amortise is saved,
+ * and `amortizationSchedule` declines it on read, as Sure's `amortizable?`.
  */
 export function parseLoanDetails(
 	input: LoanDetailsInput,
@@ -169,7 +190,7 @@ export function parseLoanDetails(
 	if (!blank(input.originalAmount) && currency !== null) {
 		const amount = parseAmount(input.originalAmount ?? "", currency);
 
-		if (amount === null || amount <= 0) {
+		if (amount === null) {
 			issues.push({ field: "originalAmount", code: "invalid_amount" });
 		} else {
 			details.originalAmount = amount;
@@ -196,10 +217,9 @@ export function parseLoanDetails(
 
 	if (!blank(input.termMonths)) {
 		const text = input.termMonths?.trim() ?? "";
-		const months = TERM_PATTERN.test(text) ? Number(text) : 0;
 
-		if (months >= 1 && months <= MAX_LOAN_TERM_MONTHS) {
-			details.termMonths = months;
+		if (TERM_PATTERN.test(text)) {
+			details.termMonths = Number(text);
 		} else {
 			issues.push({ field: "termMonths", code: "invalid_term" });
 		}
@@ -210,7 +230,7 @@ export function parseLoanDetails(
 	}
 
 	if (!blank(input.interestRate)) {
-		details.interestRate = parseRate(input.interestRate ?? "", INTEREST_RATE_DECIMALS);
+		details.interestRate = parseInterestRate(input.interestRate ?? "");
 
 		if (details.interestRate === null) {
 			issues.push({ field: "interestRate", code: "invalid_rate" });
@@ -218,7 +238,7 @@ export function parseLoanDetails(
 	}
 
 	if (!blank(input.insuranceRate)) {
-		details.insuranceRate = parseRate(input.insuranceRate ?? "", INSURANCE_RATE_DECIMALS);
+		details.insuranceRate = parseInsuranceRate(input.insuranceRate ?? "");
 
 		if (details.insuranceRate === null) {
 			issues.push({ field: "insuranceRate", code: "invalid_rate" });
@@ -272,7 +292,7 @@ function parseRateChanges(rows: readonly { effectiveDate: string; rate: string }
 		}
 
 		const effectiveDate = isoDate(row.effectiveDate);
-		const rate = parseRate(row.rate, INTEREST_RATE_DECIMALS);
+		const rate = parseRateChangeRate(row.rate);
 
 		if (effectiveDate === null || rate === null) {
 			incomplete = true;
@@ -392,11 +412,16 @@ function hasForeignDetails(type: "loan" | "credit_card", details: AccountDetails
 	return foreign.some((field) => details[field] !== undefined);
 }
 
-/** Reports details on a type without any, or with another type's fields, else each invalid one. */
+/**
+ * Reports details on a type without any, or with another type's fields, else
+ * each invalid one. `dialog` adds what Sure's `loans/_form` bounds in the
+ * browser beyond its model.
+ */
 function reportDetailsIssues(
 	context: z.RefinementCtx,
 	account: { type: unknown; currency: unknown; openingDate: unknown },
 	details: AccountDetailsInput,
+	dialog: boolean,
 ): void {
 	if (
 		(account.type !== "loan" && account.type !== "credit_card") ||
@@ -404,18 +429,24 @@ function reportDetailsIssues(
 	) {
 		context.addIssue({ code: "custom", path: ["details"], message: "invalid_details" });
 	} else if (account.type === "loan") {
-		reportLoanDetailsIssues(context, details, account.currency, account.openingDate);
+		reportLoanDetailsIssues(context, details, account.currency, account.openingDate, dialog);
 	} else {
 		reportCreditCardDetailsIssues(context, details, account.currency);
 	}
 }
 
-/** Adds each invalid loan detail to a schema's issues, under `details.<field>`. */
+/**
+ * Adds each invalid loan detail to a schema's issues, under `details.<field>`.
+ * In a dialog the term also runs from 1 to `MAX_LOAN_TERM_MONTHS`, as the
+ * `min` and `max` of Sure's `loans/_form` field; the API saves any term, which
+ * a provider may write.
+ */
 function reportLoanDetailsIssues(
 	context: z.RefinementCtx,
 	details: LoanDetailsInput,
 	currency: unknown,
 	openingDate: unknown,
+	dialog: boolean,
 ): void {
 	const validCurrency = typeof currency === "string" && isCurrencyCode(currency) ? currency : null;
 	const validOpeningDate =
@@ -423,78 +454,94 @@ function reportLoanDetailsIssues(
 			? openingDate
 			: null;
 
-	for (const issue of parseLoanDetails(details, validCurrency, validOpeningDate).issues) {
+	const parsed = parseLoanDetails(details, validCurrency, validOpeningDate);
+	const { termMonths } = parsed.details;
+	const issues: LoanDetailsIssue[] =
+		dialog && termMonths !== null && (termMonths < 1 || termMonths > MAX_LOAN_TERM_MONTHS)
+			? [{ field: "termMonths", code: "invalid_term" }, ...parsed.issues]
+			: parsed.issues;
+
+	for (const issue of issues) {
 		context.addIssue({ code: "custom", path: ["details", issue.field], message: issue.code });
 	}
 }
 
-// Shared with the interface, whose form resolver runs this same schema, so a
-// value the form accepts is a value the API accepts, with the same field codes.
-// Custom issues carry their field code as their message (lib/zod-error.ts).
-export const createAccountSchema = z
-	.object({
-		name: accountName,
-		type: z.enum(ACCOUNT_TYPE_IDS),
-		subtype: accountSubtype,
-		currency: z.custom<CurrencyCode>(
-			(value) => typeof value === "string" && isCurrencyCode(value),
-			"invalid_currency",
-		),
-		// Text, not a number: the minor units depend on the currency, and a
-		// JavaScript number would already have rounded the input.
-		openingBalance: z.string(),
-		// Every day from the opening date gets a balance row, written under the
-		// write lock: year 1 would mean 740 000 rows in one transaction.
-		openingDate: z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early"),
-		// A loan's or a credit card's only; any other type refuses them.
-		details: accountDetailsInputSchema.optional(),
-	})
-	// Runs even when another field failed, so the form shows every error at
-	// once. Each check guards on the fields it reads being valid themselves.
-	.superRefine((value, context) => {
-		if (
-			Object.hasOwn(ACCOUNT_TYPES, value.type) &&
-			(value.subtype === null || isAccountSubtype(value.subtype)) &&
-			!isSubtypeOf(value.type, value.subtype)
-		) {
-			context.addIssue({ code: "custom", path: ["subtype"], message: "invalid_subtype" });
-		}
+/**
+ * An account's creation. `dialog` adds the bounds Sure's form sets in the
+ * browser, so a value the dialog accepts is a value the API accepts, with the
+ * same field codes. Custom issues carry their field code as their message
+ * (lib/zod-error.ts).
+ */
+const accountCreationSchema = (dialog: boolean) =>
+	z
+		.object({
+			name: accountName,
+			type: z.enum(ACCOUNT_TYPE_IDS),
+			subtype: accountSubtype,
+			currency: z.custom<CurrencyCode>(
+				(value) => typeof value === "string" && isCurrencyCode(value),
+				"invalid_currency",
+			),
+			// Text, not a number: the minor units depend on the currency, and a
+			// JavaScript number would already have rounded the input.
+			openingBalance: z.string(),
+			// Every day from the opening date gets a balance row, written under the
+			// write lock: year 1 would mean 740 000 rows in one transaction.
+			openingDate: z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early"),
+			// A loan's or a credit card's only; any other type refuses them.
+			details: accountDetailsInputSchema.optional(),
+		})
+		// Runs even when another field failed, so the form shows every error at
+		// once. Each check guards on the fields it reads being valid themselves.
+		.superRefine((value, context) => {
+			if (
+				Object.hasOwn(ACCOUNT_TYPES, value.type) &&
+				(value.subtype === null || isAccountSubtype(value.subtype)) &&
+				!isSubtypeOf(value.type, value.subtype)
+			) {
+				context.addIssue({ code: "custom", path: ["subtype"], message: "invalid_subtype" });
+			}
 
-		if (
-			typeof value.currency === "string" &&
-			isCurrencyCode(value.currency) &&
-			typeof value.openingBalance === "string" &&
-			parseAmount(value.openingBalance, value.currency) === null
-		) {
-			context.addIssue({ code: "custom", path: ["openingBalance"], message: "invalid_amount" });
-		}
+			if (
+				typeof value.currency === "string" &&
+				isCurrencyCode(value.currency) &&
+				typeof value.openingBalance === "string" &&
+				parseAmount(value.openingBalance, value.currency) === null
+			) {
+				context.addIssue({ code: "custom", path: ["openingBalance"], message: "invalid_amount" });
+			}
 
-		if (value.details !== undefined) {
-			reportDetailsIssues(context, value, value.details);
-		}
-	})
-	.transform((value, context) => {
-		const openingBalance = parseAmount(value.openingBalance, value.currency);
+			if (value.details !== undefined) {
+				reportDetailsIssues(context, value, value.details, dialog);
+			}
+		})
+		.transform((value, context) => {
+			const openingBalance = parseAmount(value.openingBalance, value.currency);
 
-		if (openingBalance === null) {
-			// Already reported by the refinement above; kept so the output type
-			// never has to pretend.
-			context.addIssue({ code: "custom", path: ["openingBalance"], message: "invalid_amount" });
+			if (openingBalance === null) {
+				// Already reported by the refinement above; kept so the output type
+				// never has to pretend.
+				context.addIssue({ code: "custom", path: ["openingBalance"], message: "invalid_amount" });
 
-			return z.NEVER;
-		}
+				return z.NEVER;
+			}
 
-		// A loan and a card always store their details, each null until known;
-		// other types none.
-		const details =
-			value.type === "loan"
-				? parseLoanDetails(value.details ?? {}, value.currency, value.openingDate).details
-				: value.type === "credit_card"
-					? parseCreditCardDetails(value.details ?? {}, value.currency).details
-					: null;
+			// A loan and a card always store their details, each null until known;
+			// other types none.
+			const details =
+				value.type === "loan"
+					? parseLoanDetails(value.details ?? {}, value.currency, value.openingDate).details
+					: value.type === "credit_card"
+						? parseCreditCardDetails(value.details ?? {}, value.currency).details
+						: null;
 
-		return { ...value, openingBalance, details };
-	});
+			return { ...value, openingBalance, details };
+		});
+
+export const createAccountSchema = accountCreationSchema(false);
+
+/** The creation dialog's: the API's checks and Sure's form's term bound. */
+export const createAccountFormSchema = accountCreationSchema(true);
 
 export type CreateAccountInput = z.input<typeof createAccountSchema>;
 export type CreateAccountRequest = z.output<typeof createAccountSchema>;
@@ -537,10 +584,10 @@ export function isCreditCardDetailsInput(
 
 /**
  * The account's edit dialog: the name and subtype as typed, the exclusion
- * switch, a loan's or a card's details, checked the way the API checks them,
- * and a linked card's toggle. The account's currency decides how many
- * decimals the amounts may have, and its opening date is origination when
- * the loan gives no start date.
+ * switch, a loan's or a card's details, checked the way the API checks them
+ * plus the term bound of Sure's form, and a linked card's toggle. The
+ * account's currency decides how many decimals the amounts may have, and its
+ * opening date is origination when the loan gives no start date.
  */
 export function accountSettingsFormSchema(account: {
 	type: string;
@@ -557,7 +604,7 @@ export function accountSettingsFormSchema(account: {
 		})
 		.superRefine((value, context) => {
 			if (value.details !== undefined) {
-				reportDetailsIssues(context, account, value.details);
+				reportDetailsIssues(context, account, value.details, true);
 			}
 		});
 }

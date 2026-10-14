@@ -307,6 +307,13 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	);
 	await dialog.getByLabel("Date d'origine").fill("05/12/2020");
 	await expect(dialog.getByLabel("Durée (mois)")).toHaveAttribute("placeholder", "360");
+	// The API saves a term of 0, as Sure's model; the dialog refuses it, as Sure's form.
+	await dialog.getByLabel("Durée (mois)").fill("0");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog.getByLabel("Durée (mois)")).toHaveAccessibleDescription(
+		"Durée invalide : un nombre entier de mois, de 1 à 1 200.",
+	);
+	await expect(dialog).toBeVisible();
 	await dialog.getByLabel("Durée (mois)").fill("300");
 	await expect(dialog.getByLabel("Taux d'intérêt")).toHaveAttribute("placeholder", "5,25");
 	await dialog.getByLabel("Taux d'intérêt").fill("1,82");
@@ -439,23 +446,25 @@ test("a loan's rate and term edited in the dialog show in its overview", async (
 	await expect(rate).toHaveValue("4,90");
 	await expect(dialog.getByLabel("Solde initial du prêt")).toHaveValue("");
 	await rate.fill("1,8205");
-	await dialog.getByLabel("Durée (mois)").fill("12,5");
+	// The API saves a term of 0, as Sure's model; the dialog refuses it, as Sure's form.
+	await dialog.getByLabel("Durée (mois)").fill("0");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(rate).toHaveAccessibleDescription(
-		"Taux invalide : entre 0 et 100, trois décimales au plus, quatre pour l'assurance.",
+		"Taux invalide : un nombre positif, trois décimales au plus, quatre pour l'assurance.",
 	);
 	await expect(dialog.getByLabel("Durée (mois)")).toHaveAccessibleDescription(
 		"Durée invalide : un nombre entier de mois, de 1 à 1 200.",
 	);
 
-	await rate.fill("3,75");
+	// Sure caps neither rate.
+	await rate.fill("150");
 	await dialog.getByLabel("Durée (mois)").fill("48");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(page.getByText(`Compte « ${loan.name} » enregistré.`)).toBeVisible();
 	await expect(dialog).toBeHidden();
 	// A rate typed without a rate type is fixed, as Sure's default.
-	await expect(card("Taux d'intérêt")).toContainText("3,750 %");
+	await expect(card("Taux d'intérêt")).toContainText("150,000 %");
 	await expect(card("Type")).toContainText("Fixe");
 	await expect(card("Durée")).toContainText("4 ans");
 	await page.reload();
@@ -1119,6 +1128,37 @@ test("a loan without a term has no « Échéancier » tab, and a link to it open
 		panel.getByRole("img", { name: `0 % remboursé sur ${euros(800_000)}` }),
 	).toBeVisible();
 	await expect(panel.getByText(/^Échéance /u)).toHaveCount(0);
+});
+
+test("a loan saved through the API with a term of 0 has no « Échéancier » and pays nothing, as Sure's", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt"),
+		kind: "auto",
+		openingBalance: "8 000,00",
+		details: { originalAmount: "10 000,00", rateType: "fixed", interestRate: "3", termMonths: "0" },
+	});
+
+	await page.goto(`/accounts/${loan.id}?tab=schedule`);
+
+	const tabs = page.getByRole("tablist", { name: "Vues du compte" });
+	await expect(tabs.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+		"aria-selected",
+		"true",
+	);
+	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Aperçu", "Soldes", "Imports"]);
+	const chart = page.getByRole("region", { name: "Historique du solde" });
+	await expect(chart.getByText(`Solde : ${euros(800_000)}`)).toBeVisible();
+	await expect(chart.getByRole("list", { name: "Séries du graphique" })).toHaveCount(0);
+
+	await tabs.getByRole("tab", { name: "Aperçu" }).click();
+	const panel = page.getByRole("tabpanel", { name: "Aperçu" });
+	const card = (name: string) => panel.getByRole("group", { name, exact: true });
+	await expect(card("Paiement mensuel")).toContainText(euros(0));
+	await expect(card("Durée")).toContainText("0 mois");
+	await expect(card("Date de fin d'origine")).toContainText("Inconnu");
 });
 
 test("an account that is not a loan has no « Échéancier » nor « Aperçu » tab, and a link to either opens « Opérations »", async ({

@@ -2413,7 +2413,7 @@
 			"negative_amount": "Le montant ne peut pas être négatif.",
 			"invalid_currency": "Devise inconnue.",
 			"invalid_subtype": "Type de compte invalide.",
-			"invalid_rate": "Taux invalide : entre 0 et 100, trois décimales au plus, quatre pour l'assurance.",
+			"invalid_rate": "Taux invalide : un nombre positif, trois décimales au plus, quatre pour l'assurance.",
 			"invalid_term": "Durée invalide : un nombre entier de mois, de 1 à 1 200.",
 			"invalid_rate_change": "Chaque changement de taux demande une date et un taux entre 0 et 100, trois décimales au plus.",
 			"rate_change_before_origination": "Un changement de taux ne peut pas précéder la date d'origine du prêt.",
