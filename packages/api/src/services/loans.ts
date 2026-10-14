@@ -10,6 +10,7 @@ import type { BalancePeriod } from "../schemas/balances.ts";
 import type { AccountDetail } from "./accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 
+import { loanDetailsOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
@@ -97,9 +98,9 @@ async function openingOf(deps: ServiceDeps, accountId: string): Promise<Opening>
  * opening date, as Sure's `origination_date`.
  */
 function contractOf(account: AccountDetail, opening: Opening): Contract | null {
-	const { details } = account;
+	const details = loanDetailsOf(account);
 
-	if (account.type !== "loan" || details === null) {
+	if (details === null) {
 		return null;
 	}
 
@@ -234,7 +235,7 @@ export async function loanOverview(
 
 	const asOf = today(deps.timeZone);
 	const overview = overviewOf({
-		details: account.details,
+		details: loanDetailsOf(account),
 		balance: BigInt(account.balance),
 		opening: await openingOf(deps, accountId),
 		asOf,

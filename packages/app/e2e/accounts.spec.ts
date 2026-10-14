@@ -352,6 +352,70 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	await expect(edit.getByRole("combobox", { name: "Type d'assurance" })).toHaveText("Constante");
 });
 
+// Story 28.2: Sure's `credit_cards/_form`, its fields in its order and rows.
+test("a card's details typed at creation read back in its edit dialog, with no toggle unlinked", async ({
+	page,
+}) => {
+	const name = uniqueName("Visa");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Carte de crédit" }).click();
+	await dialog.getByLabel("Solde à la date :").fill("450,00");
+	const fieldIds = await dialog
+		.locator("[id^='card-']:is(input, button)")
+		.evaluateAll((fields) => fields.map((field) => field.id));
+	expect(fieldIds).toEqual([
+		"card-availableCredit",
+		"card-minimumPayment",
+		"card-apr",
+		"card-expirationDate",
+		"card-annualFee",
+	]);
+	await expect(dialog.getByLabel("Crédit disponible")).toHaveAttribute("placeholder", "10000");
+	await expect(dialog.getByLabel("Paiement minimum")).toHaveAttribute("placeholder", "100");
+	await expect(dialog.getByLabel("TAEG")).toHaveAttribute("placeholder", "15,99");
+	await expect(dialog.getByLabel("Frais annuels")).toHaveAttribute("placeholder", "99");
+	await dialog.getByLabel("Crédit disponible").fill("3 000");
+	await dialog.getByLabel("Paiement minimum").fill("25,50");
+	await dialog.getByLabel("TAEG").fill("1,234");
+	await dialog.getByLabel("Date d'expiration").fill("30/04/2028");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(
+		dialog.getByText("Taux invalide : un nombre positif ou nul, deux décimales au plus."),
+	).toBeVisible();
+	await dialog.getByLabel("TAEG").fill("15,99");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page
+		.getByRole("region", { name: "Passifs" })
+		.getByRole("link", { name: new RegExp(name) })
+		.click();
+	await page.getByRole("button", { name: `Actions du compte ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(edit.getByLabel("Crédit disponible")).toHaveValue("3000,00");
+	await expect(edit.getByLabel("Paiement minimum")).toHaveValue("25,50");
+	await expect(edit.getByLabel("TAEG")).toHaveValue("15,99");
+	await expect(edit.getByLabel("Date d'expiration")).toHaveValue("30/04/2028");
+	await expect(edit.getByLabel("Frais annuels")).toHaveValue("");
+	await expect(edit.getByLabel("Le solde correspond au crédit disponible")).toHaveCount(0);
+
+	await edit.getByLabel("Frais annuels").fill("99");
+	await edit.getByLabel("Crédit disponible").fill("");
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit).toBeHidden();
+	await page.reload();
+	await page.getByRole("button", { name: `Actions du compte ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(edit.getByLabel("Frais annuels")).toHaveValue("99,00");
+	await expect(edit.getByLabel("Crédit disponible")).toHaveValue("");
+});
+
 test("a loan's rate and term edited in the dialog show in its overview", async ({ page, api }) => {
 	const loan = await api.openAccount({
 		name: uniqueName("Prêt"),

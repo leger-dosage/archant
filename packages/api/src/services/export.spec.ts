@@ -859,6 +859,46 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes a card's details as Sure's `CreditCard` columns, a blank one null", async () => {
+		await ownDatabase();
+		const visa = await account({
+			name: "Visa",
+			type: "credit_card",
+			details: {
+				availableCredit: "3000",
+				minimumPayment: "25,50",
+				apr: "15,99",
+				expirationDate: "2028-04-30",
+				annualFee: "",
+			},
+		});
+		const blank = await account({ name: "Carte", type: "credit_card" });
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(visa)).toMatchObject({
+			accountable: {
+				subtype: "credit_card",
+				available_credit: "3000.00",
+				minimum_payment: "25.50",
+				apr: "15.99",
+				annual_fee: null,
+				expiration_date: "2028-04-30",
+			},
+		});
+		expect(accounts.get(blank)).toMatchObject({
+			accountable: {
+				available_credit: null,
+				minimum_payment: null,
+				apr: null,
+				annual_fee: null,
+				expiration_date: null,
+			},
+		});
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes Sure's `one_time` kind for a one-time row, where it was `standard`", async () => {
 		const { ids } = await household();
 		const appliance = await postOwn(ids.checking, {

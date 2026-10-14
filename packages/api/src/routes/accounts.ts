@@ -1,3 +1,4 @@
+import type { BankConnectionDeps } from "../services/bank-connections.ts";
 import type { ImportDeps } from "../services/imports.ts";
 
 import { Hono } from "hono";
@@ -28,7 +29,7 @@ import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 
-export function accountsRoutes(deps: ImportDeps) {
+export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 	return new Hono()
 		.get("/", async (c) => c.json({ data: await listAccounts(deps) }, 200))
 		.post("/", validated("json", createAccountSchema), async (c) =>

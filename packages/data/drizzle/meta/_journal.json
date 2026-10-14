@@ -519,6 +519,13 @@
       "when": 1791992284647,
       "tag": "0073_depository_subtypes",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1791996357597,
+      "tag": "0074_credit_card_details",
+      "breakpoints": true
     }
   ]
 }

@@ -750,6 +750,45 @@ test("creating an account shows the bank balance in the accounts column, and a s
 	await expect(columnAccount(page, cardId)).toContainText("300,00 €");
 });
 
+// Story 28.2: Sure's toggle, for a card a bank feeds, and the bank's limit.
+test("a linked card's toggle saves and reads back, beside the credit its bank's limit leaves", async ({
+	page,
+}) => {
+	await connect(page);
+	await choose(page, FAKE_ACCOUNTS.checking.name, "Ignorer");
+	await validate(page).click();
+	const cardId = await linkedAccountId(page, FAKE_ACCOUNTS.card.name);
+
+	await page.goto(`/accounts/${cardId}`);
+	const openEdit = async () => {
+		await page
+			.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.card.name}` })
+			.click();
+		await page.getByRole("menuitem", { name: "Modifier" }).click();
+		const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+		await expect(dialog).toBeVisible();
+
+		return dialog;
+	};
+	const dialog = await openEdit();
+	// A limit of 3 000,00 less the 300,00 the bank says the card owes.
+	await expect(dialog.getByRole("textbox", { name: "Crédit disponible" })).toHaveValue("2700,00");
+	const toggle = dialog.getByRole("switch", { name: "Le solde correspond au crédit disponible" });
+	await expect(toggle).toHaveAccessibleDescription(
+		"Activez cette option si votre banque communique le solde de cette carte sous forme de crédit disponible restant plutôt que de montant dû. La dette est alors déduite de la limite de crédit communiquée par votre banque, ou du champ Crédit disponible si votre banque n'en fournit pas.",
+	);
+	await expect(toggle).not.toBeChecked();
+	await toggle.click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page.reload();
+	const reopened = await openEdit();
+	await expect(
+		reopened.getByRole("switch", { name: "Le solde correspond au crédit disponible" }),
+	).toBeChecked();
+});
+
 test("a linked account's menu offers no deletion, only its connection's page", async ({ page }) => {
 	const connectionId = await connect(page);
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");

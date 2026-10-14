@@ -72,6 +72,12 @@ export const sessionAccountSchema = z.object({
 	// `null` too, so the port has one empty value.
 	currency: currency.nullable().catch(null),
 	cash_account_type: z.string().trim().min(1).max(10).nullish().catch(null),
+	// A card's limit, as Sure's `credit_limit`: an unreadable one is no limit,
+	// never a dropped account. The amount stays a string for `parseAmount`.
+	credit_limit: z
+		.object({ amount: z.string().trim().min(1), currency })
+		.nullish()
+		.catch(null),
 });
 
 export const sessionResponseSchema = z.object({

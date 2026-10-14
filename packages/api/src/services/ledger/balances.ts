@@ -392,6 +392,7 @@ export async function accountWithOpeningDate(tx: Transaction, accountId: string)
 			id: accounts.id,
 			type: accounts.type,
 			currency: accounts.currency,
+			details: accounts.details,
 			bankAccountId: accounts.bankAccountId,
 			openingId: entries.id,
 			openingDate: entries.date,

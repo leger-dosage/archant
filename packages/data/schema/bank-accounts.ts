@@ -1,3 +1,5 @@
+import type { MinorUnits } from "../money.ts";
+
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { bankConnections } from "./bank-connections.ts";
@@ -26,6 +28,17 @@ export const bankAccounts = sqliteTable(
 		currency: text("currency").notNull(),
 		// ISO 20022 cash account type as the bank reports it, such as `CACC`.
 		cashAccountType: text("cash_account_type"),
+		// Sure's `credit_limit`: the card's limit in this account's currency,
+		// minor units, as the bank last listed it; null when it gave none or
+		// gave it in another currency.
+		creditLimit: integer("credit_limit").$type<MinorUnits>(),
+		// Sure's `treat_balance_as_available_credit`: the bank reports this
+		// card's remaining credit as its balance, so the debt is the limit less it.
+		treatBalanceAsAvailableCredit: integer("treat_balance_as_available_credit", {
+			mode: "boolean",
+		})
+			.notNull()
+			.default(false),
 		// Epoch milliseconds of this account's last committed sync. The window
 		// lives here, not on the connection: an account that keeps failing
 		// would otherwise come back with a gap once the others moved on.

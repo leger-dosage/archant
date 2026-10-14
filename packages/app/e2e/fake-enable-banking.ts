@@ -108,7 +108,7 @@ export const FAKE_ACCOUNTS = {
 		/** `ITBD`, as the bank prints it. */
 		balance: "1234.56",
 	},
-	card: { name: "Carte Démo", balance: "-300.00" },
+	card: { name: "Carte Démo", balance: "-300.00", creditLimit: "3000.00" },
 } as const;
 
 /**
@@ -471,6 +471,7 @@ export async function startFakeEnableBanking(options: {
 						name: FAKE_ACCOUNTS.card.name,
 						currency,
 						cash_account_type: "CARD",
+						credit_limit: { currency, amount: FAKE_ACCOUNTS.card.creditLimit },
 					},
 				];
 

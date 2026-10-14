@@ -1,4 +1,4 @@
-import type { AccountSubtype, AccountType, LoanDetails } from "../account-types.ts";
+import type { AccountDetails, AccountSubtype, AccountType } from "../account-types.ts";
 
 import { sql } from "drizzle-orm";
 import { check, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
@@ -15,8 +15,8 @@ export const accounts = sqliteTable(
 		type: text("type").$type<AccountType>().notNull(),
 		subtype: text("subtype").$type<AccountSubtype>(),
 		currency: text("currency").notNull(),
-		// A loan's optional details; null for every other type.
-		details: text("details", { mode: "json" }).$type<LoanDetails>(),
+		// A loan's or a credit card's optional details; null for every other type.
+		details: text("details", { mode: "json" }).$type<AccountDetails>(),
 		// Deactivated rather than deleted: hidden from the lists, history kept,
 		// reactivable. Left out of its group's total, as in Sure.
 		active: integer("active", { mode: "boolean" }).notNull().default(true),

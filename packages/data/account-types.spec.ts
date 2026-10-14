@@ -5,11 +5,14 @@ import {
 	ACCOUNT_TYPE_IDS,
 	BANK_ACCOUNT_TARGETS,
 	classificationOf,
+	creditCardDetailsOf,
 	isAccountSubtype,
 	isBankAccountTarget,
 	isSubtypeOf,
 	isTaxAdvantaged,
+	loanDetailsOf,
 } from "./account-types.ts";
+import { toMinorUnits } from "./money.ts";
 
 describe("account types", () => {
 	it("classifies a depository, an investment, a property and a vehicle as assets, and a credit card and a loan as liabilities", () => {
@@ -111,5 +114,41 @@ describe("tax-advantaged accounts", () => {
 		expect(isTaxAdvantaged("assurance_vie")).toBe(true);
 		expect(isTaxAdvantaged("brokerage")).toBe(false);
 		expect(isTaxAdvantaged(null)).toBe(false);
+	});
+});
+
+describe("account details", () => {
+	const loan = {
+		originalAmount: null,
+		downPayment: null,
+		startDate: null,
+		termMonths: 300,
+		rateType: null,
+		interestRate: null,
+		insuranceRate: null,
+		insuranceRateType: null,
+		rateChanges: [],
+		endDate: null,
+	};
+	const card = {
+		availableCredit: toMinorUnits(300000),
+		minimumPayment: null,
+		apr: 159900,
+		expirationDate: null,
+		annualFee: null,
+	};
+
+	it("reads a loan's details on a loan only", () => {
+		expect(loanDetailsOf({ type: "loan", details: loan })).toBe(loan);
+		expect(loanDetailsOf({ type: "loan", details: card })).toBeNull();
+		expect(loanDetailsOf({ type: "credit_card", details: loan })).toBeNull();
+		expect(loanDetailsOf({ type: "loan", details: null })).toBeNull();
+	});
+
+	it("reads a card's details on a credit card only", () => {
+		expect(creditCardDetailsOf({ type: "credit_card", details: card })).toBe(card);
+		expect(creditCardDetailsOf({ type: "credit_card", details: loan })).toBeNull();
+		expect(creditCardDetailsOf({ type: "loan", details: card })).toBeNull();
+		expect(creditCardDetailsOf({ type: "credit_card", details: null })).toBeNull();
 	});
 });

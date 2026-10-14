@@ -19,7 +19,8 @@
 			"account_id": null,
 			"name": "Carte Visa Premier",
 			"currency": "EUR",
-			"cash_account_type": "CARD"
+			"cash_account_type": "CARD",
+			"credit_limit": { "currency": "EUR", "amount": "3000.00" }
 		}
 	],
 	"aspsp": { "name": "Banque Test", "country": "FR" },

@@ -275,6 +275,7 @@ describe("completeAuthorization", () => {
 					ibanLast4: "0185",
 					currency: "EUR",
 					cashAccountType: "CACC",
+					creditLimit: null,
 				},
 				{
 					uid: FIXTURE_CARD_UID,
@@ -283,6 +284,7 @@ describe("completeAuthorization", () => {
 					ibanLast4: null,
 					currency: "EUR",
 					cashAccountType: "CARD",
+					creditLimit: { amount: 300000, currency: "EUR" },
 				},
 			],
 			dropped: { count: 0, fields: [] },
@@ -354,6 +356,7 @@ describe("completeAuthorization", () => {
 				ibanLast4: "5678",
 				currency: null,
 				cashAccountType: "CACC",
+				creditLimit: null,
 			},
 			{
 				uid: "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
@@ -362,6 +365,7 @@ describe("completeAuthorization", () => {
 				ibanLast4: "5432",
 				currency: null,
 				cashAccountType: "SVGS",
+				creditLimit: null,
 			},
 		]);
 		expect(session.dropped).toEqual({ count: 0, fields: [] });
@@ -463,6 +467,21 @@ describe("toBankAccount", () => {
 			identificationHash: "u1",
 			cashAccountType: null,
 		});
+	});
+
+	it("reads a card's limit in the currency it names, and an unreadable one as none", () => {
+		expect(account({ credit_limit: { amount: "1000.00", currency: "EUR" } }).creditLimit).toEqual({
+			amount: 100000,
+			currency: "EUR",
+		});
+		expect(account({ credit_limit: { amount: "1000", currency: "USD" } }).creditLimit).toEqual({
+			amount: 100000,
+			currency: "USD",
+		});
+		expect(account({ credit_limit: { amount: "mille", currency: "EUR" } }).creditLimit).toBeNull();
+		expect(account({ credit_limit: { amount: "1000", currency: "XXX" } }).creditLimit).toBeNull();
+		expect(account({ credit_limit: "1000" }).creditLimit).toBeNull();
+		expect(account({}).creditLimit).toBeNull();
 	});
 
 	it("falls through a label longer than an account name to the next choice", () => {

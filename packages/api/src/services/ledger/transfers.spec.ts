@@ -10,6 +10,7 @@ import {
 	asUser,
 	categoryOf,
 	confirm,
+	bankDeps,
 	deps,
 	firstPage,
 	history,
@@ -416,7 +417,7 @@ describe("a transfer when a side goes", () => {
 const exclude = (entryId: string) =>
 	updateTransaction(deps(), entryId, { excluded: true }, { origin: "user" });
 
-const deactivate = (accountId: string) => updateAccount(deps(), accountId, { active: false });
+const deactivate = (accountId: string) => updateAccount(bankDeps(), accountId, { active: false });
 
 describe("transfer matching and excluded or inactive sides", () => {
 	it("never offers nor links an excluded candidate", async () => {

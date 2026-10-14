@@ -4,7 +4,7 @@ import type { Origin } from "./shared.ts";
 
 import { and, eq, inArray } from "drizzle-orm";
 
-import type { AccountSubtype, AccountType, LoanDetails } from "@archant/data/account-types";
+import type { AccountDetails, AccountSubtype, AccountType } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
@@ -31,8 +31,8 @@ export type NewAccountInput = {
 	/** A stored balance (AD-5): an asset's value, a liability's amount owed. */
 	openingBalance: MinorUnits;
 	openingDate: IsoDate;
-	/** A loan's details; absent or null for every other type. */
-	details?: LoanDetails | null | undefined;
+	/** A loan's or a credit card's details; absent or null for every other type. */
+	details?: AccountDetails | null | undefined;
 };
 
 /**

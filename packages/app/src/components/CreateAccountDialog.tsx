@@ -9,6 +9,7 @@ import type { CreateAccountInput } from "@archant/api/schemas/accounts";
 import { createAccountSchema } from "@archant/api/schemas/accounts";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
+import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
@@ -32,6 +33,7 @@ import {
 import { useCreateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
+import { CREDIT_CARD_FIELD_NAMES, completeCreditCardInput } from "@/lib/credit-card-details";
 import { yearsAgo } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, errorAt } from "@/lib/form-errors";
@@ -46,7 +48,7 @@ const TOP_FIELD_NAMES = [
 	"openingDate",
 ] as const;
 
-const FIELD_NAMES = [...TOP_FIELD_NAMES, ...LOAN_FIELD_NAMES] as const;
+const FIELD_NAMES = [...TOP_FIELD_NAMES, ...LOAN_FIELD_NAMES, ...CREDIT_CARD_FIELD_NAMES] as const;
 
 const defaults = (): CreateAccountInput => ({
 	name: "",
@@ -57,17 +59,26 @@ const defaults = (): CreateAccountInput => ({
 	// Sure's `OpeningBalanceManager#default_date`: a line dated today must land
 	// after the opening balance, which is an end-of-day balance.
 	openingDate: yearsAgo(2),
-	details: completeLoanInput(undefined),
+	details: { ...completeLoanInput(undefined), ...completeCreditCardInput(undefined) },
 });
 
 const schemaResolver = zodResolver(createAccountSchema, undefined, { raw: true });
 
-// The loan fields stay in the form's values when another type is picked, so
-// switching back keeps what was typed; the API refuses details on any other
-// type, so they are dropped before validation, and so before sending.
+// A loan's and a card's fields stay in the form's values when another type is
+// picked, so switching back keeps what was typed; the API refuses details of
+// another type, so only the chosen type's go on to validation, and so to
+// sending.
 const resolver: Resolver<CreateAccountInput> = async (values, context, options) =>
 	schemaResolver(
-		values.type === "loan" ? values : { ...values, details: undefined },
+		{
+			...values,
+			details:
+				values.type === "loan"
+					? completeLoanInput(values.details)
+					: values.type === "credit_card"
+						? completeCreditCardInput(values.details)
+						: undefined,
+		},
 		context,
 		options,
 	);
@@ -243,7 +254,15 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 					{type === "loan" && (
 						<LoanDetailsFields
 							value={completeLoanInput(details.field.value)}
-							onChange={details.field.onChange}
+							onChange={(loan) => details.field.onChange({ ...details.field.value, ...loan })}
+							errorOf={(field) => errorAt(errors, `details.${field}`)}
+						/>
+					)}
+
+					{type === "credit_card" && (
+						<CreditCardDetailsFields
+							value={completeCreditCardInput(details.field.value)}
+							onChange={(card) => details.field.onChange({ ...details.field.value, ...card })}
 							errorOf={(field) => errorAt(errors, `details.${field}`)}
 						/>
 					)}

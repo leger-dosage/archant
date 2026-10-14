@@ -39,7 +39,12 @@ import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { loadEnabledRules } from "../rule-reader.ts";
 import { getReportingCurrency } from "../settings.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { anchorDate, rotateCurrentAnchor } from "./bank-link.ts";
+import {
+	anchorDate,
+	creditCardBalanceOf,
+	rotateCurrentAnchor,
+	writeAvailableCredit,
+} from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
@@ -656,9 +661,10 @@ function planCurrentAnchor(
 	account: { type: AccountType; currency: string },
 	statementBalance: StatementBalance,
 	day: IsoDate,
+	interpreted: MinorUnits | null,
 ): StatementBalanceOutcome {
 	const date = anchorDate(statementBalance, day);
-	const balance = toStoredBankBalance(account, statementBalance.amount);
+	const balance = interpreted ?? toStoredBankBalance(account, statementBalance.amount);
 
 	return statementBalance.currency === account.currency
 		? { status: "recorded", date, balance }
@@ -788,10 +794,25 @@ export async function ingest(
 							{ openingDate: openingMovedTo ?? account.openingDate, today: context.today },
 							target.id,
 						);
-			const anchorPlan =
-				connectionId === null || statement.balance === null
+			// A card's balance is read as its bank account says, Sure's
+			// `interpret_credit_card_balance`; in another currency nothing changes.
+			const card =
+				connectionId === null ||
+				statement.balance === null ||
+				statement.balance.currency !== account.currency ||
+				account.bankAccountId === null
 					? null
-					: planCurrentAnchor(account, statement.balance, context.today);
+					: await creditCardBalanceOf(
+							tx,
+							account,
+							account.bankAccountId,
+							toStoredBankBalance(account, statement.balance.amount),
+						);
+			// A card with no limit to read its available credit against keeps its balance.
+			const anchorPlan =
+				connectionId === null || statement.balance === null || card?.balance === null
+					? null
+					: planCurrentAnchor(account, statement.balance, context.today, card?.balance ?? null);
 			const digest = previewDigest([
 				...(["created", "present", "matched", "duplicates"] as const).flatMap((group) =>
 					groups[group].map(({ ref, entryId }) => ({ group, ref, entryId })),
@@ -1013,6 +1034,12 @@ export async function ingest(
 			// as a reconciliation, so one missing line cannot shift the whole past.
 			const snapshotDate =
 				balancePlan === null ? null : await writeStatementBalance(tx, account, balancePlan, now);
+
+			// With the anchor, so a card's debt and its « Crédit disponible » never disagree.
+			if (card !== null) {
+				await writeAvailableCredit(tx, account, card.availableCredit, now);
+			}
+
 			const anchorWritten =
 				anchorPlan?.status === "recorded"
 					? await rotateCurrentAnchor(

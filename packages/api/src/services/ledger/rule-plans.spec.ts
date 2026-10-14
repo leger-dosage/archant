@@ -12,6 +12,7 @@ import {
 	add,
 	categoryOf,
 	categoryOriginOf,
+	bankDeps,
 	deps,
 	excludedOf,
 	expectedOf,
@@ -325,7 +326,7 @@ describe("ruleCandidates", () => {
 		const inactive = await openChecking({ name: "Carte" });
 		const kept = await add(active.id);
 		const hidden = await add(inactive.id);
-		await updateAccount(deps(), inactive.id, { active: false });
+		await updateAccount(bankDeps(), inactive.id, { active: false });
 
 		const read = await candidatesOf([kept, hidden]);
 		const everyAccount = await candidatesOf([kept, hidden], null, false);

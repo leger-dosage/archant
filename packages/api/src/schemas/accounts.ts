@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import type { AccountSubtype, LoanDetails, LoanRateChange } from "@archant/data/account-types";
+import type {
+	AccountSubtype,
+	CreditCardDetails,
+	LoanDetails,
+	LoanRateChange,
+} from "@archant/data/account-types";
 import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
@@ -85,23 +90,42 @@ const MAX_RATE = 1_000_000;
 
 /**
  * A percentage as typed into millionths of one, from the digits so no float
- * rounds it: `parseRate("1,82", 3)` is 18200, `parseRate("0,2917", 4)` is 2917.
- * Null when it is not a number, has more than `decimals` decimals, or is
- * above 100 %.
+ * rounds it. Null when it is not a number or has more than `decimals`
+ * decimals or `unitDigits` digits before them.
  */
-export function parseRate(text: string, decimals: number): number | null {
-	const match = new RegExp(`^(\\d{1,3})(?:[.,](\\d{1,${decimals}}))?(?:\\s*%)?$`, "u").exec(
-		text.trim(),
-	);
+function parsePercent(text: string, decimals: number, unitDigits: number): number | null {
+	const match = new RegExp(
+		`^(\\d{1,${unitDigits}})(?:[.,](\\d{1,${decimals}}))?(?:\\s*%)?$`,
+		"u",
+	).exec(text.trim());
 
 	if (match === null) {
 		return null;
 	}
 
 	const [, units = "", fraction = ""] = match;
-	const rate = Number(units) * 10_000 + Number(fraction.padEnd(4, "0"));
 
-	return rate <= MAX_RATE ? rate : null;
+	return Number(units) * 10_000 + Number(fraction.padEnd(4, "0"));
+}
+
+/**
+ * A loan's rate as typed into millionths of one: `parseRate("1,82", 3)` is
+ * 18200, `parseRate("0,2917", 4)` is 2917. Null when it is not a number, has
+ * more than `decimals` decimals, or is above 100 %.
+ */
+export function parseRate(text: string, decimals: number): number | null {
+	const rate = parsePercent(text, decimals, 3);
+
+	return rate !== null && rate <= MAX_RATE ? rate : null;
+}
+
+/**
+ * A card's APR as typed into millionths of one: `parseApr("15,99")` is
+ * 159900. Sure's `apr` is a `decimal(10,2)` with no cap, so two decimals and
+ * eight digits before them, below 100 000 000 %.
+ */
+export function parseApr(text: string): number | null {
+	return parsePercent(text, 2, 8);
 }
 
 const TERM_PATTERN = /^\d{1,4}$/u;
@@ -264,6 +288,128 @@ function parseRateChanges(rows: readonly { effectiveDate: string; rate: string }
 	return { rateChanges, incomplete };
 }
 
+/**
+ * A credit card's details as typed, every one optional and a blank one "not
+ * known", as Sure's `CreditCard` columns. Text, as a loan's: the amounts'
+ * minor units depend on the currency, and a JavaScript number would already
+ * have rounded the APR.
+ */
+export const creditCardDetailsInputSchema = z.object({
+	availableCredit: z.string().optional(),
+	minimumPayment: z.string().optional(),
+	apr: z.string().optional(),
+	expirationDate: z.string().optional(),
+	annualFee: z.string().optional(),
+});
+
+export type CreditCardDetailsInput = z.input<typeof creditCardDetailsInputSchema>;
+
+export type CreditCardDetailsIssue = {
+	field: keyof CreditCardDetailsInput;
+	code: "invalid_amount" | "invalid_rate" | "invalid_date";
+};
+
+const CREDIT_CARD_AMOUNTS = ["availableCredit", "minimumPayment", "annualFee"] as const;
+
+/**
+ * Reads typed card details into what `accounts.details` stores. Amounts are
+ * in the account's currency and never negative, as Sure's `min: 0`; `currency`
+ * null means it is itself invalid, so they are left unreported.
+ */
+export function parseCreditCardDetails(
+	input: CreditCardDetailsInput,
+	currency: string | null,
+): { details: CreditCardDetails; issues: CreditCardDetailsIssue[] } {
+	const issues: CreditCardDetailsIssue[] = [];
+	const details: CreditCardDetails = {
+		availableCredit: null,
+		minimumPayment: null,
+		apr: null,
+		expirationDate: null,
+		annualFee: null,
+	};
+
+	for (const field of CREDIT_CARD_AMOUNTS) {
+		if (!blank(input[field]) && currency !== null) {
+			const amount = parseAmount(input[field] ?? "", currency);
+
+			if (amount === null || amount < 0) {
+				issues.push({ field, code: "invalid_amount" });
+			} else {
+				details[field] = amount;
+			}
+		}
+	}
+
+	if (!blank(input.apr)) {
+		details.apr = parseApr(input.apr ?? "");
+
+		if (details.apr === null) {
+			issues.push({ field: "apr", code: "invalid_rate" });
+		}
+	}
+
+	if (!blank(input.expirationDate)) {
+		details.expirationDate = isoDate(input.expirationDate ?? "");
+
+		if (details.expirationDate === null) {
+			issues.push({ field: "expirationDate", code: "invalid_date" });
+		}
+	}
+
+	return { details, issues };
+}
+
+/** Adds each invalid card detail to a schema's issues, under `details.<field>`. */
+function reportCreditCardDetailsIssues(
+	context: z.RefinementCtx,
+	details: CreditCardDetailsInput,
+	currency: unknown,
+): void {
+	const validCurrency = typeof currency === "string" && isCurrencyCode(currency) ? currency : null;
+
+	for (const issue of parseCreditCardDetails(details, validCurrency).issues) {
+		context.addIssue({ code: "custom", path: ["details", issue.field], message: issue.code });
+	}
+}
+
+/**
+ * Either type's details, in one object so a form can keep both while the type
+ * changes; a field of the other type is refused (`hasForeignDetails`).
+ */
+const accountDetailsInputSchema = loanDetailsInputSchema.extend(creditCardDetailsInputSchema.shape);
+
+type AccountDetailsInput = z.input<typeof accountDetailsInputSchema>;
+
+const LOAN_DETAIL_FIELDS = loanDetailsInputSchema.keyof().options;
+const CREDIT_CARD_DETAIL_FIELDS = creditCardDetailsInputSchema.keyof().options;
+
+/** Whether details give a field the account's type does not have. */
+function hasForeignDetails(type: "loan" | "credit_card", details: AccountDetailsInput): boolean {
+	const foreign: readonly (keyof AccountDetailsInput)[] =
+		type === "loan" ? CREDIT_CARD_DETAIL_FIELDS : LOAN_DETAIL_FIELDS;
+
+	return foreign.some((field) => details[field] !== undefined);
+}
+
+/** Reports details on a type without any, or with another type's fields, else each invalid one. */
+function reportDetailsIssues(
+	context: z.RefinementCtx,
+	account: { type: unknown; currency: unknown; openingDate: unknown },
+	details: AccountDetailsInput,
+): void {
+	if (
+		(account.type !== "loan" && account.type !== "credit_card") ||
+		hasForeignDetails(account.type, details)
+	) {
+		context.addIssue({ code: "custom", path: ["details"], message: "invalid_details" });
+	} else if (account.type === "loan") {
+		reportLoanDetailsIssues(context, details, account.currency, account.openingDate);
+	} else {
+		reportCreditCardDetailsIssues(context, details, account.currency);
+	}
+}
+
 /** Adds each invalid loan detail to a schema's issues, under `details.<field>`. */
 function reportLoanDetailsIssues(
 	context: z.RefinementCtx,
@@ -300,8 +446,8 @@ export const createAccountSchema = z
 		// Every day from the opening date gets a balance row, written under the
 		// write lock: year 1 would mean 740 000 rows in one transaction.
 		openingDate: z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early"),
-		// A loan's only; any other type refuses them.
-		details: loanDetailsInputSchema.optional(),
+		// A loan's or a credit card's only; any other type refuses them.
+		details: accountDetailsInputSchema.optional(),
 	})
 	// Runs even when another field failed, so the form shows every error at
 	// once. Each check guards on the fields it reads being valid themselves.
@@ -324,11 +470,7 @@ export const createAccountSchema = z
 		}
 
 		if (value.details !== undefined) {
-			if (value.type !== "loan") {
-				context.addIssue({ code: "custom", path: ["details"], message: "invalid_details" });
-			} else {
-				reportLoanDetailsIssues(context, value.details, value.currency, value.openingDate);
-			}
+			reportDetailsIssues(context, value, value.details);
 		}
 	})
 	.transform((value, context) => {
@@ -342,11 +484,14 @@ export const createAccountSchema = z
 			return z.NEVER;
 		}
 
-		// A loan always stores its details, each null until known; other types none.
+		// A loan and a card always store their details, each null until known;
+		// other types none.
 		const details =
 			value.type === "loan"
 				? parseLoanDetails(value.details ?? {}, value.currency, value.openingDate).details
-				: null;
+				: value.type === "credit_card"
+					? parseCreditCardDetails(value.details ?? {}, value.currency).details
+					: null;
 
 		return { ...value, openingBalance, details };
 	});
@@ -360,10 +505,12 @@ export type CreateAccountRequest = z.output<typeof createAccountSchema>;
  * route, `PATCH /api/accounts/:id/opening-balance`. Whether `subtype`
  * fits the account needs its stored type, so the service checks it and raises
  * the same `invalid_subtype` field error as creation. `details` likewise: the
- * service refuses it on a non-loan and parses it in the account's currency.
- * It replaces the stored details whole, so every field is required, a
- * blank one clearing its value: a partial object would otherwise clear the
- * fields it left out without saying so.
+ * service refuses a loan's on any other account and a card's likewise, and
+ * parses them in the account's currency. They replace the stored details
+ * whole, so every field of their type is required, a blank one clearing its
+ * value: a partial object would otherwise clear the fields it left out
+ * without saying so. `treatBalanceAsAvailableCredit` is the card's bank
+ * account's, ignored on any other account, as Sure's.
  */
 export const updateAccountSchema = z
 	.object({
@@ -371,33 +518,47 @@ export const updateAccountSchema = z
 		subtype: accountSubtype.optional(),
 		active: z.boolean().optional(),
 		excludedFromReports: z.boolean().optional(),
-		details: loanDetailsInputSchema.required().optional(),
+		details: z
+			.union([loanDetailsInputSchema.required(), creditCardDetailsInputSchema.required()])
+			.optional(),
+		treatBalanceAsAvailableCredit: z.boolean().optional(),
 	})
 	.refine((value) => Object.values(value).some((field) => field !== undefined), "empty_patch");
 
 export type UpdateAccountInput = z.input<typeof updateAccountSchema>;
 export type UpdateAccountRequest = z.output<typeof updateAccountSchema>;
 
+/** Whether details sent for an update are a card's rather than a loan's. */
+export function isCreditCardDetailsInput(
+	details: NonNullable<UpdateAccountRequest["details"]>,
+): details is Extract<NonNullable<UpdateAccountRequest["details"]>, { availableCredit: string }> {
+	return "availableCredit" in details;
+}
+
 /**
- * The account's edit dialog: the name and subtype as typed, the exclusion switch,
- * and a loan's details, checked the way the API checks them. The account's
- * currency decides how many decimals the amounts may have, and its opening
- * date is origination when the loan gives no start date.
+ * The account's edit dialog: the name and subtype as typed, the exclusion
+ * switch, a loan's or a card's details, checked the way the API checks them,
+ * and a linked card's toggle. The account's currency decides how many
+ * decimals the amounts may have, and its opening date is origination when
+ * the loan gives no start date.
  */
-export function accountSettingsFormSchema(currency: string, openingDate: string) {
+export function accountSettingsFormSchema(account: {
+	type: string;
+	currency: string;
+	openingDate: string;
+}) {
 	return z
 		.object({
 			name: accountName,
 			subtype: z.enum(ACCOUNT_SUBTYPES).nullable(),
 			excludedFromReports: z.boolean(),
-			details: loanDetailsInputSchema.optional(),
+			details: accountDetailsInputSchema.optional(),
+			treatBalanceAsAvailableCredit: z.boolean().optional(),
 		})
 		.superRefine((value, context) => {
-			if (value.details === undefined) {
-				return;
+			if (value.details !== undefined) {
+				reportDetailsIssues(context, account, value.details);
 			}
-
-			reportLoanDetailsIssues(context, value.details, currency, openingDate);
 		});
 }
 

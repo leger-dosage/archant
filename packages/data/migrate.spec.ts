@@ -2342,6 +2342,21 @@ describe("consent renewal", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("keeps every bank account with no credit limit and the toggle off when 0074 adds them", async () => {
+		const before = await migratedBefore("0074");
+		await insertConnection(before, "c1", { status: "active", state: null });
+		await insertBankAccount(before, "b1", "c1", "hash-1");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, credit_limit as creditLimit, treat_balance_as_available_credit as toggle from bank_accounts`,
+			),
+		).resolves.toEqual([{ id: "b1", creditLimit: null, toggle: 0 }]);
+	});
+
 	it("still refuses a status other than pending or active", async () => {
 		const database = await migrated();
 

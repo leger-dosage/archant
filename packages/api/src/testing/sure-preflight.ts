@@ -271,6 +271,12 @@ const SCHEMAS = {
 			variable_rate_schedule: z.record(date, decimal).optional(),
 			insurance_rate: decimal.nullable().optional(),
 			insurance_rate_type: z.enum(LOAN_INSURANCE_TYPES).nullable().optional(),
+			// A credit card's details, as Sure's `CreditCard` columns.
+			available_credit: decimal.nullable().optional(),
+			minimum_payment: decimal.nullable().optional(),
+			apr: decimal.nullable().optional(),
+			annual_fee: decimal.nullable().optional(),
+			expiration_date: date.nullable().optional(),
 		}),
 		archant,
 	}),
