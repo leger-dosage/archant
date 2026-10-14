@@ -1562,7 +1562,7 @@
 		"review": {
 			"title": "Paiements à vérifier",
 			"line": "{{label}} ressemble à un paiement de {{bill}}",
-			"unknown": "Une opération supprimée",
+			"unknown": "Une transaction",
 			"apply": "Appliquer",
 			"reject": "Pas cette facture",
 			"applied": "Paiement appliqué",
@@ -1571,11 +1571,11 @@
 		"match": {
 			"label": "Pourquoi cette correspondance",
 			"merchant": "Même marchand",
-			"name": "Libellé reconnu",
+			"name": "Le nom correspond",
 			"transfer": "Virement vers le même compte",
 			"exactAmount": "Montant exact",
 			"amountOff": "{{amount}} d'écart",
-			"onDate": "À la date prévue",
+			"onDate": "Correspondance de date d'échéance",
 			"before_one": "{{count}} jour avant l'échéance",
 			"before_other": "{{count}} jours avant l'échéance",
 			"after_one": "{{count}} jour après l'échéance",
@@ -1668,7 +1668,7 @@
 			"rollup": "Abonnements",
 			"monthly": "Par mois",
 			"annual": "Par an",
-			"active": "Actifs",
+			"active": "Actif",
 			"priceChanges": "Changements de prix cette année"
 		},
 		"detail": {

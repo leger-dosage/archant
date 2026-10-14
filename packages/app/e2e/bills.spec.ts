@@ -214,7 +214,7 @@ test("a suggested payment reads as Sure's, and « Appliquer » or « Pas cette f
 	await expect(applied!).toContainText(/\d+\s%/u);
 	await expect(
 		applied!.getByRole("list", { name: "Pourquoi cette correspondance" }).getByRole("listitem"),
-	).toHaveText(["Libellé reconnu", `${euros(2871)} d'écart`, "5 jours après l'échéance"]);
+	).toHaveText(["Le nom correspond", `${euros(2871)} d'écart`, "5 jours après l'échéance"]);
 
 	await applied!.getByRole("button", { name: "Appliquer" }).click();
 	await expect(toast(page, "Paiement appliqué")).toBeVisible();
@@ -358,7 +358,7 @@ test("« Ajouter un paiement » offers the transactions the matcher scores, with
 	await expect(candidates).toContainText(/95\s%/u);
 	await expect(
 		candidates.getByRole("list", { name: "Pourquoi cette correspondance" }).getByRole("listitem"),
-	).toHaveText(["Libellé reconnu", "Montant exact", "À la date prévue"]);
+	).toHaveText(["Le nom correspond", "Montant exact", "Correspondance de date d'échéance"]);
 
 	await candidates.getByRole("button", { name: `Utiliser ${name}` }).click();
 	await expect(toast(page, "Paiement ajouté")).toBeVisible();
@@ -604,7 +604,7 @@ test("the type « Abonnement » adds what the active ones cost a month and a yea
 	await expect(allRow(page, `${prefix} Panier`)).toContainText(`${euros(4348)}/mois`);
 	await expect(rollup.getByRole("group", { name: "Par mois" })).toContainText(euros(6696));
 	await expect(rollup.getByRole("group", { name: "Par an" })).toContainText(euros(80_355));
-	await expect(rollup.getByRole("group", { name: "Actifs" })).toContainText("4");
+	await expect(rollup.getByRole("group", { name: "Actif" })).toContainText("4");
 	await expect(rollup).toContainText(`${prefix} Hébergement`);
 	const changes = page.getByRole("list", { name: "Changements de prix cette année" });
 	const line = changes.getByRole("listitem").filter({ hasText: netflix });

@@ -512,6 +512,51 @@ The owner asks their assistant to fix what a bank, a file or the transfer matche
 Archant fixes the figures it gets wrong, makes a two-factor code work once, answers the assistant field by field as Sure does, mirrors the Sure commits it missed, makes bank sync and import revert robust, and reviews every remaining departure from Sure, before any new feature.
 **FRs covered:** FR101, FR102, FR103, FR104, FR105, FR106; revises FR31, FR32, FR35, FR38, FR41, FR64, FR86, FR87, FR90, FR96 to FR100, NFR2, NFR19
 
+### Epic 28: Accounts and balances as Sure
+
+The owner gets Sure's account types, subtypes and details, Sure's account list and creation steps, and balances computed and confirmed as Sure computes and confirms them.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Accounts », « Entries and balances »
+
+### Epic 29: Bank synchronisation as Sure
+
+The owner's bank connection behaves as Sure's Enable Banking connection: the country saved with the credentials, Sure's consent ladder, its retries, its labels and merchants, its pending lines and duplicate suggestions, a per-account unlink and a daily sync at a chosen time.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Enable Banking synchronisation »
+
+### Epic 30: Imports, exports and resets as Sure
+
+The owner imports every file Sure imports, a Sure archive and Mint, YNAB and Actual exports included, maps and cleans a CSV in Sure's steps, exports what Sure's archive carries, and resets the household's data, with or without sample data, as Sure does.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « File import », « Classification », « Rules », « Other areas »
+
+### Epic 31: Transactions and transfers as Sure
+
+The owner filters, edits in bulk, splits, downloads, creates transfers and opens them as Sure does, and a contribution to an investment account takes Sure's category.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Transactions » and « Transfers »
+
+### Epic 32: Categories, merchants, tags and rules as Sure
+
+The owner classifies transactions with Sure's tools: categories without a kind, Sure's 22 defaults, merchants and tags with colours, every rule operator and action, rules confirmed before they run and run after each sync, a rule offered after a hand categorisation and a wizard for uncategorised lines.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Classification » and « Rules »
+
+### Epic 33: Bills as Sure
+
+The household's bills behave as Sure's: detection leaves stale and renamed series to the cleanup button, a bill starts from any transaction, an occurrence is postponed a week and paid from a search over every transaction, the drawer and the notices show what Sure shows, and the household can turn recurring transactions off.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Recurring transactions »
+
+### Epic 34: Dashboard and reports as Sure
+
+The owner reads the dashboard Sure shows: a balance sheet by account type, one period for every widget, Sure's cash flow and investment widgets in a layout each user arranges, and Sure's reports page with its CSV and print layout. Imports, rules, shortcuts and drawers work as in Sure, under Archant's own visual style.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Dashboard and reports », « Product-wide differences », « Accounts », « Entries and balances », « Other areas »
+
+### Epic 35: Budgets and goals as Sure
+
+The owner budgets every category over the household's own month, sees the cash and the bills beside each envelope, and runs savings goals as Sure does: pledges, spending, contributions, pace, a Plan page and the page's explanations.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Other areas » (Budgets, Savings goals)
+
+### Epic 36: Users, access and preferences as Sure
+
+The household gets Sure's three roles, accounts shared member by member, Sure's sign-in paths (a reset link by e-mail, passkeys, OpenID Connect) and Sure's household preferences, so a member who writes and a guest who reads work as they do in Sure.
+**FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Product-wide differences », « Users and access »
+
 ## Epic 1: Track accounts and transactions by hand
 
 The user creates depository and credit card accounts, records transactions and balance snapshots, and follows each account's balance over time.
@@ -5661,3 +5706,3081 @@ So that a bill I pay from one account or another is followed, as Sure's « N'imp
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** Vitest covers a bill without an account declared, matched by a line of each of two accounts, refused as a duplicate, and listed by every read; Playwright declares one from « Ajouter une facture »
+
+## Epic 28: Accounts and balances as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below had no admitted reason: no integer money, French text, accessibility contrast or security behind them. This epic follows Sure.
+
+What Sure does, by area:
+
+- Account types: `app/models/depository.rb` lists `cash`, `checking`, `savings`, `hsa`, `cd` and `money_market`, and `depositories/_form` offers « Aucun »; `app/models/investment.rb` groups about 55 subtypes by region in `subtypes_grouped_for_select`; `app/models/property.rb` has ten subtypes and an address; `app/models/vehicle.rb` a make, model, year and mileage; `app/models/other_asset.rb`, `app/models/other_liability.rb` and `app/models/crypto.rb` are types of their own.
+- Account details: `app/views/credit_cards/_form.html.erb` records available credit, minimum payment, APR, expiry and annual fee, and `app/models/enable_banking_account/processor.rb` reads a card's balance as available credit when its toggle says so; `app/views/accounts/_form.html.erb` records the institution and notes.
+- Loans: `Loan::PayoffChart::WINDOW_KEYS` trims the chart's periods, and `Loan#amortizable?` lets a loan without computable terms save without a schedule.
+- Holdings: `app/models/holding/cost_basis_tracker.rb` caps a sale at what is held, and `app/controllers/holdings_controller.rb` deletes a holding and remaps its security.
+- Account list: `Account.listable_manual` lists inactive accounts muted, `accounts_controller#set_default` sets a default account, `app/models/account_order.rb` orders the list, and `app/views/accounts/new.html.erb` creates an account in steps.
+- Balances: `Account#balance_type` makes property and vehicle non-cash; `Balance::ReverseCalculator#use_opening_anchor_for_date?` honours a linked account's opening balance; `Account::CurrentBalanceManager` dates the bank's balance today; `ValuationsController#confirm_create` confirms a balance before saving it; `Account::ReconciliationManager` and `Account::OpeningBalanceManager` refuse only what Sure refuses.
+
+Stories 28.1 to 28.9 and 28.12 to 28.15 come first, in any order. Story 28.10 follows 28.9, and 28.11 follows 28.10. Story 28.16 follows 28.2, 28.8 and 28.10. Stories 28.17 to 28.21 follow in any order; Story 32.8 of Epic 32 follows 28.21. Two rows of the same parity sections belong to Epic 34: the chart's vertical axis labels (Story 34.2) and snapshot notes saved as Sure saves them (Story 34.10).
+
+### Story 28.1: Every depository subtype a French household uses
+
+As the household's administrator,
+I want Sure's `cash`, `cd` and `money_market` subtypes and an empty subtype on a depository account,
+So that cash in a wallet or a term deposit is an account of its own kind, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the account creation or edit dialog for a depository account
+**When** the subtype list opens
+**Then** it offers Sure's `Depository::SUBTYPES` less `hsa`, in Sure's order: « Espèces » for `cash`, where Sure's `fr.yml` has no key, « Compte courant » and « Épargne » as today, « Certificat de dépôt » and « Marché monétaire », Sure's `depositories.subtypes.*.long`, and « Aucun », Sure's `depositories.form.none`, which saves no subtype
+
+**Given** `ACCOUNT_TYPES` in `packages/data/account-types.ts`
+**When** a depository account is saved with `cash`, `cd`, `money_market` or no subtype
+**Then** the server accepts it, `isSubtypeOf` admits the empty subtype for a depository as Sure's `allow_blank`, and the export writes the subtype as Sure's `accountable` does
+
+**Given** an account of one of the new subtypes
+**When** the accounts page, the dashboard and the assistant's `get_accounts` read it
+**Then** it counts as an asset, in the same group as a checking account, as Sure's `Depository.classification`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each subtype and the empty one on save and in the export; Playwright creates a cash account through the dialog and finds it under its subtype's label
+
+### Story 28.2: Credit card details and the available-credit toggle
+
+As the household's administrator,
+I want Sure's card details and its « Le solde correspond au crédit disponible » toggle,
+So that a card's limit, payment and fees are recorded and a bank that reports available credit gives the right debt, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the creation or edit dialog of a credit card account
+**When** it opens
+**Then** it shows Sure's `credit_cards/_form.html.erb` fields in Sure's order and words: « Crédit disponible », « Paiement minimum », « TAEG » (two decimals), « Date d'expiration » and « Frais annuels », each optional and stored in `accounts.details`, amounts in integer minor units
+
+**Given** a credit card linked to Enable Banking
+**When** its edit dialog opens
+**Then** it shows the toggle « Le solde correspond au crédit disponible » with Sure's description, stored per bank account as Sure's `treat_balance_as_available_credit`
+
+**Given** the toggle on and a sync
+**When** the bank sends a balance
+**Then** the debt is the credit limit less that balance, never below zero, the limit being the bank's `credit_limit` else the card's « Crédit disponible »; without either, the balance is left unchanged, as Sure's `interpret_credit_card_balance`
+
+**Given** the toggle off and a sync
+**When** the bank sends a balance and a `credit_limit`
+**Then** the balance is the debt and « Crédit disponible » becomes the limit less the debt, never below zero; without a limit the field keeps its value, as Sure's processor
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both modes, with and without a limit, and the details' validation; Playwright saves a card's details and reads them back
+
+### Story 28.3: Loan chart periods and payoff rendering
+
+As a member of the household,
+I want the loan chart to offer Sure's periods and to grey the recorded line past the cursor,
+So that the chart reads as Sure's loan chart.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a loan with a schedule and its chart in `LoanChart.tsx`
+**When** the period selector opens
+**Then** it offers only Sure's `Loan::PayoffChart::WINDOW_KEYS`, in Sure's order: `current_month`, `last_90_days`, `current_year`, `last_365_days`, `last_5_years`, `last_10_years` and `all_time`, under the account chart's own labels
+
+**Given** a period saved on another account that the loan chart does not offer, such as 7 or 30 days
+**When** the loan chart opens
+**Then** it shows the whole life and its selector reads « Tout », as Sure's `period_picker_selected`; the saved period stays for the other charts
+
+**Given** the cursor on the loan chart
+**When** it moves over a day
+**Then** « Solde enregistré » is coloured up to the cursor and greyed past it, as Sure's `loan_payoff_chart_controller.js`; the contract and the projection lines are not split, as Sure's forecasts
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the period list and the fallback to « Tout »; Playwright opens a loan's chart, checks the offered periods and moves the cursor
+
+### Story 28.4: Save a loan whose terms cannot be amortised
+
+As the household's administrator,
+I want a loan to save with a term or a rate outside the amortisation bounds,
+So that I record what I know of the loan and the schedule appears once the terms allow it, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the loan creation or edit dialog
+**When** I save a term of 0 or above 1 200 months, or a rate Archant refuses today
+**Then** the loan saves; only the checks Sure's `Loan` model applies remain: a start date not after today, a down payment and an insurance rate not below zero
+
+**Given** a saved loan that fails Sure's `Loan#amortizable?`: no rate type, no rate, a term not above zero or above `Loan::Simulator::MAX_PERIODS` (1 200), or a principal not above zero
+**When** its page opens
+**Then** it shows no « Échéancier » tab and no payoff chart, the plain balance chart instead, and « Aperçu » shows the figures it cannot compute as Sure's `loans/tabs/_overview` shows them
+
+**Given** the same loan
+**When** `get_accounts` and the export read it
+**Then** they carry the terms as saved, as Sure's
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each failing condition of `amortizable?` on save and on read; Playwright saves a loan with a term of 0 and finds no « Échéancier »
+
+### Story 28.5: Investment subtypes for Europe and everywhere
+
+As the household's administrator,
+I want Sure's European and generic investment subtypes, grouped by region,
+So that a pension plan, a fund or gold is an account of its own kind, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the investment account dialog
+**When** the subtype list opens
+**Then** it groups the subtypes as Sure's `Investment.subtypes_grouped_for_select` for the reporting currency `EUR`: « Europe » first, with « Assurance Vie », « Plan d'Épargne en Actions », « Prévoyance privée (Pilier 3a) » and « Riester-Rente », then « Général », with « Retraite », « Compte de retraite », « Fonds commun de placement », « Or (physique ou numérique) », « Investissement providentiel », « Fiducie » and « Autre », each label Sure's `investments.subtypes.*.long`; `brokerage` stays, under « États-Unis » as Sure files it
+
+**Given** an account saved with `pillar_3a`, `riester`, `pension` or `retirement`
+**When** a cash-flow report or a list total runs
+**Then** it is left out, as Sure's `Family#tax_advantaged_account_ids` leaves out every `tax_deferred`, `tax_exempt` and `tax_advantaged` subtype, and net worth still counts it
+
+**Given** an account of a new subtype
+**When** trades, positions and the export read it
+**Then** it behaves as any investment account
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the grouping, each subtype's tax treatment and the totals; Playwright creates an account under « Pilier 3a »
+
+### Story 28.6: Sell more than is held
+
+As the household's administrator,
+I want a sale above the quantity held to save,
+So that a trade I record late or out of order is never refused, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a security held at 10 units on a date
+**When** I record a sale of 15 units on that date, or edit or delete a buy so that a later sale exceeds what is held
+**Then** the write succeeds; `QUANTITY_UNAVAILABLE` goes from `lib/errors.ts` and from the dialog's messages
+
+**Given** that sale
+**When** holdings are computed by `domain/holdings/forward.ts`
+**Then** the quantity goes to −5, as Sure's `Holding::ForwardCalculator`; the cost basis relieves only what was held and starts over at zero, as Sure's `Holding::CostBasisTracker#sell`, and a later buy starts a fresh basis
+
+**Given** a position below zero
+**When** « Positions » and `get_holdings` read it
+**Then** it stays listed with its negative quantity and value, as Sure's `Account#current_holdings` keeps every quantity but zero
+
+**Given** the change
+**When** it lands
+**Then** AD-22 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the oversell, the edit and the deletion, the capped cost basis and the rebuy; Playwright records a sale above the quantity and finds the negative position
+
+### Story 28.7: Delete a position and remap its security
+
+As the household's administrator,
+I want to delete a position or point it at another security from its sheet,
+So that a wrong security is fixed without re-entering every trade, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a position's sheet, `PositionSheet.tsx`
+**When** I choose « Supprimer » and confirm Sure's dialog, « Supprimer la position » with « Cela supprimera la position et toutes vos transactions boursières associées sur ce compte. Cette action ne peut pas être annulée. », Sure's words with « position » for Sure's « holding »
+**Then** every trade of that security on the account is deleted with the position and the account is computed again, as Sure's `Holding#destroy_holding_and_entries!`
+
+**Given** the same sheet
+**When** I choose « Modifier le titre », pick a security through the search, « Rechercher un titre », and save
+**Then** every trade of the old security on the account moves to the new one and holdings are computed again from the new security's prices, as Sure's `HoldingsController#remap_security` and `Holding#remap_security!`; a position already held in the new security merges with it
+
+**Given** a viewer
+**When** the sheet opens
+**Then** neither action shows, and the server refuses both
+
+**Given** the change
+**When** it lands
+**Then** AD-22 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the deletion, the remap, the merge and the recomputation; Playwright deletes one position and remaps another
+
+### Story 28.8: Property and vehicle details and overview
+
+As the household's administrator,
+I want Sure's property and vehicle details and their overview tab,
+So that a home's address and area, or a car's make and mileage, sit beside its value, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the property dialog
+**When** it opens
+**Then** it offers Sure's ten subtypes, the four missing ones as « Maison plurifamiliale », « Copropriété », « Maison de ville » and Sure's « Terrain agricole », and Sure's `properties/_form.html.erb` fields: « Surface habitable » with « Unité de mesure », « Année de construction », and the address, « Adresse », « Ville », « Code postal/ZIP », « Région/Département », « Pays »
+
+**Given** the vehicle dialog
+**When** it opens
+**Then** it shows Sure's `vehicles/_form.html.erb` fields: « Marque », « Modèle », « Année », « Kilométrage » with « Unité », « Kilomètres » or « Miles »
+
+**Given** a property or a vehicle
+**When** its page opens
+**Then** a « Vue d'ensemble » tab shows Sure's `tabs/_overview` cards: for a property « Valeur marchande », « Prix d'achat », the first valuation, « Tendance », « Surface habitable », « Année de construction »; for a vehicle « Prix actuel », « Prix d'achat », « Tendance », « Marque et modèle », « Année », « Kilométrage »; a missing value reads « Inconnu », and an administrator sees « Modifier les détails du compte »
+
+**Given** the details
+**When** the export runs
+**Then** they leave in the account's `accountable` as Sure's
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the details' validation, the trend and the export; Playwright fills a property and a vehicle and reads their overview
+
+### Story 28.9: Property and vehicle values only valuations move
+
+As a member of the household,
+I want a property's or a vehicle's value to move only with a valuation,
+So that paying a builder or a garage never changes what the home or the car is worth, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a property or a vehicle account
+**When** a transaction is recorded on it
+**Then** its value stays the last valuation's, as Sure's `Account#balance_type` `:non_cash` and `Balance::BaseCalculator`: a non-cash account's flows move no balance
+
+**Given** a valuation on such an account
+**When** balances are computed
+**Then** it sets the value from its day on, forward as every manual account
+
+**Given** existing property and vehicle accounts holding transactions
+**When** the migration runs
+**Then** their balances are computed again under the new rule
+
+**Given** the change
+**When** it lands
+**Then** AD-8 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a transaction leaving the value unchanged, a valuation setting it and the recomputation of existing accounts; Playwright is unchanged, since no screen changes
+
+### Story 28.10: Other asset and other liability accounts
+
+As the household's administrator,
+I want Sure's « Autre actif » and « Autre passif » account types,
+So that jewellery, a loan from a relative or anything else I own or owe has an account, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the account creation dialog
+**When** I choose a type
+**Then** it offers « Autre actif », an asset, and « Autre passif », a liability, without subtype, as Sure's `OtherAsset` and `OtherLiability`
+
+**Given** an « Autre actif »
+**When** it is created or edited
+**Then** the dialog says, as Sure's `other_assets.new.balance_tracking_info`, that its value follows the balances entered with « Nouveau solde », not transactions; it is non-cash, as Sure's `Account#balance_type`, following Story 28.9
+
+**Given** an « Autre passif »
+**When** balances are computed
+**Then** it is non-cash too, as Sure's `balance_type` files `OtherLiability`
+
+**Given** either type
+**When** the dashboard, net worth, `get_accounts` and the export read it
+**Then** it sits in its classification's group under Sure's « Autres actifs » or « Autres passifs »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both types in balances, net worth and the export; Playwright creates one of each
+
+### Story 28.11: Crypto accounts
+
+As the household's administrator,
+I want Sure's crypto account,
+So that coins held on a platform or in a wallet count in net worth, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the account creation dialog
+**When** I choose « Cryptomonnaie »
+**Then** it offers Sure's subtypes « Portefeuille crypto » and « Plateforme d'échange crypto », or « Aucun », and « Traitement fiscal », taxable by default, with Sure's hint, as Sure's `cryptos/_form`
+
+**Given** a crypto account of subtype `exchange`
+**When** I open « Ordres »
+**Then** I record buys and sales of a crypto security as on an investment account; a `wallet` takes none, as Sure's `Crypto#supports_trades?`
+
+**Given** a crypto account
+**When** balances are computed
+**Then** its value is its cash plus its holdings, as Sure's `balance_type` `:investment`
+
+**Given** a crypto account whose tax treatment is `tax_deferred` or `tax_exempt`
+**When** a cash-flow report runs
+**Then** it is left out, as Sure's `Family#tax_advantaged_account_ids`
+
+**Given** the change
+**When** it lands
+**Then** AD-22 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers trades by subtype, holdings, tax treatment and the export; Playwright creates an exchange account and records a buy
+
+### Story 28.12: Inactive accounts listed, and a menu on each account row
+
+As a member of the household,
+I want inactive accounts listed muted among the others, with a menu on each row,
+So that I see every account at once and act on one from the list, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the accounts page with an inactive account
+**When** it opens
+**Then** the account sits in its group with the others, its name and balance in Sure's subdued text, as Sure's `Account.listable_manual` and `accounts/_account.html.erb`; the toggle that hides inactive accounts goes
+
+**Given** an administrator on the accounts page
+**When** they open a row's menu
+**Then** it offers Sure's items in Sure's order: « Modifier », then « Désactiver le compte » or « Activer le compte », « Exclure de tous les rapports » or « Inclure dans les rapports », then « Supprimer le compte » for an account no bank links, as Sure's
+
+**Given** an account excluded from reports
+**When** its row shows
+**Then** it carries Sure's icon with the tooltip « Exclu des rapports »
+
+**Given** a viewer
+**When** the accounts page opens
+**Then** no write item shows, and the server refuses each
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the list query; Playwright deactivates an account from its row, finds it muted, and reactivates it
+
+### Story 28.13: A default account for new transactions
+
+As the household's administrator,
+I want to set a default account,
+So that a new transaction starts on it, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active depository or credit card account that no bank links
+**When** I choose « Définir par défaut » in its row's menu
+**Then** it becomes my default account, stored per user as Sure's `users.default_account_id`, and its row shows « Par défaut »; another account loses it
+
+**Given** my default account
+**When** I choose « Retirer par défaut »
+**Then** I have none, as Sure's `accounts_controller#remove_default`
+
+**Given** a linked, inactive or other account
+**When** its menu opens
+**Then** it offers no « Définir par défaut », as Sure's `Account#eligible_for_transaction_default?`, and the server refuses it
+
+**Given** a default account
+**When** I open the new transaction form
+**Then** its account field starts on it, as Sure's `default_account_for_transactions`; it is cleared when the account is deactivated, linked or deleted
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers eligibility, the per-user storage and the clearing; Playwright sets a default and opens the transaction form on it
+
+### Story 28.14: Account order preference
+
+As a member of the household,
+I want to choose how my accounts are ordered,
+So that the list reads in the order I use, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Réglages »
+**When** I open my preferences
+**Then** « Ordre d'affichage des comptes par défaut » offers Sure's `AccountOrder::ORDERS` with Sure's labels: « Nom (A-Z) », the default, « Nom (Z-A) », « Solde (de bas en haut) » and « Solde (haut à bas) », saved per user as Sure's `default_account_order`
+
+**Given** an order chosen
+**When** the accounts page, the sidebar groups and the dashboard's balance sheet list accounts
+**Then** each group follows it, as Sure's `BalanceSheet#sorted`
+
+**Given** an unknown order sent to the server
+**When** it saves
+**Then** it is refused, as Sure's `inclusion` validation
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each order and the refusal; Playwright picks « Solde (haut à bas) » and checks the accounts page
+
+### Story 28.15: Account notes and institution
+
+As the household's administrator,
+I want to record an account's institution and notes,
+So that I keep the details I need beside the account, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the account creation or edit dialog
+**When** I open Sure's closed disclosure « Détails supplémentaires »
+**Then** it shows « Nom de l'institution », « Domaine de l'institution » and « Notes », with Sure's placeholders, as Sure's `accounts/_form.html.erb`; a linked account's placeholders name its bank
+
+**Given** an account with an institution name
+**When** the accounts page shows its row
+**Then** the name follows the account's after « • » on a wide screen and sits under it on a phone, as Sure's `accounts/_account.html.erb`
+
+**Given** the domain
+**When** the page renders
+**Then** no logo is fetched from it: Brandfetch stays out for security, as the parity page records
+
+**Given** notes and an institution
+**When** the export and `get_accounts` run
+**Then** they carry what Sure's carry
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers saving, length limits and the export; Playwright fills the three fields and finds the institution on the row
+
+### Story 28.16: Create an account in Sure's steps
+
+As the household's administrator,
+I want to create an account in Sure's steps,
+So that I pick a type, then a method, then the type's own form, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Nouveau compte »
+**When** it opens
+**Then** it lists the types in Sure's `accounts/new.html.erb` order, each with its icon and colour: assets first, depository, investment, crypto, property, vehicle; then credit card and loan; then « Autre actif » and « Autre passif »
+
+**Given** a type chosen
+**When** the next step opens
+**Then** it asks « Comment voulez-vous l'ajouter ? » with « Saisir le solde du compte » and, for a type a bank can link, « Lier un compte européen », which starts the Enable Banking flow, as Sure's `accounts/new/_method_selector.html.erb`; a back control returns to the types
+
+**Given** manual entry chosen
+**When** the form opens
+**Then** it is the type's own form under Sure's title, such as « Saisir les détails de la carte de crédit » or « Saisir les détails du véhicule », with « Solde à la date : » and « Date du solde d'ouverture »; a property goes through Sure's « Vue d'ensemble », « Valeur » and « Adresse » steps with « Suivant »
+
+**Given** the steps
+**When** they replace `CreateAccountDialog.tsx`
+**Then** every field the single dialog had stays reachable
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the step state; Playwright creates a depository, a credit card and a property through the steps
+
+### Story 28.17: Honour a linked account's opening balance
+
+As a member of the household,
+I want a linked account's opening balance to count going backward, and to edit it,
+So that the history starts at the amount I gave, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an account a bank syncs, computed backward by `domain/balances/reverse.ts`
+**When** the computation reaches the opening anchor's date
+**Then** that day's balance is the anchor's amount, and the next day records the gap as a cash adjustment, as Sure's `Balance::ReverseCalculator#use_opening_anchor_for_date?` and `opening_boundary_adjustment`
+
+**Given** « Soldes » on a linked account
+**When** an administrator opens « Solde d'ouverture »
+**Then** the sheet `OpeningBalanceSheet.tsx` opens as on a manual account, as Sure's valuation drawer, and saving recomputes the history
+
+**Given** `set_opening_balance` on a linked account
+**When** an assistant calls it
+**Then** it still refuses with Sure's `linked_account`
+
+**Given** the change
+**When** it lands
+**Then** AD-8 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the backward pass at and after the anchor and the adjustment; Playwright edits a linked account's opening balance
+
+### Story 28.18: Date the bank's balance today
+
+As a member of the household,
+I want the bank's balance dated today and an older one kept as a past figure,
+So that the current balance and its chain read as Sure's.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a sync whose balance carries a `reference_date` before today
+**When** `services/ledger/bank-link.ts` writes it
+**Then** the `current_anchor` is dated today, as Sure's `EnableBankingAccount::Processor` calls `set_current_balance` without a date
+
+**Given** a balance dated before the current anchor's date
+**When** it is written
+**Then** it becomes a reconciliation on its own date and the anchor and the account's balance stay, as Sure's `Account::CurrentBalanceManager#record_historical_balance`
+
+**Given** an anchor dated an earlier day
+**When** today's balance arrives
+**Then** the earlier anchor becomes a reconciliation, as Story 11.7 already does
+
+**Given** the change
+**When** it lands
+**Then** AD-8 and AD-18 change with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers today's dating, an older balance kept as a reconciliation, and the anchor's rotation; Playwright is unchanged, since no screen changes
+
+### Story 28.19: Confirm a balance before saving it
+
+As the household's administrator,
+I want to confirm a new or changed balance before it is saved,
+So that I see what it changes first, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Ajouter un solde » filled
+**When** I submit it
+**Then** a step titled « Confirmer le nouveau solde » says the balance it sets on its date, as Sure's `valuations/_confirmation_contents.html.erb`, with « Toutes les transactions et soldes futurs seront recalculés sur la base de cette mise à jour. », Sure's `recalculate_notice` with the article French needs, and « Confirmer » saves it; nothing is saved before
+
+**Given** « Modifier le solde » or the opening balance sheet with a changed date or amount
+**When** I submit it
+**Then** the step reads « Mettre à jour le solde », its notice ends « sur la base de ce changement », and its button reads « Mettre à jour », as Sure's `confirm_update`
+
+**Given** an investment account
+**When** the step shows
+**Then** it splits Sure's « Valeur totale du compte » into « Valeur des positions », for Sure's « Valeur des holdings », and « Trésorerie de courtage », computed without writing, as Sure's `dry_run`
+
+**Given** an empty amount
+**When** I submit
+**Then** Sure's « Le montant est requis » shows and no step opens
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the dry run; Playwright confirms a new balance and an update
+
+### Story 28.20: Opening balance and snapshot refusals as Sure's
+
+As the household's administrator,
+I want the opening balance and snapshots refused only where Sure refuses them,
+So that I can date them as Sure lets me.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the opening balance sheet
+**When** I save a date on or after the oldest entry and not after today
+**Then** it saves, as Sure's valuation drawer refuses only a future date; balances start at the oldest entry, as since Story 27.21
+
+**Given** `set_opening_balance` on an account with no entry
+**When** an assistant gives a date after today
+**Then** it saves it, as Sure's `OpeningBalanceManager#date_error` checks only the oldest entry, and balances run from that date
+
+**Given** `record_valuation` with a date after today
+**When** an assistant calls it
+**Then** it records the valuation, as Sure's `ReconciliationManager`, instead of Archant's `validation_error`
+
+**Given** `get_valuations` with a well-formed `account_id` no account has
+**When** an assistant calls it
+**Then** it answers an empty list, as Sure checks only that it is a UUID, instead of `not_found`
+
+**Given** the change
+**When** it lands
+**Then** AD-8 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each refusal removed; Playwright saves an opening date after a line's date
+
+### Story 28.21: An activity label on investment transactions, as Sure
+
+As the household's administrator,
+I want to give a transaction of an investment account Sure's activity type,
+So that a dividend, a fee or an internal sweep reads as what it is and leaves the budget alone, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a transaction of an investment account
+**When** an administrator opens its sheet
+**Then** a « Type d'activité » select, Sure's `transactions.show.activity_type`, offers « — » then Sure's `Transaction::ACTIVITY_LABELS` in Sure's order with Sure's `transactions.activity_labels.*` words: « Achat », « Vente », « Balayage entrant », « Balayage sortant », « Dividende », « Réinvestissement », « Intérêts », « Frais », « Transfert », « Contribution », « Retrait », « Échange », « Autre »; the choice saves at once and is locked against the sync
+
+**Given** a transaction labelled « Transfert », « Balayage entrant », « Balayage sortant » or « Échange », Sure's `INTERNAL_MOVEMENT_LABELS`
+**When** the income statement and the budget count the month
+**Then** it is left out, as Sure's `investment_activity_label_sql` in `income_statement/scoped_transactions_query.rb`
+
+**Given** the export and the assistant
+**When** they write or read a transaction
+**Then** they carry `investment_activity_label` as Sure's exporter and `get_transactions` do
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the label saved, locked and the four internal labels left out of the month; Playwright labels a transaction « Dividende » from its sheet
+
+## Epic 29: Bank synchronisation as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below had no admitted reason: no integer money, no French text, no accessibility contrast, no security. This epic follows Sure.
+
+What Sure does:
+
+- Credentials: `app/views/settings/providers/_enable_banking_panel.html.erb` saves the country with the application ID and the certificate, and `enable_banking_items_controller.rb#select_bank` lists that country's banks; « Supprimer » runs `unlink_all!`, `revoke_session` and `destroy_later`.
+- Consent: `app/models/provider/enable_banking.rb#consent_seconds_ladder` asks for the bank's maximum capped at `ENABLE_BANKING_CONSENT_DAYS`, 180 by default (`config/initializers/enable_banking.rb`), then 180, 90, 45 and 30 days on a consent-validity refusal, 60 seconds shaved off each.
+- Refused period: `next_transactions_date_from` tries the bank's `detail.date_from` first, then 89, 60 and 30 days; `wrong_transactions_period?` also reads N26's `PERIOD_INVALID`.
+- Pagination: `enable_banking_item/importer.rb#fetch_paginated_transactions` keeps the pages read when page two or later answers 400 or 422, and the account counts as synced.
+- Lines: `enable_banking_entry/processor.rb` cleans labels, creates merchants through `find_or_create_merchant`, and reads any line not marked `CRDT` as money out.
+- Pending lines: `account/provider_import_adapter.rb#find_pending_transaction` claims a pending entry of the same amount dated 0 to 8 days before the booked line, keeps the pending date and never deletes a stale one; `Setting.syncs_include_pending` turns pending lines off. Lines 316-360 suggest looser matches, and `Transaction#merge_with_duplicate!` merges them.
+- Unlink: `accounts_controller.rb#unlink` turns one account manual, and `account/syncer.rb` computes it forward from then on.
+- Schedule: `app/services/auto_sync_scheduler.rb` syncs every day at `Setting.auto_sync_time`, 02:22 by default; a sync button only waits for a running sync; `enable_banking_item/provided.rb#build_psu_headers` sends `Psu-Ip-Address` on data calls.
+
+Stories 29.1, 29.2, 29.4, 29.5, 29.6, 29.8, 29.9 and 29.10 come in any order. Story 29.3 follows 29.6, since a statement cut short no longer counts a pending miss once 29.6 removes the misses. Story 29.7 follows 29.4 and 29.6: its suggestions read the merchant 29.4 creates and the pending lines 29.6 keeps. No story waits on another epic. Story 29.4 also settles « Merchants from the bank » of `docs/sure-parity.md` « Classification ».
+
+### Story 29.1: Choose the bank's country with the credentials, and remove them
+
+As the household's administrator,
+I want to pick the country beside the Enable Banking credentials and to remove those credentials,
+So that connecting a bank lists my country's banks at once, and I can take the credentials away, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the credentials form of « Réglages › Banques »
+**When** the administrator opens it
+**Then** it asks « Pays » first, a list of Sure's 31 countries opened on « Sélectionner le pays... », beside the application ID and the `.pem` file, as Sure's `_enable_banking_panel.html.erb`; the country is saved with them, and is locked with them while a bank is active, under « Configuration verrouillée »
+
+**Given** saved credentials and a country
+**When** the administrator connects a bank
+**Then** the bank picker lists that country's banks at once and asks no country, as Sure's `select_bank` reads `country_code`
+
+**Given** saved credentials
+**When** the administrator presses « Supprimer » and confirms « Voulez-vous vraiment supprimer cette connexion ? »
+**Then** every connection is disconnected first, its accounts kept as manual accounts, as Sure's `destroy` runs `unlink_all!` and `revoke_session`; the application ID, the key and the country are deleted, and the form is empty again
+
+**Given** credentials set by the `ENABLE_BANKING_*` variables
+**When** the panel shows
+**Then** it offers no « Supprimer », since the server file holds them
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the saved country, the lock and the removal; Playwright saves credentials with a country, connects a bank without a country step, then removes them
+
+### Story 29.2: Ask for the bank's longest consent and step down on refusal
+
+As the household's administrator,
+I want Archant to ask for the longest consent the bank grants, and a shorter one when it refuses,
+So that I reconnect my bank as seldom as Sure lets me.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a bank whose `maximum_consent_validity` is known
+**When** the administrator connects it
+**Then** the consent asked for is that maximum capped at `ENABLE_BANKING_CONSENT_DAYS` days, 180 by default, less 60 seconds, as Sure's `consent_seconds_ladder`; without a maximum, the cap itself is asked for; the 90-day cap goes
+
+**Given** a bank that answers `WRONG_REQUEST_PARAMETERS` with a message naming the consent validity
+**When** the authorisation is started
+**Then** it is asked again with each of 180, 90, 45 and 30 days shorter than the first try, each less 60 seconds, as `CONSENT_FALLBACK_DAYS`; any other refusal fails at once; all refused, the last refusal is the one shown
+
+**Given** `.env.example`
+**When** a self-hoster reads it
+**Then** `ENABLE_BANKING_CONSENT_DAYS` is listed, saying that without it the cap is 180 days; a value that is not a positive whole number is ignored, as Sure's initializer
+
+**Given** AD-18
+**When** this story is built
+**Then** AD-18 changes with this story: the consent paragraph states Sure's ladder
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the cap, the ladder, a refusal of another kind and the variable
+
+### Story 29.3: Retry from the bank's suggested start, and keep a statement cut short
+
+As the household's administrator,
+I want a refused period retried from the start the bank suggests, and the pages already read kept,
+So that a sync succeeds wherever Sure's does.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a transactions call refused with `WRONG_TRANSACTIONS_PERIOD`, or with N26's `{ "code": "PERIOD_INVALID" }`
+**When** the error body carries `detail.date_from` later than the date asked for
+**Then** the call is retried from that date first, as Sure's `corrected_date_from`; without it, or when that retry is refused too, 89, 60 and 30 days are tried as today, skipping any start not later than the refused one
+
+**Given** any page of the statement, not only the first
+**When** the bank refuses its period
+**Then** that call is retried the same way, as Sure's `get_account_transactions` retries every call
+
+**Given** a statement whose second page or a later one answers 400 or 422 other than a refused period
+**When** the sync runs
+**Then** the pages read are ingested, the balance is read, and the account counts as synced, its window moving as after a full read, as Sure's `fetch_paginated_transactions`; any other error after page one still fails the account
+
+**Given** AD-18
+**When** this story is built
+**Then** AD-18 changes with this story: the refused period and the partial pages follow Sure
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the suggested date, `PERIOD_INVALID`, a later page refused and a statement cut short by a 400 and by a 422
+
+### Story 29.4: Clean bank labels and create merchants from counterparties
+
+As the household's administrator,
+I want bank lines named as Sure names them and their merchant created from the counterparty,
+So that my bank lines read and group as they do in Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a bank line whose counterparty is a `CARD-` placeholder followed by digits
+**When** it is read
+**Then** its label is the remittance text, cut at 100 characters, before the bank's code description, as Sure's `technical_card_counterparty?`
+
+**Given** remittance lines
+**When** the label is taken from them
+**Then** an « Apple Pay: », « Google Pay: » or « Samsung Pay: » prefix goes (`WALLET_PREFIX`), a technical `POS` or `ATM` line is skipped for the next one, a merchant name the household already knows, three characters or more, wins, the longest first, and else a `SUMUP *`, `SQ *`, `IZETTLE *`, `ZETTLE *` or `PAYPAL *` prefix goes; the notes keep the raw remittance
+
+**Given** a readable counterparty, or a remittance read for a `CARD-` placeholder or naming a known merchant
+**When** the line is ingested
+**Then** the line takes a merchant of that name, created on first sight and found again by the name, as Sure's `find_or_create_merchant`; a merchant the user set on the line stays
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each clean-up, the known merchant match, the merchant created and found again, and a locked merchant
+
+### Story 29.5: Read a line without direction as money out
+
+As the household's administrator,
+I want a bank line without a debit or credit indicator kept as money out,
+So that no line of my statement is dropped where Sure keeps it.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a bank line whose `credit_debit_indicator` is missing or unreadable
+**When** the sync reads it
+**Then** it is ingested as money out, its counterparty read on the creditor side, as Sure's `amount_value` and `counterparty_name` treat anything but `CRDT`; it is no longer refused with `INVALID_AMOUNT`
+
+**Given** such a line with no counterparty, code description or remittance
+**When** its label is chosen
+**Then** it reads « Virement sortant »
+
+**Given** AD-18
+**When** this story is built
+**Then** AD-18 changes with this story: only `CRDT` is money in
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a missing and an unknown indicator, the sign and the label
+
+### Story 29.6: Settle pending lines as Sure
+
+As the household's administrator,
+I want pending lines matched, dated and kept as Sure keeps them, and a switch to leave them out,
+So that a purchase keeps its date and never vanishes on its own, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a booked line no key matches
+**When** a pending entry of the same account has the same amount and currency, dated 0 to 8 days before it
+**Then** the booked line takes that entry, which keeps the pending date, as Sure's `find_pending_transaction` and `effective_date`; a pending entry dated after the booked line is not taken, and the 5 days either way go
+
+**Given** a pending entry the bank stops listing
+**When** syncs run on later days
+**Then** it stays, as Sure keeps a stale pending line; Story 11.5's deletion after two misses goes, with `transactions.pending_missed_syncs` and `transactions.pending_missed_on`, and a bank account's window is no longer extended back to its oldest pending entry
+
+**Given** « Inclure les transactions en attente », on by default, as Sure's `syncs_include_pending`
+**When** the administrator turns it off
+**Then** the next syncs ask for no `PDNG` line and drop the pending ones a booked read returns
+
+**Given** AD-17 and AD-18
+**When** this story is built
+**Then** AD-17 and AD-18 change with this story: Sure's window, date and keeping
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the 0 and 8 day bounds, a pending dated after, the kept date, a stale pending kept and the switch off; Playwright turns the switch off and on
+
+### Story 29.7: Suggest and merge pending duplicates
+
+As the household's administrator,
+I want a pending line that looks like a booked one, with a different amount, shown as a possible duplicate I can merge,
+So that a tip or an adjusted card payment is not counted twice, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a new booked line no pending entry was claimed for
+**When** a pending entry of the same account and currency, dated 0 to 3 days before it, is up to 30 % smaller in amount and is the only one sharing its merchant, or else the first three words of its label
+**Then** the pending entry shows « Doublon possible détecté », as Sure's `find_pending_transaction_fuzzy`; from 30 % to half smaller, both merchant and label must match, and the badge's tooltip reads « Écart de montant important — vérification recommandée pour vérifier s'il s'agit d'un doublon »
+
+**Given** a suggestion
+**When** the administrator presses « Oui, fusionnez-les »
+**Then** the pending entry goes and the booked line keeps its label and merchant, takes the pending line's category and date unless locked, and is locked, as `merge_with_duplicate!`; its attachments, tags and notes move onto it, since Sure loses them (issue we-promise/sure#4220)
+
+**Given** a pending entry
+**When** the administrator opens « Ouvrir la fusion »
+**Then** it lists the account's booked lines, ten at a time, to merge by hand; « Non, gardez les deux » dismisses for good
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both bands, the ambiguity rule, the merge and the dismissal; Playwright merges a suggestion
+
+### Story 29.8: Unlink one bank account
+
+As the household's administrator,
+I want to unlink one account from its bank and keep the others syncing,
+So that an account I stop following becomes manual without disconnecting the bank, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a linked account
+**When** the administrator opens its menu
+**Then** it offers « Délier du fournisseur », which opens « Délier le compte du fournisseur ? » listing Sure's four warnings, among them « Toutes les transactions et soldes existants seront conservés », with « Confirmer et délier », as Sure's `confirm_unlink`
+
+**Given** the confirmation
+**When** the account is unlinked
+**Then** it becomes a manual account with its lines, as Sure's `accounts_controller.rb#unlink`; the toast reads « Compte délié avec succès. C'est maintenant un compte manuel. »; the connection and its other accounts keep syncing, and the bank account returns to the connection's accounts to link
+
+**Given** a manual account
+**When** its menu opens
+**Then** it offers no unlink
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the unlink and a sync after it; Playwright unlinks one account of a connection
+
+### Story 29.9: Sync at the chosen time, on demand, with the PSU address
+
+As the household's administrator,
+I want every bank synced each day at a time I choose, a sync whenever I press the button, and my address sent where the bank asks for it,
+So that my banks sync as Sure's do.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Activer la synchronisation automatique », on by default, and « Heure de synchronisation (HH:MM) », 02:22 by default, as Sure's `_sync_settings.html.erb`
+**When** the time comes, read in `APP_TIMEZONE`
+**Then** the server syncs every active connection, as Sure's `AutoSyncScheduler`, from a timer in its own process; the first signed-in request of the day still syncs, and `POST /api/sync` stays
+
+**Given** a connection synced minutes ago
+**When** the administrator presses the sync button
+**Then** it syncs; only a running sync makes it wait, as Sure's `syncing?`; `SYNC_TOO_RECENT` and the hour between syncs go
+
+**Given** a bank whose `required_psu_headers` is `Psu-Ip-Address` alone
+**When** the browser starts the authorisation or returns from it
+**Then** its address is stored, sent on balance, details and transactions calls, and cleared once the consent ends, as Sure's `build_psu_headers` and `clean_stale_enable_banking_psu_ips`; a bank needing other headers gets none
+
+**Given** AD-18
+**When** this story is built
+**Then** AD-18 changes with this story: the schedule, the hour and the PSU headers follow Sure
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the timer, a sync within the hour and the headers; Playwright sets the sync time
+
+### Story 29.10: Recompute an unlinked account's history forward
+
+As the household's administrator,
+I want an account unlinked or disconnected from its bank to be computed forward as Sure computes it,
+So that its balances read as they would in Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a linked account computed backward from its bank balance
+**When** its bank is disconnected, or the account is unlinked
+**Then** `services/ledger/bank-link.ts` writes no reconciliation and leaves the opening balance's amount; the account is computed forward from its opening balance, each valuation the bank left, its last balance included, setting its own day, as Sure's `account/syncer.rb` picks `:forward` once the account is not `linked?`
+
+**Given** a past day whose forward balance differs from the backward one
+**When** the account is computed again
+**Then** the forward balance stands, as in Sure
+
+**Given** AD-8
+**When** this story is built
+**Then** AD-8 changes with this story: a disconnection no longer keeps the stored history
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a disconnection and an unlink, the valuations kept and the forward balances
+
+## Epic 30: Imports, exports and resets as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The import, export and reset departures below had no admitted reason, so this epic follows Sure.
+
+What Sure does:
+
+- Import types: `app/models/import.rb` lists `TransactionImport`, `TradeImport`, `AccountImport`, `MintImport`, `ActualImport`, `YnabImport`, `CategoryImport`, `RuleImport`, `MerchantImport`, `QifImport` and `SureImport`; `app/views/imports/new.html.erb` offers each one.
+- Archive: `app/models/sure_import.rb` reads the `all.ndjson` of Sure's export, `app/models/sure_import/preflight.rb` checks it, and `app/models/family/data_importer.rb` merges it into the family, reusing categories, tags and merchants by name.
+- CSV mapping: `app/models/transaction_import.rb` maps date, amount, name, currency, category, tags, account and notes by header. `app/models/import/row.rb` signs an amount from the amount itself or from a type column (`amount_type_strategy` `custom_column`). `rows_to_skip` skips the first lines.
+- Dates: `Family::DATE_FORMATS` holds 11 formats and `Import::CSV_ONLY_DATE_FORMATS` adds `DD/MM/YY`. `Import.detect_date_format` guesses the format from the file's dates.
+- Matched lines: `TransactionImport#import!` gives a line already present the file's category, tags and notes when the file has them.
+- Steps: `app/controllers/import/cleans_controller.rb` lists rows and `app/controllers/import/rows_controller.rb` saves the user's edit to a row; `app/views/imports/_ready.html.erb` summarises what publishing creates.
+- QIF: `app/models/qif_import.rb` reads categories, tags, splits, investment records and several accounts per file.
+- Export: `app/models/family/data_exporter.rb` writes each account whole, `institution_name` and `cash_balance` included, and each attachment's `checksum`.
+- Reset: `app/models/family/financial_data_reset.rb` deletes the household's financial data and keeps its users; `app/models/demo/generator.rb` `generate_new_user_data_for!` then loads sample data.
+
+Stories 30.1, 30.3, 30.4, 30.7 and 30.8 come first, in any order. Story 30.2 follows 30.4. Story 30.5 follows 30.4, and 30.6 follows 30.5. Story 30.9 follows 30.8. Story 30.3 fills a merchant's colour and website once Story 32.3 gives merchants those fields, and Story 30.7 exports an institution once Story 28.15 records one.
+
+### Story 30.1: Import a Sure archive
+
+As the household's administrator,
+I want to upload the `all.ndjson` of a Sure or Archant export and have it merged into my data,
+So that I can move from Sure to Archant, or restore an export into a running household, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the import sources
+**When** the administrator picks « Importer depuis Sure » (« Fichier .ndjson d'export complet »)
+**Then** the page « Importer depuis l'export » takes one `.ndjson` or `.json` file, refuses one whose first line is not a JSON object with `type` and `data` with « Le fichier doit être un NDJSON valide avec au moins un enregistrement », within Sure's `SURE_IMPORT_MAX_ROWS`
+
+**Given** an uploaded archive
+**When** the preflight runs
+**Then** it checks Sure's `REQUIRED_FIELDS` and references, refuses a missing reference with « Ligne %{line} : %{type} référence un %{field} manquant (%{value}). » and skips an advisory one with Sure's warning; « Confirmer votre importation » lists the counts per type under « Résumé de l'importation », with Sure's `dry_run_resources` names, and « Démarrer l'importation »
+
+**Given** a confirmed archive
+**When** it imports
+**Then** accounts, balances, categories, tags, merchants, recurring transactions, transactions, transfers, rejected transfers, trades, holdings, valuations, budgets and rules are created in Sure's dependency order, in one transaction; a category, tag or merchant whose name exists is reused; every amount is read through its decimal text into integer minor units, in Archant's sign; an account type Archant lacks is refused naming its line, as Sure's `invalid_import_record`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest imports an Archant export into a new database and finds the same accounts, balances and transactions, and covers the preflight's refusals; Playwright uploads an archive and reads the summary
+
+### Story 30.2: Import Mint, YNAB and Actual files
+
+As the household's administrator,
+I want to import a Mint, YNAB or Actual export with its columns already mapped,
+So that leaving one of these tools costs me no mapping work, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the import sources
+**When** the administrator opens them
+**Then** « Importer depuis Mint », « Importer depuis YNAB » and « Importer depuis Actual » appear; Sure's `fr.yml` reads « Importer à partir du budget réel », a translation of the product's name, so Archant names the product, for French text
+
+**Given** a Mint file
+**When** it is configured
+**Then** the mapping is Sure's `MintImport::DEFAULT_COLUMN_MAPPINGS`: `Date` in `%m/%d/%Y`, `Description`, `Amount`, `Currency`, `Account Name`, `Category`, `Labels` as tags, `Notes`, `Transaction Type` as the type column, incomes positive, with « Nous avons préconfiguré votre import Mint. Vous pouvez passer à l'étape suivante. »
+
+**Given** a YNAB file
+**When** it is configured
+**Then** `Payee`, `Account`, `Memo` and the category map as Sure's `YnabImport`: the amount is `Inflow` minus `Outflow` unless a signed `Amount` column exists, and the category joins « Category Group » and « Category », or « Master Category » and « Sub Category », as `combined_category`
+
+**Given** an Actual file
+**When** it is configured
+**Then** `Date`, `Payee`, `Amount`, `Account`, `Category` and `Notes` map as Sure's `ActualImport`, incomes positive, and each of the three goes on through Story 30.4's category and account mapping steps
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest imports a fixture of each tool and checks the dates, the integer amounts and their sign, the categories and the accounts; Playwright imports one YNAB file
+
+### Story 30.3: Import accounts, categories, merchants, rules and trades from CSV
+
+As the household's administrator,
+I want to import my accounts, categories, merchants, rules and trades from CSV files,
+So that I can set up the household or reload the files my export wrote, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the import sources
+**When** the administrator opens them
+**Then** « Importer les comptes », « Importer les catégories », « Importer des marchands », « Importer les règles » and « Importer les investissements » appear; Archant names merchants « Marchands », its word for them
+
+**Given** an accounts CSV
+**When** it imports
+**Then** `entity_type`, `name`, `amount`, `currency` and an optional date map as Sure's `AccountImport`; the step « Attribuez vos types de comptes » maps each type of the file to an Archant type; each account is created with its opening balance on that date, as `OpeningBalanceManager`
+
+**Given** a categories, merchants or rules CSV, such as the `categories.csv`, `merchants.csv` or `rules.csv` of an export
+**When** it imports
+**Then** a category is found or created by name with its colour, icon and parent, as `CategoryImport`; a merchant is found or created by name, its colour and website taken once Story 32.3 gives merchants those fields; a rule is created or updated from `name`, `resource_type`, `active`, `effective_date`, `conditions` and `actions`, as `RuleImport`
+
+**Given** a trades CSV
+**When** it imports
+**Then** `date`, `ticker`, `exchange_operating_mic`, `currency`, `qty`, `price` and `name` map as Sure's `TradeImport`, the sign from « Les achats sont en quantité positive » or « négative »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest imports each kind, reimports an export's `categories.csv` and `rules.csv` without creating duplicates, and checks trade amounts in integer minor units; Playwright imports one categories file
+
+### Story 30.4: Map currency, category, tags, account and a type column; Sure's date formats
+
+As the household's administrator,
+I want a CSV's currency, category, tags, account and transaction type mapped, and its date format guessed,
+So that an import fills what the file holds, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the transactions CSV configuration
+**When** the administrator maps columns
+**Then** « Devise », « Catégorie », « Étiquettes » and « Compte » join date, label, amount and notes; « Ignorer les n premières lignes » skips lines as `rows_to_skip`; a row in another currency than its account is refused with `CURRENCY_MISMATCH`, since Archant converts no currency yet
+
+**Given** « Stratégie de type de montant » set to a type column
+**When** the administrator picks the column and the value that marks one side
+**Then** each row's sign follows Sure's `apply_transaction_signage_convention`, « Revenu (entrée) » or « Dépense (sortie) »
+
+**Given** mapped categories, tags or accounts
+**When** the configuration is applied
+**Then** « Attribuez vos catégories », « Attribuez vos étiquettes » and « Attribuez vos comptes » map each value of the file to an existing one, a new one or none, as Sure's `Import::Mapping` steps
+
+**Given** a file's dates
+**When** it is uploaded
+**Then** « Format de date » offers Sure's 11 `Family::DATE_FORMATS` and `DD/MM/YY`, preselects the one `Import.detect_date_format` picks, shows « Première date analysée », and shows « Impossible de détecter le format de date » when none parses
+
+**Given** a row matching a line already present
+**When** it imports
+**Then** the line takes the row's category, tags and notes when the row has them, as `TransactionImport#import!`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the type-column sign, the date formats, the guess and the matched line; Playwright maps a category
+
+### Story 30.5: Fix rows before publishing, and Sure's confirm step
+
+As the household's administrator,
+I want to correct a rejected row in place and confirm an import on Sure's summary,
+So that a typo in one row never forces me to edit the file and start again, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a configured import
+**When** the step « Nettoyer » opens
+**Then** « Nettoyez vos données » shows the rows in a table, ten per page, with « Toutes les lignes » and « Lignes d'erreur », an invalid cell red with its reason, as Sure's `import/cleans/show.html.erb`; the steps read « Téléverser », « Configurer », « Nettoyer », « Mapper », « Confirmer »
+
+**Given** a row in the table
+**When** the administrator edits a cell and leaves it
+**Then** the row is saved and validated again, as `Import::RowsController#update`, and « Étape suivante » stays disabled while any row is invalid
+
+**Given** a clean import
+**When** the step « Confirmer » opens
+**Then** « Confirmez vos données d'importation » lists each « Élément » with its « Nombre », transactions and the categories, tags and accounts the mapping creates, as `Import#dry_run`, and « Publier l'importation » imports; AD-4 changes with this story, its grouped preview giving way to Sure's summary
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a row's edit, its validation and the summary's counts; Playwright fixes an invalid date in the table and publishes
+
+### Story 30.6: Read QIF categories, tags, splits, investments and several accounts
+
+As the household's administrator,
+I want a QIF file read whole, its categories, tags, splits, investment records and every account in it,
+So that a Quicken export arrives complete, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a QIF file with categories and tags
+**When** it is uploaded
+**Then** « Configurer et sélectionner » shows the detected date format, the « Catégories » and « Étiquettes » found with their number of transactions, and lets the administrator choose which to import, as Sure's `QifImport` and `qif_category_selections/show.html.erb`; « Continuer vers la revue » goes on
+
+**Given** a split transaction
+**When** it imports
+**Then** its lines become split lines with their own categories when they sum to the total, as `import_split_lines!`, and otherwise one line at the total; « Transactions scindées détectées » warns before the import
+
+**Given** an investment account's records
+**When** they import
+**Then** each buy, sell, dividend or interest record becomes a trade, as Sure's `generate_investment_rows` and `import_investment_rows!`
+
+**Given** a file holding several accounts
+**When** it is uploaded
+**Then** each account of the file maps to an Archant account, as `qif_accounts`, and its lines go there
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest imports fixtures with categories, tags, splits, investment records and two accounts, every amount in integer minor units; Playwright selects categories on a QIF file
+
+### Story 30.7: Export each account's institution and cash balance, and each attachment's checksum
+
+As the household's owner,
+I want my export to carry each account's institution and cash balance and each attachment's checksum,
+So that the archive holds what Sure's does, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an account
+**When** `all.ndjson` writes its `Account` line
+**Then** the line carries `institution_name`, empty until Story 28.15 records an institution, and `cash_balance`, the account's latest balance's cash part as the `Balance` lines write it, as Sure's `account.as_json`
+
+**Given** an attachment
+**When** `attachments.json` lists it
+**Then** its `checksum` is the Base64 MD5 digest of its bytes, as Active Storage's `blob.checksum`, never `null`; the bytes still never leave
+
+**Given** an attachment saved before this story
+**When** the export runs
+**Then** its `checksum` is the same as one saved after it
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest checks both `Account` fields and the checksum of a known file against Sure's value; Playwright is unchanged, since no screen changes
+
+### Story 30.8: Reset all financial data
+
+As the household's administrator,
+I want to delete every account, transaction and setting of the ledger while keeping our users,
+So that the household can start over without reinstalling, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the administrator in « Réglages »
+**When** the « Zone dangereuse » section is shown
+**Then** « Réinitialiser le compte » reads « La réinitialisation de votre compte supprimera tous vos comptes, catégories, marchands, étiquettes et autres données, mais gardera votre compte utilisateur intact. », and a viewer sees no button, the route calling `requireRole("admin")` as Sure's `ensure_admin`
+
+**Given** the button
+**When** the administrator presses it
+**Then** the dialog « Réinitialiser le compte ? » asks with Sure's `confirm_reset.body`, and confirming deletes, in one transaction, what Sure's `Family::FinancialDataReset#delete_financial_data!` deletes: imports, accounts, entries, transfers, rejected transfers, holdings, balances, recurring transactions, rules, budgets, categories, tags, merchants, attachments and bank connections
+
+**Given** the reset done
+**When** the administrator returns
+**Then** users, members, sessions, assistants and the household's settings remain, and « Votre compte a été réinitialisé. » confirms
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest checks every table is empty after a reset and users remain, and that a viewer is refused; Playwright resets and finds no account
+
+### Story 30.9: Reset with sample data
+
+As the household's administrator,
+I want to replace our data with sample data,
+So that I can try every screen on a filled household, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the « Zone dangereuse » section
+**When** the administrator presses « Réinitialiser et précharger »
+**Then** the dialog « Réinitialiser le compte et charger des données d'exemple ? » asks with Sure's body, and confirming runs Story 30.8's reset, then loads the sample data, as Sure's `FamilyResetJob` with `load_sample_data_for_email`
+
+**Given** the sample data
+**When** it is loaded
+**Then** it follows Sure's `Demo::Generator#generate_new_user_data_for!`: categories, accounts of each type Archant has, three years of transactions with salaries and recurring bills, trades, filled budgets and goals; every account is in the reporting currency, since Archant converts no currency yet, and names are French, for French text
+
+**Given** the same seed
+**When** sample data is loaded twice
+**Then** it is the same, as Sure's `DEMO_DATA_SEED`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest checks the counts per table and that every amount is integer minor units; Playwright resets with sample data and opens the dashboard
+
+## Epic 31: Transactions and transfers as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below in « Transactions » and « Transfers » had no admitted reason, so this epic follows Sure. Archant keeps « virement », the word Sure's own `transactions.form.transfer` uses, where Sure's `transfers` views say « transfert »: French text a French user expects.
+
+What Sure does:
+
+- Filters: `app/models/transaction/search.rb` and `app/models/entry_search.rb` filter by status, « Confirmée » or « En attente », and by one amount with an operator, « Égal à », « Supérieur à » or « Inférieur à », on the absolute value.
+- Bulk edit: `app/controllers/transactions/bulk_updates_controller.rb` and `Entry.bulk_update!` in `app/models/entry.rb` set the date, name, notes, category, merchant and tags of every selected line, the tags replacing the set, and lock what they save; there is no bulk exclusion.
+- Splits: `app/views/splits/new.html.erb` takes a signed amount per line; `User#show_split_grouped?` lets a user list lines flat; `app/views/transactions/show.html.erb` disables a line's name, date, amount, category and merchant; `Family::AutoTransferMatchable` lets a line be a transfer candidate; `app/controllers/splits_controller.rb#update` deletes the lines and creates them again.
+- Attachments: `app/views/transactions/_attachments.html.erb` gives each file an open button and a download button.
+- Transfers: `app/models/transfer/creator.rb` creates both sides, with an optional fee on each, from the new-transaction form; a transfer row opens `app/views/transfers/show.html.erb`; `Family#investment_contributions_category` in `app/models/family.rb` gives a contribution's outflow « Contributions aux investissements ».
+
+Stories 31.1 to 31.6 and 31.8 come in any order. Story 31.7 follows Story 32.2, which brings Sure's default categories. Story 31.6 shows a fee only once Story 31.5 records one; before it, no transfer has a fee.
+
+### Story 31.1: Filter transactions by status and amount
+
+As a member of the household,
+I want to filter my transactions by status and by one amount with an operator,
+So that I find a pending line or an exact amount the way I would in Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the transactions list's filters
+**When** the member opens « Statut »
+**Then** two checkboxes, « Confirmée » and « En attente », filter on whether a line is pending, as Sure's `EntrySearch.apply_status_filter`; both checked, or none, is no filter; the filter's badge reads « Confirmée » or « En attente »
+
+**Given** the « Montant » filter
+**When** the member picks « Égal à », « Supérieur à » or « Inférieur à » and types an amount
+**Then** the list keeps the lines whose absolute amount is within 0.01 of it, above it or below it, as Sure's `EntrySearch.apply_amount_filter`, compared in integer minor units, never as a float; « Égal à » is the default; the minimum and maximum range goes
+
+**Given** `GET /api/transactions` and the assistant
+**When** either filters
+**Then** the route takes `status`, `amount` and `amountOperator` in place of `amountMin` and `amountMax`; `get_transactions` takes Sure's `statuses`, `amount` and `amount_operator` in place of `amount_min` and `amount_max`; the totals follow the filter
+
+**Given** `docs/sure-parity.md`
+**When** the story ships
+**Then** « List, search, filters » reads Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each status, both statuses, each operator, an amount one cent off and the refusal of a malformed amount; Playwright filters a pending line and an amount greater than a value
+
+### Story 31.2: Edit several transactions at once as Sure
+
+As the household's administrator,
+I want to set the date, name, notes, category, merchant and tags of several transactions at once,
+So that I fix a batch of lines in one step, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a selection in the transactions list
+**When** the administrator chooses « Modifier » in the selection bar
+**Then** a drawer « Modifier les transactions » opens, as Sure's `transactions/bulk_updates/new.html.erb`, with « Date », « Nom », « Catégorie », « Marchand », « Étiquettes », « Notes », « Annuler » and « Enregistrer », the words of Sure's transaction drawer where its bulk drawer says « Balises » and « Remarques »; the bar's category, merchant, tags and exclusion controls go; « Supprimer » stays with its confirmation
+
+**Given** some fields filled
+**When** the administrator saves
+**Then** each filled field applies to every selected line and an empty field changes nothing, as `Entry.bulk_update!`'s `compact_blank`; a split's parent is skipped, and its lines take every field but the date; every field saved is locked against sync (AD-10), as `lock_saved_attributes!`
+
+**Given** the « Étiquettes » field
+**When** the administrator touched it
+**Then** its set replaces each line's tags, an empty set clearing them, as `tags_provided?`; untouched, every line keeps its tags
+
+**Given** a line to exclude
+**When** the administrator looks for a bulk exclusion
+**Then** there is none, as in Sure; `POST /api/transactions/bulk-update` takes Sure's fields, `date`, `name`, `notes`, `categoryId`, `merchantId` and `tagIds`, and no `excluded`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a date and a name on three lines, a split's line keeping its date, tags replaced, cleared and untouched, and the locks; Playwright edits two lines; `docs/sure-parity.md` « Bulk edit » reads Parity
+
+### Story 31.3: Split lines as Sure shows and edits them
+
+As the household's administrator,
+I want split lines entered, listed and edited as Sure does,
+So that a split behaves the same in both apps.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the split dialog
+**When** the administrator types a line's amount
+**Then** it is a signed number, negative for an expense, as Sure's `splits/new.html.erb`, which totals the parent's amount with the sign shown; the « Dépense » / « Revenu » toggle goes; the remaining counter and the submit disabled until it reaches zero stay
+
+**Given** « Réglages »
+**When** the administrator turns off « Grouper les transactions fractionnées »
+**Then** the list shows each line as its own row and no parent, as Sure's per-user `show_split_grouped`; on by default, the list groups lines under their parent as today
+
+**Given** a split's line
+**When** its sheet opens
+**Then** its label, date, amount, category and merchant are disabled, as Sure's `transactions/show.html.erb`; tags, notes and attachments stay editable; `PATCH /api/transactions/:id` refuses a label or a category on a line
+
+**Given** a split's line and a line of opposite amount in another account
+**When** matching runs or the administrator opens « Rapprocher un virement »
+**Then** the line is a candidate, as Sure's `transfer_match_candidates`, which leaves out only excluded entries; the parent, excluded once split, stays out; AD-20 and AD-11 change with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a signed split, the flat list, the refused label and category, and a line matched as a transfer; Playwright splits with a negative amount and turns grouping off; `docs/sure-parity.md` « Split interface » reads Parity
+
+### Story 31.4: Download an attachment
+
+As a member of the household,
+I want a download button beside each attached file,
+So that I save a receipt to my computer in one click, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a transaction with files under « Pièces jointes »
+**When** the sheet lists them
+**Then** each file shows two buttons, open and download, as Sure's `transactions/_attachments.html.erb`; open keeps its new tab
+
+**Given** the download button
+**When** the member clicks it
+**Then** `GET /api/transactions/:id/attachments/:attachmentId?disposition=attachment` answers the file with `Content-Disposition: attachment` and its cleaned name, as Sure's `TransactionAttachmentsController#show`; without the parameter the file stays inline; both stay under `attachmentContentSecurityPolicy`
+
+**Given** a viewer
+**When** the sheet opens
+**Then** the viewer sees and uses the download button, a read, and never the delete button
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both dispositions, a name with quotes and accents, and the headers; Playwright downloads a PDF and checks its name; `docs/sure-parity.md` « Attachments » drops « no download button »
+
+### Story 31.5: Create a transfer between two accounts
+
+As the household's administrator,
+I want to create a transfer between two accounts, with a fee,
+So that I record a move of money no statement shows, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the new-transaction form
+**When** the administrator picks « Virement » beside « Dépense » and « Revenu »
+**Then** the form asks « De », « Vers », « Date », « Montant » and « Étiquettes », and folds « Frais bancaires » with « Frais de transfert sortant » and « Frais de transfert entrant », as Sure's `transfers/_form.html.erb`
+
+**Given** a valid form
+**When** it is submitted
+**Then** one database transaction creates both sides, as `Transfer::Creator`: the outflow named « Virement vers » the destination, or « Paiement vers » for a liability, Sure's English « Transfer to » and « Payment to », with the kind `Transfer.kind_for_account` gives; the inflow named « Virement depuis » the source; the transfer `confirmed`, tagged on both sides, its amounts in integer minor units; AD-11 changes with this story
+
+**Given** a fee
+**When** the transfer is created
+**Then** each fee is a standard line on its account, named « Frais de virement » and the transfer's name, Sure's English « Transfer fee », in the « Frais » category, created on first need, as `build_source_fee_transaction`; the transfer links it
+
+**Given** a double submit, or two accounts in different currencies
+**When** the form is sent
+**Then** the second request returns the first transfer, as Sure's idempotency key; different currencies wait for exchange rates (AD-6)
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each kind, both fees, the double submit and the refusals; Playwright creates a transfer with a fee; `docs/sure-parity.md` « Creating a transfer » reads Parity
+
+### Story 31.6: Open a transfer in its own drawer
+
+As the household's administrator,
+I want a transfer row to open the transfer itself,
+So that I see both sides, their fees and notes in one place, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a transfer row in the list, pending or confirmed
+**When** the administrator opens it
+**Then** a drawer opens, as Sure's `transfers/show.html.erb`: the amount and the transfer's name; « Aperçu » with « De », the account, the date and « Montant du virement », then « Frais d'origine » and « Total » when a source fee exists; the same for « À », with « Frais de destination »
+
+**Given** « Détails »
+**When** the administrator edits it
+**Then** « Catégorie » sets the outflow's category when the kind takes one, as `Transfer#categorizable?`, « Non classé » when blank; « Étiquettes » sets the same tags on both sides and locks them, as `update_tags`; « Notes » saves the transfer's own notes, a new `transfers.notes` column
+
+**Given** « Paramètres »
+**When** the administrator deletes the transfer
+**Then** Sure's confirmation « Voulez-vous vraiment supprimer ce virement ? » deletes the transfer and its fee lines, never its two sides; « Marquer comme récurrent » of Story 27.24 moves here
+
+**Given** a viewer
+**When** the drawer opens
+**Then** it shows everything without a control that writes (AD-21)
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the notes, the tags on both sides, the category refused on a kind that takes none, and the deletion; Playwright opens a transfer, tags it and deletes it; `docs/sure-parity.md` « Category of a transfer side » reads Parity
+
+### Story 31.7: Categorise investment contributions
+
+As the household's administrator,
+I want a transfer to an investment account to take « Contributions aux investissements »,
+So that my contributions show under one category in reports and budgets, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a transfer created by Story 31.5 whose kind is `investment_contribution`
+**When** it is saved
+**Then** its outflow takes « Contributions aux investissements », as `Transfer::Creator#outflow_transaction`
+
+**Given** a pending proposal from the matcher, or a pair made by hand
+**When** its kind is `investment_contribution`
+**Then** an outflow without a category takes « Contributions aux investissements », and one with a category keeps it, as `Family::AutoTransferMatchable#auto_match_transfers!` and `TransferMatchesController#create`
+
+**Given** a household without that category, the owner having deleted it or never had it
+**When** a contribution needs it
+**Then** it is created, colour `#0d9488` and icon `trending-up`, as `Family#investment_contributions_category`; AD-12 changes with this story
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the three paths, a category kept and the category created again; Playwright pairs a contribution and sees its category; `docs/sure-parity.md` « Automatic « Investment contributions » category » reads Parity
+
+### Story 31.8: Edit a split by recreating its lines
+
+As the household's administrator,
+I want editing a split to rebuild its lines as Sure does,
+So that a split edited in Archant ends as it would in Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a split whose lines carry tags, notes or attachments
+**When** the administrator saves « Modifier la division »
+**Then** in one database transaction every line is deleted and new lines are created from the form, as Sure's `splits_controller.rb#update`, `unsplit!` then `split!`: new ids, each line's name, amount and category from the form, the merchant and kind from the parent; the old lines' tags, notes, attachments and locks go
+
+**Given** a line in a transfer or paying a bill
+**When** the split is edited
+**Then** the transfer goes with the line, as deleting a side does (AD-11)
+
+**Given** `PUT /api/transactions/:id/split`
+**When** it receives line ids
+**Then** it ignores them; AD-20 changes with this story: an edit recreates the children rather than updating those it keeps by id
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers new ids, tags, notes and attachments gone, the merchant copied and a transfer removed; Playwright edits a split and sees a line's tag gone; `docs/sure-parity.md` « Splits » reads Parity for the edit
+
+## Epic 32: Categories, merchants, tags and rules as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below cited a spec, an Epic 8 decision or nothing, none of the four admitted reasons, so this epic follows Sure.
+
+What Sure does, by area:
+
+- Categories: `app/models/category.rb` has no income or expense kind since #1160 (`e1ff6d46e`), and `Budget#sync_budget_categories` gives every category an envelope. `Category#default_categories` seeds 22 categories with their colours and Lucide icons; `categories_controller.rb` merges several into one through `Category::Merger`, deletes all (`destroy_all`) and restores the defaults (`bootstrap`). `categories/_form.html.erb` offers `Category::COLORS`, a custom colour and `Category.icon_codes`.
+- Merchants: `app/models/family_merchant.rb` gives a merchant a colour from `FamilyMerchant::COLORS` and a `website_url`; `Merchant::Merger` merges several into one.
+- Tags: `app/models/tag.rb` gives a tag a colour from `Tag::COLORS`; `Tag#replace_and_destroy!` moves a deleted tag's transactions to a replacement; `tags_controller.rb#destroy_all` deletes every tag.
+- Rule conditions: `app/models/rule/condition_filter.rb` gives text and select conditions their negative and empty operators; `condition_filter/transaction_amount.rb` compares `ABS(entries.amount)` whatever the currency; `condition_filter/transaction_details.rb` searches the provider's `transactions.extra`.
+- Rule actions: `rule/action_executor/set_transaction_tags.rb` adds several tags at once; `set_investment_activity_label.rb` sets an investment activity label.
+- Running rules: `rules_controller.rb` saves a new rule inactive, confirms it with its count of matching transactions, then activates and applies it; it sorts the list by name or update date; `ApplyAllRulesJob` runs every rule. `Family::Syncer#perform_post_sync` runs every active rule over the history after each sync, and `RuleJob` records each run as a `RuleRun`.
+- Helpers: `rules/_category_rule_cta.html.erb` offers a rule after a hand categorisation; `transactions/categorizes_controller.rb` categorises uncategorised lines in groups; `rules_controller.rb#destroy_all` deletes every rule.
+
+Departures that stay: default category names in the French a French user expects (French text); no merchant logo, since Brandfetch's `cdn.brandfetch.io` is refused by the Content-Security-Policy (security). The owner's decisions of 2026-10-14 keep Archant's additions beside Sure: replace in the label, the transfer action without a mirror entry, the creation order of rules, a manual application that respects locks and creation from the rule pickers. AI and e-mail actions are not planned. AD-4 changes with Story 32.10.
+
+Story 32.1 comes first: Story 35.2 of Epic 35 follows it. Story 32.2 comes before Story 31.7 of Epic 31, which files contributions under the category 32.2 seeds. Story 32.10 follows 32.9. Story 32.8 follows Story 28.21 of Epic 28, which gives transactions Sure's investment activity labels. The others come in any order. Story 30.3 of Epic 30 imports categories, merchants and rules from CSV, and Story 29.4 of Epic 29 creates merchants from the bank's counterparties.
+
+### Story 32.1: Categories without a kind
+
+As the household's administrator,
+I want categories without an income or expense kind,
+So that every category takes any line and any budget, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** `categories.kind` and `categories_kind_check` go, as Sure's migration `remove_classification_from_categories` of #1160 (`e1ff6d46e`); `CATEGORY_KINDS` and the kind of `newCategory` leave `@archant/data/category-presets.ts`, and a subcategory takes only its parent's colour, as Sure's `inherit_color_from_parent`
+
+**Given** « Réglages › Catégories »
+**When** the owner adds or edits a category
+**Then** the form has no « Type » field and the page shows one list, « Catégories », as Sure's `categories/index.html.erb`; the transaction and rule pickers list every category, never filtered by kind
+
+**Given** a budget month
+**When** its envelopes are built
+**Then** every category takes one, as Sure's `Budget#sync_budget_categories` over `family.categories`; the `kind === "expense"` filter of `budgetCategories` in `domain/budgets/categories.ts` and the kind checks of `services/budgets.ts` and `mcp/budgets.ts` go; Sure's other budget rules are Story 35.2
+
+**Given** an assistant
+**When** it calls `create_category`, `update_category` or `get_categories`
+**Then** none takes or returns a kind, as Sure's `create_category.rb` and `get_categories.rb`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the migration over a database holding income categories, an envelope for a former income category and the assistant's shapes; Playwright adds a category without a type and gives it an envelope
+
+### Story 32.2: Sure's default categories, merged, deleted and restored
+
+As the household's administrator,
+I want Sure's 22 defaults, multi-merge, delete all, restore, colours and icons,
+So that I organise categories with Sure's tools, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a fresh instance
+**When** `services/seed.ts` seeds it
+**Then** `DEFAULT_CATEGORIES` holds Sure's 22 `Category#default_categories` and their colours and icons; Archant's 15 French names stay; the seven it lacked take Sure's `fr.yml` names: « Achats », « Soins personnels », « Amélioration de l'habitat », « Sports et remise en forme », « Paiements du prêt », « Prestations », « Contributions aux investissements »
+
+**Given** « Fusionner les catégories » in the page's menu
+**When** the owner picks « Fusionner dans (cible) » and ticks « Catégories à fusionner », then « Fusionner la sélection »
+**Then** the sources' transactions, budget lines and subcategories move to the target, two budget lines of a month adding their integer amounts, and the sources go, as `Category::Merger`; a parent into a subcategory is refused
+
+**Given** « Supprimer tout » behind Sure's high-severity confirmation
+**When** the owner confirms
+**Then** every category goes, transactions left uncategorised, as `destroy_all`; the empty page then offers « Utiliser les valeurs par défaut (recommandé) », and the category picker « Générer les catégories par défaut », which create each missing default by name, as `Category.bootstrap!`
+
+**Given** the category form
+**When** the owner picks a colour or an icon
+**Then** it offers Sure's ten `Category::COLORS`, a custom `#rrggbb` with Sure's « Mauvais contraste » warning, and `Category.icon_codes`; without a colour, a new category takes one of the ten at random; a chip keeps Archant's contrast rendering of its colour, the accessibility departure `docs/sure-parity.md` « Visual design » records
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the defaults, a merge with budget lines and subcategories, the refusal, delete all and restore; Playwright merges, deletes all and restores
+
+### Story 32.3: Merchants and tags as Sure
+
+As the household's administrator,
+I want merchants and tags with colours, merchants with a website and merged several at a time, tags deleted with a replacement or all at once,
+So that I tidy them with Sure's tools, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Marchands »
+**When** the owner adds or edits a merchant
+**Then** `merchants` gains `color` and `website_url`; the form offers Sure's `FamilyMerchant::COLORS`, one at random by default, and « Site web (ex. : starbucks.com) »; each row shows the merchant's colour avatar, and no logo, since the Content-Security-Policy refuses `cdn.brandfetch.io`
+
+**Given** « Fusionner des marchands »
+**When** the owner picks « Fusionner vers (cible) », ticks « Marchands à fusionner » and confirms « Fusionner la sélection »
+**Then** every source's transactions move to the target and the sources go, as `Merchant::Merger`, with « %{count} marchands fusionnés avec succès »
+
+**Given** « Réglages › Étiquettes »
+**When** the owner adds or edits a tag
+**Then** `tags` gains `color`, Sure's `Tag::COLORS`, one at random by default, shown on the tag's badge everywhere; the comment of `packages/data/schema/tags.ts` that denies the colour goes
+
+**Given** a tag to delete
+**When** the owner opens « Supprimer l'étiquette ? »
+**Then** « Sélectionnez l'étiquette » picks a replacement: « Supprimer et réaffecter » moves its transactions to it, a transaction already carrying it keeping it once, and without one « Supprimer "nom" » removes it, as `Tag#replace_and_destroy!`; « Supprimer tout » deletes every tag, as `tags_controller.rb#destroy_all`, with « Toutes les étiquettes supprimées », where Sure's French says « balises »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the colours, a merchant merge, a tag deleted with and without a replacement and delete all; Playwright merges merchants and replaces a tag
+
+### Story 32.4: Every rule operator
+
+As the household's administrator,
+I want Sure's negative and empty operators in every rule condition,
+So that a rule says « does not contain » or « is not empty », as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a « Libellé » or « Notes » condition
+**When** the owner picks its operator
+**Then** the menu offers Sure's `OPERATORS_MAP["text"]` with its `rules.condition_filters.operators` words: « Contient », « Ne contient pas », « Égal à », « Différent de », « Est vide », « N'est pas vide »
+
+**Given** a « Marchand », « Catégorie » or « Compte » condition
+**When** the owner picks its operator
+**Then** it offers Sure's `OPERATORS_MAP["select"]`: « Égal à », « Différent de », « Est vide », « N'est pas vide »; « Étiquette » keeps « Égal à » and « Est vide », the two `transaction_tag.rb` applies, and « Type » keeps « Égal à »
+
+**Given** a rule with a negative operator
+**When** it runs
+**Then** « Ne contient pas » and « Différent de » also match a row whose field is empty, as Sure's `not_like` arm `OR field IS NULL` and its `IS DISTINCT FROM`; « N'est pas vide » takes no value, as `VALUELESS_OPERATORS`
+
+**Given** `@archant/data/rules.ts`
+**When** this story ships
+**Then** `RULE_OPERATORS` gains `not_like` and `is_not_null`, `RULE_OPERATORS_BY_TYPE` and `rule_conditions_operator_of_type_check` follow, and the rule summaries, `rules.csv` and the assistant's rule reads name the new operators
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each new operator on a filled and an empty field, the migration of the check and the summaries; Playwright saves a rule « Libellé » « Ne contient pas » and sees its summary
+
+### Story 32.5: Match an amount in any currency
+
+As the household's administrator,
+I want an amount condition that matches a line whatever its currency,
+So that a rule on « Montant » reaches every account, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a rule « Montant » « Supérieur à » 50
+**When** it runs
+**Then** it matches a line of 60 € and a line of 60 $ alike, as Sure's `transaction_amount.rb` compares `ABS(entries.amount)` with the value whatever the currency; a line outside the reporting currency is no longer left out
+
+**Given** the condition's value
+**When** it is stored and compared
+**Then** it is Sure's decimal text in major units, such as « 50 » or « 12.5 », read through its decimal text and never as a float; each line compares in integers, the value and `abs(amount)` scaled to a common exponent from the line's currency, so no side is rounded and money stays integer minor units
+
+**Given** an existing amount condition, stored in minor units of the reporting currency
+**When** the migration runs
+**Then** it becomes the same amount as decimal text at that currency's exponent, so every rule matches what it matched before in the reporting currency
+
+**Given** the rule form
+**When** the owner types an amount
+**Then** the field steps by the reporting currency's minor unit, as Sure's `number_step` reads the family's currency
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each operator on lines in EUR, USD and JPY, a value with more decimals than a currency has, and the migration; Playwright saves an amount rule and applies it to a line in another currency
+
+### Story 32.6: Add several tags in one rule action
+
+As the household's administrator,
+I want one rule action to add several tags,
+So that a rule tags a trip and a project at once, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the rule form
+**When** the owner picks the tag action
+**Then** « Ajouter des étiquettes » takes several tags in one multiple picker, as Sure's `set_transaction_tags.rb` is a `multi_select`, and stores their ids as Sure's list value
+
+**Given** a rule that adds two tags
+**When** it runs
+**Then** it adds both to the tags each matching transaction already has, never removing one, as Sure merges `existing_tag_ids` with the selected ones; a transaction whose tags are locked keeps them (AD-10); a deleted tag is ignored, and an action left with none writes nothing
+
+**Given** a rule saved with two tag actions
+**When** the migration runs
+**Then** its actions become one holding every tag, and a rule with two actions of one type is then refused, tags included, as Sure's `no_duplicate_actions` with « La règle ne peut pas avoir d'actions en double »
+
+**Given** the rules list, `rules.csv` and the assistant's rule reads
+**When** they show a tag action
+**Then** they name every tag it adds, such as « Ajouter les étiquettes Vacances, Italie »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the merge with existing tags, a locked tags field, a deleted tag, the migration and the refusal; Playwright saves a rule adding two tags and applies it
+
+### Story 32.7: Filter rules by provider details
+
+As the household's administrator,
+I want a rule condition on the details the bank sends with a line,
+So that a rule matches a merchant category code or a foreign exchange rate, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an Enable Banking sync
+**When** it writes a transaction
+**Then** `transactions.extra`, JSON and null by default, holds Sure's `enable_banking_entry/processor.rb#extra` under `enable_banking`: `fx_rate`, `fx_unit_currency`, `fx_instructed_amount`, `merchant_category_code` and `pending`, each parsed by Zod and never logged
+
+**Given** the rule form
+**When** the owner picks the condition « Détails bancaires », Sure's `transaction_details`, which has no French key
+**Then** it offers Sure's three operators, « Contient », « Égal à » and « Est vide », as `transaction_details.rb` overrides them
+
+**Given** a details condition
+**When** it runs
+**Then** « Contient » matches a string or number value at any depth, case ignored, « Égal à » the same with case, and neither ever matches a key, as Sure's `jsonb_path_query` over `strict $.**`, read through SQLite's `json_tree`; « Est vide » matches a null or `{}` details
+
+**Given** a line typed by hand or imported from a file
+**When** a details condition runs
+**Then** its `extra` is null, so only « Est vide » matches it, as in Sure
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the processor's details from a fixture, each operator, a word that only names a key, and a line without details; Playwright saves a details rule
+
+### Story 32.8: Set an investment activity label by rule
+
+As the household's administrator,
+I want a rule action that sets a transaction's investment activity label,
+So that a rule files a dividend or a fee on an investment account, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** transactions that carry Sure's `investment_activity_label`
+**When** the owner adds the action « Définir le libellé d'activité », Sure's `set_investment_activity_label`, whose label has no French key
+**Then** its value is one of Sure's 13 `Transaction::ACTIVITY_LABELS`, shown with Sure's `transactions.activity_labels` words: « Achat », « Vente », « Balayage entrant », « Balayage sortant », « Dividende », « Réinvestissement », « Intérêts », « Frais », « Transfert », « Contribution », « Retrait », « Échange », « Autre »
+
+**Given** a rule with this action
+**When** it runs
+**Then** it writes the label on every matching transaction whose label is not locked (AD-10), and writes nothing for a value outside the list, as `set_investment_activity_label.rb`
+
+**Given** the rules list, `rules.csv` and the assistant's rule reads
+**When** they show the action
+**Then** they name the label, such as « Libellé d'activité : Dividende »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the action on a free and a locked label and a refused value; Playwright saves a rule setting « Dividende »
+
+### Story 32.9: Confirm a rule before it runs, sort the list, apply every rule
+
+As the household's administrator,
+I want a new rule confirmed before it runs, Sure's sort, and « Appliquer tout » over every rule,
+So that I see how many lines a rule reaches before it changes them, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a new rule saved
+**When** the form closes
+**Then** it is disabled, as Sure's `rules.active` defaults to false, and Sure's dialog opens, « Confirmez les modifications apportées à "nom" » or « Confirmer les modifications », counting every line its conditions match from its effective date, whatever would change, as `affected_resource_count`; « Confirmer les modifications » enables it and applies it to the history, respecting locks as Archant keeps; closing leaves it disabled; « Réappliquer la règle » opens the same dialog. The « as in Sure » comment of `services/rules.ts:237` goes
+
+**Given** the rules page
+**When** the owner sorts it
+**Then** « Trier par : » offers « Nom » and « Mis à jour à », with « Changer le sens du tri », by name ascending by default, as `rules_controller.rb#index`; rules still apply in creation order, which the page's description now says
+
+**Given** « Appliquer tout »
+**When** the owner opens it
+**Then** « Appliquer toutes les règles » says « Vous êtes sur le point d'appliquer N règles affectant M opérations uniques », N every rule, disabled ones included, and M the distinct lines any rule matches, as `Rule.total_affected_resource_count`; « Confirmer et appliquer tout » runs every rule in creation order, as `ApplyAllRulesJob`, none enabled by it
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a new rule left disabled, the count with a locked line, both sorts and « Appliquer tout » over a disabled rule; Playwright confirms and sorts rules
+
+### Story 32.10: Run rules over the history after each sync, and list every run
+
+As the household's administrator,
+I want my rules to run over the whole history after each sync, and every run listed,
+So that a rule reaches lines that changed since it last ran, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a sync of the household ends, after a bank sync, an import or the daily sync
+**When** transfer matching has run
+**Then** every enabled rule runs over every transaction from its effective date, respecting locks, as `Family::Syncer#perform_post_sync`; step 5 of `ingest` goes, so a line typed by hand meets the rules at the household's next sync, as Sure's account sync runs none; AD-4 changes with this story
+
+**Given** a rule applied after a sync, by hand or by « Appliquer tout »
+**When** it runs
+**Then** it records a run, as Sure's `RuleJob`: `rule_runs` gains Sure's `execution_type`, `status` (`pending`, `success`, `failed`), queued, processed and modified counts and `error_message`; a rule that fails records `failed` and the other rules still run
+
+**Given** « Exécutions récentes »
+**When** the owner reads it
+**Then** it lists every run, newest first and paged, with Sure's columns « Date/Heure », « Type » (« Manuel », « Planifié »), « Nom de la règle », « Statut » (« En attente », « Réussi », « Échoué »), « Traitées » and « Modifiées »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a sync that recategorises an old line, a locked line left alone, a failed rule beside a successful one, and the runs recorded; Playwright syncs a fixture connection and reads its runs
+
+### Story 32.11: Offer a rule after categorising
+
+As the household's administrator,
+I want Archant to offer a rule when I categorise a line by hand,
+So that lines like it get the same category next time, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the owner sets a category on a transaction from its sheet or its row
+**When** no enabled rule that sets this category already matches the line, as `Transaction::Ruleable#eligible_for_category_rule?`
+**Then** Sure's prompt `rules/_category_rule_cta.html.erb` appears, in the French its English-only keys need: « Catégorie changée en nom », « Vous pouvez créer une règle pour catégoriser automatiquement les opérations comme celle-ci », « Ne plus afficher », « Masquer pour aujourd'hui » and « Créer une règle »
+
+**Given** the prompt
+**When** the owner picks « Créer une règle »
+**Then** the rule form opens with Sure's preset of `rules_controller.rb#new`: the line's label as the name, a condition « Libellé » « Contient » that label, and the action « Catégorie » with the chosen one
+
+**Given** the prompt
+**When** the owner picks « Masquer pour aujourd'hui », or ticks « Ne plus afficher » first
+**Then** the user's `rule_prompt_dismissed_at` hides prompts for 24 hours, or `rule_prompts_disabled` hides them for good, as Sure's user columns; a viewer never sees the prompt, a control that writes
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers eligibility with a matching and a non-matching rule and both dismissals; Playwright categorises a line, creates the offered rule and hides the prompt for the day
+
+### Story 32.12: Categorise uncategorised lines in groups
+
+As the household's administrator,
+I want a wizard that groups uncategorised lines and categorises a group at once,
+So that I catch up on uncategorised lines quickly, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** uncategorised lines
+**When** the owner opens the transactions page
+**Then** « Catégoriser (N) » leads to `/transactions/categorize`, which shows one group at a time: lines sharing a merchant's name, else a label, and a sign, largest group first then by name, as `Transaction::Grouper::ByMerchantOrName`; split parents are left out
+
+**Given** a group
+**When** the owner picks a category under « Assigner une catégorie »
+**Then** it sets it on every ticked line, each with « Inclure nom » ticked by default, as a hand edit (AD-10); a single line takes its own category from its row; « Ignorer » moves to the next group, « Quitter » leaves, and the page counts « N opérations non catégorisées restantes » until « Toutes les opérations sont catégorisées », Sure's `transactions.categorizes` words with « opération » for « transaction », as everywhere in Archant
+
+**Given** « Créer une règle de catégorisation » ticked
+**When** the group is categorised
+**Then** an enabled rule is created: a « Libellé » « Contient » condition on the group's name, a « Type » condition on its sign and the category action, as `Rule.create_from_grouping`; a filter field previews the uncategorised lines it would match, as `preview_rule`, and a rule that fails says « Opérations catégorisées, mais la règle n'a pas pu être créée (elle existe peut-être déjà). »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the grouping and its order, a partial group, the rule created and the duplicate refused; Playwright categorises two groups, one with a rule
+
+### Story 32.13: Delete every rule
+
+As the household's administrator,
+I want to delete every rule at once,
+So that I start my rules over without deleting them one by one, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the rules page with at least one rule
+**When** the owner picks « Supprimer toutes les règles » in the page's menu and confirms Sure's high-severity confirmation
+**Then** every rule goes with its conditions and actions, as `rules_controller.rb#destroy_all`, and the page says « Toutes les règles supprimées »
+
+**Given** transactions a rule changed
+**When** every rule is deleted
+**Then** they keep what the rules wrote, as a single deletion leaves them, and the page shows Sure's empty state « Pas encore de règles »
+
+**Given** a viewer or a page without rules
+**When** the page renders
+**Then** the menu item is absent, as Sure shows it only when rules exist, and `viewerReadOnly` refuses the `DELETE` from a viewer
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the deletion, the transactions left as they were and the viewer's refusal; Playwright deletes every rule
+
+## Epic 33: Bills as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below had none of the four admitted reasons: money as integer minor units, French text, accessibility contrast, security. This epic follows Sure.
+
+What Sure does:
+
+- Cleanup: `app/models/recurring_transaction/cleaner.rb` `cleanup_stale_transactions` runs only from « Nettoyer les obsolètes » (`recurring_transactions_controller.rb#cleanup`); `pipeline.rb` never calls it, and nothing deletes a suggestion whose rows are gone.
+- Next date: `app/models/recurring_transaction/schedule.rb:172-176` dates a plain monthly series' next payment on its expected day in the month after the latest row's, clamped to the month's end.
+- Renamed series: `identifier.rb` has no `rekey`; a renamed series leaves its twin, and the cleaner retires the old one.
+- Declaring: `recurring_transactions_controller.rb:115-125` opens a picker over every transaction, `picker_entries` (312-345) filters it, and `declared_bill.rb` keys the bill on its name, never on a merchant.
+- Occurrence sheet: `recurring_occurrences/show.html.erb:286` offers « Reporter d'une semaine » and no amount field; `recurring_occurrences_controller.rb:99-200` ranks six candidates, lists fifteen others by amount, and searches every transaction past the date window.
+- Drawer: `bills/_summary.html.erb` and `bills/_detail.html.erb` show the paid headline, « Payer », how the bill is recognised, the yearly table, upcoming dates and history.
+- Notices: `bills/_notice.html.erb` and `bills_controller.rb#collect_notices` list price changes of the last 30 days; `bills/_occurrence.html.erb:5` quiets an autopaid bill.
+- Switch: `families.recurring_transactions_disabled`, read by `recurring_feature_guardable.rb`, the jobs, the navigation and the assistant's bill tools.
+
+Stories 33.1 to 33.9 come in any order: the catalogue gives no dependency inside the epic or on another epic. Stories 33.1 and 33.3 both change `detectWithin` in `packages/api/src/services/recurring/series.ts`, so they are built one after the other.
+
+### Story 33.1: Retire stale bills from the cleanup button only
+
+As the household's administrator,
+I want detection to leave my series' status alone and keep every suggestion,
+So that a bill becomes inactive only when I press « Nettoyer les obsolètes », as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active series past Sure's `staleness_threshold_date` with no recent row
+**When** a sync, an import, a revert or « Identifier les modèles » runs detection
+**Then** the series stays `active`: `detectWithin` in `packages/api/src/services/recurring/series.ts` no longer calls `clean`, as Sure's `pipeline.rb` never calls `Cleaner`
+
+**Given** the same series
+**When** the administrator presses « Nettoyer les obsolètes » in « Réglages › Transactions récurrentes »
+**Then** `cleanupRecurring` makes it `inactive` and the toast reads « %{count} transactions récurrentes obsolètes nettoyées », as Sure's `cleaner.rb` `cleanup_stale_transactions`
+
+**Given** a `suggested` series whose transactions were all deleted
+**When** detection or the cleanup runs
+**Then** the suggestion stays, since neither Sure's identifier nor its cleaner deletes a series; `cleanerSteps` keeps no `deleted` step
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers detection leaving a stale series active and a rowless suggestion in place, and the cleanup retiring the stale series; Playwright is unchanged, since no screen changes
+
+### Story 33.2: Date a monthly bill's next payment as Sure
+
+As the household's administrator,
+I want a plain monthly bill's next date computed as Sure's,
+So that « Prochaine » shows the date Sure would show.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a series with one monthly rule on the 28th, every month, no end, and its latest row on 2 March
+**When** detection or the manual pass computes its next date
+**Then** `nextExpectedAfter` in `packages/api/src/domain/recurring/schedule.ts` answers 28 April, the expected day in the month after the latest row's, as Sure's `schedule.rb:172-176` `occurrence_in_month(date.next_month)`; Spec 9.2's nearest day to one month on, 28 March, goes
+
+**Given** a series due on the 31st whose latest row is on 15 January
+**When** its next date is computed
+**Then** it is 28 February, or 29 in a leap year, clamped to the month's end as Sure's `occurrence_in_month`
+
+**Given** any other schedule, or a date from today on
+**When** its next date is computed
+**Then** nothing changes: `nextOccurrenceAfter` and `dueFrom` already follow Sure's `first_occurrence_after` and `next_occurrence_from_today`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the late payment, the clamped month and a non-monthly schedule; Playwright is unchanged
+
+### Story 33.3: Leave a renamed series behind
+
+As the household's administrator,
+I want a series whose transactions change name to stay where it is,
+So that detection proposes the new name as its own series, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active series keyed on the label « NETFLIX » whose latest rows now carry the merchant « Netflix »
+**When** detection runs
+**Then** the series keeps its key, label and payments; `rekey` in `packages/api/src/domain/recurring/series.ts` and its call in `detectWithin` go, since Sure's `identifier.rb` has none
+
+**Given** the new rows form a pattern no series of their key holds
+**When** detection runs
+**Then** a new `suggested` series appears under « Nouvelles factures possibles », as Sure's identifier creates it
+
+**Given** the old series no longer sees a row
+**When** the administrator presses « Nettoyer les obsolètes » past its staleness threshold
+**Then** it becomes `inactive`, as Sure's `cleaner.rb` retires it
+
+**Given** AD-24 in `docs/architecture.md`
+**When** the story lands
+**Then** AD-24 changes with this story: its sentence on `rekey` goes
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a renamed series kept with its payments and the new suggestion beside it; Playwright is unchanged
+
+### Story 33.4: Declare a bill from any transaction
+
+As the household's administrator,
+I want to start a bill from any transaction in « Ajouter une facture », and the bill keyed on its name,
+So that a charge detection missed becomes a bill in one step, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the « Ajouter une facture » dialog in `packages/app/src/components/BillDialog.tsx`
+**When** the administrator reads below the starting points
+**Then** « Vous ne trouvez pas ce que vous cherchez ? » and « Rechercher dans toutes vos transactions » open « Trouver une transaction pour démarrer », as Sure's `pick_entry.html.erb`; for an income, « Trouver un versement pour démarrer »
+
+**Given** the picker
+**When** it opens, then the administrator types in « Rechercher par nom, remarque ou marchand »
+**Then** it lists the 20 most recent transactions of the dialog's sign, no transfer side, no excluded row and no split parent, as Sure's `picker_entries` (`recurring_transactions_controller.rb:312-345`), then those whose label, notes or merchant contain the words; a row already paying a bill reads « Rattachée à {{name}} »; with none, « Aucun résultat pour « {{query}} ». Essayez avec moins de mots, ou revenez en arrière et remplissez le formulaire vous-même. »
+
+**Given** a picked transaction, or « Créer une facture » in a transaction's sheet
+**When** the dialog fills and the bill is saved
+**Then** the name is the merchant's else the label, and the bill keys on that name with no merchant, as Sure's `prefill_recurring_from_entry` and `declared_bill.rb`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the picker's filters, search and claimed row, and the name key; Playwright declares a bill from a searched transaction
+
+### Story 33.5: Postpone an occurrence a week
+
+As the household's administrator,
+I want the occurrence sheet to postpone a bill by one week and offer no amount field,
+So that the sheet offers what Sure's offers.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a scheduled occurrence open in `packages/app/src/components/OccurrenceSheet.tsx`
+**When** the administrator opens its menu
+**Then** it lists « Ignorer » and « Reporter d'une semaine », as Sure's `recurring_occurrences/show.html.erb:284-287`; « Reporter au » and its date field go
+
+**Given** « Reporter d'une semaine »
+**When** it is chosen
+**Then** the occurrence's `snoozedUntil` becomes today plus 7 days in `APP_TIMEZONE`, as Sure's `snooze_recurring_occurrence_path(until: Date.current + 7)`, and the toast reads « Reportée au {{date}} »
+
+**Given** the same sheet
+**When** it renders
+**Then** « Modifier le montant » and its field go, since no view of Sure sets `override_amount`; `PATCH /api/recurring/occurrences/:id` keeps taking a date and an amount, as Sure's `snooze` and `override_amount` routes do
+
+**Given** `bills.description` in `packages/app/src/locales/fr.json`
+**When** the story lands
+**Then** it no longer promises to change an occurrence's amount
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the seven-day postpone; Playwright postpones an occurrence a week and finds no amount field
+
+### Story 33.6: Search any transaction to pay an occurrence
+
+As the household's administrator,
+I want the occurrence sheet to list likely payments by amount and search every transaction,
+So that I can link the payment the matcher missed, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an occurrence open in the sheet
+**When** « Trouver un paiement » renders
+**Then** it shows up to six transactions the matcher's `explain` scores, then « Autres correspondances probables », up to fifteen others of the series' account, sign and currency, not yet linked to it, dated from 40 days before the due date to 40 days after or today, nearest the remaining amount first, then nearest the due date, as Sure's `recurring_occurrences_controller.rb:99-200`
+
+**Given** « Rechercher dans toutes les transactions »
+**When** the administrator types in « Rechercher des transactions »
+**Then** the second list reads every transaction of that account, sign and currency whose label contains the words, whatever its date; with none, « Aucun résultat pour {{query}}. »
+
+**Given** a bill without an account
+**When** the lists are built
+**Then** they read every account the household holds, as Sure's `candidate_scope`; a transfer side is left out unless the series is a recurring transfer
+
+**Given** a row of either list
+**When** « Lier le paiement » is pressed
+**Then** it is linked as the sheet's « Utiliser » links one today, through `POST /api/recurring/occurrences/:id/payments`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the window, the amount order and the search past the window; Playwright links a searched payment
+
+### Story 33.7: Show a bill's drawer in full
+
+As a member of the household,
+I want a bill's drawer to show everything Sure's shows,
+So that one bill's cost, recognition and history sit in one place, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the drawer at `/bills/:id` (`packages/app/src/routes/_authed.bills.$billId.tsx`)
+**When** its current occurrence is partly or fully paid
+**Then** its summary reads « {{amount}} payés » and « {{amount}} restants », and beside the payment link sits « Payer » or « Paiement automatique », as Sure's `bills/_summary.html.erb` and `recurring_transactions/_pay_action.html.erb`
+
+**Given** the drawer's « Aperçu »
+**When** it renders
+**Then** « Comment cette facture est reconnue » lists the name, the amount or its range, the frequency, the account, « Correspond aussi à {{names}} » and the learned tolerance; the « 12 derniers mois » chart, « Moyenne payée », « Par an » and « Payé cette année »; « Indicateurs clés », one row per year with « Dépensé » and « Paiement moyen », as Sure's `bills/_detail.html.erb`
+
+**Given** a bill with dates to come and settled cycles
+**When** the drawer renders
+**Then** « À venir » lists the next three dates with « ~ » and the amount, and « Historique » the twelve latest closed occurrences, each with its status, its payment's label or « Paiement manuel », or « {{count}} paiements », and the amount paid, as Sure's `bills_controller.rb:164-165`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the yearly table and the history's read; Playwright opens a drawer and finds each section
+
+### Story 33.8: Price notices and autopay tone
+
+As a member of the household,
+I want the bills page to announce recent price changes and quiet the bills that pay themselves,
+So that the page points at what needs me, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active bill listed on `/bills` with a price change effective in the last 30 days
+**When** the page renders
+**Then** a « Changements » section lists « {{name}} a changé de prix : {{from}} → {{to}} ({{percent}}) » with « Gérer », which opens the drawer, as Sure's `bills/_notice.html.erb` and `bills_controller.rb#collect_notices`
+
+**Given** several notices
+**When** they are ordered
+**Then** a change of at least 10 % either way is urgent, as Sure's `RecurringPriceChange::MATERIAL_SHIFT`, and comes first; the others follow, nearest today first, folded under « {{count}} changements mineurs » when an urgent one exists; the shift is computed from integer minor units
+
+**Given** a bill with « Paiement automatique » on
+**When** its row renders
+**Then** its name and amount take the secondary text colour, as Sure's `bills/_occurrence.html.erb:5`, its action reads « Paiement automatique » rather than « Payer », and it leaves the « requièrent votre attention » count
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the 30-day window, the 10 % threshold and the order; Playwright finds a notice and an autopaid row
+
+### Story 33.9: Turn recurring transactions off
+
+As the household's administrator,
+I want the switch « Activer les transactions récurrentes »,
+So that a household that does not follow bills sees none of them, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Réglages › Transactions récurrentes » (`packages/app/src/routes/_authed.settings.recurring.tsx`)
+**When** the administrator reads its top
+**Then** the switch « Activer les transactions récurrentes », with « Détecter automatiquement les modèles de transactions récurrentes et afficher les transactions projetées à venir. », writes a household setting in `settings`, on by default, as Sure's `families.recurring_transactions_disabled`; a viewer sees the switch's state and no control
+
+**Given** the switch off
+**When** a sync, an import or the day's first request runs
+**Then** neither detection nor occurrence generation runs, as Sure's `identify_recurring_transactions_job.rb` and `generate_recurring_occurrences_job.rb`; no series is deleted
+
+**Given** the switch off
+**When** a member browses
+**Then** « Factures » leaves the navigation and `/bills` leads home, as Sure's `bills_nav_item` and `recurring_feature_guardable.rb`; `/transactions` shows no « À venir » tab; the settings page hides « Identifier les modèles » and « Nettoyer les obsolètes »; « Marquer comme récurrent » on a transfer is refused with « Les transactions récurrentes sont désactivées pour cette famille »
+
+**Given** the switch off
+**When** an assistant calls a bill tool in `packages/api/src/mcp/bills.ts`
+**Then** it answers Sure's `bills_support.rb` refusal, `{ error: "Bills & recurring transactions are disabled for this family", hint: … }`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each gate and the tool refusal; Playwright turns the switch off and finds no « Factures »
+
+## Epic 34: Dashboard and reports as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The departures below had no admitted reason: no integer money, French text, accessibility contrast or security. This epic follows Sure. On 2026-10-14 the owner chose Sure's layout under Archant's own visual style, inspired by Linear: colours, Inter and shadows stay; where Sure opens a drawer or lays out cards, Archant follows.
+
+What Sure does:
+
+- Balance sheet: `app/views/pages/dashboard/_balance_sheet.html.erb` groups each classification by account type, each type a collapsible row with its weight and total, its accounts under it.
+- Charts: `app/javascript/controllers/time_series_chart_controller.js` labels no vertical axis, draws no grid and names only the first and last dates.
+- Period: `app/controllers/concerns/periodable.rb` and `app/models/period.rb` give the dashboard one period, saved per user as `default_period`, `last_30_days` by default, or a custom range dragged on the chart.
+- Widgets: `app/controllers/pages_controller.rb` builds `cashflow_sankey`, `outflows_donut`, `money_flow`, `spending_trend`, `investment_summary`, `net_worth_chart` and `balance_sheet`, each reordered, resized, collapsed or hidden per user.
+- Reports: `app/controllers/reports_controller.rb` serves `/reports`, its CSV `export_transactions` and its `print` layout.
+- Phone: `app/views/imports/*` and `app/views/rules/*` have no width gate.
+- Shortcuts: `app/javascript/controllers/hotkey_controller.js` binds a few keys; nothing saves on `⌘Enter`.
+- Drawers: `app/components/DS/dialog.rb` opens `trades/show.html.erb` and `valuations/show.html.erb` as drawers that save each field as it changes, and `loans/tabs/_overview.html.erb` keeps three cards a row.
+
+Stories 34.1, 34.2, 34.8, 34.9 and 34.10 come in any order. Story 34.3 comes before 34.4, 34.5 and 34.7. Story 34.6 follows 34.4 and 34.5. The transfer drawer is Story 31.6, the bill drawer Story 33.7, bulk edit Story 31.2 and the split drawer Story 31.3; Story 34.10 leaves them to those stories. The goals card leaves the dashboard with Story 35.10. Privacy mode stays Later.
+
+### Story 34.1: Group the balance sheet by account type
+
+As a member of the household,
+I want the dashboard's « Bilan » to group each side by account type, as Sure's,
+So that I see how much each type weighs before I open its accounts, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the dashboard with accounts on both sides
+**When** `BalanceSheetSection` renders
+**Then** « Actifs » and « Passif » each show their total, the weight bar and legend by type, then a table headed « Nom », « Poids », « Valeur », one row per account type, as Sure's `pages/dashboard/_balance_sheet.html.erb`
+
+**Given** an account type's row
+**When** the member opens it
+**Then** its accounts appear under it, each with its weight against the side's total, drawn as Sure's five-bar `_group_weight.html.erb` beside its percent, and its balance; the type's row shows its own weight and total; amounts read without decimals, as Sure's `precision: 0`, computed from integer minor units
+
+**Given** the section header
+**When** the member presses « Tout développer »
+**Then** every type opens and the button reads « Tout réduire », as Sure's `data-balance-sheet-expand-all` script; Sure's French has no key for these, so Archant writes the words a French user expects
+
+**Given** a side with no account
+**When** the section renders
+**Then** it shows « Aucun actif pour l'instant » and « Ajoutez vos comptes d'actifs pour voir une répartition complète », or « Pas encore de passif » and « Ajoutez vos comptes de passif pour voir une répartition complète », as Sure's `fr.yml`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers `lib/balance-sheet.ts` grouping, weights that sum to 100 and an empty side; Playwright opens a type and reads its accounts; `docs/sure-parity.md` « Net worth » reads Parity for the balance sheet
+
+### Story 34.2: Draw charts' axes as Sure
+
+As a member of the household,
+I want the net worth and account charts drawn with Sure's axes,
+So that the curve takes the whole card and the dates it spans read at a glance, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the net worth chart on the dashboard or an account's balance chart
+**When** `BalanceChart.tsx` draws it
+**Then** it shows no vertical axis labels and no grid lines, as Sure's `time_series_chart_controller.js`, which draws neither; the vertical scale stays Sure's `_d3YScale` from Story 27.15
+
+**Given** the same chart
+**When** it draws its horizontal axis
+**Then** it names only the first and last dates of the series, as Sure's `_drawXAxisLabels` with two `tickValues`, in the French date format, e.g. « 14 oct. 2026 », where Sure's `%b %d, %Y` falls back to English; the first label sits inside the left edge and the last inside the right edge
+
+**Given** a series of one point
+**When** the chart renders
+**Then** it shows Sure's empty state, a dashed vertical line and a centred dot, as `_drawEmpty`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the two tick values for a month and for ten years; Playwright reads the two dates under the net worth chart and finds no vertical tick; `docs/sure-parity.md` « Net worth » reads Parity for the axes
+
+### Story 34.3: Pick the dashboard period
+
+As a member of the household,
+I want one period picker at the top of the dashboard, with Sure's periods, kept for my next visit,
+So that every widget reads the same span I chose, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the dashboard with accounts
+**When** it renders
+**Then** one picker sits above the widgets, as Sure's `UI::PeriodPicker`, listing Sure's `Period::PERIODS` in order with their French short labels: « 1J », « SC », « 7J », « MC », « LM », « 30J », « 90J », « AC », « 365J », « 5A », « 10A », « Tout »; « 30J » is the default, as `last_30_days`; `PeriodToggle` and its « 1 M, 3 M, 6 M, 1 A, Tout » go
+
+**Given** a member who picks a period
+**When** the dashboard reloads later
+**Then** it opens on that period, saved per user as Sure's `default_period` through a `PATCH`, since a `GET` never writes in Archant (AD-21); a viewer, refused by `viewerReadOnly`, keeps the choice in the URL only
+
+**Given** the net worth chart
+**When** the member drags across it
+**Then** the dashboard takes that custom range, as Sure's `_navigateToDateRange`, and the picker's trigger shows its dates, « Période personnalisée » in the list
+
+**Given** the change under the headline
+**When** a period is picked
+**Then** it reads Sure's comparison label, e.g. « vs. 30 derniers jours », and the account page's chart uses the same picker
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each period's dates, `current_month` and `last_month` on the household's calendar and an invalid custom range falling back to `last_30_days`; Playwright picks « 90J », reloads and drags a range
+
+### Story 34.4: Cash flow widgets
+
+As a member of the household,
+I want Sure's cash flow widgets on the dashboard,
+So that I see where the period's money came from and went, month by month, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the dashboard period
+**When** « Flux de trésorerie » renders
+**Then** it draws Sure's Sankey, `_cashflow_sankey_chart.html.erb`: income categories into « Flux de trésorerie », out to expense categories and « Excédent » or « Déficit », each category netted and filed by sign as Story 27.6; with no data it shows « Aucune donnée de flux de trésorerie pour cette période » and « Ajouter une transaction »
+
+**Given** the same period
+**When** « Sorties » renders
+**Then** Sure's `_outflows_donut.html.erb` shows « Total des sorties », then « Catégories » with each category's « Valeur » and « Poids », each linking to `/transactions` filtered by category and period
+
+**Given** « Entrées / sorties d'argent »
+**When** it renders
+**Then** it draws six monthly bars of « Entrées » and « Sorties » ending at its own month, with « Balance des opérations » and Sure's account filter, as `_money_flow.html.erb` and `MONEY_FLOW_CHART_MONTHS`; « Dépenses » draws Sure's `_spending_trend.html.erb` for its own month against the previous one
+
+**Given** these widgets
+**When** they render
+**Then** `CashFlowSection` and its month arrows go; the totals keep Sure's income statement from Stories 27.6 and 27.7, in integer minor units
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the Sankey nodes with a surplus and a deficit, donut weights and the six months; Playwright follows a donut category to its transactions
+
+### Story 34.5: Investment summary on the dashboard
+
+As a member of the household,
+I want Sure's « Investissements » widget on the dashboard,
+So that I read my portfolio's value, return and period activity beside my net worth, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a household with an investment account
+**When** the dashboard renders
+**Then** « Investissements » shows the portfolio's value and « Rendement total » from unrealised gains, as Sure's `pages/dashboard/_investment_summary.html.erb`; a household without one shows no widget, as `investment_summary_available?`
+
+**Given** the widget
+**When** it lists holdings
+**Then** it shows the five largest, as `top_holdings(limit: 5)`, with « Holding », « Poids », « Valeur » and « Rendement », each from Archant's positions in integer minor units
+
+**Given** the dashboard period
+**When** the widget shows its activity
+**Then** it reads « Activité » and the period's label, then « Apports », « Retraits » and « Transactions boursières », as Sure's `InvestmentStatement#totals(period:)`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the totals over a period with a buy, a sale and a contribution, and the five-holding cut; Playwright reads the widget on a household with a PEA
+
+### Story 34.6: Arrange the dashboard
+
+As a member of the household,
+I want to reorder, resize, collapse and hide the dashboard's widgets, kept for my next visit,
+So that the dashboard shows what I read first, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the dashboard
+**When** the member presses « Personnaliser »
+**Then** it enters Sure's customise mode: each widget shows « Glisser pour réorganiser la section », « Afficher/masquer la section » and « Ajuster la taille » with « Largeur » « Plein » or « Moitié » and « Hauteur » « Compact », « Auto » or « Grand », Sure's `DASHBOARD_HEIGHT_PRESETS` of 208, 288 and 416 px; « Terminé » leaves it, the English-only labels written as a French user expects
+
+**Given** a widget hidden in customise mode
+**When** the member opens « Widgets masqués »
+**Then** it can be added back; with every widget hidden, the dashboard says so, as Sure's `customize.all_hidden_title`
+
+**Given** a keyboard user
+**When** they focus a widget and press `Enter` or `Space`, then the arrows
+**Then** the widget moves, as Sure's `dashboard_sortable_controller.js`
+
+**Given** a layout change
+**When** it is saved
+**Then** it is stored per user as Sure's `section_order`, `collapsed_sections` and `dashboard_section_layout`, through a `PATCH`; widgets lay out in two columns from 1536 px, as Sure's `dashboard_masonry_controller.js`; a viewer keeps the default layout, since `viewerReadOnly` refuses the write (AD-21)
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the stored layout and an unknown widget key refused; Playwright moves a widget, hides it, reloads and adds it back
+
+### Story 34.7: The reports page, its CSV and print layout
+
+As a member of the household,
+I want Sure's « Rapports » page, with its CSV export and print layout,
+So that I review a month, a quarter or a year and keep a copy, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the navigation
+**When** the member opens « Rapports », `/reports`
+**Then** it offers Sure's periods « Mensuel », « Trimestriel », « Depuis le début de l'année », « 6 derniers mois » and « Plage personnalisée » with « Du » and « Au », « Période précédente » and « Période suivante » on `←` and `→`, and « Aujourd'hui », as Sure's `reports/index.html.erb`
+
+**Given** a period
+**When** the page renders
+**Then** it shows Sure's summary and « Performance budgétaire », then « Patrimoine net », « Tendances et aperçus », « Performance des investissements », « Flux d'investissement » and « Répartition des activités », each collapsible and reordered per user as Sure's `reports_section_order`; with no data, « Aucune donnée disponible »
+
+**Given** « Exporter CSV »
+**When** the member downloads it
+**Then** it holds Sure's `generate_transactions_csv` layout: « Category », one column per month, « Total », an income block then an expense block with their totals, amounts formatted from integer minor units
+
+**Given** « Imprimer le rapport »
+**When** the member opens it
+**Then** Sure's `print.html.erb` layout opens, titled « Rapport financier »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers period bounds, previous periods and the CSV for two months; Playwright switches to « Trimestriel », downloads the CSV and opens the print layout
+
+### Story 34.8: Import files and edit rules on a phone
+
+As the household's administrator,
+I want to import a file and write a rule from my phone,
+So that neither waits until I sit at a computer, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a screen narrower than 768 px
+**When** the administrator opens « Importer un fichier »
+**Then** `ImportDialog.tsx` shows its steps « Fichier », « Colonnes » and « Aperçu » rather than « Disponible sur ordinateur », as Sure's `app/views/imports/*`, which have no width gate; the column mapping and preview stack or scroll inside the dialog
+
+**Given** the same screen
+**When** the administrator opens « Règles »
+**Then** `_authed.rules.tsx` lists the rules and their runs, and « Ajouter une règle » opens the rule form, as Sure's `app/views/rules/*`; « Disponible sur ordinateur » goes
+
+**Given** the two keys `imports.mobile` and `rules.mobile`
+**When** the story is done
+**Then** they and both `DESKTOP_QUERY` gates are removed
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Playwright, at 390 px, imports a CSV to its preview and saves a rule
+
+### Story 34.9: Sure's few hotkeys
+
+As a member of the household,
+I want the keyboard shortcuts Sure has, and none it lacks,
+So that my keys do in Archant what they do in Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the transaction sheet
+**When** the member presses `⌘Enter` or `Ctrl+Enter`
+**Then** nothing saves: the shortcut in `TransactionForm.tsx` goes, since no Sure form binds it; « Enregistrer » saves
+
+**Given** « Réglages »
+**When** the member presses `Esc` with no dialog open
+**Then** they leave for the page they came from, as Sure's `settings/_settings_nav.html.erb`, whose « Précédent » link carries an `esc` hint on wide screens
+
+**Given** the account type list of « Nouveau compte »
+**When** the member presses `j`, `k` or the arrows
+**Then** focus moves to the next or previous type, `Enter` opens it, and the footer reads « Sélectionnez », « Naviguer » and « Fermer », as Sure's `accounts/new/_container.html.erb`
+
+**Given** any dialog or drawer
+**When** the member presses `Esc`
+**Then** it closes, as Sure's `DS::Dialog` hotkey; the reports page's `←` and `→` come with Story 34.7
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Playwright checks that `⌘Enter` saves nothing, that `Esc` leaves « Réglages », and that `j` moves through « Nouveau compte »
+
+### Story 34.10: Sure's layout under Archant's visual style
+
+As a member of the household,
+I want Sure's drawers, card grid and note saving under Archant's own visual style,
+So that each screen is laid out as Sure's while keeping Archant's look.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an existing balance snapshot
+**When** the member opens it
+**Then** `SnapshotDialog.tsx` « Modifier le solde » becomes a drawer, as Sure's `valuations/show.html.erb`: « Aperçu », « Détails » with « Notes » and « Ajoutez tout détail supplémentaire à ce bilan », « Paramètres » with « Supprimer »; « Ajouter un solde » stays a modal, as `valuations/new.html.erb`
+
+**Given** an existing trade
+**When** the member opens it
+**Then** `TradeDialog.tsx` « Modifier l'ordre » becomes a drawer, as Sure's `trades/show.html.erb`: « Détails », « Détails supplémentaires » with « Note » and « Ajoutez tout commentaire supplémentaire ici... », « Paramètres »; « Ajouter un ordre » stays a modal, as `trades/new.html.erb`
+
+**Given** a note in a snapshot, trade or transaction drawer
+**When** the member leaves the field
+**Then** it saves on its own, as Sure's `auto-submit-form` with `trigger_event_value: "blur"`, with no « Enregistrer »; a new transaction opens a modal, as Sure's `transactions/new.html.erb`, not `TransactionSheet.tsx`
+
+**Given** a drawer at 1024 px or wider
+**When** it opens
+**Then** it docks right at 550 px; below 1024 px it opens centred, as Sure's `responsive: true`; `LoanOverview.tsx` keeps three cards a row on a phone, as Sure's `grid-cols-3`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Playwright edits a snapshot's note, leaves the field and reloads, opens a trade's drawer, and reads three loan cards a row at 390 px; colours, Inter and shadows stay Archant's
+
+## Epic 35: Budgets and goals as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb`. The budget and savings goal departures below had no admitted reason; this epic follows Sure.
+
+What Sure does:
+
+- Month: `app/models/family.rb` keeps `month_start_day` between 1 and 28, and `custom_month_start_for` and `custom_month_end_for` give the period around a date; `app/models/budget.rb:35-55`, `param_to_date` and `period_for`, give each budget that period, named by `budgets.name.custom_range`.
+- Envelopes: `Budget#sync_budget_categories` gives every category of the family a row, kinds being gone since #1160; `Budget#copy_from!` copies stored amounts and the « Report » choice; `BudgetCategory#update_budgeted_spending!` rebuilds a parent from its subcategories and its reserve when a subcategory is saved; `BudgetCategory.move_allocation!` refuses a move with `InvalidMove`, which `budget_categories_controller.rb` shows as a flash message.
+- Assistant: `app/models/assistant/function/update_budget.rb` sets up the month on any update and refuses as `no_changes`, `invalid_month`, `invalid_params` or `validation_failed`; `get_budget.rb` lists the earlier months whose budget exists and counts the others in `months_unavailable`.
+- Cash: `app/views/budgets/_available_cash.html.erb` shows `Budget#available_cash`, `earmarked_for_goals` and `free_cash` beside the plan.
+- Bills: `BudgetCategory#bills_reserved`, through `bills_reservation`, sums what the period's open occurrences of the category's bills still expect.
+- Goals: `app/models/goal_pledge.rb` and `goal_pledge/reconciler.rb` match a promised deposit; `Goal#consume!` (`goal.rb:564-636`) and `Goal::WithdrawalDetector` record money spent on the goal; `default_progress_basis_for_investment` and `net_contributed_for` count contributions on an investment account; `Goal.pace_for`, `#pace` and `#projection_payload` (`goal.rb:265-281, 717-780`) give the pace and the chart; `plans_controller.rb` and `app/views/plans/show.html.erb` front budgets and goals; `goals/index.html.erb` and `GoalsController#kpi_payload` filter, search and summarise; `RefreshMaintainedGoalTargetsJob` rewrites a reserve's target on the 1st (`config/schedule.yml`); `create_goal.rb` takes Sure's contract; `Goal#status_callout_context`, `#projection_summary` and `Goals::LifecyclePanelComponent` explain a goal's state.
+
+Departures kept, each for an admitted reason or the owner's decision: an amount with more decimals than the currency holds is refused, and a reserve's months are bounded only so its amount stays a safe integer (money as integer minor units); every figure counts the reporting currency's accounts alone until exchange rates exist (Later, AD-6); a read writes nothing (AD-21), invisible on screen; goals, the cash panel and the Plan page show without Sure's preview flag, and `get_goals` and `goals.ndjson` stay as Archant's additions (owner's decisions of 2026-10-14).
+
+Story 35.1 waits for Story 36.6, which brings the household's `month_start_day`. Story 35.2 waits for Story 32.1, which removes category kinds. Story 35.9 comes before Stories 35.6, 35.11 and 35.14, which read its pace. Stories 35.3, 35.4, 35.5, 35.7, 35.8, 35.10, 35.12 and 35.13 come in any order. Personal budgets and budget shares are Story 36.4 of Epic 36.
+
+### Story 35.1: Start the month on the household's chosen day
+
+As the household's administrator,
+I want budgets to run from the day of the month the household chose,
+So that a household paid on the 25th budgets from payday to payday, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `month_start_day` set to 25 in the household preferences of Story 36.6
+**When** the owner opens « Budgets » on 3 February 2027
+**Then** the current budget runs from 25 January to 24 February 2027, as Sure's `Family#custom_month_start_for` and `custom_month_end_for`; its actuals, its carry and its suggestions read that period; its name reads « 25 janv. - 24 février 2027 », Sure's `budgets.name.custom_range` with the short and long date formats
+
+**Given** `month_start_day` at 1
+**When** any budget is read
+**Then** it covers the calendar month, as Sure's `uses_custom_month_start?` false, and nothing changes from today
+
+**Given** the URL `/budgets/2027-02` or `get_budget` and `update_budget` with `month: "2027-02"`
+**When** the month is resolved
+**Then** it names the period starting on 25 February 2027, as Sure's `Budget.param_to_date` and `MonthResolvable#resolve_month_start`; the arrows step one period; the bounds run from two years before the current period, or the oldest entry's, to two years after it, as `budget_date_valid?` and `latest_valid_budget_start_date`
+
+**Given** the schema
+**When** this story ships
+**Then** `budgets` stores each period's start and end dates, as Sure's `start_date` and `end_date`, unique per household; a migration gives every existing month its calendar dates
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a date before and after the start day, a start day of 28 across February, the slug round trip, the bounds and the name; Playwright opens a budget with a start day of 25 and reads its name and its period's transactions
+
+### Story 35.2: Budget every category as Sure
+
+As the household's administrator,
+I want an envelope for every category, copied and moved as Sure does,
+So that a category Story 32.1 freed from its kind is budgeted too, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the categories of Story 32.1, without a kind
+**When** a month is set up, copied or shown
+**Then** every category has an envelope, as Sure's `Budget#sync_budget_categories`; « Copier depuis %{source_name} » copies each category's stored amount and its « Report » choice as stored, as `Budget#copy_from!`, and no longer lifts a parent to the subcategories re-parented under it since
+
+**Given** a subcategory on « Modifiez vos budgets de catégorie »
+**When** its field shows
+**Then** it shows the stored amount, a saved 0 included, and « Partagé » is only the placeholder of an empty field, as Sure's `_budget_category_form.html.erb`
+
+**Given** a parent saved below the sum of its ring-fenced subcategories
+**When** the save lands
+**Then** the parent keeps the amount typed until the next subcategory save rebuilds it from its subcategories and its reserve, as Sure's `sync_parent_budgeted_spending!`
+
+**Given** « Déplacer de l'argent » opened on a category
+**When** the owner moves an amount
+**Then** the dialog shows the category's stored amount, as Sure's; the server still refuses more than the category gives beyond its ring-fenced subcategories, Sure's `movable_from`; a refusal answers a code per `InvalidMove` reason, shown as a notification, as Sure's flash, never as a field error
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers an income category's envelope, a copy, a parent saved below its subcategories and each move refusal; Playwright budgets a former income category and reads a refused move
+
+### Story 35.3: Sure's budget tools' inputs
+
+As the household's owner,
+I want `update_budget` and `get_budget` to take and refuse inputs as Sure's tools do,
+So that an assistant written for Sure budgets Archant the same way, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `update_budget` with only `categories`, or only `expected_income`, for a month never set up
+**When** it runs
+**Then** it sets up the month and saves what it got, as Sure's `Budget.find_or_bootstrap` on any update; Archant no longer requires spending and income together
+
+**Given** `categories` naming one category twice
+**When** it runs
+**Then** both entries apply, subcategories first and parents last, in the order given, the last amount of each winning, as Sure's `UpdateBudget#call`; nothing is refused for the repeat
+
+**Given** an input Sure refuses
+**When** it runs
+**Then** it answers Sure's keys in Sure's order: `no_changes` without a field, `invalid_month` out of bounds, `invalid_params` for a bad month slug, a negative amount, an unknown category or « Non classé » with Sure's messages, and `validation_failed` only for a refusal of the saved row; an amount with more decimals than the currency holds stays refused, money being integer minor units, as `invalid_params`
+
+**Given** `get_budget` with `prior_months`
+**When** an earlier month in bounds has no budget set up
+**Then** it is left out of `months` and counted in `months_unavailable`, as Sure lists only the months whose budget exists; a month out of bounds is counted nowhere; a target month out of bounds answers `{ currency, months: [] }` instead of `not_found`; the target month is always listed, computed without a write
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a month set up by one category, a repeated category, each refusal key and a `get_budget` with unset and out-of-bounds months; Playwright is unchanged, since no screen changes
+
+### Story 35.4: Available cash beside the budget
+
+As the household's administrator,
+I want the budget page to show the cash I hold, what goals already claim and what is really free,
+So that I see what I have beside what I plan, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the budget page of any month
+**When** it renders
+**Then** a « Trésorerie disponible » panel, subtitled « À côté du plan ci-dessus, pas dedans. », sits between the summary and the categories, as Sure's `budgets/show.html.erb:53`, with « Disponible en cash », « Déjà fléché vers des objectifs » preceded by « − », « Réellement libre » in large type, and a « Voir les objectifs » link to `/goals`
+
+**Given** the three figures
+**When** they are computed
+**Then** « Disponible en cash » sums today's balances of the active current and savings accounts included in reports, Sure's `Budget#cash_accounts` on `Depository`, an investment account's cash left out; « Déjà fléché vers des objectifs » sums the backing within those accounts of every goal neither completed nor archived, a whole-balance link counting the remainder it claims, as `earmarked_for_goals` through `Goal#backing_within`; « Réellement libre » is the difference floored at zero, as `free_cash`
+
+**Given** an account in another currency than the reporting one
+**When** the panel sums
+**Then** it counts in none of the three, as every Archant total until exchange rates exist (AD-6)
+
+**Given** the budget's own figures
+**When** the panel shows
+**Then** no budget figure changes, as Sure keeps the panel outside the allocation arithmetic; it shows without Sure's preview flag, as goals do
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a fixed earmark, a whole-balance link, a completed goal and the floor at zero; Playwright reads the three figures
+
+### Story 35.5: Bills reserved inside each envelope
+
+As the household's administrator,
+I want each category's envelope to show what its bills still expect this month,
+So that money a bill will take never reads as free to spend, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active bill with a category, not a recurring transfer, with an open occurrence due within the budget's period
+**When** the budget page shows its category
+**Then** the envelope reads « %{amount} réservés par des factures », the sum of what each such occurrence still expects after its confirmed payments, as Sure's `BudgetCategory#bills_reserved` and `_budget_category.html.erb:82`
+
+**Given** a paused bill, a recurring transfer, an income bill, an occurrence paid in full or one due outside the period
+**When** the reservation sums
+**Then** it reserves nothing, as Sure's `bills_reservation` takes active series with `destination_account_id` empty and a positive amount, due in the period; a reservation of zero shows no line
+
+**Given** a bill in another currency than the budget
+**When** the reservation sums
+**Then** it is left out and counted, the envelope reading « 1 facture n'est pas réservée, aucun taux de change disponible », Sure's `bills_reserved_unconvertible`, since Archant holds no exchange rate (AD-6)
+
+**Given** the envelope's figures
+**When** a reservation shows
+**Then** its budgeted, spent and available amounts are unchanged, as Sure's read-side hook
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers an occurrence partly paid, a paused bill, a transfer, a due date outside the period and a foreign bill; Playwright reads the reservation under an envelope
+
+### Story 35.6: Pledge a deposit toward a goal
+
+As the household's administrator,
+I want to tell a goal I just moved money toward it and have Archant confirm the deposit when it lands,
+So that a goal I feed stops reading behind, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active goal
+**When** the owner chooses « Enregistrer un virement effectué », shown when a linked account is bank-linked or an investment account, or « Enregistrer l'argent mis de côté » otherwise, as Sure's `pledge_action_label_key`
+**Then** a form takes « Montant » and « Sur le compte », previews « Atteindra {percent}%, {newTotal} sur {target}. », and « Enregistrer la promesse » records an open pledge expiring in 7 days, as Sure's `GoalPledge`; an identical open pledge is refused, as `no_duplicate_open_pledge`
+
+**Given** an open pledge
+**When** a synced inflow on its account, or a snapshot raising a manual cash account, falls between 5 days before the pledge and its expiry, within 0,50 € or 1 % of its amount
+**Then** the oldest matching pledge is matched and the transaction stamped once, as Sure's `GoalPledge::Reconciler` and `#matches?`
+
+**Given** the goal page
+**When** a pledge is open
+**Then** it reads « En attente : %{amount} vers %{account} · N jours restants » with « Prolonger de 7 jours » and « Annuler »; a pledge past its expiry reads expired and matches nothing, as Sure's `SweepExpiredGoalPledgesJob`
+
+**Given** a goal behind its pace
+**When** pledges are open
+**Then** the catch-up amount subtracts them, as `Goal#catch_up_delta_money`, reading « les promesses en attente comblent le retard » once covered; cards show « Promesse en attente »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both tolerances, the window, two pledges on one inflow, a snapshot, expiry and extension; Playwright records, extends and cancels a pledge
+
+### Story 35.7: Spend a goal
+
+As the household's administrator,
+I want to record that I spent part of a goal's money on what it was for,
+So that a holiday the goal paid for keeps counting as reached, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active one-off goal backed by money
+**When** the owner chooses « J'ai utilisé une partie de cet argent »
+**Then** « Enregistrer une dépense » asks « Combien avez-vous utilisé ? » and, with several links, « Depuis quel compte ? », then records it as Sure's `Goal#consume!`: `consumed_amount` grows, a fixed earmark shrinks by the amount, a whole-balance link becomes the smaller of what it backs and what the goal still needs
+
+**Given** a spend Sure refuses
+**When** it is submitted
+**Then** it answers Sure's `ConsumptionRefused` reason with Sure's text, such as « C'est plus que ce que cet objectif visait à épargner. »; a reserve, or a goal no longer active, records nothing
+
+**Given** booked, non-excluded outflows of at least 100 € on an active one-off goal's accounts in the last 90 days
+**When** the goal page shows
+**Then** the three newest unclaimed ones are listed under « De l'argent est sorti de ces comptes », each with « C'était ça », which records it as spent and stamps it, as Sure's `Goal::WithdrawalDetector`
+
+**Given** a goal with money spent
+**When** its card and ring show
+**Then** progress counts what was spent as found, `remaining_amount` and `progress_percent` adding `consumed_amount`, and both read « Dont %{amount} déjà utilisés », as Sure's
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers both kinds of link, each refusal, an outflow claimed twice and the progress; Playwright records a spend and claims an outflow
+
+### Story 35.8: Count contributions on an investment-backed goal
+
+As the household's administrator,
+I want a goal backed by an investment account to count what I put in, not what the market did,
+So that a market swing never moves the goal, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a goal linking an investment account
+**When** it is saved
+**Then** its progress basis becomes contributions, as Sure's `default_progress_basis_for_investment`; a goal on current and savings accounts alone keeps the balance basis
+
+**Given** a goal on the contributions basis
+**When** its backing is computed
+**Then** each investment account counts its balance less its cumulative market gain, floored at zero, as Sure's `net_contributed_for` over `balances.net_market_flows`; a current or savings account counts its balance; the earmark and remainder split stays `backing_share_for`'s
+
+**Given** the goal page of such a goal
+**When** the ring shows
+**Then** it adds « Valeur de marché %{amount} », the backing on the balance basis, as Sure's `goals.show.ring.market_value` and `Goal#market_value_money`
+
+**Given** a pledge on such a goal
+**When** a snapshot raises the investment account
+**Then** it matches no pledge, since a market move is no deposit, as Sure's `GoalPledge#matches?`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a gain, a loss below contributions, the floor at zero and a mixed goal; Playwright reads the market value on an investment-backed goal
+
+### Story 35.9: A goal's pace and history as Sure
+
+As the household's administrator,
+I want a goal's pace, backing and chart computed as Sure's,
+So that « En retard » and « En bonne voie » mean what they mean in Sure, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a goal with linked accounts
+**When** its pace is computed
+**Then** it is the net inflow of booked, non-excluded transactions on its linked accounts over the last 90 days divided by three, as Sure's `Goal.pace_for` and `#pace`, the whole accounts even for an earmarked goal; a snapshot moves no pace, where Archant took the balance change; its status compares it with the monthly amount needed, as `Goal#status`
+
+**Given** a linked account deactivated after it was linked
+**When** the goal is read
+**Then** it keeps counting in the backing and the pace, as Sure's `linked_accounts` reads it whatever its status; « Compte désactivé, non compté » goes
+
+**Given** the « Projection » chart
+**When** it draws
+**Then** the saved line is the linked accounts' whole balance over 90 days scaled by today's ratio of the goal's backing to their total, capped at 1, as Sure's `Goal#projection_payload`, where Archant drew each day's share under today's links; the projection runs from today at the pace to the target date, as `projection_end_amount`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers transfers between two linked accounts netting to zero, an excluded and a pending line, a snapshot, a deactivated account and the scaled series; Playwright reads a goal's pace and its status
+
+### Story 35.10: Budgets and goals on a Plan page
+
+As the household's administrator,
+I want budgets and goals under one « Plan » entry with a page that sums both,
+So that I decide where my money goes in one place, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the navigation
+**When** it renders
+**Then** « Plan » at `/plan` replaces « Budgets » and « Objectifs », in the sidebar and the phone bar, active on `/plan`, `/budgets` and `/goals`, as Sure's `plan_nav_item`; the breadcrumbs of a budget or a goal start with « Plan »
+
+**Given** `/plan`
+**When** it renders
+**Then** it reads « Plan » and « Décidez où va votre argent : ce que vous dépensez et ce que vous épargnez. », then two cards, as Sure's `plans/show.html.erb`: « Ce mois-ci », with « %{percent} % utilisés », « sur %{total} », the days left, « Principales catégories », four at most, and « Voir le budget complet », or « Configurer le budget de ce mois-ci » before the month is set up; « Vos objectifs », with « Objectifs actifs », « sur %{total} tous objectifs confondus », « N en retard » or « Tout est dans les temps », « Tous les objectifs » and « Nouvel objectif »
+
+**Given** the dashboard
+**When** it renders
+**Then** its « Objectifs » card is gone, as Sure's dashboard has none
+
+**Given** Sure's preview pill on the page
+**When** Archant renders it
+**Then** no pill shows, since Archant has no preview flag
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the top categories' order and the goals card's sums; Playwright opens « Plan », reaches a budget and a goal from it, and reads the dashboard without a goals card
+
+### Story 35.11: Filter, search and summarise goals
+
+As the household's administrator,
+I want to filter my goals by status, search them by name and read three indicators above them,
+So that a long list of goals stays readable, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `/goals`
+**When** it renders
+**Then** chips filter the grid of active and completed goals, as Sure's `goals/index.html.erb`: « Tous », then « En retard », « En bonne voie », the open-ended status, « En pause » and « Terminé », each worded as Archant's cards word that status; « Archivés » stays apart and unfiltered; an empty result reads « Aucun objectif ne correspond à ce filtre. »
+
+**Given** more than six goals in the grid
+**When** the owner types in « Rechercher des objectifs… »
+**Then** goals filter by name, the chips still applying, and an empty result reads Sure's `goals.index.search` text, « Aucun objectif ne correspond à "%{query}". » among them
+
+**Given** the indicator strip
+**When** it renders
+**Then** it shows « Contribué · 30 derniers jours », the net inflow into goal-linked accounts with « ↑ N % vs 30 jours précédents » or its down and flat forms; « Requis ce mois-ci », the monthly amounts of the goals behind their pace, with « N objectifs en retard »; « Objectifs en bonne voie » as « %{on_track} sur %{total} », paused goals, reserves, reached and open-ended goals out of the total, as Sure's `GoalsController#kpi_payload`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the three indicators with a paused goal and a reserve; Playwright filters by a chip and searches by name
+
+### Story 35.12: Refresh a months-of-expenses reserve monthly
+
+As the household's administrator,
+I want a reserve set in months of expenses to keep its target until the next month begins,
+So that the amount I save against moves once a month, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a reserve in months of expenses
+**When** it is saved
+**Then** `target_amount` stores the household's monthly expense median times its months, as Sure's `apply_months_of_expenses_target`, and every read uses the stored amount, where Archant computed it on each read
+
+**Given** a new month
+**When** the first signed-in request of the month runs the day's work after it answers
+**Then** each such reserve neither completed nor archived gets its target computed again, as Sure's `RefreshMaintainedGoalTargetsJob` on the 1st (`config/schedule.yml`); with no median, or a product of zero, the previous target stands, as `refresh_target_from_expenses!`
+
+**Given** the form's « Mois de dépenses »
+**When** the owner types a number
+**Then** any positive whole number is accepted, the 120-month cap going, bounded only so the amount stays a safe integer, money being integer minor units; the hint reads « Recalculé le 1er de chaque mois à partir de vos dépenses mensuelles médianes. », Sure's `target_months_hint`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the save, a refresh on a new month, a refresh without a median and the bound; Playwright reads the hint and the stored target
+
+### Story 35.13: Sure's `create_goal` contract
+
+As the household's owner,
+I want `create_goal` to take exactly Sure's parameters and find accounts as Sure's tool does,
+So that an assistant written for Sure creates goals in Archant the same way, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `create_goal`
+**When** an assistant calls it
+**Then** it takes Sure's parameters alone, `name`, `target_amount`, `target_date`, `linked_account_names`, `earmarks` and `notes`, and creates a one-off goal, as Sure's `CreateGoal`; `kind` and `target_months` go, and the refusal of a reserve's date with them
+
+**Given** `linked_account_names`
+**When** the names are matched
+**Then** they are matched among the active current and savings accounts, Sure's visible `Depository` accounts; an investment account's name answers `unknown_accounts` with `available_accounts`
+
+**Given** `available_accounts` in a refusal
+**When** it lists an account
+**Then** it gives `name`, `currency`, `free_to_earmark` and `claimed_in_full`, `free_to_earmark` being the balance less the fixed earmarks of goals neither completed nor archived, as Sure's `Account#free_to_earmark`, so an account claimed in full no longer reads `0,00 €`
+
+**Given** `get_goals`
+**When** this story ships
+**Then** it stays as it is, an Archant addition Sure lacks (owner's decision of 2026-10-14); AD-19 changes with this story, `fundableAccountsNamed` matching depository accounts
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers a call with Sure's parameters, a call with `kind` refused as unknown, an investment account's name and `free_to_earmark` of an account claimed in full; Playwright is unchanged, since no screen changes
+
+### Story 35.14: Explain a goal's state on its page
+
+As the household's administrator,
+I want a goal's page to say in words where it stands and what to do next,
+So that I read Sure's advice, not only figures, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active goal's page
+**When** it renders
+**Then** the header reads « Objectif : %{amount} d'ici le %{date} » with « N jours restants », « Objectif : %{amount} · attendu le %{date} » once the date has passed, or « Cible : %{amount} »; then one status line, Sure's `Goal#status_callout_context`: « atteindra l'objectif vers %{date} », « épargnez %{amount}/mois de plus pour rattraper le retard », « définissez une date cible pour projeter une date de fin », or the depleted reserve's line
+
+**Given** the state panel
+**When** the goal is behind, reached but not closed, a reserve whole or short, or without a date
+**Then** it shows Sure's `Goals::LifecyclePanelComponent` card: « Épargnez %{amount}/mois de plus pour rattraper le retard » with « Ajuster l'objectif à la place »; « Vous avez atteint votre cible, à %{saved} sur %{target}. » with « Clôturer cet objectif »; « Réserve constituée »; « Réserve sous son solde cible »; « Ajouter une date cible » with « Définir la date cible »
+
+**Given** the « Projection » chart
+**When** its subtitle renders
+**Then** it reads Sure's `Goal#projection_summary`, « Au rythme actuel, vous atteindrez cet objectif vers le %{date}. », « Insuffisant au rythme actuel. » or the sentence for no date, no deposit, a reserve or a reached goal, in place of « Pour l'atteindre le {{date}}, il faut épargner … »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each status line and panel; Playwright reads them for a goal behind and a reached one
+
+## Epic 36: Users, access and preferences as Sure
+
+Story 27.25 reviewed `docs/sure-parity.md` against Sure `00dd977fb` (8 October 2026). The departures below had none of the four admitted reasons: money as integer minor units, French text, accessibility contrast, security. This epic follows Sure.
+
+What Sure does:
+
+- Password reset: `app/controllers/password_resets_controller.rb` mails a link over SMTP (`SMTP_ADDRESS`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS_ENABLED`, `EMAIL_SENDER` in `.env.example`), always answers as if the address existed, and `User` `generates_token_for :password_reset` for 15 minutes, tied to the password so the link works once.
+- Roles: `app/models/user.rb` has `guest`, `member`, `admin` and `super_admin`. `require_admin!` in `application_controller.rb` keeps bank providers, invitations and member removal to `admin`; `users_controller.rb:116` lets only an `admin` change the family's settings; `require_non_guest!` refuses a guest every write to categories, merchants, tags and rules.
+- Guest layout: `apply_role_based_ui_defaults` in `user.rb` gives a guest `ui_layout: intro`, without sidebars, and `pages_controller.rb#dashboard` sends them to the assistant.
+- Sharing: `app/models/account_share.rb` gives each account an owner and shares it with chosen members, `full_control`, `read_write` or `read_only`; `Family#auto_share_existing_accounts_with` shares by default; `app/models/budget_share.rb` and `Budget` give each member a personal budget.
+- Two-factor: `User::MFA_BACKUP_CODE_COUNT` is 8, each code `SecureRandom.hex(8)`, shown once when two-factor is turned on and never regenerated.
+- Passkeys: `webauthn_credentials`, `settings/webauthn_credentials_controller.rb` and `passkey_sessions_controller.rb` sign in with a passkey, without password or TOTP while `AUTH_PASSKEY_LOGIN_ENABLED` holds.
+- OpenID Connect: `oidc_accounts_controller.rb`, `AuthConfig` and `config/auth.yml` sign in through an identity provider, link an existing user and log each event in `SsoAuditLog`.
+- Preferences: `app/models/family.rb` holds the household's `timezone`, `date_format`, `country`, `currency` and `month_start_day`; `settings/preferences/show.html.erb` edits them and `onboardings/preferences.html.erb` asks the currency and date format at setup.
+
+Story 36.2 comes first among the stories that rest on roles: Stories 36.3, 36.4 and 36.8 follow it. Stories 36.1, 36.5, 36.6 and 36.7 come in any order. Story 35.1 of Epic 35 follows Story 36.6, since the budget month starts on the day 36.6 stores. Story 36.1 brings SMTP; the rule e-mail action stays not planned (owner's decision of 2026-10-14).
+
+### Story 36.1: Reset a forgotten password by e-mail
+
+As a member of the household,
+I want a link by e-mail when I forget my password,
+So that I sign in again without the administrator's shell, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `.env.example`
+**When** this story ships
+**Then** it lists Sure's `SMTP_ADDRESS`, `SMTP_PORT` (465), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_TLS_ENABLED`, `SMTP_TLS_SKIP_VERIFY` and `EMAIL_SENDER`, validated by `validateEnv`, with a comment saying that without `SMTP_ADDRESS` no mail leaves and `pnpm api reset-password` stays the way back; `SMTP_PASSWORD` is never logged
+
+**Given** the sign-in page
+**When** a member follows « Mot de passe oublié ? » and submits an address
+**Then** the page answers « Veuillez vérifier votre boîte mail pour un lien de réinitialisation de votre mot de passe. » whether the address exists or not, as `password_resets_controller.rb#create`, and an existing user receives a link through Better Auth's `sendResetPassword`
+
+**Given** the link
+**When** it is opened within 15 minutes and a new password is set under « Réinitialiser votre mot de passe »
+**Then** the password changes, « Votre mot de passe a été réinitialisé. » shows on the sign-in page, and the link no longer works; an expired or used link shows « Jeton invalide. »
+
+**Given** the documents
+**When** this story ships
+**Then** AD-13 changes with this story; `docs/deployment.md` explains the SMTP variables; `docs/sure-parity.md` « Password reset » reads Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the request without enumeration, the expiry and the single use, with the mailer mocked; Playwright resets a password through a captured link
+
+### Story 36.2: A member who writes, and a guest as Sure's
+
+As the household's administrator,
+I want Sure's three roles, `admin`, `member` and `guest`,
+So that a partner writes beside me and a guest only reads, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `USER_ROLES` in `packages/data/user-roles.ts`
+**When** this story ships
+**Then** it holds `admin`, `member` and `guest`, as Sure's `User` enum without `super_admin`; a migration turns every `viewer` into `guest`, invitations included
+
+**Given** a member
+**When** they write
+**Then** the server accepts every write an administrator makes, except what Sure keeps to `admin`: bank connections (`require_admin!` on `enable_banking_items_controller.rb`), invitations and members, the household's preferences (`users_controller.rb:116`) and the export (`family_exports_controller.rb:64`); an assistant's consent stays an administrator's; until Story 36.4 brings ownership, a member writes to every account
+
+**Given** a guest
+**When** they send any write
+**Then** the server refuses it, as `viewerReadOnly` refuses a viewer today and Sure's `require_non_guest!` refuses a guest; the interface shows a guest no control that writes
+
+**Given** « Réglages › Membres »
+**When** the administrator invites or changes a role
+**Then** the choices are Sure's « Administrateur », « Membre » and « Invité » (`invitations/fr.yml`), and the last-administrator guard holds
+
+**Given** the documents
+**When** this story ships
+**Then** AD-21 changes with this story; `docs/sure-parity.md` « Roles » reads Parity for the roles
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest walks every mutating route for each role, after the migration; Playwright signs in as a member who writes and a guest who sees no write control
+
+### Story 36.3: Guests open on the assistant
+
+As a guest of the household,
+I want Sure's `intro` layout,
+So that I land where Sure lands a guest, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a guest
+**When** they sign in or open the dashboard
+**Then** the layout is Sure's `intro`, as `apply_role_based_ui_defaults` in `user.rb:753-765` sets it: no sidebar, the navigation reduced to Sure's home and « Intro » items (`layouts/application.html.erb`), and the dashboard sends them on, as `pages_controller.rb#dashboard`; Sure sends them to its chat, which Archant does not have, so they land on « Intro »
+
+**Given** the « Intro » page
+**When** a guest opens it
+**Then** it shows Sure's card, « Bienvenue ! » and « Expérience d'introduction à venir » (`pages/fr.yml`); anyone else who opens it goes back to the dashboard with « L'intro n'est disponible que pour les utilisateurs invités. », as `ensure_intro_guest!`
+
+**Given** a guest promoted to member
+**When** they next load a page
+**Then** the layout is the dashboard again with its sidebar, as `leaving_guest_role?`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the layout chosen per role and on promotion; Playwright signs in as a guest and lands on the « Intro » page
+
+### Story 36.4: Share each account with chosen members, and personal budgets
+
+As a member of the household,
+I want each account to have an owner who shares it with chosen members, and a budget of my own,
+So that each person sees and edits what is theirs, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the schema
+**When** this story ships
+**Then** each account has an owner, its creator, as Sure's `Account#assign_default_owner`, and `account_shares` holds one row per account and member with `permission` `full_control`, `read_write` or `read_only` and `include_in_finances`, as `account_share.rb`; a migration gives every account to the first administrator, shared as `Family#auto_share_existing_accounts_with` shares
+
+**Given** an account's « Partage de compte »
+**When** its owner shares it
+**Then** each member is listed with « Contrôle total », « Peut annoter » or « Lecture seule » (`account_sharings/fr.yml`); only the owner saves, as `account_sharings_controller.rb#update`, and a member it is shared with toggles « Inclure dans mes budgets et rapports »
+
+**Given** a member
+**When** they read or write
+**Then** they reach only accounts they own or that are shared with them, as `Account.accessible_by`; `read_write` only annotates; `full_control` edits; new accounts follow « Partage par défaut pour les nouveaux comptes »
+
+**Given** the documents
+**When** this story ships
+**Then** AD-21 changes with this story; `docs/sure-parity.md` « Per-account sharing » reads Parity
+
+**Given** « Budgets personnels » on in the preferences
+**When** a member opens their budget
+**Then** it counts the accounts they own, as `budget.rb:173`; « Budget commun » keeps the shared one; « Partage de budget » grants « Lecture seule » or « Peut modifier », as `budget_share.rb`
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers each permission, the migration and a personal budget's totals; Playwright shares an account and opens a personal budget
+
+### Story 36.5: Two-factor backup codes as Sure's
+
+As a member of the household,
+I want Sure's backup codes,
+So that I keep the same eight codes Sure gives, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** two-factor being turned on
+**When** the codes are generated
+**Then** there are 8, each 16 hexadecimal characters, as Sure's `MFA_BACKUP_CODE_COUNT` and `SecureRandom.hex(8)` in `user.rb:893-895`, through Better Auth's `twoFactor` backup code options; each is accepted once, as today
+
+**Given** « Sécurité »
+**When** two-factor is on
+**Then** there is no control to regenerate the codes, as Sure has none; a member who needs new codes turns two-factor off and on again
+
+**Given** turning two-factor off
+**When** a member does it
+**Then** the password is still asked: a security departure from Sure's `mfa_controller.rb#disable`, which the parity page cites
+
+**Given** the documents
+**When** this story ships
+**Then** `docs/sure-parity.md` « Two-factor codes, passkeys » reads Parity for the backup codes
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the count, the format and the single use of each code; Playwright turns two-factor on, sees eight codes and signs in with one
+
+### Story 36.6: Household preferences
+
+As the household's administrator,
+I want Sure's household preferences,
+So that time zone, date format, country, budget month and currency are the household's settings, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `/setup`
+**When** the first administrator is created
+**Then** the page also asks « Pays », « Devise » and « Format de date », as Sure's `onboardings/show.html.erb` and `onboardings/preferences.html.erb`; the country proposes its currency, as `Family.default_currency_for_country`
+
+**Given** « Réglages › Préférences »
+**When** the administrator opens it
+**Then** « Général » edits « Fuseau horaire », « Format de date » among Sure's `Family::DATE_FORMATS` and « Pays »; « Budget » edits « Le mois budgétaire commence le », 1 to 28, with its hint; the currency shows as « Devise de base », read-only; only an administrator saves, as `users_controller.rb:116`
+
+**Given** the stored settings
+**When** the server computes today or totals
+**Then** it reads the household's time zone, which replaces `APP_TIMEZONE`, and `getReportingCurrency()` in `services/settings.ts` reads the household's currency; an upgrade sets them from `APP_TIMEZONE` and `EUR`; dates Sure writes through `format_date` follow the format; Story 35.1 applies the month start day to budgets
+
+**Given** the documents
+**When** this story ships
+**Then** AD-6 changes with this story; `.env.example` and `docs/deployment.md` drop `APP_TIMEZONE`; `docs/sure-parity.md` « Preferences » reads Parity for these settings
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers setup, the validation and today in the stored time zone; Playwright changes each preference
+
+### Story 36.7: Sign in with a passkey
+
+As a member of the household,
+I want to register a passkey and sign in with it,
+So that a fingerprint or a security key replaces my password and code, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** « Sécurité » with two-factor on
+**When** a member adds a key under « Clés d'accès et clés de sécurité »
+**Then** Better Auth's passkey plugin stores it with its name (« Nom de la clé »), date added and last use, as Sure's `webauthn_credentials`; without two-factor the control is refused, as `ensure_mfa_enabled`; « Supprimer » removes a key after a confirmation
+
+**Given** the sign-in page
+**When** a member chooses « Se connecter avec une clé d'accès »
+**Then** a discoverable passkey with user verification required signs them in without password or TOTP, as `passkey_sessions_controller.rb`, while `AUTH_PASSKEY_LOGIN_ENABLED` is true; set to false, a passkey serves only as the second factor at the code step
+
+**Given** the labels
+**When** Sure's `fr.yml` translates « passkey » as « mot de passe »
+**Then** Archant writes « clé d'accès », as Sure's `sessions/fr.yml` does: French text a French user expects
+
+**Given** the documents
+**When** this story ships
+**Then** AD-13 changes with this story; `.env.example` lists `WEBAUTHN_RP_ID`, `WEBAUTHN_ALLOWED_ORIGINS` and `AUTH_PASSKEY_LOGIN_ENABLED`; `docs/sure-parity.md` reads Parity for passkeys
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers registration, the two-factor requirement and both sign-in modes; Playwright registers and signs in with a virtual authenticator
+
+### Story 36.8: Sign in through OpenID Connect
+
+As the household's administrator,
+I want members to sign in through our identity provider,
+So that the household uses one login, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `.env.example`
+**When** this story ships
+**Then** it lists Sure's `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `AUTH_LOCAL_LOGIN_ENABLED`, `AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED`, `AUTH_JIT_MODE` and `ALLOWED_OIDC_DOMAINS` (`config/auth.yml`), read through Better Auth's generic OAuth plugin; the client secret is never logged
+
+**Given** the sign-in page with a provider set
+**When** a member chooses « Se connecter avec OpenID Connect »
+**Then** a known identity signs in; a new one links an existing user after their password, as `oidc_accounts_controller.rb#create_link`, or creates a user only through a pending invitation, since one instance is one household; `AUTH_JIT_MODE=link_only` and `ALLOWED_OIDC_DOMAINS` restrict creation as `AuthConfig` does
+
+**Given** `AUTH_LOCAL_LOGIN_ENABLED=false`
+**When** someone signs in with a password
+**Then** it is refused, unless `AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED` lets an administrator through, and a user without a password cannot reset one, as `password_resets_controller.rb`
+
+**Given** each login, failure, link, unlink and creation
+**When** it happens
+**Then** it is recorded as Sure's `SsoAuditLog` `EVENT_TYPES`, without a token; AD-13 changes with this story; `docs/sure-parity.md` « OpenID Connect single sign-on » reads Parity
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers linking, creation through an invitation, the local-login switch and the audit log, with the provider mocked; Playwright signs in through a mocked provider

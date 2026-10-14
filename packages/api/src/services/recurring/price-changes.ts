@@ -71,7 +71,8 @@ async function latestPaid(tx: Writer, seriesId: string): Promise<PaidOccurrence[
  * the new amount, signed (AD-5), and its open occurrences already due keep the
  * old one; a manual series keeps the amount its owner stated. A detected
  * series whose new amount another series of its key already holds keeps its
- * own, the unique index on the amount being Archant's, not Sure's.
+ * own and the change stays recorded, as Sure's `update!` fails on its own
+ * unique index after the change is saved.
  */
 export async function detectPriceChanges(tx: Writer, day: IsoDate): Promise<void> {
 	const series = await tx

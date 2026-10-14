@@ -845,7 +845,11 @@ test("« Marquer comme récurrent » follows a mortgage payment, which the next 
 			.getByRole("list", { name: "Opérations correspondantes" })
 			.getByRole("list", { name: "Pourquoi cette correspondance" })
 			.getByRole("listitem"),
-	).toHaveText(["Virement vers le même compte", "Montant exact", "À la date prévue"]);
+	).toHaveText([
+		"Virement vers le même compte",
+		"Montant exact",
+		"Correspondance de date d'échéance",
+	]);
 	await page.keyboard.press("Escape");
 
 	await detect(page);
