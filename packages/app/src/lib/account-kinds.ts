@@ -51,6 +51,9 @@ export const ACCOUNT_KINDS = [
 	{ id: "commercial", type: "property", subtype: "commercial" },
 	{ id: "agri_land", type: "property", subtype: "agri_land" },
 	{ id: "vehicle", type: "vehicle", subtype: null },
+	// Last, as Sure's `accounts/new` lists them.
+	{ id: "other_asset", type: "other_asset", subtype: null },
+	{ id: "other_liability", type: "other_liability", subtype: null },
 ] as const satisfies readonly { id: string; type: AccountType; subtype: AccountSubtype | null }[];
 
 export type AccountKindId = (typeof ACCOUNT_KINDS)[number]["id"];

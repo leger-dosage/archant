@@ -78,6 +78,10 @@ export const ACCOUNT_TYPES = {
 	},
 	// Sure's `Vehicle` has no subtypes.
 	vehicle: { classification: "asset", balanceType: "non_cash", subtypes: [] },
+	// Sure's `OtherAsset` and `OtherLiability`: jewellery, a loan from a
+	// relative, anything the other types do not name. No subtype, no details.
+	other_asset: { classification: "asset", balanceType: "non_cash", subtypes: [] },
+	other_liability: { classification: "liability", balanceType: "non_cash", subtypes: [] },
 } as const satisfies Record<
 	string,
 	{

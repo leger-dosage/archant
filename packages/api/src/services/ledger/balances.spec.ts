@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
+import { ACCOUNT_TYPE_IDS, transactionsMoveBalance } from "@archant/data/account-types";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
@@ -19,6 +20,8 @@ import {
 	snapshot,
 	splitInTwo,
 	temp,
+	transferAmount,
+	transferRows,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createAccount } from "./accounts.ts";
@@ -270,6 +273,70 @@ describe("a property's or a vehicle's balances", () => {
 	});
 });
 
+// Story 28.10's matrix: jewellery worth 5 000 € and 2 000 € owed to a relative.
+const RING = 500_000;
+const DEBT = 200_000;
+
+const openJewellery = () =>
+	openChecking({
+		name: "Bijoux",
+		type: "other_asset",
+		subtype: null,
+		openingBalance: toMinorUnits(RING),
+		openingDate: "2026-05-01",
+	});
+
+const openRelativeLoan = () =>
+	openChecking({
+		name: "Prêt de Marie",
+		type: "other_liability",
+		subtype: null,
+		openingBalance: toMinorUnits(DEBT),
+		openingDate: "2026-05-01",
+	});
+
+describe("an other asset's or an other liability's balances", () => {
+	it("keep the value when a ring is sold from it", async () => {
+		const jewellery = await openJewellery();
+		await add(jewellery.id, { amount: toMinorUnits(30_000), label: "Bague", date: "2026-05-10" });
+
+		const rows = await history(jewellery.id);
+
+		expect(rows.get("2026-05-10")).toBe(RING);
+		expect([...rows.values()].every((balance) => balance === RING)).toBe(true);
+	});
+
+	it("move only on a valuation, from its own day", async () => {
+		const jewellery = await openJewellery();
+		await add(jewellery.id, { amount: toMinorUnits(30_000), label: "Bague", date: "2026-05-10" });
+
+		await snapshot(jewellery.id, "2026-05-20", 600_000);
+
+		const rows = await history(jewellery.id);
+		expect(rows.get("2026-05-19")).toBe(RING);
+		expect(rows.get("2026-05-20")).toBe(600_000);
+		expect(rows.get("2026-09-21")).toBe(600_000);
+	});
+
+	it("keep the debt when a relative is repaid by a transfer, a card payment as Sure's", async () => {
+		const relative = await openRelativeLoan();
+		const checkingAccount = await openChecking({ name: "Compte courant" });
+		const amount = transferAmount();
+		const outflow = await add(checkingAccount.id, {
+			amount: toMinorUnits(-amount),
+			date: "2026-09-10",
+		});
+		await add(relative.id, { amount: toMinorUnits(amount), date: "2026-09-10" });
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([{ kind: "credit_card_payment" }]);
+		const rows = await history(relative.id);
+		expect([...rows.values()].every((balance) => balance === DEBT)).toBe(true);
+		await expect(balanceOn(deps(), checkingAccount.id, "2026-09-10")).resolves.toMatchObject({
+			amount: 123_456 - amount,
+		});
+	});
+});
+
 const claim = () =>
 	temp.db.select().from(settings).where(eq(settings.key, "non_cash_balances_recomputed_at")).get();
 
@@ -294,11 +361,16 @@ describe("recomputeNonCashBalances", () => {
 			.set({ balance: toMinorUnits(HOME - 500_000), cash: toMinorUnits(HOME - 500_000) })
 			.where(and(eq(balances.accountId, home.id), gte(balances.date, "2026-09-10")));
 		const checkingBefore = await history(checkingAccount.id);
-		// The file's other tests opened properties and vehicles too, all recomputed.
+		// The file's other tests opened other non-cash accounts too, all recomputed.
 		const nonCash = await temp.db
 			.select({ id: accounts.id })
 			.from(accounts)
-			.where(inArray(accounts.type, ["property", "vehicle"]));
+			.where(
+				inArray(
+					accounts.type,
+					ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type)),
+				),
+			);
 
 		await expect(recomputeNonCashBalances(deps())).resolves.toBe(nonCash.length);
 

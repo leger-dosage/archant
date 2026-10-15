@@ -72,6 +72,18 @@ describe("balanceSheet", () => {
 		]);
 	});
 
+	it("puts an other asset after the vehicles and an other liability after the loans", () => {
+		const [assets, liabilities] = balanceSheet(
+			listOf(
+				[account("other_asset", 5_000), account("vehicle", 5_000)],
+				[account("other_liability", 2_000), account("loan", 2_000)],
+			),
+		);
+
+		expect(assets?.types.map((entry) => entry.type)).toEqual(["vehicle", "other_asset"]);
+		expect(liabilities?.types.map((entry) => entry.type)).toEqual(["loan", "other_liability"]);
+	});
+
 	it("gives no segment when the group total is zero or less, and still lists the accounts", () => {
 		const overdrawn = account("depository", -5_000);
 

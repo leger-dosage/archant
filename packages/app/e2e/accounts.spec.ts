@@ -1355,6 +1355,78 @@ test("a vehicle created through the form with its estimated value is listed unde
 	).toHaveCount(0);
 });
 
+// Story 28.10: Sure's `OtherAsset` and `OtherLiability`.
+test("an other asset shows Sure's valuation notice when created and edited, an other liability none, each in its group", async ({
+	page,
+}) => {
+	const notice =
+		"Les autres actifs sont suivis via des valorisations manuelles à l'aide de « Ajouter un solde », et non via des transactions. Les flux de trésorerie n'affecteront pas le solde du compte.";
+	const jewellery = uniqueName("Bijoux");
+	const relative = uniqueName("Prêt de Marie");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await expect(dialog.getByRole("note")).toHaveCount(0);
+	await dialog.getByLabel("Nom").fill(jewellery);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Autre actif", exact: true }).click();
+	await expect(dialog.getByRole("note")).toHaveText(notice);
+	await dialog.getByLabel("Solde à la date :").fill("5 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	const assetRow = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(jewellery) });
+	await expect(assetRow.getByText("Autre actif", { exact: true })).toBeVisible();
+	await expect(assetRow).toContainText(euros(500_000));
+	await expect(
+		column(page)
+			.getByRole("group", { name: "Autres actifs" })
+			.getByRole("link", { name: new RegExp(jewellery) }),
+	).toContainText(euros(500_000));
+
+	await addAccount(page).click();
+	await dialog.getByLabel("Nom").fill(relative);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Autre passif", exact: true }).click();
+	await expect(dialog.getByRole("note")).toHaveCount(0);
+	await dialog.getByLabel("Solde à la date :").fill("2 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	const liabilityRow = page
+		.getByRole("region", { name: "Passifs" })
+		.getByRole("link", { name: new RegExp(relative) });
+	await expect(liabilityRow.getByText("Autre passif", { exact: true })).toBeVisible();
+	await expect(liabilityRow).toContainText(euros(200_000));
+	await expect(
+		column(page)
+			.getByRole("group", { name: "Autres passifs" })
+			.getByRole("link", { name: new RegExp(relative) }),
+	).toContainText(euros(200_000));
+
+	await assetRow.click();
+	await page.getByRole("button", { name: `Actions du compte ${jewellery}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(edit.getByRole("note")).toHaveText(notice);
+	// One kind, so nothing to choose.
+	await expect(edit.getByLabel("Type", { exact: true })).toHaveCount(0);
+	await edit.getByRole("button", { name: "Annuler" }).click();
+
+	await page.goto("/accounts");
+	await page
+		.getByRole("region", { name: "Passifs" })
+		.getByRole("link", { name: new RegExp(relative) })
+		.click();
+	await page.getByRole("button", { name: `Actions du compte ${relative}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(edit.getByLabel("Nom")).toHaveValue(relative);
+	await expect(edit.getByRole("note")).toHaveCount(0);
+});
+
 // Story 28.8: Sure's property and vehicle details, and their « Aperçu ».
 test("a property created with its details shows its address under its caption and Sure's cards in « Aperçu »", async ({
 	page,

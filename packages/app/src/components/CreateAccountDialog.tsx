@@ -15,6 +15,7 @@ import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
+import { OtherAssetNotice } from "@/components/OtherAssetNotice";
 import { PropertyDetailsFields } from "@/components/PropertyDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -240,6 +241,8 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 						</Select>
 						<FieldMessage id="subtype-error" error={errors.subtype ?? errors.type} />
 					</div>
+
+					{type === "other_asset" && <OtherAssetNotice />}
 
 					<div className="grid grid-cols-[7rem_1fr] gap-3">
 						<div className="flex flex-col gap-1.5">

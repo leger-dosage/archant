@@ -665,6 +665,34 @@ describe("the tools", () => {
 		}
 	});
 
+	it("get_accounts lists an other asset and an other liability as Sure's OtherAsset and OtherLiability", async () => {
+		const jewellery = await openAccount({
+			name: "Bijoux",
+			type: "other_asset",
+			subtype: null,
+			openingBalance: "5 000,00",
+		});
+		const relative = await openAccount({
+			name: "Prêt de Marie",
+			type: "other_liability",
+			subtype: null,
+			openingBalance: "2 000,00",
+		});
+
+		const listed = accountsOf(await callTool(bare, tokens.access_token, "get_accounts"));
+
+		expect(listed.find((row) => row.id === jewellery.id)).toMatchObject({
+			classification: "asset",
+			type: "OtherAsset",
+			balance: "5000.0",
+		});
+		expect(listed.find((row) => row.id === relative.id)).toMatchObject({
+			classification: "liability",
+			type: "OtherLiability",
+			balance: "2000.0",
+		});
+	});
+
 	it("get_categories, get_merchants and get_tags list what their routes list", async () => {
 		const merchant = await createMerchant("Boulangerie Dupain");
 		const tag = await createTag("Vacances");

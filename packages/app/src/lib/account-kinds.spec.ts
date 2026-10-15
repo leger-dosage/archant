@@ -25,6 +25,15 @@ describe("kindOf", () => {
 		expect(kindOf("property", "single_family_home")).toBe("single_family_home");
 		expect(kindOf("vehicle", null)).toBe("vehicle");
 	});
+
+	it("names an other asset and an other liability by their type, listed last as Sure's", () => {
+		expect(kindOf("other_asset", null)).toBe("other_asset");
+		expect(kindOf("other_liability", null)).toBe("other_liability");
+		expect(ACCOUNT_KINDS.slice(-2).map((kind) => fr.accounts.subtypes[kind.id])).toEqual([
+			"Autre actif",
+			"Autre passif",
+		]);
+	});
 });
 
 describe("ACCOUNT_KINDS", () => {

@@ -100,8 +100,10 @@
 				"investment": "Investissement",
 				"property": "Bien immobilier",
 				"vehicle": "Véhicule",
+				"other_asset": "Autres actifs",
 				"credit_card": "Carte de crédit",
-				"loan": "Prêt"
+				"loan": "Prêt",
+				"other_liability": "Autres passifs"
 			}
 		},
 		"empty": {
@@ -170,7 +172,9 @@
 			"plot": "Terrain",
 			"commercial": "Local commercial",
 			"agri_land": "Terrain agricole",
-			"vehicle": "Véhicule"
+			"vehicle": "Véhicule",
+			"other_asset": "Autre actif",
+			"other_liability": "Autre passif"
 		},
 		"subtypeLongs": {
 			"assurance_vie": "Assurance-vie",
@@ -207,7 +211,8 @@
 			"submit": "Ajouter le compte",
 			"cancel": "Annuler",
 			"created": "Compte « {{name}} » ajouté.",
-			"datePlaceholder": "jj/mm/aaaa"
+			"datePlaceholder": "jj/mm/aaaa",
+			"otherAssetNotice": "Les autres actifs sont suivis via des valorisations manuelles à l'aide de « $t(snapshots.add) », et non via des transactions. Les flux de trésorerie n'affecteront pas le solde du compte."
 		}
 	},
 	"accountDetail": {
@@ -473,7 +478,7 @@
 			"spentCaption": "{{kind}} · {{caption}}",
 			"kinds": {
 				"internal_move": "Virement",
-				"credit_card_payment": "Remboursement de carte",
+				"credit_card_payment": "Paiement",
 				"loan_payment": "Remboursement de prêt",
 				"investment_contribution": "Versement"
 			},
