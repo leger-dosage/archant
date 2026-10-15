@@ -77,7 +77,8 @@ test("« Positions » lists each security by value with its weight, PRU, value a
 		await opener(page, fund).click();
 
 		await expect(sheet).toBeVisible();
-		await expect(sheet.getByRole("definition").first()).toHaveText(
+		// « Titre » first, as Sure's drawer, then the last price.
+		await expect(sheet.getByRole("definition").nth(1)).toHaveText(
 			`50,00 € le ${formatShortDate(bought)}`,
 		);
 		await expect(sheet.getByRole("list", { name: "Ordres" })).toContainText(
@@ -97,7 +98,7 @@ test("« Positions » lists each security by value with its weight, PRU, value a
 		await price.fill("60");
 		await typed.getByRole("button", { name: "Enregistrer le cours" }).click();
 
-		await expect(sheet.getByRole("definition").first()).toHaveText(
+		await expect(sheet.getByRole("definition").nth(1)).toHaveText(
 			`60,00 € le ${formatShortDate(daysAgo(0))}`,
 		);
 		await expect(sheet.getByRole("region", { name: "Aperçu" })).toContainText(`+${euros(100_000)}`);
@@ -138,6 +139,110 @@ test("« Positions » lists each security by value with its weight, PRU, value a
 		await page.keyboard.press("Escape");
 		await expect(sheet).toBeHidden();
 		await expect(cells.nth(2)).toHaveText("50,00 €");
+	});
+});
+
+test("a position's sheet remaps it onto a known security, merging the two, and deletes another after confirming", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "9 000,00",
+		openingDate: daysAgo(30),
+	});
+	const wrong = uniqueName("Fonds mal saisi");
+	const right = uniqueName("Fonds juste");
+	const gone = uniqueName("Fonds supprimé");
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name: wrong },
+		date: daysAgo(10),
+		quantity: "10",
+		price: "50",
+	});
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name: right },
+		date: daysAgo(8),
+		quantity: "5",
+		price: "50",
+	});
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name: gone },
+		date: daysAgo(6),
+		quantity: "2",
+		price: "50",
+	});
+
+	// A security in dollars, which a euro account's position cannot move to (AD-6).
+	const dollars = uniqueName("Fonds en dollars");
+	const usd = await api.openAccount({ kind: "pea", currency: "USD", openingDate: daysAgo(30) });
+	await api.recordTrade(usd.id, {
+		security: { source: "manual", name: dollars },
+		date: daysAgo(5),
+		quantity: "1",
+		price: "10",
+	});
+
+	await page.goto(`/accounts/${account.id}?tab=positions`);
+	const table = page.getByRole("table", { name: "Positions du compte" });
+
+	await test.step("a security in another currency is refused on the field, the sheet left open", async () => {
+		await opener(page, wrong).click();
+		const sheet = page.getByRole("dialog", { name: wrong });
+		await sheet.getByRole("button", { name: "Modifier le titre" }).click();
+		await sheet.getByRole("button", { name: "Rechercher un titre" }).click();
+		await page.getByRole("combobox", { name: "Rechercher un titre" }).fill(dollars);
+		await page.getByRole("option", { name: new RegExp(dollars, "u") }).click();
+		await sheet.getByRole("button", { name: "Enregistrer", exact: true }).click();
+
+		await expect(
+			sheet.getByRole("button", { name: "Rechercher un titre" }),
+		).toHaveAccessibleDescription("Ce titre n'est pas coté dans la devise du compte.");
+		await expect(sheet).toBeVisible();
+		await sheet.getByRole("button", { name: "Annuler" }).click();
+		await expect(sheet.getByRole("button", { name: "Rechercher un titre" })).toHaveCount(0);
+		await page.keyboard.press("Escape");
+		await expect(sheet).toBeHidden();
+	});
+
+	await test.step("« Modifier le titre » moves the trades onto a known security, one row left", async () => {
+		await opener(page, wrong).click();
+		const sheet = page.getByRole("dialog", { name: wrong });
+		await expect(sheet.getByRole("definition").first()).toContainText(wrong);
+		await sheet.getByRole("button", { name: "Modifier le titre" }).click();
+		await sheet.getByRole("button", { name: "Rechercher un titre" }).click();
+		const search = page.getByRole("combobox", { name: "Rechercher un titre" });
+		await search.fill(right);
+		await expect(page.getByRole("option", { name: "Saisir un titre manuellement" })).toHaveCount(0);
+		await expect(page.getByRole("status").filter({ hasText: "désactivée" })).toHaveText(
+			"La récupération des cours est désactivée : seuls les titres connus sont proposés.",
+		);
+		await page.getByRole("option", { name: new RegExp(right, "u") }).click();
+		await sheet.getByRole("button", { name: "Enregistrer", exact: true }).click();
+
+		await expect(sheet).toBeHidden();
+		await expect(page.getByText("Titre mis à jour avec succès.")).toBeVisible();
+		await expect(opener(page, wrong)).toHaveCount(0);
+		await expect(positionRow(page, right)).toHaveCount(1);
+		await expect(positionRow(page, right).getByRole("cell").nth(3)).toContainText("15 × 50,00 €");
+	});
+
+	await test.step("« Supprimer la position » deletes it with its trades once confirmed", async () => {
+		await opener(page, gone).click();
+		const sheet = page.getByRole("dialog", { name: gone });
+		const settings = sheet.getByRole("region", { name: "Paramètres" });
+		await expect(settings).toContainText("Supprimer la position");
+		await settings.getByRole("button", { name: "Supprimer" }).click();
+		const confirm = page.getByRole("alertdialog", { name: "Êtes-vous sûr ?" });
+		await expect(confirm).toContainText("Cette action ne peut pas être annulée.");
+		await confirm.getByRole("button", { name: "Confirmer" }).click();
+
+		await expect(sheet).toBeHidden();
+		await expect(page.getByText("Position supprimée")).toBeVisible();
+		await expect(opener(page, gone)).toHaveCount(0);
+		// The cash is back: 9 000 € less the 750 € of the two others.
+		await expect(table.getByRole("row").last()).toContainText(euros(825_000));
 	});
 });
 

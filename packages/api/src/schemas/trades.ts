@@ -43,27 +43,39 @@ export function normalizeIsin(text: string): string {
 
 const knownSecuritySchema = z.object({ source: z.literal("known"), id: z.string().min(1) });
 
+const listingSecuritySchema = z.object({
+	source: z.literal("listing"),
+	ticker: z.string().trim().min(1).max(TICKER_MAX_LENGTH),
+	// ISO 10383 operating MIC.
+	mic: z
+		.string()
+		.regex(/^[A-Z0-9]{4}$/u)
+		.nullable(),
+	name: securityName,
+	currency: z
+		.string()
+		.regex(/^[A-Z]{3}$/u)
+		.nullable(),
+	provider: z.enum(PROVIDERS),
+});
+
+/**
+ * A security already known or a listing the search found, never one typed
+ * by hand: what a position's security is remapped to, as Sure's drawer
+ * offers provider results only.
+ */
+export const listedSecurityChoiceSchema = z.discriminatedUnion("source", [
+	knownSecuritySchema,
+	listingSecuritySchema,
+]);
+
 /**
  * Which security a new trade is in: one already known, a listing the search
  * found, or one typed by hand, its ISIN optional since a fonds euros has none.
  */
 const securityChoiceSchema = z.discriminatedUnion("source", [
 	knownSecuritySchema,
-	z.object({
-		source: z.literal("listing"),
-		ticker: z.string().trim().min(1).max(TICKER_MAX_LENGTH),
-		// ISO 10383 operating MIC.
-		mic: z
-			.string()
-			.regex(/^[A-Z0-9]{4}$/u)
-			.nullable(),
-		name: securityName,
-		currency: z
-			.string()
-			.regex(/^[A-Z]{3}$/u)
-			.nullable(),
-		provider: z.enum(PROVIDERS),
-	}),
+	listingSecuritySchema,
 	z
 		.object({ source: z.literal("manual"), isin: z.string().optional(), name: securityName })
 		.superRefine(({ isin = "" }, context) => {
@@ -137,6 +149,7 @@ export type TradeInput = z.input<typeof tradeBodySchema>;
 export type TradePatchInput = z.input<typeof tradePatchBodySchema>;
 export type ConvertTradeInput = z.input<typeof convertTradeBodySchema>;
 export type SecurityChoiceInput = z.input<typeof securityChoiceSchema>;
+export type ListedSecurityChoice = z.output<typeof listedSecurityChoiceSchema>;
 
 type Numbers = {
 	quantity?: string | undefined;

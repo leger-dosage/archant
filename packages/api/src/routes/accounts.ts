@@ -8,7 +8,7 @@ import { AppError } from "../lib/errors.ts";
 import { validated } from "../lib/validated.ts";
 import { createAccountSchema, updateAccountSchema } from "../schemas/accounts.ts";
 import { balanceQuerySchema } from "../schemas/balances.ts";
-import { costBasisBodySchema } from "../schemas/holdings.ts";
+import { costBasisBodySchema, remapBodySchema } from "../schemas/holdings.ts";
 import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts";
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
 import { tradeBodySchema, tradePageQuerySchema } from "../schemas/trades.ts";
@@ -22,7 +22,13 @@ import {
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
-import { listPositions, setCostBasis, unlockCostBasis } from "../services/holdings.ts";
+import {
+	deletePosition,
+	listPositions,
+	remapPosition,
+	setCostBasis,
+	unlockCostBasis,
+} from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
 import { loanOverview, loanPayoffChart, loanSchedule } from "../services/loans.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
@@ -119,6 +125,25 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		.delete("/:id/holdings/:securityId/cost-basis", async (c) =>
 			c.json(
 				{ data: await unlockCostBasis(deps, c.req.param("id"), c.req.param("securityId")) },
+				200,
+			),
+		)
+		.delete("/:id/holdings/:securityId", async (c) =>
+			c.json(
+				{ data: await deletePosition(deps, c.req.param("id"), c.req.param("securityId")) },
+				200,
+			),
+		)
+		.patch("/:id/holdings/:securityId/security", validated("json", remapBodySchema), async (c) =>
+			c.json(
+				{
+					data: await remapPosition(
+						deps,
+						c.req.param("id"),
+						c.req.param("securityId"),
+						c.req.valid("json"),
+					),
+				},
 				200,
 			),
 		)

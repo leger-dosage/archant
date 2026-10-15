@@ -274,7 +274,10 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expectNone(position, [
 				{ role: "button", name: "Enregistrer le cours" },
 				{ role: "button", name: "Verrouiller le PRU" },
+				{ role: "button", name: "Modifier le titre" },
+				{ role: "button", name: "Supprimer" },
 			]);
+			await expect(position.getByRole("region", { name: "Paramètres" })).toHaveCount(0);
 			await page.keyboard.press("Escape");
 			await expect(position).toBeHidden();
 		});
@@ -607,6 +610,12 @@ test("a viewer reads every page with no control that writes, and the server refu
 			return response.status;
 		});
 		expect(skipped).toBe(403);
+		const deletedPosition = await page.evaluate(async (peaId) => {
+			const response = await fetch(`/api/accounts/${peaId}/holdings/any`, { method: "DELETE" });
+
+			return response.status;
+		}, pea.id);
+		expect(deletedPosition).toBe(403);
 		expect(z.object({ error: z.object({ code: z.string() }) }).parse(written.body).error.code).toBe(
 			"FORBIDDEN",
 		);

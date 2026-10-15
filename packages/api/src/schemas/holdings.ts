@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { readMicros } from "@archant/data/micros";
 
+import { listedSecurityChoiceSchema } from "./trades.ts";
+
 // The text as typed, so the typed client knows the body; the service parses it.
 export const costBasisBodySchema = z.object({ costBasis: z.string() });
 
@@ -25,3 +27,8 @@ export const costBasisSchema = z.object({
 		return value;
 	}),
 });
+
+/** The security a position's trades move to. */
+export const remapBodySchema = z.object({ security: listedSecurityChoiceSchema });
+
+export type RemapBody = z.output<typeof remapBodySchema>;

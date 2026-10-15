@@ -31,7 +31,7 @@ export function useAccountTrades(accountId: string, page: number) {
 }
 
 /** Refreshes the account and, since a new trade may have created one, the securities search. */
-function useInvalidateTrades(accountId: string) {
+export function useInvalidateTrades(accountId: string) {
 	const queryClient = useQueryClient();
 	const invalidateAccount = useInvalidateAccount(accountId);
 

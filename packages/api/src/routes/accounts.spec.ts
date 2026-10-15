@@ -9,6 +9,7 @@ import { z } from "zod";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { securities } from "@archant/data/schema/securities";
 
 import { createLogger } from "../lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "../schemas/imports.ts";
@@ -2046,7 +2047,7 @@ describe("PATCH /api/accounts/:id on a credit card", () => {
 	});
 });
 
-describe("a viewer on a loan", () => {
+describe("a viewer on a loan or a position", () => {
 	let viewerCookie: string;
 	let auth: Auth;
 	const silent = createLogger("silent");
@@ -2115,6 +2116,26 @@ describe("a viewer on a loan", () => {
 		expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
 		const detail = await request("GET", `/api/accounts/${account.id}`);
 		expect(detail.body).toMatchObject({ data: { openingDate: "2026-01-10" } });
+	});
+
+	it("is refused a position's deletion or remap with FORBIDDEN, nothing written", async () => {
+		const { account, securityId } = await heldFund();
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const url = `/api/accounts/${account.id}/holdings/${securityId}`;
+
+		const deleted = await viewer.request(url, { method: "DELETE" });
+		const remapped = await viewer.request(`${url}/security`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ security: { source: "known", id: securityId } }),
+		});
+
+		expect([deleted.status, remapped.status]).toEqual([403, 403]);
+		expect(errorBody.parse(await deleted.json()).error.code).toBe("FORBIDDEN");
+		expect(errorBody.parse(await remapped.json()).error.code).toBe("FORBIDDEN");
+		await expect((await holdings(account.id)).json()).resolves.toMatchObject({
+			data: { positions: [{ security: { id: securityId } }] },
+		});
 	});
 
 	it("reads its schedule", async () => {
@@ -2789,6 +2810,114 @@ describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
 		expect(errorBody.parse(await notInvestment.json()).error.code).toBe(
 			"NOT_AN_INVESTMENT_ACCOUNT",
 		);
+	});
+});
+
+const position = () => testClient(buildApp()).api.accounts[":id"].holdings[":securityId"];
+
+describe("DELETE /api/accounts/:id/holdings/:securityId and PATCH its security", () => {
+	it("deletes a position with its trades, answering its security, NOT_FOUND once gone", async () => {
+		const { account, securityId } = await heldFund();
+		const param = { id: account.id, securityId };
+
+		const deleted = await position().$delete({ param });
+
+		expect(deleted.status).toBe(200);
+		await expect(deleted.json()).resolves.toEqual({ data: { securityId } });
+		await expect((await holdings(account.id)).json()).resolves.toMatchObject({
+			data: { positions: [], cash: 2_500_000, total: 2_500_000 },
+		});
+		const again = await position().$delete({ param });
+		expect(again.status).toBe(404);
+		expect(errorBody.parse(await again.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("remaps a position onto a new listing, answering the security it is now in", async () => {
+		const { account, securityId } = await heldFund();
+		const ticker = `AI${crypto.randomUUID().slice(0, 6).toUpperCase()}.PA`;
+
+		const remapped = await position().security.$patch({
+			param: { id: account.id, securityId },
+			json: {
+				security: {
+					source: "listing",
+					ticker,
+					mic: "XPAR",
+					name: "Air Liquide",
+					currency: "EUR",
+					provider: "yahoo",
+				},
+			},
+		});
+
+		expect(remapped.status).toBe(200);
+		const { data } = await remapped.json();
+		expect(data.securityId).not.toBe(securityId);
+		await expect((await holdings(account.id)).json()).resolves.toMatchObject({
+			data: {
+				positions: [{ security: { id: data.securityId, ticker, name: "Air Liquide" } }],
+			},
+		});
+	});
+
+	it("refuses a remap of a security the account never traded with NOT_FOUND", async () => {
+		const { account, securityId } = await heldFund();
+
+		const missing = await position().security.$patch({
+			param: { id: account.id, securityId: "nope" },
+			json: { security: { source: "known", id: securityId } },
+		});
+
+		expect(missing.status).toBe(404);
+		expect(errorBody.parse(await missing.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("answers the same security with nothing written, and refuses another currency on `security`", async () => {
+		const { account, securityId } = await heldFund();
+		const dollars = crypto.randomUUID();
+		await temp.db.insert(securities).values({
+			id: dollars,
+			isin: null,
+			ticker: `AAPL${dollars.slice(0, 6)}`,
+			mic: "XNAS",
+			name: "Apple",
+			currency: "USD",
+			provider: "yahoo",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const param = { id: account.id, securityId };
+
+		const same = await position().security.$patch({
+			param,
+			json: { security: { source: "known", id: securityId } },
+		});
+		const refused = await position().security.$patch({
+			param,
+			json: { security: { source: "known", id: dollars } },
+		});
+		const manual = await request(
+			"PATCH",
+			`/api/accounts/${account.id}/holdings/${securityId}/security`,
+			{
+				security: { source: "manual", name: "Fonds euros" },
+			},
+		);
+
+		expect(same.status).toBe(200);
+		await expect(same.json()).resolves.toEqual({ data: { securityId } });
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(await refused.json()).error.fields).toEqual([
+			{ path: "security", code: "currency_mismatch" },
+		]);
+		// Sure's drawer offers provider results only.
+		expect(manual.status).toBe(400);
+		const refusedManual = errorBody.parse(manual.body).error;
+		expect(refusedManual.code).toBe("VALIDATION_ERROR");
+		expect(refusedManual.fields?.map(({ path }) => path)).toEqual(["security.source"]);
+		await expect((await holdings(account.id)).json()).resolves.toMatchObject({
+			data: { positions: [{ security: { id: securityId } }] },
+		});
 	});
 });
 

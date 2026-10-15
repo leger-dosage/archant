@@ -196,7 +196,7 @@ export function detailOf(
 }
 
 /** `locked_fields` with each of `fields` locked at `now`, as Sure's `lock_attr!`. */
-function stampedLocks(fields: readonly LockableField[], now: number) {
+export function stampedLocks(fields: readonly LockableField[], now: number) {
 	// libSQL binds a JS number as a real, which `json_set` would store as `….0`.
 	const stamps = fields.map((field) => sql`${`$.${field}`}, cast(${now} as integer)`);
 

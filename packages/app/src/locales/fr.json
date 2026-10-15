@@ -740,12 +740,15 @@
 			"hint": "Tapez un nom, un symbole ou un ISIN.",
 			"loading": "Recherche…",
 			"failed": "La recherche a échoué : saisissez le titre manuellement.",
+			"failedKnown": "La recherche a échoué.",
 			"empty": "Aucun titre trouvé.",
 			"known": "Titres connus",
 			"listings": "Yahoo Finance",
 			"manual": "Saisir un titre manuellement",
 			"off": "La récupération des cours est désactivée : seuls les titres connus et la saisie manuelle sont proposés.",
-			"unavailable": "Yahoo Finance ne répond pas : seuls les titres connus et la saisie manuelle sont proposés."
+			"offKnown": "La récupération des cours est désactivée : seuls les titres connus sont proposés.",
+			"unavailable": "Yahoo Finance ne répond pas : seuls les titres connus et la saisie manuelle sont proposés.",
+			"unavailableKnown": "Yahoo Finance ne répond pas : seuls les titres connus sont proposés."
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -862,6 +865,7 @@
 		"sheet": {
 			"kicker": "Position",
 			"overview": "Aperçu",
+			"security": "Titre",
 			"lastPrice": "Dernier cours",
 			"priceOn": "{{price}} le {{date}}",
 			"quantity": "Quantité",
@@ -874,7 +878,8 @@
 			"trades": "Ordres",
 			"noTrades": "Aucun ordre.",
 			"olderTrades_one": "Un ordre plus ancien figure dans l'onglet « Ordres ».",
-			"olderTrades_other": "{{count}} ordres plus anciens figurent dans l'onglet « Ordres »."
+			"olderTrades_other": "{{count}} ordres plus anciens figurent dans l'onglet « Ordres ».",
+			"settings": "Paramètres"
 		},
 		"price": {
 			"title": "Saisir un cours",
@@ -893,6 +898,20 @@
 			"lock": "Verrouiller le PRU",
 			"unlock": "Revenir au PRU calculé",
 			"locked": "Verrouillé : saisi par vous."
+		},
+		"remap": {
+			"edit": "Modifier le titre",
+			"save": "Enregistrer",
+			"success": "Titre mis à jour avec succès."
+		},
+		"delete": {
+			"title": "Supprimer la position",
+			"description": "Cela supprimera la position et toutes vos transactions boursières associées sur ce compte. Cette action ne peut pas être annulée.",
+			"action": "Supprimer",
+			"confirmTitle": "Êtes-vous sûr ?",
+			"confirmDescription": "Cette action ne peut pas être annulée.",
+			"confirm": "Confirmer",
+			"success": "Position supprimée"
 		}
 	},
 	"imports": {

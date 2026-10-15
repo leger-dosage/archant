@@ -291,3 +291,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-3-grey-the-recorded-loan-line-past-the-cursor.md`
   summary: The loan chart's arrow keys step one data row per press, recorded days included, where Sure's step one tooltip stop (a payment date) per press, and Home, End and Escape do nothing.
   evidence: Pre-existing: Recharts' `accessibilityLayer` drives the tooltip by row; Sure's `loan_payoff_chart_controller.js:520-551` steps through `stops`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-7-delete-a-position-and-remap-its-security.md`
+  summary: The position sheet's delete confirmation has no test for a refused deletion (dialog closed, error toast shown).
+  evidence: `DeletePosition.confirm`'s catch branch in `PositionSheet.tsx` is reached by no Vitest or Playwright test; removing it breaks nothing.

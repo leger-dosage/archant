@@ -101,12 +101,15 @@ export function SecurityPicker({
 	picked,
 	error,
 	onPick,
+	manual = true,
 }: {
 	id: string;
 	/** What the field shows, `null` until a security is picked. */
 	picked: string | null;
 	error: ShownError | undefined;
 	onPick: (pick: SecurityPick) => void;
+	/** `false` leaves « Saisir un titre manuellement » out. */
+	manual?: boolean;
 }) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
@@ -128,6 +131,7 @@ export function SecurityPicker({
 			</PopoverTrigger>
 			<PopoverContent align="start" className="w-(--radix-popover-trigger-width) p-0">
 				<SecurityCombobox
+					manual={manual}
 					onSelect={(pick) => {
 						onPick(pick);
 						setOpen(false);

@@ -7,13 +7,18 @@ import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { entries } from "@archant/data/schema/entries";
 import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
+import { trades } from "@archant/data/schema/trades";
 
 import {
+	add,
 	deps,
+	excludedOf,
 	link,
+	lockTimes,
 	newBankAccount,
 	openChecking,
 	openPea,
@@ -26,14 +31,16 @@ import { deleteAccount } from "./accounts.ts";
 import * as ledgerBalances from "./balances.ts";
 import {
 	currentHoldings,
+	deletePosition,
 	lastHeldHoldings,
 	liveCostBasisLocks,
 	lockCostBasis,
 	recomputeFeeCostBases,
+	remapPosition,
 	revalueHoldings,
 	unlockCostBasis,
 } from "./holdings.ts";
-import { deleteTrade, recordTrade, updateTrade } from "./trades.ts";
+import { convertTransaction, deleteTrade, recordTrade, updateTrade } from "./trades.ts";
 
 /** A buy or a sale, as the helpers below build them. */
 type OrderInput = Extract<TradeInput, { side: "buy" | "sell" }>;
@@ -867,5 +874,412 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await expect(
 			temp.db.select().from(costBasisLocks).where(eq(costBasisLocks.accountId, pea.id)),
 		).resolves.toEqual([]);
+	});
+});
+
+/** Each trade on the account as `date securityId quantity`, oldest first. */
+async function tradesOf(accountId: string) {
+	const rows = await temp.db
+		.select({ date: entries.date, securityId: trades.securityId, quantity: trades.quantity })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(eq(entries.accountId, accountId))
+		.orderBy(asc(entries.date), asc(trades.quantity));
+
+	return rows.map((row) => `${row.date} ${row.securityId} ${row.quantity}`);
+}
+
+/** The securities the account holds a row of on any day. */
+async function heldSecurities(accountId: string) {
+	const rows = await temp.db
+		.selectDistinct({ securityId: holdings.securityId })
+		.from(holdings)
+		.where(eq(holdings.accountId, accountId));
+
+	return rows.map((row) => row.securityId).toSorted();
+}
+
+async function locksOf(accountId: string) {
+	return temp.db
+		.select({ securityId: costBasisLocks.securityId, costBasis: costBasisLocks.costBasis })
+		.from(costBasisLocks)
+		.where(eq(costBasisLocks.accountId, accountId));
+}
+
+const dividendOf = (securityId: string): TradeInput => ({
+	side: "dividend",
+	security: { source: "known", id: securityId },
+	date: "2026-09-15",
+	amount: toMinorUnits(1234),
+});
+
+const remap = (
+	accountId: string,
+	securityId: string,
+	choice: Parameters<typeof remapPosition>[3],
+) => remapPosition(deps(), accountId, securityId, choice);
+
+/** A transaction of the PEA converted into a buy of `securityId`. */
+async function converted(accountId: string, securityId: string) {
+	const source = await add(accountId, { date: "2026-09-10", amount: toMinorUnits(-612_650) });
+	await convertTransaction(
+		deps(),
+		source,
+		{
+			side: "buy",
+			security: { source: "known", id: securityId },
+			quantity: toMicros(10_000_000),
+			price: toMicros(612_400_000),
+		},
+		user,
+	);
+
+	return source;
+}
+
+describe("deletePosition", () => {
+	it("deletes every trade of the security, dividends too, and recomputes once", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const other = await newSecurity("Air Liquide");
+		await record(pea.id, buy(securityId));
+		await record(pea.id, buy(securityId, { date: "2026-09-12" }));
+		await record(pea.id, sell(securityId, { date: "2026-09-14", quantity: toMicros(5_000_000) }));
+		await record(pea.id, dividendOf(securityId));
+		await record(pea.id, buy(other, { date: "2026-09-11" }));
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await deletePosition(deps(), pea.id, securityId, user);
+
+		expect(recompute).toHaveBeenCalledTimes(1);
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-11 ${other} 10000000`]);
+		await expect(heldSecurities(pea.id)).resolves.toEqual([other]);
+		// The opening 25 000 € less the other buy, at 612.40 € and 2.50 € of fees.
+		await expect(dayOf(pea.id, "2026-09-21")).resolves.toEqual({
+			balance: 2_499_750,
+			cash: 1_887_350,
+		});
+		await expect(
+			temp.db
+				.select({ count: entries.id })
+				.from(entries)
+				.where(and(eq(entries.accountId, pea.id), eq(entries.kind, "trade"))),
+		).resolves.toHaveLength(1);
+		// The security stays, as history.
+		await expect(
+			temp.db.select().from(securities).where(eq(securities.id, securityId)),
+		).resolves.toHaveLength(1);
+	});
+
+	it("deletes a short position too", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, sell(securityId));
+
+		await deletePosition(deps(), pea.id, securityId, user);
+
+		await expect(tradesOf(pea.id)).resolves.toEqual([]);
+		await expect(heldSecurities(pea.id)).resolves.toEqual([]);
+	});
+
+	it("brings back a converted trade's transaction, its exclusion locked", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const source = await converted(pea.id, securityId);
+		const locks = await lockTimes(source);
+		setToday("2026-09-21T11:00:00Z");
+
+		await deletePosition(deps(), pea.id, securityId, user);
+
+		await expect(excludedOf(source)).resolves.toBe(false);
+		await expect(lockTimes(source)).resolves.toEqual({
+			...locks,
+			excluded: Date.parse("2026-09-21T11:00:00Z"),
+		});
+		await expect(tradesOf(pea.id)).resolves.toEqual([]);
+		// The transaction counts again.
+		await expect(dayOf(pea.id, "2026-09-21")).resolves.toMatchObject({ balance: 1_887_350 });
+	});
+
+	it("locks nothing for another origin", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const source = await converted(pea.id, securityId);
+		const locks = await lockTimes(source);
+		setToday("2026-09-21T11:00:00Z");
+
+		await deletePosition(deps(), pea.id, securityId, { origin: "maintenance" });
+
+		await expect(excludedOf(source)).resolves.toBe(false);
+		await expect(lockTimes(source)).resolves.toEqual(locks);
+	});
+
+	it("drops the position's lock, so a later buy reads its calculated cost basis", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		await lock(pea.id, securityId, 400_000_000);
+
+		await deletePosition(deps(), pea.id, securityId, user);
+
+		await expect(locksOf(pea.id)).resolves.toEqual([]);
+		await record(pea.id, buy(securityId, { date: "2026-09-15" }));
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ costBasis: 612_650_000, costBasisLocked: false }],
+		});
+	});
+
+	it("refuses a security the account never traded, and an account that is not an investment one", async () => {
+		const pea = await openPea();
+		const elsewhere = await openPea();
+		const checking = await openChecking();
+		const securityId = await newSecurity();
+		await record(elsewhere.id, buy(securityId));
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await expect(deletePosition(deps(), pea.id, securityId, user)).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(deletePosition(deps(), "nope", securityId, user)).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(deletePosition(deps(), checking.id, securityId, user)).rejects.toMatchObject({
+			code: "NOT_AN_INVESTMENT_ACCOUNT",
+		});
+		expect(recompute).not.toHaveBeenCalled();
+		await expect(tradesOf(elsewhere.id)).resolves.toHaveLength(1);
+	});
+});
+
+describe("remapPosition", () => {
+	it("moves every trade to a listing not stored yet, written in the same transaction", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		await record(pea.id, dividendOf(securityId));
+		const ticker = `ai${crypto.randomUUID().slice(0, 8)}.pa`;
+
+		const { securityId: target } = await remap(pea.id, securityId, {
+			source: "listing",
+			ticker,
+			mic: "XPAR",
+			name: "Air Liquide",
+			currency: "EUR",
+			provider: "yahoo",
+		});
+
+		expect(target).not.toBe(securityId);
+		await expect(
+			temp.db.select().from(securities).where(eq(securities.id, target)).get(),
+		).resolves.toMatchObject({
+			ticker: ticker.toUpperCase(),
+			name: "Air Liquide",
+			provider: "yahoo",
+		});
+		await expect(tradesOf(pea.id)).resolves.toEqual([
+			`2026-09-10 ${target} 10000000`,
+			`2026-09-15 ${target} 0`,
+		]);
+		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
+		// The old security stays, as history.
+		await expect(
+			temp.db.select().from(securities).where(eq(securities.id, securityId)),
+		).resolves.toHaveLength(1);
+	});
+
+	it("merges into a position the account holds, its cost basis from every buy", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		await record(pea.id, buy(target, { date: "2026-09-14", quantity: toMicros(5_000_000) }));
+		await record(pea.id, buy(securityId));
+		const before = await dayOf(pea.id, "2026-09-21");
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		// Recomputed once, from the earlier of the two first trades.
+		expect(recompute).toHaveBeenCalledTimes(1);
+		expect(recompute.mock.calls[0]?.[2]).toBe("2026-09-10");
+		// 15 bought for 9 186 € and 5 € of fees.
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ security: { id: target }, quantity: 15_000_000, costBasis: 612_733_333 }],
+		});
+		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
+		await expect(dayOf(pea.id, "2026-09-21")).resolves.toEqual(before);
+	});
+
+	it("moves a lock to a security with none, and drops it beside one", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		const locked = await newSecurity("Danone");
+		await record(pea.id, buy(securityId));
+		await record(pea.id, buy(target));
+		await record(pea.id, buy(locked));
+		await lock(pea.id, securityId, 400_000_000);
+		await lock(pea.id, locked, 500_000_000);
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		await expect(locksOf(pea.id)).resolves.toEqual(
+			expect.arrayContaining([
+				{ securityId: target, costBasis: 400_000_000 },
+				{ securityId: locked, costBasis: 500_000_000 },
+			]),
+		);
+		await expect(locksOf(pea.id)).resolves.toHaveLength(2);
+
+		await remap(pea.id, target, { source: "known", id: locked });
+
+		await expect(locksOf(pea.id)).resolves.toEqual([
+			{ securityId: locked, costBasis: 500_000_000 },
+		]);
+	});
+
+	it("deletes a lock a full sale ended rather than move it onto a history that never reaches zero", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		await record(pea.id, buy(securityId));
+		await record(pea.id, buy(target, { quantity: toMicros(5_000_000) }));
+		setToday("2026-09-15T10:00:00Z");
+		await lock(pea.id, securityId, 400_000_000);
+		setToday("2026-09-21T10:00:00Z");
+		await record(pea.id, sell(securityId, { date: "2026-09-16" }));
+		await record(pea.id, buy(securityId, { date: "2026-09-18" }));
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		await expect(locksOf(pea.id)).resolves.toEqual([]);
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ security: { id: target }, quantity: 15_000_000, costBasisLocked: false }],
+		});
+	});
+
+	it("moves a live lock onto a security whose own lock a full sale ended", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		await record(pea.id, buy(securityId));
+		await record(pea.id, buy(target));
+		setToday("2026-09-15T10:00:00Z");
+		await lock(pea.id, target, 500_000_000);
+		await lock(pea.id, securityId, 400_000_000);
+		setToday("2026-09-21T10:00:00Z");
+		await record(pea.id, sell(target, { date: "2026-09-16" }));
+		await record(pea.id, buy(target, { date: "2026-09-18" }));
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		await expect(locksOf(pea.id)).resolves.toEqual([
+			{ securityId: target, costBasis: 400_000_000 },
+		]);
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ security: { id: target }, costBasis: 400_000_000, costBasisLocked: true }],
+		});
+	});
+
+	it("remaps a short position", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		await record(pea.id, sell(securityId));
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ security: { id: target }, quantity: -10_000_000 }],
+		});
+		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
+	});
+
+	it("recomputes from the target's first trade when it is the earlier", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity("Air Liquide");
+		await record(pea.id, buy(target, { date: "2026-09-05", quantity: toMicros(5_000_000) }));
+		await record(pea.id, buy(securityId));
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await remap(pea.id, securityId, { source: "known", id: target });
+
+		expect(recompute.mock.calls[0]?.[2]).toBe("2026-09-05");
+		const rows = await holdingsOf(pea.id);
+		expect(rows[0]).toBe("2026-09-05 5000000 612400000 306200 612900000");
+		expect(rows).toContain("2026-09-09 5000000 612400000 306200 612900000");
+		expect(rows).toContain("2026-09-10 15000000 612400000 918600 612733333");
+		expect(rows.at(-1)).toBe("2026-09-21 15000000 612400000 918600 612733333");
+	});
+
+	it("writes nothing for the same security", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
+
+		await expect(remap(pea.id, securityId, { source: "known", id: securityId })).resolves.toEqual({
+			securityId,
+		});
+
+		expect(recompute).not.toHaveBeenCalled();
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
+	});
+
+	it("refuses a security in another currency, and writes nothing", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const dollars = await newSecurity("Apple");
+		await temp.db.update(securities).set({ currency: "USD" }).where(eq(securities.id, dollars));
+		await record(pea.id, buy(securityId));
+		const ticker = `AAPL${crypto.randomUUID().slice(0, 8)}`;
+
+		await expect(remap(pea.id, securityId, { source: "known", id: dollars })).rejects.toMatchObject(
+			{
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "security", code: "currency_mismatch" }],
+			},
+		);
+		await expect(
+			remap(pea.id, securityId, {
+				source: "listing",
+				ticker,
+				mic: "XNAS",
+				name: "Apple",
+				currency: "USD",
+				provider: "yahoo",
+			}),
+		).rejects.toMatchObject({ fields: [{ path: "security", code: "currency_mismatch" }] });
+
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
+		await expect(
+			temp.db.select().from(securities).where(eq(securities.ticker, ticker)),
+		).resolves.toEqual([]);
+	});
+
+	it("refuses a security the account never traded", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		const target = await newSecurity();
+
+		await expect(remap(pea.id, securityId, { source: "known", id: target })).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+
+	it("refuses an account that is not an investment one, and a known security that does not exist", async () => {
+		const pea = await openPea();
+		const checking = await openChecking();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+
+		await expect(
+			remap(checking.id, securityId, { source: "known", id: securityId }),
+		).rejects.toMatchObject({ code: "NOT_AN_INVESTMENT_ACCOUNT" });
+		await expect(remap(pea.id, securityId, { source: "known", id: "nope" })).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "security", code: "invalid_value" }],
+		});
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
 	});
 });

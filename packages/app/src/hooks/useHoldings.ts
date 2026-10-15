@@ -1,10 +1,11 @@
-import type { InferResponseType } from "hono/client";
+import type { InferRequestType, InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { CostBasisInput } from "@archant/api/schemas/holdings";
 import type { TypedPriceInput } from "@archant/api/schemas/prices";
 
+import { useInvalidateTrades } from "@/hooks/useTrades";
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -83,6 +84,51 @@ export function useUnlockCostBasis(accountId: string, securityId: string) {
 				await unwrap(
 					api.accounts[":id"].holdings[":securityId"]["cost-basis"].$delete({
 						param: { id: accountId, securityId },
+					}),
+				)
+			).data,
+		onSuccess: invalidate,
+	});
+}
+
+/**
+ * « Supprimer la position »: its trades go, so the balances, the
+ * transactions a converted trade came from and « Ordres » move too.
+ */
+export function useDeletePosition(accountId: string, securityId: string) {
+	const invalidate = useInvalidateTrades(accountId);
+
+	return useMutation({
+		mutationFn: async () =>
+			(
+				await unwrap(
+					api.accounts[":id"].holdings[":securityId"].$delete({
+						param: { id: accountId, securityId },
+					}),
+				)
+			).data,
+		onSuccess: invalidate,
+	});
+}
+
+type RemapJson = InferRequestType<
+	(typeof api.accounts)[":id"]["holdings"][":securityId"]["security"]["$patch"]
+>["json"];
+
+/**
+ * « Modifier le titre »: the trades move to another security, maybe a new
+ * one the securities search then knows, and the positions merge.
+ */
+export function useRemapPosition(accountId: string, securityId: string) {
+	const invalidate = useInvalidateTrades(accountId);
+
+	return useMutation({
+		mutationFn: async (security: RemapJson["security"]) =>
+			(
+				await unwrap(
+					api.accounts[":id"].holdings[":securityId"].security.$patch({
+						param: { id: accountId, securityId },
+						json: { security },
 					}),
 				)
 			).data,
