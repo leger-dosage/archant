@@ -200,6 +200,28 @@ describe("POST /api/accounts", () => {
 		await expect(accountCount()).resolves.toBe(before);
 	});
 
+	it("creates a pillar 3a and an investment without a subtype, both listed as investment assets", async () => {
+		const client = await ownClient();
+		const pillar = await client.$post({
+			json: { ...valid, name: "Pilier", type: "investment", subtype: "pillar_3a" },
+		});
+		const blank = await client.$post({
+			json: { ...valid, name: "Placement", type: "investment", subtype: null },
+		});
+
+		expect([pillar.status, blank.status]).toEqual([201, 201]);
+		const { data } = await (await client.$get()).json();
+		expect(
+			data.groups
+				.flatMap((group) => group.accounts)
+				.filter((account) => account.type === "investment")
+				.map(({ name, subtype }) => ({ name, subtype })),
+		).toEqual([
+			{ name: "Pilier", subtype: "pillar_3a" },
+			{ name: "Placement", subtype: null },
+		]);
+	});
+
 	it("reports every invalid field at once", async () => {
 		const { body } = await postRaw({ ...valid, name: "", openingBalance: "abc" });
 
@@ -824,9 +846,10 @@ describe("POST /api/accounts", () => {
 		});
 	});
 
-	it("refuses an investment without a subtype or with another type's", async () => {
+	it("refuses an investment with another type's subtype or Sure's US 401k", async () => {
+		const before = await accountCount();
 		const responses = await Promise.all(
-			["savings", null].map(async (subtype) => postRaw({ ...valid, ...pea, subtype })),
+			["savings", "401k"].map(async (subtype) => postRaw({ ...valid, ...pea, subtype })),
 		);
 
 		for (const { status, body } of responses) {
@@ -836,6 +859,7 @@ describe("POST /api/accounts", () => {
 				fields: [{ path: "subtype", code: "invalid_subtype" }],
 			});
 		}
+		await expect(accountCount()).resolves.toBe(before);
 	});
 
 	it("refuses details on an investment", async () => {
@@ -1642,6 +1666,15 @@ describe("PATCH /api/accounts/:id", () => {
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "subtype", code: "invalid_subtype" }],
 		});
+	});
+
+	it("clears a PEA's subtype, as Sure's blank investment", async () => {
+		const account = await openAccount(pea);
+
+		const { status, body } = await patchAccount(account.id, { subtype: null });
+
+		expect(status).toBe(200);
+		expect(accountBody.parse(body).data).toMatchObject({ subtype: null });
 	});
 
 	it("refuses a loan without a subtype", async () => {

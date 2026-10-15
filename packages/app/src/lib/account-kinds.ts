@@ -23,11 +23,22 @@ export const ACCOUNT_KINDS = [
 	{ id: "business", type: "loan", subtype: "business" },
 	// `other` alone would read as any account, not a loan.
 	{ id: "other_loan", type: "loan", subtype: "other" },
-	{ id: "pea", type: "investment", subtype: "pea" },
+	// An investment without a subtype, Sure's `include_blank`, named as Sure
+	// names the type.
+	{ id: "investment", type: "investment", subtype: null },
 	{ id: "assurance_vie", type: "investment", subtype: "assurance_vie" },
+	{ id: "pea", type: "investment", subtype: "pea" },
+	{ id: "pillar_3a", type: "investment", subtype: "pillar_3a" },
+	{ id: "riester", type: "investment", subtype: "riester" },
+	{ id: "pension", type: "investment", subtype: "pension" },
+	{ id: "retirement", type: "investment", subtype: "retirement" },
+	{ id: "mutual_fund", type: "investment", subtype: "mutual_fund" },
+	{ id: "gold", type: "investment", subtype: "gold" },
+	{ id: "angel", type: "investment", subtype: "angel" },
+	{ id: "trust", type: "investment", subtype: "trust" },
+	{ id: "other_investment", type: "investment", subtype: "other" },
 	// Sure's `brokerage`, labelled « Compte-titres ».
 	{ id: "brokerage", type: "investment", subtype: "brokerage" },
-	{ id: "other_investment", type: "investment", subtype: "other" },
 	{ id: "single_family_home", type: "property", subtype: "single_family_home" },
 	{ id: "apartment", type: "property", subtype: "apartment" },
 	{ id: "second_home", type: "property", subtype: "second_home" },
@@ -44,3 +55,19 @@ export function kindOf(type: AccountType, subtype: AccountSubtype | null): Accou
 		ACCOUNT_KINDS.find((kind) => kind.type === type && kind.subtype === subtype)?.id ?? "checking"
 	);
 }
+
+/**
+ * The investment subtypes by region, as Sure's `subtypes_grouped_for_select`
+ * orders them for `EUR`, the reporting currency: Europe, then the generic
+ * ones, then the United States. The id is the key under
+ * `accounts.subtypeRegions`; each kind's label is under
+ * `accounts.subtypeLongs`, Sure's long label, which only the select shows.
+ */
+export const INVESTMENT_REGIONS = [
+	{ id: "eu", kinds: ["assurance_vie", "pea", "pillar_3a", "riester"] },
+	{
+		id: "generic",
+		kinds: ["pension", "retirement", "mutual_fund", "gold", "angel", "trust", "other_investment"],
+	},
+	{ id: "us", kinds: ["brokerage"] },
+] as const satisfies readonly { id: string; kinds: readonly AccountKindId[] }[];

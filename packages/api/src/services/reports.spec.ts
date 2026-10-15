@@ -285,6 +285,27 @@ describe("getCashFlow", () => {
 	});
 });
 
+describe("getCashFlow and Sure's tax treatment", () => {
+	it("leaves a retirement account's expense out, counts a gold account's and a blank investment's, and keeps all three in net worth", async () => {
+		const retirement = await account({
+			name: "Retraite",
+			type: "investment",
+			subtype: "retirement",
+		});
+		const gold = await account({ name: "Or", type: "investment", subtype: "gold" });
+		const blank = await account({ name: "Placement", type: "investment", subtype: null });
+		await spend(retirement, "2026-09-15", -4_000);
+		await spend(gold, "2026-09-15", -2_000);
+		await spend(blank, "2026-09-15", -1_000);
+
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const netWorth = await getNetWorth(deps(), "1M");
+
+		expect(cashFlow.expenses).toBe(-3_000);
+		expect(netWorth.netWorth).toBe(3 * 100_000 - 7_000);
+	});
+});
+
 describe("getCashFlow and one-time transactions", () => {
 	it("leaves a one-time expense out of the month, where it counted 900 €", async () => {
 		const checking = await account();
@@ -365,6 +386,24 @@ describe("getIncomeStatement", () => {
 		// Every category, so a tool lists those without a counted row at zero.
 		expect(statement.breakdown?.categories.map((row) => row.id)).toContain(groceries);
 		expect(cashFlow).toMatchObject({ income: 0, expenses: -7_000 });
+	});
+
+	it("refuses a riester among the accounts asked, as a PEA", async () => {
+		const checking = await account();
+		const riester = await account({ name: "Riester", type: "investment", subtype: "riester" });
+
+		await expect(
+			getIncomeStatement(deps(), {
+				from: "2026-09-01",
+				to: "2026-09-30",
+				accountIds: [checking, riester],
+				byMonth: false,
+				comparePrevious: false,
+			}),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "accountIds.1", code: "unknown_account" }],
+		});
 	});
 
 	it("refuses a PEA among the accounts asked, as it would report it as zero", async () => {

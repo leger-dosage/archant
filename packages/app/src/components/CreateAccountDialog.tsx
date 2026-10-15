@@ -1,6 +1,7 @@
 import type { Resolver } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Fragment } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -12,6 +13,7 @@ import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
+import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +29,7 @@ import {
 	Select,
 	SelectContent,
 	SelectItem,
+	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
@@ -184,11 +187,26 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
-								{ACCOUNT_KINDS.map((option) => (
-									<SelectItem key={option.id} value={option.id}>
-										{t(`accounts.subtypes.${option.id}`)}
-									</SelectItem>
-								))}
+								{ACCOUNT_KINDS.map((option) => {
+									if (option.type !== "investment") {
+										return (
+											<SelectItem key={option.id} value={option.id}>
+												{t(`accounts.subtypes.${option.id}`)}
+											</SelectItem>
+										);
+									}
+
+									// The blank investment opens the grouped section, whose
+									// subtypes follow by region; the separators keep the
+									// properties after it from reading as « États-Unis ».
+									return option.subtype === null ? (
+										<Fragment key={option.id}>
+											<SelectSeparator />
+											<InvestmentKindGroups blankLabel={t(`accounts.subtypes.${option.id}`)} />
+											<SelectSeparator />
+										</Fragment>
+									) : null;
+								})}
 							</SelectContent>
 						</Select>
 						<FieldMessage id="subtype-error" error={errors.subtype ?? errors.type} />

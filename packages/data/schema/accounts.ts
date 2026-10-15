@@ -41,7 +41,8 @@ export const accounts = sqliteTable(
 		// One clause per type, so the database refuses a savings credit card as
 		// firmly as the API does. `is not null` is spelled out because `null in
 		// (...)` is null, and a check constraint lets null through. A type whose
-		// subtype is optional, as Sure's depository, says `is null or` instead.
+		// subtype is optional, as Sure's depository and investment, says `is
+		// null or` instead.
 		check(
 			"accounts_subtype_check",
 			sql.join(

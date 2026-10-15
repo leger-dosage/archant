@@ -803,6 +803,33 @@ describe("sumTransactions and tax-advantaged accounts", () => {
 	});
 });
 
+describe("sumTransactions and Sure's tax treatment", () => {
+	it("leaves a pillar 3a's and a riester's lines out of income and expenses, and counts a gold account's and a blank investment's", async () => {
+		const pillar = await openPea({ name: "Pilier 3a totaux", subtype: "pillar_3a" });
+		const riester = await openPea({ name: "Riester totaux", subtype: "riester" });
+		const gold = await openPea({ name: "Or totaux", subtype: "gold" });
+		const blank = await openPea({ name: "Placement totaux", subtype: null });
+		const deferred = transferAmount();
+		const taxable = transferAmount();
+		await add(pillar.id, { amount: toMinorUnits(-deferred), label: "Frais" });
+		await add(riester.id, { amount: toMinorUnits(-deferred), label: "Frais" });
+		await add(gold.id, { amount: toMinorUnits(-taxable), label: "Garde" });
+		await add(blank.id, { amount: toMinorUnits(-taxable), label: "Garde" });
+
+		await expect(
+			sumTransactions(deps(), { accountIds: [pillar.id, riester.id, gold.id, blank.id] }),
+		).resolves.toEqual([
+			{
+				currency: "EUR",
+				amount: -2 * (deferred + taxable),
+				income: 0,
+				expense: -2 * taxable,
+				count: 4,
+			},
+		]);
+	});
+});
+
 describe("oldestEntryDate", () => {
 	it("names the earliest entry of any kind, and nothing in an empty ledger", async () => {
 		const empty = await createTempDatabase();
