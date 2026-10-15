@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { CreateAccountInput } from "@archant/api/schemas/accounts";
-import { createAccountSchema } from "@archant/api/schemas/accounts";
+import { createAccountFormSchema } from "@archant/api/schemas/accounts";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
@@ -62,7 +62,7 @@ const defaults = (): CreateAccountInput => ({
 	details: { ...completeLoanInput(undefined), ...completeCreditCardInput(undefined) },
 });
 
-const schemaResolver = zodResolver(createAccountSchema, undefined, { raw: true });
+const schemaResolver = zodResolver(createAccountFormSchema, undefined, { raw: true });
 
 // A loan's and a card's fields stay in the form's values when another type is
 // picked, so switching back keeps what was typed; the API refuses details of

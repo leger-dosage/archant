@@ -899,6 +899,25 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes a loan's terms Sure saves without amortising them, and passes its preflight", async () => {
+		await ownDatabase();
+		const loan = await account({
+			name: "Prêt familial",
+			type: "loan",
+			subtype: "other",
+			openingBalance: "5 000",
+			details: { originalAmount: "-5 000", termMonths: "0", interestRate: "150" },
+		});
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(loan)).toMatchObject({
+			accountable: { initial_balance: "-5000.00", term_months: 0, interest_rate: "150.0" },
+		});
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes Sure's `one_time` kind for a one-time row, where it was `standard`", async () => {
 		const { ids } = await household();
 		const appliance = await postOwn(ids.checking, {

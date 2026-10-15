@@ -334,7 +334,7 @@ describe("POST /api/accounts", () => {
 		expect(status).toBe(201);
 	});
 
-	it.each(["1,8205", "3,4567", "-1", "101", "100,001", "abc", "1,2,3"])(
+	it.each(["1,8205", "3,4567", "-1", "12345678", "abc", "1,2,3"])(
 		"refuses the interest rate %j",
 		async (interestRate) => {
 			const { status, body } = await postRaw({ ...valid, ...mortgage, details: { interestRate } });
@@ -366,7 +366,72 @@ describe("POST /api/accounts", () => {
 		]);
 	});
 
-	it.each(["0", "-5", "abc", "1,234"])("refuses the amount borrowed %j", async (originalAmount) => {
+	// Sure's `Loan` caps neither rate; only its rate changes stop at 100 %.
+	it("saves an interest rate of 150 % and an insurance rate of 120 %, and amortises them", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				details: { ...ingTerms, interestRate: "150", insuranceRate: "120" },
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({
+			data: { details: { interestRate: 1_500_000, insuranceRate: 1_200_000 } },
+		});
+		expect((await scheduleOf(data.id))?.payments).toHaveLength(300);
+	});
+
+	it("amortises the opening balance when the amount borrowed is 0, as Sure's `original_balance`", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { ...ingTerms, originalAmount: "0" } },
+		});
+		const { data } = await response.json();
+
+		expect((await scheduleOf(data.id))?.payments).toHaveLength(300);
+		expect(await overviewOf(data.id)).toMatchObject({ originalAmount: 18_000_000 });
+	});
+
+	it("refuses an insurance rate with five digits before the decimals", async () => {
+		const { body } = await postRaw({ ...valid, ...mortgage, details: { insuranceRate: "12345" } });
+
+		expect(body.error.fields).toEqual([{ path: "details.insuranceRate", code: "invalid_rate" }]);
+	});
+
+	// Sure's money field takes any amount. Neither counts as recorded, so the
+	// principal falls back to the opening balance, here nothing either, and
+	// `amortizable?` declines the loan.
+	it.each([
+		["0", 0],
+		["-5 000", -500_000],
+	])("saves the amount borrowed %j without a schedule", async (originalAmount, minorUnits) => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...mortgage,
+				openingBalance: "0",
+				details: { ...ingTerms, originalAmount },
+			},
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({ data: { details: { originalAmount: minorUnits } } });
+		expect(await scheduleOf(data.id)).toBeNull();
+		expect(await overviewOf(data.id)).toMatchObject({
+			originalAmount: 0,
+			monthlyPayment: 0,
+			payoffDate: null,
+			totalCost: null,
+			instalment: null,
+		});
+	});
+
+	it.each(["abc", "1,234"])("refuses the amount borrowed %j", async (originalAmount) => {
 		const { status, body } = await postRaw({ ...valid, ...mortgage, details: { originalAmount } });
 
 		expect(status).toBe(400);
@@ -396,7 +461,36 @@ describe("POST /api/accounts", () => {
 		expect(detail.body).toMatchObject({ data: { details: { termMonths: Number(termMonths) } } });
 	});
 
-	it.each(["0", "1201", "12,5", "12.5", "-3", "abc", "00000"])(
+	// Sure's `term_months` is an integer column its model never bounds: a
+	// provider writes terms its form would refuse, and the loan is saved and
+	// left unamortised.
+	it.each([
+		["0", 0, 0],
+		["00000", 0, 0],
+		["1201", 1201, null],
+		["1500", 1500, null],
+		["999999999", 999_999_999, null],
+	])("saves the term %j without a schedule", async (termMonths, months, monthlyPayment) => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: { ...valid, ...mortgage, details: { ...ingTerms, termMonths } },
+		});
+		const { data } = await response.json();
+
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+
+		expect(detail.body).toMatchObject({ data: { details: { termMonths: months } } });
+		expect(await scheduleOf(data.id)).toBeNull();
+		expect(await overviewOf(data.id)).toMatchObject({
+			termMonths: months,
+			monthlyPayment,
+			payoffDate: null,
+			totalCost: null,
+			insurance: { rate: 2917 },
+			instalment: null,
+		});
+	});
+
+	it.each(["12,5", "12.5", "-3", "abc", "1000000000"])(
 		"refuses the term %j",
 		async (termMonths) => {
 			const { status, body } = await postRaw({ ...valid, ...mortgage, details: { termMonths } });
@@ -1677,11 +1771,22 @@ describe("PATCH /api/accounts/:id", () => {
 		expect(saved.status).toBe(200);
 	});
 
+	it("saves a term of 0, which only the dialog refuses, without a schedule", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+
+		const { status } = await patchAccount(loan.id, { details: { ...ingTerms, termMonths: "0" } });
+
+		expect(status).toBe(200);
+		const detail = await request("GET", `/api/accounts/${loan.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { termMonths: 0 } } });
+		expect(await scheduleOf(loan.id)).toBeNull();
+	});
+
 	it("refuses a start date after today, saving nothing", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
 
 		const { status, body } = await patchAccount(loan.id, {
-			details: { ...ingTerms, startDate: "2026-09-22", termMonths: "0" },
+			details: { ...ingTerms, startDate: "2026-09-22", termMonths: "abc" },
 		});
 
 		expect(status).toBe(400);
@@ -1704,7 +1809,7 @@ describe("PATCH /api/accounts/:id", () => {
 		});
 		const onLoan = await patchAccount(loan.id, {
 			name: "Autre",
-			details: { ...blankTerms, interestRate: "3,4567", originalAmount: "0" },
+			details: { ...blankTerms, interestRate: "3,4567", originalAmount: "abc" },
 		});
 
 		expect(onChecking.status).toBe(400);

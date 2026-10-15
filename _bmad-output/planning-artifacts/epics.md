@@ -5812,9 +5812,13 @@ So that I record what I know of the loan and the schedule appears once the terms
 
 **Acceptance Criteria:**
 
-**Given** the loan creation or edit dialog
-**When** I save a term of 0 or above 1 200 months, or a rate Archant refuses today
+**Given** the API
+**When** a loan is saved with a term of 0 or above 1 200 months, or a rate Archant refuses today
 **Then** the loan saves; only the checks Sure's `Loan` model applies remain: a start date not after today, a down payment and an insurance rate not below zero
+
+**Given** the loan creation or edit dialog
+**When** I type a term of 0 or above 1 200 months
+**Then** the dialog refuses it, as the `min` and `max` of Sure's `loans/_form` field bound it to 1 to 1 200
 
 **Given** a saved loan that fails Sure's `Loan#amortizable?`: no rate type, no rate, a term not above zero or above `Loan::Simulator::MAX_PERIODS` (1 200), or a principal not above zero
 **When** its page opens
@@ -5826,7 +5830,7 @@ So that I record what I know of the loan and the schedule appears once the terms
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
-**Then** Vitest covers each failing condition of `amortizable?` on save and on read; Playwright saves a loan with a term of 0 and finds no « Échéancier »
+**Then** Vitest covers each failing condition of `amortizable?` on save and on read; Playwright saves a loan with a term of 0 through the API and finds no « Échéancier »
 
 ### Story 28.5: Investment subtypes for Europe and everywhere
 
