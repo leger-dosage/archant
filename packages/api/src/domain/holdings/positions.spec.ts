@@ -96,6 +96,36 @@ describe("positionFigures", () => {
 		).toEqual({ bookValue: null, gain: null, gainPercent: null, weight: 60_000_000 });
 	});
 
+	it("measures a short position's gain against its book value's size, as Sure's `Trend`", () => {
+		// Two units short at a cost basis of 700, priced at 720: a loss of 40.
+		expect(
+			positionFigures(
+				{
+					quantity: toMicros(-2_000_000),
+					amount: toMinorUnits(-144_000),
+					costBasis: toMicros(700_000_000),
+				},
+				total,
+				"EUR",
+			),
+		).toMatchObject({ bookValue: -140_000, gain: -4_000, gainPercent: -2_857_143 });
+	});
+
+	it("gives no book value, gain or percentage past what a balance can hold below zero", () => {
+		// A short position: a million units sold short, the tracker's ten million euros.
+		expect(
+			positionFigures(
+				{
+					quantity: toMicros(-1_000_000_000_000),
+					amount: toMinorUnits(-600_000),
+					costBasis: toMicros(10_000_000_000_000),
+				},
+				total,
+				"EUR",
+			),
+		).toEqual({ bookValue: null, gain: null, gainPercent: null, weight: -60_000_000 });
+	});
+
 	it("gives no percentage past what a number holds exactly", () => {
 		// A gain of a million euros on a book value of one cent.
 		expect(

@@ -28,13 +28,7 @@ import {
 } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import {
-	invalidField,
-	lockedBy,
-	movesQuantity,
-	refuseShortfall,
-	tradedSecurityId,
-} from "./shared.ts";
+import { invalidField, lockedBy, movesQuantity, tradedSecurityId } from "./shared.ts";
 import { splitRow } from "./splits.ts";
 
 /**
@@ -400,7 +394,6 @@ export async function recordTrade(
 			const security = await resolveSecurity(tx, input.security, account.currency, now);
 			const quantity = signedQuantity(input.side, input.quantity);
 			const amount = amountOf({ quantity, price: input.price, fee: input.fee }, account.currency);
-			await refuseShortfall(tx, account.id, security.id, { date: input.date, quantity });
 
 			const id = await insertTrade(
 				deps,
@@ -434,8 +427,6 @@ async function tradeRow(tx: Transaction, id: string) {
 			amount: entries.amount,
 			parentEntryId: entries.parentEntryId,
 			securityId: trades.securityId,
-			// Read for a buy or a sale only, which is always in a security.
-			orderSecurityId: tradedSecurityId,
 			incomeKind: trades.incomeKind,
 			quantity: trades.quantity,
 			price: trades.price,
@@ -526,15 +517,7 @@ export async function updateTrade(
 				throw new AppError("TRANSACTION_SPLIT", "This trade keeps its transaction's figures.");
 			}
 
-			if (current.incomeKind === null) {
-				await refuseShortfall(
-					tx,
-					account.id,
-					current.orderSecurityId,
-					{ date, quantity: figures.quantity },
-					id,
-				);
-			} else if (date !== current.date) {
+			if (current.incomeKind !== null && date !== current.date) {
 				// Checked when the income moves only: deleting the buy it relied on
 				// leaves it, as Sure does, and its amount must stay editable.
 				await refuseIncomeSecurity(tx, account.id, current.incomeKind, current.securityId, date);
@@ -555,11 +538,10 @@ export async function updateTrade(
 }
 
 /**
- * Deletes a trade and recomputes from its date. Refused when a later sale
- * would then sell more than the account holds. The security stays, a
- * history of prices with it. A converted trade's transaction comes back,
- * counted again, its exclusion still locked, as Sure's `unsplit!` leaves a
- * split's parent.
+ * Deletes a trade and recomputes from its date, a later sale left short
+ * included, as Sure. The security stays, a history of prices with it. A
+ * converted trade's transaction comes back, counted again, its exclusion
+ * still locked, as Sure's `unsplit!` leaves a split's parent.
  */
 export async function deleteTrade(
 	deps: ServiceDeps,
@@ -570,10 +552,6 @@ export async function deleteTrade(
 		async (tx) => {
 			const current = await tradeRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
-
-			if (current.incomeKind === null) {
-				await refuseShortfall(tx, account.id, current.orderSecurityId, null, id);
-			}
 
 			await tx.delete(trades).where(eq(trades.entryId, id));
 			await tx.delete(entries).where(eq(entries.id, id));
@@ -672,7 +650,6 @@ export async function convertTransaction(
 
 				const security = await resolveSecurity(tx, input.security, account.currency, now);
 				const quantity = signedQuantity(input.side, input.quantity);
-				await refuseShortfall(tx, account.id, security.id, { date: source.date, quantity });
 				tradeId = await insertTrade(
 					deps,
 					tx,

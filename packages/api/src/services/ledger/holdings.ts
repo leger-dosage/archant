@@ -2,7 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, asc, desc, eq, gt, gte, inArray, lte, max, min, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lte, max, min, ne, sql } from "drizzle-orm";
 
 import type { Micros } from "@archant/data/micros";
 import { toMicros } from "@archant/data/micros";
@@ -152,8 +152,8 @@ export type CurrentHoldings = {
 
 /**
  * A cost basis the owner locked on a position still running: `after` is the
- * position's last day at quantity zero before it, `null` when it never was,
- * so the lock stands on the days after it that hold the security.
+ * position's last day at quantity zero or below before it, `null` when it
+ * never was, so the lock stands on the days after it that hold the security.
  */
 export type LiveCostBasisLock = {
 	accountId: string;
@@ -163,50 +163,51 @@ export type LiveCostBasisLock = {
 };
 
 /**
- * The rule that a full sale ends a lock: the first day at quantity zero on or
- * after the day it was locked, `null` while none, read per lock row of the
- * query it goes in. A seek into the partial index `holdings_zero_quantity`:
- * the zero is a literal, never a bound parameter, since SQLite proves a
- * partial index applies only from the query's text.
+ * The rule that a full sale, or one past it, ends a lock: the first day at
+ * quantity zero or below on or after the day it was locked, `null` while
+ * none, read per lock row of the query it goes in. A seek into the partial
+ * index `holdings_not_held`: the zero is a literal, never a bound parameter,
+ * since SQLite proves a partial index applies only from the query's text.
  */
 function lockEndedOn(db: Reader) {
-	const firstZero = db
+	const firstNotHeld = db
 		.select({ day: min(holdings.date) })
 		.from(holdings)
 		.where(
 			and(
 				eq(holdings.accountId, costBasisLocks.accountId),
 				eq(holdings.securityId, costBasisLocks.securityId),
-				sql`${holdings.quantity} = 0`,
+				sql`${holdings.quantity} <= 0`,
 				gte(holdings.date, costBasisLocks.lockedOn),
 			),
 		);
 
-	return sql<IsoDate | null>`(${firstZero})`;
+	return sql<IsoDate | null>`(${firstNotHeld})`;
 }
 
 /**
  * The cost basis locks whose position still runs, one account's or every
- * one's. A day at quantity zero on or after the day it was locked ended that
- * position, a full sale, and the lock with it: a rebuy is priced from its own
- * buys, as Sure's tracker starts over. Such a lock stays in its table, read
- * by nothing, until the owner locks or unlocks that security again.
+ * one's. A day at quantity zero or below on or after the day it was locked
+ * ended that position, a full sale or one past it, and the lock with it: a
+ * rebuy is priced from its own buys, as Sure's tracker starts over. Such a
+ * lock stays in its table, read by nothing, until the owner locks or unlocks
+ * that security again.
  */
 export async function liveCostBasisLocks(
 	db: Reader,
 	accountId: string | null,
 ): Promise<LiveCostBasisLock[]> {
 	// `after`, which the export reads, and the lock's end: per lock, seeks
-	// into the partial index `holdings_zero_quantity`, the locks being few and
+	// into the partial index `holdings_not_held`, the locks being few and
 	// the holdings ten years of days per security. The zero is a literal.
-	const lastZero = db
+	const lastNotHeld = db
 		.select({ day: max(holdings.date) })
 		.from(holdings)
 		.where(
 			and(
 				eq(holdings.accountId, costBasisLocks.accountId),
 				eq(holdings.securityId, costBasisLocks.securityId),
-				sql`${holdings.quantity} = 0`,
+				sql`${holdings.quantity} <= 0`,
 			),
 		);
 	const rows = await db
@@ -214,7 +215,7 @@ export async function liveCostBasisLocks(
 			accountId: costBasisLocks.accountId,
 			securityId: costBasisLocks.securityId,
 			costBasis: costBasisLocks.costBasis,
-			after: sql<IsoDate | null>`(${lastZero})`,
+			after: sql<IsoDate | null>`(${lastNotHeld})`,
 			endedOn: lockEndedOn(db),
 		})
 		.from(costBasisLocks)
@@ -240,9 +241,9 @@ async function lastHoldingsDay(db: Reader, accountId: string, day: IsoDate) {
 /**
  * What an account holds at the end of `day`, as Sure's holdings table reads
  * it: each security's holding on the account's last holdings day on or
- * before `day`, quantity above zero, by value then name, its cost basis the
- * lock's when the owner set one on this position (AD-22), and the cash of the
- * last stored balance on or before `day`.
+ * before `day`, quantity not zero, as Sure's `qty <> 0`, by value then
+ * name, its cost basis the lock's when the owner set one on this position
+ * (AD-22), and the cash of the last stored balance on or before `day`.
  */
 export async function currentHoldings(
 	db: Reader,
@@ -299,7 +300,7 @@ export async function currentHoldings(
 			and(
 				eq(holdings.accountId, accountId),
 				eq(holdings.date, date),
-				gt(holdings.quantity, toMicros(0)),
+				ne(holdings.quantity, toMicros(0)),
 			),
 		)
 		.orderBy(desc(holdings.amount), asc(securities.name), asc(securities.id));
@@ -329,7 +330,10 @@ export type LastHeldHolding = {
 	security: { id: string; name: string; ticker: string | null };
 	/** The last day it was held, today for a position still running. */
 	date: IsoDate;
-	/** Above zero: that day's quantity, a sold-out security's last one. */
+	/**
+	 * Not zero: that day's quantity, a sold-out security's last one, below
+	 * zero when sold short.
+	 */
 	quantity: Micros;
 	price: Micros;
 	amount: MinorUnits;
@@ -338,11 +342,11 @@ export type LastHeldHolding = {
 };
 
 /**
- * Each security's last holding above zero on or before `day`, on each of
+ * Each security's last holding not zero on or before `day`, on each of
  * `accountIds`, a security sold out included at its last held quantity, as
  * Sure's `DISTINCT ON (account_id, security_id)` over `qty <> 0`. Its cost
- * basis is the lock's when no day at zero falls between the lock's day and
- * the row's, so a lock stands on the last day of a position sold since.
+ * basis is the lock's when no day at zero or below falls between the lock's
+ * day and the row's, so a lock stands on the last day of a position sold since.
  */
 export async function lastHeldHoldings(
 	db: Reader,
@@ -366,7 +370,7 @@ export async function lastHeldHoldings(
 			and(
 				inArray(holdings.accountId, [...accountIds]),
 				lte(holdings.date, day),
-				gt(holdings.quantity, toMicros(0)),
+				ne(holdings.quantity, toMicros(0)),
 			),
 		)
 		.groupBy(holdings.accountId, holdings.securityId)
@@ -408,7 +412,8 @@ export async function lastHeldHoldings(
 
 	return rows.map((row) => {
 		const lock = locks.get(`${row.accountId}:${row.security.id}`);
-		// A lock stands on a row unless a day at zero falls between its day and the row's.
+		// A lock stands on a row unless a day at zero or below falls between its
+		// day and the row's.
 		const locked = lock !== undefined && (lock.endedOn === null || lock.endedOn > row.date);
 
 		return {
@@ -467,9 +472,10 @@ async function heldToday(
 /**
  * Sets a position's cost basis by hand and locks it, as Sure's
  * `set_manual_cost_basis!`: every reader then takes it over the calculated
- * one, until a full sale ends the position. Holdings keep theirs and no
- * balance moves, so nothing is recomputed. A cost basis whose book value no
- * balance could hold is refused on `costBasis`, as a trade's amount is.
+ * one, until a full sale, or one past it, ends the position. Holdings keep
+ * theirs and no balance moves, so nothing is recomputed. A cost basis whose
+ * book value no balance could hold is refused on `costBasis`, as a trade's
+ * amount is.
  */
 export async function lockCostBasis(
 	deps: ServiceDeps,

@@ -125,13 +125,6 @@ export const ERROR_STATUSES = {
 	 */
 	NOT_AN_INVESTMENT_ACCOUNT: 409,
 	/**
-	 * A trade, an edit or a deletion after which the account would hold less
-	 * than nothing of a security on some day: a sale above what it holds on
-	 * its date, or a later sale left short. The form shows it on the quantity.
-	 * Nothing is written.
-	 */
-	QUANTITY_UNAVAILABLE: 409,
-	/**
 	 * A bill declared, or a series edited, onto the account, key, amount and
 	 * currency of another series with the same dedup scope, as Sure's
 	 * `already_exists`. Nothing is written.

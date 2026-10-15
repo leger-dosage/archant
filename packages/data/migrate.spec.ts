@@ -3135,7 +3135,7 @@ describe("holdings", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
-	it("holds one holding per account, day and security, never negative, and protects both ends", async () => {
+	it("holds one holding per account, day and security, below zero when sold short, and protects both ends", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "investment", "pea");
 		await insertSecurity(database, "s1");
@@ -3148,15 +3148,52 @@ describe("holdings", () => {
 		await expect(
 			insertHolding(database, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null }),
 		).resolves.toBeDefined();
-		await expect(insertHolding(database, { date: "2026-09-12", quantity: -1 })).rejects.toThrow();
-		await expect(insertHolding(database, { date: "2026-09-12", price: -1 })).rejects.toThrow();
-		await expect(insertHolding(database, { date: "2026-09-12", amount: -1 })).rejects.toThrow();
+		// A sale above what was held, as Sure's `ForwardCalculator`.
+		await expect(
+			insertHolding(database, {
+				date: "2026-09-12",
+				quantity: -5_000_000,
+				amount: -306_200,
+				costBasis: null,
+			}),
+		).resolves.toBeDefined();
+		await expect(insertHolding(database, { date: "2026-09-13", price: -1 })).rejects.toThrow();
 		await expect(insertHolding(database, { securityId: "nope" })).rejects.toThrow();
 
 		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
 		await expect(database.run(sql`delete from accounts where id = 'a1'`)).rejects.toThrow();
 		await database.run(sql`delete from holdings`);
 		await database.run(sql`delete from accounts where id = 'a1'`);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps every holding at 0076, then takes one below zero and indexes the days not held", async () => {
+		const before = await migratedBefore("0076");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertSecurity(before, "s1");
+		await insertHolding(before);
+		await insertHolding(before, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null });
+		await expect(
+			insertHolding(before, { date: "2026-09-12", quantity: -1, amount: -1, costBasis: null }),
+		).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select date, quantity, amount, cost_basis from holdings order by date`),
+		).resolves.toEqual([
+			{ date: "2026-09-10", quantity: 10_000_000, amount: 612_400, cost_basis: 612_400_000 },
+			{ date: "2026-09-11", quantity: 0, amount: 0, cost_basis: null },
+		]);
+		await expect(
+			insertHolding(database, { date: "2026-09-12", quantity: -1, amount: -1, costBasis: null }),
+		).resolves.toBeDefined();
+		await expect(
+			database.all(
+				sql`select name from sqlite_master where type = 'index' and tbl_name = 'holdings' and sql is not null`,
+			),
+		).resolves.toEqual([{ name: "holdings_not_held" }]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 

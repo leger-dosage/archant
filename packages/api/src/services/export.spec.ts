@@ -1385,6 +1385,34 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("leaves the days sold short out of the Holding lines, which Sure's importer would refuse", async () => {
+		await ownDatabase();
+		const pea = await account({ name: "PEA", type: "investment", subtype: "pea" });
+		const trade = async (side: string, date: string, quantity: string) =>
+			created(`/api/accounts/${pea}/trades`, {
+				side,
+				security: { source: "manual", isin: "FR0010315770", name: "Fonds euros" },
+				date,
+				quantity,
+				price: "10",
+				fee: "0",
+			});
+		await trade("buy", "2026-09-10", "10");
+		await trade("sell", "2026-09-12", "15");
+
+		const archive = await exported();
+		const days = archive.of("Holding").map((row) => [row["date"], row["qty"]]);
+
+		expect(days.slice(0, 2)).toEqual([
+			["2026-09-10", "10"],
+			["2026-09-11", "10"],
+		]);
+		expect(days.some(([, qty]) => String(qty).startsWith("-"))).toBe(false);
+		expect(days.some(([date]) => date === "2026-09-12")).toBe(false);
+		expect(archive.of("Trade")).toHaveLength(2);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("starts Sure's lines 29 years back, the opening anchor moved there at that day's balance", async () => {
 		await ownDatabase();
 		const old = await openOwn({

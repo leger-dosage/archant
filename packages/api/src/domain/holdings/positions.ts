@@ -40,7 +40,10 @@ export type PositionFigures = {
 	bookValue: MinorUnits | null;
 	/** « +/- value latente »: the value less the book value; `null` without a cost basis. */
 	gain: MinorUnits | null;
-	/** The gain over the book value; `null` without a cost basis or with a zero book value. */
+	/**
+	 * The gain over the book value's size; `null` without a cost basis or with
+	 * a zero book value.
+	 */
 	gainPercent: Micros | null;
 	weight: Micros | null;
 };
@@ -62,8 +65,13 @@ export function positionFigures(
 			: marketValue(position.quantity, position.costBasis, currency);
 
 	// Past `MAX_MINOR_UNITS`, as a trade's amount is refused: a cost basis
-	// locked before a later buy grew the quantity can reach it.
-	if (bookValue === null || bookValue > BigInt(MAX_MINOR_UNITS)) {
+	// locked before a later buy grew the quantity can reach it, and a short
+	// position's book value, below zero, can reach it from below.
+	if (
+		bookValue === null ||
+		bookValue > BigInt(MAX_MINOR_UNITS) ||
+		bookValue < -BigInt(MAX_MINOR_UNITS)
+	) {
 		return { bookValue: null, gain: null, gainPercent: null, weight };
 	}
 
@@ -72,8 +80,9 @@ export function positionFigures(
 	return {
 		bookValue: toMinorUnits(Number(bookValue)),
 		gain: toMinorUnits(Number(gain)),
-		// A free share has no book value to measure a gain against.
-		gainPercent: percentOf(gain, bookValue),
+		// A free share has no book value to measure a gain against; a short
+		// position's is measured by its size, as Sure's `Trend#percent`.
+		gainPercent: percentOf(gain, bookValue < 0n ? -bookValue : bookValue),
 		weight,
 	};
 }

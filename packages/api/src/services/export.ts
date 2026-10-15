@@ -1117,33 +1117,41 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 
 	for await (const page of holdingPages(deps.db, from)) {
 		yield ndjson(
-			page.map((row) => {
-				const lock = locks.get(`${row.accountId} ${row.securityId}`);
-				const locked =
-					lock !== undefined && row.quantity > 0 && (lock.after === null || row.date > lock.after);
-				const costBasis = locked ? lock.costBasis : row.costBasis;
+			// A day sold short stays out: Sure's `Holding` validates a quantity
+			// and an amount of zero or more, so its importer would refuse the
+			// whole archive, and the sync it runs after an import computes
+			// those days again from the trades.
+			page
+				.filter((row) => row.quantity >= 0)
+				.map((row) => {
+					const lock = locks.get(`${row.accountId} ${row.securityId}`);
+					const locked =
+						lock !== undefined &&
+						row.quantity > 0 &&
+						(lock.after === null || row.date > lock.after);
+					const costBasis = locked ? lock.costBasis : row.costBasis;
 
-				return {
-					type: "Holding",
-					data: {
-						account_id: row.accountId,
-						security_id: row.securityId,
-						ticker: sureTicker(row),
-						security_name: row.security.name,
-						exchange_operating_mic: row.security.mic,
-						date: row.date,
-						qty: formatMicros(row.quantity),
-						price: formatMicros(row.price),
-						amount: decimal(row.amount, row.currency),
-						currency: row.currency,
-						cost_basis: costBasis === null ? null : formatMicros(costBasis),
-						cost_basis_source: costBasis === null ? null : locked ? "manual" : "calculated",
-						cost_basis_locked: locked,
-						security_locked: false,
-						archant: { isin: row.security.isin },
-					},
-				};
-			}),
+					return {
+						type: "Holding",
+						data: {
+							account_id: row.accountId,
+							security_id: row.securityId,
+							ticker: sureTicker(row),
+							security_name: row.security.name,
+							exchange_operating_mic: row.security.mic,
+							date: row.date,
+							qty: formatMicros(row.quantity),
+							price: formatMicros(row.price),
+							amount: decimal(row.amount, row.currency),
+							currency: row.currency,
+							cost_basis: costBasis === null ? null : formatMicros(costBasis),
+							cost_basis_source: costBasis === null ? null : locked ? "manual" : "calculated",
+							cost_basis_locked: locked,
+							security_locked: false,
+							archant: { isin: row.security.isin },
+						},
+					};
+				}),
 			counts,
 		);
 	}

@@ -1,11 +1,9 @@
-import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 
-import { and, eq, inArray, isNotNull, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, inArray, isNotNull, ne, notInArray, or, sql } from "drizzle-orm";
 import { QueryBuilder, alias } from "drizzle-orm/sqlite-core";
 
-import type { Micros } from "@archant/data/micros";
 import { toMicros } from "@archant/data/micros";
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
@@ -18,7 +16,6 @@ import type { LockableField, LockedFields } from "@archant/data/schema/transacti
 import { transfers } from "@archant/data/schema/transfers";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
-import { firstShortfall } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 
@@ -142,9 +139,8 @@ export async function refuseSplit(
 }
 
 /**
- * Trades that move a quantity: holdings, the held securities and the quantity
- * check drop an income, as Sure's `PortfolioCache` drops a trade of quantity
- * zero.
+ * Trades that move a quantity: holdings and the held securities drop an
+ * income, as Sure's `PortfolioCache` drops a trade of quantity zero.
  */
 export const movesQuantity = ne(trades.quantity, toMicros(0));
 
@@ -152,86 +148,26 @@ export const movesQuantity = ne(trades.quantity, toMicros(0));
 export const tradedSecurityId = sql<string>`${trades.securityId}`;
 
 /**
- * Refuses a write after which the account's running quantity of the security
- * falls below zero on some day: a sale above what is held on its date, or an
- * edit or a deletion that leaves a later sale short, where Sure's
- * `CostBasisTracker` silently caps. `except` is the trade being rewritten,
- * `next` what it becomes, `null` when it goes or is already gone.
- */
-export async function refuseShortfall(
-	tx: Pick<Transaction, "select">,
-	accountId: string,
-	securityId: string,
-	next: { date: IsoDate; quantity: Micros } | null,
-	except?: string,
-): Promise<void> {
-	const held = await tx
-		.select({ date: entries.date, quantity: trades.quantity })
-		.from(trades)
-		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(
-			and(
-				eq(entries.accountId, accountId),
-				eq(trades.securityId, securityId),
-				movesQuantity,
-				except === undefined ? undefined : ne(trades.entryId, except),
-			),
-		);
-
-	if (firstShortfall(next === null ? held : [...held, next]) !== null) {
-		throw new AppError("QUANTITY_UNAVAILABLE", "The account would sell more than it holds.");
-	}
-}
-
-/**
  * Deletes the split lines of `parentIds`, before the parents themselves:
  * `parent_entry_id` restricts. A child carries no key, transfer or rejected
  * pair (AD-20), only its taggings, its attachments and its detail row; or
  * it is the trade a transaction was converted into (AD-22), whose row goes
- * first. Returns the positions those trades moved, for `refuseShortfalls`
- * once every chunk of a deletion is gone: a converted buy and the converted
- * sale it covers may fall in two chunks.
+ * first.
  */
 export async function deleteSplitChildren(
 	tx: Transaction,
 	parentIds: readonly string[],
-): Promise<TradedPosition[]> {
+): Promise<void> {
 	const children = () =>
 		tx
 			.select({ id: entries.id })
 			.from(entries)
 			.where(inArray(entries.parentEntryId, [...parentIds]));
-	const traded = await tx
-		.selectDistinct({ accountId: entries.accountId, securityId: tradedSecurityId })
-		.from(trades)
-		.innerJoin(entries, eq(entries.id, trades.entryId))
-		.where(and(inArray(entries.parentEntryId, [...parentIds]), movesQuantity));
-
 	await tx.delete(trades).where(inArray(trades.entryId, children()));
 	await tx.delete(taggings).where(inArray(taggings.transactionId, children()));
 	await deleteAttachmentsOf(tx, children());
 	await tx.delete(transactions).where(inArray(transactions.entryId, children()));
 	await tx.delete(entries).where(inArray(entries.parentEntryId, [...parentIds]));
-
-	return traded;
-}
-
-/** A security on an account, as a deleted trade moved it. */
-export type TradedPosition = { accountId: string; securityId: string };
-
-/**
- * Refuses, with `QUANTITY_UNAVAILABLE`, a deletion after which a later sale
- * of one of `positions` sells more than its account holds.
- */
-export async function refuseShortfalls(
-	tx: Pick<Transaction, "select">,
-	positions: readonly TradedPosition[],
-): Promise<void> {
-	const unique = new Map(positions.map((row) => [`${row.accountId} ${row.securityId}`, row]));
-
-	await oneByOne([...unique.values()], async ({ accountId, securityId }) =>
-		refuseShortfall(tx, accountId, securityId, null),
-	);
 }
 
 /**
@@ -244,7 +180,7 @@ export async function deleteTransactionRows(
 	tx: Transaction,
 	ids: readonly string[],
 ): Promise<void> {
-	await refuseShortfalls(tx, await deleteSplitChildren(tx, ids));
+	await deleteSplitChildren(tx, ids);
 	await tx.delete(entryKeys).where(inArray(entryKeys.entryId, ids));
 	await tx.delete(transfers).where(transferOf(ids));
 	await tx.delete(rejectedTransfers).where(rejectedOf(ids));

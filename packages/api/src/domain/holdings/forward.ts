@@ -51,13 +51,21 @@ export type DailyHolding = {
 	amount: MinorUnits;
 	/**
 	 * Weighted average price of the buys, each buy's fee in its cost, a
-	 * sale's fee out; `null` while nothing is held.
+	 * sale's fee out, as Sure's `CostBasisTracker`: whatever the quantity's
+	 * sign, `null` while the tracker holds nothing.
 	 */
 	costBasis: Micros | null;
 };
 
 type Position = {
+	/** The position's quantity, below zero after a sale above what was held. */
 	quantity: bigint;
+	/**
+	 * What Sure's `CostBasisTracker` holds, kept apart from the quantity: never
+	 * below zero, a sale relieving at most this much.
+	 */
+	tracked: bigint;
+	/** The tracker's average; `null` while it holds nothing. */
 	costBasis: bigint | null;
 	/** The price carried into the next day, and the day it was set. */
 	price: Micros;
@@ -65,33 +73,34 @@ type Position = {
 };
 
 /**
- * Sure's `CostBasisTracker`: a buy moves the weighted average, its cost
- * `quantity × price + fee` as Sure's `effective_trade_price`, the fee joining
- * that cost before the buy's one rounding, half to even, to the millionth;
- * a sale leaves it, its fee out; nothing held clears it, so the next buy
- * starts over from its own cost, as Sure's `reset`.
+ * Sure's `CostBasisTracker`: a buy adds `quantity × price + fee` to what it
+ * holds, as Sure's `effective_trade_price`, and moves the average, rounded
+ * half to even to the millionth; a sale relieves at the average, which it
+ * leaves, at most what the tracker holds, and does nothing while it holds
+ * nothing; the tracker emptied clears the average, so the next buy starts
+ * over, as Sure's `reset`. The position's quantity follows every trade, below
+ * zero included, as Sure's `ForwardCalculator`.
  */
 function apply(position: Position, trade: HoldingTrade, feeScale: bigint): void {
 	const quantity = BigInt(trade.quantity);
 
 	if (quantity > 0n) {
-		// A short position, a sale before the buy that covers it, has no cost.
-		const held = position.costBasis === null ? 0n : position.quantity;
-
 		position.costBasis = divideHalfEven(
-			held * (position.costBasis ?? 0n) +
+			position.tracked * (position.costBasis ?? 0n) +
 				quantity * BigInt(trade.price) +
 				BigInt(trade.fee) * feeScale,
-			held + quantity,
+			position.tracked + quantity,
 		);
+		position.tracked += quantity;
+	} else if (quantity < 0n && position.tracked > 0n) {
+		position.tracked -= -quantity < position.tracked ? -quantity : position.tracked;
+
+		if (position.tracked === 0n) {
+			position.costBasis = null;
+		}
 	}
 
 	position.quantity += quantity;
-
-	if (position.quantity <= 0n) {
-		position.costBasis = null;
-	}
-
 	position.price = trade.price;
 	position.pricedOn = trade.date;
 }
@@ -100,6 +109,7 @@ function apply(position: Position, trade: HoldingTrade, feeScale: bigint): void 
 function applyTo(positions: Map<string, Position>, trade: HoldingTrade, feeScale: bigint): void {
 	const position = positions.get(trade.securityId) ?? {
 		quantity: 0n,
+		tracked: 0n,
 		costBasis: null,
 		price: trade.price,
 		pricedOn: trade.date,
@@ -112,11 +122,12 @@ function applyTo(positions: Map<string, Position>, trade: HoldingTrade, feeScale
 /**
  * One holding per security and day, from `from` to `until`, as Sure's
  * `Holding::ForwardCalculator`: a security from its first trade on, every
- * day after a full sale, to `until`, at quantity zero. A day's price is the stored
- * price of that day, a provider's or a typed one, else the day's last trade
- * price, else the day before's, carried. The day before `from` is replayed
- * from every earlier trade, its price the later of the last trade and the
- * last stored price, the stored one on the same day.
+ * day after a full sale, to `until`, at quantity zero, and below zero after
+ * a sale above what was held. A day's price is the stored price of that
+ * day, a provider's or a typed one, else the day's last trade price, else
+ * the day before's, carried. The day before `from` is replayed from every
+ * earlier trade, its price the later of the last trade and the last stored
+ * price, the stored one on the same day.
  */
 export function forwardHoldings(input: HoldingsInput): DailyHolding[] {
 	const positions = new Map<string, Position>();

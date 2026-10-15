@@ -761,8 +761,8 @@ export function exportedTrades(db: Reader) {
 
 /**
  * Every cost basis the owner locked on a position still running, with the
- * position's last day at quantity zero before it, `null` when none: the
- * `Holding` lines of the days after it that hold the security carry it.
+ * position's last day at quantity zero or below before it, `null` when none:
+ * the `Holding` lines of the days after it that hold the security carry it.
  * `lockedOn` only tells a running position from an ended one, and stays.
  */
 export async function exportedCostBasisLocks(db: Reader) {

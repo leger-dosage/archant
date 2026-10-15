@@ -38,7 +38,7 @@ export const trades = sqliteTable(
 		fee: integer("fee").$type<MinorUnits>().notNull(),
 	},
 	(table) => [
-		// The held securities and the quantity check read trades by security.
+		// The held securities and an income's `not_held` check read trades by security.
 		index("trades_security").on(table.securityId),
 		check(
 			"trades_income_kind_check",

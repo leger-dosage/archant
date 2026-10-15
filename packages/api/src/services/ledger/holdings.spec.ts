@@ -27,6 +27,7 @@ import * as ledgerBalances from "./balances.ts";
 import {
 	currentHoldings,
 	lastHeldHoldings,
+	liveCostBasisLocks,
 	lockCostBasis,
 	recomputeFeeCostBases,
 	revalueHoldings,
@@ -563,6 +564,29 @@ describe("currentHoldings", () => {
 		});
 	});
 
+	it("lists a position below zero by its negative value, after those above, as Sure's `qty <> 0`", async () => {
+		const pea = await openPea();
+		const held = await newSecurity("Détenu");
+		const short = await newSecurity("Vendu à découvert");
+		await record(pea.id, buy(held));
+		await record(pea.id, buy(short));
+		await record(pea.id, sell(short, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
+
+		const { holdings: rows } = await currentHoldings(temp.db, pea.id, "2026-09-21");
+
+		expect(
+			rows.map(({ security, quantity, amount, costBasis }) => [
+				security.name,
+				quantity,
+				amount,
+				costBasis,
+			]),
+		).toEqual([
+			["Détenu", 10_000_000, 612_400, 612_650_000],
+			["Vendu à découvert", -5_000_000, -325_000, null],
+		]);
+	});
+
 	it("answers an account that never traded with no day and its balance as cash, zero before it opened", async () => {
 		const pea = await openPea();
 		await snapshot(pea.id, "2026-09-11", 2_600_000);
@@ -656,6 +680,17 @@ describe("lastHeldHoldings", () => {
 			},
 		]);
 		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-09")).resolves.toEqual([]);
+	});
+
+	it("reads a position below zero at its last quantity, which is not zero", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		await record(pea.id, sell(securityId, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
+
+		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-21")).resolves.toMatchObject([
+			{ date: "2026-09-21", quantity: -5_000_000, amount: -325_000, costBasis: null },
+		]);
 		await expect(lastHeldHoldings(temp.db, [], "2026-09-21")).resolves.toEqual([]);
 	});
 });
@@ -749,6 +784,34 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		});
 	});
 
+	it("end with a sale that crosses zero, so the rebuy reads its calculated cost basis", async () => {
+		const pea = await openPea();
+		const securityId = await newSecurity();
+		await record(pea.id, buy(securityId));
+		setToday("2026-09-15T10:00:00Z");
+		await lock(pea.id, securityId, 400_000_000);
+		setToday("2026-09-21T10:00:00Z");
+
+		await record(pea.id, sell(securityId, { date: "2026-09-16", quantity: toMicros(15_000_000) }));
+		await record(
+			pea.id,
+			buy(securityId, {
+				date: "2026-09-18",
+				quantity: toMicros(8_000_000),
+				price: toMicros(700_000_000),
+			}),
+		);
+
+		// 8 at 700 € and 2.50 € of fees, the tracker emptied by the sale.
+		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ quantity: 3_000_000, costBasis: 700_312_500, costBasisLocked: false }],
+		});
+		await expect(liveCostBasisLocks(temp.db, pea.id)).resolves.toEqual([]);
+		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-21")).resolves.toMatchObject([
+			{ quantity: 3_000_000, costBasis: 700_312_500 },
+		]);
+	});
+
 	it("refuse a cost basis whose book value no balance could hold", async () => {
 		const pea = await openPea();
 		const securityId = await newSecurity();
@@ -772,8 +835,13 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		const checking = await openChecking();
 		await record(pea.id, buy(traded));
 		await record(pea.id, sell(traded, { date: "2026-09-12" }));
+		const short = await newSecurity();
+		await record(pea.id, buy(short));
+		await record(pea.id, sell(short, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
 
 		await expect(lock(pea.id, traded, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
+		// Sure's `HoldingsController#update` checks `qty.positive?`.
+		await expect(lock(pea.id, short, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(lock(pea.id, never, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(lock(fresh.id, never, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(lock("nope", never, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });

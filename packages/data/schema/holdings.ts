@@ -10,7 +10,8 @@ import { securities } from "./securities.ts";
 /**
  * Sure's `Holding`: what an investment account holds of one security at the
  * end of one day, from its first trade in it to the account's last balance
- * day, every day after a full sale included at quantity zero. Derived from
+ * day, every day after a full sale included at quantity zero, and below zero
+ * after a sale above what was held, as Sure's. Derived from
  * `trades` and `security_prices` by the ledger's balance recompute, as Sure's
  * `Holding::ForwardCalculator`; the ledger deletes them with their account
  * and writes them nowhere else (AD-2, AD-22).
@@ -28,16 +29,16 @@ export const holdings = sqliteTable(
 			.references(() => securities.id, { onDelete: "restrict" }),
 		/** `YYYY-MM-DD`. */
 		date: text("date").notNull(),
-		/** Millionths of a unit held at the end of the day. */
+		/** Millionths of a unit held at the end of the day, below zero when sold short. */
 		quantity: integer("quantity").$type<Micros>().notNull(),
 		/** Millionths of the account currency's major unit, per unit: the day's price. */
 		price: integer("price").$type<Micros>().notNull(),
-		/** `quantity × price`, in minor units of the account's currency. */
+		/** `quantity × price`, in minor units of the account's currency, signed as the quantity. */
 		amount: integer("amount").$type<MinorUnits>().notNull(),
 		/**
 		 * The weighted average price of the buys, each buy's fee in its cost, a
 		 * sale's fee out, in millionths per unit, as Sure's `CostBasisTracker`;
-		 * `null` while nothing is held.
+		 * `null` while the tracker holds nothing, whatever the quantity.
 		 */
 		costBasis: integer("cost_basis").$type<Micros>(),
 	},
@@ -45,14 +46,14 @@ export const holdings = sqliteTable(
 		// By account then day: the balance recompute reads and rewrites an
 		// account's days from a date on, the export pages along it.
 		primaryKey({ columns: [table.accountId, table.date, table.securityId] }),
-		// A position's last day at zero, which ends a cost basis lock: the
-		// days at zero are few, so the lock read never walks every holding.
-		index("holdings_zero_quantity")
-			.on(table.accountId, table.securityId, table.date)
-			.where(sql`quantity = 0`),
-		check("holdings_quantity_check", sql`${table.quantity} >= 0`),
+		// A position's days at zero or below, which end a cost basis lock: such
+		// days are few, so the lock read never walks every holding. The
+		// quantity rides along because `<= 0`, unlike `= 0`, leaves SQLite
+		// reading it to check each day, and the index then covers the read.
+		index("holdings_not_held")
+			.on(table.accountId, table.securityId, table.date, table.quantity)
+			.where(sql`quantity <= 0`),
 		check("holdings_price_check", sql`${table.price} >= 0`),
-		check("holdings_amount_check", sql`${table.amount} >= 0`),
 	],
 );
 
