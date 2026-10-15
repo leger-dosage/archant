@@ -14,6 +14,7 @@ import { creditCardDetailsOf, loanDetailsOf } from "@archant/data/account-types"
 
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
+import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -279,14 +280,18 @@ export function EditAccountDialog({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{kinds.map((kind) => (
-										<SelectItem key={kind.id} value={kind.id}>
-											{/* Sure's `include_blank`: the empty choice reads « Aucun » here. */}
-											{kind.id === "depository"
-												? t("accountActions.form.noSubtype")
-												: t(`accounts.subtypes.${kind.id}`)}
-										</SelectItem>
-									))}
+									{account.type === "investment" ? (
+										<InvestmentKindGroups blankLabel={t("accountActions.form.noSubtype")} />
+									) : (
+										kinds.map((kind) => (
+											<SelectItem key={kind.id} value={kind.id}>
+												{/* Sure's `include_blank`: the empty choice reads « Aucun » here. */}
+												{kind.subtype === null
+													? t("accountActions.form.noSubtype")
+													: t(`accounts.subtypes.${kind.id}`)}
+											</SelectItem>
+										))
+									)}
 								</SelectContent>
 							</Select>
 							<FieldMessage id="account-subtype-error" error={errors.subtype} />

@@ -24,10 +24,27 @@ export const ACCOUNT_TYPES = {
 		classification: "liability",
 		subtypes: ["mortgage", "student", "auto", "home_equity", "line_of_credit", "business", "other"],
 	},
-	// Sure's `Investment::SUBTYPES` keys: `brokerage` is the compte-titres.
+	// Sure's `Investment::SUBTYPES` keys of its « Europe » and generic regions,
+	// in the order its `subtypes_grouped_for_select` gives them for `EUR`, then
+	// `brokerage`, the compte-titres, alone of its US ones. No French household
+	// holds the US, UK, Canadian, Australian or Indian others.
 	investment: {
 		classification: "asset",
-		subtypes: ["pea", "assurance_vie", "brokerage", "other"],
+		subtypes: [
+			"assurance_vie",
+			"pea",
+			"pillar_3a",
+			"riester",
+			"pension",
+			"retirement",
+			"mutual_fund",
+			"gold",
+			"angel",
+			"trust",
+			"other",
+			"brokerage",
+		],
+		subtypeOptional: true,
 	},
 	// A French-relevant subset of Sure's `Property::SUBTYPES` keys.
 	property: {
@@ -88,13 +105,19 @@ export function isSubtypeOf(type: AccountType, subtype: string | null): boolean 
 }
 
 /**
- * Sure's `:tax_advantaged` subtypes Archant has: a PEA and an assurance-vie
- * hold money set aside, so no cash-flow report and no list total counts
- * their lines, as Sure's `tax_advantaged_account_ids`. Net worth still does.
+ * The subtypes Sure's `Investment::SUBTYPES` does not treat as `:taxable`:
+ * a PEA, an assurance-vie and a retirement plan hold money set aside, so no
+ * cash-flow report and no list total counts their lines, as Sure's
+ * `tax_advantaged_account_ids`. Net worth still does. No subtype is taxable,
+ * as Sure's `|| :taxable`.
  */
 export const TAX_ADVANTAGED_SUBTYPES = [
-	"pea",
 	"assurance_vie",
+	"pea",
+	"pillar_3a",
+	"riester",
+	"pension",
+	"retirement",
 ] as const satisfies readonly AccountSubtype[];
 
 export function isTaxAdvantaged(subtype: string | null): boolean {

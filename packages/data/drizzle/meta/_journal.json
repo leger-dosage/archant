@@ -526,6 +526,13 @@
       "when": 1791996357597,
       "tag": "0074_credit_card_details",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1792046200056,
+      "tag": "0075_investment_subtypes",
+      "breakpoints": true
     }
   ]
 }

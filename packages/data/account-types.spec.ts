@@ -46,8 +46,16 @@ describe("account types", () => {
 			"line_of_credit",
 			"business",
 			"other",
-			"pea",
 			"assurance_vie",
+			"pea",
+			"pillar_3a",
+			"riester",
+			"pension",
+			"retirement",
+			"mutual_fund",
+			"gold",
+			"angel",
+			"trust",
 			"brokerage",
 			"single_family_home",
 			"apartment",
@@ -58,7 +66,7 @@ describe("account types", () => {
 		]);
 	});
 
-	it("requires a subtype where the type has some, none where it has none, and admits none for a depository", () => {
+	it("requires a subtype where the type has some, none where it has none, and admits none for a depository or an investment", () => {
 		expect(isSubtypeOf("depository", "savings")).toBe(true);
 		expect(isSubtypeOf("depository", "cash")).toBe(true);
 		expect(isSubtypeOf("depository", "cd")).toBe(true);
@@ -74,7 +82,14 @@ describe("account types", () => {
 		expect(isSubtypeOf("loan", "consumer")).toBe(false);
 		expect(isSubtypeOf("investment", "pea")).toBe(true);
 		expect(isSubtypeOf("investment", "other")).toBe(true);
-		expect(isSubtypeOf("investment", null)).toBe(false);
+		expect(isSubtypeOf("investment", "pillar_3a")).toBe(true);
+		expect(isSubtypeOf("investment", "riester")).toBe(true);
+		expect(isSubtypeOf("investment", "mutual_fund")).toBe(true);
+		expect(isSubtypeOf("investment", "trust")).toBe(true);
+		expect(isSubtypeOf("investment", null)).toBe(true);
+		expect(isSubtypeOf("investment", "401k")).toBe(false);
+		expect(isSubtypeOf("investment", "isa")).toBe(false);
+		expect(isSubtypeOf("loan", "pension")).toBe(false);
 		expect(isSubtypeOf("investment", "savings")).toBe(false);
 		expect(isSubtypeOf("property", "single_family_home")).toBe(true);
 		expect(isSubtypeOf("property", "commercial")).toBe(true);
@@ -109,10 +124,20 @@ describe("bank account targets", () => {
 });
 
 describe("tax-advantaged accounts", () => {
-	it("are a PEA and an assurance-vie, as Sure's `:tax_advantaged` subtypes, never a compte-titres", () => {
-		expect(isTaxAdvantaged("pea")).toBe(true);
-		expect(isTaxAdvantaged("assurance_vie")).toBe(true);
-		expect(isTaxAdvantaged("brokerage")).toBe(false);
+	it("are Sure's tax-advantaged and tax-deferred subtypes, never a taxable one or none", () => {
+		for (const subtype of [
+			"pea",
+			"assurance_vie",
+			"pillar_3a",
+			"riester",
+			"pension",
+			"retirement",
+		]) {
+			expect(isTaxAdvantaged(subtype)).toBe(true);
+		}
+		for (const subtype of ["brokerage", "mutual_fund", "gold", "angel", "trust", "other"]) {
+			expect(isTaxAdvantaged(subtype)).toBe(false);
+		}
 		expect(isTaxAdvantaged(null)).toBe(false);
 	});
 });

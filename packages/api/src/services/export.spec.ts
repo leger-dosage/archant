@@ -859,6 +859,54 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes an investment's new subtype as stored, a blank one null, and a trade on it as on a PEA", async () => {
+		await ownDatabase();
+		const fund = await account({
+			name: "Fonds commun",
+			type: "investment",
+			subtype: "mutual_fund",
+			openingBalance: "1 000",
+		});
+		const blank = await account({ name: "Placement", type: "investment", subtype: null });
+		const trade = await created(`/api/accounts/${fund}/trades`, {
+			side: "buy",
+			security: { source: "manual", isin: "FR0010315770", name: "Fonds euros" },
+			date: "2026-09-10",
+			quantity: "2",
+			price: "10",
+			fee: "0",
+		});
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(fund)).toMatchObject({
+			accountable_type: "Investment",
+			subtype: "mutual_fund",
+			accountable: { subtype: "mutual_fund" },
+			archant: { type: "investment", subtype: "mutual_fund" },
+		});
+		expect(accounts.get(blank)).toMatchObject({
+			accountable_type: "Investment",
+			subtype: null,
+			accountable: { subtype: null },
+			archant: { type: "investment", subtype: null },
+		});
+		expect(archive.csv("accounts.csv").map((row) => row.slice(0, 4))).toEqual(
+			expect.arrayContaining([
+				[fund, "Fonds commun", "Investment", "mutual_fund"],
+				[blank, "Placement", "Investment", ""],
+			]),
+		);
+		expect(archive.of("Trade")).toEqual([
+			expect.objectContaining({ id: trade, account_id: fund, qty: "2", amount: "20.00" }),
+		]);
+		expect(archive.of("Holding")).toContainEqual(
+			expect.objectContaining({ account_id: fund, date: "2026-09-10", qty: "2" }),
+		);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes a card's details as Sure's `CreditCard` columns, a blank one null", async () => {
 		await ownDatabase();
 		const visa = await account({

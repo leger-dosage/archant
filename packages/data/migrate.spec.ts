@@ -91,7 +91,7 @@ describe("runMigrations", () => {
 		await expect(insertAccount(database, "a7", "brokerage", null)).rejects.toThrow();
 		await expect(insertAccount(database, "a8", "investment", "pea")).resolves.toBeDefined();
 		await expect(insertAccount(database, "a9", "investment", "other")).resolves.toBeDefined();
-		await expect(insertAccount(database, "a10", "investment", null)).rejects.toThrow();
+		await expect(insertAccount(database, "a10", "investment", "401k")).rejects.toThrow();
 		await expect(insertAccount(database, "a11", "investment", "mortgage")).rejects.toThrow();
 		await expect(insertAccount(database, "a12", "loan", "pea")).rejects.toThrow();
 		await expect(insertAccount(database, "a13", "property", "apartment")).resolves.toBeDefined();
@@ -965,6 +965,57 @@ describe("depository subtypes", () => {
 		await expect(insertAccount(database, "b2", "depository", "hsa")).rejects.toThrow();
 		await expect(insertAccount(database, "b3", "loan", null)).rejects.toThrow();
 		await expect(insertAccount(database, "b4", "credit_card", "cash")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("investment subtypes", () => {
+	it("keeps every account's subtype at 0075, then takes Sure's European and generic subtypes and none", async () => {
+		const before = await migratedBefore("0075");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "investment", "pea");
+		await insertAccount(before, "a3", "investment", "assurance_vie");
+		await insertAccount(before, "a4", "investment", "brokerage");
+		await insertAccount(before, "a5", "investment", "other");
+		await insertAccount(before, "a6", "depository", null);
+		// The rebuild drops `accounts`: an entry on it must outlive the drop.
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await expect(insertAccount(before, "a7", "investment", "pillar_3a")).rejects.toThrow();
+		await expect(insertAccount(before, "a8", "investment", null)).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+		await expect(
+			database.all(sql`select id, type, subtype from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "depository", subtype: "checking" },
+			{ id: "a2", type: "investment", subtype: "pea" },
+			{ id: "a3", type: "investment", subtype: "assurance_vie" },
+			{ id: "a4", type: "investment", subtype: "brokerage" },
+			{ id: "a5", type: "investment", subtype: "other" },
+			{ id: "a6", type: "depository", subtype: null },
+		]);
+		await expect(insertAccount(database, "b1", "investment", null)).resolves.toBeDefined();
+		const added = [
+			"pillar_3a",
+			"riester",
+			"pension",
+			"retirement",
+			"mutual_fund",
+			"gold",
+			"angel",
+			"trust",
+		];
+		await expect(
+			Promise.all(added.map((subtype) => insertAccount(database, subtype, "investment", subtype))),
+		).resolves.toHaveLength(added.length);
+		await expect(insertAccount(database, "b2", "investment", "401k")).rejects.toThrow();
+		await expect(insertAccount(database, "b3", "loan", "pension")).rejects.toThrow();
+		await expect(insertAccount(database, "b4", "loan", null)).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });

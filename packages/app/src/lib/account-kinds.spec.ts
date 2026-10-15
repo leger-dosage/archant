@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import fr from "../locales/fr.json";
-import { ACCOUNT_KINDS, kindOf } from "./account-kinds.ts";
+import { ACCOUNT_KINDS, INVESTMENT_REGIONS, kindOf } from "./account-kinds.ts";
 
 describe("kindOf", () => {
 	it("tells a loan's `other` from an investment's", () => {
@@ -15,8 +15,10 @@ describe("kindOf", () => {
 		expect(kindOf("depository", null)).toBe("depository");
 	});
 
-	it("names an investment by its subtype", () => {
+	it("names an investment by its subtype, and one without as the type itself", () => {
 		expect(kindOf("investment", "pea")).toBe("pea");
+		expect(kindOf("investment", "pillar_3a")).toBe("pillar_3a");
+		expect(kindOf("investment", null)).toBe("investment");
 	});
 
 	it("names a property by its subtype, and a vehicle by its type", () => {
@@ -51,5 +53,68 @@ describe("ACCOUNT_KINDS", () => {
 			"Prêt professionnel",
 			"Autre prêt",
 		]);
+	});
+
+	it("offers the blank investment, then Sure's European, generic and brokerage subtypes, each named by Sure's short label", () => {
+		const investments = ACCOUNT_KINDS.filter((kind) => kind.type === "investment");
+
+		expect(investments.map((kind) => fr.accounts.subtypes[kind.id])).toEqual([
+			"Investissement",
+			"Assurance-vie",
+			"PEA",
+			"Pilier 3a",
+			"Riester",
+			"Retraite",
+			"Retraite",
+			"Fonds commun",
+			"Or",
+			"Business angel",
+			"Fiducie",
+			"Autre",
+			"Compte-titres",
+		]);
+	});
+});
+
+describe("INVESTMENT_REGIONS", () => {
+	it("groups the investment subtypes as Sure's select for EUR, by Sure's region names and long labels", () => {
+		expect(
+			INVESTMENT_REGIONS.map((region) => ({
+				region: fr.accounts.subtypeRegions[region.id],
+				kinds: region.kinds.map((kind) => fr.accounts.subtypeLongs[kind]),
+			})),
+		).toEqual([
+			{
+				region: "Europe",
+				kinds: [
+					"Assurance-vie",
+					"Plan d'Épargne en Actions",
+					"Prévoyance privée (Pilier 3a)",
+					"Riester-Rente",
+				],
+			},
+			{
+				region: "Général",
+				kinds: [
+					"Retraite",
+					"Compte de retraite",
+					"Fonds commun de placement",
+					"Or (physique ou numérique)",
+					"Investissement providentiel",
+					"Fiducie",
+					"Autre investissement",
+				],
+			},
+			{ region: "États-Unis", kinds: ["Compte-titres"] },
+		]);
+	});
+
+	it("holds every investment kind but the blank one, once, in the kinds' order", () => {
+		const grouped: readonly string[] = INVESTMENT_REGIONS.flatMap((region) => region.kinds);
+		const kinds = ACCOUNT_KINDS.filter(
+			(kind) => kind.type === "investment" && kind.subtype !== null,
+		).map((kind) => kind.id);
+
+		expect(grouped).toEqual(kinds);
 	});
 });

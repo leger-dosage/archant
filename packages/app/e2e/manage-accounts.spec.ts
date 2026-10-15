@@ -120,6 +120,30 @@ test("a checking account switched to « Aucun » reads « Liquidités »", async
 	await expect(pageRow(page, account.name)).toContainText("Liquidités");
 });
 
+// Story 28.5: Sure's `include_blank` for an investment, then its subtypes by region.
+test("a PEA switched to « Aucun » reads « Investissement »", async ({ page, api }) => {
+	const account = await api.openAccount({ kind: "pea", openingBalance: "500,00" });
+
+	const dialog = await openEdit(page, account);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await expect(page.getByRole("option").first()).toHaveText("Aucun");
+	await expect(page.getByRole("group", { name: "Europe" }).getByRole("option")).toHaveText([
+		"Assurance-vie",
+		"Plan d'Épargne en Actions",
+		"Prévoyance privée (Pilier 3a)",
+		"Riester-Rente",
+	]);
+	await page.getByRole("option", { name: "Aucun" }).click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
+		"Investissement",
+	);
+	await page.goto("/accounts");
+	await expect(pageRow(page, account.name)).toContainText("Investissement");
+});
+
 test("a credit card offers no type to choose, and a blank name is refused", async ({
 	page,
 	api,

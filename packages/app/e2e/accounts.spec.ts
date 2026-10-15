@@ -1199,7 +1199,7 @@ test("a PEA created through the form is listed under « Actifs » with its value
 	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
 	await dialog.getByLabel("Nom").fill(name);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
-	await page.getByRole("option", { name: "PEA", exact: true }).click();
+	await page.getByRole("option", { name: "Plan d'Épargne en Actions" }).click();
 	await expect(dialog.getByLabel("Solde initial du prêt")).toHaveCount(0);
 	await dialog.getByLabel("Solde à la date :").fill("25 000,00");
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
@@ -1220,6 +1220,74 @@ test("a PEA created through the form is listed under « Actifs » with its value
 			.getByRole("group", { name: "Investissement" })
 			.getByRole("link", { name: new RegExp(name) }),
 	).toContainText(euros(2_500_000));
+});
+
+// Story 28.5: Sure's investment subtypes, grouped by region, long in the
+// select and short in the lists.
+test("a pillar 3a created under « Europe » through the form is listed as « Pilier 3a »", async ({
+	page,
+}) => {
+	const name = uniqueName("Prévoyance");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await expect(page.getByRole("group", { name: "Europe" }).getByRole("option")).toHaveText([
+		"Assurance-vie",
+		"Plan d'Épargne en Actions",
+		"Prévoyance privée (Pilier 3a)",
+		"Riester-Rente",
+	]);
+	await expect(page.getByRole("group", { name: "Général" }).getByRole("option")).toHaveText([
+		"Retraite",
+		"Compte de retraite",
+		"Fonds commun de placement",
+		"Or (physique ou numérique)",
+		"Investissement providentiel",
+		"Fiducie",
+		"Autre investissement",
+	]);
+	await expect(page.getByRole("group", { name: "États-Unis" }).getByRole("option")).toHaveText([
+		"Compte-titres",
+	]);
+	await page
+		.getByRole("group", { name: "Europe" })
+		.getByRole("option", { name: "Prévoyance privée (Pilier 3a)" })
+		.click();
+	await dialog.getByLabel("Solde à la date :").fill("3 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("Pilier 3a", { exact: true })).toBeVisible();
+	await expect(row).toContainText(euros(300_000));
+});
+
+// Story 28.5: Sure's `include_blank`, named as Sure names the type.
+test("an investment created without a subtype through the form reads « Investissement »", async ({
+	page,
+}) => {
+	const name = uniqueName("Placement");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Investissement", exact: true }).click();
+	await dialog.getByLabel("Solde à la date :").fill("1 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("Investissement", { exact: true })).toBeVisible();
+	await expect(row).toContainText(euros(100_000));
 });
 
 // Story 7.3: property and vehicle accounts.

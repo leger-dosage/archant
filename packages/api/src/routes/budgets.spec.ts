@@ -386,6 +386,30 @@ describe("a budget's history and a PEA", () => {
 	});
 });
 
+describe("a budget and Sure's tax treatment", () => {
+	it("leaves a retirement account's −15,00 € out of the actuals, and counts a gold account's", async () => {
+		await household();
+		const retirement = await openOwn({
+			type: "investment",
+			subtype: "retirement",
+			openingDate: "2026-04-01",
+			openingBalance: "10 000,00",
+		});
+		const gold = await openOwn({
+			type: "investment",
+			subtype: "gold",
+			openingDate: "2026-04-01",
+			openingBalance: "10 000,00",
+		});
+		await line(retirement.id, "2026-09-12", "-15,00");
+		await line(gold.id, "2026-09-12", "-15,00");
+
+		const budget = await budgetOf("2026-09");
+
+		expect(budget.actual).toEqual({ spending: 9_000, income: 103_000 });
+	});
+});
+
 describe("a budget and a one-time transaction", () => {
 	it("leaves a one-time 900,00 € out of the actuals and the medians, where it made September 975,00 €", async () => {
 		const { account, courses } = await household();

@@ -102,7 +102,8 @@ async function reportedAccounts(deps: ServiceDeps) {
 /**
  * The accounts every cash-flow report counts, as Sure's
  * `IncomeStatement#eligible_accounts`: `reportedAccounts`' without the
- * tax-advantaged ones, a PEA or an assurance-vie, whose money is set aside.
+ * tax-advantaged ones, a PEA, an assurance-vie or a retirement plan, whose
+ * money is set aside.
  */
 async function cashFlowAccounts(deps: ServiceDeps) {
 	const { counted, ...rest } = await reportedAccounts(deps);
