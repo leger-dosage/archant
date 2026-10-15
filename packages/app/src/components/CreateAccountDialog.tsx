@@ -15,6 +15,7 @@ import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
+import { PropertyDetailsFields } from "@/components/PropertyDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -33,9 +34,16 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useCreateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
+import {
+	PROPERTY_FIELD_NAMES,
+	VEHICLE_FIELD_NAMES,
+	completePropertyInput,
+	completeVehicleInput,
+} from "@/lib/asset-details";
 import { CREDIT_CARD_FIELD_NAMES, completeCreditCardInput } from "@/lib/credit-card-details";
 import { yearsAgo } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
@@ -51,7 +59,13 @@ const TOP_FIELD_NAMES = [
 	"openingDate",
 ] as const;
 
-const FIELD_NAMES = [...TOP_FIELD_NAMES, ...LOAN_FIELD_NAMES, ...CREDIT_CARD_FIELD_NAMES] as const;
+const FIELD_NAMES = [
+	...TOP_FIELD_NAMES,
+	...LOAN_FIELD_NAMES,
+	...CREDIT_CARD_FIELD_NAMES,
+	...PROPERTY_FIELD_NAMES,
+	...VEHICLE_FIELD_NAMES,
+] as const;
 
 const defaults = (): CreateAccountInput => ({
 	name: "",
@@ -62,25 +76,40 @@ const defaults = (): CreateAccountInput => ({
 	// Sure's `OpeningBalanceManager#default_date`: a line dated today must land
 	// after the opening balance, which is an end-of-day balance.
 	openingDate: yearsAgo(2),
-	details: { ...completeLoanInput(undefined), ...completeCreditCardInput(undefined) },
+	details: {
+		...completeLoanInput(undefined),
+		...completeCreditCardInput(undefined),
+		...completePropertyInput(undefined),
+		...completeVehicleInput(undefined),
+	},
 });
 
 const schemaResolver = zodResolver(createAccountFormSchema, undefined, { raw: true });
 
-// A loan's and a card's fields stay in the form's values when another type is
-// picked, so switching back keeps what was typed; the API refuses details of
-// another type, so only the chosen type's go on to validation, and so to
-// sending.
+/** The chosen type's details, as the API takes them; none for a type without any. */
+function chosenDetails(values: CreateAccountInput): CreateAccountInput["details"] {
+	switch (values.type) {
+		case "loan":
+			return completeLoanInput(values.details);
+		case "credit_card":
+			return completeCreditCardInput(values.details);
+		case "property":
+			return completePropertyInput(values.details);
+		case "vehicle":
+			return completeVehicleInput(values.details);
+		default:
+			return undefined;
+	}
+}
+
+// Every type's fields stay in the form's values when another type is picked,
+// so switching back keeps what was typed; the API refuses details of another
+// type, so only the chosen type's go on to validation, and so to sending.
 const resolver: Resolver<CreateAccountInput> = async (values, context, options) =>
 	schemaResolver(
 		{
 			...values,
-			details:
-				values.type === "loan"
-					? completeLoanInput(values.details)
-					: values.type === "credit_card"
-						? completeCreditCardInput(values.details)
-						: undefined,
+			details: chosenDetails(values),
 		},
 		context,
 		options,
@@ -281,6 +310,24 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 						<CreditCardDetailsFields
 							value={completeCreditCardInput(details.field.value)}
 							onChange={(card) => details.field.onChange({ ...details.field.value, ...card })}
+							errorOf={(field) => errorAt(errors, `details.${field}`)}
+						/>
+					)}
+
+					{type === "property" && (
+						<PropertyDetailsFields
+							value={completePropertyInput(details.field.value)}
+							onChange={(property) =>
+								details.field.onChange({ ...details.field.value, ...property })
+							}
+							errorOf={(field) => errorAt(errors, `details.${field}`)}
+						/>
+					)}
+
+					{type === "vehicle" && (
+						<VehicleDetailsFields
+							value={completeVehicleInput(details.field.value)}
+							onChange={(vehicle) => details.field.onChange({ ...details.field.value, ...vehicle })}
 							errorOf={(field) => errorAt(errors, `details.${field}`)}
 						/>
 					)}

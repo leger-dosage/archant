@@ -1,4 +1,4 @@
-import type { LoanOverviewData } from "@/hooks/useLoanOverview";
+import type { LoanOverviewData } from "@/hooks/useAccountOverview";
 import type { ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";

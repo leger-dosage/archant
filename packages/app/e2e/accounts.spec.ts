@@ -1161,7 +1161,7 @@ test("a loan saved through the API with a term of 0 has no « Échéancier » an
 	await expect(card("Date de fin d'origine")).toContainText("Inconnu");
 });
 
-test("an account that is not a loan has no « Échéancier » nor « Aperçu » tab, and a link to either opens « Opérations »", async ({
+test("an account that is not a loan, a property or a vehicle has no « Échéancier » nor « Aperçu » tab, and a link to either opens « Opérations »", async ({
 	page,
 	api,
 }) => {
@@ -1353,6 +1353,161 @@ test("a vehicle created through the form with its estimated value is listed unde
 	await expect(
 		page.getByRole("region", { name: "Passifs" }).getByRole("link", { name: new RegExp(name) }),
 	).toHaveCount(0);
+});
+
+// Story 28.8: Sure's property and vehicle details, and their « Aperçu ».
+test("a property created with its details shows its address under its caption and Sure's cards in « Aperçu »", async ({
+	page,
+}) => {
+	const name = uniqueName("Appartement Lyon");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Copropriété", exact: true }).click();
+	await dialog.getByLabel("Solde à la date :").fill("250 000,00");
+	await expect(dialog.getByLabel("Année de construction")).toHaveAttribute("placeholder", "2000");
+	await expect(dialog.getByRole("combobox", { name: "Unité de mesure" })).toHaveText(
+		"Mètres carrés",
+	);
+	// Sure's form bounds the year built; the API alone would save it.
+	await dialog.getByLabel("Année de construction").fill("1200");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog.getByLabel("Année de construction")).toHaveAccessibleDescription(
+		`Indiquez une année de 1500 à ${new Date().getFullYear()}.`,
+	);
+	await dialog.getByLabel("Année de construction").fill("1975");
+	await dialog.getByLabel("Surface habitable").fill("68");
+	await dialog.getByLabel("Adresse").fill("3 rue Mercière");
+	await dialog.getByLabel("Ville").fill("Lyon");
+	await dialog.getByLabel("Code postal/ZIP").fill("69002");
+	await dialog.getByLabel("Pays").fill("FR");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) })
+		.click();
+	await expect(page.getByText("3 rue Mercière, Lyon, 69002 FR", { exact: true })).toBeVisible();
+	await page.getByRole("tab", { name: "Aperçu" }).click();
+	const overview = page.getByRole("tabpanel", { name: "Aperçu" });
+	const card = (title: string) => overview.getByRole("group", { name: title, exact: true });
+	await expect(overview.getByRole("group")).toHaveText([
+		/^Valeur marchande/u,
+		/^Prix d'achat/u,
+		/^Tendance/u,
+		/^Année de construction/u,
+		/^Surface habitable/u,
+	]);
+	await expect(card("Valeur marchande")).toContainText(euros(25_000_000));
+	await expect(card("Prix d'achat")).toContainText(euros(25_000_000));
+	await expect(card("Année de construction")).toContainText("1975");
+	await expect(card("Surface habitable")).toContainText(/68\sm²/u);
+
+	await overview.getByRole("button", { name: "Modifier les détails du compte" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(edit.getByLabel("Année de construction")).toHaveValue("1975");
+	await expect(edit.getByLabel("Adresse")).toHaveValue("3 rue Mercière");
+	await edit.getByRole("combobox", { name: "Unité de mesure" }).click();
+	await page.getByRole("option", { name: "Pieds carrés", exact: true }).click();
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit).toBeHidden();
+	await expect(card("Surface habitable")).toContainText(/68\spi²/u);
+});
+
+test("a vehicle created with its mileage reads it in « Aperçu », and its details are edited from there", async ({
+	page,
+	api,
+}) => {
+	const name = uniqueName("Voiture");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Véhicule", exact: true }).click();
+	await dialog.getByLabel("Solde à la date :").fill("18 500,00");
+	await dialog.getByLabel("Date du solde d'ouverture").fill(typed(daysAgo(60)));
+	await dialog.getByLabel("Marque").fill("Peugeot");
+	await dialog.getByLabel("Modèle").fill("208");
+	await dialog.getByLabel("Année", { exact: true }).fill("2021");
+	await dialog.getByLabel("Kilométrage").fill("15000");
+	await expect(dialog.getByRole("combobox", { name: "Unité" })).toHaveText("Kilomètres");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) })
+		.click();
+	const id = new URL(page.url()).pathname.split("/").at(-1) ?? "";
+	await api.recordSnapshot(id, { date: daysAgo(5), balance: "17 000,00" });
+	await page.getByRole("tab", { name: "Aperçu" }).click();
+	const overview = page.getByRole("tabpanel", { name: "Aperçu" });
+	const card = (title: string) => overview.getByRole("group", { name: title, exact: true });
+	await expect(overview.getByRole("group")).toHaveText([
+		/^Marque et modèle/u,
+		/^Année/u,
+		/^Kilométrage/u,
+		/^Prix d'achat/u,
+		/^Prix actuel/u,
+		/^Tendance/u,
+	]);
+	await expect(card("Marque et modèle")).toContainText("Peugeot 208");
+	await expect(card("Kilométrage")).toContainText(/15\s000\skm/u);
+	await expect(card("Prix d'achat")).toContainText(euros(1_850_000));
+	await expect(card("Prix actuel")).toContainText(euros(1_700_000));
+	await expect(card("Tendance")).toContainText(euros(-150_000));
+	await expect(card("Tendance")).toContainText("(−8,1 %)");
+
+	await overview.getByRole("button", { name: "Modifier les détails du compte" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(edit.getByLabel("Marque")).toHaveValue("Peugeot");
+	await expect(edit.getByLabel("Kilométrage")).toHaveValue("15000");
+	await expect(edit.getByRole("combobox", { name: "Unité" })).toHaveText("Kilomètres");
+	await edit.getByLabel("Kilométrage").fill("-1");
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit.getByLabel("Kilométrage")).toHaveAccessibleDescription(
+		"Le kilométrage ne peut pas être négatif.",
+	);
+	await edit.getByLabel("Kilométrage").fill("21000");
+	await edit.getByRole("combobox", { name: "Unité" }).click();
+	await page.getByRole("option", { name: "Miles", exact: true }).click();
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit).toBeHidden();
+	await expect(card("Kilométrage")).toContainText(/21\s000\smi/u);
+
+	await overview.getByRole("button", { name: "Modifier les détails du compte" }).click();
+	await expect(edit.getByLabel("Kilométrage")).toHaveValue("21000");
+	await expect(edit.getByRole("combobox", { name: "Unité" })).toHaveText("Miles");
+});
+
+test("a property without details reads « Inconnu », and no address line shows under its caption", async ({
+	page,
+	api,
+}) => {
+	const home = await api.openAccount({
+		name: uniqueName("Maison"),
+		kind: "single_family_home",
+		openingBalance: "320 000,00",
+	});
+
+	await page.goto(`/accounts/${home.id}?tab=overview`);
+	const overview = page.getByRole("tabpanel", { name: "Aperçu" });
+	await expect(
+		overview.getByRole("group", { name: "Année de construction", exact: true }),
+	).toContainText("Inconnu");
+	await expect(
+		overview.getByRole("group", { name: "Surface habitable", exact: true }),
+	).toContainText("Inconnu");
+	// The caption and the value alone: Sure's subtitle only shows an address.
+	await expect(page.getByRole("region", { name: home.name })).toHaveText(
+		`Maison${euros(32_000_000)}`,
+	);
 });
 
 test("invalid fields show their message next to the field", async ({ page }) => {

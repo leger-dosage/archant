@@ -5,9 +5,9 @@ import { MAX_LOAN_TERM_MONTHS } from "@archant/data/account-types";
 import { amountToText } from "@/lib/amount-sign";
 
 /** Every field of a loan's details, as a PATCH must send them. */
-type CompleteLoanInput = Exclude<
+type CompleteLoanInput = Extract<
 	NonNullable<UpdateAccountInput["details"]>,
-	{ availableCredit: string }
+	{ originalAmount: string }
 >;
 
 /**

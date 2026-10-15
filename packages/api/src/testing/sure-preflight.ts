@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { LOAN_INSURANCE_TYPES, LOAN_RATE_TYPES } from "@archant/data/account-types";
+import {
+	AREA_UNITS,
+	LOAN_INSURANCE_TYPES,
+	LOAN_RATE_TYPES,
+	MILEAGE_UNITS,
+} from "@archant/data/account-types";
 
 // What Sure's `SureImport` checks before it imports an `all.ndjson`, written
 // from its code at 14638a7: `SureImport::Preflight`, the validations of the
@@ -274,6 +279,16 @@ const SCHEMAS = {
 			apr: decimal.nullable().optional(),
 			annual_fee: decimal.nullable().optional(),
 			expiration_date: date.nullable().optional(),
+			// A property's, as Sure's `Property` columns.
+			year_built: z.int32().nullable().optional(),
+			area_value: z.int32().nullable().optional(),
+			area_unit: z.enum(AREA_UNITS).nullable().optional(),
+			// A vehicle's, as Sure's `Vehicle` columns.
+			make: z.string().nullable().optional(),
+			model: z.string().nullable().optional(),
+			year: z.int32().nullable().optional(),
+			mileage_value: z.int32().nullable().optional(),
+			mileage_unit: z.enum(MILEAGE_UNITS).nullable().optional(),
 		}),
 		archant,
 	}),

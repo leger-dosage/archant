@@ -1,18 +1,24 @@
 import { z } from "zod";
 
 import type {
+	AccountDetails,
 	AccountSubtype,
+	AccountType,
 	CreditCardDetails,
 	LoanDetails,
 	LoanRateChange,
+	PropertyDetails,
+	VehicleDetails,
 } from "@archant/data/account-types";
 import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
 	ACCOUNT_TYPES,
+	AREA_UNITS,
 	LOAN_INSURANCE_TYPES,
 	LOAN_RATE_TYPES,
 	MAX_LOAN_TERM_MONTHS,
+	MILEAGE_UNITS,
 	isAccountSubtype,
 	isSubtypeOf,
 } from "@archant/data/account-types";
@@ -380,88 +386,288 @@ export function parseCreditCardDetails(
 	return { details, issues };
 }
 
-/** Adds each invalid card detail to a schema's issues, under `details.<field>`. */
-function reportCreditCardDetailsIssues(
-	context: z.RefinementCtx,
-	details: CreditCardDetailsInput,
-	currency: unknown,
-): void {
-	const validCurrency = typeof currency === "string" && isCurrencyCode(currency) ? currency : null;
+/**
+ * A property's details as typed, every one optional and a blank one "not
+ * known", as Sure's `Property` columns and its `Address`. Numbers are text, as
+ * the form types them.
+ */
+export const propertyDetailsInputSchema = z.object({
+	yearBuilt: z.string().optional(),
+	areaValue: z.string().optional(),
+	areaUnit: z.enum(AREA_UNITS).optional(),
+	addressLine1: z.string().optional(),
+	locality: z.string().optional(),
+	region: z.string().optional(),
+	postalCode: z.string().optional(),
+	country: z.string().optional(),
+});
 
-	for (const issue of parseCreditCardDetails(details, validCurrency).issues) {
-		context.addIssue({ code: "custom", path: ["details", issue.field], message: issue.code });
-	}
+export type PropertyDetailsInput = z.input<typeof propertyDetailsInputSchema>;
+
+/** A vehicle's details as typed, every one optional, as Sure's `Vehicle` columns. */
+export const vehicleDetailsInputSchema = z.object({
+	make: z.string().optional(),
+	model: z.string().optional(),
+	year: z.string().optional(),
+	mileageValue: z.string().optional(),
+	mileageUnit: z.enum(MILEAGE_UNITS).optional(),
+});
+
+export type VehicleDetailsInput = z.input<typeof vehicleDetailsInputSchema>;
+
+type DetailsIssue<Field extends string> = {
+	field: Field;
+	code: "invalid_number" | "too_long" | "invalid_year" | "invalid_area" | "invalid_mileage";
+};
+
+// Sure's string columns; a longer text is refused rather than cut.
+const DETAIL_TEXT_MAX_LENGTH = 255;
+
+// Sure's integer columns, which its models never bound: nine digits stay
+// within their 32 bits.
+const INTEGER_PATTERN = /^-?\d{1,9}$/u;
+
+/** Reads typed integers and texts, blank as null, collecting each refusal. */
+function detailReader<Field extends string>(
+	input: Partial<Record<Field, string | undefined>>,
+	issues: DetailsIssue<Field>[],
+) {
+	return {
+		integer(field: Field): number | null {
+			const text = input[field]?.trim() ?? "";
+
+			if (text === "") {
+				return null;
+			}
+
+			if (!INTEGER_PATTERN.test(text)) {
+				issues.push({ field, code: "invalid_number" });
+
+				return null;
+			}
+
+			return Number(text);
+		},
+		text(field: Field): string | null {
+			const text = input[field]?.trim() ?? "";
+
+			if (text.length > DETAIL_TEXT_MAX_LENGTH) {
+				issues.push({ field, code: "too_long" });
+			}
+
+			return text === "" ? null : text;
+		},
+	};
+}
+
+type PropertyField = keyof PropertyDetailsInput;
+type VehicleField = keyof VehicleDetailsInput;
+
+/**
+ * Reads typed property details into what `accounts.details` stores. Only a
+ * number that is not an integer, or a text longer than Sure's column, is
+ * refused: Sure's `Property` validates nothing more.
+ */
+function parsePropertyDetails(input: PropertyDetailsInput): {
+	details: PropertyDetails;
+	issues: DetailsIssue<PropertyField>[];
+} {
+	const issues: DetailsIssue<PropertyField>[] = [];
+	const read = detailReader<PropertyField>(input, issues);
+	const details: PropertyDetails = {
+		yearBuilt: read.integer("yearBuilt"),
+		areaValue: read.integer("areaValue"),
+		areaUnit: input.areaUnit ?? "sqm",
+		addressLine1: read.text("addressLine1"),
+		locality: read.text("locality"),
+		region: read.text("region"),
+		postalCode: read.text("postalCode"),
+		country: read.text("country"),
+	};
+
+	return { details, issues };
+}
+
+/** Reads typed vehicle details into what `accounts.details` stores, as a property's. */
+function parseVehicleDetails(input: VehicleDetailsInput): {
+	details: VehicleDetails;
+	issues: DetailsIssue<VehicleField>[];
+} {
+	const issues: DetailsIssue<VehicleField>[] = [];
+	const read = detailReader<VehicleField>(input, issues);
+	const details: VehicleDetails = {
+		make: read.text("make"),
+		model: read.text("model"),
+		year: read.integer("year"),
+		mileageValue: read.integer("mileageValue"),
+		mileageUnit: input.mileageUnit ?? "km",
+	};
+
+	return { details, issues };
 }
 
 /**
- * Either type's details, in one object so a form can keep both while the type
- * changes; a field of the other type is refused (`hasForeignDetails`).
+ * Every type's details, in one object so a form can keep them all while the
+ * type changes; a field of another type is refused (`parseAccountDetails`).
  */
-const accountDetailsInputSchema = loanDetailsInputSchema.extend(creditCardDetailsInputSchema.shape);
+const accountDetailsInputSchema = loanDetailsInputSchema
+	.extend(creditCardDetailsInputSchema.shape)
+	.extend(propertyDetailsInputSchema.shape)
+	.extend(vehicleDetailsInputSchema.shape);
 
 type AccountDetailsInput = z.input<typeof accountDetailsInputSchema>;
 
-const LOAN_DETAIL_FIELDS = loanDetailsInputSchema.keyof().options;
-const CREDIT_CARD_DETAIL_FIELDS = creditCardDetailsInputSchema.keyof().options;
+/** What a type's details are read against: the account's currency and opening date, null when invalid. */
+type DetailsContext = { currency: string | null; openingDate: string | null };
 
-/** Whether details give a field the account's type does not have. */
-function hasForeignDetails(type: "loan" | "credit_card", details: AccountDetailsInput): boolean {
-	const foreign: readonly (keyof AccountDetailsInput)[] =
-		type === "loan" ? CREDIT_CARD_DETAIL_FIELDS : LOAN_DETAIL_FIELDS;
+type ParsedDetails = { details: AccountDetails; issues: { field: string; code: string }[] };
 
-	return foreign.some((field) => details[field] !== undefined);
+/**
+ * The types that carry details, each with its fields and its reader. `dialog`
+ * adds what Sure's form bounds in the browser beyond its model, so a value
+ * the dialog accepts is one the API accepts too.
+ */
+const DETAILS_BY_TYPE = {
+	loan: {
+		fields: loanDetailsInputSchema.keyof().options,
+		parse: (input: AccountDetailsInput, context: DetailsContext, dialog: boolean) => {
+			const parsed = parseLoanDetails(input, context.currency, context.openingDate);
+			const { termMonths } = parsed.details;
+
+			// The `min` and `max` of Sure's `loans/_form` term field; the API saves
+			// any term, which a provider may write.
+			return dialog && termMonths !== null && (termMonths < 1 || termMonths > MAX_LOAN_TERM_MONTHS)
+				? {
+						details: parsed.details,
+						issues: [{ field: "termMonths", code: "invalid_term" }, ...parsed.issues],
+					}
+				: parsed;
+		},
+	},
+	credit_card: {
+		fields: creditCardDetailsInputSchema.keyof().options,
+		parse: (input: AccountDetailsInput, context: DetailsContext) =>
+			parseCreditCardDetails(input, context.currency),
+	},
+	property: {
+		fields: propertyDetailsInputSchema.keyof().options,
+		parse: (input: AccountDetailsInput, _context: DetailsContext, dialog: boolean) => {
+			const parsed = parsePropertyDetails(input);
+			const { yearBuilt, areaValue } = parsed.details;
+			const issues: ParsedDetails["issues"] = [...parsed.issues];
+
+			// The `min` and `max` of Sure's `properties/_form` fields.
+			if (dialog && yearBuilt !== null && (yearBuilt < 1500 || yearBuilt > currentYear())) {
+				issues.push({ field: "yearBuilt", code: "invalid_year" });
+			}
+
+			if (dialog && areaValue !== null && areaValue < 0) {
+				issues.push({ field: "areaValue", code: "invalid_area" });
+			}
+
+			return { details: parsed.details, issues };
+		},
+	},
+	vehicle: {
+		fields: vehicleDetailsInputSchema.keyof().options,
+		parse: (input: AccountDetailsInput, _context: DetailsContext, dialog: boolean) => {
+			const parsed = parseVehicleDetails(input);
+			const { year, mileageValue } = parsed.details;
+			const issues: ParsedDetails["issues"] = [...parsed.issues];
+
+			// The `min` and `max` of Sure's `vehicles/_form` fields.
+			if (dialog && year !== null && (year < 1900 || year > currentYear() + 1)) {
+				issues.push({ field: "year", code: "invalid_year" });
+			}
+
+			if (dialog && mileageValue !== null && mileageValue < 0) {
+				issues.push({ field: "mileageValue", code: "invalid_mileage" });
+			}
+
+			return { details: parsed.details, issues };
+		},
+	},
+} satisfies Partial<
+	Record<
+		AccountType,
+		{
+			fields: readonly (keyof AccountDetailsInput)[];
+			parse: (
+				input: AccountDetailsInput,
+				context: DetailsContext,
+				dialog: boolean,
+			) => ParsedDetails;
+		}
+	>
+>;
+
+// Sure's `Time.current.year`, the browser's in the dialog.
+const currentYear = () => new Date().getFullYear();
+
+function hasDetails(type: AccountType): type is keyof typeof DETAILS_BY_TYPE {
+	return Object.hasOwn(DETAILS_BY_TYPE, type);
 }
 
 /**
- * Reports details on a type without any, or with another type's fields, else
- * each invalid one. `dialog` adds what Sure's `loans/_form` bounds in the
- * browser beyond its model.
+ * Reads details for an account of `type`. Null when the type carries none or
+ * the details give a field of another type: `invalid_details`.
  */
+export function parseAccountDetails(
+	type: AccountType,
+	input: AccountDetailsInput,
+	context: DetailsContext,
+	dialog = false,
+): ParsedDetails | null {
+	if (!hasDetails(type)) {
+		return null;
+	}
+
+	const own: readonly string[] = DETAILS_BY_TYPE[type].fields;
+	const foreign = Object.entries(input).some(
+		([field, value]) => value !== undefined && !own.includes(field),
+	);
+
+	return foreign ? null : DETAILS_BY_TYPE[type].parse(input, context, dialog);
+}
+
+/** Reports details the account's type does not take, else each invalid one under `details.<field>`. */
 function reportDetailsIssues(
 	context: z.RefinementCtx,
 	account: { type: unknown; currency: unknown; openingDate: unknown },
 	details: AccountDetailsInput,
 	dialog: boolean,
 ): void {
-	if (
-		(account.type !== "loan" && account.type !== "credit_card") ||
-		hasForeignDetails(account.type, details)
-	) {
+	const type =
+		typeof account.type === "string" && Object.hasOwn(ACCOUNT_TYPES, account.type)
+			? ACCOUNT_TYPE_IDS.find((id) => id === account.type)
+			: undefined;
+	const parsed =
+		type === undefined
+			? null
+			: parseAccountDetails(
+					type,
+					details,
+					{
+						currency:
+							typeof account.currency === "string" && isCurrencyCode(account.currency)
+								? account.currency
+								: null,
+						openingDate:
+							typeof account.openingDate === "string" &&
+							z.iso.date().safeParse(account.openingDate).success
+								? account.openingDate
+								: null,
+					},
+					dialog,
+				);
+
+	if (parsed === null) {
 		context.addIssue({ code: "custom", path: ["details"], message: "invalid_details" });
-	} else if (account.type === "loan") {
-		reportLoanDetailsIssues(context, details, account.currency, account.openingDate, dialog);
-	} else {
-		reportCreditCardDetailsIssues(context, details, account.currency);
+
+		return;
 	}
-}
 
-/**
- * Adds each invalid loan detail to a schema's issues, under `details.<field>`.
- * In a dialog the term also runs from 1 to `MAX_LOAN_TERM_MONTHS`, as the
- * `min` and `max` of Sure's `loans/_form` field; the API saves any term, which
- * a provider may write.
- */
-function reportLoanDetailsIssues(
-	context: z.RefinementCtx,
-	details: LoanDetailsInput,
-	currency: unknown,
-	openingDate: unknown,
-	dialog: boolean,
-): void {
-	const validCurrency = typeof currency === "string" && isCurrencyCode(currency) ? currency : null;
-	const validOpeningDate =
-		typeof openingDate === "string" && z.iso.date().safeParse(openingDate).success
-			? openingDate
-			: null;
-
-	const parsed = parseLoanDetails(details, validCurrency, validOpeningDate);
-	const { termMonths } = parsed.details;
-	const issues: LoanDetailsIssue[] =
-		dialog && termMonths !== null && (termMonths < 1 || termMonths > MAX_LOAN_TERM_MONTHS)
-			? [{ field: "termMonths", code: "invalid_term" }, ...parsed.issues]
-			: parsed.issues;
-
-	for (const issue of issues) {
+	for (const issue of parsed.issues) {
 		context.addIssue({ code: "custom", path: ["details", issue.field], message: issue.code });
 	}
 }
@@ -488,7 +694,8 @@ const accountCreationSchema = (dialog: boolean) =>
 			// Every day from the opening date gets a balance row, written under the
 			// write lock: year 1 would mean 740 000 rows in one transaction.
 			openingDate: z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early"),
-			// A loan's or a credit card's only; any other type refuses them.
+			// A loan's, a credit card's, a property's or a vehicle's only; any
+			// other type refuses them.
 			details: accountDetailsInputSchema.optional(),
 		})
 		// Runs even when another field failed, so the form shows every error at
@@ -526,21 +733,20 @@ const accountCreationSchema = (dialog: boolean) =>
 				return z.NEVER;
 			}
 
-			// A loan and a card always store their details, each null until known;
+			// A type with details always stores them, each null until known;
 			// other types none.
 			const details =
-				value.type === "loan"
-					? parseLoanDetails(value.details ?? {}, value.currency, value.openingDate).details
-					: value.type === "credit_card"
-						? parseCreditCardDetails(value.details ?? {}, value.currency).details
-						: null;
+				parseAccountDetails(value.type, value.details ?? {}, {
+					currency: value.currency,
+					openingDate: value.openingDate,
+				})?.details ?? null;
 
 			return { ...value, openingBalance, details };
 		});
 
 export const createAccountSchema = accountCreationSchema(false);
 
-/** The creation dialog's: the API's checks and Sure's form's term bound. */
+/** The creation dialog's: the API's checks and the bounds of Sure's forms. */
 export const createAccountFormSchema = accountCreationSchema(true);
 
 export type CreateAccountInput = z.input<typeof createAccountSchema>;
@@ -552,8 +758,8 @@ export type CreateAccountRequest = z.output<typeof createAccountSchema>;
  * route, `PATCH /api/accounts/:id/opening-balance`. Whether `subtype`
  * fits the account needs its stored type, so the service checks it and raises
  * the same `invalid_subtype` field error as creation. `details` likewise: the
- * service refuses a loan's on any other account and a card's likewise, and
- * parses them in the account's currency. They replace the stored details
+ * service refuses one type's on an account of another, and parses them in
+ * the account's currency. They replace the stored details
  * whole, so every field of their type is required, a blank one clearing its
  * value: a partial object would otherwise clear the fields it left out
  * without saying so. `treatBalanceAsAvailableCredit` is the card's bank
@@ -566,7 +772,12 @@ export const updateAccountSchema = z
 		active: z.boolean().optional(),
 		excludedFromReports: z.boolean().optional(),
 		details: z
-			.union([loanDetailsInputSchema.required(), creditCardDetailsInputSchema.required()])
+			.union([
+				loanDetailsInputSchema.required(),
+				creditCardDetailsInputSchema.required(),
+				propertyDetailsInputSchema.required(),
+				vehicleDetailsInputSchema.required(),
+			])
 			.optional(),
 		treatBalanceAsAvailableCredit: z.boolean().optional(),
 	})
@@ -575,17 +786,10 @@ export const updateAccountSchema = z
 export type UpdateAccountInput = z.input<typeof updateAccountSchema>;
 export type UpdateAccountRequest = z.output<typeof updateAccountSchema>;
 
-/** Whether details sent for an update are a card's rather than a loan's. */
-export function isCreditCardDetailsInput(
-	details: NonNullable<UpdateAccountRequest["details"]>,
-): details is Extract<NonNullable<UpdateAccountRequest["details"]>, { availableCredit: string }> {
-	return "availableCredit" in details;
-}
-
 /**
  * The account's edit dialog: the name and subtype as typed, the exclusion
- * switch, a loan's or a card's details, checked the way the API checks them
- * plus the term bound of Sure's form, and a linked card's toggle. The
+ * switch, its type's details, checked the way the API checks them plus the
+ * bounds of Sure's forms, and a linked card's toggle. The
  * account's currency decides how many decimals the amounts may have, and its
  * opening date is origination when the loan gives no start date.
  */

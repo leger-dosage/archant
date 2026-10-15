@@ -478,3 +478,23 @@ export async function openingAnchorOf(
 		? null
 		: { date: row.date, balance: toMinorUnits(row.balance), notes: row.notes };
 }
+
+/**
+ * The amount of the account's earliest valuation by date, the opening anchor
+ * included, as Sure's `entries.valuations.order(:date).first`; `null` for an
+ * account without any. Two on one day: the one written first.
+ */
+export async function firstValuationOf(
+	deps: ServiceDeps,
+	accountId: string,
+): Promise<MinorUnits | null> {
+	const row = await deps.db
+		.select({ amount: entries.amount })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.kind, "valuation")))
+		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id))
+		.limit(1)
+		.get();
+
+	return row === undefined ? null : toMinorUnits(row.amount);
+}

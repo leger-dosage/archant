@@ -13,6 +13,7 @@ import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
 import { tradeBodySchema, tradePageQuerySchema } from "../schemas/trades.ts";
 import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
+import { accountOverview } from "../services/account-overview.ts";
 import {
 	createAccount,
 	deleteAccount,
@@ -30,7 +31,7 @@ import {
 	unlockCostBasis,
 } from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
-import { loanOverview, loanPayoffChart, loanSchedule } from "../services/loans.ts";
+import { loanPayoffChart, loanSchedule } from "../services/loans.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
@@ -98,7 +99,7 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 			c.json({ data: await loanSchedule(deps, c.req.param("id")) }, 200),
 		)
 		.get("/:id/overview", async (c) =>
-			c.json({ data: await loanOverview(deps, c.req.param("id")) }, 200),
+			c.json({ data: await accountOverview(deps, c.req.param("id")) }, 200),
 		)
 		.get("/:id/payoff-chart", validated("query", balanceQuerySchema), async (c) =>
 			c.json(

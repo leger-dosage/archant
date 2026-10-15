@@ -183,6 +183,14 @@ test("a viewer reads every page with no control that writes, and the server refu
 			interestRate: "1,82",
 		},
 	});
+	// A property with its details, whose « Aperçu » a viewer reads without « Modifier ».
+	const home = await api.openAccount({
+		name: `${prefix} maison`,
+		kind: "condominium",
+		openingBalance: "250 000,00",
+		openingDate: "2022-02-01",
+		details: { yearBuilt: "1975", locality: "Lyon" },
+	});
 	const { url } = await api.invite(`lecteur-${randomUUID().slice(0, 8)}@archant.test`);
 	await acceptInvitation(page.request, url, { name, password: "mot de passe du lecteur" });
 
@@ -240,12 +248,20 @@ test("a viewer reads every page with no control that writes, and the server refu
 				euros(13_000_000),
 			);
 			await expectNone(overview, [{ role: "button", name: "Modifier les détails du prêt" }]);
+
 			await page.getByRole("tab", { name: "Échéancier" }).click();
 			await expect(
 				page
 					.getByRole("tabpanel", { name: "Échéancier" })
 					.getByRole("group", { name: "Paiement mensuel", exact: true }),
 			).toContainText(euros(53_969));
+
+			await page.goto(`/accounts/${home.id}?tab=overview`);
+			const homeOverview = page.getByRole("tabpanel", { name: "Aperçu" });
+			await expect(
+				homeOverview.getByRole("group", { name: "Année de construction" }),
+			).toContainText("1975");
+			await expectNone(homeOverview, [{ role: "button", name: "Modifier les détails du compte" }]);
 
 			await page.goto(`/accounts/${pea.id}`);
 			await page
