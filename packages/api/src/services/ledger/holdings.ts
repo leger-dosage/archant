@@ -1,8 +1,25 @@
 import type { IsoDate } from "../../domain/dates.ts";
+import type { ListedSecurityChoice } from "../../schemas/trades.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, asc, desc, eq, gt, gte, inArray, lte, max, min, ne, sql } from "drizzle-orm";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	exists,
+	gt,
+	gte,
+	inArray,
+	isNotNull,
+	lte,
+	max,
+	min,
+	ne,
+	not,
+	sql,
+} from "drizzle-orm";
 
 import type { Micros } from "@archant/data/micros";
 import { toMicros } from "@archant/data/micros";
@@ -15,17 +32,15 @@ import type { PriceProviderId } from "@archant/data/schema/securities";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
 import { trades } from "@archant/data/schema/trades";
+import { transactions } from "@archant/data/schema/transactions";
 
-import { maxDate, today } from "../../domain/dates.ts";
+import { maxDate, minDate, today } from "../../domain/dates.ts";
 import { marketValue } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
-import {
-	accountWithOpeningDate,
-	historyStartOf,
-	lastBalanceOnOrBefore,
-	recomputeBalances,
-} from "./balances.ts";
+import { historyStartOf, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
+import { stampedLocks } from "./patch.ts";
 import { invalidField, movesQuantity, oneByOne } from "./shared.ts";
+import { investmentAccount, resolveSecurity } from "./trades.ts";
 
 /**
  * Values again what `securityId`'s prices from `from` on changed: each
@@ -438,12 +453,7 @@ async function heldToday(
 	securityId: string,
 	timeZone: string,
 ): Promise<{ quantity: Micros; currency: string; day: IsoDate }> {
-	const account = await accountWithOpeningDate(tx, accountId);
-
-	if (account.type !== "investment") {
-		throw new AppError("NOT_AN_INVESTMENT_ACCOUNT", "Only an investment account holds trades.");
-	}
-
+	const account = await investmentAccount(tx, accountId);
 	const day = today(timeZone);
 	const date = await lastHoldingsDay(tx, accountId, day);
 	const row =
@@ -523,6 +533,191 @@ export async function unlockCostBasis(
 				.where(
 					and(eq(costBasisLocks.accountId, accountId), eq(costBasisLocks.securityId, securityId)),
 				);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** The account's trades in `securityId`, read with `entries` joined. */
+const tradesIn = (accountId: string, securityId: string) =>
+	and(eq(entries.accountId, accountId), eq(trades.securityId, securityId));
+
+/** The ids of the account's trades in `securityId`, buys, sales and dividends alike, as a subquery. */
+function tradeIdsOf(tx: Transaction, accountId: string, securityId: string) {
+	return tx
+		.select({ id: trades.entryId })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(tradesIn(accountId, securityId));
+}
+
+/** The date of the account's first trade in `securityId`, `null` with none. */
+async function firstTradeOf(tx: Transaction, accountId: string, securityId: string) {
+	const row = await tx
+		.select({ date: min(entries.date) })
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(tradesIn(accountId, securityId))
+		.get();
+
+	return row?.date ?? null;
+}
+
+const lockWhere = (accountId: string, securityId: string) =>
+	and(eq(costBasisLocks.accountId, accountId), eq(costBasisLocks.securityId, securityId));
+
+/**
+ * Deletes a position with every trade of its security on the account, buys,
+ * sales and dividends alike, as Sure's `destroy_holding_and_entries!`, and
+ * recomputes once from the first of them; a short or sold-out position goes
+ * too, since its trades are still there. A converted trade's transaction
+ * comes back, counted again, its exclusion locked, as `deleteTrade` brings
+ * it back. The position's cost basis lock goes with it, since no day at
+ * zero would end it otherwise. The security stays, a history of prices with
+ * it (AD-22). `NOT_FOUND` when the account has no trade in it.
+ */
+export async function deletePosition(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+	options: { origin: Origin },
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const account = await investmentAccount(tx, accountId);
+			const first = await firstTradeOf(tx, accountId, securityId);
+
+			if (first === null) {
+				throw notHeld();
+			}
+
+			const parents = tx
+				.select({ id: entries.parentEntryId })
+				.from(entries)
+				.where(
+					and(
+						inArray(entries.id, tradeIdsOf(tx, accountId, securityId)),
+						isNotNull(entries.parentEntryId),
+					),
+				);
+			await tx
+				.update(transactions)
+				.set({
+					excluded: false,
+					...(options.origin === "user"
+						? { lockedFields: stampedLocks(["excluded"], Date.now()) }
+						: {}),
+				})
+				.where(inArray(transactions.entryId, parents));
+			await tx.delete(trades).where(inArray(trades.entryId, tradeIdsOf(tx, accountId, securityId)));
+			// The entries whose `trades` row just went: every other trade entry keeps
+			// its row, the ledger writing both in one transaction.
+			await tx
+				.delete(entries)
+				.where(
+					and(
+						eq(entries.accountId, accountId),
+						eq(entries.kind, "trade"),
+						not(
+							exists(
+								tx
+									.select({ id: trades.entryId })
+									.from(trades)
+									.where(eq(trades.entryId, entries.id)),
+							),
+						),
+					),
+				);
+			await tx.delete(costBasisLocks).where(lockWhere(accountId, securityId));
+			await recomputeBalances(tx, account, first, deps.timeZone);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Moves every trade of `securityId` on the account to the security `choice`
+ * names, as Sure's `remap_security!`, a listing not stored yet written in the
+ * same transaction, one in another currency refused on `security` (AD-6).
+ * The positions merge by themselves, since the recompute, run once from the
+ * earlier of either security's first trade on the account, derives them
+ * from the trades. A live cost basis lock moves to the new security when
+ * it has no live one, else it is dropped, as Sure's merge keeps the existing
+ * row's; a lock a day at zero ended, on either security, is deleted first. The
+ * old security and its prices stay (AD-22). Remapping to the same security
+ * writes nothing. `NOT_FOUND` when the account has no trade in it. Answers
+ * the new security's id.
+ */
+export async function remapPosition(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+	choice: ListedSecurityChoice,
+): Promise<{ securityId: string }> {
+	return deps.db.transaction(
+		async (tx) => {
+			const account = await investmentAccount(tx, accountId);
+			const first = await firstTradeOf(tx, accountId, securityId);
+
+			if (first === null) {
+				throw notHeld();
+			}
+
+			const target = await resolveSecurity(tx, choice, account.currency, Date.now());
+
+			if (target.id === securityId) {
+				return { securityId };
+			}
+
+			if (target.row !== null) {
+				await tx.insert(securities).values(target.row);
+			}
+
+			const targetFirst = await firstTradeOf(tx, accountId, target.id);
+			// A lock a day at zero ended is read by nothing; moved or left
+			// standing, it would come back on the merged history.
+			const live = new Set(
+				(await liveCostBasisLocks(tx, accountId)).map((lock) => lock.securityId),
+			);
+			const ended = [securityId, target.id].filter((id) => !live.has(id));
+
+			if (ended.length > 0) {
+				await tx
+					.delete(costBasisLocks)
+					.where(
+						and(eq(costBasisLocks.accountId, accountId), inArray(costBasisLocks.securityId, ended)),
+					);
+			}
+
+			await tx
+				.update(trades)
+				.set({ securityId: target.id })
+				.where(inArray(trades.entryId, tradeIdsOf(tx, accountId, securityId)));
+			await tx
+				.update(costBasisLocks)
+				.set({ securityId: target.id })
+				.where(
+					and(
+						lockWhere(accountId, securityId),
+						not(
+							exists(
+								tx
+									.select({ id: costBasisLocks.securityId })
+									.from(costBasisLocks)
+									.where(lockWhere(accountId, target.id)),
+							),
+						),
+					),
+				);
+			await tx.delete(costBasisLocks).where(lockWhere(accountId, securityId));
+			await recomputeBalances(
+				tx,
+				account,
+				targetFirst === null ? first : minDate(first, targetFirst),
+				deps.timeZone,
+			);
+
+			return { securityId: target.id };
 		},
 		{ behavior: "immediate" },
 	);

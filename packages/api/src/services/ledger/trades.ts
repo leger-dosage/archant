@@ -97,7 +97,7 @@ export type ConversionInput =
 	| { side: IncomeKind; security: IncomeSecurity };
 
 /** The account, refused unless it is an investment account: no other holds a security. */
-async function investmentAccount(tx: Transaction, accountId: string) {
+export async function investmentAccount(tx: Transaction, accountId: string) {
 	const account = await accountWithOpeningDate(tx, accountId);
 
 	if (account.type !== "investment") {
@@ -256,7 +256,7 @@ function securityRow(
  * The security `choice` names, found or still to create, in the account's
  * currency or refused (AD-6).
  */
-async function resolveSecurity(
+export async function resolveSecurity(
 	tx: Transaction,
 	choice: SecurityChoice,
 	accountCurrency: string,

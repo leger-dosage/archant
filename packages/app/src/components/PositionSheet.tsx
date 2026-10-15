@@ -1,11 +1,13 @@
+import type { SecurityPick } from "@/components/SecurityCombobox";
 import type { PositionData } from "@/hooks/useHoldings";
 import type { ShownError } from "@/lib/form-errors";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LockIcon } from "lucide-react";
-import { useMemo } from "react";
+import { LockIcon, PencilIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useController, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { costBasisSchema } from "@archant/api/schemas/holdings";
 import type { TypedPriceInput } from "@archant/api/schemas/prices";
@@ -13,10 +15,12 @@ import { typedPriceSchema } from "@archant/api/schemas/prices";
 import { isIncomeSide } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
+import { SecurityPicker, TradeFieldMessage } from "@/components/TradeFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +33,9 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+	useDeletePosition,
 	usePositionTrades,
+	useRemapPosition,
 	useSetCostBasis,
 	useTypePrice,
 	useUnlockCostBasis,
@@ -213,6 +219,138 @@ function CostBasisForm({ accountId, position }: { accountId: string; position: P
 	);
 }
 
+/**
+ * « Modifier le titre », as Sure's drawer: the position's trades move to the
+ * security picked among the known ones and the provider's listings, none
+ * typed by hand. `onDone` runs once they moved, as Sure redirects to the
+ * account.
+ */
+function RemapForm({
+	accountId,
+	securityId,
+	onCancel,
+	onDone,
+}: {
+	accountId: string;
+	securityId: string;
+	onCancel: () => void;
+	onDone: () => void;
+}) {
+	const { t } = useTranslation();
+	const remap = useRemapPosition(accountId, securityId);
+	const [pick, setPick] = useState<SecurityPick | null>(null);
+	const [error, setError] = useState<ShownError | undefined>(undefined);
+
+	const submit = async (event: React.FormEvent) => {
+		event.preventDefault();
+
+		if (pick === null || pick.choice.source === "manual") {
+			setError({ type: "custom", message: "too_small" });
+
+			return;
+		}
+
+		try {
+			await remap.mutateAsync(pick.choice);
+			toast.success(t("positions.remap.success"));
+			onDone();
+		} catch (refusal) {
+			showRefusal(refusal, (fields) => {
+				const security = fields.find((field) => field.path === "security");
+
+				if (security !== undefined) {
+					setError({ type: "custom", message: security.code });
+				}
+
+				return fields.filter((field) => field !== security);
+			});
+		}
+	};
+
+	return (
+		<form noValidate className="flex flex-col gap-3" onSubmit={(event) => void submit(event)}>
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="position-security">{t("trades.security.search")}</Label>
+				<SecurityPicker
+					id="position-security"
+					picked={pick?.label ?? null}
+					error={error}
+					manual={false}
+					onPick={(picked) => {
+						setPick(picked);
+						setError(undefined);
+					}}
+				/>
+				<TradeFieldMessage id="position-security-error" error={error} />
+			</div>
+			<div className="flex justify-end gap-2">
+				<Button type="button" variant="outline" onClick={onCancel}>
+					{t("common.cancel")}
+				</Button>
+				<Button type="submit" disabled={remap.isPending}>
+					{t("positions.remap.save")}
+				</Button>
+			</div>
+		</form>
+	);
+}
+
+/**
+ * « Supprimer la position », as Sure's « Paramètres » row, confirmed by
+ * Sure's generic dialog. `onDone` runs once the position is gone.
+ */
+function DeletePosition({
+	accountId,
+	securityId,
+	onDone,
+}: {
+	accountId: string;
+	securityId: string;
+	onDone: () => void;
+}) {
+	const { t } = useTranslation();
+	const remove = useDeletePosition(accountId, securityId);
+	const [confirming, setConfirming] = useState(false);
+
+	const confirm = async () => {
+		try {
+			await remove.mutateAsync();
+			setConfirming(false);
+			toast.success(t("positions.delete.success"));
+			onDone();
+		} catch (error) {
+			setConfirming(false);
+			showErrorToast(errorCodeOf(error));
+		}
+	};
+
+	return (
+		<div className="flex items-center justify-between gap-4 p-4">
+			<div className="flex flex-col gap-1 text-sm">
+				<h4 className="font-medium">{t("positions.delete.title")}</h4>
+				<p className="text-muted-foreground">{t("positions.delete.description")}</p>
+			</div>
+			<Button
+				type="button"
+				variant="outline"
+				className="text-destructive"
+				onClick={() => setConfirming(true)}
+			>
+				{t("positions.delete.action")}
+			</Button>
+			<ConfirmDialog
+				open={confirming}
+				onOpenChange={setConfirming}
+				title={t("positions.delete.confirmTitle")}
+				description={t("positions.delete.confirmDescription")}
+				confirmLabel={t("positions.delete.confirm")}
+				pending={remove.isPending}
+				onConfirm={() => void confirm()}
+			/>
+		</div>
+	);
+}
+
 function PositionTrades({
 	accountId,
 	securityId,
@@ -285,9 +423,10 @@ type PositionSheetProps = {
 };
 
 /**
- * Sure's holding drawer: the position's last price and its day, its figures,
- * its trades, « Saisir un cours » for a security no provider prices, and a
- * cost basis the owner sets and locks.
+ * Sure's holding drawer: the position's security, which the owner may
+ * remap, its last price and its day, its figures, its trades, « Saisir un
+ * cours » for a security no provider prices, a cost basis the owner sets and
+ * locks, and « Paramètres » to delete it.
  */
 export function PositionSheet({
 	account,
@@ -298,9 +437,20 @@ export function PositionSheet({
 }: PositionSheetProps) {
 	const { t } = useTranslation();
 	const none = t("positions.sheet.none");
+	// The security whose remap form is open, so another position opens with it closed.
+	const [remapping, setRemapping] = useState<string | null>(null);
+	// Closed by Escape or outside, the sheet reopens with the remap form closed.
+	const changeOpen = (next: boolean) => {
+		if (!next) {
+			setRemapping(null);
+		}
+
+		onOpenChange(next);
+	};
+	const close = () => changeOpen(false);
 
 	return (
-		<Sheet open={open} onOpenChange={onOpenChange}>
+		<Sheet open={open} onOpenChange={changeOpen}>
 			<SheetContent
 				// The transaction sheet's frame: 550 px, 12 px off the viewport's edges from 768 px.
 				className="data-[side=right]:w-full data-[side=right]:border-l-0 data-[side=right]:sm:max-w-none data-[side=right]:md:inset-y-3 data-[side=right]:md:right-3 data-[side=right]:md:h-auto data-[side=right]:md:w-[550px] data-[side=right]:md:rounded-xl data-[side=right]:md:border motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
@@ -318,49 +468,86 @@ export function PositionSheet({
 						</SheetHeader>
 						<div className="flex flex-col gap-4 overflow-y-auto p-4">
 							<InsetGroup level={3} title={t("positions.sheet.overview")}>
-								<dl className="flex flex-col gap-3 p-4">
-									<Figure label={t("positions.sheet.lastPrice")}>
-										{t("positions.sheet.priceOn", {
-											price: formatPrice(position.price, account.currency),
-											date: formatShortDate(position.priceDate),
-										})}
-									</Figure>
-									<Figure label={t("positions.sheet.quantity")}>
-										{formatQuantity(position.quantity)}
-									</Figure>
-									<Figure label={t("positions.sheet.value")}>
-										<Money amount={position.amount} currency={account.currency} />
-									</Figure>
-									<Figure label={t("positions.sheet.costBasis")}>
-										{position.costBasis === null
-											? none
-											: formatPrice(position.costBasis, account.currency)}
-									</Figure>
-									<Figure label={t("positions.sheet.bookValue")}>
-										{position.bookValue === null ? (
-											none
-										) : (
-											<Money amount={position.bookValue} currency={account.currency} />
-										)}
-									</Figure>
-									<Figure label={t("positions.sheet.gain")}>
-										{position.gain === null ? (
-											none
-										) : (
+								<div className="flex flex-col gap-3 p-4">
+									<dl>
+										<Figure label={t("positions.sheet.security")}>
 											<span className="flex items-center gap-2">
-												<Money amount={position.gain} currency={account.currency} plusSign />
-												{position.gainPercent !== null && (
-													<span className="text-muted-foreground">
-														{formatSignedPercent(Number(position.gainPercent))}
-													</span>
+												{position.security.ticker ?? position.security.name}
+												{canWrite && (
+													<Button
+														type="button"
+														variant="ghost"
+														size="icon-sm"
+														className="-my-1.5 text-muted-foreground"
+														aria-label={t("positions.remap.edit")}
+														aria-expanded={remapping === position.security.id}
+														onClick={() =>
+															setRemapping((current) =>
+																current === position.security.id ? null : position.security.id,
+															)
+														}
+													>
+														<PencilIcon aria-hidden="true" />
+													</Button>
 												)}
 											</span>
-										)}
-									</Figure>
-									<Figure label={t("positions.sheet.weight")}>
-										{position.weight === null ? none : formatShare(position.weight)}
-									</Figure>
-								</dl>
+										</Figure>
+									</dl>
+									{canWrite && remapping === position.security.id && (
+										<RemapForm
+											accountId={account.id}
+											securityId={position.security.id}
+											onCancel={() => setRemapping(null)}
+											onDone={() => {
+												setRemapping(null);
+												close();
+											}}
+										/>
+									)}
+									<dl className="flex flex-col gap-3">
+										<Figure label={t("positions.sheet.lastPrice")}>
+											{t("positions.sheet.priceOn", {
+												price: formatPrice(position.price, account.currency),
+												date: formatShortDate(position.priceDate),
+											})}
+										</Figure>
+										<Figure label={t("positions.sheet.quantity")}>
+											{formatQuantity(position.quantity)}
+										</Figure>
+										<Figure label={t("positions.sheet.value")}>
+											<Money amount={position.amount} currency={account.currency} />
+										</Figure>
+										<Figure label={t("positions.sheet.costBasis")}>
+											{position.costBasis === null
+												? none
+												: formatPrice(position.costBasis, account.currency)}
+										</Figure>
+										<Figure label={t("positions.sheet.bookValue")}>
+											{position.bookValue === null ? (
+												none
+											) : (
+												<Money amount={position.bookValue} currency={account.currency} />
+											)}
+										</Figure>
+										<Figure label={t("positions.sheet.gain")}>
+											{position.gain === null ? (
+												none
+											) : (
+												<span className="flex items-center gap-2">
+													<Money amount={position.gain} currency={account.currency} plusSign />
+													{position.gainPercent !== null && (
+														<span className="text-muted-foreground">
+															{formatSignedPercent(Number(position.gainPercent))}
+														</span>
+													)}
+												</span>
+											)}
+										</Figure>
+										<Figure label={t("positions.sheet.weight")}>
+											{position.weight === null ? none : formatShare(position.weight)}
+										</Figure>
+									</dl>
+								</div>
 							</InsetGroup>
 							{canWrite && (position.security.provider === null || position.security.offline) && (
 								<InsetGroup level={3} title={t("positions.price.title")}>
@@ -388,6 +575,16 @@ export function PositionSheet({
 									/>
 								</div>
 							</InsetGroup>
+							{canWrite && (
+								<InsetGroup level={3} title={t("positions.sheet.settings")}>
+									<DeletePosition
+										key={position.security.id}
+										accountId={account.id}
+										securityId={position.security.id}
+										onDone={close}
+									/>
+								</InsetGroup>
+							)}
 						</div>
 					</>
 				)}

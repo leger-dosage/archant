@@ -1,5 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
-import type { CostBasisInput } from "../schemas/holdings.ts";
+import type { CostBasisInput, RemapBody } from "../schemas/holdings.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { CurrentHolding, LastHeldHolding } from "./ledger/holdings.ts";
 
@@ -19,9 +19,11 @@ import { getAccount } from "./accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import {
 	currentHoldings,
+	deletePosition as deleteLedgerPosition,
 	lastHeldHoldings,
 	lockCostBasis,
 	notHeld,
+	remapPosition as remapLedgerPosition,
 	unlockCostBasis as unlockLedgerCostBasis,
 } from "./ledger/holdings.ts";
 import { idsNamed } from "./names.ts";
@@ -258,4 +260,31 @@ export async function unlockCostBasis(
 	await unlockLedgerCostBasis(deps, accountId, securityId, { origin: "user" });
 
 	return positionOf(deps, accountId, securityId);
+}
+
+/**
+ * Deletes a position and every trade of its security on the account, as
+ * Sure's holding drawer, on the user's behalf. Answers the security's id.
+ */
+export async function deletePosition(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+): Promise<{ securityId: string }> {
+	await deleteLedgerPosition(deps, accountId, securityId, { origin: "user" });
+
+	return { securityId };
+}
+
+/**
+ * Moves a position's trades to another security, as Sure's holding drawer,
+ * on the user's behalf. Answers the security they are now in.
+ */
+export async function remapPosition(
+	deps: ServiceDeps,
+	accountId: string,
+	securityId: string,
+	body: RemapBody,
+): Promise<{ securityId: string }> {
+	return remapLedgerPosition(deps, accountId, securityId, body.security);
 }

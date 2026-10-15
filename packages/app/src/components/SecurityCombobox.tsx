@@ -56,11 +56,19 @@ export function securityLabel(security: { name: string; ticker: string | null })
 /**
  * The trade form's security list to type into: the securities already
  * known, then the provider's listings, then « Saisir un titre manuellement »,
- * which the form follows with an ISIN and a name. While fetching is off, or
- * the provider fails, it says so and offers the known securities and manual
- * entry alone. The caller puts it in a popover and closes it on `onSelect`.
+ * which the form follows with an ISIN and a name, unless `manual` is off, as
+ * a position's remap offers search results only, as Sure's. While fetching
+ * is off, or the provider fails, it says so and offers the known securities
+ * and manual entry alone. The caller puts it in a popover and closes it on
+ * `onSelect`.
  */
-export function SecurityCombobox({ onSelect }: { onSelect: (pick: SecurityPick) => void }) {
+export function SecurityCombobox({
+	onSelect,
+	manual = true,
+}: {
+	onSelect: (pick: SecurityPick) => void;
+	manual?: boolean;
+}) {
 	const { t } = useTranslation();
 	const [search, setSearch] = useState("");
 	const results = useSecuritySearch(search);
@@ -72,9 +80,9 @@ export function SecurityCombobox({ onSelect }: { onSelect: (pick: SecurityPick) 
 		data === undefined
 			? null
 			: !data.enabled
-				? t("trades.security.off")
+				? t(manual ? "trades.security.off" : "trades.security.offKnown")
 				: data.unavailable
-					? t("trades.security.unavailable")
+					? t(manual ? "trades.security.unavailable" : "trades.security.unavailableKnown")
 					: null;
 
 	const pickKnown = (security: Known) =>
@@ -109,7 +117,7 @@ export function SecurityCombobox({ onSelect }: { onSelect: (pick: SecurityPick) 
 				)}
 				{typed && results.isError && (
 					<p role="status" className="px-3 py-2 text-xs text-muted-foreground">
-						{t("trades.security.failed")}
+						{t(manual ? "trades.security.failed" : "trades.security.failedKnown")}
 					</p>
 				)}
 				{data !== undefined && known.length === 0 && listings.length === 0 && (
@@ -151,17 +159,19 @@ export function SecurityCombobox({ onSelect }: { onSelect: (pick: SecurityPick) 
 						))}
 					</CommandGroup>
 				)}
-				<CommandGroup>
-					<CommandItem
-						value={MANUAL}
-						onSelect={() =>
-							onSelect({ choice: manualChoice(search), label: t("trades.form.manualPick") })
-						}
-					>
-						<PencilLineIcon aria-hidden="true" />
-						<span>{t("trades.security.manual")}</span>
-					</CommandItem>
-				</CommandGroup>
+				{manual && (
+					<CommandGroup>
+						<CommandItem
+							value={MANUAL}
+							onSelect={() =>
+								onSelect({ choice: manualChoice(search), label: t("trades.form.manualPick") })
+							}
+						>
+							<PencilLineIcon aria-hidden="true" />
+							<span>{t("trades.security.manual")}</span>
+						</CommandItem>
+					</CommandGroup>
+				)}
 			</CommandList>
 		</Command>
 	);
