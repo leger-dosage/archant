@@ -5,7 +5,6 @@ import { MAX_MINOR_UNITS, toMinorUnits } from "@archant/data/money";
 
 import {
 	conversionFee,
-	firstShortfall,
 	isIncome,
 	isIncomeSide,
 	isValidIsin,
@@ -155,47 +154,6 @@ describe("conversionFee", () => {
 				toMinorUnits(0),
 				"EUR",
 			),
-		).toBeNull();
-	});
-});
-
-const trade = (date: string, quantity: number) => ({ date, quantity: micros(quantity) });
-
-describe("firstShortfall", () => {
-	it("finds nothing short in a history that never sells more than it holds", () => {
-		expect(firstShortfall([])).toBeNull();
-		expect(
-			firstShortfall([
-				trade("2026-09-01", 10),
-				trade("2026-09-05", -4),
-				trade("2026-09-03", -6),
-				trade("2026-09-06", 3),
-			]),
-		).toBeNull();
-	});
-
-	it("nets a day's trades before checking it, whatever their order", () => {
-		expect(firstShortfall([trade("2026-09-01", -5), trade("2026-09-01", 5)])).toBeNull();
-	});
-
-	it("names the first day the running quantity falls below zero", () => {
-		expect(firstShortfall([trade("2026-09-01", 10), trade("2026-09-02", -11)])).toBe("2026-09-02");
-		// Buy 10 on day 1, sell 10 on day 5, sell 5 on day 3: day 5 is short.
-		expect(
-			firstShortfall([trade("2026-09-01", 10), trade("2026-09-05", -10), trade("2026-09-03", -5)]),
-		).toBe("2026-09-05");
-		// The buy gone, the first sale is short.
-		expect(firstShortfall([trade("2026-09-05", -10)])).toBe("2026-09-05");
-	});
-
-	it("sums past what a number holds exactly", () => {
-		expect(
-			firstShortfall([
-				trade("2026-09-01", Number.MAX_SAFE_INTEGER),
-				trade("2026-09-02", Number.MAX_SAFE_INTEGER),
-				trade("2026-09-03", -Number.MAX_SAFE_INTEGER),
-				trade("2026-09-04", -Number.MAX_SAFE_INTEGER),
-			]),
 		).toBeNull();
 	});
 });

@@ -367,7 +367,9 @@ export function PositionSheet({
 									<TypedPriceForm key={position.security.id} securityId={position.security.id} />
 								</InsetGroup>
 							)}
-							{canWrite && (
+							{/* A position sold short has no cost basis to set: the server
+							    refuses it, as Sure's `HoldingsController#update` does. */}
+							{canWrite && !position.quantity.startsWith("-") && (
 								<InsetGroup level={3} title={t("positions.costBasis.title")}>
 									<CostBasisForm
 										// A fresh form once the lock or the cost basis changed.

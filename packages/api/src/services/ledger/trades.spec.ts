@@ -162,6 +162,15 @@ async function stored(id: string) {
 		.get();
 }
 
+/** The account's holding of its one security at the end of `date`. */
+async function heldOn(accountId: string, date: string) {
+	return temp.db
+		.select({ quantity: holdings.quantity, costBasis: holdings.costBasis })
+		.from(holdings)
+		.where(and(eq(holdings.accountId, accountId), eq(holdings.date, date)))
+		.get();
+}
+
 const securityCount = async () =>
 	(await temp.db.select({ n: count() }).from(securities).get())?.n ?? 0;
 
@@ -221,31 +230,79 @@ describe("recordTrade", () => {
 		await expect(stored(id)).resolves.toMatchObject({ amount: -100 });
 	});
 
-	it("refuses a sale above what is held on its date, and writes nothing", async () => {
+	it("records a sale above what is held, the position below zero without a cost basis, as Sure", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		await record(account.id, buy(securityId));
-		const before = await rowsOf(account.id);
 
-		await expect(
-			record(account.id, sell(securityId, { quantity: toMicros(11_000_000) })),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE", fields: undefined });
-		// Held only from the 10th: a sale on the 9th is short too.
-		await expect(
-			record(account.id, sell(securityId, { date: "2026-09-09", quantity: toMicros(1_000_000) })),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
-		await expect(rowsOf(account.id)).resolves.toEqual(before);
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-11", quantity: toMicros(15_000_000) }),
+		);
+
+		await expect(heldOn(account.id, "2026-09-11")).resolves.toEqual({
+			quantity: -5_000_000,
+			costBasis: null,
+		});
+		// The 15 sold at 650 € come in; the 5 short are worth -5 × 650 €.
+		expect((await history(account.id)).get("2026-09-21")).toBe(
+			2_500_000 - 612_650 + 975_000 - 325_000,
+		);
 	});
 
-	it("refuses a sale that leaves a later one short", async () => {
+	it("records a sale before anything is held, and one that leaves a later sale short", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-02", quantity: toMicros(1_000_000) }),
+		);
+		await record(account.id, buy(securityId, { date: "2026-09-03" }));
+		await record(account.id, sell(securityId, { date: "2026-09-06" }));
+
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-04", quantity: toMicros(5_000_000) }),
+		);
+
+		await expect(heldOn(account.id, "2026-09-02")).resolves.toEqual({
+			quantity: -1_000_000,
+			costBasis: null,
+		});
+		await expect(heldOn(account.id, "2026-09-06")).resolves.toMatchObject({ quantity: -6_000_000 });
+	});
+
+	it("starts over from a rebuy after a short position, and keeps a partial cover's cost basis", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		await record(account.id, buy(securityId, { date: "2026-09-02" }));
-		await record(account.id, sell(securityId, { date: "2026-09-06" }));
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-03", quantity: toMicros(15_000_000) }),
+		);
+		const cover = (date: string, quantity: number) =>
+			record(
+				account.id,
+				buy(securityId, {
+					date,
+					quantity: toMicros(quantity),
+					price: toMicros(700_000_000),
+					fee: toMinorUnits(0),
+				}),
+			);
 
-		await expect(
-			record(account.id, sell(securityId, { date: "2026-09-04", quantity: toMicros(5_000_000) })),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
+		await cover("2026-09-04", 3_000_000);
+		await cover("2026-09-05", 5_000_000);
+
+		// Sure's tracker holds the 3 bought, the position -2.
+		await expect(heldOn(account.id, "2026-09-04")).resolves.toEqual({
+			quantity: -2_000_000,
+			costBasis: 700_000_000,
+		});
+		await expect(heldOn(account.id, "2026-09-05")).resolves.toEqual({
+			quantity: 3_000_000,
+			costBasis: 700_000_000,
+		});
 	});
 
 	it("nets a day's trades: a sale covered by a buy the same day holds", async () => {
@@ -253,9 +310,12 @@ describe("recordTrade", () => {
 		const securityId = await newSecurity();
 		await record(account.id, buy(securityId, { date: "2026-09-10" }));
 
-		await expect(
-			record(account.id, sell(securityId, { date: "2026-09-10", quantity: toMicros(10_000_000) })),
-		).resolves.toBeTypeOf("string");
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-10", quantity: toMicros(10_000_000) }),
+		);
+
+		await expect(heldOn(account.id, "2026-09-10")).resolves.toMatchObject({ quantity: 0 });
 	});
 
 	it("counts each account's holding apart", async () => {
@@ -264,8 +324,11 @@ describe("recordTrade", () => {
 		const securityId = await newSecurity();
 		await record(pea.id, buy(securityId));
 
-		await expect(record(other.id, sell(securityId))).rejects.toMatchObject({
-			code: "QUANTITY_UNAVAILABLE",
+		await record(other.id, sell(securityId));
+
+		await expect(heldOn(pea.id, "2026-09-10")).resolves.toMatchObject({ quantity: 10_000_000 });
+		await expect(heldOn(other.id, "2026-09-10")).resolves.toMatchObject({
+			quantity: -10_000_000,
 		});
 	});
 
@@ -469,8 +532,16 @@ describe("recordTrade", () => {
 		const before = await securityCount();
 
 		await expect(
-			record(account.id, sell("", { security: { source: "manual", isin: null, name: "Vendu" } })),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
+			// Refused after the security is resolved, in the same transaction.
+			record(
+				account.id,
+				buy("", {
+					security: { source: "manual", isin: null, name: "Trop cher" },
+					quantity: toMicros(100_000_000_000),
+					price: toMicros(1_000_000_000_000),
+				}),
+			),
+		).rejects.toMatchObject({ fields: [{ path: "quantity", code: "too_big" }] });
 
 		expect(await securityCount()).toBe(before);
 	});
@@ -541,22 +612,30 @@ describe("updateTrade", () => {
 		expect(days.get("2026-09-05")).toBe(2_500_000 - 612_650 + 612_400);
 	});
 
-	it("refuses an edit that leaves a later sale short, and writes nothing", async () => {
+	it("saves an edit that leaves a later sale short, the position below zero after it", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		const bought = await record(account.id, buy(securityId, { date: "2026-09-02" }));
-		const sold = await record(account.id, sell(securityId, { date: "2026-09-06" }));
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-06", quantity: toMicros(8_000_000) }),
+		);
 
-		await expect(
-			updateTrade(deps(), bought, { quantity: toMicros(5_000_000) }, user),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
-		await expect(updateTrade(deps(), bought, { date: "2026-09-08" }, user)).rejects.toMatchObject({
-			code: "QUANTITY_UNAVAILABLE",
+		await updateTrade(deps(), bought, { quantity: toMicros(5_000_000) }, user);
+
+		await expect(heldOn(account.id, "2026-09-06")).resolves.toEqual({
+			quantity: -3_000_000,
+			costBasis: null,
 		});
-		await expect(updateTrade(deps(), sold, { side: "buy" }, user)).resolves.toBeUndefined();
-		await expect(stored(bought)).resolves.toMatchObject({
-			date: "2026-09-02",
-			quantity: 10_000_000,
+
+		await updateTrade(deps(), bought, { date: "2026-09-08" }, user);
+
+		await expect(heldOn(account.id, "2026-09-06")).resolves.toEqual({
+			quantity: -8_000_000,
+			costBasis: null,
+		});
+		await expect(heldOn(account.id, "2026-09-08")).resolves.toMatchObject({
+			quantity: -3_000_000,
 		});
 	});
 
@@ -604,18 +683,24 @@ describe("deleteTrade", () => {
 		).resolves.toBeDefined();
 	});
 
-	it("refuses to delete a buy a later sale needs", async () => {
+	it("deletes a buy a later sale needs, the sale then short", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		const bought = await record(account.id, buy(securityId, { date: "2026-09-02" }));
-		const sold = await record(account.id, sell(securityId, { date: "2026-09-06" }));
+		await record(
+			account.id,
+			sell(securityId, { date: "2026-09-06", quantity: toMicros(8_000_000) }),
+		);
 
-		await expect(deleteTrade(deps(), bought, user)).rejects.toMatchObject({
-			code: "QUANTITY_UNAVAILABLE",
-		});
-		await deleteTrade(deps(), sold, user);
 		await deleteTrade(deps(), bought, user);
-		await expect(rowsOf(account.id)).resolves.toEqual({ entries: 1, trades: 0 });
+
+		await expect(rowsOf(account.id)).resolves.toEqual({ entries: 2, trades: 1 });
+		await expect(heldOn(account.id, "2026-09-06")).resolves.toEqual({
+			quantity: -8_000_000,
+			costBasis: null,
+		});
+		// The opening cash, the 8 sold at 650 € in, and -8 × 650 € held.
+		expect((await history(account.id)).get("2026-09-21")).toBe(2_500_000);
 	});
 
 	it("refuses an id that names no trade", async () => {
@@ -949,7 +1034,7 @@ describe("dividends and interest", () => {
 		await expect(stored(id)).resolves.toMatchObject({ date: "2026-09-12", amount: 2000 });
 	});
 
-	it("deletes an income without a quantity check, and gives its cash back", async () => {
+	it("deletes an income, and gives its cash back", async () => {
 		const account = await openPea();
 		const fund = await newSecurity();
 		await record(account.id, buy(fund));
@@ -1124,17 +1209,21 @@ describe("convertTransaction", () => {
 		await expect(rowsOf(account.id)).resolves.toMatchObject({ trades: 0 });
 	});
 
-	it("refuses a sale of what is not held, and an income on what is not held, as a trade does", async () => {
+	it("converts a sale of what is not held, below zero as a trade, and refuses an income on it", async () => {
 		const account = await openPea();
 		const fund = await newSecurity();
 		const inflow = await lineOn(account.id, 260_000);
 
 		await expect(
-			convert(inflow, { ...convertBuy(fund, 260_000_000), side: "sell" }),
-		).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
-		await expect(
 			convert(inflow, { side: "dividend", security: { source: "known", id: fund } }),
 		).rejects.toMatchObject({ fields: [{ path: "security", code: "not_held" }] });
+		await expect(
+			convert(inflow, { ...convertBuy(fund, 260_000_000), side: "sell" }),
+		).resolves.toBeTypeOf("string");
+		await expect(heldOn(account.id, "2026-09-10")).resolves.toEqual({
+			quantity: -10_000_000,
+			costBasis: null,
+		});
 	});
 
 	it("refuses a transfer side, a pending, excluded or flagged line, a split's rows and a converted one", async () => {
@@ -1274,33 +1363,39 @@ describe("convertTransaction", () => {
 		);
 	});
 
-	it("refuses to delete a converted buy a later sale needs, by any path", async () => {
+	it("deletes a converted buy a later sale needs, by any path, the sale then short", async () => {
 		const account = await openPea();
 		const fund = await newSecurity();
-		const source = await lineOn(account.id, -612_650);
-		await convert(source, convertBuy(fund));
-		await record(account.id, sell(fund, { date: "2026-09-15" }));
-
-		await expect(deleteTransaction(deps(), source, user)).rejects.toMatchObject({
-			code: "QUANTITY_UNAVAILABLE",
-		});
-		await expect(bulkDeleteTransactions(deps(), { ids: [source] }, user)).rejects.toMatchObject({
-			code: "QUANTITY_UNAVAILABLE",
-		});
-
+		const one = await lineOn(account.id, -612_650);
+		const two = await lineOn(account.id, -612_650);
+		await convert(one, convertBuy(fund));
+		await convert(two, convertBuy(fund));
 		const { importId } = await importStatement(
 			account.id,
-			statementOf(line({ date: "2026-09-11", amount: toMinorUnits(-612_652), label: "ACHAT" })),
+			statementOf(line({ date: "2026-09-10", amount: toMinorUnits(-612_652), label: "ACHAT" })),
 		);
 		const [{ id: imported } = { id: "" }] = await temp.db
 			.select({ id: entries.id })
 			.from(entries)
 			.where(eq(entries.importId, importId));
 		await convert(imported, convertBuy(fund));
-		await record(account.id, sell(fund, { date: "2026-09-16" }));
+		await record(account.id, sell(fund, { date: "2026-09-15", quantity: toMicros(25_000_000) }));
 
-		await expect(revert(importId)).rejects.toMatchObject({ code: "QUANTITY_UNAVAILABLE" });
-		await expect(rowsOf(account.id)).resolves.toMatchObject({ trades: 4 });
+		await deleteTransaction(deps(), one, user);
+		await expect(heldOn(account.id, "2026-09-15")).resolves.toMatchObject({
+			quantity: -5_000_000,
+		});
+		await bulkDeleteTransactions(deps(), { ids: [two] }, user);
+		await expect(heldOn(account.id, "2026-09-15")).resolves.toMatchObject({
+			quantity: -15_000_000,
+		});
+		await revert(importId);
+
+		await expect(rowsOf(account.id)).resolves.toMatchObject({ trades: 1 });
+		await expect(heldOn(account.id, "2026-09-15")).resolves.toEqual({
+			quantity: -25_000_000,
+			costBasis: null,
+		});
 	});
 
 	it("reverts an import whose converted buy and the converted sale it covers fall in two chunks", async () => {

@@ -189,6 +189,88 @@ describe("forwardHoldings", () => {
 		]);
 	});
 
+	describe("below zero, as Sure's tracker", () => {
+		it("takes the quantity below zero on a sale above what is held, the cost basis cleared", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-11",
+					trades: [
+						trade("2026-09-10", 10_000_000, 612_400_000),
+						trade("2026-09-11", -15_000_000, 650_000_000),
+					],
+				}),
+			).toEqual([
+				"2026-09-10 lvmh 10000000 612400000 612400 612400000",
+				"2026-09-11 lvmh -5000000 650000000 -325000 null",
+			]);
+		});
+
+		it("starts over from the rebuy's own price after a short position", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-12",
+					trades: [
+						trade("2026-09-10", 10_000_000, 612_400_000),
+						trade("2026-09-11", -15_000_000, 650_000_000),
+						trade("2026-09-12", 8_000_000, 700_000_000),
+					],
+				}).at(-1),
+			).toBe("2026-09-12 lvmh 3000000 700000000 210000 700000000");
+		});
+
+		it("keeps the cost basis of what the tracker holds while the position stays below zero", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-13",
+					trades: [
+						trade("2026-09-10", 10_000_000, 612_400_000),
+						trade("2026-09-11", -15_000_000, 650_000_000),
+						trade("2026-09-12", 3_000_000, 700_000_000),
+						trade("2026-09-13", 1_000_000, 800_000_000),
+					],
+				}).slice(2),
+			).toEqual([
+				"2026-09-12 lvmh -2000000 700000000 -140000 700000000",
+				"2026-09-13 lvmh -1000000 800000000 -80000 725000000",
+			]);
+		});
+
+		it("averages a day's buys after a sale recorded before them over what the tracker holds", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-10",
+					trades: [
+						trade("2026-09-10", -5_000_000, 600_000_000),
+						trade("2026-09-10", 3_000_000, 700_000_000),
+						trade("2026-09-10", 4_000_000, 800_000_000),
+					],
+				}),
+			).toEqual(["2026-09-10 lvmh 2000000 800000000 160000 757142857"]);
+		});
+
+		it("relieves a sale at the average, which it leaves, and does nothing while the tracker holds nothing", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-12",
+					trades: [
+						trade("2026-09-10", -5_000_000, 600_000_000),
+						trade("2026-09-11", 8_000_000, 700_000_000),
+						trade("2026-09-12", -2_000_000, 750_000_000),
+					],
+				}),
+			).toEqual([
+				"2026-09-10 lvmh -5000000 600000000 -300000 null",
+				"2026-09-11 lvmh 3000000 700000000 210000 700000000",
+				"2026-09-12 lvmh 1000000 750000000 75000 700000000",
+			]);
+		});
+	});
+
 	it("rounds the cost basis to the millionth and the amount to the cent, half to even", () => {
 		expect(
 			rows({

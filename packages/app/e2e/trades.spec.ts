@@ -99,12 +99,13 @@ test("a PEA records a buy then a sale from « Ordres », its balance the cash pl
 	});
 });
 
-test("a sale above what is held is refused on its quantity, and nothing is written", async ({
+test("a sale above what is held saves, and « Positions » lists the position below zero", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount({ kind: "pea", openingDate: daysAgo(30) });
 	const name = uniqueName("Titre");
+	const sold = daysAgo(3);
 	await api.recordTrade(account.id, {
 		security: { source: "manual", name },
 		date: daysAgo(5),
@@ -118,14 +119,29 @@ test("a sale above what is held is refused on its quantity, and nothing is writt
 	await dialog.getByRole("radio", { name: "Vente" }).click();
 	await searchSecurity(dialog, name);
 	await page.getByRole("group", { name: "Titres connus" }).getByRole("option").click();
-	await fillNumbers(dialog, { date: daysAgo(3), quantity: "11", price: "10", fee: "0" });
+	await fillNumbers(dialog, { date: sold, quantity: "15", price: "10", fee: "0" });
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
-	await expect(dialog.getByLabel("Quantité")).toHaveAccessibleDescription(
-		"Le compte ne détient pas assez de ce titre, à cette date ou pour une vente qui suit.",
-	);
-	await dialog.getByRole("button", { name: "Annuler" }).click();
-	await expect(page.getByRole("row")).toHaveCount(2);
+	// As Sure's, nothing warns: the sale is saved and the quantity goes below zero.
+	await expect(dialog).toBeHidden();
+	await expect(tradeRow(page, sold)).toContainText("15 × 10,00 €");
+	await expect(tradeRow(page, sold)).toContainText(`+${euros(15_000)}`);
+
+	await page.getByRole("tab", { name: "Positions" }).click();
+	const cells = page
+		.getByRole("row")
+		.filter({ has: page.getByRole("button", { name: new RegExp(`^${name}`, "u") }) })
+		.getByRole("cell");
+	await expect(cells.nth(2)).toHaveText("—");
+	await expect(cells.nth(3)).toContainText(euros(-5_000));
+	await expect(cells.nth(3)).toContainText("−5 × 10,00 €");
+	await expect(page.getByRole("row").last().getByRole("cell").nth(0)).toHaveText("Liquidités");
+
+	// No cost basis to set on a position sold short, as Sure's server refuses one.
+	await page.getByRole("button", { name: new RegExp(`^${name}`, "u") }).click();
+	const sheet = page.getByRole("dialog", { name });
+	await expect(sheet.getByText("−5", { exact: true })).toBeVisible();
+	await expect(sheet.getByRole("region", { name: "Prix de revient unitaire" })).toHaveCount(0);
 });
 
 test("a trade opened from its row is edited, then deleted, and the balance follows its fee", async ({
@@ -177,7 +193,7 @@ test("a trade opened from its row is edited, then deleted, and the balance follo
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
-test("deleting a buy a later sale needs is refused, and both rows stay", async ({ page, api }) => {
+test("deleting a buy a later sale needs succeeds, the sale left short", async ({ page, api }) => {
 	const account = await api.openAccount({ kind: "pea", openingDate: daysAgo(30) });
 	const security = { source: "manual", isin: "FR0010315770", name: "Fonds euros" };
 	const bought = daysAgo(5);
@@ -203,16 +219,14 @@ test("deleting a buy a later sale needs is refused, and both rows stay", async (
 		.getByRole("button", { name: "Supprimer l'ordre" })
 		.click();
 
-	await expect(
-		page.locator("[data-sonner-toast]").filter({
-			hasText:
-				"Le compte ne détient pas assez de ce titre : une vente, à sa date ou plus tard, dépasserait ce qu'il détient.",
-		}),
-	).toBeVisible();
-	const dialog = page.getByRole("dialog", { name: "Modifier l'ordre" });
-	await dialog.getByRole("button", { name: "Annuler" }).click();
-	await expect(dialog).toBeHidden();
-	await expect(page.getByRole("row")).toHaveCount(3);
+	await expect(page.getByRole("dialog", { name: "Modifier l'ordre" })).toBeHidden();
+	await expect(tradeRow(page, bought)).toBeHidden();
+	await expect(page.getByRole("row")).toHaveCount(2);
+
+	await page.getByRole("tab", { name: "Positions" }).click();
+	await expect(page.getByRole("row").filter({ hasText: "Fonds euros" })).toContainText(
+		"−10 × 12,00 €",
+	);
 });
 
 test("the security list says when fetching is off or Yahoo fails, and offers its listings once on", async ({

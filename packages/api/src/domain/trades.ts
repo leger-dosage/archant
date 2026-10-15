@@ -1,5 +1,3 @@
-import type { IsoDate } from "./dates.ts";
-
 import type { IncomeKind } from "@archant/data/income-kinds";
 import { INCOME_KINDS } from "@archant/data/income-kinds";
 import type { Micros } from "@archant/data/micros";
@@ -110,33 +108,6 @@ export function conversionFee(
 	const fee = side === "buy" ? -BigInt(amount) - value : value - BigInt(amount);
 
 	return fee < 0n || fee > BigInt(MAX_MINOR_UNITS) ? null : toMinorUnits(Number(fee));
-}
-
-/**
- * The first day a security's running quantity falls below zero, its trades
- * summed per day in date order; `null` when it never does. Per day, as
- * holdings are: a sale and the buy that covers it on the same day hold.
- */
-export function firstShortfall(
-	movements: readonly { date: IsoDate; quantity: Micros }[],
-): IsoDate | null {
-	const byDay = new Map<IsoDate, bigint>();
-
-	for (const { date, quantity } of movements) {
-		byDay.set(date, (byDay.get(date) ?? 0n) + BigInt(quantity));
-	}
-
-	let running = 0n;
-
-	for (const [date, quantity] of [...byDay].toSorted(([a], [b]) => a.localeCompare(b))) {
-		running += quantity;
-
-		if (running < 0n) {
-			return date;
-		}
-	}
-
-	return null;
 }
 
 const ISIN_PATTERN = /^[A-Z]{2}[A-Z0-9]{9}\d$/u;

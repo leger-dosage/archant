@@ -11,6 +11,7 @@ describe("formatQuantity", () => {
 		["2.5", "2,5"],
 		["0.000001", "0,000001"],
 		["1234.5", "1 234,5"],
+		["-5", "−5"],
 		["abc", "abc"],
 	])("shows %j as %j", (quantity, expected) => {
 		expect(spaced(formatQuantity(quantity))).toBe(expected);

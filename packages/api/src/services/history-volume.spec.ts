@@ -784,13 +784,13 @@ describe("query plans at 100,000 transactions", () => {
 		["one account", () => peaId],
 		["every account", () => null],
 	])(
-		"finds the live cost basis locks of %s from the zero-quantity index, never every holding",
+		"finds the live cost basis locks of %s from the not-held index, never every holding",
 		async (_name, accountOf) => {
 			const statements = await statementsOf(async () => liveCostBasisLocks(temp.db, accountOf()));
 			const plan = await planOf(only(statements, /"cost_basis_locks"/u));
 
 			expect(plan).toMatch(
-				/SEARCH holdings USING COVERING INDEX holdings_zero_quantity \(account_id=\? AND security_id=\?\)/u,
+				/SEARCH holdings USING COVERING INDEX holdings_not_held \(account_id=\? AND security_id=\?\)/u,
 			);
 			expect(plan).not.toMatch(/SCAN holdings/u);
 		},

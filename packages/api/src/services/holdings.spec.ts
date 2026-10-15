@@ -148,6 +148,36 @@ describe("listPositions", () => {
 		});
 	});
 
+	it("lists a position below zero last, with its negative value and weight, then the cash", async () => {
+		const { pea } = await twoLines();
+		const c = await newSecurity("C");
+		// 5 of C sold at 40 € without any held: 200 € in, -200 € held.
+		await buy(pea.id, c, {
+			side: "sell",
+			date: "2026-09-16",
+			quantity: toMicros(5_000_000),
+			price: toMicros(40_000_000),
+		});
+
+		const holdings = await listPositions(deps(), pea.id);
+
+		expect(
+			holdings.positions.map(({ security, quantity, weight }) => [security.name, quantity, weight]),
+		).toEqual([
+			["A", "100", "60"],
+			["B", "10", "0"],
+			["C", "-5", "-2"],
+		]);
+		expect(holdings.positions[2]).toMatchObject({
+			amount: -20_000,
+			costBasis: null,
+			bookValue: null,
+			gain: null,
+			gainPercent: null,
+		});
+		expect(holdings).toMatchObject({ cash: 420_000, cashWeight: "42", total: 1_000_000 });
+	});
+
 	it("leaves every weight out when the total is not above zero", async () => {
 		const { pea } = await twoLines(-200_000);
 

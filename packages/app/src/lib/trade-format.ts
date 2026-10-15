@@ -9,9 +9,11 @@ const MAX_DECIMALS = 6;
 
 const quantityFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: MAX_DECIMALS });
 
-/** `"2.5"` as `2,5`, grouped the French way. */
+/** `"2.5"` as `2,5`, grouped the French way; a position sold short as `−5`. */
 export function formatQuantity(quantity: string): string {
-	return isDecimalString(quantity) ? quantityFormat.format(quantity) : quantity;
+	// CLDR's French minus is a hyphen; typography and DESIGN.md want U+2212,
+	// as `formatMoney` gives the value beside it.
+	return isDecimalString(quantity) ? quantityFormat.format(quantity).replace("-", "−") : quantity;
 }
 
 /**

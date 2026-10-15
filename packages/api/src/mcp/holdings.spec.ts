@@ -242,6 +242,28 @@ describe("get_holdings", () => {
 		expect(result.total_value).toBe(euros("1 700,00"));
 	});
 
+	it("lists a position sold below zero at its last quantity, which is not zero, as Sure's `qty <> 0`", async () => {
+		const tools = await single("10 000,00");
+		const fundId = await buy(tools.account.id, fund("Fonds"), "10", "150", { date: "2026-03-02" });
+		await buy(tools.account.id, { source: "known", id: fundId }, "15", "150", {
+			side: "sell",
+			date: "2026-06-01",
+		});
+
+		const result = await read(tools, { page: 1 });
+
+		expect(result.holdings).toMatchObject([
+			{
+				name: "Fonds",
+				quantity: -5,
+				amount: -750,
+				weight: "-7.5",
+				average_cost: null,
+				date: "2026-09-21",
+			},
+		]);
+	});
+
 	it("writes weight as Sure's Holding#weight: two decimals as text, 1 on a zero balance, 0 on a zero amount", async () => {
 		const third = await single("750,00");
 		await buy(third.account.id, fund("Un tiers"), "1", "250");

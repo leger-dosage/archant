@@ -156,13 +156,6 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 	const showError = (error: unknown) => {
 		const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 
-		// The API names no field for it: the quantity is what the owner changes.
-		if (apiError.code === "QUANTITY_UNAVAILABLE") {
-			form.setError("quantity", { type: "quantity_unavailable" });
-
-			return;
-		}
-
 		const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
 
 		if (unplaced.length > 0 || apiError.fields.length === 0) {

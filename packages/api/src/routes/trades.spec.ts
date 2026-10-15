@@ -66,6 +66,21 @@ async function postTrade(accountId: string, body: unknown) {
 	return request("POST", `/api/accounts/${accountId}/trades`, body);
 }
 
+const positionsBody = z.object({
+	data: z.object({
+		positions: z.array(
+			z.object({ quantity: z.string(), amount: z.number(), costBasis: z.string().nullable() }),
+		),
+	}),
+});
+
+/** The account's positions today, as « Positions » reads them. */
+async function positionsOf(accountId: string) {
+	const { body } = await request("GET", `/api/accounts/${accountId}/holdings`);
+
+	return positionsBody.parse(body).data.positions;
+}
+
 async function recorded(accountId: string, body: unknown) {
 	const { status, body: answer } = await postTrade(accountId, body);
 
@@ -110,7 +125,7 @@ describe("POST /api/accounts/:id/trades", () => {
 		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 612_400);
 	});
 
-	it("records a sale of what is held, and refuses one above it with QUANTITY_UNAVAILABLE", async () => {
+	it("records a sale of what is held, then one above it, the position below zero as Sure", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		await recorded(account.id, buyBody(securityId));
@@ -125,19 +140,27 @@ describe("POST /api/accounts/:id/trades", () => {
 				fee: "0",
 			}),
 		);
-		const { status, body } = await postTrade(
+		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 260_000 + 390_000);
+		const short = await recorded(
 			account.id,
-			buyBody(securityId, { side: "sell", date: "2026-09-14", quantity: "6,5", fee: "0" }),
+			buyBody(securityId, {
+				side: "sell",
+				date: "2026-09-14",
+				quantity: "11",
+				price: "650",
+				fee: "0",
+			}),
 		);
 
 		expect(sale).toMatchObject({ side: "sell", quantity: "4", amount: 260_000 });
-		expect(status).toBe(409);
-		expect(errorBody.parse(body).error).toEqual({
-			code: "QUANTITY_UNAVAILABLE",
-			message: "The account would sell more than it holds.",
-		});
-		// The 6 shares left at the sale's 650 €.
-		await expect(balanceOf(account.id)).resolves.toBe(2_500_000 - 612_650 + 260_000 + 390_000);
+		expect(short).toMatchObject({ side: "sell", quantity: "11", amount: 715_000 });
+		await expect(positionsOf(account.id)).resolves.toEqual([
+			{ quantity: "-5", amount: -325_000, costBasis: null },
+		]);
+		// The 5 shares short at the sale's 650 € count against the cash.
+		await expect(balanceOf(account.id)).resolves.toBe(
+			2_500_000 - 612_650 + 260_000 + 715_000 - 325_000,
+		);
 	});
 
 	it("creates a security typed by hand, and reuses it for the same ISIN", async () => {
@@ -321,17 +344,20 @@ describe("PATCH /api/trades/:id", () => {
 		);
 	});
 
-	it("refuses an edit that leaves a later sale short, and an invalid number", async () => {
+	it("saves an edit that leaves a later sale short, and refuses an invalid number", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		const bought = await recorded(account.id, buyBody(securityId, { date: "2026-09-05" }));
-		await recorded(account.id, buyBody(securityId, { side: "sell", date: "2026-09-08", fee: "0" }));
+		await recorded(
+			account.id,
+			buyBody(securityId, { side: "sell", date: "2026-09-08", quantity: "8", fee: "0" }),
+		);
 
 		const short = await request("PATCH", `/api/trades/${bought.id}`, { quantity: "5" });
 		const invalid = await request("PATCH", `/api/trades/${bought.id}`, { price: "x" });
 
-		expect(short.status).toBe(409);
-		expect(errorBody.parse(short.body).error.code).toBe("QUANTITY_UNAVAILABLE");
+		expect(short.status).toBe(200);
+		await expect(positionsOf(account.id)).resolves.toMatchObject([{ quantity: "-3" }]);
 		expect(invalid.status).toBe(400);
 		expect(errorBody.parse(invalid.body).error.fields).toEqual([
 			{ path: "price", code: "invalid_price" },
@@ -374,16 +400,19 @@ describe("DELETE /api/trades/:id", () => {
 		await expect(balanceOf(account.id)).resolves.toBe(2_500_000);
 	});
 
-	it("refuses to delete a buy a later sale needs", async () => {
+	it("deletes a buy a later sale needs, the sale then short", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
 		const bought = await recorded(account.id, buyBody(securityId, { date: "2026-09-05" }));
-		await recorded(account.id, buyBody(securityId, { side: "sell", date: "2026-09-08", fee: "0" }));
+		await recorded(
+			account.id,
+			buyBody(securityId, { side: "sell", date: "2026-09-08", quantity: "8", fee: "0" }),
+		);
 
-		const { status, body } = await request("DELETE", `/api/trades/${bought.id}`);
+		const { status } = await request("DELETE", `/api/trades/${bought.id}`);
 
-		expect(status).toBe(409);
-		expect(errorBody.parse(body).error.code).toBe("QUANTITY_UNAVAILABLE");
+		expect(status).toBe(200);
+		await expect(positionsOf(account.id)).resolves.toMatchObject([{ quantity: "-8" }]);
 	});
 });
 

@@ -2497,7 +2497,6 @@
 			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, six décimales au plus. Exemple : 12,5.",
 			"invalid_price": "Prix invalide : un nombre positif ou nul, six décimales au plus. Exemple : 612,40.",
 			"invalid_isin": "ISIN invalide : deux lettres, neuf lettres ou chiffres, puis un chiffre de contrôle.",
-			"quantity_unavailable": "Le compte ne détient pas assez de ce titre, à cette date ou pour une vente qui suit.",
 			"not_held": "Le compte ne détenait pas ce titre à cette date.",
 			"amount_mismatch": "Quantité × prix ne laisse pas de frais positifs ou nuls pour le montant de l'opération.",
 			"invalid_url": "Lien invalide : une adresse http ou https. Exemple : banque.fr/payer.",
@@ -2513,7 +2512,6 @@
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "Un virement récurrent existe déjà pour cette paire de comptes.",
 		"PAYMENT_EXCEEDS_TRANSACTION": "Le montant de cette opération paie déjà d'autres échéances.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
-		"NOT_AN_INVESTMENT_ACCOUNT": "Seul un compte d'investissement reçoit des ordres.",
-		"QUANTITY_UNAVAILABLE": "Le compte ne détient pas assez de ce titre : une vente, à sa date ou plus tard, dépasserait ce qu'il détient."
+		"NOT_AN_INVESTMENT_ACCOUNT": "Seul un compte d'investissement reçoit des ordres."
 	}
 }
